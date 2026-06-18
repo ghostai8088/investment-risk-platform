@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "irp-backend"
+version = "0.1.0"
+description = "Investment Risk Platform - backend API (scaffold, system endpoints only)"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.5",
+  "uvicorn>=0.30",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/irp_backend"]

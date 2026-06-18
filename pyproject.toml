@@ -1,0 +1,23 @@
+# Root tooling configuration (not a package). Per-package metadata lives in each package's pyproject.toml.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["apps/backend/src", "apps/worker/src", "packages/shared-python/src", "scripts"]
+extend-exclude = [".venv", "node_modules", "dist", "build", "migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency-injection callables are safe to use as argument defaults.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Query", "fastapi.Path"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+files = ["apps/backend/src", "apps/worker/src", "packages/shared-python/src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["apps/backend/tests", "apps/worker/tests", "packages/shared-python/tests"]

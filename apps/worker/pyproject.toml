@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "irp-worker"
+version = "0.1.0"
+description = "Investment Risk Platform - calculation-run worker (scaffold, no calculations)"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/irp_worker"]

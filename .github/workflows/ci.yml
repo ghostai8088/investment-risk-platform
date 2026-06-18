@@ -1,0 +1,111 @@
+name: CI
+
+# Enforces the ratified Step 1A–1C standards from the first commit.
+# Any failing step fails its job and blocks the merge.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e packages/shared-python -e apps/backend -e apps/worker
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: Ruff lint
+        run: ruff check .
+      - name: Mypy
+        run: mypy
+      - name: Pytest
+        run: pytest
+
+  frontend:
+    name: Frontend (TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install
+      - name: Shared package tests
+        run: npm run -w packages/shared-ts test
+      - name: Lint
+        run: npm run -w apps/frontend lint
+      - name: Typecheck
+        run: npm run -w apps/frontend typecheck
+      - name: Test
+        run: npm run -w apps/frontend test
+      - name: Build
+        run: npm run -w apps/frontend build
+
+  migration:
+    name: DB migration (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: irp
+          POSTGRES_USER: irp
+          # Ephemeral CI-only service credential (not an application secret).
+          POSTGRES_PASSWORD: irp
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U irp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e packages/shared-python "psycopg[binary]"
+      - name: Apply foundation migration
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: alembic upgrade head
+      - name: Revert foundation migration (downgrade smoke)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: alembic downgrade base
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Secret scan (placeholder for gitleaks)
+        run: python scripts/secret_scan.py
+
+  docs-check:
+    name: Documentation check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Documentation consistency (placeholder)
+        run: python scripts/check_docs.py

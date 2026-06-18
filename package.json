@@ -1,0 +1,10 @@
+{
+  "name": "investment-risk-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Investment Risk Platform monorepo (scaffold)",
+  "workspaces": [
+    "apps/frontend",
+    "packages/shared-ts"
+  ]
+}

@@ -1,0 +1,13 @@
+# Backend / Python development dependencies (pinned for reproducibility).
+# Versions verified to provide wheels for Python 3.12 (CI) and 3.14 (current local default).
+# Runtime deps for each package are also declared in that package's pyproject.toml.
+ruff==0.6.9
+mypy==2.1.0
+pytest==8.3.3
+httpx==0.28.1
+fastapi==0.137.1
+uvicorn==0.49.0
+pydantic==2.13.4
+pydantic-settings==2.14.1
+sqlalchemy==2.0.51
+alembic==1.18.4

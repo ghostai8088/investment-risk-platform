@@ -1,0 +1,14 @@
+# Gitleaks configuration (placeholder).
+# The active scaffold check is scripts/secret_scan.py; wiring the full gitleaks engine
+# into CI is a later-hardening task (threat model THR-23, BR-10).
+title = "Investment Risk Platform gitleaks config (placeholder)"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlisted paths (examples and the scanner's own pattern strings)"
+paths = [
+  '''\.env\.example''',
+  '''scripts/secret_scan\.py''',
+]

@@ -1,0 +1,170 @@
+# Canonical Data Model Standard
+
+## Document Control
+
+| Field | Value |
+|---|---|
+| Document ID | DATA-CANON-001 |
+| Version | 0.1 (Draft for Review) |
+| Status | Draft |
+| Owner | R-05 Data Architect AI |
+| Approver | H-04 Data Owner |
+| Created | 2026-06-17 |
+| Last Reviewed | 2026-06-17 |
+| Related Documents | temporal_reproducibility_standard.md, audit_event_taxonomy.md, entitlement_sod_model.md, numerical_quant_standards.md, architecture_baseline.md |
+| Supported Build Rules | BR-4, BR-6, BR-7, BR-13 |
+
+## 1. Purpose
+
+Define naming standards, identifier strategy, mandatory common columns, and the canonical entity set so that every module
+shares one consistent, lineage-aware, auditable data foundation. This is the contract the data dictionary (future, per-field)
+will elaborate; it is not full DDL.
+
+## 2. Naming & Modeling Standards (DM-N)
+
+| ID | Standard |
+|---|---|
+| DM-N-01 | Tables and columns in `snake_case`; table names singular (e.g., `position`, `calculation_run`). |
+| DM-N-02 | Surrogate primary key `id` (UUID); business/natural keys stored explicitly and uniquely constrained. |
+| DM-N-03 | Foreign keys named `<referenced_entity>_id`. |
+| DM-N-04 | Monetary amounts stored as decimal with explicit `*_currency` (ISO 4217) — never binary float (QS standards). |
+| DM-N-05 | All timestamps stored in UTC; business dates stored as date with explicit calendar reference where relevant. |
+| DM-N-06 | Every entity carries the mandatory common columns (§4) and, where stateful, bitemporal columns (§4 / temporal standard). |
+| DM-N-07 | Every field has a data classification tag (DC-*, see entitlement_sod_model.md) recorded in the data dictionary. |
+| DM-N-08 | Enumerations are reference data, not free text; controlled vocabularies live in reference tables. |
+| DM-N-09 | No module persists into another bounded context's tables (ARCH-P-01); cross-context access via service/API only. |
+
+## 3. Identifier Strategy
+
+| Concern | Standard |
+|---|---|
+| Internal IDs | UUID surrogate keys; immutable. |
+| Instruments | Maintain cross-reference (`identifier_xref`) across vendor and standard identifiers (ISIN/CUSIP/SEDOL/FIGI/internal). |
+| Issuers / Counterparties | Prefer LEI where available; maintain internal entity ID and hierarchy (parent/ultimate-parent). |
+| Private assets | Internal private-asset ID with proxy/mapping to public risk factors (`proxy_mapping`). |
+| Tenancy | `tenant_id` on every tenant-scoped entity (AD-008); enforced by FW-ENT. |
+
+## 4. Mandatory Common Columns
+
+Every persisted entity includes:
+
+- `id` (UUID, PK)
+- `tenant_id` (where tenant-scoped)
+- `created_at` / `created_by`, `updated_at` / `updated_by`
+- `source_id` (FK to `data_source`; lineage origin — BR-13)
+- `record_version` (monotonic version)
+- Bitemporal (stateful business entities): `valid_from`, `valid_to`, `system_from`, `system_to`
+  (see [temporal_reproducibility_standard.md](temporal_reproducibility_standard.md))
+- Classification tag reference (DM-N-07)
+
+Result and audit entities are **append-only/immutable** (no in-place update; corrections via new versions).
+
+## 5. Canonical Entities (ENT)
+
+Grouped by bounded context. IDs are stable; attributes listed are indicative (the per-field dictionary will expand them).
+
+### Reference / Security Master (BC-02/BC-03)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-001 | `instrument` | Security master; asset class, terms, identifiers via xref |
+| ENT-002 | `issuer` | Issuer/obligor with LEI and hierarchy |
+| ENT-003 | `counterparty` | Trading/credit counterparty; links to netting/CSA |
+| ENT-004 | `identifier_xref` | Instrument/entity identifier cross-reference |
+| ENT-005 | `currency` | ISO 4217 reference |
+| ENT-006 | `calendar` | Holiday calendars per market (QS day-count/roll) |
+| ENT-007 | `rating_scale` / `rating` | External and internal/shadow ratings |
+| ENT-008 | `corporate_action` | Splits, coupons, calls, restructurings |
+| ENT-009 | `benchmark` | Benchmark definitions and constituents |
+
+### Portfolio & Positions (BC-01)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-010 | `portfolio` / `fund` / `strategy` / `account` | Hierarchy nodes |
+| ENT-011 | `position` | Holdings (bitemporal) |
+| ENT-012 | `transaction` | Trades/cashflows |
+| ENT-013 | `valuation` | Valuation history (bitemporal) |
+| ENT-014 | `exposure_aggregate` | Derived aggregation (run-tracked) |
+
+### Private Assets (BC-04)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-015 | `commitment` | Funded/unfunded |
+| ENT-016 | `capital_call` / `distribution` | Cashflow events |
+| ENT-017 | `gp_report` / `appraisal` | NAV/valuation sources, valuation dates, stale flags |
+| ENT-018 | `private_company_financials` | Restricted/MNPI classification |
+| ENT-019 | `proxy_mapping` | Private-to-public risk-factor proxies |
+
+### Market Data (BC-02)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-020 | `price_point` | Time-series prices |
+| ENT-021 | `yield_curve` | Curve nodes |
+| ENT-022 | `volatility_surface` | Vol points |
+| ENT-023 | `credit_spread` | Spread time-series |
+| ENT-024 | `fx_rate` | FX (QS triangulation) |
+| ENT-025 | `factor_return` | Risk-factor returns |
+
+### Risk Results & Scenarios (BC-05…BC-09)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-026 | `calculation_run` | Binds version+snapshot+assumptions+seed+initiator (FW-RUN) |
+| ENT-027 | `risk_result` | Immutable result rows linked to a run |
+| ENT-028 | `sensitivity` / `exposure_metric` | Greeks/duration/PFE/etc. |
+| ENT-029 | `scenario_definition` | Versioned, saved assumptions (BR-8) |
+| ENT-030 | `scenario_result` | Run-tracked scenario outputs |
+
+### Limits & Breach (BC-10)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-031 | `limit_definition` | Soft/hard limits, scope |
+| ENT-032 | `limit_utilization` | Run-tracked utilization |
+| ENT-033 | `breach` | Breach record + workflow state |
+| ENT-034 | `breach_action` | 1L/2L actions, remediation, closure evidence |
+
+### Model Governance (BC-11)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-035 | `model` / `model_version` | Inventory + versioning |
+| ENT-036 | `model_assumption` / `model_limitation` | Declared per version |
+| ENT-037 | `model_validation` | Validation status, tier, approval |
+
+### Data Governance (BC-12)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-038 | `data_source` | Source registry (lineage origin) |
+| ENT-039 | `data_quality_rule` / `dq_result` | DQ rules and outcomes |
+| ENT-040 | `reconciliation_result` | Recon outcomes |
+| ENT-041 | `manual_override` | Prior/new value, justification, approval (BR-7) |
+| ENT-042 | `lineage_edge` | Source-to-target lineage graph edges (BR-13) |
+
+### Security / Admin / Audit (BC-13/BC-15)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-043 | `user` / `service_account` / `agent_principal` | Subjects (incl. AI agents) |
+| ENT-044 | `role` / `permission` / `entitlement_grant` / `scope` | RBAC/ABAC model |
+| ENT-045 | `audit_event` | Immutable; schema in audit_event_taxonomy.md |
+| ENT-046 | `report` / `report_version` | Reproducible reports (BR-9) |
+
+## 6. Lineage & Audit Hooks (mandatory)
+
+- Every record references its `source_id`; every derived record (results, aggregates, reports) records the upstream
+  `calculation_run` and input snapshot, materialized as `lineage_edge` rows (BR-6, BR-13).
+- Every create/update/override/approve emits an audit event (BR-5, BR-12) per audit_event_taxonomy.md.
+- `manual_override` (ENT-041) is the only sanctioned path to change governed values and must carry the BR-7 fields.
+
+## 7. Open Decisions
+
+| ID | Open Decision |
+|---|---|
+| OD-012 | Confirm primary instrument/entity identifier authority and vendor xref precedence. |
+| OD-013 | Confirm portfolio hierarchy depth/flexibility (fixed levels vs arbitrary tree). |
+| OD-014 | Confirm storage split between relational SoR and time-series store for ENT-020…025 (AD-004). |
+| OD-015 | Confirm netting-set / CSA modeling depth for counterparty (ENT-003 related). |
+
+## 8. Dependencies
+
+- [temporal_reproducibility_standard.md](temporal_reproducibility_standard.md) (bitemporal columns, snapshots).
+- [audit_event_taxonomy.md](audit_event_taxonomy.md) (ENT-045 schema).
+- [entitlement_sod_model.md](../06_security/entitlement_sod_model.md) (DC tags, ENT-043/044).
+- [numerical_quant_standards.md](../05_analytics_methodologies/numerical_quant_standards.md) (monetary/FX/date conventions).
+- AD-004 (datastore), AD-005 (temporal), AD-008 (tenancy).
