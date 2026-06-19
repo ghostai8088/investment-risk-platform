@@ -76,7 +76,8 @@ def test_concurrent_writes_pg_gapless() -> None:
     def writer() -> None:
         db = factory()
         try:
-            db.execute(text("SET app.current_tenant = :t"), {"t": tenant})  # RLS context
+            # RLS context. NOTE: `SET x = :p` cannot bind params in PostgreSQL; use set_config().
+            db.execute(text("SELECT set_config('app.current_tenant', :t, false)"), {"t": tenant})
             barrier.wait(timeout=30)  # fail fast instead of hanging
             _emit(db, tenant)
             db.commit()
@@ -93,7 +94,7 @@ def test_concurrent_writes_pg_gapless() -> None:
 
     check = factory()
     try:
-        check.execute(text("SET app.current_tenant = :t"), {"t": tenant})
+        check.execute(text("SELECT set_config('app.current_tenant', :t, false)"), {"t": tenant})
         seqs = sorted(
             e.sequence_no for e in check.query(AuditEvent).filter(AuditEvent.chain_id == tenant)
         )
