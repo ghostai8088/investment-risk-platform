@@ -25,8 +25,9 @@ keep each subphase independently DoD-able and reviewable:
   before any domain entity so BX-LIN/BX-DOC/BX-AUD are enforceable from the first row.
 - **P1B Security Master & Reference Data** is the dependency root for all risk; it stabilizes the first real **FR (bitemporal)**
   domain pattern before positions consume it.
-- **P1C Portfolio & Positions** depends on instruments (P1B) and the rails (P1A); it produces the first **run-tracked derived
-  output** (exposure aggregation) exercising FW-RUN + reproducibility.
+- **P1C Portfolio & Positions** depends on instruments (P1B) and the rails (P1A). It delivers hierarchy/positions/transactions/
+  valuations + as-of reconstruction. **REQ-PPM-004 exposure aggregation is deferred to P2** (decision DR-P1-2 / AD-014) unless a
+  minimal `dataset_snapshot` skeleton is delivered first (open question OQ-013a).
 
 **Alternatives considered & rejected:** (a) *one monolithic P1* — too large to review, mixes enabling and domain work, and risks
 domain entities landing before lineage/DQ exist; (b) *fold P0.5 into P1A* — hygiene is independent of and should precede schema
@@ -78,22 +79,22 @@ rails exist. P1C starts only after P1B (positions reference instruments).
 | 1 | **Requirements included** | REQ-SMR-001 (instrument master), REQ-SMR-002 (issuer/counterparty entities + hierarchy), REQ-SMR-003 (identifier cross-reference), REQ-SMR-004 (corporate actions & calendars). Delivers DEP-SMR. |
 | 2 | **Requirements excluded** | Public market data PUB-* (P2); private asset data PRV-* (P4); ratings/benchmark depth (P2/P3); pricing/risk (P2+); corporate-action *application to positions* (P1C/later — here store effective-dated actions only). |
 | 3 | **Dependencies** | P1A (lineage capture, DQ rules, ingestion), P0.5 (entitlement bootstrap). FW-TMP (FR for instrument terms; EV for entities). **First real FR-class domain usage.** |
-| 4 | **Database entities** | `instrument` (ENT-001, FR terms), `issuer` (ENT-002, EV), `counterparty` (ENT-003, EV), `identifier_xref` (ENT-004, EV), `corporate_action` (ENT-008, effective-dated EV), `calendar` (ENT-006, EV), `currency` (ENT-005, EV), `rating_scale` (ENT-007, EV). |
+| 4 | **Database entities** | Per AD-013 hybrid tenancy. **Global (no tenant_id):** `currency` (ENT-005), standard `calendar` (ENT-006), standard `rating_scale` (ENT-007), country/classification codes. **Tenant-scoped (tenant_id + RLS):** `instrument` (ENT-001, FR terms), `issuer` (ENT-002, EV), `counterparty` (ENT-003, EV), `identifier_xref` (ENT-004, EV), internal classifications, custom hierarchies. `corporate_action` (ENT-008, effective-dated) tenant-scoped. Tenant **override** rows may extend a global record. |
 | 5 | **API surfaces** | CRUD + as-of read for instrument/issuer/counterparty; `GET /instruments/resolve?identifier=…` (xref); corporate-action & calendar management; ingestion mapping from P1A upload → instruments/entities. Tenant-scoped, entitled. |
 | 6 | **Audit events** | `DATA.*` create/update per entity (entity_type=instrument/issuer/…); `DATA.CORRECTION` on edits; `DATA.INGEST` for mapped ingestion. Effective-dated changes audited with before/after. |
 | 7 | **Entitlement checks** | `reference.instrument.view/.edit`, `reference.issuer.view/.edit`, `reference.counterparty.view/.edit`, `reference.identifier.resolve`, `reference.corporate_action.edit`, `reference.calendar.edit` — deny-by-default, tenant-scoped. |
 | 8 | **Data lineage hooks** | Each reference record binds `source_id` + a `lineage_edge` to its ingestion batch (uses P1A). FR instrument terms reconstructable as-of. |
 | 9 | **Tests** | Instrument terms reconstructable as-of (FR bitemporal); identifier resolution + precedence → one instrument; issuer→ultimate-parent rollup; corporate action applies on effective date; calendar/day-count roll (QS-10/11); entitlement deny tests; ingestion-mapping test. |
 | 10 | **Acceptance criteria** | Any known identifier resolves to exactly one instrument; instrument terms queryable as-of any past date; issuer hierarchy rolls to ultimate parent; corporate actions effective-dated; reference data carries lineage + audit; unentitled access denied. |
-| 11 | **Risks** | First real FR bitemporality → modeling complexity (mitigate via temporal mixins + as-of tests). **Open decision: reference-data tenancy** (shared cross-tenant vs per-tenant). Identifier precedence ambiguity. Scope creep into pricing/ratings depth (excluded). |
+| 11 | **Risks** | First real FR bitemporality → modeling complexity (mitigate via temporal mixins + as-of tests). Reference-data tenancy **resolved** to hybrid (AD-013); global tables must be write-restricted + RLS-exempt without leaking tenant data. Identifier-precedence rules still open (OQ-015). Scope creep into pricing/ratings depth (excluded). |
 | 12 | **Estimated sequence** | (a) currency/calendar/rating_scale; (b) issuer/counterparty + hierarchy; (c) instrument (FR terms) + identifier_xref + resolve; (d) corporate_action effective-dated; (e) ingestion mapping + lineage + tests. |
 
 ## 5. P1C — Portfolio Hierarchy & Positions
 
 | # | Dimension | Detail |
 |---|---|---|
-| 1 | **Requirements included** | REQ-PPM-001 (portfolio/fund/strategy hierarchy), REQ-PPM-002 (position master as-of), REQ-PPM-003 (transaction & valuation history), REQ-PPM-004 (exposure aggregation). |
-| 2 | **Requirements excluded** | Risk analytics (P2+); limits (P6); private positions/commitments (P4); valuation *computation* from market data (P2 — here valuations are stored/ingested, not derived). |
+| 1 | **Requirements included** | REQ-PPM-001 (portfolio/fund/strategy hierarchy), REQ-PPM-002 (position master as-of), REQ-PPM-003 (transaction & valuation history). **REQ-PPM-004 (exposure aggregation) is deferred to P2 by default** (DR-P1-2 / AD-014); re-enters P1C only if a minimal `dataset_snapshot` skeleton is delivered first (OQ-013a). |
+| 2 | **Requirements excluded** | **REQ-PPM-004 exposure aggregation (deferred to P2 — no derived output without a bound input snapshot, AD-014)**; risk analytics (P2+); limits (P6); private positions/commitments (P4); valuation *computation* from market data (P2 — here valuations are stored/ingested, not derived). |
 | 3 | **Dependencies** | P1B (instruments — positions reference them), P1A (lineage, ingestion), P0.5 (entitlement, audit concurrency), FW-RUN (exposure aggregation run-tracked), FW-TMP (FR positions/valuations; IA transactions). |
 | 4 | **Database entities** | `portfolio`/`fund`/`strategy`/`account` (ENT-010, EV hierarchy), `position` (ENT-011, FR), `transaction` (ENT-012, IA), `valuation` (ENT-013, FR), `exposure_aggregate` (ENT-014, IA, run-tracked). |
 | 5 | **API surfaces** | Hierarchy CRUD; position as-of read; transaction append; valuation as-of; `POST /portfolios/{id}/aggregate` → `CalculationRun` + result read. Tenant-scoped + **portfolio-level ABAC scope** (first real use). |
@@ -102,7 +103,7 @@ rails exist. P1C starts only after P1B (positions reference instruments).
 | 8 | **Data lineage hooks** | Positions/valuations bind source→lineage; `exposure_aggregate` (PPM-004) binds `CalculationRun` + input snapshot + lineage edges — **first governed derived output** (BX-LIN + BX-REPRO via FW-RUN). |
 | 9 | **Tests** | Position reconstructable as-of (FR); transactions immutable (IA); valuation as-of; aggregation reproduces within tolerance + binds lineage + reproducible; **portfolio-scope entitlement** (entitled to A ⇒ denied B within a tenant); hierarchy rollup. |
 | 10 | **Acceptance criteria** | Positions/valuations queryable as-of any past date; aggregation produces reproducible, lineage-bound exposures over an entitled scope; portfolio-level entitlement enforced (cross-portfolio denied within a tenant); transactions immutable. |
-| 11 | **Risks** | **PPM-004 needs an input snapshot** but FW-RUN's reproducibility FKs are nullable placeholders → either deliver a *minimal dataset-snapshot* in P1C (pin position+valuation record versions at run time) or **defer PPM-004 to P2** (open decision). Portfolio ABAC granularity (node vs subtree). FR position volume. |
+| 11 | **Risks** | PPM-004 snapshot dependency **resolved**: deferred to P2 unless a minimal `dataset_snapshot` is delivered first (DR-P1-2 / AD-014; OQ-013a). Portfolio ABAC granularity (node vs subtree) still open (OQ-014). FR position volume. |
 | 12 | **Estimated sequence** | (a) portfolio hierarchy + ABAC scope anchor; (b) position master (FR) referencing instruments; (c) transaction (IA) + valuation (FR); (d) exposure aggregation (FW-RUN + lineage + repro); (e) entitlement scope + tests. |
 
 ## 6. Recommended Sequence & Critical Path
@@ -116,15 +117,25 @@ P0.5 hygiene ──► P1A rails (lineage / model-registry / DQ / ingestion) ─
 - **Allowed overlap:** P0.5 with non-ingestion parts of P1A.
 - Each subphase exits only on full DoD + control-matrix `Implemented` + green CI + clean enterprise review (build_sequence §3).
 
-## 7. Open Decisions to resolve before/within P1
+## 7. Decisions (resolved) and remaining open questions
 
-| ID | Decision | Needed by |
+**Resolved** in [p1_decision_record.md](p1_decision_record.md) (2026-06-18):
+
+| ID | Resolution |
+|---|---|
+| OQ-004 | Defer maker-checker/SoD workflow to P6; P1 preserves audit + adds non-enforcing schema hooks (DR-P1-3) |
+| OQ-008 | Tests enforced now; coverage targets advisory until post-P1A; golden tests for calcs (DR-P1-4) |
+| OQ-011 | P0.5 = the five hardening items only; explicit exclusions (DR-P1-5) |
+| OQ-012 | Hybrid reference-data tenancy (DR-P1-1 / **AD-013**) |
+| OQ-013 | Defer PPM-004 to P2 unless a minimal `dataset_snapshot` is delivered first (DR-P1-2 / **AD-014**) |
+
+**Remaining open (do not block P0.5):**
+
+| ID | Question | Needed by |
 |---|---|---|
-| OQ-004 | Minimal SoD in P1 for overrides, or defer all maker-checker to P6? | P1A (DQ overrides excluded → likely defer; confirm) |
-| OQ-012 (new) | Reference-data tenancy: shared cross-tenant vs per-tenant `instrument`/`issuer`/`calendar`? | P1B |
-| OQ-013 (new) | Deliver a minimal dataset-snapshot in P1C for PPM-004, or defer exposure aggregation to P2? | P1C |
-| OQ-008 | Test-coverage threshold + CI enforcement | P0.5 |
-| OQ-011 | Exact minimum P0.5 hardening scope | P0.5 (this plan proposes it) |
+| OQ-013a | Deliver a minimal `dataset_snapshot` in P1A/P1C (re-enabling PPM-004) or keep deferred to P2? | P1C/P2 |
+| OQ-014 | Portfolio ABAC scope granularity — node vs subtree? | P1C |
+| OQ-015 | Identifier-precedence rules for `identifier_xref` | P1B |
 
 ## 8. Dependencies
 

@@ -121,10 +121,10 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 
 | ID | Question | Owner |
 |---|---|---|
-| OQ-001 | Confirm CAP taxonomy is authoritative vs. annotating capability_map.md with CAP IDs (currently CAP lives here, OD-036). | H-07 |
+| ~~OQ-001~~ | **CLOSED (2026-06-18):** CAP taxonomy authoritative here; capability_map.md annotated with CAP IDs. | H-07 |
 | OQ-002 | Confirm phase ordering vs. commercial priority (e.g., should private markets precede some public-risk depth?). | H-07/H-01 |
 | OQ-003 | Confirm which risk methodologies are in initial depth vs. "simple-but-complete" first cut (per design principle). | H-01/H-02 |
-| OQ-004 | Confirm SoD/maker-checker must land by P6 (limits/breach) — is an earlier minimal SoD needed for P1 overrides? | H-03/H-01 |
+| ~~OQ-004~~ | **DECIDED (2026-06-18, DR-P1-3):** defer maker-checker/SoD workflow to P6; P1 preserves audit + adds non-enforcing schema hooks. | H-03/H-01 |
 | OQ-005 | Confirm regulatory scope (REG-US-*) that turns specific requirements mandatory vs. optional (links OD-037). | H-05 |
 | OQ-006 | Confirm whether CVA (CPT-004) stays placeholder through v1 or is scheduled. | H-02 |
 | OQ-007 | Confirm persona consolidation at small team scale without breaking SoD pairs (links OD-001/026). | H-07 |
