@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 
-import { appInfo } from "./app";
+import { appInfo } from "./appInfo";
 
 export function App(): ReactElement {
   const info = appInfo();

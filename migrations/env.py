@@ -1,8 +1,9 @@
-"""Alembic environment (empty framework — no schema yet, Step 1D).
+"""Alembic environment.
 
 The database URL is read from the ``DATABASE_URL`` environment variable at runtime
-(no secrets in source — BR-10). ``target_metadata`` is None until the canonical data
-model is implemented (a later step). This file is intentionally not exercised by CI.
+(no secrets in source — BR-10). ``target_metadata`` is the foundation metadata (audit,
+entitlement, calculation-run). The CI ``migration`` job runs ``alembic upgrade head`` and
+``alembic check`` (schema-drift gate, OD-052) against PostgreSQL.
 """
 
 from __future__ import annotations
@@ -37,7 +38,15 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            # Drift check (P0.5 / OD-052): flag structural drift (added/removed tables and
+            # columns). Type and server-default comparison is intentionally disabled to avoid
+            # false positives from custom types (GUID) and dialect variants (JSON vs JSONB).
+            compare_type=False,
+            compare_server_default=False,
+        )
         with context.begin_transaction():
             context.run_migrations()
 

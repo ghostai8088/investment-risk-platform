@@ -40,6 +40,11 @@ rails exist. P1C starts only after P1B (positions reference instruments).
 
 ## 2. P0.5 — Engineering Hygiene & Foundation Hardening
 
+> **Status: Implemented (pending CI confirmation of the Postgres-only steps).** All five items built and locally verified where
+> possible (frontend `npm ci` build, audit concurrency code + ops CLI + bootstrap catalog tests on SQLite, offline migration
+> render). The `alembic check` drift gate and the N-thread audit-write concurrency proof run against Postgres in the CI
+> `migration` job (no local Postgres/Docker available). Closes OD-051, OD-052.
+
 | # | Dimension | Detail |
 |---|---|---|
 | 1 | **Requirements included** | REQ-AUD-002 (scheduled chain verification + checkpoints); DEP-CIH (Alembic autogenerate drift check in CI; audit-write concurrency control); DEP-FELOCK (frontend `package-lock.json` + CI `npm ci`); entitlement **bootstrap seeding** (baseline roles/permissions so P1B/P1C checks are real). Closes OD-051, OD-052; resolves OQ-008/OQ-011. |

@@ -7,11 +7,12 @@ inserts, assigns the next per-chain sequence number, and computes the hash chain
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.hashing import GENESIS_HASH, chain_hash, payload_hash
@@ -23,6 +24,26 @@ def _iso(dt: datetime) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(UTC).isoformat()
+
+
+def _advisory_lock_key(chain_id: str) -> int:
+    """Deterministic signed 64-bit key for a per-tenant audit chain (advisory lock)."""
+    digest = hashlib.blake2b(chain_id.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "big", signed=True)
+
+
+def _lock_chain(session: Session, chain_id: str) -> None:
+    """Serialize concurrent writers of one tenant's audit chain (BR-18, OD-051).
+
+    On PostgreSQL, take a transaction-scoped advisory lock keyed by the chain so concurrent
+    ``record_event`` calls for the same tenant produce gapless, unique ``sequence_no`` values
+    (released automatically on commit/rollback). On other engines (SQLite in unit tests),
+    writes are already serialized, so this is a no-op.
+    """
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(:k)"), {"k": _advisory_lock_key(chain_id)}
+        )
 
 
 def _build_payload(
@@ -103,6 +124,7 @@ def record_event(
 ) -> AuditEvent:
     """Append a hash-chained audit event for ``tenant_id`` (one chain per tenant)."""
     chain_id = str(tenant_id)
+    _lock_chain(session, chain_id)
     last = session.execute(
         select(AuditEvent)
         .where(AuditEvent.chain_id == chain_id)
@@ -261,3 +283,33 @@ def create_checkpoint(session: Session, tenant_id: str) -> AuditCheckpoint | Non
     session.add(checkpoint)
     session.flush()
     return checkpoint
+
+
+@dataclass(frozen=True)
+class ChainReport:
+    chain_id: str
+    result: ChainVerificationResult
+    checkpoint_sequence_no: int | None = None
+
+
+def verify_all_chains(session: Session, *, create_checkpoints: bool = False) -> list[ChainReport]:
+    """Verify every tenant's audit chain; optionally checkpoint each (ops job, CTRL-026).
+
+    Returns one report per chain (ordered by chain_id). Backs the audit-verification CLI.
+    """
+    chain_ids = list(
+        session.execute(
+            select(AuditEvent.chain_id).distinct().order_by(AuditEvent.chain_id)
+        ).scalars()
+    )
+    reports: list[ChainReport] = []
+    for chain_id in chain_ids:
+        result = verify_chain(session, chain_id)
+        checkpoint_seq: int | None = None
+        if create_checkpoints and result.ok:
+            checkpoint = create_checkpoint(session, chain_id)
+            checkpoint_seq = checkpoint.sequence_no if checkpoint is not None else None
+        reports.append(
+            ChainReport(chain_id=chain_id, result=result, checkpoint_sequence_no=checkpoint_seq)
+        )
+    return reports

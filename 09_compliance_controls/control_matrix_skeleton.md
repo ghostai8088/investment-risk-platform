@@ -64,20 +64,23 @@ auditable. It is a **skeleton**: controls are seeded across every framework and 
 | CTRL-023 | Data classification + MNPI barriers enforced | Preventive | Hybrid | §3/13 | BR-11 | R-07/H-05 | Barrier access tests | Denied-access audit | Planned |
 | CTRL-024 | Export controls (DC-4 blocked by default) | Preventive | Automated | §13 | BR-11 | R-07 | Export-control test | `EXPORT.*` events | Planned |
 | CTRL-025 | Entitlement changes maker-checked + audited | Preventive | Automated | §13 | BR-7, BR-11 | R-07 | Entitlement-change test | `ENTITLEMENT.*` events | Planned |
-| CTRL-026 | Audit store append-only + hash-chain integrity | Preventive | Automated | §12 | BR-12, BR-18 | R-12 | Hash-chain verify + tamper-detection + append-only tests (app + Postgres trigger) | Audit tests, migration trigger | Implemented (1E) |
+| CTRL-026 | Audit store append-only + hash-chain integrity + concurrency-safe + verifiable | Preventive/Detective | Automated | §12 | BR-12, BR-18 | R-12 | Hash-chain verify + tamper-detection + append-only (app + PG trigger); per-tenant advisory-lock concurrency test (PG, gapless under N threads); audit-verify ops CLI | Audit tests, concurrency test, `audit_verify` CLI, migration trigger | Implemented (1E + P0.5) |
 | CTRL-027 | Data quality rules run on ingest | Detective | Automated | §11 | BR-5 | R-05 | DQ hook execution | DQ results (ENT-039) | Planned |
 | CTRL-028 | Reconciliation of sources | Detective | Hybrid | §11 | BR-6 | R-05 | Recon job | Recon results (ENT-040) | Planned |
 | CTRL-029 | Stale/missing data flagged, not silently filled | Preventive | Automated | §3/4–8 | BR-2, BR-14 | R-06 | Missing-data handling test (QS-15/16) | Flagged records | Planned |
 | CTRL-030 | Production change approval (release gate) | Preventive | Manual | §13 | BR-15 | H-10 | Release-readiness review | Go/no-go record | Planned |
 | CTRL-031 | Breach workflow enforces 1L/2L separation | Preventive | Hybrid | §9 | BR-7 | R-01/H-01 | Workflow state test (SOD-02) | `BREACH.*` events | Planned |
 | CTRL-032 | Failed audit capture blocks governed change | Preventive | Automated | All | BR-12 | R-07 | Fail-closed test (AUD-04) | Test results | Planned |
+| CTRL-033 | Schema/migration drift gate (models vs migrations) | Preventive | Automated | §11 | BR-4, BR-19 | R-12 | `alembic check` in CI migration job (structural drift) | CI migration job | Implemented (P0.5) |
 
 ## 4. Coverage Note
 
 Every build rule BR-1 … BR-19 is covered by at least one control above. The Step 1C rules map to existing controls: **BR-17**
 (tenant isolation) → CTRL-011/CTRL-023; **BR-18** (audit hash-chain integrity) → CTRL-026/CTRL-032; **BR-19** (temporal-class
-conformance) → CTRL-017/CTRL-018. As construction phases open, controls will be split to specific bounded contexts and
-capabilities (CAP IDs once added to the capability map) and given Test/Evidence detail.
+conformance) → CTRL-017/CTRL-018. **P0.5** additions: reproducible frontend builds → CTRL-001 (`npm ci`); audit-write
+concurrency + verification ops CLI → CTRL-026; schema-drift gate → **CTRL-033**; entitlement bootstrap seed (baseline catalog +
+role templates) underpins CTRL-011/CTRL-025. As construction phases open, controls will be split to specific bounded contexts and
+capabilities and given Test/Evidence detail.
 
 ## 5. Open Decisions
 

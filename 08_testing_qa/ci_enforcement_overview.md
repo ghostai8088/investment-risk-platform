@@ -23,14 +23,18 @@ runs four jobs; any failing step fails its job and blocks the merge (BR-1: no fe
 
 | CI Job | Steps | Enforces | Maps to control |
 |---|---|---|---|
-| `backend` | ruff format --check, ruff check, mypy, pytest (incl. foundation-slice tests) | BR-1, BR-11, BR-12, BR-17, BR-18, BR-19 | CTRL-001, CTRL-005, CTRL-011, CTRL-016, CTRL-017, CTRL-019, CTRL-026 |
-| `frontend` | eslint, tsc, vitest, vite build | BR-1, UI builds & is typed | CTRL-001 |
-| `migration` | alembic upgrade head + downgrade base against a Postgres service | DB schema, RLS tenant isolation (BR-17), append-only triggers (BR-12) | CTRL-011, CTRL-026 |
+| `backend` | ruff format --check, ruff check, mypy, pytest (foundation + P0.5 tests) | BR-1, BR-11, BR-12, BR-17, BR-18, BR-19 | CTRL-001, CTRL-005, CTRL-011, CTRL-016, CTRL-017, CTRL-026 |
+| `frontend` | **npm ci** (reproducible from lockfile), eslint, tsc, vitest, vite build | BR-1, reproducible UI build | CTRL-001 |
+| `migration` | alembic upgrade head → **alembic check (drift)** → **audit-write concurrency test (PG)** → downgrade base | DB schema, RLS (BR-17), append-only triggers + concurrency (BR-12/18), drift (OD-052) | CTRL-011, CTRL-026, CTRL-033 |
 | `secret-scan` | scripts/secret_scan.py (gitleaks later) | BR-10 (no secrets in source) | CTRL-010 |
 | `docs-check` | scripts/check_docs.py | documentation present & doc-control headers | CTRL-002, CTRL-004 |
 
 As of Step 1E the foundation-slice tests make the audit hash-chain, append-only immutability, deny-by-default entitlement,
 tenant isolation, and temporal-class declaration into **executable controls** (see `03_architecture/foundation_slice.md`).
+**P0.5** adds: reproducible frontend builds (`npm ci` from a committed lockfile), a schema-drift gate (`alembic check`),
+per-tenant audit-write concurrency (advisory locks, proved gapless under N-thread contention in the migration job), an
+audit-chain verification ops CLI (`python -m irp_worker.audit_verify`), and an entitlement bootstrap seed (baseline permission
+catalog + role templates).
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 

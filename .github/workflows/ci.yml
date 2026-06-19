@@ -38,8 +38,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Install dependencies
-        run: npm install
+      - name: Install dependencies (reproducible from lockfile)
+        run: npm ci
       - name: Shared package tests
         run: npm run -w packages/shared-ts test
       - name: Lint
@@ -79,11 +79,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
           pip install -e packages/shared-python "psycopg[binary]"
-      - name: Apply foundation migration
+      - name: Apply migrations (foundation + entitlement seed)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: alembic upgrade head
-      - name: Revert foundation migration (downgrade smoke)
+      - name: Schema drift check (models vs migrations, OD-052)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: alembic check
+      - name: Audit-write concurrency test (Postgres, BR-18 / OD-051)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_audit_concurrency.py -q
+      - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: alembic downgrade base
