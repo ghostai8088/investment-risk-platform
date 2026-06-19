@@ -196,8 +196,8 @@ P1A-0 (tenant context — unblocks everything)
 **Yes.** The P0.5 foundation is CI-green: FORCE RLS exists; the `set_config('app.current_tenant', …)` **mechanism** is exercised
 against real Postgres (the seed migration uses `is_local=true`; the concurrency test uses `is_local=false`); the dev header-shim
 principal + entitlement gate exist; and `FW-AUD` is concurrency-safe. **Note:** no existing test yet proves the request-scoped
-`is_local=true` auto-clear or the pool `RESET` — P1A-0 adds those (tests d/e). P1A-0 is otherwise pure wiring. Confirm the §11
-decisions first (sensible defaults recommended so they do not block).
+`is_local=true` auto-clear or the pool `RESET` — P1A-0 adds those (tests d/e). P1A-0 is otherwise pure wiring. The §11 decisions
+are now **resolved** ([p1a0_decision_record.md](p1a0_decision_record.md); AD-015, AD-016), so nothing blocks P1A-0.
 
 ## 10. Exact kickoff prompt for P1A-0
 
@@ -229,17 +229,19 @@ decisions first (sensible defaults recommended so they do not block).
 > Return: files created/updated, DB/role changes, tests added, CI impact, controls now executable, known placeholders, whether
 > P1A-0 is complete, and confirmation that `make check` passes and the migration job should pass. Do not start P1A-1.
 
-## 11. Open decisions that must be resolved before P1A-0 code
+## 11. P1A-0 Decisions — RESOLVED
 
-| ID | Decision | Recommendation |
+All four are decided in [p1a0_decision_record.md](p1a0_decision_record.md) (2026-06-19); two are elevated to the decision log.
+
+| ID | Decision | Status |
 |---|---|---|
-| OQ-P1A-0-1 | Cross-tenant ops mechanism (audit-verify, platform jobs) | **Dedicated `BYPASSRLS` ops DB role** for ops jobs; app uses per-tenant `set_config`. |
-| OQ-P1A-0-2 | Tenant-context scope | **`is_local=true`** (transaction-local; auto-clears at COMMIT/ROLLBACK) **plus** a pool check-in handler issuing an explicit **`RESET app.current_tenant`** (defense-in-depth for session-scoped / no-transaction paths — SQLAlchemy's default rollback-on-return does **not** clear session-level GUCs). |
-| OQ-P1A-0-3 | Unverified dev-shim tenant | Accept for dev; **document it is not a security boundary** until SSO (P9). RLS + entitlement remain defense-in-depth. |
-| OQ-P1A-0-4 | Log RLS-denied access as `AUTH.DENIED`? | Defer (minimal value pre-domain); revisit in P1A-4. |
+| OQ-P1A-0-1 | Dedicated `BYPASSRLS` ops DB role for cross-tenant ops only; app never uses it; separate, audited privileged credentials | **Decided (DR-P1A0-1 / AD-015)** |
+| OQ-P1A-0-2 | `set_config(..., is_local=true)` transaction-local + explicit pool `RESET app.current_tenant`; five proofs as tests | **Decided (DR-P1A0-2 / AD-016)** |
+| OQ-P1A-0-3 | Accept unverified dev-shim tenant until SSO (P9); production requires verified tenant claims (AD-007) | **Decided (DR-P1A0-3)** |
+| OQ-P1A-0-4 | Defer `AUTH.DENIED` for RLS denials; preserve a mapping hook (later: `SECURITY.RLS_DENIED`, OQ-P1A-0-4a) | **Decided (DR-P1A0-4)** |
 
-(Sub-slice-specific open questions OQ-P1A-1-x … OQ-P1A-4-x are listed per §4–7 and are needed before *those* sub-slices, not
-before P1A-0.)
+Sub-slice-specific open questions (OQ-P1A-1-x … OQ-P1A-4-x, §4–7) remain open and are needed before *those* sub-slices, not
+before P1A-0.
 
 ## 12. Dependencies
 
