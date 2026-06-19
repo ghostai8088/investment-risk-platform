@@ -9,6 +9,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import NullPool
 
 from irp_shared.audit.models import AuditEvent
 from irp_shared.audit.service import _advisory_lock_key, record_event, verify_all_chains
@@ -62,7 +63,9 @@ def test_verify_all_chains_reports_each_tenant(session: Session) -> None:
 def test_concurrent_writes_pg_gapless() -> None:
     """N threads writing one tenant's chain concurrently must yield gapless, unique sequence_no."""
     url = os.environ["IRP_TEST_DATABASE_URL"]
-    engine = make_engine(url)
+    # Test-only engine config: NullPool so every one of the N concurrent threads can hold its
+    # own connection at the barrier. The default pool caps at 15 (< N), which exhausts/deadlocks.
+    engine = make_engine(url, poolclass=NullPool)
     Base.metadata.create_all(engine)  # no-op if the migration already created the schema
     factory = make_session_factory(engine)
     tenant = str(uuid.uuid4())
@@ -74,7 +77,7 @@ def test_concurrent_writes_pg_gapless() -> None:
         db = factory()
         try:
             db.execute(text("SET app.current_tenant = :t"), {"t": tenant})  # RLS context
-            barrier.wait()
+            barrier.wait(timeout=30)  # fail fast instead of hanging
             _emit(db, tenant)
             db.commit()
         except Exception as exc:
