@@ -115,8 +115,9 @@ def test_lineage_edge_tenant_isolation(app_url: str) -> None:
     session = factory()
     try:
         set_tenant_context(session, a)
+        # psycopg3 returns native uuid columns as uuid.UUID -> stringify to compare with str ids.
         tenants = {
-            r[0] for r in session.execute(text("SELECT DISTINCT tenant_id FROM lineage_edge"))
+            str(r[0]) for r in session.execute(text("SELECT DISTINCT tenant_id FROM lineage_edge"))
         }
         assert a in tenants
         assert b not in tenants  # RLS isolates
