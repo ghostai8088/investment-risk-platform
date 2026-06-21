@@ -49,7 +49,7 @@ auditable. It is a **skeleton**: controls are seeded across every framework and 
 | CTRL-008 | Scenarios versioned with saved assumptions | Preventive | Automated | §8 | BR-8 | R-06 | Scenario version test | Scenario versions (ENT-029) | Planned |
 | CTRL-009 | Reports reproducible from bound runs | Detective | Automated | §12 | BR-9 | R-09 | Report regeneration test | Report version + run ids | Planned |
 | CTRL-010 | No secrets in source | Preventive | Automated | §13 | BR-10 | R-12 | Secret-scan hook | Scan results | Planned |
-| CTRL-011 | No module bypasses entitlement framework | Preventive | Automated | §13 | BR-11, BR-17 | R-07 | Deny-by-default + tenant-scope tests (app) + Postgres RLS (migration job) | Entitlement test suite, RLS migration | Implemented (1E) |
+| CTRL-011 | No module bypasses entitlement framework; tenant isolation enforced end-to-end | Preventive | Automated | §13 | BR-11, BR-17 | R-07 | Deny-by-default tests (app) + **per-session tenant-context wiring** (`set_config` + durable pool RESET) + PG RLS tests **under a constrained non-superuser role** (visibility, fail-closed w/ SQLSTATE 42501, mismatch, isolation, recycle) + BYPASSRLS-ops-role restricted to cross-tenant ops | Entitlement + tenant-context tests, RLS migration, ops-role migration | Implemented (1E + P1A-0) |
 | CTRL-012 | No module bypasses audit framework | Preventive | Automated | All | BR-12 | R-07 | Unaudited-write detection | Audit coverage report | Planned |
 | CTRL-013 | No module bypasses lineage framework | Preventive | Automated | §11 | BR-13 | R-05 | Lineage coverage test | Lineage report | Planned |
 | CTRL-014 | Limitations explicitly documented | Detective | Manual | All | BR-14 | R-10 | Limitations register review | Limitations register | Planned |

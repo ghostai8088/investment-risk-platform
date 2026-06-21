@@ -37,7 +37,9 @@ privileged role — never used by the app — preserves tenant isolation (BR-17)
 **Implications.** A P1A-0 migration creates the role (`CREATE ROLE … BYPASSRLS`) with explicit grants (`SELECT` on
 `audit_event`; `SELECT, INSERT` on `audit_checkpoint`); the audit-verify CLI connects via a **distinct ops `DATABASE_URL`**; the
 app DB role is never granted BYPASSRLS; ops-role usage is logged (BR-16/audit). Credential separation is a secrets-management
-requirement (BR-10).
+requirement (BR-10). **Corollary (deployment): the application DB role must be non-superuser and non-BYPASSRLS** — PostgreSQL
+superusers/BYPASSRLS roles bypass RLS entirely (even under `FORCE`), so RLS only protects when the app connects as a constrained
+role. The RLS tests run under such a constrained role (`irp_app`), not the superuser.
 
 **Status:** Accepted → see **AD-015**.
 
@@ -54,9 +56,11 @@ for any code path that mistakenly sets session-scoped context or sets it outside
 rollback-on-return does not clear session-level GUCs). This is the canonical end-to-end RLS enforcement mechanism for every
 DB-backed request, worker, and CLI.
 
-**Implications.** A `tenant_context()` helper in `irp_shared.db`; the backend `get_tenant_session` dependency opens a transaction
-before setting context; the pool check-in listener issues an explicit `RESET`. The five proofs above become PG-gated tests in the
-CI `migration` job. Missing context yields fail-closed false-deny (availability), not a leak.
+**Implications.** A `tenant_context()` helper in `irp_shared.db`; the backend `get_tenant_session` dependency sets context via
+`set_config`, which **autobegins** the transaction (no explicit BEGIN); the pool check-in listener issues an explicit
+`RESET app.current_tenant` **and commits it** so the reset is durable. The proofs above become PG-gated tests run under a
+**non-superuser app role** in the CI `migration` job. Missing context yields fail-closed false-deny (availability), not a leak.
+A mid-request COMMIT/ROLLBACK drops the transaction-local context (single-transaction request invariant; AD-016 revisit).
 
 **Status:** Accepted → see **AD-016**.
 

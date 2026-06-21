@@ -4,8 +4,14 @@ Runs ``verify_all_chains`` against the configured database and reports per-tenan
 integrity; exit code 1 if any chain is broken. ``--checkpoint`` writes a checkpoint per
 healthy chain. This is an ops job/CLI, not an HTTP endpoint.
 
+**Cross-tenant ops (AD-015):** under FORCE row-level security the app role cannot read other
+tenants' audit chains, so this CLI must connect via the privileged **BYPASSRLS ops role**
+(separate ops credentials / ``DATABASE_URL``, managed as a privileged secret — BR-10), never the
+application role. On PostgreSQL the CLI verifies the connected role has BYPASSRLS/superuser and
+refuses to run otherwise (exit 3).
+
 Usage:
-    python -m irp_worker.audit_verify [--database-url URL] [--checkpoint]
+    python -m irp_worker.audit_verify [--database-url URL] [--checkpoint]   # URL = ops credentials
 """
 
 from __future__ import annotations
@@ -13,6 +19,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+
+from sqlalchemy import text
 
 from irp_shared.audit.service import verify_all_chains
 from irp_shared.db.session import make_engine, make_session_factory
@@ -39,6 +47,21 @@ def main(argv: list[str] | None = None) -> int:
     engine = make_engine(args.database_url)
     session = make_session_factory(engine)()
     try:
+        # AD-015: cross-tenant verification requires the BYPASSRLS ops role, never the app role.
+        if engine.dialect.name == "postgresql":
+            privileged = session.execute(
+                text(
+                    "SELECT bool_or(rolbypassrls OR rolsuper) "
+                    "FROM pg_roles WHERE rolname = current_user"
+                )
+            ).scalar()
+            if not privileged:
+                print(
+                    "error: audit-verify must run under the BYPASSRLS ops role (AD-015), "
+                    "not the application role",
+                    file=sys.stderr,
+                )
+                return 3
         reports = verify_all_chains(session, create_checkpoints=args.checkpoint)
         if args.checkpoint:
             session.commit()

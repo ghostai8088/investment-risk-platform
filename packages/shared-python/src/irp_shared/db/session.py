@@ -12,9 +12,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from irp_shared.db.tenant import attach_tenant_reset
+
 
 def make_engine(url: str, **kwargs: Any) -> Engine:
-    return create_engine(url, future=True, **kwargs)
+    engine = create_engine(url, future=True, **kwargs)
+    attach_tenant_reset(
+        engine
+    )  # pool check-in RESET of app.current_tenant (AD-016); no-op on SQLite
+    return engine
 
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:
