@@ -19,7 +19,7 @@ from sqlalchemy.pool import NullPool
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import set_tenant_context
 from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
-from irp_shared.lineage.models import DataSource
+from irp_shared.lineage.models import DataSource, LineageEdge
 from irp_shared.lineage.service import (
     DataSourceNotVisible,
     record_lineage,
@@ -153,17 +153,19 @@ def test_lineage_edge_no_context_fails_closed(app_url: str) -> None:
     factory = make_session_factory(engine)
     session = factory()
     try:
-        with pytest.raises(ProgrammingError) as exc:
-            session.execute(
-                text(
-                    "INSERT INTO lineage_edge "
-                    "(id, tenant_id, system_from, source_type, source_id, target_entity_type, "
-                    " target_entity_id, edge_kind) "
-                    "VALUES (gen_random_uuid(), :t, now(), 'data_source', gen_random_uuid(), "
-                    " 'synthetic.t', gen_random_uuid(), 'ORIGIN')"
-                ),
-                {"t": str(uuid.uuid4())},
+        # ORM insert (GUID type binds uuid columns correctly); no app.current_tenant -> RLS rejects.
+        session.add(
+            LineageEdge(
+                tenant_id=str(uuid.uuid4()),
+                source_type="data_source",
+                source_id=str(uuid.uuid4()),
+                target_entity_type="synthetic.t",
+                target_entity_id=str(uuid.uuid4()),
+                edge_kind="ORIGIN",
             )
+        )
+        with pytest.raises(ProgrammingError) as exc:
+            session.flush()
         assert _is_rls_violation(exc.value)
         session.rollback()
         assert session.execute(text("SELECT count(*) FROM lineage_edge")).scalar() == 0
@@ -236,9 +238,8 @@ def test_cross_tenant_edge_lookup_returns_none(app_url: str) -> None:
     session = factory()
     try:
         set_tenant_context(session, a)
-        found = session.execute(
-            text("SELECT id FROM lineage_edge WHERE id = :i"), {"i": b_edge_id}
-        ).scalar_one_or_none()
+        # ORM lookup (mirrors the endpoint; GUID type binds the uuid): RLS hides tenant-B's edge.
+        found = session.get(LineageEdge, b_edge_id)
         assert found is None  # RLS-hidden -> endpoint returns 404
     finally:
         session.close()
@@ -267,12 +268,15 @@ def test_lineage_edge_append_only_at_db(app_url: str) -> None:
         set_tenant_context(session, tenant)
         with pytest.raises(ProgrammingError):
             session.execute(
-                text("UPDATE lineage_edge SET edge_kind = 'X' WHERE id = :i"), {"i": edge_id}
+                text("UPDATE lineage_edge SET edge_kind = 'X' WHERE id = CAST(:i AS uuid)"),
+                {"i": edge_id},
             )
         session.rollback()
         set_tenant_context(session, tenant)
         with pytest.raises(ProgrammingError):
-            session.execute(text("DELETE FROM lineage_edge WHERE id = :i"), {"i": edge_id})
+            session.execute(
+                text("DELETE FROM lineage_edge WHERE id = CAST(:i AS uuid)"), {"i": edge_id}
+            )
         session.rollback()
     finally:
         session.close()
