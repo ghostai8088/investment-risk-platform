@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from irp_backend.api.lineage import router as lineage_router
 from irp_backend.api.system import router as system_router
 
 app = FastAPI(title="Investment Risk Platform API (scaffold)")
 app.include_router(system_router)
+app.include_router(lineage_router)

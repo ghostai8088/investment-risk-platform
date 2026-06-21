@@ -30,6 +30,16 @@ def test_platform_admin_has_all_permissions() -> None:
     assert set(ROLE_TEMPLATES["platform_admin"]) == set(ALL_CODES)
 
 
+def test_lineage_source_manage_is_least_privilege() -> None:
+    # P1A-1: new deny-by-default permission, granted only to data_steward (+ platform_admin via
+    # ALL_CODES); read-only roles must NOT hold it (least privilege ENT-P-01, 3L independence).
+    assert "lineage.source.manage" in ALL_CODES
+    assert "lineage.source.manage" in ROLE_TEMPLATES["data_steward"]
+    assert "lineage.source.manage" in ROLE_TEMPLATES["platform_admin"]
+    for role in ("risk_analyst_1l", "risk_manager_2l", "auditor_3l", "ops"):
+        assert "lineage.source.manage" not in ROLE_TEMPLATES[role]
+
+
 def test_ids_deterministic_and_unique() -> None:
     assert permission_id("data.upload") == permission_id("data.upload")
     assert role_id("ops") == role_id("ops")

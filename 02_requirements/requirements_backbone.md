@@ -104,7 +104,7 @@ requirement is not Done unless its inherited BX are satisfied.
 | Token | Meaning | Status |
 |---|---|---|
 | FW-TMP / FW-AUD / FW-ENT / FW-RUN | Foundation slice frameworks | Exist (with §3 placeholders) |
-| DEP-LIN | Data lineage skeleton (capture + source-to-target + query) | **Future** (CAP-14) |
+| DEP-LIN | Data lineage skeleton (capture + source-to-target + query) | **Exists** (capture skeleton, P1A-1: `data_source`/`lineage_edge` + `record_lineage`; query/viz is REQ-LIN-002/P7) |
 | DEP-MREG | Model registry skeleton (inventory + version binding) | **Future** (CAP-12) |
 | DEP-DQF | Data quality framework (rules engine + exceptions) | **Future** (CAP-13) |
 | DEP-SMR | Security Master / Reference Data domain | **Future** (CAP-2) |
@@ -236,7 +236,7 @@ entitlement/lineage/model-gov/control/phase/dependency are in the [RTM](requirem
 
 | REQ | Title | CAP | Business purpose | Functional | Data | Calc | Test | Acceptance | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| REQ-LIN-001 | Lineage skeleton & capture | 14.1/14.2 | Trace every output to source | Lineage edges from source→run→result | `lineage_edge`, `data_source` (IA) | — | Lineage-completeness test | Every governed output has a complete lineage path (BR-6/13) | Draft |
+| REQ-LIN-001 | Lineage skeleton & capture | 14.1/14.2 | Trace every output to source | Lineage edges from source→run→result | `lineage_edge` (IA), `data_source` (EV) | — | Lineage-completeness test | Every governed output has a complete lineage path (BR-6/13) | In-Progress (P1A-1 skeleton) |
 | REQ-LIN-002 | Lineage query & extract | 14.3 | Answer "where did this number come from" | Query/visualize lineage for a result/report | lineage edges | — | Lineage-query test | Given a result, the full upstream graph is returned | Draft |
 
 ### CAP-15 Auditability (AUD)

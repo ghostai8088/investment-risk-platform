@@ -25,7 +25,7 @@ runs four jobs; any failing step fails its job and blocks the merge (BR-1: no fe
 |---|---|---|---|
 | `backend` | ruff format --check, ruff check, mypy, pytest (foundation + P0.5 tests) | BR-1, BR-11, BR-12, BR-17, BR-18, BR-19 | CTRL-001, CTRL-005, CTRL-011, CTRL-016, CTRL-017, CTRL-026 |
 | `frontend` | **npm ci** (reproducible from lockfile), eslint, tsc, vitest, vite build | BR-1, reproducible UI build | CTRL-001 |
-| `migration` | alembic upgrade head → **alembic check (drift)** → **audit-write concurrency test (PG)** → **tenant-context RLS tests (PG)** → downgrade base | DB schema, RLS tenant isolation end-to-end (BR-17), append-only triggers + concurrency (BR-12/18), drift (OD-052) | CTRL-011, CTRL-026, CTRL-033 |
+| `migration` | alembic upgrade head → **alembic check (drift)** → **audit-write concurrency test (PG)** → **tenant-context RLS tests (PG)** → **lineage RLS tests (PG, P1A-1)** → downgrade base | DB schema, RLS tenant isolation end-to-end (BR-17), append-only triggers + concurrency (BR-12/18), lineage `data_source`/`lineage_edge` isolation + fail-closed + append-only under the constrained `irp_app` role, drift (OD-052) | CTRL-005, CTRL-006, CTRL-011, CTRL-013, CTRL-026, CTRL-033 |
 | `secret-scan` | scripts/secret_scan.py (gitleaks later) | BR-10 (no secrets in source) | CTRL-010 |
 | `docs-check` | scripts/check_docs.py | documentation present & doc-control headers | CTRL-002, CTRL-004 |
 
@@ -37,7 +37,10 @@ audit-chain verification ops CLI (`python -m irp_worker.audit_verify`), and an e
 catalog + role templates). **P1A-0** makes tenant isolation **end-to-end**: per-session `set_config('app.current_tenant', …, true)`
 (AD-016) with a pool check-in `RESET`, exercised by PG-gated tests (context set/auto-clear, recycle safety, missing-context
 fail-closed, tenant-mismatch denied, worker path, BYPASSRLS ops read), plus the BYPASSRLS ops role (AD-015) for cross-tenant
-verification only.
+verification only. **P1A-1** builds the lineage skeleton (REQ-LIN-001): `data_source` (EV) + `lineage_edge` (IA) with the
+`record_lineage`/`assert_has_lineage` BX-LIN contract and `GET /lineage/edges/{id}`, making **CTRL-006/CTRL-013** executable at
+skeleton level — new PG-gated tests prove tenant isolation, no-context fail-closed (SQLSTATE 42501), cross-tenant write/reference
+rejection, DB append-only, and ops-role-no-grant under the constrained `irp_app` role.
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 

@@ -43,15 +43,15 @@ auditable. It is a **skeleton**: controls are seeded across every framework and 
 | CTRL-002 | Every calculation has methodology doc | Preventive | Hybrid | §4–8 | BR-2 | R-06 | Doc-consistency hook | Methodology doc + QS-24 decl. | Planned |
 | CTRL-003 | Every model/version inventoried before use | Preventive | Hybrid | §10 | BR-3 | R-08 | Model-inventory hook | Inventory entry (ENT-035) | Planned |
 | CTRL-004 | Every field defined in data dictionary | Preventive | Manual | §11 | BR-4 | R-05 | Dictionary review | Data dictionary | Planned |
-| CTRL-005 | Data-changing actions emit audit events | Detective | Automated | §11/12 | BR-5, BR-12 | R-07 | Audit completeness test | Audit events (ENT-045) | Implemented (1E, partial: calc-run + entitlement) |
-| CTRL-006 | Risk results bind full lineage (source→run) | Preventive | Automated | §4–8 | BR-6, BR-13 | R-05 | Lineage completeness test | Lineage edges, run record | Planned |
+| CTRL-005 | Data-changing actions emit audit events | Detective | Automated | §11/12 | BR-5, BR-12 | R-07 | Audit completeness test; **data_source create/update emit `DATA.SOURCE_REGISTER`/`DATA.SOURCE_UPDATE`** (P1A-1) | Audit events (ENT-045) incl. `data_source` | Implemented (1E + P1A-1, partial: calc-run + entitlement + data_source) |
+| CTRL-006 | Risk results bind full lineage (source→run) | Preventive | Automated | §4–8 | BR-6, BR-13 | R-05 | Lineage completeness test (skeleton): a recorded governed output has a complete `source→target` path retrievable by id (`record_lineage` + `GET /lineage/edges/{id}`); full source→run→result completes when calc runs exist (P2+) | Lineage edges, retrieval test | Designed (skeleton, P1A-1) |
 | CTRL-007 | Manual overrides carry BR-7 fields + approval | Preventive | Automated | §11 | BR-7 | R-07 | Override schema validation | `OVERRIDE.*` events | Planned |
 | CTRL-008 | Scenarios versioned with saved assumptions | Preventive | Automated | §8 | BR-8 | R-06 | Scenario version test | Scenario versions (ENT-029) | Planned |
 | CTRL-009 | Reports reproducible from bound runs | Detective | Automated | §12 | BR-9 | R-09 | Report regeneration test | Report version + run ids | Planned |
 | CTRL-010 | No secrets in source | Preventive | Automated | §13 | BR-10 | R-12 | Secret-scan hook | Scan results | Planned |
 | CTRL-011 | No module bypasses entitlement framework; tenant isolation enforced end-to-end | Preventive | Automated | §13 | BR-11, BR-17 | R-07 | Deny-by-default tests (app) + **per-session tenant-context wiring** (`set_config` + durable pool RESET) + PG RLS tests **under a constrained non-superuser role** (visibility, fail-closed w/ SQLSTATE 42501, mismatch, isolation, recycle) + BYPASSRLS-ops-role restricted to cross-tenant ops | Entitlement + tenant-context tests, RLS migration, ops-role migration | Implemented (1E + P1A-0) |
 | CTRL-012 | No module bypasses audit framework | Preventive | Automated | All | BR-12 | R-07 | Unaudited-write detection | Audit coverage report | Planned |
-| CTRL-013 | No module bypasses lineage framework | Preventive | Automated | §11 | BR-13 | R-05 | Lineage coverage test | Lineage report | Planned |
+| CTRL-013 | No module bypasses lineage framework | Preventive | Automated | §11 | BR-13 | R-05 | BX-LIN enforcement test: a governed write lacking a lineage edge fails `assert_has_lineage` (skeleton; "governed output" stubbed via a synthetic target until domains exist) | Lineage coverage test | Designed (skeleton, P1A-1) |
 | CTRL-014 | Limitations explicitly documented | Detective | Manual | All | BR-14 | R-10 | Limitations register review | Limitations register | Planned |
 | CTRL-015 | Human approval gate for restricted change types | Preventive | Manual | §10/11/13 | BR-15 | H-02/H-03/H-05/H-06/H-10 | Approval-record check | `approval_ref` records | Planned |
 | CTRL-016 | Material AI agent actions logged | Detective | Automated | All | BR-16 | R-07 | Agent-event completeness test | `AGENT.*` events | Planned |
@@ -79,8 +79,12 @@ Every build rule BR-1 … BR-19 is covered by at least one control above. The St
 (tenant isolation) → CTRL-011/CTRL-023; **BR-18** (audit hash-chain integrity) → CTRL-026/CTRL-032; **BR-19** (temporal-class
 conformance) → CTRL-017/CTRL-018. **P0.5** additions: reproducible frontend builds → CTRL-001 (`npm ci`); audit-write
 concurrency + verification ops CLI → CTRL-026; schema-drift gate → **CTRL-033**; entitlement bootstrap seed (baseline catalog +
-role templates) underpins CTRL-011/CTRL-025. As construction phases open, controls will be split to specific bounded contexts and
-capabilities and given Test/Evidence detail.
+role templates) underpins CTRL-011/CTRL-025. **P1A-1** additions: the `data_source` (EV) + `lineage_edge` (IA) skeleton makes
+**BX-LIN** executable — `record_lineage`/`assert_has_lineage` + `GET /lineage/edges/{id}` under P1A-0 tenant context move
+**CTRL-006/CTRL-013** to Designed (skeleton); `data_source` create/update audit (`DATA.SOURCE_REGISTER`/`DATA.SOURCE_UPDATE`)
+extends **CTRL-005**; the new deny-by-default `lineage.source.manage` permission + FORCE-RLS (USING + WITH CHECK) on both tables,
+proven under the constrained `irp_app` role, underpin **CTRL-011**. As construction phases open, controls will be split to specific
+bounded contexts and capabilities and given Test/Evidence detail.
 
 ## 5. Open Decisions
 

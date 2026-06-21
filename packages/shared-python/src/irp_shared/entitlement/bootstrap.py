@@ -22,6 +22,7 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ops.audit.verify", "Run audit chain verification"),
     ("data.upload", "Upload/ingest data via the anti-corruption layer"),
     ("lineage.view", "View data lineage"),
+    ("lineage.source.manage", "Register and manage data sources (lineage provenance roots)"),
     ("model.inventory.view", "View the model inventory"),
     ("model.inventory.register", "Register a model or model version"),
     ("dq.rule.manage", "Manage data quality rules"),
@@ -51,6 +52,7 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
     "data_steward": [
         "data.upload",
         "lineage.view",
+        "lineage.source.manage",
         "dq.rule.manage",
         "dq.result.view",
         "reference.instrument.view",

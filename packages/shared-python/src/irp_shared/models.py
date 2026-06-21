@@ -15,6 +15,7 @@ from irp_shared.entitlement.models import (
     RolePermission,
     UserRole,
 )
+from irp_shared.lineage.models import DataSource, LineageEdge
 
 metadata = Base.metadata
 
@@ -29,4 +30,6 @@ __all__ = [
     "Permission",
     "RolePermission",
     "UserRole",
+    "DataSource",
+    "LineageEdge",
 ]

@@ -76,7 +76,7 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-DQR-001 | 13.1 | P-DS | Plat/1L | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027/029 | DEP-DQF | Draft |
 | REQ-DQR-002 | 13.2 | P-DS | Plat | P7 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-028 | DEP-DQF, CAP-18 | Draft |
 | REQ-DQR-003 | 13.4 | P-DS,P-RM | 1L/2L | P7 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-007/021 | REQ-ADM-002 (SoD), FW-AUD | Draft |
-| REQ-LIN-001 | 14.1/14.2 | P-DS,P-IA | Plat | P1 | BX-AUD | BX-ENT | — | — | CTRL-006/013 | DEP-LIN (builds it), FW-AUD | Draft |
+| REQ-LIN-001 | 14.1/14.2 | P-DS,P-IA | Plat | P1 | BX-AUD | BX-ENT | — | — | CTRL-006/013 | DEP-LIN (builds it), FW-AUD | In-Progress (P1A-1 skeleton: capture + retrieve-by-id at entity/run granularity; CAP-14.1 field-level mapping & CAP-14.3 query → REQ-LIN-002/P7) |
 | REQ-LIN-002 | 14.3 | P-DS,P-IA | Plat/3L | P7 | BX-AUD | BX-ENT | — | — | CTRL-013 | DEP-LIN | Draft |
 | REQ-AUD-001 | 15.1/15.4 | P-IA,P-CO | Plat/3L | P1 | BX-AUD | BX-ENT | — | — | CTRL-005/012 | FW-AUD (extends) | Draft |
 | REQ-AUD-002 | 15.2 | P-IA | Plat | P0 | BX-AUD | BX-ENT | — | — | CTRL-026 | FW-AUD, DEP-CIH | Draft |

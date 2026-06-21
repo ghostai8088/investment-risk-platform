@@ -58,7 +58,7 @@ Codes are `CATEGORY.ACTION`. Stable event IDs `EVT-nnn` index notable events.
 |---|---|---|
 | `AUTH` | `AUTH.LOGIN`, `AUTH.LOGOUT`, `AUTH.MFA_CHALLENGE`, `AUTH.DENIED` | Authentication (EVT-001…) |
 | `ENTITLEMENT` | `ENTITLEMENT.GRANT`, `.REVOKE`, `.ROLE_CHANGE`, `.REQUEST`, `.APPROVE` | Access changes; maker-checker (EVT-010…) |
-| `DATA` | `DATA.INGEST`, `.VALIDATE`, `.CORRECTION`, `.RECONCILE`, `.PURGE` | Data lifecycle incl. restatement (EVT-020…) |
+| `DATA` | `DATA.INGEST`, `.VALIDATE`, `.CORRECTION`, `.RECONCILE`, `.PURGE`, `.SOURCE_REGISTER`, `.SOURCE_UPDATE` | Data lifecycle incl. restatement + data-source provenance (EVT-020…; `.SOURCE_REGISTER`=EVT-026, `.SOURCE_UPDATE`=EVT-027, P1A-1). `LINEAGE.RECORD` (EVT-028) **reserved/unused** — standalone lineage correction/backfill (P7/REQ-LIN-002); lineage edges are otherwise metadata of an already-audited governed write (no per-edge event). |
 | `OVERRIDE` | `OVERRIDE.CREATE`, `.APPROVE`, `.REJECT` | Manual overrides — BR-7 fields mandatory (EVT-030…) |
 | `CALC` | `CALC.RUN_START`, `.RUN_COMPLETE`, `.RUN_FAIL` | Calculation runs; binds run metadata (EVT-040…) |
 | `MODEL` | `MODEL.REGISTER`, `.VERSION`, `.VALIDATE`, `.APPROVE`, `.RESTRICT`, `.RETIRE` | Model governance (EVT-050…) |
