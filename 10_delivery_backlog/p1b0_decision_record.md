@@ -5,8 +5,8 @@
 | Field | Value |
 |---|---|
 | Document ID | BACKLOG-P1B0-DR-001 |
-| Version | 0.1 (Draft for Review) |
-| Status | Draft |
+| Version | 1.0 (Ratified) |
+| Status | **Ratified (P1B-0, 2026-06-22)** — recorded into the governance source-of-truth artifacts (AD-013-R1 in `11_decision_log/architecture_decision_log.md`; REQ-SMR-005 + REQ-SMR-001/003/004 annotations + CAP-2.5 re-partition in `02_requirements/` and `01_product_strategy/capability_map.md`; ENT-001…008 annotations in `04_data_model/canonical_data_model_standard.md` + temporal §2A; `REFERENCE.*` reserved in `04_data_model/audit_event_taxonomy.md`; reference permissions in `06_security/entitlement_sod_model.md`). Audit codes + entitlement bootstrap **code** are minted inside the P1B build slices, not at P1B-0. |
 | Owner | R-01 Chief Architect AI (with R-05 Data Architect AI) |
 | Approver | H-06 Engineering Lead (H-04 Head of Architecture, H-08 Internal Audit consulted) |
 | Created | 2026-06-22 |

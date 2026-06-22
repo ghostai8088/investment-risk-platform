@@ -57,7 +57,17 @@ append-only state transitions (ENT-033, ENT-034); audit events (ENT-045, additio
 ### EV — effective-dated versioning (lighter)
 Reference/master data (ENT-002 issuer, ENT-003 counterparty, ENT-004 identifier_xref, ENT-005 currency, ENT-006 calendar,
 ENT-008 corporate_action, ENT-009 benchmark); limit definitions (ENT-031, effective-dated); security/admin (ENT-043 users/
-service/agent principals, ENT-044 roles/permissions/grants — grants carry effective dates); ENT-038 data_source.
+service/agent principals, ENT-044 roles/permissions/grants — grants carry effective dates); ENT-038 data_source;
+**ENT-001 instrument identity** (master attributes) and **ENT-007 rating_scale/grade taxonomy** (the EV halves of the
+P1B-0 splits below).
+
+> **P1B-0 ratification note (intra-entity splits — conform to this §2A, no AD-005 amendment):**
+> - **ENT-001** is realized as `instrument` (**EV** identity/master attributes) + `instrument_terms` (**FR** effective-dated
+>   economic/legal terms — coupon/maturity/call schedules, the FR clause above) (OD-P1B-A).
+> - **ENT-007** splits into `rating_scale`/grade **taxonomy = EV** (P1B-1) and rating **assignments feeding credit = FR**
+>   (the FR clause above; deferred to a credit phase) (OD-P1B-J).
+> - **ENT-008** corporate_action is **EV** (already classified here) — status/reason history flows through the `REFERENCE.*`
+>   audit trail, not an IA table (OD-P1B-B).
 
 ### Rationale (TR-21)
 | ID | Rationale |

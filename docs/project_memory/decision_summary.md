@@ -9,7 +9,7 @@
 - **AD-005** **selective bitemporality**: **FR** (bitemporal) for risk-driving inputs, **IA** (immutable append-only) for outputs/events/audit, **EV** (effective-dated) for reference/config. Risk = entity misclassification.
 - **AD-007** real identity via OIDC/SSO (deferred; dev header shim is not a security boundary).
 - **AD-008 / BR-17** tenant isolation; investment data MNPI-adjacent → isolation by default.
-- **AD-013** **hybrid reference-data tenancy**: global system reference shared read-only; investment reference tenant-scoped; tenant-override pattern; no cross-tenant proprietary sharing. (P1B-0 proposes refinement **AD-013-R1** — see below.)
+- **AD-013** **hybrid reference-data tenancy**: global system reference shared read-only; investment reference tenant-scoped; tenant-override pattern; no cross-tenant proprietary sharing. (P1B-0 **ratifies** refinement **AD-013-R1** — Accepted (H-04), in the decision log — see below.)
 - **AD-015 / AD-016** RLS tenant context via `set_config`; BYPASSRLS reserved to the ops role.
 - **BR-3** inventoried-before-use (models); **BR-7** override fields; **BR-10** no secrets in source; **BR-11** deny-by-default; **BR-12** non-bypassable audit; **BR-13** lineage; **BR-16** AI-agent logging; **BR-19** declare `__temporal_class__`.
 
@@ -26,8 +26,12 @@
 - **P1A-4:** `ingestion_batch` **IA-classed but status-mutable** (the CalculationRun precedent — NOT in `APPEND_ONLY_TABLES`); `ingestion_staged_record` IA immutable (in `APPEND_ONLY_TABLES` + ORM guard + P0001 trigger). CSV anti-corruption: 10 MiB cap counted while reading, CSV-only allowlist, filename sanitization, encoding validation, formula-injection neutralization, ragged-row rejection, no-op AV seam (`scan_status`, OD-042). Composes P1A-1 lineage + P1A-3 DQ; **durable-evidence-on-reject** (REJECTED batch + flagged result + audit committed; 4xx, never 200). Activates `DATA.INGEST`; reuses `data.upload` (no new audit code, no new permission). `data_quality_result.ingestion_batch_id` populated via an additive `run_quality_check` kwarg (set-before-flush; the only P1A-3 service change).
 
 ## P1B open decisions resolved in P1B-0 (OD-P1B-A … OD-P1B-J)
-Recorded in `10_delivery_backlog/p1b0_decision_record.md` (**committed at `dbed93e`**, CI-green; 7-lens reviewed;
-several require ratification before P1B-1 builds):
+Recorded in `10_delivery_backlog/p1b0_decision_record.md` (**committed at `dbed93e`**, CI-green; 7-lens reviewed).
+**Ratifications RECORDED into the governance source-of-truth** (working tree, commit pending): **AD-013-R1**
+(decision log); **REQ-SMR-005** + REQ-SMR-001/003/004 annotations + CAP-2.5 re-partition (backbone/RTM/capability
+map); ENT-001..008 annotations (canonical model + temporal §2A); **`REFERENCE.*`** reserved (audit
+taxonomy); reference permissions (entitlement model). Audit codes + entitlement bootstrap **code** are minted in
+the P1B build slices, not at P1B-0. Summary of the resolutions:
 - **OD-P1B-A** Instrument split: `instrument` = **EV** identity + `instrument_terms` = **FR** (per AD-005 §2A / REQ-SMR-001). Canonical annotation (ENT-001 realized as two tables).
 - **OD-P1B-B** `corporate_action` = **EV** (AD-005 §2A / REQ-SMR-004); status history via audit trail.
 - **OD-P1B-C** Hybrid tenancy via **SYSTEM_TENANT rows + asymmetric RLS** (`USING own OR SYSTEM` / `WITH CHECK` single-tenant); closed hybrid set = **{currency, calendar, rating_scale}**; proprietary entities never hybrid; override-wins is application-layer. **Refinement ADR AD-013-R1** (R-04/R-05/H-04).

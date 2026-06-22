@@ -60,6 +60,27 @@ Resource types map to canonical entities/contexts; actions include: `view`, `cre
 `override`, `run_calc`, `define_limit`, `change_limit`, `close_breach`, `validate_model`, `approve_model`, `manage_entitlement`,
 `export`, `deploy`, `admin`. Each (resource, action) is a `PERM-*` and is checked per ENT-P-02.
 
+### 5A. Reference-data permissions (P1B Security Master & Reference Data — ratified P1B-0/OD-P1B-F)
+
+Required `reference.<entity>.<verb>` permissions with **view/edit separation** (a viewer cannot mutate). These are
+governance-level definitions; the entitlement bootstrap **code** is updated in the relevant P1B build slice (not here),
+deny-by-default, least-privilege (data_steward edit; broader view), with **no role-template change beyond additive grants**.
+
+| Entity | Permissions | Status in catalog (`bootstrap.py`) |
+|---|---|---|
+| currency | `reference.currency.view`, `reference.currency.edit` | **new** (P1B-1) |
+| calendar | `reference.calendar.view`, `reference.calendar.edit` | `.edit` exists; **add `.view`** (P1B-1) |
+| rating_scale | `reference.rating_scale.view`, `reference.rating_scale.edit` | **new** (P1B-1) |
+| legal_entity | `reference.legal_entity.view`, `reference.legal_entity.edit` | **new** (P1B-2) |
+| issuer | `reference.issuer.view`, `reference.issuer.edit` | exists |
+| counterparty | `reference.counterparty.view`, `reference.counterparty.edit` | exists |
+| instrument | `reference.instrument.view`, `reference.instrument.edit` | exists |
+| identifier_xref | `reference.identifier.resolve` (read/lookup) | exists |
+| corporate_action | `reference.corporate_action.view`, `reference.corporate_action.edit` | `.edit` exists; **add `.view`** (P1B-4) |
+
+**Reserved (not minted now):** `reference.rating.*` — held for the future **FR rating-assignment** domain (distinct from the
+EV `rating_scale` taxonomy), so the verb namespace does not collide when rating assignments land in a later phase.
+
 ## 6. Segregation-of-Duties Matrix (SOD)
 
 Incompatible duties — the same subject must not hold both sides of a pair within the same scope.

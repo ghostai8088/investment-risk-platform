@@ -70,6 +70,7 @@ Codes are `CATEGORY.ACTION`. Stable event IDs `EVT-nnn` index notable events.
 | `CONFIG` | `CONFIG.CHANGE`, `.DEPLOY` | Configuration/deployment (EVT-110…) |
 | `ADMIN` | `ADMIN.USER_CREATE`, `.DISABLE`, `.SECRET_ROTATE` | Administration (EVT-120…) |
 | `AGENT` | `AGENT.ACTION`, `.RECOMMEND`, `.DRAFT`, `.REVIEW` | Material AI agent actions — BR-16 (EVT-130…) |
+| `REFERENCE` | `REFERENCE.CREATE`, `.UPDATE`, `.CORRECTION`, `.STATUS_CHANGE` | **Reserved (P1B-0/OD-P1B-E, EVT-140 block) — NOT yet emitted.** Reference-data (Security Master) entity CRUD + effective-dated supersede + status lifecycle. Minted/emitted starting in the P1B-1 slice. **Reconciliation:** `REFERENCE.CORRECTION` is the **reference-domain** restatement code, distinct from the reserved `DATA.CORRECTION` (data-lifecycle restatement); an FR `instrument_terms` restatement carries the **TR-08** `restatement_reason` + superseded-version link (manual_override/BR-7 enforcement is P6/P7). No generic `DATA.CREATE`/`DATA.UPDATE` is used. |
 
 ## 4. Integrity, Segregation & Retention
 

@@ -10,22 +10,26 @@ project:
   default_branch: main
 
 latest:
-  origin_main_commit: dbed93e
-  origin_main_subject: "Add P1B-0 decision record and P1B implementation plan"
-  local_vs_origin: in-sync   # 0 ahead / 0 behind at snapshot
-  ci_status: green           # Actions run 27969793585 (success)
+  origin_main_commit: b1efc05
+  origin_main_subject: "Add durable project-memory artifacts for session recovery"
+  local_vs_origin: in-sync   # at last commit; P1B-0 ratification edits are uncommitted in the working tree
+  ci_status: green           # b1efc05: Actions run 27971541638
   migration_head: 0007_generic_ingestion_staging   # next migration: 0008
 
 working_tree:
   uncommitted:
-    - path: docs/project_memory/*
-      status: untracked
-      note: these memory artifacts; pending their own commit approval
-  # The two P1B-0 planning docs are now COMMITTED at dbed93e (no longer in the working tree).
+    - path: "P1B-0 ratification edits (governance + project_memory)"
+      status: modified
+      note: >
+        AD-013-R1 (11_decision_log); REQ-SMR-005 + REQ-SMR-001/003/004 annotations + CAP-2.5 re-partition
+        (02_requirements + 01_product_strategy/capability_map); ENT-001..008 annotations
+        (04_data_model/canonical + temporal §2A); REFERENCE.* reserved (04_data_model/audit_event_taxonomy);
+        reference permissions (06_security/entitlement_sod_model); decision-record status -> Ratified;
+        docs/project_memory/* updated. Commit pending approval. NO code.
 
 operating_mode: ultracode    # plan-workflow -> commit plan -> implement -> review-workflow -> fix -> make check -> commit-on-approval -> CI
 commit_policy: explicit-approval-only
-current_approval_gate: "Record P1B-0 ratifications (AD-013-R1, REQ-SMR-005) and plan P1B-1 - planning only, not implementation; each step on explicit approval. (docs/project_memory commit also pending.)"
+current_approval_gate: "Commit the P1B-0 ratification updates (governance/planning docs only), then plan P1B-1 - each step on explicit approval; no implementation"
 
 phases:
   completed:
@@ -37,17 +41,19 @@ phases:
     - {id: P1A-4,  name: "Generic ingestion staging",          commit: "c781bb8", ci: green}  # + PG fix 0282359
     - {id: P1A-closeout, name: "P1A closeout / P1B readiness",  commit: "69afedf", ci: green}
     - {id: P1B-0,        name: "P1B-0 decision record + implementation plan", commit: "dbed93e", ci: green}
+    - {id: P1B-0-memory, name: "Durable project-memory artifacts", commit: "b1efc05", ci: green}
   milestones:
     P1A: closed   # all five rails committed and CI-green
     P1B-0: committed   # decision record + plan committed CI-green; implementation blocked
+    P1B-0-ratifications: recorded-commit-pending   # governance source-of-truth updated; uncommitted
   active:
     id: P1B-0-ratifications
-    name: "Record P1B-0 ratifications (AD-013-R1, REQ-SMR-005, CAP-2.5 re-partition, ENT annotations) - planning docs only"
-    status: pending-approval
+    name: "P1B-0 ratifications recorded into governance source-of-truth (working tree); commit pending approval"
+    status: recorded-commit-pending
   next:
     id: P1B-1-planning
-    name: "Plan P1B-1 (currency/calendar/rating_scale) via UltraCode workflow, then implement on direction"
-    status: blocked-until-ratifications-and-approval
+    name: "After committing ratifications: plan P1B-1 (currency/calendar/rating_scale) via UltraCode workflow; implement only on direction"
+    status: blocked-until-approval
 
 p1b_open_decisions:        # resolved in P1B-0 draft; several need ratification before P1B-1
   OD-P1B-A: "instrument split: instrument=EV identity + instrument_terms=FR"
@@ -62,7 +68,7 @@ p1b_open_decisions:        # resolved in P1B-0 draft; several need ratification 
   OD-P1B-J: "mint REQ-SMR-005 + re-partition CAP-2.5 + annotate ENT-007 EV/FR; R-02/R-05"
 
 blockers:
-  - "P1B-0 docs committed (dbed93e); P1B implementation still blocked until ratifications recorded (AD-013-R1, REQ-SMR-005, REFERENCE.* codes, entitlement additions)"
+  - "P1B-0 docs committed (dbed93e); ratifications RECORDED (AD-013-R1, REQ-SMR-005, ENT annotations, REFERENCE.* reserved, reference permissions) - commit pending; P1B implementation still blocked until ratification commit + P1B-1 plan approval"
   - "Every step gated on explicit user approval; do not start the next slice unprompted"
 
 do_not_start:

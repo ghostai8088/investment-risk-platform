@@ -34,10 +34,11 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-PPM-002 | 1.2 | P-PM,P-RA | 1L | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-006/013/017 | FW-TMP(FR), DEP-SMR, DEP-LIN | Draft |
 | REQ-PPM-003 | 1.3/1.4 | P-PM,P-DS | 1L/Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-005/017 | FW-AUD, FW-TMP | Draft |
 | REQ-PPM-004 | 1.5 | P-RA,P-RM | 1L/2L | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-006/018 | FW-RUN, DEP-LIN, CAP-1 | Draft |
-| REQ-SMR-001 | 2.1 | P-DS | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-004/017 | FW-TMP(FR), DEP-DQF | Draft |
-| REQ-SMR-002 | 2.2 | P-DS | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-004 | FW-TMP, DEP-LIN | Draft |
-| REQ-SMR-003 | 2.3 | P-DS | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-004 | FW-TMP, DEP-DQF | Draft |
-| REQ-SMR-004 | 2.4/2.5 | P-DS,P-RA | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-004/017 | FW-TMP, QS-10/11 | Draft |
+| REQ-SMR-001 | 2.1 | P-DS | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-004/017 | FW-TMP(FR), DEP-DQF | Ratified (P1B-0): instrument identity=EV + instrument_terms=FR (OD-P1B-A); build P1B-3 |
+| REQ-SMR-002 | 2.2 | P-DS | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-004 | FW-TMP, DEP-LIN | Ratified (P1B-0): separate issuer/counterparty over impl-only legal_entity core (OD-P1B-D); build P1B-2 |
+| REQ-SMR-003 | 2.3 | P-DS | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-004 | FW-TMP, DEP-DQF | Ratified (P1B-0, partial): deterministic-or-AmbiguousIdentifier; precedence deferred P1C/OD-012 (OD-P1B-G); build P1B-3 |
+| REQ-SMR-004 | 2.4/2.5a | P-DS,P-RA | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-004/017 | FW-TMP, QS-10/11 | Ratified (P1B-0): corporate_action=EV (OD-P1B-B); calendar entity only, roll math deferred; build P1B-1/P1B-4 |
+| REQ-SMR-005 | 2.5b | P-DS | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-004/017 | FW-TMP, DEP-DQF | Ratified (P1B-0, new): currency + rating_scale taxonomy, hybrid global+override (AD-013-R1, OD-P1B-J); build P1B-1 |
 | REQ-PUB-001 | 3.1 | P-DS,P-RA | Plat | P2 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-017/029 | FW-TMP(FR), DEP-DQF, CAP-2 | Draft |
 | REQ-PUB-002 | 3.2/3.3 | P-DS,P-RA | Plat | P2 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-017 | FW-TMP, CAP-2 | Draft |
 | REQ-PUB-003 | 3.4/3.5 | P-DS,P-RA | Plat | P2 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-029 | FW-TMP, DEP-DQF, CAP-2 | Draft |
@@ -97,7 +98,7 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 
 ## 3. Coverage summary
 
-- **19 capability domains** (CAP-1…19), **~90 sub-capabilities**, **64 baseline requirements** (REQ-…-001…), all `Draft`.
+- **19 capability domains** (CAP-1…19), **~90 sub-capabilities**, **65 baseline requirements** (REQ-…-001…; +REQ-SMR-005 minted P1B-0). Most `Draft`; the P1A rails (LIN/MDG/DQR/INT-001) and the P1B-0 SMR rows are `Ratified`/`In-Progress` per their Status cells.
 - Every requirement inherits `BX-AUD` + `BX-ENT`; **44** inherit `BX-LIN`; **21** are model-governed (`ModelGov = Y`).
 - Every build rule BR-1…BR-19 is represented via the BX baseline and per-requirement controls.
 

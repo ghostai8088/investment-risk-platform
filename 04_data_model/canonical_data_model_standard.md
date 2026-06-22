@@ -66,14 +66,14 @@ Grouped by bounded context. IDs are stable; attributes listed are indicative (th
 ### Reference / Security Master (BC-02/BC-03)
 | ID | Entity | Notes |
 |---|---|---|
-| ENT-001 | `instrument` | Security master; asset class, terms, identifiers via xref |
-| ENT-002 | `issuer` | Issuer/obligor with LEI and hierarchy |
-| ENT-003 | `counterparty` | Trading/credit counterparty; links to netting/CSA |
-| ENT-004 | `identifier_xref` | Instrument/entity identifier cross-reference |
-| ENT-005 | `currency` | ISO 4217 reference |
-| ENT-006 | `calendar` | Holiday calendars per market (QS day-count/roll) |
-| ENT-007 | `rating_scale` / `rating` | External and internal/shadow ratings |
-| ENT-008 | `corporate_action` | Splits, coupons, calls, restructurings |
+| ENT-001 | `instrument` | Security master; asset class, identifiers via xref. **P1B-0 ratified (OD-P1B-A):** realized as `instrument` (**EV** identity) + `instrument_terms` (**FR** effective-dated economic/legal terms) — no entity removed/renamed |
+| ENT-002 | `issuer` | Issuer/obligor with LEI and hierarchy. **P1B-0 (OD-P1B-D):** an `issuer` role/profile table over an **implementation-only `legal_entity` core** (shared LEI/hierarchy; **no canonical ENT id** unless later approved) |
+| ENT-003 | `counterparty` | Trading/credit counterparty; links to netting/CSA. **P1B-0 (OD-P1B-D):** a `counterparty` role/profile table over the same implementation-only `legal_entity` core; remains distinct from ENT-002 |
+| ENT-004 | `identifier_xref` | Instrument/entity identifier cross-reference (EV). **P1B-0 (OD-P1B-G):** deterministic resolve-to-one-or-AmbiguousIdentifier; precedence (OD-012) deferred to P1C |
+| ENT-005 | `currency` | ISO 4217 reference (EV). **P1B-0:** REQ-SMR-005; hybrid global+tenant-override (AD-013-R1) |
+| ENT-006 | `calendar` | Holiday calendars per market (QS day-count/roll) (EV). **P1B-0:** REQ-SMR-004; calendar entity only, roll math deferred; hybrid (AD-013-R1) |
+| ENT-007 | `rating_scale` / `rating` | External and internal/shadow ratings. **P1B-0 split:** `rating_scale`/grade **taxonomy = EV** (REQ-SMR-005, P1B-1); rating **assignments = FR** (ENT-007 per AD-005 §2A, deferred to a credit phase) |
+| ENT-008 | `corporate_action` | Splits, coupons, calls, restructurings. **P1B-0 ratified (OD-P1B-B):** **EV** effective-dated (applies on effective date, supersedable); status/reason history via the `REFERENCE.*` audit trail, not an IA table |
 | ENT-009 | `benchmark` | Benchmark definitions and constituents |
 
 ### Portfolio & Positions (BC-01)

@@ -37,7 +37,7 @@ The backbone expands these 14 sections into 19 domains via **2 splits** and **3 
 | 12 | Reporting | CAP-16 | 1:1 |
 | 13 | Security and Administration | CAP-17 (+ **CAP-15**) | Auditability **elevated** as CAP-15 |
 | 14 | Integration Readiness | CAP-18 | 1:1 |
-| — | *(not a map section)* | **CAP-2** Security Master & Reference Data | new/elevated domain |
+| — | *(not a map section)* | **CAP-2** Security Master & Reference Data | new/elevated domain. Sub-caps: 2.1 instrument · 2.2 issuer/counterparty · 2.3 identifier xref · 2.4 corporate actions · **2.5a calendars** · **2.5b currencies/rating scales** *(2.5 re-partitioned P1B-0: 2.5a→REQ-SMR-004, 2.5b→REQ-SMR-005)* |
 | — | *(not a map section)* | **CAP-15** Auditability | new/elevated cross-cutting domain (audit framework exists in foundation) |
 | — | *(not a map section)* | **CAP-19** BAU AI Agent Support | added domain (see `../00_ai_operating_model/bau_ai_use_cases.md`) |
 
@@ -60,7 +60,7 @@ The backbone expands these 14 sections into 19 domains via **2 splits** and **3 
 - Yield curves (CAP-3.2)
 - Volatility data (CAP-3.3)
 - Credit spreads (CAP-3.4)
-- Ratings (CAP-3.5; rating scales → CAP-2.5)
+- Ratings (CAP-3.5; rating scales → CAP-2.5b)
 - Benchmarks (CAP-3.5)
 
 ## 3. Private Asset Data  *(CAP-4)*

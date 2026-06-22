@@ -4,21 +4,19 @@
 > user approval.** Re-verify `git status` / HEAD / CI before acting (state may have advanced since this snapshot).
 
 ## Exact next step
-**DONE:** the two P1B-0 planning docs are **committed at `dbed93e`** (CI-green). Remaining uncommitted: the
-`docs/project_memory/*` artifacts (pending their own commit approval — recommended message:
-`Add durable project-memory artifacts for session recovery`, or `Update project-memory artifacts after P1B-0 commit`).
+**DONE:** P1B-0 planning docs committed at `dbed93e`; project-memory artifacts committed at `b1efc05`;
+**P1B-0 ratifications RECORDED** into the governance source-of-truth (decision log AD-013-R1; backbone/RTM
+REQ-SMR-005 + annotations + CAP-2.5 re-partition; capability map; canonical model + temporal §2A ENT
+annotations; audit taxonomy `REFERENCE.*` reserved; entitlement model reference permissions; decision-record
+status → Ratified; project-memory updated). **These ratification edits are in the working tree, commit pending.**
 
-**1. Record the P1B-0 ratifications — planning/governance docs only, no code, ONLY on explicit approval.**
-These are the gating prerequisites for P1B-1 (see `decision_summary.md` OD-P1B-A/C/E/F/J): **AD-013-R1** in
-`11_decision_log/architecture_decision_log.md`; **REQ-SMR-005** + the CAP-2.5 re-partition + the ENT-001/ENT-007
-annotations in `02_requirements/` and `04_data_model/`; (the `REFERENCE.*` audit category + entitlement
-additions are minted inside the P1B-1 slice, not standalone).
+**1. Commit the P1B-0 ratification updates — governance/planning docs only, no code, ONLY on explicit approval.**
 
 **2. Plan P1B-1** (currency / calendar / rating_scale) via the UltraCode planning workflow → committed plan
 doc — **on explicit approval**. The first reference-data slice and the first hybrid global+tenant RLS.
 
 **3. Then, on explicit direction, implement P1B-1** — mint the REFERENCE audit category + new permissions in
-this slice. **Do not begin implementation before the ratifications are recorded and the slice is approved.**
+this slice. **Do not begin implementation before the slice plan is approved.**
 
 ## Exact next prompt to run (when the user is ready to start P1B-1 implementation)
 > "Begin P1B-1 implementation only: currency / calendar / rating_scale. Use the P1A rails. Implement the new
