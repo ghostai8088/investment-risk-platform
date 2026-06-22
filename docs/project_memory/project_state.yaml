@@ -1,0 +1,84 @@
+# Compact machine-readable project state for session recovery.
+# As of 2026-06-22. Re-verify `latest` (git HEAD/CI) and `working_tree` at session start — they drift.
+schema_version: 1
+as_of: "2026-06-22"
+
+project:
+  name: investment-risk-platform
+  north_star: full-scope enterprise investment-risk platform (not MVP/POC)
+  remote: github.com/ghostai8088/investment-risk-platform
+  default_branch: main
+
+latest:
+  origin_main_commit: dbed93e
+  origin_main_subject: "Add P1B-0 decision record and P1B implementation plan"
+  local_vs_origin: in-sync   # 0 ahead / 0 behind at snapshot
+  ci_status: green           # Actions run 27969793585 (success)
+  migration_head: 0007_generic_ingestion_staging   # next migration: 0008
+
+working_tree:
+  uncommitted:
+    - path: docs/project_memory/*
+      status: untracked
+      note: these memory artifacts; pending their own commit approval
+  # The two P1B-0 planning docs are now COMMITTED at dbed93e (no longer in the working tree).
+
+operating_mode: ultracode    # plan-workflow -> commit plan -> implement -> review-workflow -> fix -> make check -> commit-on-approval -> CI
+commit_policy: explicit-approval-only
+current_approval_gate: "Record P1B-0 ratifications (AD-013-R1, REQ-SMR-005) and plan P1B-1 - planning only, not implementation; each step on explicit approval. (docs/project_memory commit also pending.)"
+
+phases:
+  completed:
+    - {id: P0.5,   name: "Engineering hygiene & foundation",   commit: "4f93a33", ci: green}
+    - {id: P1A-0,  name: "Tenant context / RLS",               commit: "7cdc2f9", ci: green}
+    - {id: P1A-1,  name: "Data source + lineage skeleton",     commit: "96a1564", ci: green}
+    - {id: P1A-2,  name: "Model registry skeleton",            commit: "c9be657", ci: green}
+    - {id: P1A-3,  name: "Data quality skeleton",              commit: "cc472be", ci: green}
+    - {id: P1A-4,  name: "Generic ingestion staging",          commit: "c781bb8", ci: green}  # + PG fix 0282359
+    - {id: P1A-closeout, name: "P1A closeout / P1B readiness",  commit: "69afedf", ci: green}
+    - {id: P1B-0,        name: "P1B-0 decision record + implementation plan", commit: "dbed93e", ci: green}
+  milestones:
+    P1A: closed   # all five rails committed and CI-green
+    P1B-0: committed   # decision record + plan committed CI-green; implementation blocked
+  active:
+    id: P1B-0-ratifications
+    name: "Record P1B-0 ratifications (AD-013-R1, REQ-SMR-005, CAP-2.5 re-partition, ENT annotations) - planning docs only"
+    status: pending-approval
+  next:
+    id: P1B-1-planning
+    name: "Plan P1B-1 (currency/calendar/rating_scale) via UltraCode workflow, then implement on direction"
+    status: blocked-until-ratifications-and-approval
+
+p1b_open_decisions:        # resolved in P1B-0 draft; several need ratification before P1B-1
+  OD-P1B-A: "instrument split: instrument=EV identity + instrument_terms=FR"
+  OD-P1B-B: "corporate_action = EV"
+  OD-P1B-C: "hybrid via SYSTEM_TENANT + asymmetric RLS; hybrid set {currency,calendar,rating_scale}; AD-013-R1"
+  OD-P1B-D: "legal_entity core (no ENT id) + separate issuer/counterparty role profiles"
+  OD-P1B-E: "new REFERENCE.* audit category (EVT-140 block); R-07"
+  OD-P1B-F: "add currency/rating_scale/legal_entity + .view permissions; R-07"
+  OD-P1B-G: "deterministic-or-ambiguity identifier resolution; precedence deferred (OD-012/P1C)"
+  OD-P1B-H: "irp_shared.reference package, one-way deps"
+  OD-P1B-I: "per-tenant MANUAL data_source; lineage rooted in each row's own context"
+  OD-P1B-J: "mint REQ-SMR-005 + re-partition CAP-2.5 + annotate ENT-007 EV/FR; R-02/R-05"
+
+blockers:
+  - "P1B-0 docs committed (dbed93e); P1B implementation still blocked until ratifications recorded (AD-013-R1, REQ-SMR-005, REFERENCE.* codes, entitlement additions)"
+  - "Every step gated on explicit user approval; do not start the next slice unprompted"
+
+do_not_start:
+  - P1B implementation (reference entities, migration 0008, irp_shared.reference, endpoints) before ratifications + direction
+  - P1C   # portfolio, positions, valuations, exposure aggregation, identifier precedence (OD-012), counterparty netting (OD-015)
+  - P2+   # market/private data, risk analytics, scenarios, limits, breach, reporting, real SSO, vendor/SFTP adapters
+  - any domain functionality (portfolio, positions, valuations, market prices, market-data ingestion, private-asset ingestion, GP parsing, risk calc, exposure, limits, breach, dashboards, reporting, real SSO)
+  - any change to packages/shared-python/src/irp_shared/audit/service.py (frozen)
+  - any new audit code / permission / role without the governed R-07 update
+
+frozen:
+  - packages/shared-python/src/irp_shared/audit/service.py
+
+recheck_at_session_start:
+  - "git log -1 --oneline ; git status --short  (HEAD + whether P1B-0/memory docs got committed)"
+  - "latest CI conclusion for current HEAD (GitHub Actions REST API; gh CLI not installed)"
+  - "whether AD-013-R1 / REQ-SMR-005 have been recorded yet"
+
+uncertain_values: []   # none material at snapshot; all hashes/CI verified against the repo
