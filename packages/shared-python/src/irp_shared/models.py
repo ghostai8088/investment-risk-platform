@@ -16,6 +16,7 @@ from irp_shared.entitlement.models import (
     UserRole,
 )
 from irp_shared.lineage.models import DataSource, LineageEdge
+from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, ModelVersion
 
 metadata = Base.metadata
 
@@ -32,4 +33,8 @@ __all__ = [
     "UserRole",
     "DataSource",
     "LineageEdge",
+    "Model",
+    "ModelVersion",
+    "ModelAssumption",
+    "ModelLimitation",
 ]

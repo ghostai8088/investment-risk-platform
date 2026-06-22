@@ -26,7 +26,7 @@ logging).
 | ID | Rule |
 |---|---|
 | MG-01 | A **model** is any quantitative method that processes inputs into estimates used for risk, valuation, limits, scenarios, or reporting (incl. statistical, analytical, and AI/ML methods). |
-| MG-02 | Every model and version is registered in the inventory (`model`, `model_version`, ENT-035) before use (BR-3); unregistered calculations may not feed governed outputs. |
+| MG-02 | Every model and version is registered in the inventory (`model`, `model_version`, ENT-035) before use (BR-3); unregistered calculations may not feed governed outputs. **Realized at skeleton in P1A-2** (`register_model`/`register_model_version` + `assert_registered_model_version` inventory-before-use gate; assumptions/limitations ENT-036); MG-04/05/06/07 validation/approval **enforcement** is P7 (REQ-MDG-002/003) — P1A-2 records owner/developer/tier/validation_status as non-enforcing fields only. |
 | MG-03 | Embedded product AI features that produce risk-relevant outputs are in scope as models or model-adjacent tools and are inventoried. |
 
 ## 3. Model Risk Tiering (MG)

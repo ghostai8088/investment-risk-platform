@@ -61,7 +61,7 @@ Codes are `CATEGORY.ACTION`. Stable event IDs `EVT-nnn` index notable events.
 | `DATA` | `DATA.INGEST`, `.VALIDATE`, `.CORRECTION`, `.RECONCILE`, `.PURGE`, `.SOURCE_REGISTER`, `.SOURCE_UPDATE` | Data lifecycle incl. restatement + data-source provenance (EVT-020…; `.SOURCE_REGISTER`=EVT-026, `.SOURCE_UPDATE`=EVT-027, P1A-1). `LINEAGE.RECORD` (EVT-028) **reserved/unused** — standalone lineage correction/backfill (P7/REQ-LIN-002); lineage edges are otherwise metadata of an already-audited governed write (no per-edge event). |
 | `OVERRIDE` | `OVERRIDE.CREATE`, `.APPROVE`, `.REJECT` | Manual overrides — BR-7 fields mandatory (EVT-030…) |
 | `CALC` | `CALC.RUN_START`, `.RUN_COMPLETE`, `.RUN_FAIL` | Calculation runs; binds run metadata (EVT-040…) |
-| `MODEL` | `MODEL.REGISTER`, `.VERSION`, `.VALIDATE`, `.APPROVE`, `.RESTRICT`, `.RETIRE` | Model governance (EVT-050…) |
+| `MODEL` | `MODEL.REGISTER`, `.VERSION`, `.VALIDATE`, `.APPROVE`, `.RESTRICT`, `.RETIRE` | Model governance (EVT-050…). `MODEL.REGISTER`/`MODEL.VERSION` **activated in P1A-2** (model/version inventory; assumption/limitation writes fold into `MODEL.VERSION`, no per-row event); `.VALIDATE/.APPROVE/.RESTRICT/.RETIRE` **reserved** for the P7 validation/approval/restricted-use/retirement workflow (REQ-MDG-002/003). |
 | `LIMIT` | `LIMIT.DEFINE`, `.CHANGE`, `.APPROVE` | Limit framework changes (EVT-060…) |
 | `BREACH` | `BREACH.DETECT`, `.ASSIGN`, `.1L_RESPONSE`, `.2L_REVIEW`, `.ESCALATE`, `.CLOSE` | Breach workflow (EVT-070…) |
 | `SCENARIO` | `SCENARIO.DEFINE`, `.VERSION`, `.RUN` | Scenario lifecycle (EVT-080…) |

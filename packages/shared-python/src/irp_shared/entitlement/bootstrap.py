@@ -73,6 +73,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "portfolio.view",
         "position.view",
         "model.inventory.view",
+        # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
+        # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
+        "model.inventory.register",
         "dq.result.view",
         "lineage.view",
     ],

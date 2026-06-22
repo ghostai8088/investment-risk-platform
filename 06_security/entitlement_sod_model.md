@@ -43,7 +43,7 @@ human-approval gates (BR-15) enforceable.
 | Role ID | Role | Line | Indicative permissions |
 |---|---|---|---|
 | ROLE-PM | Portfolio Manager | 1L | View positions/risk in scope; request scenarios; respond to breaches |
-| ROLE-RA | Risk Analyst | 1L | Run calcs, define scenarios (draft), view risk in scope |
+| ROLE-RA | Risk Analyst | 1L | Run calcs, define scenarios (draft), view risk in scope; **register models/versions** (`model.inventory.register`, P1A-2 — 1L developer/owner, the maker side of the future SOD-03; the 2L validator deliberately does not hold register, MG-04) |
 | ROLE-RM | Risk Manager | 2L | Review breaches, approve 2L steps, define/approve limits |
 | ROLE-MV | Model Validator | 2L (independent) | View models/methodologies, record validation; cannot author methodology |
 | ROLE-DS | Data Steward | — | Manage DQ exceptions, approve overrides within remit; **register/manage data sources** (`lineage.source.manage`, P1A-1) |

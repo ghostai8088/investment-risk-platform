@@ -40,6 +40,19 @@ def test_lineage_source_manage_is_least_privilege() -> None:
         assert "lineage.source.manage" not in ROLE_TEMPLATES[role]
 
 
+def test_model_inventory_register_is_least_privilege() -> None:
+    # P1A-2: register granted to the 1L model developer/owner + platform_admin (via ALL_CODES);
+    # NOT to the independent validator/auditor (pre-positions MG-04 dev≠validator / SOD-03).
+    assert "model.inventory.register" in ALL_CODES and "model.inventory.view" in ALL_CODES
+    assert "model.inventory.register" in ROLE_TEMPLATES["risk_analyst_1l"]
+    assert "model.inventory.register" in ROLE_TEMPLATES["platform_admin"]
+    for role in ("risk_manager_2l", "auditor_3l", "ops"):
+        assert "model.inventory.register" not in ROLE_TEMPLATES[role]
+    # view is held by the inventory readers.
+    for role in ("risk_analyst_1l", "risk_manager_2l", "auditor_3l"):
+        assert "model.inventory.view" in ROLE_TEMPLATES[role]
+
+
 def test_ids_deterministic_and_unique() -> None:
     assert permission_id("data.upload") == permission_id("data.upload")
     assert role_id("ops") == role_id("ops")

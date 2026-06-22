@@ -70,7 +70,7 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-BRC-001 | 11.1 | P-PM,P-RM | 1L/2L | P6 | BX-AUD | BX-ENT | — | — | CTRL-005/031 | DEP-WFL, CAP-10 | Draft |
 | REQ-BRC-002 | 11.2/11.3 | P-PM,P-RM | 1L/2L | P6 | BX-AUD | BX-ENT | — | — | CTRL-021/031 | REQ-ADM-002 (SoD), DEP-WFL | Draft |
 | REQ-BRC-003 | 11.4 | P-RM,P-CO | 2L | P6 | BX-AUD | BX-ENT | — | — | CTRL-015/031 | DEP-WFL | Draft |
-| REQ-MDG-001 | 12.1/12.2 | P-MV,P-RM | 2L | P1 | BX-AUD | BX-ENT | — | **Y** | CTRL-003 | DEP-MREG, FW-AUD | Draft |
+| REQ-MDG-001 | 12.1/12.2 | P-MV,P-RM | 2L | P1 | BX-AUD | BX-ENT | — | **Y** | CTRL-003/014 | DEP-MREG, FW-AUD | In-Progress (P1A-2 skeleton: inventory + versioning + assumptions/limitations + BR-3 gate; tiering REQ-MDG-002 & validation/approval REQ-MDG-003 → P7. Register writer = model owner/developer `risk_analyst_1l`; P-MV/P-RM are inventory readers) |
 | REQ-MDG-002 | 12.3 | P-MV | 2L | P7 | BX-AUD | BX-ENT | — | **Y** | CTRL-003/015 | DEP-MGW | Draft |
 | REQ-MDG-003 | 12.4/12.5 | P-MV | 2L | P7 | BX-AUD | BX-ENT | — | **Y** | CTRL-015/022 | DEP-MGW, REQ-ADM-002 (SoD) | Draft |
 | REQ-DQR-001 | 13.1 | P-DS | Plat/1L | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027/029 | DEP-DQF | Draft |

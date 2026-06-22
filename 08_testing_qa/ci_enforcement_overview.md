@@ -25,7 +25,7 @@ runs four jobs; any failing step fails its job and blocks the merge (BR-1: no fe
 |---|---|---|---|
 | `backend` | ruff format --check, ruff check, mypy, pytest (foundation + P0.5 tests) | BR-1, BR-11, BR-12, BR-17, BR-18, BR-19 | CTRL-001, CTRL-005, CTRL-011, CTRL-016, CTRL-017, CTRL-026 |
 | `frontend` | **npm ci** (reproducible from lockfile), eslint, tsc, vitest, vite build | BR-1, reproducible UI build | CTRL-001 |
-| `migration` | alembic upgrade head → **alembic check (drift)** → **audit-write concurrency test (PG)** → **tenant-context RLS tests (PG)** → **lineage RLS tests (PG, P1A-1)** → downgrade base | DB schema, RLS tenant isolation end-to-end (BR-17), append-only triggers + concurrency (BR-12/18), lineage `data_source`/`lineage_edge` isolation + fail-closed + append-only under the constrained `irp_app` role, drift (OD-052) | CTRL-005, CTRL-006, CTRL-011, CTRL-013, CTRL-026, CTRL-033 |
+| `migration` | alembic upgrade head → **alembic check (drift)** → **audit-write concurrency test (PG)** → **tenant-context RLS tests (PG)** → **lineage RLS tests (PG, P1A-1)** → **model registry RLS tests (PG, P1A-2)** → downgrade base | DB schema, RLS tenant isolation end-to-end (BR-17), append-only triggers + concurrency (BR-12/18), lineage `data_source`/`lineage_edge` + model `model`/`model_version`/`model_assumption`/`model_limitation` isolation + fail-closed + append-only under the constrained `irp_app` role, drift (OD-052) | CTRL-003, CTRL-005, CTRL-006, CTRL-011, CTRL-013, CTRL-014, CTRL-026, CTRL-033 |
 | `secret-scan` | scripts/secret_scan.py (gitleaks later) | BR-10 (no secrets in source) | CTRL-010 |
 | `docs-check` | scripts/check_docs.py | documentation present & doc-control headers | CTRL-002, CTRL-004 |
 
@@ -40,7 +40,14 @@ fail-closed, tenant-mismatch denied, worker path, BYPASSRLS ops read), plus the 
 verification only. **P1A-1** builds the lineage skeleton (REQ-LIN-001): `data_source` (EV) + `lineage_edge` (IA) with the
 `record_lineage`/`assert_has_lineage` BX-LIN contract and `GET /lineage/edges/{id}`, making **CTRL-006/CTRL-013** executable at
 skeleton level — new PG-gated tests prove tenant isolation, no-context fail-closed (SQLSTATE 42501), cross-tenant write/reference
-rejection, DB append-only, and ops-role-no-grant under the constrained `irp_app` role.
+rejection, DB append-only, and ops-role-no-grant under the constrained `irp_app` role. **P1A-2** builds the model registry
+skeleton (REQ-MDG-001): `model` (EV) + `model_version`/`model_assumption`/`model_limitation` (IA) with `register_model` +
+`assert_registered_model_version` (the BR-3 inventory-before-use gate) and gated `POST /models` + read endpoints, making
+**CTRL-003/CTRL-014** executable at skeleton level — reusing the existing `MODEL.REGISTER`/`MODEL.VERSION` codes and
+`model.inventory.register`/`view` permissions (no new vocabulary). PG-gated tests add model-table isolation, no-context fail-closed,
+cross-tenant parent-reference rejection, IA append-only (with an EV negative-control on the mutable `model` head), and
+ops-role-no-grant. Governance fields (tier/validation_status/approved_use) are non-enforcing placeholders — an AC-11 test proves a
+Tier-1 UNVALIDATED model registers/binds with no gate (validation/approval is P7).
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 
