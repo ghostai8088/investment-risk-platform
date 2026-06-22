@@ -105,6 +105,9 @@ def _seed_batch(factory, tenant: str) -> tuple[str, str]:  # noqa: ANN001
             actor_id="a",
         )
         session.commit()
+        # commit cleared the transaction-local app.current_tenant GUC; re-set it so the
+        # read-back is RLS-visible (otherwise the staged row is correctly hidden -> NoResultFound).
+        set_tenant_context(session, tenant)
         staged_id = session.execute(
             text("SELECT id FROM ingestion_staged_record WHERE batch_id = CAST(:b AS uuid)"),
             {"b": batch.id},
