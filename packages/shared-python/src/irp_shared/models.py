@@ -8,6 +8,7 @@ from __future__ import annotations
 from irp_shared.audit.models import AuditCheckpoint, AuditEvent
 from irp_shared.calc.models import CalculationRun
 from irp_shared.db.base import Base
+from irp_shared.dq.models import DataQualityResult, DataQualityRule
 from irp_shared.entitlement.models import (
     AppUser,
     Permission,
@@ -37,4 +38,6 @@ __all__ = [
     "ModelVersion",
     "ModelAssumption",
     "ModelLimitation",
+    "DataQualityRule",
+    "DataQualityResult",
 ]

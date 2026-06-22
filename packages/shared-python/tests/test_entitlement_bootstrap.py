@@ -53,6 +53,19 @@ def test_model_inventory_register_is_least_privilege() -> None:
         assert "model.inventory.view" in ROLE_TEMPLATES[role]
 
 
+def test_dq_rule_manage_is_least_privilege() -> None:
+    # P1A-3: dq.rule.manage stays on the data steward (+ platform_admin) only — NOT the read roles
+    # (least privilege ENT-P-01; pre-positions the P7 REQ-DQR-003 override SoD where P-DS is maker).
+    assert "dq.rule.manage" in ALL_CODES and "dq.result.view" in ALL_CODES
+    assert "dq.rule.manage" in ROLE_TEMPLATES["data_steward"]
+    assert "dq.rule.manage" in ROLE_TEMPLATES["platform_admin"]
+    for role in ("risk_analyst_1l", "risk_manager_2l", "auditor_3l", "ops"):
+        assert "dq.rule.manage" not in ROLE_TEMPLATES[role]
+    # result.view is held broadly by the read roles.
+    for role in ("data_steward", "risk_analyst_1l", "risk_manager_2l", "auditor_3l"):
+        assert "dq.result.view" in ROLE_TEMPLATES[role]
+
+
 def test_ids_deterministic_and_unique() -> None:
     assert permission_id("data.upload") == permission_id("data.upload")
     assert role_id("ops") == role_id("ops")

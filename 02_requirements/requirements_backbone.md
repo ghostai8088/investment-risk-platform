@@ -106,7 +106,7 @@ requirement is not Done unless its inherited BX are satisfied.
 | FW-TMP / FW-AUD / FW-ENT / FW-RUN | Foundation slice frameworks | Exist (with §3 placeholders) |
 | DEP-LIN | Data lineage skeleton (capture + source-to-target + query) | **Exists** (capture skeleton, P1A-1: `data_source`/`lineage_edge` + `record_lineage`; query/viz is REQ-LIN-002/P7) |
 | DEP-MREG | Model registry skeleton (inventory + version binding) | **Exists** (inventory + version-binding skeleton, P1A-2: `model`/`model_version`/`model_assumption`/`model_limitation` + `register_model`; tiering REQ-MDG-002/P7, validation REQ-MDG-003/P7) |
-| DEP-DQF | Data quality framework (rules engine + exceptions) | **Future** (CAP-13) |
+| DEP-DQF | Data quality framework (rules engine + exceptions) | **Exists** (DQ rules-engine skeleton — `data_quality_rule`/`data_quality_result` + `DQRule.evaluate` + `run_quality_check` + `assert_passed_quality_checks`, P1A-3; reconciliation REQ-DQR-002/P7, overrides REQ-DQR-003/P7) |
 | DEP-SMR | Security Master / Reference Data domain | **Future** (CAP-2) |
 | DEP-SSO | Real SSO / OIDC identity (replaces dev header shim) | **Future** (CAP-17, AD-007) |
 | DEP-MGW | Full model governance / validation workflow | **Future** (CAP-12) |
@@ -228,7 +228,7 @@ entitlement/lineage/model-gov/control/phase/dependency are in the [RTM](requirem
 
 | REQ | Title | CAP | Business purpose | Functional | Data | Calc | Test | Acceptance | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| REQ-DQR-001 | DQ rules engine | 13.1 | Detect bad data early | Configurable DQ rules run on ingest | `data_quality_rule`, `dq_result` (IA) | Rule eval | DQ-rule test | Rules run on load; exceptions raised, not silent | Draft |
+| REQ-DQR-001 | DQ rules engine | 13.1 | Detect bad data early | Configurable DQ rules run on ingest | `data_quality_rule` (EV), `data_quality_result` (IA) | Rule eval | DQ-rule test | Rules run on load; exceptions raised, not silent | In-Progress (P1A-3 skeleton) |
 | REQ-DQR-002 | Reconciliation | 13.2 | Agreement across sources | Reconcile positions/valuations across feeds | recon inputs | Recon calc | Recon test | Discrepancies surfaced with severity | Draft |
 | REQ-DQR-003 | Manual overrides (maker-checker) | 13.4 | Controlled correction | Override with BR-7 fields + approval | `manual_override` (IA) | — | Override (BR-7) test | Override carries prior/new/justification/approval; audited | Draft |
 

@@ -46,7 +46,7 @@ human-approval gates (BR-15) enforceable.
 | ROLE-RA | Risk Analyst | 1L | Run calcs, define scenarios (draft), view risk in scope; **register models/versions** (`model.inventory.register`, P1A-2 — 1L developer/owner, the maker side of the future SOD-03; the 2L validator deliberately does not hold register, MG-04) |
 | ROLE-RM | Risk Manager | 2L | Review breaches, approve 2L steps, define/approve limits |
 | ROLE-MV | Model Validator | 2L (independent) | View models/methodologies, record validation; cannot author methodology |
-| ROLE-DS | Data Steward | — | Manage DQ exceptions, approve overrides within remit; **register/manage data sources** (`lineage.source.manage`, P1A-1) |
+| ROLE-DS | Data Steward | — | Manage DQ exceptions, approve overrides within remit; **register/manage data sources** (`lineage.source.manage`, P1A-1); **manage data-quality rules** (`dq.rule.manage`, P1A-3 — held by P-DS + platform_admin only, the maker side of the future REQ-DQR-003 override SoD; read roles hold only `dq.result.view`) |
 | ROLE-CO | Compliance Officer | 2L | MNPI/restricted-list administration, compliance positions |
 | ROLE-ADM | Administrator | — | User/role admin; **cannot** approve own entitlement requests or edit audit |
 | ROLE-AUD | Auditor / Internal Audit | 3L | Read-only across controls and audit; no operational actions |

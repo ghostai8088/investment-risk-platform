@@ -73,7 +73,7 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-MDG-001 | 12.1/12.2 | P-MV,P-RM | 2L | P1 | BX-AUD | BX-ENT | — | **Y** | CTRL-003/014 | DEP-MREG, FW-AUD | In-Progress (P1A-2 skeleton: inventory + versioning + assumptions/limitations + BR-3 gate; tiering REQ-MDG-002 & validation/approval REQ-MDG-003 → P7. Register writer = model owner/developer `risk_analyst_1l`; P-MV/P-RM are inventory readers) |
 | REQ-MDG-002 | 12.3 | P-MV | 2L | P7 | BX-AUD | BX-ENT | — | **Y** | CTRL-003/015 | DEP-MGW | Draft |
 | REQ-MDG-003 | 12.4/12.5 | P-MV | 2L | P7 | BX-AUD | BX-ENT | — | **Y** | CTRL-015/022 | DEP-MGW, REQ-ADM-002 (SoD) | Draft |
-| REQ-DQR-001 | 13.1 | P-DS | Plat/1L | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027/029 | DEP-DQF | Draft |
+| REQ-DQR-001 | 13.1 | P-DS | Plat/1L | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027/029 | DEP-DQF | In-Progress (P1A-3 skeleton: rule define + 2 generic evaluators + result capture + no-silent-failure + `assert_passed_quality_checks` gate; reconciliation REQ-DQR-002 & overrides REQ-DQR-003 → P7. First real on-ingest run at P1A-4) |
 | REQ-DQR-002 | 13.2 | P-DS | Plat | P7 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-028 | DEP-DQF, CAP-18 | Draft |
 | REQ-DQR-003 | 13.4 | P-DS,P-RM | 1L/2L | P7 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-007/021 | REQ-ADM-002 (SoD), FW-AUD | Draft |
 | REQ-LIN-001 | 14.1/14.2 | P-DS,P-IA | Plat | P1 | BX-AUD | BX-ENT | — | — | CTRL-006/013 | DEP-LIN (builds it), FW-AUD | In-Progress (P1A-1 skeleton: capture + retrieve-by-id at entity/run granularity; CAP-14.1 field-level mapping & CAP-14.3 query → REQ-LIN-002/P7) |

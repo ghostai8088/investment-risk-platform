@@ -77,7 +77,7 @@ exception is registered with the model version.
 
 | ID | Standard |
 |---|---|
-| QS-15 | Missing inputs are handled by declared rules (proxy, last-good-with-staleness-flag, or exclude-with-flag) — never silent zero-fill. |
+| QS-15 | Missing inputs are handled by declared rules (proxy, last-good-with-staleness-flag, or exclude-with-flag) — never silent zero-fill. **Operationalized at skeleton in P1A-3** (REQ-DQR-001): the DQ rules engine's no-silent-failure contract (QS-06/15/16/BR-14) surfaces a failing/errored generic rule as a raised exception or a persisted flagged `data_quality_result`, audited `DATA.VALIDATE outcome='failure'`; domain-specific missing/stale handling (proxy, last-known-good window QS-16) arrives with the domain data slices (PUB/PRV, P2/P4). |
 | QS-16 | Stale valuations (esp. private assets) are flagged with the valuation date and staleness threshold; downstream results inherit the flag. |
 | QS-17 | Proxy mappings (`proxy_mapping`, ENT-019) used in a calculation are recorded as part of lineage and assumptions. |
 

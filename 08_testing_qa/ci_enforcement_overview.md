@@ -25,7 +25,7 @@ runs four jobs; any failing step fails its job and blocks the merge (BR-1: no fe
 |---|---|---|---|
 | `backend` | ruff format --check, ruff check, mypy, pytest (foundation + P0.5 tests) | BR-1, BR-11, BR-12, BR-17, BR-18, BR-19 | CTRL-001, CTRL-005, CTRL-011, CTRL-016, CTRL-017, CTRL-026 |
 | `frontend` | **npm ci** (reproducible from lockfile), eslint, tsc, vitest, vite build | BR-1, reproducible UI build | CTRL-001 |
-| `migration` | alembic upgrade head → **alembic check (drift)** → **audit-write concurrency test (PG)** → **tenant-context RLS tests (PG)** → **lineage RLS tests (PG, P1A-1)** → **model registry RLS tests (PG, P1A-2)** → downgrade base | DB schema, RLS tenant isolation end-to-end (BR-17), append-only triggers + concurrency (BR-12/18), lineage `data_source`/`lineage_edge` + model `model`/`model_version`/`model_assumption`/`model_limitation` isolation + fail-closed + append-only under the constrained `irp_app` role, drift (OD-052) | CTRL-003, CTRL-005, CTRL-006, CTRL-011, CTRL-013, CTRL-014, CTRL-026, CTRL-033 |
+| `migration` | alembic upgrade head → **alembic check (drift)** → **audit-write concurrency test (PG)** → **tenant-context RLS tests (PG)** → **lineage RLS tests (PG, P1A-1)** → **model registry RLS tests (PG, P1A-2)** → **data-quality RLS tests (PG, P1A-3)** → downgrade base | DB schema, RLS tenant isolation end-to-end (BR-17), append-only triggers + concurrency (BR-12/18), lineage/model + data-quality `data_quality_rule`/`data_quality_result` isolation + fail-closed + append-only under the constrained `irp_app` role, drift (OD-052) | CTRL-003, CTRL-005, CTRL-006, CTRL-011, CTRL-013, CTRL-014, CTRL-027, CTRL-029, CTRL-026, CTRL-033 |
 | `secret-scan` | scripts/secret_scan.py (gitleaks later) | BR-10 (no secrets in source) | CTRL-010 |
 | `docs-check` | scripts/check_docs.py | documentation present & doc-control headers | CTRL-002, CTRL-004 |
 
@@ -47,7 +47,14 @@ skeleton (REQ-MDG-001): `model` (EV) + `model_version`/`model_assumption`/`model
 `model.inventory.register`/`view` permissions (no new vocabulary). PG-gated tests add model-table isolation, no-context fail-closed,
 cross-tenant parent-reference rejection, IA append-only (with an EV negative-control on the mutable `model` head), and
 ops-role-no-grant. Governance fields (tier/validation_status/approved_use) are non-enforcing placeholders — an AC-11 test proves a
-Tier-1 UNVALIDATED model registers/binds with no gate (validation/approval is P7).
+Tier-1 UNVALIDATED model registers/binds with no gate (validation/approval is P7). **P1A-3** builds the data-quality skeleton
+(REQ-DQR-001): `data_quality_rule` (EV) + `data_quality_result` (IA) with a pluggable `DQRule.evaluate()` engine (2 generic rules:
+`not_null`, `allowed_values`), `run_quality_check`, and the `assert_passed_quality_checks()` gate a future ingestion (P1A-4) calls,
+making **CTRL-027/CTRL-029** executable at skeleton level — reusing `DATA.VALIDATE` and `dq.rule.manage`/`dq.result.view` (no new
+permission, no role change). The headline **no-silent-failure** tests prove a failing rule persists a flagged result, `severity=ERROR`
+raises, `WARNING` flags-only, and an evaluator error propagates and is audited `outcome='failure'` (QS-06/15/16, BR-14). PG-gated
+tests add the two `data_quality_*` tables' isolation, no-context fail-closed, cross-tenant rule-reference rejection, IA append-only
+(P0001 trigger, with an EV negative-control on the mutable rule head), and ops-role-no-grant.
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 
