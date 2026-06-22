@@ -37,6 +37,12 @@ def _is_rls_violation(error: ProgrammingError) -> bool:
     )
 
 
+def _is_append_only_violation(error: ProgrammingError) -> bool:
+    # The append-only trigger RAISE EXCEPTION is SQLSTATE P0001 — distinct from a 42501 privilege
+    # denial, so the test proves the TRIGGER fired (not merely that the role lacks UPDATE/DELETE).
+    return getattr(error.orig, "sqlstate", None) == "P0001" or "append-only" in str(error).lower()
+
+
 @pytest.fixture(scope="module")
 def app_url() -> str:
     """Constrained non-superuser app role with only the grants the lineage path needs."""
@@ -53,7 +59,9 @@ def app_url() -> str:
         )
         conn.execute(text("GRANT USAGE ON SCHEMA public TO irp_app"))
         conn.execute(text("GRANT SELECT, INSERT ON data_source TO irp_app"))
-        conn.execute(text("GRANT SELECT, INSERT ON lineage_edge TO irp_app"))
+        # UPDATE/DELETE on lineage_edge so its append-only rejection is the TRIGGER (P0001),
+        # not a privilege denial (42501) — i.e. the test proves the DB-layer immutability.
+        conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON lineage_edge TO irp_app"))
         conn.execute(text("GRANT SELECT, INSERT ON audit_event TO irp_app"))
     superuser.dispose()
     return (
@@ -265,19 +273,21 @@ def test_lineage_edge_append_only_at_db(app_url: str) -> None:
         edge_id = edge.id
         # Re-set context: commit cleared the transaction-local GUC, and the row must be VISIBLE
         # (RLS) for the per-row append-only trigger to fire on the attempted mutation.
-        # Raw UPDATE/DELETE bypass the ORM guard but hit the DB append-only trigger.
+        # Raw UPDATE/DELETE bypass the ORM guard but hit the DB append-only trigger (P0001).
         set_tenant_context(session, tenant)
-        with pytest.raises(ProgrammingError):
+        with pytest.raises(ProgrammingError) as exc:
             session.execute(
                 text("UPDATE lineage_edge SET edge_kind = 'X' WHERE id = CAST(:i AS uuid)"),
                 {"i": edge_id},
             )
+        assert _is_append_only_violation(exc.value), "UPDATE not trigger-blocked"
         session.rollback()
         set_tenant_context(session, tenant)
-        with pytest.raises(ProgrammingError):
+        with pytest.raises(ProgrammingError) as exc:
             session.execute(
                 text("DELETE FROM lineage_edge WHERE id = CAST(:i AS uuid)"), {"i": edge_id}
             )
+        assert _is_append_only_violation(exc.value), "DELETE not trigger-blocked"
         session.rollback()
     finally:
         session.close()
