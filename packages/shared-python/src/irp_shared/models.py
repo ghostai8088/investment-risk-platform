@@ -19,6 +19,13 @@ from irp_shared.entitlement.models import (
 from irp_shared.ingestion.models import IngestionBatch, IngestionStagedRecord
 from irp_shared.lineage.models import DataSource, LineageEdge
 from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, ModelVersion
+from irp_shared.reference.models import (
+    Calendar,
+    CalendarHoliday,
+    Currency,
+    RatingGrade,
+    RatingScale,
+)
 
 metadata = Base.metadata
 
@@ -43,4 +50,9 @@ __all__ = [
     "DataQualityResult",
     "IngestionBatch",
     "IngestionStagedRecord",
+    "Currency",
+    "Calendar",
+    "CalendarHoliday",
+    "RatingScale",
+    "RatingGrade",
 ]

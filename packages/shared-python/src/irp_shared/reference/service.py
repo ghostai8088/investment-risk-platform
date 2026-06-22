@@ -1,0 +1,185 @@
+"""Reference-data write core + hybrid read dedup (P1B-1).
+
+A single generic governed-write core mirroring the ``register_data_source`` body so every reference
+create is **co-transactional and fail-closed** (no mid-call commit — the endpoint/caller owns the
+commit; if the audit or lineage insert is rejected the whole write rolls back):
+
+    add(parent [+ children]) -> flush -> record_lineage(MANUAL source) -> record_event(REFERENCE.*)
+
+- ``ensure_manual_source`` resolves-or-registers the acting tenant's ``MANUAL`` ``data_source``
+  (the provenance root the origin edge needs); the SYSTEM seed path calls it under SYSTEM context.
+- ``record_reference_create`` records exactly one ORIGIN lineage edge from that MANUAL source and
+  emits ``REFERENCE.CREATE`` (children fold in — no own event); ``record_reference_update`` emits
+  ``REFERENCE.UPDATE`` (no new edge — an entity keeps its single origin edge).
+- ``dedupe_tenant_wins`` is the **application-layer** "tenant override wins" read dedup (AD-013-R1):
+  RLS ``USING`` returns own + SYSTEM rows; this keeps the own-tenant row per ``code``. The override
+  precedence lives **here**, never in the RLS policy.
+
+Imports only ``lineage`` / ``audit`` / ``db`` / ``entitlement`` (one-way). No ``irp_backend``, no
+``irp_shared.models`` (plural aggregator), no ``irp_shared.ingestion`` — enforced by a test.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any, Protocol, TypeVar
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from irp_shared.audit.service import record_event
+from irp_shared.lineage.models import EDGE_KIND_ORIGIN, DataSource
+from irp_shared.lineage.service import record_lineage, register_data_source
+from irp_shared.reference.events import REFERENCE_CREATE_EVENT, REFERENCE_UPDATE_EVENT
+
+#: ``data_source`` provenance for governed reference CRUD (value-level vocab; no schema change).
+MANUAL_SOURCE_TYPE = "MANUAL"
+MANUAL_SOURCE_CODE = "MANUAL"
+MANUAL_SOURCE_NAME = "Manual reference entry"
+
+#: ``entity_type`` literals for audit/lineage (the parent table names; children carry none).
+ENTITY_CURRENCY = "currency"
+ENTITY_CALENDAR = "calendar"
+ENTITY_RATING_SCALE = "rating_scale"
+
+#: ``source_module`` for every reference audit event.
+SOURCE_MODULE = "reference"
+
+
+@dataclass(frozen=True)
+class ReferenceActor:
+    """The actor/correlation context threaded into every reference audit emission (BR-16 ready)."""
+
+    actor_id: str
+    actor_type: str = "user"
+    agent_model: str | None = None
+    agent_model_version: str | None = None
+    on_behalf_of: str | None = None
+    correlation_id: str | None = None
+
+
+class _CodedRow(Protocol):
+    """Structural type for an EV row carrying ``code`` + ``tenant_id`` (for read dedup)."""
+
+    code: str
+    tenant_id: str
+
+
+_RowT = TypeVar("_RowT", bound=_CodedRow)
+
+
+def ensure_manual_source(session: Session, tenant_id: str, actor_id: str) -> DataSource:
+    """Idempotently resolve-or-register the acting tenant's ``MANUAL`` ``data_source``.
+
+    Resolved through the (RLS-scoped) session AND filtered by ``tenant_id`` explicitly so the lookup
+    is correct on SQLite (no RLS) as well as PostgreSQL. The first reference write for a tenant
+    registers the source (emitting ``DATA.SOURCE_REGISTER``); later writes reuse it. SYSTEM seeds
+    call this under SYSTEM context, producing the SYSTEM_TENANT MANUAL source."""
+    existing = session.execute(
+        select(DataSource).where(
+            DataSource.tenant_id == str(tenant_id),
+            DataSource.code == MANUAL_SOURCE_CODE,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    return register_data_source(
+        session,
+        tenant_id=str(tenant_id),
+        code=MANUAL_SOURCE_CODE,
+        name=MANUAL_SOURCE_NAME,
+        source_type=MANUAL_SOURCE_TYPE,
+        actor_id=actor_id,
+    )
+
+
+def record_reference_create(
+    session: Session,
+    *,
+    entity: Any,
+    entity_type: str,
+    after_value: dict[str, Any],
+    actor: ReferenceActor,
+) -> None:
+    """Root one ORIGIN lineage edge (MANUAL source) and emit ``REFERENCE.CREATE`` for a new head.
+
+    Co-transactional, fail-closed; the caller has already ``add``ed + ``flush``ed the head (and any
+    children) so ``entity.id`` / ``entity.tenant_id`` are set. Children fold into THIS event — they
+    get no event of their own. ``after_value`` is DC-2 metadata only (identifying + controlled-vocab
+    fields + child counts), never full rows or raw input."""
+    source = ensure_manual_source(session, entity.tenant_id, actor.actor_id)
+    record_lineage(
+        session,
+        source=source,
+        target_entity_type=entity_type,
+        target_entity_id=entity.id,
+        edge_kind=EDGE_KIND_ORIGIN,  # explicit origin intent (not the rail default)
+    )
+    record_event(
+        session,
+        event_type=REFERENCE_CREATE_EVENT,
+        tenant_id=entity.tenant_id,
+        actor_type=actor.actor_type,
+        actor_id=actor.actor_id,
+        source_module=SOURCE_MODULE,
+        entity_type=entity_type,
+        entity_id=entity.id,
+        action="create",
+        after_value=after_value,
+        correlation_id=actor.correlation_id,
+        agent_model=actor.agent_model,
+        agent_model_version=actor.agent_model_version,
+        on_behalf_of=actor.on_behalf_of,
+        data_classification="DC-2",
+    )
+
+
+def record_reference_update(
+    session: Session,
+    *,
+    entity: Any,
+    entity_type: str,
+    before_value: dict[str, Any],
+    after_value: dict[str, Any],
+    actor: ReferenceActor,
+) -> None:
+    """Emit ``REFERENCE.UPDATE`` for an effective-dated supersede / attribute change of a head.
+
+    No new lineage edge — the entity keeps its ORIGIN edge from creation. ``before``/``after``
+    are the diffed changed keys only (DC-2 metadata)."""
+    record_event(
+        session,
+        event_type=REFERENCE_UPDATE_EVENT,
+        tenant_id=entity.tenant_id,
+        actor_type=actor.actor_type,
+        actor_id=actor.actor_id,
+        source_module=SOURCE_MODULE,
+        entity_type=entity_type,
+        entity_id=entity.id,
+        action="update",
+        before_value=before_value,
+        after_value=after_value,
+        correlation_id=actor.correlation_id,
+        agent_model=actor.agent_model,
+        agent_model_version=actor.agent_model_version,
+        on_behalf_of=actor.on_behalf_of,
+        data_classification="DC-2",
+    )
+
+
+def dedupe_tenant_wins(rows: Sequence[_RowT], acting_tenant: str) -> list[_RowT]:
+    """Application-layer "tenant override wins" dedup (AD-013-R1): keep one row per ``code``, the
+    acting tenant's row preferred over the SYSTEM_TENANT row. Deterministic (sorted by code).
+
+    RLS already returned the union (own + SYSTEM); precedence is decided here, not in the policy.
+    This is the portable equivalent of ``SELECT DISTINCT ON (code) ... ORDER BY code,
+    (tenant_id = :acting) DESC`` and behaves identically on PostgreSQL and SQLite."""
+    chosen: dict[str, _RowT] = {}
+    ordered = sorted(
+        rows,
+        key=lambda r: (r.code, 0 if str(r.tenant_id) == str(acting_tenant) else 1),
+    )
+    for row in ordered:
+        chosen.setdefault(row.code, row)  # own-tenant sorts first within a code -> wins
+    return [chosen[code] for code in sorted(chosen)]

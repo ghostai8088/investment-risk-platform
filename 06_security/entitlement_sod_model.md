@@ -68,9 +68,9 @@ deny-by-default, least-privilege (data_steward edit; broader view), with **no ro
 
 | Entity | Permissions | Status in catalog (`bootstrap.py`) |
 |---|---|---|
-| currency | `reference.currency.view`, `reference.currency.edit` | **new** (P1B-1) |
-| calendar | `reference.calendar.view`, `reference.calendar.edit` | `.edit` exists; **add `.view`** (P1B-1) |
-| rating_scale | `reference.rating_scale.view`, `reference.rating_scale.edit` | **new** (P1B-1) |
+| currency | `reference.currency.view`, `reference.currency.edit` | **IMPLEMENTED (P1B-1)** — additive catalog entries + grants |
+| calendar | `reference.calendar.view`, `reference.calendar.edit` | **IMPLEMENTED (P1B-1)** — `.view` added (`.edit` pre-existed) |
+| rating_scale | `reference.rating_scale.view`, `reference.rating_scale.edit` | **IMPLEMENTED (P1B-1)** — additive catalog entries + grants |
 | legal_entity | `reference.legal_entity.view`, `reference.legal_entity.edit` | **new** (P1B-2) |
 | issuer | `reference.issuer.view`, `reference.issuer.edit` | exists |
 | counterparty | `reference.counterparty.view`, `reference.counterparty.edit` | exists |
@@ -80,6 +80,14 @@ deny-by-default, least-privilege (data_steward edit; broader view), with **no ro
 
 **Reserved (not minted now):** `reference.rating.*` — held for the future **FR rating-assignment** domain (distinct from the
 EV `rating_scale` taxonomy), so the verb namespace does not collide when rating assignments land in a later phase.
+
+**P1B-1 grants (implemented, least-privilege, additive only — no role-template restructure):** the five new permissions
+were appended to `irp_shared/entitlement/bootstrap.py` and seeded by `0002_entitlement_seed` on a fresh `alembic upgrade
+head` (the established P1A-1/2/3 catalog precedent — no forward migration). `.edit` (`reference.currency.edit`,
+`reference.rating_scale.edit`) → `data_steward` (+ `platform_admin` via `ALL_CODES`) only; `.view`
+(`reference.currency.view`, `reference.rating_scale.view`, `reference.calendar.view`) → `data_steward`, `risk_analyst_1l`,
+`risk_manager_2l`, `auditor_3l` (+ `platform_admin`). A read-tier role cannot mutate; `reference.rating.*` is absent from
+the catalog. Asserted by `test_reference_data_permissions_are_additive_and_least_privilege`.
 
 ## 6. Segregation-of-Duties Matrix (SOD)
 

@@ -68,6 +68,12 @@ P1B-0 splits below).
 >   (the FR clause above; deferred to a credit phase) (OD-P1B-J).
 > - **ENT-008** corporate_action is **EV** (already classified here) — status/reason history flows through the `REFERENCE.*`
 >   audit trail, not an IA table (OD-P1B-B).
+>
+> **P1B-1 realization note:** the EV halves of ENT-005 (`currency`), ENT-006 (`calendar`/`calendar_holiday`) and the ENT-007
+> taxonomy (`rating_scale`/`rating_grade`) are now built (migration 0008) — all declare `__temporal_class__ = EFFECTIVE_DATED`,
+> are EV-mutable (no `irp_prevent_mutation` trigger; a `REFERENCE.UPDATE` succeeds at the DB), and carry `record_version`. The
+> FR halves (ENT-001 `instrument_terms`, ENT-007 rating **assignments**) remain unbuilt — **the `FullReproducibleMixin` (FR)
+> still has no first persisted user; P1B-3 is its first exercise.**
 
 ### Rationale (TR-21)
 | ID | Rationale |

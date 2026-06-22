@@ -103,7 +103,19 @@ REJECTED batch + flagged result + `DATA.INGEST`/`DATA.VALIDATE` audit, never sil
 on every batch); the `DATA.INGEST` lifecycle (create + per-transition `status_change`) extends **CTRL-005/011/012/017/032**;
 anti-corruption file controls realize **THR-05/THR-06** at skeleton level (AV deferred, OD-042). **No new audit code, no new
 permission, no role change** (`data.upload` already bootstrapped). **CTRL-028** (reconciliation) and **CTRL-007/021**
-(override/SoD) remain **Planned** — no canonical mapping, reconciliation, or override workflow in P1A-4. As construction phases
+(override/SoD) remain **Planned** — no canonical mapping, reconciliation, or override workflow in P1A-4. **P1B-1** additions:
+the first reference-data slice (`currency` ENT-005, `calendar`+`calendar_holiday` ENT-006, `rating_scale`+`rating_grade` ENT-007
+taxonomy; REQ-SMR-005 + REQ-SMR-004 calendar) and the platform's **first asymmetric hybrid RLS** (AD-013-R1). **CTRL-004**
+(data-dictionary field definitions) moves toward Designed via the ISO-4217 `code` shape / MIC / agency / minor_units field
+definitions. **CTRL-011** is extended by the five additive reference permissions AND the **first hybrid-RLS evidence**
+(own+SYSTEM read; single-tenant `WITH CHECK` write; no-context-global; structural `pg_policies` asymmetry + closed-set tests in
+`test_reference_pg`). **CTRL-005/012** gain `REFERENCE.CREATE` (EVT-140) / `REFERENCE.UPDATE` (EVT-141) coverage (children fold
+in). **CTRL-017** coverage for these EV entities is the `__temporal_class__ = EFFECTIVE_DATED` declaration test, **NOT**
+append-only (EV, not IA). **CTRL-032** gains first reference-CRUD fail-closed evidence (parent + children + lineage edge roll
+back together when `record_event` raises). **CTRL-013** is exercised again (one MANUAL-`data_source` ORIGIN edge per reference
+entity). **Label note (R-10):** tenant-isolation/RLS evidence attaches to **CTRL-011**, not the mis-seeded **CTRL-003** (whose
+matrix label is model-inventory) — flagged, not silently edited. **No new audit framework code** (`record_event` FROZEN),
+**no `data_source` hybrid**, **no rating ASSIGNMENTS / `reference.rating.*`**. As construction phases
 open, controls will be split to specific bounded contexts and capabilities and given Test/Evidence detail.
 
 ## 5. Open Decisions

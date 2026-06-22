@@ -54,7 +54,15 @@ making **CTRL-027/CTRL-029** executable at skeleton level — reusing `DATA.VALI
 permission, no role change). The headline **no-silent-failure** tests prove a failing rule persists a flagged result, `severity=ERROR`
 raises, `WARNING` flags-only, and an evaluator error propagates and is audited `outcome='failure'` (QS-06/15/16, BR-14). PG-gated
 tests add the two `data_quality_*` tables' isolation, no-context fail-closed, cross-tenant rule-reference rejection, IA append-only
-(P0001 trigger, with an EV negative-control on the mutable rule head), and ops-role-no-grant.
+(P0001 trigger, with an EV negative-control on the mutable rule head), and ops-role-no-grant. **P1B-1** builds the first
+reference-data slice (REQ-SMR-005 + REQ-SMR-004 calendar): `currency`/`calendar`(+`calendar_holiday`)/`rating_scale`(+`rating_grade`)
+— five EV tables (migration 0008) — and the platform's **first asymmetric hybrid RLS** (AD-013-R1). A new CI step **"Reference
+hybrid-RLS tests (Postgres)"** runs `test_reference_pg.py` under the constrained `irp_app` role, proving both arms of the
+asymmetry (a tenant reads own + SYSTEM rows via `USING`, but cannot write a SYSTEM row — `WITH CHECK` single-tenant → 42501),
+no-context-returns-only-global, child-table hybrid policies, structural `pg_policies` asymmetry + closed-set (the SYSTEM literal is
+in `qual` but never `with_check`, and on **only** the five tables — `data_source` stays symmetric), and dual-chain `verify_chain`
+(SYSTEM seed + tenant override). `REFERENCE.CREATE`/`.UPDATE` are activated against the FROZEN `record_event`; the five additive
+`reference.*` permissions seed via the existing `0002` catalog path (no new audit framework code, no role-template restructure).
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 

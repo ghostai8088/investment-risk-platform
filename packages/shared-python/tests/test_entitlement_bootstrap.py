@@ -66,6 +66,43 @@ def test_dq_rule_manage_is_least_privilege() -> None:
         assert "dq.result.view" in ROLE_TEMPLATES[role]
 
 
+def test_reference_data_permissions_are_additive_and_least_privilege() -> None:
+    # P1B-1: the five additive reference perms exist; reference.rating.* is RESERVED
+    # (future FR assignment domain) and must NOT be minted. reference.calendar.edit already existed.
+    new_codes = (
+        "reference.currency.view",
+        "reference.currency.edit",
+        "reference.rating_scale.view",
+        "reference.rating_scale.edit",
+        "reference.calendar.view",
+    )
+    for code in new_codes:
+        assert code in ALL_CODES, f"missing {code}"
+    assert not any(code.startswith("reference.rating.") for code in ALL_CODES)
+
+    # .edit perms: data_steward (the maker) + platform_admin (via ALL_CODES); NOT the read tiers.
+    for code in ("reference.currency.edit", "reference.rating_scale.edit"):
+        assert code in ROLE_TEMPLATES["data_steward"]
+        assert code in ROLE_TEMPLATES["platform_admin"]
+        for role in ("risk_analyst_1l", "risk_manager_2l", "auditor_3l", "ops"):
+            assert code not in ROLE_TEMPLATES[role], f"{role} must not hold {code}"
+
+    # .view perms: data_steward + the read tiers (incl. the 3L auditor) + platform_admin.
+    for code in (
+        "reference.currency.view",
+        "reference.rating_scale.view",
+        "reference.calendar.view",
+    ):
+        for role in (
+            "data_steward",
+            "risk_analyst_1l",
+            "risk_manager_2l",
+            "auditor_3l",
+            "platform_admin",
+        ):
+            assert code in ROLE_TEMPLATES[role], f"{role} should hold {code}"
+
+
 def test_ids_deterministic_and_unique() -> None:
     assert permission_id("data.upload") == permission_id("data.upload")
     assert role_id("ops") == role_id("ops")

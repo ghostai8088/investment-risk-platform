@@ -36,6 +36,13 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("reference.identifier.resolve", "Resolve instrument identifiers"),
     ("reference.corporate_action.edit", "Edit corporate actions"),
     ("reference.calendar.edit", "Edit calendars"),
+    # P1B-1 reference-data vocabularies (additive; AD-013-R1 hybrid set). reference.rating.* is
+    # RESERVED for the future FR rating-ASSIGNMENT domain and is deliberately NOT minted here.
+    ("reference.currency.view", "View currencies"),
+    ("reference.currency.edit", "Edit currencies"),
+    ("reference.rating_scale.view", "View rating scales"),
+    ("reference.rating_scale.edit", "Edit rating scales"),
+    ("reference.calendar.view", "View calendars"),
     ("portfolio.view", "View portfolios"),
     ("portfolio.edit", "Edit portfolios"),
     ("position.view", "View positions"),
@@ -64,12 +71,22 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.identifier.resolve",
         "reference.corporate_action.edit",
         "reference.calendar.edit",
+        # P1B-1 reference vocabularies: steward holds view + edit (the reference maker).
+        "reference.currency.view",
+        "reference.currency.edit",
+        "reference.rating_scale.view",
+        "reference.rating_scale.edit",
+        "reference.calendar.view",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
         "reference.issuer.view",
         "reference.counterparty.view",
         "reference.identifier.resolve",
+        # P1B-1 reference vocabularies: view-only for the read tiers.
+        "reference.currency.view",
+        "reference.rating_scale.view",
+        "reference.calendar.view",
         "portfolio.view",
         "position.view",
         "model.inventory.view",
@@ -83,13 +100,25 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.instrument.view",
         "reference.issuer.view",
         "reference.counterparty.view",
+        # P1B-1 reference vocabularies: view-only.
+        "reference.currency.view",
+        "reference.rating_scale.view",
+        "reference.calendar.view",
         "portfolio.view",
         "position.view",
         "model.inventory.view",
         "dq.result.view",
         "lineage.view",
     ],
-    "auditor_3l": ["lineage.view", "model.inventory.view", "dq.result.view"],
+    "auditor_3l": [
+        "lineage.view",
+        "model.inventory.view",
+        "dq.result.view",
+        # P1B-1 reference vocabularies: read access for the independent (3L) reviewer.
+        "reference.currency.view",
+        "reference.rating_scale.view",
+        "reference.calendar.view",
+    ],
 }
 
 
