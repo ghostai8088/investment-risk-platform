@@ -65,7 +65,7 @@ auditable. It is a **skeleton**: controls are seeded across every framework and 
 | CTRL-024 | Export controls (DC-4 blocked by default) | Preventive | Automated | §13 | BR-11 | R-07 | Export-control test | `EXPORT.*` events | Planned |
 | CTRL-025 | Entitlement changes maker-checked + audited | Preventive | Automated | §13 | BR-7, BR-11 | R-07 | Entitlement-change test | `ENTITLEMENT.*` events | Planned |
 | CTRL-026 | Audit store append-only + hash-chain integrity + concurrency-safe + verifiable | Preventive/Detective | Automated | §12 | BR-12, BR-18 | R-12 | Hash-chain verify + tamper-detection + append-only (app + PG trigger); per-tenant advisory-lock concurrency test (PG, gapless under N threads); audit-verify ops CLI | Audit tests, concurrency test, `audit_verify` CLI, migration trigger | Implemented (1E + P0.5) |
-| CTRL-027 | Data quality rules run on ingest | Detective | Automated | §11 | BR-5 | R-05 | DQ-rule execution skeleton (P1A-3): pluggable `DQRule.evaluate()` with 1-2 generic rules persists a `data_quality_result` (ENT-039, IA) + `DATA.VALIDATE` audit; `assert_passed_quality_checks()` is the on-ingest gate a future ingestion (P1A-4) calls | DQ results (ENT-039) + `DATA.VALIDATE` events + no-silent-failure test | Designed (skeleton, P1A-3) |
+| CTRL-027 | Data quality rules run on ingest | Detective | Automated | §11 | BR-5 | R-05 | **Realized on a real ingest path (P1A-4):** `POST /ingest/upload` runs active generic staging rules over staged rows via `run_quality_check` and gates with `assert_passed_quality_checks` (ERROR rejects the batch, WARNING flags) — DQ-rule engine skeleton from P1A-3 (pluggable `DQRule.evaluate()`, `data_quality_result` ENT-039 IA + `DATA.VALIDATE`) | DQ results (ENT-039, `ingestion_batch_id` populated) + `DATA.VALIDATE` events + on-ingest no-silent-failure test (`test_ingest_endpoint`/`test_ingestion`) | Implemented (on-ingest, P1A-4) |
 | CTRL-028 | Reconciliation of sources | Detective | Hybrid | §11 | BR-6 | R-05 | Recon job | Recon results (ENT-040) | Planned |
 | CTRL-029 | Stale/missing data flagged, not silently filled | Preventive | Automated | §3/4–8 | BR-2, BR-14 | R-06 | Missing-data handling test (QS-15/16); **no-silent-failure framework** (P1A-3, QS-06): a failing/errored DQ rule surfaces as a raised exception or a persisted flagged `data_quality_result` and is audited (`DATA.VALIDATE`, `outcome='failure'`) — never silently passes/swallowed | Flagged records; `data_quality_result` rows + `DATA.VALIDATE` failure events | Designed (skeleton, P1A-3) |
 | CTRL-030 | Production change approval (release gate) | Preventive | Manual | §13 | BR-15 | H-10 | Release-readiness review | Go/no-go record | Planned |
@@ -95,8 +95,16 @@ executable — moves **CTRL-027** and **CTRL-029** to Designed (skeleton); rule 
 `DATA.DQ_RULE_UPDATE`) and result capture (`DATA.VALIDATE`) extend **CTRL-005/012/017/032**; no new permission
 (`dq.rule.manage`→data_steward, `dq.result.view` broad — already bootstrapped, no role change). **CTRL-028** (reconciliation,
 REQ-DQR-002/P7) and the manual-override/SoD controls (**CTRL-007/021**, REQ-DQR-003/P7) remain **Planned** — no reconciliation or
-override workflow in P1A-3. As construction phases open, controls will be split to specific bounded contexts and capabilities and
-given Test/Evidence detail.
+override workflow in P1A-3. **P1A-4** additions: generic ingestion staging (`ingestion_batch` ENT-047 IA-status-mutable +
+`ingestion_staged_record` ENT-048 IA, REQ-INT-001) makes **CTRL-027** **Implemented (on-ingest)** — `POST /ingest/upload` runs DQ
+over staged rows and gates the batch; **CTRL-029** gains first real on-ingest no-silent-failure evidence (a DQ ERROR persists a
+REJECTED batch + flagged result + `DATA.INGEST`/`DATA.VALIDATE` audit, never silently rolled back) but stays **Designed**;
+**CTRL-013** (lineage no-bypass) is exercised non-synthetically (a `data_source → ingestion_batch` ORIGIN edge + `assert_has_lineage`
+on every batch); the `DATA.INGEST` lifecycle (create + per-transition `status_change`) extends **CTRL-005/011/012/017/032**;
+anti-corruption file controls realize **THR-05/THR-06** at skeleton level (AV deferred, OD-042). **No new audit code, no new
+permission, no role change** (`data.upload` already bootstrapped). **CTRL-028** (reconciliation) and **CTRL-007/021**
+(override/SoD) remain **Planned** — no canonical mapping, reconciliation, or override workflow in P1A-4. As construction phases
+open, controls will be split to specific bounded contexts and capabilities and given Test/Evidence detail.
 
 ## 5. Open Decisions
 

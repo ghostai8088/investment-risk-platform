@@ -145,6 +145,12 @@ Grouped by bounded context. IDs are stable; attributes listed are indicative (th
 | ENT-045 | `audit_event` | Immutable; schema in audit_event_taxonomy.md |
 | ENT-046 | `report` / `report_version` | Reproducible reports (BR-9) |
 
+### Integration (BC-16)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-047 | `ingestion_batch` | One upload's run record (P1A-4, REQ-INT-001). IA-classed but **status-mutable** (the `calculation_run` precedent — not in `APPEND_ONLY_TABLES`; every transition audited via `DATA.INGEST`). Real FK to `data_source` (provenance root); no FK to any domain/canonical table. |
+| ENT-048 | `ingestion_staged_record` | Immutable parsed/neutralized raw row (P1A-4). IA, append-only (ORM guard + DB trigger). `payload` is a single **generic JSON** column — no domain shape, no domain FK; **not canonical data** (canonical mapping is deferred to P1B/P1C). |
+
 ## 6. Lineage & Audit Hooks (mandatory)
 
 - Every record references its `source_id`; every derived record (results, aggregates, reports) records the upstream

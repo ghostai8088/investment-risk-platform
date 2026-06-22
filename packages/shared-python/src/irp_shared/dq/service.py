@@ -182,6 +182,7 @@ def run_quality_check(
     target_entity_type: str | None = None,
     target_entity_id: str | None = None,
     data_source_id: str | None = None,
+    ingestion_batch_id: str | None = None,
     actor_type: str = "user",
     agent_model: str | None = None,
     agent_model_version: str | None = None,
@@ -190,6 +191,10 @@ def run_quality_check(
 ) -> DataQualityResult:
     """Evaluate ``rule`` over ``dataset``, persist an immutable ``data_quality_result``, and audit
     ``DATA.VALIDATE`` — all co-transactionally. Applies the no-silent-failure policy (module doc).
+
+    ``ingestion_batch_id`` (P1A-4) populates the reserved no-FK placeholder column **before flush**
+    (the result is append-only — it cannot be set after the call returns/raises); it links the
+    result to the ingestion batch on BOTH the PASS and the ERROR/raise paths. No schema change.
     """
     resolved = session.execute(
         select(DataQualityRule).where(DataQualityRule.id == str(rule.id))
@@ -231,6 +236,7 @@ def run_quality_check(
         evaluated_count=evaluation.evaluated_count,
         failed_count=evaluation.failed_count,
         data_source_id=(str(data_source_id) if data_source_id is not None else None),
+        ingestion_batch_id=(str(ingestion_batch_id) if ingestion_batch_id is not None else None),
     )
     session.add(result)
     session.flush()
@@ -252,6 +258,7 @@ def run_quality_check(
             "severity": resolved.severity,
             "target_entity_type": target_entity_type,
             "data_source_id": result.data_source_id,
+            "ingestion_batch_id": result.ingestion_batch_id,
         },
         correlation_id=correlation_id,
         agent_model=agent_model,

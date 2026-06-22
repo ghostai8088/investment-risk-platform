@@ -268,7 +268,7 @@ entitlement/lineage/model-gov/control/phase/dependency are in the [RTM](requirem
 
 | REQ | Title | CAP | Business purpose | Functional | Data | Calc | Test | Acceptance | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| REQ-INT-001 | File upload (CSV/Excel) | 18.1 | Onboard data without integration | Validated, sandboxed upload via anti-corruption layer | staged files | — | Upload-validation + malicious-file test | Bad/malicious files rejected; canonical mapping + lineage recorded | Draft |
+| REQ-INT-001 | File upload (CSV/Excel) | 18.1 | Onboard data without integration | Validated, sandboxed upload via anti-corruption layer | staged files | — | Upload-validation + malicious-file test | Bad/malicious files rejected; lineage origin + audit recorded (P1A-4 skeleton is **CSV-only**, XLSX later; **canonical mapping deferred to P1B/P1C** — staged rows are generic JSON, not canonical data) | In-Progress (P1A-4) |
 | REQ-INT-002 | API & SFTP adapters | 18.2/18.3 | Automated feeds | Inbound API/SFTP adapters to canonical model | feed payloads | — | Adapter-mapping test | Feeds map to canonical entities; audit + lineage on ingest | Draft |
 | REQ-INT-003 | Vendor / accounting / GP-report adapters | 18.4/18.5 | Connect ecosystem | Adapter abstraction for vendors & GP reports | vendor feeds | — | Adapter-abstraction test | New vendor added via config; no structural change (ARCH-P-07) | Draft |
 

@@ -88,7 +88,7 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-ADM-002 | 17.2/17.3 | P-ADM | Plat | P6 | BX-AUD | BX-ENT | — | — | CTRL-015/021/025 | FW-ENT (SoD build) | Draft |
 | REQ-ADM-003 | 17.5 | P-CO,P-ADM | 2L/Plat | P4 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-023/024 | CAP-4, DEP-RPT (export part P8) | Draft |
 | REQ-ADM-004 | 17.4 | P-ADM | Plat | P9 | BX-AUD | BX-ENT | — | — | CTRL-011 | FW-ENT | Draft |
-| REQ-INT-001 | 18.1 | P-DS,P-ADM | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027 | anti-corruption, FW-AUD, DEP-DQF | Draft |
+| REQ-INT-001 | 18.1 | P-DS,P-ADM | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027 | anti-corruption, FW-AUD, DEP-DQF | In-Progress (P1A-4 skeleton: generic CSV upload + anti-corruption + raw-row staging + on-ingest DQ + lineage origin + audit; canonical mapping → P1B/P1C; API/SFTP/vendor/GP adapters REQ-INT-002/003 → P9) |
 | REQ-INT-002 | 18.2/18.3 | P-DS,P-ADM | Plat | P9 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027 | DEP-DQF, CAP-2 | Draft |
 | REQ-INT-003 | 18.4/18.5 | P-DS,P-ADM | Plat | P9 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027 | CAP-3/4, DEP-DQF | Draft |
 | REQ-BAI-001 | 19.1 | P-DS,P-RA | BAU | P10 | BX-AUD | BX-ENT | — | — | CTRL-016 | FW-AUD, AD-009 (read-only tier) | Draft |

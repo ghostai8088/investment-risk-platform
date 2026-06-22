@@ -16,6 +16,7 @@ from irp_shared.entitlement.models import (
     RolePermission,
     UserRole,
 )
+from irp_shared.ingestion.models import IngestionBatch, IngestionStagedRecord
 from irp_shared.lineage.models import DataSource, LineageEdge
 from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, ModelVersion
 
@@ -40,4 +41,6 @@ __all__ = [
     "ModelLimitation",
     "DataQualityRule",
     "DataQualityResult",
+    "IngestionBatch",
+    "IngestionStagedRecord",
 ]
