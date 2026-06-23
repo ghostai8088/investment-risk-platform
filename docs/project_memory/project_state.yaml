@@ -1,7 +1,7 @@
 # Compact machine-readable project state for session recovery.
-# As of 2026-06-24. Re-verify `latest` (git HEAD/CI) and `working_tree` at session start — they drift.
+# As of 2026-06-25. Re-verify `latest` (git HEAD/CI) and `working_tree` at session start — they drift.
 schema_version: 1
-as_of: "2026-06-24"
+as_of: "2026-06-25"
 
 project:
   name: investment-risk-platform
@@ -10,23 +10,24 @@ project:
   default_branch: main
 
 latest:
-  origin_main_commit: 8545ed6
-  origin_main_subject: "Implement P1B-3 reference data instrument terms identifiers"
-  local_vs_origin: in-sync   # origin/main == 8545ed6; ONLY this project_memory refresh is uncommitted (no code)
-  ci_status: green           # 8545ed6: GitHub Actions run #34 = 28042611593 (success, all 5 jobs)
-  migration_head: 0010_instrument   # next migration: 0011 (lands when P1B-4 is BUILT)
+  origin_main_commit: 060b2a4
+  origin_main_subject: "Implement P1B-4 reference data corporate action"
+  local_vs_origin: in-sync   # origin/main == 060b2a4; ONLY this project_memory refresh is uncommitted (no code)
+  ci_status: green           # 060b2a4: GitHub Actions run #37 = 28052388043 (success, all 5 jobs)
+  migration_head: 0011_corporate_action   # next migration: 0012 (lands when P1C is BUILT)
 
 working_tree:
   uncommitted:
     - path: "docs/project_memory/* (this session-recovery refresh)"
       status: modified
       note: >
-        Project-memory refresh to HEAD 8545ed6 (P1B-3 CLOSED, CI-green). Docs-only; NO code, NO
-        migration, NO backend/frontend/worker/shared-package/test/bootstrap/CI changes. Commit pending approval.
+        Project-memory refresh to HEAD 060b2a4 (P1B-4 CLOSED, CI-green; the P1B Security-Master &
+        Reference-Data block is DELIVERED for P1B-1..P1B-4). Docs-only; NO code, NO migration, NO
+        backend/frontend/worker/shared-package/test/bootstrap/CI changes. Commit pending approval.
 
 operating_mode: ultracode    # plan-workflow -> commit plan -> implement -> review-workflow -> fix -> make check -> commit-on-approval -> CI
 commit_policy: explicit-approval-only
-current_approval_gate: "P1B-3 CLOSED (8545ed6) + CI-green. Next is P1B-4 PLANNING ONLY on explicit approval (corporate_action = EV effective-dated reference data). P1B-4 implementation NOT started; do not begin until the P1B-4 plan is approved."
+current_approval_gate: "P1B-4 CLOSED (060b2a4) + CI-green; the P1B reference-data block (P1B-1..P1B-4) is DELIVERED. Next step is a P1B CLOSEOUT / P1C READINESS review (analogous to the P1A closeout). P1C implementation NOT started; P1B-5 (ingestion mapping) stays CONDITIONAL/DEFERRED. Do not begin P1C until the closeout/readiness review + P1C planning are approved."
 
 phases:
   completed:
@@ -46,30 +47,33 @@ phases:
     - {id: P1B-2,        name: "Reference data: legal_entity core + issuer/counterparty 1:1 profiles; symmetric RLS; proprietary-never-hybrid evidence", commit: "32c7778", ci: green}
     - {id: P1B-3-plan,   name: "P1B-3 implementation plan (instrument EV + instrument_terms FR + identifier_xref EV)", commit: "43c042e", ci: green}
     - {id: P1B-3,        name: "Reference data: instrument (EV) + instrument_terms (FR, first bitemporal) + identifier_xref (EV); deterministic identifier resolution; EVT-142 activated", commit: "8545ed6", ci: green}
+    - {id: P1B-4-plan,   name: "P1B-4 implementation plan (corporate_action = EV effective-dated reference data)", commit: "f6d691a", ci: green}
+    - {id: P1B-4,        name: "Reference data: corporate_action (EV, capture-only); status lifecycle + REFERENCE.STATUS_CHANGE (EVT-143) activated; instrument FK", commit: "060b2a4", ci: green}
 
   milestones:
     P1A: closed   # all five rails committed and CI-green
     P1B-0: committed   # decision record + plan (dbed93e) + ratifications (4fae26b), CI-green
     P1B-1: closed   # reference data committed 6568cb1, CI-green (run #28). First asymmetric hybrid RLS.
     P1B-2: closed   # legal_entity/issuer/counterparty committed 32c7778, CI-green (run #31). Proprietary-never-hybrid.
-    P1B-3: closed   # instrument/instrument_terms/identifier_xref committed 8545ed6, CI-green (run #34 / 28042611593). First real FR/bitemporal.
+    P1B-3: closed   # instrument/instrument_terms/identifier_xref committed 8545ed6, CI-green (run #34). First real FR/bitemporal.
+    P1B-4: closed   # corporate_action committed 060b2a4, CI-green (run #37 / 28052388043). EVT-143 first exercise.
+    P1B: DELIVERED  # Security Master & Reference Data block complete for P1B-1..P1B-4 (P1B-5 ingestion mapping conditional/deferred).
   active:
-    id: P1B-3
-    name: "P1B-3 CLOSED and CI-green (8545ed6); only the project-memory refresh is commit-pending"
+    id: P1B-4
+    name: "P1B-4 CLOSED and CI-green (060b2a4); the P1B reference-data block (P1B-1..P1B-4) is DELIVERED; only the project-memory refresh is commit-pending"
     status: closed-ci-green
   next:
-    id: P1B-4-planning
-    name: "Plan P1B-4 (corporate_action = EV effective-dated reference data) via the UltraCode planning workflow; PLANNING ONLY, on explicit approval. P1B-4 implementation NOT started."
+    id: P1B-closeout-P1C-readiness
+    name: "P1B closeout / P1C readiness review (the rails+reference inventory a P1C plan will reuse), then P1C PLANNING — on explicit approval. P1C implementation NOT started; P1B-5 (ingestion mapping) conditional/deferred."
     status: blocked-until-approval
 
 # --- P1B-1 key deliverables (CLOSED, 6568cb1, CI-green) ---
 p1b1_deliverables:
   entities: [currency, calendar, calendar_holiday, rating_scale, rating_grade]   # all EV; migration 0008
   hybrid_tenancy: "FIRST asymmetric hybrid RLS slice (AD-013-R1): USING (own OR SYSTEM_TENANT) / WITH CHECK (own only); FORCE RLS on all five; children carry their own policy"
-  system_tenant_read: "SYSTEM_TENANT rows globally readable (closed set = the 5 tables only); data_source NOT hybrid; no-context read returns only the global slice"
-  tenant_wins_dedup: "application-layer DISTINCT-ON-by-code (service.dedupe_tenant_wins) — NOT an RLS merge; UNIQUE(tenant_id, code), never UNIQUE(code)"
+  tenant_wins_dedup: "application-layer DISTINCT-ON-by-code (service.dedupe_tenant_wins) — NOT an RLS merge; UNIQUE(tenant_id, code), never UNIQUE(code); SYSTEM_TENANT global-read (closed set = the 5)"
   audit: "ACTIVATED REFERENCE.CREATE (EVT-140) / REFERENCE.UPDATE (EVT-141) as caller constants to the FROZEN record_event; children fold into the parent event; per-tenant + SYSTEM chains"
-  reqs: "REQ-SMR-005 In-Progress (Done pending comprehensive global catalog, OQ-P1B1-001); REQ-SMR-004 In-Progress (calendar partial; roll math deferred)"
+  reqs: "REQ-SMR-005 In-Progress (Done pending comprehensive global catalog); REQ-SMR-004 In-Progress (calendar partial; roll math deferred)"
 
 # --- P1B-2 key deliverables (CLOSED, 32c7778, CI-green; the proprietary-never-hybrid slice) ---
 p1b2_deliverables:
@@ -83,47 +87,46 @@ p1b2_deliverables:
 # --- P1B-3 key deliverables (CLOSED, 8545ed6, CI-green; the FIRST REAL FR/BITEMPORAL slice) ---
 p1b3_deliverables:
   entities: [instrument, instrument_terms, identifier_xref]   # migration 0010; REQ-SMR-001 + REQ-SMR-003
-  instrument: "EV identity/master data ONLY (code, name, asset_class, instrument_type, nullable issuer_id FK -> issuer profile, currency_code plain ISO str, is_active); NO price/valuation/holding/risk/terms columns; single is_active flag (no status string)"
-  instrument_terms: "FR / fully-reproducible / BITEMPORAL — the platform's FIRST persisted user of FullReproducibleMixin (valid_from/valid_to + system_from/system_to). Protocol: create -> effective-dated supersede (close prior valid_to) -> as-known correction/restatement (close prior system_to). One-now per op; close-first ordering; content of prior versions never mutated; NOT append-only (no irp_prevent_mutation trigger); current-head partial-unique (tenant_id, instrument_id) WHERE valid_to IS NULL AND system_to IS NULL"
-  identifier_xref: "EV; polymorphic (entity_type, entity_id) NO domain FK, scoped to entity_type='instrument' in P1B-3; active partial-unique (tenant_id, scheme, value) WHERE valid_to IS NULL"
-  first_real_fr: "TRUE — FullReproducibleMixin had NO persisted user through P1B-2; P1B-3 is its first exercise (temporal standard 2A note flipped to 'exercised P1B-3')"
-  valid_time_reconstruction: "reconstruct_terms_as_of(valid_at) returns the terms version effective at the business date (TR-01); proven SQLite + PG-under-FORCE-RLS"
-  known_time_reconstruction: "reconstruct_terms_as_of(valid_at, known_at) returns the version as-KNOWN-at the knowledge date (TR-02/TR-04); known_at defaults to now = current view; as-known-before-correction returns prior values, as-known-now returns corrected"
-  reference_correction: "REFERENCE.CORRECTION (EVT-142) ACTIVATED for terms restatement (R-07 sign-off, OQ-7) via a NEW caller-side record_reference_correction helper in reference/service.py; audit/service.py FROZEN; TR-08 restatement_reason on the canonical justification field + supersedes_id link in DC-2 after_value"
-  identifier_resolution: "deterministic SINGLE-result-or-AmbiguousIdentifier (OD-P1B-G / CTRL-029); resolve_identifier returns one Instrument / None / AmbiguousIdentifier (distinct entity_ids) — NEVER a silent arbitrary match; endpoint 200/404/409; cross-vendor precedence DEFERRED (OD-012 -> P1C)"
-  cross_tenant: "cross-tenant issuer_id/instrument_id/entity_id fail closed via the EXPLICIT tenant_id==acting_tenant resolver predicate (resolve_issuer/resolve_instrument -> *NotVisible) pre-commit; RLS WITH CHECK only gates the row's own tenant_id (does not tenant-check linked-id targets)"
-  symmetric_rls: "all three PROPRIETARY tenant-scoped SYMMETRIC RLS (byte-for-byte the 0009 loop); NEVER hybrid; closed-hybrid-set still the 5 P1B-1 tables"
-  entitlement: "additive reference.identifier.view/edit only; reference.instrument.* + reference.identifier.resolve already existed; .resolve recipients UNCHANGED (NOT widened to risk_manager_2l); auditor_3l excluded; parity test pins the sets"
-  review: "8-lens UltraCode adversarial review: 4 approve / 4 approve_with_changes, ZERO block, zero behavioral defect; fixes = the missing identifier parity test + correction-audit/lineage assertions + events.py doc + endpoint-409 + scope-fence tests"
-  reqs: "REQ-SMR-001 In-Progress (instrument EV + instrument_terms FR reconstruct-as-of delivered; pricing/cashflow/valuation terms math -> P2+); REQ-SMR-003 In-Progress partial (deterministic-or-ambiguity delivered; precedence/external-validation -> P1C/OD-012)"
+  instrument: "EV identity/master data ONLY (nullable issuer_id FK -> issuer profile, currency_code plain ISO str, is_active); NO price/valuation/holding/risk/terms columns; single is_active flag"
+  instrument_terms: "FR / BITEMPORAL — the platform's FIRST persisted user of FullReproducibleMixin. Protocol: create -> effective-dated supersede (close prior valid_to) -> as-known correction (close prior system_to). One-now; close-first; prior content never mutated; NOT append-only; current-head partial-unique (tenant_id, instrument_id) WHERE valid_to IS NULL AND system_to IS NULL"
+  reconstruction: "reconstruct_terms_as_of(valid_at, known_at) proves BOTH axes (valid-time TR-01 + known-at/system-time TR-02/TR-04; known_at default = now = current view)"
+  reference_correction: "REFERENCE.CORRECTION (EVT-142) ACTIVATED for terms restatement (R-07, OQ-7) via a NEW caller-side record_reference_correction; audit/service.py FROZEN; TR-08 restatement_reason on justification + supersedes_id link"
+  identifier_resolution: "deterministic SINGLE-result-or-AmbiguousIdentifier (OD-P1B-G / CTRL-029); polymorphic (entity_type, entity_id) scoped to 'instrument'; active partial-unique (tenant_id, scheme, value) WHERE valid_to IS NULL; precedence DEFERRED (OD-012 -> P1C)"
+  cross_tenant: "cross-tenant issuer_id/instrument_id/entity_id fail closed via the EXPLICIT tenant predicate (resolve_* -> *NotVisible) pre-commit; RLS WITH CHECK only gates the row's own tenant_id"
+  reqs: "REQ-SMR-001 In-Progress (terms math -> P2+); REQ-SMR-003 In-Progress partial (precedence/external-validation -> P1C/OD-012)"
 
-# --- P1B-4 focus (the PLANNED next slice; NOT yet planned/built) ---
-p1b4_focus:
-  entity: "corporate_action = EV (effective-dated reference data) — OD-P1B-B"
-  scope: "the corporate_action reference ENTITY only (effective-dated declarations); EV tenant-scoped SYMMETRIC RLS (proprietary, never hybrid); REFERENCE.* audit; MANUAL-source lineage; additive entitlements"
-  exclusions: "NO application of corporate actions to positions; NO valuation/position adjustment; NO event-processing/lifecycle engine; NO day-count/roll math (QS-10/11 deferred to P1C)"
-  reqs: "REQ-SMR-004 (corporate_action portion; calendar already partial from P1B-1). Roll/day-count math stays deferred."
+# --- P1B-4 key deliverables (CLOSED, 060b2a4, CI-green; the LAST reference entity — capture-only) ---
+p1b4_deliverables:
+  entity: [corporate_action]   # migration 0011; REQ-SMR-004 corporate_action portion
+  ev_reference_data: "corporate_action = EV effective-dated reference data (OD-P1B-B); one physical row; amend = in-place EV supersede (REFERENCE.UPDATE); NOT IA, NOT FR; the EV valid_from/valid_to record axis is distinct from the inert business-date columns (announcement/ex/record/pay/effective_date)"
+  instrument_relationship: "instrument_id NOT-NULL FK to the P1B-3 instrument head; resolved via the REUSED resolve_instrument tenant-filtered -> cross-tenant/unknown fails closed (InstrumentNotVisible) pre-commit; RLS WITH CHECK gates only the row's own tenant_id (the P1B-3 rls-1 lesson)"
+  reference_status_change: "REFERENCE.STATUS_CHANGE (EVT-143) ACTIVATED (R-07 sign-off, OQ-1) — the platform's FIRST persisted user of EVT-143 — via a NEW caller-side record_reference_status_change in reference/service.py (NO new lineage edge; audit/service.py FROZEN); before/after = {status}; optional justification=reason. Used ONLY for corporate_action (other entities' is_active flips still ride REFERENCE.UPDATE; the existing EVT-143-reservation tests stay green, entity-scoped)"
+  status_lifecycle: "single status field ANNOUNCED -> CONFIRMED -> CANCELLED (CANCELLED terminal; no is_active dual flag — the P1B-3 arch-1 lesson); a thin transition guard rejects illegal/no-op/out-of-vocab moves (IllegalStatusTransition -> 409; bad initial status -> 422) with NO DB write — validation, not a workflow engine"
+  capture_only: "CAPTURE-ONLY reference data: NO application of corporate actions to positions/valuations, NO entitlement/tax calc, NO event-processing engine, NO roll/day-count math (QS-10/11 -> P1C), NO vendor feed/reconciliation/override. ratio/amount/currency_code are inert placeholders. 'No double-apply' holds trivially (nothing is ever applied). Scope-fence test asserts no applied/position/valuation/entitlement/tax column"
+  entitlement: "additive reference.corporate_action.view (== reference.instrument.view recipient set; auditor_3l EXCLUDED); reference.corporate_action.edit already existed (unchanged); parity test pins the sets"
+  review: "8-lens UltraCode adversarial review: 6 approve / 2 approve_with_changes, ZERO block, zero behavioral defect; fixes = no-DB-write-on-reject + out-of-vocab/no-op tests, lineage-edge-count lock, endpoint bad-status 422, and a CI-doc over-claim narrowed"
+  reqs: "REQ-SMR-004 In-Progress (corporate_action capture delivered; roll/day-count math QS-10/11 deferred to P1C). Issuer-level corporate actions deferred (instrument_id NOT-NULL)."
 
-p1b_open_decisions:        # ratified at P1B-0 (4fae26b)
-  OD-P1B-A: "instrument split: instrument=EV identity + instrument_terms=FR (REALIZED P1B-3, 8545ed6)"
-  OD-P1B-B: "corporate_action = EV (P1B-4 = NEXT)"
-  OD-P1B-C: "hybrid via SYSTEM_TENANT + asymmetric RLS; closed hybrid set = the 5 P1B-1 tables (REALIZED P1B-1). Proprietary entities (legal_entity/issuer/counterparty REALIZED P1B-2; instrument/instrument_terms/identifier_xref REALIZED P1B-3) NEVER hybrid."
+p1b_open_decisions:        # ratified at P1B-0 (4fae26b); the P1B-* decisions are now all REALIZED
+  OD-P1B-A: "instrument split: instrument=EV identity + instrument_terms=FR (REALIZED P1B-3)"
+  OD-P1B-B: "corporate_action = EV (REALIZED P1B-4, 060b2a4)"
+  OD-P1B-C: "hybrid via SYSTEM_TENANT + asymmetric RLS; closed hybrid set = the 5 P1B-1 tables. Proprietary entities (legal_entity/issuer/counterparty P1B-2; instrument/instrument_terms/identifier_xref P1B-3; corporate_action P1B-4) NEVER hybrid — ALL REALIZED."
   OD-P1B-D: "legal_entity core (no ENT id) + separate issuer/counterparty role profiles (REALIZED P1B-2)"
-  OD-P1B-E: "REFERENCE.* audit category; R-07 (CREATE/UPDATE activated P1B-1, extended P1B-2/P1B-3; CORRECTION/EVT-142 ACTIVATED P1B-3 for instrument_terms restatement; STATUS_CHANGE/EVT-143 still reserved)"
-  OD-P1B-F: "add .view permissions; R-07 (currency/rating_scale/calendar.view P1B-1; legal_entity.* P1B-2; identifier.view/edit P1B-3 additive — resolve unchanged)"
+  OD-P1B-E: "REFERENCE.* audit category; R-07 (CREATE/UPDATE activated P1B-1, extended P1B-2/3/4; CORRECTION/EVT-142 ACTIVATED P1B-3 for instrument_terms; STATUS_CHANGE/EVT-143 ACTIVATED P1B-4 for corporate_action)"
+  OD-P1B-F: "add .view permissions; R-07 (currency/rating_scale/calendar.view P1B-1; legal_entity.* P1B-2; identifier.view/edit P1B-3; corporate_action.view P1B-4 — all additive)"
   OD-P1B-G: "deterministic-or-ambiguity identifier resolution; precedence deferred (OD-012/P1C) (REALIZED P1B-3)"
-  OD-P1B-H: "irp_shared.reference package, one-way deps (CREATED P1B-1; extended P1B-2 + P1B-3)"
-  OD-P1B-I: "per-tenant MANUAL data_source; lineage rooted in each row's own context (REALIZED P1B-1; reused P1B-2/P1B-3)"
+  OD-P1B-H: "irp_shared.reference package, one-way deps (CREATED P1B-1; extended P1B-2/3/4)"
+  OD-P1B-I: "per-tenant MANUAL data_source; lineage rooted in each row's own context (REALIZED P1B-1; reused P1B-2/3/4)"
   OD-P1B-J: "mint REQ-SMR-005 + re-partition CAP-2.5 + annotate ENT-007 EV/FR; R-02/R-05 (DONE P1B-0/P1B-1)"
 
 blockers:
-  - "P1B-3 CLOSED (8545ed6) and CI-green; P1B-4 is PLANNING ONLY next, and only on explicit approval. P1B-4 implementation MUST NOT start until its plan is approved."
+  - "P1B-4 CLOSED (060b2a4) and CI-green; the P1B block (P1B-1..P1B-4) is DELIVERED. Next is a P1B closeout / P1C readiness review, then P1C PLANNING — only on explicit approval. P1C implementation MUST NOT start until directed."
   - "Every step gated on explicit user approval; do not start the next slice unprompted."
 
 do_not_start:
-  - P1B-4 implementation (corporate_action entity, migration 0011, endpoints) until the P1B-4 plan is approved
-  - no application of corporate actions to positions ; no valuation/position adjustment ; no event-processing engine
-  - no portfolio / no positions / no valuations
+  - P1C implementation (portfolio/positions/valuations/exposure) until the P1B closeout / P1C readiness review AND P1C planning are approved
+  - P1B-5 (reference-data ingestion mapping) — CONDITIONAL/DEFERRED (only if bulk loading is needed; not now)
+  - no portfolio / no positions / no valuations / no holdings
   - no market data / no pricing / no risk calculations / no exposure aggregation / no reporting / no dashboards / no real SSO
   - P1C and P2+   # everything beyond Security Master & Reference Data
   - any change to packages/shared-python/src/irp_shared/audit/service.py (frozen)
@@ -142,12 +145,12 @@ security_housekeeping:
       credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.
 
 recheck_at_session_start:
-  - "git log -1 --oneline ; git status --short   (HEAD should be >= 8545ed6; whether this memory refresh got committed)"
+  - "git log -1 --oneline ; git status --short   (HEAD should be >= 060b2a4; whether this memory refresh got committed)"
   - "latest CI conclusion for current HEAD (GitHub Actions REST API; gh CLI not installed)"
   - "git remote -v   (origin is now SSH: git@github.com:ghostai8088/investment-risk-platform.git; auth via Keychain-backed key)"
-  - "migration head is 0010_instrument; the P1B-4 BUILD will add 0011"
+  - "migration head is 0011_corporate_action; the P1C BUILD will add 0012"
 
 uncertain_values:
-  - "as_of '2026-06-24' (P1B-2 landed 06-23; P1B-3 plan + impl landed after). The host clock has read 2026-06-18 intermittently — the commit timeline is authoritative; date is approximate."
-  - "This project_memory refresh is UNCOMMITTED — origin/main stays 8545ed6 until it is committed on approval."
-  - "CI run #34 = 28042611593 (success) is the P1B-3 build run; P1B-3 plan commit 43c042e was an earlier docs-only run."
+  - "as_of '2026-06-25' (P1B-3 landed ~06-24; P1B-4 plan + impl landed after). The host clock has read 2026-06-18 intermittently — the commit timeline is authoritative; date is approximate."
+  - "This project_memory refresh is UNCOMMITTED — origin/main stays 060b2a4 until it is committed on approval."
+  - "CI run #37 = 28052388043 (success) is the P1B-4 build run; P1B-4 plan commit f6d691a was an earlier docs-only run."
