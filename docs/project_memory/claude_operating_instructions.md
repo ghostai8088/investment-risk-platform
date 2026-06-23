@@ -64,8 +64,11 @@ analogous plan/decision return format the user specifies.) **Then hold for commi
   the constrained `irp_app` role (grant UPDATE/DELETE on IA tables so append-only proves the **P0001 trigger**,
   not a 42501 privilege denial); **re-set tenant context after any commit before a read-back** (commit clears
   the transaction-local GUC — the `0282359` lesson).
-- Migrations sequential (next `0008`); `alembic check` is a drift gate (`compare_type=False`); NAMING_CONVENTION
-  `pk_/ix_/uq_/fk_`; register new models in `irp_shared.models`. Each new tenant table → add a CI RLS step.
+- Migrations sequential (head `0008_reference_data`; next `0009`); `alembic check` is a drift gate
+  (`compare_type=False`); NAMING_CONVENTION `pk_/ix_/uq_/fk_`; register new models in `irp_shared.models`.
+  Each new tenant table → add a CI RLS step. **Hybrid (AD-013-R1) tables** use the asymmetric loop
+  (`USING own OR SYSTEM_TENANT` / `WITH CHECK own`) — the symmetric loop stays for proprietary/tenant-scoped
+  tables; the SYSTEM literal must NEVER appear in `WITH CHECK`.
 - FastAPI: `get_tenant_session` (sets context), `require_permission` (deny-by-default, module-level guard
   singletons to avoid B008), `uuid.UUID` path params (422 + indistinguishable 404), single end-of-request commit.
 
@@ -75,5 +78,8 @@ analogous plan/decision return format the user specifies.) **Then hold for commi
 - Adding excluded/out-of-phase scope (domain entities, P1C/P2+, dashboards, reporting, real SSO, etc.).
 - Modifying `audit/service.py`; minting audit codes/permissions/roles outside the governed process.
 - Putting secrets in source (BR-10); staging artifacts/caches/env files.
+- Reading/copying/printing/using a **credential file** (e.g. a stray GitHub PAT) found on disk — never inspect
+  token contents; flag it for the user to revoke/rotate. (One was found in the parent dir and resolved on
+  2026-06-22 — see `current_state.md` Housekeeping; git auth is now an SSH key.)
 - Declaring a background workflow "dead" from weak signals — wait for the harness completion notification.
 - Reporting success without verification (state failures with output; say when a step was skipped).

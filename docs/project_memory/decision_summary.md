@@ -27,11 +27,11 @@
 
 ## P1B open decisions resolved in P1B-0 (OD-P1B-A … OD-P1B-J)
 Recorded in `10_delivery_backlog/p1b0_decision_record.md` (**committed at `dbed93e`**, CI-green; 7-lens reviewed).
-**Ratifications RECORDED into the governance source-of-truth** (working tree, commit pending): **AD-013-R1**
+**Ratifications COMMITTED into the governance source-of-truth at `4fae26b`** (CI-green): **AD-013-R1**
 (decision log); **REQ-SMR-005** + REQ-SMR-001/003/004 annotations + CAP-2.5 re-partition (backbone/RTM/capability
 map); ENT-001..008 annotations (canonical model + temporal §2A); **`REFERENCE.*`** reserved (audit
 taxonomy); reference permissions (entitlement model). Audit codes + entitlement bootstrap **code** are minted in
-the P1B build slices, not at P1B-0. Summary of the resolutions:
+the P1B build slices (currency/calendar/rating_scale codes + perms landed in P1B-1). Summary of the resolutions:
 - **OD-P1B-A** Instrument split: `instrument` = **EV** identity + `instrument_terms` = **FR** (per AD-005 §2A / REQ-SMR-001). Canonical annotation (ENT-001 realized as two tables).
 - **OD-P1B-B** `corporate_action` = **EV** (AD-005 §2A / REQ-SMR-004); status history via audit trail.
 - **OD-P1B-C** Hybrid tenancy via **SYSTEM_TENANT rows + asymmetric RLS** (`USING own OR SYSTEM` / `WITH CHECK` single-tenant); closed hybrid set = **{currency, calendar, rating_scale}**; proprietary entities never hybrid; override-wins is application-layer. **Refinement ADR AD-013-R1** (R-04/R-05/H-04).
@@ -42,6 +42,21 @@ the P1B build slices, not at P1B-0. Summary of the resolutions:
 - **OD-P1B-H** New web-framework-free `irp_shared.reference` package; one-way deps (→ lineage/dq/audit/entitlement only; no risk/portfolio/ingestion-mapping/reporting in the CRUD core).
 - **OD-P1B-I** Per-tenant `MANUAL` `data_source`; lineage **rooted in each row's own context** (SYSTEM-context for global rows) — `data_source` is **not** made hybrid.
 - **OD-P1B-J** Mint **REQ-SMR-005** (currency, rating_scale) + re-partition CAP sub-cap 2.5 + annotate ENT-007 EV/FR. R-02/R-05.
+
+## P1B-1 design decisions (REALIZED — `6568cb1`, CI-green)
+The first reference-data slice and the platform's first hybrid-tenancy / asymmetric-RLS evidence (AD-013-R1).
+- **Five EV tables** (mig `0008`): `currency` (ENT-005), `calendar`+`calendar_holiday` (ENT-006), `rating_scale`+`rating_grade` (ENT-007 **taxonomy only** — zero assignment columns; FR rating assignments deferred). `UNIQUE(tenant_id, code)`, **never `UNIQUE(code)`**; no append-only trigger (all EV-mutable — a `REFERENCE.UPDATE` succeeds at the DB).
+- **Asymmetric hybrid RLS** (net-new, distinct from the symmetric loop): `USING (own-tenant OR SYSTEM_TENANT) / WITH CHECK (own-tenant only)`. The SYSTEM literal is in `USING`/`qual` but **never** in `WITH CHECK` (a tenant overwriting global vocab = cross-tenant breach); FORCE RLS + own policy on every table **including children**; closed hybrid set = exactly these 5 (`data_source` stays symmetric — NOT hybrid). SYSTEM_TENANT_ID injected as a fixed literal from `entitlement.bootstrap`.
+- **Tenant override wins = APPLICATION-LAYER dedup** (`service.dedupe_tenant_wins`, DISTINCT-ON-by-`code`, own-tenant preferred) — NOT an RLS merge.
+- **`REFERENCE.CREATE` (EVT-140) / `REFERENCE.UPDATE` (EVT-141) activated** as caller constants to the FROZEN `record_event`; children fold into the parent event (no own event); DC-2 metadata only; per-tenant + SYSTEM chains. `CORRECTION`/`STATUS_CHANGE` reserved, not emitted.
+- **Lineage** (OD-P1B-I): one ORIGIN edge per entity from a per-tenant **MANUAL** `data_source` (`ensure_manual_source`, idempotent); SYSTEM seeds rooted on the SYSTEM chain. New web-framework-free **`irp_shared.reference`** package (one-way deps). Additive `reference.currency.*` / `reference.rating_scale.*` / `reference.calendar.view` perms seeded via the existing `0002` catalog path (no new audit framework code). Governed SYSTEM seeder is test-proven (not yet wired to prod).
+
+## P1B-2 design decisions (PLANNED — committed plan `410cc7e`, 7-lens reviewed; NOT yet built)
+REQ-SMR-002 (OD-P1B-D); plan `10_delivery_backlog/p1b2_implementation_plan.md` (§21 = kickoff). The contrast with P1B-1: these are **PROPRIETARY** entities, so they are the inverse of P1B-1's hybrid model.
+- **Shared `legal_entity` core, IMPLEMENTATION-ONLY (NO canonical ENT id)** (OD-P1B-D) + **separate 1:1 `issuer` (ENT-002) / `counterparty` (ENT-003) role profiles** (`UNIQUE(tenant_id, legal_entity_id)`, NOT-NULL FK; a legal entity may carry both). The unified-table-with-role-flags alternative is REJECTED. All three **EV** (one physical row per logical entity).
+- **Tenant-scoped SYMMETRIC RLS — NEVER hybrid / NEVER SYSTEM_TENANT** (OD-P1B-C proprietary invariant): `USING == WITH CHECK == own-tenant`, no global rows. Cross-tenant leakage blocked on every axis (symmetric reads/`WITH CHECK`, **explicitly-tenant-filtered** profile→core + parent resolution, positive + closed-set `pg_policies` guards). The resolvers carry an EXPLICIT `tenant_id` predicate (the `ensure_manual_source` pattern, NOT id-only `register_model_version`) so cross-tenant fails closed on SQLite too.
+- **Hierarchy STRUCTURE in P1B-2** (`parent_legal_entity_id` self-FK adjacency + a bounded, cycle-safe, tenant-filtered `resolve_ultimate_parent`, depth cap 32, no exposure math); the **exposure-rollup CALCULATION is DEFERRED**. **No netting / CSA / collateral / exposure columns** (OD-015 deferred).
+- Reuse `REFERENCE.CREATE/UPDATE` (each entity OWN event — NOT folded, unlike P1B-1 children; `audit/service.py` FROZEN); one MANUAL-`data_source` ORIGIN edge per row. Additive `reference.legal_entity.view/edit` only (issuer/counterparty perms exist); `legal_entity.view` matches the issuer/counterparty recipient set — **EXCLUDES `auditor_3l`** (proprietary-identity SoD).
 
 ## Deferred (sound; do not pull forward)
 OD-012 identifier precedence → P1C; OD-015 counterparty netting/CSA → P1C; REQ-INT-002/003 vendor/SFTP/API

@@ -34,11 +34,11 @@ Tenant context/RLS · audit + hash chain · entitlements · data_source · linea
 quality · generic ingestion staging · temporal mixins (EV/IA/FR) · Alembic migration + drift gate ·
 constrained-role PG RLS tests · append-only trigger tests. (Full inventory: `10_delivery_backlog/p1a_closeout_p1b_readiness.md` Part 2.)
 
-### P1B — Security Master & Reference Data — **NEXT (planning done at P1B-0; implementation blocked)**
+### P1B — Security Master & Reference Data — **IN PROGRESS (P1B-1 done; P1B-2 planning next)**
 Direction (canonical BC-02/BC-03): the first **domain** data, built on the P1A rails, reference-data only.
 Sub-slices (see `10_delivery_backlog/p1b_implementation_plan.md`):
-- **P1B-1** currency / calendar / rating_scale (EV; first hybrid global+tenant RLS).
-- **P1B-2** legal_entity core + issuer / counterparty role profiles (EV).
+- **P1B-1** currency / calendar / rating_scale (EV; first hybrid global+tenant RLS) — **DONE / CLOSED (`6568cb1`, CI-green).** First asymmetric hybrid RLS (AD-013-R1); `REFERENCE.CREATE`/`UPDATE`; SYSTEM_TENANT global-read; app-layer tenant-wins dedup; MANUAL-`data_source` lineage; `irp_shared.reference` package.
+- **P1B-2** legal_entity core + issuer / counterparty role profiles (EV) — **PLAN COMMITTED (`410cc7e`, CI-green, 7-lens reviewed); implementation READY, pending approval.** `legal_entity` implementation-only (no ENT id); separate 1:1 role profiles; tenant-scoped SYMMETRIC RLS, **NEVER hybrid** (proprietary); hierarchy structure (rollup calc deferred); plan §21 = kickoff.
 - **P1B-3** instrument (EV identity) + instrument_terms (**FR** — first real bitemporal usage) + identifier_xref (EV).
 - **P1B-4** corporate_action (EV, effective-dated).
 - **P1B-5** reference-data ingestion mapping (**conditional / deferred** — only if bulk loading is needed).
