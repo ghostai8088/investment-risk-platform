@@ -71,7 +71,7 @@ deny-by-default, least-privilege (data_steward edit; broader view), with **no ro
 | currency | `reference.currency.view`, `reference.currency.edit` | **IMPLEMENTED (P1B-1)** — additive catalog entries + grants |
 | calendar | `reference.calendar.view`, `reference.calendar.edit` | **IMPLEMENTED (P1B-1)** — `.view` added (`.edit` pre-existed) |
 | rating_scale | `reference.rating_scale.view`, `reference.rating_scale.edit` | **IMPLEMENTED (P1B-1)** — additive catalog entries + grants |
-| legal_entity | `reference.legal_entity.view`, `reference.legal_entity.edit` | **new** (P1B-2) |
+| legal_entity | `reference.legal_entity.view`, `reference.legal_entity.edit` | **IMPLEMENTED (P1B-2)** — additive; `.view` granted to EXACTLY the `issuer`/`counterparty.view` recipient set (data_steward/risk_analyst_1l/risk_manager_2l + platform_admin — **excludes `auditor_3l`**, proprietary-identity SoD; parity test guards drift); `.edit` → data_steward |
 | issuer | `reference.issuer.view`, `reference.issuer.edit` | exists |
 | counterparty | `reference.counterparty.view`, `reference.counterparty.edit` | exists |
 | instrument | `reference.instrument.view`, `reference.instrument.edit` | exists |

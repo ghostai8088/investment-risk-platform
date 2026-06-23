@@ -38,10 +38,14 @@ MANUAL_SOURCE_TYPE = "MANUAL"
 MANUAL_SOURCE_CODE = "MANUAL"
 MANUAL_SOURCE_NAME = "Manual reference entry"
 
-#: ``entity_type`` literals for audit/lineage (the parent table names; children carry none).
+#: ``entity_type`` literals for audit/lineage (the table names; P1B-1 children carry none, P1B-2
+#: profiles each emit their OWN event).
 ENTITY_CURRENCY = "currency"
 ENTITY_CALENDAR = "calendar"
 ENTITY_RATING_SCALE = "rating_scale"
+ENTITY_LEGAL_ENTITY = "legal_entity"
+ENTITY_ISSUER = "issuer"
+ENTITY_COUNTERPARTY = "counterparty"
 
 #: ``source_module`` for every reference audit event.
 SOURCE_MODULE = "reference"

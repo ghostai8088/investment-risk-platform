@@ -103,6 +103,31 @@ def test_reference_data_permissions_are_additive_and_least_privilege() -> None:
             assert code in ROLE_TEMPLATES[role], f"{role} should hold {code}"
 
 
+def test_legal_entity_permissions_additive_and_recipient_parity() -> None:
+    # P1B-2: the two additive legal_entity permissions exist; reference.rating.* still absent.
+    assert "reference.legal_entity.view" in ALL_CODES
+    assert "reference.legal_entity.edit" in ALL_CODES
+    assert not any(code.startswith("reference.rating.") for code in ALL_CODES)
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    # legal_entity is PROPRIETARY identity -> .view recipients EQUAL the issuer/counterparty set
+    # (data_steward/risk_analyst_1l/risk_manager_2l + platform_admin), and EXCLUDE auditor_3l. The
+    # parity assertion is the regression guard so the proprietary-identity family cannot drift.
+    assert _holders("reference.legal_entity.view") == _holders("reference.issuer.view")
+    assert _holders("reference.legal_entity.view") == _holders("reference.counterparty.view")
+    assert "auditor_3l" not in _holders("reference.legal_entity.view")
+    assert _holders("reference.legal_entity.view") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "risk_manager_2l",
+        "platform_admin",
+    }
+    # .edit: data_steward (the maker) + platform_admin only; never the read tiers.
+    assert _holders("reference.legal_entity.edit") == {"data_steward", "platform_admin"}
+
+
 def test_ids_deterministic_and_unique() -> None:
     assert permission_id("data.upload") == permission_id("data.upload")
     assert role_id("ops") == role_id("ops")

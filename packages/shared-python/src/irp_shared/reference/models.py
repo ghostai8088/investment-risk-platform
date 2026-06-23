@@ -16,6 +16,14 @@ no enum, no CHECK, no lookup table — so new values are data, not migrations (t
 rule). ``rating_scale`` / ``rating_grade`` are taxonomy **only**: zero assignment columns (no
 ``instrument_id`` / ``issuer_id`` / ``rated_entity`` / ``as_of`` / ``outlook`` / ``watch``) — rating
 ASSIGNMENTS are FR and deferred to the credit phase (scope fence).
+
+P1B-2 (REQ-SMR-002) adds three PROPRIETARY, NEVER-hybrid EV entities — ``legal_entity``
+(an implementation-only shared core, no ENT id — OD-P1B-D) + the separate 1:1 role profiles
+``issuer`` (ENT-002) and ``counterparty`` (ENT-003). Unlike the five above they are NOT hybrid;
+they use the symmetric tenant-isolation loop (``USING == WITH CHECK == own-tenant``) and carry no
+SYSTEM_TENANT rows (OD-P1B-C: a firm's issuers/counterparties are MNPI-adjacent). The hierarchy is
+on the core (``parent_legal_entity_id`` self-FK); the exposure-rollup calc is deferred — and
+``counterparty`` carries NO netting/CSA/collateral/exposure column (OD-015 deferred).
 """
 
 from __future__ import annotations
@@ -26,9 +34,11 @@ from sqlalchemy import (
     Boolean,
     Date,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -152,4 +162,98 @@ class RatingGrade(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMi
     code: Mapped[str] = mapped_column(String(20), nullable=False)  # grade symbol AAA/Aaa/BBB-
     rank: Mapped[int] = mapped_column(Integer, nullable=False)  # ordinal (deterministic ordering)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+# --- P1B-2: legal_entity core + issuer/counterparty role profiles (PROPRIETARY, NEVER hybrid) ---
+
+
+class LegalEntity(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):
+    """Implementation-only shared identity core (OD-P1B-D) — NO canonical ENT id; a normalization of
+    shared LEI/name/hierarchy that ``issuer`` (ENT-002) + ``counterparty`` (ENT-003) reference 1:1.
+
+    PROPRIETARY, tenant-scoped, NEVER hybrid (symmetric RLS). One physical row per logical entity
+    (in-place EV supersede; history via the ``REFERENCE.UPDATE`` audit). ``parent_legal_entity_id``
+    is an **intra-tenant** self-FK adjacency hook (the hierarchy structure); the exposure-rollup
+    *calculation* is deferred — NO stored ``ultimate_parent_id`` / rollup / exposure column.
+    Open-vocab attributes (``entity_type``, ``jurisdiction``) are plain Strings (MG-01)."""
+
+    __tablename__ = "legal_entity"
+    __temporal_class__ = TemporalClass.EFFECTIVE_DATED
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_legal_entity_tenant_code"),
+        # LEI unique per tenant WHEN PRESENT (Postgres partial; nullable so unidentified entities
+        # are allowed). On SQLite a plain unique index, but NULL leis are distinct there too, so the
+        # behaviour matches. alembic check stays drift-clean because migration 0009 emits the same.
+        Index(
+            "uq_legal_entity_tenant_lei",
+            "tenant_id",
+            "lei",
+            unique=True,
+            postgresql_where=text("lei IS NOT NULL"),
+        ),
+    )
+
+    code: Mapped[str] = mapped_column(String(150), nullable=False)  # firm-assigned LE code
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    lei: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # ISO-17442; plain str, no FK
+    jurisdiction: Mapped[str | None] = mapped_column(String(10), nullable=True)  # ISO-3166 domicile
+    entity_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # CORP/BANK/... plain
+    # Intra-tenant self-FK adjacency (hierarchy hook). NULL = a root. Self-parent rejected in the
+    # service. NO traversal/rollup logic in the model (deferred); the resolver lives in the binder.
+    parent_legal_entity_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("legal_entity.id"), nullable=True, index=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class Issuer(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):
+    """Issuer role/profile (ENT-002, EV) — a thin 1:1 profile over ``legal_entity`` holding ONLY
+    role-specific attributes (NO code/lei/name/jurisdiction/hierarchy — those are on the
+    core). PROPRIETARY, NEVER hybrid. ``UNIQUE(tenant_id, legal_entity_id)`` = the 1:1
+    contract. NO rating-assignment column (assignments are FR, deferred)."""
+
+    __tablename__ = "issuer"
+    __temporal_class__ = TemporalClass.EFFECTIVE_DATED
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "legal_entity_id", name="uq_issuer_tenant_legal_entity"),
+    )
+
+    legal_entity_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("legal_entity.id"), nullable=False, index=True
+    )
+    issuer_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # CORPORATE/SOVEREIGN/...
+    sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Role-level activation (independent of the core's is_active; flip rides on REFERENCE.UPDATE).
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class Counterparty(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):
+    """Counterparty role/profile (ENT-003, EV) — a 1:1 profile over ``legal_entity``, distinct from
+    ``issuer`` (OD-P1B-D). PROPRIETARY, NEVER hybrid. ``UNIQUE(tenant_id, legal_entity_id)``
+    = the 1:1 contract. ZERO netting/CSA/collateral/exposure columns (OD-015 deferred to P1C)."""
+
+    __tablename__ = "counterparty"
+    __temporal_class__ = TemporalClass.EFFECTIVE_DATED
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "legal_entity_id", name="uq_counterparty_tenant_legal_entity"
+        ),
+    )
+
+    legal_entity_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("legal_entity.id"), nullable=False, index=True
+    )
+    counterparty_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # BANK/BROKER/CCP/...
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

@@ -74,6 +74,11 @@ P1B-0 splits below).
 > are EV-mutable (no `irp_prevent_mutation` trigger; a `REFERENCE.UPDATE` succeeds at the DB), and carry `record_version`. The
 > FR halves (ENT-001 `instrument_terms`, ENT-007 rating **assignments**) remain unbuilt — **the `FullReproducibleMixin` (FR)
 > still has no first persisted user; P1B-3 is its first exercise.**
+>
+> **P1B-2 realization note:** ENT-002 (`issuer`) and ENT-003 (`counterparty`) — realized as 1:1 role profiles over an
+> implementation-only `legal_entity` core (migration 0009) — are now built, all `__temporal_class__ = EFFECTIVE_DATED`,
+> EV-mutable (in-place supersede; one physical row per logical entity; history via the `REFERENCE.UPDATE` audit), carrying
+> `record_version`. They are PROPRIETARY (symmetric RLS, never hybrid). **FR is still unexercised — P1B-3 remains its first use.**
 
 ### Rationale (TR-21)
 | ID | Rationale |

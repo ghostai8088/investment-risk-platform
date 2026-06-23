@@ -22,7 +22,10 @@ from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, Mod
 from irp_shared.reference.models import (
     Calendar,
     CalendarHoliday,
+    Counterparty,
     Currency,
+    Issuer,
+    LegalEntity,
     RatingGrade,
     RatingScale,
 )
@@ -55,4 +58,7 @@ __all__ = [
     "CalendarHoliday",
     "RatingScale",
     "RatingGrade",
+    "LegalEntity",
+    "Issuer",
+    "Counterparty",
 ]

@@ -63,6 +63,14 @@ no-context-returns-only-global, child-table hybrid policies, structural `pg_poli
 in `qual` but never `with_check`, and on **only** the five tables — `data_source` stays symmetric), and dual-chain `verify_chain`
 (SYSTEM seed + tenant override). `REFERENCE.CREATE`/`.UPDATE` are activated against the FROZEN `record_event`; the five additive
 `reference.*` permissions seed via the existing `0002` catalog path (no new audit framework code, no role-template restructure).
+**P1B-2** builds the second SMR slice (REQ-SMR-002): `legal_entity` core + `issuer`/`counterparty` 1:1 role profiles — three
+**PROPRIETARY** EV tables (migration `0009`) under the **symmetric** RLS loop (`USING == WITH CHECK == own-tenant`), the inverse of
+P1B-1's hybrid model. A new CI step **"Legal-entity symmetric-RLS tests (Postgres)"** runs `test_reference_entities_pg.py` under the
+constrained `irp_app` role, proving cross-tenant invisibility, no-context-returns-zero-rows, forged-write → 42501 (and emits no
+audit), profile→core + hierarchy cross-tenant fail-closed (explicit tenant predicate + RLS), a **positive symmetric-policy +
+FORCE-RLS** structural assertion, and that the **closed hybrid set is unchanged** (still exactly the five P1B-1 tables —
+proprietary-never-hybrid). Reuses `REFERENCE.CREATE/UPDATE` (own event per entity), MANUAL-source lineage, and the additive
+`reference.legal_entity.*` permissions (no new audit framework code; `legal_entity.view` excludes `auditor_3l`).
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 

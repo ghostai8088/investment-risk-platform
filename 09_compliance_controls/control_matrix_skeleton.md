@@ -115,7 +115,17 @@ append-only (EV, not IA). **CTRL-032** gains first reference-CRUD fail-closed ev
 back together when `record_event` raises). **CTRL-013** is exercised again (one MANUAL-`data_source` ORIGIN edge per reference
 entity). **Label note (R-10):** tenant-isolation/RLS evidence attaches to **CTRL-011**, not the mis-seeded **CTRL-003** (whose
 matrix label is model-inventory) — flagged, not silently edited. **No new audit framework code** (`record_event` FROZEN),
-**no `data_source` hybrid**, **no rating ASSIGNMENTS / `reference.rating.*`**. As construction phases
+**no `data_source` hybrid**, **no rating ASSIGNMENTS / `reference.rating.*`**. **P1B-2** additions: the second SMR slice
+(`legal_entity` core + `issuer` ENT-002 + `counterparty` ENT-003 1:1 role profiles; REQ-SMR-002) is the **proprietary-never-hybrid
+evidence** (the inverse of P1B-1). **CTRL-011** is extended by the additive `reference.legal_entity.*` permissions AND
+**symmetric RLS on three proprietary tables** (`USING == WITH CHECK == own-tenant`; no-context read → zero rows; a positive
+`pg_policies` symmetric+FORCE-RLS assertion + the unchanged closed-hybrid-set test prove these are NOT hybrid). **CTRL-004** advances
+via LEI (ISO-17442) / jurisdiction (ISO-3166) / entity_type field shapes. **CTRL-005/012** gain `REFERENCE.CREATE`/`.UPDATE` on the
+three entities (each its **own** event). **CTRL-017** = the EV `__temporal_class__` declaration test. **CTRL-032** gains
+per-entity CREATE **and** UPDATE fail-closed evidence (entity + profile + lineage + lazily-created MANUAL source roll back; an
+UPDATE's mutated attributes + `record_version` revert). **CTRL-013** = one MANUAL-`data_source` ORIGIN edge per entity. The
+proprietary-identity SoD is honoured (`legal_entity.view` excludes `auditor_3l`, matching `issuer`/`counterparty.view`). **No new
+audit framework code; no hybrid/SYSTEM_TENANT; no netting/CSA/exposure column or calc.** As construction phases
 open, controls will be split to specific bounded contexts and capabilities and given Test/Evidence detail.
 
 ## 5. Open Decisions

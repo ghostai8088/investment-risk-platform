@@ -43,6 +43,11 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("reference.rating_scale.view", "View rating scales"),
     ("reference.rating_scale.edit", "Edit rating scales"),
     ("reference.calendar.view", "View calendars"),
+    # P1B-2 legal_entity core (additive; PROPRIETARY tenant-scoped). issuer/counterparty perms
+    # exist above. reference.rating.* stays RESERVED. legal_entity.view granted to EXACTLY
+    # the issuer/counterparty.view recipient set (proprietary-identity SoD — EXCLUDES auditor_3l).
+    ("reference.legal_entity.view", "View legal entities"),
+    ("reference.legal_entity.edit", "Edit legal entities"),
     ("portfolio.view", "View portfolios"),
     ("portfolio.edit", "Edit portfolios"),
     ("position.view", "View positions"),
@@ -77,6 +82,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.rating_scale.view",
         "reference.rating_scale.edit",
         "reference.calendar.view",
+        # P1B-2 legal_entity: steward holds view + edit (the maker).
+        "reference.legal_entity.view",
+        "reference.legal_entity.edit",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -87,6 +95,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.currency.view",
         "reference.rating_scale.view",
         "reference.calendar.view",
+        # P1B-2 legal_entity: view-only (matches the issuer/counterparty.view read tier).
+        "reference.legal_entity.view",
         "portfolio.view",
         "position.view",
         "model.inventory.view",
@@ -104,6 +114,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.currency.view",
         "reference.rating_scale.view",
         "reference.calendar.view",
+        # P1B-2 legal_entity: view-only (matches the issuer/counterparty.view read tier).
+        "reference.legal_entity.view",
         "portfolio.view",
         "position.view",
         "model.inventory.view",
