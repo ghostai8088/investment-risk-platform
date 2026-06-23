@@ -58,6 +58,7 @@ append-only state transitions (ENT-033, ENT-034); audit events (ENT-045, additio
 Reference/master data (ENT-002 issuer, ENT-003 counterparty, ENT-004 identifier_xref, ENT-005 currency, ENT-006 calendar,
 ENT-008 corporate_action, ENT-009 benchmark); limit definitions (ENT-031, effective-dated); security/admin (ENT-043 users/
 service/agent principals, ENT-044 roles/permissions/grants — grants carry effective dates); ENT-038 data_source;
+**ENT-010 portfolio/fund/strategy/account hierarchy** (P1C-1 domain hierarchy — single EV table + node_type);
 **ENT-001 instrument identity** (master attributes) and **ENT-007 rating_scale/grade taxonomy** (the EV halves of the
 P1B-0 splits below).
 
@@ -95,6 +96,15 @@ P1B-0 splits below).
 > history via the audit trail, not an IA table — OD-P1B-B). It is EV-mutable (no `irp_prevent_mutation` trigger). The EV
 > `valid_from/valid_to` record axis is distinct from the inert business-date columns; **no application/position/valuation logic**
 > (application is P1C). The CAP-2 Security-Master reference block (ENT-001..006/008) is now EV/FR-complete for P1B.
+>
+> **P1C-0 ratification note (AD-017, 2026-06-23 — capture-only domain block; conforms to this §2A, no AD-005 amendment):**
+> **ENT-010** (`portfolio`) is classified **EV** and ratified for the P1C-1 build — a single `portfolio` table (`node_type`
+> PORTFOLIO/FUND/STRATEGY/ACCOUNT + `parent_portfolio_id` adjacency; the entitlement scope anchor), EV-mutable (in-place
+> supersede; `record_version`; history via the `PORTFOLIO.UPDATE` audit), **not yet built** (planned migration `0012`).
+> **ENT-011** position (**FR**) and **ENT-013** valuation (**FR**) are P1C **capture-only** — captured/as-of-reconstructable
+> via the P1B-3 `instrument_terms` FR protocol (create → supersede → as-known correction; `reconstruct_*_as_of` on both axes),
+> **not** derived analytics outputs. **ENT-012** transaction is **IA** (append-only event log). **ENT-014** `exposure_aggregate`
+> (IA, derived) + `dataset_snapshot` stay **P2** (AD-014) — no governed derived output without a bound input snapshot.
 
 ### Rationale (TR-21)
 | ID | Rationale |

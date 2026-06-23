@@ -30,7 +30,7 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 
 | REQ | CAP | Persona | LoD | Phase | Audit | Ent | Lineage | ModelGov | Control(s) | Dependencies | Status |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| REQ-PPM-001 | 1.1 | P-PM,P-ADM | 1L/Plat | P1 | BX-AUD | BX-ENT | — | — | CTRL-001/005/011 | FW-ENT, FW-AUD, FW-TMP | Draft |
+| REQ-PPM-001 | 1.1 | P-PM,P-ADM | 1L/Plat | P1 | BX-AUD | BX-ENT | — | — | CTRL-001/005/011 | FW-ENT, FW-AUD, FW-TMP | **In-Progress (P1C-0 ratified; P1C-1 planned — single `portfolio` EV table, `node_type` + `parent_portfolio_id`; ABAC scope anchor, enforcement P6+)** |
 | REQ-PPM-002 | 1.2 | P-PM,P-RA | 1L | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-006/013/017 | FW-TMP(FR), DEP-SMR, DEP-LIN | Draft |
 | REQ-PPM-003 | 1.3/1.4 | P-PM,P-DS | 1L/Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-005/017 | FW-AUD, FW-TMP | Draft |
 | REQ-PPM-004 | 1.5 | P-RA,P-RM | 1L/2L | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-006/018 | FW-RUN, DEP-LIN, CAP-1 | Draft |

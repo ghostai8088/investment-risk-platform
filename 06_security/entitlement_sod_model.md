@@ -89,6 +89,24 @@ head` (the established P1A-1/2/3 catalog precedent — no forward migration). `.
 `risk_manager_2l`, `auditor_3l` (+ `platform_admin`). A read-tier role cannot mutate; `reference.rating.*` is absent from
 the catalog. Asserted by `test_reference_data_permissions_are_additive_and_least_privilege`.
 
+### 5B. Domain permissions — portfolio (P1C Portfolio & Position Management — ratified P1C-0, 2026-06-23)
+
+Portfolio is **domain** data (CAP-1/BC-01), not reference data, so it uses plain **`portfolio.<verb>`** codes (NOT
+`reference.portfolio.*`). The catalog codes `portfolio.view` / `portfolio.edit` are already seeded (placeholders);
+P1C-1 wires them.
+
+| Entity | Permissions | Grants (ratified for P1C-1) |
+|---|---|---|
+| portfolio | `portfolio.view`, `portfolio.edit` | `portfolio.view` → `risk_analyst_1l`, `risk_manager_2l` (+ `platform_admin` via `ALL_CODES`). `portfolio.edit` is **maker/admin only** — currently `platform_admin` only; P1C-1 additively grants the **`data_steward`** maker **BOTH `portfolio.view` + `portfolio.edit`** (the steward must read its own writes; it currently holds neither). **`auditor_3l` excluded** (scope SoD). `portfolio.edit` is **not** broadly granted beyond maker/admin. Parity test pins the sets. |
+
+**ABAC anchor-not-enforce (P1C-1, AD-017):** the portfolio hierarchy is the **portfolio-scope ANCHOR**. A future
+`SCOPE-PORTFOLIO` grant (P6+) will reference `portfolio.id` with **subtree** semantics (OQ-014 closed = subtree: a grant on
+a node reaches its descendants). P1C-1 provides the bounded **descendant** traversal so subtree membership is **computable**,
+but **no scope is enforced** — `portfolio.view` gates by role + tenant only, so within a tenant any holder sees **all**
+portfolios until the P6+ `entitlement_grant` scope payload lands. Acceptable in P1C because the data is synthetic (DC-1/DC-2).
+**ENT-P-06** is thus **partially satisfied** in P1C-1: the **tenant** attribute is enforced (RLS); the **portfolio-scope**
+attribute is **anchored, not enforced** (→ P6+).
+
 ## 6. Segregation-of-Duties Matrix (SOD)
 
 Incompatible duties — the same subject must not hold both sides of a pair within the same scope.
@@ -144,7 +162,7 @@ Every field carries a DC tag (DM-N-07). Logs and audit `before/after` for DC-3/D
 | ID | Open Decision |
 |---|---|
 | OD-024 | Confirm IdP/SSO integration specifics and MFA policy (AD-007). |
-| OD-025 | Confirm portfolio-scope granularity for ABAC (position-level vs portfolio-level). |
+| OD-025 | **CLOSED (P1C-0, 2026-06-23):** portfolio-scope granularity = **portfolio-level** (node + subtree), not position-level; recorded as the P1C-1 scope anchor (§5B), enforcement deferred to P6+ (AD-017). |
 | OD-026 | Confirm whether team holds multiple human roles and how SoD pairs are preserved at small scale (links OD-001). |
 | OD-027 | Confirm MNPI barrier model and restricted-list source of truth with H-05. |
 

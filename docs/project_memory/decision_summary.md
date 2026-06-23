@@ -11,6 +11,7 @@
 - **AD-008 / BR-17** tenant isolation; investment data MNPI-adjacent → isolation by default.
 - **AD-013** **hybrid reference-data tenancy**: global system reference shared read-only; investment reference tenant-scoped; tenant-override pattern; no cross-tenant proprietary sharing. (P1B-0 **ratifies** refinement **AD-013-R1** — Accepted (H-04), in the decision log — see below.)
 - **AD-015 / AD-016** RLS tenant context via `set_config`; BYPASSRLS reserved to the ops role.
+- **AD-017** (Accepted H-06/H-04, P1C-0, 2026-06-23) **P1C is a capture-only domain block**: portfolio (EV) / transaction (IA) / position (FR) / valuation (FR) are CAPTURED / as-of-reconstructable, **not** derived analytics; **no** exposure aggregation / risk / pricing / valuation models / corporate-action application / `dataset_snapshot` (stay P2, AD-014). The portfolio hierarchy is the ABAC portfolio-scope **anchor**; enforcement → P6+. Conforms to AD-005/AD-013-R1/AD-014/AD-008.
 - **BR-3** inventoried-before-use (models); **BR-7** override fields; **BR-10** no secrets in source; **BR-11** deny-by-default; **BR-12** non-bypassable audit; **BR-13** lineage; **BR-16** AI-agent logging; **BR-19** declare `__temporal_class__`.
 
 ## P1A-0 decisions (tenant context / RLS)
@@ -73,8 +74,18 @@ REQ-SMR-004 corporate_action (OD-P1B-B); migration `0011`. The **last reference 
 - **`instrument_id` NOT-NULL FK** to the P1B-3 `instrument` head, resolved via the **reused** `resolve_instrument` tenant-filtered → cross-tenant/unknown fails closed (`InstrumentNotVisible`) pre-commit. Symmetric proprietary RLS (byte-for-byte the `0010` loop). Additive `reference.corporate_action.view` (== instrument.view set; `auditor_3l` excluded; parity test); `.edit` pre-existing unchanged.
 - **CAPTURE-ONLY** (the load-bearing scope fence): **NO** application to positions/valuations, **NO** entitlement/tax calc, **NO** event-processing engine, **NO** roll/day-count math (QS-10/11 → P1C), **NO** vendor feed/reconciliation/override workflow. "No double-apply" holds trivially (nothing is ever applied); a scope-fence test pins absence of any applied/position/valuation/entitlement/tax column.
 
+## P1C-0 decisions (RATIFIED into governance — `705d3ba` + ratification this turn; 7-lens reviewed)
+The twelve P1C decisions (OD-P1C-A..L, `10_delivery_backlog/p1c0_decision_record.md`) + **AD-017** are recorded into the source-of-truth.
+- **Portfolio model (OD-P1C-C / REQ-PPM-001 / ENT-010 / OD-013 closed):** a **single `portfolio` EV table** with a `node_type` controlled-vocab (`PORTFOLIO`/`FUND`/`STRATEGY`/`ACCOUNT`) + `parent_portfolio_id` self-FK adjacency (arbitrary tree, depth-capped 32) — **not** four tables. The entitlement scope **anchor**.
+- **ABAC (OD-P1C-A/B; OD-025 closed = portfolio-level; OQ-014 = subtree):** P1C-1 **anchors** portfolio scope (records the hierarchy + bounded descendant resolver) but does **NOT enforce** it — enforcement → P6+. Residual risk: within a tenant any `portfolio.view` holder sees all portfolios (acceptable: synthetic data). ENT-P-06 partially satisfied (tenant enforced; portfolio-scope anchored).
+- **Audit (PORTFOLIO.\*):** RESERVED at the **EVT-150 block** (`PORTFOLIO.CREATE`=150 / `.UPDATE`=151 / `.STATUS_CHANGE`=152) in `audit_event_taxonomy.md` — NOT emitted; activated caller-side only in the P1C-1 build; `audit/service.py` FROZEN. Status flips ride on `PORTFOLIO.UPDATE` (STATUS_CHANGE reserved-not-required for P1C-1).
+- **Entitlement (§5B):** `portfolio.view`/`portfolio.edit` (domain codes, not `reference.*`); `data_steward` gets **both** (maker reads its own writes); `portfolio.view` → risk_analyst_1l/risk_manager_2l (+ admin); `portfolio.edit` maker/admin only; `auditor_3l` excluded.
+- **Capture-only (OD-P1C-E/F/G/H/I, AD-017):** positions/valuations captured-not-derived (no derivation engine, no calc); transactions IA log; **no** exposure aggregation / `dataset_snapshot` (OQ-013a → stays P2) / corporate-action application / market data / pricing / valuation models.
+- **Synthetic data (OD-P1C-L):** deterministic governed synthetic seed (uuid5 + fixed timestamps; labeled, never-auto-run; no real client/vendor data) — a P1C prerequisite replacing P1B-5.
+- **Subphase structure:** P1C-1 portfolio → P1C-2 transactions → P1C-3 positions → P1C-4 valuations → P1C-5 as-of views → P1C-6 synthetic dataset.
+
 ## Deferred (sound; do not pull forward)
-OD-012 identifier precedence → P1C; OD-015 counterparty netting/CSA → P1C; REQ-INT-002/003 vendor/SFTP/API
+OD-012 identifier precedence → beyond P1C (vendor-ingestion phase); OD-015 counterparty netting/CSA → P2+ (counterparty-credit, re-targeted out of P1C by OD-P1C-K); exposure aggregation (REQ-PPM-004) + `dataset_snapshot` → P2 (AD-017/AD-014); REQ-INT-002/003 vendor/SFTP/API
 adapters → P9; OD-042 production AV → later; manual_override/BR-7 enforcement → P6/P7; reconciliation
 (REQ-DQR-002) and override workflow (REQ-DQR-003) → P7; model validation/tiering (REQ-MDG-002/003) → P7;
 WORM/anchored audit hardening → later.

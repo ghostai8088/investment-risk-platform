@@ -85,6 +85,8 @@ Grouped by bounded context. IDs are stable; attributes listed are indicative (th
 | ENT-013 | `valuation` | Valuation history (bitemporal) |
 | ENT-014 | `exposure_aggregate` | Derived aggregation (run-tracked) |
 
+> **P1C-0 ratification note (AD-017, 2026-06-23 — conforms to §2A temporal classes, no AD-005 amendment):** P1C is a **capture-only** domain block. **ENT-010** (`portfolio`) is realized in P1C-1 (planned migration `0012`) as a **single `portfolio` EV table** with a `node_type` controlled-vocab (`PORTFOLIO`/`FUND`/`STRATEGY`/`ACCOUNT`) + a `parent_portfolio_id` self-FK adjacency — the entitlement portfolio-scope **ANCHOR** (subtree semantics; ABAC enforcement deferred to P6+). **ENT-011** position (**FR**) + **ENT-013** valuation (**FR**) are **CAPTURED / as-of-reconstructable** (reusing the P1B-3 `instrument_terms` FR protocol), **not** derived analytics; **ENT-012** transaction (**IA**, append-only). **ENT-014** `exposure_aggregate` (IA, derived) and `dataset_snapshot` **stay P2** (AD-014) unless explicitly reopened — P1C performs **no** exposure aggregation / risk / pricing / valuation models / corporate-action application. OD-012 (identifier precedence) and OD-015 (counterparty netting/CSA) remain deferred beyond P1C.
+
 ### Private Assets (BC-04)
 | ID | Entity | Notes |
 |---|---|---|
@@ -163,7 +165,7 @@ Grouped by bounded context. IDs are stable; attributes listed are indicative (th
 | ID | Open Decision |
 |---|---|
 | OD-012 | Confirm primary instrument/entity identifier authority and vendor xref precedence. |
-| OD-013 | Confirm portfolio hierarchy depth/flexibility (fixed levels vs arbitrary tree). |
+| OD-013 | **CLOSED (P1C-0, 2026-06-23):** arbitrary adjacency tree — `parent_portfolio_id` self-FK, depth-capped at `MAX_HIERARCHY_DEPTH=32`, default-permissive `node_type` pairs (single `portfolio` EV table; AD-017 / REQ-PPM-001). |
 | OD-014 | Confirm storage split between relational SoR and time-series store for ENT-020…025 (AD-004). |
 | OD-015 | Confirm netting-set / CSA modeling depth for counterparty (ENT-003 related). |
 

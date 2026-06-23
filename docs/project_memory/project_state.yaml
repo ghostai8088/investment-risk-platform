@@ -10,24 +10,26 @@ project:
   default_branch: main
 
 latest:
-  origin_main_commit: 060b2a4
-  origin_main_subject: "Implement P1B-4 reference data corporate action"
-  local_vs_origin: in-sync   # origin/main == 060b2a4; ONLY this project_memory refresh is uncommitted (no code)
-  ci_status: green           # 060b2a4: GitHub Actions run #37 = 28052388043 (success, all 5 jobs)
-  migration_head: 0011_corporate_action   # next migration: 0012 (lands when P1C is BUILT)
+  origin_main_commit: b52ad9e
+  origin_main_subject: "Add P1C-1 portfolio hierarchy implementation plan"
+  local_vs_origin: in-sync   # origin/main == b52ad9e; the P1C-0 RATIFICATION (governance md/yaml + memory) is uncommitted (no code)
+  ci_status: green           # b52ad9e: GitHub Actions run #41 (docs-only); closeout #39, P1C-0 #40
+  migration_head: 0011_corporate_action   # next migration: 0012 (lands when P1C-1 is BUILT)
 
 working_tree:
   uncommitted:
-    - path: "docs/project_memory/* (this session-recovery refresh)"
+    - path: "P1C-0 ratification (governance md/yaml + docs/project_memory/*)"
       status: modified
       note: >
-        Project-memory refresh to HEAD 060b2a4 (P1B-4 CLOSED, CI-green; the P1B Security-Master &
-        Reference-Data block is DELIVERED for P1B-1..P1B-4). Docs-only; NO code, NO migration, NO
+        P1C-0 RATIFICATION into governance source-of-truth: AD-017 (P1C capture-only); REQ-PPM-001 -> In-Progress
+        (backbone + RTM); PORTFOLIO.* RESERVED (EVT-150 block, not emitted) in audit_event_taxonomy; ENT-010 note +
+        OD-013 closure (canonical) + temporal §2A note; portfolio.view/edit grants + OD-025 closure (entitlement §5B);
+        control-coverage note; p1c0_decision_record -> Ratified; these memory files. NO code, NO migration, NO
         backend/frontend/worker/shared-package/test/bootstrap/CI changes. Commit pending approval.
 
 operating_mode: ultracode    # plan-workflow -> commit plan -> implement -> review-workflow -> fix -> make check -> commit-on-approval -> CI
 commit_policy: explicit-approval-only
-current_approval_gate: "P1B-4 CLOSED (060b2a4) + CI-green; the P1B reference-data block (P1B-1..P1B-4) is DELIVERED. Next step is a P1B CLOSEOUT / P1C READINESS review (analogous to the P1A closeout). P1C implementation NOT started; P1B-5 (ingestion mapping) stays CONDITIONAL/DEFERRED. Do not begin P1C until the closeout/readiness review + P1C planning are approved."
+current_approval_gate: "P1C-0 RATIFIED (this turn): AD-017 + the twelve P1C decisions recorded into governance so P1C-1 can begin from approved baselines. P1B DELIVERED; P1B closeout (e99633a), P1C-0 decision record + plan (705d3ba), P1C-1 plan (b52ad9e) all committed + CI-green. NEXT = P1C-1 BUILD (portfolio EV hierarchy + ABAC scope anchor, per p1c1_implementation_plan.md) on explicit approval. P1C-1 implementation NOT started; P1B-5 CONDITIONAL/DEFERRED."
 
 phases:
   completed:
@@ -52,19 +54,17 @@ phases:
 
   milestones:
     P1A: closed   # all five rails committed and CI-green
-    P1B-0: committed   # decision record + plan (dbed93e) + ratifications (4fae26b), CI-green
-    P1B-1: closed   # reference data committed 6568cb1, CI-green (run #28). First asymmetric hybrid RLS.
-    P1B-2: closed   # legal_entity/issuer/counterparty committed 32c7778, CI-green (run #31). Proprietary-never-hybrid.
-    P1B-3: closed   # instrument/instrument_terms/identifier_xref committed 8545ed6, CI-green (run #34). First real FR/bitemporal.
-    P1B-4: closed   # corporate_action committed 060b2a4, CI-green (run #37 / 28052388043). EVT-143 first exercise.
     P1B: DELIVERED  # Security Master & Reference Data block complete for P1B-1..P1B-4 (P1B-5 ingestion mapping conditional/deferred).
+    P1B-closeout: committed   # P1B closeout / P1C readiness review (e99633a), CI-green run #39
+    P1C-0: ratified   # decision record + P1C implementation plan (705d3ba); RATIFIED into governance this turn (AD-017 etc.)
+    P1C-1-plan: committed   # P1C-1 portfolio-hierarchy implementation plan (b52ad9e), CI-green run #41
   active:
-    id: P1B-4
-    name: "P1B-4 CLOSED and CI-green (060b2a4); the P1B reference-data block (P1B-1..P1B-4) is DELIVERED; only the project-memory refresh is commit-pending"
-    status: closed-ci-green
+    id: P1C-0-ratification
+    name: "P1C-0 RATIFIED into governance source-of-truth (AD-017, REQ-PPM-001, PORTFOLIO.* reserved, OD-013/OD-025 closed, portfolio.* grants); commit-pending (no code)"
+    status: commit-pending
   next:
-    id: P1B-closeout-P1C-readiness
-    name: "P1B closeout / P1C readiness review (the rails+reference inventory a P1C plan will reuse), then P1C PLANNING — on explicit approval. P1C implementation NOT started; P1B-5 (ingestion mapping) conditional/deferred."
+    id: P1C-1-build
+    name: "P1C-1 BUILD: portfolio EV hierarchy + ABAC scope anchor (migration 0012; irp_shared/portfolio/ package; activate PORTFOLIO.CREATE/UPDATE; data_steward portfolio.view+edit; bounded ancestor+descendant resolvers; symmetric RLS; NO ABAC enforcement) per p1c1_implementation_plan.md — on explicit approval."
     status: blocked-until-approval
 
 # --- P1B-1 key deliverables (CLOSED, 6568cb1, CI-green) ---
@@ -119,18 +119,26 @@ p1b_open_decisions:        # ratified at P1B-0 (4fae26b); the P1B-* decisions ar
   OD-P1B-I: "per-tenant MANUAL data_source; lineage rooted in each row's own context (REALIZED P1B-1; reused P1B-2/3/4)"
   OD-P1B-J: "mint REQ-SMR-005 + re-partition CAP-2.5 + annotate ENT-007 EV/FR; R-02/R-05 (DONE P1B-0/P1B-1)"
 
+p1c_ratification:   # this turn — P1C-0 RATIFIED into governance source-of-truth (no code)
+  AD-017: "P1C capture-only domain block: portfolio (EV) / transaction (IA) / position (FR) / valuation (FR) are CAPTURED/as-of-reconstructable, NOT derived analytics; NO exposure aggregation / risk / pricing / valuation models / corporate-action application / dataset_snapshot (stay P2 unless reopened, AD-014). Portfolio hierarchy = ABAC scope ANCHOR; enforcement P6+."
+  REQ-PPM-001: "Draft -> In-Progress (backbone + RTM): single portfolio EV table + node_type + parent_portfolio_id; scope anchor; account reconciled into ENT-010 vocab."
+  PORTFOLIO_audit_family: "RESERVED in audit_event_taxonomy.md at EVT-150 block (PORTFOLIO.CREATE=150, .UPDATE=151, .STATUS_CHANGE=152) — NOT emitted; activated caller-side only in the P1C-1 build; audit/service.py FROZEN."
+  closures: "OD-013 (canonical) = arbitrary depth-capped tree; OD-025 (entitlement) = portfolio-level granularity."
+  entitlement: "portfolio.view -> risk_analyst_1l/risk_manager_2l (+ platform_admin); data_steward gets BOTH portfolio.view + portfolio.edit (maker); portfolio.edit maker/admin only; auditor_3l excluded. ABAC anchored-not-enforced (ENT-P-06 partially satisfied)."
+
 blockers:
-  - "P1B-4 CLOSED (060b2a4) and CI-green; the P1B block (P1B-1..P1B-4) is DELIVERED. Next is a P1B closeout / P1C readiness review, then P1C PLANNING — only on explicit approval. P1C implementation MUST NOT start until directed."
+  - "P1C-0 RATIFIED (this turn); the P1C-1 plan (b52ad9e) is committed + CI-green. Next is the P1C-1 BUILD — only on explicit approval. P1C-1 implementation MUST NOT start until directed."
   - "Every step gated on explicit user approval; do not start the next slice unprompted."
 
 do_not_start:
-  - P1C implementation (portfolio/positions/valuations/exposure) until the P1B closeout / P1C readiness review AND P1C planning are approved
+  - P1C-1 build (portfolio EV hierarchy) until explicitly directed (plan + ratification done; build is a separate approval)
+  - P1C-2/3/4 (transactions / positions / valuations) + P1C-5/6 — not until their slices are planned + approved
+  - exposure aggregation / dataset_snapshot / risk / pricing / valuation models / corporate-action application (AD-017/AD-014; capture-only)
+  - ABAC enforcement (P1C-1 anchors portfolio scope; enforcement -> P6+)
   - P1B-5 (reference-data ingestion mapping) — CONDITIONAL/DEFERRED (only if bulk loading is needed; not now)
-  - no portfolio / no positions / no valuations / no holdings
-  - no market data / no pricing / no risk calculations / no exposure aggregation / no reporting / no dashboards / no real SSO
-  - P1C and P2+   # everything beyond Security Master & Reference Data
+  - P2+ (market data / reporting / dashboards / real SSO / etc.)
   - any change to packages/shared-python/src/irp_shared/audit/service.py (frozen)
-  - any new audit code / permission / role without the governed R-07 update
+  - any new audit code / permission / role / migration in CODE without the governed R-07 update (PORTFOLIO.* + portfolio.* are RESERVED in governance, minted in code only in the P1C-1 build)
 
 frozen:
   - packages/shared-python/src/irp_shared/audit/service.py

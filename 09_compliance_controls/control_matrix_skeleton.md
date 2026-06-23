@@ -125,7 +125,14 @@ three entities (each its **own** event). **CTRL-017** = the EV `__temporal_class
 per-entity CREATE **and** UPDATE fail-closed evidence (entity + profile + lineage + lazily-created MANUAL source roll back; an
 UPDATE's mutated attributes + `record_version` revert). **CTRL-013** = one MANUAL-`data_source` ORIGIN edge per entity. The
 proprietary-identity SoD is honoured (`legal_entity.view` excludes `auditor_3l`, matching `issuer`/`counterparty.view`). **No new
-audit framework code; no hybrid/SYSTEM_TENANT; no netting/CSA/exposure column or calc.** As construction phases
+audit framework code; no hybrid/SYSTEM_TENANT; no netting/CSA/exposure column or calc.** **P1C-0 ratification (AD-017,
+2026-06-23):** the planned P1C-1 portfolio-hierarchy slice will exercise **CTRL-001** (tests-before-completion), **CTRL-004**
+(`portfolio` columns + `node_type`/`status` vocab field defs), **CTRL-005/012** (new `PORTFOLIO.CREATE`/`.UPDATE` — **RESERVED**
+at the EVT-150 block, activated caller-side in the build; `audit/service.py` FROZEN), **CTRL-006/013** (one MANUAL-`data_source`
+ORIGIN edge per portfolio), **CTRL-011** (deny-by-default `portfolio.view`/`.edit` + symmetric proprietary RLS on `portfolio`,
+never hybrid), **CTRL-017** (EV `__temporal_class__` declaration), and **CTRL-032** (fail-closed audit). **No new CTRL minted; no
+audit code / permission / role / migration minted at ratification (all RESERVED for the P1C-1 build).** ABAC portfolio scope is
+**anchored, not enforced** (enforcement P6+). As construction phases
 open, controls will be split to specific bounded contexts and capabilities and given Test/Evidence detail.
 
 ## 5. Open Decisions
