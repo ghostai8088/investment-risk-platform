@@ -80,6 +80,16 @@ FK/polymorphic targets), the positive symmetric-policy + FORCE-RLS assertion, th
 bitemporal as-of reconstruction on both axes** + that `instrument_terms` is not append-only (close-out UPDATE succeeds). Activates
 `REFERENCE.CORRECTION` (EVT-142, caller-side; `audit/service.py` FROZEN) and the additive `reference.identifier.view/edit`
 permissions (`.resolve` recipients unchanged; `auditor_3l` excluded).
+**P1B-4** builds the fourth SMR slice (REQ-SMR-004 corporate_action): `corporate_action` (EV, **capture-only**) — one PROPRIETARY
+table (migration `0011`) under the symmetric RLS loop. A new CI step **"Corporate-action symmetric-RLS tests (Postgres)"** runs
+`test_reference_corporate_actions_pg.py` under `irp_app`, proving cross-tenant invisibility + no-context-zero-rows, the
+cross-tenant `instrument_id` guard is the service-layer `InstrumentNotVisible` predicate pre-commit, the RLS `WITH CHECK` backstop
+denies a forged-tenant re-stamp (42501), the positive symmetric-policy + FORCE-RLS assertion, the unchanged closed-hybrid-set, and
+the EVT-143 status transition + EV-mutability under FORCE RLS. **Activates `REFERENCE.STATUS_CHANGE` (EVT-143, caller-side;
+`audit/service.py` FROZEN)** for corporate_action status transitions and the additive `reference.corporate_action.view` permission
+(`auditor_3l` excluded). **No application/position/valuation logic** (capture-only; application is P1C). The CAP-2 EV/FR reference
+*entities* (ENT-001..006/008) are now realized for P1B; REQ-SMR-002/003/004 remain **In-Progress** (exposure-rollup calc,
+cross-vendor precedence, and QS-10/11 roll/day-count math respectively deferred to P1C).
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 

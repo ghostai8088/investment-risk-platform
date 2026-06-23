@@ -34,6 +34,7 @@ from irp_shared.lineage.service import record_lineage, register_data_source
 from irp_shared.reference.events import (
     REFERENCE_CORRECTION_EVENT,
     REFERENCE_CREATE_EVENT,
+    REFERENCE_STATUS_CHANGE_EVENT,
     REFERENCE_UPDATE_EVENT,
 )
 
@@ -53,6 +54,7 @@ ENTITY_COUNTERPARTY = "counterparty"
 ENTITY_INSTRUMENT = "instrument"
 ENTITY_INSTRUMENT_TERMS = "instrument_terms"
 ENTITY_IDENTIFIER_XREF = "identifier_xref"
+ENTITY_CORPORATE_ACTION = "corporate_action"
 
 #: ``source_module`` for every reference audit event.
 SOURCE_MODULE = "reference"
@@ -218,6 +220,46 @@ def record_reference_correction(
         before_value=before_value,
         after_value=after_value,
         justification=restatement_reason,  # TR-08 reason on the canonical audit field
+        correlation_id=actor.correlation_id,
+        agent_model=actor.agent_model,
+        agent_model_version=actor.agent_model_version,
+        on_behalf_of=actor.on_behalf_of,
+        data_classification="DC-2",
+    )
+
+
+def record_reference_status_change(
+    session: Session,
+    *,
+    entity: Any,
+    entity_type: str,
+    before_value: dict[str, Any],
+    after_value: dict[str, Any],
+    actor: ReferenceActor,
+    reason: str | None = None,
+) -> None:
+    """Emit ``REFERENCE.STATUS_CHANGE`` (EVT-143) for an EV status-lifecycle transition of a head.
+
+    No new lineage edge — a status transition is an in-place EV update (the row keeps its ORIGIN
+    edge
+    from creation), exactly like ``record_reference_update``. EVT-143 is activated caller-side here
+    (OQ-1 / R-07, P1B-4) — the FROZEN ``audit.service.record_event`` is unchanged.
+    ``before``/``after``
+    isolate the ``status`` transition (DC-2 metadata); an optional ``reason`` lands on the canonical
+    ``justification`` audit field."""
+    record_event(
+        session,
+        event_type=REFERENCE_STATUS_CHANGE_EVENT,
+        tenant_id=entity.tenant_id,
+        actor_type=actor.actor_type,
+        actor_id=actor.actor_id,
+        source_module=SOURCE_MODULE,
+        entity_type=entity_type,
+        entity_id=entity.id,
+        action="status_change",
+        before_value=before_value,
+        after_value=after_value,
+        justification=reason,
         correlation_id=actor.correlation_id,
         agent_model=actor.agent_model,
         agent_model_version=actor.agent_model_version,

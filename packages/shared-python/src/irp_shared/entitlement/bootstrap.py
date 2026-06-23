@@ -54,6 +54,10 @@ PERMISSIONS: list[tuple[str, str]] = [
     # RESERVED. .view granted to the reference.instrument.view set; auditor_3l EXCLUDED (SoD).
     ("reference.identifier.view", "View instrument identifiers"),
     ("reference.identifier.edit", "Edit instrument identifiers"),
+    # P1B-4 corporate_action (additive; PROPRIETARY tenant-scoped). reference.corporate_action.edit
+    # already exists above — only .view is NEW. .view granted to the reference.instrument.view set;
+    # auditor_3l EXCLUDED (proprietary security-master SoD). reference.rating.* stays RESERVED.
+    ("reference.corporate_action.view", "View corporate actions"),
     ("portfolio.view", "View portfolios"),
     ("portfolio.edit", "Edit portfolios"),
     ("position.view", "View positions"),
@@ -95,6 +99,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # reference.instrument.* + reference.identifier.resolve already granted above.
         "reference.identifier.view",
         "reference.identifier.edit",
+        # P1B-4 corporate_action: steward holds view (.edit already granted above).
+        "reference.corporate_action.view",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -109,6 +115,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.legal_entity.view",
         # P1B-3 instrument identifiers: view-only (reference.identifier.resolve already above).
         "reference.identifier.view",
+        # P1B-4 corporate_action: view-only.
+        "reference.corporate_action.view",
         "portfolio.view",
         "position.view",
         "model.inventory.view",
@@ -131,6 +139,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # P1B-3 instrument identifiers: view-only. reference.identifier.resolve is NOT granted to
         # risk_manager_2l (its existing recipient set is unchanged — purely additive .view).
         "reference.identifier.view",
+        # P1B-4 corporate_action: view-only.
+        "reference.corporate_action.view",
         "portfolio.view",
         "position.view",
         "model.inventory.view",

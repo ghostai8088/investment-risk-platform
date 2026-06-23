@@ -165,6 +165,29 @@ def test_identifier_permissions_additive_and_recipient_parity() -> None:
         assert "auditor_3l" not in _holders(code)
 
 
+def test_corporate_action_permissions_additive_and_recipient_parity() -> None:
+    # P1B-4: the additive corporate_action.view exists; .edit already existed; rating.* absent.
+    assert "reference.corporate_action.view" in ALL_CODES
+    assert "reference.corporate_action.edit" in ALL_CODES
+    assert not any(code.startswith("reference.rating.") for code in ALL_CODES)
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    # Purely ADDITIVE: the new .view recipients EQUAL the reference.instrument.view set
+    # (proprietary security-master SoD — EXCLUDES auditor_3l). .edit recipients are UNCHANGED.
+    assert _holders("reference.corporate_action.view") == _holders("reference.instrument.view")
+    assert _holders("reference.corporate_action.view") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "risk_manager_2l",
+        "platform_admin",
+    }
+    assert _holders("reference.corporate_action.edit") == {"data_steward", "platform_admin"}
+    for code in ("reference.corporate_action.view", "reference.corporate_action.edit"):
+        assert "auditor_3l" not in _holders(code)
+
+
 def test_ids_deterministic_and_unique() -> None:
     assert permission_id("data.upload") == permission_id("data.upload")
     assert role_id("ops") == role_id("ops")

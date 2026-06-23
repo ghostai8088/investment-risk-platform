@@ -11,9 +11,13 @@ P1B-1 **activates** the first two as value-level ``event_type`` strings passed t
 ``instrument_terms`` as-known restatement path — emitted caller-side via
 ``reference.service.record_reference_correction`` (the FROZEN ``audit.service.record_event`` is
 unchanged), carrying the TR-08 ``restatement_reason`` (on ``justification``) + ``supersedes_id``.
-``REFERENCE.STATUS_CHANGE`` (EVT-143) remains **reserved and NOT emitted**; ``is_active`` flips ride
-on ``REFERENCE.UPDATE`` (no STATUS_CHANGE). The constants are declared so the reservation is
-explicit and a scope-fence test can assert EVT-143 is never written.
+``REFERENCE.STATUS_CHANGE`` (EVT-143) is **ACTIVATED in P1B-4** (R-07 sign-off, OQ-1) for the
+`corporate_action` status-lifecycle transitions (ANNOUNCED → CONFIRMED → CANCELLED) — emitted
+caller-side via ``reference.service.record_reference_status_change`` (the FROZEN
+``audit.service.record_event`` is unchanged). For the P1B-1/P1B-2/P1B-3 entities, ``is_active``
+flips
+still ride on ``REFERENCE.UPDATE`` (no STATUS_CHANGE) — EVT-143 is used ONLY for corporate_action
+transitions, and the existing reservation tests stay green (they never create a corporate_action).
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from __future__ import annotations
 REFERENCE_CREATE_EVENT = "REFERENCE.CREATE"  # EVT-140
 REFERENCE_UPDATE_EVENT = "REFERENCE.UPDATE"  # EVT-141
 
-#: EVT-142 ACTIVATED in P1B-3 (instrument_terms restatement); EVT-143 stays RESERVED (not emitted).
+#: EVT-142 ACTIVATED P1B-3 (instrument_terms restatement); EVT-143 ACTIVATED P1B-4
+# (corporate_action).
 REFERENCE_CORRECTION_EVENT = "REFERENCE.CORRECTION"  # EVT-142 (activated P1B-3)
-REFERENCE_STATUS_CHANGE_EVENT = "REFERENCE.STATUS_CHANGE"  # EVT-143 (reserved)
+REFERENCE_STATUS_CHANGE_EVENT = "REFERENCE.STATUS_CHANGE"  # EVT-143 (activated P1B-4)

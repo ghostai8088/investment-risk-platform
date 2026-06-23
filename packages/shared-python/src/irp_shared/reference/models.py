@@ -410,3 +410,59 @@ class IdentifierXref(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, Timestam
     )  # provenance hint, NOT precedence
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+# --- P1B-4: corporate_action (PROPRIETARY, EV effective-dated; capture-only) ---
+
+
+class CorporateAction(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):
+    """Corporate-action reference data (ENT-008, EV; OD-P1B-B) — CAPTURE-ONLY.
+
+    Effective-dated reference record of a corporate action on an instrument (splits, coupons, calls,
+    restructurings). PROPRIETARY, tenant-scoped, NEVER hybrid (symmetric RLS, migration 0011). One
+    physical row per logical action; amend/cancel = in-place EV supersede (history via the
+    ``REFERENCE.*`` audit trail), NOT IA and NOT FR. **NO application engine, NO position/valuation
+    adjustment, NO entitlement/tax calc, NO roll math** (capture-only; application is P1C).
+
+    The EV ``valid_from``/``valid_to`` track the RECORD's version window; the business dates
+    (``announcement_date``/``ex_date``/``record_date``/``pay_date``/``effective_date``) are inert
+    Date columns — no computation. ``status`` is the SINGLE lifecycle flag (ANNOUNCED -> CONFIRMED
+    ->
+    CANCELLED; no ``is_active``). ``ratio``/``amount``/``currency_code`` are inert placeholders.
+    Open-vocab attributes (``action_type``, ``status``) are plain Strings (MG-01)."""
+
+    __tablename__ = "corporate_action"
+    __temporal_class__ = TemporalClass.EFFECTIVE_DATED
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_corporate_action_tenant_code"),
+    )
+
+    code: Mapped[str] = mapped_column(
+        String(150), nullable=False
+    )  # firm corporate-action reference
+    instrument_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("instrument.id"), nullable=False, index=True
+    )  # the affected security; intra-tenant; resolved tenant-filtered
+    action_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # DIVIDEND/SPLIT/MERGER/... plain
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="ANNOUNCED"
+    )  # ANNOUNCED/CONFIRMED/CANCELLED (single lifecycle flag; no is_active)
+    announcement_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True
+    )  # inert business date
+    ex_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # inert business date
+    record_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # inert business date
+    pay_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # inert business date
+    effective_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True
+    )  # stored attribute; nothing applied
+    ratio: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)  # inert (no calc)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)  # inert (no calc)
+    currency_code: Mapped[str | None] = mapped_column(String(3), nullable=True)  # plain ISO, no FK
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source: Mapped[str | None] = mapped_column(
+        String(150), nullable=True
+    )  # provenance hint, NOT a vendor feed
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

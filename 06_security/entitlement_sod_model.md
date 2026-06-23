@@ -76,7 +76,7 @@ deny-by-default, least-privilege (data_steward edit; broader view), with **no ro
 | counterparty | `reference.counterparty.view`, `reference.counterparty.edit` | exists |
 | instrument | `reference.instrument.view`, `reference.instrument.edit` | **IMPLEMENTED (P1B-3)** — `.view` → data_steward/risk_analyst_1l/risk_manager_2l (+ platform_admin), `.edit` → data_steward; **excludes `auditor_3l`** (proprietary security-master SoD); covers `instrument_terms` (terms writes require `.edit`) |
 | identifier_xref | `reference.identifier.view`, `reference.identifier.edit`, `reference.identifier.resolve` (read/lookup) | **IMPLEMENTED (P1B-3)** — additive `.view`/`.edit` minted (`.view`/`.resolve` → read tier, `.edit` → data_steward; excludes `auditor_3l`); the pre-existing `.resolve` recipient set is **UNCHANGED** (data_steward/risk_analyst_1l — NOT widened to risk_manager_2l); parity test pins the sets |
-| corporate_action | `reference.corporate_action.view`, `reference.corporate_action.edit` | `.edit` exists; **add `.view`** (P1B-4) |
+| corporate_action | `reference.corporate_action.view`, `reference.corporate_action.edit` | **IMPLEMENTED (P1B-4)** — `.edit` already existed (data_steward); additive `.view` minted → data_steward/risk_analyst_1l/risk_manager_2l (== the `reference.instrument.view` set); **excludes `auditor_3l`** (proprietary security-master SoD); parity test pins the sets |
 
 **Reserved (not minted now):** `reference.rating.*` — held for the future **FR rating-assignment** domain (distinct from the
 EV `rating_scale` taxonomy), so the verb namespace does not collide when rating assignments land in a later phase.

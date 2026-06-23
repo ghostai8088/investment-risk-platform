@@ -22,6 +22,7 @@ from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, Mod
 from irp_shared.reference.models import (
     Calendar,
     CalendarHoliday,
+    CorporateAction,
     Counterparty,
     Currency,
     IdentifierXref,
@@ -67,4 +68,5 @@ __all__ = [
     "Instrument",
     "InstrumentTerms",
     "IdentifierXref",
+    "CorporateAction",
 ]

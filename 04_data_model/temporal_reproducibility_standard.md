@@ -88,6 +88,13 @@ P1B-0 splits below).
 > table is **NOT** append-only (no `irp_prevent_mutation` trigger — the bitemporal protocol UPDATEs the close-out columns);
 > content-immutability of prior versions is service-enforced + tested. ENT-004 (`identifier_xref`, EV) is also built.
 > Remaining FR users (ENT-007 rating **assignments**, market data, positions, valuations) are still deferred.
+>
+> **P1B-4 realization note:** ENT-008 (`corporate_action`) is now built (migration 0011) as **EV** — capture-only effective-dated
+> reference data. One physical row per logical action; amend = in-place EV supersede (`REFERENCE.UPDATE`); the status lifecycle
+> (ANNOUNCED → CONFIRMED → CANCELLED) is the **first persisted user of `REFERENCE.STATUS_CHANGE` / EVT-143** (status/reason
+> history via the audit trail, not an IA table — OD-P1B-B). It is EV-mutable (no `irp_prevent_mutation` trigger). The EV
+> `valid_from/valid_to` record axis is distinct from the inert business-date columns; **no application/position/valuation logic**
+> (application is P1C). The CAP-2 Security-Master reference block (ENT-001..006/008) is now EV/FR-complete for P1B.
 
 ### Rationale (TR-21)
 | ID | Rationale |

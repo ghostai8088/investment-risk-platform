@@ -132,6 +132,11 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_reference_instruments_pg.py -q
+      - name: Corporate-action symmetric-RLS tests (Postgres, REQ-SMR-004 / OD-P1B-B / BR-17)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_reference_corporate_actions_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
