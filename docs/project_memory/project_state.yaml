@@ -1,7 +1,7 @@
 # Compact machine-readable project state for session recovery.
-# As of 2026-06-22. Re-verify `latest` (git HEAD/CI) and `working_tree` at session start — they drift.
+# As of 2026-06-23. Re-verify `latest` (git HEAD/CI) and `working_tree` at session start — they drift.
 schema_version: 1
-as_of: "2026-06-22"
+as_of: "2026-06-23"
 
 project:
   name: investment-risk-platform
@@ -10,24 +10,23 @@ project:
   default_branch: main
 
 latest:
-  origin_main_commit: 410cc7e
-  origin_main_subject: "Add P1B-2 implementation plan"
-  local_vs_origin: in-sync   # origin/main == 410cc7e; ONLY this project_memory refresh is uncommitted (no code)
-  ci_status: green           # 410cc7e: GitHub Actions run #29 = 27996506127 (success; docs-only change)
-  migration_head: 0008_reference_data   # unchanged by the plan commit; next migration 0009 lands when P1B-2 is BUILT
+  origin_main_commit: 32c7778
+  origin_main_subject: "Implement P1B-2 reference data legal entity issuer counterparty"
+  local_vs_origin: in-sync   # origin/main == 32c7778; ONLY this project_memory refresh is uncommitted (no code)
+  ci_status: green           # 32c7778: GitHub Actions run #31 = 28029190858 (success, all 5 jobs)
+  migration_head: 0009_legal_entity   # next migration: 0010 (lands when P1B-3 is BUILT)
 
 working_tree:
   uncommitted:
     - path: "docs/project_memory/* (this session-recovery refresh)"
       status: modified
       note: >
-        Project-memory refresh to HEAD 410cc7e (P1B-1 closed; P1B-2 implementation PLAN committed + CI-green).
-        Docs-only; NO code, NO migration, NO backend/frontend/worker/shared-package/test/bootstrap/CI changes.
-        Commit pending approval.
+        Project-memory refresh to HEAD 32c7778 (P1B-2 CLOSED, CI-green). Docs-only; NO code, NO
+        migration, NO backend/frontend/worker/shared-package/test/bootstrap/CI changes. Commit pending approval.
 
 operating_mode: ultracode    # plan-workflow -> commit plan -> implement -> review-workflow -> fix -> make check -> commit-on-approval -> CI
 commit_policy: explicit-approval-only
-current_approval_gate: "P1B-2 implementation PLAN committed (410cc7e) + CI-green. P1B-2 IMPLEMENTATION is READY to begin, pending EXPLICIT approval. Do not start until directed; use the §21 kickoff prompt in 10_delivery_backlog/p1b2_implementation_plan.md."
+current_approval_gate: "P1B-2 CLOSED (32c7778) + CI-green. Next is P1B-3 PLANNING ONLY on explicit approval (instrument EV + instrument_terms FR + identifier_xref). P1B-3 implementation NOT started; do not begin until the P1B-3 plan is approved."
 
 phases:
   completed:
@@ -44,19 +43,20 @@ phases:
     - {id: P1B-1-plan,   name: "P1B-1 implementation plan",     commit: "05ee5f5", ci: green}
     - {id: P1B-1,        name: "Reference data: currency/calendar(+holiday)/rating_scale(+grade); first asymmetric hybrid RLS", commit: "6568cb1", ci: green}
     - {id: P1B-2-plan,   name: "P1B-2 implementation plan (legal_entity core + issuer/counterparty profiles)", commit: "410cc7e", ci: green}
+    - {id: P1B-2,        name: "Reference data: legal_entity core + issuer/counterparty 1:1 profiles; symmetric RLS; proprietary-never-hybrid evidence", commit: "32c7778", ci: green}
 
   milestones:
     P1A: closed   # all five rails committed and CI-green
     P1B-0: committed   # decision record + plan (dbed93e) + ratifications (4fae26b), CI-green
-    P1B-1: closed   # reference data committed 6568cb1, CI-green (run #28 / 27982349921)
-    P1B-2-plan: committed   # implementation plan committed 410cc7e, CI-green (run #29 / 27996506127); 7-lens reviewed
+    P1B-1: closed   # reference data committed 6568cb1, CI-green (run #28). First asymmetric hybrid RLS.
+    P1B-2: closed   # legal_entity/issuer/counterparty committed 32c7778, CI-green (run #31 / 28029190858). Proprietary-never-hybrid.
   active:
     id: P1B-2
-    name: "P1B-2 implementation READY to begin (plan committed 410cc7e, CI-green); pending EXPLICIT approval. Implementation NOT started."
-    status: ready-pending-approval
+    name: "P1B-2 CLOSED and CI-green (32c7778); only the project-memory refresh is commit-pending"
+    status: closed-ci-green
   next:
-    id: P1B-2-implementation
-    name: "Implement P1B-2 (legal_entity core + issuer/counterparty role profiles) via the §21 kickoff prompt of p1b2_implementation_plan.md; on explicit approval only."
+    id: P1B-3-planning
+    name: "Plan P1B-3 (instrument EV identity + instrument_terms FR + identifier_xref EV) via the UltraCode planning workflow; PLANNING ONLY, on explicit approval. P1B-3 implementation NOT started."
     status: blocked-until-approval
 
 # --- P1B-1 key deliverables (CLOSED, 6568cb1, CI-green) ---
@@ -66,41 +66,52 @@ p1b1_deliverables:
   system_tenant_read: "SYSTEM_TENANT rows globally readable (closed set = the 5 tables only); data_source NOT hybrid; no-context read returns only the global slice"
   tenant_wins_dedup: "application-layer DISTINCT-ON-by-code (service.dedupe_tenant_wins) — NOT an RLS merge; UNIQUE(tenant_id, code), never UNIQUE(code)"
   audit: "ACTIVATED REFERENCE.CREATE (EVT-140) / REFERENCE.UPDATE (EVT-141) as caller constants to the FROZEN record_event; children fold into the parent event; per-tenant + SYSTEM chains"
-  lineage: "one ORIGIN edge per entity from a per-tenant MANUAL data_source (ensure_manual_source); SYSTEM seeds rooted on the SYSTEM chain"
   package: "new web-framework-free irp_shared.reference (one-way deps); thin api/reference.py endpoints; governed SYSTEM seeder (test-proven, not yet wired to prod)"
   reqs: "REQ-SMR-005 In-Progress (Done pending comprehensive global catalog, OQ-P1B1-001); REQ-SMR-004 In-Progress (calendar partial; roll math deferred)"
 
-# --- P1B-2 invariants (the PLANNED next slice; committed plan 410cc7e — NOT yet built) ---
-p1b2_invariants:
-  scope: "legal_entity (core) + issuer (ENT-002) + counterparty (ENT-003) — REQ-SMR-002. Plan: 10_delivery_backlog/p1b2_implementation_plan.md (§21 = kickoff)."
-  legal_entity: "IMPLEMENTATION-ONLY shared core — NO canonical ENT ID (OD-P1B-D); a normalization of shared LEI/name/hierarchy, not a new domain entity"
-  role_profiles: "issuer and counterparty are SEPARATE 1:1 role/profile tables over the core (UNIQUE(tenant_id, legal_entity_id), NOT-NULL FK); the unified-table-with-flags alternative is REJECTED; a legal entity may carry both"
-  temporal: "all three are EV (__temporal_class__ = EFFECTIVE_DATED); none append-only; none FR; one physical row per logical entity (in-place supersede, history via REFERENCE.UPDATE audit)"
-  tenancy: "PROPRIETARY -> tenant-scoped, SYMMETRIC RLS (USING == WITH CHECK == own-tenant); NEVER hybrid, NEVER SYSTEM_TENANT (OD-P1B-C). data_source stays symmetric. Resolvers carry an EXPLICIT tenant_id predicate so cross-tenant fails closed on SQLite + PG."
-  hierarchy: "STRUCTURE belongs in P1B-2 (parent_legal_entity_id self-FK adjacency + a bounded, cycle-safe, tenant-filtered resolve_ultimate_parent, depth cap 32). EXPOSURE-ROLLUP CALCULATION is DEFERRED (no risk math)."
-  excluded_columns: "NO netting / CSA / collateral / exposure columns on counterparty (OD-015 deferred); no stored ultimate_parent/rollup column"
-  audit_entitlement: "reuse REFERENCE.CREATE/UPDATE (each entity OWN event, not folded); audit/service.py FROZEN. Additive reference.legal_entity.view/edit only (issuer/counterparty perms exist); legal_entity.view matches the issuer/counterparty recipient set (EXCLUDES auditor_3l — proprietary-identity SoD)."
+# --- P1B-2 key deliverables (CLOSED, 32c7778, CI-green; the proprietary-never-hybrid slice) ---
+p1b2_deliverables:
+  entities: [legal_entity, issuer, counterparty]   # all EV; migration 0009; REQ-SMR-002
+  legal_entity: "IMPLEMENTATION-ONLY shared core — NO canonical ENT ID (OD-P1B-D); LEI + hierarchy live here"
+  issuer: "1:1 role/profile table over the core (ENT-002); UNIQUE(tenant_id, legal_entity_id), NOT-NULL FK"
+  counterparty: "1:1 role/profile table over the core (ENT-003); ZERO netting/CSA/collateral/exposure columns (OD-015 deferred)"
+  symmetric_rls: "tenant-scoped SYMMETRIC RLS (USING == WITH CHECK == own-tenant; FORCE RLS); no-context read returns ZERO rows"
+  proprietary_never_hybrid: "PROPRIETARY -> NEVER hybrid, NEVER SYSTEM_TENANT (OD-P1B-C); pg_policies positive symmetric assertion + closed-hybrid-set still exactly the 5 P1B-1 tables; data_source stays symmetric"
+  lei_partial_unique: "Postgres partial-unique (tenant_id, lei) WHERE lei IS NOT NULL (LEI unique per tenant when present; NULL leis coexist; same lei across tenants allowed); alembic-check drift-clean; SQLite + PG behavioral tests"
+  hierarchy_structure: "parent_legal_entity_id intra-tenant self-FK adjacency (the hierarchy STRUCTURE); exposure-rollup CALCULATION DEFERRED (no risk math, no stored ultimate_parent column)"
+  ultimate_parent_resolver: "bounded (visited-set + depth cap 32), cycle-safe, boundary-terminating resolve_ultimate_parent; each hop carries an EXPLICIT tenant_id predicate (cross-tenant fails closed on SQLite + PG); pure structural walk"
+  audit_lineage: "reuse REFERENCE.CREATE/UPDATE (each entity OWN event, NOT folded; audit/service.py FROZEN); one MANUAL-data_source ORIGIN edge per row; fail-closed CREATE (per entity) + UPDATE"
+  entitlement: "additive reference.legal_entity.view/edit only; legal_entity.view recipients == issuer/counterparty.view set (EXCLUDES auditor_3l, proprietary-identity SoD; parity test)"
+  reqs: "REQ-SMR-002 In-Progress (structural hierarchy shipped; exposure-rollup CALC deferred to P2+)"
 
-p1b_open_decisions:        # ratified at P1B-0 (4fae26b); guide P1B-2..P1B-5
-  OD-P1B-A: "instrument split: instrument=EV identity + instrument_terms=FR (P1B-3)"
+# --- P1B-3 focus (the PLANNED next slice; NOT yet planned/built) ---
+p1b3_focus:
+  instrument: "instrument = EV identity (asset_class, status, issuer FK to the issuer profile) — OD-P1B-A"
+  instrument_terms: "instrument_terms = FR (FullReproducibleMixin) — the FIRST REAL BITEMPORAL usage on the platform; coupon/maturity/call/day-count/denomination ccy; instrument FK"
+  identifier_xref: "identifier_xref = EV (scheme/value, valid_from/valid_to); tenant-scoped"
+  resolution: "deterministic SINGLE-result-or-AmbiguousIdentifier resolution (OD-P1B-G); partial-unique (tenant_id, scheme, value) WHERE valid_to IS NULL; cross-vendor precedence DEFERRED (OD-012 -> P1C)"
+  reqs: "REQ-SMR-001 (instrument) + REQ-SMR-003 (identifier_xref, partial); REQUIRES R-05 + the OD-P1B-A/G ratifications already in place"
+  tenancy: "all tenant-scoped, SYMMETRIC RLS (proprietary, NEVER hybrid). FR temporal queries apply the native-uuid CI lessons."
+
+p1b_open_decisions:        # ratified at P1B-0 (4fae26b); guide P1B-3..P1B-5
+  OD-P1B-A: "instrument split: instrument=EV identity + instrument_terms=FR (P1B-3 = NEXT)"
   OD-P1B-B: "corporate_action = EV (P1B-4)"
-  OD-P1B-C: "hybrid via SYSTEM_TENANT + asymmetric RLS; hybrid set {currency,calendar,rating_scale}; AD-013-R1 (REALIZED in P1B-1). Proprietary entities (legal_entity/issuer/counterparty/instrument/...) NEVER hybrid."
-  OD-P1B-D: "legal_entity core (no ENT id) + separate issuer/counterparty role profiles (PLANNED P1B-2, plan 410cc7e)"
-  OD-P1B-E: "new REFERENCE.* audit category (EVT-140 block); R-07 (CREATE/UPDATE activated P1B-1; CORRECTION/STATUS_CHANGE reserved)"
-  OD-P1B-F: "add currency/rating_scale/legal_entity + .view permissions; R-07 (currency/rating_scale/calendar.view minted P1B-1; legal_entity.* at P1B-2)"
-  OD-P1B-G: "deterministic-or-ambiguity identifier resolution; precedence deferred (OD-012/P1C) (P1B-3)"
-  OD-P1B-H: "irp_shared.reference package, one-way deps (CREATED P1B-1; extended P1B-2)"
-  OD-P1B-I: "per-tenant MANUAL data_source; lineage rooted in each row's own context (REALIZED P1B-1; reused P1B-2)"
+  OD-P1B-C: "hybrid via SYSTEM_TENANT + asymmetric RLS; closed hybrid set {currency,calendar,rating_scale} (REALIZED P1B-1). Proprietary entities (legal_entity/issuer/counterparty/instrument/instrument_terms/identifier_xref) NEVER hybrid (legal_entity/issuer/counterparty REALIZED P1B-2)."
+  OD-P1B-D: "legal_entity core (no ENT id) + separate issuer/counterparty role profiles (REALIZED P1B-2, 32c7778)"
+  OD-P1B-E: "new REFERENCE.* audit category (EVT-140 block); R-07 (CREATE/UPDATE activated P1B-1; extended to legal_entity/issuer/counterparty P1B-2; CORRECTION/STATUS_CHANGE reserved)"
+  OD-P1B-F: "add currency/rating_scale/legal_entity + .view permissions; R-07 (currency/rating_scale/calendar.view P1B-1; legal_entity.* P1B-2)"
+  OD-P1B-G: "deterministic-or-ambiguity identifier resolution; precedence deferred (OD-012/P1C) (P1B-3 = NEXT)"
+  OD-P1B-H: "irp_shared.reference package, one-way deps (CREATED P1B-1; extended P1B-2; extended again P1B-3)"
+  OD-P1B-I: "per-tenant MANUAL data_source; lineage rooted in each row's own context (REALIZED P1B-1; reused P1B-2/P1B-3)"
   OD-P1B-J: "mint REQ-SMR-005 + re-partition CAP-2.5 + annotate ENT-007 EV/FR; R-02/R-05 (DONE P1B-0/P1B-1)"
 
 blockers:
-  - "P1B-2 implementation PLAN committed (410cc7e) and CI-green; P1B-2 IMPLEMENTATION is ready but MUST NOT start until explicitly approved."
+  - "P1B-2 CLOSED (32c7778) and CI-green; P1B-3 is PLANNING ONLY next, and only on explicit approval. P1B-3 implementation MUST NOT start until its plan is approved."
   - "Every step gated on explicit user approval; do not start the next slice unprompted."
 
 do_not_start:
-  - P1B-2 implementation (legal_entity/issuer/counterparty entities, migration 0009, api/reference_entities.py) until EXPLICITLY approved
-  - P1B-3 (instrument, instrument_terms (FR), identifier_xref) ; P1B-4 (corporate_action) ; P1B-5 (ingestion mapping)  # later sub-slices, not now
-  - no instrument / no instrument_terms / no identifier_xref / no corporate_action
+  - P1B-3 implementation (instrument / instrument_terms (FR) / identifier_xref entities, migration 0010, endpoints) until the P1B-3 plan is approved
+  - no corporate_action (P1B-4) ; no ingestion mapping (P1B-5)
   - no portfolio / no positions / no valuations
   - no market data / no private-asset ingestion / no risk calculations / no exposure aggregation / no reporting / no dashboards / no real SSO
   - P1C and P2+   # everything beyond Security Master & Reference Data
@@ -120,11 +131,11 @@ security_housekeeping:
       credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.
 
 recheck_at_session_start:
-  - "git log -1 --oneline ; git status --short   (HEAD should be >= 410cc7e; whether this memory refresh got committed)"
+  - "git log -1 --oneline ; git status --short   (HEAD should be >= 32c7778; whether this memory refresh got committed)"
   - "latest CI conclusion for current HEAD (GitHub Actions REST API; gh CLI not installed)"
   - "git remote -v   (origin is now SSH: git@github.com:ghostai8088/investment-risk-platform.git; auth via Keychain-backed key)"
-  - "migration head is 0008_reference_data; the P1B-2 BUILD will add 0009"
+  - "migration head is 0009_legal_entity; the P1B-3 BUILD will add 0010"
 
 uncertain_values:
-  - "as_of '2026-06-22' matches the commit timeline + sibling docs; the host clock briefly reported 2026-06-18 (kept 2026-06-22 for consistency)."
-  - "This project_memory refresh is UNCOMMITTED — origin/main stays 410cc7e until it is committed on approval."
+  - "as_of '2026-06-23' (P1B-2 landed 06-23; the slice timeline spans 06-22 -> 06-23). Prior snapshots used 06-22."
+  - "This project_memory refresh is UNCOMMITTED — origin/main stays 32c7778 until it is committed on approval."

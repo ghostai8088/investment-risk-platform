@@ -38,8 +38,8 @@ constrained-role PG RLS tests · append-only trigger tests. (Full inventory: `10
 Direction (canonical BC-02/BC-03): the first **domain** data, built on the P1A rails, reference-data only.
 Sub-slices (see `10_delivery_backlog/p1b_implementation_plan.md`):
 - **P1B-1** currency / calendar / rating_scale (EV; first hybrid global+tenant RLS) — **DONE / CLOSED (`6568cb1`, CI-green).** First asymmetric hybrid RLS (AD-013-R1); `REFERENCE.CREATE`/`UPDATE`; SYSTEM_TENANT global-read; app-layer tenant-wins dedup; MANUAL-`data_source` lineage; `irp_shared.reference` package.
-- **P1B-2** legal_entity core + issuer / counterparty role profiles (EV) — **PLAN COMMITTED (`410cc7e`, CI-green, 7-lens reviewed); implementation READY, pending approval.** `legal_entity` implementation-only (no ENT id); separate 1:1 role profiles; tenant-scoped SYMMETRIC RLS, **NEVER hybrid** (proprietary); hierarchy structure (rollup calc deferred); plan §21 = kickoff.
-- **P1B-3** instrument (EV identity) + instrument_terms (**FR** — first real bitemporal usage) + identifier_xref (EV).
+- **P1B-2** legal_entity core + issuer / counterparty role profiles (EV) — **DONE / CLOSED (`32c7778`, CI-green, 7-lens reviewed).** `legal_entity` implementation-only (no ENT id); separate 1:1 role profiles; tenant-scoped SYMMETRIC RLS, **NEVER hybrid** (the proprietary-never-hybrid evidence); LEI partial-unique; hierarchy structure + bounded ultimate-parent resolver (rollup calc deferred).
+- **P1B-3** instrument (EV identity) + instrument_terms (**FR** — first real bitemporal usage) + identifier_xref (EV) — **NEXT (planning only, on approval).** Deterministic single-result-or-ambiguity identifier resolution (OD-P1B-G); cross-vendor precedence deferred (OD-012 → P1C).
 - **P1B-4** corporate_action (EV, effective-dated).
 - **P1B-5** reference-data ingestion mapping (**conditional / deferred** — only if bulk loading is needed).
 Open decisions resolved in P1B-0: OD-P1B-A…J (see `decision_summary.md`).

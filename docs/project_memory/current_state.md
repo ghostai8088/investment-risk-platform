@@ -2,7 +2,7 @@
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this first, then `project_state.yaml`, `next_actions.md`, and
-> `claude_operating_instructions.md`. **As of 2026-06-22.** Values that drift are flagged; re-verify the
+> `claude_operating_instructions.md`. **As of 2026-06-23.** Values that drift are flagged; re-verify the
 > ones in "Re-check at session start" before acting.
 
 ## Repository
@@ -11,20 +11,21 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `410cc7e` — "Add P1B-2 implementation plan" (the P1B-1 implementation landed at `6568cb1`, just prior).
+- **origin/main HEAD:** `32c7778` — "Implement P1B-2 reference data legal entity issuer counterparty" (the P1B-2 plan landed at `410cc7e`, just prior).
 - **Local == origin:** yes; **only this `docs/project_memory/` refresh is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** for `410cc7e` (GitHub Actions **run #29 = 27996506127** = success; docs-only change). P1B-1's `6568cb1` was green at run #28 (27982349921).
-- **Migration head:** `0008_reference_data` (the P1B-2 plan commit added no migration; the P1B-2 **build** will add `0009`).
+- **Latest CI:** **GREEN** for `32c7778` (GitHub Actions **run #31 = 28029190858** = success — all 5 jobs; the migration job's new **"Legal-entity symmetric-RLS tests (Postgres)"** step passed). P1B-1's `6568cb1` was green at run #28.
+- **Migration head:** `0009_legal_entity` (the P1B-3 **build** will add `0010`).
 
 ## Working tree (uncommitted)
 - **This `docs/project_memory/*` refresh** — modified tracked files, commit pending approval. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
 
 ## Current active gate
-**P1B-1 (Reference Data — currency / calendar / rating_scale) is CLOSED and CI-green** (`6568cb1`, run #28).
-The **P1B-2 implementation PLAN is COMMITTED and CI-green** (`410cc7e`, run #29), 7-lens UltraCode reviewed and
-hardened. **P1B-2 IMPLEMENTATION is READY to begin, pending EXPLICIT approval — implementation is NOT started.**
-Do not begin the build until directed; the paste-ready kickoff is **§21 of `10_delivery_backlog/p1b2_implementation_plan.md`**.
-The platform follows a strict planning-first, commit-only-on-explicit-approval cadence; plan / implement / commit are separate approvals.
+**P1B-2 (Reference Data — legal_entity core + issuer/counterparty profiles) is CLOSED and CI-green**
+(`32c7778`, run #31), 7-lens UltraCode reviewed. The next step is **P1B-3 PLANNING ONLY** (instrument EV
+identity + `instrument_terms` **FR** — the first real bitemporal usage — + `identifier_xref` EV), via the
+UltraCode planning workflow, **on explicit approval**. **P1B-3 implementation is NOT started** and must not
+begin until the P1B-3 plan is approved. The platform follows a strict planning-first,
+commit-only-on-explicit-approval cadence; plan / implement / commit are separate approvals.
 
 ## P1B-1 key deliverables (closed, `6568cb1`)
 - **Five EV reference tables** (migration `0008`): `currency`, `calendar`, `calendar_holiday`, `rating_scale`, `rating_grade` — all `__temporal_class__ = EFFECTIVE_DATED`, `UNIQUE(tenant_id, code)` (never `UNIQUE(code)`), no append-only trigger.
@@ -42,28 +43,36 @@ The platform follows a strict planning-first, commit-only-on-explicit-approval c
 - **P1B-0 decision record + plan** — `dbed93e`; **ratifications into governance** — `4fae26b`; **project-memory artifacts** — `b1efc05`.
 - **P1B-1 implementation plan** — `05ee5f5`.
 - **P1B-1 reference-data implementation** — `6568cb1` (CI-green, run #28). **P1B-1 CLOSED.**
-- **P1B-2 implementation plan** — `410cc7e` (CI-green, run #29). *Plan only — P1B-2 implementation not started.*
+- **P1B-2 implementation plan** — `410cc7e` (CI-green, run #29).
+- **P1B-2 reference-data implementation** — `32c7778` (CI-green, run #31). **P1B-2 CLOSED.**
 
-## P1B-2 invariants (the PLANNED next slice — committed plan `410cc7e`, NOT yet built)
-Plan: `10_delivery_backlog/p1b2_implementation_plan.md` (§21 = kickoff). REQ-SMR-002 (issuer ENT-002 +
-counterparty ENT-003 over a shared `legal_entity` core).
-- **`legal_entity` is IMPLEMENTATION-ONLY — NO canonical ENT ID** (OD-P1B-D); a normalization of shared LEI/name/hierarchy, not a new domain entity.
-- **`issuer` and `counterparty` are SEPARATE 1:1 role/profile tables** over the core (`UNIQUE(tenant_id, legal_entity_id)`, NOT-NULL FK); the unified-table-with-flags alternative is REJECTED; a legal entity may carry both.
-- **All three are EV** (`__temporal_class__ = EFFECTIVE_DATED`); none append-only, none FR; one physical row per logical entity (in-place supersede, history via `REFERENCE.UPDATE` audit).
-- **All three are tenant-scoped and NEVER hybrid** — PROPRIETARY → SYMMETRIC RLS (`USING == WITH CHECK == own-tenant`), no SYSTEM_TENANT (OD-P1B-C). Resolvers carry an EXPLICIT tenant predicate (cross-tenant fails closed on SQLite + PG).
-- **Hierarchy STRUCTURE belongs in P1B-2** (`parent_legal_entity_id` self-FK adjacency + a bounded, cycle-safe, tenant-filtered `resolve_ultimate_parent`, depth cap 32); the **exposure-rollup CALCULATION is DEFERRED** (no risk math).
-- **No netting / CSA / collateral / exposure columns** (OD-015 deferred); no stored rollup column.
-- Reuse `REFERENCE.CREATE/UPDATE` (each entity OWN event; `audit/service.py` FROZEN); additive `reference.legal_entity.view/edit` only (`legal_entity.view` matches the issuer/counterparty recipient set — EXCLUDES `auditor_3l`).
+## P1B-2 key deliverables (closed, `32c7778`)
+REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evidence (the inverse of P1B-1).
+- **`legal_entity` IMPLEMENTATION-ONLY core — NO canonical ENT ID** (OD-P1B-D); LEI + hierarchy live on the core.
+- **`issuer` (ENT-002) + `counterparty` (ENT-003) as SEPARATE 1:1 role/profile tables** over the core (`UNIQUE(tenant_id, legal_entity_id)` + NOT-NULL FK); a legal entity may carry both; the unified-table-with-flags alternative was NOT built.
+- **Symmetric tenant-scoped RLS** (`USING == WITH CHECK == own-tenant`; FORCE RLS) — **proprietary-never-hybrid**: no SYSTEM_TENANT rows; no-context read returns **zero** rows; `pg_policies` positive symmetric assertion + the **closed hybrid set stays exactly the 5 P1B-1 tables**; `data_source` stays symmetric.
+- **LEI partial-uniqueness:** Postgres partial-unique `(tenant_id, lei) WHERE lei IS NOT NULL` (per-tenant when present; NULLs coexist; same lei across tenants allowed); drift-clean; SQLite + PG behavioral tests.
+- **Legal-entity hierarchy STRUCTURE:** `parent_legal_entity_id` intra-tenant self-FK adjacency; the **exposure-rollup CALCULATION is DEFERRED** (no risk math, no stored `ultimate_parent` column; counterparty has zero netting/CSA/collateral/exposure columns).
+- **Bounded ultimate-parent resolver:** `resolve_ultimate_parent` (visited-set + depth cap 32, cycle-safe, boundary-terminating); each hop carries an EXPLICIT `tenant_id` predicate (cross-tenant fails closed on SQLite + PG); pure structural walk.
+- Reuse `REFERENCE.CREATE/UPDATE` (each entity OWN event, NOT folded; `audit/service.py` FROZEN); one MANUAL-`data_source` ORIGIN edge per row; additive `reference.legal_entity.view/edit` (`.view` recipients == issuer/counterparty.view set — **EXCLUDES `auditor_3l`**, proprietary-identity SoD).
+
+## P1B-3 focus (the PLANNED next slice — NOT yet planned/built)
+REQ-SMR-001 (instrument) + REQ-SMR-003 (identifier_xref). The **first real bitemporal usage** on the platform.
+- **`instrument` = EV identity** (asset_class, status, issuer FK → the `issuer` profile) — OD-P1B-A.
+- **`instrument_terms` = FR** (`FullReproducibleMixin`) — coupon/maturity/call/day-count/denomination ccy; instrument FK. **The first persisted user of FR / bitemporality** (it has been unexercised through P1B-2).
+- **`identifier_xref` = EV** (scheme/value, valid_from/valid_to); tenant-scoped.
+- **Deterministic single-result-or-`AmbiguousIdentifier` resolution** (OD-P1B-G); partial-unique `(tenant_id, scheme, value) WHERE valid_to IS NULL`; cross-vendor precedence DEFERRED (OD-012 → P1C).
+- All tenant-scoped SYMMETRIC RLS (proprietary, NEVER hybrid); FR temporal queries apply the native-uuid CI lessons.
 
 ## Next required action
-**Implement P1B-2** (legal_entity core + issuer / counterparty role profiles) **on explicit approval**, via the
-§21 kickoff prompt of `p1b2_implementation_plan.md` (multi-lens review → fix → `make check` + the new
-legal-entity RLS PG step → commit on approval). **Do NOT begin the build until directed.** See `next_actions.md`.
+**Plan P1B-3** (instrument EV + `instrument_terms` FR + identifier_xref EV — OD-P1B-A/G) via the UltraCode
+planning workflow → committed plan doc, **on explicit approval. Planning only — do NOT implement P1B-3.**
+See `next_actions.md` for the exact prompt and gates.
 
 ## What MUST NOT be started yet
-- **P1B-2 implementation** (legal_entity / issuer / counterparty entities, migration `0009`, `api/reference_entities.py`) — until **explicitly approved**.
-- **P1B-3** (instrument / instrument_terms FR / identifier_xref), **P1B-4** (corporate_action), **P1B-5** (ingestion mapping) — later sub-slices, not now.
-- No **instrument / instrument_terms / identifier_xref / corporate_action**; no **portfolio / positions / valuations**; no **market data / private-asset ingestion / risk calculations / exposure aggregation / reporting / dashboards / real SSO**.
+- **P1B-3 implementation** (instrument / instrument_terms FR / identifier_xref entities, migration `0010`, endpoints) — until the P1B-3 plan is **approved**.
+- **P1B-4** (corporate_action), **P1B-5** (ingestion mapping) — later sub-slices, not now.
+- No **corporate_action**; no **portfolio / positions / valuations**; no **market data / private-asset ingestion / risk calculations / exposure aggregation / reporting / dashboards / real SSO**.
 - **P1C / P2+** — anything beyond Security Master & Reference Data.
 - **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen); no new audit code / permission / role without the governed R-07 update.
 
@@ -71,7 +80,7 @@ legal-entity RLS PG step → commit on approval). **Do NOT begin the build until
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `410cc7e`) and whether this memory refresh was committed.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `32c7778`) and whether this memory refresh was committed.
 - Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — query the REST API).
 - `git remote -v` — origin is now SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0008_reference_data` (the P1B-2 build will add `0009`).
+- Migration head is `0009_legal_entity` (the P1B-3 build will add `0010`).
