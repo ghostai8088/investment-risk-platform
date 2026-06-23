@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.reference.legal_entity import resolve_legal_entity
@@ -24,6 +25,30 @@ from irp_shared.reference.service import (
 
 #: Mutable role attributes ``update_issuer`` will diff/apply (legal_entity_id is the stable link).
 _UPDATABLE = ("issuer_type", "sector", "is_active")
+
+
+class IssuerNotVisible(Exception):
+    """Raised when an ``issuer_id`` is not visible in the acting tenant scope (cross-tenant hidden,
+    or unknown) — a dependent write (e.g. an ``instrument.issuer_id``) fails closed."""
+
+    def __init__(self, issuer_id: str) -> None:
+        super().__init__(f"issuer {issuer_id} is not visible in the current tenant context")
+        self.issuer_id = str(issuer_id)
+
+
+def resolve_issuer(session: Session, issuer_id: str, *, acting_tenant: str) -> Issuer:
+    """Resolve an ``issuer`` profile by id with an EXPLICIT ``tenant_id == acting_tenant`` predicate
+    (fail-closed on SQLite AND PG, the ``resolve_legal_entity`` pattern). Raises
+    :class:`IssuerNotVisible` on a hidden/unknown id."""
+    issuer = session.execute(
+        select(Issuer).where(
+            Issuer.id == str(issuer_id),
+            Issuer.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if issuer is None:
+        raise IssuerNotVisible(str(issuer_id))
+    return issuer
 
 
 def create_issuer(

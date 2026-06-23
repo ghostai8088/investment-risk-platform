@@ -29,6 +29,7 @@ on the core (``parent_legal_entity_id`` self-FK); the exposure-rollup calc is de
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -36,6 +37,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
     text,
@@ -45,6 +47,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from irp_shared.db.base import Base
 from irp_shared.db.mixins import (
     EffectiveDatedMixin,
+    FullReproducibleMixin,
     PrimaryKeyMixin,
     TenantMixin,
     TimestampMixin,
@@ -255,5 +258,155 @@ class Counterparty(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampM
     counterparty_type: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )  # BANK/BROKER/CCP/...
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+# --- P1B-3: instrument (EV identity) + instrument_terms (FR) + identifier_xref (EV) ---
+# All three are PROPRIETARY, tenant-scoped, NEVER hybrid (symmetric RLS, migration 0010).
+
+
+class Instrument(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):
+    """Security-master identity / head (ENT-001 identity, EV; OD-P1B-A split).
+
+    Identity/master attributes ONLY — the FR economic/legal terms live on ``instrument_terms``.
+    ``issuer_id`` is a NULLABLE intra-tenant FK to the ``issuer`` PROFILE (cash/FX/index carry no
+    issuer); a non-null value is resolved tenant-filtered (fail-closed cross-tenant). ``is_active``
+    is the SINGLE lifecycle flag (no ``status`` string); the EV active window (``valid_to IS NULL``)
+    is the resolution predicate and the flip rides on ``REFERENCE.UPDATE``. ``currency_code`` is a
+    plain ISO-4217 string (NOT a FK to the HYBRID ``currency`` table — avoids proprietary→hybrid
+    coupling, the ``legal_entity.lei`` precedent). NO price/valuation/holding/risk/terms column."""
+
+    __tablename__ = "instrument"
+    __temporal_class__ = TemporalClass.EFFECTIVE_DATED
+    __table_args__ = (UniqueConstraint("tenant_id", "code", name="uq_instrument_tenant_code"),)
+
+    code: Mapped[str] = mapped_column(String(150), nullable=False)  # firm-assigned instrument key
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    asset_class: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # EQUITY/BOND/FX/CASH/... plain
+    instrument_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # GOVT_BOND/... plain
+    issuer_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("issuer.id"), nullable=True, index=True
+    )  # nullable; intra-tenant; resolved tenant-filtered
+    currency_code: Mapped[str | None] = mapped_column(
+        String(3), nullable=True
+    )  # ISO-4217 plain str, no FK
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class InstrumentTerms(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):
+    """Effective-dated economic/legal terms (ENT-001 terms, **FR** — the platform's FIRST real
+    bitemporal entity; OD-P1B-A / AD-005 §2A).
+
+    FR keeps full version history in-table on BOTH axes: ``valid_from/valid_to`` (valid time, TR-01)
+    and ``system_from/system_to`` (system/knowledge time, TR-02). Versions are written by the
+    ``instrument_terms`` binder protocol (create / effective-dated supersede / as-known correction);
+    a prior version's economic columns are NEVER mutated in place — only its
+    ``valid_to``/``system_to``
+    close-out columns. The table is therefore **NOT** append-only (no ``irp_prevent_mutation``
+    trigger,
+    no ``APPEND_ONLY_TABLES`` entry); content-immutability is service-enforced + tested.
+    ``supersedes_id``
+    links to the superseded version (TR-08, set on both supersede and correction);
+    ``restatement_reason``
+    is set ONLY on a correction. Economic columns are inert placeholder strings/numerics — NO
+    pricing,
+    cashflow, day-count, or valuation math in this slice."""
+
+    __tablename__ = "instrument_terms"
+    __temporal_class__ = TemporalClass.FULL_REPRODUCIBLE
+    __table_args__ = (
+        # Bitemporal current-head invariant: at most one version OPEN ON BOTH axes per instrument.
+        # Correctness of as-of reconstruction comes from the binder's query predicate, NOT this
+        # index.
+        # SQLite supports partial indexes with WHERE, so the same predicate is emitted for both
+        # engines; migration 0010 emits the byte-identical name + postgresql_where (drift-clean).
+        Index(
+            "uq_instrument_terms_current",
+            "tenant_id",
+            "instrument_id",
+            unique=True,
+            postgresql_where=text("valid_to IS NULL AND system_to IS NULL"),
+            sqlite_where=text("valid_to IS NULL AND system_to IS NULL"),
+        ),
+    )
+
+    instrument_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("instrument.id"), nullable=False, index=True
+    )  # the logical key (all version rows of one instrument's terms)
+    coupon_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    coupon_frequency: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # ANNUAL/SEMI_ANNUAL/... plain
+    issue_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    maturity_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    day_count: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # ACT/360, 30/360, ... plain
+    denomination_currency: Mapped[str | None] = mapped_column(
+        String(3), nullable=True
+    )  # ISO-4217 plain str
+    face_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    term_source: Mapped[str | None] = mapped_column(
+        String(150), nullable=True
+    )  # methodology/source pointer
+    restatement_reason: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )  # set ONLY on a correction (TR-08)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("instrument_terms.id"), nullable=True
+    )  # link to the superseded version (TR-08)
+    record_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1
+    )  # logical version count (create=1; each supersede/correction = prev+1)
+
+
+class IdentifierXref(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):
+    """Instrument/entity identifier cross-reference (ENT-004, EV; OD-P1B-G).
+
+    ``(entity_type, entity_id)`` is a POLYMORPHIC reference with NO domain FK (genericity, MG-01) —
+    P1B-3 writes only ``entity_type='instrument'``. Referential + tenant integrity of ``entity_id``
+    rests solely on the binder's tenant-filtered ``resolve_instrument`` + the RLS ``WITH CHECK`` on
+    the
+    xref row's own ``tenant_id`` (RLS does not tenant-check the polymorphic target). The active
+    partial-unique ``(tenant_id, scheme, value) WHERE valid_to IS NULL`` is the OD-P1B-G structural
+    uniqueness for the deterministic-or-``AmbiguousIdentifier`` resolver. ``source`` is a provenance
+    hint, NOT precedence authority (cross-vendor precedence deferred to OD-012/P1C)."""
+
+    __tablename__ = "identifier_xref"
+    __temporal_class__ = TemporalClass.EFFECTIVE_DATED
+    __table_args__ = (
+        # Active-only structural uniqueness (a plain UNIQUE cannot express "over the active period"
+        # and would collide across superseded EV versions). SQLite partial index supported.
+        Index(
+            "uq_identifier_xref_active",
+            "tenant_id",
+            "scheme",
+            "value",
+            unique=True,
+            postgresql_where=text("valid_to IS NULL"),
+            sqlite_where=text("valid_to IS NULL"),
+        ),
+        Index("ix_identifier_xref_entity", "entity_type", "entity_id"),
+    )
+
+    entity_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # polymorphic; P1B-3 = 'instrument' only
+    entity_id: Mapped[str] = mapped_column(GUID, nullable=False)  # polymorphic ref, NO domain FK
+    scheme: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # ISIN/CUSIP/SEDOL/FIGI/TICKER/INTERNAL_ID/... plain
+    value: Mapped[str] = mapped_column(
+        String(255), nullable=False
+    )  # identifier value (trim hygiene)
+    source: Mapped[str | None] = mapped_column(
+        String(150), nullable=True
+    )  # provenance hint, NOT precedence
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

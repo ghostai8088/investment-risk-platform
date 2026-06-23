@@ -71,6 +71,15 @@ audit), profile→core + hierarchy cross-tenant fail-closed (explicit tenant pre
 FORCE-RLS** structural assertion, and that the **closed hybrid set is unchanged** (still exactly the five P1B-1 tables —
 proprietary-never-hybrid). Reuses `REFERENCE.CREATE/UPDATE` (own event per entity), MANUAL-source lineage, and the additive
 `reference.legal_entity.*` permissions (no new audit framework code; `legal_entity.view` excludes `auditor_3l`).
+**P1B-3** builds the third SMR slice (REQ-SMR-001/003): `instrument` (EV identity) + `instrument_terms` (**FR** — the platform's first
+persisted bitemporal entity) + `identifier_xref` (EV) — three PROPRIETARY tables (migration `0010`) under the symmetric RLS loop.
+A new CI step **"Instrument / identifier symmetric-RLS + FR-bitemporal tests (Postgres)"** runs `test_reference_instruments_pg.py`
+under `irp_app`, proving cross-tenant invisibility + no-context-zero-rows, forged-write → 42501, the cross-tenant linked-id
+(`issuer_id`/`instrument_id`/`entity_id`) guard is the **service-layer `*NotVisible` predicate pre-commit** (RLS does not tenant-check
+FK/polymorphic targets), the positive symmetric-policy + FORCE-RLS assertion, the unchanged closed-hybrid-set, and the **FR
+bitemporal as-of reconstruction on both axes** + that `instrument_terms` is not append-only (close-out UPDATE succeeds). Activates
+`REFERENCE.CORRECTION` (EVT-142, caller-side; `audit/service.py` FROZEN) and the additive `reference.identifier.view/edit`
+permissions (`.resolve` recipients unchanged; `auditor_3l` excluded).
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 

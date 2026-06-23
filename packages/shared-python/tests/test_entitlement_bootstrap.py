@@ -128,6 +128,43 @@ def test_legal_entity_permissions_additive_and_recipient_parity() -> None:
     assert _holders("reference.legal_entity.edit") == {"data_steward", "platform_admin"}
 
 
+def test_identifier_permissions_additive_and_recipient_parity() -> None:
+    # P1B-3: the two additive identifier permissions exist; reference.rating.* still absent.
+    assert "reference.identifier.view" in ALL_CODES
+    assert "reference.identifier.edit" in ALL_CODES
+    assert not any(code.startswith("reference.rating.") for code in ALL_CODES)
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    # P1B-3 is purely ADDITIVE: the new .view recipients EQUAL the reference.instrument.view set
+    # (proprietary security-master SoD — EXCLUDES auditor_3l), and the pre-existing
+    # reference.identifier.resolve recipient set is UNCHANGED (NOT widened to risk_manager_2l).
+    assert _holders("reference.identifier.view") == _holders("reference.instrument.view")
+    assert _holders("reference.identifier.view") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "risk_manager_2l",
+        "platform_admin",
+    }
+    # .edit: data_steward (the maker) + platform_admin only.
+    assert _holders("reference.identifier.edit") == {"data_steward", "platform_admin"}
+    # .resolve: pre-existing recipients UNCHANGED — risk_manager_2l must NOT be granted resolve.
+    assert _holders("reference.identifier.resolve") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "platform_admin",
+    }
+    assert "risk_manager_2l" not in _holders("reference.identifier.resolve")
+    # auditor_3l excluded from all three (proprietary-identity SoD).
+    for code in (
+        "reference.identifier.view",
+        "reference.identifier.edit",
+        "reference.identifier.resolve",
+    ):
+        assert "auditor_3l" not in _holders(code)
+
+
 def test_ids_deterministic_and_unique() -> None:
     assert permission_id("data.upload") == permission_id("data.upload")
     assert role_id("ops") == role_id("ops")

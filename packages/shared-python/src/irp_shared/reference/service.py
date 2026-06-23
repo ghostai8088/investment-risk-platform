@@ -31,7 +31,11 @@ from sqlalchemy.orm import Session
 from irp_shared.audit.service import record_event
 from irp_shared.lineage.models import EDGE_KIND_ORIGIN, DataSource
 from irp_shared.lineage.service import record_lineage, register_data_source
-from irp_shared.reference.events import REFERENCE_CREATE_EVENT, REFERENCE_UPDATE_EVENT
+from irp_shared.reference.events import (
+    REFERENCE_CORRECTION_EVENT,
+    REFERENCE_CREATE_EVENT,
+    REFERENCE_UPDATE_EVENT,
+)
 
 #: ``data_source`` provenance for governed reference CRUD (value-level vocab; no schema change).
 MANUAL_SOURCE_TYPE = "MANUAL"
@@ -46,6 +50,9 @@ ENTITY_RATING_SCALE = "rating_scale"
 ENTITY_LEGAL_ENTITY = "legal_entity"
 ENTITY_ISSUER = "issuer"
 ENTITY_COUNTERPARTY = "counterparty"
+ENTITY_INSTRUMENT = "instrument"
+ENTITY_INSTRUMENT_TERMS = "instrument_terms"
+ENTITY_IDENTIFIER_XREF = "identifier_xref"
 
 #: ``source_module`` for every reference audit event.
 SOURCE_MODULE = "reference"
@@ -164,6 +171,53 @@ def record_reference_update(
         action="update",
         before_value=before_value,
         after_value=after_value,
+        correlation_id=actor.correlation_id,
+        agent_model=actor.agent_model,
+        agent_model_version=actor.agent_model_version,
+        on_behalf_of=actor.on_behalf_of,
+        data_classification="DC-2",
+    )
+
+
+def record_reference_correction(
+    session: Session,
+    *,
+    entity: Any,
+    entity_type: str,
+    restatement_reason: str,
+    before_value: dict[str, Any] | None = None,
+    after_value: dict[str, Any],
+    actor: ReferenceActor,
+) -> None:
+    """Root one ORIGIN edge and emit ``REFERENCE.CORRECTION`` (EVT-142) for an FR as-known restate.
+
+    The corrected row is a NEW physical version (its own lineage origin), so this mirrors
+    ``record_reference_create``'s edge rooting; the prior row's ``system_to`` close-out is a
+    separate ``record_reference_update`` (no edge). EVT-142 is activated caller-side here
+    (OQ-7 / R-07); the FROZEN ``audit.service.record_event`` is unchanged. ``restatement_reason``
+    (TR-08) is recorded on the canonical ``justification`` audit field AND in the DC-2
+    ``after_value`` metadata; ``approval_ref`` stays ``None`` until BR-7 enforcement (P6/P7)."""
+    source = ensure_manual_source(session, entity.tenant_id, actor.actor_id)
+    record_lineage(
+        session,
+        source=source,
+        target_entity_type=entity_type,
+        target_entity_id=entity.id,
+        edge_kind=EDGE_KIND_ORIGIN,
+    )
+    record_event(
+        session,
+        event_type=REFERENCE_CORRECTION_EVENT,
+        tenant_id=entity.tenant_id,
+        actor_type=actor.actor_type,
+        actor_id=actor.actor_id,
+        source_module=SOURCE_MODULE,
+        entity_type=entity_type,
+        entity_id=entity.id,
+        action="correct",
+        before_value=before_value,
+        after_value=after_value,
+        justification=restatement_reason,  # TR-08 reason on the canonical audit field
         correlation_id=actor.correlation_id,
         agent_model=actor.agent_model,
         agent_model_version=actor.agent_model_version,

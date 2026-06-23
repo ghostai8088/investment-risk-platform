@@ -412,6 +412,8 @@ def test_reference_import_direction() -> None:
         "irp_shared.risk",
         "irp_shared.portfolio",
         "irp_shared.reporting",
+        "irp_shared.market_data",  # deferred downstream packages (explicit; allowlist also blocks)
+        "irp_shared.calc",
     )
     # Allowlist (the "imports only" spec): any first-party irp_shared.* import must land in exactly
     # these subpackages. This fails CLOSED on a NEW cross-layer import (e.g. irp_shared.calc/model)

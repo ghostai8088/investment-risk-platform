@@ -48,6 +48,12 @@ PERMISSIONS: list[tuple[str, str]] = [
     # the issuer/counterparty.view recipient set (proprietary-identity SoD — EXCLUDES auditor_3l).
     ("reference.legal_entity.view", "View legal entities"),
     ("reference.legal_entity.edit", "Edit legal entities"),
+    # P1B-3 instrument identifiers (additive; PROPRIETARY tenant-scoped). reference.instrument.view/
+    # edit and reference.identifier.resolve already exist above — only .view/.edit are NEW. The
+    # existing .resolve recipient set is UNCHANGED (NOT widened to risk_manager_2l). rating.* stays
+    # RESERVED. .view granted to the reference.instrument.view set; auditor_3l EXCLUDED (SoD).
+    ("reference.identifier.view", "View instrument identifiers"),
+    ("reference.identifier.edit", "Edit instrument identifiers"),
     ("portfolio.view", "View portfolios"),
     ("portfolio.edit", "Edit portfolios"),
     ("position.view", "View positions"),
@@ -85,6 +91,10 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # P1B-2 legal_entity: steward holds view + edit (the maker).
         "reference.legal_entity.view",
         "reference.legal_entity.edit",
+        # P1B-3 instrument identifiers: steward holds view + edit (the maker).
+        # reference.instrument.* + reference.identifier.resolve already granted above.
+        "reference.identifier.view",
+        "reference.identifier.edit",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -97,6 +107,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.calendar.view",
         # P1B-2 legal_entity: view-only (matches the issuer/counterparty.view read tier).
         "reference.legal_entity.view",
+        # P1B-3 instrument identifiers: view-only (reference.identifier.resolve already above).
+        "reference.identifier.view",
         "portfolio.view",
         "position.view",
         "model.inventory.view",
@@ -116,6 +128,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.calendar.view",
         # P1B-2 legal_entity: view-only (matches the issuer/counterparty.view read tier).
         "reference.legal_entity.view",
+        # P1B-3 instrument identifiers: view-only. reference.identifier.resolve is NOT granted to
+        # risk_manager_2l (its existing recipient set is unchanged — purely additive .view).
+        "reference.identifier.view",
         "portfolio.view",
         "position.view",
         "model.inventory.view",

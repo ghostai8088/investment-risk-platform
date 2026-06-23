@@ -24,6 +24,9 @@ from irp_shared.reference.models import (
     CalendarHoliday,
     Counterparty,
     Currency,
+    IdentifierXref,
+    Instrument,
+    InstrumentTerms,
     Issuer,
     LegalEntity,
     RatingGrade,
@@ -61,4 +64,7 @@ __all__ = [
     "LegalEntity",
     "Issuer",
     "Counterparty",
+    "Instrument",
+    "InstrumentTerms",
+    "IdentifierXref",
 ]

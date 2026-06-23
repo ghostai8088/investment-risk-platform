@@ -627,5 +627,7 @@ def test_hybrid_tables_parity_models_vs_migration() -> None:
 def test_excluded_entity_tables_absent_from_metadata() -> None:
     from irp_shared.models import metadata
 
-    for table in ("instrument", "instrument_terms", "identifier_xref", "corporate_action"):
-        assert table not in metadata.tables  # no P1B-3/P1B-4 entity pulled forward
+    # P1B-3 builds instrument / instrument_terms / identifier_xref; corporate_action (P1B-4) and
+    # later-slice entities must still NOT be pulled forward.
+    for table in ("corporate_action", "portfolio", "position", "valuation"):
+        assert table not in metadata.tables

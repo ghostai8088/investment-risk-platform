@@ -79,6 +79,15 @@ P1B-0 splits below).
 > implementation-only `legal_entity` core (migration 0009) — are now built, all `__temporal_class__ = EFFECTIVE_DATED`,
 > EV-mutable (in-place supersede; one physical row per logical entity; history via the `REFERENCE.UPDATE` audit), carrying
 > `record_version`. They are PROPRIETARY (symmetric RLS, never hybrid). **FR is still unexercised — P1B-3 remains its first use.**
+>
+> **P1B-3 realization note:** ENT-001 is now built (migration 0010) as `instrument` (**EV** identity) + `instrument_terms`
+> (**FR** — the platform's **first persisted user of `FullReproducibleMixin`**). The FR protocol maintains both axes
+> (`valid_from/valid_to` + `system_from/system_to`): create → effective-dated supersede (close prior `valid_to`) → as-known
+> correction/restatement (close prior `system_to`, `restatement_reason` + `supersedes_id` — **TR-08**), with
+> `reconstruct_terms_as_of(valid_at, known_at)` proving as-of reconstruction on BOTH axes (acceptance-gated tests). The FR
+> table is **NOT** append-only (no `irp_prevent_mutation` trigger — the bitemporal protocol UPDATEs the close-out columns);
+> content-immutability of prior versions is service-enforced + tested. ENT-004 (`identifier_xref`, EV) is also built.
+> Remaining FR users (ENT-007 rating **assignments**, market data, positions, valuations) are still deferred.
 
 ### Rationale (TR-21)
 | ID | Rationale |
