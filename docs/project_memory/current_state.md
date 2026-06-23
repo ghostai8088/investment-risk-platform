@@ -2,7 +2,7 @@
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this first, then `project_state.yaml`, `next_actions.md`, and
-> `claude_operating_instructions.md`. **As of 2026-06-23.** Values that drift are flagged; re-verify the
+> `claude_operating_instructions.md`. **As of 2026-06-24.** Values that drift are flagged; re-verify the
 > ones in "Re-check at session start" before acting.
 
 ## Repository
@@ -11,20 +11,20 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `32c7778` — "Implement P1B-2 reference data legal entity issuer counterparty" (the P1B-2 plan landed at `410cc7e`, just prior).
+- **origin/main HEAD:** `8545ed6` — "Implement P1B-3 reference data instrument terms identifiers" (the P1B-3 plan landed at `43c042e`; P1B-2 implementation at `32c7778`, just prior).
 - **Local == origin:** yes; **only this `docs/project_memory/` refresh is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** for `32c7778` (GitHub Actions **run #31 = 28029190858** = success — all 5 jobs; the migration job's new **"Legal-entity symmetric-RLS tests (Postgres)"** step passed). P1B-1's `6568cb1` was green at run #28.
-- **Migration head:** `0009_legal_entity` (the P1B-3 **build** will add `0010`).
+- **Latest CI:** **GREEN** for `8545ed6` (GitHub Actions **run #34 = 28042611593** = success — all 5 jobs; the migration job's new **"Instrument / identifier symmetric-RLS + FR-bitemporal tests (Postgres)"** step passed). P1B-2's `32c7778` was green at run #31.
+- **Migration head:** `0010_instrument` (the P1B-4 **build** will add `0011`).
 
 ## Working tree (uncommitted)
 - **This `docs/project_memory/*` refresh** — modified tracked files, commit pending approval. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
 
 ## Current active gate
-**P1B-2 (Reference Data — legal_entity core + issuer/counterparty profiles) is CLOSED and CI-green**
-(`32c7778`, run #31), 7-lens UltraCode reviewed. The next step is **P1B-3 PLANNING ONLY** (instrument EV
-identity + `instrument_terms` **FR** — the first real bitemporal usage — + `identifier_xref` EV), via the
-UltraCode planning workflow, **on explicit approval**. **P1B-3 implementation is NOT started** and must not
-begin until the P1B-3 plan is approved. The platform follows a strict planning-first,
+**P1B-3 (Reference Data — instrument + `instrument_terms` FR + `identifier_xref`) is CLOSED and CI-green**
+(`8545ed6`, run #34), 8-lens UltraCode reviewed — the platform's **first real FR / bitemporal** slice. The
+next step is **P1B-4 PLANNING ONLY** (`corporate_action` = EV effective-dated reference data), via the
+UltraCode planning workflow, **on explicit approval**. **P1B-4 implementation is NOT started** and must not
+begin until the P1B-4 plan is approved. The platform follows a strict planning-first,
 commit-only-on-explicit-approval cadence; plan / implement / commit are separate approvals.
 
 ## P1B-1 key deliverables (closed, `6568cb1`)
@@ -45,6 +45,8 @@ commit-only-on-explicit-approval cadence; plan / implement / commit are separate
 - **P1B-1 reference-data implementation** — `6568cb1` (CI-green, run #28). **P1B-1 CLOSED.**
 - **P1B-2 implementation plan** — `410cc7e` (CI-green, run #29).
 - **P1B-2 reference-data implementation** — `32c7778` (CI-green, run #31). **P1B-2 CLOSED.**
+- **P1B-3 implementation plan** — `43c042e` (CI-green).
+- **P1B-3 reference-data implementation** — `8545ed6` (CI-green, run #34). **P1B-3 CLOSED.**
 
 ## P1B-2 key deliverables (closed, `32c7778`)
 REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evidence (the inverse of P1B-1).
@@ -56,23 +58,29 @@ REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evid
 - **Bounded ultimate-parent resolver:** `resolve_ultimate_parent` (visited-set + depth cap 32, cycle-safe, boundary-terminating); each hop carries an EXPLICIT `tenant_id` predicate (cross-tenant fails closed on SQLite + PG); pure structural walk.
 - Reuse `REFERENCE.CREATE/UPDATE` (each entity OWN event, NOT folded; `audit/service.py` FROZEN); one MANUAL-`data_source` ORIGIN edge per row; additive `reference.legal_entity.view/edit` (`.view` recipients == issuer/counterparty.view set — **EXCLUDES `auditor_3l`**, proprietary-identity SoD).
 
-## P1B-3 focus (the PLANNED next slice — NOT yet planned/built)
-REQ-SMR-001 (instrument) + REQ-SMR-003 (identifier_xref). The **first real bitemporal usage** on the platform.
-- **`instrument` = EV identity** (asset_class, status, issuer FK → the `issuer` profile) — OD-P1B-A.
-- **`instrument_terms` = FR** (`FullReproducibleMixin`) — coupon/maturity/call/day-count/denomination ccy; instrument FK. **The first persisted user of FR / bitemporality** (it has been unexercised through P1B-2).
-- **`identifier_xref` = EV** (scheme/value, valid_from/valid_to); tenant-scoped.
-- **Deterministic single-result-or-`AmbiguousIdentifier` resolution** (OD-P1B-G); partial-unique `(tenant_id, scheme, value) WHERE valid_to IS NULL`; cross-vendor precedence DEFERRED (OD-012 → P1C).
-- All tenant-scoped SYMMETRIC RLS (proprietary, NEVER hybrid); FR temporal queries apply the native-uuid CI lessons.
+## P1B-3 key deliverables (closed, `8545ed6`)
+REQ-SMR-001 (instrument) + REQ-SMR-003 (identifier_xref, partial); migration `0010`. The platform's **first real FR / bitemporal** slice.
+- **`instrument` = EV identity/master data only** — code, name, asset_class, instrument_type, nullable `issuer_id` FK → the `issuer` profile, plain-ISO `currency_code`, `is_active` (single lifecycle flag, **no `status` string**). **No** price/valuation/holding/risk/terms columns.
+- **`instrument_terms` = FR / fully-reproducible / bitemporal** — the platform's **first persisted user of `FullReproducibleMixin`** (`valid_from/valid_to` + `system_from/system_to`). Protocol: create → effective-dated supersede (close prior `valid_to`) → as-known **correction/restatement** (close prior `system_to`). One-`now` per op; close-first ordering; prior versions' economics never mutated; **NOT append-only** (no `irp_prevent_mutation` trigger); current-head partial-unique `(tenant_id, instrument_id) WHERE valid_to IS NULL AND system_to IS NULL`.
+- **Valid-time reconstruction** — `reconstruct_terms_as_of(valid_at)` returns the version effective at the business date (TR-01). **Known-at / system-time reconstruction** — `reconstruct_terms_as_of(valid_at, known_at)` returns the version as-known-at the knowledge date (TR-02/TR-04; default `known_at`=now=current view). Both axes acceptance-tested on SQLite **and** PG-under-FORCE-RLS.
+- **`REFERENCE.CORRECTION` (EVT-142) ACTIVATED** for terms restatement (R-07 sign-off, OQ-7) via a NEW caller-side `record_reference_correction` in `reference/service.py`; **`audit/service.py` stays FROZEN**; TR-08 `restatement_reason` on the canonical `justification` field + `supersedes_id` link in DC-2 `after_value`.
+- **`identifier_xref` = EV** — polymorphic `(entity_type, entity_id)` no-FK, scoped to `entity_type='instrument'`; active partial-unique `(tenant_id, scheme, value) WHERE valid_to IS NULL`. **Deterministic single-result-or-`AmbiguousIdentifier`** resolution (OD-P1B-G / CTRL-029) — never a silent arbitrary match; endpoint 200/404/409; cross-vendor precedence DEFERRED (OD-012 → P1C).
+- All three PROPRIETARY tenant-scoped **SYMMETRIC RLS** (byte-for-byte the `0009` loop); **NEVER hybrid**; closed-hybrid-set still the 5 P1B-1 tables. Cross-tenant `issuer_id`/`instrument_id`/`entity_id` fail closed via the **service-layer** `*NotVisible` predicate pre-commit. Additive `reference.identifier.view/edit` (`.resolve` recipients unchanged; `auditor_3l` excluded). 8-lens reviewed — zero behavioral defect.
+
+## P1B-4 focus (the PLANNED next slice — NOT yet planned/built)
+REQ-SMR-004 (corporate_action portion). OD-P1B-B.
+- **`corporate_action` = EV (effective-dated reference data)** — the reference ENTITY only (effective-dated declarations); tenant-scoped SYMMETRIC RLS (proprietary, never hybrid); REFERENCE.* audit; MANUAL-source lineage; additive entitlements.
+- **Excluded:** **NO** application of corporate actions to positions; **NO** valuation/position adjustment; **NO** event-processing / lifecycle engine; **NO** day-count/roll math (QS-10/11 → P1C).
 
 ## Next required action
-**Plan P1B-3** (instrument EV + `instrument_terms` FR + identifier_xref EV — OD-P1B-A/G) via the UltraCode
-planning workflow → committed plan doc, **on explicit approval. Planning only — do NOT implement P1B-3.**
+**Plan P1B-4** (`corporate_action` = EV effective-dated reference data — OD-P1B-B) via the UltraCode planning
+workflow → committed plan doc, **on explicit approval. Planning only — do NOT implement P1B-4.**
 See `next_actions.md` for the exact prompt and gates.
 
 ## What MUST NOT be started yet
-- **P1B-3 implementation** (instrument / instrument_terms FR / identifier_xref entities, migration `0010`, endpoints) — until the P1B-3 plan is **approved**.
-- **P1B-4** (corporate_action), **P1B-5** (ingestion mapping) — later sub-slices, not now.
-- No **corporate_action**; no **portfolio / positions / valuations**; no **market data / private-asset ingestion / risk calculations / exposure aggregation / reporting / dashboards / real SSO**.
+- **P1B-4 implementation** (`corporate_action` entity, migration `0011`, endpoints) — until the P1B-4 plan is **approved**.
+- **No application of corporate actions to positions; no valuation/position adjustment; no event-processing engine** (the corporate_action ENTITY only).
+- No **portfolio / positions / valuations**; no **market data / pricing / risk calculations / exposure aggregation / reporting / dashboards / real SSO**.
 - **P1C / P2+** — anything beyond Security Master & Reference Data.
 - **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen); no new audit code / permission / role without the governed R-07 update.
 
@@ -80,7 +88,7 @@ See `next_actions.md` for the exact prompt and gates.
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `32c7778`) and whether this memory refresh was committed.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `8545ed6`) and whether this memory refresh was committed.
 - Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — query the REST API).
 - `git remote -v` — origin is now SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0009_legal_entity` (the P1B-3 build will add `0010`).
+- Migration head is `0010_instrument` (the P1B-4 build will add `0011`).
