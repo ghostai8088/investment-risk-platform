@@ -2,7 +2,7 @@
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this first, then `project_state.yaml`, `next_actions.md`, and
-> `claude_operating_instructions.md`. **As of 2026-06-25.** Values that drift are flagged; re-verify the
+> `claude_operating_instructions.md`. **As of 2026-06-23.** Values that drift are flagged; re-verify the
 > ones in "Re-check at session start" before acting.
 
 ## Repository
@@ -11,22 +11,36 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `b52ad9e` — "Add P1C-1 portfolio hierarchy implementation plan". Chain since P1B-4: `060b2a4` (P1B-4 impl) → `2069b1a` (memory refresh) → `e99633a` (P1B closeout / P1C readiness) → `705d3ba` (P1C-0 decision record + P1C implementation plan) → `b52ad9e` (P1C-1 plan).
-- **Local == origin:** yes; **this `docs/project_memory/*` refresh + the P1C-0 ratification governance edits are uncommitted** (governance markdown/YAML, commit pending). No code.
-- **Latest CI:** **GREEN** — `b52ad9e` = GitHub Actions **run #41** (docs-only). Prior docs runs: closeout #39, P1C-0 #40.
-- **Migration head:** `0011_corporate_action` (the P1C-1 **build** will add `0012`).
+- **origin/main HEAD:** `bb89c74` — "Implement P1C-1 portfolio hierarchy and ABAC scope anchor". Chain since P1B-4: `060b2a4` (P1B-4 impl) → `2069b1a` (memory) → `e99633a` (P1B closeout / P1C readiness) → `705d3ba` (P1C-0 decision record + P1C plan) → `b52ad9e` (P1C-1 plan) → `dca7bc0` (P1C-0 ratification) → `bb89c74` (P1C-1 build).
+- **Local == origin:** yes; **only this `docs/project_memory/*` refresh is uncommitted** (docs-only, commit pending). No code.
+- **Latest CI:** **GREEN** — `bb89c74` = GitHub Actions **run #43 (id 28068172716)** = success, all 5 jobs; the migration job's new **"Portfolio symmetric-RLS tests (Postgres, REQ-PPM-001 / AD-017 / BR-17)"** step + `0012_portfolio` + `alembic check` drift + downgrade smoke all passed. Prior: ratification #42, P1C-1 plan #41.
+- **Migration head:** `0012_portfolio` (the P1C-2 **build** will add `0013`).
 
 ## Working tree (uncommitted)
-- **P1C-0 ratification** (this turn) — governance markdown/YAML: AD-017; REQ-PPM-001 → In-Progress (backbone + RTM); `PORTFOLIO.*` RESERVED (EVT-150 block) in the audit taxonomy; ENT-010 note + OD-013 closure (canonical) + temporal §2A note; `portfolio.view`/`.edit` grants + OD-025 closure (entitlement §5B); control-coverage note; `p1c0_decision_record` → Ratified; these project-memory files. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
+- **This `docs/project_memory/*` refresh** (P1C-1 closeout) — modified tracked files, commit pending approval. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
 
 ## Current active gate
-**P1C-0 is RATIFIED** (this turn) — the twelve P1C decisions + **AD-017** recorded into the governance source-of-truth
-so P1C-1 can begin from approved baselines. **P1B is DELIVERED** (P1B-1…P1B-4 closed, CI-green); the **P1B closeout /
-P1C readiness review** (`e99633a`), the **P1C-0 decision record + P1C implementation plan** (`705d3ba`), and the
-**P1C-1 portfolio-hierarchy implementation plan** (`b52ad9e`) are all committed and CI-green. The next step is the
-**P1C-1 BUILD** (the `portfolio` EV hierarchy + ABAC scope anchor — per `10_delivery_backlog/p1c1_implementation_plan.md`),
-**on explicit approval**. **P1C-1 implementation is NOT started.** The platform follows a strict planning-first,
-commit-only-on-explicit-approval cadence; plan / ratify / implement / commit are separate approvals.
+**P1C-1 (portfolio hierarchy + ABAC scope anchor) is CLOSED and CI-green** (`bb89c74`, run #43), 8-lens UltraCode reviewed
+(7 approve / 1 approve_with_changes, 0 block; the lone MEDIUM = a missing CTRL-032 fail-closed-rollback test, fixed before
+commit). The platform's **first domain entity** is delivered: `portfolio` (ENT-010, EV), `PORTFOLIO.CREATE`/`UPDATE`
+(EVT-150/151) activated, `data_steward` holds `portfolio.view`+`portfolio.edit`, ABAC **anchored not enforced** (P6+).
+The next step is **P1C-2 PLANNING ONLY** (transactions — IA append-only, capture-only), **on explicit approval**.
+**P1C-2 implementation is NOT started.** The platform follows a strict planning-first, commit-only-on-explicit-approval
+cadence; plan / implement / commit are separate approvals.
+
+## P1C-1 key deliverables (closed, `bb89c74`, CI-green run #43)
+REQ-PPM-001 (migration `0012`); the platform's **first domain entity** + the entitlement portfolio-scope **ANCHOR**.
+- **`portfolio` = EV entity** (ENT-010) — single `portfolio` table; `__temporal_class__ = EFFECTIVE_DATED`; amend = in-place supersede (`record_version` bump); NOT append-only; NO `system_*`/FR axis; single `status` (no `is_active`). `node_type`/`status` controlled-vocab plain Strings (no enum/CHECK). A portfolio **holds nothing** (no position/valuation/holding/exposure column).
+- **Portfolio hierarchy via `parent_portfolio_id`** — intra-tenant self-FK adjacency (NULL = root); `UNIQUE(tenant_id, code)`; self-parent rejected; re-parent re-runs a write-time cycle guard.
+- **Bounded ANCESTOR resolver** — `resolve_ultimate_parent` (upward walk; `MAX_HIERARCHY_DEPTH=32` + visited-set + `HierarchyCycleError` + per-hop tenant predicate + boundary-stop) — a direct reuse of the `legal_entity` shape.
+- **Bounded DESCENDANT resolver** — `resolve_descendants` (NEW; downward subtree BFS to the same safety invariants) — the substrate for future ABAC subtree scope.
+- **ABAC scope ANCHOR (anchor-not-enforce, AD-017 / OD-P1C-A/B):** the node id + adjacency + descendant resolver record future subtree semantics, but **NOTHING reads/filters by scope**. `portfolio.view` gates by role + tenant only; within a tenant any view-holder sees ALL portfolios (documented residual risk + tested as a scope fence). Enforcement → P6+.
+- **`PORTFOLIO.CREATE` (EVT-150) / `PORTFOLIO.UPDATE` (EVT-151) ACTIVATED** — caller-side constants in `irp_shared/portfolio/events.py` to the FROZEN `record_event`; per-tenant chain; DC-2 metadata only; a `status` flip rides on `PORTFOLIO.UPDATE` (no STATUS_CHANGE in P1C-1). `audit/service.py` **untouched**.
+- **`portfolio.view` / `portfolio.edit`** — the seeded catalog codes wired; `data_steward` granted BOTH (maker reads its own writes); existing `portfolio.view` recipients (`risk_analyst_1l`/`risk_manager_2l`) unchanged; `portfolio.edit` maker/admin only; `auditor_3l` excluded; parity-tested. Deny-by-default `require_permission`.
+- **MANUAL `data_source` lineage** — one ORIGIN edge per create (`ensure_manual_source` resolve-or-register + `record_lineage`, fail-closed; `assert_has_lineage`); an EV amend roots **no** new edge.
+- **Symmetric tenant-scoped RLS** — `USING == WITH CHECK == own-tenant`, ENABLE+FORCE (migration `0012`); **NEVER hybrid** (no SYSTEM_TENANT; the closed 5-table hybrid set is asserted unchanged — `portfolio` did NOT join it); cross-tenant `parent_portfolio_id` fails closed at the **service layer** (`resolve_portfolio` → `PortfolioNotVisible`) pre-commit; no BYPASSRLS app path.
+- **Fail-closed audit rollback (CTRL-032)** — co-transactional: if `record_event`/`record_lineage` raises, the whole unit (portfolio + MANUAL source + ORIGIN edge + audit event) rolls back (no mid-call commit); proven by a negative test.
+- **New `irp_shared/portfolio/` package** (the first domain package) — `models`/`events`/`service`/binder; imports ONLY the rails (lineage/audit/db/temporal), never reference/irp_backend/aggregator (import-direction test). 35 portfolio tests (17 logic + 11 endpoint + 7 PG) + a parity test; the 5 thin endpoints (`/portfolios` CRUD + `/{id}/tree`).
 
 ## P1B-1 key deliverables (closed, `6568cb1`)
 - **Five EV reference tables** (migration `0008`): `currency`, `calendar`, `calendar_holiday`, `rating_scale`, `rating_grade` — all `__temporal_class__ = EFFECTIVE_DATED`, `UNIQUE(tenant_id, code)` (never `UNIQUE(code)`), no append-only trigger.
@@ -50,6 +64,11 @@ commit-only-on-explicit-approval cadence; plan / ratify / implement / commit are
 - **P1B-3 reference-data implementation** — `8545ed6` (CI-green, run #34). **P1B-3 CLOSED.**
 - **P1B-4 implementation plan** — `f6d691a` (CI-green).
 - **P1B-4 reference-data implementation** — `060b2a4` (CI-green, run #37). **P1B-4 CLOSED → P1B block DELIVERED.**
+- **P1B closeout / P1C readiness review** — `e99633a` (CI-green, run #39).
+- **P1C-0 decision record + P1C implementation plan** — `705d3ba` (CI-green, run #40).
+- **P1C-1 portfolio-hierarchy implementation plan** — `b52ad9e` (CI-green, run #41).
+- **P1C-0 ratification into governance** — `dca7bc0` (AD-017 + REQ-PPM-001 + PORTFOLIO.* reserved + OD-013/OD-025 closed; CI-green, run #42).
+- **P1C-1 portfolio-hierarchy + ABAC scope anchor implementation** — `bb89c74` (CI-green, run #43). **P1C-1 CLOSED** — the first domain entity.
 
 ## P1B-2 key deliverables (closed, `32c7778`)
 REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evidence (the inverse of P1B-1).
@@ -83,19 +102,21 @@ REQ-SMR-004 (corporate_action portion); migration `0011`. The **last reference e
 With **P1B-1 (vocabularies/hybrid) + P1B-2 (legal_entity/issuer/counterparty) + P1B-3 (instrument/terms/identifier) + P1B-4 (corporate_action)** all closed and CI-green, the **Security-Master & Reference-Data block is complete**. **P1B-5** (reference-data ingestion mapping) is **conditional/deferred** (only if bulk loading is needed). The CAP-2 EV/FR reference entities (ENT-001..006/008) are realized; the *requirements* REQ-SMR-001/002/003/004 stay **In-Progress** (terms math, exposure-rollup calc, cross-vendor precedence, and QS-10/11 roll math respectively deferred to P1C/P2+).
 
 ## Next required action
-**P1C-1 BUILD** — implement the `portfolio` EV hierarchy + ABAC scope anchor per `10_delivery_backlog/p1c1_implementation_plan.md`
-(migration `0012`; new `irp_shared/portfolio/` package; activate the RESERVED `PORTFOLIO.CREATE`/`.UPDATE`; grant `data_steward`
-`portfolio.view`+`portfolio.edit`; bounded ancestor+descendant resolvers; symmetric RLS; **no ABAC enforcement**). **On explicit
-approval only.** Confirm the three ⚑ P1C-1 sign-offs first (audit family = `PORTFOLIO.*` ✓ ratified; `data_steward` view+edit;
-"no ABAC enforcement"). See `next_actions.md`.
+**P1C-2 PLANNING ONLY** — plan the `transaction` slice (ENT-012, **IA append-only**) via the UltraCode planning workflow:
+the first **domain IA** entity (mirror the `ingestion_staged_record`/`lineage_edge` append-only precedent — `APPEND_ONLY_TABLES`
++ `irp_prevent_mutation` P0001 trigger + ORM guard); **capture-only** (an independent trade/cashflow event log keyed to
+portfolio + instrument). **On explicit approval. Planning only — do NOT implement P1C-2.** **P1C-2 focus / fences:**
+transaction = IA append-only; **capture-only**; **no position derivation** (positions are captured directly in P1C-3, not
+derived from transactions); **no valuation**; **no exposure aggregation**. See `next_actions.md`.
 
 ## What MUST NOT be started yet
-- **P1C-1 implementation** (the `portfolio` build) — until explicitly directed (the plan + P1C-0 ratification are done; the build is a separate approval).
-- **P1C-2/3/4** (transactions / positions / valuations) and **P2+** — not until their slices are planned + approved.
-- **Exposure aggregation / `dataset_snapshot` / risk / pricing / valuation models / corporate-action application** — deferred (AD-017 / AD-014); P1C is capture-only.
-- **ABAC enforcement** — P1C-1 anchors portfolio scope but does NOT enforce it (enforcement → P6+).
+- **P1C-2 implementation** (the `transaction` build) — until its plan is approved (planning is the next step; plan / implement / commit are separate approvals).
+- **No position derivation** from transactions (a calc — deferred; P1C-3 captures positions directly). **No positions / no valuations / no holdings.**
+- **P1C-3/4/5/6** and **P2+** — not until their slices are planned + approved.
+- **Exposure aggregation / `dataset_snapshot` / risk calculations / market data / pricing / valuation models / portfolio performance / corporate-action application / reporting / dashboards / real SSO** — deferred (AD-017 / AD-014); P1C is capture-only.
+- **ABAC enforcement** — anchored in P1C-1 but NOT enforced (enforcement → P6+).
 - **P1B-5** (reference-data ingestion mapping) — conditional/deferred (only if bulk loading is needed; not now).
-- **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen); no new audit code / permission / role / migration without the governed R-07 update (the `PORTFOLIO.*` family + `portfolio.*` grants are RESERVED in governance, activated in code only in the P1C-1 build).
+- **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen); no new audit code / permission / role / migration without the governed R-07 update.
 
 ## Housekeeping / security (RESOLVED — recorded for recovery)
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**

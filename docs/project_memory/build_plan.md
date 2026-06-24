@@ -34,7 +34,7 @@ Tenant context/RLS · audit + hash chain · entitlements · data_source · linea
 quality · generic ingestion staging · temporal mixins (EV/IA/FR) · Alembic migration + drift gate ·
 constrained-role PG RLS tests · append-only trigger tests. (Full inventory: `10_delivery_backlog/p1a_closeout_p1b_readiness.md` Part 2.)
 
-### P1B — Security Master & Reference Data — **DELIVERED (P1B-1..P1B-4 done & CI-green; P1B-5 conditional/deferred; next = P1B closeout / P1C readiness)**
+### P1B — Security Master & Reference Data — **DELIVERED (P1B-1..P1B-4 done & CI-green; P1B-5 conditional/deferred; closeout + P1C-0 ratification done; P1C-1 CLOSED)**
 Direction (canonical BC-02/BC-03): the first **domain** data, built on the P1A rails, reference-data only.
 Sub-slices (see `10_delivery_backlog/p1b_implementation_plan.md`):
 - **P1B-1** currency / calendar / rating_scale (EV; first hybrid global+tenant RLS) — **DONE / CLOSED (`6568cb1`, CI-green).** First asymmetric hybrid RLS (AD-013-R1); `REFERENCE.CREATE`/`UPDATE`; SYSTEM_TENANT global-read; app-layer tenant-wins dedup; MANUAL-`data_source` lineage; `irp_shared.reference` package.
@@ -43,12 +43,17 @@ Sub-slices (see `10_delivery_backlog/p1b_implementation_plan.md`):
 - **P1B-4** corporate_action (EV, effective-dated) — **DONE / CLOSED (`060b2a4`, CI-green, 8-lens reviewed).** Capture-only reference entity; single status lifecycle (ANNOUNCED→CONFIRMED→CANCELLED); `REFERENCE.STATUS_CHANGE` (EVT-143) activated (first use); `instrument_id` NOT-NULL FK; NO application-to-positions / valuation-adjustment / event-engine / roll math (OD-P1B-B).
 - **P1B-5** reference-data ingestion mapping (**conditional / deferred** — only if bulk loading is needed; not now).
 Open decisions resolved in P1B-0: OD-P1B-A…J — **all REALIZED P1B-1..P1B-4** (see `decision_summary.md`).
-**Next: P1B closeout / P1C readiness review, then P1C planning (on approval).**
+**Next (DONE): P1B closeout / P1C readiness (`e99633a`); P1C-0 decision record + plan (`705d3ba`) + ratification (`dca7bc0`, AD-017).**
 
-### P1C — Portfolio, positions, valuations, exposure (domain analytics base) — **FUTURE**
-Portfolio/fund/account hierarchy (ENT-010), positions (ENT-011, bitemporal), transactions (ENT-012),
-valuations (ENT-013, bitemporal), exposure aggregation (ENT-014). Identifier precedence (OD-012),
-counterparty netting/CSA (OD-015) land here. **Not in P1B.**
+### P1C — Portfolio, positions, valuations, exposure (domain analytics base) — **IN PROGRESS (capture-only, AD-017)**
+Direction (canonical BC-01): the first **domain** data. Capture + as-of reconstruction only — NO exposure aggregation /
+risk / pricing / valuation models / corporate-action application / dataset_snapshot (deferred to P2, AD-014/AD-017).
+Sub-slices (see `10_delivery_backlog/p1c_implementation_plan.md`):
+- **P1C-0** decision record + plan + ratification — **DONE** (`705d3ba` + `dca7bc0`): the twelve P1C decisions; **AD-017** (P1C capture-only stance); OD-013/OD-025 closed; OD-012/OD-015 re-targeted.
+- **P1C-1** portfolio / fund / strategy / account hierarchy + ABAC scope anchor (ENT-010, **EV**) — **DONE / CLOSED (`bb89c74`, CI-green run #43, 8-lens reviewed).** The platform's **first domain entity**: single `portfolio` EV table; bounded ancestor + **NEW** descendant resolvers; **ABAC anchor-not-enforce** (P6+); `PORTFOLIO.CREATE`/`UPDATE` (EVT-150/151) activated; symmetric RLS; fail-closed rollback; new `irp_shared/portfolio/` package.
+- **P1C-2** transactions (ENT-012, **IA append-only**) — **NEXT (planning only, on approval).** Capture-only trade/cashflow log; NO position derivation.
+- **P1C-3** positions (ENT-011, **FR** bitemporal — reuse the P1B-3 `instrument_terms` protocol); **P1C-4** valuations (ENT-013, **FR**); **P1C-5** as-of holdings views (no aggregation); **P1C-6** synthetic dataset — **FUTURE** (each separately planned + approved).
+Exposure aggregation (ENT-014, REQ-PPM-004) stays **P2** (AD-014). Identifier precedence (OD-012) and counterparty netting/CSA (OD-015) re-targeted beyond P1C.
 
 ### P2+ — Market & private data, risk analytics, scenarios, limits, breach, reporting — **FUTURE**
 Market data & curves (ENT-020–025), private assets (ENT-015–019), calculation runs binding model

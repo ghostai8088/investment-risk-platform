@@ -21,8 +21,10 @@
 | **P1B closeout / P1C readiness** | DONE | `e99633a` | green (run #39) | closeout doc + rail/domain inventory + P1B-5 defer + P1C readiness + subphase structure + synthetic-data strategy (`10_delivery_backlog/p1b_closeout_p1c_readiness.md`) | — |
 | **P1C-0** decision record + plan | DONE / **RATIFIED** | `705d3ba`; ratification (this turn, governance md/yaml) | green (run #40) | 12 decisions (OD-P1C-A..L) + P1C implementation plan (P1C-1..P1C-6); **AD-017** + REQ-PPM-001 + PORTFOLIO.* reserved + OD-013/OD-025 closed recorded into governance | OD-012/OD-015 re-targeted beyond P1C |
 | **P1C-1** portfolio-hierarchy plan | PLAN DONE | `b52ad9e` | green (run #41) | detailed 20-section plan: single `portfolio` EV table + `node_type` + `parent_portfolio_id`; ABAC scope anchor; bounded ancestor+descendant resolvers; `PORTFOLIO.*` audit; symmetric RLS (`10_delivery_backlog/p1c1_implementation_plan.md`) | **build NOT started** — next, on approval |
-| **P1C-1** build | NOT STARTED | — | — | — | migration `0012`; on explicit approval; no ABAC enforcement |
-| **P1C-2/3/4/5/6 + P2+** | NOT STARTED | — | — | — | must not be pulled forward |
+| **P1C-0** ratification | DONE | `dca7bc0` | green (run #42) | AD-017 + REQ-PPM-001 + PORTFOLIO.* reserved (EVT-150) + OD-013/OD-025 closed + portfolio.* grants recorded into governance |
+| **P1C-1** portfolio hierarchy + ABAC scope anchor | **DONE / CLOSED** | impl **`bb89c74`** | green (run #43 = 28068172716) | 1 EV table (mig `0012`, symmetric RLS): `portfolio` (ENT-010) — single table, `node_type`/`status` controlled-vocab, `parent_portfolio_id` self-FK; bounded ancestor (`resolve_ultimate_parent`) + **NEW** descendant (`resolve_descendants`) resolvers (depth cap 32, visited-set, `HierarchyCycleError`, per-hop tenant predicate); **ABAC anchor-not-enforce**; **`PORTFOLIO.CREATE`/`UPDATE` (EVT-150/151) ACTIVATED** caller-side (`audit/service.py` FROZEN); `data_steward` granted `portfolio.view`+`portfolio.edit` (auditor_3l excluded); MANUAL-source ORIGIN lineage; **fail-closed audit rollback (CTRL-032)**; new `irp_shared/portfolio/` domain package (rail-only imports); 35 tests + parity. 8-lens reviewed (0 block). The platform's **first domain entity**. | a portfolio holds NOTHING (no position/valuation/holding/exposure); ABAC enforcement → P6+; STATUS_CHANGE (EVT-152) reserved-not-emitted; HTTP amend can't un-parent to root (reference baseline) |
+| **P1C-2** transaction (IA append-only) | NOT STARTED (planning next) | — | — | — | the first domain IA entity; capture-only; migration `0013`; planning on approval; NO position derivation/valuation/exposure |
+| **P1C-3/4/5/6 + P2+** | NOT STARTED | — | — | — | must not be pulled forward |
 
 ## Milestones
 - **P1A milestone: CLOSED** — all five rails (P1A-0…P1A-4) committed and CI-green.
@@ -34,13 +36,15 @@
 - **P1B milestone: DELIVERED** — P1B-1..P1B-4 closed and CI-green (the Security-Master & Reference-Data block; P1B-5 ingestion mapping conditional/deferred).
 - **P1B closeout / P1C readiness: DONE** — `e99633a`, CI-green (run #39); 7-lens reviewed.
 - **P1C-0: RATIFIED** — decision record + P1C implementation plan `705d3ba` (run #40); ratified into governance this turn (AD-017; REQ-PPM-001 In-Progress; PORTFOLIO.* reserved EVT-150; OD-013/OD-025 closed; portfolio.* grants). 7-lens reviewed.
-- **P1C-1 plan: DONE** — portfolio-hierarchy implementation plan `b52ad9e`, CI-green (run #41); 7-lens reviewed. **Next: the P1C-1 BUILD, on explicit approval.**
+- **P1C-1 plan: DONE** — portfolio-hierarchy implementation plan `b52ad9e`, CI-green (run #41); 7-lens reviewed.
+- **P1C-0 ratification: DONE** — AD-017 + the P1C-0 decisions recorded into governance `dca7bc0`, CI-green (run #42); 6-lens reviewed.
+- **P1C-1: CLOSED** — portfolio EV hierarchy + ABAC scope anchor committed `bb89c74`, CI-green (run #43); 8-lens UltraCode reviewed (0 block). The platform's **first domain entity**; `PORTFOLIO.*` (EVT-150/151) first exercise. **Next: P1C-2 PLANNING (transaction, IA append-only), on explicit approval.**
 
 ## CI job shape (the `migration` Postgres job, all green at HEAD)
 `alembic upgrade head` → `alembic check` (drift) → audit concurrency → tenant-context RLS → lineage RLS →
 model-registry RLS → data-quality RLS → ingestion RLS + append-only → **Reference hybrid-RLS (REQ-SMR-005 /
 AD-013-R1)** → **Legal-entity symmetric-RLS (REQ-SMR-002 / OD-P1B-D)** → **Instrument/identifier symmetric-RLS
 + FR-bitemporal (REQ-SMR-001/003 / OD-P1B-A/G)** → **Corporate-action symmetric-RLS (REQ-SMR-004 /
-OD-P1B-B)** → downgrade base. Plus Backend (ruff
+OD-P1B-B)** → **Portfolio symmetric-RLS (REQ-PPM-001 / AD-017)** → downgrade base. Plus Backend (ruff
 format/lint, mypy, pytest), Frontend, Documentation check,
 Secret scan.
