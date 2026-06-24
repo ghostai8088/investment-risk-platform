@@ -210,6 +210,26 @@ def test_portfolio_permissions_grants_as_ratified() -> None:
     assert "auditor_3l" not in _holders("portfolio.edit")
 
 
+def test_transaction_permissions_grants_as_ratified() -> None:
+    # P1C-2: transaction.view + transaction.record are NEWLY minted (additive). data_steward is the
+    # maker/recorder (holds BOTH); transaction.record is maker/admin only; the read tiers hold view;
+    # auditor_3l EXCLUDED (operational client data SoD). `.record` is the append-only governed verb.
+    assert "transaction.view" in ALL_CODES and "transaction.record" in ALL_CODES
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    assert _holders("transaction.view") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "risk_manager_2l",
+        "platform_admin",
+    }
+    assert _holders("transaction.record") == {"data_steward", "platform_admin"}
+    assert "auditor_3l" not in _holders("transaction.view")
+    assert "auditor_3l" not in _holders("transaction.record")
+
+
 def test_ids_deterministic_and_unique() -> None:
     assert permission_id("data.upload") == permission_id("data.upload")
     assert role_id("ops") == role_id("ops")

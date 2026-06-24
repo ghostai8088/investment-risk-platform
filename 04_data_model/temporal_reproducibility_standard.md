@@ -104,7 +104,7 @@ P1B-0 splits below).
 > axis; history via the `PORTFOLIO.UPDATE` audit). Bounded cycle-safe ancestor + descendant resolvers; symmetric RLS.
 > **ENT-011** position (**FR**) and **ENT-013** valuation (**FR**) are P1C **capture-only** — captured/as-of-reconstructable
 > via the P1B-3 `instrument_terms` FR protocol (create → supersede → as-known correction; `reconstruct_*_as_of` on both axes),
-> **not** derived analytics outputs. **ENT-012** transaction is **IA** (append-only event log). **ENT-014** `exposure_aggregate`
+> **not** derived analytics outputs. **ENT-012** transaction is **IA** (append-only event log) — **BUILT in P1C-2 (migration `0013`)** as the platform's **first DOMAIN append-only entity**: `__temporal_class__ = IMMUTABLE_APPEND_ONLY` (`system_from` only), in `APPEND_ONLY_TABLES` (the `irp_prevent_mutation` P0001 trigger) + the ORM `before_update`/`before_delete` guard; corrections are explicit reversal records (`reverses_transaction_id`), never updates (the original is never mutated). Capture-only — no position derivation. **ENT-014** `exposure_aggregate`
 > (IA, derived) + `dataset_snapshot` stay **P2** (AD-014) — no governed derived output without a bound input snapshot.
 
 ### Rationale (TR-21)

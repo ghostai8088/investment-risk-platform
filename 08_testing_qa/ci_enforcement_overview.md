@@ -101,6 +101,18 @@ both `portfolio.view`+`portfolio.edit` (additive; `auditor_3l` excluded), and ro
 create. **ABAC is anchored, not enforced** (the descendant resolver records subtree semantics; no scope filtering — a tested
 fence). **No transactions/positions/valuations/holdings/aggregation** (a portfolio holds nothing; later slices). REQ-PPM-001 is
 now **In-Progress**.
+**P1C-2** builds the `transaction` IA **append-only** event log (REQ-PPM-003 transaction conjunct; ENT-012) — the platform's
+**first DOMAIN append-only entity**: one PROPRIETARY table (migration `0013`) under the symmetric RLS loop **plus** the
+`irp_prevent_mutation` P0001 trigger (`transaction` in `APPEND_ONLY_TABLES`) + the ORM `before_update`/`before_delete` guard; a
+new `irp_shared/transaction/` package (one-way: → portfolio + reference + rails). A new CI step **"Transaction symmetric-RLS +
+append-only tests (Postgres)"** runs `test_transaction_pg.py` under `irp_app`, proving tenant isolation + no-context-zero, the
+**append-only P0001 trigger** (grant UPDATE/DELETE + a positive control so the rejection is the trigger, not a 42501), the
+forged-tenant **42501** WITH-CHECK on INSERT (distinct from P0001), the symmetric-policy + closed-hybrid-set assertions, the
+cross-tenant FK service-layer reject, and a reversal under FORCE RLS. **Activates `TRANSACTION.RECORD`/`.REVERSE` (EVT-160/161,
+caller-side; `audit/service.py` FROZEN)**; mints `transaction.view`/`transaction.record` (`data_steward` maker; `auditor_3l`
+excluded); one MANUAL-`data_source` ORIGIN edge per record (incl. reversals). **Capture-only** — corrections are explicit
+reversal records (`reverses_transaction_id`; original never mutated); **no position derivation, no cashflow engine, no
+valuation/exposure calc**. REQ-PPM-003 transaction conjunct is now **In-Progress** (valuation conjunct → P1C-4).
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 

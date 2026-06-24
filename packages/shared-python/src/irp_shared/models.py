@@ -34,6 +34,7 @@ from irp_shared.reference.models import (
     RatingGrade,
     RatingScale,
 )
+from irp_shared.transaction.models import Transaction
 
 metadata = Base.metadata
 
@@ -71,4 +72,5 @@ __all__ = [
     "IdentifierXref",
     "CorporateAction",
     "Portfolio",
+    "Transaction",
 ]

@@ -62,6 +62,10 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("portfolio.edit", "Edit portfolios"),
     ("position.view", "View positions"),
     ("exposure.aggregate.run", "Run exposure aggregation"),
+    # P1C-2 transaction (additive; PROPRIETARY tenant-scoped, IA append-only). `.record` is the
+    # append-only governed-write verb (a transaction is recorded, never edited — no `.edit`).
+    ("transaction.view", "View transactions"),
+    ("transaction.record", "Record transactions"),
 ]
 
 #: All permission codes, in catalog order.
@@ -107,6 +111,11 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # portfolio.edit is maker/admin-only (data_steward + platform_admin); auditor_3l excluded.
         "portfolio.view",
         "portfolio.edit",
+        # P1C-2 transaction: steward is the maker/recorder — holds BOTH view + record (reads its own
+        # writes). transaction.record is maker/admin-only (data_steward + platform_admin);
+        # risk_analyst_1l/risk_manager_2l hold transaction.view (below); auditor_3l excluded.
+        "transaction.view",
+        "transaction.record",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -125,6 +134,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.corporate_action.view",
         "portfolio.view",
         "position.view",
+        # P1C-2 transaction: read-tier view-only (transaction.record is maker/admin-only).
+        "transaction.view",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -149,6 +160,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.corporate_action.view",
         "portfolio.view",
         "position.view",
+        # P1C-2 transaction: read-tier view-only (transaction.record is maker/admin-only).
+        "transaction.view",
         "model.inventory.view",
         "dq.result.view",
         "lineage.view",

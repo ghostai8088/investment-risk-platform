@@ -135,7 +135,14 @@ logic + endpoint + PG suites), **CTRL-004** (`portfolio` columns + `node_type`/`
 `PORTFOLIO.*`, the `data_steward` `portfolio.*` grant, and migration `0012` are minted in **code** in this build (the
 P1C-0 ratification only reserved them; `audit/service.py` stays FROZEN). ABAC portfolio scope is **anchored, not enforced**
 (enforcement P6+; the descendant resolver records subtree semantics, the endpoints apply no scope filter — a tested fence).
-As construction phases
+**P1C-2 (REQ-PPM-003 transaction conjunct, AD-017, 2026-06-24):** the `transaction` IA append-only slice (migration `0013`)
+is the **first DOMAIN append-only entity** — it exercises **CTRL-017** with new force (the `irp_prevent_mutation` P0001
+trigger + the ORM `before_update`/`before_delete` guard, proven by the PG trigger test that grants `irp_app` UPDATE/DELETE so
+the rejection is the **P0001 trigger**, not a 42501 privilege denial), **CTRL-012** (no audit bypass — `TRANSACTION.RECORD`/
+`.REVERSE` EVT-160/161 on every record), and **CTRL-001/004/005/006/011/032** (tests / data-dict / audit / lineage /
+deny-by-default + RLS / fail-closed rollback). New `transaction.view`/`transaction.record` perms (`data_steward` maker;
+`auditor_3l` excluded); `audit/service.py` FROZEN. **Capture-only** — corrections are explicit reversal records, no position
+derivation / cashflow engine / valuation / exposure calc. As construction phases
 open, controls will be split to specific bounded contexts and capabilities and given Test/Evidence detail.
 
 ## 5. Open Decisions
