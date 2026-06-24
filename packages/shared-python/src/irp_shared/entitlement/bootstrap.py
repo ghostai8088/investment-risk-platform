@@ -101,6 +101,12 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.identifier.edit",
         # P1B-4 corporate_action: steward holds view (.edit already granted above).
         "reference.corporate_action.view",
+        # P1C-1 portfolio: steward is the maker — holds BOTH view + edit (so it can read its own
+        # writes). The codes pre-exist in the catalog (placeholders); this is the additive GRANT
+        # (OD-P1C1-3). risk_analyst_1l/risk_manager_2l already hold portfolio.view (below);
+        # portfolio.edit is maker/admin-only (data_steward + platform_admin); auditor_3l excluded.
+        "portfolio.view",
+        "portfolio.edit",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",

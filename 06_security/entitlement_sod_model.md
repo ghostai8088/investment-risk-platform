@@ -92,12 +92,12 @@ the catalog. Asserted by `test_reference_data_permissions_are_additive_and_least
 ### 5B. Domain permissions — portfolio (P1C Portfolio & Position Management — ratified P1C-0, 2026-06-23)
 
 Portfolio is **domain** data (CAP-1/BC-01), not reference data, so it uses plain **`portfolio.<verb>`** codes (NOT
-`reference.portfolio.*`). The catalog codes `portfolio.view` / `portfolio.edit` are already seeded (placeholders);
-P1C-1 wires them.
+`reference.portfolio.*`). The catalog codes `portfolio.view` / `portfolio.edit` were seeded as placeholders; **P1C-1
+wired them (IMPLEMENTED).**
 
-| Entity | Permissions | Grants (ratified for P1C-1) |
+| Entity | Permissions | Grants (IMPLEMENTED P1C-1) |
 |---|---|---|
-| portfolio | `portfolio.view`, `portfolio.edit` | `portfolio.view` → `risk_analyst_1l`, `risk_manager_2l` (+ `platform_admin` via `ALL_CODES`). `portfolio.edit` is **maker/admin only** — currently `platform_admin` only; P1C-1 additively grants the **`data_steward`** maker **BOTH `portfolio.view` + `portfolio.edit`** (the steward must read its own writes; it currently holds neither). **`auditor_3l` excluded** (scope SoD). `portfolio.edit` is **not** broadly granted beyond maker/admin. Parity test pins the sets. |
+| portfolio | `portfolio.view`, `portfolio.edit` | `portfolio.view` → `risk_analyst_1l`, `risk_manager_2l`, **`data_steward`** (+ `platform_admin` via `ALL_CODES`). `portfolio.edit` is **maker/admin only** — **`data_steward`** + `platform_admin`. P1C-1 additively granted the **`data_steward`** maker **BOTH `portfolio.view` + `portfolio.edit`** (so the maker reads its own writes; it previously held neither). **`auditor_3l` excluded** (scope SoD). Parity test (`test_portfolio_permissions_grants_as_ratified`) pins the sets. |
 
 **ABAC anchor-not-enforce (P1C-1, AD-017):** the portfolio hierarchy is the **portfolio-scope ANCHOR**. A future
 `SCOPE-PORTFOLIO` grant (P6+) will reference `portfolio.id` with **subtree** semantics (OQ-014 closed = subtree: a grant on

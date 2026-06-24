@@ -90,6 +90,17 @@ the EVT-143 status transition + EV-mutability under FORCE RLS. **Activates `REFE
 (`auditor_3l` excluded). **No application/position/valuation logic** (capture-only; application is P1C). The CAP-2 EV/FR reference
 *entities* (ENT-001..006/008) are now realized for P1B; REQ-SMR-002/003/004 remain **In-Progress** (exposure-rollup calc,
 cross-vendor precedence, and QS-10/11 roll/day-count math respectively deferred to P1C).
+**P1C-1** builds the first **domain** slice (REQ-PPM-001 portfolio hierarchy / ABAC scope anchor): `portfolio` (EV, ENT-010) —
+one PROPRIETARY table (migration `0012`) under the symmetric RLS loop, the new `irp_shared/portfolio/` package, and the
+`portfolios` router. A new CI step **"Portfolio symmetric-RLS tests (Postgres)"** runs `test_portfolio_pg.py` under `irp_app`,
+proving cross-tenant invisibility + no-context-zero-rows, the cross-tenant `parent_portfolio_id` guard is the service-layer
+`PortfolioNotVisible` predicate pre-commit, the RLS `WITH CHECK` backstop denies a forged-tenant re-stamp (42501), the positive
+symmetric-policy + FORCE-RLS assertion, the unchanged closed-hybrid-set, and EV-mutability + descendant-subtree isolation under
+FORCE RLS. **Activates `PORTFOLIO.CREATE`/`.UPDATE` (EVT-150/151, caller-side; `audit/service.py` FROZEN)**, grants `data_steward`
+both `portfolio.view`+`portfolio.edit` (additive; `auditor_3l` excluded), and roots one MANUAL-`data_source` ORIGIN edge per
+create. **ABAC is anchored, not enforced** (the descendant resolver records subtree semantics; no scope filtering — a tested
+fence). **No transactions/positions/valuations/holdings/aggregation** (a portfolio holds nothing; later slices). REQ-PPM-001 is
+now **In-Progress**.
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 

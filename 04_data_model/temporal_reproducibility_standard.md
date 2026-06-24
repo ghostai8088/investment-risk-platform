@@ -98,9 +98,10 @@ P1B-0 splits below).
 > (application is P1C). The CAP-2 Security-Master reference block (ENT-001..006/008) is now EV/FR-complete for P1B.
 >
 > **P1C-0 ratification note (AD-017, 2026-06-23 — capture-only domain block; conforms to this §2A, no AD-005 amendment):**
-> **ENT-010** (`portfolio`) is classified **EV** and ratified for the P1C-1 build — a single `portfolio` table (`node_type`
-> PORTFOLIO/FUND/STRATEGY/ACCOUNT + `parent_portfolio_id` adjacency; the entitlement scope anchor), EV-mutable (in-place
-> supersede; `record_version`; history via the `PORTFOLIO.UPDATE` audit), **not yet built** (planned migration `0012`).
+> **ENT-010** (`portfolio`) is classified **EV** and **BUILT in P1C-1 (migration `0012`)** — a single `portfolio` table
+> (`node_type` PORTFOLIO/FUND/STRATEGY/ACCOUNT + `parent_portfolio_id` adjacency; the entitlement scope anchor), EV-mutable
+> (in-place supersede; `record_version`; declares `__temporal_class__ = EFFECTIVE_DATED`; NOT append-only; no `system_*`
+> axis; history via the `PORTFOLIO.UPDATE` audit). Bounded cycle-safe ancestor + descendant resolvers; symmetric RLS.
 > **ENT-011** position (**FR**) and **ENT-013** valuation (**FR**) are P1C **capture-only** — captured/as-of-reconstructable
 > via the P1B-3 `instrument_terms` FR protocol (create → supersede → as-known correction; `reconstruct_*_as_of` on both axes),
 > **not** derived analytics outputs. **ENT-012** transaction is **IA** (append-only event log). **ENT-014** `exposure_aggregate`

@@ -627,7 +627,8 @@ def test_hybrid_tables_parity_models_vs_migration() -> None:
 def test_excluded_entity_tables_absent_from_metadata() -> None:
     from irp_shared.models import metadata
 
-    # P1B-3 builds instrument / instrument_terms / identifier_xref; P1B-4 builds corporate_action.
-    # Later-slice (P1C/P2+) entities must still NOT be pulled forward.
-    for table in ("portfolio", "position", "valuation", "price_point", "exposure"):
+    # P1B-3 builds instrument / instrument_terms / identifier_xref; P1B-4 builds corporate_action;
+    # P1C-1 builds portfolio (ENT-010). Later-slice (P1C-2+/P2+) entities must still NOT be pulled
+    # forward.
+    for table in ("position", "valuation", "price_point", "exposure"):
         assert table not in metadata.tables
