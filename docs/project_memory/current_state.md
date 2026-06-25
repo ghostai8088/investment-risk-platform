@@ -11,25 +11,38 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `c5c5806` — "Implement P1C-4 valuation capture FR bitemporal". Chain since P1C-3 build: `4ee124e` (P1C-3 build) → `2f7d647` (P1C-3 memory refresh) → `b38f182` (P1C-3 memory cleanup) → `67741fb` (CI hygiene — GitHub Actions → Node 24 majors) → `92a0264` (P1C-4 plan) → `c5c5806` (P1C-4 build). Earlier chain: `bb89c74` (P1C-1 build) → `c398215` (P1C-2 plan) → `abb230f` (P1C-2 build) → `f3fd7c9` (P1C-2 memory) → `42cc02c` (P1C-3 plan).
+- **origin/main HEAD:** `0bef45b` — "Implement P1C-5 read-only as-of holdings portfolio views". Chain since P1C-4 build: `c5c5806` (P1C-4 build) → `6e3dcc1` (P1C-4 memory refresh) → `8a14173` (P1C-5 plan) → `0bef45b` (P1C-5 build). Earlier: `4ee124e` (P1C-3 build) → `2f7d647`/`b38f182` (P1C-3 memory) → `67741fb` (CI hygiene Node-24) → `92a0264` (P1C-4 plan) → `c5c5806` (P1C-4 build).
 - **Local == origin:** yes; **only this `docs/project_memory/*` refresh is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** — `c5c5806` = GitHub Actions **run #54 (id 28186419856)** = success, all 5 jobs (the migration job **gained** a new **"Valuation symmetric-RLS + FR-bitemporal tests (Postgres, REQ-PPM-003 / AD-005 / BR-17/BR-19)"** step — job count unchanged at 5); `0015_valuation` + `alembic check` drift + the NOT-append-only positive proof + the 4-part current-head partial-unique + downgrade smoke all passed (and CI runs warning-free on the Node-24 action majors). Prior: P1C-4 plan #53 (`92a0264`), CI hygiene #52 (`67741fb`), P1C-3 build #49 (`4ee124e`).
-- **Migration head:** `0015_valuation` (the P1C-5 build adds no entity — as-of holdings views are read-only; the next migration `0016` lands only if a later slice persists a new entity).
+- **Latest CI:** **GREEN** — `0bef45b` = GitHub Actions **run #57 (id 28196900649)** = success, **all 5 jobs** (Documentation check, Secret scan, Backend Python, Frontend TS, DB migration Postgres). **The migration job gained NO new step** — its last domain RLS step is still "Valuation symmetric-RLS" (P1C-4); there is **no "Holdings" RLS step** because P1C-5 persists nothing. This is the structural proof that **no migration was added**: `alembic check` drift-clean, head stays `0015_valuation`, downgrade smoke green. Holdings logic + endpoint tests ran in Backend; the 4 holdings FORCE-RLS tests ran in the Postgres job. Prior: P1C-5 plan #56 (`8a14173`), P1C-4 memory #55 (`6e3dcc1`), P1C-4 build #54 (`c5c5806`).
+- **Migration head:** `0015_valuation` (P1C-5 as-of holdings views are READ-ONLY — no new entity, no migration; the next migration `0016` lands only if a later slice persists a new entity).
 
 ## Working tree (uncommitted)
-- **This `docs/project_memory/*` refresh** (P1C-4 closeout) — modified tracked files, commit pending approval. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
+- **This `docs/project_memory/*` refresh** (P1C-5 closeout) — modified tracked files, commit pending approval. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
 
 ## Current active gate
-**P1C-4 (valuation capture — FR bitemporal, captured marks) is CLOSED and CI-green** (`c5c5806`, run #54), 8-lens UltraCode
-reviewed (8 approve / 0 block; 1 LOW folded before commit — an endpoint `no-view-cannot-read` 403 test). The platform's
-**second FR DOMAIN entity** is delivered: `valuation` (ENT-013, FR), `VALUATION.CREATE`/`UPDATE`/`CORRECTION`
-(EVT-180/181/182) activated, `valuation.view`/`valuation.edit` **both newly minted** (`data_steward` maker; `auditor_3l`
-excluded), captured marks (not modeled) with `valuation_date` an immutable logical-key + both-axes as-of reconstruction.
-**REQ-PPM-003 is now Done** — both the transaction (P1C-2) and valuation (P1C-4) conjuncts are realized; no scope-enforcement
-residual gates it (OD-P1C4-5). The next step is **P1C-5 PLANNING ONLY** (as-of holdings / portfolio views — read-only,
-non-computational), **on explicit approval**. **P1C-5 implementation is NOT started; P1C-6 (synthetic dataset) is NOT
-started.** The platform follows a strict planning-first, commit-only-on-explicit-approval cadence; plan / implement / commit
-are separate approvals.
+**P1C-5 (read-only as-of holdings / portfolio views) is CLOSED and CI-green** (`0bef45b`, run #57), 8-lens UltraCode
+reviewed (8 approve / 0 block; 2 LOW fence-tightening folds before commit — AST write-helper fence + import-direction
+allowlist tightened). The platform's **first read-model package** is delivered: a read-only `irp_shared/holdings/`
+composition layer + `GET /portfolios/{id}/holdings` that reconstructs the as-of holdings SET by composing the captured
+`portfolio` hierarchy + `position` FR + (optional, display-only) `valuation` FR reads. **NO new entity, NO migration, NO
+write endpoint, NO permission, NO audit/lineage/DQ write, NO aggregation / market-value / `quantity × mark` / exposure /
+`dataset_snapshot`.** Marks are display-only, opt-in (`include_marks`), deterministic (explicit `valuation_date`), gated
+(`valuation.view` in-handler → 403 before any mark lookup). Subtree traversal is read COMPOSITION, not ABAC enforcement
+(anchor-not-enforce → P6+). **No REQ status change** — REQ-PPM-001/002 stay In-Progress (read-half realized; ABAC residual
+→ P6+); REQ-PPM-003 stays Done. The next step is **P1C-6 PLANNING ONLY** (deterministic synthetic dataset), **on explicit
+approval**. **P1C-6 implementation is NOT started.** The platform follows a strict planning-first,
+commit-only-on-explicit-approval cadence; plan / implement / commit are separate approvals.
+
+## P1C-5 key deliverables (closed, `0bef45b`, CI-green run #57)
+The platform's **first read-model / composition package** — read-only, computes nothing, persists nothing (read half of REQ-PPM-001/002; display-only mark read of REQ-PPM-003). **No REQ status change** (OD-P1C5-5).
+- **Read-only `irp_shared/holdings/` package** — `service.py` + plain read DTOs (`HoldingRow`/`MarkView`/`HoldingWithMark`, dataclasses, NOT ORM entities, not in `irp_shared.models`, no temporal mixin) + `__init__.py`. **No `models.py`, no `events.py`, no migration.** One-way imports `holdings → {db, portfolio, position, valuation, reference}`; nothing imports `holdings` (import-direction test, tightened to exactly that allowlist).
+- **`GET /portfolios/{id}/holdings`** (new `api/holdings.py`, mounted on the portfolios path) — params `valid_at` **required**, `known_at` optional (default now), `subtree`/`include_marks` optional, `valuation_date` required iff `include_marks=true`, `limit`/`offset` pagination (no total-count). Read-only: **no `db.commit`, no `record_event`, no `record_lineage`, no DQ write** (AST-proven). Only a GET (POST/PUT/PATCH/DELETE → 405).
+- **As-of holdings / portfolio views — composition of captured portfolio + position + valuation records.** `reconstruct_holdings_as_of` is the set-returning generalization of `reconstruct_position_as_of` (identical half-open predicate on BOTH axes, filtered by `portfolio_id`, one open version per instrument). `reconstruct_subtree_holdings_as_of` resolves the node then the bounded/cycle-safe/tenant-predicated `resolve_descendants` and unions the node id. `attach_marks_as_of` reuses `reconstruct_valuation_as_of`.
+- **`valid_at` required; `known_at` optional** (default now = current view = latest system-known) — both bitemporal axes; the holdings set + any attached marks are consistent at one `(valid_at, known_at)` point.
+- **Optional display-only valuation marks, gated by `valuation.view`** — opt-in (`include_marks=true` + explicit `valuation_date`); the stored `mark_value`/`currency_code`/`mark_source`/`price_basis` surfaced verbatim; `valuation.view` checked **in-handler before any mark lookup** → 403 fail-closed (a position-only viewer cannot leak valuations).
+- **Entitlement reuse, mint nothing** — `portfolio.view` + `position.view` route guards; `valuation.view` conditional in-handler. Catalog unchanged.
+- **RLS inherited** — reads via `get_tenant_session`; service tenant predicate (`Position.tenant_id == acting_tenant`) as defense-in-depth; cross-tenant/unknown portfolio → 404; corrupt/too-deep hierarchy → 409; no BYPASSRLS; closed hybrid set untouched. PG-proven under FORCE-RLS as `irp_app` (tenant isolation, no-context zero rows, both axes).
+- **Capture-only fences (load-bearing tests):** **no new entity, no migration, no write endpoint, no audit write, no lineage write, no DQ write, no market-value rollup, no `quantity × mark` calculation, no exposure aggregation, no `dataset_snapshot`** — proven by an AST scope-fence (forbids multiplication + every write/lineage/DQ helper) + a DTO-field fence (no `market_value`/`exposure`/`total`/`weight` field) + a zero-audit-write endpoint assertion. 31 tests (15 logic+fence / 4 PG FORCE-RLS / 12 endpoint). `audit/service.py` untouched. `migration_head` stays `0015_valuation`.
 
 ## P1C-4 key deliverables (closed, `c5c5806`, CI-green run #54)
 REQ-PPM-003 valuation conjunct (migration `0015`); the platform's **second FR DOMAIN entity** (third persisted bitemporal entity after `instrument_terms` + `position`).
@@ -122,6 +135,9 @@ REQ-PPM-001 (migration `0012`); the platform's **first domain entity** + the ent
 - **CI hygiene** — `67741fb` (run #52): GitHub Actions bumped to Node-24 majors (`checkout@v5`/`setup-python@v6`/`setup-node@v5`); Node-20 deprecation warning eliminated.
 - **P1C-4 valuation implementation plan** — `92a0264` (CI-green, run #53).
 - **P1C-4 valuation capture (FR bitemporal, captured marks) implementation** — `c5c5806` (CI-green, run #54). **P1C-4 CLOSED** — the second FR domain entity; **REQ-PPM-003 now Done**.
+- **P1C-4 closeout project-memory refresh** — `6e3dcc1` (CI-green, run #55).
+- **P1C-5 holdings-views implementation plan** — `8a14173` (CI-green, run #56; OD-P1C5-1..6 signed off).
+- **P1C-5 read-only as-of holdings / portfolio views implementation** — `0bef45b` (CI-green, run #57). **P1C-5 CLOSED** — the first read-model / composition package (no entity, no migration).
 
 ## P1B-2 key deliverables (closed, `32c7778`)
 REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evidence (the inverse of P1B-1).
@@ -155,20 +171,21 @@ REQ-SMR-004 (corporate_action portion); migration `0011`. The **last reference e
 With **P1B-1 (vocabularies/hybrid) + P1B-2 (legal_entity/issuer/counterparty) + P1B-3 (instrument/terms/identifier) + P1B-4 (corporate_action)** all closed and CI-green, the **Security-Master & Reference-Data block is complete**. **P1B-5** (reference-data ingestion mapping) is **conditional/deferred** (only if bulk loading is needed). The CAP-2 EV/FR reference entities (ENT-001..006/008) are realized; the *requirements* REQ-SMR-001/002/003/004 stay **In-Progress** (terms math, exposure-rollup calc, cross-vendor precedence, and QS-10/11 roll math respectively deferred to P1C/P2+).
 
 ## Next required action
-**P1C-5 PLANNING ONLY** — plan the `as-of holdings / portfolio views` slice via the UltraCode planning workflow:
-**read-only** as-of holdings / portfolio views composed from the captured `position` (+ optionally `valuation`) FR entities
-via their shipped `reconstruct_*_as_of` reads — **no computation beyond safe reconstruction/composition**. **On explicit
-approval. Planning only — do NOT implement P1C-5.** **P1C-5 focus / fences:** read-only views; **no exposure aggregation**;
-**no market value rollup** (unless explicitly approved as display-only from captured marks); **no `dataset_snapshot`**; no new
-persisted entity. Then P1C-6 synthetic dataset (separately planned + approved). See `next_actions.md`.
+**P1C-6 PLANNING ONLY** — plan the **deterministic synthetic dataset** slice via the UltraCode planning workflow:
+a **deterministic synthetic portfolio dataset** (synthetic reference seed pack, synthetic portfolio hierarchy, synthetic
+transactions / positions / valuations) built with **`uuid5` deterministic IDs** + **fixed timestamps**, **no real
+client/vendor data**, shipped as a **labeled never-auto-run seed module** (explicit invocation only; never wired to a
+production post-migrate path). **On explicit approval. Planning only — do NOT implement P1C-6.** **P1C-6 fences:** no real
+or sensitive data; no production auto-run seed; no market data ingestion; no risk calculations; no exposure aggregation; no
+reporting/dashboard build; no P2+ work. See `next_actions.md`.
 
 ## What MUST NOT be started yet
-- **P1C-5 implementation** (the as-of holdings/portfolio views build) — until its plan is approved (planning is the next step; plan / implement / commit are separate approvals).
-- **P1C-6 (synthetic dataset) implementation** — until P1C-6 planning is approved.
-- **No exposure aggregation / no `dataset_snapshot` / no risk calculations** — deferred to P2 (AD-014/AD-017/OD-P1C-G/H).
+- **P1C-6 (synthetic dataset) implementation** — until P1C-6 planning is approved (planning is the next step; plan / implement / commit are separate approvals).
+- **No real / sensitive data** in the synthetic dataset — synthetic-only, deterministic (`uuid5` + fixed timestamps); **no real client/vendor data**.
+- **No production auto-run seed** — the seed module is a **labeled never-auto-run** module (explicit invocation only; never wired to a prod post-migrate path).
 - **No market data ingestion / no pricing model / no valuation model** — P2; valuations are captured marks (OD-P1C-F).
-- **No market value rollup** in P1C-5 unless explicitly approved as **display-only from captured marks** (no new compute).
-- **No reporting / dashboards / real SSO / P2+ work** — deferred (AD-017 / AD-007 / AD-014).
+- **No risk calculations / no exposure aggregation / no `dataset_snapshot`** — deferred to P2 (AD-014/AD-017/OD-P1C-G/H).
+- **No reporting / dashboards build / real SSO / P2+ work** — deferred (AD-017 / AD-007 / AD-014).
 - **ABAC enforcement** — anchored in P1C-1 but NOT enforced (enforcement → P6+).
 - **P1B-5** (reference-data ingestion mapping) — conditional/deferred (only if bulk loading is needed; not now).
 - **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen); no new audit code / permission / role / migration without the governed R-07 update.
@@ -177,7 +194,7 @@ persisted entity. Then P1C-6 synthetic dataset (separately planned + approved). 
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `c5c5806`) and whether this memory refresh was committed.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `0bef45b`) and whether this memory refresh was committed.
 - Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — query the REST API).
 - `git remote -v` — origin is now SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0015_valuation` (P1C-5 as-of holdings views are read-only — no new migration unless a later slice persists a new entity).
+- Migration head is `0015_valuation` (P1C-5 holdings views are read-only — no new migration; the next migration `0016` lands only if a later slice persists a new entity).
