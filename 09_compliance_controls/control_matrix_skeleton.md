@@ -166,6 +166,21 @@ computed), `mark_source` an inert label; **NO valuation/pricing model, NO price 
 (no `position` FK / no `quantity`), NO exposure aggregation, NO holdings view, NO dataset_snapshot**. `valuation_date` is an
 immutable logical-key column (OD-P1C-F). This jointly with the P1C-2 transaction conjunct **closes REQ-PPM-003 (Done)**. As
 construction phases
+
+**P1C-5 (read half of REQ-PPM-001/002, AD-017 / OD-P1C-A/B/F/G/H, 2026-06-25):** the as-of holdings / portfolio **views** slice
+is a **read-only composition** (new `irp_shared/holdings/` read-model package + `GET /portfolios/{id}/holdings`) — it adds
+**NO entity, NO migration, NO permission, NO audit event, NO lineage/DQ write** (`migration_head` stays `0015_valuation`). It
+exercises **CTRL-001** (tests), **CTRL-004** (response fields in the data dictionary), and **CTRL-011** as its primary control
+(deny-by-default `portfolio.view` + `position.view`; `valuation.view` in-handler before any mark lookup; tenant isolation via
+inherited symmetric FORCE-RLS on `position`/`portfolio`/`valuation`; no BYPASSRLS). The write-side controls **do NOT apply** to
+a pure read: **CTRL-005/012** (audit emit), **CTRL-006/013** (lineage bind/no-bypass), **CTRL-032** (fail-closed audit rollback)
+— and a tested **zero-audit-write** assertion proves it. Subtree traversal reuses the bounded cycle-safe descendant resolver as
+**read composition, NOT ABAC enforcement** (anchor-not-enforce → P6+). **CTRL-017** applies to the underlying captured FR
+entities (already declared), not to the read DTOs. **Capture-only fences (load-bearing scope test):** NO aggregation / sum /
+rollup / total / weight, NO `market_value` or `quantity × mark_value`, NO exposure, NO `dataset_snapshot`, NO risk/pricing/
+valuation model, NO market-data/price lookup, NO position-from-transaction derivation, NO corporate-action application. Marks
+are **display-only** (opt-in, deterministic by an explicit `valuation_date`). **No REQ status change** (read-composition over
+already-satisfied capture; REQ-PPM-002 stays In-Progress, ABAC residual → P6+). As construction phases
 open, controls will be split to specific bounded contexts and capabilities and given Test/Evidence detail.
 
 ## 5. Open Decisions
