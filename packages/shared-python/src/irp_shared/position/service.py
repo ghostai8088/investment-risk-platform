@@ -27,6 +27,7 @@ only.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -110,8 +111,10 @@ def _emit(
     actor: PositionActor,
     before_value: dict[str, Any] | None = None,
     justification: str | None = None,
+    now: datetime | None = None,
 ) -> None:
-    """Emit one POSITION.* event to the FROZEN record_event (per-tenant chain; DC-2 metadata)."""
+    """Emit one POSITION.* event to the FROZEN record_event (per-tenant chain; DC-2 metadata).
+    ``now`` is the deterministic-injection seam → ``event_time`` (default-None ⇒ server clock)."""
     record_event(
         session,
         event_type=event_type,
@@ -130,11 +133,17 @@ def _emit(
         agent_model_version=actor.agent_model_version,
         on_behalf_of=actor.on_behalf_of,
         data_classification="DC-2",
+        event_time=now,
     )
 
 
 def record_position_create(
-    session: Session, *, entity: Any, after_value: dict[str, Any], actor: PositionActor
+    session: Session,
+    *,
+    entity: Any,
+    after_value: dict[str, Any],
+    actor: PositionActor,
+    now: datetime | None = None,
 ) -> None:
     """Root one ORIGIN edge + emit ``POSITION.CREATE`` (EVT-170) for a captured new version."""
     _origin_edge(session, entity=entity, actor=actor)
@@ -145,6 +154,7 @@ def record_position_create(
         action="create",
         after_value=after_value,
         actor=actor,
+        now=now,
     )
 
 
@@ -155,6 +165,7 @@ def record_position_update(
     before_value: dict[str, Any],
     after_value: dict[str, Any],
     actor: PositionActor,
+    now: datetime | None = None,
 ) -> None:
     """Emit ``POSITION.UPDATE`` (EVT-171) for a prior-head close-out — NO new lineage edge (the
     version keeps its ORIGIN edge); before/after carry the changed boundary column only."""
@@ -166,6 +177,7 @@ def record_position_update(
         before_value=before_value,
         after_value=after_value,
         actor=actor,
+        now=now,
     )
 
 
@@ -176,6 +188,7 @@ def record_position_correction(
     restatement_reason: str,
     after_value: dict[str, Any],
     actor: PositionActor,
+    now: datetime | None = None,
 ) -> None:
     """Root one ORIGIN edge + emit ``POSITION.CORRECTION`` (EVT-172) for an as-known restatement (a
     corrected NEW version). ``restatement_reason`` (TR-08) lands on the canonical ``justification``
@@ -190,4 +203,5 @@ def record_position_correction(
         after_value=after_value,
         actor=actor,
         justification=restatement_reason,
+        now=now,
     )

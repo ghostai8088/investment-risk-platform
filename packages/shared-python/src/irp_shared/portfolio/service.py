@@ -24,6 +24,7 @@ only (identifying + controlled-vocab fields), never full rows or raw input. ``au
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -91,11 +92,13 @@ def record_portfolio_create(
     entity: Any,
     after_value: dict[str, Any],
     actor: PortfolioActor,
+    now: datetime | None = None,
 ) -> None:
     """Root one ORIGIN lineage edge (MANUAL source) and emit ``PORTFOLIO.CREATE`` for a new node.
 
     Co-transactional, fail-closed; the caller has already ``add``ed + ``flush``ed the node so
-    ``entity.id`` / ``entity.tenant_id`` are set. ``after_value`` is DC-2 metadata only."""
+    ``entity.id`` / ``entity.tenant_id`` are set. ``after_value`` is DC-2 metadata only. ``now`` is
+    the deterministic-injection seam → ``event_time`` (default-None ⇒ server clock)."""
     source = ensure_manual_source(session, entity.tenant_id, actor.actor_id)
     record_lineage(
         session,
@@ -120,6 +123,7 @@ def record_portfolio_create(
         agent_model_version=actor.agent_model_version,
         on_behalf_of=actor.on_behalf_of,
         data_classification="DC-2",
+        event_time=now,
     )
 
 

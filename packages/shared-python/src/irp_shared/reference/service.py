@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol, TypeVar
 
 from sqlalchemy import select
@@ -114,13 +115,15 @@ def record_reference_create(
     entity_type: str,
     after_value: dict[str, Any],
     actor: ReferenceActor,
+    now: datetime | None = None,
 ) -> None:
     """Root one ORIGIN lineage edge (MANUAL source) and emit ``REFERENCE.CREATE`` for a new head.
 
     Co-transactional, fail-closed; the caller has already ``add``ed + ``flush``ed the head (and any
     children) so ``entity.id`` / ``entity.tenant_id`` are set. Children fold into THIS event — they
     get no event of their own. ``after_value`` is DC-2 metadata only (identifying + controlled-vocab
-    fields + child counts), never full rows or raw input."""
+    fields + child counts), never full rows or raw input. ``now`` is the deterministic-injection
+    seam → ``event_time`` (default-None ⇒ server clock; only the synthetic seed passes it)."""
     source = ensure_manual_source(session, entity.tenant_id, actor.actor_id)
     record_lineage(
         session,
@@ -145,6 +148,7 @@ def record_reference_create(
         agent_model_version=actor.agent_model_version,
         on_behalf_of=actor.on_behalf_of,
         data_classification="DC-2",
+        event_time=now,
     )
 
 

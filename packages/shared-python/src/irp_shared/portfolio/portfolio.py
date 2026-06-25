@@ -28,6 +28,7 @@ P1C because the data is synthetic (DC-1/DC-2).
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -204,6 +205,8 @@ def create_portfolio(
     base_currency_code: str | None = None,
     status: str = "ACTIVE",
     description: str | None = None,
+    entity_id: str | None = None,
+    now: datetime | None = None,
 ) -> Portfolio:
     """Create a ``portfolio`` node (governed: MANUAL-source ORIGIN lineage + ``PORTFOLIO.CREATE``).
 
@@ -211,7 +214,11 @@ def create_portfolio(
     parent
     fails closed via :class:`PortfolioNotVisible`). Self-parenting is impossible on create (the new
     id
-    is server-generated and the parent must pre-exist) — it is guarded on update."""
+    is server-generated and the parent must pre-exist) — it is guarded on update.
+
+    ``entity_id``/``now`` are the deterministic-injection seam (keyword-only, default-None ⇒ every
+    production call site is unchanged: server `uuid4` id + the EV mixin's wall-clock `valid_from`);
+    only the synthetic seed passes them for `uuid5` ids + a fixed clock."""
     if parent_portfolio_id is not None:
         resolve_portfolio(session, parent_portfolio_id, acting_tenant=tenant_id)
 
@@ -226,6 +233,12 @@ def create_portfolio(
         description=description,
         record_version=1,
     )
+    if now is not None:
+        portfolio.valid_from = (
+            now  # seam: fixed clock (else the EV mixin default stamps wall-clock)
+        )
+    if entity_id is not None:
+        portfolio.id = entity_id  # seam: deterministic uuid5 id (skips the `default=new_uuid`)
     session.add(portfolio)
     session.flush()
     record_portfolio_create(
@@ -240,6 +253,7 @@ def create_portfolio(
             "base_currency_code": base_currency_code,
         },
         actor=actor,
+        now=now,
     )
     return portfolio
 

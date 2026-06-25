@@ -147,13 +147,20 @@ def create_position(
     cost_basis: Decimal | None = None,
     quantity_unit: str | None = None,
     position_source: str | None = None,
+    entity_id: str | None = None,
+    now: datetime | None = None,
 ) -> Position:
     """Create the first open position version (governed: MANUAL-source ORIGIN lineage +
     ``POSITION.CREATE``). ``portfolio_id`` + ``instrument_id`` are resolved tenant-filtered
-    (cross-tenant/unknown → fails closed: ``PortfolioNotVisible`` / ``InstrumentNotVisible``)."""
+    (cross-tenant/unknown → fails closed: ``PortfolioNotVisible`` / ``InstrumentNotVisible``).
+
+    ``entity_id``/``now`` are the **deterministic-injection seam** (keyword-only, default-None):
+    when
+    None (every production call site) behavior is unchanged (server `uuid4` id + wall-clock `now`);
+    only the synthetic seed passes them to obtain `uuid5` ids + a fixed clock (OD-P1C6-1)."""
     resolve_portfolio(session, portfolio_id, acting_tenant=acting_tenant)
     resolve_instrument(session, instrument_id, acting_tenant=acting_tenant)
-    now = utcnow()
+    now = now or utcnow()
     row = Position(
         tenant_id=str(acting_tenant),
         portfolio_id=str(portfolio_id),
@@ -168,9 +175,11 @@ def create_position(
         position_source=position_source,
         record_version=1,
     )
+    if entity_id is not None:
+        row.id = entity_id  # seam: deterministic uuid5 id (skips the `default=new_uuid`)
     session.add(row)
     session.flush()
-    record_position_create(session, entity=row, after_value=_summary(row), actor=actor)
+    record_position_create(session, entity=row, after_value=_summary(row), actor=actor, now=now)
     return row
 
 
@@ -182,13 +191,16 @@ def supersede_position(
     acting_tenant: str,
     actor: PositionActor,
     effective_at: datetime,
+    entity_id: str | None = None,
+    now: datetime | None = None,
     **new_fields: Any,
 ) -> Position:
     """Effective-dated (valid-time) supersede: close the current head's ``valid_to = effective_at``
     (``POSITION.UPDATE``), then insert a new open version effective at ``effective_at``
     (``POSITION.CREATE`` + its own ORIGIN edge). Prior content columns are carried forward and the
     supplied ``new_fields`` override them. The prior head is sourced via the tenant-predicated
-    ``_current_open`` (never a caller-supplied id); ``supersedes_id`` is set internally."""
+    ``_current_open`` (never a caller-supplied id); ``supersedes_id`` is set internally.
+    ``entity_id``/``now`` are the deterministic-injection seam (default-None ⇒ prod unchanged)."""
     resolve_portfolio(session, portfolio_id, acting_tenant=acting_tenant)
     resolve_instrument(session, instrument_id, acting_tenant=acting_tenant)
     _check_field_kwargs(new_fields)
@@ -198,7 +210,7 @@ def supersede_position(
     if prior is None:
         raise NoCurrentPosition(str(portfolio_id), str(instrument_id))
 
-    now = utcnow()
+    now = now or utcnow()
     # CLOSE-FIRST: stamp + flush the prior valid_to close-out before adding the new open row.
     before = {"valid_to": _json_safe(prior.valid_to)}
     prior.valid_to = effective_at
@@ -209,6 +221,7 @@ def supersede_position(
         before_value=before,
         after_value={"valid_to": _json_safe(prior.valid_to)},
         actor=actor,
+        now=now,
     )
 
     carried = {field: getattr(prior, field) for field in POSITION_FIELDS}
@@ -224,9 +237,11 @@ def supersede_position(
         record_version=prior.record_version + 1,
         **{**carried, **new_fields},
     )
+    if entity_id is not None:
+        new.id = entity_id  # seam: deterministic uuid5 id for the new open version
     session.add(new)
     session.flush()
-    record_position_create(session, entity=new, after_value=_summary(new), actor=actor)
+    record_position_create(session, entity=new, after_value=_summary(new), actor=actor, now=now)
     return new
 
 
@@ -237,18 +252,21 @@ def correct_position(
     restatement_reason: str,
     acting_tenant: str,
     actor: PositionActor,
+    entity_id: str | None = None,
+    now: datetime | None = None,
     **corrected: Any,
 ) -> Position:
     """As-known restatement (TR-08): close the prior row's ``system_to = now``
     then insert a corrected version over the SAME valid period with ``restatement_reason`` +
     ``supersedes_id`` (``POSITION.CORRECTION`` / EVT-172 + its own ORIGIN edge). The prior row's
     content columns are NEVER mutated — only its ``system_to`` close-out. ``position_row`` must
-    already be tenant-resolved (via ``resolve_position``); the FKs are re-resolved fail-closed."""
+    already be tenant-resolved (via ``resolve_position``); the FKs are re-resolved fail-closed.
+    ``entity_id``/``now`` are the deterministic-injection seam (default-None ⇒ prod unchanged)."""
     resolve_portfolio(session, position_row.portfolio_id, acting_tenant=acting_tenant)
     resolve_instrument(session, position_row.instrument_id, acting_tenant=acting_tenant)
     _check_field_kwargs(corrected)
 
-    now = utcnow()
+    now = now or utcnow()
     # CLOSE-FIRST: stamp + flush the prior system_to close-out before adding the corrected row.
     before = {"system_to": _json_safe(position_row.system_to)}
     position_row.system_to = now
@@ -259,6 +277,7 @@ def correct_position(
         before_value=before,
         after_value={"system_to": _json_safe(position_row.system_to)},
         actor=actor,
+        now=now,
     )
 
     carried = {field: getattr(position_row, field) for field in POSITION_FIELDS}
@@ -275,6 +294,8 @@ def correct_position(
         record_version=position_row.record_version + 1,
         **{**carried, **corrected},
     )
+    if entity_id is not None:
+        corrected_row.id = entity_id  # seam: deterministic uuid5 id for the corrected version
     session.add(corrected_row)
     session.flush()
     record_position_correction(
@@ -289,6 +310,7 @@ def correct_position(
             },
         ),
         actor=actor,
+        now=now,
     )
     return corrected_row
 

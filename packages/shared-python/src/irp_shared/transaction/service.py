@@ -26,6 +26,7 @@ only.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -94,12 +95,14 @@ def _emit(
     after_value: dict[str, Any],
     actor: TransactionActor,
     justification: str | None = None,
+    now: datetime | None = None,
 ) -> None:
     """Root one ORIGIN lineage edge (MANUAL source) + emit one TRANSACTION.* event for a NEW row.
 
     Co-transactional, fail-closed; the caller has already ``add``ed + ``flush``ed the row so
     ``entity.id``/``entity.tenant_id`` are set. Every transaction write is a new record (no update),
-    so every write roots its own ORIGIN edge."""
+    so every write roots its own ORIGIN edge. ``now`` is the deterministic-injection seam →
+    ``event_time`` (default-None ⇒ server clock)."""
     source = ensure_manual_source(session, entity.tenant_id, actor.actor_id)
     record_lineage(
         session,
@@ -125,11 +128,17 @@ def _emit(
         agent_model_version=actor.agent_model_version,
         on_behalf_of=actor.on_behalf_of,
         data_classification="DC-2",
+        event_time=now,
     )
 
 
 def record_transaction_record(
-    session: Session, *, entity: Any, after_value: dict[str, Any], actor: TransactionActor
+    session: Session,
+    *,
+    entity: Any,
+    after_value: dict[str, Any],
+    actor: TransactionActor,
+    now: datetime | None = None,
 ) -> None:
     """Root one ORIGIN edge + emit ``TRANSACTION.RECORD`` (EVT-160) for a normal capture."""
     _emit(
@@ -139,6 +148,7 @@ def record_transaction_record(
         action="record",
         after_value=after_value,
         actor=actor,
+        now=now,
     )
 
 
@@ -149,6 +159,7 @@ def record_transaction_reverse(
     after_value: dict[str, Any],
     actor: TransactionActor,
     reason: str | None = None,
+    now: datetime | None = None,
 ) -> None:
     """Root one ORIGIN edge + emit ``TRANSACTION.REVERSE`` (EVT-161) for a reversal record (new row
     with ``reverses_transaction_id``; the original is never mutated). ``reason`` (if any) lands on
@@ -162,4 +173,5 @@ def record_transaction_reverse(
         after_value=after_value,
         actor=actor,
         justification=reason,
+        now=now,
     )

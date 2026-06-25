@@ -164,14 +164,17 @@ def create_valuation(
     currency_code: str | None = None,
     mark_source: str | None = None,
     price_basis: str | None = None,
+    entity_id: str | None = None,
+    now: datetime | None = None,
 ) -> Valuation:
     """Create the first open mark for a ``(portfolio, instrument, valuation_date)`` (governed:
     MANUAL-source ORIGIN lineage + ``VALUATION.CREATE``). ``portfolio_id`` + ``instrument_id`` are
     resolved tenant-filtered (cross-tenant/unknown → fails closed: ``PortfolioNotVisible`` /
-    ``InstrumentNotVisible``). ``mark_value`` is captured, never computed."""
+    ``InstrumentNotVisible``). ``mark_value`` is captured, never computed.
+    ``entity_id``/``now`` are the deterministic-injection seam (default-None ⇒ prod unchanged)."""
     resolve_portfolio(session, portfolio_id, acting_tenant=acting_tenant)
     resolve_instrument(session, instrument_id, acting_tenant=acting_tenant)
-    now = utcnow()
+    now = now or utcnow()
     row = Valuation(
         tenant_id=str(acting_tenant),
         portfolio_id=str(portfolio_id),
@@ -187,9 +190,11 @@ def create_valuation(
         price_basis=price_basis,
         record_version=1,
     )
+    if entity_id is not None:
+        row.id = entity_id  # seam: deterministic uuid5 id (skips the `default=new_uuid`)
     session.add(row)
     session.flush()
-    record_valuation_create(session, entity=row, after_value=_summary(row), actor=actor)
+    record_valuation_create(session, entity=row, after_value=_summary(row), actor=actor, now=now)
     return row
 
 
@@ -202,6 +207,8 @@ def supersede_valuation(
     acting_tenant: str,
     actor: ValuationActor,
     effective_at: datetime,
+    entity_id: str | None = None,
+    now: datetime | None = None,
     **new_fields: Any,
 ) -> Valuation:
     """Effective-dated (valid-time) re-mark for the SAME ``valuation_date``: close the head's
@@ -224,7 +231,7 @@ def supersede_valuation(
     if prior is None:
         raise NoCurrentValuation(str(portfolio_id), str(instrument_id), valuation_date)
 
-    now = utcnow()
+    now = now or utcnow()
     # CLOSE-FIRST: stamp + flush the prior valid_to close-out before adding the new open row.
     before = {"valid_to": _json_safe(prior.valid_to)}
     prior.valid_to = effective_at
@@ -235,6 +242,7 @@ def supersede_valuation(
         before_value=before,
         after_value={"valid_to": _json_safe(prior.valid_to)},
         actor=actor,
+        now=now,
     )
 
     carried = {field: getattr(prior, field) for field in VALUATION_FIELDS}
@@ -251,9 +259,11 @@ def supersede_valuation(
         record_version=prior.record_version + 1,
         **{**carried, **new_fields},
     )
+    if entity_id is not None:
+        new.id = entity_id  # seam: deterministic uuid5 id for the new open version
     session.add(new)
     session.flush()
-    record_valuation_create(session, entity=new, after_value=_summary(new), actor=actor)
+    record_valuation_create(session, entity=new, after_value=_summary(new), actor=actor, now=now)
     return new
 
 
@@ -264,6 +274,8 @@ def correct_valuation(
     restatement_reason: str,
     acting_tenant: str,
     actor: ValuationActor,
+    entity_id: str | None = None,
+    now: datetime | None = None,
     **corrected: Any,
 ) -> Valuation:
     """As-known restatement (TR-08): close the prior row's ``system_to = now``
@@ -276,7 +288,7 @@ def correct_valuation(
     resolve_instrument(session, valuation_row.instrument_id, acting_tenant=acting_tenant)
     _check_field_kwargs(corrected)
 
-    now = utcnow()
+    now = now or utcnow()
     # CLOSE-FIRST: stamp + flush the prior system_to close-out before adding the corrected row.
     before = {"system_to": _json_safe(valuation_row.system_to)}
     valuation_row.system_to = now
@@ -287,6 +299,7 @@ def correct_valuation(
         before_value=before,
         after_value={"system_to": _json_safe(valuation_row.system_to)},
         actor=actor,
+        now=now,
     )
 
     carried = {field: getattr(valuation_row, field) for field in VALUATION_FIELDS}
@@ -304,6 +317,8 @@ def correct_valuation(
         record_version=valuation_row.record_version + 1,
         **{**carried, **corrected},
     )
+    if entity_id is not None:
+        corrected_row.id = entity_id  # seam: deterministic uuid5 id for the corrected version
     session.add(corrected_row)
     session.flush()
     record_valuation_correction(
@@ -318,6 +333,7 @@ def correct_valuation(
             },
         ),
         actor=actor,
+        now=now,
     )
     return corrected_row
 

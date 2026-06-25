@@ -181,6 +181,21 @@ rollup / total / weight, NO `market_value` or `quantity × mark_value`, NO expos
 valuation model, NO market-data/price lookup, NO position-from-transaction derivation, NO corporate-action application. Marks
 are **display-only** (opt-in, deterministic by an explicit `valuation_date`). **No REQ status change** (read-composition over
 already-satisfied capture; REQ-PPM-002 stays In-Progress, ABAC residual → P6+). As construction phases
+
+**P1C-6 (deterministic synthetic dataset, OD-P1C-L REALIZED / AD-017, 2026-06-25):** a **labeled, never-auto-run** synthetic-data
+seed (new `irp_shared/synthetic/` package — `build_synthetic_dataset`) that builds a small reproducible demo dataset **through the
+governed binders**, so every seeded row **PRESERVES** the production controls: **CTRL-005/012** (each row emits its `*.CREATE`/
+`RECORD` audit event; `verify_chain` passes), **CTRL-006/013** (each row roots its MANUAL-source ORIGIN lineage edge;
+`assert_has_lineage`), **CTRL-011** (writes only under the reserved SYNTHETIC tenant context — symmetric FORCE-RLS, **never
+BYPASSRLS**; a different tenant sees zero synthetic rows), plus **CTRL-001** (the determinism / governed-path / guard tests). **No
+control is weakened.** It adds **NO entity, NO migration** (`migration_head` stays `0015_valuation`), **NO HTTP endpoint, NO
+permission, NO audit-code** (`audit/service.py` FROZEN); the only shared-package change is a **narrow, keyword-only, default-None
+deterministic-injection seam** (`entity_id` / `now`) on the governed binders — **production call sites are byte-for-byte unchanged**
+(test-proven). Determinism: `uuid5` ids + an injected fixed seed clock; an **AST fence** forbids `datetime.now`/`utcnow`/`uuid4`/
+`new_uuid`/`uuid1`/`random` in the seed module + any multiplication (no `quantity × mark` / market value / exposure — capture-only).
+**Never-auto-run** is enforced architecturally (not in migrations/startup) + an explicit confirm-flag + an `IRP_ALLOW_SYNTHETIC_SEED=1`
+env gate + a refuse-non-synthetic-tenant guard (all tested). Synthetic-only data (DC-1/DC-2 demo fixtures): `SYNTH_*`/neutral names,
+no real vendor/agency/client names, no real ISIN/CUSIP/SEDOL/LEI. **No REQ status change.** As construction phases
 open, controls will be split to specific bounded contexts and capabilities and given Test/Evidence detail.
 
 ## 5. Open Decisions

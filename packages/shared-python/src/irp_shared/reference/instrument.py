@@ -10,6 +10,7 @@ explicit-tenant-predicate ``resolve_instrument`` reused by the terms and identif
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -64,12 +65,18 @@ def create_instrument(
     issuer_id: str | None = None,
     currency_code: str | None = None,
     is_active: bool = True,
+    entity_id: str | None = None,
+    now: datetime | None = None,
 ) -> Instrument:
     """Create an ``instrument`` head (governed: MANUAL-source lineage + ``REFERENCE.CREATE``).
 
     A non-null ``issuer_id`` is resolved tenant-filtered (cross-tenant/unknown → fails closed via
     :class:`~irp_shared.reference.issuer.IssuerNotVisible`). Instruments WITHOUT an issuer (cash/FX/
-    index) are allowed (``issuer_id`` nullable)."""
+    index) are allowed (``issuer_id`` nullable).
+
+    ``entity_id``/``now`` are the deterministic-injection seam (keyword-only, default-None ⇒ prod
+    unchanged: server `uuid4` id + the EV mixin's wall-clock `valid_from`); only the synthetic seed
+    passes them for `uuid5` ids + a fixed clock."""
     if issuer_id is not None:
         resolve_issuer(session, issuer_id, acting_tenant=tenant_id)
 
@@ -84,6 +91,12 @@ def create_instrument(
         is_active=is_active,
         record_version=1,
     )
+    if now is not None:
+        instrument.valid_from = (
+            now  # seam: fixed clock (else the EV mixin default stamps wall-clock)
+        )
+    if entity_id is not None:
+        instrument.id = entity_id  # seam: deterministic uuid5 id (skips the `default=new_uuid`)
     session.add(instrument)
     session.flush()
     record_reference_create(
@@ -100,6 +113,7 @@ def create_instrument(
             "is_active": is_active,
         },
         actor=actor,
+        now=now,
     )
     return instrument
 

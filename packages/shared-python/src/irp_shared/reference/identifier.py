@@ -60,6 +60,8 @@ def create_identifier_xref(
     source: str | None = None,
     valid_from: datetime | None = None,
     is_active: bool = True,
+    entity_id: str | None = None,
+    now: datetime | None = None,
 ) -> IdentifierXref:
     """Create an ``identifier_xref`` for an instrument (governed: MANUAL-source lineage +
     ``REFERENCE.CREATE``). ``entity_type`` is forced to ``'instrument'``; ``instrument_id`` is
@@ -67,9 +69,10 @@ def create_identifier_xref(
     tenant-filtered (cross-tenant/unknown →
     :class:`~irp_shared.reference.instrument.InstrumentNotVisible`).
     The active partial-unique ``(tenant_id, scheme, value) WHERE valid_to IS NULL`` enforces at most
-    one active row per identifier (a duplicate raises ``IntegrityError``)."""
+    one active row per identifier (a duplicate raises ``IntegrityError``).
+    ``entity_id``/``now`` are the deterministic-injection seam (default-None ⇒ prod unchanged)."""
     instrument = resolve_instrument(session, instrument_id, acting_tenant=tenant_id)
-    now = utcnow()
+    now = now or utcnow()
     xref = IdentifierXref(
         tenant_id=instrument.tenant_id,  # server-stamped from the resolved instrument (== acting)
         entity_type=ENTITY_TYPE_INSTRUMENT,
@@ -82,6 +85,8 @@ def create_identifier_xref(
         is_active=is_active,
         record_version=1,
     )
+    if entity_id is not None:
+        xref.id = entity_id  # seam: deterministic uuid5 id (skips the `default=new_uuid`)
     session.add(xref)
     session.flush()
     record_reference_create(
@@ -97,6 +102,7 @@ def create_identifier_xref(
             "is_active": is_active,
         },
         actor=actor,
+        now=now,
     )
     return xref
 

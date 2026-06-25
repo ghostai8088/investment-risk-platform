@@ -29,6 +29,7 @@ only.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -112,8 +113,10 @@ def _emit(
     actor: ValuationActor,
     before_value: dict[str, Any] | None = None,
     justification: str | None = None,
+    now: datetime | None = None,
 ) -> None:
-    """Emit one VALUATION.* event to the FROZEN record_event (per-tenant chain; DC-2 metadata)."""
+    """Emit one VALUATION.* event to the FROZEN record_event (per-tenant chain; DC-2 metadata).
+    ``now`` is the deterministic-injection seam → ``event_time`` (default-None ⇒ server clock)."""
     record_event(
         session,
         event_type=event_type,
@@ -132,11 +135,17 @@ def _emit(
         agent_model_version=actor.agent_model_version,
         on_behalf_of=actor.on_behalf_of,
         data_classification="DC-2",
+        event_time=now,
     )
 
 
 def record_valuation_create(
-    session: Session, *, entity: Any, after_value: dict[str, Any], actor: ValuationActor
+    session: Session,
+    *,
+    entity: Any,
+    after_value: dict[str, Any],
+    actor: ValuationActor,
+    now: datetime | None = None,
 ) -> None:
     """Root one ORIGIN edge + emit ``VALUATION.CREATE`` (EVT-180) for a captured new mark."""
     _origin_edge(session, entity=entity, actor=actor)
@@ -147,6 +156,7 @@ def record_valuation_create(
         action="create",
         after_value=after_value,
         actor=actor,
+        now=now,
     )
 
 
@@ -157,6 +167,7 @@ def record_valuation_update(
     before_value: dict[str, Any],
     after_value: dict[str, Any],
     actor: ValuationActor,
+    now: datetime | None = None,
 ) -> None:
     """Emit ``VALUATION.UPDATE`` (EVT-181) for a prior-head close-out — NO new lineage edge (the
     version keeps its ORIGIN edge); before/after carry the changed boundary column only."""
@@ -168,6 +179,7 @@ def record_valuation_update(
         before_value=before_value,
         after_value=after_value,
         actor=actor,
+        now=now,
     )
 
 
@@ -178,6 +190,7 @@ def record_valuation_correction(
     restatement_reason: str,
     after_value: dict[str, Any],
     actor: ValuationActor,
+    now: datetime | None = None,
 ) -> None:
     """Root one ORIGIN edge + emit ``VALUATION.CORRECTION`` (EVT-182) for an as-known restatement (a
     corrected NEW version). ``restatement_reason`` (TR-08) lands on the canonical ``justification``
@@ -192,4 +205,5 @@ def record_valuation_correction(
         after_value=after_value,
         actor=actor,
         justification=restatement_reason,
+        now=now,
     )
