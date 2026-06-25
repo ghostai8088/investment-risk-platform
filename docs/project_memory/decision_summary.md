@@ -1,6 +1,6 @@
 # Decision Summary
 
-> **As of 2026-06-22.** Ratified and load-bearing decisions. **Do not relitigate the "Ratified" items unless
+> **As of 2026-06-24.** Ratified and load-bearing decisions. **Do not relitigate the "Ratified" items unless
 > the user explicitly reopens them.** Authoritative sources: `11_decision_log/architecture_decision_log.md`
 > (AD-*), the per-slice plan docs, and `10_delivery_backlog/p1b0_decision_record.md` (OD-P1B-*).
 
@@ -93,6 +93,16 @@ REQ-PPM-001 (migration `0012`); `portfolio` (ENT-010, EV) hierarchy + the entitl
 - **Symmetric proprietary RLS** (migration `0012`, byte-for-byte the `0011` loop); **NEVER hybrid** (closed 5-table hybrid set asserted unchanged); cross-tenant `parent_portfolio_id` fails closed at the **service layer** (`resolve_portfolio` → `PortfolioNotVisible`) pre-commit. **Fail-closed audit rollback (CTRL-032)** proven by a negative test.
 - **Entitlement:** `data_steward` granted BOTH `portfolio.view` + `portfolio.edit` (maker reads its own writes); existing `portfolio.view` recipients unchanged; `portfolio.edit` maker/admin only; `auditor_3l` excluded; parity-tested.
 - **New `irp_shared/portfolio/` package** (first domain package; rail-only imports, import-direction test). 35 tests (17 logic + 11 endpoint + 7 PG) + parity; 5 thin endpoints.
+
+## P1C-2 design decisions (REALIZED — `abb230f`, CI-green run #46; 8-lens reviewed, 0 block, 2 LOW folded) — the first DOMAIN IA / append-only entity
+REQ-PPM-003 transaction conjunct (migration `0013`); `transaction` (ENT-012, IA append-only) — a capture-only trade/cashflow event log. Sign-offs: OD-P1C2-1 (audit), OD-P1C2-2 (entitlement), OD-P1C2-6 (capture-only).
+- **`transaction` = IA append-only** — `ImmutableAppendOnlyMixin` (`system_from` only; NO `valid_*`/`system_to`/`record_version`/`status`/`is_active`); `__temporal_class__ = IMMUTABLE_APPEND_ONLY`. A bare event keyed to a `portfolio` + an `instrument`; `quantity` (signed) + inert `price`/`gross_amount`/`currency_code`/`external_ref`. **Truly immutable** — in `APPEND_ONLY_TABLES` (unlike the IA-status-mutable `ingestion_batch`/`calculation_run`).
+- **Two-layer append-only immutability:** the `irp_prevent_mutation` **P0001 DB trigger** (reusing the `0001` function) AND the ORM `before_update`/`before_delete` guard raising `AppendOnlyViolation`. PG test grants `irp_app` UPDATE/DELETE + a positive control so the rejection proves the **P0001 trigger**, not a 42501 privilege denial; the forged-tenant 42501 is proven separately via a forged-tenant **INSERT** (an UPDATE would hit the trigger first).
+- **Reversal-as-new-record (OD-P1C2-6):** corrections are explicit NEW rows (`reverses_transaction_id` self-FK; negated `quantity`/`gross_amount`; `txn_type=REVERSAL`) emitting `TRANSACTION.REVERSE`; the original is **NEVER mutated** (a reversal is an append, not an update); a reversal may itself be reversed. No update/delete/cancel endpoint.
+- **`TRANSACTION.RECORD` (EVT-160) / `TRANSACTION.REVERSE` (EVT-161) ACTIVATED** (OD-P1C2-1) — caller-side constants (new `irp_shared/transaction/events.py`) to the **FROZEN** `record_event`; per-tenant chain; DC-2 metadata; **create-only** (no UPDATE/STATUS_CHANGE — a transaction is immutable). `audit/service.py` UNTOUCHED.
+- **Entitlement (OD-P1C2-2):** minted `transaction.view` + `transaction.record`; `data_steward` is the **maker/recorder** (holds both); risk tiers hold `.view`; `auditor_3l` excluded; parity-tested.
+- **Symmetric proprietary RLS** (migration `0013`, byte-for-byte the `0012` loop); **NEVER hybrid** (closed 5-table hybrid set asserted unchanged); cross-tenant `portfolio_id`/`instrument_id`/`reverses_transaction_id` fail closed at the **service layer** (`resolve_*` → `*NotVisible`) pre-commit. One MANUAL-source ORIGIN edge per record + reversal. **Fail-closed audit rollback (CTRL-032)** proven by a negative test.
+- **Capture-only (AD-017):** **NO transaction-to-position derivation**, NO cashflow engine, NO valuation, NO exposure aggregation, NO corporate-action application; numeric fields inert. New `irp_shared/transaction/` package (first to depend one-way on **two** upstream packages — portfolio + reference + rails; import-direction test). 32 tests (13 logic + 8 PG + 11 endpoint) + parity; 4 thin endpoints (record/list/get/reverse). REQ-PPM-003 In-Progress (valuation conjunct → P1C-4).
 
 ## Deferred (sound; do not pull forward)
 OD-012 identifier precedence → beyond P1C (vendor-ingestion phase); OD-015 counterparty netting/CSA → P2+ (counterparty-credit, re-targeted out of P1C by OD-P1C-K); exposure aggregation (REQ-PPM-004) + `dataset_snapshot` → P2 (AD-017/AD-014); REQ-INT-002/003 vendor/SFTP/API

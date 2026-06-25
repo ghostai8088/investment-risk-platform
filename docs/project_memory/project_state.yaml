@@ -1,7 +1,7 @@
 # Compact machine-readable project state for session recovery.
-# As of 2026-06-23. Re-verify `latest` (git HEAD/CI) and `working_tree` at session start — they drift.
+# As of 2026-06-24. Re-verify `latest` (git HEAD/CI) and `working_tree` at session start — they drift.
 schema_version: 1
-as_of: "2026-06-23"
+as_of: "2026-06-24"
 
 project:
   name: investment-risk-platform
@@ -10,24 +10,24 @@ project:
   default_branch: main
 
 latest:
-  origin_main_commit: bb89c74
-  origin_main_subject: "Implement P1C-1 portfolio hierarchy and ABAC scope anchor"
-  local_vs_origin: in-sync   # origin/main == bb89c74; ONLY this docs/project_memory/* refresh is uncommitted (no code)
-  ci_status: green           # bb89c74: GitHub Actions run #43 (id 28068172716) = success, all 5 jobs; migration job's Portfolio symmetric-RLS step + 0012 + drift + downgrade all green
-  migration_head: 0012_portfolio   # next migration: 0013 (lands when P1C-2 transaction is BUILT)
+  origin_main_commit: abb230f
+  origin_main_subject: "Implement P1C-2 transaction capture IA append-only"
+  local_vs_origin: in-sync   # origin/main == abb230f; ONLY this docs/project_memory/* refresh is uncommitted (no code)
+  ci_status: green           # abb230f: GitHub Actions run #46 (id 28108904570) = success, all 5 jobs; migration job's Transaction symmetric-RLS + append-only step + 0013 + drift + P0001 trigger proof + downgrade all green
+  migration_head: 0013_transaction   # next migration: 0014 (lands when P1C-3 position is BUILT)
 
 working_tree:
   uncommitted:
-    - path: "docs/project_memory/* (this P1C-1 closeout refresh)"
+    - path: "docs/project_memory/* (this P1C-2 closeout refresh)"
       status: modified
       note: >
-        Project-memory refresh to HEAD bb89c74 (P1C-1 CLOSED, CI-green run #43 — the first domain entity: portfolio
-        EV hierarchy + ABAC scope anchor). Docs-only; NO code, NO migration, NO backend/frontend/worker/shared-package/
-        test/bootstrap/CI changes. Commit pending approval.
+        Project-memory refresh to HEAD abb230f (P1C-2 CLOSED, CI-green run #46 — the first domain IA / append-only
+        entity: transaction capture, capture-only with reversal-as-new-record). Docs-only; NO code, NO migration, NO
+        backend/frontend/worker/shared-package/test/bootstrap/CI changes. Commit pending approval.
 
 operating_mode: ultracode    # plan-workflow -> commit plan -> implement -> review-workflow -> fix -> make check -> commit-on-approval -> CI
 commit_policy: explicit-approval-only
-current_approval_gate: "P1C-1 CLOSED and CI-green (bb89c74, run #43; 8-lens reviewed, 0 block). The first DOMAIN entity is delivered: portfolio (ENT-010, EV) + ABAC scope anchor; PORTFOLIO.CREATE/UPDATE (EVT-150/151) activated; data_steward holds portfolio.view+edit; ABAC anchored-not-enforced (P6+). NEXT = P1C-2 PLANNING ONLY (transaction = IA append-only, capture-only) on explicit approval. P1C-2 implementation NOT started; P1B-5 CONDITIONAL/DEFERRED."
+current_approval_gate: "P1C-2 CLOSED and CI-green (abb230f, run #46; 8-lens reviewed, 0 block, 2 LOW folded). The first DOMAIN IA / append-only entity is delivered: transaction (ENT-012, IA) capture-only; TRANSACTION.RECORD/REVERSE (EVT-160/161) activated; transaction.view/record minted (data_steward maker; auditor_3l excluded); reversal-as-new-record (original never mutated); two-layer append-only (P0001 trigger + ORM guard); NO transaction-to-position derivation. NEXT = P1C-3 PLANNING ONLY (position = FR bitemporal, captured directly) on explicit approval. P1C-3 implementation NOT started; P1B-5 CONDITIONAL/DEFERRED."
 
 phases:
   completed:
@@ -54,6 +54,9 @@ phases:
     - {id: P1C-1-plan,   name: "P1C-1 portfolio-hierarchy implementation plan", commit: "b52ad9e", ci: green}
     - {id: P1C-0-ratification, name: "P1C-0 ratification into governance (AD-017, REQ-PPM-001, PORTFOLIO.* reserved, OD-013/OD-025 closed)", commit: "dca7bc0", ci: green}
     - {id: P1C-1,        name: "P1C-1 portfolio (ENT-010, EV) hierarchy + ABAC scope anchor; PORTFOLIO.CREATE/UPDATE (EVT-150/151) activated; symmetric RLS; the first DOMAIN entity", commit: "bb89c74", ci: green}
+    - {id: P1C-1-memory, name: "P1C-1 closeout project-memory refresh", commit: "d1d6829", ci: green}
+    - {id: P1C-2-plan,   name: "P1C-2 transaction implementation plan", commit: "c398215", ci: green}
+    - {id: P1C-2,        name: "P1C-2 transaction (ENT-012, IA append-only) capture-only; TRANSACTION.RECORD/REVERSE (EVT-160/161) activated; reversal-as-new-record; two-layer append-only (P0001 trigger + ORM guard); symmetric RLS; the first DOMAIN IA / append-only entity", commit: "abb230f", ci: green}
 
   milestones:
     P1A: closed   # all five rails committed and CI-green
@@ -62,13 +65,15 @@ phases:
     P1C-0: ratified   # decision record + plan (705d3ba) + ratifications (dca7bc0, run #42) into governance (AD-017 etc.)
     P1C-1-plan: committed   # P1C-1 portfolio-hierarchy implementation plan (b52ad9e), CI-green run #41
     P1C-1: closed   # portfolio EV hierarchy + ABAC scope anchor committed bb89c74, CI-green (run #43). The platform's FIRST domain entity.
+    P1C-2-plan: committed   # P1C-2 transaction implementation plan (c398215), CI-green run #45
+    P1C-2: closed   # transaction capture (IA append-only) committed abb230f, CI-green (run #46). The platform's FIRST domain IA / append-only entity.
   active:
-    id: P1C-1
-    name: "P1C-1 CLOSED and CI-green (bb89c74, run #43; 8-lens reviewed, 0 block); only this project-memory refresh is commit-pending"
+    id: P1C-2
+    name: "P1C-2 CLOSED and CI-green (abb230f, run #46; 8-lens reviewed, 0 block, 2 LOW folded); only this project-memory refresh is commit-pending"
     status: closed-ci-green
   next:
-    id: P1C-2-planning
-    name: "P1C-2 PLANNING ONLY: transaction (ENT-012, IA append-only) — the first domain IA entity; capture-only trade/cashflow event log keyed to portfolio + instrument; NO position derivation, NO valuation, NO exposure aggregation. Planning only on explicit approval; P1C-2 implementation NOT started."
+    id: P1C-3-planning
+    name: "P1C-3 PLANNING ONLY: position (ENT-011, FR bitemporal) — captured DIRECTLY (reuse the instrument_terms FR protocol), NOT derived from transactions; NO market value calculation, NO exposure aggregation. Planning only on explicit approval; P1C-3 implementation NOT started."
     status: blocked-until-approval
 
 # --- P1B-1 key deliverables (CLOSED, 6568cb1, CI-green) ---
@@ -144,26 +149,41 @@ p1c1_deliverables:
   review: "8-lens UltraCode adversarial review: 7 approve / 1 approve_with_changes, 0 block; the lone MEDIUM (AUD-1: missing CTRL-032 fail-closed-rollback test) fixed before commit + QA-1 (strengthened tenant-bounded subtree test)."
   reqs: "REQ-PPM-001 In-Progress (hierarchy + scope anchor delivered; ABAC enforcement -> P6+; exposure aggregation -> P2)."
 
-# --- P1C-2 focus (the NEXT slice — PLANNING ONLY, on approval) ---
-p1c2_focus:
-  entity: "transaction (ENT-012, IA append-only) — the first domain IA entity"
-  pattern: "mirror the ingestion_staged_record/lineage_edge append-only precedent: APPEND_ONLY_TABLES + irp_prevent_mutation P0001 trigger + ORM before_update/before_delete guard"
-  scope: "CAPTURE-ONLY trade/cashflow event log keyed to portfolio + instrument"
+# --- P1C-2 key deliverables (CLOSED, abb230f, CI-green run #46; the FIRST domain IA / append-only entity) ---
+p1c2_deliverables:
+  entity: [transaction]   # ENT-012, IA append-only; migration 0013; REQ-PPM-003 (transaction conjunct)
+  ia_entity: "transaction = IA append-only (ImmutableAppendOnlyMixin: system_from ONLY; NO valid_*/system_to/record_version/status/is_active; __temporal_class__ = IMMUTABLE_APPEND_ONLY). A bare trade/cashflow event keyed to a portfolio + an instrument; quantity/price/gross_amount are INERT captures (never recomputed). TRULY IMMUTABLE (in APPEND_ONLY_TABLES, unlike the IA-status-mutable ingestion_batch/calculation_run)."
+  two_layer_append_only: "transaction in APPEND_ONLY_TABLES -> the irp_prevent_mutation P0001 DB trigger (reusing the 0001 function) AND the ORM event.listen before_update/before_delete guard raising AppendOnlyViolation. PG test grants irp_app UPDATE/DELETE + a positive control so the rejection proves the P0001 TRIGGER (not a 42501 privilege denial); the forged-tenant 42501 is proven separately via a forged-tenant INSERT."
+  reversal_convention: "reversal-as-new-record: a correction is an explicit NEW row (reverses_transaction_id self-FK; negated quantity/gross_amount; txn_type=REVERSAL) emitting TRANSACTION.REVERSE; the ORIGINAL is NEVER mutated (a reversal is an append, not an update); a reversal may itself be reversed. Tested: original byte-for-byte unchanged + exactly two rows for the pair."
+  audit: "TRANSACTION.RECORD (EVT-160) / TRANSACTION.REVERSE (EVT-161) ACTIVATED — caller-side constants in irp_shared/transaction/events.py to the FROZEN record_event; per-tenant chain; DC-2 metadata only; CREATE-ONLY (no UPDATE/STATUS_CHANGE — a transaction is immutable). audit/service.py UNTOUCHED."
+  entitlement: "transaction.view + transaction.record minted additively; data_steward is the MAKER/RECORDER (holds both); risk tiers (risk_analyst_1l/risk_manager_2l) hold .view; auditor_3l EXCLUDED; parity-tested. Deny-by-default require_permission."
+  lineage: "one MANUAL data_source ORIGIN edge per record AND per reversal record (ensure_manual_source resolve-or-register + record_lineage, fail-closed; assert_has_lineage)."
+  rls: "symmetric tenant-scoped (USING == WITH CHECK == own-tenant, ENABLE+FORCE; migration 0013, mirrors 0012); NEVER hybrid (no SYSTEM_TENANT; closed 5-table hybrid set asserted unchanged); cross-tenant portfolio_id/instrument_id/reverses_transaction_id fail closed at the SERVICE layer (resolve_* -> *NotVisible) pre-commit; no BYPASSRLS app path."
+  fail_closed_rollback: "CTRL-032 co-transactional: if record_event/record_lineage raises, the whole unit (transaction + MANUAL source + ORIGIN edge + audit event) rolls back (no mid-call commit); proven by a negative test."
+  capture_only: "NO transaction-to-position derivation, NO cashflow engine, NO valuation, NO exposure aggregation, NO corporate-action application. New irp_shared/transaction/ package (one-way: transaction -> {portfolio, reference, rails}; import-direction test). 32 transaction tests (13 logic + 8 PG + 11 endpoint) + parity; 4 thin endpoints (record/list/get/reverse — no PUT/PATCH/DELETE)."
+  review: "8-lens UltraCode adversarial review: 8 approve, 0 block; 2 LOW folded before commit (QA-1: removed a Markdown-orphaning blank line in the audit-taxonomy table; DQ-1: reversal test asserts its own MANUAL-source ORIGIN lineage edge)."
+  reqs: "REQ-PPM-003 In-Progress (transaction conjunct delivered; the valuation conjunct -> P1C-4; not closeable until P1C-4)."
+
+# --- P1C-3 focus (the NEXT slice — PLANNING ONLY, on approval) ---
+p1c3_focus:
+  entity: "position (ENT-011, FR bitemporal) — captured directly"
+  pattern: "reuse the P1B-3 instrument_terms FR protocol: FullReproducibleMixin (valid_from/valid_to + system_from/system_to); create -> effective-dated supersede -> as-known correction; both-axes as-of reconstruction; one-now; close-first; current-head partial-unique; NOT append-only"
+  scope: "positions CAPTURED DIRECTLY (a holding-as-of snapshot), keyed to portfolio + instrument"
   fences:
-    - "NO position derivation (positions are captured directly in P1C-3, not derived from the transaction log — that is a calc, deferred)"
-    - "NO valuation"
+    - "NO derivation from transactions (positions are captured directly, NOT derived from the P1C-2 transaction log — a derivation engine is deferred)"
+    - "NO market value calculation"
     - "NO exposure aggregation"
-    - "NO dataset_snapshot / risk / pricing / market data"
+    - "NO dataset_snapshot / risk / pricing / market data / valuation"
 
 blockers:
-  - "P1C-1 CLOSED (bb89c74) and CI-green (run #43). Next is P1C-2 PLANNING ONLY — only on explicit approval. P1C-2 implementation MUST NOT start until its plan is approved."
+  - "P1C-2 CLOSED (abb230f) and CI-green (run #46). Next is P1C-3 PLANNING ONLY — only on explicit approval. P1C-3 implementation MUST NOT start until its plan is approved."
   - "Every step gated on explicit user approval; do not start the next slice unprompted."
 
 do_not_start:
-  - P1C-2 implementation (transaction build) until its plan is approved (planning is the next step; plan/implement/commit are separate approvals)
-  - NO position derivation from transactions (a calc — deferred; P1C-3 captures positions directly). NO positions / NO valuations / NO holdings.
-  - P1C-3/4/5/6 + P2+ — not until their slices are planned + approved
-  - exposure aggregation / dataset_snapshot / risk calculations / market data / pricing / valuation models / portfolio performance / corporate-action application / reporting / dashboards / real SSO (AD-017/AD-014; capture-only)
+  - P1C-3 implementation (position build) until its plan is approved (planning is the next step; plan/implement/commit are separate approvals)
+  - NO derivation from transactions (positions are captured directly in P1C-3, never derived from the P1C-2 transaction log — a derivation engine is deferred). NO positions built yet / NO valuations / NO holdings / NO market values.
+  - P1C-4/5/6 + P2+ — not until their slices are planned + approved
+  - valuations / holdings / market values / exposure aggregation / dataset_snapshot / risk calculations / market data / pricing / valuation models / portfolio performance / corporate-action application / reporting / dashboards / real SSO (AD-017/AD-014; capture-only)
   - ABAC enforcement (anchored in P1C-1; enforcement -> P6+)
   - P1B-5 (reference-data ingestion mapping) — CONDITIONAL/DEFERRED (only if bulk loading is needed; not now)
   - any change to packages/shared-python/src/irp_shared/audit/service.py (frozen)
@@ -182,12 +202,12 @@ security_housekeeping:
       credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.
 
 recheck_at_session_start:
-  - "git log -1 --oneline ; git status --short   (HEAD should be >= bb89c74; whether this memory refresh got committed)"
+  - "git log -1 --oneline ; git status --short   (HEAD should be >= abb230f; whether this memory refresh got committed)"
   - "latest CI conclusion for current HEAD (GitHub Actions REST API; gh CLI not installed)"
   - "git remote -v   (origin is now SSH: git@github.com:ghostai8088/investment-risk-platform.git; auth via Keychain-backed key)"
-  - "migration head is 0012_portfolio; the P1C-2 BUILD will add 0013"
+  - "migration head is 0013_transaction; the P1C-3 BUILD will add 0014"
 
 uncertain_values:
-  - "as_of '2026-06-23' is approximate — the host clock has drifted (read 2026-06-18 / 2026-06-25 intermittently). The commit timeline + CI run numbers are authoritative; calendar dates are best-effort."
-  - "This project_memory refresh is UNCOMMITTED — origin/main stays bb89c74 until it is committed on approval."
-  - "CI run #43 = 28068172716 (success) is the P1C-1 build run (all 5 jobs green incl. the new Portfolio symmetric-RLS migration step)."
+  - "as_of '2026-06-24' is approximate — the host clock has drifted (read 2026-06-18 / 2026-06-25 intermittently). The commit timeline + CI run numbers are authoritative; calendar dates are best-effort."
+  - "This project_memory refresh is UNCOMMITTED — origin/main stays abb230f until it is committed on approval."
+  - "CI run #46 = 28108904570 (success) is the P1C-2 build run (all 5 jobs green incl. the new Transaction symmetric-RLS + append-only migration step)."

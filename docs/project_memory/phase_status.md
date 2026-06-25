@@ -1,6 +1,6 @@
 # Phase Status
 
-> **As of 2026-06-22.** Per-phase status, commits, CI, deliverables, placeholders. Commit hashes are the
+> **As of 2026-06-24.** Per-phase status, commits, CI, deliverables, placeholders. Commit hashes are the
 > implementation commit (plan/fix commits noted). Re-verify HEAD + CI at session start (`current_state.md`).
 
 | Phase | Status | Impl commit | CI | Key deliverables | Known placeholders carried forward |
@@ -20,11 +20,13 @@
 | **P1B-5** ingestion mapping | NOT STARTED (conditional/deferred) | — | — | — | only if bulk reference loading is needed; not now |
 | **P1B closeout / P1C readiness** | DONE | `e99633a` | green (run #39) | closeout doc + rail/domain inventory + P1B-5 defer + P1C readiness + subphase structure + synthetic-data strategy (`10_delivery_backlog/p1b_closeout_p1c_readiness.md`) | — |
 | **P1C-0** decision record + plan | DONE / **RATIFIED** | `705d3ba`; ratification (this turn, governance md/yaml) | green (run #40) | 12 decisions (OD-P1C-A..L) + P1C implementation plan (P1C-1..P1C-6); **AD-017** + REQ-PPM-001 + PORTFOLIO.* reserved + OD-013/OD-025 closed recorded into governance | OD-012/OD-015 re-targeted beyond P1C |
-| **P1C-1** portfolio-hierarchy plan | PLAN DONE | `b52ad9e` | green (run #41) | detailed 20-section plan: single `portfolio` EV table + `node_type` + `parent_portfolio_id`; ABAC scope anchor; bounded ancestor+descendant resolvers; `PORTFOLIO.*` audit; symmetric RLS (`10_delivery_backlog/p1c1_implementation_plan.md`) | **build NOT started** — next, on approval |
+| **P1C-1** portfolio-hierarchy plan | PLAN DONE | `b52ad9e` | green (run #41) | detailed 20-section plan: single `portfolio` EV table + `node_type` + `parent_portfolio_id`; ABAC scope anchor; bounded ancestor+descendant resolvers; `PORTFOLIO.*` audit; symmetric RLS (`10_delivery_backlog/p1c1_implementation_plan.md`) | build CLOSED (`bb89c74`, run #43) |
 | **P1C-0** ratification | DONE | `dca7bc0` | green (run #42) | AD-017 + REQ-PPM-001 + PORTFOLIO.* reserved (EVT-150) + OD-013/OD-025 closed + portfolio.* grants recorded into governance |
 | **P1C-1** portfolio hierarchy + ABAC scope anchor | **DONE / CLOSED** | impl **`bb89c74`** | green (run #43 = 28068172716) | 1 EV table (mig `0012`, symmetric RLS): `portfolio` (ENT-010) — single table, `node_type`/`status` controlled-vocab, `parent_portfolio_id` self-FK; bounded ancestor (`resolve_ultimate_parent`) + **NEW** descendant (`resolve_descendants`) resolvers (depth cap 32, visited-set, `HierarchyCycleError`, per-hop tenant predicate); **ABAC anchor-not-enforce**; **`PORTFOLIO.CREATE`/`UPDATE` (EVT-150/151) ACTIVATED** caller-side (`audit/service.py` FROZEN); `data_steward` granted `portfolio.view`+`portfolio.edit` (auditor_3l excluded); MANUAL-source ORIGIN lineage; **fail-closed audit rollback (CTRL-032)**; new `irp_shared/portfolio/` domain package (rail-only imports); 35 tests + parity. 8-lens reviewed (0 block). The platform's **first domain entity**. | a portfolio holds NOTHING (no position/valuation/holding/exposure); ABAC enforcement → P6+; STATUS_CHANGE (EVT-152) reserved-not-emitted; HTTP amend can't un-parent to root (reference baseline) |
-| **P1C-2** transaction (IA append-only) | NOT STARTED (planning next) | — | — | — | the first domain IA entity; capture-only; migration `0013`; planning on approval; NO position derivation/valuation/exposure |
-| **P1C-3/4/5/6 + P2+** | NOT STARTED | — | — | — | must not be pulled forward |
+| **P1C-2** transaction plan | PLAN DONE | `c398215` | green (run #45) | 22-section plan: `transaction` IA append-only event log + `reverses_transaction_id`; `TRANSACTION.RECORD`/`REVERSE`; symmetric RLS + append-only trigger; `transaction.view`/`record`; capture-only (`10_delivery_backlog/p1c2_implementation_plan.md`) | build CLOSED (`abb230f`, run #46) |
+| **P1C-2** transaction (IA append-only) | **DONE / CLOSED** | impl **`abb230f`** | green (run #46 = 28108904570) | 1 IA table (mig `0013`, symmetric RLS + append-only): `transaction` (ENT-012) — `ImmutableAppendOnlyMixin` (`system_from` only), in `APPEND_ONLY_TABLES` → `irp_prevent_mutation` **P0001 trigger** + ORM `before_update`/`before_delete` guard; `portfolio_id`/`instrument_id` NOT-NULL FKs (service-layer cross-tenant fail-closed); `reverses_transaction_id` self-FK; **reversal-as-new-record** (original never mutated); partial-unique `external_ref`; **`TRANSACTION.RECORD`/`REVERSE` (EVT-160/161) ACTIVATED** caller-side (`audit/service.py` FROZEN); `transaction.view`/`record` minted (`data_steward` maker; `auditor_3l` excluded); MANUAL-source ORIGIN lineage per record + reversal; fail-closed audit rollback (CTRL-032); new `irp_shared/transaction/` package (one-way → portfolio+reference+rails); 32 tests + parity. 8-lens reviewed (0 block). The platform's **first domain IA / append-only entity**. | **capture-only** — NO position derivation / cashflow engine / valuation / exposure aggregation; `quantity`/`price`/`gross_amount` inert; REQ-PPM-003 In-Progress (transaction conjunct; valuation → P1C-4); `txn_type` open vocab |
+| **P1C-3** position (FR bitemporal) | NOT STARTED (planning next) | — | — | — | captured directly (reuse `instrument_terms` FR protocol); **NO derivation from transactions**; NO market value calc; NO exposure aggregation; planning on approval; migration `0014` |
+| **P1C-4/5/6 + P2+** | NOT STARTED | — | — | — | must not be pulled forward |
 
 ## Milestones
 - **P1A milestone: CLOSED** — all five rails (P1A-0…P1A-4) committed and CI-green.
@@ -38,13 +40,16 @@
 - **P1C-0: RATIFIED** — decision record + P1C implementation plan `705d3ba` (run #40); ratified into governance this turn (AD-017; REQ-PPM-001 In-Progress; PORTFOLIO.* reserved EVT-150; OD-013/OD-025 closed; portfolio.* grants). 7-lens reviewed.
 - **P1C-1 plan: DONE** — portfolio-hierarchy implementation plan `b52ad9e`, CI-green (run #41); 7-lens reviewed.
 - **P1C-0 ratification: DONE** — AD-017 + the P1C-0 decisions recorded into governance `dca7bc0`, CI-green (run #42); 6-lens reviewed.
-- **P1C-1: CLOSED** — portfolio EV hierarchy + ABAC scope anchor committed `bb89c74`, CI-green (run #43); 8-lens UltraCode reviewed (0 block). The platform's **first domain entity**; `PORTFOLIO.*` (EVT-150/151) first exercise. **Next: P1C-2 PLANNING (transaction, IA append-only), on explicit approval.**
+- **P1C-1: CLOSED** — portfolio EV hierarchy + ABAC scope anchor committed `bb89c74`, CI-green (run #43); 8-lens UltraCode reviewed (0 block). The platform's **first domain entity**; `PORTFOLIO.*` (EVT-150/151) first exercise.
+- **P1C-2 plan: DONE** — transaction implementation plan `c398215`, CI-green (run #45); 8-lens reviewed.
+- **P1C-2: CLOSED** — transaction capture (IA append-only) committed `abb230f`, CI-green (run #46); 8-lens UltraCode reviewed (0 block, 2 LOW folded). The platform's **first domain IA / append-only entity**; `TRANSACTION.*` (EVT-160/161) first exercise; capture-only with reversal-as-new-record. **Next: P1C-3 PLANNING (position, FR bitemporal, captured directly), on explicit approval.**
 
 ## CI job shape (the `migration` Postgres job, all green at HEAD)
 `alembic upgrade head` → `alembic check` (drift) → audit concurrency → tenant-context RLS → lineage RLS →
 model-registry RLS → data-quality RLS → ingestion RLS + append-only → **Reference hybrid-RLS (REQ-SMR-005 /
 AD-013-R1)** → **Legal-entity symmetric-RLS (REQ-SMR-002 / OD-P1B-D)** → **Instrument/identifier symmetric-RLS
 + FR-bitemporal (REQ-SMR-001/003 / OD-P1B-A/G)** → **Corporate-action symmetric-RLS (REQ-SMR-004 /
-OD-P1B-B)** → **Portfolio symmetric-RLS (REQ-PPM-001 / AD-017)** → downgrade base. Plus Backend (ruff
+OD-P1B-B)** → **Portfolio symmetric-RLS (REQ-PPM-001 / AD-017)** → **Transaction symmetric-RLS +
+append-only (REQ-PPM-003 / AD-017 / BR-17/BR-18)** → downgrade base. Plus Backend (ruff
 format/lint, mypy, pytest), Frontend, Documentation check,
 Secret scan.
