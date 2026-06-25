@@ -13,7 +13,7 @@ latest:
   origin_main_commit: 4ee124e
   origin_main_subject: "Implement P1C-3 position capture FR bitemporal"
   local_vs_origin: in-sync   # origin/main == 4ee124e; ONLY this docs/project_memory/* refresh is uncommitted (no code)
-  ci_status: green           # 4ee124e: GitHub Actions run #49 (id 28177012516) = success, all 6 jobs; migration job's Position symmetric-RLS + FR-bitemporal step + 0014 + drift + NOT-append-only positive proof + downgrade all green
+  ci_status: green           # 4ee124e: GitHub Actions run #49 (id 28177012516) = success, all 5 jobs (the migration job GAINED a new Position symmetric-RLS + FR-bitemporal step — job count unchanged at 5); + 0014 + drift + NOT-append-only positive proof + downgrade all green
   migration_head: 0014_position   # next migration: 0015 (lands when P1C-4 valuation is BUILT)
 
 working_tree:
@@ -169,7 +169,6 @@ p1c2_deliverables:
   review: "8-lens UltraCode adversarial review: 8 approve, 0 block; 2 LOW folded before commit (QA-1: removed a Markdown-orphaning blank line in the audit-taxonomy table; DQ-1: reversal test asserts its own MANUAL-source ORIGIN lineage edge)."
   reqs: "REQ-PPM-003 In-Progress (transaction conjunct delivered; the valuation conjunct -> P1C-4; not closeable until P1C-4)."
 
-# --- P1C-3 focus (the NEXT slice — PLANNING ONLY, on approval) ---
 # --- P1C-3 key deliverables (CLOSED, 4ee124e, CI-green run #49; the FIRST FR DOMAIN entity) ---
 p1c3_deliverables:
   entity: [position]   # ENT-011, FR bitemporal; migration 0014; REQ-PPM-002
@@ -233,4 +232,4 @@ recheck_at_session_start:
 uncertain_values:
   - "as_of '2026-06-25' is approximate — the host clock has drifted (read 2026-06-18 / 2026-06-25 intermittently). The commit timeline + CI run numbers are authoritative; calendar dates are best-effort."
   - "This project_memory refresh is UNCOMMITTED — origin/main stays 4ee124e until it is committed on approval."
-  - "CI run #49 = 28177012516 (success) is the P1C-3 build run (all 6 jobs green incl. the new Position symmetric-RLS + FR-bitemporal migration step)."
+  - "CI run #49 = 28177012516 (success) is the P1C-3 build run (all 5 jobs green; the migration job gained the new Position symmetric-RLS + FR-bitemporal STEP — job count unchanged at 5)."

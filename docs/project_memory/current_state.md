@@ -13,7 +13,7 @@
 ## Latest known committed state
 - **origin/main HEAD:** `4ee124e` — "Implement P1C-3 position capture FR bitemporal". Chain since P1C-2 build: `abb230f` (P1C-2 build) → `f3fd7c9` (P1C-2 memory refresh) → `42cc02c` (P1C-3 plan) → `4ee124e` (P1C-3 build). Earlier chain: `705d3ba` (P1C-0 decision record + P1C plan) → `b52ad9e` (P1C-1 plan) → `dca7bc0` (P1C-0 ratification) → `bb89c74` (P1C-1 build) → `d1d6829` (P1C-1 memory) → `c398215` (P1C-2 plan).
 - **Local == origin:** yes; **only this `docs/project_memory/*` refresh is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** — `4ee124e` = GitHub Actions **run #49 (id 28177012516)** = success, all 6 jobs; the migration job's new **"Position symmetric-RLS + FR-bitemporal tests (Postgres, REQ-PPM-002 / AD-005 / BR-17/BR-19)"** step + `0014_position` + `alembic check` drift + the NOT-append-only positive proof + downgrade smoke all passed. Prior: P1C-3 plan #48 (`42cc02c`), P1C-2 memory #47 (`f3fd7c9`), P1C-2 build #46 (`abb230f`).
+- **Latest CI:** **GREEN** — `4ee124e` = GitHub Actions **run #49 (id 28177012516)** = success, all 5 jobs (the migration job **gained** a new **"Position symmetric-RLS + FR-bitemporal tests (Postgres, REQ-PPM-002 / AD-005 / BR-17/BR-19)"** step — job count unchanged at 5); `0014_position` + `alembic check` drift + the NOT-append-only positive proof + downgrade smoke all passed. Prior: P1C-3 plan #48 (`42cc02c`), P1C-2 memory #47 (`f3fd7c9`), P1C-2 build #46 (`abb230f`).
 - **Migration head:** `0014_position` (the P1C-4 **build** will add `0015`).
 
 ## Working tree (uncommitted)
