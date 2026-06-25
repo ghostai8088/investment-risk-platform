@@ -10,24 +10,24 @@ project:
   default_branch: main
 
 latest:
-  origin_main_commit: 4ee124e
-  origin_main_subject: "Implement P1C-3 position capture FR bitemporal"
-  local_vs_origin: in-sync   # origin/main == 4ee124e; ONLY this docs/project_memory/* refresh is uncommitted (no code)
-  ci_status: green           # 4ee124e: GitHub Actions run #49 (id 28177012516) = success, all 5 jobs (the migration job GAINED a new Position symmetric-RLS + FR-bitemporal step — job count unchanged at 5); + 0014 + drift + NOT-append-only positive proof + downgrade all green
-  migration_head: 0014_position   # next migration: 0015 (lands when P1C-4 valuation is BUILT)
+  origin_main_commit: c5c5806
+  origin_main_subject: "Implement P1C-4 valuation capture FR bitemporal"
+  local_vs_origin: in-sync   # origin/main == c5c5806; ONLY this docs/project_memory/* refresh is uncommitted (no code)
+  ci_status: green           # c5c5806: GitHub Actions run #54 (id 28186419856) = success, all 5 jobs (the migration job GAINED a new Valuation symmetric-RLS + FR-bitemporal step — job count unchanged at 5); + 0015 + drift + NOT-append-only positive proof + 4-part current-head partial-unique + downgrade all green; CI warning-free on Node-24 action majors
+  migration_head: 0015_valuation   # P1C-5 as-of holdings views are read-only — no new migration unless a later slice persists a new entity
 
 working_tree:
   uncommitted:
-    - path: "docs/project_memory/* (this P1C-3 closeout refresh)"
+    - path: "docs/project_memory/* (this P1C-4 closeout refresh)"
       status: modified
       note: >
-        Project-memory refresh to HEAD 4ee124e (P1C-3 CLOSED, CI-green run #49 — the first FR DOMAIN
-        entity: position capture, FR bitemporal, captured-not-derived). Docs-only; NO code, NO migration, NO
-        backend/frontend/worker/shared-package/test/bootstrap/CI changes. Commit pending approval.
+        Project-memory refresh to HEAD c5c5806 (P1C-4 CLOSED, CI-green run #54 — the second FR DOMAIN
+        entity: valuation capture, FR bitemporal, captured marks; REQ-PPM-003 now Done). Docs-only; NO code, NO
+        migration, NO backend/frontend/worker/shared-package/test/bootstrap/CI changes. Commit pending approval.
 
 operating_mode: ultracode    # plan-workflow -> commit plan -> implement -> review-workflow -> fix -> make check -> commit-on-approval -> CI
 commit_policy: explicit-approval-only
-current_approval_gate: "P1C-3 CLOSED and CI-green (4ee124e, run #49; 8-lens reviewed, 0 block, 1 LOW folded). The first FR DOMAIN entity is delivered: position (ENT-011, FR bitemporal) captured directly (NOT derived from transactions); POSITION.CREATE/UPDATE/CORRECTION (EVT-170/171/172) activated; position.edit minted + position.view wired to data_steward (auditor_3l excluded); both-axes as-of reconstruction; NOT append-only (no P0001 trigger — content-immutability service-enforced); NO market value / exposure aggregation / holdings view. NEXT = P1C-4 PLANNING ONLY (valuation = FR bitemporal, captured marks) on explicit approval. P1C-4 implementation NOT started; P1B-5 CONDITIONAL/DEFERRED."
+current_approval_gate: "P1C-4 CLOSED and CI-green (c5c5806, run #54; 8-lens reviewed, 0 block, 1 LOW folded). The second FR DOMAIN entity is delivered: valuation (ENT-013, FR bitemporal) captured marks (NOT modeled); VALUATION.CREATE/UPDATE/CORRECTION (EVT-180/181/182) activated; both valuation.view + valuation.edit newly minted (data_steward maker; auditor_3l excluded); valuation_date an immutable logical-key (4-part current-head key); both-axes as-of reconstruction; NOT append-only; NO valuation/pricing model, NO price lookup, NO market-value rollup, NO position link. REQ-PPM-003 now DONE (both conjuncts). NEXT = P1C-5 PLANNING ONLY (as-of holdings/portfolio views = read-only, non-computational) on explicit approval. P1C-5 implementation NOT started; P1C-6 (synthetic dataset) NOT started; P1B-5 CONDITIONAL/DEFERRED."
 
 phases:
   completed:
@@ -60,6 +60,10 @@ phases:
     - {id: P1C-2-memory, name: "P1C-2 closeout project-memory refresh", commit: "f3fd7c9", ci: green}
     - {id: P1C-3-plan,   name: "P1C-3 position implementation plan (OD-P1C3-1..5 signed off)", commit: "42cc02c", ci: green}
     - {id: P1C-3,        name: "P1C-3 position (ENT-011, FR bitemporal) captured directly (NOT derived); POSITION.CREATE/UPDATE/CORRECTION (EVT-170/171/172) activated; both-axes as-of reconstruction; NOT append-only; symmetric RLS; the first FR DOMAIN entity", commit: "4ee124e", ci: green}
+    - {id: P1C-3-memory, name: "P1C-3 closeout project-memory refresh + cleanup", commit: "b38f182", ci: green}
+    - {id: ci-hygiene,   name: "CI hygiene: GitHub Actions bumped to Node-24 majors (checkout@v5/setup-python@v6/setup-node@v5); Node-20 deprecation warning eliminated", commit: "67741fb", ci: green}
+    - {id: P1C-4-plan,   name: "P1C-4 valuation implementation plan (OD-P1C4-1..6 signed off)", commit: "92a0264", ci: green}
+    - {id: P1C-4,        name: "P1C-4 valuation (ENT-013, FR bitemporal) captured marks (NOT modeled); valuation_date immutable logical-key (4-part current-head key); VALUATION.CREATE/UPDATE/CORRECTION (EVT-180/181/182) activated; both-axes as-of; NOT append-only; symmetric RLS; the second FR DOMAIN entity; REQ-PPM-003 now Done", commit: "c5c5806", ci: green}
 
   milestones:
     P1A: closed   # all five rails committed and CI-green
@@ -72,13 +76,15 @@ phases:
     P1C-2: closed   # transaction capture (IA append-only) committed abb230f, CI-green (run #46). The platform's FIRST domain IA / append-only entity.
     P1C-3-plan: committed   # P1C-3 position implementation plan (42cc02c), CI-green run #48; OD-P1C3-1..5 signed off
     P1C-3: closed   # position capture (FR bitemporal, captured directly) committed 4ee124e, CI-green (run #49). The platform's FIRST FR domain entity.
+    P1C-4-plan: committed   # P1C-4 valuation implementation plan (92a0264), CI-green run #53; OD-P1C4-1..6 signed off
+    P1C-4: closed   # valuation capture (FR bitemporal, captured marks) committed c5c5806, CI-green (run #54). The platform's SECOND FR domain entity; REQ-PPM-003 now Done.
   active:
-    id: P1C-3
-    name: "P1C-3 CLOSED and CI-green (4ee124e, run #49; 8-lens reviewed, 0 block, 1 LOW folded); only this project-memory refresh is commit-pending"
+    id: P1C-4
+    name: "P1C-4 CLOSED and CI-green (c5c5806, run #54; 8-lens reviewed, 0 block, 1 LOW folded); only this project-memory refresh is commit-pending"
     status: closed-ci-green
   next:
-    id: P1C-4-planning
-    name: "P1C-4 PLANNING ONLY: valuation (ENT-013, FR bitemporal) — captured MARKS (reuse the position/instrument_terms FR protocol), NOT computed by a valuation model; NO price lookup, NO market value rollup, NO exposure aggregation. Planning only on explicit approval; P1C-4 implementation NOT started."
+    id: P1C-5-planning
+    name: "P1C-5 PLANNING ONLY: as-of holdings/portfolio views — READ-ONLY views composed from the captured position (+ valuation) FR entities via reconstruct_*_as_of; NO computation beyond safe reconstruction/composition; NO exposure aggregation; NO market value rollup (unless display-only from captured marks); NO dataset_snapshot; no new persisted entity. Planning only on explicit approval; P1C-5 implementation NOT started; P1C-6 (synthetic dataset) NOT started."
     status: blocked-until-approval
 
 # --- P1B-1 key deliverables (CLOSED, 6568cb1, CI-green) ---
@@ -185,27 +191,46 @@ p1c3_deliverables:
   review: "8-lens UltraCode adversarial review: 8 approve, 0 block; 1 LOW folded before commit (supersede-path per-version lineage-edge + content-immutability test assertion)."
   reqs: "REQ-PPM-002 In-Progress (capture + both-axes as-of reconstruction delivered; the residual open conjunct is portfolio-scope ABAC enforcement -> P6+; not closeable until then)."
 
-# --- P1C-4 focus (the NEXT slice — PLANNING ONLY, on approval) ---
-p1c4_focus:
-  entity: "valuation (ENT-013, FR bitemporal) — captured marks"
-  pattern: "reuse the position/instrument_terms FR protocol verbatim: FullReproducibleMixin; create -> effective-dated supersede -> as-known correction; both-axes as-of reconstruction; one-now; close-first; current-head partial-unique; NOT append-only"
-  scope: "valuations CAPTURED as marks (a value-as-of snapshot + source label), keyed to portfolio + instrument (OD-P1C-F: single captured mark + source label per (portfolio, instrument, valuation_date))"
+# --- P1C-4 key deliverables (CLOSED, c5c5806, CI-green run #54; the SECOND FR DOMAIN entity) ---
+p1c4_deliverables:
+  entity: [valuation]   # ENT-013, FR bitemporal; migration 0015; REQ-PPM-003 (valuation conjunct)
+  fr_entity: "valuation = FR bitemporal (FullReproducibleMixin; __temporal_class__ = FULL_REPRODUCIBLE). Reuses the position/instrument_terms protocol VERBATIM. NOT append-only (NOT in APPEND_ONLY_TABLES, no irp_prevent_mutation trigger, no ORM guard; content-immutability service-enforced + tested)."
+  captured_marks: "captured marks, NOT valuation-model outputs (OD-P1C-F): mark_value is supplied (NOT NULL, never recomputed); NO valuation/pricing model, NO price lookup, NO source-precedence engine. mark_source is an inert provenance LABEL (NOT a market-data FK); currency_code/price_basis nullable captured (price_basis metadata only)."
+  valuation_date_key: "valuation_date is a SEPARATE IMMUTABLE logical-key Date column (OD-P1C-F) — a peer of instrument_id, carried forward verbatim, never mutated, DISTINCT from the FR valid_from axis. Current-head partial-unique on the 4-PART key (tenant_id, portfolio_id, instrument_id, valuation_date) WHERE valid_to IS NULL AND system_to IS NULL; many valuation_dates per (portfolio, instrument) coexist as separate open heads."
+  reconstruction: "reconstruct_valuation_as_of(valid_at, known_at) proves BOTH axes (valid-time + known-at/system-time; default known_at=now=current view=latest system-known). Tested SQLite AND PG-under-FORCE-RLS (REQ-PPM-003 'valuations queryable as-of')."
+  supersede: "supersede_valuation = effective-dated re-mark for the SAME valuation_date: close prior valid_to (VALUATION.UPDATE) -> new open version (VALUATION.CREATE); close-first; one-now; prior content carried forward."
+  correction: "correct_valuation = as-known restatement: close prior system_to (VALUATION.UPDATE) -> corrected version over SAME valid period + same valuation_date with restatement_reason (TR-08) + supersedes_id (VALUATION.CORRECTION); prior content never mutated (tested)."
+  audit: "VALUATION.CREATE (EVT-180) / VALUATION.UPDATE (EVT-181) / VALUATION.CORRECTION (EVT-182) ACTIVATED caller-side (irp_shared/valuation/events.py) to the FROZEN record_event; per-op grain create=1 / supersede=2 / correct=2; per-tenant chain; DC-2 metadata. audit/service.py UNTOUCHED."
+  entitlement: "valuation.view + valuation.edit BOTH newly minted (neither pre-existed — the transaction.view/.record mint-both precedent). data_steward maker holds both; risk tiers hold view; valuation.edit maker/admin-only; auditor_3l EXCLUDED from both; parity-tested."
+  lineage: "one MANUAL data_source ORIGIN edge per NEW physical version (create / new-open-row-of-supersede / correction); the prior-head close-out roots NONE. mark_source (row label) is DISTINCT from the MANUAL data_source ORIGIN edge. fail-closed rollback (CTRL-032) tested."
+  rls: "symmetric tenant-scoped (USING == WITH CHECK == own-tenant, ENABLE+FORCE; migration 0015, mirrors 0014); NEVER hybrid (no SYSTEM_TENANT; closed 5-table hybrid set asserted unchanged); cross-tenant portfolio_id/instrument_id/supersedes_id fail closed at the SERVICE layer; no BYPASSRLS."
+  capture_only: "NO valuation model, NO price lookup, NO market data ingestion, NO market value rollup (no position_id FK, no quantity, no quantity*mark, no market_value column), NO exposure aggregation, NO holdings view (single-valuation reads only). New irp_shared/valuation/ package (one-way -> {portfolio, reference, rails}; import-direction test FORBIDS importing position). 48 tests (24 logic + 9 PG + 15 endpoint) + parity."
+  review: "8-lens UltraCode adversarial review: 8 approve, 0 block; 1 LOW folded (endpoint no-view-cannot-read 403 test)."
+  reqs: "REQ-PPM-003 now DONE — both conjuncts realized (transaction IA append-only P1C-2 mig 0013; valuation FR captured-marks + both-axes as-of P1C-4 mig 0015). No scope-enforcement residual gates it (OD-P1C4-5)."
+
+# --- P1C-5 focus (the NEXT slice — PLANNING ONLY, on approval) ---
+p1c5_focus:
+  scope: "as-of holdings / portfolio VIEWS — READ-ONLY views composed from the captured position (+ optionally valuation) FR entities via their shipped reconstruct_*_as_of reads"
+  pattern: "compose existing read-only as-of reconstructions; no new persisted entity, no new migration (unless a later slice persists one); reuse the FR reconstruction reads"
   fences:
-    - "NO valuation model (marks are captured, NOT computed)"
-    - "NO price lookup / NO market-data ingestion"
-    - "NO market value rollup / NO holdings view"
+    - "NO computation beyond safe reconstruction/composition"
     - "NO exposure aggregation"
-    - "NO dataset_snapshot / risk / pricing model"
+    - "NO market value rollup UNLESS explicitly approved as DISPLAY-ONLY from captured marks (no new compute)"
+    - "NO dataset_snapshot"
+    - "NO risk / pricing model / market data ingestion / reporting"
+  note: "P1C-6 (synthetic dataset) follows on separate planning."
 
 blockers:
-  - "P1C-3 CLOSED (4ee124e) and CI-green (run #49). Next is P1C-4 PLANNING ONLY — only on explicit approval. P1C-4 implementation MUST NOT start until its plan is approved."
+  - "P1C-4 CLOSED (c5c5806) and CI-green (run #54). Next is P1C-5 PLANNING ONLY — only on explicit approval. P1C-5 implementation MUST NOT start until its plan is approved; P1C-6 (synthetic dataset) MUST NOT start until P1C-6 planning is approved."
   - "Every step gated on explicit user approval; do not start the next slice unprompted."
 
 do_not_start:
-  - P1C-4 implementation (valuation build) until its plan is approved (planning is the next step; plan/implement/commit are separate approvals)
-  - NO valuation model / NO price lookup (valuations are captured marks in P1C-4, never computed from a pricing/valuation model or a market-data lookup). NO market value rollup / NO holdings views / NO exposure aggregation.
-  - P1C-5/6 + P2+ — not until their slices are planned + approved
-  - holdings views / market values / exposure aggregation / dataset_snapshot / risk calculations / market data ingestion / pricing models / valuation models / portfolio performance / corporate-action application / reporting / dashboards / real SSO (AD-017/AD-014; capture-only)
+  - P1C-5 implementation (as-of holdings/portfolio views build) until its plan is approved (planning is the next step; plan/implement/commit are separate approvals)
+  - P1C-6 (synthetic dataset) implementation until P1C-6 planning is approved
+  - NO exposure aggregation / NO dataset_snapshot / NO risk calculations (deferred to P2; AD-014/AD-017/OD-P1C-G/H)
+  - NO market data ingestion / NO pricing model / NO valuation model (P2; valuations are captured marks, OD-P1C-F)
+  - NO market value rollup in P1C-5 unless explicitly approved as DISPLAY-ONLY from captured marks (no new compute)
+  - NO reporting / dashboards / real SSO / P2+ work (AD-017/AD-007/AD-014)
   - ABAC enforcement (anchored in P1C-1; enforcement -> P6+)
   - P1B-5 (reference-data ingestion mapping) — CONDITIONAL/DEFERRED (only if bulk loading is needed; not now)
   - any change to packages/shared-python/src/irp_shared/audit/service.py (frozen)
@@ -224,12 +249,12 @@ security_housekeeping:
       credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.
 
 recheck_at_session_start:
-  - "git log -1 --oneline ; git status --short   (HEAD should be >= 4ee124e; whether this memory refresh got committed)"
+  - "git log -1 --oneline ; git status --short   (HEAD should be >= c5c5806; whether this memory refresh got committed)"
   - "latest CI conclusion for current HEAD (GitHub Actions REST API; gh CLI not installed)"
   - "git remote -v   (origin is now SSH: git@github.com:ghostai8088/investment-risk-platform.git; auth via Keychain-backed key)"
-  - "migration head is 0014_position; the P1C-4 BUILD will add 0015"
+  - "migration head is 0015_valuation; P1C-5 as-of holdings views are read-only — no new migration unless a later slice persists a new entity"
 
 uncertain_values:
   - "as_of '2026-06-25' is approximate — the host clock has drifted (read 2026-06-18 / 2026-06-25 intermittently). The commit timeline + CI run numbers are authoritative; calendar dates are best-effort."
-  - "This project_memory refresh is UNCOMMITTED — origin/main stays 4ee124e until it is committed on approval."
-  - "CI run #49 = 28177012516 (success) is the P1C-3 build run (all 5 jobs green; the migration job gained the new Position symmetric-RLS + FR-bitemporal STEP — job count unchanged at 5)."
+  - "This project_memory refresh is UNCOMMITTED — origin/main stays c5c5806 until it is committed on approval."
+  - "CI run #54 = 28186419856 (success) is the P1C-4 build run (all 5 jobs green; the migration job gained the new Valuation symmetric-RLS + FR-bitemporal STEP — job count unchanged at 5)."

@@ -64,7 +64,7 @@ analogous plan/decision return format the user specifies.) **Then hold for commi
   the constrained `irp_app` role (grant UPDATE/DELETE on IA tables so append-only proves the **P0001 trigger**,
   not a 42501 privilege denial); **re-set tenant context after any commit before a read-back** (commit clears
   the transaction-local GUC — the `0282359` lesson).
-- Migrations sequential (head `0014_position`; next `0015`); `alembic check` is a drift gate
+- Migrations sequential (head `0015_valuation`; P1C-5 as-of holdings views are read-only — no new migration unless a later slice persists a new entity); `alembic check` is a drift gate
   (`compare_type=False`); NAMING_CONVENTION `pk_/ix_/uq_/fk_`; register new models in `irp_shared.models`.
   Each new tenant table → add a CI RLS step. **Hybrid (AD-013-R1) tables** use the asymmetric loop
   (`USING own OR SYSTEM_TENANT` / `WITH CHECK own`) — the symmetric loop stays for proprietary/tenant-scoped
