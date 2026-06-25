@@ -2,7 +2,7 @@
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this first, then `project_state.yaml`, `next_actions.md`, and
-> `claude_operating_instructions.md`. **As of 2026-06-24.** Values that drift are flagged; re-verify the
+> `claude_operating_instructions.md`. **As of 2026-06-25.** Values that drift are flagged; re-verify the
 > ones in "Re-check at session start" before acting.
 
 ## Repository
@@ -11,22 +11,35 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `abb230f` — "Implement P1C-2 transaction capture IA append-only". Chain since P1C-1 build: `bb89c74` (P1C-1 build) → `d1d6829` (P1C-1 memory refresh) → `c398215` (P1C-2 plan) → `abb230f` (P1C-2 build). Earlier chain: `e99633a` (P1B closeout / P1C readiness) → `705d3ba` (P1C-0 decision record + P1C plan) → `b52ad9e` (P1C-1 plan) → `dca7bc0` (P1C-0 ratification) → `bb89c74` (P1C-1 build).
+- **origin/main HEAD:** `4ee124e` — "Implement P1C-3 position capture FR bitemporal". Chain since P1C-2 build: `abb230f` (P1C-2 build) → `f3fd7c9` (P1C-2 memory refresh) → `42cc02c` (P1C-3 plan) → `4ee124e` (P1C-3 build). Earlier chain: `705d3ba` (P1C-0 decision record + P1C plan) → `b52ad9e` (P1C-1 plan) → `dca7bc0` (P1C-0 ratification) → `bb89c74` (P1C-1 build) → `d1d6829` (P1C-1 memory) → `c398215` (P1C-2 plan).
 - **Local == origin:** yes; **only this `docs/project_memory/*` refresh is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** — `abb230f` = GitHub Actions **run #46 (id 28108904570)** = success, all 5 jobs; the migration job's new **"Transaction symmetric-RLS + append-only tests (Postgres, REQ-PPM-003 / AD-017 / BR-17/BR-18)"** step + `0013_transaction` + `alembic check` drift + the append-only P0001 trigger proof + downgrade smoke all passed. Prior: P1C-2 plan #45 (`c398215`), P1C-1 memory #44 (`d1d6829`), P1C-1 build #43 (`bb89c74`).
-- **Migration head:** `0013_transaction` (the P1C-3 **build** will add `0014`).
+- **Latest CI:** **GREEN** — `4ee124e` = GitHub Actions **run #49 (id 28177012516)** = success, all 6 jobs; the migration job's new **"Position symmetric-RLS + FR-bitemporal tests (Postgres, REQ-PPM-002 / AD-005 / BR-17/BR-19)"** step + `0014_position` + `alembic check` drift + the NOT-append-only positive proof + downgrade smoke all passed. Prior: P1C-3 plan #48 (`42cc02c`), P1C-2 memory #47 (`f3fd7c9`), P1C-2 build #46 (`abb230f`).
+- **Migration head:** `0014_position` (the P1C-4 **build** will add `0015`).
 
 ## Working tree (uncommitted)
-- **This `docs/project_memory/*` refresh** (P1C-2 closeout) — modified tracked files, commit pending approval. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
+- **This `docs/project_memory/*` refresh** (P1C-3 closeout) — modified tracked files, commit pending approval. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
 
 ## Current active gate
-**P1C-2 (transaction capture — IA append-only) is CLOSED and CI-green** (`abb230f`, run #46), 8-lens UltraCode reviewed
-(8 approve / 0 block; only 2 LOW folded before commit — a Markdown-orphaned audit-taxonomy table row, and a reversal-lineage
-test assertion). The platform's **first domain IA / append-only entity** is delivered: `transaction` (ENT-012, IA),
-`TRANSACTION.RECORD`/`REVERSE` (EVT-160/161) activated, `transaction.view`/`transaction.record` minted (`data_steward`
-maker; `auditor_3l` excluded), capture-only with reversal-as-new-record. The next step is **P1C-3 PLANNING ONLY** (positions —
-FR bitemporal, captured directly), **on explicit approval**. **P1C-3 implementation is NOT started.** The platform follows a
+**P1C-3 (position capture — FR bitemporal, captured directly) is CLOSED and CI-green** (`4ee124e`, run #49), 8-lens UltraCode
+reviewed (8 approve / 0 block; 1 LOW folded before commit — a supersede-path per-version lineage-edge + content-immutability
+test assertion). The platform's **first FR DOMAIN entity** is delivered: `position` (ENT-011, FR), `POSITION.CREATE`/`UPDATE`/
+`CORRECTION` (EVT-170/171/172) activated, `position.edit` minted + `position.view` wired to `data_steward` (`auditor_3l`
+excluded), captured-not-derived with both-axes as-of reconstruction. The next step is **P1C-4 PLANNING ONLY** (valuations —
+FR bitemporal, captured marks), **on explicit approval**. **P1C-4 implementation is NOT started.** The platform follows a
 strict planning-first, commit-only-on-explicit-approval cadence; plan / implement / commit are separate approvals.
+
+## P1C-3 key deliverables (closed, `4ee124e`, CI-green run #49)
+REQ-PPM-002 (migration `0014`); the platform's **first FR DOMAIN entity** (second persisted bitemporal entity after the P1B-3 `instrument_terms`).
+- **`position` = FR / bitemporal entity** (ENT-011) — `FullReproducibleMixin` (`valid_from`/`valid_to` + `system_from`/`system_to`); `__temporal_class__ = FULL_REPRODUCIBLE`. Reuses the P1B-3 `instrument_terms` protocol verbatim. **NOT append-only** (NOT in `APPEND_ONLY_TABLES`, no `irp_prevent_mutation` trigger, no ORM guard — the FR protocol requires close-out UPDATEs; prior-version content immutability is service-enforced + test-proven, the FR contrast with the IA `transaction`).
+- **Captured positions, NOT derived from transactions** (OD-P1C-E) — a holding supplied directly to the platform; **no `transaction` FK, no derivation engine, no cashflow engine**. Grain = aggregated `(portfolio_id, instrument_id)` (OD-P1C-D), **signed quantity** (long>0/short<0), opaque `cost_basis` (never recomputed); `valid_from` IS the as-of date (no separate `position_date`). Current-head partial-unique `(tenant_id, portfolio_id, instrument_id) WHERE valid_to IS NULL AND system_to IS NULL`.
+- **Valid-time reconstruction** — `reconstruct_position_as_of(valid_at)` returns the version effective at the business as-of date. **Known-at / system-time reconstruction** — `reconstruct_position_as_of(valid_at, known_at)` returns the version as-known-at the knowledge date (default `known_at`=now=current view). Both axes tested on SQLite **and** PG-under-FORCE-RLS (REQ-PPM-002 acceptance: "reconstructable for any past as-of date").
+- **Effective-dated supersede** — `supersede_position` closes the prior head's `valid_to` (`POSITION.UPDATE`) then inserts a new open version (`POSITION.CREATE`); close-first ordering; one-`now`; prior content carried forward, never mutated.
+- **Correction / restatement** — `correct_position` closes the prior row's `system_to` (`POSITION.UPDATE`) then inserts a corrected version over the SAME valid period with `restatement_reason` (TR-08) + `supersedes_id` (`POSITION.CORRECTION`); prior content never mutated (content-immutability-on-correction tested).
+- **`POSITION.CREATE` (EVT-170) / `POSITION.UPDATE` (EVT-171) / `POSITION.CORRECTION` (EVT-172) ACTIVATED** — caller-side constants in `irp_shared/position/events.py` to the FROZEN `record_event`; per-op grain: create=1 event, supersede=2 (UPDATE close-out + CREATE), correct=2 (UPDATE close-out + CORRECTION); per-tenant chain; DC-2 metadata only. `audit/service.py` **untouched**.
+- **`position.edit` minted** (the one NEW code — the FR maker verb; `.edit` not `.record` because FR is close-out-updated) — `data_steward` + `platform_admin` only. **`position.view` wired to `data_steward`** — the pre-existing seeded placeholder grant extended (the three existing recipients `risk_analyst_1l`/`risk_manager_2l`/`platform_admin` unchanged). `auditor_3l` **excluded** from both; parity-tested.
+- **MANUAL `data_source` lineage per physical version** — one ORIGIN edge per NEW physical version row (create / the new open row of a supersede / a correction each root one edge; the prior-head close-out roots NONE); `ensure_manual_source` resolve-or-register + `record_lineage`, fail-closed; `assert_has_lineage`.
+- **Symmetric tenant-scoped RLS** — `USING == WITH CHECK == own-tenant`, ENABLE+FORCE (migration `0014`, mirrors `0013`); **NEVER hybrid** (no SYSTEM_TENANT; closed 5-table hybrid set asserted unchanged); cross-tenant `portfolio_id`/`instrument_id`/`supersedes_id` fail closed at the **service layer** (`resolve_*` / `_current_open` explicit tenant predicate); no BYPASSRLS app path. Fail-closed co-transactional audit rollback (CTRL-032) tested.
+- **No market value calculation / no exposure aggregation / no holdings view** — **capture-only**: no `market_value`/`price`/`mark`/`valuation`/`exposure`/`transaction_id`/lot column; no derivation; single-position reads only (`GET /positions`, `GET /positions/as-of` — no rollup/aggregate/holdings-view endpoint; multi-position holdings views → P1C-5). New `irp_shared/position/` package (one-way: `position → {portfolio, reference, rails}`; import-direction test). 45 position tests (22 logic + 9 PG + 14 endpoint) + parity. REQ-PPM-002 **In-Progress** (capture + as-of built; ABAC enforcement → P6+).
 
 ## P1C-2 key deliverables (closed, `abb230f`, CI-green run #46)
 REQ-PPM-003 (transaction conjunct; migration `0013`); the platform's **first domain IA / append-only entity**.
@@ -85,6 +98,9 @@ REQ-PPM-001 (migration `0012`); the platform's **first domain entity** + the ent
 - **P1C-1 closeout project-memory refresh** — `d1d6829` (CI-green, run #44).
 - **P1C-2 transaction implementation plan** — `c398215` (CI-green, run #45).
 - **P1C-2 transaction capture (IA append-only) implementation** — `abb230f` (CI-green, run #46). **P1C-2 CLOSED** — the first domain IA / append-only entity.
+- **P1C-2 closeout project-memory refresh** — `f3fd7c9` (CI-green, run #47).
+- **P1C-3 position implementation plan** — `42cc02c` (CI-green, run #48).
+- **P1C-3 position capture (FR bitemporal) implementation** — `4ee124e` (CI-green, run #49). **P1C-3 CLOSED** — the first FR domain entity.
 
 ## P1B-2 key deliverables (closed, `32c7778`)
 REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evidence (the inverse of P1B-1).
@@ -118,17 +134,17 @@ REQ-SMR-004 (corporate_action portion); migration `0011`. The **last reference e
 With **P1B-1 (vocabularies/hybrid) + P1B-2 (legal_entity/issuer/counterparty) + P1B-3 (instrument/terms/identifier) + P1B-4 (corporate_action)** all closed and CI-green, the **Security-Master & Reference-Data block is complete**. **P1B-5** (reference-data ingestion mapping) is **conditional/deferred** (only if bulk loading is needed). The CAP-2 EV/FR reference entities (ENT-001..006/008) are realized; the *requirements* REQ-SMR-001/002/003/004 stay **In-Progress** (terms math, exposure-rollup calc, cross-vendor precedence, and QS-10/11 roll math respectively deferred to P1C/P2+).
 
 ## Next required action
-**P1C-3 PLANNING ONLY** — plan the `position` slice (ENT-011, **FR bitemporal**) via the UltraCode planning workflow:
-**positions are captured directly** (reuse the P1B-3 `instrument_terms` FR protocol — `FullReproducibleMixin`,
-effective-dated supersede + as-known correction, both-axes reconstruction), **NOT derived from transactions**. **On explicit
-approval. Planning only — do NOT implement P1C-3.** **P1C-3 focus / fences:** position = FR bitemporal; **captured directly**;
-**no derivation from transactions**; **no market value calculation**; **no exposure aggregation**. See `next_actions.md`.
+**P1C-4 PLANNING ONLY** — plan the `valuation` slice (ENT-013, **FR bitemporal**) via the UltraCode planning workflow:
+**valuations are captured marks** (reuse the same `instrument_terms`/`position` FR protocol — `FullReproducibleMixin`,
+effective-dated supersede + as-known correction, both-axes reconstruction), **NOT computed by a valuation model**. **On explicit
+approval. Planning only — do NOT implement P1C-4.** **P1C-4 focus / fences:** valuation = FR bitemporal; **captured marks**;
+**no valuation model**; **no price lookup**; **no market value rollup**; **no exposure aggregation**. See `next_actions.md`.
 
 ## What MUST NOT be started yet
-- **P1C-3 implementation** (the `position` build) — until its plan is approved (planning is the next step; plan / implement / commit are separate approvals).
-- **No derivation from transactions** — positions are captured directly in P1C-3, never derived from the P1C-2 transaction log (a derivation engine is deferred). **No positions built yet / no valuations / no holdings / no market values.**
-- **P1C-4/5/6** and **P2+** — not until their slices are planned + approved.
-- **Valuations / holdings / market values / exposure aggregation / `dataset_snapshot` / risk calculations / market data / pricing / valuation models / portfolio performance / corporate-action application / reporting / dashboards / real SSO** — deferred (AD-017 / AD-014); P1C is capture-only.
+- **P1C-4 implementation** (the `valuation` build) — until its plan is approved (planning is the next step; plan / implement / commit are separate approvals).
+- **No valuation model / no price lookup** — valuations are captured marks in P1C-4, never computed from a pricing/valuation model or a market-data lookup. **No market value rollup / no holdings views / no exposure aggregation.**
+- **P1C-5/6** and **P2+** — not until their slices are planned + approved.
+- **Holdings views / market values / exposure aggregation / `dataset_snapshot` / risk calculations / market data ingestion / pricing models / valuation models / portfolio performance / corporate-action application / reporting / dashboards / real SSO** — deferred (AD-017 / AD-014); P1C is capture-only.
 - **ABAC enforcement** — anchored in P1C-1 but NOT enforced (enforcement → P6+).
 - **P1B-5** (reference-data ingestion mapping) — conditional/deferred (only if bulk loading is needed; not now).
 - **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen); no new audit code / permission / role / migration without the governed R-07 update.
@@ -137,7 +153,7 @@ approval. Planning only — do NOT implement P1C-3.** **P1C-3 focus / fences:** 
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `abb230f`) and whether this memory refresh was committed.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `4ee124e`) and whether this memory refresh was committed.
 - Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — query the REST API).
 - `git remote -v` — origin is now SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0013_transaction` (the P1C-3 build will add `0014`).
+- Migration head is `0014_position` (the P1C-4 build will add `0015`).
