@@ -142,7 +142,18 @@ the rejection is the **P0001 trigger**, not a 42501 privilege denial), **CTRL-01
 `.REVERSE` EVT-160/161 on every record), and **CTRL-001/004/005/006/011/032** (tests / data-dict / audit / lineage /
 deny-by-default + RLS / fail-closed rollback). New `transaction.view`/`transaction.record` perms (`data_steward` maker;
 `auditor_3l` excluded); `audit/service.py` FROZEN. **Capture-only** — corrections are explicit reversal records, no position
-derivation / cashflow engine / valuation / exposure calc. As construction phases
+derivation / cashflow engine / valuation / exposure calc.
+**P1C-3 (REQ-PPM-002, AD-005 §2A, 2026-06-25):** the `position` **FR bitemporal** slice (migration `0014`) is the **first FR
+DOMAIN entity** (second FR entity after the P1B-3 `instrument_terms`). It exercises **CTRL-017 with the FR reading**:
+temporal-class **declared** (`FULL_REPRODUCIBLE`) ✓, but **append-only immutability does NOT apply** — `position` is **NOT** in
+`APPEND_ONLY_TABLES` and has **no** `irp_prevent_mutation` trigger (the FR protocol requires close-out UPDATEs); prior-version
+CONTENT immutability is **service-enforced + test-proven** (the PG test asserts a close-out UPDATE returns `rowcount == 1`,
+the inversion of the transaction P0001 guard). Also **CTRL-012** (no audit bypass — `POSITION.CREATE`/`.UPDATE`/`.CORRECTION`
+EVT-170/171/172 on every governed write) and **CTRL-001/004/005/006/011/032** (tests / data-dict / audit / lineage /
+deny-by-default + symmetric RLS / fail-closed rollback). New `position.edit` perm minted + existing `position.view` grant
+extended to `data_steward` (maker; `auditor_3l` excluded); `audit/service.py` FROZEN. **Capture-only** — positions are captured
+directly, **NOT derived from transactions** (no transaction FK, no derivation engine); no market value / valuation / exposure /
+holdings-view / dataset_snapshot. As construction phases
 open, controls will be split to specific bounded contexts and capabilities and given Test/Evidence detail.
 
 ## 5. Open Decisions

@@ -113,6 +113,22 @@ caller-side; `audit/service.py` FROZEN)**; mints `transaction.view`/`transaction
 excluded); one MANUAL-`data_source` ORIGIN edge per record (incl. reversals). **Capture-only** — corrections are explicit
 reversal records (`reverses_transaction_id`; original never mutated); **no position derivation, no cashflow engine, no
 valuation/exposure calc**. REQ-PPM-003 transaction conjunct is now **In-Progress** (valuation conjunct → P1C-4).
+**P1C-3** builds the `position` **FR bitemporal** captured holdings master (REQ-PPM-002; ENT-011) — the platform's **first FR
+DOMAIN entity** (second FR entity after the P1B-3 `instrument_terms`): one PROPRIETARY table (migration `0014`) under the
+symmetric RLS loop, reusing the `instrument_terms` FR protocol verbatim (create / effective-dated supersede / as-known
+correction / `reconstruct_position_as_of` on both axes); a new `irp_shared/position/` package (one-way: → portfolio + reference
++ rails). **NOT append-only** (the FR contrast with `transaction`): `position` is **NOT** in `APPEND_ONLY_TABLES` and has **no**
+P0001 trigger — the FR protocol requires close-out UPDATEs; prior-version content immutability is service-enforced + tested. A
+new CI step **"Position symmetric-RLS + FR-bitemporal tests (Postgres)"** runs `test_position_pg.py` under `irp_app`, proving
+tenant isolation + no-context-zero, the symmetric-policy + closed-hybrid-set assertions, the forged-tenant **42501** WITH-CHECK
+on INSERT, the current-head partial-unique in PG, the cross-tenant FK service-layer reject, FR reconstruction under FORCE RLS,
+and the **NOT-append-only positive proof** (a close-out UPDATE returns `rowcount == 1` — permitted; the inversion of the
+transaction P0001 guard). **Activates `POSITION.CREATE`/`.UPDATE`/`.CORRECTION` (EVT-170/171/172, caller-side;
+`audit/service.py` FROZEN)**; mints `position.edit` + extends the existing `position.view` grant to `data_steward` (maker;
+`auditor_3l` excluded); one MANUAL-`data_source` ORIGIN edge per new physical version. **Capture-only** — positions are
+**captured directly, NOT derived from transactions** (no transaction FK, no derivation engine); aggregated `(portfolio,
+instrument)` grain, signed quantity, opaque `cost_basis`; **no market value, no valuation, no exposure aggregation, no holdings
+view, no dataset_snapshot**. REQ-PPM-002 is now **In-Progress** (capture + as-of built; ABAC enforcement → P6+).
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 

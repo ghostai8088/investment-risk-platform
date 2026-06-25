@@ -628,7 +628,7 @@ def test_excluded_entity_tables_absent_from_metadata() -> None:
     from irp_shared.models import metadata
 
     # P1B-3 builds instrument / instrument_terms / identifier_xref; P1B-4 builds corporate_action;
-    # P1C-1 builds portfolio (ENT-010). Later-slice (P1C-2+/P2+) entities must still NOT be pulled
-    # forward.
-    for table in ("position", "valuation", "price_point", "exposure"):
+    # P1C-1 builds portfolio (ENT-010); P1C-2 builds transaction (ENT-012); P1C-3 builds position
+    # (ENT-011). Later-slice (P1C-4+/P2+) entities must still NOT be pulled forward.
+    for table in ("valuation", "price_point", "exposure", "exposure_aggregate", "dataset_snapshot"):
         assert table not in metadata.tables

@@ -61,6 +61,10 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("portfolio.view", "View portfolios"),
     ("portfolio.edit", "Edit portfolios"),
     ("position.view", "View positions"),
+    # P1C-3 position (FR captured holdings). `position.view` pre-exists as a seeded placeholder
+    # (granted to the read tiers + admin); `position.edit` is the NEW maker verb minted here (a
+    # position is captured/superseded/corrected — `.edit`, not `.record`; FR is close-out-updated).
+    ("position.edit", "Edit positions"),
     ("exposure.aggregate.run", "Run exposure aggregation"),
     # P1C-2 transaction (additive; PROPRIETARY tenant-scoped, IA append-only). `.record` is the
     # append-only governed-write verb (a transaction is recorded, never edited — no `.edit`).
@@ -116,6 +120,11 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # risk_analyst_1l/risk_manager_2l hold transaction.view (below); auditor_3l excluded.
         "transaction.view",
         "transaction.record",
+        # P1C-3 position: steward is the maker — holds BOTH view + edit (reads its own writes).
+        # position.view pre-exists (granted to the read tiers below); this is the additive steward
+        # GRANT + the NEW position.edit (maker/admin-only); auditor_3l excluded (OD-P1C3-2).
+        "position.view",
+        "position.edit",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",

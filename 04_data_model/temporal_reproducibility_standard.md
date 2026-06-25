@@ -102,8 +102,12 @@ P1B-0 splits below).
 > (`node_type` PORTFOLIO/FUND/STRATEGY/ACCOUNT + `parent_portfolio_id` adjacency; the entitlement scope anchor), EV-mutable
 > (in-place supersede; `record_version`; declares `__temporal_class__ = EFFECTIVE_DATED`; NOT append-only; no `system_*`
 > axis; history via the `PORTFOLIO.UPDATE` audit). Bounded cycle-safe ancestor + descendant resolvers; symmetric RLS.
-> **ENT-011** position (**FR**) and **ENT-013** valuation (**FR**) are P1C **capture-only** — captured/as-of-reconstructable
-> via the P1B-3 `instrument_terms` FR protocol (create → supersede → as-known correction; `reconstruct_*_as_of` on both axes),
+> **ENT-011** position (**FR**) is **BUILT in P1C-3 (migration `0014`)** as the platform's **first FR DOMAIN entity** —
+> captured/as-of-reconstructable via the P1B-3 `instrument_terms` FR protocol (create → effective-dated supersede → as-known
+> correction; `reconstruct_position_as_of` on both axes); aggregated `(portfolio, instrument)` grain, signed quantity, opaque
+> `cost_basis`. **NOT append-only** (no `irp_prevent_mutation` trigger — the FR protocol requires close-out UPDATEs; prior-version
+> CONTENT immutability is service-enforced + tested) — the FR contrast with the IA `transaction`. **Captured directly, NOT
+> derived from transactions** (OD-P1C-E). **ENT-013** valuation (**FR**) stays P1C **capture-only** (same protocol, → P1C-4),
 > **not** derived analytics outputs. **ENT-012** transaction is **IA** (append-only event log) — **BUILT in P1C-2 (migration `0013`)** as the platform's **first DOMAIN append-only entity**: `__temporal_class__ = IMMUTABLE_APPEND_ONLY` (`system_from` only), in `APPEND_ONLY_TABLES` (the `irp_prevent_mutation` P0001 trigger) + the ORM `before_update`/`before_delete` guard; corrections are explicit reversal records (`reverses_transaction_id`), never updates (the original is never mutated). Capture-only — no position derivation. **ENT-014** `exposure_aggregate`
 > (IA, derived) + `dataset_snapshot` stay **P2** (AD-014) — no governed derived output without a bound input snapshot.
 

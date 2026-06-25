@@ -230,6 +230,26 @@ def test_transaction_permissions_grants_as_ratified() -> None:
     assert "auditor_3l" not in _holders("transaction.record")
 
 
+def test_position_permissions_grants_as_ratified() -> None:
+    # P1C-3: position.view PRE-EXISTS (seeded placeholder, held by the read tiers + admin); P1C-3
+    # WIRES it by adding the data_steward grant. position.edit is the ONE genuinely NEW code
+    # (maker/admin only). data_steward is the maker; auditor_3l EXCLUDED (proprietary holdings SoD).
+    assert "position.view" in ALL_CODES and "position.edit" in ALL_CODES
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    assert _holders("position.view") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "risk_manager_2l",
+        "platform_admin",
+    }
+    assert _holders("position.edit") == {"data_steward", "platform_admin"}
+    assert "auditor_3l" not in _holders("position.view")
+    assert "auditor_3l" not in _holders("position.edit")
+
+
 def test_ids_deterministic_and_unique() -> None:
     assert permission_id("data.upload") == permission_id("data.upload")
     assert role_id("ops") == role_id("ops")

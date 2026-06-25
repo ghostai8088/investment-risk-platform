@@ -268,15 +268,18 @@ def test_record_rolls_back_no_orphan(session: Session, monkeypatch: pytest.Monke
 
 def test_record_creates_no_position_or_valuation(session: Session) -> None:
     from irp_shared.models import metadata
+    from irp_shared.position.models import Position
 
-    # P1C-2 builds only `transaction`; the later-slice tables must still NOT exist.
-    for table in ("position", "valuation", "exposure", "price_point"):
+    # P1C-4+/P2+ tables must still NOT exist (P1C-3 builds `position`, but a transaction never
+    # derives one — captured-not-derived, OD-P1C-E).
+    for table in ("valuation", "exposure", "exposure_aggregate", "price_point", "dataset_snapshot"):
         assert table not in metadata.tables
     tenant = _tenant()
     pf_id, inst_id = _seed_pf_inst(session, tenant)
     _record(session, tenant, pf_id, inst_id)
-    # the only domain rows are the transaction + its FK targets; nothing derived.
+    # the only domain rows are the transaction + its FK targets; NO position is derived from it.
     assert session.execute(select(func.count()).select_from(Transaction)).scalar_one() == 1
+    assert session.execute(select(func.count()).select_from(Position)).scalar_one() == 0
 
 
 # --- import direction: transaction imports only portfolio/reference/rails (one-way) ---
