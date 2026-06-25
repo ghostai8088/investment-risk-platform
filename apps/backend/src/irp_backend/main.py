@@ -23,6 +23,7 @@ from irp_backend.api.reference_entities import router as reference_entities_rout
 from irp_backend.api.reference_instruments import router as reference_instruments_router
 from irp_backend.api.system import router as system_router
 from irp_backend.api.transactions import router as transactions_router
+from irp_backend.api.valuations import router as valuations_router
 
 app = FastAPI(title="Investment Risk Platform API (scaffold)")
 app.include_router(system_router)
@@ -37,3 +38,4 @@ app.include_router(reference_corporate_actions_router)
 app.include_router(portfolios_router)
 app.include_router(transactions_router)
 app.include_router(positions_router)
+app.include_router(valuations_router)

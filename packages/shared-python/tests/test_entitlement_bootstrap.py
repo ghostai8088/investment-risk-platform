@@ -250,6 +250,26 @@ def test_position_permissions_grants_as_ratified() -> None:
     assert "auditor_3l" not in _holders("position.edit")
 
 
+def test_valuation_permissions_grants_as_ratified() -> None:
+    # P1C-4: BOTH valuation.view + valuation.edit are NEWLY minted (neither pre-existed in the
+    # catalog, unlike position.view). data_steward is the maker (holds both); the read tiers hold
+    # view; valuation.edit is maker/admin only; auditor_3l EXCLUDED from both (OD-P1C4-2).
+    assert "valuation.view" in ALL_CODES and "valuation.edit" in ALL_CODES
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    assert _holders("valuation.view") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "risk_manager_2l",
+        "platform_admin",
+    }
+    assert _holders("valuation.edit") == {"data_steward", "platform_admin"}
+    assert "auditor_3l" not in _holders("valuation.view")
+    assert "auditor_3l" not in _holders("valuation.edit")
+
+
 def test_ids_deterministic_and_unique() -> None:
     assert permission_id("data.upload") == permission_id("data.upload")
     assert role_id("ops") == role_id("ops")

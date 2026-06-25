@@ -129,6 +129,22 @@ transaction P0001 guard). **Activates `POSITION.CREATE`/`.UPDATE`/`.CORRECTION` 
 **captured directly, NOT derived from transactions** (no transaction FK, no derivation engine); aggregated `(portfolio,
 instrument)` grain, signed quantity, opaque `cost_basis`; **no market value, no valuation, no exposure aggregation, no holdings
 view, no dataset_snapshot**. REQ-PPM-002 is now **In-Progress** (capture + as-of built; ABAC enforcement → P6+).
+**P1C-4** builds the `valuation` **FR bitemporal** captured mark history (REQ-PPM-003 valuation conjunct; ENT-013) — the
+platform's **second FR DOMAIN entity**: one PROPRIETARY table (migration `0015`) under the symmetric RLS loop, reusing the
+`position`/`instrument_terms` FR protocol verbatim (create / effective-dated re-mark supersede / as-known correction /
+`reconstruct_valuation_as_of` on both axes); a new `irp_shared/valuation/` package (one-way: → portfolio + reference + rails;
+**NO `position` import**). **NOT append-only** (the FR contrast): `valuation` is **not** in any `APPEND_ONLY_TABLES`/trigger
+loop. The grain is `(portfolio, instrument, valuation_date)` with **`valuation_date` an immutable logical-key column** (OD-P1C-F),
+distinct from the FR `valid_from` axis. A new CI step **"Valuation symmetric-RLS + FR-bitemporal tests (Postgres)"** runs
+`test_valuation_pg.py` under `irp_app`, proving tenant isolation + no-context-zero, the symmetric-policy (`qual == with_check`)
++ closed-hybrid-set assertions, the forged-tenant **42501** WITH-CHECK on INSERT, the **4-part** current-head partial-unique in
+PG, the cross-tenant FK service-layer reject, FR reconstruction under FORCE RLS, and the **NOT-append-only positive proof**
+(a close-out UPDATE returns `rowcount == 1`). **Activates `VALUATION.CREATE`/`.UPDATE`/`.CORRECTION` (EVT-180/181/182,
+caller-side; `audit/service.py` FROZEN)**; mints **both** `valuation.view`/`valuation.edit` (`data_steward` maker; `auditor_3l`
+excluded); one MANUAL-`data_source` ORIGIN edge per new physical version. **Captured marks** — `mark_value` captured (never
+computed), `mark_source` an inert label; **no valuation/pricing model, no price lookup, no market-data ingestion, no market-value
+rollup (no `position` FK / no `quantity`), no exposure aggregation, no holdings view, no dataset_snapshot**. With both conjuncts
+realized, **REQ-PPM-003 is now Done** (OD-P1C4-5).
 
 ## 3. Current placeholders (to be replaced as the platform is built)
 

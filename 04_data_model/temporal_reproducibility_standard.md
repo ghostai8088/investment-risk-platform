@@ -107,8 +107,11 @@ P1B-0 splits below).
 > correction; `reconstruct_position_as_of` on both axes); aggregated `(portfolio, instrument)` grain, signed quantity, opaque
 > `cost_basis`. **NOT append-only** (no `irp_prevent_mutation` trigger — the FR protocol requires close-out UPDATEs; prior-version
 > CONTENT immutability is service-enforced + tested) — the FR contrast with the IA `transaction`. **Captured directly, NOT
-> derived from transactions** (OD-P1C-E). **ENT-013** valuation (**FR**) stays P1C **capture-only** (same protocol, → P1C-4),
-> **not** derived analytics outputs. **ENT-012** transaction is **IA** (append-only event log) — **BUILT in P1C-2 (migration `0013`)** as the platform's **first DOMAIN append-only entity**: `__temporal_class__ = IMMUTABLE_APPEND_ONLY` (`system_from` only), in `APPEND_ONLY_TABLES` (the `irp_prevent_mutation` P0001 trigger) + the ORM `before_update`/`before_delete` guard; corrections are explicit reversal records (`reverses_transaction_id`), never updates (the original is never mutated). Capture-only — no position derivation. **ENT-014** `exposure_aggregate`
+> derived from transactions** (OD-P1C-E). **ENT-013** valuation (**FR**) is **BUILT in P1C-4 (migration `0015`)** as the
+> platform's **second FR DOMAIN entity** — captured marks via the `position`/`instrument_terms` FR protocol (create →
+> supersede → as-known correction; `reconstruct_valuation_as_of` both axes); grain `(portfolio, instrument, valuation_date)`
+> with `valuation_date` an immutable logical-key column DISTINCT from the FR `valid_from` axis (OD-P1C-F). **NOT append-only**;
+> **captured marks, NOT computed by a valuation/pricing model, NO market-value rollup / NO position link** (OD-P1C-F). **ENT-012** transaction is **IA** (append-only event log) — **BUILT in P1C-2 (migration `0013`)** as the platform's **first DOMAIN append-only entity**: `__temporal_class__ = IMMUTABLE_APPEND_ONLY` (`system_from` only), in `APPEND_ONLY_TABLES` (the `irp_prevent_mutation` P0001 trigger) + the ORM `before_update`/`before_delete` guard; corrections are explicit reversal records (`reverses_transaction_id`), never updates (the original is never mutated). Capture-only — no position derivation. **ENT-014** `exposure_aggregate`
 > (IA, derived) + `dataset_snapshot` stay **P2** (AD-014) — no governed derived output without a bound input snapshot.
 
 ### Rationale (TR-21)

@@ -36,6 +36,7 @@ from irp_shared.reference.models import (
     RatingScale,
 )
 from irp_shared.transaction.models import Transaction
+from irp_shared.valuation.models import Valuation
 
 metadata = Base.metadata
 
@@ -75,4 +76,5 @@ __all__ = [
     "Portfolio",
     "Transaction",
     "Position",
+    "Valuation",
 ]

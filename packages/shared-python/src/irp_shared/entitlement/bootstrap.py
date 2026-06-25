@@ -70,6 +70,11 @@ PERMISSIONS: list[tuple[str, str]] = [
     # append-only governed-write verb (a transaction is recorded, never edited — no `.edit`).
     ("transaction.view", "View transactions"),
     ("transaction.record", "Record transactions"),
+    # P1C-4 valuation (FR captured marks). BOTH codes are NEW (neither pre-exists in the catalog,
+    # unlike position.view). `.edit` is the FR maker verb (a mark is captured/superseded/corrected —
+    # `.edit`, not `.record`; FR is close-out-updated). auditor_3l excluded from both.
+    ("valuation.view", "View valuations"),
+    ("valuation.edit", "Edit valuations"),
 ]
 
 #: All permission codes, in catalog order.
@@ -125,6 +130,11 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # GRANT + the NEW position.edit (maker/admin-only); auditor_3l excluded (OD-P1C3-2).
         "position.view",
         "position.edit",
+        # P1C-4 valuation: steward is the maker — holds BOTH view + edit (reads its own writes).
+        # BOTH codes are NEW; risk_analyst_1l/risk_manager_2l hold valuation.view (below);
+        # valuation.edit is maker/admin-only; auditor_3l excluded (OD-P1C4-2).
+        "valuation.view",
+        "valuation.edit",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -145,6 +155,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "position.view",
         # P1C-2 transaction: read-tier view-only (transaction.record is maker/admin-only).
         "transaction.view",
+        # P1C-4 valuation: read-tier view-only (valuation.edit is maker/admin-only).
+        "valuation.view",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -171,6 +183,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "position.view",
         # P1C-2 transaction: read-tier view-only (transaction.record is maker/admin-only).
         "transaction.view",
+        # P1C-4 valuation: read-tier view-only (valuation.edit is maker/admin-only).
+        "valuation.view",
         "model.inventory.view",
         "dq.result.view",
         "lineage.view",
