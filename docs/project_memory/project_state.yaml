@@ -10,27 +10,27 @@ project:
   default_branch: main
 
 latest:
-  origin_main_commit: 3629baa
-  origin_main_subject: "Implement P2-1 dataset snapshot reproducibility primitive"
-  local_vs_origin: in-sync   # origin/main == 3629baa; ONLY this docs/project_memory/* refresh (P2-1 closeout) is uncommitted (no code)
-  ci_status: green           # 3629baa: GitHub Actions run #67 (id 28251757848) = success — all 5 jobs (Backend, DB migration (Postgres), Frontend, Secret scan, Documentation check); the NEW "Snapshot symmetric-RLS + append-only tests (AD-014 / ENT-049/050 / BR-17/BR-18)" PG step ran green, plus Apply-migrations (0016) + Schema-drift (alembic check) + Revert-migrations (downgrade smoke). Prior: P2-1 closeout memory refresh #66 (d45a31b); P2 governance ratification #65 (63be23a); P2-1 plan #64 (d7be981); P2-0 #63 (2d19992); P1C closeout/readiness #62 (7070dff); P1C-6 closeout memory #61 (9584ba4)
-  migration_head: 0016_dataset_snapshot   # ADVANCED 0015_valuation -> 0016_dataset_snapshot at P2-1 (3629baa); the FIRST migration since P1C-4; alembic check drift-clean; downgrade 0016->0015->head smoke green
+  origin_main_commit: c257e5c
+  origin_main_subject: "Implement P2-2 fx_rate captured FX market data and conversion"
+  local_vs_origin: in-sync   # origin/main == c257e5c; ONLY this docs/project_memory/* refresh (P2-2 closeout) is uncommitted (no code)
+  ci_status: green           # c257e5c: GitHub Actions run #70 (id 28258782538) = success — all 5 jobs (Backend, DB migration (Postgres), Frontend, Secret scan, Documentation check); the NEW "FX rate symmetric-RLS + hybrid-currency tests (ENT-024 / OD-P2-E/G / BR-17)" PG step ran green, plus Apply-migrations (0017) + Schema-drift (alembic check) + Revert-migrations (downgrade smoke). Prior: P2-2 plan #69 (6020b03); P2-1 closeout memory #68 (85ff5b2); P2-1 implementation #67 (3629baa); P2 governance ratification #65 (63be23a)
+  migration_head: 0017_fx_rate   # ADVANCED 0016_dataset_snapshot -> 0017_fx_rate at P2-2 (c257e5c); alembic check drift-clean; downgrade 0017->0016->head smoke green
 
 working_tree:
   uncommitted:
-    - path: "docs/project_memory/* (this P2-1 closeout refresh)"
+    - path: "docs/project_memory/* (this P2-2 closeout refresh)"
       status: modified
       note: >
-        Project-memory refresh to HEAD 3629baa (P2-1 dataset_snapshot IMPLEMENTATION committed + CI-green,
-        run #67). Advances the memory past the P2 governance-ratification memory commit d45a31b (#66) and the
-        P2-1 implementation 3629baa (#67). THIS refresh is docs-only — NO code, NO migration. (The P2-1 code
-        — the snapshot package, migration 0016, the snapshot.view/.create grants in entitlement/bootstrap.py,
-        the snapshot CI step — all shipped in 3629baa, NOT in this docs refresh.) audit/service.py FROZEN.
-        Commit pending approval.
+        Project-memory refresh to HEAD c257e5c (P2-2 fx_rate IMPLEMENTATION committed + CI-green, run #70).
+        Advances the memory past the P2-1 closeout memory 85ff5b2 (#68), the P2-2 plan 6020b03 (#69), and the
+        P2-2 implementation c257e5c (#70). THIS refresh is docs-only — NO code, NO migration. (The P2-2 code —
+        the irp_shared/marketdata package, migration 0017_fx_rate, the marketdata.view/.ingest grants, the
+        RANGE DQ evaluator, the hybrid-aware resolve_currency, the FX CI step, the governance-doc updates — all
+        shipped in c257e5c, NOT in this docs refresh.) audit/service.py FROZEN. Commit pending approval.
 
 operating_mode: ultracode    # plan-workflow -> commit plan -> implement -> review-workflow -> fix -> make check -> commit-on-approval -> CI
 commit_policy: explicit-approval-only
-current_approval_gate: "P2-1 dataset_snapshot IMPLEMENTATION is COMPLETE, COMMITTED (3629baa), and CI-green (run #67). The full P1C block is DELIVERED; the P2 reproducibility-foundation was planned + ratified (7070dff #62, 2d19992 #63, d7be981 #64, 63be23a #65); and now the AD-014 reproducible input-snapshot primitive (ENT-049/050) is REALIZED in code. Shipped at 3629baa: dataset_snapshot + dataset_snapshot_component (IA TRUE append-only — APPEND_ONLY_TABLES + irp_prevent_mutation P0001 trigger + ORM guard; migration 0016_dataset_snapshot, the first migration since P1C-4 0015); physical-version pinning + captured_content + SHA-256 canonical content_hash + header manifest_hash (app-side, excludes close-out markers, HALF_UP-quantized for engine-independence); the build_snapshot governed binder over the set-returning enumerators; the narrow internal snapshot/component lineage writer (data_snapshot source_type, local Core Table, no import cycle); the caller-side completeness DQ gate (reuses run_quality_check NOT_NULL; Protocol UNTOUCHED; gap -> fail closed); SNAPSHOT.CREATE activated (EVT-190) caller-side to the FROZEN record_event; snapshot.view/.create minted (data_steward maker; risk tiers .view; auditor_3l excluded; parity-tested); POST /snapshots + GET /snapshots/{id} + GET /snapshots/{id}/verify; symmetric tenant-scoped RLS (never hybrid; closed hybrid set unchanged); the cross-tenant binding-integrity invariant (resolve only under the acting tenant -> foreign id fails closed, no snapshot). NO exposure number; NO calculation_run wiring (readiness only; binding -> P2-3). 8-lens UltraCode review (16 agents) -> 6 in-scope findings folded. make check green (501 SQLite); PG green (alembic upgrade 0001->0016 + alembic check drift-clean + 9-test snapshot PG suite + downgrade 0016->0015->head smoke). audit/service.py FROZEN. NEXT = P2-2 PLANNING ONLY (FX rates), on explicit approval; P2-2 implementation NOT started; P1B-5 CONDITIONAL/DEFERRED."
+current_approval_gate: "P2-2 fx_rate IMPLEMENTATION is COMPLETE, COMMITTED (c257e5c), and CI-green (run #70). P2-1 dataset_snapshot (3629baa) and P2-2 fx_rate (c257e5c) are both REALIZED. Shipped at c257e5c: fx_rate (ENT-024, FR/bitemporal — the valuation protocol verbatim: capture/supersede/correct/reconstruct_fx_rate_as_of; NOT append-only, content-immutability service-enforced; migration 0017_fx_rate); the irp_shared/marketdata package; captured FX market data (NOT analytics); explicit base/quote direction (rate = 1 base = rate quote, QS-08); MID-only rate_type v1 (QS-09); rate Numeric(28,12); rate_date a SEPARATE immutable logical key (the valuation_date precedent); 5-part current-head partial-unique (tenant,base,quote,rate_date,rate_type); a pure published-rate convert helper (direct / reciprocal / triangulation-through-configured-base USD-default; exact-date rate_date==date(valid_at) v1; fail-closed FxRateNotFound, no silent 1.0); the NEW hybrid-aware resolve_currency (own OR SYSTEM; foreign-tenant rejected — NOT the symmetric predicate); marketdata.view/.ingest minted (data_steward maker; risk tiers .view; auditor_3l excluded; parity-tested); MARKET.FX_CREATE/UPDATE/CORRECTION (EVT-200) activated caller-side to the FROZEN record_event; VENDOR data_source ORIGIN lineage per physical version (reuses record_lineage UNCHANGED); the NEW generic RANGE DQ evaluator (additive; Protocol untouched; strictly-positive rate) + required-field gate; symmetric tenant-scoped RLS (NEVER hybrid; closed 5-table hybrid set asserted unchanged on PG). NO exposure number; NO calculation_run wiring; NO dataset_snapshot package change. 8-lens UltraCode review -> 6 approve, 2 approve_with_changes, 0 block; 1 in-scope fold (the CTRL-032 lineage/audit-failure rollback negative test). make check green (529 SQLite); PG green (alembic upgrade 0001->0017 + drift-clean + the 6-test FX PG suite + all 17 PG files on a fresh DB + downgrade 0017->0016->head). audit/service.py FROZEN. Frontend visibility: P2-2 had NO visible UI change (backend/shared-data only). NEXT = P2-3 PLANNING ONLY (calculation_run wiring + basic exposure — the FIRST governed derived number, snapshot+run-gated), on explicit approval; P2-3 implementation NOT started; P1B-5 CONDITIONAL/DEFERRED."
 
 phases:
   completed:
@@ -80,6 +80,9 @@ phases:
     - {id: P2-ratification, name: "P2 dataset_snapshot governance ratification into source-of-truth (ENT-049/050; SNAPSHOT.CREATE reserved EVT-190; snapshot.* reserved; AD-004-R1; REQ-PPM-004 -> In-Progress; 7-lens, 7x approve). RESERVED/PLANNED, no code", commit: "63be23a", ci: green}
     - {id: P2-ratification-memory, name: "P2 governance-ratification closeout project-memory refresh (docs-only)", commit: "d45a31b", ci: green}
     - {id: P2-1, name: "P2-1 dataset_snapshot (ENT-049/050) IMPLEMENTATION: the AD-014 reproducible input-snapshot primitive REALIZED — two IA true-append-only tables (migration 0016_dataset_snapshot); physical-version pin + captured_content + SHA-256 content_hash + manifest_hash (HALF_UP-quantized, engine-independent); build_snapshot governed binder; narrow internal snapshot/component lineage writer; caller-side completeness DQ gate (Protocol untouched); SNAPSHOT.CREATE (EVT-190) activated; snapshot.view/.create minted (data_steward maker; auditor_3l excluded); POST /snapshots + GET /{id} + GET /{id}/verify; symmetric RLS; cross-tenant binding-integrity invariant; NO exposure number, NO calculation_run wiring (readiness only). 8-lens review, 6 in-scope folds; the first new Snapshot RLS CI step + migration since P1C-4", commit: "3629baa", ci: green}
+    - {id: P2-1-memory, name: "P2-1 dataset_snapshot closeout project-memory refresh (docs-only)", commit: "85ff5b2", ci: green}
+    - {id: P2-2-plan, name: "P2-2 fx_rate implementation plan (FR captured FX market data + published-rate convert; the 10 specific decisions settled; 8-lens, 6 in-scope folds; build-ready)", commit: "6020b03", ci: green}
+    - {id: P2-2, name: "P2-2 fx_rate (ENT-024) IMPLEMENTATION: captured FX market data REALIZED — fx_rate FR/bitemporal (migration 0017_fx_rate, symmetric RLS, NOT append-only; the valuation protocol verbatim); irp_shared/marketdata package; explicit base/quote direction (rate = 1 base = rate quote); MID-only v1; rate Numeric(28,12); rate_date separate immutable logical key; pure published-rate convert (direct/reciprocal/triangulation-through-base USD-default; exact-date v1; fail-closed); hybrid-aware resolve_currency (own OR SYSTEM); marketdata.view/.ingest minted; MARKET.FX_CREATE/UPDATE/CORRECTION (EVT-200) activated; VENDOR data_source ORIGIN lineage per physical version (reuses record_lineage); new generic RANGE DQ evaluator (additive, Protocol untouched); symmetric RLS (NEVER hybrid; closed hybrid set unchanged). NO exposure, NO calculation_run wiring, NO dataset_snapshot change. 8-lens review (6 approve/2 approve_with_changes/0 block), 1 in-scope fold (CTRL-032 rollback test); new FX symmetric-RLS CI step", commit: "c257e5c", ci: green}
 
   milestones:
     P1A: closed   # all five rails committed and CI-green
@@ -107,14 +110,17 @@ phases:
     P2-1-plan: committed   # P2-1 dataset_snapshot implementation plan (d7be981), CI-green run #64; 8-lens 0 block
     P2-ratification: committed   # P2 dataset_snapshot governance ratification (63be23a), CI-green run #65; 7-lens 7x approve; RESERVED/PLANNED, no code
     P2-ratification-memory: committed   # P2 governance-ratification closeout project-memory refresh (d45a31b), CI-green run #66; docs-only
-    P2-1: closed   # P2-1 dataset_snapshot IMPLEMENTATION committed 3629baa, CI-green (run #67). The AD-014 reproducible input-snapshot primitive (ENT-049/050) REALIZED; migration head 0015_valuation -> 0016_dataset_snapshot; the FIRST domain migration + new Snapshot RLS CI step since P1C-4. NO exposure number, NO calculation_run wiring.
+    P2-1: closed   # P2-1 dataset_snapshot IMPLEMENTATION committed 3629baa, CI-green (run #67). The AD-014 reproducible input-snapshot primitive (ENT-049/050) REALIZED; migration head 0015_valuation -> 0016_dataset_snapshot. NO exposure number, NO calculation_run wiring.
+    P2-1-memory: committed   # P2-1 dataset_snapshot closeout project-memory refresh (85ff5b2), CI-green run #68; docs-only
+    P2-2-plan: committed   # P2-2 fx_rate implementation plan (6020b03), CI-green run #69; 8-lens, 6 in-scope folds; build-ready
+    P2-2: closed   # P2-2 fx_rate IMPLEMENTATION committed c257e5c, CI-green (run #70). Captured FX market data (ENT-024, FR) REALIZED; migration head 0016_dataset_snapshot -> 0017_fx_rate; new FX symmetric-RLS CI step. NO exposure number, NO calculation_run wiring, NO dataset_snapshot change.
   active:
-    id: P2-1
-    name: "P2-1 dataset_snapshot IMPLEMENTATION COMPLETE, COMMITTED (3629baa), and CI-green (run #67). The AD-014 reproducible input-snapshot primitive (ENT-049/050) is REALIZED in code (migration 0016_dataset_snapshot; IA true-append-only; pin + captured_content + hashes; build_snapshot binder; completeness DQ gate; SNAPSHOT.CREATE + snapshot.view/.create; POST/GET/verify endpoints; symmetric RLS; cross-tenant binding integrity). NO exposure number, NO calculation_run wiring. Only this project-memory refresh (P2-1 closeout) is commit-pending"
+    id: P2-2
+    name: "P2-2 fx_rate IMPLEMENTATION COMPLETE, COMMITTED (c257e5c), and CI-green (run #70). Captured FX market data (ENT-024, FR) is REALIZED in code (migration 0017_fx_rate; the valuation FR protocol verbatim; irp_shared/marketdata package; explicit base/quote direction; MID-only; Numeric(28,12); pure published-rate convert direct/reciprocal/triangulation; hybrid-aware resolve_currency; marketdata.view/.ingest; MARKET.FX_* EVT-200; VENDOR lineage; RANGE DQ evaluator; symmetric RLS). NO exposure, NO calculation_run wiring, NO dataset_snapshot change. P2-2 had NO visible UI change. Only this project-memory refresh (P2-2 closeout) is commit-pending"
     status: implemented-committed-ci-green
   next:
-    id: P2-2-planning
-    name: "P2-2 PLANNING ONLY (on explicit approval): the P2-2 FX-rate decision record + implementation plan — fx_rate as an FR (bitemporal) entity; explicit currency-pair DIRECTION; MID rate; configurable base currency (USD-default) + triangulation-through-base IF ratified (a lookup, not analytics) per QS-07/08/09 + OD-030. PLANNING ONLY — NO FX code, NO currency-conversion analytics unless explicitly approved, NO exposure, NO calculation_run wiring, NO price/curve/benchmark, NO P3+. Plan -> review -> commit-on-approval; implementation is a SEPARATE later approval."
+    id: P2-3-planning
+    name: "P2-3 PLANNING ONLY (on explicit approval): the P2-3 decision record + implementation plan — calculation_run wiring + basic exposure foundation. exposure_aggregate (ENT-014) = IA, in APPEND_ONLY_TABLES, run-bound + snapshot-gated; bind through calculation_run (ENT-026) with the additive environment_id column (OD-P2-C/F); the FIRST governed derived number — Sigma(signed qty x captured mark) FX-converted, consuming the P2-1 dataset_snapshot + the P2-2 fx_rate; AD-014/FW-RUN/TR-15: snapshot + complete run-bind REQUIRED before any official derived output. NO risk / VaR / ES / factor / sensitivities / scenario / pricing model. PLANNING ONLY — NO exposure/calc-run code until the P2-3 plan is approved; implementation is a SEPARATE later approval. Frontend: P2-3 may enable future exposure views but builds NO frontend unless explicitly directed."
     status: blocked-until-approval
 
 # --- P1B-1 key deliverables (CLOSED, 6568cb1, CI-green) ---
@@ -300,29 +306,53 @@ p2_1_deliverables:
   review: "8-lens UltraCode adversarial review (16 agents, 296 tool-uses) -> 6 in-scope findings folded: (1) POST response empty components[] under PG FORCE RLS post-commit -> build response pre-commit; (2) _norm_decimal engine-dependent rounding -> HALF_UP quantize; (3) snapshot PG suite not in CI -> add the step; (4) plan §17 position-supersede verify test; (5) completeness-rollback lineage+SNAPSHOT.CREATE zero-row asserts; (6) verify-emits-zero-audit assert. Five cross-slice fences flipped (test_position/valuation/reference_entities/transaction removed dataset_snapshot from their P2+-forbidden lists; test_synthetic 0016->0017)"
   reqs: "REQ-PPM-004 stays In-Progress — the AD-014 dataset_snapshot prereq is now REALIZED; the calculation_run-bound exposure aggregation builds at P2-3 (snapshot+run-gated)"
 
-# --- P2-2 focus (the NEXT phase — PLANNING ONLY, on approval; FX rates) ---
-p2_2_focus:
-  - "fx_rate entity, FR temporal classification (bitemporal — AD-005; risk-driving market input, reconstructable as-of on both axes)"
-  - "explicit currency-pair DIRECTION (base/quote made unambiguous; no implicit inversion)"
-  - "MID rate (no bid/ask spread modeling at P2-2)"
-  - "configurable base currency (USD default) + triangulation-through-base IF ratified — a deterministic ratified LOOKUP, not analytics (QS-07/08/09 + OD-030)"
-  - "NO currency-conversion analytics unless explicitly approved; NO exposure number; NO calculation_run wiring; NO price/curve/benchmark; NO P3+"
-  - "PLANNING ONLY first (decision record + implementation plan); implementation is a SEPARATE later approval"
+# --- P2-2 key deliverables (CLOSED, c257e5c, CI-green run #70; captured FX market data REALIZED) ---
+p2_2_deliverables:
+  entity: "ENT-024 fx_rate (FR/bitemporal) — the platform's FIRST market-data entity + the fourth persisted FullReproducibleMixin user (after instrument_terms/position/valuation); migration 0017_fx_rate; NOT append-only (close-out UPDATEs; content-immutability service-enforced + tested); the valuation protocol mirrored verbatim"
+  package: "new irp_shared/marketdata package (models/events/service/convert/__init__) — leaf, one-way imports {reference, lineage, dq, audit, db}; imports NO calc/exposure/snapshot symbol; nothing imports marketdata. The shared market-data home (P2-4 price / P2-5 curve / P2-6 benchmark join additively)"
+  captured_market_data: "captured vendor FX, NOT computed — no model, no curve-implied rate, no interpolation; rate is inert (captured, never recomputed)"
+  direction: "explicit base/quote DIRECTION (QS-08): rate means '1 base = rate quote' (price-of-base-in-quote); self-describing per row; reciprocal derived at read time by convert (1/rate), NOT stored"
+  rate_type: "MID-only v1 (QS-09; controlled-vocab plain String rate_type; BID/ASK reserved, not minted; out-of-vocab -> FxRateValueError 422)"
+  rate_scale: "rate column Numeric(28,12) — NOT money scale 6 (FX needs >6 dp for small-unit pairs + reciprocal/triangulation precision; fixed explicitly per QS-05)"
+  rate_date: "rate_date a SEPARATE immutable logical key (the valuation_date precedent), NOT valid_from; current-head 5-part partial-unique (tenant_id, base_currency, quote_currency, rate_date, rate_type) WHERE valid_to IS NULL AND system_to IS NULL; exact-date matching v1 (rate_date == date(valid_at); most-recent-on-or-before deferred)"
+  convert: "pure published-rate convert helper (convert.py) — identity / direct lookup / read-time reciprocal / triangulation-through-the-configured-base (USD default, configurable per call); defined arithmetic over published rates (lookup x lookup), NOT analytics; a missing leg FAILS CLOSED (FxRateNotFound) — NO interpolation, NO stale-rate fallback, NO silent 1.0; read-only (no audit/lineage/DQ emit)"
+  resolve_currency: "NEW hybrid-aware resolve_currency in reference/service.py (+ CurrencyNotVisible) — admits own-tenant OR SYSTEM_TENANT currency (the dedupe_tenant_wins / RLS USING-arm precedent), rejects a foreign tenant's currency; deliberately NOT the symmetric tenant_id==acting_tenant by-id resolver (which would reject the SYSTEM USD/EUR base and break triangulation)"
+  entitlement: "marketdata.view + marketdata.ingest minted (REUSABLE across all market data, NOT per-entity fx_rate.*); .ingest is the governed canonical-write verb (capture/supersede/correct), distinct from data.upload (raw staging); data_steward holds both (maker); risk tiers hold .view; auditor_3l EXCLUDED; parity-tested (test_marketdata_permissions_grants_as_ratified)"
+  audit: "MARKET.FX_CREATE/UPDATE/CORRECTION (EVT-200 block) ACTIVATED caller-side (marketdata/events.py) to the FROZEN record_event; per-op grain capture=1, supersede=2 (UPDATE close-out + CREATE), correct=2 (UPDATE close-out + CORRECTION); DC-2 metadata only (no vendor-licensed payload dump); zero on read/convert (OD-023). audit/service.py UNTOUCHED"
+  lineage: "one VENDOR data_source ORIGIN lineage edge per NEW physical version (capture / new-open-row-of-supersede / correction; the prior-head close-out roots NONE) via ensure_vendor_source (VENDOR_FX) — REUSES record_lineage UNCHANGED (no new lineage framework). rate_source is an inert provenance LABEL, DISTINCT from the governed ORIGIN edge"
+  dq: "NEW generic RANGE evaluator in dq/rules.py (RULE_TYPE_RANGE; the first new evaluator since the 2 shipped) over the existing (params,dataset) Protocol — ADDITIVE, no Protocol change; strictly-positive rate = {min:0, min_inclusive:false}. The 2 shipped evaluators behavior-unchanged (no-regression test). A governed required-field + positive-rate DQ gate (run_quality_check, DATA.VALIDATE, fail-closed -> CTRL-032 rollback). The two REGISTRY exact-equality asserts (test_data_quality + test_ingestion) + the rules docstring updated to three"
+  rls: "symmetric tenant-scoped RLS (USING == WITH CHECK == own-tenant; ENABLE+FORCE; migration 0017); NEVER hybrid (no SYSTEM_TENANT; fx_rate is per-tenant vendor-licensed; closed 5-table hybrid set asserted unchanged on PG); cross-tenant currency/fx fails closed at the service layer; no BYPASSRLS app path"
+  api: "api/marketdata.py — POST /fx (capture; marketdata.ingest) + POST /fx/{id}/supersede + POST /fx/{id}/correct + GET /fx/as-of + GET /fx (range) + GET /fx/convert (marketdata.view; read-only). No PUT/PATCH/DELETE. Whole-unit rollback + 403/404/409/422 mapping"
+  scope_fences: "NO exposure calculation / NO exposure_aggregate; NO calculation_run created/wired / NO environment_id; NO dataset_snapshot package change / NO COMPONENT_KIND_FX (P2-3 mints it); NO price/curve/benchmark/feed-pipeline; NO risk/VaR/ES/factor/pricing/valuation model. AST/import fence: marketdata imports no calc/exposure/snapshot/risk symbol; ast.Mult PERMITTED for convert; nothing imports marketdata. tests: test_fx_rate.py (SQLite logic+convert+DQ+audit+lineage+rollback+fences) + test_fx_rate_pg.py (PG FORCE-RLS/forged-tenant/closed-hybrid/hybrid-currency/audit-chain, 6) + test_marketdata_endpoint.py (entitlement/403/404/409/422/no-mutate)"
+  review: "8-lens UltraCode review (6 approve / 2 approve_with_changes / 0 block) -> 1 in-scope fold: the CTRL-032 lineage/audit-emit-failure rollback negative test (monkeypatch record_lineage/record_event -> assert zero fx_rate/edge/MARKET.FX_CREATE), mirroring the valuation precedent. Cross-slice fences updated: test_synthetic 0017->0018; test_snapshot migration-chain guard (head moved off 0016)"
+  docs: "governance source-of-truth updated IN THE BUILD COMMIT (c257e5c): audit_event_taxonomy (MARKET.FX_* EVT-200 activated), entitlement_sod_model (marketdata.*), canonical_data_model_standard (ENT-024 REALIZED), temporal_reproducibility_standard (FX = FR realized), control_matrix_skeleton (P2-2 additions; CTRL mapping; RANGE evaluator). NEW FX symmetric-RLS CI step in ci.yml"
+  reqs: "no REQ closes at P2-2 (an enabling market-data prerequisite); REQ-PPM-004 exposure aggregation builds at P2-3 over the bound dataset_snapshot + the captured fx_rate"
+  frontend: "NO visible UI change (backend/shared-data infrastructure only; no frontend files). Future UI enabled: FX rate lookup/detail screens + snapshot-bound exposure views — NOT built (no frontend in P2-2)"
+
+# --- P2-3 focus (the NEXT phase — PLANNING ONLY, on approval; calculation_run wiring + basic exposure) ---
+p2_3_focus:
+  - "calculation_run wiring (ENT-026, IA status-mutable, NOT in APPEND_ONLY_TABLES) + the additive environment_id column (OD-P2-C; FW-RUN item 7); reuse the shipped CALC.RUN_CREATE/CALC.RUN_STATUS_CHANGE emitters; audit/service.py FROZEN"
+  - "basic exposure foundation: exposure_aggregate (ENT-014) = IA, in APPEND_ONLY_TABLES (TRUE append-only), DERIVED, run-tracked; produced AS a calculation_run result"
+  - "the FIRST governed derived number: deterministic Sigma(signed quantity x captured mark_value) FX-converted to a base currency, grouped by a ratified dimension; code_version is the reproducibility anchor (model_version N/A-with-rationale — a model-less rollup); NOT ENT-028 sensitivity"
+  - "consume the P2-1 dataset_snapshot (bind input versions; P2-3 mints COMPONENT_KIND_FX + extends the binder/_reresolve_content to pin FX) + the P2-2 fx_rate (convert marks to base)"
+  - "AD-014 / FW-RUN §5 / TR-15: a snapshot + a COMPLETE run-bind are REQUIRED before any official derived output; a run missing any item raises + writes ZERO exposure rows + no orphan run (the full negative test)"
+  - "NO risk / VaR / Expected Shortfall / factor / covariance / vol / sensitivities / scenario / pricing model / valuation model; NO P3+; the exposure scope-fence is VOCABULARY/IMPORT (ast.Mult permitted for the rollup), NOT no-Mult"
+  - "PLANNING ONLY first (decision record + implementation plan; promote REQ-PPM-004 work); implementation is a SEPARATE later approval. Frontend: may enable future exposure views but builds NO frontend unless explicitly directed"
 
 blockers:
-  - "P2-1 dataset_snapshot IMPLEMENTATION COMPLETE, COMMITTED (3629baa), and CI-green (run #67). The AD-014 reproducible input-snapshot primitive (ENT-049/050) is REALIZED. Only this project-memory refresh (P2-1 closeout) is commit-pending."
-  - "Next is P2-2 PLANNING ONLY (FX rates) — on explicit approval. Plan/review/commit the P2-2 decision record + implementation plan; FX IMPLEMENTATION is a SEPARATE later approval."
+  - "P2-2 fx_rate IMPLEMENTATION COMPLETE, COMMITTED (c257e5c), and CI-green (run #70). Captured FX market data (ENT-024, FR) is REALIZED. Only this project-memory refresh (P2-2 closeout) is commit-pending."
+  - "Next is P2-3 PLANNING ONLY (calculation_run wiring + basic exposure) — on explicit approval. Plan/review/commit the P2-3 decision record + implementation plan; the exposure/calc-run IMPLEMENTATION is a SEPARATE later approval."
   - "Every step gated on explicit user approval; do not start the next slice unprompted."
 
 do_not_start:
-  - NO P2-2 / FX IMPLEMENTATION until P2-2 PLANNING is approved (the next phase is P2-2 PLANNING only; plan / review / implement / commit are separate approvals)
-  - NO exposure calculation / exposure_aggregate (the first governed derived number is P2-3, snapshot+run-gated, AD-014)
-  - NO calculation_run wiring (the P2-1 snapshot id is the future P2-3 referent only; binding -> P2-3)
+  - NO P2-3 / exposure + calculation_run IMPLEMENTATION until P2-3 PLANNING is approved (the next phase is P2-3 PLANNING only; plan / review / implement / commit are separate approvals)
+  - NO exposure calculation / exposure_aggregate until P2-3 planning is approved (the first governed derived number is P2-3, snapshot+run-gated, AD-014/FW-RUN/TR-15)
+  - NO calculation_run wiring until P2-3 planning is approved (the snapshot id + the fx_rate are P2-3 inputs; binding -> P2-3)
   - NO price history (P2-4); NO curves (P2-5); NO benchmarks (P2-6)
   - NO factor model (ENT-022 volatility_surface / ENT-025 factor_return -> P3+)
   - NO risk calculations / VaR / ES / sensitivities (P3+)
-  - NO market data ingestion (FX/price/curve) — P2-2+
   - NO reporting / dashboard build (P2; AD-014)
+  - NO frontend changes unless explicitly directed (P2-2 had none; P2-3 may enable exposure views but builds no frontend by default)
   - NO P3+ work (factor models, covariance/vol, scenarios, limits, breach, reporting, real SSO)
   - ABAC enforcement (anchored in P1C-1; enforcement -> P6+)
   - P1B-5 (reference-data ingestion mapping) — CONDITIONAL/DEFERRED (only if bulk loading is needed; not now)
@@ -342,12 +372,12 @@ security_housekeeping:
       credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.
 
 recheck_at_session_start:
-  - "git log -1 --oneline ; git status --short   (HEAD should be >= 3629baa; whether this P2-1 closeout memory refresh got committed)"
+  - "git log -1 --oneline ; git status --short   (HEAD should be >= c257e5c; whether this P2-2 closeout memory refresh got committed)"
   - "latest CI conclusion for current HEAD (GitHub Actions REST API; gh CLI not installed — the public repo API answers unauthenticated)"
   - "git remote -v   (origin is now SSH: git@github.com:ghostai8088/investment-risk-platform.git; auth via Keychain-backed key)"
-  - "migration head is 0016_dataset_snapshot (advanced from 0015_valuation at P2-1 / 3629baa); next P2-2 FX migration lands only when P2-2 is IMPLEMENTED (planning is next)"
+  - "migration head is 0017_fx_rate (advanced from 0016_dataset_snapshot at P2-2 / c257e5c); next P2-3 exposure/calc-run migration (incl. the additive calculation_run.environment_id) lands only when P2-3 is IMPLEMENTED (planning is next)"
 
 uncertain_values:
   - "as_of '2026-06-26' is approximate — the host clock has drifted (read 2026-06-18 / 2026-06-25 / 2026-06-26 intermittently). The commit timeline + CI run numbers are authoritative; calendar dates are best-effort."
-  - "This P2-1 closeout project_memory refresh is UNCOMMITTED — origin/main stays 3629baa until it is committed on approval."
-  - "CI run #67 = 28251757848 (success, all 5 jobs) is the P2-1 implementation run for 3629baa (verified via the GitHub Actions REST API this session; the new Snapshot symmetric-RLS PG step + Apply-migrations 0016 + Schema-drift + downgrade-smoke all green). Run #66 = the P2 governance-ratification closeout memory (d45a31b)."
+  - "This P2-2 closeout project_memory refresh is UNCOMMITTED — origin/main stays c257e5c until it is committed on approval."
+  - "CI run #70 = 28258782538 (success, all 5 jobs) is the P2-2 implementation run for c257e5c (verified via the GitHub Actions REST API this session; the new FX symmetric-RLS + hybrid-currency PG step + Apply-migrations 0017 + Schema-drift + downgrade-smoke all green). Run #69 = the P2-2 plan (6020b03); run #68 = the P2-1 closeout memory (85ff5b2)."
