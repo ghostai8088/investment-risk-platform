@@ -103,7 +103,7 @@ Grouped by bounded context. IDs are stable; attributes listed are indicative (th
 | ENT-021 | `yield_curve` | Curve nodes |
 | ENT-022 | `volatility_surface` | Vol points |
 | ENT-023 | `credit_spread` | Spread time-series |
-| ENT-024 | `fx_rate` | FX (QS triangulation) |
+| ENT-024 | `fx_rate` | FX (QS triangulation). **REALIZED in P2-2 (migration `0017`, FR)** — captured vendor FX; logical key `(base_currency, quote_currency, rate_date, rate_type)`; `rate` = "1 base = rate quote" (QS-08), `Numeric(28,12)`, MID only (QS-09); `rate_date` a separate immutable logical key (the `valuation_date` precedent); current-head partial-unique `WHERE valid_to IS NULL AND system_to IS NULL`; symmetric tenant-scoped RLS (NEVER hybrid); VENDOR `data_source` ORIGIN lineage; `MARKET.FX_*` audit; a pure published-rate `convert` (direct/reciprocal/triangulation-through-base, fail-closed) — **no analytics, no exposure, no `calculation_run`**. |
 | ENT-025 | `factor_return` | Risk-factor returns |
 
 ### Risk Results & Scenarios (BC-05…BC-09)

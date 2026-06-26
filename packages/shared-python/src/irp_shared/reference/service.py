@@ -26,10 +26,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, TypeVar
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.service import record_event
+from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.lineage.models import EDGE_KIND_ORIGIN, DataSource
 from irp_shared.lineage.service import record_lineage, register_data_source
 from irp_shared.reference.events import (
@@ -38,6 +39,7 @@ from irp_shared.reference.events import (
     REFERENCE_STATUS_CHANGE_EVENT,
     REFERENCE_UPDATE_EVENT,
 )
+from irp_shared.reference.models import Currency
 
 #: ``data_source`` provenance for governed reference CRUD (value-level vocab; no schema change).
 MANUAL_SOURCE_TYPE = "MANUAL"
@@ -287,3 +289,42 @@ def dedupe_tenant_wins(rows: Sequence[_RowT], acting_tenant: str) -> list[_RowT]
     for row in ordered:
         chosen.setdefault(row.code, row)  # own-tenant sorts first within a code -> wins
     return [chosen[code] for code in sorted(chosen)]
+
+
+class CurrencyNotVisible(Exception):
+    """Raised when a currency ``code`` is not visible to the acting tenant — neither an own-tenant
+    nor a SYSTEM_TENANT row exists (a foreign tenant's currency, or an unknown code). Fails
+    closed."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(f"currency {code!r} is not visible in the current tenant context")
+        self.code = code
+
+
+def resolve_currency(session: Session, code: str, *, acting_tenant: str) -> Currency:
+    """Resolve an ISO currency ``code`` for the acting tenant under **AD-013-R1 HYBRID** visibility:
+    admit an **own-tenant OR SYSTEM_TENANT** row (own wins via ``dedupe_tenant_wins``), reject a
+    **foreign tenant's** currency. Raises :class:`CurrencyNotVisible` when neither exists.
+
+    This is deliberately **NOT** the symmetric ``tenant_id == acting_tenant`` by-id resolver
+    pattern:
+    `currency` is the hybrid SYSTEM/tenant table, so a symmetric predicate would reject the SYSTEM
+    `USD`/`EUR` base and break FX triangulation. The explicit ``(own OR SYSTEM)`` predicate is
+    correct
+    on SQLite (no RLS) and is the RLS ``USING``-arm on PG (defense-in-depth)."""
+    rows = list(
+        session.execute(
+            select(Currency).where(
+                Currency.code == code,
+                or_(
+                    Currency.tenant_id == str(acting_tenant),
+                    Currency.tenant_id == SYSTEM_TENANT_ID,
+                ),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        raise CurrencyNotVisible(code)
+    return dedupe_tenant_wins(rows, acting_tenant)[0]  # own-tenant override wins over SYSTEM

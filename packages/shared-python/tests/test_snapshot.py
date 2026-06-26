@@ -606,7 +606,9 @@ def test_snapshot_permissions_grants_as_ratified() -> None:
 # ---------- migration head ----------
 
 
-def test_migration_head_is_0016() -> None:
+def test_migration_0016_chain_position() -> None:
+    # 0016 (dataset_snapshot) sits immediately above 0015; the HEAD advances each slice (P2-2 added
+    # 0017_fx_rate), so this guards 0016's fixed chain position, not that it is still the head.
     from alembic.script import ScriptDirectory
 
     root = pathlib.Path(snapshot_service.__file__)
@@ -614,6 +616,6 @@ def test_migration_head_is_0016() -> None:
         assert root != root.parent, "alembic.ini not found"
         root = root.parent
     script = ScriptDirectory(str(root / "migrations"))
-    assert script.get_current_head() == "0016_dataset_snapshot"
     rev = script.get_revision("0016_dataset_snapshot")
     assert rev.down_revision == "0015_valuation"
+    assert "0016_dataset_snapshot" in {r.revision for r in script.walk_revisions()}

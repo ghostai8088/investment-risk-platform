@@ -3,7 +3,9 @@
 A ``DQEvaluator`` is the ``DQRule.evaluate()`` interface: ``(params, dataset) -> DQEvaluation``. The
 ``REGISTRY`` maps a controlled-vocab ``rule_type`` string to an evaluator, so new GENERIC rule kinds
 register by value + a function, never a schema migration (the genericity contract, MG-01 analog).
-Exactly two generic evaluators are registered: ``not_null`` and ``allowed_values``. No domain rules.
+Exactly three generic evaluators are registered: ``not_null``, ``allowed_values``, and ``range``
+(the
+last added P2-2 for strictly-positive FX rates). No domain rules.
 
 ``evaluate()` ALWAYS returns a structured ``DQEvaluation`` (never None) so a failure is structurally
 un-swallowable; a malformed rule (unknown type / bad params) raises — the caller audits + reraises.
@@ -18,6 +20,7 @@ from typing import Any, Protocol
 #: Controlled-vocab rule_type values seeded now (new generic kinds add a value + a function).
 RULE_TYPE_NOT_NULL = "NOT_NULL"
 RULE_TYPE_ALLOWED_VALUES = "ALLOWED_VALUES"
+RULE_TYPE_RANGE = "RANGE"  # P2-2: numeric bound check (e.g. strictly-positive FX rate)
 
 Dataset = Sequence[Mapping[str, Any]]
 
@@ -88,10 +91,41 @@ def evaluate_allowed_values(params: Mapping[str, Any], dataset: Dataset) -> DQEv
     )
 
 
-#: The evaluator registry — exactly the two GENERIC rules (no domain-specific evaluators).
+def evaluate_range(params: Mapping[str, Any], dataset: Dataset) -> DQEvaluation:
+    """Generic: every row's ``params['column']`` must lie within ``[min, max]``. ``min``/``max`` are
+    optional bounds; ``min_inclusive``/``max_inclusive`` default True. A NULL value is an offender
+    (use ``not_null`` for nullability). Strictly-positive ⇒ ``{min: 0, min_inclusive: False}``."""
+    column = _require_column(params)
+    lo = params.get("min")
+    hi = params.get("max")
+    lo_inc = bool(params.get("min_inclusive", True))
+    hi_inc = bool(params.get("max_inclusive", True))
+    offenders: list[Any] = []
+    for row in dataset:
+        value = row.get(column)
+        if value is None:
+            offenders.append(value)
+            continue
+        below = lo is not None and (value < lo if lo_inc else value <= lo)
+        above = hi is not None and (value > hi if hi_inc else value >= hi)
+        if below or above:
+            offenders.append(value)
+    if not offenders:
+        return DQEvaluation(passed=True, evaluated_count=len(dataset))
+    return DQEvaluation(
+        passed=False,
+        observed_value=str(offenders[0])[:500],
+        detail=f"{len(offenders)} value(s) in column {column!r} outside the allowed range",
+        evaluated_count=len(dataset),
+        failed_count=len(offenders),
+    )
+
+
+#: The evaluator registry — exactly the three GENERIC rules (no domain-specific evaluators).
 REGISTRY: dict[str, DQEvaluator] = {
     RULE_TYPE_NOT_NULL: evaluate_not_null,
     RULE_TYPE_ALLOWED_VALUES: evaluate_allowed_values,
+    RULE_TYPE_RANGE: evaluate_range,
 }
 
 

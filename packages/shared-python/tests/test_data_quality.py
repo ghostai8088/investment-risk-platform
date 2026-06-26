@@ -19,7 +19,12 @@ from sqlalchemy.orm import Session
 from irp_shared.audit.models import AppendOnlyViolation, AuditEvent
 from irp_shared.audit.service import verify_chain
 from irp_shared.dq.models import DataQualityResult, DataQualityRule
-from irp_shared.dq.rules import REGISTRY, RULE_TYPE_ALLOWED_VALUES, RULE_TYPE_NOT_NULL
+from irp_shared.dq.rules import (
+    REGISTRY,
+    RULE_TYPE_ALLOWED_VALUES,
+    RULE_TYPE_NOT_NULL,
+    RULE_TYPE_RANGE,
+)
 from irp_shared.dq.service import (
     DQ_RULE_DEFINE_EVENT,
     DQ_RULE_UPDATE_EVENT,
@@ -357,7 +362,8 @@ def test_scope_fence_no_reserved_codes_or_columns(session: Session) -> None:
         assert not any(
             forbidden in c for c in cols
         ), f"unexpected workflow column matching {forbidden}"
-    assert set(REGISTRY) == {RULE_TYPE_NOT_NULL, RULE_TYPE_ALLOWED_VALUES}  # exactly two generic
+    # exactly three generic evaluators (RANGE added P2-2 for strictly-positive FX rates)
+    assert set(REGISTRY) == {RULE_TYPE_NOT_NULL, RULE_TYPE_ALLOWED_VALUES, RULE_TYPE_RANGE}
 
 
 def test_dq_package_has_no_forbidden_imports() -> None:

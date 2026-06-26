@@ -20,7 +20,12 @@ from sqlalchemy.orm import Session
 from irp_shared.audit.models import AppendOnlyViolation, AuditEvent
 from irp_shared.audit.service import verify_chain
 from irp_shared.dq.models import DataQualityResult
-from irp_shared.dq.rules import REGISTRY, RULE_TYPE_ALLOWED_VALUES, RULE_TYPE_NOT_NULL
+from irp_shared.dq.rules import (
+    REGISTRY,
+    RULE_TYPE_ALLOWED_VALUES,
+    RULE_TYPE_NOT_NULL,
+    RULE_TYPE_RANGE,
+)
 from irp_shared.dq.service import register_dq_rule
 from irp_shared.ingestion import anticorruption as ac
 from irp_shared.ingestion.anticorruption import (
@@ -519,8 +524,9 @@ def test_scope_fence_generic_only(session: Session) -> None:
     batch_fks = {fk.column.table.name for fk in IngestionBatch.__table__.foreign_keys}
     staged_fks = {fk.column.table.name for fk in IngestionStagedRecord.__table__.foreign_keys}
     assert batch_fks == {"data_source"} and staged_fks == {"ingestion_batch"}
-    # The DQ engine is reused, not extended: still exactly the two generic evaluators.
-    assert set(REGISTRY) == {RULE_TYPE_NOT_NULL, RULE_TYPE_ALLOWED_VALUES}
+    # The DQ engine is reused, not extended by ingestion: the three generic evaluators (RANGE added
+    # P2-2 for FX, not by ingestion) and no domain evaluators.
+    assert set(REGISTRY) == {RULE_TYPE_NOT_NULL, RULE_TYPE_ALLOWED_VALUES, RULE_TYPE_RANGE}
     # No reserved P7 codes emitted on the ingest path.
     tenant = _tenant()
     source_id = _source(session, tenant)

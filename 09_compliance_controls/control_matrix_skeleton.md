@@ -215,6 +215,17 @@ whole-unit rollback, on SQLite **and** PG); **CTRL-032** (fail-closed co-transac
 `entitlement/bootstrap.py` UNCHANGED. **No control is weakened; no new CTRL minted** (existing controls gain a planned P2-1
 binding).
 
+**P2-2 additions (FX market data — `fx_rate`, ENT-024, IMPLEMENTED `0017_fx_rate`, 2026-06-26):** captured vendor FX (FR) +
+a pure published-rate `convert` (no analytics). Controls now executable for FX: **CTRL-006/013** (lineage — one VENDOR
+`data_source` ORIGIN edge per physical version, reusing `record_lineage` unchanged); **CTRL-011** (deny-by-default
+`marketdata.view`/`.ingest` + symmetric FORCE-RLS, PG-proven as `irp_app`; a new **Snapshot/FX symmetric-RLS CI step** + a new
+migration); **CTRL-023** (vendor-licensed FX tenant-scoped — NEVER hybrid; closed 5-table hybrid set asserted unchanged);
+**CTRL-017** (`fx_rate` declares `FULL_REPRODUCIBLE`; NOT append-only); **CTRL-026** (`MARKET.FX_*` hash-chain `verify_chain`);
+**CTRL-032** (fail-closed co-transactional rollback if audit/lineage/DQ raises). The DQ no-silent-failure gate gains an
+**additive generic `RANGE` evaluator** (strictly-positive rate) — `(params, dataset)` Protocol **unchanged**, the two shipped
+evaluators behavior-unchanged. **CTRL-009 / the AD-014 gate are UNTOUCHED** — FX produces no governed derived number (exposure
+stays P2-3, snapshot+run-gated). `audit/service.py` **FROZEN**. **No control weakened; no new CTRL minted.**
+
 ## 5. Open Decisions
 
 | ID | Open Decision |

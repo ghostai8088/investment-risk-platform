@@ -82,6 +82,13 @@ PERMISSIONS: list[tuple[str, str]] = [
     # excluded from both (operational reproducibility-input SoD).
     ("snapshot.view", "View dataset snapshots"),
     ("snapshot.create", "Create dataset snapshots (reproducible input snapshots)"),
+    # P2-2 market data (ENT-024 fx_rate first; price/curve/benchmark join additively). BOTH codes
+    # NEW + REUSABLE across all market data (NOT per-entity fx_rate.*). `.ingest` is the governed
+    # canonical-write verb (capture/supersede/correct) — distinct from `data.upload` (raw staging).
+    # `.ingest` is maker/admin-only (data_steward + platform_admin); the read tiers hold `.view`;
+    # auditor_3l excluded from both (vendor-license isolation is by tenant-scoped RLS, not a role).
+    ("marketdata.view", "View market data (FX rates, prices, curves)"),
+    ("marketdata.ingest", "Capture/correct governed market data (FX rates, prices, curves)"),
 ]
 
 #: All permission codes, in catalog order.
@@ -147,6 +154,11 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # maker/admin-only; auditor_3l excluded.
         "snapshot.view",
         "snapshot.create",
+        # P2-2 market data: steward is the maker — holds BOTH view + ingest (reads its own writes).
+        # risk_analyst_1l/risk_manager_2l hold marketdata.view (below); marketdata.ingest is
+        # maker/admin-only; auditor_3l excluded.
+        "marketdata.view",
+        "marketdata.ingest",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -171,6 +183,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "valuation.view",
         # P2-1 dataset_snapshot: read-tier view-only (snapshot.create is maker/admin-only).
         "snapshot.view",
+        # P2-2 market data: read-tier view-only (marketdata.ingest is maker/admin-only).
+        "marketdata.view",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -201,6 +215,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "valuation.view",
         # P2-1 dataset_snapshot: read-tier view-only (snapshot.create is maker/admin-only).
         "snapshot.view",
+        # P2-2 market data: read-tier view-only (marketdata.ingest is maker/admin-only).
+        "marketdata.view",
         "model.inventory.view",
         "dq.result.view",
         "lineage.view",

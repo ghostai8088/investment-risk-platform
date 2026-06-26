@@ -47,6 +47,8 @@ ENT-025 factor_return); positions (ENT-011); valuations (ENT-013); external/inte
 (ENT-007); private NAV/appraisals (ENT-017) and commitments (ENT-015); instrument economic terms that are effective-dated
 (ENT-001, e.g., coupon/maturity schedules).
 
+> **P2-2 realization note (FX, 2026-06-26):** **ENT-024 `fx_rate` is REALIZED** (migration `0017`, FR bitemporal — the fourth persisted `FullReproducibleMixin` user after `instrument_terms`/`position`/`valuation`): capture / effective-dated supersede / as-known correction / both-axes `reconstruct_fx_rate_as_of`; NOT append-only (close-out UPDATEs; content-immutability service-enforced); `rate_date`/`rate_type` immutable logical-key components; symmetric tenant-scoped RLS (NEVER hybrid). The remaining market-data FR entities (ENT-020/021/022/023/025) stay **P2-4+/P3**.
+
 ### IA — immutable append-only
 Reproducible input snapshots (**ENT-049 `dataset_snapshot` + ENT-050 `dataset_snapshot_component`** — the AD-014 reproducibility
 primitive; **TRUE append-only**, in `APPEND_ONLY_TABLES` with the `irp_prevent_mutation` trigger + ORM guard — the `transaction`

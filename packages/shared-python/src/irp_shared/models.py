@@ -18,6 +18,7 @@ from irp_shared.entitlement.models import (
 )
 from irp_shared.ingestion.models import IngestionBatch, IngestionStagedRecord
 from irp_shared.lineage.models import DataSource, LineageEdge
+from irp_shared.marketdata.models import FxRate
 from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, ModelVersion
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.position.models import Position
@@ -80,4 +81,5 @@ __all__ = [
     "Valuation",
     "DatasetSnapshot",
     "DatasetSnapshotComponent",
+    "FxRate",
 ]

@@ -13,6 +13,7 @@ from irp_backend.api.dq import router as dq_router
 from irp_backend.api.holdings import router as holdings_router
 from irp_backend.api.ingest import router as ingest_router
 from irp_backend.api.lineage import router as lineage_router
+from irp_backend.api.marketdata import router as marketdata_router
 from irp_backend.api.models import router as models_router
 from irp_backend.api.portfolios import router as portfolios_router
 from irp_backend.api.positions import router as positions_router
@@ -43,3 +44,4 @@ app.include_router(positions_router)
 app.include_router(valuations_router)
 app.include_router(holdings_router)
 app.include_router(snapshots_router)
+app.include_router(marketdata_router)
