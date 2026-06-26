@@ -22,6 +22,7 @@ from irp_backend.api.reference_corporate_actions import (
 )
 from irp_backend.api.reference_entities import router as reference_entities_router
 from irp_backend.api.reference_instruments import router as reference_instruments_router
+from irp_backend.api.snapshots import router as snapshots_router
 from irp_backend.api.system import router as system_router
 from irp_backend.api.transactions import router as transactions_router
 from irp_backend.api.valuations import router as valuations_router
@@ -41,3 +42,4 @@ app.include_router(transactions_router)
 app.include_router(positions_router)
 app.include_router(valuations_router)
 app.include_router(holdings_router)
+app.include_router(snapshots_router)

@@ -629,6 +629,7 @@ def test_excluded_entity_tables_absent_from_metadata() -> None:
 
     # P1B-3 builds instrument / instrument_terms / identifier_xref; P1B-4 builds corporate_action;
     # P1C-1 builds portfolio (ENT-010); P1C-2 builds transaction (ENT-012); P1C-3 builds position
-    # (ENT-011); P1C-4 builds valuation (ENT-013). Later-slice (P2+) entities must still NOT exist.
-    for table in ("price_point", "exposure", "exposure_aggregate", "dataset_snapshot"):
+    # (ENT-011); P1C-4 builds valuation (ENT-013); P2-1 builds dataset_snapshot (ENT-049/050).
+    # Later-slice (P2-2+) entities must still NOT exist.
+    for table in ("price_point", "exposure", "exposure_aggregate"):
         assert table not in metadata.tables

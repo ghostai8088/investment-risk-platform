@@ -127,7 +127,8 @@ def test_valuation_holds_nothing_scope_fence() -> None:
 def test_no_derived_or_excluded_table() -> None:
     names = set(Valuation.metadata.tables.keys())
     assert "valuation" in names
-    for forbidden in ("exposure_aggregate", "price_point", "dataset_snapshot", "holding"):
+    # P2-1 builds `dataset_snapshot`; the still-future (P2-2+) tables must NOT exist.
+    for forbidden in ("exposure_aggregate", "price_point", "holding"):
         assert forbidden not in names, f"excluded table {forbidden} must not exist"
 
 

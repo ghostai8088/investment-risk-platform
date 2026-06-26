@@ -26,8 +26,10 @@ from irp_shared.db.mixins import (
 from irp_shared.db.types import GUID
 from irp_shared.temporal import TemporalClass
 
-#: Upstream node kinds for ``lineage_edge.source_type`` (forward-compat: ``data_snapshot``).
+#: Upstream node kinds for ``lineage_edge.source_type``.
 SOURCE_TYPE_DATA_SOURCE = "data_source"
+#: P2-1: a ``dataset_snapshot`` (ENT-049) source node — snapshot -> pinned-input-version edges.
+SOURCE_TYPE_DATA_SNAPSHOT = "data_snapshot"
 
 #: Edge relationship roles (controlled vocab).
 EDGE_KIND_ORIGIN = "ORIGIN"

@@ -1,0 +1,155 @@
+"""Deterministic, engine-independent canonical serialization for snapshot components (P2-1, §7).
+
+``captured_content`` = ``canonicalize({field: normalized_value, ...})`` over the per-kind immutable
+field set; ``content_hash = sha256_hex(captured_content)``. Reuses the audited ``audit.hashing``
+primitives (``canonicalize`` sorts keys, compact separators, ``ensure_ascii=False``; ``sha256_hex``)
+so the hash is **identical across the AD-011 SQLite/PG split** — in app code, NEVER in the DB.
+
+Normalization (so nothing hits ``canonicalize``'s ``default=str`` fallback non-deterministically):
+``Decimal`` -> fixed-scale string at the column scale (QS-01/03); ``datetime`` -> ISO-8601 UTC
+(naive assumed UTC, QS-12); ``date`` -> ``YYYY-MM-DD``; GUID/str -> lowercase; ``None`` -> JSON null
+(explicit, distinct from ``""``). The **mutable close-out markers ``valid_to``/``system_to``** (and
+``created_at``/``updated_at``) are EXCLUDED — FR rows are close-out-UPDATEd while their content is
+immutable. ``restatement_reason``/``supersedes_id`` ARE included (write-once version provenance).
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
+
+from irp_shared.audit.hashing import canonicalize, sha256_hex
+
+#: Decimal scales per column (canonical_data_model — Position.quantity Numeric(28,8); valuation /
+#: position mark/cost_basis Numeric(20,6)).
+_SCALE_QUANTITY = 8
+_SCALE_MONEY = 6
+
+
+def _norm_datetime(value: datetime) -> str:
+    """ISO-8601 UTC (a naive value — e.g. from SQLite — is assumed UTC)."""
+    dt = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return dt.isoformat()
+
+
+def _norm_decimal(value: Decimal, scale: int) -> str:
+    """Fixed-scale decimal string (trailing zeros normalized, so 1 and 1.00 hash identically).
+
+    QUANTIZE to the column scale with ROUND_HALF_UP **before** formatting — engine-independence
+    (AD-011): Python's ``f"{:.Nf}"`` uses ROUND_HALF_EVEN, but PG ``numeric`` rounds HALF_UP when it
+    stores a sub-scale value. Without an explicit quantize a value carrying more precision than the
+    column scale (e.g. ``0.0000005`` at scale 6) would hash differently build-time (in-memory,
+    un-roundtripped) vs verify-time (PG-roundtripped), and differently on SQLite vs PG — a spurious
+    drift. Quantizing HALF_UP here makes BOTH ends, on BOTH engines, hash the same scaled value."""
+    quantized = value.quantize(Decimal(1).scaleb(-scale), rounding=ROUND_HALF_UP)
+    return f"{quantized:f}"
+
+
+def _norm_guid(value: str) -> str:
+    return str(value).lower()
+
+
+def position_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``position`` (FR) version (§7 POSITION field list)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "quantity": _norm_decimal(row.quantity, _SCALE_QUANTITY),
+        "cost_basis": (
+            None if row.cost_basis is None else _norm_decimal(row.cost_basis, _SCALE_MONEY)
+        ),
+        "quantity_unit": row.quantity_unit,
+        "position_source": row.position_source,
+        "restatement_reason": row.restatement_reason,
+        "supersedes_id": (None if row.supersedes_id is None else _norm_guid(row.supersedes_id)),
+        "valid_from": _norm_datetime(row.valid_from),
+        "system_from": _norm_datetime(row.system_from),
+        "record_version": row.record_version,
+    }
+
+
+def valuation_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``valuation`` (FR) version (§7 VALUATION field list)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "valuation_date": row.valuation_date.isoformat(),
+        "mark_value": _norm_decimal(row.mark_value, _SCALE_MONEY),
+        "currency_code": row.currency_code,
+        "mark_source": row.mark_source,
+        "price_basis": row.price_basis,
+        "restatement_reason": row.restatement_reason,
+        "supersedes_id": (None if row.supersedes_id is None else _norm_guid(row.supersedes_id)),
+        "valid_from": _norm_datetime(row.valid_from),
+        "system_from": _norm_datetime(row.system_from),
+        "record_version": row.record_version,
+    }
+
+
+def portfolio_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``portfolio`` (EV) version (§7 PORTFOLIO field list — no
+    ``system_from``; includes ``name``/``description`` so the hash moves on any EV amend)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "code": row.code,
+        "name": row.name,
+        "node_type": row.node_type,
+        "parent_portfolio_id": (
+            None if row.parent_portfolio_id is None else _norm_guid(row.parent_portfolio_id)
+        ),
+        "base_currency_code": row.base_currency_code,
+        "status": row.status,
+        "description": row.description,
+        "valid_from": _norm_datetime(row.valid_from),
+        "record_version": row.record_version,
+    }
+
+
+def serialize_content(content: dict[str, Any]) -> str:
+    """Canonical-serialize a per-kind content dict (sorted keys, compact, engine-independent)."""
+    return canonicalize(content)
+
+
+def content_hash(captured_content: str) -> str:
+    """``sha256_hex`` of the canonical ``captured_content`` string (§7)."""
+    return sha256_hex(captured_content)
+
+
+def manifest_hash(
+    *,
+    tenant_id: str,
+    as_of_valid_at: datetime,
+    as_of_known_at: datetime,
+    as_of_valuation_date: date,
+    binding_predicate_version: str,
+    component_count: int,
+    component_hashes: list[tuple[str, str, str]],
+) -> str:
+    """The header reproducibility fingerprint: SHA-256 over the header cutoffs + ``component_count``
+    (folded IN, anti-truncation) + the component hashes sorted by the NORMALIZED
+    ``(component_kind, target_entity_id)``. Deterministic given identical cutoffs (§7)."""
+    ordered = sorted(
+        (
+            [kind.lower(), _norm_guid(target_id), c_hash]
+            for kind, target_id, c_hash in component_hashes
+        ),
+        key=lambda triple: (triple[0], triple[1]),
+    )
+    preimage = {
+        "header": {
+            "tenant_id": _norm_guid(tenant_id),
+            "as_of_valid_at": _norm_datetime(as_of_valid_at),
+            "as_of_known_at": _norm_datetime(as_of_known_at),
+            "as_of_valuation_date": as_of_valuation_date.isoformat(),
+            "binding_predicate_version": binding_predicate_version,
+        },
+        "component_count": component_count,
+        "component_hashes": ordered,
+    }
+    return sha256_hex(canonicalize(preimage))

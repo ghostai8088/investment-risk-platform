@@ -128,11 +128,10 @@ def test_position_holds_nothing_scope_fence() -> None:
 def test_record_creates_no_derived_or_excluded_table() -> None:
     names = set(Position.metadata.tables.keys())
     assert "position" in names
-    # P1C-4 builds `valuation` (ENT-013); later-slice (P2+) tables must still NOT exist.
+    # P2-1 builds `dataset_snapshot` (ENT-049/050); later-slice (P2-2+) tables must still NOT exist.
     for forbidden in (
         "exposure_aggregate",
         "price_point",
-        "dataset_snapshot",
         "holding",
     ):
         assert forbidden not in names, f"excluded table {forbidden} must not exist"

@@ -75,6 +75,13 @@ PERMISSIONS: list[tuple[str, str]] = [
     # `.edit`, not `.record`; FR is close-out-updated). auditor_3l excluded from both.
     ("valuation.view", "View valuations"),
     ("valuation.edit", "Edit valuations"),
+    # P2-1 dataset_snapshot (ENT-049/050, the AD-014 reproducible input snapshot). BOTH codes are
+    # NEW. `.create` (NOT `.record`) is the deliberate verb — a snapshot is a create-once run
+    # artifact (like calculation_run is created/initiated), not a recorded business event. `.create`
+    # is maker/admin-only (data_steward + platform_admin); the read tiers hold `.view`; auditor_3l
+    # excluded from both (operational reproducibility-input SoD).
+    ("snapshot.view", "View dataset snapshots"),
+    ("snapshot.create", "Create dataset snapshots (reproducible input snapshots)"),
 ]
 
 #: All permission codes, in catalog order.
@@ -135,6 +142,11 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # valuation.edit is maker/admin-only; auditor_3l excluded (OD-P1C4-2).
         "valuation.view",
         "valuation.edit",
+        # P2-1 dataset_snapshot: steward is the maker — holds BOTH view + create (reads its own
+        # writes). risk_analyst_1l/risk_manager_2l hold snapshot.view (below); snapshot.create is
+        # maker/admin-only; auditor_3l excluded.
+        "snapshot.view",
+        "snapshot.create",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -157,6 +169,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "transaction.view",
         # P1C-4 valuation: read-tier view-only (valuation.edit is maker/admin-only).
         "valuation.view",
+        # P2-1 dataset_snapshot: read-tier view-only (snapshot.create is maker/admin-only).
+        "snapshot.view",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -185,6 +199,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "transaction.view",
         # P1C-4 valuation: read-tier view-only (valuation.edit is maker/admin-only).
         "valuation.view",
+        # P2-1 dataset_snapshot: read-tier view-only (snapshot.create is maker/admin-only).
+        "snapshot.view",
         "model.inventory.view",
         "dq.result.view",
         "lineage.view",

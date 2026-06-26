@@ -15,12 +15,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import Column, MetaData, Table, select
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.service import record_event
+from irp_shared.db.types import GUID
 from irp_shared.lineage.models import (
     EDGE_KIND_ORIGIN,
+    SOURCE_TYPE_DATA_SNAPSHOT,
     SOURCE_TYPE_DATA_SOURCE,
     DataSource,
     LineageEdge,
@@ -32,6 +34,13 @@ SOURCE_UPDATE_EVENT = "DATA.SOURCE_UPDATE"
 
 #: Mutable attributes ``update_data_source`` will diff/apply.
 _UPDATABLE = ("name", "source_type", "description", "is_active")
+
+#: Local Core reference to dataset_snapshot (ENT-049) for RLS-scoped tenant resolution WITHOUT
+#: importing ``irp_shared.snapshot`` — keeps lineage a leaf the snapshot package depends on, never
+#: the reverse (the ``dq/service`` ``_DATA_SOURCE`` precedent; separate MetaData, no registration).
+_DATASET_SNAPSHOT = Table(
+    "dataset_snapshot", MetaData(), Column("id", GUID), Column("tenant_id", GUID)
+)
 
 
 class LineageMissingError(Exception):
@@ -157,6 +166,55 @@ def record_lineage(
         target_entity_id=str(target_entity_id),
         edge_kind=edge_kind,
         run_id=(str(run_id) if run_id is not None else None),
+    )
+    session.add(edge)
+    session.flush()
+    return edge
+
+
+class SnapshotNotVisible(Exception):
+    """Raised when ``record_internal_lineage`` cannot resolve the ``dataset_snapshot`` source under
+    the caller's tenant scope (cross-tenant id hidden by RLS, or unknown) — fails closed."""
+
+    def __init__(self, source_id: str) -> None:
+        super().__init__(
+            f"dataset_snapshot {source_id} is not visible in the current tenant context"
+        )
+        self.source_id = str(source_id)
+
+
+def record_internal_lineage(
+    session: Session,
+    *,
+    snapshot_id: str,
+    target_entity_type: str,
+    target_entity_id: str,
+    edge_kind: str = EDGE_KIND_ORIGIN,
+) -> LineageEdge:
+    """Record one ``dataset_snapshot -> pinned-input-version`` lineage edge (P2-1, narrow internal
+    writer). The shipped :func:`record_lineage` is ``data_source``-only; this sibling roots a
+    ``data_snapshot``-sourced edge.
+
+    The snapshot header must be **flushed first**. ``tenant_id`` is stamped from the snapshot
+    resolved **through the RLS-scoped session** (a local Core ``dataset_snapshot`` reference, so
+    lineage imports nothing from ``snapshot``), never from caller input — a cross-tenant snapshot id
+    resolves to zero rows and raises :class:`SnapshotNotVisible` (fail closed). Emits **no** audit
+    event (the edge is metadata of the already-audited ``SNAPSHOT.CREATE``).
+    """
+    resolved = session.execute(
+        select(_DATASET_SNAPSHOT.c.tenant_id).where(_DATASET_SNAPSHOT.c.id == str(snapshot_id))
+    ).first()
+    if resolved is None:
+        raise SnapshotNotVisible(str(snapshot_id))
+
+    edge = LineageEdge(
+        tenant_id=resolved.tenant_id,  # server-side stamp; RLS WITH CHECK is the backstop
+        source_type=SOURCE_TYPE_DATA_SNAPSHOT,
+        source_id=str(snapshot_id),
+        target_entity_type=target_entity_type,
+        target_entity_id=str(target_entity_id),
+        edge_kind=edge_kind,
+        run_id=None,
     )
     session.add(edge)
     session.flush()

@@ -270,9 +270,9 @@ def test_record_creates_no_position_or_valuation(session: Session) -> None:
     from irp_shared.models import metadata
     from irp_shared.position.models import Position
 
-    # P2+ tables must still NOT exist (P1C-3 builds `position` + P1C-4 builds `valuation`, but a
-    # transaction never derives either — captured-not-derived, OD-P1C-E).
-    for table in ("exposure", "exposure_aggregate", "price_point", "dataset_snapshot"):
+    # Still-future (P2-2+) tables must NOT exist (P2-1 builds `dataset_snapshot`, but a transaction
+    # never derives position/valuation/exposure — captured-not-derived, OD-P1C-E).
+    for table in ("exposure", "exposure_aggregate", "price_point"):
         assert table not in metadata.tables
     tenant = _tenant()
     pf_id, inst_id = _seed_pf_inst(session, tenant)
