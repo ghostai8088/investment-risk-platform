@@ -11,27 +11,49 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `0bef45b` — "Implement P1C-5 read-only as-of holdings portfolio views". Chain since P1C-4 build: `c5c5806` (P1C-4 build) → `6e3dcc1` (P1C-4 memory refresh) → `8a14173` (P1C-5 plan) → `0bef45b` (P1C-5 build). Earlier: `4ee124e` (P1C-3 build) → `2f7d647`/`b38f182` (P1C-3 memory) → `67741fb` (CI hygiene Node-24) → `92a0264` (P1C-4 plan) → `c5c5806` (P1C-4 build).
-- **Local == origin:** yes; **only this `docs/project_memory/*` refresh is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** — `0bef45b` = GitHub Actions **run #57 (id 28196900649)** = success, **all 5 jobs** (Documentation check, Secret scan, Backend Python, Frontend TS, DB migration Postgres). **The migration job gained NO new step** — its last domain RLS step is still "Valuation symmetric-RLS" (P1C-4); there is **no "Holdings" RLS step** because P1C-5 persists nothing. This is the structural proof that **no migration was added**: `alembic check` drift-clean, head stays `0015_valuation`, downgrade smoke green. Holdings logic + endpoint tests ran in Backend; the 4 holdings FORCE-RLS tests ran in the Postgres job. Prior: P1C-5 plan #56 (`8a14173`), P1C-4 memory #55 (`6e3dcc1`), P1C-4 build #54 (`c5c5806`).
-- **Migration head:** `0015_valuation` (P1C-5 as-of holdings views are READ-ONLY — no new entity, no migration; the next migration `0016` lands only if a later slice persists a new entity).
+- **origin/main HEAD:** `3e9882d` — "Implement P1C-6 deterministic synthetic dataset". Chain since P1C-5 build: `0bef45b` (P1C-5 build) → `867e576` (P1C-5 memory refresh) → `7dfdb79` (P1C-6 plan) → `3e9882d` (P1C-6 build). Earlier: `c5c5806` (P1C-4 build) → `6e3dcc1` (P1C-4 memory) → `8a14173` (P1C-5 plan) → `0bef45b` (P1C-5 build).
+- **Local == origin:** yes; **only this `docs/project_memory/*` refresh (P1C-6 closeout) is uncommitted** (docs-only, commit pending). No code.
+- **Latest CI:** **GREEN** — `3e9882d` = GitHub Actions **run #60 (id 28207899969)** = success, **all 5 jobs** (Backend Python, Secret scan, DB migration Postgres, Documentation check, Frontend TypeScript) — re-verified via the GitHub Actions REST API this session. **The migration job gained NO new step** — its last domain RLS step is still "Valuation symmetric-RLS" (P1C-4); there is **no synthetic-seed RLS/migration step** because P1C-6 is a never-auto-run seed module that persists no new table. This is the structural proof that **no migration was added**: `alembic check` drift-clean, head stays `0015_valuation`, downgrade smoke green. The synthetic builder + governed-seam tests ran in Backend; the 4 synthetic FORCE-RLS tests ran in the Postgres job. Prior: P1C-6 plan #59 (`7dfdb79`), P1C-5 memory #58 (`867e576`), P1C-5 build #57 (`0bef45b`).
+- **Migration head:** `0015_valuation` (P1C-6 is a NEVER-AUTO-RUN seed module — no new entity, no migration; the next migration `0016` lands only if a later slice persists a new entity).
 
 ## Working tree (uncommitted)
-- **This `docs/project_memory/*` refresh** (P1C-5 closeout) — modified tracked files, commit pending approval. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
+- **This `docs/project_memory/*` refresh** (P1C-6 closeout) — modified tracked files, commit pending approval. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
 
 ## Current active gate
-**P1C-5 (read-only as-of holdings / portfolio views) is CLOSED and CI-green** (`0bef45b`, run #57), 8-lens UltraCode
-reviewed (8 approve / 0 block; 2 LOW fence-tightening folds before commit — AST write-helper fence + import-direction
-allowlist tightened). The platform's **first read-model package** is delivered: a read-only `irp_shared/holdings/`
-composition layer + `GET /portfolios/{id}/holdings` that reconstructs the as-of holdings SET by composing the captured
-`portfolio` hierarchy + `position` FR + (optional, display-only) `valuation` FR reads. **NO new entity, NO migration, NO
-write endpoint, NO permission, NO audit/lineage/DQ write, NO aggregation / market-value / `quantity × mark` / exposure /
-`dataset_snapshot`.** Marks are display-only, opt-in (`include_marks`), deterministic (explicit `valuation_date`), gated
-(`valuation.view` in-handler → 403 before any mark lookup). Subtree traversal is read COMPOSITION, not ABAC enforcement
-(anchor-not-enforce → P6+). **No REQ status change** — REQ-PPM-001/002 stay In-Progress (read-half realized; ABAC residual
-→ P6+); REQ-PPM-003 stays Done. The next step is **P1C-6 PLANNING ONLY** (deterministic synthetic dataset), **on explicit
-approval**. **P1C-6 implementation is NOT started.** The platform follows a strict planning-first,
-commit-only-on-explicit-approval cadence; plan / implement / commit are separate approvals.
+**P1C-6 (deterministic synthetic dataset) is CLOSED and CI-green** (`3e9882d`, run #60), 8-lens UltraCode reviewed — the
+review **caught a real BLOCKER** (a false-GREEN determinism test that depended on the dev-shell env var
+`IRP_ALLOW_SYNTHETIC_SEED`), which was fixed (autouse monkeypatch fixture; no process-global `os.environ` mutation) and
+**re-validated with the env var UNSET** (`make check` passed, full suite green) — CI run #60 (which has no such env var) green is the real
+confirmation. The deterministic synthetic dataset is delivered: the **`irp_shared/synthetic` package** (uuid5 deterministic
+IDs + a fixed `SeedClock`; `build_synthetic_dataset` composes the **governed** service/binder paths into a synthetic
+reference pack + portfolio hierarchy + transactions + positions + valuations) seeded only via a **keyword-only default-None
+deterministic-injection seam** (`entity_id`/`now`) on the governed binders, so **production call sites are byte-for-byte
+unchanged**. **NEVER-AUTO-RUN** (not wired to migrations/startup; explicit `allow_synthetic_seed=True` +
+`IRP_ALLOW_SYNTHETIC_SEED=1` env gate + a **production / non-synthetic-tenant REFUSAL guard**); writes **only** the reserved
+SYNTHETIC tenant under FORCE RLS, **never BYPASSRLS**; **no real client/vendor data**; **no market / risk / exposure /
+`dataset_snapshot` scope** (capture-only). **NO new entity, NO migration** (head stays `0015_valuation`). With P1C-6 closed
+the **FULL P1C block (P1C-1…P1C-6) is DELIVERED** — the capture-only domain-analytics base (AD-017). **No REQ status change.**
+The next step is the **P1C CLOSEOUT / P2 READINESS REVIEW** (planning only), **on explicit approval**. **P2 implementation is
+NOT started.** The platform follows a strict planning-first, commit-only-on-explicit-approval cadence; closeout / review /
+plan / implement / commit are separate approvals.
+
+## P1C-6 key deliverables (closed, `3e9882d`, CI-green run #60) — completes the FULL P1C block
+A deterministic test/demo/UI enabler (OD-P1C-L; the P1C prerequisite that replaced P1B-5). **No new entity, no migration, no REQ status change** — it composes the already-shipped governed binders into a fixed, reproducible synthetic dataset.
+- **Deterministic synthetic dataset** — a fixed, reproducible synthetic portfolio dataset built run-to-run identically; verified by a determinism/repeatability test (run twice → identical ids + audit chain).
+- **`irp_shared/synthetic` package** — `ids.py` (a fixed uuid5 namespace + `synthetic_id(key)`; `SYNTHETIC_TENANT_ID`/`SYNTHETIC_ACTOR_ID`; `SEED_EPOCH` + a deterministic `SeedClock.tick()`; `business_date`) + `builder.py` (`build_synthetic_dataset` → `SyntheticDatasetSummary`). Leaf tooling: `synthetic → {portfolio, position, valuation, transaction, reference, db}`; **nothing imports `synthetic`**.
+- **Governed service/binder seed path** — composes the **governed** binders (`record_event` audit hash chain + `ensure_manual_source`/`record_lineage`), **not** direct ORM inserts. Determinism is delivered through a **keyword-only, default-None deterministic-injection seam** (`entity_id`/`now`) added to the governed binders (portfolio/position/valuation/transaction/reference instrument+identifier) + their audit `_emit` helpers (`now → record_event(event_time=now)`); `record_event`'s hash payload **excludes** the AuditEvent surrogate PK, so injected `event_time` + deterministic order ⇒ a deterministic chain. **Production call sites pass nothing ⇒ byte-for-byte unchanged** (proven by the existing prod-path binder tests + an explicit prod-call-site-unchanged test). **`audit/service.py` UNTOUCHED** (frozen).
+- **Synthetic reference pack** — 3 instruments (SYNTH-BOND-A / SYNTH-EQ-B / SYNTH-CASH-C; `currency_code` strings; `issuer_id=None`) + 2 identifiers (a **structurally-invalid** synthetic ISIN `ZZ0000000001` + an INTERNAL scheme) — no real instrument/issuer/vendor identifiers.
+- **Synthetic portfolio hierarchy** — a 6-node subtree FUND → {STRAT-1 → {ACCT-1, ACCT-2}, STRAT-2 → ACCT-3} (bounded; exercises the ancestor/descendant resolvers).
+- **Synthetic transactions** — 3: a BUY, a reverse-with-price, and a SELL (the IA append-only reversal-as-new-record path).
+- **Synthetic positions** — 6 rows: incl. a SHORT (−200), an effective-dated supersede, and an as-known correction (the FR both-axes paths).
+- **Synthetic valuations** — 4 rows: incl. a correction and multiple `valuation_date`s; one account/equity holding deliberately has **no mark** (a stale/missing-mark edge case for the read-side holdings views).
+- **uuid5 deterministic IDs** — every synthetic row's id is `uuid5(_SYN_NS, key)`; no `uuid4`/`new_uuid`/`uuid1`/`random` (AST-fenced).
+- **Fixed injected timestamps** — a `SeedClock` yields `SEED_EPOCH + N seconds`; no `datetime.now`/`utcnow` in the seed path (AST-fenced); injected through the governed binders so temporal axes + the chain are deterministic.
+- **Never-auto-run guard** — not wired to migrations or app startup; raises `SyntheticSeedRefused` unless `allow_synthetic_seed=True` **and** `os.environ["IRP_ALLOW_SYNTHETIC_SEED"]=="1"` **and** the tenant is the reserved SYNTHETIC tenant (the `reference/bootstrap.seed_system_reference` never-auto-run precedent).
+- **Production / non-synthetic refusal guard** — refuses for any non-SYNTHETIC tenant and without the explicit confirmation + env gate; a production / wrong-tenant invocation fails closed. Writes **only** the reserved SYNTHETIC tenant's rows under FORCE RLS, **never BYPASSRLS** (PG FORCE-RLS tests: only the synthetic tenant's rows visible; a different tenant + a no-context session see ZERO rows; `verify_chain(...).ok is True`).
+- **No real client/vendor data** — SYNTH_* / neutral names only; a structurally-invalid synthetic ISIN; no real ISIN/CUSIP/SEDOL/LEI/exchange/agency names.
+- **No market/risk/exposure/`dataset_snapshot` scope** — capture-only: the seed only captures reference/hierarchy/transactions/positions/valuations through the existing governed binders; it computes nothing (no market value, no `quantity × mark`, no exposure aggregation, no `dataset_snapshot`). **No weakening of audit, lineage, RLS, entitlement, or temporal controls** — every synthetic row is fully audited + lineaged under tenant RLS; the seam is additive (default-None) and prod-path-neutral.
+- **Tests** — `test_synthetic.py` (20 SQLite: determinism/repeatability, refusal-without-the-gate, edge cases, an AST no-compute fence) + `test_synthetic_pg.py` (4 FORCE-RLS as the constrained `irp_app` role). The seed is uuid5-deterministic ⇒ **not idempotent** ⇒ seeded exactly **once** per PG module.
 
 ## P1C-5 key deliverables (closed, `0bef45b`, CI-green run #57)
 The platform's **first read-model / composition package** — read-only, computes nothing, persists nothing (read half of REQ-PPM-001/002; display-only mark read of REQ-PPM-003). **No REQ status change** (OD-P1C5-5).
@@ -138,6 +160,9 @@ REQ-PPM-001 (migration `0012`); the platform's **first domain entity** + the ent
 - **P1C-4 closeout project-memory refresh** — `6e3dcc1` (CI-green, run #55).
 - **P1C-5 holdings-views implementation plan** — `8a14173` (CI-green, run #56; OD-P1C5-1..6 signed off).
 - **P1C-5 read-only as-of holdings / portfolio views implementation** — `0bef45b` (CI-green, run #57). **P1C-5 CLOSED** — the first read-model / composition package (no entity, no migration).
+- **P1C-5 closeout project-memory refresh** — `867e576` (CI-green, run #58).
+- **P1C-6 deterministic synthetic dataset implementation plan** — `7dfdb79` (CI-green, run #59; audit conclusions folded; OD-P1C6-1..7 signed off).
+- **P1C-6 deterministic synthetic dataset implementation** — `3e9882d` (CI-green, run #60). **P1C-6 CLOSED** — the deterministic synthetic dataset (governed seam + never-auto-run). **The FULL P1C block (P1C-1…P1C-6) is DELIVERED.**
 
 ## P1B-2 key deliverables (closed, `32c7778`)
 REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evidence (the inverse of P1B-1).
@@ -171,21 +196,24 @@ REQ-SMR-004 (corporate_action portion); migration `0011`. The **last reference e
 With **P1B-1 (vocabularies/hybrid) + P1B-2 (legal_entity/issuer/counterparty) + P1B-3 (instrument/terms/identifier) + P1B-4 (corporate_action)** all closed and CI-green, the **Security-Master & Reference-Data block is complete**. **P1B-5** (reference-data ingestion mapping) is **conditional/deferred** (only if bulk loading is needed). The CAP-2 EV/FR reference entities (ENT-001..006/008) are realized; the *requirements* REQ-SMR-001/002/003/004 stay **In-Progress** (terms math, exposure-rollup calc, cross-vendor precedence, and QS-10/11 roll math respectively deferred to P1C/P2+).
 
 ## Next required action
-**P1C-6 PLANNING ONLY** — plan the **deterministic synthetic dataset** slice via the UltraCode planning workflow:
-a **deterministic synthetic portfolio dataset** (synthetic reference seed pack, synthetic portfolio hierarchy, synthetic
-transactions / positions / valuations) built with **`uuid5` deterministic IDs** + **fixed timestamps**, **no real
-client/vendor data**, shipped as a **labeled never-auto-run seed module** (explicit invocation only; never wired to a
-production post-migrate path). **On explicit approval. Planning only — do NOT implement P1C-6.** **P1C-6 fences:** no real
-or sensitive data; no production auto-run seed; no market data ingestion; no risk calculations; no exposure aggregation; no
-reporting/dashboard build; no P2+ work. See `next_actions.md`.
+**P1C CLOSEOUT / P2 READINESS REVIEW (PLANNING ONLY)** — with the **FULL P1C block delivered**, the next step is a P1C
+closeout + a readiness review for **P2** (market & private data, risk analytics, scenarios, limits, breach, reporting),
+**on explicit approval**. **P2 readiness focus:** (1) market data vs `dataset_snapshot` vs exposure **foundation** — their
+sequence/dependency; (2) whether `dataset_snapshot` must **precede** exposure aggregation; (3) how P2 should **consume** the
+P1C captured positions / valuations / holdings views (the read-model is the consumption surface — do not re-derive);
+(4) **preserve the capture-only boundaries (AD-017)** unless explicitly reopened. **Planning only — do NOT implement P2.**
+See `next_actions.md`.
 
 ## What MUST NOT be started yet
-- **P1C-6 (synthetic dataset) implementation** — until P1C-6 planning is approved (planning is the next step; plan / implement / commit are separate approvals).
-- **No real / sensitive data** in the synthetic dataset — synthetic-only, deterministic (`uuid5` + fixed timestamps); **no real client/vendor data**.
-- **No production auto-run seed** — the seed module is a **labeled never-auto-run** module (explicit invocation only; never wired to a prod post-migrate path).
-- **No market data ingestion / no pricing model / no valuation model** — P2; valuations are captured marks (OD-P1C-F).
-- **No risk calculations / no exposure aggregation / no `dataset_snapshot`** — deferred to P2 (AD-014/AD-017/OD-P1C-G/H).
-- **No reporting / dashboards build / real SSO / P2+ work** — deferred (AD-017 / AD-007 / AD-014).
+- **P2 implementation** — until the **P1C closeout / P2 readiness review AND P2 planning** are approved (closeout / review / plan / implement are separate approvals).
+- **No market data ingestion** — P2.
+- **No `dataset_snapshot`** — P2 (AD-014/AD-017).
+- **No exposure aggregation** — REQ-PPM-004 → P2 (AD-014/AD-017).
+- **No risk calculations** — P2.
+- **No pricing model** — P2.
+- **No valuation model** — P2; valuations stay captured marks (OD-P1C-F).
+- **No reporting / dashboard build** — P2 (AD-014).
+- **No real SSO** — AD-007 (the dev header shim is not a security boundary).
 - **ABAC enforcement** — anchored in P1C-1 but NOT enforced (enforcement → P6+).
 - **P1B-5** (reference-data ingestion mapping) — conditional/deferred (only if bulk loading is needed; not now).
 - **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen); no new audit code / permission / role / migration without the governed R-07 update.
@@ -194,7 +222,7 @@ reporting/dashboard build; no P2+ work. See `next_actions.md`.
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `0bef45b`) and whether this memory refresh was committed.
-- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — query the REST API).
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `3e9882d`) and whether this P1C-6 closeout memory refresh was committed.
+- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated).
 - `git remote -v` — origin is now SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0015_valuation` (P1C-5 holdings views are read-only — no new migration; the next migration `0016` lands only if a later slice persists a new entity).
+- Migration head is `0015_valuation` (P1C-6 is a never-auto-run seed module — no new migration; the next migration `0016` lands only if a later slice persists a new entity).

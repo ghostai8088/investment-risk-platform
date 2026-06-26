@@ -6,58 +6,66 @@
 ## Exact next step
 **DONE:** the **P1B block** + **P1C-0** (AD-017) → **P1C-1 BUILD** (`bb89c74`, #43): `portfolio` EV hierarchy → **P1C-2 BUILD**
 (`abb230f`, #46): `transaction` IA append-only → **P1C-3 BUILD** (`4ee124e`, #49): `position` FR → **P1C-4 BUILD** (`c5c5806`,
-#54): `valuation` FR captured marks (**REQ-PPM-003 Done**) → **P1C-4 memory** (`6e3dcc1`, #55) → **P1C-5 plan** (`8a14173`,
-#56; OD-P1C5-1..6 signed off) → **P1C-5 BUILD** (`0bef45b`, CI-green run #57; 8-lens reviewed, 0 block, 2 LOW fence folds):
-read-only as-of holdings / portfolio views — the platform's **first read-model / composition package** (`irp_shared/holdings/`
-+ `GET /portfolios/{id}/holdings`; **no entity, no migration, no write endpoint, no audit/lineage/DQ**). **No REQ status change.**
+#54): `valuation` FR captured marks (**REQ-PPM-003 Done**) → **P1C-4 memory** (`6e3dcc1`, #55) → **P1C-5 plan** (`8a14173`, #56)
+→ **P1C-5 BUILD** (`0bef45b`, #57): read-only as-of holdings / portfolio views (the first read-model package) → **P1C-5 memory**
+(`867e576`, #58) → **P1C-6 plan** (`7dfdb79`, #59; OD-P1C6-1..7 signed off) → **P1C-6 BUILD** (`3e9882d`, CI-green run #60;
+8-lens reviewed — a false-GREEN determinism test BLOCKER caught + fixed + re-validated env-unset): the **deterministic
+synthetic dataset** — the `irp_shared/synthetic` package (uuid5 IDs + fixed `SeedClock`) seeded through the **governed**
+binders via a keyword-only default-None seam (production call sites byte-for-byte unchanged); **never-auto-run + production /
+non-synthetic refusal guard**; SYNTHETIC tenant under FORCE RLS, never BYPASSRLS; **no entity, no migration, no real
+client/vendor data, no market/risk/exposure/dataset_snapshot**. **No REQ status change.** **The FULL P1C block
+(P1C-1…P1C-6) is DELIVERED.**
 
-**COMMIT-PENDING:** this `docs/project_memory/*` refresh (P1C-5 closeout; no code) — commit on explicit approval.
+**COMMIT-PENDING:** this `docs/project_memory/*` refresh (P1C-6 closeout; no code) — commit on explicit approval.
 
-**NEXT — P1C-6 PLANNING ONLY (on explicit approval):** plan the **deterministic synthetic dataset** slice — a synthetic
-reference seed pack + synthetic portfolio hierarchy + synthetic transactions / positions / valuations, built with **`uuid5`
-deterministic IDs** + **fixed timestamps**, **no real client/vendor data**, shipped as a **labeled never-auto-run seed
-module** (explicit invocation only). **Fences:** no real/sensitive data; no production auto-run seed; no market data
-ingestion; no risk calculations; no exposure aggregation; no reporting/dashboard build; no P2+ work.
-**Planning only — do NOT implement P1C-6.**
+**NEXT — P1C CLOSEOUT / P2 READINESS REVIEW, PLANNING ONLY (on explicit approval):** a P1C closeout + a readiness review for
+**P2** (market & private data, risk analytics, scenarios, limits, breach, reporting). **P2 readiness focus:** (1) market data
+vs `dataset_snapshot` vs exposure **foundation** — their sequence/dependency; (2) whether `dataset_snapshot` must **precede**
+exposure aggregation; (3) how P2 should **consume** the P1C captured positions / valuations / holdings views (the read-model
+is the consumption surface — do not re-derive); (4) **preserve the capture-only boundaries (AD-017)** unless explicitly
+reopened. **Planning only — do NOT implement P2.** **P2 stays unplanned/unbuilt until the closeout/readiness review AND P2
+planning are approved.**
 
-## Exact next prompt to run (when the user is ready for P1C-6 planning)
-> "Begin P1C-6 planning only: deterministic synthetic dataset. Do not write application code; do not create migrations; do
-> not implement. Produce the P1C-6 implementation plan (mirror p1c5_implementation_plan.md): a DETERMINISTIC synthetic
-> dataset — a synthetic reference seed pack (currencies/calendars/instruments/legal entities), a synthetic portfolio
-> hierarchy, and synthetic transactions / positions / valuations — built via the existing governed create paths, with
-> `uuid5` deterministic IDs (fixed namespace) + FIXED timestamps (no host-clock/random dependence), shipped as a LABELED
-> never-auto-run seed module (explicit invocation only; NEVER wired to a production post-migrate / auto-run path). Define:
-> module placement + invocation contract, determinism strategy, the synthetic data shape per entity, tenant scoping,
-> idempotency/re-run behavior, tests (determinism + idempotency + no-auto-run guard), acceptance, risks, open decisions,
-> controls, doc updates, and an 8-lens UltraCode adversarial review. STRICT EXCLUSIONS: NO real/sensitive data, NO
-> production auto-run seed, NO market data ingestion, NO risk calculations, NO exposure aggregation, NO reporting/dashboard
-> build, NO real SSO, NO P2+ work. Do not commit until I approve."
+## Exact next prompt to run (when the user is ready for the P1C closeout / P2 readiness review)
+> "Begin the P1C closeout / P2 readiness review (planning only): produce a P1C closeout note (the full P1C block P1C-1..P1C-6
+> delivered + CI-green; what is realized vs deferred; REQ-PPM status) and a P2 readiness review. Do not write application
+> code; do not create migrations; do not implement. The readiness review must settle: (1) the market-data vs
+> `dataset_snapshot` vs exposure FOUNDATION and their sequence/dependency; (2) whether `dataset_snapshot` must PRECEDE
+> exposure aggregation; (3) how P2 should CONSUME the P1C captured positions/valuations/holdings views (read-model as the
+> consumption surface); (4) which capture-only boundaries (AD-017) stay closed unless explicitly reopened. Identify the P2
+> sub-slice sequence + open decisions + risks, and run an 8-lens UltraCode adversarial review. STRICT EXCLUSIONS: NO P2
+> implementation, NO market data ingestion, NO dataset_snapshot, NO exposure aggregation, NO risk calculations, NO pricing
+> model, NO valuation model, NO reporting/dashboard build, NO real SSO. Do not commit until I approve."
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
-- **Each slice/step is separately gated** — closeout, plan, implementation, and commit are distinct approvals.
-- **Do not start the P1C-6 build** until its plan is approved (P1C-6 PLANNING is the next step; plan / implement / commit
-  are separate approvals). **No real/sensitive data, no production auto-run seed**; P2+ stays unplanned; P1B-5 stays
-  conditional/deferred.
+- **Each slice/step is separately gated** — closeout, readiness review, plan, implementation, and commit are distinct approvals.
+- **Do not start any P2 build** until the P1C closeout / P2 readiness review AND P2 planning are approved (the closeout /
+  readiness review is the next step; review / plan / implement / commit are separate approvals). P2 stays unplanned; P1B-5
+  stays conditional/deferred; the capture-only boundaries (AD-017) stay closed unless explicitly reopened.
 
 ## CI gates (must be green before a phase is "closed")
 - Backend (ruff format + lint, mypy, pytest), Frontend, **DB migration (Postgres)** incl. `alembic check` drift +
   the per-rail/per-entity RLS steps (Reference hybrid-RLS + Legal-entity + Instrument/identifier FR-bitemporal +
   Corporate-action symmetric-RLS + **Portfolio symmetric-RLS** + **Transaction symmetric-RLS + append-only** + **Position
   symmetric-RLS + FR-bitemporal** + **Valuation symmetric-RLS + FR-bitemporal** all shipped) + downgrade smoke, Documentation
-  check, Secret scan. **P1C-5 (read-only holdings views) added NO new migration/RLS step** — the migration job's last domain
-  step is still Valuation; that absence is the structural proof no table was persisted. (P1C-6 synthetic dataset is a seed
-  module — also no new migration/RLS step unless it persists a new entity, which it must not.)
-- `gh` CLI is **not installed** — query GitHub Actions via the REST API (or Docker `postgres:16` locally to
+  check, Secret scan. **P1C-6 (deterministic synthetic dataset) added NO new migration/RLS step** — it is a never-auto-run
+  seed module; the migration job's last domain step is still Valuation; that absence is the structural proof no table was
+  persisted (`alembic check` drift-clean, head stays `0015_valuation`). The synthetic builder + governed-seam tests ran in
+  Backend; the 4 synthetic FORCE-RLS tests ran in the Postgres job. **HEAD `3e9882d` = run #60 (id 28207899969) = success,
+  all 5 jobs** (verified via the REST API this session).
+- `gh` CLI is **not installed** — query GitHub Actions via the public-repo REST API (or Docker `postgres:16` locally to
   reproduce PG-only failures, as done throughout P1B/P1C). CI runs warning-free on the Node-24 action majors.
 
 ## Stop conditions (halt and ask)
-- Any request to start **P1C-6 planning** is fine **on explicit approval**; but do NOT pull in the **build**, or
-  **real/sensitive data / a production auto-run seed / market-data ingestion / risk / exposure aggregation / reporting /
-  dashboards**, ABAC enforcement, or any P2+ domain — separate, later, planned slices.
+- Any request to start the **P1C closeout / P2 readiness review** is fine **on explicit approval** (planning only); but do
+  NOT pull in any **P2 build**, or **market-data ingestion / `dataset_snapshot` / exposure aggregation / risk / pricing /
+  valuation models / reporting / dashboards / real SSO**, ABAC enforcement, or any P2+ domain — separate, later, planned slices.
 - Any request to start **P1B-5** (conditional/deferred) ahead of a bulk-loading driver.
-- Any change to **`audit/service.py`** (frozen) or any new audit code / permission / role without the governed
+- Any change to **`audit/service.py`** (frozen) or any new audit code / permission / role / migration without the governed
   update (R-07).
+- Any attempt to **wire the synthetic seed to a production / auto-run path**, **weaken its never-auto-run / refusal guard**,
+  or seed a **non-SYNTHETIC tenant** — refuse; the seed is explicit-invocation-only, SYNTHETIC-tenant-only, never BYPASSRLS.
 - A red CI on a just-committed slice → diagnose and fix (test-only fixes are in-scope for closing that slice).
 - Missing or ambiguous approval → ask; do not assume.
 - A stray **credential file** found on disk → do NOT inspect/use it; flag it for the user to revoke/rotate.
