@@ -29,7 +29,7 @@ exception is registered with the model version.
 |---|---|---|
 | Money storage | `DECIMAL` with scale **10**; computation in a decimal context of **≥34 significant digits** (decimal128-equivalent) | No binary float for money (QS-01) |
 | Display rounding | Round to the currency's **minor unit** (e.g., USD 2 dp) at presentation only | Internal precision preserved (QS-03) |
-| Rounding mode | **Round-half-to-even** (banker's rounding) | Global default; per-methodology exceptions documented (QS-04) |
+| Rounding mode | **Round-half-to-even** (banker's rounding) | Global default for aggregation; **registered exception — `ROUND_HALF_UP` for deterministic canonical serialization / `quantize`** (the snapshot/derived-result reproducibility path: e.g. P2-3 `exposure_aggregate.exposure_amount` `Numeric(28,6)` + the effective composite `fx_rate` `Numeric(28,12)`), so the self-recompute is exact-by-construction (QS-04; TR-13) |
 | FX base currency | **USD** as platform base/reporting currency | Configurable per tenant/portfolio (QS-07) |
 | FX conversion | Triangulate via base (USD); **mid** rates; rate as-of the valuation date from the designated source; rate version bound to run | QS-08/09 |
 | Missing data | **No silent zero-fill.** Use last-known-good with staleness flag within a configurable window (**default 5 business days** for liquid market data); beyond window mark stale + raise DQ exception; proxies only via approved `proxy_mapping` | QS-15/16/17 |
@@ -46,7 +46,7 @@ exception is registered with the model version.
 | QS-01 | Money is stored and computed as **decimal** with explicit precision/scale; **binary floating point is prohibited for monetary values**. |
 | QS-02 | Every monetary value carries an ISO 4217 currency; no "naked" amounts. |
 | QS-03 | Internal computation precision exceeds display precision; rounding occurs only at defined boundaries. |
-| QS-04 | Rounding convention is explicit per context (default: round-half-to-even / banker's rounding for aggregation); documented per methodology. |
+| QS-04 | Rounding convention is explicit per context (default: round-half-to-even / banker's rounding for aggregation); documented per methodology. **Registered exception:** deterministic **canonical serialization / `quantize` uses `ROUND_HALF_UP`** (the snapshot + derived-result reproducibility path — e.g. P2-3 `exposure_amount` and the effective composite `fx_rate`), so a stored value re-computes exactly from its stored, rounded inputs (supports TR-13). |
 | QS-05 | Rates and ratios are stored unitless with explicit convention (decimal vs percent vs basis points stated, never ambiguous). |
 | QS-06 | No silent `NaN`/`Inf`/null-to-zero: undefined results fail loudly and are flagged, not coerced (BR-14 limitation noted). |
 
@@ -56,7 +56,7 @@ exception is registered with the model version.
 |---|---|
 | QS-07 | FX rates sourced from a designated source per run; the rate's as-of date matches the calculation's valuation date. |
 | QS-08 | Cross rates are derived by triangulation through a defined base currency; direction (quote convention) is explicit. |
-| QS-09 | The FX rate version used is bound to the calculation run (reproducibility). |
+| QS-09 | The FX rate version used is bound to the calculation run (reproducibility). The **effective composite rate** produced by a triangulated/reciprocal path is itself a governed numeric value: the **multiplicative composite** of its legs, `ROUND_HALF_UP`-quantized to its declared scale, **version-pinned to the run** via the snapshot-captured FX components (P2-3 `exposure_aggregate.fx_rate` + `fx_legs` — leg references, sign-preserving; no abs/gross/net coercion, QS-06/QS-22). |
 
 ## 4. Dates, Calendars & Day-Count (QS)
 

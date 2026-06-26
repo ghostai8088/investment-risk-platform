@@ -18,9 +18,20 @@ DQ evaluator (additive); **NO exposure number, NO `calculation_run` wiring, NO `
 
 **COMMIT-PENDING:** this `docs/project_memory/*` refresh (P2-2 closeout; no code) — commit on explicit approval.
 
-**NEXT — P2-3 PLANNING ONLY (on explicit approval):** author the **P2-3 decision record + implementation plan** for
-`calculation_run` wiring + basic exposure. **Plan ONLY** — NO exposure/calc-run code, NO risk, NO P3+. Implementation is a
-**separate later approval**.
+**DONE — P2-3 PLANNING** (`d10c766`, CI #72 green): the **P2-3 decision record + implementation plan** (`calculation_run` wiring +
+basic exposure) committed; 8-lens reviewed (7 approve-with-changes / 1 approve / 0 block; 10 in-scope folds); the five OQ-P2-3
+sign-offs recorded. **DONE — P2-3 GOVERNANCE RATIFICATION** (this turn, pending commit): `exposure_aggregate` (ENT-014) + the
+`calculation_run` binding ratified into the source-of-truth governance docs — canonical model (ENT-014/ENT-026 cells), temporal
+standard (the AD-018 realization note), audit taxonomy (the `CALC.RUN_START/COMPLETE/FAIL` → `CALC.RUN_CREATE`/`STATUS_CHANGE`
+doc-vs-code reconciliation + the EVT-210 `EXPOSURE.*` reservation), entitlement model (`exposure.view`/`exposure.aggregate.run`,
+auditor_3l-in-view), control matrix (CTRL-009 executable + the P2-3 bindings), RTM + backbone (REQ-PPM-004, basic-exposure-only),
+the ADR log (**AD-018**), and the numerical standard (the HALF_UP canonical-serialization exception). **No code; no migration; head
+stays `0017_fx_rate`; `audit/service.py` FROZEN.**
+
+**NEXT — P2-3 IMPLEMENTATION (a separate later approval):** build the exposure slice per `p2_3_exposure_implementation_plan.md` §24 —
+migration `0018` (`exposure_aggregate` table + additive `calculation_run.environment_id`), the `irp_shared/exposure/` package, the
+snapshot FX-pinning extension, the lineage/entitlement wiring, `api/exposure.py`. The governance is now ratified, so the build
+**consumes** it (realizes it in code) rather than re-minting. NO risk / VaR / ES / factor / P3+.
 
 ## Exact next prompt to run (when the user is ready for P2-3 planning)
 > "Begin P2-3 planning only: the `calculation_run` wiring + basic exposure decision record + implementation plan. Plan EXACTLY

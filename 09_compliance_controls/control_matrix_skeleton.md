@@ -226,6 +226,23 @@ migration); **CTRL-023** (vendor-licensed FX tenant-scoped — NEVER hybrid; clo
 evaluators behavior-unchanged. **CTRL-009 / the AD-014 gate are UNTOUCHED** — FX produces no governed derived number (exposure
 stays P2-3, snapshot+run-gated). `audit/service.py` **FROZEN**. **No control weakened; no new CTRL minted.**
 
+**P2-3 ratification (basic exposure + `calculation_run` wiring — `exposure_aggregate` ENT-014, RATIFIED-IN-PLANNING 2026-06-26;
+AD-018; PLANNED, migration `0018` NOT yet built):** the platform's **FIRST official governed derived number**, which makes the
+**AD-014 / FW-RUN §5 / TR-15 gate LOAD-BEARING** (it had no producer before P2-3). Control bindings (all to **existing** CTRLs —
+**no control weakened, no new CTRL minted**): **CTRL-009 becomes EXECUTABLE** (no official derived number without a `dataset_snapshot`
++ a complete `calculation_run` — `input_snapshot_id` non-null + `code_version` + the additive `environment_id`; reproducible from the
+snapshot-pinned captured content per TR-09); **CTRL-006/018** (run-binding + lineage — the `dataset_snapshot → calculation_run`
+(`DEPENDS_ON`) + `calculation_run → exposure_aggregate` (`ORIGIN`, `run_id`-stamped) edges, via the generalized internal-lineage
+writer); **CTRL-013** (no lineage bypass); **CTRL-017** (`exposure_aggregate` declares `IMMUTABLE_APPEND_ONLY`, in
+`APPEND_ONLY_TABLES` + P0001 trigger + ORM guard — append-only derived result); **CTRL-011/023** (deny-by-default `exposure.view` /
+`exposure.aggregate.run` + symmetric FORCE-RLS, NEVER hybrid; a new **exposure symmetric-RLS CI step**); **CTRL-026** (the run reuses
+the `CALC.RUN_CREATE`/`CALC.RUN_STATUS_CHANGE` hash-chain — `verify_chain`); **CTRL-032** (fail-closed: a **pre-create refusal** = ZERO
+run/result/audit; a **post-create FAILED** run = committed FAILED run + ZERO result; an emit-path failure rolls the whole unit back).
+DQ gates fail closed **before any result write** (snapshot completeness + FX completeness + valuation-mark-required + cross-tenant) —
+reusing `run_quality_check`/`DATA.VALIDATE`, the `(params, dataset)` Protocol **unchanged**. **NO-RISK BOUNDARY:** exposure is **signed
+market value v1** (`MARKET_VALUE` only) — **NOT** VaR/Expected Shortfall/factor/sensitivity/scenario/stress/P&L/performance; those stay
+P3+. The additive `calc/service.py` `outcome` param is the only calc change; `audit/service.py` **FROZEN**.
+
 ## 5. Open Decisions
 
 | ID | Open Decision |

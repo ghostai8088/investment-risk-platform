@@ -119,6 +119,22 @@ P1B-0 splits below).
 > **captured marks, NOT computed by a valuation/pricing model, NO market-value rollup / NO position link** (OD-P1C-F). **ENT-012** transaction is **IA** (append-only event log) — **BUILT in P1C-2 (migration `0013`)** as the platform's **first DOMAIN append-only entity**: `__temporal_class__ = IMMUTABLE_APPEND_ONLY` (`system_from` only), in `APPEND_ONLY_TABLES` (the `irp_prevent_mutation` P0001 trigger) + the ORM `before_update`/`before_delete` guard; corrections are explicit reversal records (`reverses_transaction_id`), never updates (the original is never mutated). Capture-only — no position derivation. **ENT-014** `exposure_aggregate`
 > (IA, derived) + `dataset_snapshot` stay **P2** (AD-014) — no governed derived output without a bound input snapshot.
 
+> **P2-3 realization note (AD-018, 2026-06-26 — ratified-in-planning; conforms to §2A + §5, no AD-005 amendment):** `exposure_aggregate`
+> (**ENT-014**, already classed **IA** in §2A above) is the platform's **FIRST executable instance of the FW-RUN §5 / TR-15
+> run-bind** — the first official governed derived number. It is **IA, TRUE append-only** (in `APPEND_ONLY_TABLES`; a re-run is a
+> NEW `calculation_run` + new rows, never an edit) and **RUN-BOUND + SNAPSHOT-GATED**: no row exists without a non-null
+> `input_snapshot_id` + a complete run binding **`code_version`** (the deterministic anchor) + the additive **`environment_id`** (§5
+> item 7) + the initiator. Of the §5 bind, items 3/4/5 (`assumption_set`, RNG seed, scenario) and `model_version` are
+> **N/A-with-recorded-rationale** — a **model-less deterministic captured-mark rollup** (`signed_quantity × captured mark_value ×
+> effective FX rate`, **signed market value v1**), never a sham binding. **TR-15 fail-closed, split by timing:** a **pre-create
+> refusal** (missing prerequisite) leaves ZERO run + ZERO result + ZERO audit; a **post-create FAILED** run (a gate failing after
+> RUNNING) commits a FAILED run + `CALC.RUN_STATUS_CHANGE` but ZERO result rows. **Reproducibility (TR-09/TR-13):** the exposure
+> reads ONLY the snapshot's pinned components' **captured content** (positions, valuations, and FX as `COMPONENT_KIND_FX`) — **never
+> a live `reconstruct_*`/`resolve_*` read**; the FX is the **effective composite** of the pinned legs (`fx_legs` are leg references,
+> NOT a hard FK to a supersedable FR row), so a later vendor correction cannot change a historical exposure. **BASIC exposure ONLY —
+> NOT risk** (no VaR/ES/factor/sensitivity/scenario/stress/pricing/valuation model). **Planned, NOT implemented** (P2-3 is a later
+> separate slice; migration `0018`).
+
 ### Rationale (TR-21)
 | ID | Rationale |
 |---|---|
