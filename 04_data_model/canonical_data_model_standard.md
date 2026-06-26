@@ -153,6 +153,14 @@ Grouped by bounded context. IDs are stable; attributes listed are indicative (th
 | ENT-047 | `ingestion_batch` | One upload's run record (P1A-4, REQ-INT-001). IA-classed but **status-mutable** (the `calculation_run` precedent — not in `APPEND_ONLY_TABLES`; every transition audited via `DATA.INGEST`). Real FK to `data_source` (provenance root); no FK to any domain/canonical table. |
 | ENT-048 | `ingestion_staged_record` | Immutable parsed/neutralized raw row (P1A-4). IA, append-only (ORM guard + DB trigger). `payload` is a single **generic JSON** column — no domain shape, no domain FK; **not canonical data** (canonical mapping is deferred to P1B/P1C). |
 
+### Reproducibility — Input Snapshots (BC-05 / AD-014)
+| ID | Entity | Notes |
+|---|---|---|
+| ENT-049 | `dataset_snapshot` | **Reproducible input snapshot HEADER** (AD-014). IA, **TRUE append-only** (in `APPEND_ONLY_TABLES` — the `transaction` precedent, NOT the status-mutable `calculation_run` flavor). Pins a knowledge-time-cut input set by `(as_of_valid_at, as_of_known_at, as_of_valuation_date)` + a `manifest_hash`. **NO `status` column; NO `model_version` component** (model_version binds at the run, ENT-026). Reproducibility INFRASTRUCTURE — captures input versions, computes **no** derived number. |
+| ENT-050 | `dataset_snapshot_component` | Per-input **physical-version pin** of a `dataset_snapshot`. IA, true append-only. Captures `target_entity_type` + `target_entity_id` (surrogate row id) + `valid_from` + `system_from` (FR) + `record_version` + **`captured_content`** + `content_hash`. Component vocabulary (P2-1): **`PORTFOLIO` / `POSITION` / `VALUATION`**; **`FX` reserved for P2-2**, `PRICE`/`CURVE`/`REFERENCE` later. |
+
+> **P2-0 ratification note (AD-014 reproducibility primitive, 2026-06-26):** `dataset_snapshot` (ENT-049) + `dataset_snapshot_component` (ENT-050) are **ratified-in-planning** (`p2_0_decision_record.md` + `p2_1_dataset_snapshot_implementation_plan.md`) — the AD-014 reproducible input snapshot that **precedes any official derived output**. **Planned, NOT implemented** (migration head stays `0015_valuation`; no `snapshot` package). Temporal class **IA TRUE append-only**; **symmetric tenant-scoped RLS** (never hybrid/SYSTEM_TENANT); cross-tenant component binding **fails closed**. Physical-version pin = `target_entity_id` (surrogate row id) + `valid_from` + `system_from` + `record_version` + `captured_content` + `content_hash`; **FR records pin `valid_from`+`system_from`** (each FR version is a distinct immutable row); the **EV `portfolio` component pins NULL `system_from`** (no system axis) with `record_version` the authoritative drift discriminator (`captured_content` makes EV value-captured); the content hash is **SHA-256** over an **app-side canonical serialization** (deterministic field order; Decimal fixed-scale; ISO-8601 UTC-µs date/time; GUID lowercase; explicit null sentinel; **excludes the mutable close-out markers `valid_to`/`system_to`**). `calculation_run` (ENT-026) **binding begins in P2-3** — P2-1 prepares for it but wires nothing and produces **no** derived number. This **reopens** the AD-017 "`dataset_snapshot` stays P2" deferral (the P2 reproducibility-foundation phase, AD-014).
+
 ## 6. Lineage & Audit Hooks (mandatory)
 
 - Every record references its `source_id`; every derived record (results, aggregates, reports) records the upstream
@@ -166,7 +174,7 @@ Grouped by bounded context. IDs are stable; attributes listed are indicative (th
 |---|---|
 | OD-012 | Confirm primary instrument/entity identifier authority and vendor xref precedence. |
 | OD-013 | **CLOSED (P1C-0, 2026-06-23):** arbitrary adjacency tree — `parent_portfolio_id` self-FK, depth-capped at `MAX_HIERARCHY_DEPTH=32`, default-permissive `node_type` pairs (single `portfolio` EV table; AD-017 / REQ-PPM-001). |
-| OD-014 | Confirm storage split between relational SoR and time-series store for ENT-020…025 (AD-004). |
+| OD-014 | **RESOLVED (P2-0 ratification, 2026-06-26, via AD-004-R1):** **Postgres-first** behind the AD-004 market-data repository interface; TimescaleDB **deferred** to a measured volume/performance threshold (AD-004's own revisit trigger). The relational SoR backs ENT-020…025 (+ the ENT-049/050 snapshots) for P2 initial volumes; the repo interface keeps a future Timescale swap non-breaking. See **AD-004-R1**. *(orig: confirm storage split between relational SoR and time-series store for ENT-020…025, AD-004.)* |
 | OD-015 | Confirm netting-set / CSA modeling depth for counterparty (ENT-003 related). |
 
 ## 8. Dependencies

@@ -48,7 +48,10 @@ ENT-025 factor_return); positions (ENT-011); valuations (ENT-013); external/inte
 (ENT-001, e.g., coupon/maturity schedules).
 
 ### IA — immutable append-only
-Calculation runs and outputs (ENT-026 calculation_run, ENT-027 risk_result, ENT-028 sensitivity/exposure, ENT-014
+Reproducible input snapshots (**ENT-049 `dataset_snapshot` + ENT-050 `dataset_snapshot_component`** — the AD-014 reproducibility
+primitive; **TRUE append-only**, in `APPEND_ONLY_TABLES` with the `irp_prevent_mutation` trigger + ORM guard — the `transaction`
+precedent, distinct from the status-mutable `calculation_run`; **P2-0 ratification, 2026-06-26, planned-not-implemented**);
+calculation runs and outputs (ENT-026 calculation_run, ENT-027 risk_result, ENT-028 sensitivity/exposure, ENT-014
 exposure_aggregate, ENT-030 scenario_result); versioned-immutable definitions (ENT-029 scenario_definition, ENT-036
 model_assumption set, ENT-035 model_version); transactions as an event log (ENT-012); manual overrides (ENT-041); lineage
 edges (ENT-042); DQ and reconciliation results (ENT-039, ENT-040); report versions (ENT-046); breach and breach actions as

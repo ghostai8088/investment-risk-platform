@@ -198,6 +198,23 @@ env gate + a refuse-non-synthetic-tenant guard (all tested). Synthetic-only data
 no real vendor/agency/client names, no real ISIN/CUSIP/SEDOL/LEI. **No REQ status change.** As construction phases
 open, controls will be split to specific bounded contexts and capabilities and given Test/Evidence detail.
 
+**P2-0 / P2-1 ratification (reproducible input snapshot — `dataset_snapshot`, AD-014, 2026-06-26 — PLANNED, NOT IMPLEMENTED):** the
+P2 reproducibility primitive (ENT-049 `dataset_snapshot` + ENT-050 `dataset_snapshot_component`) is **ratified into governance**
+(`p2_0_decision_record.md` + `p2_1_dataset_snapshot_implementation_plan.md`); **no code/migration this phase** (`migration_head`
+stays `0015_valuation`). Control mapping at activation (P2-1 implementation): **CTRL-009** (reproducibility — the snapshot
+**pins input record versions + a SHA-256 manifest hash** so a later run reproduces; **AD-014: no official derived number is
+produced before snapshot/run binding** — P2-1 produces **none**, exposure binds `calculation_run` at P2-3); **CTRL-017** (the
+**IA TRUE-append-only** reading — both tables in `APPEND_ONLY_TABLES` + the `irp_prevent_mutation` P0001 trigger + ORM
+`before_update`/`before_delete` guard, the `transaction` precedent; **distinct** from the status-mutable `calculation_run`);
+**CTRL-006/013** (lineage — a **narrow internal snapshot/component lineage writer** roots one `data_snapshot`-sourced ORIGIN
+edge per pinned input; **not** a broad lineage-framework rewrite); **CTRL-011/023** (tenant isolation — **symmetric** FORCE-RLS,
+**never hybrid/SYSTEM_TENANT**; **cross-tenant component binding FAILS CLOSED** via the explicit-tenant-predicate resolvers,
+whole-unit rollback, on SQLite **and** PG); **CTRL-032** (fail-closed co-transactional governed write — snapshot + audit
+(`SNAPSHOT.CREATE`, reserved) + lineage + the **caller-side completeness DQ gate** (reuses `run_quality_check` / `DATA.VALIDATE`,
+**no DQ-protocol change**; a coverage gap fails closed and **prevents snapshot creation**)). `audit/service.py` stays **FROZEN**;
+`entitlement/bootstrap.py` UNCHANGED. **No control is weakened; no new CTRL minted** (existing controls gain a planned P2-1
+binding).
+
 ## 5. Open Decisions
 
 | ID | Open Decision |
