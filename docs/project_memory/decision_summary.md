@@ -1,11 +1,13 @@
 # Decision Summary
 
-> **As of 2026-06-25.** Ratified and load-bearing decisions. **Do not relitigate the "Ratified" items unless
+> **As of 2026-06-26.** Ratified and load-bearing decisions. **Do not relitigate the "Ratified" items unless
 > the user explicitly reopens them.** Authoritative sources: `11_decision_log/architecture_decision_log.md`
-> (AD-*), the per-slice plan docs, and `10_delivery_backlog/p1b0_decision_record.md` (OD-P1B-*).
+> (AD-*), the per-slice plan docs, and `10_delivery_backlog/{p1b0_decision_record,p2_0_decision_record}.md` (OD-*).
 
 ## Major ratified architecture decisions (AD-*, Accepted by H-04)
-- **AD-004** segregated/append-only audit store; native uuid + JSONB on Postgres.
+- **AD-004** segregated/append-only audit store; native uuid + JSONB on Postgres; datastore = PostgreSQL SoR + TimescaleDB for market data (behind a repo interface) + S3 + segregated audit.
+- **AD-004-R1** (Accepted P2-0, 2026-06-26) **storage-split refinement of AD-004 — Postgres-first behind the market-data repo interface.** ENT-020…025 market data + the ENT-049/050 reproducibility snapshots land in **Postgres** (reusing FORCE-RLS/audit/lineage/DQ) **through the AD-004 repo interface**; **TimescaleDB deferred** to a measured volume/perf threshold (a non-breaking future swap). **Honest deviation from AD-004's "Timescale initially."** Resolves **OD-014**; the future Timescale leg must enforce tenant scoping in the interface.
+- **AD-014** (Accepted H-06/H-04) **no governed derived output without a bound, reproducible input snapshot** — the gate the P2 `dataset_snapshot` (ENT-049/050) realizes; **reopened by P2** (the reproducibility-foundation phase).
 - **AD-005** **selective bitemporality**: **FR** (bitemporal) for risk-driving inputs, **IA** (immutable append-only) for outputs/events/audit, **EV** (effective-dated) for reference/config. Risk = entity misclassification.
 - **AD-007** real identity via OIDC/SSO (deferred; dev header shim is not a security boundary).
 - **AD-008 / BR-17** tenant isolation; investment data MNPI-adjacent → isolation by default.
@@ -145,13 +147,26 @@ A deterministic test/demo/UI enabler (OD-P1C-L; the P1C prerequisite that replac
 - **Capture-only (AD-017):** **NO market / risk / exposure / `dataset_snapshot` scope** — the seed only captures reference/hierarchy/transactions/positions/valuations through the existing governed binders; it computes nothing (no market value, no `quantity × mark`, no exposure aggregation, no `dataset_snapshot`). **No weakening of audit, lineage, RLS, entitlement, or temporal controls** — the seam is additive (default-None) and prod-path-neutral.
 - **The review caught a real BLOCKER (the load-bearing lesson):** the determinism test was a **false-GREEN** — it depended on `IRP_ALLOW_SYNTHETIC_SEED` being exported in the dev shell, so it raised `SyntheticSeedRefused` (and FAILED) in a clean shell. Fixed with an **autouse `monkeypatch` env-gate fixture** (no process-global `os.environ` mutation), then **re-validated with the var UNSET** (`make check` passed, full suite green) — CI run #60 (which has no such env var) green is the real confirmation. 24 tests (20 SQLite + 4 PG FORCE-RLS). The seed is uuid5-deterministic ⇒ **not idempotent** ⇒ seeded exactly **once** per PG module.
 
+## P2-0 / P2-1 design decisions (RATIFIED into governance — `2d19992` + `d7be981` + `63be23a`; reproducibility-first)
+The P2 reproducibility-foundation, planned (P2-0/P2-1) and ratified into the source-of-truth (P2-ratification). Sign-offs: OD-P2-A…L. **All RESERVED/PLANNED — no code; `audit/service.py` FROZEN, `entitlement/bootstrap.py` UNCHANGED, migration head `0015_valuation`.**
+- **Reproducibility-first sequencing (OD-P2-D):** P2-1 `dataset_snapshot` → P2-2 FX → P2-3 `calculation_run` + basic exposure → P2-4 price → P2-5 curves → P2-6 benchmark. The AD-014-gated first governed derived number (exposure) needs only positions+valuations(+FX), so the **reproducibility primitive precedes any market-data history**.
+- **`dataset_snapshot` (ENT-049) + `dataset_snapshot_component` (ENT-050) — IA TRUE append-only (OD-P2-A/B):** in `APPEND_ONLY_TABLES`, the `transaction` precedent (NOT the status-mutable `calculation_run`). The component pins the **physical version** (`target_entity_id` surrogate id + `valid_from`/`system_from` (FR; NULL for EV) + `record_version`) + **`captured_content`** + **SHA-256 app-side canonical hash** (deterministic order; Decimal fixed-scale; ISO-8601 UTC-µs; GUID lowercase; null sentinel; **excludes the close-out markers `valid_to`/`system_to`**). Vocab PORTFOLIO/POSITION/VALUATION (FX reserved P2-2). **NO status column, NO model_version component** (model binds at the run).
+- **`calculation_run` binding (OD-P2-C):** the snapshot is bound **through** `calculation_run` (ENT-026); `code_version` is the deterministic-rollup anchor (`model_version` N/A for a model-less rollup); FW-RUN §5/TR-15 full bind; an additive `environment_id` column lands in **P2-3**. **P2-1 wires nothing and produces no derived number.**
+- **FX (OD-P2-E):** `fx_rate` FR per the ratified QS-07/08/09 + OD-030 (USD-base default configurable; explicit pair direction; MID rates; rate bound to the run; triangulation-through-base is a ratified lookup, not analytics) — **P2-2**, not P2-1.
+- **Tenancy (OD-P2-G):** market data + the snapshots are **symmetric tenant-scoped** (never hybrid/SYSTEM_TENANT; a shared-global set would require AD-013-R2); cross-tenant component binding **fails closed**.
+- **Storage (OD-P2-H):** **AD-004-R1** Postgres-first behind the interface (above); OD-014 resolved.
+- **Audit/entitlement (R-07):** `SNAPSHOT.CREATE` reserved at **EVT-190** (activation in P2-1); `snapshot.view`/`.create` reserved (`data_steward` maker; `auditor_3l` excluded); reuse `DATA.VALIDATE` for the DQ gate; reuse the shipped `CALC.RUN_CREATE`/`CALC.RUN_STATUS_CHANGE` for the run lifecycle (the taxonomy `RUN_START/COMPLETE/FAIL` labels are a P2-3/R-07 reconciliation item).
+- **DQ + lineage (OD-P2-I/J):** a **caller-side completeness gate** (reuse `run_quality_check`; `DQEvaluator` Protocol UNTOUCHED; gap → fail closed → no snapshot) + a **narrow internal snapshot/component lineage writer** (re-resolve the snapshot via a local Core Table; no import cycle; no framework rewrite).
+- **REQ-PPM-004 (exposure aggregation) → In-Progress (OD-P2-H/Part 3):** the AD-014 `dataset_snapshot` prereq is P2-1; the `calculation_run`-bound aggregation builds at P2-3.
+
 ## Deferred (sound; do not pull forward)
-OD-012 identifier precedence → beyond P1C (vendor-ingestion phase); OD-015 counterparty netting/CSA → P2+ (counterparty-credit, re-targeted out of P1C by OD-P1C-K); exposure aggregation (REQ-PPM-004) + `dataset_snapshot` → P2 (AD-017/AD-014); REQ-INT-002/003 vendor/SFTP/API
+OD-012 identifier precedence → beyond P1C (vendor-ingestion phase); OD-015 counterparty netting/CSA → P2+ (counterparty-credit, re-targeted out of P1C by OD-P1C-K); exposure aggregation (REQ-PPM-004, now **In-Progress**) builds at **P2-3** over a bound `dataset_snapshot` (the P2-1 reproducibility primitive is planned + ratified; AD-017/AD-014); ENT-022 volatility_surface + ENT-025 factor_return + factor models / risk / VaR / ES → **P3+**; REQ-INT-002/003 vendor/SFTP/API
 adapters → P9; OD-042 production AV → later; manual_override/BR-7 enforcement → P6/P7; reconciliation
 (REQ-DQR-002) and override workflow (REQ-DQR-003) → P7; model validation/tiering (REQ-MDG-002/003) → P7;
 WORM/anchored audit hardening → later.
 
 ## Do not relitigate unless explicitly reopened
-All AD-* above; the selective-bitemporality classes; the no-silent-failure DQ policy; the
+All AD-* above (incl. **AD-004-R1**); the selective-bitemporality classes; the no-silent-failure DQ policy; the
 audit-frozen / no-new-audit-code-without-R-07 rule; the IA-status-mutable precedent; the durable-evidence
-ingestion contract; the P1B-0 OD-P1B-* resolutions (once committed/ratified).
+ingestion contract; the P1B-0 OD-P1B-* resolutions; **the P2-0 OD-P2-A…L decisions + the P2 `dataset_snapshot` governance
+ratification (ENT-049/050, SNAPSHOT.CREATE reserved, snapshot.* reserved, AD-004-R1, REQ-PPM-004→In-Progress)** — committed/ratified `63be23a`.
