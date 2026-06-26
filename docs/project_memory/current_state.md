@@ -11,37 +11,42 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `63be23a` — "Ratify P2 dataset snapshot governance". Chain since P1C-6 build: `3e9882d` (P1C-6 build, #60) → `9584ba4` (P1C-6 closeout memory, #61) → `7070dff` (P1C closeout / P2 readiness review, #62) → `2d19992` (P2-0 decision record + P2 implementation plan, #63) → `d7be981` (P2-1 dataset_snapshot implementation plan, #64) → `63be23a` (P2 dataset_snapshot governance ratification, #65).
-- **Local == origin:** yes; **only this `docs/project_memory/*` refresh (P2 closeout) is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** — `63be23a` = GitHub Actions **run #65 (id 28245890604)** = success — verified via the REST API this session. A **docs-only** governance ratification (8 markdown files); the migration job gained NO new step (head stays `0015_valuation`). Prior P2 runs all green: P2-1 plan #64 (`d7be981`), P2-0 #63 (`2d19992`), P1C closeout/readiness #62 (`7070dff`), P1C-6 closeout memory #61 (`9584ba4`), P1C-6 build #60 (`3e9882d`).
-- **Migration head:** `0015_valuation` — **unchanged through the entire P2 planning + ratification phase** (all planning/governance docs, no code; the next migration `0016_dataset_snapshot` lands only when **P2-1 is implemented**).
+- **origin/main HEAD:** `3629baa` — "Implement P2-1 dataset snapshot reproducibility primitive". Chain since P2 ratification: `63be23a` (P2 governance ratification, #65) → `d45a31b` (P2 ratification closeout memory, #66) → `3629baa` (**P2-1 `dataset_snapshot` implementation**, #67).
+- **Local == origin:** yes; **only this `docs/project_memory/*` refresh (P2-1 closeout) is uncommitted** (docs-only, commit pending). No code.
+- **Latest CI:** **GREEN** — `3629baa` = GitHub Actions **run #67 (id 28251757848)** = success — all 5 jobs (Backend, **DB migration (Postgres)**, Frontend, Secret scan, Documentation check), verified via the REST API this session. The migration job gained a **new step** — *Snapshot symmetric-RLS + append-only tests (AD-014 / ENT-049/050 / BR-17/BR-18)* — alongside *Apply migrations* (0016), *Schema drift check* (`alembic check`), and *Revert migrations* (downgrade smoke), all green. Prior: P2-1 closeout memory #66 (`d45a31b`), P2 governance ratification #65 (`63be23a`), P2-1 plan #64 (`d7be981`), P2-0 #63 (`2d19992`).
+- **Migration head:** `0016_dataset_snapshot` — **advanced from `0015_valuation` at P2-1** (`3629baa`; the first migration since P1C-4). `alembic check` drift-clean; downgrade `0016→0015→head` smoke green.
 
 ## Working tree (uncommitted)
-- **This `docs/project_memory/*` refresh** (P2 closeout — P1C closeout/readiness + P2-0 + P2-1 plan + P2 governance ratification) — modified tracked files, commit pending approval. **No code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
+- **This `docs/project_memory/*` refresh** (P2-1 closeout) — modified tracked files, commit pending approval. **Docs-only: no code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.** (The P2-1 code — the `snapshot` package, migration `0016`, the `snapshot.view`/`.create` grants in `entitlement/bootstrap.py`, the snapshot CI step — all shipped in `3629baa`, not in this docs refresh.)
 
 ## Current active gate
-**P2 PLANNING + GOVERNANCE RATIFICATION are COMPLETE and CI-green.** The full P1C block (P1C-1…P1C-6) is **DELIVERED**
-(capture-only domain base, AD-017). On top of it, the **P2 reproducibility-foundation phase is planned and ratified into the
-governance source-of-truth** — **all planning-only, NO code**:
-- **P1C closeout / P2 readiness review** (`7070dff`, run #62; 8-lens) — chose **reproducibility-first** P2 sequencing (snapshot before any official derived number).
-- **P2-0 decision record + P2 implementation plan** (`2d19992`, run #63; 8-lens, 0 block) — OD-P2-A…L; the reproducibility-first subphase structure **P2-1 snapshot → P2-2 FX → P2-3 calculation_run+exposure → P2-4 price → P2-5 curves → P2-6 benchmark**.
-- **P2-1 `dataset_snapshot` implementation plan** (`d7be981`, run #64; 8-lens, 0 block) — the detailed build plan for the AD-014 reproducibility primitive (§1–§24).
-- **P2 `dataset_snapshot` governance ratification** (`63be23a`, run #65; **7-lens, 7× approve, 0 block**) — recorded into the source-of-truth (see next section).
-**The next step is P2-1 IMPLEMENTATION ONLY** — build the `dataset_snapshot` primitive per `10_delivery_backlog/p2_1_dataset_snapshot_implementation_plan.md` §24, **on explicit approval. P2-1 implementation is NOT started** (no `snapshot` package; migration head `0015_valuation`; `audit/service.py` FROZEN; `entitlement/bootstrap.py` unchanged). Strict planning-first, commit-only-on-explicit-approval cadence holds (plan / review / ratify / implement / commit are separate approvals).
+**P2-1 `dataset_snapshot` IMPLEMENTATION is COMPLETE, COMMITTED (`3629baa`), and CI-green (run #67).** The full P1C block is
+**DELIVERED**; the P2 reproducibility-foundation was planned + ratified (`7070dff` #62 → `2d19992` #63 → `d7be981` #64 →
+`63be23a` #65); and now the **AD-014 reproducible input-snapshot primitive (ENT-049/050) is REALIZED in code** (see the next
+section). **The next step is P2-2 PLANNING ONLY (FX rates)** — author the P2-2 decision record + implementation plan, **on
+explicit approval**; **P2-2 implementation is NOT started**. Strict planning-first, commit-only-on-explicit-approval cadence
+holds (plan / review / implement / commit are separate approvals).
 
-## P2 governance ratification (committed `63be23a`, CI-green run #65) — RESERVED/PLANNED, no code
-Ratified-in-planning into the governance source-of-truth (8 markdown files). **`audit/service.py` FROZEN; `entitlement/bootstrap.py` UNCHANGED; migration head `0015_valuation`; no `snapshot` package.** 7-lens reviewed (7× approve, 0 block — zero drift from the committed plans).
-- **ENT-049 `dataset_snapshot`** + **ENT-050 `dataset_snapshot_component`** minted into the canonical model — the AD-014 reproducible input snapshot (header + per-input physical-version pin: `target_entity_id` (surrogate id) + `valid_from`/`system_from` (FR; NULL for EV) + `record_version` + `captured_content` + `content_hash`; SHA-256 app-side canonical serialization excluding `valid_to`/`system_to`; vocab PORTFOLIO/POSITION/VALUATION, FX reserved P2-2; **no status / no model_version component**).
-- **IA TRUE append-only** temporal classification (in `APPEND_ONLY_TABLES`, the `transaction` precedent — NOT the status-mutable `calculation_run`); recorded in `temporal_reproducibility_standard.md` §2A.
-- **`SNAPSHOT.CREATE` RESERVED at the EVT-190 block** in the audit taxonomy — **not activated** (activation only in P2-1 impl; DC-2 metadata only; no read/verify emit).
-- **`snapshot.view` / `snapshot.create` RESERVED** in the entitlement model — `data_steward` maker; `auditor_3l` excluded; deny-by-default; **NOT minted** in `bootstrap.py`.
-- **AD-004-R1** — Postgres-first behind the AD-004 market-data repository interface (honest deviation from "Timescale initially"; Timescale deferred to a measured threshold); **OD-014 resolved**.
-- **REQ-PPM-004 (exposure aggregation) → In-Progress** — the AD-014 `dataset_snapshot` prereq is P2-1; the `calculation_run`-bound aggregation builds at P2-3 (RTM control set CTRL-006/018 + FW-RUN/DEP-LIN/CAP-1 preserved).
-- **Control matrix** maps reproducibility / append-only / lineage / RLS / fail-closed to **existing** CTRLs (009/017/006/013/011/023/032) — **no new CTRL minted, no control weakened**; records "no official derived number before snapshot/run binding".
-- **No implementation yet.**
-
-## P2-1 implementation focus (the NEXT build — on explicit approval)
-`dataset_snapshot` + `dataset_snapshot_component` (IA TRUE append-only) · **physical-version pins** (surrogate id + `valid_from`/`system_from` + `record_version`) · **`captured_content` + canonical SHA-256 hash** (app-side, excludes close-out markers) · the **cross-tenant binding-integrity invariant** (resolve only under the acting tenant's RLS; foreign proprietary id → fail closed, no snapshot) · a **narrow internal snapshot lineage writer** (not a framework rewrite) · a **caller-side completeness DQ gate** (reuses `run_quality_check`/`DATA.VALIDATE`, no Protocol change; gap fails closed) · **NO exposure number, NO `calculation_run` wiring** (readiness only; binding → P2-3). Migration `0016_dataset_snapshot`. Full spec: `p2_1_dataset_snapshot_implementation_plan.md` §24.
+## P2-1 key deliverables (closed, `3629baa`, CI-green run #67) — the AD-014 reproducibility primitive REALIZED
+The reproducible input snapshot (ENT-049/050): an immutable, knowledge-time pin of the exact governed input record versions a
+later `calculation_run` (P2-3) will consume. It **computes no derived number** (no `quantity × mark`, no exposure) and **wires no
+`calculation_run`** — reproducibility infrastructure only. New `irp_shared/snapshot/` package + `api/snapshots.py`; migration
+`0016_dataset_snapshot` (the first since P1C-4). **`audit/service.py` UNTOUCHED.** 8-lens UltraCode review (16 agents) → 6
+in-scope folds.
+- **`dataset_snapshot` (ENT-049) + `dataset_snapshot_component` (ENT-050)** — header + per-input physical-version pin. **IA TRUE append-only**: both in `APPEND_ONLY_TABLES` → the `irp_prevent_mutation` **P0001 DB trigger** (reusing the `0001` function) **paired with** the ORM `before_update`/`before_delete` guard (`AppendOnlyViolation`); no `status` column; the `transaction` precedent (NOT the status-mutable `calculation_run`).
+- **Physical-version pinning** — `target_entity_id` (surrogate row id) + `pinned_valid_from` + `pinned_system_from` (FR; NULL for the EV `portfolio` kind) + `pinned_record_version`.
+- **`captured_content` + SHA-256 canonical `content_hash`** — app-side canonical serialization (sorted keys, compact, `ensure_ascii=False`, reusing `audit.hashing`) **excluding** the close-out markers `valid_to`/`system_to`; Decimal **HALF_UP-quantized** to column scale so the hash is **identical across the AD-011 SQLite/PG split**; FR byte-stable under later supersede/correction, EV `portfolio` drift detected by `record_version`.
+- **Header `manifest_hash`** — SHA-256 over the header cutoffs + `component_count` (anti-truncation) + the sorted component hashes.
+- **`build_snapshot` governed binder** — composes the shipped tenant-predicated reads (`reconstruct_subtree_holdings_as_of` + `attach_marks_as_of`), re-resolves each input by id under the acting tenant, pins + captures + hashes; imports **no** `calc` symbol.
+- **Narrow internal snapshot/component lineage writer** — `record_internal_lineage` (new `SOURCE_TYPE_DATA_SNAPSHOT='data_snapshot'`) re-resolves the snapshot via a **local Core Table** (no import from `snapshot`; the dq `_DATA_SOURCE` precedent); one `snapshot → component` edge per component; **not a framework rewrite**.
+- **Caller-side completeness DQ gate** — the gap (non-zero-quantity bound positions lacking a same-as-of mark) encoded as `{'present': None}` rows through the shipped `run_quality_check` NOT_NULL rule (the `DQEvaluator` Protocol + the two shipped evaluators **untouched**); a gap → `DataQualityError` → CTRL-032 whole-unit rollback (no snapshot).
+- **`SNAPSHOT.CREATE` (EVT-190) ACTIVATED** — caller-side constant (`snapshot/events.py`) to the FROZEN `record_event`; one event per create; DC-2 metadata only (`component_count`/`manifest_hash`/cutoffs, never the captured payloads); zero on read/verify.
+- **`snapshot.view` / `snapshot.create` minted** (`bootstrap.py`; seeded by migration `0002` on fresh migrate) — `data_steward` holds both (maker); `risk_analyst_1l`/`risk_manager_2l` hold `.view`; `auditor_3l` **excluded**; parity-tested. Deny-by-default.
+- **`POST /snapshots` + `GET /snapshots/{id}` + `GET /snapshots/{id}/verify`** — create (gated `snapshot.create`; 201; the response is built **pre-commit** so the tenant-scoped read is not blanked by the post-commit GUC clear under PG FORCE RLS; 404/409/422 mapping; whole-unit rollback) + read + verify (gated `snapshot.view`; re-resolves each component, reports drift; emits no audit event).
+- **Symmetric tenant-scoped RLS** — `USING == WITH CHECK == own-tenant`, ENABLE+FORCE (migration `0016`); **NEVER hybrid** (no SYSTEM_TENANT; the closed 5-table hybrid set asserted unchanged on PG).
+- **Cross-tenant binding-integrity invariant** — every input is resolved **only under the acting tenant**; a foreign proprietary id resolves to zero rows and **fails closed pre-write** (no snapshot). No BYPASSRLS app path.
+- **Scope fences** — **no exposure calculation / no `exposure_aggregate`**; **no `calculation_run` created or wired** (the snapshot id is the future P2-3 referent only). AST fence: no multiplication in `service`/`serialize`, no `calc` import, nothing imports `snapshot`. Tests: `test_snapshot.py` (SQLite logic+fences) + `test_snapshot_pg.py` (PG FORCE-RLS/P0001-trigger/cross-tenant/audit-chain, 9) + `test_snapshot_endpoint.py` (entitlement/404/409/422). The 6 review folds: POST empty-`components[]`-under-FORCE-RLS fix · `_norm_decimal` HALF_UP determinism · the new snapshot CI step · plan §17 position-supersede + completeness-rollback lineage/audit + verify-no-emit test gaps. Five cross-slice fences flipped (test_position/valuation/reference_entities/transaction removed `dataset_snapshot` from their P2+-forbidden lists; test_synthetic `0016→0017`).
+- **`make check` green** (501 SQLite); **PG green** (`alembic upgrade 0001→0016` + `alembic check` drift-clean + the 9-test snapshot PG suite + downgrade smoke). **REQ-PPM-004** stays In-Progress — the AD-014 prereq is now realized; the run-bound exposure aggregation builds at **P2-3**.
 
 ## P1C-6 key deliverables (closed, `3e9882d`, CI-green run #60) — completes the FULL P1C block
 A deterministic test/demo/UI enabler (OD-P1C-L; the P1C prerequisite that replaced P1B-5). **No new entity, no migration, no REQ status change** — it composes the already-shipped governed binders into a fixed, reproducible synthetic dataset.
@@ -174,6 +179,8 @@ REQ-PPM-001 (migration `0012`); the platform's **first domain entity** + the ent
 - **P2-0 decision record + P2 implementation plan** — `2d19992` (CI-green, run #63; 8-lens, 0 block). OD-P2-A…L; subphases P2-1…P2-6.
 - **P2-1 dataset_snapshot implementation plan** — `d7be981` (CI-green, run #64; 8-lens, 0 block). The AD-014 reproducibility-primitive build plan.
 - **P2 dataset_snapshot governance ratification** — `63be23a` (CI-green, run #65; 7-lens, 7× approve). ENT-049/050 + SNAPSHOT.CREATE (EVT-190 reserved) + snapshot.* (reserved) + AD-004-R1 + REQ-PPM-004→In-Progress.
+- **P2 ratification closeout project-memory refresh** — `d45a31b` (CI-green, run #66; docs-only).
+- **P2-1 `dataset_snapshot` implementation** — `3629baa` (CI-green, run #67; 8-lens, 6 in-scope folds). **P2-1 CLOSED** — the AD-014 reproducible input-snapshot primitive (ENT-049/050) realized; **migration head `0015_valuation` → `0016_dataset_snapshot`** (the first migration since P1C-4) + the first new Snapshot symmetric-RLS CI step. NO exposure number, NO `calculation_run` wiring.
 
 ## P1B-2 key deliverables (closed, `32c7778`)
 REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evidence (the inverse of P1B-1).
@@ -207,19 +214,19 @@ REQ-SMR-004 (corporate_action portion); migration `0011`. The **last reference e
 With **P1B-1 (vocabularies/hybrid) + P1B-2 (legal_entity/issuer/counterparty) + P1B-3 (instrument/terms/identifier) + P1B-4 (corporate_action)** all closed and CI-green, the **Security-Master & Reference-Data block is complete**. **P1B-5** (reference-data ingestion mapping) is **conditional/deferred** (only if bulk loading is needed). The CAP-2 EV/FR reference entities (ENT-001..006/008) are realized; the *requirements* REQ-SMR-001/002/003/004 stay **In-Progress** (terms math, exposure-rollup calc, cross-vendor precedence, and QS-10/11 roll math respectively deferred to P1C/P2+).
 
 ## Next required action
-**P2-1 IMPLEMENTATION ONLY** — build the **`dataset_snapshot` reproducibility primitive** per
-`10_delivery_backlog/p2_1_dataset_snapshot_implementation_plan.md` §24 (the verbatim kickoff prompt): the two IA true-append-only
-tables (migration `0016_dataset_snapshot`), the value-capturing binder via the set-returning enumerators, the cross-tenant
-binding-integrity invariant, the narrow internal lineage writer, the caller-side completeness DQ gate, the `SNAPSHOT.CREATE`
-activation (R-07 block already reserved) + `snapshot.view`/`.create` mint, and the §17 test matrix — with an 8-lens review and
-`make check` + PG green. **On explicit approval. P2-1 implementation is NOT started.** Build **nothing else**.
+**P2-2 PLANNING ONLY (FX rates)** — author the **P2-2 decision record + implementation plan** for `fx_rate` (an **FR /
+bitemporal** market input): explicit currency-pair **direction**, **MID** rate, a configurable base currency (USD default) +
+triangulation-through-base **if ratified** (a deterministic lookup, not analytics; per QS-07/08/09 + OD-030) — with the planning
+UltraCode workflow, then commit the plan **on explicit approval**. **PLANNING ONLY — no FX code, no currency-conversion
+analytics unless explicitly approved.** P2-2 implementation is a **separate later approval**. Build **nothing else**.
 
 ## What MUST NOT be started yet
-- **P2-2 / FX implementation** — the next subphase after P2-1; do not pull forward.
-- **P2-3 / exposure implementation** — `calculation_run` wiring + `exposure_aggregate`; gated behind P2-1+P2-2.
-- **No price history** (P2-4) · **no curves** (P2-5) · **no benchmarks** (P2-6).
+- **P2-2 / FX implementation** — **only the P2-2 PLANNING is next**; no FX code until the P2-2 plan is approved. No currency-conversion analytics unless explicitly approved.
 - **No exposure calculation / no `exposure_aggregate`** — the first governed derived number is P2-3, snapshot+run-gated (AD-014).
-- **No risk calculations / VaR / ES / factor / sensitivities** — P3+.
+- **No `calculation_run` wiring** — the P2-1 snapshot id is the future P2-3 referent only (binding → P2-3).
+- **No price history** (P2-4) · **no curves** (P2-5) · **no benchmarks** (P2-6).
+- **No factor model** — ENT-022 volatility_surface / ENT-025 factor_return → P3+.
+- **No risk calculations / VaR / ES / sensitivities** — P3+.
 - **No market data ingestion** (FX/price/curve) — P2-2+.
 - **No reporting / dashboard build** — P2 (AD-014).
 - **No P3+ work** — factor models, covariance/vol, scenarios, limits, breach, reporting, real SSO.
@@ -231,7 +238,7 @@ activation (R-07 block already reserved) + `snapshot.view`/`.create` mint, and t
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `63be23a`) and whether this P2 closeout memory refresh was committed.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `3629baa`) and whether this P2-1 closeout memory refresh was committed.
 - Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated).
 - `git remote -v` — origin is now SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0015_valuation` (unchanged through all P2 planning + ratification; the next migration `0016_dataset_snapshot` lands only when P2-1 is implemented).
+- Migration head is `0016_dataset_snapshot` (advanced from `0015_valuation` at P2-1 / `3629baa`; the next P2-2 FX migration lands only when P2-2 is implemented — planning is next).
