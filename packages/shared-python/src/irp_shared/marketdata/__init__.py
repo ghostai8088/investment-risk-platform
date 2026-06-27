@@ -2,9 +2,10 @@
 
 FX is the first tenant (``fx_rate``, ENT-024); P2-4 price / P2-5 curves / P2-6 benchmark join
 additively. Leaf domain package: imports ``{reference, lineage, dq, audit, db}`` one-way; imports
-**no** ``calc`` / ``snapshot`` / ``exposure`` symbol; nothing imports ``marketdata``. Captured
-market
-data ONLY — no analytics, no exposure, no ``calculation_run`` (OD-P2-E/F/G).
+**no** ``calc`` / ``snapshot`` / ``exposure`` symbol. Captured market data ONLY — no analytics, no
+exposure, no ``calculation_run`` (OD-P2-E/F/G). (P2-3: the ``snapshot`` binder + the ``exposure``
+compute import the PURE leg helpers ``resolve_conversion_legs`` / ``compose_effective_rate`` — a
+one-way ``{snapshot, exposure} -> marketdata`` dependency; ``marketdata`` still imports neither.)
 """
 
 from __future__ import annotations
@@ -16,6 +17,11 @@ from irp_shared.marketdata.events import (
     MARKET_FX_UPDATE_EVENT,
     FxRateActor,
     ensure_vendor_source,
+)
+from irp_shared.marketdata.legs import (
+    FxLeg,
+    compose_effective_rate,
+    resolve_conversion_legs,
 )
 from irp_shared.marketdata.models import FX_RATE_TYPES, RATE_TYPE_MID, FxRate
 from irp_shared.marketdata.service import (
@@ -50,4 +56,7 @@ __all__ = [
     "ConvertResult",
     "FxRateNotFound",
     "DEFAULT_BASE",
+    "resolve_conversion_legs",
+    "compose_effective_rate",
+    "FxLeg",
 ]

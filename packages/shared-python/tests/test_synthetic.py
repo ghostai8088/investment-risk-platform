@@ -304,6 +304,18 @@ def test_governed_path_audit_lineage_and_chain(seeded: Session) -> None:
     )  # the per-tenant audit chain verifies
 
 
+def test_synthetic_seed_produces_no_governed_derived_number(seeded: Session) -> None:
+    # OD-P2-L: the synthetic seed is CAPTURE-ONLY — it produces ZERO calculation_run and ZERO
+    # exposure_aggregate rows (governed derived numbers come ONLY from the AD-014/FW-RUN gate, never
+    # from a seed). The no-compute AST fence (no Mult) is the static guard; this is the runtime
+    # proof.
+    from irp_shared.calc.models import CalculationRun
+    from irp_shared.exposure import ExposureAggregate
+
+    assert seeded.execute(select(func.count()).select_from(CalculationRun)).scalar_one() == 0
+    assert seeded.execute(select(func.count()).select_from(ExposureAggregate)).scalar_one() == 0
+
+
 # --- 10 never-auto-run guard + 11 non-synthetic refusal ---
 
 
@@ -485,9 +497,9 @@ def test_no_migration_and_no_entity() -> None:
     versions = root / "migrations" / "versions"
     for py in versions.glob("*.py"):
         assert "synthetic" not in py.read_text().lower(), f"{py} references synthetic"
-    # P2-1 legitimately owns 0016 (dataset_snapshot); the synthetic slice still adds no migration,
-    # so the next slot (0018+) must remain empty here (no surprise migration from this slice).
-    assert not list(versions.glob("0018*")), "no 0018 migration may be added by the synthetic slice"
+    # P2-1/P2-2/P2-3 legitimately own 0016/0017/0018; the synthetic slice still adds no migration,
+    # so the next slot (0019+) must remain empty here (no surprise migration from this slice).
+    assert not list(versions.glob("0019*")), "no 0019 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -

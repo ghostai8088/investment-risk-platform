@@ -20,6 +20,7 @@ def create_run(
     model_version_id: str | None = None,
     assumption_set_id: str | None = None,
     code_version: str | None = None,
+    environment_id: str | None = None,
 ) -> CalculationRun:
     run = CalculationRun(
         tenant_id=str(tenant_id),
@@ -31,6 +32,7 @@ def create_run(
         model_version_id=model_version_id,
         assumption_set_id=assumption_set_id,
         code_version=code_version,
+        environment_id=environment_id,
     )
     session.add(run)
     session.flush()
@@ -56,7 +58,16 @@ def update_run_status(
     new_status: RunStatus,
     *,
     actor_id: str | None = None,
+    outcome: str = "success",
 ) -> CalculationRun:
+    """Transition the run's ``status`` (in place) and emit ``CALC.RUN_STATUS_CHANGE``.
+
+    ``outcome`` (P2-3, OD-P2-3-F/H — additive, default ``"success"`` so every existing caller is
+    behavior-unchanged) forwards to the FROZEN ``record_event``; a P2-3 exposure run passes
+    ``outcome="failure"`` on a **post-create FAILED** transition (a gate failing after RUNNING ⇒ the
+    FAILED run + this event are committed, with ZERO result rows). ``audit/service.py`` is untouched
+    —
+    ``record_event`` already accepts ``outcome``."""
     before = run.status
     run.status = new_status.value
     if new_status in TERMINAL_STATUSES:
@@ -75,5 +86,6 @@ def update_run_status(
         action="status_change",
         before_value={"status": before},
         after_value={"status": run.status},
+        outcome=outcome,
     )
     return run

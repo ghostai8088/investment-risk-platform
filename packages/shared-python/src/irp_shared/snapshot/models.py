@@ -41,14 +41,19 @@ PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (PURPOSE_EXPOSURE_INPUT, PURPOSE_ADHOC, PURPOSE_TEST)
 
-#: Controlled-vocab ``component_kind`` values for P2-1 (FX/PRICE/CURVE/REFERENCE reserved later).
+#: Controlled-vocab ``component_kind`` values (PRICE/CURVE/REFERENCE reserved later).
 COMPONENT_KIND_PORTFOLIO = "PORTFOLIO"
 COMPONENT_KIND_POSITION = "POSITION"
 COMPONENT_KIND_VALUATION = "VALUATION"
+#: P2-3 (OD-P2-3-E): a pinned ``fx_rate`` (ENT-024) leg — captured so a base-currency exposure run
+#: is reproducible from the snapshot alone (the exposure compute reads this captured content, never
+#: a live FX read). Minted additively; the tables are unchanged (no schema redesign).
+COMPONENT_KIND_FX = "FX"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
+    COMPONENT_KIND_FX,
 )
 
 

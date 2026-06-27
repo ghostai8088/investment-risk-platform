@@ -496,9 +496,17 @@ def test_marketdata_imports_no_calc_exposure_snapshot_risk() -> None:
 
 
 def test_nothing_imports_marketdata() -> None:
+    """``marketdata`` is a leaf, EXCEPT ``models.py`` (every model) and the P2-3 consumers of the
+    PURE FX leg helpers: ``snapshot`` (pins FX legs at build) + ``exposure`` (composes the effective
+    rate over captured legs). ``marketdata`` still imports neither — a one-way dependency."""
     root = pathlib.Path(fx_service.__file__).parents[1]
     for path in root.rglob("*.py"):
-        if "marketdata" in path.parts or path.name == "models.py":
+        if (
+            "marketdata" in path.parts
+            or "snapshot" in path.parts
+            or "exposure" in path.parts
+            or path.name == "models.py"
+        ):
             continue
         text = path.read_text()
         assert "import irp_shared.marketdata" not in text, path
@@ -526,7 +534,9 @@ def test_fx_rate_table_registered_but_not_append_only() -> None:
     assert issubclass(FxRate, FullReproducibleMixin)
 
 
-def test_migration_head_is_0017() -> None:
+def test_migration_0017_chain_position() -> None:
+    # P2-3 advanced the head to 0018_exposure_aggregate; 0017_fx_rate keeps its chain position
+    # (down_revision 0016) and is reachable in the revision walk (no longer the head).
     from alembic.script import ScriptDirectory
 
     root = pathlib.Path(fx_service.__file__)
@@ -534,5 +544,6 @@ def test_migration_head_is_0017() -> None:
         assert root != root.parent, "alembic.ini not found"
         root = root.parent
     script = ScriptDirectory(str(root / "migrations"))
-    assert script.get_current_head() == "0017_fx_rate"
     assert script.get_revision("0017_fx_rate").down_revision == "0016_dataset_snapshot"
+    revs = {r.revision for r in script.walk_revisions()}
+    assert "0017_fx_rate" in revs

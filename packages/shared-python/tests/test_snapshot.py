@@ -582,10 +582,11 @@ def test_snapshot_computes_no_product_no_calc_import() -> None:
 
 def test_nothing_imports_snapshot() -> None:
     """``snapshot`` is a leaf: no other ``irp_shared`` package imports it at runtime, EXCEPT the
-    central ``models.py`` aggregator (which must import every model for ``Base.metadata``)."""
+    central ``models.py`` aggregator (every model) and the P2-3 ``exposure`` run consumer (which
+    reads the bound snapshot's pinned components — the AD-014 single-bind)."""
     root = pathlib.Path(snapshot_service.__file__).parents[1]
     for path in root.rglob("*.py"):
-        if "snapshot" in path.parts or path.name == "models.py":
+        if "snapshot" in path.parts or "exposure" in path.parts or path.name == "models.py":
             continue
         text = path.read_text()
         assert "import irp_shared.snapshot" not in text, path

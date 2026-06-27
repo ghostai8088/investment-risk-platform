@@ -30,9 +30,14 @@ from irp_shared.temporal import TemporalClass
 SOURCE_TYPE_DATA_SOURCE = "data_source"
 #: P2-1: a ``dataset_snapshot`` (ENT-049) source node — snapshot -> pinned-input-version edges.
 SOURCE_TYPE_DATA_SNAPSHOT = "data_snapshot"
+#: P2-3 (OD-P2-3-J): a ``calculation_run`` (ENT-026) source node — run -> derived-result edges.
+SOURCE_TYPE_CALCULATION_RUN = "calculation_run"
 
 #: Edge relationship roles (controlled vocab).
 EDGE_KIND_ORIGIN = "ORIGIN"
+#: P2-3 (OD-P2-3-J): a dependency edge (``dataset_snapshot`` --DEPENDS_ON--> ``calculation_run``).
+#: (NOTE: "DEP-LIN" is the RTM/control traceability token, NOT an ``edge_kind`` — DR-P2-3-J.)
+EDGE_KIND_DEPENDENCY = "DEPENDS_ON"
 
 
 class DataSource(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):

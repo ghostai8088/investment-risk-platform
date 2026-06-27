@@ -52,6 +52,12 @@ class CalculationRun(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Bas
     assumption_set_id: Mapped[str | None] = mapped_column(GUID, nullable=True)
     random_seed: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     code_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # P2-3 (OD-P2-3-F): the deployment/region environment the run executed in — part of the FW-RUN
+    # §5
+    # bind (temporal §5 item 7). Additive, nullable (migration 0018, on this status-mutable table —
+    # a
+    # free run-environment label, NOT a security boundary).
+    environment_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False

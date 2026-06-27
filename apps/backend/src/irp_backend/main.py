@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from irp_backend.api.dq import router as dq_router
+from irp_backend.api.exposure import router as exposure_router
 from irp_backend.api.holdings import router as holdings_router
 from irp_backend.api.ingest import router as ingest_router
 from irp_backend.api.lineage import router as lineage_router
@@ -45,3 +46,4 @@ app.include_router(valuations_router)
 app.include_router(holdings_router)
 app.include_router(snapshots_router)
 app.include_router(marketdata_router)
+app.include_router(exposure_router)

@@ -17,8 +17,9 @@ bare ``session.get``) at the FROZEN cutoffs, re-serializes, and compares ``conte
 authoritative reproducibility check. FR components are byte-stable under later supersede/correction;
 an EV ``portfolio`` amend (``record_version`` bump) is reported as drift.
 
-One-way imports: ``snapshot -> {portfolio, position, valuation, holdings, lineage, dq, audit, db}``;
-nothing imports ``snapshot``.
+One-way imports: ``snapshot -> {portfolio, position, valuation, holdings, marketdata, lineage, dq,
+audit, db}`` (P2-3 adds ``marketdata`` for FX-leg pinning — imports NO ``calc``/``exposure`` symbol,
+creates/wires no ``calculation_run``); nothing imports ``snapshot``.
 """
 
 from __future__ import annotations
@@ -41,10 +42,13 @@ from irp_shared.holdings import (
 )
 from irp_shared.holdings.service import HoldingRow
 from irp_shared.lineage.service import record_internal_lineage
+from irp_shared.marketdata import DEFAULT_BASE, resolve_conversion_legs
+from irp_shared.marketdata.service import FxRateNotVisible, resolve_fx_rate
 from irp_shared.portfolio import PortfolioNotVisible, resolve_portfolio
 from irp_shared.position import PositionNotVisible, resolve_position
 from irp_shared.snapshot.events import SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
+    COMPONENT_KIND_FX,
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
@@ -54,6 +58,7 @@ from irp_shared.snapshot.models import (
 )
 from irp_shared.snapshot.serialize import (
     content_hash,
+    fx_content,
     manifest_hash,
     portfolio_content,
     position_content,
@@ -182,10 +187,20 @@ def build_snapshot(
     as_of_known_at: datetime | None = None,
     as_of_valuation_date: date | None = None,
     binding_predicate_version: str = DEFAULT_BINDING_PREDICATE,
+    base_currency: str | None = None,
 ) -> DatasetSnapshot:
     """Build one immutable ``dataset_snapshot`` over the bound portfolio subtree (governed). See the
     module docstring. ``as_of_known_at`` defaults to now and is FROZEN onto the header;
-    ``as_of_valuation_date`` defaults to ``date(as_of_valid_at)``."""
+    ``as_of_valuation_date`` defaults to ``date(as_of_valid_at)``.
+
+    P2-3 (OD-P2-3-E): when ``base_currency`` is given (the ``EXPOSURE_INPUT`` case), the binder also
+    pins, for each distinct mark currency != base, the convert-path ``fx_rate`` legs to that base as
+    ``COMPONENT_KIND_FX`` components — so a later exposure run is reproducible from the snapshot
+    alone
+    (it reads the captured FX, never live market data). This is the FX-completeness gate:
+    ``resolve_conversion_legs`` fails closed (:class:`~irp_shared.marketdata.FxRateNotFound`, before
+    any write) if a leg is missing. When ``base_currency`` is ``None`` (the P2-1 behavior) no FX is
+    pinned — backward-compatible. Still computes NO derived number (no ``qty x mark``)."""
     if purpose not in SNAPSHOT_PURPOSES:
         raise SnapshotPurposeError(purpose)
     known = as_of_known_at if as_of_known_at is not None else utcnow()
@@ -217,6 +232,7 @@ def build_snapshot(
     #    safety) and capture its canonical content. component spec = (kind, target_type, row, hash).
     specs: list[tuple[str, str, Any, str, str]] = []
     seen_portfolios: set[str] = set()
+    mark_currencies: set[str] = set()
     for e in enriched:
         h = e.holding
         pos = resolve_position(session, h.position_id, acting_tenant=acting_tenant)
@@ -228,6 +244,30 @@ def build_snapshot(
         if e.mark is not None:
             val = resolve_valuation(session, e.mark.valuation_id, acting_tenant=acting_tenant)
             _append_spec(specs, COMPONENT_KIND_VALUATION, "valuation", val, valuation_content(val))
+            if val.currency_code is not None:
+                mark_currencies.add(val.currency_code)
+
+    # 3b. P2-3: pin the FX legs (EXPOSURE_INPUT). For each distinct mark currency != base, pin the
+    #     convert-path fx_rate rows (triangulation pivot = DEFAULT_BASE). FX-completeness fails
+    #     closed (FxRateNotFound) BEFORE any write if a leg is missing as-of.
+    if base_currency is not None:
+        seen_fx: set[str] = set()
+        for ccy in sorted(mark_currencies):
+            if ccy == base_currency:
+                continue
+            for fx_row in resolve_conversion_legs(
+                session,
+                from_currency=ccy,
+                to_currency=base_currency,
+                valid_at=as_of_valid_at,
+                acting_tenant=acting_tenant,
+                known_at=known,
+                base=DEFAULT_BASE,
+            ):
+                if fx_row.id in seen_fx:
+                    continue
+                seen_fx.add(fx_row.id)
+                _append_spec(specs, COMPONENT_KIND_FX, "fx_rate", fx_row, fx_content(fx_row))
 
     # 4. No empty / foreign-scope snapshot (fail closed before any write).
     if not specs:
@@ -351,6 +391,10 @@ def _reresolve_content(
         return valuation_content(
             resolve_valuation(session, comp.target_entity_id, acting_tenant=acting_tenant)
         )
+    if comp.component_kind == COMPONENT_KIND_FX:
+        return fx_content(
+            resolve_fx_rate(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
     return portfolio_content(
         resolve_portfolio(session, comp.target_entity_id, acting_tenant=acting_tenant)
     )
@@ -367,7 +411,7 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
     for comp in comps:
         try:
             live = _reresolve_content(session, comp, acting_tenant=acting_tenant)
-        except (PositionNotVisible, ValuationNotVisible, PortfolioNotVisible):
+        except (PositionNotVisible, ValuationNotVisible, PortfolioNotVisible, FxRateNotVisible):
             drifted.append(comp.id)
             continue
         if content_hash(serialize_content(live)) != comp.content_hash:

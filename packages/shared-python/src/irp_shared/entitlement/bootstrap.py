@@ -65,7 +65,14 @@ PERMISSIONS: list[tuple[str, str]] = [
     # (granted to the read tiers + admin); `position.edit` is the NEW maker verb minted here (a
     # position is captured/superseded/corrected — `.edit`, not `.record`; FR is close-out-updated).
     ("position.edit", "Edit positions"),
+    # P2-3 exposure (ENT-014, the first governed derived number). `exposure.aggregate.run`
+    # pre-exists as a seeded reserved-unwired code; P2-3 WIRES it + mints `exposure.view`.
+    # `.aggregate.run` is the run-the-governed-compute verb (a derived number is *run*, not
+    # edited/recorded). `auditor_3l` is INCLUDED in `.view` (the FIRST domain perm to grant the 3L
+    # auditor a read — a governed OUTPUT is 3L-oversight scope, the dq.result.view/lineage.view
+    # precedent; OD-P2-3-I/OQ-P2-3-2).
     ("exposure.aggregate.run", "Run exposure aggregation"),
+    ("exposure.view", "View exposure aggregates"),
     # P1C-2 transaction (additive; PROPRIETARY tenant-scoped, IA append-only). `.record` is the
     # append-only governed-write verb (a transaction is recorded, never edited — no `.edit`).
     ("transaction.view", "View transactions"),
@@ -159,6 +166,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # maker/admin-only; auditor_3l excluded.
         "marketdata.view",
         "marketdata.ingest",
+        # P2-3 exposure: steward is a maker — holds run + view (reads its own writes).
+        "exposure.aggregate.run",
+        "exposure.view",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -185,6 +195,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "snapshot.view",
         # P2-2 market data: read-tier view-only (marketdata.ingest is maker/admin-only).
         "marketdata.view",
+        # P2-3 exposure: the 1L analyst RUNS exposure (maker) + views the results.
+        "exposure.aggregate.run",
+        "exposure.view",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -217,6 +230,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "snapshot.view",
         # P2-2 market data: read-tier view-only (marketdata.ingest is maker/admin-only).
         "marketdata.view",
+        # P2-3 exposure: 2L view-only (exposure.aggregate.run is maker/admin-only).
+        "exposure.view",
         "model.inventory.view",
         "dq.result.view",
         "lineage.view",
@@ -229,6 +244,10 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.currency.view",
         "reference.rating_scale.view",
         "reference.calendar.view",
+        # P2-3 exposure: the 3L auditor VIEWS governed derived outputs (the deliberate inclusion —
+        # OD-P2-3-I; distinct from the operational input SoD that excludes auditor from
+        # portfolio/transaction/position/valuation/marketdata).
+        "exposure.view",
     ],
 }
 

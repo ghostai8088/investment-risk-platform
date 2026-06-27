@@ -22,9 +22,10 @@ from typing import Any
 from irp_shared.audit.hashing import canonicalize, sha256_hex
 
 #: Decimal scales per column (canonical_data_model — Position.quantity Numeric(28,8); valuation /
-#: position mark/cost_basis Numeric(20,6)).
+#: position mark/cost_basis Numeric(20,6); fx_rate.rate Numeric(28,12)).
 _SCALE_QUANTITY = 8
 _SCALE_MONEY = 6
+_SCALE_FX_RATE = 12
 
 
 def _norm_datetime(value: datetime) -> str:
@@ -107,6 +108,29 @@ def portfolio_content(row: Any) -> dict[str, Any]:
         "status": row.status,
         "description": row.description,
         "valid_from": _norm_datetime(row.valid_from),
+        "record_version": row.record_version,
+    }
+
+
+def fx_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of an ``fx_rate`` (FR) version (P2-3 FX component). The rate
+    is
+    captured at the FX scale 12 (Numeric(28,12)); ``rate_date``/``rate_type``/``base``/``quote`` are
+    the immutable logical key. Close-out markers (``valid_to``/``system_to``) are EXCLUDED (the FR
+    content is immutable; the row is close-out-UPDATEd) — the ``valuation`` precedent."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "base_currency": row.base_currency,
+        "quote_currency": row.quote_currency,
+        "rate_date": row.rate_date.isoformat(),
+        "rate": _norm_decimal(row.rate, _SCALE_FX_RATE),
+        "rate_type": row.rate_type,
+        "rate_source": row.rate_source,
+        "restatement_reason": row.restatement_reason,
+        "supersedes_id": (None if row.supersedes_id is None else _norm_guid(row.supersedes_id)),
+        "valid_from": _norm_datetime(row.valid_from),
+        "system_from": _norm_datetime(row.system_from),
         "record_version": row.record_version,
     }
 
