@@ -1,6 +1,6 @@
 # Claude Operating Instructions
 
-> **As of 2026-06-26.** How Claude Code works on this project. Read with `current_state.md`, `next_actions.md`,
+> **As of 2026-06-27.** How Claude Code works on this project. Read with `current_state.md`, `next_actions.md`,
 > and `decision_summary.md`. These encode the user's required cadence — follow them exactly.
 
 ## Operating model (UltraCode)
@@ -64,7 +64,7 @@ analogous plan/decision return format the user specifies.) **Then hold for commi
   the constrained `irp_app` role (grant UPDATE/DELETE on IA tables so append-only proves the **P0001 trigger**,
   not a 42501 privilege denial); **re-set tenant context after any commit before a read-back** (commit clears
   the transaction-local GUC — the `0282359` lesson).
-- Migrations sequential (head `0017_fx_rate`; **advanced from `0016_dataset_snapshot` at P2-2** (`c257e5c`) — persisting ENT-024 `fx_rate`; the next migration lands when **P2-3 exposure/calc-run is implemented**, incl. the additive `calculation_run.environment_id`); `alembic check` is a drift gate
+- Migrations sequential (head `0018_exposure_aggregate`; **advanced from `0017_fx_rate` at P2-3** (`da178fc`) — persisting ENT-014 `exposure_aggregate` + the additive `calculation_run.environment_id`; the next migration lands when **P2-4 price history is implemented**); `alembic check` is a drift gate
   (`compare_type=False`); NAMING_CONVENTION `pk_/ix_/uq_/fk_`; register new models in `irp_shared.models`.
   Each new tenant table → add a CI RLS step. **Hybrid (AD-013-R1) tables** use the asymmetric loop
   (`USING own OR SYSTEM_TENANT` / `WITH CHECK own`) — the symmetric loop stays for proprietary/tenant-scoped

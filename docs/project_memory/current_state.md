@@ -2,7 +2,7 @@
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this first, then `project_state.yaml`, `next_actions.md`, and
-> `claude_operating_instructions.md`. **As of 2026-06-26.** Values that drift are flagged; re-verify the
+> `claude_operating_instructions.md`. **As of 2026-06-27.** Values that drift are flagged; re-verify the
 > ones in "Re-check at session start" before acting.
 
 ## Repository
@@ -11,22 +11,40 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `c257e5c` — "Implement P2-2 fx_rate captured FX market data and conversion". Chain since P2-1: `3629baa` (**P2-1 `dataset_snapshot` implementation**, #67) → `85ff5b2` (P2-1 closeout memory, #68) → `6020b03` (P2-2 plan, #69) → `c257e5c` (**P2-2 `fx_rate` implementation**, #70).
-- **Local == origin:** yes; **only this `docs/project_memory/*` refresh (P2-2 closeout) is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** — `c257e5c` = GitHub Actions **run #70 (id 28258782538)** = success — all 5 jobs (Backend, **DB migration (Postgres)**, Frontend, Secret scan, Documentation check), verified via the REST API this session. The migration job gained a **new step** — *FX rate symmetric-RLS + hybrid-currency tests (ENT-024 / OD-P2-E/G / BR-17)* — alongside *Apply migrations* (0017), *Schema drift check* (`alembic check`), and *Revert migrations* (downgrade smoke), all green. Prior: P2-2 plan #69 (`6020b03`), P2-1 closeout memory #68 (`85ff5b2`), P2-1 implementation #67 (`3629baa`).
-- **Migration head:** `0017_fx_rate` — **advanced from `0016_dataset_snapshot` at P2-2** (`c257e5c`). `alembic check` drift-clean; downgrade `0017→0016→head` smoke green.
+- **origin/main HEAD:** `da178fc` — "Implement P2-3 calculation run wiring and basic exposure". Chain since P2-2: `c257e5c` (**P2-2 `fx_rate` implementation**, #70) → `adf4ac5` (P2-2 closeout memory, #71) → `d10c766` (P2-3 plan, #72) → `851f976` (P2-3 governance ratification, #73) → `da178fc` (**P2-3 exposure implementation**, #74).
+- **Local == origin:** yes; **only this `docs/project_memory/*` refresh (P2-3 closeout) is uncommitted** (docs-only, commit pending). No code.
+- **Latest CI:** **GREEN** — `da178fc` = GitHub Actions **run #74** = success — all 5 jobs (Backend, **DB migration (Postgres)**, Frontend, Secret scan, Documentation check), verified via the REST API this session. The migration job gained a **new step** — *Exposure symmetric-RLS + append-only tests (ENT-014 / AD-014 / AD-018 / BR-17/BR-18)* — alongside *Apply migrations* (0018), *Schema drift check* (`alembic check`), and *Revert migrations* (downgrade smoke), all green. Prior: P2-3 governance ratification #73 (`851f976`), P2-3 plan #72 (`d10c766`), P2-2 closeout memory #71 (`adf4ac5`), P2-2 implementation #70 (`c257e5c`).
+- **Migration head:** `0018_exposure_aggregate` — **advanced from `0017_fx_rate` at P2-3** (`da178fc`): the `exposure_aggregate` table + the additive `calculation_run.environment_id` column. `alembic check` drift-clean; downgrade `0018→0017→base→head` smoke green.
 
 ## Working tree (uncommitted)
-- **This `docs/project_memory/*` refresh** (P2-2 closeout) — modified tracked files, commit pending approval. **Docs-only: no code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.** (The P2-2 code — the `irp_shared/marketdata` package, migration `0017`, the `marketdata.*` grants, the `RANGE` DQ evaluator, the hybrid-aware `resolve_currency`, the FX CI step, the governance-doc updates — all shipped in `c257e5c`, not in this docs refresh.)
+- **This `docs/project_memory/*` refresh** (P2-3 closeout) — modified tracked files, commit pending approval. **Docs-only: no code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.** (The P2-3 code — the `irp_shared/exposure` package, migration `0018` + the additive `calculation_run.environment_id`, the `exposure.*` grants, the `marketdata/legs.py` helper, the snapshot FX-pinning extension, the `record_run_lineage`, the exposure CI step — all shipped in `da178fc`; the governance docs flipped to IMPLEMENTED at `851f976`/`da178fc`, not in this docs refresh.)
 
 ## Current active gate
-**P2-2 `fx_rate` IMPLEMENTATION is COMPLETE, COMMITTED (`c257e5c`), and CI-green (run #70).** P2-1 `dataset_snapshot` (`3629baa`)
-and P2-2 `fx_rate` (`c257e5c`) are both **REALIZED** (see the deliverables sections). **The next step is P2-3 PLANNING ONLY** —
-author the P2-3 decision record + implementation plan for **`calculation_run` wiring + basic exposure** (the first governed derived
-number, snapshot+run-gated), **on explicit approval**; **P2-3 implementation is NOT started**. Strict planning-first,
+**P2-3 `calculation_run` wiring + basic exposure IMPLEMENTATION is COMPLETE, COMMITTED (`da178fc`), and CI-green (run #74).** The
+platform's **first governed derived number — `exposure_aggregate` (ENT-014)** — is **REALIZED** (see the deliverables section).
+**The next step is P2-4 PLANNING ONLY** — author the P2-4 decision record + implementation plan for **captured price history**
+(FR / bitemporal market data), **on explicit approval**; **P2-4 implementation is NOT started**. Strict planning-first,
 commit-only-on-explicit-approval cadence holds (plan / review / implement / commit are separate approvals). **Frontend visibility:
-P2-2 had no visible UI change (backend/shared-data only); P2-3 may enable future exposure views but builds no frontend unless
-explicitly directed.**
+P2-3 had no visible UI change (backend/shared-data only); it enables future exposure-result + calculation-run-evidence UI, but
+P2-4 planning builds no frontend unless explicitly directed.**
+
+## P2-3 key deliverables (closed, `da178fc`, CI-green run #74) — the FIRST governed derived number REALIZED
+`exposure_aggregate` (ENT-014, **IA TRUE append-only**) — the platform's **first official governed derived number** (AD-018; the
+AD-014 / FW-RUN §5 / TR-15 gate now load-bearing). New `irp_shared/exposure/` package + `api/exposure.py`; migration
+`0018_exposure_aggregate` + the additive `calculation_run.environment_id`. **`audit/service.py` UNTOUCHED.** 8-lens review
+(5 approve / 3 approve_with_changes / 0 block) → 2 in-scope folds.
+- **Run-bound + snapshot-gated** — `exposure_aggregate` carries NOT-NULL FKs to `calculation_run.run_id` + `dataset_snapshot.id`; no row exists without a complete run over a bound `EXPOSURE_INPUT` snapshot (a consume-path `purpose==EXPOSURE_INPUT` pre-create gate). In `APPEND_ONLY_TABLES` → the `irp_prevent_mutation` P0001 trigger + the ORM guard; a re-run is a NEW run + new rows.
+- **`calculation_run` wiring** — the additive **`environment_id`** column (FW-RUN §5 item 7) + the additive **`update_run_status(outcome=)`** param (the one `calc/service.py` touch; `calc/service.py` is NOT frozen, `audit/service.py` IS); `code_version` the deterministic anchor; `model_version_id` N/A-with-rationale (a model-less rollup); `run_type='EXPOSURE_AGGREGATE'`.
+- **Signed market value v1** — `exposure_amount = quantize_HALF_UP(signed_quantity × captured mark_value × effective fx_rate, 6)` (`Numeric(28,6)`, exact-by-construction self-audit); `exposure_type = MARKET_VALUE` only. **Grain = the per-holding atom `(portfolio_id, instrument_id, base_currency)`** (no portfolio/subtree TOTAL rows; gross/net/abs deferred).
+- **Effective composite FX** — `fx_rate Numeric(28,12)` = the effective composite multiplier (the product of the convert legs; a published rate only in the direct/identity case); **`fx_legs` JSON** = the ordered leg evidence (id/base/quote/rate/direction), captured path provenance, **NOT a hard FK** to a supersedable `fx_rate` row (the snapshot `COMPONENT_KIND_FX` is the authoritative pin).
+- **Reproducibility (AD-014)** — the exposure compute reads **ONLY** the snapshot's pinned captured content (positions/valuations/FX); `COMPONENT_KIND_FX` minted; `build_snapshot(base_currency=)` pins the convert-path FX legs; `marketdata/legs.py` `compose_effective_rate` is **pure** (no DB read). **NO live `reconstruct_*`/`resolve_*` read** in the compute (import-fenced); **reproducible under a later FX correction** (re-run over the same snapshot is identical).
+- **Failure model (OD-P2-3-F)** — **pre-create refusal** (missing prereq / cross-tenant / incomplete-snapshot / missing-FX / non-EXPOSURE_INPUT) = raise before `create_run` → ZERO run/exposure/audit; **post-create FAILED** (a gate after RUNNING) = committed FAILED run + `CALC.RUN_STATUS_CHANGE(outcome='failure')` + ZERO rows (the durable refusal evidence, readable via `GET /exposure/runs/{id}`).
+- **Audit reuse** — `CALC.RUN_CREATE` + `CALC.RUN_STATUS_CHANGE` reused; **NO `EXPOSURE.AGGREGATE_CREATE` emitted** (EVT-210 `EXPOSURE.*` reserved-only; the rows are run-tracked + lineaged). `audit/service.py` FROZEN.
+- **Lineage** — `dataset_snapshot` **--DEPENDS_ON-->** `calculation_run` **--ORIGIN-->** `exposure_aggregate` (`run_id` stamped on the result edges); new `SOURCE_TYPE_CALCULATION_RUN` + `EDGE_KIND_DEPENDENCY` (`"DEPENDS_ON"`) + `record_run_lineage`; `record_internal_lineage` gains `run_id`. **Not a framework rewrite** ("DEP-LIN" is the RTM token, not an `edge_kind`).
+- **DQ** — fail-closed gates **before any write** (snapshot completeness + FX completeness + mark-required + cross-tenant) via `run_quality_check`; the `(params, dataset)` Protocol **untouched**.
+- **Entitlement** — `exposure.view` + `exposure.aggregate.run` wired (`.aggregate.run` pre-existed seeded-unwired; `.view` minted); `.run` → `data_steward`/`risk_analyst_1l`/`platform_admin`; `.view` → risk tiers + `data_steward` + `platform_admin` + **`auditor_3l`** (the **first** domain perm to grant the 3L auditor a read — governed-output oversight; distinct from the operational-input SoD). Deny-by-default; parity-tested.
+- **Symmetric tenant-scoped RLS** (ENABLE+FORCE; migration `0018`) — **NEVER hybrid** (closed 5-table hybrid set asserted unchanged on PG); cross-tenant snapshot/portfolio/run fail closed; no BYPASSRLS.
+- **NOT risk** — `MARKET_VALUE` only; **no VaR/ES/factor/stress/scenario/P&L/performance/pricing/valuation model**; the scope-fence is VOCABULARY/IMPORT (`ast.Mult` PERMITTED for the rollup; `reconstruct_fx_rate_as_of`/live resolvers FORBIDDEN in the compute). Tests: `test_exposure.py` (27 SQLite) + `test_exposure_pg.py` (7 PG FORCE-RLS/P0001/forged-tenant/closed-hybrid/cross-tenant-consume/audit-chain) + `test_exposure_endpoint.py` (8). **`make check` green (564 SQLite); PG green** (`alembic upgrade 0001→0018` + drift-clean + 151 PG tests + downgrade `0018→0017→base→head`). 7 cross-slice fence flips. **REQ-PPM-004** advanced; **CTRL-009** now EXECUTABLE.
 
 ## P2-2 key deliverables (closed, `c257e5c`, CI-green run #70) — captured FX market data REALIZED
 `fx_rate` (ENT-024, **FR/bitemporal**) — the platform's first market-data entity, the `valuation` protocol mirrored verbatim
@@ -202,6 +220,10 @@ REQ-PPM-001 (migration `0012`); the platform's **first domain entity** + the ent
 - **P2-1 closeout project-memory refresh** — `85ff5b2` (CI-green, run #68; docs-only).
 - **P2-2 `fx_rate` implementation plan** — `6020b03` (CI-green, run #69; 8-lens, 6 in-scope folds; build-ready). The 10 specific decisions settled (FR; base/quote direction; MID; USD-base triangulation; `marketdata.*`; etc.).
 - **P2-2 `fx_rate` implementation** — `c257e5c` (CI-green, run #70; 8-lens, 6 approve / 2 approve_with_changes / 0 block; 1 in-scope fold). **P2-2 CLOSED** — captured FX market data (ENT-024, FR) realized; **migration head `0016_dataset_snapshot` → `0017_fx_rate`** + the new FX symmetric-RLS CI step. NO exposure number, NO `calculation_run` wiring, NO `dataset_snapshot` change.
+- **P2-2 closeout project-memory refresh** — `adf4ac5` (CI-green, run #71; docs-only).
+- **P2-3 decision record + implementation plan** — `d10c766` (CI-green, run #72; 8-lens, 10 in-scope folds; the five OQ-P2-3 sign-offs). `calculation_run` wiring + basic exposure; OD-P2-3-A…L.
+- **P2-3 exposure + `calculation_run` governance ratification** — `851f976` (CI-green, run #73; AD-018; 7-lens, 6 approve / 1 approve_with_changes). ENT-014 ratified-in-planning; the `CALC.RUN_START/COMPLETE/FAIL` → `CALC.RUN_CREATE/STATUS_CHANGE` doc-vs-code reconciliation; EVT-210 `EXPOSURE.*` reserved; `exposure.*` perms; CTRL-009 executable; HALF_UP canonical-serialization exception. RATIFIED-IN-PLANNING, no code.
+- **P2-3 `calculation_run` wiring + basic exposure implementation** — `da178fc` (CI-green, run #74; 8-lens, 5 approve / 3 approve_with_changes / 0 block; 2 in-scope folds). **P2-3 CLOSED** — the **first governed derived number** (`exposure_aggregate`, ENT-014, IA append-only) realized; **migration head `0017_fx_rate` → `0018_exposure_aggregate`** (+ the additive `calculation_run.environment_id`) + the new Exposure symmetric-RLS CI step. The AD-014/FW-RUN/TR-15 gate is now load-bearing. NO risk (MARKET_VALUE only).
 
 ## P1B-2 key deliverables (closed, `32c7778`)
 REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evidence (the inverse of P1B-1).
@@ -235,23 +257,25 @@ REQ-SMR-004 (corporate_action portion); migration `0011`. The **last reference e
 With **P1B-1 (vocabularies/hybrid) + P1B-2 (legal_entity/issuer/counterparty) + P1B-3 (instrument/terms/identifier) + P1B-4 (corporate_action)** all closed and CI-green, the **Security-Master & Reference-Data block is complete**. **P1B-5** (reference-data ingestion mapping) is **conditional/deferred** (only if bulk loading is needed). The CAP-2 EV/FR reference entities (ENT-001..006/008) are realized; the *requirements* REQ-SMR-001/002/003/004 stay **In-Progress** (terms math, exposure-rollup calc, cross-vendor precedence, and QS-10/11 roll math respectively deferred to P1C/P2+).
 
 ## Next required action
-**P2-3 PLANNING ONLY (`calculation_run` wiring + basic exposure)** — author the **P2-3 decision record + implementation plan**:
-wire the shipped `calculation_run` (ENT-026, IA status-mutable) + the additive `environment_id` column (OD-P2-C); produce
-`exposure_aggregate` (ENT-014, IA, in `APPEND_ONLY_TABLES`, **run-bound + snapshot-gated**) — the **first governed derived
-number** = Σ(signed qty × captured mark) FX-converted, **consuming the P2-1 `dataset_snapshot` + the P2-2 `fx_rate`**; AD-014 /
-FW-RUN §5 / TR-15 require a snapshot + a complete run-bind **before any official derived output**. With the planning UltraCode
-workflow, then commit the plan **on explicit approval**. **PLANNING ONLY — no exposure/calc-run code; no risk.** Implementation is
-a **separate later approval**. Build **nothing else**.
+**P2-4 PLANNING ONLY (captured price history)** — author the **P2-4 decision record + implementation plan**: the next market-data
+entity after `fx_rate` — **captured price history**, **FR / bitemporal** (the P2-2 `fx_rate` / P1C-4 `valuation` protocol
+precedent), joining the `irp_shared/marketdata` package additively. **Captured prices ONLY** — no pricing model, no valuation
+model, no factor model, no risk calculation, no market-data feed-ingestion pipeline unless explicitly planned. With the planning
+UltraCode workflow, then commit the plan **on explicit approval**. **PLANNING ONLY — no price-history code; no risk.**
+Implementation is a **separate later approval**. Build **nothing else**.
 
 ## What MUST NOT be started yet
-- **P2-3 / exposure + `calculation_run` implementation** — **only the P2-3 PLANNING is next**; no exposure/calc-run code until the P2-3 plan is approved.
-- **No exposure calculation / no `exposure_aggregate`** until P2-3 planning is approved — the first governed derived number is P2-3, snapshot+run-gated (AD-014/FW-RUN/TR-15).
-- **No `calculation_run` wiring** until P2-3 planning is approved — the snapshot id + the `fx_rate` are P2-3 inputs (binding → P2-3).
-- **No price history** (P2-4) · **no curves** (P2-5) · **no benchmarks** (P2-6).
+- **P2-4 / price-history implementation** — **only the P2-4 PLANNING is next**; no price-history code until the P2-4 plan is approved.
+- **No price history implementation** until P2-4 planning is approved (capture via the governed binder, the `fx_rate` precedent).
+- **No curves** (P2-5) · **no benchmarks** (P2-6).
 - **No factor model** — ENT-022 volatility_surface / ENT-025 factor_return → P3+.
-- **No risk calculations / VaR / ES / sensitivities** — P3+.
+- **No risk calculations / VaR / Expected Shortfall / sensitivities** — P3+.
+- **No stress testing / scenario analytics** — P3+.
+- **No performance / returns** — P3+.
+- **No pricing model / valuation model** — captured prices only at P2-4.
+- **No market-data feed-ingestion pipeline** unless explicitly planned.
 - **No reporting / dashboard build** — P2 (AD-014).
-- **No frontend changes** unless explicitly directed (P2-2 had none; P2-3 may enable exposure views but builds no frontend by default).
+- **No frontend changes** unless explicitly approved (P2-3 had none; it enables future exposure-result + calc-run-evidence UI but builds no frontend by default; P2-4 planning adds no frontend unless directed).
 - **No P3+ work** — factor models, covariance/vol, scenarios, limits, breach, reporting, real SSO.
 - **ABAC enforcement** — anchored in P1C-1 but NOT enforced (enforcement → P6+).
 - **P1B-5** (reference-data ingestion mapping) — conditional/deferred (only if bulk loading is needed; not now).
@@ -261,7 +285,7 @@ a **separate later approval**. Build **nothing else**.
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `c257e5c`) and whether this P2-2 closeout memory refresh was committed.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `da178fc`) and whether this P2-3 closeout memory refresh was committed.
 - Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated).
 - `git remote -v` — origin is now SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0017_fx_rate` (advanced from `0016_dataset_snapshot` at P2-2 / `c257e5c`; the next P2-3 exposure/calc-run migration — incl. the additive `calculation_run.environment_id` — lands only when P2-3 is implemented; planning is next).
+- Migration head is `0018_exposure_aggregate` (advanced from `0017_fx_rate` at P2-3 / `da178fc`: the `exposure_aggregate` table + the additive `calculation_run.environment_id`; the next P2-4 price-history migration lands only when P2-4 is implemented; planning is next).
