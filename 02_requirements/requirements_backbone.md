@@ -144,7 +144,7 @@ entitlement/lineage/model-gov/control/phase/dependency are in the [RTM](requirem
 
 | REQ | Title | CAP | Business purpose | Functional | Data | Calc | Test | Acceptance | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| REQ-PUB-001 | Market prices (time-series) | 3.1 | Inputs for valuation & risk | Bitemporal price points per instrument/source | `price_point` (FR) | — | As-of + staleness test | Price reconstructable as-of; stale flagged (QS-16) | Draft |
+| REQ-PUB-001 | Market prices (time-series) | 3.1 | Inputs for valuation & risk | Bitemporal price points per instrument/source | `price_point` (FR) | — | As-of + staleness test | Price reconstructable as-of; stale flagged (QS-16) | **In-Progress (partial, P2-4 implementation, migration `0019`):** `price_point` (ENT-020, FR) realized — the **"price reconstructable as-of"** acceptance leg delivered on BOTH axes (`reconstruct_price_as_of`; captured RAW vendor prices; 6-part current-head key with `price_source`; `MARKET.PRICE_*` audited; VENDOR_PRICE ORIGIN lineage; symmetric RLS; required-field + strictly-positive RANGE DQ). The **"stale flagged (QS-16)"** leg is **DEFERRED** (OQ-P2-4-4) — REQ does **NOT** close |
 | REQ-PUB-002 | Curves & volatility surfaces | 3.2/3.3 | Discounting & options risk | Versioned curves/surfaces with interpolation method | `yield_curve`, `volatility_surface` (FR) | Interpolation (QS-13) | Interpolation test | Curve/surface values reproduce; method declared | Draft |
 | REQ-PUB-003 | Credit spreads, ratings, benchmarks | 3.4/3.5 | Credit & relative risk inputs | Spread series, ratings, benchmark constituents | `credit_spread`, `rating`, `benchmark` (FR/EV) | — | Coverage test | Inputs present & as-of for the risk engine | Draft |
 

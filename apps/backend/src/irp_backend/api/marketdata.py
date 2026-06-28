@@ -1,14 +1,14 @@
-"""Market-data endpoints (P2-2, ENT-024 fx_rate) — captured FR FX rates + published-rate convert.
+"""Market-data endpoints — captured FR FX rates (P2-2, ENT-024) + price history (P2-4, ENT-020).
 
 Thin layer over ``irp_shared.marketdata``. PROPRIETARY tenant-scoped (NEVER hybrid), FR (NOT
 append-only). Writes are gated ``marketdata.ingest`` (the governed canonical-write verb); reads +
-``convert`` are gated ``marketdata.view``. ``tenant_id`` server-stamped; currencies resolved
-hybrid-aware (own OR SYSTEM → 404); a single end-of-request ``db.commit()`` on writes. There is **no
-PUT/PATCH/DELETE** — a rate is *superseded* (effective-dated re-quote) or *corrected* (as-known
-restatement), both append NEW versions. ``convert`` is published-rate arithmetic only (direct /
-reciprocal / triangulation-through-base, fail-closed) — NO exposure, NO ``calculation_run``, no
-audit
-on read.
+``convert`` are gated ``marketdata.view`` (the SAME two verbs are REUSED for prices). ``tenant_id``
+server-stamped; the instrument FK + currencies are resolved tenant-/hybrid-aware (→ 404); a single
+end-of-request ``db.commit()`` on writes. There is **no PUT/PATCH/DELETE** — a rate/price is
+*superseded* (effective-dated re-quote) or *corrected* (as-known restatement), both append NEW
+versions. ``convert`` is published-rate arithmetic only (direct / reciprocal /
+triangulation-through-base, fail-closed). Prices are **captured RAW** — NO conversion, NO pricing/
+valuation model, NO exposure, NO ``calculation_run``, no audit on read.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
 from irp_shared.marketdata import (
     DEFAULT_BASE,
+    PRICE_TYPE_CLOSE,
     RATE_TYPE_MID,
     FxRate,
     FxRateActor,
@@ -33,16 +34,28 @@ from irp_shared.marketdata import (
     FxRateNotVisible,
     FxRateValueError,
     NoCurrentFxRate,
+    NoCurrentPrice,
+    PriceActor,
+    PriceNotVisible,
+    PricePoint,
+    PriceValueError,
     capture_fx_rate,
+    capture_price,
     convert,
     correct_fx_rate,
+    correct_price,
     reconstruct_fx_rate_as_of,
+    reconstruct_price_as_of,
     resolve_fx_rate,
+    resolve_price,
     supersede_fx_rate,
+    supersede_price,
 )
+from irp_shared.reference.instrument import InstrumentNotVisible
 from irp_shared.reference.service import CurrencyNotVisible
 
 router = APIRouter(prefix="/fx", tags=["marketdata"])
+price_router = APIRouter(prefix="/prices", tags=["marketdata"])
 
 #: Module-level guard singletons (deny-by-default; built once, not in argument defaults).
 _require_ingest = require_permission("marketdata.ingest")
@@ -332,3 +345,255 @@ def convert_fx(
         rate_type=result.rate_type,
         rate_path=result.rate_path,
     )
+
+
+# --- Price history (P2-4, ENT-020) — captured RAW vendor prices on the FR protocol -------------
+
+
+def _price_actor(principal: Principal) -> PriceActor:
+    return PriceActor(actor_id=principal.user_id)
+
+
+class PriceIn(BaseModel):
+    instrument_id: str
+    price_date: date
+    price: Decimal
+    currency_code: str
+    price_source: str
+    price_type: str = PRICE_TYPE_CLOSE
+    valid_from: datetime | None = None
+
+
+class PriceSupersedeIn(BaseModel):
+    effective_at: datetime
+    price: Decimal | None = None  # only fields set here override the carried-forward prior price
+
+
+class PriceCorrectIn(BaseModel):
+    restatement_reason: str
+    price: Decimal | None = None
+
+
+class PriceOut(BaseModel):
+    id: str
+    instrument_id: str
+    price_date: date
+    price: Decimal
+    price_type: str
+    currency_code: str
+    price_source: str
+    valid_from: datetime
+    valid_to: datetime | None
+    system_from: datetime
+    system_to: datetime | None
+    restatement_reason: str | None
+    supersedes_id: str | None
+    record_version: int
+
+
+def _price_out(row: PricePoint) -> PriceOut:
+    return PriceOut(
+        id=row.id,
+        instrument_id=row.instrument_id,
+        price_date=row.price_date,
+        price=row.price,
+        price_type=row.price_type,
+        currency_code=row.currency_code,
+        price_source=row.price_source,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        system_from=row.system_from,
+        system_to=row.system_to,
+        restatement_reason=row.restatement_reason,
+        supersedes_id=row.supersedes_id,
+        record_version=row.record_version,
+    )
+
+
+#: Governed-write error → (status, detail). Fail-closed; rolls back before mapping.
+_PRICE_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
+    PriceValueError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid price_point input"),
+    InstrumentNotVisible: (status.HTTP_404_NOT_FOUND, "instrument not found"),
+    CurrencyNotVisible: (status.HTTP_404_NOT_FOUND, "currency not found"),
+    PriceNotVisible: (status.HTTP_404_NOT_FOUND, "price_point not found"),
+    NoCurrentPrice: (status.HTTP_409_CONFLICT, "no current price_point version to supersede"),
+    DataQualityError: (status.HTTP_409_CONFLICT, "price_point failed a data-quality gate"),
+}
+
+
+def _raise_price_write(db: Session, exc: Exception) -> None:
+    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
+    code, detail = _PRICE_WRITE_ERRORS[type(exc)]
+    raise HTTPException(status_code=code, detail=detail) from None
+
+
+@price_router.post("", response_model=PriceOut, status_code=status.HTTP_201_CREATED)
+def create_price(
+    body: PriceIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> PriceOut:
+    """Capture a price (governed: VENDOR-source ORIGIN lineage + MARKET.PRICE_CREATE + the DQ
+    gate)."""
+    try:
+        row = capture_price(
+            db,
+            instrument_id=body.instrument_id,
+            price_date=body.price_date,
+            price=body.price,
+            currency_code=body.currency_code,
+            price_source=body.price_source,
+            acting_tenant=principal.tenant_id,
+            actor=_price_actor(principal),
+            price_type=body.price_type,
+            valid_from=body.valid_from,
+        )
+    except (PriceValueError, InstrumentNotVisible, CurrencyNotVisible, DataQualityError) as exc:
+        _raise_price_write(db, exc)
+    out = _price_out(row)
+    db.commit()
+    return out
+
+
+@price_router.post(
+    "/{price_id}/supersede", response_model=PriceOut, status_code=status.HTTP_201_CREATED
+)
+def supersede_price_endpoint(
+    price_id: str,
+    body: PriceSupersedeIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> PriceOut:
+    """Effective-dated re-price for the SAME logical key of an existing head."""
+    try:
+        prior = resolve_price(db, price_id, acting_tenant=principal.tenant_id)
+        overrides = body.model_dump(exclude_none=True, exclude={"effective_at"})
+        row = supersede_price(
+            db,
+            instrument_id=prior.instrument_id,
+            price_date=prior.price_date,
+            price_type=prior.price_type,
+            currency_code=prior.currency_code,
+            price_source=prior.price_source,
+            acting_tenant=principal.tenant_id,
+            actor=_price_actor(principal),
+            effective_at=body.effective_at,
+            **overrides,
+        )
+    except (
+        PriceValueError,
+        InstrumentNotVisible,
+        CurrencyNotVisible,
+        PriceNotVisible,
+        NoCurrentPrice,
+        DataQualityError,
+    ) as exc:
+        _raise_price_write(db, exc)
+    out = _price_out(row)
+    db.commit()
+    return out
+
+
+@price_router.post(
+    "/{price_id}/correct", response_model=PriceOut, status_code=status.HTTP_201_CREATED
+)
+def correct_price_endpoint(
+    price_id: str,
+    body: PriceCorrectIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> PriceOut:
+    """As-known vendor restatement of a specific price_point version (same valid period + logical
+    key)."""
+    try:
+        prior = resolve_price(db, price_id, acting_tenant=principal.tenant_id)
+        overrides = body.model_dump(exclude_none=True, exclude={"restatement_reason"})
+        row = correct_price(
+            db,
+            prior,
+            restatement_reason=body.restatement_reason,
+            acting_tenant=principal.tenant_id,
+            actor=_price_actor(principal),
+            **overrides,
+        )
+    except (
+        PriceValueError,
+        InstrumentNotVisible,
+        CurrencyNotVisible,
+        PriceNotVisible,
+        DataQualityError,
+    ) as exc:
+        _raise_price_write(db, exc)
+    out = _price_out(row)
+    db.commit()
+    return out
+
+
+@price_router.get("/as-of", response_model=PriceOut)
+def get_price_as_of(
+    instrument_id: str = Query(...),
+    price_date: date = Query(...),
+    currency_code: str = Query(...),
+    price_source: str = Query(...),
+    valid_at: datetime = Query(...),
+    known_at: datetime | None = Query(default=None),
+    price_type: str = Query(default=PRICE_TYPE_CLOSE),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> PriceOut:
+    """The single head price for a logical key as-of (valid_at, known_at) — 404 if none."""
+    row = reconstruct_price_as_of(
+        db,
+        acting_tenant=principal.tenant_id,
+        instrument_id=instrument_id,
+        price_date=price_date,
+        price_type=price_type,
+        currency_code=currency_code,
+        price_source=price_source,
+        valid_at=valid_at,
+        known_at=known_at,
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="price_point not found")
+    return _price_out(row)
+
+
+@price_router.get("", response_model=list[PriceOut])
+def list_prices(
+    instrument_id: str = Query(...),
+    price_date_from: date = Query(...),
+    price_date_to: date = Query(...),
+    currency_code: str = Query(...),
+    price_source: str = Query(...),
+    valid_at: datetime = Query(...),
+    known_at: datetime | None = Query(default=None),
+    price_type: str = Query(default=PRICE_TYPE_CLOSE),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[PriceOut]:
+    """The as-of head price for each price_date in [from, to] for a logical key — read-only."""
+    from irp_shared.db.mixins import utcnow
+
+    known = known_at or utcnow()
+    rows = (
+        db.execute(
+            select(PricePoint)
+            .where(
+                PricePoint.tenant_id == str(principal.tenant_id),
+                PricePoint.instrument_id == instrument_id,
+                PricePoint.price_type == price_type,
+                PricePoint.currency_code == currency_code,
+                PricePoint.price_source == price_source,
+                PricePoint.price_date >= price_date_from,
+                PricePoint.price_date <= price_date_to,
+                PricePoint.valid_from <= valid_at,
+                or_(PricePoint.valid_to.is_(None), PricePoint.valid_to > valid_at),
+                PricePoint.system_from <= known,
+                or_(PricePoint.system_to.is_(None), PricePoint.system_to > known),
+            )
+            .order_by(PricePoint.price_date)
+        )
+        .scalars()
+        .all()
+    )
+    return [_price_out(row) for row in rows]
