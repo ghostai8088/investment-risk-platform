@@ -630,7 +630,9 @@ def test_excluded_entity_tables_absent_from_metadata() -> None:
     # P1B-3 builds instrument / instrument_terms / identifier_xref; P1B-4 builds corporate_action;
     # P1C-1 builds portfolio (ENT-010); P1C-2 builds transaction (ENT-012); P1C-3 builds position
     # (ENT-011); P1C-4 builds valuation (ENT-013); P2-1 dataset_snapshot; P2-2 fx_rate; P2-3
-    # exposure_aggregate (ENT-014); P2-4 price_point (ENT-020); P2-5 curve+curve_point (ENT-021).
-    # Later-slice entities must still NOT exist — volatility_surface (ENT-022) stays future (P3+).
-    for table in ("volatility_surface",):
+    # exposure_aggregate (ENT-014); P2-4 price_point (ENT-020); P2-5 curve+curve_point (ENT-021);
+    # P2-6 benchmark+benchmark_constituent (ENT-009). Later-slice entities must still NOT exist —
+    # volatility_surface (ENT-022) + the deferred benchmark levels/returns (P2-6 OD-P2-6-K — a
+    # net-new canonical ENT id, not minted here) stay future (P3+).
+    for table in ("volatility_surface", "benchmark_level", "benchmark_return"):
         assert table not in metadata.tables

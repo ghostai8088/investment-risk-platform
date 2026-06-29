@@ -66,6 +66,7 @@ from sqlalchemy.orm import Mapped, Mapper, mapped_column
 from irp_shared.audit.models import AppendOnlyViolation
 from irp_shared.db.base import Base
 from irp_shared.db.mixins import (
+    EffectiveDatedMixin,
     FullReproducibleMixin,
     ImmutableAppendOnlyMixin,
     PrimaryKeyMixin,
@@ -378,3 +379,129 @@ def _block_curve_point_mutation(mapper: Mapper[Any], connection: Any, target: An
 # UPDATEs to valid_to/system_to; prior-version content immutability is binder-enforced + tested).
 event.listen(CurvePoint, "before_update", _block_curve_point_mutation)
 event.listen(CurvePoint, "before_delete", _block_curve_point_mutation)
+
+
+class Benchmark(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):
+    """Captured benchmark/index DEFINITION header (ENT-009, EV) — the FOURTH market-data entity.
+
+    The index IDENTITY (code / name / family / denomination currency / methodology label). A
+    slowly-changing REFERENCE-family entity (the ``corporate_action``/``instrument`` EV precedent):
+    entity-versioned in place via ``record_version`` (the drift discriminator), NOT append-only, NO
+    system axis (EV records valid time only). PROPRIETARY/symmetric; NEVER hybrid (per-tenant
+    vendor-licensed; a shared-global benchmark *definition* would be an AD-013-R2 event, OD-P2-G).
+
+    Audited via ``REFERENCE.CREATE``/``REFERENCE.UPDATE`` (the ENT-009 reference/definition family —
+    OQ-P2-6-11 Option A; the constituent *membership* is the captured-market ``MARKET.*`` half). A
+    **captured** definition (supplied to the platform), **NOT computed** — no performance, no active
+    return/risk, no tracking error, no attribution, no factor model. The time-varying membership +
+    weights live in the FR ``benchmark_constituent`` children. Logical identity key
+    ``(tenant_id, benchmark_code, benchmark_source)``:
+
+    - **``benchmark_code``:** the tenant's logical code (e.g. ``"SPX"``); a NOT-NULL key component.
+    - **``benchmark_source``:** the vendor label (e.g. ``"SP_DJI"``); a NOT-NULL key component
+      (multi-vendor coexistence — the ``price_source``/``curve_source`` precedent).
+    - **``benchmark_currency``:** the captured index denomination (ISO String(3); validated via the
+      hybrid-aware ``resolve_currency``). NO conversion.
+    - **``benchmark_name``/``index_family``/``vendor_code``/``methodology_label``:** captured opaque
+      attributes (``methodology_label`` is inert — no engine consumes it; NO identifier-resolution).
+    """
+
+    __tablename__ = "benchmark"
+    __temporal_class__ = TemporalClass.EFFECTIVE_DATED
+    __table_args__ = (
+        # EV current-identity: one row per (tenant, code, vendor) — in-place versioned (the
+        # corporate_action uq precedent; NOT a partial-WHERE — EV does not close-out rows).
+        UniqueConstraint(
+            "tenant_id",
+            "benchmark_code",
+            "benchmark_source",
+            name="uq_benchmark_tenant_code_source",
+        ),
+    )
+
+    benchmark_code: Mapped[str] = mapped_column(String(150), nullable=False)
+    benchmark_source: Mapped[str] = mapped_column(String(150), nullable=False)
+    benchmark_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    benchmark_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    index_family: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    vendor_code: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    # Inert captured metadata — NO methodology engine consumes it (the interpolation_method
+    # precedent).
+    methodology_label: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class BenchmarkConstituent(
+    PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base
+):
+    """Captured benchmark MEMBERSHIP + weight (ENT-009 detail, FR bitemporal) — the captured-market
+    half of the benchmark entity (the ``price_point``/``curve`` FR protocol, set-grained).
+
+    An effective-dated ``(instrument, weight)`` membership row. PROPRIETARY/symmetric; NEVER hybrid;
+    **NOT append-only** (the FR protocol requires close-out UPDATEs; content-immutability
+    service-enforced + tested). Captured/superseded/corrected **as a set** per
+    ``(benchmark_id, effective_date)`` (a vendor publishes/restates the whole constituent set);
+    audited via ``MARKET.BENCHMARK_CONSTITUENT_*`` (captured market/index data that re-versions over
+    time — OQ-P2-6-11 Option A). Logical key
+    ``(benchmark_id, instrument_id, effective_date)``:
+
+    - **``benchmark_id``:** NOT-NULL FK to the ``benchmark`` definition.
+    - **``instrument_id``:** NOT-NULL FK (resolved tenant-filtered via ``resolve_instrument`` — a
+      mastered instrument; cross-tenant fail-closed at the service layer; the ``price_point``
+      precedent).
+    - **``effective_date`` (the ``curve_date``/``price_date`` precedent):** a separate immutable
+      logical-key ``Date`` — the membership/reconstitution date the set is FOR — carried forward
+      verbatim, never mutated, DISTINCT from the FR ``valid_from`` axis.
+    - **``weight``:** the captured index weight as a canonical DECIMAL fraction (``0.05`` = 5%, NOT
+      percent/bps), ``Numeric(20, 12)`` (the ``curve.point_value`` scale); a non-negative sanity
+      ``RANGE [0, 1]`` v1 DQ. **Captured, NEVER computed** — no active weight / return.
+    - **``constituent_currency``:** an optional captured per-name denomination (validated via
+      ``resolve_currency`` when present). NO conversion.
+
+    The promoted key columns (``effective_date``) are DB-level NOT NULL; current-head partial-unique
+    ``(tenant_id, benchmark_id, instrument_id, effective_date) WHERE valid_to IS NULL AND
+    system_to IS NULL``.
+    """
+
+    __tablename__ = "benchmark_constituent"
+    __temporal_class__ = TemporalClass.FULL_REPRODUCIBLE
+    __table_args__ = (
+        Index(
+            "uq_benchmark_constituent_current",
+            "tenant_id",
+            "benchmark_id",
+            "instrument_id",
+            "effective_date",
+            unique=True,
+            postgresql_where=text("valid_to IS NULL AND system_to IS NULL"),
+            sqlite_where=text("valid_to IS NULL AND system_to IS NULL"),
+        ),
+    )
+
+    benchmark_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("benchmark.id"), nullable=False, index=True
+    )
+    instrument_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("instrument.id"), nullable=False, index=True
+    )
+    # Immutable logical-key: the membership/reconstitution date the set is FOR (the curve_date
+    # precedent).
+    effective_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # The captured index weight as a canonical DECIMAL fraction (not %/bps); inert (NEVER computed).
+    weight: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
+    # Optional captured per-name currency (validated via resolve_currency when present); NO
+    # conversion.
+    constituent_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    restatement_reason: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )  # set ONLY on a correction (TR-08)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("benchmark_constituent.id"), nullable=True
+    )  # link to the superseded same-instrument row (set on supersede + correction)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+# NOTE: benchmark (EV) + benchmark_constituent (FR) are BOTH NOT append-only — no ORM
+# before_update/before_delete guard and no irp_prevent_mutation trigger (EV mutates in place;
+# FR requires close-out UPDATEs). Content immutability is binder-enforced + tested (a difference
+# from curve_point).

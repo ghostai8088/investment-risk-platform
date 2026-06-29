@@ -29,6 +29,12 @@ from irp_shared.marketdata import (
     PRICE_TYPE_CLOSE,
     RATE_TYPE_MID,
     REFERENCE_KEY_NONE,
+    Benchmark,
+    BenchmarkActor,
+    BenchmarkConstituent,
+    BenchmarkNotVisible,
+    BenchmarkValueError,
+    ConstituentInput,
     Curve,
     CurveActor,
     CurveNode,
@@ -42,28 +48,37 @@ from irp_shared.marketdata import (
     FxRateValueError,
     NoCurrentCurve,
     NoCurrentFxRate,
+    NoCurrentMembership,
     NoCurrentPrice,
     PriceActor,
     PriceNotVisible,
     PricePoint,
     PriceValueError,
+    capture_benchmark,
     capture_curve,
     capture_fx_rate,
+    capture_membership,
     capture_price,
     convert,
     correct_curve,
     correct_fx_rate,
+    correct_membership,
     correct_price,
+    list_benchmarks,
     list_curve_points,
     reconstruct_curve_as_of,
     reconstruct_fx_rate_as_of,
+    reconstruct_membership_as_of,
     reconstruct_price_as_of,
+    resolve_benchmark,
     resolve_curve,
     resolve_fx_rate,
     resolve_price,
     supersede_curve,
     supersede_fx_rate,
+    supersede_membership,
     supersede_price,
+    update_benchmark,
 )
 from irp_shared.reference.instrument import InstrumentNotVisible
 from irp_shared.reference.service import CurrencyNotVisible
@@ -71,6 +86,7 @@ from irp_shared.reference.service import CurrencyNotVisible
 router = APIRouter(prefix="/fx", tags=["marketdata"])
 price_router = APIRouter(prefix="/prices", tags=["marketdata"])
 curve_router = APIRouter(prefix="/curves", tags=["marketdata"])
+benchmark_router = APIRouter(prefix="/benchmarks", tags=["marketdata"])
 
 #: Module-level guard singletons (deny-by-default; built once, not in argument defaults).
 _require_ingest = require_permission("marketdata.ingest")
@@ -907,3 +923,345 @@ def list_curves(
         .all()
     )
     return [_curve_with_nodes(db, h, principal) for h in headers]
+
+
+# --- Benchmarks (P2-6, ENT-009) — captured benchmark/index definitions + FR membership ---
+# Governance family split (OQ-P2-6-11 Option A): the EV definition is audited REFERENCE.*; the FR
+# membership is audited MARKET.BENCHMARK_CONSTITUENT_*. Entitlement reuses marketdata.view/.ingest.
+
+
+def _benchmark_actor(principal: Principal) -> BenchmarkActor:
+    return BenchmarkActor(actor_id=principal.user_id)
+
+
+class BenchmarkIn(BaseModel):
+    benchmark_code: str
+    benchmark_source: str
+    benchmark_currency: str
+    benchmark_name: str | None = None
+    index_family: str | None = None
+    vendor_code: str | None = None
+    methodology_label: str | None = None
+
+
+class BenchmarkUpdateIn(BaseModel):
+    benchmark_currency: str | None = None
+    benchmark_name: str | None = None
+    index_family: str | None = None
+    vendor_code: str | None = None
+    methodology_label: str | None = None
+
+
+class BenchmarkOut(BaseModel):
+    id: str
+    benchmark_code: str
+    benchmark_source: str
+    benchmark_currency: str
+    benchmark_name: str | None
+    index_family: str | None
+    vendor_code: str | None
+    methodology_label: str | None
+    valid_from: datetime
+    valid_to: datetime | None
+    record_version: int
+
+
+class ConstituentIn(BaseModel):
+    instrument_id: str
+    weight: Decimal
+    constituent_currency: str | None = None
+
+
+class ConstituentOut(BaseModel):
+    instrument_id: str
+    weight: Decimal
+    constituent_currency: str | None
+    effective_date: date
+    valid_from: datetime
+    valid_to: datetime | None
+    system_from: datetime
+    system_to: datetime | None
+    supersedes_id: str | None
+    record_version: int
+
+
+class MembershipIn(BaseModel):
+    effective_date: date
+    constituents: list[ConstituentIn]
+
+
+class MembershipSupersedeIn(MembershipIn):
+    effective_at: datetime
+
+
+class MembershipCorrectIn(MembershipIn):
+    restatement_reason: str
+
+
+class MembershipOut(BaseModel):
+    benchmark_id: str
+    effective_date: date
+    constituents: list[ConstituentOut]
+
+
+def _constituents_in(body_constituents: list[ConstituentIn]) -> list[ConstituentInput]:
+    return [
+        ConstituentInput(
+            instrument_id=c.instrument_id,
+            weight=c.weight,
+            constituent_currency=c.constituent_currency,
+        )
+        for c in body_constituents
+    ]
+
+
+def _benchmark_out(row: Benchmark) -> BenchmarkOut:
+    return BenchmarkOut(
+        id=row.id,
+        benchmark_code=row.benchmark_code,
+        benchmark_source=row.benchmark_source,
+        benchmark_currency=row.benchmark_currency,
+        benchmark_name=row.benchmark_name,
+        index_family=row.index_family,
+        vendor_code=row.vendor_code,
+        methodology_label=row.methodology_label,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        record_version=row.record_version,
+    )
+
+
+def _constituent_out(row: BenchmarkConstituent) -> ConstituentOut:
+    return ConstituentOut(
+        instrument_id=row.instrument_id,
+        weight=row.weight,
+        constituent_currency=row.constituent_currency,
+        effective_date=row.effective_date,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        system_from=row.system_from,
+        system_to=row.system_to,
+        supersedes_id=row.supersedes_id,
+        record_version=row.record_version,
+    )
+
+
+def _membership_out(
+    benchmark_id: str, effective_date: date, rows: list[BenchmarkConstituent]
+) -> MembershipOut:
+    return MembershipOut(
+        benchmark_id=benchmark_id,
+        effective_date=effective_date,
+        constituents=[_constituent_out(r) for r in rows],
+    )
+
+
+#: Governed-write error → (status, detail). Fail-closed; rolls back before mapping.
+_BENCHMARK_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
+    BenchmarkValueError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid benchmark input"),
+    CurrencyNotVisible: (status.HTTP_404_NOT_FOUND, "currency not found"),
+    InstrumentNotVisible: (status.HTTP_404_NOT_FOUND, "instrument not found"),
+    BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
+    NoCurrentMembership: (status.HTTP_409_CONFLICT, "no current membership to supersede/correct"),
+    DataQualityError: (status.HTTP_409_CONFLICT, "benchmark failed a data-quality gate"),
+}
+
+
+def _raise_benchmark_write(db: Session, exc: Exception) -> None:
+    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
+    code, detail = _BENCHMARK_WRITE_ERRORS[type(exc)]
+    raise HTTPException(status_code=code, detail=detail) from None
+
+
+@benchmark_router.post("", response_model=BenchmarkOut, status_code=status.HTTP_201_CREATED)
+def create_benchmark(
+    body: BenchmarkIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkOut:
+    """Capture a benchmark DEFINITION (EV; REFERENCE.CREATE + VENDOR_BENCHMARK ORIGIN lineage)."""
+    try:
+        row = capture_benchmark(
+            db,
+            benchmark_code=body.benchmark_code,
+            benchmark_source=body.benchmark_source,
+            benchmark_currency=body.benchmark_currency,
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+            benchmark_name=body.benchmark_name,
+            index_family=body.index_family,
+            vendor_code=body.vendor_code,
+            methodology_label=body.methodology_label,
+        )
+    except (BenchmarkValueError, CurrencyNotVisible) as exc:
+        _raise_benchmark_write(db, exc)
+    out = _benchmark_out(row)
+    db.commit()
+    return out
+
+
+@benchmark_router.post("/{benchmark_id}/update", response_model=BenchmarkOut)
+def update_benchmark_endpoint(
+    benchmark_id: str,
+    body: BenchmarkUpdateIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkOut:
+    """Apply attribute changes to a benchmark DEFINITION in place (EV; REFERENCE.UPDATE)."""
+    try:
+        row = resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+        update_benchmark(
+            db,
+            row,
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+            **body.model_dump(exclude_unset=True),
+        )
+    except (BenchmarkValueError, BenchmarkNotVisible, CurrencyNotVisible) as exc:
+        _raise_benchmark_write(db, exc)
+    out = _benchmark_out(row)
+    db.commit()
+    return out
+
+
+@benchmark_router.post(
+    "/{benchmark_id}/membership", response_model=MembershipOut, status_code=status.HTTP_201_CREATED
+)
+def capture_membership_endpoint(
+    benchmark_id: str,
+    body: MembershipIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> MembershipOut:
+    """Capture a membership set for (benchmark, effective_date) as ONE governed unit."""
+    try:
+        benchmark = resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+        rows = capture_membership(
+            db,
+            benchmark,
+            effective_date=body.effective_date,
+            constituents=_constituents_in(body.constituents),
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+        )
+    except (
+        BenchmarkValueError,
+        BenchmarkNotVisible,
+        InstrumentNotVisible,
+        CurrencyNotVisible,
+        DataQualityError,
+    ) as exc:
+        _raise_benchmark_write(db, exc)
+    out = _membership_out(benchmark_id, body.effective_date, rows)
+    db.commit()
+    return out
+
+
+@benchmark_router.post(
+    "/{benchmark_id}/membership/supersede",
+    response_model=MembershipOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def supersede_membership_endpoint(
+    benchmark_id: str,
+    body: MembershipSupersedeIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> MembershipOut:
+    """Effective-dated re-capture of a (benchmark, effective_date) membership (fresh set)."""
+    try:
+        benchmark = resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+        rows = supersede_membership(
+            db,
+            benchmark,
+            effective_date=body.effective_date,
+            constituents=_constituents_in(body.constituents),
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+            effective_at=body.effective_at,
+        )
+    except (
+        BenchmarkValueError,
+        BenchmarkNotVisible,
+        InstrumentNotVisible,
+        CurrencyNotVisible,
+        NoCurrentMembership,
+        DataQualityError,
+    ) as exc:
+        _raise_benchmark_write(db, exc)
+    out = _membership_out(benchmark_id, body.effective_date, rows)
+    db.commit()
+    return out
+
+
+@benchmark_router.post(
+    "/{benchmark_id}/membership/correct",
+    response_model=MembershipOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def correct_membership_endpoint(
+    benchmark_id: str,
+    body: MembershipCorrectIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> MembershipOut:
+    """As-known restatement of a (benchmark, effective_date) membership (same valid period)."""
+    try:
+        benchmark = resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+        rows = correct_membership(
+            db,
+            benchmark,
+            effective_date=body.effective_date,
+            constituents=_constituents_in(body.constituents),
+            restatement_reason=body.restatement_reason,
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+        )
+    except (
+        BenchmarkValueError,
+        BenchmarkNotVisible,
+        InstrumentNotVisible,
+        CurrencyNotVisible,
+        NoCurrentMembership,
+        DataQualityError,
+    ) as exc:
+        _raise_benchmark_write(db, exc)
+    out = _membership_out(benchmark_id, body.effective_date, rows)
+    db.commit()
+    return out
+
+
+@benchmark_router.get("/{benchmark_id}/membership/as-of", response_model=MembershipOut)
+def get_membership_as_of(
+    benchmark_id: str,
+    effective_date: date = Query(...),
+    valid_at: datetime = Query(...),
+    known_at: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> MembershipOut:
+    """The membership set for (benchmark, effective_date) as-of (valid_at, known_at)."""
+    try:
+        resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+    except BenchmarkNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="benchmark not found"
+        ) from None
+    rows = reconstruct_membership_as_of(
+        db,
+        acting_tenant=principal.tenant_id,
+        benchmark_id=benchmark_id,
+        effective_date=effective_date,
+        valid_at=valid_at,
+        known_at=known_at,
+    )
+    return _membership_out(benchmark_id, effective_date, rows)
+
+
+@benchmark_router.get("", response_model=list[BenchmarkOut])
+def list_benchmarks_endpoint(
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[BenchmarkOut]:
+    """All current benchmark definitions for the acting tenant."""
+    return [_benchmark_out(row) for row in list_benchmarks(db, acting_tenant=principal.tenant_id)]

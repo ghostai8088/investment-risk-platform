@@ -23,7 +23,7 @@
 | **P2-3** | `calculation_run` wiring + basic exposure | `calculation_run` (ENT-026, wired + `environment_id` add) + `exposure_aggregate` (ENT-014, in `APPEND_ONLY_TABLES`) | run = IA status-mutable; result = IA append-only | **the FIRST governed compute** (snapshot+run gated) |
 | **P2-4** | Market price history | `price_point` (ENT-020) | **FR** | P3 factor-model on-ramp (off the exposure critical path) |
 | **P2-5** | Yield curves / credit spreads | `yield_curve` (ENT-021), `credit_spread` (ENT-023) | **FR** | P3 on-ramp |
-| **P2-6** | Benchmark / index (conditional) | `benchmark` (ENT-009, EV) + `benchmark_level` (FR, new canonical id) | EV + FR | conditional on a confirmed P3 dependency |
+| **P2-6** | Benchmark / index — **DELIVERED (migration `0021`)** | `benchmark` (ENT-009, EV definition) + `benchmark_constituent` (ENT-009, FR membership) | EV + FR | **conditionality RESOLVED — P3 dependency CONFIRMED (OD-P2-6-O); levels/returns deferred** |
 
 ---
 
@@ -109,7 +109,8 @@
 13. **Risks** — interpolation creep into "capture".
 14. **Open questions** — curve identity/versioning; storage.
 
-### P2-6 — Benchmark / index data  *(conditional on a confirmed P3 dependency)*
+### P2-6 — Benchmark / index data  *(conditionality RESOLVED — DELIVERED at migration `0021`)*
+> **AS-BUILT (P2-6, OD-P2-6-* / OQ-P2-6-1…11):** the conditionality is **RESOLVED — the P3 dependency is CONFIRMED** (the benchmark-relative/active-risk + factor on-ramp consumes captured membership as as-of inputs, OD-P2-6-O). Built **metadata + constituents** only: `benchmark` (EV definition) + `benchmark_constituent` (FR bitemporal membership, set-grained per `(benchmark, effective_date)`). **`benchmark_level`/`benchmark_return` (captured levels/returns) DEFERRED** — a net-new canonical ENT id NOT minted here (OD-P2-6-K). **Audit (OQ-P2-6-11 Option A):** `REFERENCE.CREATE`/`REFERENCE.UPDATE` for the EV definition (honoring step-6) + `MARKET.BENCHMARK_CONSTITUENT_*` (EVT-200) for the FR membership. **Entitlement:** reuse `marketdata.view`/`.ingest` (a narrow, recorded supersession of the sketch's step-7 'reference perms (definition)'). **Lineage:** `VENDOR_BENCHMARK` ORIGIN for both (a recorded supersession of step-9 'MANUAL/reference for definitions'). **DQ:** required-field + weight `RANGE [0,1]` (sum/staleness deferred). Symmetric RLS both tables (NEITHER append-only). The sketch below (steps 1–14) is the pre-build plan; the AS-BUILT above governs.
 1. **Requirements included** — benchmark definitions/constituents + levels, **only if a P3 factor dependency is confirmed**.
 2. **Requirements excluded** — active-return/attribution/factor math.
 3. **Proposed entities/modules** — `benchmark` (**ENT-009, EV reference**) + `benchmark_level` (FR levels; **a net-new canonical ENT id minted via the Part-3 ratification, gated on the confirmed P3 dependency** — not a free P2-6 build choice).

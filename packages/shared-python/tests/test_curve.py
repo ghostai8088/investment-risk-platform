@@ -604,5 +604,8 @@ def test_migration_head_is_0020_curves() -> None:
         assert root != root.parent
         root = root.parent
     script = ScriptDirectory(str(root / "migrations"))
-    assert script.get_current_head() == "0020_curves"
+    # P2-6 advanced the head to 0021_benchmark; curve keeps its chain position (0020_curves,
+    # down_revision 0019_price_point) and stays reachable in the revision walk.
+    assert script.get_current_head() == "0021_benchmark"
     assert script.get_revision("0020_curves").down_revision == "0019_price_point"
+    assert "0020_curves" in {r.revision for r in script.walk_revisions()}

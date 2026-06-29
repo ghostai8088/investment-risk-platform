@@ -270,10 +270,12 @@ def test_record_creates_no_position_or_valuation(session: Session) -> None:
     from irp_shared.models import metadata
     from irp_shared.position.models import Position
 
-    # Still-future tables must NOT exist (P2-1..5 build dataset_snapshot/fx_rate/exposure_aggregate/
-    # price_point/curve+curve_point, but a transaction never derives position/valuation/exposure —
-    # captured-not-derived, OD-P1C-E). volatility_surface (ENT-022) stays future (P3+).
-    for table in ("volatility_surface",):
+    # Still-future tables must NOT exist (P2-1..6 build dataset_snapshot/fx_rate/exposure_aggregate/
+    # price_point/curve+curve_point/benchmark+benchmark_constituent, but a transaction never derives
+    # position/valuation/exposure — captured-not-derived, OD-P1C-E). volatility_surface (ENT-022) +
+    # the deferred benchmark levels/returns (P2-6 OD-P2-6-K — net-new canonical ENT id, not
+    # minted) stay future (P3+).
+    for table in ("volatility_surface", "benchmark_level", "benchmark_return"):
         assert table not in metadata.tables
     tenant = _tenant()
     pf_id, inst_id = _seed_pf_inst(session, tenant)
