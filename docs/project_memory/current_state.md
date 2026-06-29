@@ -2,7 +2,7 @@
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this first, then `project_state.yaml`, `next_actions.md`, and
-> `claude_operating_instructions.md`. **As of 2026-06-28.** Values that drift are flagged; re-verify the
+> `claude_operating_instructions.md`. **As of 2026-06-29.** Values that drift are flagged; re-verify the
 > ones in "Re-check at session start" before acting.
 
 ## Repository
@@ -11,22 +11,42 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `2b63b76` — "Implement P2-4 captured price history". Chain since P2-3: `da178fc` (**P2-3 exposure implementation**, #74) → `0b12d85` (P2-3 closeout memory, #75) → `b73e65f` (**P2-4 plan**, #76) → `2b63b76` (**P2-4 price-history implementation**, #77).
-- **Local == origin:** yes; **only this `docs/project_memory/*` refresh (P2-4 closeout) is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** — `2b63b76` = GitHub Actions **run #77** = success — all 5 jobs (Backend, **DB migration (Postgres)**, Frontend, Secret scan, Documentation check), verified via the REST API this session. The migration job gained a **new step** — *Price-point symmetric-RLS + FR-bitemporal tests (ENT-020 / OD-P2-4-* / BR-17)* — alongside *Apply migrations* (0019), *Schema drift check* (`alembic check`), and *Revert migrations* (downgrade smoke), all green. Prior: P2-4 plan #76 (`b73e65f`), P2-3 closeout memory #75 (`0b12d85`), P2-3 implementation #74 (`da178fc`), P2-3 governance ratification #73 (`851f976`).
-- **Migration head:** `0019_price_point` — **advanced from `0018_exposure_aggregate` at P2-4** (`2b63b76`): the `price_point` FR table (symmetric RLS, NOT append-only). `alembic check` drift-clean; downgrade `0019→0018→base→head` smoke green.
+- **origin/main HEAD:** `49ca3bd` — "Implement P2-5 captured yield and spread curves". Chain since P2-4: `2b63b76` (**P2-4 price-history implementation**, #77) → `419db9d` (P2-4 closeout memory, #78) → `326ad94` (**P2-5 plan**, #79) → `49ca3bd` (**P2-5 curve implementation**, #80).
+- **Local == origin:** yes; **only this `docs/project_memory/*` refresh (P2-5 closeout) is uncommitted** (docs-only, commit pending). No code.
+- **Latest CI:** **GREEN** — `49ca3bd` = GitHub Actions **run #80** = success — all 5 jobs (Backend, **DB migration (Postgres)**, Frontend, Secret scan, Documentation check), verified via the REST API this session. The migration job gained a **new step** — *Curve symmetric-RLS + FR/append-only tests (ENT-021/023 / OD-P2-5-* / BR-17/BR-18)* — alongside *Apply migrations* (0020), *Schema drift check* (`alembic check`), and *Revert migrations* (downgrade smoke), all green. Prior: P2-5 plan #79 (`326ad94`), P2-4 closeout memory #78 (`419db9d`), P2-4 implementation #77 (`2b63b76`), P2-4 plan #76 (`b73e65f`).
+- **Migration head:** `0020_curves` — **advanced from `0019_price_point` at P2-5** (`49ca3bd`): the `curve` FR header + `curve_point` IA append-only nodes (symmetric RLS both; P0001 trigger on `curve_point` only). `alembic check` drift-clean; downgrade `0020→0019→base→head` smoke green.
 
 ## Working tree (uncommitted)
-- **This `docs/project_memory/*` refresh** (P2-4 closeout) — modified tracked files, commit pending approval. **Docs-only: no code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/governance-source/CI changes.** (The P2-4 code — the `marketdata/price.py` binder + `PricePoint` model, migration `0019_price_point`, the `/prices` endpoints, the `price_point` tests, the cross-slice fence flips, and the REQ-PUB-001 `Draft→In-Progress(partial)` RTM/backbone advancement — all shipped in `2b63b76`, not in this docs refresh.)
+- **This `docs/project_memory/*` refresh** (P2-5 closeout) — modified tracked files, commit pending approval. **Docs-only: no code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/governance-source/CI changes.** (The P2-5 code — the `marketdata/curve.py` binder + `Curve` + `CurvePoint` models, migration `0020_curves`, the `/curves` endpoints, the curve tests, the cross-slice fence flips, and the REQ-PUB-002 + REQ-PUB-003 `Draft→In-Progress(partial)` RTM/backbone advancement — all shipped in `49ca3bd`, not in this docs refresh.)
 
 ## Current active gate
-**P2-4 captured price history IMPLEMENTATION is COMPLETE, COMMITTED (`2b63b76`), and CI-green (run #77).** `price_point` (ENT-020) —
-**captured vendor security price market data** (the second market-data entity after `fx_rate`) — is **REALIZED** (see the
-deliverables section). **The next step is P2-5 PLANNING ONLY** — author the P2-5 decision record + implementation plan for
-**captured yield/spread curves** (FR / bitemporal market data; a curve header + curve point design if appropriate), **on explicit
-approval**; **P2-5 implementation is NOT started**. Strict planning-first, commit-only-on-explicit-approval cadence holds (plan /
-review / implement / commit are separate approvals). **Frontend visibility: P2-4 had no visible UI change (backend/shared-data
-only); it enables future price-history / market-data-readiness UI, but P2-5 planning builds no frontend unless explicitly directed.**
+**P2-5 captured yield/spread curves IMPLEMENTATION is COMPLETE, COMMITTED (`49ca3bd`), and CI-green (run #80).** `curve` (ENT-021) +
+`curve_point` — **captured vendor yield/spread curve market data** (the third market-data entity after `fx_rate`/`price_point`) —
+is **REALIZED** (see the deliverables section). **The next step is P2-6 PLANNING ONLY** — author the P2-6 decision record +
+implementation plan for **captured benchmark/index data** (benchmark metadata + constituents + levels/returns if scoped as captured
+data; FR / bitemporal where appropriate), **on explicit approval**; **P2-6 implementation is NOT started**. Strict planning-first,
+commit-only-on-explicit-approval cadence holds (plan / review / implement / commit are separate approvals). **Frontend visibility:
+P2-5 had no visible UI change (backend/shared-data only); it enables future curve / market-data-readiness UI, but P2-6 planning
+builds no frontend unless explicitly directed.**
+
+## P2-5 key deliverables (closed, `49ca3bd`, CI-green run #80) — captured yield/spread curves REALIZED
+`curve` (ENT-021, **FR header**) + `curve_point` (**IA append-only version-pinned nodes**) — the platform's **third market-data
+entity** (after `fx_rate`/`price_point`), a unified model fusing the `fx_rate`/`price_point` FR capture protocol (header) with the
+`dataset_snapshot`→`dataset_snapshot_component` header-owns-immutable-children split (nodes). New `marketdata/curve.py` binder
+(`capture_curve`/`supersede_curve`/`correct_curve`/`reconstruct_curve_as_of`/`resolve_curve`/`list_curve_points`); migration
+`0020_curves`. **`audit/service.py` UNTOUCHED.** 8-lens review (7 approve / 1 approve_with_changes / 0 block) → 1 material fold (the
+REQ-PUB-002/003 RTM advancement) + 3 low folds.
+- **Captured, not computed** — **NO curve construction, interpolation, bootstrapping, discounting, duration, key-rate, spread-duration, pricing/valuation/return/factor/risk** (scope-fenced: no construction/risk verb call-or-def in the binder; no `ast.Mult`). `interpolation_method` is a **nullable inert metadata label** (no engine).
+- **ENT mapping** — ENT-021 `yield_curve` realized as the unified `curve` + `curve_point`; **ENT-023 `credit_spread` realized BY VALUE** (`curve_type=CREDIT_SPREAD` + `reference_key` over the SAME tables — the genericity principle; no separate table). `volatility_surface` (ENT-022) stays future.
+- **Temporal** — `curve` header = FR/bitemporal (`FullReproducibleMixin`; capture/supersede/correct/`reconstruct_curve_as_of` both axes; NOT append-only). `curve_point` = IA append-only version-pinned children (in `APPEND_ONLY_TABLES` + the `irp_prevent_mutation` P0001 trigger + ORM guard; a re-version = a NEW header + a FRESH node set; nodes never individually mutated).
+- **Grain** — `curve` 6-part current-head partial-unique `(tenant_id, curve_type, currency_code, reference_key, curve_date, curve_source) WHERE valid_to IS NULL AND system_to IS NULL`; promoted key cols DB-level **NOT NULL**. `curve_point` UNIQUE `(curve_id, value_type, tenor_days)`. `curve_date` a **separate immutable logical key** (distinct from `valid_from`).
+- **Conventions** — `curve_type` `{TREASURY, GOVT, SWAP, OIS, CREDIT_SPREAD}`; `value_type` `{ZERO_RATE, PAR_RATE, DISCOUNT_FACTOR, SPREAD}`; `point_value` `Numeric(20,12)` canonical DECIMAL (not %/bps); `tenor_label` String + normalized `tenor_days` Integer (key, `>0`). **`reference_key`** an opaque NOT-NULL discriminator (sentinel `"NONE"` for rate curves; opaque issuer/rating/sector for `CREDIT_SPREAD`) — **NOT an FK**; the `curve_type`↔`reference_key` invariant binder-enforced (`CurveValueError` 422).
+- **Audit** — `MARKET.CURVE_CREATE`/`UPDATE`/`CORRECTION` (EVT-200) caller-side to the FROZEN `record_event`; **ONE event per curve** (header-grained); per-op grain 1/2/2; **NO audit on read**.
+- **Lineage** — one `VENDOR_CURVE` `data_source` ORIGIN edge per **NEW physical curve version** (header-targeted); none on close-out.
+- **Entitlement** — **reuse `marketdata.view`/`.ingest`** (no new permission; `bootstrap.py` unchanged; parity-tested).
+- **DQ** — required-field + tenor-validity + **value-type-conditional `RANGE`** (two binder-side rules over `value_type`-filtered sub-datasets: DF strictly-positive; ZERO/PAR/SPREAD `[-1,1]`, negatives allowed); the `(params, dataset)` Protocol **untouched**; fail-closed (CTRL-032). Completeness/staleness **deferred** (OQ-P2-5-8).
+- **RLS** — **symmetric tenant-scoped + FORCE RLS on BOTH tables** (migration `0020`); NEVER hybrid (closed 5-table hybrid set unchanged); `curve_point.tenant_id` server-stamped from the header; no BYPASSRLS.
+- **Snapshot readiness-only** — **NO `COMPONENT_KIND_CURVE`**; **NO `calculation_run`/`exposure_aggregate`/`dataset_snapshot`/`fx_rate`/`price_point` change.** API: `api/marketdata.py` `curve_router` (`POST /curves` + `/{id}/supersede` + `/{id}/correct`; `GET /curves/as-of` + `/curves`); no PUT/PATCH/DELETE. Tests: `test_curve.py` (24 SQLite) + `test_curve_pg.py` (6 PG, incl. `curve_point` P0001 append-only + forged-tenant on both tables) + `test_curve_endpoint.py` (6). **`make check` green (784 tests); PG green.** **REQ-PUB-002 + REQ-PUB-003 → In-Progress (partial)** (curve-values-reproduce + spread-coverage legs; vol-surface/interpolation-test/rating/benchmark deferred).
 
 ## P2-4 key deliverables (closed, `2b63b76`, CI-green run #77) — captured price history REALIZED
 `price_point` (ENT-020, **FR / bitemporal**) — the platform's **second market-data entity** (after `fx_rate`/ENT-024), the
@@ -247,6 +267,9 @@ REQ-PPM-001 (migration `0012`); the platform's **first domain entity** + the ent
 - **P2-3 closeout project-memory refresh** — `0b12d85` (CI-green, run #75; docs-only).
 - **P2-4 captured price history decision record + implementation plan** — `b73e65f` (CI-green, run #76; 8-lens, 4 in-scope folds; the six OQ-P2-4 sign-offs). `price_point` (ENT-020) FR/bitemporal captured prices; OD-P2-4-A…L.
 - **P2-4 captured price history implementation** — `2b63b76` (CI-green, run #77; 8-lens, 7 approve / 1 approve_with_changes / 0 block; 1 in-scope fold). **P2-4 CLOSED** — `price_point` (ENT-020, FR/bitemporal captured vendor prices) realized; **migration head `0018_exposure_aggregate` → `0019_price_point`** + the new Price-point symmetric-RLS CI step. **REQ-PUB-001 → In-Progress (partial).** NO pricing model, NO conversion, NO `calculation_run`/`exposure_aggregate`/`dataset_snapshot`/FX change.
+- **P2-4 closeout project-memory refresh** — `419db9d` (CI-green, run #78; docs-only).
+- **P2-5 captured yield/spread curves decision record + implementation plan** — `326ad94` (CI-green, run #79; 8-lens, 8 in-scope folds; the ten OQ-P2-5 sign-offs). The unified `curve` + `curve_point`; OD-P2-5-A…N.
+- **P2-5 captured yield/spread curves implementation** — `49ca3bd` (CI-green, run #80; 8-lens, 7 approve / 1 approve_with_changes / 0 block; 1 material + 3 low folds). **P2-5 CLOSED** — the unified `curve` (FR header, ENT-021) + `curve_point` (IA append-only nodes) realized; ENT-023 `credit_spread` by value; **migration head `0019_price_point` → `0020_curves`** + the new Curve symmetric-RLS CI step. **REQ-PUB-002 + REQ-PUB-003 → In-Progress (partial).** NO curve construction/interpolation/duration/pricing/risk; NO `calculation_run`/`exposure_aggregate`/`dataset_snapshot`/`fx_rate`/`price_point` change.
 
 ## P1B-2 key deliverables (closed, `32c7778`)
 REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evidence (the inverse of P1B-1).
@@ -280,26 +303,24 @@ REQ-SMR-004 (corporate_action portion); migration `0011`. The **last reference e
 With **P1B-1 (vocabularies/hybrid) + P1B-2 (legal_entity/issuer/counterparty) + P1B-3 (instrument/terms/identifier) + P1B-4 (corporate_action)** all closed and CI-green, the **Security-Master & Reference-Data block is complete**. **P1B-5** (reference-data ingestion mapping) is **conditional/deferred** (only if bulk loading is needed). The CAP-2 EV/FR reference entities (ENT-001..006/008) are realized; the *requirements* REQ-SMR-001/002/003/004 stay **In-Progress** (terms math, exposure-rollup calc, cross-vendor precedence, and QS-10/11 roll math respectively deferred to P1C/P2+).
 
 ## Next required action
-**P2-5 PLANNING ONLY (captured yield/spread curves)** — author the **P2-5 decision record + implementation plan**: the next
-market-data entity after `price_point` — **captured yield/spread curves**, **FR / bitemporal** (the `fx_rate` / `price_point` /
-`valuation` protocol precedent), joining the `irp_shared/marketdata` package additively; a **curve header + curve point** design
-if appropriate. **Captured curves ONLY** — no duration calculation, no pricing model, no valuation model, no factor model, no risk
-calculation, no interpolation/bootstrapping engine unless explicitly planned. With the planning UltraCode workflow, then commit
-the plan **on explicit approval**. **PLANNING ONLY — no curve code; no risk.** Implementation is a **separate later approval**.
-Build **nothing else**.
+**P2-6 PLANNING ONLY (captured benchmark/index data)** — author the **P2-6 decision record + implementation plan**: the next
+market-data entity after `curve` — **captured benchmark/index data** (benchmark metadata + constituents + levels/returns if scoped
+as **captured** data; a header + detail design, the `curve`/`curve_point` precedent if appropriate), **FR / bitemporal where
+appropriate**, joining the `irp_shared/marketdata` package additively (the `fx_rate` / `price_point` / `curve` protocol precedent).
+**Captured benchmark data ONLY** — no performance attribution, no factor model, no risk calculation, no returns analytics. With the
+planning UltraCode workflow, then commit the plan **on explicit approval**. **PLANNING ONLY — no benchmark code; no risk.**
+Implementation is a **separate later approval**. Build **nothing else**.
 
 ## What MUST NOT be started yet
-- **Curves implementation (P2-5)** — **only the P2-5 PLANNING is next**; no curve code until the P2-5 plan is approved.
-- **No benchmarks** (P2-6).
-- **No duration calculation** — curves are CAPTURED at P2-5 (no duration / PV / yield math).
+- **Benchmark implementation (P2-6)** — **only the P2-6 PLANNING is next**; no benchmark code until the P2-6 plan is approved.
+- **No curve construction / interpolation / bootstrapping / discounting / duration / key-rate** — curves are CAPTURED at P2-5.
 - **No factor model** — ENT-022 volatility_surface / ENT-025 factor_return → P3+.
 - **No risk calculations / VaR / Expected Shortfall / sensitivities** — P3+.
 - **No stress testing / scenario analytics** — P3+.
-- **No performance / returns** — P3+.
+- **No performance / returns / attribution** — P3+ (a captured benchmark "return" level is a vendor-supplied number, never computed).
 - **No pricing model / valuation model** — captured market data only.
-- **No interpolation / bootstrapping / curve-construction engine** unless explicitly planned.
 - **No reporting / dashboard build** — P2 (AD-014).
-- **No frontend changes** unless explicitly approved (P2-4 had none; it enables future price-history / market-data-readiness UI but builds no frontend by default; P2-5 planning adds no frontend unless directed).
+- **No frontend changes** unless explicitly approved (P2-5 had none; it enables future curve / market-data-readiness UI but builds no frontend by default; P2-6 planning adds no frontend unless directed).
 - **No P3+ work** — factor models, covariance/vol, scenarios, limits, breach, reporting, real SSO.
 - **ABAC enforcement** — anchored in P1C-1 but NOT enforced (enforcement → P6+).
 - **P1B-5** (reference-data ingestion mapping) — conditional/deferred (only if bulk loading is needed; not now).
@@ -309,7 +330,7 @@ Build **nothing else**.
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `2b63b76`) and whether this P2-4 closeout memory refresh was committed.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `49ca3bd`) and whether this P2-5 closeout memory refresh was committed.
 - Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated).
 - `git remote -v` — origin is now SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0019_price_point` (advanced from `0018_exposure_aggregate` at P2-4 / `2b63b76`: the `price_point` FR table; the next P2-5 curve migration lands only when P2-5 is implemented; planning is next).
+- Migration head is `0020_curves` (advanced from `0019_price_point` at P2-5 / `49ca3bd`: the `curve` FR header + `curve_point` IA append-only nodes; the next P2-6 benchmark migration lands only when P2-6 is implemented; planning is next).
