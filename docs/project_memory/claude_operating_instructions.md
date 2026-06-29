@@ -35,6 +35,32 @@ The project uses an **UltraCode multi-agent** model for planning and review:
   watch the relevant CI job to green (REST API; `gh` not installed). A red CI on the just-committed slice is
   fixed before moving on (test-only fixes allowed; reproduce PG-only failures with Docker `postgres:16`).
 
+## Provenance & dates (standing rule)
+- **Authoritative provenance = commit hashes, GitHub Actions run IDs, migration heads, and the `origin/main`
+  HEAD.** Sequence and "what shipped when" are established from Git/GitHub metadata, never from the host
+  calendar. When recording or ordering work, cite these — not a date.
+- **Calendar `as_of` dates are informational only** unless explicitly derived from Git/GitHub metadata (a
+  commit/CI timestamp). Treat the `as_of` field in the project-memory artifacts as best-effort labelling.
+- **Host-clock drift is recorded ONCE in `uncertain_values` and not repeated.** Do NOT re-surface the
+  host-clock-drift caveat in reports; raise the date-uncertainty point ONLY when: (1) a generated artifact
+  materially depends on today's date; (2) there is a genuine conflict between commit/CI chronology and a
+  calendar date; or (3) the user specifically asks about date accuracy. Otherwise stay silent on it — set the
+  `as_of` date and move on.
+
+## Local PG validation container (standing rule)
+- PG validation uses a **single, stable, reused** local container named **`irp_pg_local`** (`postgres:16`;
+  `irp:irp@localhost:5432/irp`) — **start-if-absent, reuse-if-present**. Do NOT create a fresh per-slice
+  `irp_pg_pNN` name (the name churn is what made the cleanup note recur).
+- The container is **ephemeral local tooling, not a deliverable**: a temporary local Postgres validation
+  container may be **stopped after validation**, and torn down **silently** (`docker stop irp_pg_local`) as part
+  of end-of-slice cleanup once CI is green. **Do NOT surface a recurring "container still running / please
+  `docker stop …`" housekeeping note in reports** — it is noise the user has already actioned; re-emitting an
+  already-resolved cleanup reminder is the exact anti-pattern this rule (and the dates rule above) forbid. Only
+  mention the container if it is genuinely still running AND in the way of the user's next step.
+- **Local container cleanup is NOT a repo/code change** — starting or stopping `irp_pg_local` touches nothing
+  under version control. It does **not** affect CI, migrations, or the committed project state; it never needs a
+  commit and is never reported as one.
+
 ## Scope-control rules
 - **Planning-first, thin slices.** No domain functionality during foundation/skeleton/planning phases.
 - **Do not start the next slice until directed.** Plan / implement / commit are separate approvals.

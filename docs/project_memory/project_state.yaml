@@ -480,6 +480,6 @@ recheck_at_session_start:
   - "migration head is 0020_curves (advanced from 0019_price_point at P2-5 / 49ca3bd; the curve FR header + curve_point IA append-only nodes); the next P2-6 benchmark migration lands only when P2-6 is IMPLEMENTED (planning is next)"
 
 uncertain_values:
-  - "as_of '2026-06-29' is approximate — the host clock has drifted (read 2026-06-18 .. 2026-06-29 intermittently). The commit timeline + CI run numbers are authoritative; calendar dates are best-effort."
+  - "Per the Provenance & dates standing rule (claude_operating_instructions.md): commit hashes / CI run IDs / migration heads are AUTHORITATIVE; the as_of calendar date is informational best-effort (the host clock drifts) — set it and move on; do NOT re-surface the clock-drift caveat as a finding."
   - "This P2-5 closeout project_memory refresh is UNCOMMITTED — origin/main stays 49ca3bd until it is committed on approval."
   - "CI run #80 (success, all 5 jobs) is the P2-5 implementation run for 49ca3bd (verified via the GitHub Actions REST API this session; the new Curve symmetric-RLS + FR/append-only PG step + Apply-migrations 0020 + Schema-drift + downgrade-smoke all green). Run #79 = the P2-5 plan (326ad94); #78 = the P2-4 closeout memory (419db9d); #77 = the P2-4 implementation (2b63b76)."
