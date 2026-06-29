@@ -28,26 +28,40 @@ from irp_shared.marketdata import (
     DEFAULT_BASE,
     PRICE_TYPE_CLOSE,
     RATE_TYPE_MID,
+    REFERENCE_KEY_NONE,
+    Curve,
+    CurveActor,
+    CurveNode,
+    CurveNotVisible,
+    CurvePoint,
+    CurveValueError,
     FxRate,
     FxRateActor,
     FxRateNotFound,
     FxRateNotVisible,
     FxRateValueError,
+    NoCurrentCurve,
     NoCurrentFxRate,
     NoCurrentPrice,
     PriceActor,
     PriceNotVisible,
     PricePoint,
     PriceValueError,
+    capture_curve,
     capture_fx_rate,
     capture_price,
     convert,
+    correct_curve,
     correct_fx_rate,
     correct_price,
+    list_curve_points,
+    reconstruct_curve_as_of,
     reconstruct_fx_rate_as_of,
     reconstruct_price_as_of,
+    resolve_curve,
     resolve_fx_rate,
     resolve_price,
+    supersede_curve,
     supersede_fx_rate,
     supersede_price,
 )
@@ -56,6 +70,7 @@ from irp_shared.reference.service import CurrencyNotVisible
 
 router = APIRouter(prefix="/fx", tags=["marketdata"])
 price_router = APIRouter(prefix="/prices", tags=["marketdata"])
+curve_router = APIRouter(prefix="/curves", tags=["marketdata"])
 
 #: Module-level guard singletons (deny-by-default; built once, not in argument defaults).
 _require_ingest = require_permission("marketdata.ingest")
@@ -597,3 +612,298 @@ def list_prices(
         .all()
     )
     return [_price_out(row) for row in rows]
+
+
+# --- Curves (P2-5, ENT-021/023) — captured RAW vendor yield/spread curves on the FR protocol ---
+
+
+def _curve_actor(principal: Principal) -> CurveActor:
+    return CurveActor(actor_id=principal.user_id)
+
+
+class CurveNodeIn(BaseModel):
+    tenor_label: str
+    tenor_days: int
+    value_type: str
+    point_value: Decimal
+
+
+class CurveIn(BaseModel):
+    curve_type: str
+    currency_code: str
+    curve_date: date
+    curve_source: str
+    nodes: list[CurveNodeIn]
+    reference_key: str = REFERENCE_KEY_NONE
+    interpolation_method: str | None = None
+    valid_from: datetime | None = None
+
+
+class CurveReversionIn(BaseModel):
+    nodes: list[CurveNodeIn]
+    interpolation_method: str | None = None
+
+
+class CurveSupersedeIn(CurveReversionIn):
+    effective_at: datetime
+
+
+class CurveCorrectIn(CurveReversionIn):
+    restatement_reason: str
+
+
+class CurveNodeOut(BaseModel):
+    tenor_label: str
+    tenor_days: int
+    value_type: str
+    point_value: Decimal
+
+
+class CurveOut(BaseModel):
+    id: str
+    curve_type: str
+    currency_code: str
+    reference_key: str
+    curve_date: date
+    curve_source: str
+    interpolation_method: str | None
+    point_count: int
+    valid_from: datetime
+    valid_to: datetime | None
+    system_from: datetime
+    system_to: datetime | None
+    restatement_reason: str | None
+    supersedes_id: str | None
+    record_version: int
+    nodes: list[CurveNodeOut]
+
+
+def _nodes_in(body_nodes: list[CurveNodeIn]) -> list[CurveNode]:
+    return [
+        CurveNode(
+            tenor_label=n.tenor_label,
+            tenor_days=n.tenor_days,
+            value_type=n.value_type,
+            point_value=n.point_value,
+        )
+        for n in body_nodes
+    ]
+
+
+def _curve_out(header: Curve, points: list[CurvePoint]) -> CurveOut:
+    return CurveOut(
+        id=header.id,
+        curve_type=header.curve_type,
+        currency_code=header.currency_code,
+        reference_key=header.reference_key,
+        curve_date=header.curve_date,
+        curve_source=header.curve_source,
+        interpolation_method=header.interpolation_method,
+        point_count=header.point_count,
+        valid_from=header.valid_from,
+        valid_to=header.valid_to,
+        system_from=header.system_from,
+        system_to=header.system_to,
+        restatement_reason=header.restatement_reason,
+        supersedes_id=header.supersedes_id,
+        record_version=header.record_version,
+        nodes=[
+            CurveNodeOut(
+                tenor_label=p.tenor_label,
+                tenor_days=p.tenor_days,
+                value_type=p.value_type,
+                point_value=p.point_value,
+            )
+            for p in points
+        ],
+    )
+
+
+#: Governed-write error → (status, detail). Fail-closed; rolls back before mapping.
+_CURVE_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
+    CurveValueError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid curve input"),
+    CurrencyNotVisible: (status.HTTP_404_NOT_FOUND, "currency not found"),
+    CurveNotVisible: (status.HTTP_404_NOT_FOUND, "curve not found"),
+    NoCurrentCurve: (status.HTTP_409_CONFLICT, "no current curve version to supersede"),
+    DataQualityError: (status.HTTP_409_CONFLICT, "curve failed a data-quality gate"),
+}
+
+
+def _raise_curve_write(db: Session, exc: Exception) -> None:
+    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
+    code, detail = _CURVE_WRITE_ERRORS[type(exc)]
+    raise HTTPException(status_code=code, detail=detail) from None
+
+
+def _curve_with_nodes(db: Session, header: Curve, principal: Principal) -> CurveOut:
+    points = list_curve_points(db, header.id, acting_tenant=principal.tenant_id)
+    return _curve_out(header, points)
+
+
+@curve_router.post("", response_model=CurveOut, status_code=status.HTTP_201_CREATED)
+def create_curve(
+    body: CurveIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> CurveOut:
+    """Capture a curve (header + its node set, one governed unit: VENDOR-source ORIGIN lineage +
+    MARKET.CURVE_CREATE + the DQ gate)."""
+    try:
+        header = capture_curve(
+            db,
+            curve_type=body.curve_type,
+            currency_code=body.currency_code,
+            curve_date=body.curve_date,
+            curve_source=body.curve_source,
+            nodes=_nodes_in(body.nodes),
+            acting_tenant=principal.tenant_id,
+            actor=_curve_actor(principal),
+            reference_key=body.reference_key,
+            interpolation_method=body.interpolation_method,
+            valid_from=body.valid_from,
+        )
+    except (CurveValueError, CurrencyNotVisible, DataQualityError) as exc:
+        _raise_curve_write(db, exc)
+    out = _curve_with_nodes(db, header, principal)
+    db.commit()
+    return out
+
+
+@curve_router.post(
+    "/{curve_id}/supersede", response_model=CurveOut, status_code=status.HTTP_201_CREATED
+)
+def supersede_curve_endpoint(
+    curve_id: str,
+    body: CurveSupersedeIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> CurveOut:
+    """Effective-dated re-capture for the SAME logical key of an existing head (new version + fresh
+    node set)."""
+    try:
+        prior = resolve_curve(db, curve_id, acting_tenant=principal.tenant_id)
+        header = supersede_curve(
+            db,
+            curve_type=prior.curve_type,
+            currency_code=prior.currency_code,
+            curve_date=prior.curve_date,
+            curve_source=prior.curve_source,
+            nodes=_nodes_in(body.nodes),
+            acting_tenant=principal.tenant_id,
+            actor=_curve_actor(principal),
+            effective_at=body.effective_at,
+            reference_key=prior.reference_key,
+            interpolation_method=body.interpolation_method,
+        )
+    except (
+        CurveValueError,
+        CurrencyNotVisible,
+        CurveNotVisible,
+        NoCurrentCurve,
+        DataQualityError,
+    ) as exc:
+        _raise_curve_write(db, exc)
+    out = _curve_with_nodes(db, header, principal)
+    db.commit()
+    return out
+
+
+@curve_router.post(
+    "/{curve_id}/correct", response_model=CurveOut, status_code=status.HTTP_201_CREATED
+)
+def correct_curve_endpoint(
+    curve_id: str,
+    body: CurveCorrectIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> CurveOut:
+    """As-known vendor restatement of a specific curve version (same valid period + logical key +
+    fresh node set)."""
+    try:
+        prior = resolve_curve(db, curve_id, acting_tenant=principal.tenant_id)
+        header = correct_curve(
+            db,
+            prior,
+            restatement_reason=body.restatement_reason,
+            nodes=_nodes_in(body.nodes),
+            acting_tenant=principal.tenant_id,
+            actor=_curve_actor(principal),
+            interpolation_method=body.interpolation_method,
+        )
+    except (CurveValueError, CurrencyNotVisible, CurveNotVisible, DataQualityError) as exc:
+        _raise_curve_write(db, exc)
+    out = _curve_with_nodes(db, header, principal)
+    db.commit()
+    return out
+
+
+@curve_router.get("/as-of", response_model=CurveOut)
+def get_curve_as_of(
+    curve_type: str = Query(...),
+    currency_code: str = Query(...),
+    curve_date: date = Query(...),
+    curve_source: str = Query(...),
+    valid_at: datetime = Query(...),
+    reference_key: str = Query(default=REFERENCE_KEY_NONE),
+    known_at: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> CurveOut:
+    """The single head curve (header + pinned nodes) for a logical key as-of (valid_at, known_at)
+    — 404 if none."""
+    header = reconstruct_curve_as_of(
+        db,
+        acting_tenant=principal.tenant_id,
+        curve_type=curve_type,
+        currency_code=currency_code,
+        curve_date=curve_date,
+        curve_source=curve_source,
+        valid_at=valid_at,
+        reference_key=reference_key,
+        known_at=known_at,
+    )
+    if header is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="curve not found")
+    return _curve_with_nodes(db, header, principal)
+
+
+@curve_router.get("", response_model=list[CurveOut])
+def list_curves(
+    curve_type: str = Query(...),
+    currency_code: str = Query(...),
+    curve_date_from: date = Query(...),
+    curve_date_to: date = Query(...),
+    curve_source: str = Query(...),
+    valid_at: datetime = Query(...),
+    reference_key: str = Query(default=REFERENCE_KEY_NONE),
+    known_at: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[CurveOut]:
+    """The as-of head curve (header + nodes) for each curve_date in [from, to] for a logical key —
+    read-only."""
+    from irp_shared.db.mixins import utcnow
+
+    known = known_at or utcnow()
+    headers = (
+        db.execute(
+            select(Curve)
+            .where(
+                Curve.tenant_id == str(principal.tenant_id),
+                Curve.curve_type == curve_type,
+                Curve.currency_code == currency_code,
+                Curve.reference_key == reference_key,
+                Curve.curve_source == curve_source,
+                Curve.curve_date >= curve_date_from,
+                Curve.curve_date <= curve_date_to,
+                Curve.valid_from <= valid_at,
+                or_(Curve.valid_to.is_(None), Curve.valid_to > valid_at),
+                Curve.system_from <= known,
+                or_(Curve.system_to.is_(None), Curve.system_to > known),
+            )
+            .order_by(Curve.curve_date)
+        )
+        .scalars()
+        .all()
+    )
+    return [_curve_with_nodes(db, h, principal) for h in headers]

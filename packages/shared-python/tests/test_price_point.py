@@ -519,7 +519,9 @@ def test_price_module_imports_no_calc_exposure_snapshot_risk() -> None:
 # ---------- migration head ----------
 
 
-def test_migration_head_is_0019_price_point() -> None:
+def test_migration_0019_chain_position() -> None:
+    # P2-5 advanced head to 0020_curves; 0019_price_point keeps its chain position (down_revision
+    # 0018_exposure_aggregate) and stays reachable in the revision walk (no longer the head).
     import pathlib as _pl
 
     from alembic.script import ScriptDirectory
@@ -529,5 +531,6 @@ def test_migration_head_is_0019_price_point() -> None:
         assert root != root.parent, "alembic.ini not found"
         root = root.parent
     script = ScriptDirectory(str(root / "migrations"))
-    assert script.get_current_head() == "0019_price_point"
+    assert script.get_current_head() == "0020_curves"
     assert script.get_revision("0019_price_point").down_revision == "0018_exposure_aggregate"
+    assert "0019_price_point" in {r.revision for r in script.walk_revisions()}

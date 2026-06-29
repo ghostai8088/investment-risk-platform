@@ -714,9 +714,9 @@ def test_scope_fence_mult_is_permitted() -> None:
 # ---------- migration head ----------
 
 
-def test_migration_head_after_price_point() -> None:
-    # P2-4 advanced the head to 0019_price_point (down_revision 0018_exposure_aggregate); the
-    # exposure migration keeps its chain position and stays reachable in the revision walk.
+def test_migration_head_after_curves() -> None:
+    # P2-5 advanced the head to 0020_curves (down_revision 0019_price_point); the exposure migration
+    # keeps its chain position (0018_exposure_aggregate) and stays reachable in the revision walk.
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
@@ -724,8 +724,9 @@ def test_migration_head_after_price_point() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0019_price_point"
-    assert script.get_revision("0019_price_point").down_revision == "0018_exposure_aggregate"
+    assert script.get_current_head() == "0020_curves"
+    assert script.get_revision("0020_curves").down_revision == "0019_price_point"
+    assert "0018_exposure_aggregate" in {r.revision for r in script.walk_revisions()}
     assert "0018_exposure_aggregate" in {r.revision for r in script.walk_revisions()}
 
 

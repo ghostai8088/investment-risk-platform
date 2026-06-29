@@ -12,6 +12,23 @@ marketdata`` dependency; ``marketdata`` still imports neither.)
 from __future__ import annotations
 
 from irp_shared.marketdata.convert import DEFAULT_BASE, ConvertResult, FxRateNotFound, convert
+from irp_shared.marketdata.curve import (
+    MARKET_CURVE_CORRECTION_EVENT,
+    MARKET_CURVE_CREATE_EVENT,
+    MARKET_CURVE_UPDATE_EVENT,
+    VENDOR_CURVE_SOURCE_CODE,
+    CurveActor,
+    CurveNode,
+    CurveNotVisible,
+    CurveValueError,
+    NoCurrentCurve,
+    capture_curve,
+    correct_curve,
+    list_curve_points,
+    reconstruct_curve_as_of,
+    resolve_curve,
+    supersede_curve,
+)
 from irp_shared.marketdata.events import (
     MARKET_FX_CORRECTION_EVENT,
     MARKET_FX_CREATE_EVENT,
@@ -25,12 +42,17 @@ from irp_shared.marketdata.legs import (
     resolve_conversion_legs,
 )
 from irp_shared.marketdata.models import (
+    CURVE_TYPES,
+    CURVE_VALUE_TYPES,
     FX_RATE_TYPES,
     PRICE_TYPE_CLOSE,
     PRICE_TYPE_MID,
     PRICE_TYPE_NAV,
     PRICE_TYPES,
     RATE_TYPE_MID,
+    REFERENCE_KEY_NONE,
+    Curve,
+    CurvePoint,
     FxRate,
     PricePoint,
 )
@@ -102,4 +124,24 @@ __all__ = [
     "PriceValueError",
     "PriceNotVisible",
     "NoCurrentPrice",
+    "Curve",
+    "CurvePoint",
+    "CurveNode",
+    "CURVE_TYPES",
+    "CURVE_VALUE_TYPES",
+    "REFERENCE_KEY_NONE",
+    "CurveActor",
+    "MARKET_CURVE_CREATE_EVENT",
+    "MARKET_CURVE_UPDATE_EVENT",
+    "MARKET_CURVE_CORRECTION_EVENT",
+    "VENDOR_CURVE_SOURCE_CODE",
+    "capture_curve",
+    "supersede_curve",
+    "correct_curve",
+    "reconstruct_curve_as_of",
+    "resolve_curve",
+    "list_curve_points",
+    "CurveValueError",
+    "CurveNotVisible",
+    "NoCurrentCurve",
 ]
