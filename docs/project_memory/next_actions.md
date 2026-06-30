@@ -5,54 +5,64 @@
 
 ## Exact next step
 **DONE:** the **FULL P1C block** → P2-1 `dataset_snapshot` (`3629baa`, #67) → P2-2 `fx_rate` (`c257e5c`, #70) → P2-3 `calculation_run`
-+ basic exposure (`da178fc`, #74; the first governed derived number, `exposure_aggregate`/ENT-014) → **P2-4 captured price history**
-(`2b63b76`, #77; `price_point`/ENT-020) → **P2-4 closeout memory** (`419db9d`, #78) → **P2-5 plan** (`326ad94`, #79; 8-lens, 8 folds;
-the ten OQ-P2-5 sign-offs) → **P2-5 captured yield/spread curves IMPLEMENTATION** (`49ca3bd`, CI-green run #80; **8-lens review — 7
-approve / 1 approve_with_changes / 0 block; 1 material + 3 low folds**): the unified **`curve` (FR header, ENT-021) + `curve_point`
-(IA append-only version-pinned nodes)** REALIZED — the `fx_rate`/`price_point` FR protocol + the `dataset_snapshot`/`component`
-header+detail split; the `marketdata/curve.py` binder (`capture_curve`/`supersede_curve`/`correct_curve`/`reconstruct_curve_as_of`/
-`resolve_curve`/`list_curve_points`); migration `0020_curves` (curve FR symmetric RLS NOT append-only; `curve_point` IA append-only —
-`APPEND_ONLY_TABLES` + the P0001 trigger + ORM guard). **ENT-023 `credit_spread` realized BY VALUE** (`curve_type=CREDIT_SPREAD` +
-`reference_key` over the same tables; the genericity principle). **6-part current-head key** `(tenant_id, curve_type, currency_code,
-reference_key, curve_date, curve_source)` + promoted key cols **NOT NULL**; `curve_point` UNIQUE `(curve_id, value_type, tenor_days)`;
-`curve_date` a **separate immutable logical key**; `curve_type` **{TREASURY, GOVT, SWAP, OIS, CREDIT_SPREAD}**; `value_type`
-**{ZERO_RATE, PAR_RATE, DISCOUNT_FACTOR, SPREAD}**; `point_value` **Numeric(20,12)** (canonical decimal); `tenor_label` + normalized
-`tenor_days`; `reference_key` opaque (NOT an FK) + the `curve_type`↔`reference_key` invariant; `interpolation_method` an inert label;
-**`MARKET.CURVE_CREATE`/`UPDATE`/`CORRECTION`** caller-side (ONE event per curve); **`VENDOR_CURVE` ORIGIN lineage** per physical
-version; reuse `marketdata.view`/`.ingest` (**NO new permission**); **value-type-conditional `RANGE` DQ** (DF strictly-positive;
-rates/spreads `[-1,1]`); symmetric RLS on **both** tables; **snapshot readiness-only** (NO `COMPONENT_KIND_CURVE`); the new Curve
-symmetric-RLS CI step. **NO curve construction/interpolation/bootstrapping/duration/key-rate/pricing/risk; NO `calculation_run`/
-`exposure_aggregate`/`dataset_snapshot`/`fx_rate`/`price_point` change.** `migration_head` `0019_price_point` → `0020_curves`.
-`audit/service.py` FROZEN. **REQ-PUB-002 + REQ-PUB-003 → In-Progress (partial)** (curve-values-reproduce + spread-coverage legs;
-vol-surface/interpolation-test/rating/benchmark deferred). **P2-5 is COMPLETE and CI-green. No visible UI change** (enables future
-curve / market-data-readiness UI).
++ basic exposure (`da178fc`, #74; the first governed derived number, `exposure_aggregate`/ENT-014) → P2-4 `price_point` (`2b63b76`,
+#77) → P2-5 `curve`+`curve_point` (`49ca3bd`, #80) → **P2-5 closeout memory** (`0c5c068`, #81) → **P2-6 plan** (`8d2782f`, #82;
+8-lens, 2 HIGH + 1 MED + 21 LOW folds; the eleven OQ-P2-6 sign-offs + Option A) → **operating-rules** (`1e0dc08`, #83; provenance/dates
++ local-PG-container standing rules) → **P2-6 captured benchmark/index data IMPLEMENTATION** (`b6284a4`, CI-green run #84; **8-lens
+review — 4 approve / 4 approve_with_changes / 0 block; every finding folded, incl. a real read-endpoint 500→404 fail-closed-status
+bug + 5 added tests**): **`benchmark` (ENT-009, EV definition) + `benchmark_constituent` (FR/bitemporal membership)** REALIZED — the
+`marketdata/benchmark.py` binder (`capture_benchmark`/`update_benchmark`/`resolve_benchmark`/`list_benchmarks` + `capture_membership`/
+`supersede_membership`/`correct_membership`/`reconstruct_membership_as_of`) + the `Benchmark` + `BenchmarkConstituent` models;
+migration `0021_benchmark` (**NEITHER table append-only** — EV in-place + FR close-out; no P0001 trigger). Identity
+`(tenant, benchmark_code, benchmark_source)`; constituent 4-part current-head key `(tenant, benchmark_id, instrument_id,
+effective_date)` + promoted key cols **NOT NULL**; `effective_date` a **separate immutable logical key**; `weight` **Numeric(20,12)**
+(`RANGE [0,1]`); `instrument_id` NOT-NULL FK via `resolve_instrument`; membership captured/superseded/corrected **as a set** per
+`(benchmark, effective_date)`. **RATIFIED AUDIT SPLIT (OQ-P2-6-11 Option A):** `REFERENCE.CREATE`/`REFERENCE.UPDATE` for the EV
+definition; `MARKET.BENCHMARK_CONSTITUENT_CREATE`/`_UPDATE`/`_CORRECTION` (EVT-200; set-grained, one-event-per-set) for the FR
+membership; the definition is NOT moved into `MARKET.*`. **`VENDOR_BENCHMARK` ORIGIN lineage** (benchmark-targeted; no `effective_date`
+on the edge); reuse `marketdata.view`/`.ingest` (**NO new permission**); required-field + weight `RANGE [0,1]` DQ (Protocol
+untouched); symmetric RLS on **both** tables; **snapshot readiness-only** (NO `COMPONENT_KIND_BENCHMARK`). **`benchmark_level` +
+`benchmark_return` DEFERRED** (a net-new canonical ENT id NOT minted). **NO performance/attribution/active-return/active-risk/
+tracking-error/factor/covariance/VaR/ES/reporting; NO `calculation_run`/`exposure_aggregate`/`dataset_snapshot`/`fx_rate`/
+`price_point`/`curve` change.** `migration_head` `0020_curves` → `0021_benchmark`. `audit/service.py` FROZEN. **REQ-PUB-003 benchmark
+leg advanced** (stays In-Progress partial; rating + levels/returns + the full Coverage test deferred). **P2-6 is COMPLETE and
+CI-green. No visible UI change.**
 
-**COMMIT-PENDING:** this `docs/project_memory/*` refresh (P2-5 closeout; no code) — commit on explicit approval.
+**THE FULL P2 CAPTURED MARKET-DATA / REPRODUCIBILITY FOUNDATION IS COMPLETE and CI-green** — P2-1 `dataset_snapshot` (`3629baa`) /
+P2-2 `fx_rate` (`c257e5c`) / P2-3 `calculation_run`+`exposure_aggregate` (`da178fc`) / P2-4 `price_point` (`2b63b76`) / P2-5
+`curve`+`curve_point` (`49ca3bd`) / P2-6 `benchmark`+`benchmark_constituent` (`b6284a4`). The reproducibility primitive + the captured
+market-data inputs (FX, prices, curves, benchmarks) + the first governed derived number (exposure) are all realized. **NO risk
+analytics yet** (P3).
 
-**NEXT — P2-6 PLANNING ONLY (on explicit approval):** author the **P2-6 decision record + implementation plan** for **captured
-benchmark/index data** (the next market-data entity after `curve`; benchmark metadata + constituents + levels/returns if scoped as
-**captured** data; a header + detail design if appropriate; **FR / bitemporal where appropriate**, joining `irp_shared/marketdata`
-additively). **Captured benchmark data ONLY** — NO performance attribution, NO factor model, NO risk calculation, NO returns
-analytics. **Plan ONLY** — NO benchmark code, NO risk, NO P3+. Implementation is a **separate later approval**.
+**COMMIT-PENDING:** this `docs/project_memory/*` refresh (P2-6 closeout; no code) — commit on explicit approval.
 
-## Exact next prompt to run (when the user is ready for P2-6 planning)
-> "Begin P2-6 planning only: the captured benchmark/index data decision record + implementation plan. Plan EXACTLY the P2-6 subphase
-> per the ratified P2 sequencing (`p2_implementation_plan.md`): a **captured benchmark/index** market-data entity (the next after
-> `curve`/ENT-021), realizing the benchmark portion of REQ-PUB-003 (`benchmark`); benchmark metadata + constituents + levels/returns
-> IF scoped as **captured** data; **FR / bitemporal where appropriate** (the `fx_rate` / `price_point` / `curve` protocol precedent —
-> capture / supersede / correct / reconstruct-as-of), a header + detail design if appropriate; joining `irp_shared/marketdata`
-> additively; symmetric tenant-scoped RLS (per-tenant vendor-licensed; NEVER hybrid; closed 5-table hybrid set unchanged); a
-> `MARKET.*` audit family member; VENDOR `data_source` ORIGIN lineage; a fail-closed DQ gate (reuse the `RANGE`/required-field
-> evaluators); snapshot integration readiness-only unless a calc needs it. STRICT EXCLUSIONS: NO benchmark code (planning only); NO
-> performance attribution; NO factor model; NO risk / VaR / ES / sensitivities / scenario; NO returns analytics; NO P3+. N-lens
-> UltraCode planning workflow; produce the decision record + implementation plan markdown under `10_delivery_backlog/`. Do not commit
-> until I approve."
+**NEXT — P2 CLOSEOUT / P3 READINESS REVIEW (on explicit approval):** assess whether the P2 captured market-data foundation is
+sufficient for **P3 (factor model / market-risk) PLANNING**. Focus: factor-model + market-risk readiness; data-history requirements
+for factor/risk models; model registry / `model_version` integration; `calculation_run` + `dataset_snapshot` governance for risk
+OUTPUTS (the first governed risk numbers — `risk_result`/`sensitivity`); risk methodology documentation requirements. **READINESS
+REVIEW ONLY** — NO P3 code, NO risk calculation. P3 PLANNING is a **separate later approval**; P3 implementation a further separate
+approval.
+
+## Exact next prompt to run (when the user is ready for the P2 closeout / P3 readiness review)
+> "Begin the P2 closeout / P3 readiness review (assessment only — no code). The full P2 captured market-data foundation is delivered
+> (P2-1 dataset_snapshot, P2-2 fx_rate, P2-3 calculation_run+exposure, P2-4 price_point, P2-5 curve+curve_point, P2-6
+> benchmark+benchmark_constituent; migration head 0021_benchmark; CI-green). Assess P3 (factor model / market-risk) readiness:
+> (1) whether the captured market-data foundation (FX / prices / curves / benchmarks) + the reproducibility primitive
+> (dataset_snapshot) + calculation_run are sufficient inputs for P3 risk PLANNING; (2) data-history requirements for factor/risk
+> models (time-series depth/coverage); (3) model registry / model_version integration (risk OUTPUTS bind a model_version, unlike the
+> deterministic P2-3 exposure rollup); (4) calculation_run + dataset_snapshot governance for the first governed RISK numbers
+> (risk_result ENT-027 / sensitivity ENT-028 binding a run + snapshot + model_version + seed; reproducibility under correction);
+> (5) risk methodology documentation + model-inventory requirements (REQ-MKT-001 acceptance). Produce a readiness-review note /
+> P3-0 decision-record scaffold under 10_delivery_backlog/. STRICT EXCLUSIONS: NO P3 code; NO factor/covariance/VaR/ES/sensitivity/
+> stress/scenario build; NO risk calculation; NO benchmark_level/benchmark_return; NO frontend; NO migration. Readiness review only;
+> P3 PLANNING is a separate later approval. Do not commit until I approve."
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
-- **Each slice/step is separately gated** — plan, review, implementation, and commit are distinct approvals.
-- **Do not start benchmark implementation** until the **P2-6 plan is approved** and its implementation separately approved. P1B-5
-  stays conditional/deferred; the P3+ boundaries stay closed unless explicitly reopened.
+- **Each slice/step is separately gated** — readiness-review, plan, review, implementation, and commit are distinct approvals.
+- **Do not start P3 implementation** until **P3 PLANNING is approved** and its implementation separately approved. The P2 closeout /
+  P3 readiness review is the next gate (assessment only). P1B-5 stays conditional/deferred; the P3+ boundaries stay closed unless
+  explicitly reopened. `benchmark_level`/`benchmark_return` stay deferred (a net-new canonical ENT id).
 
 ## CI gates (must be green before a phase is "closed")
 - Backend (ruff format + lint, mypy, pytest), Frontend, **DB migration (Postgres)** incl. `alembic check` drift +
@@ -60,21 +70,22 @@ analytics. **Plan ONLY** — NO benchmark code, NO risk, NO P3+. Implementation 
   Corporate-action symmetric-RLS + **Portfolio symmetric-RLS** + **Transaction symmetric-RLS + append-only** + **Position
   symmetric-RLS + FR-bitemporal** + **Valuation symmetric-RLS + FR-bitemporal** + **Snapshot symmetric-RLS + append-only** +
   **FX rate symmetric-RLS + hybrid-currency** + **Exposure symmetric-RLS + append-only** + **Price-point symmetric-RLS + FR-bitemporal**
-  + **Curve symmetric-RLS + FR/append-only** all shipped) + `alembic check` drift + downgrade smoke, Documentation check, Secret scan.
-  **P2-5 added the Curve symmetric-RLS step** + migration `0020_curves` (head `0019_price_point` → `0020_curves`; the `curve` FR
-  header + `curve_point` IA append-only nodes). **HEAD `49ca3bd` = run #80 = success** (all 5 jobs).
+  + **Curve symmetric-RLS + FR/append-only** + **Benchmark symmetric-RLS + EV/FR (neither append-only)** all shipped) + `alembic check`
+  drift + downgrade smoke, Documentation check, Secret scan. **P2-6 added the benchmark suite** (no new explicit CI step — the migration
+  job auto-covers `0021_benchmark`) + migration `0021_benchmark` (head `0020_curves` → `0021_benchmark`; the `benchmark` EV definition
+  + `benchmark_constituent` FR membership, NEITHER append-only). **HEAD `b6284a4` = run #84 = success** (all 5 jobs).
 - `gh` CLI is **not installed** — query GitHub Actions via the public-repo REST API (or Docker `postgres:16` locally to
   reproduce PG-only failures, as done throughout P1B/P1C/P2). CI runs warning-free on the Node-24 action majors.
 
 ## Stop conditions (halt and ask)
-- Any request to start **P2-6 PLANNING** is fine **on explicit approval** (author the captured benchmark/index decision record + plan
-  only); but do NOT pull in **benchmark implementation**, **performance attribution**, **a factor model**, **risk/VaR/ES/factor/
-  sensitivities/scenario**, **returns analytics**, reporting/dashboards, real SSO, ABAC enforcement, or any P3+ work — separate,
-  later, planned slices.
-- **The third market-data entity is REALIZED** — `curve` + `curve_point` (ENT-021/023) is captured FR/bitemporal vendor yield/spread
-  curve data, shipped at P2-5 (`49ca3bd`); after `fx_rate` (P2-2), `price_point` (P2-4), and the first governed derived number
-  `exposure_aggregate` (ENT-014, P2-3). Any FURTHER derived output (risk/factor/scenario/attribution) or computed market data (curve
-  construction, interpolation, duration) stays its own planned slice / P3+; refuse to pull it forward.
+- Any request to start the **P2 closeout / P3 readiness review** is fine **on explicit approval** (assessment / readiness note only);
+  but do NOT pull in **P3 implementation**, **a factor model**, **risk/VaR/ES/sensitivities/scenario/stress**, **performance
+  attribution / active return / active risk / tracking error**, `benchmark_level`/`benchmark_return`, reporting/dashboards, real SSO,
+  ABAC enforcement, or any P3+ work — separate, later, planned slices.
+- **The FULL P2 captured market-data foundation is REALIZED** — `benchmark` + `benchmark_constituent` (ENT-009) is captured benchmark/
+  index data, shipped at P2-6 (`b6284a4`); after `fx_rate` (P2-2), `price_point` (P2-4), `curve`+`curve_point` (P2-5), and the first
+  governed derived number `exposure_aggregate` (ENT-014, P2-3). Any FURTHER derived output (risk/factor/scenario/attribution/
+  tracking-error) or computed market data stays its own planned slice / P3+; refuse to pull it forward.
 - Any request to start **P1B-5** (conditional/deferred) ahead of a bulk-loading driver.
 - Any change to **`audit/service.py`** (frozen) or **`entitlement/bootstrap.py`** outside the governed R-07 mint, or any new
   audit code / permission / role / migration without R-07.

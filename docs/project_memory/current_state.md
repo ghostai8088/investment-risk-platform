@@ -11,23 +11,52 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `49ca3bd` — "Implement P2-5 captured yield and spread curves". Chain since P2-4: `2b63b76` (**P2-4 price-history implementation**, #77) → `419db9d` (P2-4 closeout memory, #78) → `326ad94` (**P2-5 plan**, #79) → `49ca3bd` (**P2-5 curve implementation**, #80).
-- **Local == origin:** yes; **only this `docs/project_memory/*` refresh (P2-5 closeout) is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** — `49ca3bd` = GitHub Actions **run #80** = success — all 5 jobs (Backend, **DB migration (Postgres)**, Frontend, Secret scan, Documentation check), verified via the REST API this session. The migration job gained a **new step** — *Curve symmetric-RLS + FR/append-only tests (ENT-021/023 / OD-P2-5-* / BR-17/BR-18)* — alongside *Apply migrations* (0020), *Schema drift check* (`alembic check`), and *Revert migrations* (downgrade smoke), all green. Prior: P2-5 plan #79 (`326ad94`), P2-4 closeout memory #78 (`419db9d`), P2-4 implementation #77 (`2b63b76`), P2-4 plan #76 (`b73e65f`).
-- **Migration head:** `0020_curves` — **advanced from `0019_price_point` at P2-5** (`49ca3bd`): the `curve` FR header + `curve_point` IA append-only nodes (symmetric RLS both; P0001 trigger on `curve_point` only). `alembic check` drift-clean; downgrade `0020→0019→base→head` smoke green.
+- **origin/main HEAD:** `b6284a4` — "Implement P2-6 captured benchmark and index data". Chain since P2-5: `49ca3bd` (**P2-5 curve implementation**, #80) → `0c5c068` (P2-5 closeout memory, #81) → `8d2782f` (**P2-6 plan**, #82) → `1e0dc08` (operating-rules, #83) → `b6284a4` (**P2-6 benchmark implementation**, #84).
+- **Local == origin:** yes; **only this `docs/project_memory/*` refresh (P2-6 closeout) is uncommitted** (docs-only, commit pending). No code.
+- **Latest CI:** **GREEN** — `b6284a4` = GitHub Actions **run #84** = success — all 5 jobs (Backend, **DB migration (Postgres)**, Frontend, Secret scan, Documentation check), verified via the REST API this session. The migration job ran *Apply migrations* (0021_benchmark), *Schema drift check* (`alembic check`, drift-clean), *Revert migrations* (downgrade smoke), and the benchmark backend suite (symmetric-RLS / FR-bitemporal / EV create-update / supersede-correct / weight-DQ / `REFERENCE.*`+`MARKET.BENCHMARK_CONSTITUENT_*` audit / VENDOR_BENCHMARK lineage / fail-closed-rollback / closed-hybrid-set), all green. Prior: operating-rules #83 (`1e0dc08`), P2-6 plan #82 (`8d2782f`), P2-5 closeout memory #81 (`0c5c068`), P2-5 implementation #80 (`49ca3bd`).
+- **Migration head:** `0021_benchmark` — **advanced from `0020_curves` at P2-6** (`b6284a4`): the `benchmark` EV definition + `benchmark_constituent` FR membership (symmetric RLS both; **NEITHER table append-only** — no P0001 trigger). `alembic check` drift-clean; downgrade `0021→0020→base→head` smoke green.
 
 ## Working tree (uncommitted)
-- **This `docs/project_memory/*` refresh** (P2-5 closeout) — modified tracked files, commit pending approval. **Docs-only: no code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/governance-source/CI changes.** (The P2-5 code — the `marketdata/curve.py` binder + `Curve` + `CurvePoint` models, migration `0020_curves`, the `/curves` endpoints, the curve tests, the cross-slice fence flips, and the REQ-PUB-002 + REQ-PUB-003 `Draft→In-Progress(partial)` RTM/backbone advancement — all shipped in `49ca3bd`, not in this docs refresh.)
+- **This `docs/project_memory/*` refresh** (P2-6 closeout) — modified tracked files, commit pending approval. **Docs-only: no code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/governance-source/CI changes.** (The P2-6 code — the `marketdata/benchmark.py` binder + `Benchmark` + `BenchmarkConstituent` models, migration `0021_benchmark`, the `/benchmarks` endpoints, the benchmark tests, the cross-slice fence flips, and the REQ-PUB-003 benchmark-leg advancement — all shipped in `b6284a4`, not in this docs refresh.)
 
 ## Current active gate
-**P2-5 captured yield/spread curves IMPLEMENTATION is COMPLETE, COMMITTED (`49ca3bd`), and CI-green (run #80).** `curve` (ENT-021) +
-`curve_point` — **captured vendor yield/spread curve market data** (the third market-data entity after `fx_rate`/`price_point`) —
-is **REALIZED** (see the deliverables section). **The next step is P2-6 PLANNING ONLY** — author the P2-6 decision record +
-implementation plan for **captured benchmark/index data** (benchmark metadata + constituents + levels/returns if scoped as captured
-data; FR / bitemporal where appropriate), **on explicit approval**; **P2-6 implementation is NOT started**. Strict planning-first,
-commit-only-on-explicit-approval cadence holds (plan / review / implement / commit are separate approvals). **Frontend visibility:
-P2-5 had no visible UI change (backend/shared-data only); it enables future curve / market-data-readiness UI, but P2-6 planning
-builds no frontend unless explicitly directed.**
+**P2-6 captured benchmark/index data IMPLEMENTATION is COMPLETE, COMMITTED (`b6284a4`), and CI-green (run #84).** `benchmark`
+(ENT-009, EV definition) + `benchmark_constituent` (FR/bitemporal membership) — **captured vendor benchmark/index data** (the
+**fourth** market-data entity) — is **REALIZED** (see the deliverables section). **THE FULL P2 CAPTURED MARKET-DATA /
+REPRODUCIBILITY FOUNDATION IS COMPLETE and CI-green** (P2-1 `dataset_snapshot` / P2-2 `fx_rate` / P2-3 `calculation_run`+exposure /
+P2-4 `price_point` / P2-5 `curve`+`curve_point` / P2-6 `benchmark`+`benchmark_constituent`). **The next step is the P2 closeout /
+P3 readiness review** — assess whether the P2 foundation is sufficient for **P3 (factor model / market-risk) PLANNING**, **on
+explicit approval**; **P3 planning has NOT started; P3 implementation has NOT started.** Strict planning-first,
+commit-only-on-explicit-approval cadence holds (readiness-review / plan / implement / commit are separate approvals). **Frontend
+visibility: P2-6 had no visible UI change (backend/shared-data only); P2 completion enables future market-data / exposure /
+benchmark / risk-readiness UI, but the P3 readiness review adds no frontend unless explicitly directed.**
+
+## P2-6 key deliverables (closed, `b6284a4`, CI-green run #84) — captured benchmark/index data REALIZED
+`benchmark` (ENT-009, **EV definition header**) + `benchmark_constituent` (**FR/bitemporal membership**) — the platform's **fourth
+market-data entity**, completing the P2 captured market-data foundation. New `marketdata/benchmark.py` binder (`capture_benchmark` /
+`update_benchmark` / `resolve_benchmark` / `list_benchmarks` for the EV definition; `capture_membership` / `supersede_membership` /
+`correct_membership` / `reconstruct_membership_as_of` for the FR set-grained membership) + the `Benchmark` + `BenchmarkConstituent`
+models; migration `0021_benchmark`. **`audit/service.py` UNTOUCHED.** 8-lens review (4 approve / 4 approve_with_changes / 0 block)
+→ every finding folded, incl. a real read-endpoint 500→404 fail-closed-status bug + 5 added tests.
+- **Captured, not computed** — **NO performance attribution, NO active return, NO active risk, NO tracking error, NO factor exposure / factor model / covariance, NO VaR / ES / stress / scenario, NO return calculation, NO reporting/dashboard** (scope-fenced: no calc/exposure/snapshot/convert import, no analytics/risk verb call-or-def, no `ast.Mult`). `methodology_label` is an inert label.
+- **ENT mapping** — ENT-009 "Benchmark definitions and constituents" realized as the EV `benchmark` definition + the FR `benchmark_constituent` membership (bookkept under ENT-009; no new canonical id). **`benchmark_level` + `benchmark_return` DEFERRED** — a net-new canonical ENT id NOT minted here (OD-P2-6-K).
+- **Temporal** — `benchmark` = **EV** (`EffectiveDatedMixin`; entity-versioned in place via `record_version`; the `corporate_action` precedent). `benchmark_constituent` = **FR/bitemporal** (`FullReproducibleMixin`; capture/supersede/correct/`reconstruct_membership_as_of` both axes; captured **as a set** per `(benchmark, effective_date)` — the curve node-set atomicity over FR rows). **NEITHER table append-only** (no `irp_prevent_mutation` P0001 trigger — the difference from `curve_point`).
+- **Grain** — `benchmark` identity `UNIQUE(tenant_id, benchmark_code, benchmark_source)` (EV in-place). `benchmark_constituent` 4-part current-head partial-unique `(tenant_id, benchmark_id, instrument_id, effective_date) WHERE valid_to IS NULL AND system_to IS NULL`; promoted key cols **NOT NULL**. `effective_date` a **separate immutable logical key** (distinct from `valid_from`).
+- **Conventions** — `weight` `Numeric(20,12)` canonical DECIMAL (sanity `RANGE [0,1]`); `instrument_id` NOT-NULL FK via `resolve_instrument`; `benchmark_currency` captured + resolved (no conversion); `benchmark_code`/`benchmark_source` identity; captured `vendor_code`/`index_family`/`methodology_label` (no identifier-resolution engine).
+- **Audit — the RATIFIED SPLIT (OQ-P2-6-11 Option A)** — the EV **definition** audits `REFERENCE.CREATE`/`REFERENCE.UPDATE` (EVT-140/141; the reference-family precedent); the FR **membership** audits `MARKET.BENCHMARK_CONSTITUENT_CREATE`/`_UPDATE`/`_CORRECTION` (EVT-200; **set-grained — ONE event per membership set**, constituent-count-independent; per-op create=1/update=1, capture=1/supersede=2/correct=2); the definition is **NOT** moved into `MARKET.*`; DC-2 metadata only; **NO audit on read**. `audit/service.py` FROZEN.
+- **Lineage** — `VENDOR_BENCHMARK` `data_source` ORIGIN edge per NEW benchmark version + per captured membership-set version (benchmark-row-targeted; constituents covered transitively; **the edge carries NO `effective_date`** — `record_lineage` reused UNCHANGED).
+- **Entitlement** — **reuse `marketdata.view`/`.ingest`** (no new permission; `bootstrap.py` unchanged; parity-tested).
+- **DQ** — required-field NOT_NULL + weight `RANGE [0,1]` over the constituent set via `run_quality_check` (the `(params, dataset)` Protocol **untouched**); fail-closed (CTRL-032 whole-set rollback); **non-vacuous** (empty set rejected `BenchmarkValueError` 422). Weight-sum completeness + staleness **deferred**.
+- **RLS** — **symmetric tenant-scoped + FORCE RLS on BOTH tables** (migration `0021`); NEVER hybrid (closed 5-table hybrid set unchanged); `benchmark_constituent.tenant_id` server-stamped from the parent; no BYPASSRLS.
+- **Snapshot readiness-only** — **NO `COMPONENT_KIND_BENCHMARK`**; **NO `calculation_run`/`exposure_aggregate`/`dataset_snapshot`/`fx_rate`/`price_point`/`curve` change.** API: `api/marketdata.py` `benchmark_router` (`POST /benchmarks` + `/{id}/update` + `/{id}/membership` + `/membership/supersede` + `/membership/correct`; `GET /benchmarks/{id}/membership/as-of` + `/benchmarks`); no PUT/PATCH/DELETE. Tests: `test_benchmark.py` (28 SQLite) + `test_benchmark_pg.py` (7 PG) + `test_benchmark_endpoint.py` (12). **`make check` green (658 tests); PG green.** **REQ-PUB-003 benchmark leg → advanced** (stays In-Progress partial; rating + levels/returns + the full Coverage test deferred).
+
+## P2 captured market-data foundation — COMPLETE (CI-green)
+The full reproducibility-first P2 block is delivered and CI-green: **P2-1** `dataset_snapshot` (`3629baa`, the AD-014 reproducibility
+primitive) · **P2-2** `fx_rate` (`c257e5c`, captured FX) · **P2-3** `calculation_run`+`exposure_aggregate` (`da178fc`, the first
+governed derived number — MARKET_VALUE only) · **P2-4** `price_point` (`2b63b76`, captured prices) · **P2-5** `curve`+`curve_point`
+(`49ca3bd`, captured curves) · **P2-6** `benchmark`+`benchmark_constituent` (`b6284a4`, captured benchmarks). The reproducibility
+primitive + the captured market-data inputs (FX, prices, curves, benchmarks) + the first governed derived number (exposure) are all
+realized. **NO risk analytics yet** — VaR/ES/factor/covariance/stress/scenario/attribution/tracking-error stay **P3+**.
 
 ## P2-5 key deliverables (closed, `49ca3bd`, CI-green run #80) — captured yield/spread curves REALIZED
 `curve` (ENT-021, **FR header**) + `curve_point` (**IA append-only version-pinned nodes**) — the platform's **third market-data
@@ -303,25 +332,24 @@ REQ-SMR-004 (corporate_action portion); migration `0011`. The **last reference e
 With **P1B-1 (vocabularies/hybrid) + P1B-2 (legal_entity/issuer/counterparty) + P1B-3 (instrument/terms/identifier) + P1B-4 (corporate_action)** all closed and CI-green, the **Security-Master & Reference-Data block is complete**. **P1B-5** (reference-data ingestion mapping) is **conditional/deferred** (only if bulk loading is needed). The CAP-2 EV/FR reference entities (ENT-001..006/008) are realized; the *requirements* REQ-SMR-001/002/003/004 stay **In-Progress** (terms math, exposure-rollup calc, cross-vendor precedence, and QS-10/11 roll math respectively deferred to P1C/P2+).
 
 ## Next required action
-**P2-6 PLANNING ONLY (captured benchmark/index data)** — author the **P2-6 decision record + implementation plan**: the next
-market-data entity after `curve` — **captured benchmark/index data** (benchmark metadata + constituents + levels/returns if scoped
-as **captured** data; a header + detail design, the `curve`/`curve_point` precedent if appropriate), **FR / bitemporal where
-appropriate**, joining the `irp_shared/marketdata` package additively (the `fx_rate` / `price_point` / `curve` protocol precedent).
-**Captured benchmark data ONLY** — no performance attribution, no factor model, no risk calculation, no returns analytics. With the
-planning UltraCode workflow, then commit the plan **on explicit approval**. **PLANNING ONLY — no benchmark code; no risk.**
-Implementation is a **separate later approval**. Build **nothing else**.
+**P2 CLOSEOUT / P3 READINESS REVIEW** — the full P2 captured market-data foundation is delivered (P2-1…P2-6, CI-green). The next
+step is to assess whether it is sufficient for **P3 (factor model / market-risk) PLANNING**: factor-model + market-risk readiness;
+data-history requirements for factor/risk models; model registry / `model_version` integration; `calculation_run` +
+`dataset_snapshot` governance for risk OUTPUTS (the first governed risk numbers — `risk_result`/`sensitivity`, binding a run + a
+snapshot + a model_version + a seed); risk methodology documentation requirements. **READINESS REVIEW ONLY — no P3 code, no risk
+calculation.** P3 PLANNING is a **separate later approval**; P3 implementation a further separate approval. Build **nothing else**.
 
 ## What MUST NOT be started yet
-- **Benchmark implementation (P2-6)** — **only the P2-6 PLANNING is next**; no benchmark code until the P2-6 plan is approved.
+- **P3 implementation** — **the P2 closeout / P3 readiness review is next**; no P3 code until P3 PLANNING is approved.
+- **No factor model** — ENT-025 factor_return / covariance / vol surface ENT-022 → P3+.
+- **No risk calculations / VaR / Expected Shortfall / sensitivities** — ENT-027 risk_result / ENT-028 sensitivity → P3+.
+- **No stress testing / scenario analytics** — ENT-029 scenario_definition → P3+.
+- **No performance attribution / active return / active risk / tracking error** — P3+ (and `benchmark_level`/`benchmark_return` are themselves DEFERRED — a net-new canonical ENT id, not minted).
 - **No curve construction / interpolation / bootstrapping / discounting / duration / key-rate** — curves are CAPTURED at P2-5.
-- **No factor model** — ENT-022 volatility_surface / ENT-025 factor_return → P3+.
-- **No risk calculations / VaR / Expected Shortfall / sensitivities** — P3+.
-- **No stress testing / scenario analytics** — P3+.
-- **No performance / returns / attribution** — P3+ (a captured benchmark "return" level is a vendor-supplied number, never computed).
-- **No pricing model / valuation model** — captured market data only.
+- **No pricing model / valuation model / corporate-action adjustment engine** — captured market data only.
 - **No reporting / dashboard build** — P2 (AD-014).
-- **No frontend changes** unless explicitly approved (P2-5 had none; it enables future curve / market-data-readiness UI but builds no frontend by default; P2-6 planning adds no frontend unless directed).
-- **No P3+ work** — factor models, covariance/vol, scenarios, limits, breach, reporting, real SSO.
+- **No frontend changes** unless explicitly approved (P2-6 had none; P2 completion enables future market-data / exposure / benchmark / risk-readiness UI but builds no frontend by default; the P3 readiness review adds no frontend unless directed).
+- **No P3+ work** — factor models, covariance/vol, VaR/ES, scenarios, limits, breach, reporting, real SSO — until P3 planning is approved.
 - **ABAC enforcement** — anchored in P1C-1 but NOT enforced (enforcement → P6+).
 - **P1B-5** (reference-data ingestion mapping) — conditional/deferred (only if bulk loading is needed; not now).
 - **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen) or `entitlement/bootstrap.py` outside the governed R-07 mint; no new audit code / permission / role / migration without R-07.
@@ -330,7 +358,7 @@ Implementation is a **separate later approval**. Build **nothing else**.
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `49ca3bd`) and whether this P2-5 closeout memory refresh was committed.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `b6284a4`) and whether this P2-6 closeout memory refresh was committed.
 - Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated).
 - `git remote -v` — origin is now SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0020_curves` (advanced from `0019_price_point` at P2-5 / `49ca3bd`: the `curve` FR header + `curve_point` IA append-only nodes; the next P2-6 benchmark migration lands only when P2-6 is implemented; planning is next).
+- Migration head is `0021_benchmark` (advanced from `0020_curves` at P2-6 / `b6284a4`: the `benchmark` EV definition + `benchmark_constituent` FR membership; NEITHER table append-only; the next migration lands only when a P3 risk entity is implemented — the P2 closeout / P3 readiness review is next, no code).
