@@ -1,24 +1,29 @@
 """``build_snapshot`` governed binder + ``verify_snapshot`` (P2-1, ENT-049/050 — AD-014).
 
-``build_snapshot`` composes the already-shipped, tenant-predicated reads into an immutable snapshot:
+``build_snapshot`` composes the already-shipped, tenant-predicated reads into an immutable
+snapshot:
 it resolves the bound scope (``resolve_portfolio`` — cross-tenant/unknown fails closed BEFORE any
 write), enumerates the open positions of the subtree (``reconstruct_subtree_holdings_as_of``) and
 their marks at a fixed ``valuation_date`` (``attach_marks_as_of``), re-resolves each input by id
 under the acting tenant (the per-component pin + cross-tenant safety), pins the physical version +
 the canonical ``captured_content`` + ``content_hash``, computes the header ``manifest_hash``, roots
 a ``data_snapshot`` lineage edge per component, runs the caller-side completeness DQ gate (fail-
-closed), and emits ``SNAPSHOT.CREATE`` — all in the caller's single transaction (CTRL-032 rollback).
+closed), and emits ``SNAPSHOT.CREATE`` — all in the caller's single transaction (CTRL-032
+rollback).
 
 It **computes no derived number** (no ``quantity x mark``, no exposure) and **creates/​wires no
 ``calculation_run``** — imports NO ``calc`` symbol (readiness §10, never becomes wiring).
 
-``verify_snapshot`` re-resolves each component by id (the explicit-tenant-predicate resolvers, not a
+``verify_snapshot`` re-resolves each component by id (the explicit-tenant-predicate resolvers, not
+a
 bare ``session.get``) at the FROZEN cutoffs, re-serializes, and compares ``content_hash`` — the
-authoritative reproducibility check. FR components are byte-stable under later supersede/correction;
+authoritative reproducibility check. FR components are byte-stable under later
+supersede/correction;
 an EV ``portfolio`` amend (``record_version`` bump) is reported as drift.
 
 One-way imports: ``snapshot -> {portfolio, position, valuation, holdings, marketdata, lineage, dq,
-audit, db}`` (P2-3 adds ``marketdata`` for FX-leg pinning — imports NO ``calc``/``exposure`` symbol,
+audit, db}`` (P2-3 adds ``marketdata`` for FX-leg pinning — imports NO ``calc``/``exposure``
+symbol,
 creates/wires no ``calculation_run``); nothing imports ``snapshot``.
 """
 
@@ -42,22 +47,33 @@ from irp_shared.holdings import (
 )
 from irp_shared.holdings.service import HoldingRow
 from irp_shared.lineage.service import record_internal_lineage
-from irp_shared.marketdata import DEFAULT_BASE, resolve_conversion_legs
+from irp_shared.marketdata import (
+    DEFAULT_BASE,
+    CurveNotVisible,
+    list_curve_points,
+    reconstruct_curve_as_of,
+    resolve_conversion_legs,
+    resolve_curve,
+)
+from irp_shared.marketdata.models import REFERENCE_KEY_NONE
 from irp_shared.marketdata.service import FxRateNotVisible, resolve_fx_rate
 from irp_shared.portfolio import PortfolioNotVisible, resolve_portfolio
 from irp_shared.position import PositionNotVisible, resolve_position
 from irp_shared.snapshot.events import SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
+    COMPONENT_KIND_CURVE,
     COMPONENT_KIND_FX,
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
+    PURPOSE_SENSITIVITY_INPUT,
     SNAPSHOT_PURPOSES,
     DatasetSnapshot,
     DatasetSnapshotComponent,
 )
 from irp_shared.snapshot.serialize import (
     content_hash,
+    curve_content,
     fx_content,
     manifest_hash,
     portfolio_content,
@@ -104,7 +120,8 @@ class SnapshotNotFound(Exception):
 @dataclass(frozen=True)
 class VerifyResult:
     """The outcome of ``verify_snapshot``: ``ok`` iff every component re-resolves byte-identically.
-    ``drifted_components`` lists the component ids whose live value/version differs (or is gone)."""
+    ``drifted_components`` lists the component ids whose live value/version differs (or is
+    gone)."""
 
     ok: bool
     component_count: int
@@ -146,7 +163,8 @@ def _run_completeness_gate(
     holdings: list[HoldingRow],
     enriched: list[HoldingWithMark],
 ) -> None:
-    """Fail-closed completeness: every non-zero-quantity bound position MUST have a same-as-of mark.
+    """Fail-closed completeness: every non-zero-quantity bound position MUST have a same-as-of
+    mark.
 
     The gap (expected - actual) is encoded as one ``{'present': None}`` row per missing key and run
     through the shipped ``run_quality_check`` NOT_NULL rule (the existing evaluator; Protocol
@@ -189,16 +207,20 @@ def build_snapshot(
     binding_predicate_version: str = DEFAULT_BINDING_PREDICATE,
     base_currency: str | None = None,
 ) -> DatasetSnapshot:
-    """Build one immutable ``dataset_snapshot`` over the bound portfolio subtree (governed). See the
+    """Build one immutable ``dataset_snapshot`` over the bound portfolio subtree (governed). See
+    the
     module docstring. ``as_of_known_at`` defaults to now and is FROZEN onto the header;
     ``as_of_valuation_date`` defaults to ``date(as_of_valid_at)``.
 
-    P2-3 (OD-P2-3-E): when ``base_currency`` is given (the ``EXPOSURE_INPUT`` case), the binder also
-    pins, for each distinct mark currency != base, the convert-path ``fx_rate`` legs to that base as
+    P2-3 (OD-P2-3-E): when ``base_currency`` is given (the ``EXPOSURE_INPUT`` case), the binder
+    also
+    pins, for each distinct mark currency != base, the convert-path ``fx_rate`` legs to that base
+    as
     ``COMPONENT_KIND_FX`` components — so a later exposure run is reproducible from the snapshot
     alone
     (it reads the captured FX, never live market data). This is the FX-completeness gate:
-    ``resolve_conversion_legs`` fails closed (:class:`~irp_shared.marketdata.FxRateNotFound`, before
+    ``resolve_conversion_legs`` fails closed (:class:`~irp_shared.marketdata.FxRateNotFound`,
+    before
     any write) if a leg is missing. When ``base_currency`` is ``None`` (the P2-1 behavior) no FX is
     pinned — backward-compatible. Still computes NO derived number (no ``qty x mark``)."""
     if purpose not in SNAPSHOT_PURPOSES:
@@ -229,7 +251,7 @@ def build_snapshot(
     )
 
     # 3. Re-resolve each input by id under the acting tenant (the per-component pin + cross-tenant
-    #    safety) and capture its canonical content. component spec = (kind, target_type, row, hash).
+    # safety) and capture its canonical content. component spec = (kind, target_type, row, hash).
     specs: list[tuple[str, str, Any, str, str]] = []
     seen_portfolios: set[str] = set()
     mark_currencies: set[str] = set()
@@ -343,8 +365,170 @@ def _append_spec(
     specs.append((kind, target_type, row, captured, content_hash(captured)))
 
 
+@dataclass(frozen=True)
+class CurveSelector:
+    """The full ``reconstruct_curve_as_of`` logical key for one curve to pin in a sensitivity-input
+    snapshot (OD-P3-1-E). ``reference_key`` is ``"NONE"`` for a rate curve / the issuer-rating
+    label
+    for a ``CREDIT_SPREAD`` curve."""
+
+    curve_type: str
+    currency_code: str
+    curve_date: date
+    curve_source: str
+    reference_key: str = REFERENCE_KEY_NONE
+
+
+class CurveSnapshotError(Exception):
+    """Raised when a requested curve selector does not resolve to a curve as-of (fail closed,
+    BEFORE
+    any write) — the curve-presence gate for a sensitivity-input snapshot. Maps to 409/404."""
+
+    def __init__(self, selector: CurveSelector) -> None:
+        super().__init__(f"no curve for selector {selector!r} as-of (fail closed)")
+        self.selector = selector
+
+
+def _run_curve_completeness_gate(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    header: DatasetSnapshot,
+    empty_curve_ids: list[str],
+) -> None:
+    """Fail-closed completeness for a curve snapshot: every pinned curve MUST carry >=1 node. The
+    gap
+    (a curve with zero ``curve_point`` rows) is one ``{'present': None}`` row through the shipped
+    ``run_quality_check`` NOT_NULL rule (Protocol UNTOUCHED) -> ``DataQualityError`` ->
+    rollback."""
+    dataset: list[dict[str, Any]] = (
+        [{"present": None} for _ in empty_curve_ids] if empty_curve_ids else [{"present": True}]
+    )
+    rule = _ensure_completeness_rule(session, tenant_id=acting_tenant, actor=actor)
+    run_quality_check(
+        session,
+        rule=rule,
+        dataset=dataset,
+        actor_id=actor.actor_id,
+        target_entity_type="dataset_snapshot",
+        target_entity_id=header.id,
+        actor_type=actor.actor_type,
+    )
+
+
+def build_curve_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    curve_selectors: list[CurveSelector],
+    as_of_valid_at: datetime,
+    as_of_known_at: datetime | None = None,
+    label: str = "",
+    purpose: str = PURPOSE_SENSITIVITY_INPUT,
+    binding_predicate_version: str = DEFAULT_BINDING_PREDICATE,
+) -> DatasetSnapshot:
+    """Build one immutable ``SENSITIVITY_INPUT`` snapshot pinning a set of ``curve`` versions
+    (header + immutable node set) as ``COMPONENT_KIND_CURVE`` components — so an
+    analytic-sensitivity
+    run is reproducible from the snapshot alone (it reads the captured curve content, never a live
+    curve read; OD-P3-1-E/F). Each selector is resolved at ``as_of_valid_at``/``as_of_known_at``
+    via
+    ``reconstruct_curve_as_of`` (cross-tenant/unknown fails closed). A selector with no curve as-of
+    raises :class:`CurveSnapshotError` (curve-presence gate, before any write); a pinned curve with
+    zero nodes fails the completeness gate. Curve-only — NO portfolio scope, computes NO number."""
+    if purpose not in SNAPSHOT_PURPOSES:
+        raise SnapshotPurposeError(purpose)
+    known = as_of_known_at if as_of_known_at is not None else utcnow()
+    val_date = as_of_valid_at.date()
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    empty_curve_ids: list[str] = []
+    seen: set[str] = set()
+    for sel in curve_selectors:
+        header = reconstruct_curve_as_of(
+            session,
+            acting_tenant=acting_tenant,
+            curve_type=sel.curve_type,
+            currency_code=sel.currency_code,
+            curve_date=sel.curve_date,
+            curve_source=sel.curve_source,
+            valid_at=as_of_valid_at,
+            reference_key=sel.reference_key,
+            known_at=known,
+        )
+        if header is None:
+            raise CurveSnapshotError(sel)
+        if header.id in seen:
+            continue
+        seen.add(header.id)
+        nodes = list_curve_points(session, header.id, acting_tenant=acting_tenant)
+        if not nodes:
+            empty_curve_ids.append(header.id)
+        _append_spec(specs, COMPONENT_KIND_CURVE, "curve", header, curve_content(header, nodes))
+
+    if not specs:
+        raise EmptySnapshotError("(no curve selectors)")
+
+    m_hash = manifest_hash(
+        tenant_id=acting_tenant,
+        as_of_valid_at=as_of_valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=val_date,
+        binding_predicate_version=binding_predicate_version,
+        component_count=len(specs),
+        component_hashes=[(kind, row.id, c_hash) for (kind, _t, row, _cc, c_hash) in specs],
+    )
+    header_row = DatasetSnapshot(
+        tenant_id=str(acting_tenant),
+        label=label,
+        purpose=purpose,
+        as_of_valid_at=as_of_valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=val_date,
+        binding_predicate_version=binding_predicate_version,
+        component_count=len(specs),
+        manifest_hash=m_hash,
+        created_by=actor.actor_id,
+    )
+    session.add(header_row)
+    session.flush()
+
+    for kind, ttype, row, captured, c_hash in specs:
+        comp = DatasetSnapshotComponent(
+            tenant_id=str(acting_tenant),
+            snapshot_id=header_row.id,
+            component_kind=kind,
+            target_entity_type=ttype,
+            target_entity_id=row.id,
+            pinned_valid_from=getattr(row, "valid_from", None),
+            pinned_system_from=getattr(row, "system_from", None),
+            pinned_record_version=getattr(row, "record_version", None),
+            captured_content=captured,
+            content_hash=c_hash,
+        )
+        session.add(comp)
+    session.flush()
+    for _kind, ttype, row, _captured, _ch in specs:
+        record_internal_lineage(
+            session, snapshot_id=header_row.id, target_entity_type=ttype, target_entity_id=row.id
+        )
+
+    _run_curve_completeness_gate(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        header=header_row,
+        empty_curve_ids=empty_curve_ids,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
-    """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed on
+    """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
+    on
     SQLite + PG). Raises :class:`SnapshotNotFound` on a hidden/unknown id."""
     header = session.execute(
         select(DatasetSnapshot).where(
@@ -381,8 +565,10 @@ def list_components(
 def _reresolve_content(
     session: Session, comp: DatasetSnapshotComponent, *, acting_tenant: str
 ) -> dict[str, Any]:
-    """Re-resolve a component's target by id (explicit-tenant-predicate resolver, never session.get)
-    and return its current canonical content dict. Raises the resolver's ``*NotVisible`` if gone."""
+    """Re-resolve a component's target by id (explicit-tenant-predicate resolver, never
+    session.get)
+    and return its current canonical content dict. Raises the resolver's ``*NotVisible`` if
+    gone."""
     if comp.component_kind == COMPONENT_KIND_POSITION:
         return position_content(
             resolve_position(session, comp.target_entity_id, acting_tenant=acting_tenant)
@@ -395,13 +581,18 @@ def _reresolve_content(
         return fx_content(
             resolve_fx_rate(session, comp.target_entity_id, acting_tenant=acting_tenant)
         )
+    if comp.component_kind == COMPONENT_KIND_CURVE:
+        header = resolve_curve(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        nodes = list_curve_points(session, header.id, acting_tenant=acting_tenant)
+        return curve_content(header, nodes)
     return portfolio_content(
         resolve_portfolio(session, comp.target_entity_id, acting_tenant=acting_tenant)
     )
 
 
 def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -> VerifyResult:
-    """Re-resolve each component under the acting tenant, re-serialize, and compare ``content_hash``
+    """Re-resolve each component under the acting tenant, re-serialize, and compare
+    ``content_hash``
     (the authoritative reproducibility check). Drift = a changed value/version (or a gone target).
     Emits NO audit event (read/verify is no-emit, OD-023). Raises :class:`SnapshotNotFound` if the
     header is not visible."""
@@ -411,7 +602,13 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
     for comp in comps:
         try:
             live = _reresolve_content(session, comp, acting_tenant=acting_tenant)
-        except (PositionNotVisible, ValuationNotVisible, PortfolioNotVisible, FxRateNotVisible):
+        except (
+            PositionNotVisible,
+            ValuationNotVisible,
+            PortfolioNotVisible,
+            FxRateNotVisible,
+            CurveNotVisible,
+        ):
             drifted.append(comp.id)
             continue
         if content_hash(serialize_content(live)) != comp.content_hash:

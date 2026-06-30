@@ -1,0 +1,412 @@
+"""Sensitivity binder (P3-1, ENT-028) — the first reproducible governed risk number.
+
+``run_sensitivities`` produces ``sensitivity_result`` rows ONLY when bound to a
+``dataset_snapshot``
+(``SENSITIVITY_INPUT``, pinning the curve(s)) + a complete ``calculation_run`` + a **REGISTERED
+``model_version``** (the model-governance hardening vs the model-less exposure rollup; AD-014 /
+FW-RUN / TR-15 / CTRL-003). The number is the closed-form curve-node DV01 / spread-DV01 of a unit
+zero-coupon claim (``irp_shared.risk.kernel``), curve-intrinsic (OD-P3-1-A) — NO
+instrument/position
+attribution, NO interpolation, NO pricing engine.
+
+Reproducibility (the AD-014 invariant): the compute reads **ONLY the snapshot's pinned
+``COMPONENT_KIND_CURVE`` captured content** (curve header + node set) — it makes **NO** live
+``reconstruct_curve_as_of`` / ``list_curve_points`` / ``resolve_curve`` read, so a later curve
+correction cannot change a historical sensitivity.
+
+Model governance (the load-bearing hardening): ``assert_registered_model_version`` is called in the
+**pre-create gate** — an unknown/unregistered ``model_version_id`` raises
+``UnregisteredModelError``
+BEFORE the run is created ⇒ ZERO run/result/audit. No sensitivity number escapes the model
+inventory.
+
+Failure model (the P2-3 precedent, split by timing):
+- **Pre-create refusal** (missing
+``code_version``/``environment_id``/initiator/``model_version_id``;
+  an unregistered model_version; an unbuildable/cross-tenant/missing-curve snapshot): **raise
+  BEFORE
+  ``create_run``** ⇒ ZERO run + ZERO result + ZERO audit.
+- **Post-create FAILED** (the DQ gate failing AFTER RUNNING — a curve with no usable nodes): mark
+the
+  run FAILED (``outcome='failure'``) and **return** a FAILED result ⇒ a committed FAILED run +
+  ``CALC.RUN_STATUS_CHANGE`` + ZERO result rows.
+- **Emit-path** raises propagate ⇒ the whole unit rolls back co-transactionally (CTRL-032).
+
+One-way imports: ``risk -> {snapshot, marketdata(constants/kernel), calc, model, lineage, dq,
+audit, db}``; imports NO live curve resolver into the compute; imports no
+factor/covariance/VaR/scenario/stress symbol; nothing imports ``risk``.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.service import create_run, update_run_status
+from irp_shared.dq.models import SEVERITY_ERROR, DataQualityRule
+from irp_shared.dq.rules import RULE_TYPE_NOT_NULL
+from irp_shared.dq.service import register_dq_rule, run_quality_check
+from irp_shared.lineage.models import EDGE_KIND_DEPENDENCY, EDGE_KIND_ORIGIN
+from irp_shared.lineage.service import record_internal_lineage, record_run_lineage
+from irp_shared.marketdata.models import (
+    VALUE_TYPE_DISCOUNT_FACTOR,
+    VALUE_TYPE_SPREAD,
+    VALUE_TYPE_ZERO_RATE,
+)
+from irp_shared.model.service import assert_registered_model_version
+from irp_shared.risk.events import (
+    RUN_TYPE_SENSITIVITY,
+    SENSITIVITY_TYPE_DV01,
+    SENSITIVITY_TYPE_SPREAD_DV01,
+    SensitivityActor,
+)
+from irp_shared.risk.kernel import node_dv01, node_spread_dv01
+from irp_shared.risk.models import SensitivityResult
+from irp_shared.snapshot import (
+    COMPONENT_KIND_CURVE,
+    PURPOSE_SENSITIVITY_INPUT,
+    CurveSelector,
+    SnapshotActor,
+    build_curve_snapshot,
+    list_components,
+    resolve_snapshot,
+)
+
+#: The bump convention recorded on each row (1.0000 = 1bp).
+_BUMP_BPS = Decimal("1.0000")
+#: Per-tenant governed completeness DQ rule (resolve-or-register; the exposure pattern).
+_COMPLETENESS_RULE_CODE = "risk.sensitivity.completeness"
+
+
+class SensitivityInputError(Exception):
+    """A missing/invalid prerequisite detected BEFORE the run is created — pre-create refusal (no
+    run, no result, no audit). Maps to 422."""
+
+
+class SensitivityNotVisible(Exception):
+    """Raised when a ``sensitivity_result`` id is not visible in the acting tenant scope."""
+
+    def __init__(self, sensitivity_id: str) -> None:
+        super().__init__(
+            f"sensitivity_result {sensitivity_id} is not visible in the current tenant"
+        )
+        self.sensitivity_id = str(sensitivity_id)
+
+
+class SensitivityRunNotVisible(Exception):
+    """Raised when a sensitivity ``calculation_run`` id is not visible in the acting tenant."""
+
+    def __init__(self, run_id: str) -> None:
+        super().__init__(f"sensitivity run {run_id} is not visible in the current tenant")
+        self.run_id = str(run_id)
+
+
+@dataclass(frozen=True)
+class SensitivityRunResult:
+    """The outcome of ``run_sensitivities``: the ``calculation_run`` + status + the rows produced.
+    ``status`` is ``COMPLETED`` (with ``rows``) or ``FAILED`` (a post-create gate failure: a
+    committed FAILED run + ZERO rows + ``failure_reason``)."""
+
+    run: CalculationRun
+    status: str
+    rows: list[SensitivityResult] = field(default_factory=list)
+    failure_reason: str | None = None
+
+
+def _build_rows(
+    comps: list[Any],
+    *,
+    run: CalculationRun,
+    snapshot_id: str,
+    model_version_id: str,
+    acting_tenant: str,
+) -> tuple[list[SensitivityResult], list[str]]:
+    """Compute one sensitivity row per usable node of each pinned ``COMPONENT_KIND_CURVE``
+    component
+    (PURE — reads the captured content, no live curve read). ``ZERO_RATE``/``DISCOUNT_FACTOR`` ->
+    ``DV01``; ``SPREAD`` -> ``SPREAD_DV01``; ``PAR_RATE`` (+ unknown) nodes are skipped (deferred).
+    Returns ``(rows, gaps)`` — ``gaps`` names every pinned curve with ZERO usable nodes (the
+    fail-closed DQ signal; rows are NOT written when gaps exist)."""
+    rows: list[SensitivityResult] = []
+    gaps: list[str] = []
+    for comp in comps:
+        if comp.component_kind != COMPONENT_KIND_CURVE:
+            continue
+        data = json.loads(comp.captured_content)
+        curve_id = data["id"]
+        usable = 0
+        for node in data["nodes"]:
+            value_type = node["value_type"]
+            tenor_days = int(node["tenor_days"])
+            point_value = Decimal(node["point_value"])
+            if value_type in (VALUE_TYPE_ZERO_RATE, VALUE_TYPE_DISCOUNT_FACTOR):
+                value = node_dv01(tenor_days, value_type, point_value)
+                sensitivity_type = SENSITIVITY_TYPE_DV01
+            elif value_type == VALUE_TYPE_SPREAD:
+                value = node_spread_dv01(tenor_days, point_value)
+                sensitivity_type = SENSITIVITY_TYPE_SPREAD_DV01
+            else:
+                continue  # PAR_RATE (+ any future type): not computed in v1 (deferred)
+            usable += 1
+            rows.append(
+                SensitivityResult(
+                    tenant_id=str(acting_tenant),
+                    calculation_run_id=run.run_id,
+                    input_snapshot_id=str(snapshot_id),
+                    model_version_id=str(model_version_id),
+                    curve_id=curve_id,
+                    curve_type=data["curve_type"],
+                    currency_code=data["currency_code"],
+                    reference_key=data["reference_key"],
+                    value_type=value_type,
+                    tenor_days=tenor_days,
+                    tenor_label=node["tenor_label"],
+                    sensitivity_type=sensitivity_type,
+                    sensitivity_value=value,
+                    bump_bps=_BUMP_BPS,
+                )
+            )
+        if usable == 0:
+            gaps.append(f"no-usable-nodes:{curve_id}")
+    return rows, gaps
+
+
+def _ensure_completeness_rule(
+    session: Session, *, tenant_id: str, actor: SensitivityActor
+) -> DataQualityRule:
+    rule = session.execute(
+        select(DataQualityRule).where(
+            DataQualityRule.tenant_id == str(tenant_id),
+            DataQualityRule.code == _COMPLETENESS_RULE_CODE,
+        )
+    ).scalar_one_or_none()
+    if rule is not None:
+        return rule
+    return register_dq_rule(
+        session,
+        tenant_id=str(tenant_id),
+        code=_COMPLETENESS_RULE_CODE,
+        name="Sensitivity run input completeness (usable curve nodes)",
+        rule_type=RULE_TYPE_NOT_NULL,
+        actor_id=actor.actor_id,
+        params={"column": "present"},
+        target_entity_type="sensitivity_result",
+        severity=SEVERITY_ERROR,
+        actor_type=actor.actor_type,
+    )
+
+
+def _run_completeness_gate(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SensitivityActor,
+    run: CalculationRun,
+    gaps: list[str],
+) -> None:
+    """Fail-closed DQ gate (``DATA.VALIDATE``): one ``{'present': None}`` row per gap (a pinned
+    curve
+    with no usable nodes). A non-empty gap fails ERROR ⇒ ``DataQualityError`` (the caller converts
+    it
+    to a post-create FAILED run). Reuses ``run_quality_check`` NOT_NULL; the Protocol is
+    UNTOUCHED."""
+    dataset: list[dict[str, Any]] = (
+        [{"present": None} for _ in gaps] if gaps else [{"present": True}]
+    )
+    rule = _ensure_completeness_rule(session, tenant_id=acting_tenant, actor=actor)
+    run_quality_check(
+        session,
+        rule=rule,
+        dataset=dataset,
+        actor_id=actor.actor_id,
+        target_entity_type="calculation_run",
+        target_entity_id=run.run_id,
+        actor_type=actor.actor_type,
+    )
+
+
+def run_sensitivities(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SensitivityActor,
+    code_version: str,
+    environment_id: str,
+    model_version_id: str,
+    curve_selectors: list[CurveSelector] | None = None,
+    as_of_valid_at: datetime | None = None,
+    as_of_known_at: datetime | None = None,
+    snapshot_id: str | None = None,
+) -> SensitivityRunResult:
+    """Run a governed analytic-sensitivity calculation. Build-in-request (default —
+    ``curve_selectors``
+    + ``as_of_valid_at``: builds a ``SENSITIVITY_INPUT`` snapshot pinning the curve(s)) or
+    consume-existing (``snapshot_id``). See the module docstring for the failure model + the AD-014
+    /
+    CTRL-003 invariants."""
+    from irp_shared.dq.service import (
+        DataQualityError,
+    )  # local: keep the import-fence surface minimal
+
+    # --- Pre-create prerequisite gate (raise BEFORE create_run ⇒ zero run/result/audit) ---
+    if not code_version:
+        raise SensitivityInputError("code_version is required (FW-RUN/TR-15)")
+    if not environment_id:
+        raise SensitivityInputError("environment_id is required (FW-RUN/TR-15)")
+    if actor is None or not actor.actor_id:
+        raise SensitivityInputError("initiator is required (FW-RUN/TR-15)")
+    if not model_version_id:
+        raise SensitivityInputError("model_version_id is required (CTRL-003 inventory-before-use)")
+    # Inventory-before-use (CTRL-003 / BR-3): a REGISTERED model_version is MANDATORY. An unknown /
+    # unregistered version raises UnregisteredModelError BEFORE the run is created ⇒ zero
+    # run/result.
+    assert_registered_model_version(session, str(model_version_id), tenant_id=acting_tenant)
+
+    # --- Bind the curve snapshot (cross-tenant/unknown/missing-curve ⇒ pre-create refusal) ---
+    if snapshot_id is not None:
+        snapshot = resolve_snapshot(session, snapshot_id, acting_tenant=acting_tenant)
+        if snapshot.purpose != PURPOSE_SENSITIVITY_INPUT:
+            raise SensitivityInputError(
+                f"snapshot {snapshot_id} purpose {snapshot.purpose!r} "
+                f"!= {PURPOSE_SENSITIVITY_INPUT}"
+            )
+    else:
+        if not curve_selectors or as_of_valid_at is None:
+            raise SensitivityInputError(
+                "curve_selectors + as_of_valid_at are required to build a sensitivity snapshot"
+            )
+        snapshot = build_curve_snapshot(
+            session,
+            acting_tenant=acting_tenant,
+            actor=SnapshotActor(actor_id=actor.actor_id, actor_type=actor.actor_type),
+            curve_selectors=list(curve_selectors),
+            as_of_valid_at=as_of_valid_at,
+            as_of_known_at=as_of_known_at,
+        )
+
+    # --- Create the run + RUNNING (the run now exists; failures below are POST-CREATE FAILED) ---
+    run = create_run(
+        session,
+        tenant_id=acting_tenant,
+        run_type=RUN_TYPE_SENSITIVITY,
+        initiated_by=actor.actor_id,
+        input_snapshot_id=snapshot.id,
+        model_version_id=str(model_version_id),
+        code_version=code_version,
+        environment_id=environment_id,
+    )
+    update_run_status(session, run, RunStatus.RUNNING, actor_id=actor.actor_id)
+
+    # The snapshot->run DEPENDS_ON edge is an INPUT-DEPENDENCY fact ("this run consumed this
+    # snapshot") — true regardless of outcome (it mirrors the run's NOT-NULL input_snapshot_id FK).
+    # Record it BEFORE the DQ gate so a committed FAILED run keeps a traceable link to its input
+    # (the auditor's durable refusal evidence has full lineage; review fold — lineage lens). The
+    # run->result ORIGIN edges stay on the success path (a FAILED run has zero result rows).
+    record_internal_lineage(
+        session,
+        snapshot_id=snapshot.id,
+        target_entity_type="calculation_run",
+        target_entity_id=run.run_id,
+        edge_kind=EDGE_KIND_DEPENDENCY,
+        run_id=run.run_id,
+    )
+
+    rows, gaps = _build_rows(
+        list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant),
+        run=run,
+        snapshot_id=snapshot.id,
+        model_version_id=str(model_version_id),
+        acting_tenant=acting_tenant,
+    )
+    try:
+        # Fail-closed BEFORE any result INSERT (emits DATA.VALIDATE; raises on a gap).
+        _run_completeness_gate(
+            session, acting_tenant=acting_tenant, actor=actor, run=run, gaps=gaps
+        )
+    except DataQualityError as gate:
+        update_run_status(
+            session, run, RunStatus.FAILED, actor_id=actor.actor_id, outcome="failure"
+        )
+        return SensitivityRunResult(
+            run=run, status=RunStatus.FAILED.value, rows=[], failure_reason=str(gate)
+        )
+
+    # --- Governed write: rows + run->result (ORIGIN, run_id) ---
+    for row in rows:
+        session.add(row)
+    session.flush()
+    for row in rows:
+        record_run_lineage(
+            session,
+            run_id=run.run_id,
+            target_entity_type="sensitivity_result",
+            target_entity_id=row.id,
+            edge_kind=EDGE_KIND_ORIGIN,
+        )
+
+    update_run_status(session, run, RunStatus.COMPLETED, actor_id=actor.actor_id)
+    return SensitivityRunResult(run=run, status=RunStatus.COMPLETED.value, rows=rows)
+
+
+def list_sensitivities(
+    session: Session, *, run_id: str, acting_tenant: str
+) -> list[SensitivityResult]:
+    """The sensitivity rows of a run (tenant-scoped, stable order)."""
+    return list(
+        session.execute(
+            select(SensitivityResult)
+            .where(
+                SensitivityResult.calculation_run_id == str(run_id),
+                SensitivityResult.tenant_id == str(acting_tenant),
+            )
+            .order_by(
+                SensitivityResult.curve_id,
+                SensitivityResult.value_type,
+                SensitivityResult.tenor_days,
+                SensitivityResult.sensitivity_type,
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+def resolve_run(session: Session, run_id: str, *, acting_tenant: str) -> CalculationRun:
+    """Resolve a SENSITIVITY ``calculation_run`` by ``run_id`` with an EXPLICIT tenant predicate +
+    ``run_type`` filter (fail-closed). Surfaces a committed FAILED run (the durable refusal
+    evidence)
+    rather than synthesizing it. Raises :class:`SensitivityRunNotVisible` on a hidden/unknown id or
+    a
+    non-sensitivity run."""
+    run = session.execute(
+        select(CalculationRun).where(
+            CalculationRun.run_id == str(run_id),
+            CalculationRun.tenant_id == str(acting_tenant),
+            CalculationRun.run_type == RUN_TYPE_SENSITIVITY,
+        )
+    ).scalar_one_or_none()
+    if run is None:
+        raise SensitivityRunNotVisible(str(run_id))
+    return run
+
+
+def resolve_sensitivity(
+    session: Session, sensitivity_id: str, *, acting_tenant: str
+) -> SensitivityResult:
+    """Resolve one ``sensitivity_result`` row by id with an EXPLICIT tenant predicate."""
+    row = session.execute(
+        select(SensitivityResult).where(
+            SensitivityResult.id == str(sensitivity_id),
+            SensitivityResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise SensitivityNotVisible(str(sensitivity_id))
+    return row

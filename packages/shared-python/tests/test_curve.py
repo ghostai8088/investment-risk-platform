@@ -540,11 +540,13 @@ def test_curve_fr_header_curve_point_append_only() -> None:
             assert "curve_point" in line and '"curve",' not in line and "'curve'," not in line
 
 
-def test_no_component_kind_curve_minted() -> None:
+def test_component_kind_curve_minted_in_p3_1() -> None:
+    # P2-5 left CURVE reserved-comment-only; P3-1 mints COMPONENT_KIND_CURVE (an app-constant, no
+    # schema change) for the analytic-sensitivity curve snapshot.
     import irp_shared.snapshot.models as snap_models
 
-    assert not hasattr(snap_models, "COMPONENT_KIND_CURVE")
-    assert "CURVE" not in snap_models.SNAPSHOT_COMPONENT_KINDS
+    assert snap_models.COMPONENT_KIND_CURVE == "CURVE"
+    assert "CURVE" in snap_models.SNAPSHOT_COMPONENT_KINDS
 
 
 def test_curve_module_no_construction_or_risk_symbols() -> None:
@@ -604,8 +606,8 @@ def test_migration_head_is_0020_curves() -> None:
         assert root != root.parent
         root = root.parent
     script = ScriptDirectory(str(root / "migrations"))
-    # P2-6 advanced the head to 0021_benchmark; curve keeps its chain position (0020_curves,
+    # P3-1 advanced the head to 0022_sensitivity; curve keeps its chain position (0020_curves,
     # down_revision 0019_price_point) and stays reachable in the revision walk.
-    assert script.get_current_head() == "0021_benchmark"
+    assert script.get_current_head() == "0022_sensitivity"
     assert script.get_revision("0020_curves").down_revision == "0019_price_point"
     assert "0020_curves" in {r.revision for r in script.walk_revisions()}

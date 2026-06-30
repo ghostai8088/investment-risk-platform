@@ -73,6 +73,13 @@ PERMISSIONS: list[tuple[str, str]] = [
     # precedent; OD-P2-3-I/OQ-P2-3-2).
     ("exposure.aggregate.run", "Run exposure aggregation"),
     ("exposure.view", "View exposure aggregates"),
+    # P3-1 risk (ENT-028 sensitivity_result, the first reproducible governed RISK number). BOTH
+    # codes are NEW. `risk.run` is the run-the-governed-compute verb (a risk number is *run*, not
+    # edited/recorded; mirrors `exposure.aggregate.run`); `risk.view` reads results. `auditor_3l` is
+    # INCLUDED in `risk.view` (governed risk OUTPUT is 3L-oversight scope — the exposure.view
+    # precedent; OD-P3-1-I). Both maker/read sets mirror the exposure family.
+    ("risk.run", "Run governed risk analytics (analytic sensitivities)"),
+    ("risk.view", "View risk results (sensitivities)"),
     # P1C-2 transaction (additive; PROPRIETARY tenant-scoped, IA append-only). `.record` is the
     # append-only governed-write verb (a transaction is recorded, never edited — no `.edit`).
     ("transaction.view", "View transactions"),
@@ -169,6 +176,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # P2-3 exposure: steward is a maker — holds run + view (reads its own writes).
         "exposure.aggregate.run",
         "exposure.view",
+        # P3-1 risk: steward is a maker — holds run + view (the exposure precedent).
+        "risk.run",
+        "risk.view",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -198,6 +208,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # P2-3 exposure: the 1L analyst RUNS exposure (maker) + views the results.
         "exposure.aggregate.run",
         "exposure.view",
+        # P3-1 risk: the 1L analyst RUNS sensitivities (maker) + views the results.
+        "risk.run",
+        "risk.view",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -232,6 +245,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "marketdata.view",
         # P2-3 exposure: 2L view-only (exposure.aggregate.run is maker/admin-only).
         "exposure.view",
+        # P3-1 risk: 2L view-only (risk.run is maker/admin-only).
+        "risk.view",
         "model.inventory.view",
         "dq.result.view",
         "lineage.view",
@@ -248,6 +263,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # OD-P2-3-I; distinct from the operational input SoD that excludes auditor from
         # portfolio/transaction/position/valuation/marketdata).
         "exposure.view",
+        # P3-1 risk: the 3L auditor VIEWS governed risk outputs (the exposure.view precedent —
+        # OD-P3-1-I; governed risk results are 3L-oversight scope).
+        "risk.view",
     ],
 }
 

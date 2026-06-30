@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from irp_shared.snapshot.events import SNAPSHOT_CREATE_EVENT, SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
+    COMPONENT_KIND_CURVE,
     COMPONENT_KIND_FX,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
+    PURPOSE_SENSITIVITY_INPUT,
     SNAPSHOT_COMPONENT_KINDS,
     SNAPSHOT_PURPOSES,
     DatasetSnapshot,
@@ -20,10 +22,13 @@ from irp_shared.snapshot.models import (
 )
 from irp_shared.snapshot.service import (
     DEFAULT_BINDING_PREDICATE,
+    CurveSelector,
+    CurveSnapshotError,
     EmptySnapshotError,
     SnapshotNotFound,
     SnapshotPurposeError,
     VerifyResult,
+    build_curve_snapshot,
     build_snapshot,
     list_components,
     resolve_snapshot,
@@ -36,12 +41,17 @@ __all__ = [
     "SNAPSHOT_PURPOSES",
     "SNAPSHOT_COMPONENT_KINDS",
     "COMPONENT_KIND_FX",
+    "COMPONENT_KIND_CURVE",
     "COMPONENT_KIND_POSITION",
     "COMPONENT_KIND_VALUATION",
+    "PURPOSE_SENSITIVITY_INPUT",
     "SnapshotActor",
     "SNAPSHOT_CREATE_EVENT",
     "record_snapshot_create",
     "build_snapshot",
+    "build_curve_snapshot",
+    "CurveSelector",
+    "CurveSnapshotError",
     "verify_snapshot",
     "resolve_snapshot",
     "list_components",

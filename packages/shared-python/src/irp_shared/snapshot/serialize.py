@@ -2,12 +2,14 @@
 
 ``captured_content`` = ``canonicalize({field: normalized_value, ...})`` over the per-kind immutable
 field set; ``content_hash = sha256_hex(captured_content)``. Reuses the audited ``audit.hashing``
-primitives (``canonicalize`` sorts keys, compact separators, ``ensure_ascii=False``; ``sha256_hex``)
+primitives (``canonicalize`` sorts keys, compact separators, ``ensure_ascii=False``;
+``sha256_hex``)
 so the hash is **identical across the AD-011 SQLite/PG split** — in app code, NEVER in the DB.
 
 Normalization (so nothing hits ``canonicalize``'s ``default=str`` fallback non-deterministically):
 ``Decimal`` -> fixed-scale string at the column scale (QS-01/03); ``datetime`` -> ISO-8601 UTC
-(naive assumed UTC, QS-12); ``date`` -> ``YYYY-MM-DD``; GUID/str -> lowercase; ``None`` -> JSON null
+(naive assumed UTC, QS-12); ``date`` -> ``YYYY-MM-DD``; GUID/str -> lowercase; ``None`` -> JSON
+null
 (explicit, distinct from ``""``). The **mutable close-out markers ``valid_to``/``system_to``** (and
 ``created_at``/``updated_at``) are EXCLUDED — FR rows are close-out-UPDATEd while their content is
 immutable. ``restatement_reason``/``supersedes_id`` ARE included (write-once version provenance).
@@ -22,10 +24,12 @@ from typing import Any
 from irp_shared.audit.hashing import canonicalize, sha256_hex
 
 #: Decimal scales per column (canonical_data_model — Position.quantity Numeric(28,8); valuation /
-#: position mark/cost_basis Numeric(20,6); fx_rate.rate Numeric(28,12)).
+#: position mark/cost_basis Numeric(20,6); fx_rate.rate Numeric(28,12); curve_point.point_value
+#: Numeric(20,12)).
 _SCALE_QUANTITY = 8
 _SCALE_MONEY = 6
 _SCALE_FX_RATE = 12
+_SCALE_CURVE_POINT = 12
 
 
 def _norm_datetime(value: datetime) -> str:
@@ -38,7 +42,8 @@ def _norm_decimal(value: Decimal, scale: int) -> str:
     """Fixed-scale decimal string (trailing zeros normalized, so 1 and 1.00 hash identically).
 
     QUANTIZE to the column scale with ROUND_HALF_UP **before** formatting — engine-independence
-    (AD-011): Python's ``f"{:.Nf}"`` uses ROUND_HALF_EVEN, but PG ``numeric`` rounds HALF_UP when it
+    (AD-011): Python's ``f"{:.Nf}"`` uses ROUND_HALF_EVEN, but PG ``numeric`` rounds HALF_UP when
+    it
     stores a sub-scale value. Without an explicit quantize a value carrying more precision than the
     column scale (e.g. ``0.0000005`` at scale 6) would hash differently build-time (in-memory,
     un-roundtripped) vs verify-time (PG-roundtripped), and differently on SQLite vs PG — a spurious
@@ -115,7 +120,8 @@ def portfolio_content(row: Any) -> dict[str, Any]:
 def fx_content(row: Any) -> dict[str, Any]:
     """The immutable captured content of an ``fx_rate`` (FR) version (P2-3 FX component). The rate
     is
-    captured at the FX scale 12 (Numeric(28,12)); ``rate_date``/``rate_type``/``base``/``quote`` are
+    captured at the FX scale 12 (Numeric(28,12)); ``rate_date``/``rate_type``/``base``/``quote``
+    are
     the immutable logical key. Close-out markers (``valid_to``/``system_to``) are EXCLUDED (the FR
     content is immutable; the row is close-out-UPDATEd) — the ``valuation`` precedent."""
     return {
@@ -132,6 +138,42 @@ def fx_content(row: Any) -> dict[str, Any]:
         "valid_from": _norm_datetime(row.valid_from),
         "system_from": _norm_datetime(row.system_from),
         "record_version": row.record_version,
+    }
+
+
+def curve_content(row: Any, nodes: list[Any]) -> dict[str, Any]:
+    """The immutable captured content of a ``curve`` (FR) version + its node set (P3-1 CURVE
+    component). One CURVE component = the header immutable fields + the ordered ``curve_point``
+    node
+    list (``point_value`` at the curve-point scale 12) — the header+nodes pinned as a unit (the
+    nodes
+    are IA append-only + version-pinned to the header). ``interpolation_method`` is inert/captured.
+    Close-out markers (``valid_to``/``system_to``) are EXCLUDED (the FR content is immutable).
+    Nodes
+    are sorted by ``(value_type, tenor_days)`` so the hash is order-independent of the read."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "curve_type": row.curve_type,
+        "currency_code": row.currency_code,
+        "reference_key": row.reference_key,
+        "curve_date": row.curve_date.isoformat(),
+        "curve_source": row.curve_source,
+        "interpolation_method": row.interpolation_method,
+        "restatement_reason": row.restatement_reason,
+        "supersedes_id": (None if row.supersedes_id is None else _norm_guid(row.supersedes_id)),
+        "valid_from": _norm_datetime(row.valid_from),
+        "system_from": _norm_datetime(row.system_from),
+        "record_version": row.record_version,
+        "nodes": [
+            {
+                "tenor_days": n.tenor_days,
+                "tenor_label": n.tenor_label,
+                "value_type": n.value_type,
+                "point_value": _norm_decimal(n.point_value, _SCALE_CURVE_POINT),
+            }
+            for n in sorted(nodes, key=lambda x: (x.value_type, x.tenor_days))
+        ],
     }
 
 
@@ -155,7 +197,8 @@ def manifest_hash(
     component_count: int,
     component_hashes: list[tuple[str, str, str]],
 ) -> str:
-    """The header reproducibility fingerprint: SHA-256 over the header cutoffs + ``component_count``
+    """The header reproducibility fingerprint: SHA-256 over the header cutoffs +
+    ``component_count``
     (folded IN, anti-truncation) + the component hashes sorted by the NORMALIZED
     ``(component_kind, target_entity_id)``. Deterministic given identical cutoffs (§7)."""
     ordered = sorted(

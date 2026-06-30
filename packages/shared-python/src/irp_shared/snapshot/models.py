@@ -12,7 +12,8 @@ guard below (shared ``audit.models.AppendOnlyViolation``). A snapshot is created
 mutated; a new input set is a NEW snapshot. PROPRIETARY, tenant-scoped, **NEVER hybrid** (symmetric
 RLS only, migration 0016). No ``valid_*`` axis (the as-of-ness lives in the pinned input versions +
 the header cutoffs). **No ``status``; no ``model_version`` component** (model binds at the run,
-OD-P2-C). The component captures both a physical-version PIN (``target_entity_id`` + coords) and the
+OD-P2-C). The component captures both a physical-version PIN (``target_entity_id`` + coords) and
+the
 ``captured_content`` (the canonical-serialized value) so the snapshot is self-sufficient (§8).
 """
 
@@ -35,13 +36,22 @@ from irp_shared.db.mixins import (
 from irp_shared.db.types import GUID
 from irp_shared.temporal import TemporalClass
 
-#: Controlled-vocab ``purpose`` values (plain String, no enum/CHECK; app-side allow-list in binder).
+#: Controlled-vocab ``purpose`` values (plain String, no enum/CHECK; app-side allow-list in
+#: binder).
 PURPOSE_EXPOSURE_INPUT = "EXPOSURE_INPUT"
+#: P3-1 (OD-P3-1-E): a curve-input snapshot for an analytic-sensitivity run (pins CURVE
+#: components).
+PURPOSE_SENSITIVITY_INPUT = "SENSITIVITY_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
-SNAPSHOT_PURPOSES = (PURPOSE_EXPOSURE_INPUT, PURPOSE_ADHOC, PURPOSE_TEST)
+SNAPSHOT_PURPOSES = (
+    PURPOSE_EXPOSURE_INPUT,
+    PURPOSE_SENSITIVITY_INPUT,
+    PURPOSE_ADHOC,
+    PURPOSE_TEST,
+)
 
-#: Controlled-vocab ``component_kind`` values (PRICE/CURVE/REFERENCE reserved later).
+#: Controlled-vocab ``component_kind`` values (PRICE/REFERENCE reserved later).
 COMPONENT_KIND_PORTFOLIO = "PORTFOLIO"
 COMPONENT_KIND_POSITION = "POSITION"
 COMPONENT_KIND_VALUATION = "VALUATION"
@@ -49,11 +59,19 @@ COMPONENT_KIND_VALUATION = "VALUATION"
 #: is reproducible from the snapshot alone (the exposure compute reads this captured content, never
 #: a live FX read). Minted additively; the tables are unchanged (no schema redesign).
 COMPONENT_KIND_FX = "FX"
+#: P3-1 (OD-P3-1-E): a pinned ``curve`` (ENT-021) header version + its immutable ``curve_point``
+#: node
+#: set (captured into one component) — so an analytic-sensitivity run is reproducible from the
+#: snapshot alone (the compute reads this captured content, never a live curve read). App-constant;
+#: the ``dataset_snapshot``/``component`` tables are UNCHANGED (``component_kind`` is
+#: unconstrained).
+COMPONENT_KIND_CURVE = "CURVE"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
     COMPONENT_KIND_FX,
+    COMPONENT_KIND_CURVE,
 )
 
 
@@ -67,7 +85,8 @@ class DatasetSnapshot(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Ti
     label: Mapped[str] = mapped_column(String(255), nullable=False)
     purpose: Mapped[str] = mapped_column(String(50), nullable=False)  # controlled-vocab plain str
     as_of_valid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    # FROZEN at create; both the binder and verify use this concrete instant (never wall-clock now).
+    # FROZEN at create; both the binder and verify use this concrete instant (never wall-clock
+    # now).
     as_of_known_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     as_of_valuation_date: Mapped[date] = mapped_column(Date, nullable=False)
     binding_predicate_version: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -79,11 +98,14 @@ class DatasetSnapshot(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Ti
 class DatasetSnapshotComponent(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     """Per-input physical-version pin + captured value of a ``dataset_snapshot`` (ENT-050, IA).
 
-    Polymorphic ``(target_entity_type, target_entity_id)`` — **no domain FK** (mirrors lineage_edge/
+    Polymorphic ``(target_entity_type, target_entity_id)`` — **no domain FK** (mirrors
+    lineage_edge/
     identifier_xref). ``target_entity_id`` is the **surrogate row id** (the physical-version
     identity for FR; the current row id for EV). ``captured_content`` is the canonical-serialized
-    immutable value; ``content_hash = sha256_hex(captured_content)``. ``pinned_system_from`` is NULL
-    for the EV ``portfolio`` kind (no system axis); ``record_version`` is the authoritative EV drift
+    immutable value; ``content_hash = sha256_hex(captured_content)``. ``pinned_system_from`` is
+    NULL
+    for the EV ``portfolio`` kind (no system axis); ``record_version`` is the authoritative EV
+    drift
     discriminator.
     """
 
