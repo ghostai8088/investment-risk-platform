@@ -26,9 +26,11 @@ from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
 from irp_shared.marketdata import (
     DEFAULT_BASE,
+    FREQUENCY_DAILY,
     PRICE_TYPE_CLOSE,
     RATE_TYPE_MID,
     REFERENCE_KEY_NONE,
+    RETURN_TYPE_SIMPLE,
     Benchmark,
     BenchmarkActor,
     BenchmarkConstituent,
@@ -41,12 +43,18 @@ from irp_shared.marketdata import (
     CurveNotVisible,
     CurvePoint,
     CurveValueError,
+    Factor,
+    FactorActor,
+    FactorNotVisible,
+    FactorReturn,
+    FactorValueError,
     FxRate,
     FxRateActor,
     FxRateNotFound,
     FxRateNotVisible,
     FxRateValueError,
     NoCurrentCurve,
+    NoCurrentFactorReturn,
     NoCurrentFxRate,
     NoCurrentMembership,
     NoCurrentPrice,
@@ -56,29 +64,38 @@ from irp_shared.marketdata import (
     PriceValueError,
     capture_benchmark,
     capture_curve,
+    capture_factor,
+    capture_factor_return,
     capture_fx_rate,
     capture_membership,
     capture_price,
     convert,
     correct_curve,
+    correct_factor_return,
     correct_fx_rate,
     correct_membership,
     correct_price,
     list_benchmarks,
     list_curve_points,
+    list_factor_returns,
+    list_factors,
     reconstruct_curve_as_of,
+    reconstruct_factor_return_as_of,
     reconstruct_fx_rate_as_of,
     reconstruct_membership_as_of,
     reconstruct_price_as_of,
     resolve_benchmark,
     resolve_curve,
+    resolve_factor,
     resolve_fx_rate,
     resolve_price,
     supersede_curve,
+    supersede_factor_return,
     supersede_fx_rate,
     supersede_membership,
     supersede_price,
     update_benchmark,
+    update_factor,
 )
 from irp_shared.reference.instrument import InstrumentNotVisible
 from irp_shared.reference.service import CurrencyNotVisible
@@ -87,6 +104,7 @@ router = APIRouter(prefix="/fx", tags=["marketdata"])
 price_router = APIRouter(prefix="/prices", tags=["marketdata"])
 curve_router = APIRouter(prefix="/curves", tags=["marketdata"])
 benchmark_router = APIRouter(prefix="/benchmarks", tags=["marketdata"])
+factor_router = APIRouter(prefix="/factors", tags=["marketdata"])
 
 #: Module-level guard singletons (deny-by-default; built once, not in argument defaults).
 _require_ingest = require_permission("marketdata.ingest")
@@ -1265,3 +1283,341 @@ def list_benchmarks_endpoint(
 ) -> list[BenchmarkOut]:
     """All current benchmark definitions for the acting tenant."""
     return [_benchmark_out(row) for row in list_benchmarks(db, acting_tenant=principal.tenant_id)]
+
+
+# --- factor (P3-2, ENT-025) — captured factor-return INPUTS (definition EV + return series FR) ---
+
+
+def _factor_actor(principal: Principal) -> FactorActor:
+    return FactorActor(actor_id=principal.user_id)
+
+
+class FactorIn(BaseModel):
+    factor_code: str
+    factor_source: str
+    factor_family: str
+    factor_type: str | None = None
+    region: str | None = None
+    currency_code: str | None = None
+    asset_class: str | None = None
+    frequency: str = FREQUENCY_DAILY
+    factor_name: str | None = None
+    description: str | None = None
+
+
+class FactorUpdateIn(BaseModel):
+    factor_family: str | None = None
+    factor_type: str | None = None
+    region: str | None = None
+    currency_code: str | None = None
+    asset_class: str | None = None
+    frequency: str | None = None
+    factor_name: str | None = None
+    description: str | None = None
+
+
+class FactorOut(BaseModel):
+    id: str
+    factor_code: str
+    factor_source: str
+    factor_family: str
+    factor_type: str | None
+    region: str | None
+    currency_code: str | None
+    asset_class: str | None
+    frequency: str
+    factor_name: str | None
+    description: str | None
+    valid_from: datetime
+    valid_to: datetime | None
+    record_version: int
+
+
+class FactorReturnIn(BaseModel):
+    return_date: date
+    return_value: Decimal
+    return_type: str = RETURN_TYPE_SIMPLE
+
+
+class FactorReturnSupersedeIn(FactorReturnIn):
+    effective_at: datetime
+
+
+class FactorReturnCorrectIn(FactorReturnIn):
+    restatement_reason: str
+
+
+class FactorReturnOut(BaseModel):
+    id: str
+    factor_id: str
+    return_date: date
+    return_type: str
+    return_value: Decimal
+    valid_from: datetime
+    valid_to: datetime | None
+    system_from: datetime
+    system_to: datetime | None
+    supersedes_id: str | None
+    record_version: int
+
+
+def _factor_out(row: Factor) -> FactorOut:
+    return FactorOut(
+        id=row.id,
+        factor_code=row.factor_code,
+        factor_source=row.factor_source,
+        factor_family=row.factor_family,
+        factor_type=row.factor_type,
+        region=row.region,
+        currency_code=row.currency_code,
+        asset_class=row.asset_class,
+        frequency=row.frequency,
+        factor_name=row.factor_name,
+        description=row.description,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        record_version=row.record_version,
+    )
+
+
+def _factor_return_out(row: FactorReturn) -> FactorReturnOut:
+    return FactorReturnOut(
+        id=row.id,
+        factor_id=row.factor_id,
+        return_date=row.return_date,
+        return_type=row.return_type,
+        return_value=row.return_value,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        system_from=row.system_from,
+        system_to=row.system_to,
+        supersedes_id=row.supersedes_id,
+        record_version=row.record_version,
+    )
+
+
+#: Governed-write error → (status, detail). Fail-closed; rolls back before mapping.
+_FACTOR_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
+    FactorValueError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid factor input"),
+    CurrencyNotVisible: (status.HTTP_404_NOT_FOUND, "currency not found"),
+    FactorNotVisible: (status.HTTP_404_NOT_FOUND, "factor not found"),
+    NoCurrentFactorReturn: (
+        status.HTTP_409_CONFLICT,
+        "no current factor return to supersede/correct",
+    ),
+    DataQualityError: (status.HTTP_409_CONFLICT, "factor return failed a data-quality gate"),
+}
+
+
+def _raise_factor_write(db: Session, exc: Exception) -> None:
+    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
+    code, detail = _FACTOR_WRITE_ERRORS[type(exc)]
+    raise HTTPException(status_code=code, detail=detail) from None
+
+
+@factor_router.post("", response_model=FactorOut, status_code=status.HTTP_201_CREATED)
+def create_factor(
+    body: FactorIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> FactorOut:
+    """Capture a factor DEFINITION (EV; REFERENCE.CREATE + VENDOR_FACTOR ORIGIN lineage)."""
+    try:
+        row = capture_factor(
+            db,
+            factor_code=body.factor_code,
+            factor_source=body.factor_source,
+            factor_family=body.factor_family,
+            acting_tenant=principal.tenant_id,
+            actor=_factor_actor(principal),
+            factor_type=body.factor_type,
+            region=body.region,
+            currency_code=body.currency_code,
+            asset_class=body.asset_class,
+            frequency=body.frequency,
+            factor_name=body.factor_name,
+            description=body.description,
+        )
+    except (FactorValueError, CurrencyNotVisible) as exc:
+        _raise_factor_write(db, exc)
+    out = _factor_out(row)
+    db.commit()
+    return out
+
+
+@factor_router.post("/{factor_id}/update", response_model=FactorOut)
+def update_factor_endpoint(
+    factor_id: str,
+    body: FactorUpdateIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> FactorOut:
+    """Apply attribute changes to a factor DEFINITION in place (EV; REFERENCE.UPDATE)."""
+    try:
+        row = resolve_factor(db, factor_id, acting_tenant=principal.tenant_id)
+        update_factor(
+            db,
+            row,
+            acting_tenant=principal.tenant_id,
+            actor=_factor_actor(principal),
+            **body.model_dump(exclude_unset=True),
+        )
+    except (FactorValueError, FactorNotVisible, CurrencyNotVisible) as exc:
+        _raise_factor_write(db, exc)
+    out = _factor_out(row)
+    db.commit()
+    return out
+
+
+@factor_router.post(
+    "/{factor_id}/returns", response_model=FactorReturnOut, status_code=status.HTTP_201_CREATED
+)
+def capture_factor_return_endpoint(
+    factor_id: str,
+    body: FactorReturnIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> FactorReturnOut:
+    """Capture the first open factor return for (factor, return_date, return_type)."""
+    try:
+        factor = resolve_factor(db, factor_id, acting_tenant=principal.tenant_id)
+        row = capture_factor_return(
+            db,
+            factor,
+            return_date=body.return_date,
+            return_value=body.return_value,
+            return_type=body.return_type,
+            acting_tenant=principal.tenant_id,
+            actor=_factor_actor(principal),
+        )
+    except (FactorValueError, FactorNotVisible, DataQualityError) as exc:
+        _raise_factor_write(db, exc)
+    out = _factor_return_out(row)
+    db.commit()
+    return out
+
+
+@factor_router.post(
+    "/{factor_id}/returns/supersede",
+    response_model=FactorReturnOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def supersede_factor_return_endpoint(
+    factor_id: str,
+    body: FactorReturnSupersedeIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> FactorReturnOut:
+    """Effective-dated re-capture of a factor return (valid-time; a new version)."""
+    try:
+        factor = resolve_factor(db, factor_id, acting_tenant=principal.tenant_id)
+        row = supersede_factor_return(
+            db,
+            factor,
+            return_date=body.return_date,
+            return_value=body.return_value,
+            return_type=body.return_type,
+            effective_at=body.effective_at,
+            acting_tenant=principal.tenant_id,
+            actor=_factor_actor(principal),
+        )
+    except (FactorValueError, FactorNotVisible, NoCurrentFactorReturn, DataQualityError) as exc:
+        _raise_factor_write(db, exc)
+    out = _factor_return_out(row)
+    db.commit()
+    return out
+
+
+@factor_router.post(
+    "/{factor_id}/returns/correct",
+    response_model=FactorReturnOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def correct_factor_return_endpoint(
+    factor_id: str,
+    body: FactorReturnCorrectIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> FactorReturnOut:
+    """As-known restatement (system-time) of a factor return; a corrected version."""
+    try:
+        factor = resolve_factor(db, factor_id, acting_tenant=principal.tenant_id)
+        row = correct_factor_return(
+            db,
+            factor,
+            return_date=body.return_date,
+            return_value=body.return_value,
+            return_type=body.return_type,
+            restatement_reason=body.restatement_reason,
+            acting_tenant=principal.tenant_id,
+            actor=_factor_actor(principal),
+        )
+    except (FactorValueError, FactorNotVisible, NoCurrentFactorReturn, DataQualityError) as exc:
+        _raise_factor_write(db, exc)
+    out = _factor_return_out(row)
+    db.commit()
+    return out
+
+
+@factor_router.get("/{factor_id}/returns/as-of", response_model=FactorReturnOut)
+def get_factor_return_as_of(
+    factor_id: str,
+    return_date: date = Query(...),
+    valid_at: datetime = Query(...),
+    return_type: str = Query(default=RETURN_TYPE_SIMPLE),
+    known_at: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> FactorReturnOut:
+    """Bitemporal as-of read of a factor return (fail-closed on an unknown factor / no version)."""
+    try:
+        resolve_factor(db, factor_id, acting_tenant=principal.tenant_id)
+    except FactorNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="factor not found"
+        ) from None
+    row = reconstruct_factor_return_as_of(
+        db,
+        acting_tenant=principal.tenant_id,
+        factor_id=factor_id,
+        return_date=return_date,
+        return_type=return_type,
+        valid_at=valid_at,
+        known_at=known_at,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="no factor return as-of"
+        ) from None
+    return _factor_return_out(row)
+
+
+@factor_router.get("/{factor_id}/returns", response_model=list[FactorReturnOut])
+def list_factor_returns_endpoint(
+    factor_id: str,
+    return_type: str | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[FactorReturnOut]:
+    """The current-head factor return series for a factor (tenant-scoped)."""
+    try:
+        resolve_factor(db, factor_id, acting_tenant=principal.tenant_id)
+    except FactorNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="factor not found"
+        ) from None
+    return [
+        _factor_return_out(row)
+        for row in list_factor_returns(
+            db, acting_tenant=principal.tenant_id, factor_id=factor_id, return_type=return_type
+        )
+    ]
+
+
+@factor_router.get("", response_model=list[FactorOut])
+def list_factors_endpoint(
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[FactorOut]:
+    """All current factor definitions for the acting tenant."""
+    return [_factor_out(row) for row in list_factors(db, acting_tenant=principal.tenant_id)]

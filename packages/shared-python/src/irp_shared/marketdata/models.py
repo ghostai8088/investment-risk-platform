@@ -124,6 +124,30 @@ CURVE_VALUE_TYPES = (
 #: value_types whose ``point_value`` may be NEGATIVE (bounded sanity RANGE, not strictly-positive).
 SIGNED_VALUE_TYPES = (VALUE_TYPE_ZERO_RATE, VALUE_TYPE_PAR_RATE, VALUE_TYPE_SPREAD)
 
+#: Controlled-vocab ``factor_family`` values for P3-2 (app-side allow-list; OTHER is the catch-all).
+FACTOR_FAMILY_STYLE = "STYLE"
+FACTOR_FAMILY_INDUSTRY = "INDUSTRY"
+FACTOR_FAMILY_COUNTRY = "COUNTRY"
+FACTOR_FAMILY_MACRO = "MACRO"
+FACTOR_FAMILY_MARKET = "MARKET"
+FACTOR_FAMILY_CURRENCY = "CURRENCY"
+FACTOR_FAMILY_OTHER = "OTHER"
+FACTOR_FAMILIES = (
+    FACTOR_FAMILY_STYLE,
+    FACTOR_FAMILY_INDUSTRY,
+    FACTOR_FAMILY_COUNTRY,
+    FACTOR_FAMILY_MACRO,
+    FACTOR_FAMILY_MARKET,
+    FACTOR_FAMILY_CURRENCY,
+    FACTOR_FAMILY_OTHER,
+)
+#: Controlled-vocab factor-return ``return_type`` (SIMPLE arithmetic v1; LOG reserved — not minted).
+RETURN_TYPE_SIMPLE = "SIMPLE"
+FACTOR_RETURN_TYPES = (RETURN_TYPE_SIMPLE,)
+#: Controlled-vocab factor ``frequency`` (DAILY v1; WEEKLY/MONTHLY reserved — not minted).
+FREQUENCY_DAILY = "DAILY"
+FACTOR_FREQUENCIES = (FREQUENCY_DAILY,)
+
 
 class FxRate(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):
     """Captured vendor FX rate (ENT-024, FR bitemporal). PROPRIETARY/symmetric; NOT append-only."""
@@ -505,3 +529,115 @@ class BenchmarkConstituent(
 # before_update/before_delete guard and no irp_prevent_mutation trigger (EV mutates in place;
 # FR requires close-out UPDATEs). Content immutability is binder-enforced + tested (a difference
 # from curve_point).
+
+
+class Factor(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):
+    """Captured risk-factor DEFINITION header (ENT-025 detail, net-new canonical id, EV) — P3-2.
+
+    The FIFTH market-data entity; the ``benchmark`` EV-definition precedent. The IDENTITY of a risk
+    factor (code / vendor source / family / type / scope / frequency). A slowly-changing REFERENCE-
+    family entity: entity-versioned in place via ``record_version``, NOT append-only, NO system axis
+    (EV records valid time only). PROPRIETARY/symmetric; NEVER hybrid (per-tenant vendor-licensed).
+    Audited via ``REFERENCE.CREATE``/``REFERENCE.UPDATE`` (the ``benchmark`` definition precedent —
+    the captured *returns* are the ``MARKET.*`` half). A **captured** definition (supplied to the
+    platform), **NOT computed** — no factor exposure, covariance, VaR/ES, or return computation. The
+    dated returns live in the FR ``factor_return`` children. Logical identity key
+    ``(tenant_id, factor_code, factor_source)``:
+
+    - **``factor_code``:** the tenant's logical factor code (e.g. ``"MOMENTUM"``); a NOT-NULL key.
+    - **``factor_source``:** the vendor label (e.g. ``"MSCI_BARRA"``); a NOT-NULL key component
+      (multi-vendor coexistence — the ``benchmark_source`` precedent).
+    - **``factor_family``:** a controlled-vocab family
+      (STYLE/INDUSTRY/COUNTRY/MACRO/MARKET/CURRENCY/OTHER); ``factor_type`` is an optional captured
+      subtype label.
+    - **``currency_code``/``region``/``asset_class``:** optional captured scope (currency validated
+      via the hybrid-aware ``resolve_currency`` when present). NO conversion.
+    - **``frequency``:** the return frequency (``DAILY`` v1); a NOT-NULL controlled-vocab attribute.
+    """
+
+    __tablename__ = "factor"
+    __temporal_class__ = TemporalClass.EFFECTIVE_DATED
+    __table_args__ = (
+        # EV current-identity: one row per (tenant, code, vendor) — in-place versioned (the
+        # benchmark uq precedent; NOT a partial-WHERE — EV does not close-out rows).
+        UniqueConstraint(
+            "tenant_id", "factor_code", "factor_source", name="uq_factor_tenant_code_source"
+        ),
+    )
+
+    factor_code: Mapped[str] = mapped_column(String(150), nullable=False)
+    factor_source: Mapped[str] = mapped_column(String(150), nullable=False)
+    factor_family: Mapped[str] = mapped_column(String(30), nullable=False)
+    # Optional captured subtype label (not vocab-enforced v1 — the interpolation_method precedent).
+    factor_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    region: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Optional captured denomination (validated via resolve_currency when present); NO conversion.
+    currency_code: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    asset_class: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    frequency: Mapped[str] = mapped_column(String(20), nullable=False, default=FREQUENCY_DAILY)
+    factor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class FactorReturn(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):
+    """Captured factor RETURN observation (ENT-025, FR bitemporal) — the captured-market half; the
+    ``fx_rate``/``curve``-header single-row FR protocol.
+
+    A **captured** vendor/external factor return for a business date (a value supplied to the
+    platform), **NEVER computed** — no price-derived return, no regression, no factor model, no
+    exposure/covariance/VaR. PROPRIETARY/symmetric; NEVER hybrid; **NOT append-only** (the FR
+    protocol requires close-out UPDATEs; content-immutability service-enforced + tested). Logical
+    key ``(factor_id, return_date, return_type)``:
+
+    - **``factor_id``:** NOT-NULL FK to the ``factor`` definition (resolved tenant-filtered).
+    - **``return_date`` (the ``curve_date``/``rate_date`` precedent):** a separate immutable
+      logical-key ``Date`` — the business date the return is FOR — carried forward verbatim, never
+      mutated, DISTINCT from the FR ``valid_from`` axis.
+    - **``return_type``:** controlled-vocab (``SIMPLE`` v1; ``LOG`` reserved); a NOT-NULL key.
+    - **``return_value``:** the captured return as a canonical DECIMAL fraction (``0.01`` = 1%, NOT
+      percent/bps), ``Numeric(20, 12)`` (the ``curve.point_value``/``weight`` scale); inert (NEVER
+      computed). A binder-side finiteness guard rejects NaN/±Inf; a ``> -1`` economic-sanity DQ
+      RANGE.
+
+    Current-head partial-unique ``(tenant_id, factor_id, return_date, return_type) WHERE valid_to IS
+    NULL AND system_to IS NULL`` — exactly one open head per factor+date+type.
+    """
+
+    __tablename__ = "factor_return"
+    __temporal_class__ = TemporalClass.FULL_REPRODUCIBLE
+    __table_args__ = (
+        Index(
+            "uq_factor_return_current",
+            "tenant_id",
+            "factor_id",
+            "return_date",
+            "return_type",
+            unique=True,
+            postgresql_where=text("valid_to IS NULL AND system_to IS NULL"),
+            sqlite_where=text("valid_to IS NULL AND system_to IS NULL"),
+        ),
+    )
+
+    factor_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("factor.id"), nullable=False, index=True
+    )
+    # Immutable logical-key: the business date the return is FOR (the curve_date precedent).
+    return_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    return_type: Mapped[str] = mapped_column(String(20), nullable=False, default=RETURN_TYPE_SIMPLE)
+    # The captured return as a canonical DECIMAL fraction (0.01 = 1%); inert (NEVER computed).
+    return_value: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
+    restatement_reason: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )  # set ONLY on a correction (TR-08)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("factor_return.id"), nullable=True
+    )  # link to the superseded version (set on supersede + correction)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+# NOTE: factor (EV) + factor_return (FR) are BOTH NOT append-only — no ORM
+# before_update/before_delete guard and no irp_prevent_mutation trigger (EV mutates in place; FR
+# requires close-out UPDATEs).
+# Content immutability is binder-enforced + tested (the benchmark precedent, a difference from
+# curve_point).

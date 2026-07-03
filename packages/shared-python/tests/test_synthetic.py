@@ -497,9 +497,9 @@ def test_no_migration_and_no_entity() -> None:
     versions = root / "migrations" / "versions"
     for py in versions.glob("*.py"):
         assert "synthetic" not in py.read_text().lower(), f"{py} references synthetic"
-    # P2-1..P2-6 own 0016..0021; P3-1 legitimately owns 0022_sensitivity; the synthetic slice still
-    # adds no migration, so the next slot (0023+) must remain empty here (no surprise migration).
-    assert not list(versions.glob("0023*")), "no 0023 migration may be added by the synthetic slice"
+    # P2-1..P2-6 own 0016..0021; P3-1 owns 0022_sensitivity; P3-2 owns 0023_factor_return; the
+    # synthetic slice still adds no migration, so the next slot (0024+) must remain empty here.
+    assert not list(versions.glob("0024*")), "no 0024 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -

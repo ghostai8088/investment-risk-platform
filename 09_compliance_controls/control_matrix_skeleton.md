@@ -243,6 +243,23 @@ reusing `run_quality_check`/`DATA.VALIDATE`, the `(params, dataset)` Protocol **
 market value v1** (`MARKET_VALUE` only) — **NOT** VaR/Expected Shortfall/factor/sensitivity/scenario/stress/P&L/performance; those stay
 P3+. The additive `calc/service.py` `outcome` param is the only calc change; `audit/service.py` **FROZEN**.
 
+**P3-2 additions (factor-return inputs — net-new `factor` EV definition + `factor_return` FR series, ENT-025, IMPLEMENTED
+`0023_factor_return`, 2026-07-02; LOCAL-ONLY under degraded connectivity — commit + push/CI PENDING, NOT remote-CI-green):**
+captured vendor/external factor returns (FR) + a net-new EV definition — the same captured-market-data control pattern as
+`fx_rate`/`price_point`/`curve`/`benchmark` (**no control weakened; no new CTRL minted; the `factor.*` permission space is NOT
+minted — `marketdata.view`/`.ingest` REUSED**). Controls now executable for factor: **CTRL-006/013** (lineage — one VENDOR_FACTOR
+`data_source` ORIGIN edge per captured version, reusing `record_lineage` unchanged); **CTRL-011** (deny-by-default
+`marketdata.view`/`.ingest` + symmetric FORCE-RLS, PG-proven as `irp_app` in `test_factor_pg.py`); **CTRL-023** (vendor-licensed
+factor data tenant-scoped — NEVER hybrid; closed 5-table hybrid set asserted unchanged); **CTRL-017** (`factor_return` declares
+`FULL_REPRODUCIBLE`, `factor` declares `EFFECTIVE_DATED`; **NEITHER append-only** — no `irp_prevent_mutation` trigger, the `benchmark`
+precedent); **CTRL-026** (`REFERENCE.*` definition + `MARKET.FACTOR_RETURN_*` series hash-chain `verify_chain`); **CTRL-032**
+(fail-closed co-transactional rollback if audit/lineage/DQ raises). The DQ gate reuses the generic `NOT_NULL` + `RANGE` evaluators
+(a `> -1` economic-sanity floor) — `(params, dataset)` Protocol **unchanged**; a **binder-side finiteness guard** rejects NaN/±Inf
+BEFORE any write (the min-only RANGE does not catch +Inf). **CTRL-009 / the AD-014 gate are UNTOUCHED** — a captured factor return
+is an **INPUT**, not a governed derived number (**NO `calculation_run`, NO `model_version`, NO snapshot pin**); computed factor
+returns are DEFERRED (would re-engage CTRL-003/009 with a registered `model_version` — the ENT-028 `sensitivity_result` precedent).
+`audit/service.py` **FROZEN**. **No control weakened; no new CTRL minted.**
+
 ## 5. Open Decisions
 
 | ID | Open Decision |

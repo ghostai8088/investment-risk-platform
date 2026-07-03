@@ -16,6 +16,7 @@ from irp_backend.api.ingest import router as ingest_router
 from irp_backend.api.lineage import router as lineage_router
 from irp_backend.api.marketdata import benchmark_router as marketdata_benchmark_router
 from irp_backend.api.marketdata import curve_router as marketdata_curve_router
+from irp_backend.api.marketdata import factor_router as marketdata_factor_router
 from irp_backend.api.marketdata import price_router as marketdata_price_router
 from irp_backend.api.marketdata import router as marketdata_router
 from irp_backend.api.models import router as models_router
@@ -53,5 +54,6 @@ app.include_router(marketdata_router)
 app.include_router(marketdata_price_router)
 app.include_router(marketdata_curve_router)
 app.include_router(marketdata_benchmark_router)
+app.include_router(marketdata_factor_router)
 app.include_router(exposure_router)
 app.include_router(risk_router)
