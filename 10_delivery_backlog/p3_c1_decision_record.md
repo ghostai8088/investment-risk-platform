@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **PLANNING RATIFIED** — OQ-P3-C1-1…8 approved by the user at the commit gate (2026-07-07, after a plain-language decision briefing); implementation is a SEPARATE approval |
+| Status | **IMPLEMENTED and CLOSED** — plan `c2e85ac` (CI #104 green); implementation `0599f7f` (CI **#105** green); OQ-P3-C1-1…8 were ratified at the plan-commit gate (2026-07-07, after a plain-language decision briefing) and the Tier-2 implementation commit was separately user-approved after the Part 7 review was folded |
 | Date | 2026-07-07 |
 | Basis | The recorded deferral registers of the P3-3/P3-4/P3-5 adversarial reviews (dispositions in each record's Part 7 / the retrospective audit); the R0 behavior-preserving-refactor precedent (`a9b6567`) |
 | Grounding | Verified against shipped HEAD `d94e572` (CI #103): `ModelVersion.status` is a nullable String(20) commented "Non-enforcing version status placeholder … NOT a validation gate"; the four risk bootstrap registrars all set `status="REGISTERED"` while the generic `POST /models` path can mint `status=None`; `update_run_status` carries the additive-`outcome` precedent; `calculation_run` is IA status-mutable (the additive `environment_id` precedent); ten `_ERROR_MAP[type(exc)]` exact-type lookups exist; five binders silently prefer `snapshot_id` when both input modes are passed; seven result columns have float53-unsafe contracts (`sensitivity_value(28,12)`, `loading(20,12)`, `exposure_amount(28,6)`×2, `signed_quantity(28,8)`, `mark_value(20,6)`, `fx_rate(28,12)`); the run scaffold now has FOUR risk copies (+ exposure's fifth variant). |
@@ -112,6 +112,11 @@ Implementation-ready once OQ-P3-C1-1…8 are ratified. Build contract = `p3_c1_i
 ---
 
 ## Part 7 — Implementation adversarial review log (2026-07-07, independent-context)
+
+> **CLOSEOUT STAMP (2026-07-07):** P3-C1 **IMPLEMENTED and CLOSED** — plan `c2e85ac` (CI **#104** green);
+> implementation `0599f7f` (CI **#105** green, REST-verified); user approval given at the Tier-2 gate AFTER the
+> review below was folded and re-validated (1111 PG-backed tests; `alembic check` clean; downgrade smoke green;
+> migration head `0026_var` → `0027_run_failure_reason`).
 
 Six independent finder agents over the full P3-C1 working-tree diff; every candidate verified empirically before
 folding. The extraction itself came back CLEAN on every axis checked: operation order, closure captures, exception

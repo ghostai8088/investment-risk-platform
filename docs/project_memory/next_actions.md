@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `5ed8271` / CI #102 (refreshed 2026-07-07).** What to do
+> **As of HEAD `0599f7f` / CI #105 (refreshed 2026-07-07).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -66,18 +66,36 @@ gates) + own-tenant provenance re-resolution (the review's principal fold — PG
 dual-path exactness legs. Independent 6-finder review: **13 findings folded**, 2 deferrals recorded
 (`p3_5_decision_record.md` Part 7). **REQ-MKT-001 → In-Progress (parametric leg).**
 
+**DONE since:** **P3-5 closeout memory** (`d94e572`, CI #103) → **P3-C1 PLANNING** (`c2e85ac`, CI **#104** —
+`p3_c1_decision_record.md` OD-P3-C1-A…H + `p3_c1_implementation_plan.md`; **OQ-P3-C1-1…8 RATIFIED at the commit
+gate after a plain-language decision briefing** — the standing presentation calibration) → **P3-C1 IMPLEMENTATION
+(`0599f7f`, CI #105 green)**: the hardening/consolidation slice — the deferral-register paydown, NO new governed
+number. The REGISTERED-status bind at the risk gate (`assert_model_version_of` → `UnregisteredModelError`) + the
+review's principal fold: **register/run consistency** (all four governed registrars refuse a non-REGISTERED
+same-label twin, `WrongModelVersionError` 422); **persisted `calculation_run.failure_reason`** (additive migration
+`0027_run_failure_reason`; FAILED-only; audit payload unchanged; the four GET-run endpoints surface it; reason
+formats verbatim); **the run-scaffold extraction** (`risk/scaffold.py::execute_governed_run` ×4 risk binders) under
+the R0 bar, proven by **golden captures written green PRE-extraction** (audit/lineage/DQ CONTENT + exact reason
+formats; re-run against the stashed pre-extraction code); `PreciseDecimal` parity ×8 result columns (NO migration);
+the MRO-walking `deps.map_refusal` ×3 routers; both-modes ambiguity refusal ×5 binders (every build-mode arg incl.
+as-of); the P3-3 mixed-base adjudication check. **Independent 6-finder review: 12 findings folded**, 1 pre-existing
+residual recorded (the DQ-rule first-registration race) (`p3_c1_decision_record.md` Part 7). 1111 PG-backed tests;
+a FAILED run now executes on PG in CI.
+
 **NEXT — THE NEXT-SLICE DECISION (on explicit direction; none pre-approved):**
 1. **P3-6 stress/scenario planning** (ENT-029/030; REQ-MKT-004 — **RTM-phase P5**: flagged by the P3-0 record as
    possibly a later phase, not core P3).
 2. **A VaR ROADMAP method slice** (user-directed 2026-07-07): factor-based **historical simulation** (feasible with
    current data; new model family; quantile-interpolation + window-adequacy declarations) or **Monte-Carlo** (gated
    on a seeded simulator + revaluation engine; binds `random_seed`, QS-18).
-3. **The hardening/parity carry-ins** (recorded): the `assert_registered_model_version` status-bind check
-   (cross-slice, all four binders); shipped result-column `PreciseDecimal` parity; run-scaffold extraction (third
-   copy); `_ERROR_MAP` exact-type lookup; both-modes silent snapshot preference; latent mixed-base grain; GET
-   `failure_reason` persistence.
+3. **A read-only frontend "risk runs & results" view** (the user asked 2026-07-07 when the frontend would be
+   visible; all the read APIs exist — the four GET-run/result families incl. `failure_reason`; one planning slice +
+   one build slice; still gated on explicit direction).
 4. **P3-7 benchmark-relative** (blocked for return-based analytics on the deferred `benchmark_level`/`return`
    captured-data slice).
+5. **The remaining recorded follow-ups** (the old carry-in register was largely PAID DOWN at P3-C1):
+   exposure-family scaffold/`failure_reason` adoption; captured-input-table `PreciseDecimal` parity; the DQ-rule
+   first-registration race (a deliberate behavior change — its own slice).
 Whichever is chosen: PLANNING ONLY first — decision record + implementation plan under `10_delivery_backlog/`.
 
 ## Approval gates (hard)
@@ -92,8 +110,9 @@ Whichever is chosen: PLANNING ONLY first — decision record + implementation pl
 ## CI gates (must be green before a phase is "closed")
 - Backend (ruff format + lint, mypy, pytest), Frontend, **DB migration (Postgres)** incl. `alembic check` drift +
   ALL per-table RLS/append-only PG suites (complete since `7c50c43`; Covariance added at `c2bd126`, VaR at
-  `5ed8271`) + downgrade smoke, Documentation check, Secret scan. **HEAD `5ed8271` = run #102 = success**
-  (REST-verified; #98–#102 all green). Python 3.12 runners.
+  `5ed8271`; migration head `0027_run_failure_reason` auto-covered since `0599f7f` — a FAILED run now executes on
+  PG in CI) + downgrade smoke, Documentation check, Secret scan. **HEAD `0599f7f` = run #105 = success**
+  (REST-verified; #98–#105 all green). Python 3.12 runners.
   **This machine:** venv = Python 3.13.0; `irp_pg_local` IS stood up (`postgres:16`). After a schema reset just run
   `alembic upgrade head` — migration 0003 re-grants `irp_ops` itself; **NEVER manually grant schema USAGE to
   `irp_ops`** (it breaks the `downgrade base` smoke at DROP ROLE; fixed 2026-07-07 with
@@ -110,8 +129,8 @@ Whichever is chosen: PLANNING ONLY first — decision record + implementation pl
   computed factor returns, covariance v2 (shrinkage/EWMA/correlation/annualization), and the VaR deferrals
   (ES/√h/component-VaR/backtesting/quantile-function) stay deferred named slices/versions until planned.
 - Any change to **`audit/service.py`** (frozen) or **`entitlement/bootstrap.py`** outside the governed R-07 mint
-  (P3-3/P3-4/P3-5 mint NO new permission — `risk.view`/`risk.run` are REUSED); any new audit code / permission / role /
-  migration without R-07.
+  (P3-3/P3-4/P3-5/P3-C1 mint NO new permission — `risk.view`/`risk.run` are REUSED); any new audit code / permission /
+  role / migration without R-07.
 - Any weakening of the P2/P3 snapshot-run-model controls; any BYPASSRLS app path; any hybrid/SYSTEM_TENANT behavior
   beyond the closed 5-table set.
 - A red CI on a just-committed slice → diagnose and fix (test-only fixes are in-scope for closing that slice).

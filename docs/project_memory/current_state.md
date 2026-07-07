@@ -1,9 +1,9 @@
 # Current State
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
-> history. Read this first, then `10_delivery_backlog/p3_5_decision_record.md` (the latest record; Part 7 =
+> history. Read this first, then `10_delivery_backlog/p3_c1_decision_record.md` (the latest record; Part 7 =
 > the implementation review log), `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD
-> `5ed8271` / CI #102 (refreshed 2026-07-07).** Values that
+> `0599f7f` / CI #105 (refreshed 2026-07-07).** Values that
 > drift are flagged; re-verify the ones in "Re-check at session start" before acting. *(`project_state.yaml`
 > is RETIRED — see its stub; the recovery set is `CLAUDE.md` → this file → `phase_status.md` → `next_actions.md`.)*
 
@@ -13,28 +13,55 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `5ed8271` — "Implement P3-5 parametric VaR engine (delta-normal v1) with adversarial-review folds" (**CI run #102 green**). Chain since P3-3: `7c50c43` (**P3-3 implementation**, #95) → `362481a` (P3-3 closeout memory) → `8abe764` (**P3-4 planning**, OQs ratified) → `a9b6567` (**P3-4-R0 refactor**, #98) → `c2bd126` (**P3-4 IMPLEMENTATION + 12 review folds**, #99) → `c2480a4` (P3-4 closeout memory, #100) → `c2c1b4d` (**P3-5 parametric-VaR planning**, OQ-P3-5-1..10 ratified + the historical-sim/MC ROADMAP note, #101) → `5ed8271` (**P3-5 IMPLEMENTATION + 13 review folds**, **CI #102 green**). Earlier chain: Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
+- **origin/main HEAD:** `0599f7f` — "Implement P3-C1 hardening/consolidation slice with adversarial-review folds" (**CI run #105 green**). Chain since P3-3: `7c50c43` (**P3-3 implementation**, #95) → `362481a` (P3-3 closeout memory) → `8abe764` (**P3-4 planning**, OQs ratified) → `a9b6567` (**P3-4-R0 refactor**, #98) → `c2bd126` (**P3-4 IMPLEMENTATION + 12 review folds**, #99) → `c2480a4` (P3-4 closeout memory, #100) → `c2c1b4d` (**P3-5 parametric-VaR planning**, OQ-P3-5-1..10 ratified + the historical-sim/MC ROADMAP note, #101) → `5ed8271` (**P3-5 IMPLEMENTATION + 13 review folds**, #102) → `d94e572` (P3-5 closeout memory, #103) → `c2e85ac` (**P3-C1 hardening planning**, OQ-P3-C1-1..8 ratified after a plain-language briefing, #104) → `0599f7f` (**P3-C1 IMPLEMENTATION + 12 review folds**, **CI #105 green**). Earlier chain: Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
 - **Local == origin:** yes (0 ahead / 0 behind); only this closeout memory refresh is uncommitted.
-- **Latest CI:** **GREEN** — `5ed8271` = GitHub Actions **run #102** = success (all jobs incl. the new VaR PG step; REST-verified). Chain #98–#102 all green.
-- **Migration head:** `0026_var` — advanced `0025_covariance` → `0026_var` (P3-5, `5ed8271`: `var_result` ENT-027 realized, IA TRUE append-only + P0001 trigger + symmetric RLS + the two hard-FK provenance run columns). `alembic check` drift-clean; downgrade smoke green.
+- **Latest CI:** **GREEN** — `0599f7f` = GitHub Actions **run #105** = success (all jobs; a FAILED run now executes on PG in CI). Chain #98–#105 all green.
+- **Migration head:** `0027_run_failure_reason` — advanced `0026_var` → `0027_run_failure_reason` (P3-C1, `0599f7f`: the additive nullable `calculation_run.failure_reason` Text column; the `environment_id` additive precedent — no RLS/trigger change). `alembic check` drift-clean; downgrade smoke green.
 - **Networking note (this machine):** SSH to GitHub is unreliable on some networks (lossy-link/PMTU class — pushes stall mid-key-exchange while HTTPS works); the reliable push path is **HTTPS + the keychain-cached PAT**; CI verification via the public REST API always works. A full-repo safety bundle exists at `../irp-p3-3-7c50c43.bundle`.
 
 ## Working tree (uncommitted)
-- **This P3-5 closeout memory refresh only** (Tier 0 — docs-only project-memory; no code, no migration): `current_state.md` / `next_actions.md` / `phase_status.md` / `decision_summary.md` / `build_plan.md` + the decision-record status stamp advanced to `5ed8271`/#102.
+- **This P3-C1 closeout memory refresh only** (Tier 0 — docs-only project-memory; no code, no migration): `current_state.md` / `next_actions.md` / `phase_status.md` / `decision_summary.md` / `build_plan.md` + the `p3_c1_decision_record.md` status/closeout stamps advanced to `0599f7f`/#105.
 
 ## Current active gate
-**P3-0 … P3-5 are ALL COMPLETE and CI-green.** P3-5 (`5ed8271`, CI #102) delivered the **fourth governed risk number
-and the first DERIVED-OF-DERIVED one**: parametric delta-normal 1-day VaR (ENT-027 `risk_result` realized) — see the
-deliverables section below. The independent 6-finder review confirmed + folded 13 findings pre-commit (log =
-`p3_5_decision_record.md` Part 7; 2 recorded deferrals). **The next gate is the NEXT-SLICE DECISION, on explicit
-direction — the honest options: (a) P3-6 stress/scenario planning (ENT-029/030 — NOTE: RTM-phase P5, possibly a
-later phase); (b) a VaR ROADMAP method slice (factor-based historical simulation — feasible with current data — or
-Monte-Carlo — gated on a seeded simulator + revaluation; both user-directed 2026-07-07); (c) the recorded
-hardening/parity carry-ins (the model-status bind check across all four binders; shipped result-column
-PreciseDecimal parity; the run-scaffold extraction, now at its THIRD copy); (d) P3-7 benchmark-relative (needs the
-deferred benchmark-levels captured-data slice for return-based analytics).** Strict planning-first cadence + the
-gate tiers hold. **Frontend visibility: none of P3-0…P3-5 has a visible UI change; no frontend is built unless
-explicitly directed.**
+**P3-0 … P3-5 + P3-C1 are ALL COMPLETE and CI-green.** P3-C1 (`0599f7f`, CI #105; plan `c2e85ac`, #104 — the
+OQ-P3-C1-1…8 ratification followed a plain-language decision briefing, the standing presentation calibration) was
+the **hardening/consolidation slice — the deferral-register paydown, NO new governed number** — see the deliverables
+section below. The independent 6-finder review confirmed + folded 12 findings pre-commit (log =
+`p3_c1_decision_record.md` Part 7; 1 pre-existing residual recorded). **The next gate is the NEXT-SLICE DECISION, on
+explicit direction — the honest options: (a) P3-6 stress/scenario planning (ENT-029/030 — NOTE: RTM-phase P5,
+possibly a later phase); (b) a VaR ROADMAP method slice (factor-based historical simulation — feasible with current
+data — or Monte-Carlo — gated on a seeded simulator + revaluation; both user-directed 2026-07-07); (c) a read-only
+frontend "risk runs & results" view (the user asked 2026-07-07 when the frontend would be visible; all read APIs it
+needs exist — still requires explicit direction like every slice); (d) P3-7 benchmark-relative (needs the deferred
+benchmark-levels captured-data slice for return-based analytics); (e) the remaining recorded follow-ups
+(exposure-family scaffold/failure_reason adoption; captured-input-table PreciseDecimal parity).** Strict
+planning-first cadence + the gate tiers hold. **Frontend visibility: none of P3-0…P3-C1 has a visible UI change; no
+frontend is built unless explicitly directed — but the user has signaled interest (see option c).**
+
+## P3-C1 key deliverables (closed, `0599f7f`, CI-green run #105) — the hardening/consolidation slice; NO new governed number
+The deferral-register paydown (OD-P3-C1-A…H; plan `c2e85ac`, CI #104): **(B) the REGISTERED-status bind** —
+`assert_model_version_of` (the risk-family gate all four binders route through) now requires
+`version.status == "REGISTERED"` → `UnregisteredModelError`; AND (the review's principal fold) **all FOUR governed
+registrars refuse a non-REGISTERED same-label twin** (`WrongModelVersionError` 422) — register/run consistency (the
+generic resolver + P7 validation semantics untouched). **(C) persisted `calculation_run.failure_reason`** (additive
+Text; migration `0027_run_failure_reason`; `update_run_status(failure_reason=)` persists on the FAILED transition
+ONLY; the audit payload UNCHANGED — DQ rows remain the durable evidence; the four GET-run endpoints surface it; all
+four binder reason formats preserved VERBATIM). **(D) the run-scaffold extraction** —
+`risk/scaffold.py::execute_governed_run` (create_run → RUNNING → DEPENDS_ON → compute → fail-closed gate → FAILED+
+reason | rows+ORIGIN+COMPLETED) consumed by all four risk binders under the R0 behavior-preservation bar, **proven
+by golden captures written green PRE-extraction** (`test_p3c1_scaffold_preservation.py`: audit sequences + lineage
+CONTENT + DQ-rule CONTENT + exact reason formats; one finder re-ran the goldens against the stashed pre-extraction
+code). **(E) `PreciseDecimal` parity** for the 8 float53-unsafe result columns (`sensitivity_value(28,12)`,
+`loading(20,12)`, `exposure_amount(28,6)`×2, `signed_quantity(28,8)`, `mark_value(20,6)`, `fx_rate(28,12)`,
+`z_score(20,12)` — the review fold); PG DDL identical, NO migration. **(F) the MRO-walking `deps.map_refusal`**
+shared by the risk/exposure/snapshot routers (a subclass of a mapped refusal no longer 500s). **(G) both-modes
+ambiguity refusal ×5 binders** covering EVERY build-mode argument incl. the as-of args (exposure's `base_currency`
+deliberately excluded — verified honored on the snapshot path); checks sit BEFORE the model gate (request-shape
+first). **(H) the P3-3 mixed-base adjudication check** (`_adjudicate_pins` base-currency uniformity — the latent
+hole closed at adjudication, grain unchanged). **12 review findings folded; 1 residual recorded** (the DQ-rule
+first-registration race — pre-existing, faithfully preserved; a deliberate-behavior-change slice if wanted).
+**Recorded follow-ups:** exposure-family scaffold/`failure_reason` adoption; captured-input-table PreciseDecimal
+parity. 1111 PG-backed tests; `audit/service.py` FROZEN; zero new permissions/audit codes/entities.
 
 ## P3-5 key deliverables (closed, `5ed8271`, CI-green run #102) — ENT-027 REALIZED; the FIRST derived-of-derived number
 **`var_result`** (**ENT-027 `risk_result` REALIZED**; migration `0026_var`; **IA TRUE append-only** + P0001 trigger +
@@ -56,7 +83,7 @@ moves a fresh build but not the pin). `RISK.VAR_CREATE` reserved-not-emitted; **
 permissions**; `var_parametric_v1.md` methodology (**specific-risk = 0 the first-class limitation**); 4 endpoints;
 the VaR PG CI step; 52 new tests. **13 review findings folded; 2 recorded deferrals** (the
 `assert_registered_model_version` status-bind check — cross-slice, a P3-6-planning carry-in; shipped result-column
-float parity — a dedicated PreciseDecimal parity slice). **REQ-MKT-001 → In-Progress (parametric leg);
+float parity — a dedicated PreciseDecimal parity slice) — **both PAID DOWN at P3-C1 (`0599f7f`)**. **REQ-MKT-001 → In-Progress (parametric leg);
 historical-sim + MC = user-directed ROADMAP method slices.**
 
 ## P3-4 key deliverables (closed, `c2bd126`, CI-green run #99) — the THIRD governed RISK number REALIZED
@@ -231,7 +258,9 @@ realized. **NO risk analytics yet** — VaR/ES/factor/covariance/stress/scenario
 - **P3-4-R0 refactor pre-step** — `a9b6567` (CI-green, run #98; shared `dq/gates.py` presence helpers + `_persist_snapshot`).
 - **P3-4 covariance implementation** — `c2bd126` (CI-green, run #99; 12 review folds). **P3-4 CLOSED** — the third governed risk number (ENT-051; migration `0025_covariance`). Closeout memory — `c2480a4` (#100).
 - **P3-5 parametric-VaR planning** — `c2c1b4d` (CI-green, run #101; OQ-P3-5-1…10 RATIFIED + the historical-sim/MC roadmap note).
-- **P3-5 parametric-VaR implementation** — `5ed8271` (CI-green, run #102; 13 review folds). **P3-5 CLOSED** — ENT-027 realized (migration `0026_var`); REQ-MKT-001 → In-Progress (parametric leg).
+- **P3-5 parametric-VaR implementation** — `5ed8271` (CI-green, run #102; 13 review folds). **P3-5 CLOSED** — ENT-027 realized (migration `0026_var`); REQ-MKT-001 → In-Progress (parametric leg). Closeout memory — `d94e572` (#103).
+- **P3-C1 hardening/consolidation planning** — `c2e85ac` (CI-green, run #104; OQ-P3-C1-1…8 RATIFIED at the commit gate after a plain-language decision briefing).
+- **P3-C1 hardening/consolidation implementation** — `0599f7f` (CI-green, run #105; 12 review folds + 1 pre-existing residual recorded). **P3-C1 CLOSED** — the deferral-register paydown (migration `0027_run_failure_reason`; the run-scaffold extraction; the REGISTERED-status bind + register/run consistency; PreciseDecimal parity ×8; `deps.map_refusal`; both-modes refusal ×5; the mixed-base check).
 
 ## Next required action
 **THE NEXT-SLICE DECISION (on explicit direction)** — present the options honestly; none is pre-approved:
@@ -240,13 +269,14 @@ realized. **NO risk analytics yet** — VaR/ES/factor/covariance/stress/scenario
 - **A VaR ROADMAP method slice** (user-directed 2026-07-07): factor-based historical simulation (feasible with
   current data; own model family + methodology + quantile-interpolation declarations) or Monte-Carlo (gated on a
   seeded simulator + revaluation engine; binds `random_seed`, QS-18).
-- **The hardening/parity carry-ins** (recorded deferrals): the `assert_registered_model_version`
-  status=='REGISTERED' bind check (cross-slice — all four binders + the generic registration semantics); shipped
-  result-column `PreciseDecimal` parity (`sensitivity_result`/`factor_exposure_result`/`exposure_aggregate`);
-  the run-scaffold extraction (third copy accrued at P3-5); `_ERROR_MAP` exact-type lookup; both-modes silent
-  snapshot preference; latent mixed-base grain; GET `failure_reason` persistence.
+- **A read-only frontend "risk runs & results" view** (the user asked 2026-07-07 when the frontend would be
+  visible; every read API it needs already exists — the four GET-run/GET-result families incl. the new
+  `failure_reason`. One planning slice + one build slice; still requires explicit direction).
 - **P3-7 benchmark-relative** (return-based analytics need the deferred `benchmark_level`/`benchmark_return`
   captured-data slice first).
+- **The remaining recorded follow-ups** (most of the old carry-in register was PAID DOWN at P3-C1 `0599f7f`):
+  exposure-family scaffold/`failure_reason` adoption; captured-input-table `PreciseDecimal` parity; the DQ-rule
+  first-registration race (a deliberate behavior change — needs its own slice).
 Whichever is chosen: planning first — decision record + implementation plan under `10_delivery_backlog/`; build
 **nothing else**.
 
@@ -259,7 +289,7 @@ Whichever is chosen: planning first — decision record + implementation plan un
 - **No benchmark-relative analytics / active risk / tracking error / performance attribution** — P3-7+ (and `benchmark_level`/`benchmark_return` are themselves DEFERRED captured inputs — a net-new canonical ENT id, not minted).
 - **No vendor-beta or regression factor exposures** — deferred v2 (need a captured factor-loading slice / adjusted-price return history + estimation); **no computed factor returns** (need adjusted prices + a registered model_version); `COMPONENT_KIND_FACTOR_RETURN` MINTED at P3-4 for the covariance window pin (regression v2 stays deferred).
 - **No instrument/position key-rate DV01 / interpolation / bootstrapping / pricing engine / PAR_RATE / vol surface** — the P3-1 deferrals stand.
-- **No reporting / dashboard build; no frontend changes** unless explicitly approved (P3-0…P3-3 have no visible UI change; the P3 numbers enable future factor-exposure/risk-run/factor-analytics UI but build none by default).
+- **No reporting / dashboard build; no frontend changes** unless explicitly approved (P3-0…P3-C1 have no visible UI change; the P3 numbers enable a future risk-runs/results UI — the user signaled interest 2026-07-07, but it still gates on explicit direction + its own plan).
 - **No limits/breach, real SSO, ABAC enforcement** — P6+ (ABAC stays anchored-not-enforced).
 - **P1B-5** (reference-data ingestion mapping) — conditional/deferred (only if bulk loading is needed; not now).
 - **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen) or `entitlement/bootstrap.py` outside the governed R-07 mint (P3-3 mints NO new permission — `risk.view`/`risk.run` are REUSED); no new audit code / permission / role / migration without R-07. **No weakening of the P2/P3 snapshot-run-model controls; no BYPASSRLS; no hybrid/SYSTEM_TENANT behavior** beyond the closed 5-table set.
@@ -268,9 +298,9 @@ Whichever is chosen: planning first — decision record + implementation plan un
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `5ed8271`) and whether this P3-5 closeout memory refresh was committed.
-- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated, 60 req/hr — poll WIDE; `5ed8271` = run #102 = success at this refresh). **Push over HTTPS + keychain PAT when SSH stalls** (the lossy-network note above); URL-pushes don't move the tracking ref — `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)` after.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `0599f7f`) and whether this P3-C1 closeout memory refresh was committed.
+- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated, 60 req/hr — poll WIDE; `0599f7f` = run #105 = success at this refresh). **Push over HTTPS + keychain PAT when SSH stalls** (the lossy-network note above); URL-pushes don't move the tracking ref — `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)` after.
 - `git remote -v` — origin is SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0026_var` (P3-5 / `5ed8271`); the next migration lands ONLY at the next separately-approved implementation slice.
+- Migration head is `0027_run_failure_reason` (P3-C1 / `0599f7f`); the next migration lands ONLY at the next separately-approved implementation slice.
 - `project_state.yaml` is **RETIRED** (2026-07-06 stub; found drifted at the P3-3 planning session) — the recovery set is `CLAUDE.md` + this file + `phase_status.md` + `next_actions.md`.
 - **This machine's environment (verified 2026-07-07):** the repo sits nested at `~/Projects/investment_risk_platform/investment-risk-platform/`; the venv is **Python 3.13.0** (CI runs 3.12); **`irp_pg_local` IS stood up** (reused `postgres:16`; `postgresql+psycopg://irp:irp@localhost:5432/irp`) — reset the schema between full PG pytest runs and NEVER manually grant `irp_ops` schema USAGE (migrations re-grant; the extra grant breaks the downgrade smoke); `gh` is not installed (use the public REST API).
