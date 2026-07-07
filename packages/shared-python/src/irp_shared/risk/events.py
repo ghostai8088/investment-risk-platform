@@ -33,10 +33,22 @@ RISK_SENSITIVITY_CREATE_EVENT_RESERVED = "RISK.SENSITIVITY_CREATE"
 #: ``RISK.SENSITIVITY_CREATE``/``EXPOSURE.*`` reserved-only precedent).
 RISK_FACTOR_EXPOSURE_CREATE_EVENT_RESERVED = "RISK.FACTOR_EXPOSURE_CREATE"
 
+#: The ``calculation_run.run_type`` discriminator for a covariance-estimation run (P3-4).
+RUN_TYPE_COVARIANCE = "COVARIANCE"
+
+#: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in P3-4 (OD-P3-4-L).
+RISK_COVARIANCE_CREATE_EVENT_RESERVED = "RISK.COVARIANCE_CREATE"
+
 #: Controlled-vocab ``sensitivity_type`` (plain String, no enum/CHECK; app-side allow-list).
 SENSITIVITY_TYPE_DV01 = "DV01"
 SENSITIVITY_TYPE_SPREAD_DV01 = "SPREAD_DV01"
 SENSITIVITY_TYPES = (SENSITIVITY_TYPE_DV01, SENSITIVITY_TYPE_SPREAD_DV01)
+
+#: Controlled-vocab ``covariance_result.statistic_type`` (P3-4; ``CORRELATION`` is reserved —
+#: extend by value later, never emitted in v1).
+STATISTIC_TYPE_COVARIANCE = "COVARIANCE"
+STATISTIC_TYPE_CORRELATION_RESERVED = "CORRELATION"
+STATISTIC_TYPES = (STATISTIC_TYPE_COVARIANCE,)
 
 
 @dataclass(frozen=True)
@@ -50,6 +62,14 @@ class SensitivityActor:
 @dataclass(frozen=True)
 class FactorExposureActor:
     """The principal initiating a factor-exposure run (mirrors :class:`SensitivityActor`)."""
+
+    actor_id: str
+    actor_type: str = "user"
+
+
+@dataclass(frozen=True)
+class CovarianceActor:
+    """The principal initiating a covariance-estimation run (mirrors :class:`SensitivityActor`)."""
 
     actor_id: str
     actor_type: str = "user"

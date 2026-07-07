@@ -44,12 +44,15 @@ PURPOSE_EXPOSURE_INPUT = "EXPOSURE_INPUT"
 PURPOSE_SENSITIVITY_INPUT = "SENSITIVITY_INPUT"
 #: P3-3 (OD-P3-3-I): a factor-exposure input snapshot (pins EXPOSURE atoms + FACTOR definitions).
 PURPOSE_FACTOR_EXPOSURE_INPUT = "FACTOR_EXPOSURE_INPUT"
+#: P3-4 (OD-P3-4-I): a covariance input snapshot (pins FACTOR definitions + FACTOR_RETURN windows).
+PURPOSE_COVARIANCE_INPUT = "COVARIANCE_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
     PURPOSE_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
+    PURPOSE_COVARIANCE_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -75,9 +78,15 @@ COMPONENT_KIND_CURVE = "CURVE"
 #: the tables are UNCHANGED.
 COMPONENT_KIND_EXPOSURE = "EXPOSURE"
 #: P3-3 (OD-P3-3-I): a pinned ``factor`` EV definition version (the PORTFOLIO EV-pin flavor: NULL
-#: system axis; ``record_version`` the drift discriminator). ``COMPONENT_KIND_FACTOR_RETURN`` stays
-#: readiness-noted, NOT minted (v1 consumes no return — OD-P3-2-G / OD-P3-3-I).
+#: system axis; ``record_version`` the drift discriminator). ``COMPONENT_KIND_FACTOR_RETURN`` was
+#: readiness-noted here until P3-4 minted it below (OD-P3-2-G / OD-P3-3-I / OD-P3-4-I).
 COMPONENT_KIND_FACTOR = "FACTOR"
+#: P3-4 (OD-P3-4-I): a pinned per-factor RETURN WINDOW — the ordered ``factor_return`` FR rows of
+#: the aligned estimation window, captured as ONE component per factor (the ``curve``
+#: header+nodes shape over FR rows; readiness-noted since OD-P3-2-G, MINTED here at its designed
+#: first consumer). ``target_entity_type='factor'`` (the series parent; the kind disambiguates
+#: from the COMPONENT_KIND_FACTOR definition pin).
+COMPONENT_KIND_FACTOR_RETURN = "FACTOR_RETURN"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -86,6 +95,7 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_CURVE,
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
+    COMPONENT_KIND_FACTOR_RETURN,
 )
 
 

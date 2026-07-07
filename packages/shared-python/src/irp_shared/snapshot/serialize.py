@@ -226,6 +226,33 @@ def factor_content(row: Any) -> dict[str, Any]:
     }
 
 
+def factor_return_series_content(factor: Any, rows: list[Any]) -> dict[str, Any]:
+    """The captured content of one factor's pinned RETURN WINDOW (P3-4 FACTOR_RETURN component —
+    the ``curve_content`` header+rows shape over FR rows). Each row is an immutable FR VERSION
+    (corrections close it out and insert successors) ⇒ per-row id re-resolution is byte-stable;
+    a later vendor supersede/correction is invisible to the pinned window (TR-09). Rows ordered
+    by ``return_date``; values at the factor-return scale 12."""
+    return {
+        "factor_id": _norm_guid(factor.id),
+        "factor_code": factor.factor_code,
+        "factor_source": factor.factor_source,
+        "return_type": rows[0].return_type if rows else None,
+        "frequency": factor.frequency,
+        "rows": [
+            {
+                "id": _norm_guid(r.id),
+                "return_date": r.return_date.isoformat(),
+                "return_type": r.return_type,
+                "return_value": _norm_decimal(r.return_value, _SCALE_CURVE_POINT),
+                "valid_from": _norm_datetime(r.valid_from),
+                "system_from": _norm_datetime(r.system_from),
+                "record_version": r.record_version,
+            }
+            for r in sorted(rows, key=lambda x: x.return_date)
+        ],
+    }
+
+
 def serialize_content(content: dict[str, Any]) -> str:
     """Canonical-serialize a per-kind content dict (sorted keys, compact, engine-independent)."""
     return canonicalize(content)

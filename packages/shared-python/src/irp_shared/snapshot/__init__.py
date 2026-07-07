@@ -7,6 +7,9 @@ the ``marketdata`` pure leg helper) for ``EXPOSURE_INPUT`` snapshots — still n
 P3-3 pins already-computed IMMUTABLE ``exposure_aggregate`` atoms (a models-only, function-local
 read — the ``exposure`` SERVICE is never imported, it imports ``snapshot``) + ``factor`` EV
 definitions for ``FACTOR_EXPOSURE_INPUT`` snapshots — pinning outputs-as-inputs, computing nothing.
+P3-4 pins aligned ``factor_return`` FR windows (``COMPONENT_KIND_FACTOR_RETURN``, via the EXISTING
+``marketdata.factor`` reads) for ``COVARIANCE_INPUT`` snapshots — capturing series, estimating
+nothing.
 """
 
 from __future__ import annotations
@@ -16,9 +19,11 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_CURVE,
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
+    COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FX,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
+    PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
     SNAPSHOT_COMPONENT_KINDS,
@@ -27,7 +32,9 @@ from irp_shared.snapshot.models import (
     DatasetSnapshotComponent,
 )
 from irp_shared.snapshot.service import (
+    COVARIANCE_BINDING_PREDICATE,
     DEFAULT_BINDING_PREDICATE,
+    CovarianceSnapshotError,
     CurveSelector,
     CurveSnapshotError,
     EmptySnapshotError,
@@ -35,6 +42,7 @@ from irp_shared.snapshot.service import (
     SnapshotNotFound,
     SnapshotPurposeError,
     VerifyResult,
+    build_covariance_snapshot,
     build_curve_snapshot,
     build_factor_exposure_snapshot,
     build_snapshot,
@@ -73,4 +81,9 @@ __all__ = [
     "PURPOSE_FACTOR_EXPOSURE_INPUT",
     "build_factor_exposure_snapshot",
     "FactorExposureSnapshotError",
+    "COMPONENT_KIND_FACTOR_RETURN",
+    "PURPOSE_COVARIANCE_INPUT",
+    "COVARIANCE_BINDING_PREDICATE",
+    "build_covariance_snapshot",
+    "CovarianceSnapshotError",
 ]

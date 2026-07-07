@@ -31,6 +31,7 @@ the run consumers (``exposure``, ``risk``) import ``snapshot``.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
@@ -55,8 +56,13 @@ from irp_shared.marketdata import (
     resolve_conversion_legs,
     resolve_curve,
 )
-from irp_shared.marketdata.factor import FactorNotVisible, resolve_factor
-from irp_shared.marketdata.models import REFERENCE_KEY_NONE
+from irp_shared.marketdata.factor import (
+    FactorNotVisible,
+    list_factor_returns,
+    reconstruct_factor_return_as_of,
+    resolve_factor,
+)
+from irp_shared.marketdata.models import REFERENCE_KEY_NONE, RETURN_TYPE_SIMPLE, FactorReturn
 from irp_shared.marketdata.service import FxRateNotVisible, resolve_fx_rate
 from irp_shared.portfolio import PortfolioNotVisible, resolve_portfolio
 from irp_shared.position import PositionNotVisible, resolve_position
@@ -65,10 +71,12 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_CURVE,
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
+    COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FX,
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
+    PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
     SNAPSHOT_PURPOSES,
@@ -80,6 +88,7 @@ from irp_shared.snapshot.serialize import (
     curve_content,
     exposure_content,
     factor_content,
+    factor_return_series_content,
     fx_content,
     manifest_hash,
     portfolio_content,
@@ -371,7 +380,14 @@ def _persist_snapshot(
         )
         session.add(comp)
     session.flush()
+    # One edge per unique pinned TARGET (P3-4: a factor appears under BOTH the FACTOR and the
+    # FACTOR_RETURN kind — the input is still one row; prior builders never repeat a target, so
+    # this is behavior-preserving for them).
+    seen_targets: set[tuple[str, str]] = set()
     for _kind, ttype, row, _captured, _ch in specs:
+        if (ttype, row.id) in seen_targets:
+            continue
+        seen_targets.add((ttype, row.id))
         record_internal_lineage(
             session, snapshot_id=header.id, target_entity_type=ttype, target_entity_id=row.id
         )
@@ -634,6 +650,178 @@ def build_factor_exposure_snapshot(
     return header_row
 
 
+class CovarianceSnapshotError(Exception):
+    """Raised when a covariance-input snapshot cannot be built (fewer than two distinct factors,
+    a window shorter than two observations, fewer than ``window_observations`` common return
+    dates, or an unresolvable input) — fail closed, BEFORE any write. Maps to 409."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"covariance snapshot input failed closed: {detail}")
+        self.detail = detail
+
+
+def _resolve_factor_return_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``factor_return`` FR row by surrogate id with an EXPLICIT tenant predicate (the
+    verify-path re-read; ``marketdata/factor.py`` stays UNTOUCHED — this is a snapshot-side
+    resolver, the ``_resolve_exposure_atom`` precedent)."""
+    row = session.execute(
+        select(FactorReturn).where(
+            FactorReturn.id == str(row_id),
+            FactorReturn.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise CovarianceSnapshotError(f"factor return {row_id} is not visible")
+    return row
+
+
+def _factor_window_rows(
+    session: Session,
+    *,
+    acting_tenant: str,
+    factor_id: str,
+    valid_at: datetime,
+    known_at: datetime,
+) -> dict[date, Any]:
+    """The ``SIMPLE`` return VERSIONS of one factor true at ``valid_at`` as known at ``known_at``,
+    keyed by ``return_date`` (dates > ``valid_at.date()`` excluded) — via the EXISTING reads only.
+    The current-head list only ENUMERATES candidate dates (a superset of the dates known at any
+    cut — a captured logical key always keeps exactly one open head); the pinned VERSION per date
+    always comes from ``reconstruct_factor_return_as_of`` on BOTH axes, so the frozen header
+    cutoffs reproduce the pinned content (the 2026-07 review fix: a current-heads default branch
+    ignored the valid axis — a backdated ``valid_at`` under a later supersede, or a
+    future-effective supersede, pinned a version NOT valid at the declared instant)."""
+    head_dates = [
+        r.return_date
+        for r in list_factor_returns(
+            session,
+            acting_tenant=acting_tenant,
+            factor_id=factor_id,
+            return_type=RETURN_TYPE_SIMPLE,
+        )
+        if r.return_date <= valid_at.date()
+    ]
+    out: dict[date, Any] = {}
+    for return_date in head_dates:
+        row = reconstruct_factor_return_as_of(
+            session,
+            acting_tenant=acting_tenant,
+            factor_id=factor_id,
+            return_date=return_date,
+            valid_at=valid_at,
+            return_type=RETURN_TYPE_SIMPLE,
+            known_at=known_at,
+        )
+        if row is not None:
+            out[row.return_date] = row
+    return out
+
+
+#: The covariance binding/selection rule (OD-P3-4-I): the N most recent COMMON ``SIMPLE`` return
+#: dates per selected factor, current/as-known-at the header cutoffs.
+COVARIANCE_BINDING_PREDICATE = "v1:factor-return-window"
+
+
+def build_covariance_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    factor_ids: list[str],
+    window_observations: int,
+    as_of_valid_at: datetime | None = None,
+    as_of_known_at: datetime | None = None,
+) -> DatasetSnapshot:
+    """Build one immutable ``COVARIANCE_INPUT`` snapshot (P3-4, OD-P3-4-I) pinning, per selected
+    factor:
+
+    - one ``COMPONENT_KIND_FACTOR`` component (the EV definition pin — the P3-3 flavor), and
+    - one ``COMPONENT_KIND_FACTOR_RETURN`` component — the factor's aligned RETURN WINDOW: the
+      ``window_observations`` most recent return dates COMMON to every selected factor (FR rows,
+      the ``curve`` header+nodes shape; ``target_entity_type='factor'``, the series parent),
+
+    so a covariance run is reproducible from the snapshot alone (the compute reads this captured
+    content — never a live factor/return read; a later vendor supersede/correction of a window
+    return is invisible to the pin, TR-09). Alignment is **fail-closed, no imputation/pairwise**
+    (OD-P3-0-L): fewer than ``window_observations`` common dates raises
+    :class:`CovarianceSnapshotError` BEFORE any write, as do a duplicate/sub-two factor list and
+    a sub-two window. The declared-window/factor-frequency adjudication is the RISK binder's
+    pre-create gate — this builder pins a well-formed window; it does not read the model
+    registry. NO derived number is computed here."""
+    now = utcnow()
+    valid_at = as_of_valid_at if as_of_valid_at is not None else now
+    known = as_of_known_at if as_of_known_at is not None else now  # FROZEN once (header == pin)
+
+    if window_observations < 2:
+        raise CovarianceSnapshotError(
+            f"window_observations must be >= 2 (got {window_observations})"
+        )
+    # Lowercase-normalized dedup: PG resolves GUIDs case-insensitively, so case-variant spellings
+    # of one id are the SAME factor (the 2026-07 review fix — a case-sensitive check let them
+    # through to an IntegrityError inside _persist_snapshot on PG / a spurious 404 on SQLite).
+    distinct_ids = list(dict.fromkeys(str(fid).lower() for fid in factor_ids))
+    if len(distinct_ids) != len(factor_ids):
+        raise CovarianceSnapshotError("duplicate factor ids — an ambiguous series set is refused")
+    if len(distinct_ids) < 2:
+        raise CovarianceSnapshotError(
+            f"a covariance snapshot needs >= 2 distinct factors (got {len(distinct_ids)})"
+        )
+
+    factors = [resolve_factor(session, fid, acting_tenant=acting_tenant) for fid in distinct_ids]
+    resolved_ids = [str(factor.id).lower() for factor in factors]
+    if len(set(resolved_ids)) != len(resolved_ids):  # any residual aliasing — refuse pre-write
+        raise CovarianceSnapshotError("duplicate factor ids — an ambiguous series set is refused")
+    by_date = {
+        factor.id: _factor_window_rows(
+            session,
+            acting_tenant=acting_tenant,
+            factor_id=factor.id,
+            valid_at=valid_at,
+            known_at=known,
+        )
+        for factor in factors
+    }
+
+    # The N most recent COMMON dates (set intersection; fail-closed on a short overlap).
+    common: set[date] = set.intersection(*(set(rows.keys()) for rows in by_date.values()))
+    if len(common) < window_observations:
+        raise CovarianceSnapshotError(
+            f"only {len(common)} common return dates across {len(factors)} factors — "
+            f"the declared window needs {window_observations} (no imputation, OD-P3-0-L)"
+        )
+    window_dates = sorted(common)[-window_observations:]
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for factor in factors:
+        window_rows = [by_date[factor.id][d] for d in window_dates]
+        _append_spec(specs, COMPONENT_KIND_FACTOR, "factor", factor, factor_content(factor))
+        _append_spec(
+            specs,
+            COMPONENT_KIND_FACTOR_RETURN,
+            "factor",
+            factor,
+            factor_return_series_content(factor, window_rows),
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_COVARIANCE_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=window_dates[-1],
+        binding_predicate_version=COVARIANCE_BINDING_PREDICATE,
+    )
+
+    # No build-time DQ gate: the window is complete by construction (a short/misaligned window is
+    # refused above, before any write) — the P3-3 no-snapshot-gap-class rationale.
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -701,6 +889,17 @@ def _reresolve_content(
         return factor_content(
             resolve_factor(session, comp.target_entity_id, acting_tenant=acting_tenant)
         )
+    if comp.component_kind == COMPONENT_KIND_FACTOR_RETURN:
+        # Re-read the series parent + each pinned FR row by surrogate id (tenant-predicated). A
+        # gone/cross-tenant row reports as drift; a superseded/corrected row is byte-stable (its
+        # immutable content is what was pinned — the close-out markers are excluded, TR-09).
+        factor = resolve_factor(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        pinned = json.loads(comp.captured_content)
+        rows = [
+            _resolve_factor_return_row(session, r["id"], acting_tenant=acting_tenant)
+            for r in pinned["rows"]
+        ]
+        return factor_return_series_content(factor, rows)
     return portfolio_content(
         resolve_portfolio(session, comp.target_entity_id, acting_tenant=acting_tenant)
     )
@@ -726,6 +925,7 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             CurveNotVisible,
             FactorNotVisible,
             FactorExposureSnapshotError,
+            CovarianceSnapshotError,
         ):
             drifted.append(comp.id)
             continue

@@ -1,5 +1,6 @@
-"""Risk endpoints (P3-1 sensitivities + P3-3 factor exposures — ENT-028): the governed risk
-numbers (curve-node DV01 / spread-DV01; indicator-loading CURRENCY-family factor exposures).
+"""Risk endpoints (P3-1 sensitivities + P3-3 factor exposures — ENT-028; P3-4 covariance
+matrices — ENT-051): the governed risk numbers (curve-node DV01 / spread-DV01; indicator-loading
+CURRENCY-family factor exposures; equal-weighted unbiased sample factor covariances).
 
 Thin layer over the ``irp_shared.risk`` binder. PROPRIETARY tenant-scoped (NEVER hybrid), IA TRUE
 append-only, run-bound + snapshot-gated + **model_version-bound** (AD-014 / FW-RUN / TR-15 /
@@ -32,6 +33,12 @@ from irp_shared.exposure.service import ExposureRunNotVisible
 from irp_shared.marketdata.factor import FactorNotVisible
 from irp_shared.model.service import UnregisteredModelError
 from irp_shared.risk import (
+    CovarianceActor,
+    CovarianceInputError,
+    CovarianceNotVisible,
+    CovarianceResult,
+    CovarianceRunNotVisible,
+    CovarianceRunResult,
     FactorExposureActor,
     FactorExposureInputError,
     FactorExposureNotVisible,
@@ -46,18 +53,24 @@ from irp_shared.risk import (
     SensitivityRunNotVisible,
     SensitivityRunResult,
     WrongModelVersionError,
+    list_covariances,
     list_factor_exposures,
     list_sensitivities,
+    register_covariance_model,
     register_factor_exposure_model,
     register_sensitivity_model,
+    resolve_covariance,
+    resolve_covariance_run,
     resolve_factor_exposure,
     resolve_factor_exposure_run,
     resolve_run,
     resolve_sensitivity,
+    run_covariance,
     run_factor_exposure,
     run_sensitivities,
 )
 from irp_shared.snapshot import (
+    CovarianceSnapshotError,
     CurveSelector,
     CurveSnapshotError,
     EmptySnapshotError,
@@ -102,6 +115,14 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     ModelVersionConflictError: (
         status.HTTP_409_CONFLICT,
         "version_label already registered with a different code_version",
+    ),
+    CovarianceInputError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid covariance run input",
+    ),
+    CovarianceSnapshotError: (
+        status.HTTP_409_CONFLICT,
+        "covariance snapshot input failed closed",
     ),
 }
 
@@ -544,3 +565,229 @@ def get_factor_exposure(
             status_code=status.HTTP_404_NOT_FOUND, detail="factor exposure not found"
         ) from None
     return _fx_row_out(row)
+
+
+# ---------- P3-4: covariance matrices (sample v1) ----------
+
+
+def _cov_actor(principal: Principal) -> CovarianceActor:
+    return CovarianceActor(actor_id=principal.user_id)
+
+
+class CovarianceModelIn(BaseModel):
+    code_version: str
+    window_observations: int  # the DECLARED estimation window — version identity (OD-P3-4-G)
+
+
+class CovarianceRunIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    environment_id: str  # the run environment (FW-RUN §5 item 7; required)
+    model_version_id: uuid.UUID  # a REGISTERED model_version (CTRL-003; required)
+    factor_ids: list[uuid.UUID] | None = None  # build-in-request
+    as_of_valid_at: datetime | None = None
+    as_of_known_at: datetime | None = None
+    snapshot_id: uuid.UUID | None = None  # consume-existing alternative
+
+
+class CovarianceRowOut(BaseModel):
+    id: str
+    factor_id_1: str
+    factor_id_2: str
+    factor_code_1: str
+    factor_code_2: str
+    statistic_type: str
+    return_type: str
+    frequency: str
+    n_observations: int
+    window_start: date
+    window_end: date
+    covariance_value: str
+    model_version_id: str
+
+
+class CovarianceRunOut(BaseModel):
+    run_id: str
+    status: str
+    run_type: str
+    input_snapshot_id: str | None
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    initiated_by: str
+    failure_reason: str | None
+    rows: list[CovarianceRowOut]
+
+
+def _cov_row_out(row: CovarianceResult) -> CovarianceRowOut:
+    return CovarianceRowOut(
+        id=row.id,
+        factor_id_1=row.factor_id_1,
+        factor_id_2=row.factor_id_2,
+        factor_code_1=row.factor_code_1,
+        factor_code_2=row.factor_code_2,
+        statistic_type=row.statistic_type,
+        return_type=row.return_type,
+        frequency=row.frequency,
+        n_observations=row.n_observations,
+        window_start=row.window_start,
+        window_end=row.window_end,
+        # Fixed-point, never scientific: str(Decimal('1E-8')) would flip notation for small
+        # covariances (the 2026-07 review fix).
+        covariance_value=f"{row.covariance_value:f}",
+        model_version_id=row.model_version_id,
+    )
+
+
+def _cov_run_out(result: CovarianceRunResult) -> CovarianceRunOut:
+    run = result.run
+    return CovarianceRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_cov_row_out(r) for r in result.rows],
+    )
+
+
+@router.post(
+    "/models/covariance",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_covariance(
+    body: CovarianceModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed covariance model + a model_version for this
+    ``(code_version, window_observations)`` pair and return its id (OD-P3-4-G — the window is
+    version identity; a same-label re-register with a different window OR code_version is a 409).
+    The response envelope is the shared registration shape."""
+    try:
+        version = register_covariance_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            window_observations=body.window_observations,
+        )
+    except ValueError:  # window_observations < 2 (the registration floor)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="window_observations must be >= 2",
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        # WrongModelVersionError: the existing same-label version carries a malformed/absent
+        # declared window (mintable via the GENERIC model endpoint) — a governed refusal, not a
+        # 500 (the 2026-07 review fix).
+        db.rollback()
+        code, detail = _ERROR_MAP[type(exc)]
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/covariances/runs",
+    response_model=CovarianceRunOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_covariance_run(
+    body: CovarianceRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> CovarianceRunOut:
+    """Run a governed sample-covariance estimation. A pre-create refusal raises + rolls back (no
+    run — incl. a short/misaligned window, 409); a post-create FAILED run is committed
+    (``status='FAILED'``, zero rows — the defensive output-sanity gate)."""
+    try:
+        result = run_covariance(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_cov_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            factor_ids=(None if body.factor_ids is None else [str(f) for f in body.factor_ids]),
+            as_of_valid_at=body.as_of_valid_at,
+            as_of_known_at=body.as_of_known_at,
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        CovarianceInputError,
+        UnregisteredModelError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        CovarianceSnapshotError,
+        FactorNotVisible,
+    ) as exc:
+        # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
+        db.rollback()
+        code, detail = _ERROR_MAP[type(exc)]
+        raise HTTPException(status_code=code, detail=detail) from None
+
+    # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a
+    # post-create FAILED run are committed (the FAILED run is durable refusal evidence).
+    response = _cov_run_out(result)
+    db.commit()
+    return response
+
+
+@router.get("/covariances/runs/{run_id}", response_model=CovarianceRunOut)
+def get_covariance_run(
+    run_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> CovarianceRunOut:
+    """Read a covariance run + its matrix rows (tenant-scoped; read-only). A committed FAILED run
+    (zero rows) is surfaced with ``status='FAILED'`` (durable refusal evidence), NOT a 404."""
+    try:
+        run = resolve_covariance_run(db, str(run_id), acting_tenant=principal.tenant_id)
+    except CovarianceRunNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="covariance run not found"
+        ) from None
+    rows = list_covariances(db, run_id=str(run_id), acting_tenant=principal.tenant_id)
+    return CovarianceRunOut(
+        run_id=run.run_id,
+        status=run.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=None,
+        rows=[_cov_row_out(r) for r in rows],
+    )
+
+
+@router.get("/covariances/{covariance_id}", response_model=CovarianceRowOut)
+def get_covariance(
+    covariance_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> CovarianceRowOut:
+    """Read a single ``covariance_result`` row (tenant-scoped; read-only)."""
+    try:
+        row = resolve_covariance(db, str(covariance_id), acting_tenant=principal.tenant_id)
+    except CovarianceNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="covariance not found"
+        ) from None
+    return _cov_row_out(row)

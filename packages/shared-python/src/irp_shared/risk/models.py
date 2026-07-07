@@ -23,16 +23,17 @@ is deferred). The captured ``curve_type``/``currency_code``/``reference_key``/``
 
 from __future__ import annotations
 
+from datetime import date as dt_date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ForeignKey, Integer, Numeric, String, UniqueConstraint, event
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
 from irp_shared.audit.models import AppendOnlyViolation
 from irp_shared.db.base import Base
 from irp_shared.db.mixins import ImmutableAppendOnlyMixin, PrimaryKeyMixin, TenantMixin
-from irp_shared.db.types import GUID
+from irp_shared.db.types import GUID, PreciseDecimal
 from irp_shared.temporal import TemporalClass
 
 
@@ -137,6 +138,58 @@ class FactorExposureResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixi
     exposure_amount: Mapped[Decimal] = mapped_column(Numeric(28, 6), nullable=False)
 
 
+class CovarianceResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One element of a sample factor covariance matrix (P3-4, ENT-051 `covariance_matrix`;
+    IA TRUE append-only). One row per canonical UNORDERED factor pair INCLUDING the diagonal
+    (`factor_id_1 == factor_id_2` rows are the variances); the run is the matrix identity —
+    F factors ⇒ exactly F·(F+1)/2 rows per COMPLETED run.
+
+    **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** (the P3-3 exemplar): NOT-NULL
+    ``calculation_run_id`` + ``input_snapshot_id`` (a ``COVARIANCE_INPUT`` snapshot pinning the
+    factor definitions + return windows) + a REGISTERED, identity-checked ``model_version_id``
+    whose declared ``window_observations`` fixed the estimation window (OD-P3-4-G). Grain = the
+    3-tuple ``(calculation_run_id, factor_id_1, factor_id_2)`` with **binder-enforced canonical
+    ordering** ``factor_id_1 <= factor_id_2`` (lowercase-GUID string order; NO CHECK constraint —
+    the genericity rule; service-enforced + tested). ``factor_id_*`` are deliberately NOT hard
+    FKs (the pinned ``COMPONENT_KIND_FACTOR`` components are authoritative). ``covariance_value``
+    is ``quantize_HALF_UP(cov_ij, 20)`` — DAILY, UNANNUALIZED (declared) — carried as
+    ``PreciseDecimal``: NUMERIC(38,20) on PG, a fixed-scale TEXT on SQLite (a 20dp value does
+    NOT survive SQLite's float roundtrip; AD-011 engine-independence)."""
+
+    __tablename__ = "covariance_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        UniqueConstraint(
+            "calculation_run_id",
+            "factor_id_1",
+            "factor_id_2",
+            name="uq_covariance_result_run_grain",
+        ),
+    )
+
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("dataset_snapshot.id"), nullable=False, index=True
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    )
+    factor_id_1: Mapped[str] = mapped_column(GUID, nullable=False)
+    factor_id_2: Mapped[str] = mapped_column(GUID, nullable=False)
+    factor_code_1: Mapped[str] = mapped_column(String(150), nullable=False)
+    factor_code_2: Mapped[str] = mapped_column(String(150), nullable=False)
+    # Controlled vocab (plain String): 'COVARIANCE' v1; 'CORRELATION' reserved (extend by value).
+    statistic_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    return_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(20), nullable=False)
+    n_observations: Mapped[int] = mapped_column(Integer, nullable=False)
+    window_start: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    window_end: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    covariance_value: Mapped[Decimal] = mapped_column(PreciseDecimal(38, 20), nullable=False)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{type(target).__name__} is append-only (AUD-01); update/delete is forbidden"
@@ -149,3 +202,5 @@ event.listen(SensitivityResult, "before_update", _block_mutation)
 event.listen(SensitivityResult, "before_delete", _block_mutation)
 event.listen(FactorExposureResult, "before_update", _block_mutation)
 event.listen(FactorExposureResult, "before_delete", _block_mutation)
+event.listen(CovarianceResult, "before_update", _block_mutation)
+event.listen(CovarianceResult, "before_delete", _block_mutation)

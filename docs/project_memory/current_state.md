@@ -50,8 +50,8 @@ a truthful `FACTOR_EXPOSURE_BINDING_PREDICATE`; `RISK.FACTOR_EXPOSURE_CREATE` re
 `register_factor_exposure_model`. **ci.yml restored to the COMPLETE per-table PG suite set** (benchmark, holdings,
 synthetic, sensitivity, factor, factor-exposure — six suites absent from CI since the P2-5-era list; #95 ran all
 green). 60 new tests incl. 8 review-regression tests; the snapshot→exposure import boundary fenced (function-local
-models-only — module-level is a proven circular import). `COMPONENT_KIND_FACTOR_RETURN` still NOT minted (returns'
-first consumer is P3-4). `audit/service.py` FROZEN. Deferred (recorded): vendor-beta/regression exposures;
+models-only — module-level is a proven circular import). `COMPONENT_KIND_FACTOR_RETURN` was still unminted at
+P3-3 close (MINTED at P3-4, its designed first consumer). `audit/service.py` FROZEN. Deferred (recorded): vendor-beta/regression exposures;
 ASSET_CLASS+ dimensions; `_ERROR_MAP` exact-type lookup; both-modes silent snapshot preference; latent mixed-base
 grain; GET `failure_reason` persistence; the 3×-snapshot-assembly / 4×-DQ-gate / 3×-run-scaffold extractions
 (a dedicated cleanup slice — a P3-4 planning carry-in).
@@ -67,7 +67,7 @@ fraction `Numeric(20,12)`; `return_type` SIMPLE (LOG reserved); capture/supersed
 VENDOR_FACTOR ORIGIN lineage; **`marketdata.view`/`.ingest` REUSED** (no `factor.*` permission); binder-side
 `Decimal.is_finite()` guard (NaN/±Inf rejected pre-write) + `> -1` economic-sanity DQ RANGE; 8 endpoints; 39 factor tests.
 **Captured INPUT — NO `calculation_run`, NO `model_version`, NO snapshot pin** (computed factor returns DEFERRED — would
-need adjusted prices + a registered model_version). `COMPONENT_KIND_FACTOR_RETURN` readiness-noted, NOT minted.
+need adjusted prices + a registered model_version). `COMPONENT_KIND_FACTOR_RETURN` readiness-noted (MINTED at P3-4).
 `audit/service.py` FROZEN. Validated green on Python 3.12 + 3.14 + full PG.
 
 ## P3-1 key deliverables (closed, `e8e2e59`, CI-covered at run #89) — the FIRST governed RISK number REALIZED
@@ -188,7 +188,7 @@ Build **nothing else**.
 - **No VaR / Expected Shortfall** — P3-5 (ENT-027 `risk_result`; gated on P3-4 + history).
 - **No stress testing / scenario analytics** — P3-6 (ENT-029/030; RTM-P5 — possibly a later phase).
 - **No benchmark-relative analytics / active risk / tracking error / performance attribution** — P3-7+ (and `benchmark_level`/`benchmark_return` are themselves DEFERRED captured inputs — a net-new canonical ENT id, not minted).
-- **No vendor-beta or regression factor exposures** — deferred v2 (need a captured factor-loading slice / adjusted-price return history + estimation); **no computed factor returns** (need adjusted prices + a registered model_version); **no `COMPONENT_KIND_FACTOR_RETURN`** (readiness-noted; minted when P3-4 / regression v2 consumes returns).
+- **No vendor-beta or regression factor exposures** — deferred v2 (need a captured factor-loading slice / adjusted-price return history + estimation); **no computed factor returns** (need adjusted prices + a registered model_version); `COMPONENT_KIND_FACTOR_RETURN` MINTED at P3-4 for the covariance window pin (regression v2 stays deferred).
 - **No instrument/position key-rate DV01 / interpolation / bootstrapping / pricing engine / PAR_RATE / vol surface** — the P3-1 deferrals stand.
 - **No reporting / dashboard build; no frontend changes** unless explicitly approved (P3-0…P3-3 have no visible UI change; the P3 numbers enable future factor-exposure/risk-run/factor-analytics UI but build none by default).
 - **No limits/breach, real SSO, ABAC enforcement** — P6+ (ABAC stays anchored-not-enforced).

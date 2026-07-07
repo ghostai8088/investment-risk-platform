@@ -943,8 +943,12 @@ def test_scope_fence_no_future_analytics_imports_or_identifiers() -> None:
 
 
 def test_scope_fence_no_factor_return_component_kind() -> None:
-    # v1 consumes NO factor return: the FACTOR_RETURN component kind stays readiness-noted.
-    assert "FACTOR_RETURN" not in SNAPSHOT_COMPONENT_KINDS
+    # P3-3 v1 consumes NO factor return. The FACTOR_RETURN kind WAS minted at P3-4 (its designed
+    # first consumer — covariance; the no-status-decay flip); the load-bearing fence is that the
+    # FACTOR-EXPOSURE sources still never reference it (the covariance slice does).
+    assert "FACTOR_RETURN" in SNAPSHOT_COMPONENT_KINDS  # minted at P3-4, not here
+    assert "FACTOR_RETURN" not in _FACTOR_SERVICE_SRC
+    assert "FACTOR_RETURN" not in _FACTOR_KERNEL_SRC
 
 
 # ---------- (10b) the 2026-07 adversarial-review regression tests ----------
@@ -1152,5 +1156,5 @@ def test_migration_head_is_factor_exposure() -> None:
     cfg = Config(str(_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(_ROOT / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0024_factor_exposure"
+    assert script.get_current_head() == "0025_covariance"
     assert script.get_revision("0024_factor_exposure").down_revision == "0023_factor_return"

@@ -276,6 +276,27 @@ asserted unchanged); **CTRL-026** (`CALC.RUN_*` hash chain — `verify_chain`); 
 untouched; co-transactional rollback). The `RISK.*` family stays reserved-not-emitted (`RISK.FACTOR_EXPOSURE_CREATE` joins
 `RISK.SENSITIVITY_CREATE`). `audit/service.py` **FROZEN**.
 
+**P3-4 additions (covariance engine — `covariance_result`, ENT-051, IMPLEMENTED `0025_covariance`):** the THIRD governed
+derived risk number — the equal-weighted unbiased sample covariance matrix over pinned factor-return windows (**no control
+weakened; no new CTRL minted; NO new permission — `risk.view`/`risk.run` REUSED**). Controls exercised: **CTRL-003**
+(inventory-before-use with model IDENTITY — `assert_model_version_of` pre-create on the THIRD model family,
+`risk.covariance.sample` v1; an unregistered OR wrong-family version = zero run/rows/audit, both negative-tested);
+**CTRL-002/014** (the `covariance_sample_v1.md` methodology doc + mirrored assumption/limitation rows **including the
+registration-declared `window_observations=N`** — the window is version identity, a same-label different-window re-register
+is a governed 409, never a silent re-point); **CTRL-009** (governed output — non-null `input_snapshot_id` + complete
+`calculation_run`; snapshot-only compute over `COMPONENT_KIND_FACTOR_RETURN` pins); **CTRL-017** (IA TRUE append-only —
+`APPEND_ONLY_TABLES` + P0001 trigger + ORM guard, PG-proven); **CTRL-018/TR-13** (reproduction — same-snapshot re-run
+byte-identical; **invariant under a post-pin vendor supersede AND correction** of a window return; **the dual-path
+verification standing rule's first discharge**: hand-computed exact rational references + an independent `numpy.cov(ddof=1)`
+cross-check at `ε_rel = 1e-9` + eigenvalue-PSD property tests at `λ_min ≥ −1e-12·trace` — numpy TEST-ONLY, import-fenced out
+of the `irp_shared` runtime); **CTRL-006/013** (lineage — `snapshot --DEPENDS_ON--> run --ORIGIN--> result`, DEPENDS_ON kept
+on a FAILED run); **CTRL-011/023** (deny-by-default reused `risk.*` + symmetric FORCE-RLS, NEVER hybrid; closed 5-table
+hybrid set asserted unchanged); **CTRL-026** (`CALC.RUN_*` hash chain — `verify_chain`); **CTRL-029/032** (fail-closed
+window/alignment gates on BOTH entry paths — fewer than N common dates ⇒ pre-create refusal with ZERO writes, **no
+imputation, no pairwise deletion**; a short/misaligned/wrong-N/unpaired pinned snapshot refused at adjudication; the
+defensive output-sanity DQ `risk.covariance.completeness` ⇒ committed FAILED run + ZERO rows; co-transactional rollback).
+The `RISK.*` family stays reserved-not-emitted (`RISK.COVARIANCE_CREATE` joins the row). `audit/service.py` **FROZEN**.
+
 ## 5. Open Decisions
 
 | ID | Open Decision |

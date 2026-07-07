@@ -117,3 +117,54 @@ Per the modernized `claude_operating_instructions.md`, planning documents take t
 
 ## Part 6 — P3-4 implementation readiness gate
 P3-4 is **implementation-ready** once OQ-P3-4-1…10 are approved AND the R0 refactor pre-step has landed green: the v1 estimator, the ENT-051 mint + element-row realization, the 3-tuple grain, the IA class, the registration-declared window, the `Numeric(38,20)` convention, the `FACTOR_RETURN` component + `COVARIANCE_INPUT` purpose, the audit reservation + entitlement reuse, the dual-path verification contract (numpy test-only), and migration `0025` are all fixed against the ratified standards and the hardened P3-3 exemplar. The build contract is `p3_4_covariance_implementation_plan.md`. **P3-4 planning implemented nothing.**
+
+---
+
+## Part 7 — Implementation adversarial review log (2026-07-07, independent-context — the plan Part 11 gate)
+
+Six independent finder agents (line-scan / changed-behavior / cross-file / governance-tenancy / numeric-methodology /
+test-quality) over the full P3-4 working-tree diff, each candidate then verified empirically before folding. The numeric
+finder independently re-derived the hand-reference matrix with exact rational arithmetic (all constants confirmed) and
+proved the numpy cross-check + eigenvalue legs non-vacuous. **Twelve findings CONFIRMED and FOLDED** (fixes + regression
+tests in the same slice); none deferred, none refuted-without-record:
+
+1. **`PreciseDecimal` bind-side quantize ran under the DEFAULT Decimal context (prec 28)** — a legitimately capturable
+   large covariance (> 8 integer digits at 20dp) raised `InvalidOperation` at flush AFTER run-create (500 + whole-unit
+   rollback instead of the durable FAILED contract). → quantize inside a `localcontext(prec = precision + scale)`;
+   unit-tested to the full `Numeric(38,20)` envelope.
+2. **Negative-zero engine divergence** — the kernel could emit `-0E-20`; PG numeric drops the sign, the SQLite TEXT
+   carrier kept it (AD-011 violation). → normalized to `+0` at the kernel output AND at the type's bind; tested.
+3. **The builder's default (no `as_of_known_at`) branch ignored the VALID axis** — current heads were pinned, so a
+   backdated `as_of_valid_at` under a later valid-time supersede (or a future-effective supersede) pinned a version NOT
+   valid at the declared instant, and the frozen header cutoffs could not reproduce the pin. → `_factor_window_rows`
+   now ALWAYS pins via per-date `reconstruct_factor_return_as_of` on both axes (heads only enumerate candidate dates;
+   `known` frozen once); regression-tested with a backdated cut + supersede.
+4. **Case-variant GUID duplicates** passed the case-sensitive dedup gates (PG resolves GUIDs case-insensitively) →
+   IntegrityError 500 on PG / spurious 404 on SQLite. → lowercase-normalized dedup in binder + builder, plus a
+   post-resolve collision refusal before any write; tested.
+5. **Kernel duplicate-series-id collapse** — duplicate (incl. case-variant) ids silently shrank the output below
+   F·(F+1)/2 with values from the wrong series. → explicit `CovarianceKernelError`; tested both spellings.
+6. **The adjudication gate missed series-uniqueness** — the one malformation the kernel handled worst was the one the
+   consume-path gate didn't name. → duplicate `FACTOR_RETURN` series (case-variant smuggle) now refuse pre-create; tested.
+7. **`declared_window_observations` bare `int()`** — a `risk.covariance.sample` version minted via the GENERIC model
+   endpoint (same permission) with `window_observations=abc` produced an unmapped 500. → strict digit parse ⇒
+   `WrongModelVersionError` (422); malformed/absent/ambiguous all service-tested.
+8. **`register_covariance` endpoint missed `WrongModelVersionError`** from the identity branch (same-label version with
+   no/malformed window) — a tenant could permanently 500 its own registration path. → added to the except set (422).
+9. **Duplicate lineage edges** — the two per-factor components wrote two `snapshot→factor` ORIGIN edges. →
+   `_persist_snapshot` records one edge per unique pinned target (behavior-preserving for prior builders); tested.
+10. **Kernel `InvalidOperation` escape for |cov| ≥ 1e30** (unreachable via governed capture — `Numeric(20,12)` caps
+    |r| < 1e8 ⇒ |cov| ≤ ~8e16, which also proves the column cannot overflow) → mapped to `CovarianceKernelError`
+    (the standalone-safety claim); tested.
+11. **API scientific-notation flip** — `str(Decimal('1E-8'))` broke the fixed-point response contract for small
+    covariances. → `f"{value:f}"`; unit-tested.
+12. **The shipped hybrid-set probe was VACUOUS** — `pg_policies.qual LIKE '%…000000%'` used a wrong SYSTEM_TENANT_ID
+    (real id ends `…000001`), so the P3-3 assertion matched zero rows and `⊆` passed emptily. → both PG suites now probe
+    with the imported `SYSTEM_TENANT_ID` and assert set EQUALITY (a dropped hybrid policy fails too).
+
+Test-coverage folds from the review (beyond the fix regressions): hand-minted-snapshot probes for the misaligned /
+unpaired / non-SIMPLE / non-DAILY consume-path refusals (the OD-P3-4-H branches the governed builder can never produce);
+the persisted-DQ-evidence assertion on the FAILED path; an anti-vacuousness population assertion on the runtime-numpy
+fence; mutation-verb probes across all three new route families. Doc fold: the methodology "mirrored verbatim" claim
+softened to content-identical (ASCII spellings stored). Post-fold validation: format/lint/mypy/docs/secret-scan clean;
+**1039 passed** full-PG suite; `alembic check` clean; downgrade-base smoke green.

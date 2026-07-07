@@ -22,7 +22,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.model.models import Model, ModelVersion
+from irp_shared.model.models import Model, ModelAssumption, ModelVersion
 from irp_shared.model.service import (
     assert_registered_model_version,
     register_model,
@@ -268,5 +268,139 @@ def register_factor_exposure_model(
         status="REGISTERED",
         assumptions=FACTOR_EXPOSURE_ASSUMPTIONS,
         limitations=FACTOR_EXPOSURE_LIMITATIONS,
+        actor_type=actor_type,
+    )
+
+
+#: The per-tenant inventory identity of the covariance estimation model (P3-4, OD-P3-4-A/G).
+COVARIANCE_MODEL_CODE = "risk.covariance.sample"
+COVARIANCE_MODEL_NAME = "Sample factor covariance (equal-weighted, unbiased N-1)"
+COVARIANCE_MODEL_TYPE = "COVARIANCE"
+COVARIANCE_VERSION_LABEL = "v1"
+
+#: MANDATORY methodology pointer — the versioned doc under the existing methodology home.
+COVARIANCE_METHODOLOGY_REF = "05_analytics_methodologies/covariance_sample_v1.md"
+
+#: The declared-window assumption prefix (OD-P3-4-G: the estimation window is part of the version
+#: identity — parsed back from the assumption row for the identity check + the binder's read).
+WINDOW_ASSUMPTION_PREFIX = "window_observations="
+
+#: The declared methodology choices EXCLUDING the window (which is registration-supplied and
+#: appended per call; OD-P3-4-F/G).
+COVARIANCE_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Equal-weighted UNBIASED sample covariance: cov_ij = SUM_t((r_i,t - mu_i)(r_j,t - mu_j)) "
+    "/ (N - 1); mu_i = SUM_t(r_i,t) / N.",
+    "Inputs: captured SIMPLE DAILY factor returns (decimal fractions); the window = the N most "
+    "recent dates on which EVERY selected factor has a current-head return (set intersection); "
+    "fewer than N common dates fails closed — NO imputation, NO pairwise deletion (pairwise "
+    "breaks PSD).",
+    "Units: DAILY, UNANNUALIZED covariance of SIMPLE returns (annualization is a later, declared "
+    "transform).",
+    "Computed in Decimal at 50-digit context precision; quantize_HALF_UP to 20 decimal places "
+    "(the Numeric(38,20) column scale).",
+    "PSD by construction (Gram form) in exact arithmetic; numerically verified by eigenvalue "
+    "property tests + an independent numpy.cov cross-check (test-only dependency).",
+)
+
+#: The recorded scope-outs (mirrored into model_limitation rows; OD-P3-4-A/P).
+COVARIANCE_LIMITATIONS: tuple[str, ...] = (
+    "Factor-level covariance only - NOT asset/instrument covariance (instrument return history "
+    "requires adjusted/total-return prices; a named captured-data gap).",
+    "Equal weights only - no EWMA/decay; no shrinkage (Ledoit-Wolf); each is a later, separately "
+    "declared model_version. The sample estimator is rank-deficient for F >= N (use F < N).",
+    "No correlation-matrix output (statistic_type CORRELATION reserved); no annualization.",
+    "No missing-data imputation: a factor lacking a return on a window date fails the run closed.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+)
+
+
+def declared_window_observations(session: Session, version: ModelVersion) -> int:
+    """Parse the version's declared estimation window from its ``model_assumption`` rows (the
+    OD-P3-4-G identity: exactly ONE ``window_observations=N`` assumption must exist)."""
+    rows = (
+        session.execute(
+            select(ModelAssumption).where(ModelAssumption.model_version_id == version.id)
+        )
+        .scalars()
+        .all()
+    )
+    declared = [
+        r.assumption_text[len(WINDOW_ASSUMPTION_PREFIX) :]
+        for r in rows
+        if r.assumption_text.startswith(WINDOW_ASSUMPTION_PREFIX)
+    ]
+    # Exactly one, strictly-decimal declaration — a version minted with a malformed/absent window
+    # (reachable via the GENERIC model-registration endpoint under the same permission) is NOT a
+    # covariance-model identity; refuse fail-closed (422), never a bare int() ValueError (500).
+    if len(declared) != 1 or not declared[0].isdigit():
+        raise WrongModelVersionError(str(version.id), COVARIANCE_MODEL_CODE)
+    return int(declared[0])
+
+
+def register_covariance_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    window_observations: int,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the covariance ``model`` + a ``model_version`` for this
+    ``(code_version, window_observations)`` pair through the governed model service (P3-4,
+    OD-P3-4-G). The window is recorded as a ``model_assumption`` AND is part of the
+    version-resolution identity: re-registering the same ``version_label`` with a DIFFERENT
+    ``code_version`` OR window raises :class:`ModelVersionConflictError` (an immutable inventory
+    identity cannot be re-pointed) — mint a new ``version_label`` instead."""
+    if window_observations < 2:
+        raise ValueError("window_observations must be >= 2 (the N-1 sample denominator)")
+    model = session.execute(
+        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == COVARIANCE_MODEL_CODE)
+    ).scalar_one_or_none()
+    if model is None:
+        model = register_model(
+            session,
+            tenant_id=str(tenant_id),
+            code=COVARIANCE_MODEL_CODE,
+            name=COVARIANCE_MODEL_NAME,
+            model_type=COVARIANCE_MODEL_TYPE,
+            actor_id=actor_id,
+            description=(
+                "Equal-weighted unbiased sample covariance of captured factor returns "
+                "(P3-4, ENT-051)."
+            ),
+            actor_type=actor_type,
+        )
+
+    version = session.execute(
+        select(ModelVersion).where(
+            ModelVersion.model_id == model.id,
+            ModelVersion.version_label == COVARIANCE_VERSION_LABEL,
+        )
+    ).scalar_one_or_none()
+    if version is not None:
+        if version.code_version != str(code_version) or declared_window_observations(
+            session, version
+        ) != int(window_observations):
+            raise ModelVersionConflictError(
+                COVARIANCE_MODEL_CODE,
+                COVARIANCE_VERSION_LABEL,
+                f"{code_version} (window_observations={window_observations})",
+            )
+        return version
+
+    return register_model_version(
+        session,
+        model=model,
+        version_label=COVARIANCE_VERSION_LABEL,
+        actor_id=actor_id,
+        methodology_ref=COVARIANCE_METHODOLOGY_REF,
+        code_version=str(code_version),
+        status="REGISTERED",
+        assumptions=(
+            *COVARIANCE_ASSUMPTIONS_BASE,
+            f"{WINDOW_ASSUMPTION_PREFIX}{int(window_observations)}",
+        ),
+        limitations=COVARIANCE_LIMITATIONS,
         actor_type=actor_type,
     )
