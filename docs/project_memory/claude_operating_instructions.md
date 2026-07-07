@@ -51,6 +51,12 @@ Planning-first, per-slice, commit-only-on-approval:
 - **Objectivity over agreement.** Lead assessments with the strongest objection; state block verdicts plainly;
   if the user's instruction conflicts with a ratified baseline OR a materially better alternative exists, say
   so BEFORE acting. Never soften findings to match the user's perceived preference.
+- **No status decay (the 2026-07-06 retrospective-audit lesson).** An implementation slice's R-07 governance
+  amendments MUST flip every planning-era status qualifier its plan introduced: before closing a slice, grep
+  the five governance docs (canonical model / audit taxonomy / temporal standard / entitlement model / control
+  matrix) for `PLANNED`, `NOT implemented`, `NOT minted`, `NOT activated`, `will pin`, `ratified-in-planning`
+  naming that slice, and update each to the realized state (commit hash + CI run). See
+  `10_delivery_backlog/retrospective_model_upgrade_audit.md` for the defect class this prevents.
 
 ## Commit discipline
 - **Commit/push ONLY on explicit user approval**, per artifact. Branch is `main`; pushes go to `origin/main`.

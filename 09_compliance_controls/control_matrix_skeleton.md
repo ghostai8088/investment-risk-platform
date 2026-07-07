@@ -198,10 +198,10 @@ env gate + a refuse-non-synthetic-tenant guard (all tested). Synthetic-only data
 no real vendor/agency/client names, no real ISIN/CUSIP/SEDOL/LEI. **No REQ status change.** As construction phases
 open, controls will be split to specific bounded contexts and capabilities and given Test/Evidence detail.
 
-**P2-0 / P2-1 ratification (reproducible input snapshot — `dataset_snapshot`, AD-014, 2026-06-26 — PLANNED, NOT IMPLEMENTED):** the
+**P2-0 / P2-1 (reproducible input snapshot — `dataset_snapshot`, AD-014; ratified 2026-06-26, REALIZED in P2-1 `3629baa`, migration `0016_dataset_snapshot`):** the
 P2 reproducibility primitive (ENT-049 `dataset_snapshot` + ENT-050 `dataset_snapshot_component`) is **ratified into governance**
-(`p2_0_decision_record.md` + `p2_1_dataset_snapshot_implementation_plan.md`); **no code/migration this phase** (`migration_head`
-stays `0015_valuation`). Control mapping at activation (P2-1 implementation): **CTRL-009** (reproducibility — the snapshot
+(`p2_0_decision_record.md` + `p2_1_dataset_snapshot_implementation_plan.md`). Control mapping (activated at the P2-1
+implementation): **CTRL-009** (reproducibility — the snapshot
 **pins input record versions + a SHA-256 manifest hash** so a later run reproduces; **AD-014: no official derived number is
 produced before snapshot/run binding** — P2-1 produces **none**, exposure binds `calculation_run` at P2-3); **CTRL-017** (the
 **IA TRUE-append-only** reading — both tables in `APPEND_ONLY_TABLES` + the `irp_prevent_mutation` P0001 trigger + ORM
@@ -227,7 +227,7 @@ evaluators behavior-unchanged. **CTRL-009 / the AD-014 gate are UNTOUCHED** — 
 stays P2-3, snapshot+run-gated). `audit/service.py` **FROZEN**. **No control weakened; no new CTRL minted.**
 
 **P2-3 ratification (basic exposure + `calculation_run` wiring — `exposure_aggregate` ENT-014, RATIFIED-IN-PLANNING 2026-06-26;
-AD-018; PLANNED, migration `0018` NOT yet built):** the platform's **FIRST official governed derived number**, which makes the
+AD-018; REALIZED `da178fc`, migration `0018_exposure_aggregate`):** the platform's **FIRST official governed derived number**, which makes the
 **AD-014 / FW-RUN §5 / TR-15 gate LOAD-BEARING** (it had no producer before P2-3). Control bindings (all to **existing** CTRLs —
 **no control weakened, no new CTRL minted**): **CTRL-009 becomes EXECUTABLE** (no official derived number without a `dataset_snapshot`
 + a complete `calculation_run` — `input_snapshot_id` non-null + `code_version` + the additive `environment_id`; reproducible from the

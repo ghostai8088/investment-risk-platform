@@ -56,7 +56,7 @@ ENT-025 factor_return); positions (ENT-011); valuations (ENT-013); external/inte
 ### IA — immutable append-only
 Reproducible input snapshots (**ENT-049 `dataset_snapshot` + ENT-050 `dataset_snapshot_component`** — the AD-014 reproducibility
 primitive; **TRUE append-only**, in `APPEND_ONLY_TABLES` with the `irp_prevent_mutation` trigger + ORM guard — the `transaction`
-precedent, distinct from the status-mutable `calculation_run`; **P2-0 ratification, 2026-06-26, planned-not-implemented**);
+precedent, distinct from the status-mutable `calculation_run`; ratified at P2-0, 2026-06-26; **REALIZED in P2-1 (`3629baa`, migration `0016_dataset_snapshot`)**);
 calculation runs and outputs (ENT-026 calculation_run, ENT-027 risk_result, ENT-028 sensitivity/exposure, ENT-014
 exposure_aggregate, ENT-030 scenario_result); versioned-immutable definitions (ENT-029 scenario_definition, ENT-036
 model_assumption set, ENT-035 model_version); transactions as an event log (ENT-012); manual overrides (ENT-041); lineage
@@ -136,8 +136,8 @@ P1B-0 splits below).
 > reads ONLY the snapshot's pinned components' **captured content** (positions, valuations, and FX as `COMPONENT_KIND_FX`) — **never
 > a live `reconstruct_*`/`resolve_*` read**; the FX is the **effective composite** of the pinned legs (`fx_legs` are leg references,
 > NOT a hard FK to a supersedable FR row), so a later vendor correction cannot change a historical exposure. **BASIC exposure ONLY —
-> NOT risk** (no VaR/ES/factor/sensitivity/scenario/stress/pricing/valuation model). **Planned, NOT implemented** (P2-3 is a later
-> separate slice; migration `0018`).
+> NOT risk** (no VaR/ES/factor/sensitivity/scenario/stress/pricing/valuation model). **REALIZED in P2-3 (`da178fc`, migration
+> `0018_exposure_aggregate`)**.
 
 ### Rationale (TR-21)
 | ID | Rationale |
