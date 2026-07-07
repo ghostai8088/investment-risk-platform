@@ -1,9 +1,11 @@
 # Current State
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
-> history. Read this first, then `project_state.yaml`, `next_actions.md`, and
-> `claude_operating_instructions.md`. **As of 2026-06-29.** Values that drift are flagged; re-verify the
-> ones in "Re-check at session start" before acting.
+> history. Read this first, then `10_delivery_backlog/p3_2_closeout_p3_3_readiness.md` (the resume anchor),
+> `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD `c452229` / CI #90 (refreshed
+> 2026-07-06, new machine — the 2026-07-02 Zscaler degraded-connectivity window is RESOLVED).** Values that
+> drift are flagged; re-verify the ones in "Re-check at session start" before acting. *(`project_state.yaml`
+> is STALE — frozen at the P2-6 closeout; this file + `phase_status.md` + `next_actions.md` are current.)*
 
 ## Repository
 - **Project:** full-scope enterprise investment-risk platform (monorepo). NOT an MVP/POC — see `build_plan.md`.
@@ -11,25 +13,72 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `b6284a4` — "Implement P2-6 captured benchmark and index data". Chain since P2-5: `49ca3bd` (**P2-5 curve implementation**, #80) → `0c5c068` (P2-5 closeout memory, #81) → `8d2782f` (**P2-6 plan**, #82) → `1e0dc08` (operating-rules, #83) → `b6284a4` (**P2-6 benchmark implementation**, #84).
-- **Local == origin:** yes; **only this `docs/project_memory/*` refresh (P2-6 closeout) is uncommitted** (docs-only, commit pending). No code.
-- **Latest CI:** **GREEN** — `b6284a4` = GitHub Actions **run #84** = success — all 5 jobs (Backend, **DB migration (Postgres)**, Frontend, Secret scan, Documentation check), verified via the REST API this session. The migration job ran *Apply migrations* (0021_benchmark), *Schema drift check* (`alembic check`, drift-clean), *Revert migrations* (downgrade smoke), and the benchmark backend suite (symmetric-RLS / FR-bitemporal / EV create-update / supersede-correct / weight-DQ / `REFERENCE.*`+`MARKET.BENCHMARK_CONSTITUENT_*` audit / VENDOR_BENCHMARK lineage / fail-closed-rollback / closed-hybrid-set), all green. Prior: operating-rules #83 (`1e0dc08`), P2-6 plan #82 (`8d2782f`), P2-5 closeout memory #81 (`0c5c068`), P2-5 implementation #80 (`49ca3bd`).
-- **Migration head:** `0021_benchmark` — **advanced from `0020_curves` at P2-6** (`b6284a4`): the `benchmark` EV definition + `benchmark_constituent` FR membership (symmetric RLS both; **NEITHER table append-only** — no P0001 trigger). `alembic check` drift-clean; downgrade `0021→0020→base→head` smoke green.
+- **origin/main HEAD:** `c452229` — "Add P3-2 closeout / P3-3 readiness handoff doc" (the resume anchor). Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90).
+- **Local == origin:** yes (0 ahead / 0 behind); only this P3-3 planning set is uncommitted (below).
+- **Latest CI:** **GREEN** — `c452229` = GitHub Actions **run #90** = success; P3-2 impl `402cb12` = **run #89** = success (all jobs: Backend on Python 3.12, **DB migration (Postgres)** incl. the sensitivity `0022` + factor `0023` suites, Frontend, Secret scan, Documentation check) — verified live via the REST API this session (runs #85–#90 all `success`). The 2026-07-02 Zscaler degraded-connectivity window is **RESOLVED**; nothing is push-pending.
+- **Migration head:** `0023_factor_return` — advanced `0021_benchmark` → `0022_sensitivity` (P3-1, `e8e2e59`: `sensitivity_result` IA TRUE append-only + P0001 trigger + symmetric RLS) → `0023_factor_return` (P3-2, `402cb12`: `factor` EV + `factor_return` FR, symmetric RLS, NEITHER append-only). `alembic check` drift-clean; downgrade smoke green.
 
 ## Working tree (uncommitted)
-- **This `docs/project_memory/*` refresh** (P2-6 closeout) — modified tracked files, commit pending approval. **Docs-only: no code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/governance-source/CI changes.** (The P2-6 code — the `marketdata/benchmark.py` binder + `Benchmark` + `BenchmarkConstituent` models, migration `0021_benchmark`, the `/benchmarks` endpoints, the benchmark tests, the cross-slice fence flips, and the REQ-PUB-003 benchmark-leg advancement — all shipped in `b6284a4`, not in this docs refresh.)
+- **The P3-3 PLANNING commit set** (commit pending explicit approval) — **planning/governance/project-memory markdown ONLY: no code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes.**
+  - NEW `10_delivery_backlog/p3_3_decision_record.md` + `10_delivery_backlog/p3_3_factor_exposure_implementation_plan.md` (the factor-exposure engine, allocation v1 — planning only).
+  - Resume-anchor housekeeping: this `docs/project_memory/{current_state,next_actions,phase_status}.md` refresh, plus the stale degraded-mode "LOCAL-ONLY / push-CI-PENDING / NOT remote-CI-green" qualifiers replaced with "committed `402cb12`, CI #89 green" in `04_data_model/canonical_data_model_standard.md`, `04_data_model/audit_event_taxonomy.md`, `04_data_model/temporal_reproducibility_standard.md`, `06_security/entitlement_sod_model.md`, `09_compliance_controls/control_matrix_skeleton.md`.
+  - `docs/project_memory/claude_operating_instructions.md` — the commit-trailer rule made model-agnostic (name the model that actually performed the work, not a hard-coded "Opus 4.8"; user-directed 2026-07-06).
 
 ## Current active gate
-**P2-6 captured benchmark/index data IMPLEMENTATION is COMPLETE, COMMITTED (`b6284a4`), and CI-green (run #84).** `benchmark`
-(ENT-009, EV definition) + `benchmark_constituent` (FR/bitemporal membership) — **captured vendor benchmark/index data** (the
-**fourth** market-data entity) — is **REALIZED** (see the deliverables section). **THE FULL P2 CAPTURED MARKET-DATA /
-REPRODUCIBILITY FOUNDATION IS COMPLETE and CI-green** (P2-1 `dataset_snapshot` / P2-2 `fx_rate` / P2-3 `calculation_run`+exposure /
-P2-4 `price_point` / P2-5 `curve`+`curve_point` / P2-6 `benchmark`+`benchmark_constituent`). **The next step is the P2 closeout /
-P3 readiness review** — assess whether the P2 foundation is sufficient for **P3 (factor model / market-risk) PLANNING**, **on
-explicit approval**; **P3 planning has NOT started; P3 implementation has NOT started.** Strict planning-first,
-commit-only-on-explicit-approval cadence holds (readiness-review / plan / implement / commit are separate approvals). **Frontend
-visibility: P2-6 had no visible UI change (backend/shared-data only); P2 completion enables future market-data / exposure /
-benchmark / risk-readiness UI, but the P3 readiness review adds no frontend unless explicitly directed.**
+**P3-0, P3-1, and P3-2 are COMPLETE and CI-green; the P3-3 factor-exposure PLAN is written and awaiting the commit gate.**
+P3-1 delivered the **first reproducible governed RISK number** (ENT-028 `sensitivity_result` — analytic curve-node
+DV01/spread-DV01; run + snapshot + **registered model_version** bound; CTRL-003 executable; `risk.view`/`risk.run` minted;
+the `05_analytics_methodologies/` framework). P3-2 delivered the **captured factor-return INPUT foundation** (net-new
+`factor` EV definition + ENT-025 `factor_return` FR series; no run/model/snapshot — an input, not a derived number).
+**P3-3 (this working tree) plans the factor-exposure engine — allocation v1:** indicator-loading CURRENCY-family factor
+exposures over the pinned atoms of a COMPLETED `exposure_aggregate` run against the P3-2 `factor` definitions — a governed
+DERIVED number mirroring the P3-1 exemplar (snapshot + run + registered model_version + IA append-only + `risk.*` reuse +
+fail-closed DQ); vendor-beta/regression exposures and `factor_return` consumption honestly deferred; migration
+`0024_factor_exposure` planned, NOT built. **P3-3 implementation has NOT started** — it is a separate approval after the
+plan commit + the OQ-P3-3-1…9 sign-offs. Strict planning-first, commit-only-on-explicit-approval cadence holds. **Frontend
+visibility: none of P3-0…P3-3 has a visible UI change (backend/shared-data + governance only); the P3 risk numbers enable
+future factor-exposure result views / risk-run evidence panels / factor analytics dashboards, but no frontend is built
+unless explicitly directed.**
+
+## P3-2 key deliverables (closed, `402cb12`, CI-green run #89) — captured factor-return inputs REALIZED
+Net-new **`factor` EV definition** (canonical id MINTED; identity `(tenant, factor_code, factor_source)`; `factor_family`
+{STYLE, INDUSTRY, COUNTRY, MACRO, MARKET, CURRENCY, OTHER}; optional `factor_type`/`region`/`currency_code`/`asset_class`
+scope; `frequency` DAILY v1; `REFERENCE.CREATE`/`UPDATE`-audited) **+ `factor_return` FR bitemporal captured series**
+(ENT-025; grain `(tenant, factor_id, return_date, return_type)` current-head partial-unique; `return_value` decimal
+fraction `Numeric(20,12)`; `return_type` SIMPLE (LOG reserved); capture/supersede/correct + both-axes
+`reconstruct_factor_return_as_of`; `MARKET.FACTOR_RETURN_CREATE`/`_UPDATE`/`_CORRECTION`-audited). Migration
+`0023_factor_return` — symmetric tenant RLS (never hybrid), **NEITHER table append-only**. `marketdata/factor.py` binder;
+VENDOR_FACTOR ORIGIN lineage; **`marketdata.view`/`.ingest` REUSED** (no `factor.*` permission); binder-side
+`Decimal.is_finite()` guard (NaN/±Inf rejected pre-write) + `> -1` economic-sanity DQ RANGE; 8 endpoints; 39 factor tests.
+**Captured INPUT — NO `calculation_run`, NO `model_version`, NO snapshot pin** (computed factor returns DEFERRED — would
+need adjusted prices + a registered model_version). `COMPONENT_KIND_FACTOR_RETURN` readiness-noted, NOT minted.
+`audit/service.py` FROZEN. Validated green on Python 3.12 + 3.14 + full PG.
+
+## P3-1 key deliverables (closed, `e8e2e59`, CI-covered at run #89) — the FIRST governed RISK number REALIZED
+ENT-028 **`sensitivity_result`** (migration `0022_sensitivity`; **IA TRUE append-only** — `APPEND_ONLY_TABLES` + P0001
+trigger + ORM guard; symmetric RLS) — **curve-node analytic DV01 / spread-DV01** (`−T·DF·1bp`; ACT/365F; continuous
+compounding; nodes-only/no-interpolation; ZERO_RATE/DISCOUNT_FACTOR/SPREAD; PAR_RATE rejected/deferred;
+`quantize_HALF_UP(…,12)`; curve-intrinsic — NO instrument/position attribution). **The model-governance hardening:**
+`run_sensitivities` calls **`assert_registered_model_version` in the pre-create gate** (fail-closed ⇒ zero run/rows/audit)
+— **CTRL-003 inventory-before-use is EXECUTABLE**; the model registered via governed `register_sensitivity_model`
+(`risk.sensitivity.analytic` v1; `methodology_ref` → `05_analytics_methodologies/sensitivities_analytic_v1.md`;
+assumptions/limitations mirrored; `validation_status` UNVALIDATED, non-enforcing until P7). New `irp_shared/risk/` package
+(`models`/`kernel`/`service`/`events`/`bootstrap`) + `api/risk.py`; snapshot `COMPONENT_KIND_CURVE` +
+`PURPOSE_SENSITIVITY_INPUT` + `curve_content` + `build_curve_snapshot`; **`risk.view`/`risk.run` MINTED** (auditor_3l in
+`.view`); `RISK.SENSITIVITY_CREATE` **reserved-not-emitted** @ EVT-220; `CALC.RUN_*` reused; lineage `snapshot
+--DEPENDS_ON--> run --ORIGIN--> result` (DEPENDS_ON recorded BEFORE the DQ gate); fail-closed
+`risk.sensitivity.completeness` DQ; the methodology framework + first methodology doc. `audit/service.py` FROZEN.
+
+## P3-0 key decisions (ratified, `07607a5`, CI-green run #87) — the P3 contract
+OD-P3-0-A…N + the OQ-P3-0-1…10 sign-offs: **analytic-sensitivities-first** (NOT VaR/ES); the **derived-number output
+contract** (every official risk result binds `dataset_snapshot` + `calculation_run` + a **registered `model_version`**
+where a model applies + `code_version` + `environment_id`; IA append-only; snapshot-only compute; reproducible under
+correction; pre-create-refusal / post-create-FAILED failure model); **`code_version`-only reserved for convention-free
+transforms** (the P2-3 rollup — sole precedent); the methodology home `05_analytics_methodologies/` + the §-template;
+`RISK.*` reserved @ EVT-220 + `CALC.RUN_*` reuse; `risk.view`/`risk.run` reservation; component kinds minted additively
+per consumer; risk results IA append-only; validation-workflow enforcement deferred to P7; the captured-data gap register
+(vol surface / adjusted prices / ratings / benchmark levels — later-subphase prerequisites only). Subphase map P3-1…P3-7
+in `p3_implementation_plan.md` (sequencing a recommendation, not a strict chain; VaR/ES last; stress RTM-P5).
 
 ## P2-6 key deliverables (closed, `b6284a4`, CI-green run #84) — captured benchmark/index data REALIZED
 `benchmark` (ENT-009, **EV definition header**) + `benchmark_constituent` (**FR/bitemporal membership**) — the platform's **fourth
@@ -299,6 +348,15 @@ REQ-PPM-001 (migration `0012`); the platform's **first domain entity** + the ent
 - **P2-4 closeout project-memory refresh** — `419db9d` (CI-green, run #78; docs-only).
 - **P2-5 captured yield/spread curves decision record + implementation plan** — `326ad94` (CI-green, run #79; 8-lens, 8 in-scope folds; the ten OQ-P2-5 sign-offs). The unified `curve` + `curve_point`; OD-P2-5-A…N.
 - **P2-5 captured yield/spread curves implementation** — `49ca3bd` (CI-green, run #80; 8-lens, 7 approve / 1 approve_with_changes / 0 block; 1 material + 3 low folds). **P2-5 CLOSED** — the unified `curve` (FR header, ENT-021) + `curve_point` (IA append-only nodes) realized; ENT-023 `credit_spread` by value; **migration head `0019_price_point` → `0020_curves`** + the new Curve symmetric-RLS CI step. **REQ-PUB-002 + REQ-PUB-003 → In-Progress (partial).** NO curve construction/interpolation/duration/pricing/risk; NO `calculation_run`/`exposure_aggregate`/`dataset_snapshot`/`fx_rate`/`price_point` change.
+- **P2-5 closeout memory** — `0c5c068` (run #81); **P2-6 plan** — `8d2782f` (run #82); **operating rules** — `1e0dc08` (run #83).
+- **P2-6 captured benchmark/index data implementation** — `b6284a4` (CI-green, run #84). **P2-6 CLOSED** — `benchmark` (ENT-009, EV definition) + `benchmark_constituent` (FR membership); **migration head `0020_curves` → `0021_benchmark`**. **THE FULL P2 FOUNDATION COMPLETE.** Closeout memory — `ae2be8e` (run #85).
+- **P2 closeout / P3 readiness review** — `bb73211` (CI re-trigger `6663452`, run #86).
+- **P3-0 decision record + P3 implementation plan** — `07607a5` (CI-green, run #87). **OD-P3-0-A…N RATIFIED** (the P3 contract; analytic-sensitivities-first; subphases P3-1…P3-7).
+- **P3-1 analytic sensitivities plan** — `1a8b2a4` (CI-green, run #88; OQ-P3-1-1…6 ratified).
+- **P3-1 analytic sensitivities implementation** — `e8e2e59` (batch-pushed; CI-covered at run #89). **P3-1 CLOSED** — the first governed RISK number (`sensitivity_result`, migration `0022_sensitivity`); CTRL-003 executable; `risk.view`/`risk.run` minted; the methodology framework + `sensitivities_analytic_v1.md`.
+- **P3-2 factor-return inputs plan** — `5466a09` (batch-pushed; CI-covered at run #89).
+- **P3-2 factor-return inputs implementation** — `402cb12` (CI-green, run #89). **P3-2 CLOSED** — the `factor` canonical id minted + ENT-025 `factor_return` realized (migration `0023_factor_return`); captured INPUT (no run/model/snapshot binding).
+- **P3-2 closeout / P3-3 readiness handoff** — `c452229` (CI-green, run #90; the resume anchor for the machine move).
 
 ## P1B-2 key deliverables (closed, `32c7778`)
 REQ-SMR-002 (migration `0009`); the platform's **proprietary-never-hybrid** evidence (the inverse of P1B-1).
@@ -332,33 +390,34 @@ REQ-SMR-004 (corporate_action portion); migration `0011`. The **last reference e
 With **P1B-1 (vocabularies/hybrid) + P1B-2 (legal_entity/issuer/counterparty) + P1B-3 (instrument/terms/identifier) + P1B-4 (corporate_action)** all closed and CI-green, the **Security-Master & Reference-Data block is complete**. **P1B-5** (reference-data ingestion mapping) is **conditional/deferred** (only if bulk loading is needed). The CAP-2 EV/FR reference entities (ENT-001..006/008) are realized; the *requirements* REQ-SMR-001/002/003/004 stay **In-Progress** (terms math, exposure-rollup calc, cross-vendor precedence, and QS-10/11 roll math respectively deferred to P1C/P2+).
 
 ## Next required action
-**P2 CLOSEOUT / P3 READINESS REVIEW** — the full P2 captured market-data foundation is delivered (P2-1…P2-6, CI-green). The next
-step is to assess whether it is sufficient for **P3 (factor model / market-risk) PLANNING**: factor-model + market-risk readiness;
-data-history requirements for factor/risk models; model registry / `model_version` integration; `calculation_run` +
-`dataset_snapshot` governance for risk OUTPUTS (the first governed risk numbers — `risk_result`/`sensitivity`, binding a run + a
-snapshot + a model_version + a seed); risk methodology documentation requirements. **READINESS REVIEW ONLY — no P3 code, no risk
-calculation.** P3 PLANNING is a **separate later approval**; P3 implementation a further separate approval. Build **nothing else**.
+**COMMIT THE P3-3 PLANNING SET (on explicit approval):** the P3-3 decision record + implementation plan
+(`10_delivery_backlog/p3_3_*.md`) + this project-memory refresh + the 5-doc degraded-qualifier cleanup — planning/
+governance/project-memory markdown only, no code. Then, **on a further separate approval and after the OQ-P3-3-1…9
+sign-offs, begin P3-3 IMPLEMENTATION** (the exact kickoff prompt is `p3_3_factor_exposure_implementation_plan.md`
+Part 11): the factor-exposure engine, allocation v1 — `factor_exposure_result` (ENT-028 family; IA append-only;
+migration `0024_factor_exposure`), `run_factor_exposure` mirroring the P3-1 `run_sensitivities` exemplar,
+`COMPONENT_KIND_EXPOSURE` + `COMPONENT_KIND_FACTOR` snapshot pins, the `factor_exposure_allocation_v1.md` methodology
+doc, `risk.*` entitlement REUSE. Build **nothing else**.
 
 ## What MUST NOT be started yet
-- **P3 implementation** — **the P2 closeout / P3 readiness review is next**; no P3 code until P3 PLANNING is approved.
-- **No factor model** — ENT-025 factor_return / covariance / vol surface ENT-022 → P3+.
-- **No risk calculations / VaR / Expected Shortfall / sensitivities** — ENT-027 risk_result / ENT-028 sensitivity → P3+.
-- **No stress testing / scenario analytics** — ENT-029 scenario_definition → P3+.
-- **No performance attribution / active return / active risk / tracking error** — P3+ (and `benchmark_level`/`benchmark_return` are themselves DEFERRED — a net-new canonical ENT id, not minted).
-- **No curve construction / interpolation / bootstrapping / discounting / duration / key-rate** — curves are CAPTURED at P2-5.
-- **No pricing model / valuation model / corporate-action adjustment engine** — captured market data only.
-- **No reporting / dashboard build** — P2 (AD-014).
-- **No frontend changes** unless explicitly approved (P2-6 had none; P2 completion enables future market-data / exposure / benchmark / risk-readiness UI but builds no frontend by default; the P3 readiness review adds no frontend unless directed).
-- **No P3+ work** — factor models, covariance/vol, VaR/ES, scenarios, limits, breach, reporting, real SSO — until P3 planning is approved.
-- **ABAC enforcement** — anchored in P1C-1 but NOT enforced (enforcement → P6+).
+- **P3-3 implementation** — not until the plan is committed, the OQ-P3-3 sign-offs are ratified, AND the user directs it.
+- **No covariance / volatility estimation** — P3-4 (mints the net-new `covariance_matrix` canonical id at its slice).
+- **No VaR / Expected Shortfall** — P3-5 (ENT-027 `risk_result`; gated on P3-4 + history).
+- **No stress testing / scenario analytics** — P3-6 (ENT-029/030; RTM-P5 — possibly a later phase).
+- **No benchmark-relative analytics / active risk / tracking error / performance attribution** — P3-7+ (and `benchmark_level`/`benchmark_return` are themselves DEFERRED captured inputs — a net-new canonical ENT id, not minted).
+- **No vendor-beta or regression factor exposures** — deferred v2 (need a captured factor-loading slice / adjusted-price return history + estimation); **no computed factor returns** (need adjusted prices + a registered model_version); **no `COMPONENT_KIND_FACTOR_RETURN`** (readiness-noted; minted when P3-4 / regression v2 consumes returns).
+- **No instrument/position key-rate DV01 / interpolation / bootstrapping / pricing engine / PAR_RATE / vol surface** — the P3-1 deferrals stand.
+- **No reporting / dashboard build; no frontend changes** unless explicitly approved (P3-0…P3-3 have no visible UI change; the P3 numbers enable future factor-exposure/risk-run/factor-analytics UI but build none by default).
+- **No limits/breach, real SSO, ABAC enforcement** — P6+ (ABAC stays anchored-not-enforced).
 - **P1B-5** (reference-data ingestion mapping) — conditional/deferred (only if bulk loading is needed; not now).
-- **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen) or `entitlement/bootstrap.py` outside the governed R-07 mint; no new audit code / permission / role / migration without R-07.
+- **Never** modify `packages/shared-python/src/irp_shared/audit/service.py` (frozen) or `entitlement/bootstrap.py` outside the governed R-07 mint (P3-3 mints NO new permission — `risk.view`/`risk.run` are REUSED); no new audit code / permission / role / migration without R-07. **No weakening of the P2/P3 snapshot-run-model controls; no BYPASSRLS; no hybrid/SYSTEM_TENANT behavior** beyond the closed 5-table set.
 
 ## Housekeeping / security (RESOLVED — recorded for recovery)
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `b6284a4`) and whether this P2-6 closeout memory refresh was committed.
-- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated).
-- `git remote -v` — origin is now SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0021_benchmark` (advanced from `0020_curves` at P2-6 / `b6284a4`: the `benchmark` EV definition + `benchmark_constituent` FR membership; NEITHER table append-only; the next migration lands only when a P3 risk entity is implemented — the P2 closeout / P3 readiness review is next, no code).
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `c452229`) and whether the P3-3 planning set was committed.
+- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated; `c452229` = run #90 = success at this refresh).
+- `git remote -v` — origin is SSH (`git@github.com:ghostai8088/…`).
+- Migration head is `0023_factor_return` (advanced `0021_benchmark` → `0022_sensitivity` at P3-1 / `e8e2e59`, → `0023_factor_return` at P3-2 / `402cb12`; the next migration is `0024_factor_exposure`, planned at P3-3 — it lands ONLY at the separately-approved P3-3 implementation slice, no code in the planning commit).
+- `project_state.yaml` is STALE (frozen at the P2-6 closeout) — do not trust its `latest`/`active`/`next` blocks; this file + `phase_status.md` + `next_actions.md` are the refreshed set (a yaml refresh is a candidate follow-up housekeeping item, not mandated by the resume anchor).

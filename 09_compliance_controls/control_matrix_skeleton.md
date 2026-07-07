@@ -244,7 +244,7 @@ market value v1** (`MARKET_VALUE` only) — **NOT** VaR/Expected Shortfall/facto
 P3+. The additive `calc/service.py` `outcome` param is the only calc change; `audit/service.py` **FROZEN**.
 
 **P3-2 additions (factor-return inputs — net-new `factor` EV definition + `factor_return` FR series, ENT-025, IMPLEMENTED
-`0023_factor_return`, 2026-07-02; LOCAL-ONLY under degraded connectivity — commit + push/CI PENDING, NOT remote-CI-green):**
+`0023_factor_return`; committed `402cb12`, CI #89 green):**
 captured vendor/external factor returns (FR) + a net-new EV definition — the same captured-market-data control pattern as
 `fx_rate`/`price_point`/`curve`/`benchmark` (**no control weakened; no new CTRL minted; the `factor.*` permission space is NOT
 minted — `marketdata.view`/`.ingest` REUSED**). Controls now executable for factor: **CTRL-006/013** (lineage — one VENDOR_FACTOR

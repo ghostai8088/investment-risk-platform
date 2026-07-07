@@ -30,7 +30,9 @@ The project uses an **UltraCode multi-agent** model for planning and review:
 - **Per-commit pre-checks:** run `make check` (lint, format, mypy, pytest, secret-scan, docs-check); confirm
   the staged set is exactly the intended files; no generated artifacts / `node_modules` / `dist` / caches /
   `.pyc` / secrets / `.env` staged; the scope-specific exclusions hold.
-- **Commit message trailer:** end with `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
+- **Commit message trailer:** end with a `Co-Authored-By` trailer naming the **model that actually performed the
+  work in that session** (e.g. `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`), so commit provenance stays
+  accurate across model changes — never a stale hard-coded model name.
 - After pushing: return the commit hash, confirm remote sync (0 ahead/0 behind), confirm CI triggered, and
   watch the relevant CI job to green (REST API; `gh` not installed). A red CI on the just-committed slice is
   fixed before moving on (test-only fixes allowed; reproduce PG-only failures with Docker `postgres:16`).
