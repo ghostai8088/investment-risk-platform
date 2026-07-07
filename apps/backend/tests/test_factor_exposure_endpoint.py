@@ -311,6 +311,8 @@ def test_post_create_failed_returns_201_failed(ctx) -> None:  # noqa: ANN001
     # The FAILED run is durable + readable (NOT a 404).
     read = client.get(f"/risk/factor-exposures/runs/{body['run_id']}", headers=_h(p))
     assert read.status_code == 200 and read.json()["status"] == "FAILED"
+    # P3-C1: the persisted reason SURFACES on read (previously hardcoded None).
+    assert read.json()["failure_reason"] == body["failure_reason"]
 
 
 def test_no_mutating_verbs(ctx) -> None:  # noqa: ANN001
@@ -318,3 +320,53 @@ def test_no_mutating_verbs(ctx) -> None:  # noqa: ANN001
     for method in ("put", "patch", "delete"):
         resp = getattr(client, method)(f"/risk/factor-exposures/{uuid.uuid4()}", headers=_h(p))
         assert resp.status_code == 405  # append-only surface: no mutation verbs
+
+
+def test_p3c1_status_twin_refused_at_run_and_register(ctx) -> None:  # noqa: ANN001
+    """P3-C1 endpoint proofs: a generically-minted status=None same-family version is refused
+    by the RUN endpoint (the CTRL-003 status gate) AND the governed REGISTER endpoint refuses
+    the squatted label as an identity conflict (422) instead of returning it as a success —
+    the register/run consistency fold."""
+    from irp_shared.model.service import register_model, register_model_version
+    from irp_shared.risk.bootstrap import FACTOR_EXPOSURE_MODEL_CODE
+
+    client, p, db, exp_run, fac = ctx
+    model = register_model(
+        db,
+        tenant_id=p.tenant_id,
+        code=FACTOR_EXPOSURE_MODEL_CODE,
+        name="g",
+        model_type="X",
+        actor_id="a",
+    )
+    twin = register_model_version(
+        db,
+        model=model,
+        version_label="v1",
+        actor_id="a",
+        methodology_ref="x",
+        code_version="risk-v1",
+        status=None,
+        assumptions=[],
+        limitations=[],
+    ).id
+    db.commit()
+    resp = client.post(
+        "/risk/factor-exposures/runs", json=_run_body(twin, exp_run, [fac]), headers=_h(p)
+    )
+    assert resp.status_code == 422  # the status gate at the run endpoint
+    resp = client.post(
+        "/risk/models/factor-exposure", json={"code_version": "risk-v1"}, headers=_h(p)
+    )
+    assert resp.status_code == 422  # register refuses the squatted non-REGISTERED twin
+    assert _count_fx_runs(db, p.tenant_id) == 0
+
+
+def test_p3c1_both_modes_422(ctx) -> None:  # noqa: ANN001
+    """P3-C1: posting BOTH input modes (build args + snapshot_id) is a 422 ambiguity refusal."""
+    client, p, db, exp_run, fac = ctx
+    mv = _register(client, p)
+    body = _run_body(mv, exp_run, [fac]) | {"snapshot_id": str(uuid.uuid4())}
+    resp = client.post("/risk/factor-exposures/runs", json=body, headers=_h(p))
+    assert resp.status_code == 422
+    assert _count_fx_runs(db, p.tenant_id) == 0

@@ -240,11 +240,13 @@ def test_pre_create_refusals_422_404_409(ctx) -> None:  # noqa: ANN001
         "/risk/covariances/runs", json=_run_body(mv, [f_a]), headers=_h(p)
     )
     assert resp.status_code == 422
-    resp = client.post(  # unknown consume-path snapshot
-        "/risk/covariances/runs",
-        json=_run_body(mv, [], snapshot_id=str(uuid.uuid4())) | {"factor_ids": None},
-        headers=_h(p),
-    )
+    consume_body = {
+        "code_version": "risk-v1",
+        "environment_id": "ci",
+        "model_version_id": mv,
+        "snapshot_id": str(uuid.uuid4()),  # consume mode ONLY (no build args — P3-C1 gate)
+    }
+    resp = client.post("/risk/covariances/runs", json=consume_body, headers=_h(p))
     assert resp.status_code == 404
     assert _count_cov_runs(db, p.tenant_id) == 0
 
@@ -303,6 +305,8 @@ def test_post_create_failed_returns_201_failed(ctx, monkeypatch: pytest.MonkeyPa
     # The FAILED run is durable + readable (NOT a 404).
     read = client.get(f"/risk/covariances/runs/{body['run_id']}", headers=_h(p))
     assert read.status_code == 200 and read.json()["status"] == "FAILED"
+    # P3-C1: the persisted reason SURFACES on read (previously hardcoded None).
+    assert read.json()["failure_reason"] == body["failure_reason"]
 
 
 def test_no_mutating_verbs(ctx) -> None:  # noqa: ANN001

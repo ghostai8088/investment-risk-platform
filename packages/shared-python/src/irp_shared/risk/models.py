@@ -79,7 +79,9 @@ class SensitivityResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     tenor_label: Mapped[str] = mapped_column(String(10), nullable=False)
     sensitivity_type: Mapped[str] = mapped_column(String(30), nullable=False)
     # = quantize_HALF_UP(-T * DF * 1bp, 12), per unit notional (the kernel result).
-    sensitivity_value: Mapped[Decimal] = mapped_column(Numeric(28, 12), nullable=False)
+    # PreciseDecimal (P3-C1 parity): 28 significant digits by contract exceed float53 — PG DDL
+    # is UNCHANGED (NUMERIC(28,12)); SQLite (test engine) gains exact fixed-scale TEXT.
+    sensitivity_value: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 12), nullable=False)
     # The bump convention recorded on the row (1.0000 = 1bp).
     bump_bps: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
 
@@ -133,9 +135,10 @@ class FactorExposureResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixi
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     mark_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     # v1 indicator loading (= 1); the beta-extension seam (Numeric(20,12), the factor scale).
-    loading: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
+    # PreciseDecimal (P3-C1 parity): contract digits exceed float53; PG DDL unchanged.
+    loading: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
     # = quantize_HALF_UP(loading * atom.exposure_amount, 6); signed, base currency.
-    exposure_amount: Mapped[Decimal] = mapped_column(Numeric(28, 6), nullable=False)
+    exposure_amount: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 6), nullable=False)
 
 
 class CovarianceResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
@@ -233,7 +236,9 @@ class VarResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     confidence_level: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
     horizon_days: Mapped[int] = mapped_column(Integer, nullable=False)
-    z_score: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
+    # PreciseDecimal (2026-07 review: the OD-E contract criterion applied consistently —
+    # 20 declared digits exceed float53 even though today's z vocabulary is 13 digits).
+    z_score: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
     # PreciseDecimal (PG NUMERIC(28,6) / SQLite fixed-scale TEXT): a 16+-significant-digit
     # currency value does not survive SQLite's float roundtrip (the P3-4 covariance lesson,
     # applied to the NEW columns; the shipped P3-1/P3-3 result columns are a recorded parity

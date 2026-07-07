@@ -375,6 +375,8 @@ def test_post_create_failed_returns_201_failed(ctx, monkeypatch: pytest.MonkeyPa
     assert body["failure_reason"] and "non-psd-radicand" in body["failure_reason"]
     read = client.get(f"/risk/vars/runs/{body['run_id']}", headers=_h(p))
     assert read.status_code == 200 and read.json()["status"] == "FAILED"
+    # P3-C1: the persisted reason SURFACES on read (previously hardcoded None).
+    assert read.json()["failure_reason"] == body["failure_reason"]
 
 
 def test_register_malformed_and_generic_minted_twin_are_4xx(ctx) -> None:  # noqa: ANN001
@@ -430,3 +432,13 @@ def test_no_mutating_verbs(ctx) -> None:  # noqa: ANN001
         for method in ("put", "patch", "delete"):
             resp = getattr(client, method)(path, headers=_h(p))
             assert resp.status_code == 405, (method, path)  # append-only: no mutation verbs
+
+
+def test_p3c1_both_modes_422(ctx) -> None:  # noqa: ANN001
+    """P3-C1: posting BOTH input modes (build args + snapshot_id) is a 422 ambiguity refusal."""
+    client, p, db, fx_run, cov_run = ctx
+    mv = _register(client, p)
+    body = _run_body(mv, fx_run, cov_run) | {"snapshot_id": str(uuid.uuid4())}
+    resp = client.post("/risk/vars/runs", json=body, headers=_h(p))
+    assert resp.status_code == 422
+    assert _count_var_runs(db, p.tenant_id) == 0

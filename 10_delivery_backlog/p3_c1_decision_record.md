@@ -108,3 +108,50 @@ sites, the seven column contracts, and the update_run_status/audit shapes read f
 ## Part 6 — P3-C1 implementation readiness gate
 Implementation-ready once OQ-P3-C1-1…8 are ratified. Build contract = `p3_c1_implementation_plan.md`.
 **P3-C1 planning implements nothing.**
+
+---
+
+## Part 7 — Implementation adversarial review log (2026-07-07, independent-context)
+
+Six independent finder agents over the full P3-C1 working-tree diff; every candidate verified empirically before
+folding. The extraction itself came back CLEAN on every axis checked: operation order, closure captures, exception
+extents, tenant coercions, and — verified character-by-character against the git-deleted originals — all four DQ rule
+descriptors, reason formats, and lineage parameters; one finder additionally re-ran the goldens against the STASHED
+pre-extraction code to confirm the capture claim. **Twelve findings CONFIRMED and FOLDED**; one residual recorded:
+
+1. **Ambiguity gates were partial** (three finders independently): the as-of arguments are build-mode inputs too —
+   `snapshot_id` + `as_of_valid_at` still silently preferred the snapshot for sensitivity/covariance/exposure. →
+   conditions widened to every build-mode argument (exposure's `base_currency` deliberately EXCLUDED — verified
+   honored, not ignored, on the snapshot path); service + endpoint tests added.
+2. **Register/run contract split** (three finders): the four registrars' idempotency branches returned an existing
+   same-label version WITHOUT the new status gate — a generically-minted `status=None` squatter got registration
+   201s while every bind refused it (a permanently wedged, silently inconsistent state). → all four registrars now
+   refuse a non-REGISTERED same-label twin (`WrongModelVersionError`, 422); the two older register endpoints gained
+   the mapping; endpoint + service proofs added.
+3. **`_map_error` only 80% shipped** — two `_ERROR_MAP[type(exc)]` exact lookups remained in the exposure/snapshot
+   routers. → the MRO walk moved to the shared `deps.map_refusal`, used by all three routers.
+4. **Unicode-digit crash residue** in `declared_window_observations` (`isdigit()` accepts superscripts that crash
+   `int()`; the run path was shielded by the status gate, the REGISTER path was not). → strict ASCII pattern.
+5. **`update_run_status` reason footgun** — the param persisted on ANY terminal transition. → FAILED-only guard.
+6. **`var_result.z_score(20,12)` missed the OD-E criterion** (20 contract digits; left plain while `loading(20,12)`
+   was converted). → converted; criterion applied consistently.
+7. **Control-matrix overclaims** (the failure_reason scope — exposure family is a recorded follow-up — and the
+   ambiguity scope). → wording scoped honestly.
+8. **The preservation proof itself strengthened** (one finder's whole mandate): the sensitivity reason pattern was
+   vacuous → now pins the exact `rule '…' failed (severity=ERROR)` format; DQ evidence was pinned by COUNT → now by
+   CONTENT (rule code/name/target per binder); lineage was pinned by CARDINALITY → now by CONTENT (edge types,
+   target ids, run stamps, snapshot sources); COMPLETED runs assert reason is None; FAILED runs assert row-persisted
+   reason == returned reason (per binder ×4).
+9. **Endpoint-layer proofs added** (test-quality finder): GET-surfaces-the-reason ×4 (the slice's headline behavior
+   was untested at HTTP); status-twin refusal at run AND register endpoints; both-modes 422s; the scaffold + the
+   `_compute` closures brought under a new live-read fence (found-set asserted); the 0027 chain-position assertion;
+   **a FAILED run now executes on PostgreSQL in CI** (the new column's UPDATE under FORCE RLS —
+   `test_factor_exposure_pg.py`).
+
+**Recorded residual (not folded, with rationale):** the DQ-rule first-registration race (two concurrent first runs
+of a tenant → one 500s with a clean rollback) — verified PRE-EXISTING and faithfully preserved by the extraction;
+fixing it is a deliberate behavior change outside this slice's contract. Standing follow-ups unchanged: the exposure
+family's scaffold/reason adoption; captured-input-table PreciseDecimal parity.
+
+Post-fold validation: format/lint/mypy/docs/secret-scan clean; **1111 passed** full-PG suite; `alembic check` clean;
+downgrade-base smoke green; the strengthened goldens green.

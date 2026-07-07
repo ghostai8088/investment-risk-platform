@@ -314,6 +314,22 @@ rows, mixed base currency, or wrong vocabulary refuse pre-create with ZERO write
 REACHABLE non-PSD radicand gate ⇒ committed FAILED run + DQ evidence + ZERO rows). The `RISK.*` family stays
 reserved-not-emitted (`RISK.VAR_CREATE` joins the row). `audit/service.py` **FROZEN**.
 
+**P3-C1 additions (hardening/consolidation — the deferral-register paydown; migration `0027_run_failure_reason`,
+additive only):** NO new number/entity/permission/audit code; no control weakened. Controls TIGHTENED/exercised:
+**CTRL-003** (the risk-family bind gate `assert_model_version_of` now REQUIRES `model_version.status == 'REGISTERED'`
+— a generically-minted `status=None` version is refused by all four risk binders, negative-tested; the generic
+resolver + P7 validation semantics untouched); **CTRL-012/CTRL-032** (a FAILED run's human-readable reason is now
+PERSISTED on `calculation_run.failure_reason` and surfaced on read **for the FOUR RISK run families** — the
+EXPOSURE_AGGREGATE family is the recorded scaffold follow-up and still reads None; the DQ rows remain the durable
+defect EVIDENCE; the audit event payload is UNCHANGED, asserted); **CTRL-029** (three explicit fail-closed
+tightenings: both-input-modes ambiguity refused across the five snapshot-consuming binders **for every build-mode
+argument** (primary selectors + the as-of arguments; exposure's `base_currency` deliberately excluded — it is
+honored, not ignored, on the snapshot path); the P3-3 pinned-atom base-currency-uniformity adjudication; subclassed
+refusal exceptions now map via the shared MRO helper across the risk/exposure/snapshot routers). The four risk binders' governed-run
+lifecycle is CONSOLIDATED into `risk/scaffold.py` under a golden-captured behavior-preservation proof
+(`test_p3c1_scaffold_preservation.py` — written green BEFORE the extraction); seven float53-unsafe result columns
+carry `PreciseDecimal` (PG DDL unchanged — `alembic check` clean). `audit/service.py` **FROZEN**.
+
 ## 5. Open Decisions
 
 | ID | Open Decision |

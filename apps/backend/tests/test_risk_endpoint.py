@@ -252,6 +252,8 @@ def test_post_create_failed_returns_201_failed(ctx) -> None:  # noqa: ANN001
     got = client.get(f"/risk/sensitivities/runs/{body['run_id']}", headers=_h(p))
     assert got.status_code == 200
     assert got.json()["status"] == "FAILED"
+    # P3-C1: the persisted reason SURFACES on read (previously hardcoded None).
+    assert got.json()["failure_reason"] == body["failure_reason"]
 
 
 def test_no_mutating_verbs(ctx) -> None:  # noqa: ANN001

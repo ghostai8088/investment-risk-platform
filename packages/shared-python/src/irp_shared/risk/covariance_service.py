@@ -47,11 +47,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.calc.models import CalculationRun, RunStatus
-from irp_shared.calc.service import create_run, update_run_status
-from irp_shared.dq.gates import ensure_presence_rule, run_presence_gate
-from irp_shared.lineage.models import EDGE_KIND_DEPENDENCY, EDGE_KIND_ORIGIN
-from irp_shared.lineage.service import record_internal_lineage, record_run_lineage
+from irp_shared.calc.models import CalculationRun
 from irp_shared.marketdata.factor import resolve_factor
 from irp_shared.marketdata.models import FREQUENCY_DAILY, RETURN_TYPE_SIMPLE
 from irp_shared.risk.bootstrap import (
@@ -62,6 +58,7 @@ from irp_shared.risk.bootstrap import (
 from irp_shared.risk.covariance_kernel import FactorSeriesPin, estimate_covariance
 from irp_shared.risk.events import RUN_TYPE_COVARIANCE, STATISTIC_TYPE_COVARIANCE, CovarianceActor
 from irp_shared.risk.models import CovarianceResult
+from irp_shared.risk.scaffold import execute_governed_run
 from irp_shared.snapshot import (
     COMPONENT_KIND_FACTOR,
     COMPONENT_KIND_FACTOR_RETURN,
@@ -256,37 +253,6 @@ def _build_rows(
     return rows, gaps
 
 
-def _run_completeness_gate(
-    session: Session,
-    *,
-    acting_tenant: str,
-    actor: CovarianceActor,
-    run: CalculationRun,
-    gaps: list[str],
-) -> None:
-    """Fail-closed DQ gate (``DATA.VALIDATE``): one ``{'present': None}`` row per defect; a
-    non-empty defect set fails ERROR ⇒ ``DataQualityError`` (the caller converts it to a
-    post-create FAILED run). The shared ``dq.gates`` presence helpers (P3-4-R0)."""
-    rule = ensure_presence_rule(
-        session,
-        tenant_id=str(acting_tenant),
-        code=_COMPLETENESS_RULE_CODE,
-        name="Covariance run output sanity (every element finite; every variance non-negative)",
-        target_entity_type="covariance_result",
-        actor_id=actor.actor_id,
-        actor_type=actor.actor_type,
-    )
-    run_presence_gate(
-        session,
-        rule=rule,
-        gaps=gaps,
-        target_entity_type="calculation_run",
-        target_entity_id=run.run_id,
-        actor_id=actor.actor_id,
-        actor_type=actor.actor_type,
-    )
-
-
 def run_covariance(
     session: Session,
     *,
@@ -305,9 +271,6 @@ def run_covariance(
     version's DECLARED ``window_observations``) or consume-existing (``snapshot_id``). BOTH paths
     adjudicate the pinned content pre-create. See the module docstring for the failure model +
     the AD-014 / CTRL-003 / OD-P3-4-G invariants."""
-    from irp_shared.dq.service import (
-        DataQualityError,
-    )  # local: keep the import-fence surface minimal
 
     # --- Pre-create prerequisite gate (raise BEFORE create_run ⇒ zero run/result/run-audit) ---
     if not code_version:
@@ -318,6 +281,15 @@ def run_covariance(
         raise CovarianceInputError("initiator is required (FW-RUN/TR-15)")
     if not model_version_id:
         raise CovarianceInputError("model_version_id is required (CTRL-003 inventory-before-use)")
+    if snapshot_id is not None and (
+        factor_ids is not None or as_of_valid_at is not None or as_of_known_at is not None
+    ):
+        # P3-C1 (OD-G): passing BOTH input modes previously preferred snapshot_id SILENTLY —
+        # an ambiguous request must be refused, never guessed.
+        raise CovarianceInputError(
+            "ambiguous input — pass either snapshot_id or the build arguments "
+            "(factor_ids/as_of_*), not both"
+        )
     # Inventory-before-use + model identity (CTRL-003 / BR-3) + the DECLARED window (OD-P3-4-G:
     # the estimation window is version identity, parsed from the registered assumptions — never a
     # free request parameter).
@@ -373,75 +345,51 @@ def run_covariance(
     )
     parsed = _adjudicate_pins(series_raw, factor_pins, declared_window=declared_window)
 
-    # --- Create the run + RUNNING (the run now exists; failures below are POST-CREATE FAILED) ---
-    run = create_run(
-        session,
-        tenant_id=acting_tenant,
-        run_type=RUN_TYPE_COVARIANCE,
-        initiated_by=actor.actor_id,
-        input_snapshot_id=snapshot.id,
-        model_version_id=str(model_version_id),
-        code_version=code_version,
-        environment_id=environment_id,
-    )
-    update_run_status(session, run, RunStatus.RUNNING, actor_id=actor.actor_id)
-
-    # The snapshot->run DEPENDS_ON edge is recorded BEFORE the DQ gate so a committed FAILED run
-    # keeps a traceable link to its input (the P3-1 lineage fold).
-    record_internal_lineage(
-        session,
-        snapshot_id=snapshot.id,
-        target_entity_type="calculation_run",
-        target_entity_id=run.run_id,
-        edge_kind=EDGE_KIND_DEPENDENCY,
-        run_id=run.run_id,
-    )
-
-    # The pure kernel over the adjudicated pins ONLY (no live read — the AD-014 invariant).
-    matrix = estimate_covariance(parsed.series)
-    rows, gaps = _build_rows(
-        parsed,
-        matrix,
-        run=run,
-        snapshot_id=snapshot.id,
-        model_version_id=str(model_version_id),
-        acting_tenant=acting_tenant,
-    )
-    try:
-        # Fail-closed BEFORE any result INSERT (emits DATA.VALIDATE; raises on a defect).
-        _run_completeness_gate(
-            session, acting_tenant=acting_tenant, actor=actor, run=run, gaps=gaps
+    # --- The shared governed-run lifecycle (P3-C1 scaffold; behavior-preserving) ---
+    def _compute(run: CalculationRun) -> tuple[list[CovarianceResult], list[str]]:
+        # The pure kernel over the adjudicated pins ONLY (no live read — the AD-014 invariant).
+        matrix = estimate_covariance(parsed.series)
+        return _build_rows(
+            parsed,
+            matrix,
+            run=run,
+            snapshot_id=snapshot.id,
+            model_version_id=str(model_version_id),
+            acting_tenant=acting_tenant,
         )
-    except DataQualityError as gate:
-        update_run_status(
-            session, run, RunStatus.FAILED, actor_id=actor.actor_id, outcome="failure"
-        )
+
+    def _format_reason(gate: Exception, gaps: list[str]) -> str:  # verbatim P3-4 format
         detail = "; ".join(gaps[:_MAX_GAPS_IN_REASON])
         more = (
             f" (+{len(gaps) - _MAX_GAPS_IN_REASON} more)" if len(gaps) > _MAX_GAPS_IN_REASON else ""
         )
-        return CovarianceRunResult(
-            run=run,
-            status=RunStatus.FAILED.value,
-            rows=[],
-            failure_reason=f"{gate} — {detail}{more}",
-        )
+        return f"{gate} — {detail}{more}"
 
-    # --- Governed write: F·(F+1)/2 rows + run->result (ORIGIN, run_id) ---
-    for row in rows:
-        session.add(row)
-    session.flush()
-    for row in rows:
-        record_run_lineage(
-            session,
-            run_id=run.run_id,
-            target_entity_type="covariance_result",
-            target_entity_id=row.id,
-            edge_kind=EDGE_KIND_ORIGIN,
-        )
-
-    update_run_status(session, run, RunStatus.COMPLETED, actor_id=actor.actor_id)
-    return CovarianceRunResult(run=run, status=RunStatus.COMPLETED.value, rows=rows)
+    outcome = execute_governed_run(
+        session,
+        acting_tenant=str(acting_tenant),
+        actor_id=actor.actor_id,
+        actor_type=actor.actor_type,
+        run_type=RUN_TYPE_COVARIANCE,
+        snapshot_id=snapshot.id,
+        model_version_id=str(model_version_id),
+        code_version=code_version,
+        environment_id=environment_id,
+        rule_code=_COMPLETENESS_RULE_CODE,
+        rule_name=(
+            "Covariance run output sanity (every element finite; every variance non-negative)"
+        ),
+        rule_target_entity_type="covariance_result",
+        result_entity_type="covariance_result",
+        compute=_compute,
+        format_reason=_format_reason,
+    )
+    return CovarianceRunResult(
+        run=outcome.run,
+        status=outcome.status,
+        rows=outcome.rows,
+        failure_reason=outcome.failure_reason,
+    )
 
 
 def list_covariances(

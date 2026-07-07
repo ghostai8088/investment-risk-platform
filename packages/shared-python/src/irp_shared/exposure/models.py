@@ -30,13 +30,13 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint, event
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
 from irp_shared.audit.models import AppendOnlyViolation
 from irp_shared.db.base import Base
 from irp_shared.db.mixins import ImmutableAppendOnlyMixin, PrimaryKeyMixin, TenantMixin
-from irp_shared.db.types import GUID
+from irp_shared.db.types import GUID, PreciseDecimal
 from irp_shared.temporal import TemporalClass
 
 #: Controlled-vocab ``exposure_type`` (plain String, no enum/CHECK; app-side allow-list). v1 =
@@ -77,17 +77,18 @@ class ExposureAggregate(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     mark_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     # Captured inputs (for self-auditing + the deterministic recompute).
-    signed_quantity: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
-    mark_value: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    # PreciseDecimal (P3-C1 parity): contract digits exceed float53; PG DDL unchanged.
+    signed_quantity: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 8), nullable=False)
+    mark_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 6), nullable=False)
     # The EFFECTIVE composite multiplier mark_currency -> base_currency (HALF_UP @ 12dp; = 1 for
     # identity). NOT a published rate in general (a product of the convert legs).
-    fx_rate: Mapped[Decimal] = mapped_column(Numeric(28, 12), nullable=False)
+    fx_rate: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 12), nullable=False)
     # JSON leg evidence: the ordered pinned fx_rate leg refs used (id/base/quote/rate/direction).
     # Captured path provenance — NOT a hard FK to a supersedable FR row. "[]" for identity.
     fx_legs: Mapped[str] = mapped_column(Text, nullable=False)
     # = quantize_HALF_UP(signed_quantity x mark_value x fx_rate, 6), in base_currency (money scale
     # 6).
-    exposure_amount: Mapped[Decimal] = mapped_column(Numeric(28, 6), nullable=False)
+    exposure_amount: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 6), nullable=False)
     exposure_type: Mapped[str] = mapped_column(
         String(30), nullable=False, default=EXPOSURE_TYPE_MARKET_VALUE
     )

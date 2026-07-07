@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.model.models import Model, ModelAssumption, ModelVersion
 from irp_shared.model.service import (
+    UnregisteredModelError,
     assert_registered_model_version,
     register_model,
     register_model_version,
@@ -76,6 +77,12 @@ def assert_model_version_of(
     raising :class:`WrongModelVersionError` otherwise. Used pre-create by every risk binder so a
     run can never bind a methodology from a different model family."""
     version = assert_registered_model_version(session, str(model_version_id), tenant_id=tenant_id)
+    if version.status != "REGISTERED":
+        # The risk binders' documented contract is "a REGISTERED model_version"; a version
+        # minted via the GENERIC registration can carry status=None and previously bound
+        # anyway (the P3-5 review's recorded deferral; P3-C1 OD-B). The generic resolver and
+        # the P7 validation semantics are untouched — this gate is risk-family-scoped.
+        raise UnregisteredModelError(str(model_version_id))
     model = session.execute(
         select(Model).where(Model.id == version.model_id, Model.tenant_id == str(tenant_id))
     ).scalar_one_or_none()
@@ -193,6 +200,12 @@ def register_sensitivity_model(
         )
     ).scalar_one_or_none()
     if version is not None:
+        if version.status != "REGISTERED":
+            # P3-C1 (OD-B residual, 2026-07 review): a same-label twin minted via the
+            # GENERIC registration (status=None) must be a REGISTRATION conflict too —
+            # otherwise register reports success while every bind refuses it (a
+            # register/run contract split; the label is squatted either way, but honestly).
+            raise WrongModelVersionError(str(version.id), str(model.code))
         if version.code_version != str(code_version):
             raise ModelVersionConflictError(
                 SENSITIVITY_MODEL_CODE, SENSITIVITY_VERSION_LABEL, str(code_version)
@@ -256,6 +269,12 @@ def register_factor_exposure_model(
         )
     ).scalar_one_or_none()
     if version is not None:
+        if version.status != "REGISTERED":
+            # P3-C1 (OD-B residual, 2026-07 review): a same-label twin minted via the
+            # GENERIC registration (status=None) must be a REGISTRATION conflict too —
+            # otherwise register reports success while every bind refuses it (a
+            # register/run contract split; the label is squatted either way, but honestly).
+            raise WrongModelVersionError(str(version.id), str(model.code))
         if version.code_version != str(code_version):
             raise ModelVersionConflictError(
                 FACTOR_EXPOSURE_MODEL_CODE, FACTOR_EXPOSURE_VERSION_LABEL, str(code_version)
@@ -336,7 +355,7 @@ def declared_window_observations(session: Session, version: ModelVersion) -> int
     # Exactly one, strictly-decimal declaration — a version minted with a malformed/absent window
     # (reachable via the GENERIC model-registration endpoint under the same permission) is NOT a
     # covariance-model identity; refuse fail-closed (422), never a bare int() ValueError (500).
-    if len(declared) != 1 or not declared[0].isdigit():
+    if len(declared) != 1 or not re.fullmatch(r"[0-9]+", declared[0]):
         raise WrongModelVersionError(str(version.id), COVARIANCE_MODEL_CODE)
     return int(declared[0])
 
@@ -383,6 +402,12 @@ def register_covariance_model(
         )
     ).scalar_one_or_none()
     if version is not None:
+        if version.status != "REGISTERED":
+            # P3-C1 (OD-B residual, 2026-07 review): a same-label twin minted via the
+            # GENERIC registration (status=None) must be a REGISTRATION conflict too —
+            # otherwise register reports success while every bind refuses it (a
+            # register/run contract split; the label is squatted either way, but honestly).
+            raise WrongModelVersionError(str(version.id), str(model.code))
         if version.code_version != str(code_version) or declared_window_observations(
             session, version
         ) != int(window_observations):
@@ -593,6 +618,12 @@ def register_var_model(
         )
     ).scalar_one_or_none()
     if version is not None:
+        if version.status != "REGISTERED":
+            # P3-C1 (OD-B residual, 2026-07 review): a same-label twin minted via the
+            # GENERIC registration (status=None) must be a REGISTRATION conflict too —
+            # otherwise register reports success while every bind refuses it (a
+            # register/run contract split; the label is squatted either way, but honestly).
+            raise WrongModelVersionError(str(version.id), str(model.code))
         declared = declared_var_parameters(session, version)  # malformed existing -> 422 class
         if (
             version.code_version != str(code_version)

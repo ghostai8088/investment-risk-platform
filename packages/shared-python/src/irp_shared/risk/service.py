@@ -48,11 +48,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.calc.models import CalculationRun, RunStatus
-from irp_shared.calc.service import create_run, update_run_status
-from irp_shared.dq.gates import ensure_presence_rule, run_presence_gate
-from irp_shared.lineage.models import EDGE_KIND_DEPENDENCY, EDGE_KIND_ORIGIN
-from irp_shared.lineage.service import record_internal_lineage, record_run_lineage
+from irp_shared.calc.models import CalculationRun
 from irp_shared.marketdata.models import (
     VALUE_TYPE_DISCOUNT_FACTOR,
     VALUE_TYPE_SPREAD,
@@ -67,6 +63,7 @@ from irp_shared.risk.events import (
 )
 from irp_shared.risk.kernel import node_dv01, node_spread_dv01
 from irp_shared.risk.models import SensitivityResult
+from irp_shared.risk.scaffold import execute_governed_run
 from irp_shared.snapshot import (
     COMPONENT_KIND_CURVE,
     PURPOSE_SENSITIVITY_INPUT,
@@ -176,38 +173,6 @@ def _build_rows(
     return rows, gaps
 
 
-def _run_completeness_gate(
-    session: Session,
-    *,
-    acting_tenant: str,
-    actor: SensitivityActor,
-    run: CalculationRun,
-    gaps: list[str],
-) -> None:
-    """Fail-closed DQ gate (``DATA.VALIDATE``): one ``{'present': None}`` row per gap; a
-    non-empty gap fails ERROR ⇒ ``DataQualityError`` (the caller converts it to a post-create
-    FAILED run). The shared ``dq.gates`` presence helpers (P3-4-R0) — rule code/name/target
-    unchanged, so the persisted evidence shape is byte-identical to the pre-R0 copy."""
-    rule = ensure_presence_rule(
-        session,
-        tenant_id=str(acting_tenant),
-        code=_COMPLETENESS_RULE_CODE,
-        name="Sensitivity run input completeness (usable curve nodes)",
-        target_entity_type="sensitivity_result",
-        actor_id=actor.actor_id,
-        actor_type=actor.actor_type,
-    )
-    run_presence_gate(
-        session,
-        rule=rule,
-        gaps=gaps,
-        target_entity_type="calculation_run",
-        target_entity_id=run.run_id,
-        actor_id=actor.actor_id,
-        actor_type=actor.actor_type,
-    )
-
-
 def run_sensitivities(
     session: Session,
     *,
@@ -227,9 +192,6 @@ def run_sensitivities(
     consume-existing (``snapshot_id``). See the module docstring for the failure model + the AD-014
     /
     CTRL-003 invariants."""
-    from irp_shared.dq.service import (
-        DataQualityError,
-    )  # local: keep the import-fence surface minimal
 
     # --- Pre-create prerequisite gate (raise BEFORE create_run ⇒ zero run/result/audit) ---
     if not code_version:
@@ -240,6 +202,15 @@ def run_sensitivities(
         raise SensitivityInputError("initiator is required (FW-RUN/TR-15)")
     if not model_version_id:
         raise SensitivityInputError("model_version_id is required (CTRL-003 inventory-before-use)")
+    if snapshot_id is not None and (
+        curve_selectors is not None or as_of_valid_at is not None or as_of_known_at is not None
+    ):
+        # P3-C1 (OD-G): passing BOTH input modes previously preferred snapshot_id SILENTLY —
+        # an ambiguous request must be refused, never guessed.
+        raise SensitivityInputError(
+            "ambiguous input — pass either snapshot_id or the build arguments "
+            "(curve_selectors/as_of_*), not both"
+        )
     # Inventory-before-use + model identity (CTRL-003 / BR-3): a REGISTERED model_version OF THE
     # SENSITIVITY MODEL is MANDATORY. An unknown/unregistered version raises UnregisteredModelError
     # and a version of a DIFFERENT model family raises WrongModelVersionError — both BEFORE the run
@@ -274,68 +245,39 @@ def run_sensitivities(
             as_of_known_at=as_of_known_at,
         )
 
-    # --- Create the run + RUNNING (the run now exists; failures below are POST-CREATE FAILED) ---
-    run = create_run(
+    # --- The shared governed-run lifecycle (P3-C1 scaffold; behavior-preserving) ---
+    def _compute(run: CalculationRun) -> tuple[list[SensitivityResult], list[str]]:
+        return _build_rows(
+            list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant),
+            run=run,
+            snapshot_id=snapshot.id,
+            model_version_id=str(model_version_id),
+            acting_tenant=acting_tenant,
+        )
+
+    outcome = execute_governed_run(
         session,
-        tenant_id=acting_tenant,
+        acting_tenant=str(acting_tenant),
+        actor_id=actor.actor_id,
+        actor_type=actor.actor_type,
         run_type=RUN_TYPE_SENSITIVITY,
-        initiated_by=actor.actor_id,
-        input_snapshot_id=snapshot.id,
+        snapshot_id=snapshot.id,
         model_version_id=str(model_version_id),
         code_version=code_version,
         environment_id=environment_id,
+        rule_code=_COMPLETENESS_RULE_CODE,
+        rule_name="Sensitivity run input completeness (usable curve nodes)",
+        rule_target_entity_type="sensitivity_result",
+        result_entity_type="sensitivity_result",
+        compute=_compute,
+        format_reason=lambda gate, gaps: str(gate),  # verbatim P3-1 format
     )
-    update_run_status(session, run, RunStatus.RUNNING, actor_id=actor.actor_id)
-
-    # The snapshot->run DEPENDS_ON edge is an INPUT-DEPENDENCY fact ("this run consumed this
-    # snapshot") — true regardless of outcome (it mirrors the run's NOT-NULL input_snapshot_id FK).
-    # Record it BEFORE the DQ gate so a committed FAILED run keeps a traceable link to its input
-    # (the auditor's durable refusal evidence has full lineage; review fold — lineage lens). The
-    # run->result ORIGIN edges stay on the success path (a FAILED run has zero result rows).
-    record_internal_lineage(
-        session,
-        snapshot_id=snapshot.id,
-        target_entity_type="calculation_run",
-        target_entity_id=run.run_id,
-        edge_kind=EDGE_KIND_DEPENDENCY,
-        run_id=run.run_id,
+    return SensitivityRunResult(
+        run=outcome.run,
+        status=outcome.status,
+        rows=outcome.rows,
+        failure_reason=outcome.failure_reason,
     )
-
-    rows, gaps = _build_rows(
-        list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant),
-        run=run,
-        snapshot_id=snapshot.id,
-        model_version_id=str(model_version_id),
-        acting_tenant=acting_tenant,
-    )
-    try:
-        # Fail-closed BEFORE any result INSERT (emits DATA.VALIDATE; raises on a gap).
-        _run_completeness_gate(
-            session, acting_tenant=acting_tenant, actor=actor, run=run, gaps=gaps
-        )
-    except DataQualityError as gate:
-        update_run_status(
-            session, run, RunStatus.FAILED, actor_id=actor.actor_id, outcome="failure"
-        )
-        return SensitivityRunResult(
-            run=run, status=RunStatus.FAILED.value, rows=[], failure_reason=str(gate)
-        )
-
-    # --- Governed write: rows + run->result (ORIGIN, run_id) ---
-    for row in rows:
-        session.add(row)
-    session.flush()
-    for row in rows:
-        record_run_lineage(
-            session,
-            run_id=run.run_id,
-            target_entity_type="sensitivity_result",
-            target_entity_id=row.id,
-            edge_kind=EDGE_KIND_ORIGIN,
-        )
-
-    update_run_status(session, run, RunStatus.COMPLETED, actor_id=actor.actor_id)
-    return SensitivityRunResult(run=run, status=RunStatus.COMPLETED.value, rows=rows)
 
 
 def list_sensitivities(

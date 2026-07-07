@@ -89,3 +89,16 @@ def require_permission(permission_code: str):  # noqa: ANN201 - returns a FastAP
         return principal
 
     return _dependency
+
+
+def map_refusal(
+    exc: Exception, error_map: dict[type[Exception], tuple[int, str]]
+) -> tuple[int, str]:
+    """Resolve the (status, opaque detail) for a refusal exception by walking the MRO — a
+    SUBCLASS of a mapped exception otherwise KeyErrors into a 500 (P3-C1, OD-F; shared by the
+    risk/exposure/snapshot routers). The nearest mapped ancestor wins; an unmapped exception
+    raises KeyError loudly (a genuine programming error)."""
+    for klass in type(exc).__mro__:
+        if klass in error_map:
+            return error_map[klass]
+    raise KeyError(type(exc))

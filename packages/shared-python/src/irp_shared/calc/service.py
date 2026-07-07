@@ -59,6 +59,7 @@ def update_run_status(
     *,
     actor_id: str | None = None,
     outcome: str = "success",
+    failure_reason: str | None = None,
 ) -> CalculationRun:
     """Transition the run's ``status`` (in place) and emit ``CALC.RUN_STATUS_CHANGE``.
 
@@ -72,6 +73,12 @@ def update_run_status(
     run.status = new_status.value
     if new_status in TERMINAL_STATUSES:
         run.completed_at = utcnow()
+    if failure_reason is not None and new_status is RunStatus.FAILED:
+        # P3-C1 (OD-C, additive - default None keeps every existing caller byte-identical; the
+        # audit event payload below is deliberately UNCHANGED). FAILED-only by contract: the
+        # model comment promises NULL on non-failed runs and readers treat non-NULL as "failed"
+        # (the 2026-07 review's footgun guard).
+        run.failure_reason = failure_reason
     session.flush()
 
     record_event(

@@ -48,11 +48,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
-from irp_shared.calc.service import create_run, update_run_status
-from irp_shared.dq.gates import ensure_presence_rule, run_presence_gate
 from irp_shared.exposure.service import resolve_run as resolve_exposure_run
-from irp_shared.lineage.models import EDGE_KIND_DEPENDENCY, EDGE_KIND_ORIGIN
-from irp_shared.lineage.service import record_internal_lineage, record_run_lineage
 from irp_shared.marketdata.models import FACTOR_FAMILY_CURRENCY
 from irp_shared.risk.bootstrap import FACTOR_EXPOSURE_MODEL_CODE, assert_model_version_of
 from irp_shared.risk.events import RUN_TYPE_FACTOR_EXPOSURE, FactorExposureActor
@@ -64,6 +60,7 @@ from irp_shared.risk.factor_kernel import (
     build_factor_index,
 )
 from irp_shared.risk.models import FactorExposureResult
+from irp_shared.risk.scaffold import execute_governed_run
 from irp_shared.snapshot import (
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
@@ -165,6 +162,14 @@ def _adjudicate_pins(atoms: list[AtomPin], factors: list[FactorPin]) -> dict[str
             "the snapshot pins no factor definitions (COMPONENT_KIND_FACTOR) — not a "
             "factor-exposure input"
         )
+    base_currencies = {a.base_currency for a in atoms}
+    if len(base_currencies) != 1:
+        # P3-C1 (OD-H): base is run-uniform by construction on the governed path, but a
+        # hand-minted snapshot could pin mixed-base atoms — the recorded latent hole, closed
+        # at the adjudication (the P3-5 twin check); the 4-tuple grain is unchanged.
+        raise FactorExposureInputError(
+            f"the pinned atoms carry mixed base currencies {sorted(base_currencies)} — refused"
+        )
     for pin in factors:
         if pin.factor_family not in SUPPORTED_FACTOR_FAMILIES:
             raise FactorExposureInputError(
@@ -216,38 +221,6 @@ def _build_rows(
     return rows, gaps
 
 
-def _run_completeness_gate(
-    session: Session,
-    *,
-    acting_tenant: str,
-    actor: FactorExposureActor,
-    run: CalculationRun,
-    gaps: list[str],
-) -> None:
-    """Fail-closed DQ gate (``DATA.VALIDATE``): one ``{'present': None}`` row per gap; a
-    non-empty gap fails ERROR ⇒ ``DataQualityError`` (the caller converts it to a post-create
-    FAILED run). The shared ``dq.gates`` presence helpers (P3-4-R0) — rule code/name/target
-    unchanged, so the persisted evidence shape is byte-identical to the pre-R0 copy."""
-    rule = ensure_presence_rule(
-        session,
-        tenant_id=str(acting_tenant),
-        code=_COMPLETENESS_RULE_CODE,
-        name="Factor-exposure run mapping completeness (every atom maps to exactly one factor)",
-        target_entity_type="factor_exposure_result",
-        actor_id=actor.actor_id,
-        actor_type=actor.actor_type,
-    )
-    run_presence_gate(
-        session,
-        rule=rule,
-        gaps=gaps,
-        target_entity_type="calculation_run",
-        target_entity_id=run.run_id,
-        actor_id=actor.actor_id,
-        actor_type=actor.actor_type,
-    )
-
-
 def run_factor_exposure(
     session: Session,
     *,
@@ -264,9 +237,6 @@ def run_factor_exposure(
     + ``factor_ids``: builds a ``FACTOR_EXPOSURE_INPUT`` snapshot pinning the atoms + factors) or
     consume-existing (``snapshot_id``). BOTH paths adjudicate the pinned content pre-create. See
     the module docstring for the failure model + the AD-014 / CTRL-003 invariants."""
-    from irp_shared.dq.service import (
-        DataQualityError,
-    )  # local: keep the import-fence surface minimal
 
     # --- Pre-create prerequisite gate (raise BEFORE create_run ⇒ zero run/result/run-audit) ---
     if not code_version:
@@ -278,6 +248,13 @@ def run_factor_exposure(
     if not model_version_id:
         raise FactorExposureInputError(
             "model_version_id is required (CTRL-003 inventory-before-use)"
+        )
+    if snapshot_id is not None and (exposure_run_id is not None or factor_ids is not None):
+        # P3-C1 (OD-G): passing BOTH input modes previously preferred snapshot_id SILENTLY —
+        # an ambiguous request must be refused, never guessed.
+        raise FactorExposureInputError(
+            "ambiguous input — pass either snapshot_id or the build arguments "
+            "(exposure_run_id/factor_ids), not both"
         )
     # Inventory-before-use + model identity (CTRL-003 / BR-3): the version must be REGISTERED and
     # belong to the FACTOR-EXPOSURE model (a sensitivity/other-family version is refused — the
@@ -328,76 +305,51 @@ def run_factor_exposure(
     )
     index = _adjudicate_pins(atoms, factors)
 
-    # --- Create the run + RUNNING (the run now exists; failures below are POST-CREATE FAILED) ---
-    run = create_run(
-        session,
-        tenant_id=acting_tenant,
-        run_type=RUN_TYPE_FACTOR_EXPOSURE,
-        initiated_by=actor.actor_id,
-        input_snapshot_id=snapshot.id,
-        model_version_id=str(model_version_id),
-        code_version=code_version,
-        environment_id=environment_id,
-    )
-    update_run_status(session, run, RunStatus.RUNNING, actor_id=actor.actor_id)
-
-    # The snapshot->run DEPENDS_ON edge is recorded BEFORE the DQ gate so a committed FAILED run
-    # keeps a traceable link to its input (the P3-1 lineage fold). The run->result ORIGIN edges
-    # stay on the success path (a FAILED run has zero result rows).
-    record_internal_lineage(
-        session,
-        snapshot_id=snapshot.id,
-        target_entity_type="calculation_run",
-        target_entity_id=run.run_id,
-        edge_kind=EDGE_KIND_DEPENDENCY,
-        run_id=run.run_id,
-    )
-
-    rows, gaps = _build_rows(
-        atoms,
-        index,
-        run=run,
-        snapshot_id=snapshot.id,
-        model_version_id=str(model_version_id),
-        acting_tenant=acting_tenant,
-    )
-    try:
-        # Fail-closed BEFORE any result INSERT (emits DATA.VALIDATE; raises on a gap).
-        _run_completeness_gate(
-            session, acting_tenant=acting_tenant, actor=actor, run=run, gaps=gaps
+    # --- The shared governed-run lifecycle (P3-C1 scaffold; behavior-preserving) ---
+    def _compute(run: CalculationRun) -> tuple[list[FactorExposureResult], list[str]]:
+        return _build_rows(
+            atoms,
+            index,
+            run=run,
+            snapshot_id=snapshot.id,
+            model_version_id=str(model_version_id),
+            acting_tenant=acting_tenant,
         )
-    except DataQualityError as gate:
-        update_run_status(
-            session, run, RunStatus.FAILED, actor_id=actor.actor_id, outcome="failure"
-        )
-        # Name the unmapped atoms/currencies in the returned reason (bounded) — the review
-        # finding: the computed gap identifiers must not be discarded.
+
+    def _format_reason(gate: Exception, gaps: list[str]) -> str:  # verbatim P3-3 format
+        # Name the unmapped atoms/currencies in the reason (bounded) — the review finding: the
+        # computed gap identifiers must not be discarded.
         detail = "; ".join(gaps[:_MAX_GAPS_IN_REASON])
         more = (
             f" (+{len(gaps) - _MAX_GAPS_IN_REASON} more)" if len(gaps) > _MAX_GAPS_IN_REASON else ""
         )
-        return FactorExposureRunResult(
-            run=run,
-            status=RunStatus.FAILED.value,
-            rows=[],
-            failure_reason=f"{gate} — {detail}{more}",
-        )
+        return f"{gate} — {detail}{more}"
 
-    # --- Governed write: rows + run->result (ORIGIN, run_id) ---
-    for row in rows:
-        session.add(row)
-    session.flush()
-    for row in rows:
-        record_run_lineage(
-            session,
-            run_id=run.run_id,
-            target_entity_type="factor_exposure_result",
-            target_entity_id=row.id,
-            edge_kind=EDGE_KIND_ORIGIN,
-        )
-
-    update_run_status(session, run, RunStatus.COMPLETED, actor_id=actor.actor_id)
-    return FactorExposureRunResult(run=run, status=RunStatus.COMPLETED.value, rows=rows)
+    outcome = execute_governed_run(
+        session,
+        acting_tenant=str(acting_tenant),
+        actor_id=actor.actor_id,
+        actor_type=actor.actor_type,
+        run_type=RUN_TYPE_FACTOR_EXPOSURE,
+        snapshot_id=snapshot.id,
+        model_version_id=str(model_version_id),
+        code_version=code_version,
+        environment_id=environment_id,
+        rule_code=_COMPLETENESS_RULE_CODE,
+        rule_name=(
+            "Factor-exposure run mapping completeness (every atom maps to exactly one factor)"
+        ),
+        rule_target_entity_type="factor_exposure_result",
+        result_entity_type="factor_exposure_result",
+        compute=_compute,
+        format_reason=_format_reason,
+    )
+    return FactorExposureRunResult(
+        run=outcome.run,
+        status=outcome.status,
+        rows=outcome.rows,
+        failure_reason=outcome.failure_reason,
+    )
 
 
 def list_factor_exposures(

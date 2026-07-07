@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from irp_backend.deps import get_tenant_session, require_permission
+from irp_backend.deps import get_tenant_session, map_refusal, require_permission
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
 from irp_shared.portfolio import HierarchyCycleError, PortfolioNotVisible
@@ -167,7 +167,7 @@ def create_snapshot(
         # Whole-unit rollback (CTRL-032): discard any partially-flushed header/components/lineage/DQ
         # row before mapping to the HTTP error — the bound unit is all-or-nothing.
         db.rollback()
-        code, detail = _ERROR_MAP[type(exc)]
+        code, detail = map_refusal(exc, _ERROR_MAP)
         raise HTTPException(status_code=code, detail=detail) from None
 
     # Build the response BEFORE commit, while the request's ``app.current_tenant`` GUC is live:

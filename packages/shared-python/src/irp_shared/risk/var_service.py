@@ -48,10 +48,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
-from irp_shared.calc.service import create_run, update_run_status
-from irp_shared.dq.gates import ensure_presence_rule, run_presence_gate
-from irp_shared.lineage.models import EDGE_KIND_DEPENDENCY, EDGE_KIND_ORIGIN
-from irp_shared.lineage.service import record_internal_lineage, record_run_lineage
 from irp_shared.risk.bootstrap import (
     VAR_MODEL_CODE,
     VarParameters,
@@ -66,6 +62,7 @@ from irp_shared.risk.events import (
 )
 from irp_shared.risk.factor_service import resolve_factor_exposure_run
 from irp_shared.risk.models import VarResult
+from irp_shared.risk.scaffold import execute_governed_run
 from irp_shared.risk.var_kernel import compute_parametric_var
 from irp_shared.snapshot import (
     COMPONENT_KIND_COVARIANCE,
@@ -277,37 +274,6 @@ def _adjudicate_pins(
     )
 
 
-def _run_completeness_gate(
-    session: Session,
-    *,
-    acting_tenant: str,
-    actor: VarActor,
-    run: CalculationRun,
-    gaps: list[str],
-) -> None:
-    """Fail-closed DQ gate (``DATA.VALIDATE``): one ``{'present': None}`` row per defect; a
-    non-empty defect set fails ERROR ⇒ ``DataQualityError`` (the caller converts it to a
-    post-create FAILED run). The shared ``dq.gates`` presence helpers (P3-4-R0)."""
-    rule = ensure_presence_rule(
-        session,
-        tenant_id=str(acting_tenant),
-        code=_COMPLETENESS_RULE_CODE,
-        name="VaR run output sanity (radicand within the declared PSD quantization floor)",
-        target_entity_type="var_result",
-        actor_id=actor.actor_id,
-        actor_type=actor.actor_type,
-    )
-    run_presence_gate(
-        session,
-        rule=rule,
-        gaps=gaps,
-        target_entity_type="calculation_run",
-        target_entity_id=run.run_id,
-        actor_id=actor.actor_id,
-        actor_type=actor.actor_type,
-    )
-
-
 def run_var(
     session: Session,
     *,
@@ -325,9 +291,6 @@ def run_var(
     runs' result rows) or consume-existing (``snapshot_id``). BOTH paths adjudicate the pinned
     content pre-create. See the module docstring for the failure model + the AD-014 / CTRL-003 /
     OD-P3-5-D invariants."""
-    from irp_shared.dq.service import (
-        DataQualityError,
-    )  # local: keep the import-fence surface minimal
 
     # --- Pre-create prerequisite gate (raise BEFORE create_run ⇒ zero run/result/run-audit) ---
     if not code_version:
@@ -338,6 +301,13 @@ def run_var(
         raise VarInputError("initiator is required (FW-RUN/TR-15)")
     if not model_version_id:
         raise VarInputError("model_version_id is required (CTRL-003 inventory-before-use)")
+    if snapshot_id is not None and (exposure_run_id is not None or covariance_run_id is not None):
+        # P3-C1 (OD-G): passing BOTH input modes previously preferred snapshot_id SILENTLY —
+        # an ambiguous request must be refused, never guessed.
+        raise VarInputError(
+            "ambiguous input — pass either snapshot_id or the build arguments "
+            "(exposure_run_id/covariance_run_id), not both"
+        )
     # Inventory-before-use + model identity (CTRL-003 / BR-3) + the DECLARED parameters
     # (OD-P3-5-D: confidence/horizon/z are version identity, parsed from the registered
     # assumptions — never free request parameters).
@@ -421,89 +391,65 @@ def run_var(
             f"the pinned covariance run {parsed.covariance_run_id} is not COMPLETED"
         )
 
-    # --- Create the run + RUNNING (the run now exists; failures below are POST-CREATE FAILED) ---
-    run = create_run(
+    # --- The shared governed-run lifecycle (P3-C1 scaffold; behavior-preserving) ---
+    def _compute(run: CalculationRun) -> tuple[list[VarResult], list[str]]:
+        # The pure kernel over the adjudicated pins ONLY (no live read — the AD-014 invariant).
+        estimate = compute_parametric_var(
+            parsed.exposure_rows, parsed.covariance, z_score=declared.z_score
+        )
+        gaps: list[str] = []
+        if estimate.sigma is None or estimate.var_value is None:
+            gaps.append(f"non-psd-radicand:{estimate.radicand:E}<-tol:{estimate.tolerance:E}")
+            return [], gaps
+        if abs(estimate.sigma) >= _MAX_RESULT_ABS or abs(estimate.var_value) >= _MAX_RESULT_ABS:
+            # Column-legal-but-extreme inputs can produce sigma beyond Numeric(28,6): a
+            # committed FAILED run with evidence, never a PG overflow 500 (2026-07 review).
+            gaps.append(f"magnitude-out-of-range:sigma:{estimate.sigma:E}")
+            return [], gaps
+        row = VarResult(
+            tenant_id=str(acting_tenant),
+            calculation_run_id=run.run_id,
+            input_snapshot_id=snapshot.id,
+            model_version_id=str(model_version_id),
+            exposure_run_id=parsed.exposure_run_id,
+            covariance_run_id=parsed.covariance_run_id,
+            metric_type=METRIC_TYPE_VAR_PARAMETRIC,
+            base_currency=parsed.base_currency,
+            confidence_level=declared.confidence_level,
+            horizon_days=declared.horizon_days,
+            z_score=declared.z_score,
+            sigma=estimate.sigma,
+            var_value=estimate.var_value,
+            n_factors=parsed.n_factors,
+            n_observations=parsed.n_observations,
+            window_start=parsed.window_start,
+            window_end=parsed.window_end,
+        )
+        return [row], gaps
+
+    outcome = execute_governed_run(
         session,
-        tenant_id=acting_tenant,
+        acting_tenant=str(acting_tenant),
+        actor_id=actor.actor_id,
+        actor_type=actor.actor_type,
         run_type=RUN_TYPE_VAR,
-        initiated_by=actor.actor_id,
-        input_snapshot_id=snapshot.id,
+        snapshot_id=snapshot.id,
         model_version_id=str(model_version_id),
         code_version=code_version,
         environment_id=environment_id,
+        rule_code=_COMPLETENESS_RULE_CODE,
+        rule_name="VaR run output sanity (radicand within the declared PSD quantization floor)",
+        rule_target_entity_type="var_result",
+        result_entity_type="var_result",
+        compute=_compute,
+        format_reason=lambda gate, gaps: f"{gate} — {'; '.join(gaps)}",  # verbatim P3-5 format
     )
-    update_run_status(session, run, RunStatus.RUNNING, actor_id=actor.actor_id)
-
-    # The snapshot->run DEPENDS_ON edge is recorded BEFORE the DQ gate so a committed FAILED run
-    # keeps a traceable link to its input (the P3-1 lineage fold).
-    record_internal_lineage(
-        session,
-        snapshot_id=snapshot.id,
-        target_entity_type="calculation_run",
-        target_entity_id=run.run_id,
-        edge_kind=EDGE_KIND_DEPENDENCY,
-        run_id=run.run_id,
+    return VarRunResult(
+        run=outcome.run,
+        status=outcome.status,
+        rows=outcome.rows,
+        failure_reason=outcome.failure_reason,
     )
-
-    # The pure kernel over the adjudicated pins ONLY (no live read — the AD-014 invariant).
-    estimate = compute_parametric_var(
-        parsed.exposure_rows, parsed.covariance, z_score=declared.z_score
-    )
-    gaps: list[str] = []
-    if estimate.sigma is None or estimate.var_value is None:
-        gaps.append(f"non-psd-radicand:{estimate.radicand:E}<-tol:{estimate.tolerance:E}")
-    elif abs(estimate.sigma) >= _MAX_RESULT_ABS or abs(estimate.var_value) >= _MAX_RESULT_ABS:
-        # Column-legal-but-extreme inputs can produce sigma beyond Numeric(28,6): a committed
-        # FAILED run with evidence, never a PG NumericValueOutOfRange 500 (2026-07 review).
-        gaps.append(f"magnitude-out-of-range:sigma:{estimate.sigma:E}")
-    try:
-        # Fail-closed BEFORE any result INSERT (emits DATA.VALIDATE; raises on a defect).
-        _run_completeness_gate(
-            session, acting_tenant=acting_tenant, actor=actor, run=run, gaps=gaps
-        )
-    except DataQualityError as gate:
-        update_run_status(
-            session, run, RunStatus.FAILED, actor_id=actor.actor_id, outcome="failure"
-        )
-        return VarRunResult(
-            run=run,
-            status=RunStatus.FAILED.value,
-            rows=[],
-            failure_reason=f"{gate} — {'; '.join(gaps)}",
-        )
-
-    assert estimate.sigma is not None and estimate.var_value is not None  # gate passed
-    row = VarResult(
-        tenant_id=str(acting_tenant),
-        calculation_run_id=run.run_id,
-        input_snapshot_id=snapshot.id,
-        model_version_id=str(model_version_id),
-        exposure_run_id=parsed.exposure_run_id,
-        covariance_run_id=parsed.covariance_run_id,
-        metric_type=METRIC_TYPE_VAR_PARAMETRIC,
-        base_currency=parsed.base_currency,
-        confidence_level=declared.confidence_level,
-        horizon_days=declared.horizon_days,
-        z_score=declared.z_score,
-        sigma=estimate.sigma,
-        var_value=estimate.var_value,
-        n_factors=parsed.n_factors,
-        n_observations=parsed.n_observations,
-        window_start=parsed.window_start,
-        window_end=parsed.window_end,
-    )
-    session.add(row)
-    session.flush()
-    record_run_lineage(
-        session,
-        run_id=run.run_id,
-        target_entity_type="var_result",
-        target_entity_id=row.id,
-        edge_kind=EDGE_KIND_ORIGIN,
-    )
-
-    update_run_status(session, run, RunStatus.COMPLETED, actor_id=actor.actor_id)
-    return VarRunResult(run=run, status=RunStatus.COMPLETED.value, rows=[row])
 
 
 def list_vars(session: Session, *, run_id: str, acting_tenant: str) -> list[VarResult]:

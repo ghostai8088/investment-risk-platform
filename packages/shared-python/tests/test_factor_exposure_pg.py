@@ -397,3 +397,106 @@ def test_audit_chain_verifies(app_url: str) -> None:
     finally:
         session.close()
         engine.dispose()
+
+
+def test_failed_run_persists_reason_on_pg(app_url: str) -> None:
+    """P3-C1: the scaffold's FAILED tail — incl. the UPDATE of the new
+    ``calculation_run.failure_reason`` column — executed under FORCE RLS on PostgreSQL (the
+    2026-07 review fold: CI previously never drove a FAILED run on PG)."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        session.add(_currency(tenant, "USD"))
+        session.add(_currency(tenant, "EUR"))
+        session.flush()
+        pf = create_portfolio(
+            session,
+            tenant_id=tenant,
+            code=f"ACCT-{uuid.uuid4().hex[:6]}",
+            name="acct",
+            node_type="ACCOUNT",
+            actor=PortfolioActor(actor_id="s"),
+        ).id
+        inst = create_instrument(
+            session,
+            tenant_id=tenant,
+            code=f"I-{uuid.uuid4().hex[:6]}",
+            name="i",
+            asset_class="BOND",
+            actor=ReferenceActor(actor_id="s"),
+        ).id
+        create_position(
+            session,
+            portfolio_id=pf,
+            instrument_id=inst,
+            acting_tenant=tenant,
+            actor=PositionActor(actor_id="s"),
+            quantity=Decimal("100"),
+            valid_from=_T0,
+        )
+        create_valuation(
+            session,
+            portfolio_id=pf,
+            instrument_id=inst,
+            valuation_date=_VD,
+            acting_tenant=tenant,
+            actor=ValuationActor(actor_id="s"),
+            mark_value=Decimal("12.50"),
+            currency_code="USD",
+            valid_from=_T0,
+        )
+        exp = run_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=ExposureActor(actor_id="a"),
+            code_version="v1",
+            environment_id="ci",
+            portfolio_id=pf,
+            as_of_valid_at=_VALID_AT,
+            as_of_known_at=_KNOWN_AT,
+            base_currency="USD",
+        )
+        eur_factor = capture_factor(  # the USD atom is UNMAPPED against an EUR-only set
+            session,
+            factor_code=f"FX_EUR_{uuid.uuid4().hex[:6]}",
+            factor_source="VENDOR_F",
+            factor_family="CURRENCY",
+            currency_code="EUR",
+            acting_tenant=tenant,
+            actor=FactorActor(actor_id="s"),
+            valid_from=_T0,
+        ).id
+        mv = register_factor_exposure_model(
+            session, tenant_id=tenant, actor_id="a", code_version="risk-v1"
+        )
+        session.flush()
+        result = run_factor_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=_ACT,
+            code_version="risk-v1",
+            environment_id="ci",
+            model_version_id=mv.id,
+            exposure_run_id=exp.run.run_id,
+            factor_ids=[eur_factor],
+        )
+        assert result.status == "FAILED" and result.rows == []
+        session.commit()
+        run_id = result.run.run_id
+        reason = result.failure_reason
+    finally:
+        session.close()
+
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        persisted = session.execute(
+            text("SELECT failure_reason FROM calculation_run WHERE run_id = :r"), {"r": run_id}
+        ).scalar_one()
+        assert persisted == reason and "unmapped-atom" in persisted
+    finally:
+        session.close()
+        engine.dispose()

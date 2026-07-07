@@ -83,7 +83,9 @@ class ModelVersion(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base)
     version_label: Mapped[str] = mapped_column(String(50), nullable=False)
     methodology_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
     code_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # Non-enforcing version status placeholder (e.g. DRAFT/REGISTERED); NOT a validation gate.
+    # Version status (e.g. DRAFT/REGISTERED). ENFORCING at the RISK bind since P3-C1
+    # (risk.bootstrap.assert_model_version_of requires 'REGISTERED'); still NOT a validation
+    # gate (P7) and non-enforcing for generic registry consumers.
     status: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 

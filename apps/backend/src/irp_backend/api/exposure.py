@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from irp_backend.deps import get_tenant_session, require_permission
+from irp_backend.deps import get_tenant_session, map_refusal, require_permission
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
 from irp_shared.exposure import (
@@ -171,7 +171,7 @@ def create_exposure_run(
     ) as exc:
         # Pre-create refusal: whole-unit rollback (no run/exposure/audit) before the HTTP error.
         db.rollback()
-        code, detail = _ERROR_MAP[type(exc)]
+        code, detail = map_refusal(exc, _ERROR_MAP)
         raise HTTPException(status_code=code, detail=detail) from None
 
     # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a

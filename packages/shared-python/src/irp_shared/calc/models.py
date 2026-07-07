@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import BigInteger, DateTime, String
+from sqlalchemy import BigInteger, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from irp_shared.db.base import Base
@@ -63,3 +63,7 @@ class CalculationRun(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Bas
         DateTime(timezone=True), default=utcnow, nullable=False
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # P3-C1 (OD-C, additive - the environment_id precedent): the human-readable reason persisted
+    # at a FAILED transition so a later read can answer WHY (the DQ rows stay the durable defect
+    # EVIDENCE; this is presentation-persistence). NULL on non-failed runs.
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -265,6 +265,16 @@ def run_exposure(
         raise ExposureInputError("initiator is required (FW-RUN/TR-15)")
 
     # --- Bind the snapshot (cross-tenant/unknown/incomplete/FX-missing ⇒ pre-create refusal) ---
+    if snapshot_id is not None and (
+        portfolio_id is not None or as_of_valid_at is not None or as_of_known_at is not None
+    ):
+        # P3-C1 (OD-G): passing BOTH input modes previously preferred snapshot_id SILENTLY —
+        # an ambiguous request must be refused, never guessed. base_currency is deliberately
+        # EXCLUDED: it IS honored on the snapshot path (the recompute base), not ignored.
+        raise ExposureInputError(
+            "ambiguous input — pass either snapshot_id or the build arguments "
+            "(portfolio_id/as_of_*), not both"
+        )
     if snapshot_id is not None:
         snapshot = resolve_snapshot(session, snapshot_id, acting_tenant=acting_tenant)
         # Snapshot-gating by CONTRACT, not by FX-coincidence: a consumed snapshot MUST be one built

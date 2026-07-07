@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from irp_backend.deps import get_tenant_session, require_permission
+from irp_backend.deps import get_tenant_session, map_refusal, require_permission
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
 from irp_shared.exposure.service import ExposureRunNotVisible
@@ -144,6 +144,12 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
 }
 
 
+def _map_error(exc: Exception) -> tuple[int, str]:
+    """Resolve the (status, opaque detail) for a refusal exception by walking the MRO (P3-C1,
+    OD-F — the shared ``deps.map_refusal``; the exposure/snapshot routers use it directly)."""
+    return map_refusal(exc, _ERROR_MAP)
+
+
 def _actor(principal: Principal) -> SensitivityActor:
     return SensitivityActor(actor_id=principal.user_id)
 
@@ -258,9 +264,11 @@ def register_sensitivity(
             actor_id=principal.user_id,
             code_version=body.code_version,
         )
-    except ModelVersionConflictError as exc:
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        # WrongModelVersionError: a same-label twin exists that is NOT a REGISTERED version of
+        # this family (generically minted) — a governed refusal, not a 500 (P3-C1).
         db.rollback()
-        code, detail = _ERROR_MAP[type(exc)]
+        code, detail = _map_error(exc)
         raise HTTPException(status_code=code, detail=detail) from None
     out = SensitivityModelOut(
         model_version_id=version.id,
@@ -324,7 +332,7 @@ def create_sensitivity_run(
     ) as exc:
         # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
         db.rollback()
-        code, detail = _ERROR_MAP[type(exc)]
+        code, detail = _map_error(exc)
         raise HTTPException(status_code=code, detail=detail) from None
 
     # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a
@@ -358,7 +366,7 @@ def get_sensitivity_run(
         code_version=run.code_version,
         environment_id=run.environment_id,
         initiated_by=run.initiated_by,
-        failure_reason=None,
+        failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
         rows=[_row_out(r) for r in rows],
     )
 
@@ -474,9 +482,11 @@ def register_factor_exposure(
             actor_id=principal.user_id,
             code_version=body.code_version,
         )
-    except ModelVersionConflictError as exc:
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        # WrongModelVersionError: a same-label twin exists that is NOT a REGISTERED version of
+        # this family (generically minted) — a governed refusal, not a 500 (P3-C1).
         db.rollback()
-        code, detail = _ERROR_MAP[type(exc)]
+        code, detail = _map_error(exc)
         raise HTTPException(status_code=code, detail=detail) from None
     out = SensitivityModelOut(
         model_version_id=version.id,
@@ -527,7 +537,7 @@ def create_factor_exposure_run(
     ) as exc:
         # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
         db.rollback()
-        code, detail = _ERROR_MAP[type(exc)]
+        code, detail = _map_error(exc)
         raise HTTPException(status_code=code, detail=detail) from None
 
     # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a
@@ -561,7 +571,7 @@ def get_factor_exposure_run(
         code_version=run.code_version,
         environment_id=run.environment_id,
         initiated_by=run.initiated_by,
-        failure_reason=None,
+        failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
         rows=[_fx_row_out(r) for r in rows],
     )
 
@@ -704,7 +714,7 @@ def register_covariance(
         # declared window (mintable via the GENERIC model endpoint) — a governed refusal, not a
         # 500 (the 2026-07 review fix).
         db.rollback()
-        code, detail = _ERROR_MAP[type(exc)]
+        code, detail = _map_error(exc)
         raise HTTPException(status_code=code, detail=detail) from None
     out = SensitivityModelOut(
         model_version_id=version.id,
@@ -755,7 +765,7 @@ def create_covariance_run(
     ) as exc:
         # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
         db.rollback()
-        code, detail = _ERROR_MAP[type(exc)]
+        code, detail = _map_error(exc)
         raise HTTPException(status_code=code, detail=detail) from None
 
     # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a
@@ -789,7 +799,7 @@ def get_covariance_run(
         code_version=run.code_version,
         environment_id=run.environment_id,
         initiated_by=run.initiated_by,
-        failure_reason=None,
+        failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
         rows=[_cov_row_out(r) for r in rows],
     )
 
@@ -928,7 +938,7 @@ def register_var(
         ) from None
     except (ModelVersionConflictError, WrongModelVersionError) as exc:
         db.rollback()
-        code, detail = _ERROR_MAP[type(exc)]
+        code, detail = _map_error(exc)
         raise HTTPException(status_code=code, detail=detail) from None
     out = SensitivityModelOut(
         model_version_id=version.id,
@@ -977,7 +987,7 @@ def create_var_run(
     ) as exc:
         # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
         db.rollback()
-        code, detail = _ERROR_MAP[type(exc)]
+        code, detail = _map_error(exc)
         raise HTTPException(status_code=code, detail=detail) from None
 
     # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a
@@ -1011,7 +1021,7 @@ def get_var_run(
         code_version=run.code_version,
         environment_id=run.environment_id,
         initiated_by=run.initiated_by,
-        failure_reason=None,
+        failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
         rows=[_var_row_out(r) for r in rows],
     )
 
