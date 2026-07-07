@@ -58,8 +58,30 @@ Planning-first, per-slice, commit-only-on-approval:
   naming that slice, and update each to the realized state (commit hash + CI run). See
   `10_delivery_backlog/retrospective_model_upgrade_audit.md` for the defect class this prevents.
 
+## Gate tiers (approval algorithm — USER-RATIFIED 2026-07-06)
+The tier is computed from the **objective footprint of the diff** (`git diff` paths + change class), NEVER from
+the model's self-assessed confidence ("zero areas of concern" is not a criterion — the assessor is the author).
+- **Tier 0 — no approval; proceed, commit, report after.** Read-only work (audits/reviews/analysis); docs-only
+  changes that alter **status, not decisions** (project-memory refreshes; status-decay fixes with hash/CI
+  evidence; cross-refs/typos); local tooling (containers/venv). Conditions: no code, no migration, no
+  ratified-decision text touched; docs-check + secret-scan green.
+- **Tier 1 — proceed and land; flag for async spot-check.** Test-only additions that pass; test-only fixes for
+  a red CI on a just-committed slice; R-07 governance amendments that mechanically **record** an
+  already-approved decision (incl. flipping a sign-off ledger to RATIFIED after explicit user approval).
+  Conditions: fully covered by executable verification; trivially revertible; no new decision embedded.
+- **Tier 2 — approval required BEFORE commit.** Any production/shared/API code change (even with green tests —
+  tests prove consistency, not intent); any migration; any new permission / audit code / canonical id /
+  component kind / vocab value; any edit to ratified-decision text, methodology docs, numerical conventions, or
+  acceptance criteria; anything touching frozen files or the RLS/tenancy surface; **starting any new slice**
+  (plan or implementation) — direction control is the user's.
+- **Tier 3 — the explicit OQ sign-off ledger (unchanged).** Methodology/model choices, grains, entity mappings,
+  scope narrowings.
+- **Auto-escalation:** ANY failed check (make check / docs-check / secret-scan / PG / CI), or ANY file outside
+  the declared tier footprint, promotes the change to Tier 2. **CI-watch-to-green is mandatory at every tier.**
+  Changing THESE gate rules is itself Tier 2/3.
+
 ## Commit discipline
-- **Commit/push ONLY on explicit user approval**, per artifact. Branch is `main`; pushes go to `origin/main`.
+- **Commit/push per the gate tiers above** (Tier 0/1 land-and-report; Tier 2/3 explicit approval per artifact). Branch is `main`; pushes go to `origin/main`.
 - **Per-commit pre-checks:** run `make check` (lint, format, mypy, pytest, secret-scan, docs-check); confirm
   the staged set is exactly the intended files; no generated artifacts / `node_modules` / `dist` / caches /
   `.pyc` / secrets / `.env` staged; the scope-specific exclusions hold.

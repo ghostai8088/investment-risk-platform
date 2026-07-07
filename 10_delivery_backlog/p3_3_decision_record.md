@@ -74,7 +74,9 @@ The P2-3 `code_version`-only exemption covers a **convention-free** transform (`
 
 ---
 
-## Part 4 — Open decisions (for sign-off at the commit gate) — **recommended defaults**
+## Part 4 — Open decisions — **APPROVED / RATIFIED by the user (2026-07-06, post-`f941d50` — the "proceed with the build" approval)**
+**Status: RATIFIED.** The nine recommended defaults below are fixed inputs to the P3-3 implementation; no open
+question remains for the build. *(The original recommendations are retained verbatim.)*
 - **OQ-P3-3-1 — recommend APPROVE (the central one).** v1 = **indicator-loading allocation factor exposure over the pinned atoms of a COMPLETED exposure run**, CURRENCY family via the atom's `mark_currency`; **vendor-beta and regression exposures DEFERRED** (named prerequisites: a captured factor-loading slice / adjusted-price return history + estimation). Factor **returns not consumed in v1** (their first consumer is P3-4). (OD-P3-3-A/B/C.)
 - **OQ-P3-3-2 — recommend APPROVE.** Consume `exposure_aggregate` rows (one governed market-value source; strongest pin) — NOT a re-rolled positions/valuations/FX compute inside the risk engine. (OD-P3-3-B.)
 - **OQ-P3-3-3 — recommend APPROVE.** Realize `factor_exposure_result` under the **existing ENT-028 family** (`exposure_metric`) — **no net-new canonical id**; the net-new alternative recorded. (OD-P3-3-D.)
