@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `f941d50` / CI #91 (refreshed 2026-07-06, new machine — the Zscaler blockage is RESOLVED).** What to do
+> **As of HEAD `7c50c43` / CI #95 (refreshed 2026-07-07).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -33,39 +33,53 @@ lineage) → **P3-2 closeout / P3-3 readiness handoff** (`c452229`, CI **#90** g
    (`canonical_data_model_standard` / `audit_event_taxonomy` / `temporal_reproducibility_standard` /
    `entitlement_sod_model` / `control_matrix_skeleton`).
 
-**IN THE WORKING TREE (user-approved 2026-07-06, docs-only):** the **model-upgrade operating-discipline housekeeping** —
-the rewritten review pattern + "Verification & objectivity" standing rules in `claude_operating_instructions.md`; the new
-repo-root `CLAUDE.md` entry pointer; `project_state.yaml` RETIRED to a stub; `current_state.md` thinned + advanced;
-these files advanced to `f941d50`/#91.
+**DONE since:** the operating-discipline modernization (`b3d3923`, #92) → the retrospective model-upgrade audit +
+status-decay fixes (`5c64cf1`, #93) → the gate tiers + OQ-P3-3 ratification (`bd5ba3c`, #94) → **P3-3 IMPLEMENTATION
+(`7c50c43`, CI #95 green)**: the factor-exposure engine (allocation v1) — `factor_exposure_result` (ENT-028 family,
+migration `0024_factor_exposure`), `run_factor_exposure` with uniform pre-create adjudication of pinned content on
+both entry paths, the model-identity assert (twin-fixed in sensitivities), conflict-safe model registration,
+`risk.*` reuse (no new permission), the methodology doc, 60 new tests, and **ci.yml restored to running ALL
+per-table PG suites** (six were missing since P2-5-era; #95 executed them all green). The max-effort /code-review
+fallback filed 15 findings; 11 folded pre-commit; 4 deferred with rationale (see the ReportFindings record +
+`p3-3` memory). `irp_pg_local` is stood up on this machine (reset recipe incl. the 0003-exact `irp_ops` re-grants
+is in the session memory).
 
-**NEXT — P3-3 IMPLEMENTATION (on explicit approval, after the OQ-P3-3-1…9 sign-offs):** build the factor-exposure
-engine per the committed plan. The exact kickoff prompt is `p3_3_factor_exposure_implementation_plan.md` **Part 11**.
-**Machine prerequisite:** stand up `irp_pg_local` (`postgres:16`) + `DATABASE_URL`/`IRP_TEST_DATABASE_URL` +
-`alembic upgrade head` on this machine first (not yet done here; the venv is Python 3.13 — CI runs 3.12).
+**NEXT — P3-4 PLANNING (on explicit approval):** covariance / volatility estimation, per
+`p3_implementation_plan.md` (P3-4 row + Part 3 contracts) and `p3_0_decision_record.md`: **mints the net-new
+`covariance_matrix` canonical id** (the Part-3 process at the slice); consumes the P3-2 `factor_return` history
+(data-history NOW load-bearing, OD-P3-0-L); registered `model_version` + methodology doc (estimation window /
+decay-or-shrinkage / PSD); IA append-only; acceptance = PSD + reproduces within ε. PLANNING ONLY — decision record
++ implementation plan under `10_delivery_backlog/`; no code. Carry into planning: the deferred review findings
+(the 3×-snapshot-assembly/4×-DQ-gate/3×-run-scaffold extractions — decide whether P3-4 rides on a preceding
+cleanup slice or absorbs the 4th/5th copies consciously) and the v2 methodology carry-forwards (standalone-spread
+CS01 limitation; beta-loading seam).
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
 - **Each slice/step is separately gated** — plan, implementation, and commit are distinct approvals.
-- **Do not start P3-3 implementation** until the P3-3 plan is committed AND the OQ-P3-3-1…9 sign-offs are ratified AND
-  the user directs the build. Do not start P3-4+ (covariance), P3-5 (VaR/ES), P3-6 (stress), or P3-7
-  (benchmark-relative) — each is its own later planned slice.
+- **Do not start P3-4 planning** until directed; do not start P3-4 implementation until its plan + sign-offs are
+  ratified. P3-5 (VaR/ES), P3-6 (stress), P3-7 (benchmark-relative) — each its own later planned slice.
+- Commit/push follow the **gate tiers** (`claude_operating_instructions.md`): Tier 0/1 land-and-report; Tier 2/3
+  (code, migrations, new slices, governed surfaces) need explicit approval.
 
 ## CI gates (must be green before a phase is "closed")
 - Backend (ruff format + lint, mypy, pytest), Frontend, **DB migration (Postgres)** incl. `alembic check` drift +
-  the per-entity RLS suites (through **Sensitivity** `0022` + **Factor** `0023`; the migration job auto-covers new
-  heads — the P2-6/P3-2 precedent) + downgrade smoke, Documentation check, Secret scan. **HEAD `c452229` = run #90 =
-  success; P3-2 impl `402cb12` = run #89 = success** (verified via the REST API — `gh` is not installed; the public
-  repo answers unauthenticated). Python 3.12 runners; the prior machine also validated on 3.14 + full PG. **This
-  machine:** venv = Python 3.13.0; `irp_pg_local` NOT yet stood up (a prerequisite for the P3-3 implementation slice,
-  not for docs-only work).
+  ALL per-table RLS/append-only PG suites (restored complete at `7c50c43` — six suites had been missing from CI
+  since the P2-5-era step list froze; run #95 executed every one green, incl. Sensitivity `0022` / Factor `0023` /
+  Factor-exposure `0024`) + downgrade smoke, Documentation check, Secret scan. **HEAD `7c50c43` = run #95 = success**
+  (verified via the REST API — `gh` is not installed; the public repo answers unauthenticated). Python 3.12 runners.
+  **This machine:** venv = Python 3.13.0; `irp_pg_local` IS stood up (`postgres:16`; after a schema reset re-grant
+  `irp_ops` EXACTLY per migration 0003 — a blanket ALL-TABLES grant fails the least-privilege PG tests).
+  **Networking:** SSH to GitHub is flaky/blocked on some networks (PMTU-black-hole/lossy-link class) — HTTPS + the
+  keychain-cached PAT is the reliable push path; the REST API always works for CI verification.
 - **PG re-run gotcha:** don't run the full pytest twice against the same DB without a schema reset
   (`data_quality_pg`/`lineage_pg`/`synthetic_pg` self-seed a `GLOBAL_OK` system-tenant row) — `DROP SCHEMA public
   CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO irp;` then `alembic upgrade head`.
 
 ## Stop conditions (halt and ask)
-- Any request to pull **P3-4+ scope into P3-3**: covariance/volatility estimation, VaR/ES, stress/scenario,
-  benchmark-relative/active-risk/tracking-error, performance attribution, regression/beta estimation, factor-loading
-  capture, computed factor returns, reporting/dashboards, frontend — refuse and flag; each is a separately planned slice.
+- Any request to pull **P3-5+ scope into P3-4 planning**: VaR/ES, stress/scenario, benchmark-relative/active-risk/
+  tracking-error, performance attribution, reporting/dashboards, frontend — refuse and flag. Regression/beta factor
+  loadings and computed factor returns stay deferred captured-input/estimation slices (named prerequisites).
 - Any change to **`audit/service.py`** (frozen) or **`entitlement/bootstrap.py`** outside the governed R-07 mint
   (P3-3 mints NO new permission — `risk.view`/`risk.run` are REUSED); any new audit code / permission / role /
   migration without R-07.

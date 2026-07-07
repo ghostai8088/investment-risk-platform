@@ -2,8 +2,7 @@
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this first, then `10_delivery_backlog/p3_2_closeout_p3_3_readiness.md` (the resume anchor),
-> `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD `f941d50` / CI #91 (refreshed
-> 2026-07-06, new machine — the 2026-07-02 Zscaler degraded-connectivity window is RESOLVED).** Values that
+> `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD `7c50c43` / CI #95 (refreshed 2026-07-07).** Values that
 > drift are flagged; re-verify the ones in "Re-check at session start" before acting. *(`project_state.yaml`
 > is RETIRED — see its stub; the recovery set is `CLAUDE.md` → this file → `phase_status.md` → `next_actions.md`.)*
 
@@ -13,34 +12,49 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `f941d50` — "Add P3-3 factor exposure planning and refresh project memory" (**the P3-3 planning commit, CI run #91 green**). Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91).
-- **Local == origin:** yes (0 ahead / 0 behind); only the model-upgrade operating-discipline housekeeping set is uncommitted (below).
-- **Latest CI:** **GREEN** — `f941d50` = GitHub Actions **run #91** = success (all jobs: Backend on Python 3.12, **DB migration (Postgres)** incl. the sensitivity `0022` + factor `0023` suites, Frontend, Secret scan, Documentation check) — verified live via the REST API this session (runs #85–#91 all `success`). The 2026-07-02 Zscaler degraded-connectivity window is **RESOLVED**; nothing is push-pending.
-- **Migration head:** `0023_factor_return` — advanced `0021_benchmark` → `0022_sensitivity` (P3-1, `e8e2e59`: `sensitivity_result` IA TRUE append-only + P0001 trigger + symmetric RLS) → `0023_factor_return` (P3-2, `402cb12`: `factor` EV + `factor_return` FR, symmetric RLS, NEITHER append-only). `alembic check` drift-clean; downgrade smoke green.
+- **origin/main HEAD:** `7c50c43` — "Implement P3-3 factor exposure engine (allocation v1) with adversarial-review folds" (**CI run #95 green — the first run executing ALL per-table PG suites**). Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
+- **Local == origin:** yes (0 ahead / 0 behind); only this closeout memory refresh is uncommitted.
+- **Latest CI:** **GREEN** — `7c50c43` = GitHub Actions **run #95** = success (all jobs; the **DB migration (Postgres)** job now runs the COMPLETE per-table PG suite set — six suites restored at this commit after being absent since the P2-5-era step list: benchmark, holdings, synthetic, sensitivity, factor, factor-exposure — all green) — verified via the REST API (runs #85–#95 all `success`).
+- **Migration head:** `0024_factor_exposure` — advanced `0023_factor_return` → `0024_factor_exposure` (P3-3, `7c50c43`: `factor_exposure_result` IA TRUE append-only + P0001 trigger + symmetric RLS). `alembic check` drift-clean; downgrade smoke green.
+- **Networking note (this machine):** SSH to GitHub is unreliable on some networks (lossy-link/PMTU class — pushes stall mid-key-exchange while HTTPS works); the reliable push path is **HTTPS + the keychain-cached PAT**; CI verification via the public REST API always works. A full-repo safety bundle exists at `../irp-p3-3-7c50c43.bundle`.
 
 ## Working tree (uncommitted)
-- **The model-upgrade operating-discipline housekeeping set** (user-approved 2026-07-06; docs-only — no code, no migration, no backend/frontend/worker/shared-package/test/bootstrap/CI changes):
-  - `claude_operating_instructions.md` — the legacy Workflow-tool fan-out replaced with the current review pattern (`/code-review ultra` and/or authorized subagent passes for implementation slices; disciplined single-pass floor for planning docs; findings-and-dispositions, not verdict tallies); NEW **"Verification & objectivity" standing rules** (no quant claim from model recall; external ground truth over self-consistency + dual-path verification from P3-4; capability-is-not-evidence; objectivity-over-agreement).
-  - NEW repo-root `CLAUDE.md` — the auto-loaded entry pointer (read order + hard invariants + environment quick facts).
-  - `project_state.yaml` — **RETIRED** (replaced by a stub; it had drifted to P2-6-era state — a fourth overlapping state file was a drift source).
-  - This `current_state.md` — thinned (closed-phase deliverable sections removed in favor of `phase_status.md` + the backlog docs + git history), HEAD/CI advanced to `f941d50`/#91, environment facts for this machine added.
-  - `next_actions.md` / `phase_status.md` — advanced to `f941d50`/#91 (the P3-3 plan is COMMITTED).
+- **This P3-3 closeout memory refresh only** (Tier 0 — docs-only project-memory; no code, no migration): `current_state.md` / `next_actions.md` / `phase_status.md` advanced to `7c50c43`/#95.
 
 ## Current active gate
-**P3-0, P3-1, and P3-2 are COMPLETE and CI-green; the P3-3 factor-exposure PLAN is COMMITTED (`f941d50`, CI #91 green).**
-P3-1 delivered the **first reproducible governed RISK number** (ENT-028 `sensitivity_result` — analytic curve-node
-DV01/spread-DV01; run + snapshot + **registered model_version** bound; CTRL-003 executable; `risk.view`/`risk.run` minted;
-the `05_analytics_methodologies/` framework). P3-2 delivered the **captured factor-return INPUT foundation** (net-new
-`factor` EV definition + ENT-025 `factor_return` FR series; no run/model/snapshot — an input, not a derived number).
-**P3-3 (committed `f941d50`) plans the factor-exposure engine — allocation v1:** indicator-loading CURRENCY-family factor
-exposures over the pinned atoms of a COMPLETED `exposure_aggregate` run against the P3-2 `factor` definitions — a governed
-DERIVED number mirroring the P3-1 exemplar (snapshot + run + registered model_version + IA append-only + `risk.*` reuse +
-fail-closed DQ); vendor-beta/regression exposures and `factor_return` consumption honestly deferred; migration
-`0024_factor_exposure` planned, NOT built. **P3-3 implementation has NOT started** — it is a separate approval gated on
-the OQ-P3-3-1…9 sign-offs (the plan commit is done). Strict planning-first, commit-only-on-explicit-approval cadence holds. **Frontend
-visibility: none of P3-0…P3-3 has a visible UI change (backend/shared-data + governance only); the P3 risk numbers enable
-future factor-exposure result views / risk-run evidence panels / factor analytics dashboards, but no frontend is built
+**P3-0 … P3-3 are ALL COMPLETE and CI-green.** P3-3 (`7c50c43`, CI #95) delivered the **second governed risk number**:
+the factor-exposure engine (allocation v1) — see the deliverables section below. The max-effort adversarial review
+(10 finder agents → empirical verifiers → sweep) folded 11 of 15 findings pre-commit; the 4 deferrals are recorded
+in the ReportFindings record + the P3-4 planning carry-ins (`next_actions.md`). **The next gate is P3-4 PLANNING
+(covariance / volatility estimation — mints the net-new `covariance_matrix` canonical id; factor-return history
+becomes load-bearing), on explicit approval; P3-4 planning has NOT started.** Strict planning-first cadence + the
+gate tiers hold. **Frontend visibility: none of P3-0…P3-3 has a visible UI change; the P3 risk numbers enable future
+factor-exposure result views / risk-run evidence panels / factor analytics dashboards, but no frontend is built
 unless explicitly directed.**
+
+## P3-3 key deliverables (closed, `7c50c43`, CI-green run #95) — the SECOND governed RISK number REALIZED
+**`factor_exposure_result`** (ENT-028 family — **no new canonical id**; migration `0024_factor_exposure`; **IA TRUE
+append-only** + P0001 trigger + symmetric RLS; grain `(calculation_run_id, portfolio_id, instrument_id, factor_id)`;
+`factor_id` deliberately NOT a hard FK — the `COMPONENT_KIND_FACTOR` pin is authoritative). **Allocation v1:**
+indicator loading (= 1, quantized to the Numeric(20,12) quantum) over the pinned atoms of a COMPLETED
+`exposure_aggregate` run × pinned CURRENCY-family `factor` definitions, matched on the atom's captured
+`mark_currency`; contributions sum to the pinned total **exactly (ε=0)** — **REQ-MKT-003 → In-Progress (partial)**.
+`run_factor_exposure` mirrors the P3-1 exemplar + the review hardenings: **uniform pre-create adjudication of PINNED
+content on BOTH entry paths** (zero-atom / zero-factor / wrong-family / NULL-scope / duplicate-currency snapshots
+refuse before any run exists); **model-identity assert** `assert_model_version_of` (a sensitivity model_version
+cannot drive a factor-exposure run — twin-fixed into `run_sensitivities`); **conflict-safe model registration**
+(`ModelVersionConflictError` → 409; twin-fixed); gap-naming `failure_reason` on FAILED runs; snapshot
+`COMPONENT_KIND_EXPOSURE` (the first IA pin flavor) + `COMPONENT_KIND_FACTOR` + `PURPOSE_FACTOR_EXPOSURE_INPUT` +
+a truthful `FACTOR_EXPOSURE_BINDING_PREDICATE`; `RISK.FACTOR_EXPOSURE_CREATE` reserved-not-emitted @ EVT-220;
+**`risk.view`/`risk.run` REUSED — zero new permissions**; `factor_exposure_allocation_v1.md` methodology + governed
+`register_factor_exposure_model`. **ci.yml restored to the COMPLETE per-table PG suite set** (benchmark, holdings,
+synthetic, sensitivity, factor, factor-exposure — six suites absent from CI since the P2-5-era list; #95 ran all
+green). 60 new tests incl. 8 review-regression tests; the snapshot→exposure import boundary fenced (function-local
+models-only — module-level is a proven circular import). `COMPONENT_KIND_FACTOR_RETURN` still NOT minted (returns'
+first consumer is P3-4). `audit/service.py` FROZEN. Deferred (recorded): vendor-beta/regression exposures;
+ASSET_CLASS+ dimensions; `_ERROR_MAP` exact-type lookup; both-modes silent snapshot preference; latent mixed-base
+grain; GET `failure_reason` persistence; the 3×-snapshot-assembly / 4×-DQ-gate / 3×-run-scaffold extractions
+(a dedicated cleanup slice — a P3-4 planning carry-in).
 
 ## P3-2 key deliverables (closed, `402cb12`, CI-green run #89) — captured factor-return inputs REALIZED
 Net-new **`factor` EV definition** (canonical id MINTED; identity `(tenant, factor_code, factor_source)`; `factor_family`
@@ -160,18 +174,17 @@ realized. **NO risk analytics yet** — VaR/ES/factor/covariance/stress/scenario
 - **P3-2 closeout / P3-3 readiness handoff** — `c452229` (CI-green, run #90; the resume anchor for the machine move).
 
 ## Next required action
-**COMMIT THE P3-3 PLANNING SET (on explicit approval):** the P3-3 decision record + implementation plan
-(`10_delivery_backlog/p3_3_*.md`) + this project-memory refresh + the 5-doc degraded-qualifier cleanup — planning/
-governance/project-memory markdown only, no code. Then, **on a further separate approval and after the OQ-P3-3-1…9
-sign-offs, begin P3-3 IMPLEMENTATION** (the exact kickoff prompt is `p3_3_factor_exposure_implementation_plan.md`
-Part 11): the factor-exposure engine, allocation v1 — `factor_exposure_result` (ENT-028 family; IA append-only;
-migration `0024_factor_exposure`), `run_factor_exposure` mirroring the P3-1 `run_sensitivities` exemplar,
-`COMPONENT_KIND_EXPOSURE` + `COMPONENT_KIND_FACTOR` snapshot pins, the `factor_exposure_allocation_v1.md` methodology
-doc, `risk.*` entitlement REUSE. Build **nothing else**.
+**P3-4 PLANNING (on explicit approval):** covariance / volatility estimation per `p3_implementation_plan.md` (P3-4)
++ `p3_0_decision_record.md` — mints the net-new `covariance_matrix` canonical id (Part-3 process at the slice);
+consumes `factor_return` history (data-history NOW load-bearing, OD-P3-0-L); registered `model_version` +
+methodology doc (estimation window / decay-or-shrinkage / PSD); IA append-only; acceptance = PSD + reproduces
+within ε; **dual-path verification required** (the Verification & objectivity standing rules — property tests +
+an independent-implementation cross-check). Planning only — decision record + implementation plan under
+`10_delivery_backlog/`; carry in the deferred review findings + the v2 methodology notes (see `next_actions.md`).
+Build **nothing else**.
 
 ## What MUST NOT be started yet
-- **P3-3 implementation** — not until the plan is committed, the OQ-P3-3 sign-offs are ratified, AND the user directs it.
-- **No covariance / volatility estimation** — P3-4 (mints the net-new `covariance_matrix` canonical id at its slice).
+- **P3-4 implementation** — not until P3-4 planning is committed + ratified AND the user directs it (P3-4 PLANNING itself also awaits explicit approval).
 - **No VaR / Expected Shortfall** — P3-5 (ENT-027 `risk_result`; gated on P3-4 + history).
 - **No stress testing / scenario analytics** — P3-6 (ENT-029/030; RTM-P5 — possibly a later phase).
 - **No benchmark-relative analytics / active risk / tracking error / performance attribution** — P3-7+ (and `benchmark_level`/`benchmark_return` are themselves DEFERRED captured inputs — a net-new canonical ENT id, not minted).
@@ -186,9 +199,9 @@ doc, `risk.*` entitlement REUSE. Build **nothing else**.
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `c452229`) and whether the P3-3 planning set was committed.
-- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated; `c452229` = run #90 = success at this refresh).
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `7c50c43`) and whether this P3-3 closeout memory refresh was committed.
+- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated; `7c50c43` = run #95 = success at this refresh). **Push over HTTPS + keychain PAT when SSH stalls** (the lossy-network note above).
 - `git remote -v` — origin is SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0023_factor_return` (advanced `0021_benchmark` → `0022_sensitivity` at P3-1 / `e8e2e59`, → `0023_factor_return` at P3-2 / `402cb12`; the next migration is `0024_factor_exposure`, planned at P3-3 — it lands ONLY at the separately-approved P3-3 implementation slice, no code in the planning commit).
+- Migration head is `0024_factor_exposure` (P3-3 / `7c50c43`); the next migration is P3-4's `covariance_matrix` slice — it lands ONLY at the separately-approved P3-4 implementation.
 - `project_state.yaml` is **RETIRED** (2026-07-06 stub; found drifted at the P3-3 planning session) — the recovery set is `CLAUDE.md` + this file + `phase_status.md` + `next_actions.md`.
 - **This machine's environment (verified 2026-07-06):** the repo sits nested at `~/Projects/investment_risk_platform/investment-risk-platform/`; the venv is **Python 3.13.0** (CI runs 3.12 — the prior machine validated 3.12 + 3.14); **`irp_pg_local` is NOT yet stood up here** — stand up the reused `postgres:16` container + `export DATABASE_URL`/`IRP_TEST_DATABASE_URL` + `alembic upgrade head` BEFORE the P3-3 implementation slice (docs-only work needs none of it); `gh` is not installed (use the public REST API).
