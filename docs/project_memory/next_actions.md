@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `7c50c43` / CI #95 (refreshed 2026-07-07).** What to do
+> **As of HEAD `c2bd126` / CI #99 (refreshed 2026-07-07).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -44,32 +44,47 @@ fallback filed 15 findings; 11 folded pre-commit; 4 deferred with rationale (see
 `p3-3` memory). `irp_pg_local` is stood up on this machine (reset recipe incl. the 0003-exact `irp_ops` re-grants
 is in the session memory).
 
-**NEXT — P3-4 PLANNING (on explicit approval):** covariance / volatility estimation, per
-`p3_implementation_plan.md` (P3-4 row + Part 3 contracts) and `p3_0_decision_record.md`: **mints the net-new
-`covariance_matrix` canonical id** (the Part-3 process at the slice); consumes the P3-2 `factor_return` history
-(data-history NOW load-bearing, OD-P3-0-L); registered `model_version` + methodology doc (estimation window /
-decay-or-shrinkage / PSD); IA append-only; acceptance = PSD + reproduces within ε. PLANNING ONLY — decision record
-+ implementation plan under `10_delivery_backlog/`; no code. Carry into planning: the deferred review findings
-(the 3×-snapshot-assembly/4×-DQ-gate/3×-run-scaffold extractions — decide whether P3-4 rides on a preceding
-cleanup slice or absorbs the 4th/5th copies consciously) and the v2 methodology carry-forwards (standalone-spread
-CS01 limitation; beta-loading seam).
+**DONE since:** **P3-4 PLANNING** (`8abe764`; `p3_4_decision_record.md` OD-P3-4-A…P + the plan; OQ-P3-4-1…10
+RATIFIED at the commit gate) → **P3-4-R0 refactor pre-step** (`a9b6567`, CI **#98** green — shared `dq/gates.py`
+presence helpers + `_persist_snapshot`; the 3×-snapshot-assembly/4×-DQ-gate duplication debt paid; run-scaffold
+extraction stays deferred) → **P3-4 IMPLEMENTATION (`c2bd126`, CI #99 green)**: the covariance engine (sample v1)
+— `covariance_result` (**ENT-051 MINTED**, migration `0025_covariance`), `run_covariance` with the
+declared-window-as-version-identity contract + uniform pre-create adjudication on both paths,
+`COMPONENT_KIND_FACTOR_RETURN` bitemporal window pins, the portable `PreciseDecimal` type, `risk.*` reuse (no new
+permission), the methodology doc, the Covariance PG CI step, 57 new tests incl. the dual-path numeric legs
+(hand-derived rational references + `numpy.cov` cross-check + eigenvalue PSD — the standing rule's first
+discharge). The independent 6-finder review confirmed + folded **12 findings** pre-commit (log =
+`p3_4_decision_record.md` Part 7; incl. the cross-slice vacuous-hybrid-probe fix in BOTH PG suites); nothing
+deferred from this review.
+
+**NEXT — P3-5 PLANNING (on explicit approval):** parametric VaR, per `p3_implementation_plan.md` (P3-5 row) and
+`p3_0_decision_record.md`: ENT-027 `risk_result`; **REQ-MKT-001 advances here** (the RTM substrate note);
+σ_p² = x'Σx over the P3-4 covariance + the P3-3 factor exposures; registered `model_version` + methodology doc
+(confidence level / horizon / distribution — all declared assumptions); IA append-only; the derived-number output
+contract verbatim; dual-path verification. PLANNING ONLY — decision record + implementation plan under
+`10_delivery_backlog/`; no code. Carry into planning the standing deferral register: run-scaffold extraction;
+`_ERROR_MAP` exact-type lookup; both-modes silent snapshot preference; latent mixed-base grain; GET
+`failure_reason` persistence; the covariance v2 carry-forwards (shrinkage/EWMA/correlation/annualization;
+max-lookback bound); the sensitivity/factor-exposure v2 carry-forwards (standalone-spread CS01; beta-loading
+seam).
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
 - **Each slice/step is separately gated** — plan, implementation, and commit are distinct approvals.
-- **Do not start P3-4 planning** until directed; do not start P3-4 implementation until its plan + sign-offs are
-  ratified. P3-5 (VaR/ES), P3-6 (stress), P3-7 (benchmark-relative) — each its own later planned slice.
+- **Do not start P3-5 planning** until directed; do not start P3-5 implementation until its plan + sign-offs are
+  ratified. P3-6 (stress), P3-7 (benchmark-relative) — each its own later planned slice.
 - Commit/push follow the **gate tiers** (`claude_operating_instructions.md`): Tier 0/1 land-and-report; Tier 2/3
   (code, migrations, new slices, governed surfaces) need explicit approval.
 
 ## CI gates (must be green before a phase is "closed")
 - Backend (ruff format + lint, mypy, pytest), Frontend, **DB migration (Postgres)** incl. `alembic check` drift +
-  ALL per-table RLS/append-only PG suites (restored complete at `7c50c43` — six suites had been missing from CI
-  since the P2-5-era step list froze; run #95 executed every one green, incl. Sensitivity `0022` / Factor `0023` /
-  Factor-exposure `0024`) + downgrade smoke, Documentation check, Secret scan. **HEAD `7c50c43` = run #95 = success**
-  (verified via the REST API — `gh` is not installed; the public repo answers unauthenticated). Python 3.12 runners.
-  **This machine:** venv = Python 3.13.0; `irp_pg_local` IS stood up (`postgres:16`; after a schema reset re-grant
-  `irp_ops` EXACTLY per migration 0003 — a blanket ALL-TABLES grant fails the least-privilege PG tests).
+  ALL per-table RLS/append-only PG suites (complete since `7c50c43`; the Covariance step added at `c2bd126`) +
+  downgrade smoke, Documentation check, Secret scan. **HEAD `c2bd126` = run #99 = success** (user-confirmed;
+  R0 `a9b6567` = #98 REST-verified). Python 3.12 runners.
+  **This machine:** venv = Python 3.13.0; `irp_pg_local` IS stood up (`postgres:16`). After a schema reset just run
+  `alembic upgrade head` — migration 0003 re-grants `irp_ops` itself; **NEVER manually grant schema USAGE to
+  `irp_ops`** (it breaks the `downgrade base` smoke at DROP ROLE; fixed 2026-07-07 with
+  `REVOKE ALL ON SCHEMA public FROM irp_ops`).
   **Networking:** SSH to GitHub is flaky/blocked on some networks (PMTU-black-hole/lossy-link class) — HTTPS + the
   keychain-cached PAT is the reliable push path; the REST API always works for CI verification.
 - **PG re-run gotcha:** don't run the full pytest twice against the same DB without a schema reset
@@ -77,11 +92,12 @@ CS01 limitation; beta-loading seam).
   CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO irp;` then `alembic upgrade head`.
 
 ## Stop conditions (halt and ask)
-- Any request to pull **P3-5+ scope into P3-4 planning**: VaR/ES, stress/scenario, benchmark-relative/active-risk/
+- Any request to pull **P3-6+ scope into P3-5 planning**: stress/scenario, benchmark-relative/active-risk/
   tracking-error, performance attribution, reporting/dashboards, frontend — refuse and flag. Regression/beta factor
-  loadings and computed factor returns stay deferred captured-input/estimation slices (named prerequisites).
+  loadings, computed factor returns, and covariance v2 (shrinkage/EWMA/correlation/annualization) stay deferred
+  named slices/versions.
 - Any change to **`audit/service.py`** (frozen) or **`entitlement/bootstrap.py`** outside the governed R-07 mint
-  (P3-3 mints NO new permission — `risk.view`/`risk.run` are REUSED); any new audit code / permission / role /
+  (P3-3/P3-4 mint NO new permission — `risk.view`/`risk.run` are REUSED); any new audit code / permission / role /
   migration without R-07.
 - Any weakening of the P2/P3 snapshot-run-model controls; any BYPASSRLS app path; any hybrid/SYSTEM_TENANT behavior
   beyond the closed 5-table set.

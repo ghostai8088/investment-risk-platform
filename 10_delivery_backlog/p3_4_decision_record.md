@@ -122,6 +122,10 @@ P3-4 is **implementation-ready** once OQ-P3-4-1…10 are approved AND the R0 ref
 
 ## Part 7 — Implementation adversarial review log (2026-07-07, independent-context — the plan Part 11 gate)
 
+> **CLOSEOUT STAMP (2026-07-07):** P3-4 **IMPLEMENTED and CLOSED** — R0 pre-step `a9b6567` (CI **#98** green);
+> implementation `c2bd126` (CI **#99** green, user-confirmed); user approval given at the Tier-2 gate AFTER the
+> review below was folded and re-validated (1039 PG-backed tests; `alembic check` clean; downgrade smoke green).
+
 Six independent finder agents (line-scan / changed-behavior / cross-file / governance-tenancy / numeric-methodology /
 test-quality) over the full P3-4 working-tree diff, each candidate then verified empirically before folding. The numeric
 finder independently re-derived the hand-reference matrix with exact rational arithmetic (all constants confirmed) and
