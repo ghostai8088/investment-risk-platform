@@ -1,9 +1,9 @@
 # Current State
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
-> history. Read this first, then `10_delivery_backlog/p3_4_decision_record.md` (the latest record; Part 7 =
+> history. Read this first, then `10_delivery_backlog/p3_5_decision_record.md` (the latest record; Part 7 =
 > the implementation review log), `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD
-> `c2bd126` / CI #99 (refreshed 2026-07-07).** Values that
+> `5ed8271` / CI #102 (refreshed 2026-07-07).** Values that
 > drift are flagged; re-verify the ones in "Re-check at session start" before acting. *(`project_state.yaml`
 > is RETIRED — see its stub; the recovery set is `CLAUDE.md` → this file → `phase_status.md` → `next_actions.md`.)*
 
@@ -13,23 +13,51 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `c2bd126` — "Implement P3-4 covariance engine (sample v1) with adversarial-review folds" (**CI run #99 green**). Chain since P3-3: `7c50c43` (**P3-3 implementation**, #95) → `362481a` (P3-3 closeout memory) → `8abe764` (**P3-4 covariance planning**, OQ-P3-4-1..10 ratified) → `a9b6567` (**P3-4-R0 refactor pre-step** — shared `dq/gates.py` + `_persist_snapshot`, **CI #98 green**) → `c2bd126` (**P3-4 IMPLEMENTATION + 12 review folds**, **CI #99 green**). Earlier chain: Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
+- **origin/main HEAD:** `5ed8271` — "Implement P3-5 parametric VaR engine (delta-normal v1) with adversarial-review folds" (**CI run #102 green**). Chain since P3-3: `7c50c43` (**P3-3 implementation**, #95) → `362481a` (P3-3 closeout memory) → `8abe764` (**P3-4 planning**, OQs ratified) → `a9b6567` (**P3-4-R0 refactor**, #98) → `c2bd126` (**P3-4 IMPLEMENTATION + 12 review folds**, #99) → `c2480a4` (P3-4 closeout memory, #100) → `c2c1b4d` (**P3-5 parametric-VaR planning**, OQ-P3-5-1..10 ratified + the historical-sim/MC ROADMAP note, #101) → `5ed8271` (**P3-5 IMPLEMENTATION + 13 review folds**, **CI #102 green**). Earlier chain: Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
 - **Local == origin:** yes (0 ahead / 0 behind); only this closeout memory refresh is uncommitted.
-- **Latest CI:** **GREEN** — `c2bd126` = GitHub Actions **run #99** = success (all jobs incl. the new Covariance PG step; user-confirmed on the website). R0 = run #98 = success (REST-verified).
-- **Migration head:** `0025_covariance` — advanced `0024_factor_exposure` → `0025_covariance` (P3-4, `c2bd126`: `covariance_result` ENT-051, IA TRUE append-only + P0001 trigger + symmetric RLS). `alembic check` drift-clean; downgrade smoke green.
+- **Latest CI:** **GREEN** — `5ed8271` = GitHub Actions **run #102** = success (all jobs incl. the new VaR PG step; REST-verified). Chain #98–#102 all green.
+- **Migration head:** `0026_var` — advanced `0025_covariance` → `0026_var` (P3-5, `5ed8271`: `var_result` ENT-027 realized, IA TRUE append-only + P0001 trigger + symmetric RLS + the two hard-FK provenance run columns). `alembic check` drift-clean; downgrade smoke green.
 - **Networking note (this machine):** SSH to GitHub is unreliable on some networks (lossy-link/PMTU class — pushes stall mid-key-exchange while HTTPS works); the reliable push path is **HTTPS + the keychain-cached PAT**; CI verification via the public REST API always works. A full-repo safety bundle exists at `../irp-p3-3-7c50c43.bundle`.
 
 ## Working tree (uncommitted)
-- **This P3-4 closeout memory refresh only** (Tier 0 — docs-only project-memory; no code, no migration): `current_state.md` / `next_actions.md` / `phase_status.md` / `decision_summary.md` / `build_plan.md` + the decision-record status stamp advanced to `c2bd126`/#99.
+- **This P3-5 closeout memory refresh only** (Tier 0 — docs-only project-memory; no code, no migration): `current_state.md` / `next_actions.md` / `phase_status.md` / `decision_summary.md` / `build_plan.md` + the decision-record status stamp advanced to `5ed8271`/#102.
 
 ## Current active gate
-**P3-0 … P3-4 are ALL COMPLETE and CI-green.** P3-4 (`c2bd126`, CI #99) delivered the **third governed risk number**:
-the sample factor covariance matrix (ENT-051) — see the deliverables section below. The independent 6-finder
-adversarial review confirmed + folded 12 findings pre-commit (log = `p3_4_decision_record.md` Part 7; nothing
-deferred from this review). **The next gate is P3-5 PLANNING (parametric VaR — ENT-027 `risk_result`; REQ-MKT-001
-advances there per the RTM substrate note; consumes Σ from P3-4 + the factor exposures from P3-3), on explicit
-approval; P3-5 planning has NOT started.** Strict planning-first cadence + the gate tiers hold. **Frontend
-visibility: none of P3-0…P3-4 has a visible UI change; no frontend is built unless explicitly directed.**
+**P3-0 … P3-5 are ALL COMPLETE and CI-green.** P3-5 (`5ed8271`, CI #102) delivered the **fourth governed risk number
+and the first DERIVED-OF-DERIVED one**: parametric delta-normal 1-day VaR (ENT-027 `risk_result` realized) — see the
+deliverables section below. The independent 6-finder review confirmed + folded 13 findings pre-commit (log =
+`p3_5_decision_record.md` Part 7; 2 recorded deferrals). **The next gate is the NEXT-SLICE DECISION, on explicit
+direction — the honest options: (a) P3-6 stress/scenario planning (ENT-029/030 — NOTE: RTM-phase P5, possibly a
+later phase); (b) a VaR ROADMAP method slice (factor-based historical simulation — feasible with current data — or
+Monte-Carlo — gated on a seeded simulator + revaluation; both user-directed 2026-07-07); (c) the recorded
+hardening/parity carry-ins (the model-status bind check across all four binders; shipped result-column
+PreciseDecimal parity; the run-scaffold extraction, now at its THIRD copy); (d) P3-7 benchmark-relative (needs the
+deferred benchmark-levels captured-data slice for return-based analytics).** Strict planning-first cadence + the
+gate tiers hold. **Frontend visibility: none of P3-0…P3-5 has a visible UI change; no frontend is built unless
+explicitly directed.**
+
+## P3-5 key deliverables (closed, `5ed8271`, CI-green run #102) — ENT-027 REALIZED; the FIRST derived-of-derived number
+**`var_result`** (**ENT-027 `risk_result` REALIZED**; migration `0026_var`; **IA TRUE append-only** + P0001 trigger +
+symmetric RLS): zero-mean delta-normal 1-day parametric VaR — `σ_p = √(xᵀΣx)`, `VaR = z·σ_p` — over the pinned
+result rows of TWO upstream governed runs (`x` = a COMPLETED FACTOR_EXPOSURE run's per-factor totals; `Σ` = a
+COMPLETED COVARIANCE run), the platform's first SINGLE-SUMMARY-ROW result (grain `(calculation_run_id,
+metric_type)`; `VAR_PARAMETRIC`, ES reserved) with **hard-FK provenance columns** `exposure_run_id`/
+`covariance_run_id` (re-resolved own-tenant on BOTH paths pre-create — PG FK checks bypass RLS; the review's
+principal fold). **Declared-parameter version identity** (OD-P3-5-D): confidence/horizon/z are strict-parsed
+`model_assumption`s (vocab {0.9500, 0.9900}; dual-verified 12dp z constants; horizon must equal `1` verbatim; NO
+runtime inverse-CDF). Fail-closed adjudication on BOTH paths: coverage (exposure factors ⊆ covariance factors, NO
+zero-variance imputation), single-run provenance, uniform base currency, canonical-order + duplicate refusals,
+source-column magnitude envelopes, structurally-malformed-content 422s. The declared radicand quantization floor
+(`tol = F²·max(xᵢ²)·1e-19`; clamp within, committed FAILED below — REACHABLE and test-proven) + a magnitude gate
+(σ beyond Numeric(28,6) ⇒ FAILED, never a PG overflow 500). σ/VaR carried as `PreciseDecimal(28,6)`. Dual-path
+verification: exact hand references (σ=500/700/7) through the kernel AND the governed consume path; `numpy`
+cross-check @1e-9; erf round-trip + bisection of the z constants; NON-VACUOUS pin invariance (upstream supersede
+moves a fresh build but not the pin). `RISK.VAR_CREATE` reserved-not-emitted; **`risk.*` REUSED — zero new
+permissions**; `var_parametric_v1.md` methodology (**specific-risk = 0 the first-class limitation**); 4 endpoints;
+the VaR PG CI step; 52 new tests. **13 review findings folded; 2 recorded deferrals** (the
+`assert_registered_model_version` status-bind check — cross-slice, a P3-6-planning carry-in; shipped result-column
+float parity — a dedicated PreciseDecimal parity slice). **REQ-MKT-001 → In-Progress (parametric leg);
+historical-sim + MC = user-directed ROADMAP method slices.**
 
 ## P3-4 key deliverables (closed, `c2bd126`, CI-green run #99) — the THIRD governed RISK number REALIZED
 **`covariance_result`** (**ENT-051 `covariance_matrix` MINTED** — the Part-3 process; migration `0025_covariance`;
@@ -201,22 +229,31 @@ realized. **NO risk analytics yet** — VaR/ES/factor/covariance/stress/scenario
 - **P3-3 factor-exposure implementation** — `7c50c43` (CI-green, run #95 — the first run executing ALL per-table PG suites). **P3-3 CLOSED.** Closeout memory — `362481a`.
 - **P3-4 covariance planning** — `8abe764` (OQ-P3-4-1…10 RATIFIED at the commit gate).
 - **P3-4-R0 refactor pre-step** — `a9b6567` (CI-green, run #98; shared `dq/gates.py` presence helpers + `_persist_snapshot`).
-- **P3-4 covariance implementation** — `c2bd126` (CI-green, run #99; 12 review folds). **P3-4 CLOSED** — the third governed risk number (ENT-051; migration `0025_covariance`).
+- **P3-4 covariance implementation** — `c2bd126` (CI-green, run #99; 12 review folds). **P3-4 CLOSED** — the third governed risk number (ENT-051; migration `0025_covariance`). Closeout memory — `c2480a4` (#100).
+- **P3-5 parametric-VaR planning** — `c2c1b4d` (CI-green, run #101; OQ-P3-5-1…10 RATIFIED + the historical-sim/MC roadmap note).
+- **P3-5 parametric-VaR implementation** — `5ed8271` (CI-green, run #102; 13 review folds). **P3-5 CLOSED** — ENT-027 realized (migration `0026_var`); REQ-MKT-001 → In-Progress (parametric leg).
 
 ## Next required action
-**P3-5 PLANNING (on explicit approval):** parametric VaR per `p3_implementation_plan.md` (P3-5) +
-`p3_0_decision_record.md` — ENT-027 `risk_result`; **REQ-MKT-001 advances here** (the RTM substrate note);
-σ_p² = x'Σx over the P3-4 covariance substrate + the P3-3 factor exposures; registered `model_version` +
-methodology doc (confidence level / horizon / distribution assumption — all declared); IA append-only; the
-derived-number output contract verbatim; **dual-path verification** (the standing rule — now precedented by the
-P3-4 discharge). Planning only — decision record + implementation plan under `10_delivery_backlog/`; carry in the
-deferred register (run-scaffold extraction; `_ERROR_MAP` exact-type lookup; both-modes silent snapshot preference;
-latent mixed-base grain; GET `failure_reason` persistence; v2 methodology carry-forwards incl. the max-lookback
-bound). Build **nothing else**.
+**THE NEXT-SLICE DECISION (on explicit direction)** — present the options honestly; none is pre-approved:
+- **P3-6 stress/scenario planning** (ENT-029 `scenario_definition` EV + ENT-030 `scenario_result`; REQ-MKT-004 —
+  **RTM-phase P5**: the P3-0 record itself flags it as possibly a later phase, not core P3).
+- **A VaR ROADMAP method slice** (user-directed 2026-07-07): factor-based historical simulation (feasible with
+  current data; own model family + methodology + quantile-interpolation declarations) or Monte-Carlo (gated on a
+  seeded simulator + revaluation engine; binds `random_seed`, QS-18).
+- **The hardening/parity carry-ins** (recorded deferrals): the `assert_registered_model_version`
+  status=='REGISTERED' bind check (cross-slice — all four binders + the generic registration semantics); shipped
+  result-column `PreciseDecimal` parity (`sensitivity_result`/`factor_exposure_result`/`exposure_aggregate`);
+  the run-scaffold extraction (third copy accrued at P3-5); `_ERROR_MAP` exact-type lookup; both-modes silent
+  snapshot preference; latent mixed-base grain; GET `failure_reason` persistence.
+- **P3-7 benchmark-relative** (return-based analytics need the deferred `benchmark_level`/`benchmark_return`
+  captured-data slice first).
+Whichever is chosen: planning first — decision record + implementation plan under `10_delivery_backlog/`; build
+**nothing else**.
 
 ## What MUST NOT be started yet
-- **P3-5 implementation** — not until P3-5 planning is committed + ratified AND the user directs it (P3-5 PLANNING itself also awaits explicit approval).
-- **No VaR / Expected Shortfall implementation** — P3-5 (ENT-027 `risk_result`; the P3-4 covariance substrate is now delivered — the gate is the planning cadence, not a data gap).
+- **No next-slice implementation** — not until its planning is committed + ratified AND the user directs it (the planning itself also awaits explicit direction; see "Next required action").
+- **No ES / historical-simulation / Monte-Carlo implementation** — ROADMAP method slices (user-directed), each its own registered model family/version + planned slice; the ES closed-form seam (`σ·φ(z)/(1−α)`) stays a recorded seam.
+- **No multi-horizon √h scaling / component-marginal VaR / backtesting / runtime quantile function** — recorded P3-5 deferrals.
 - **No shrinkage / EWMA / correlation output / annualization / asset-level covariance** — recorded v2 `model_version`s of the covariance family, never silent extensions.
 - **No stress testing / scenario analytics** — P3-6 (ENT-029/030; RTM-P5 — possibly a later phase).
 - **No benchmark-relative analytics / active risk / tracking error / performance attribution** — P3-7+ (and `benchmark_level`/`benchmark_return` are themselves DEFERRED captured inputs — a net-new canonical ENT id, not minted).
@@ -231,9 +268,9 @@ bound). Build **nothing else**.
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `c2bd126`) and whether this P3-4 closeout memory refresh was committed.
-- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated, 60 req/hr — poll WIDE; `c2bd126` = run #99 = success at this refresh). **Push over HTTPS + keychain PAT when SSH stalls** (the lossy-network note above); URL-pushes don't move the tracking ref — `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)` after.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `5ed8271`) and whether this P3-5 closeout memory refresh was committed.
+- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated, 60 req/hr — poll WIDE; `5ed8271` = run #102 = success at this refresh). **Push over HTTPS + keychain PAT when SSH stalls** (the lossy-network note above); URL-pushes don't move the tracking ref — `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)` after.
 - `git remote -v` — origin is SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0025_covariance` (P3-4 / `c2bd126`); the next migration is P3-5's `risk_result` slice — it lands ONLY at the separately-approved P3-5 implementation.
+- Migration head is `0026_var` (P3-5 / `5ed8271`); the next migration lands ONLY at the next separately-approved implementation slice.
 - `project_state.yaml` is **RETIRED** (2026-07-06 stub; found drifted at the P3-3 planning session) — the recovery set is `CLAUDE.md` + this file + `phase_status.md` + `next_actions.md`.
 - **This machine's environment (verified 2026-07-07):** the repo sits nested at `~/Projects/investment_risk_platform/investment-risk-platform/`; the venv is **Python 3.13.0** (CI runs 3.12); **`irp_pg_local` IS stood up** (reused `postgres:16`; `postgresql+psycopg://irp:irp@localhost:5432/irp`) — reset the schema between full PG pytest runs and NEVER manually grant `irp_ops` schema USAGE (migrations re-grant; the extra grant breaks the downgrade smoke); `gh` is not installed (use the public REST API).

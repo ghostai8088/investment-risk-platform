@@ -132,6 +132,10 @@ are all fixed against the ratified standards and the hardened P3-4 exemplar. The
 
 ## Part 7 — Implementation adversarial review log (2026-07-07, independent-context — the plan Part 11 gate)
 
+> **CLOSEOUT STAMP (2026-07-07):** P3-5 **IMPLEMENTED and CLOSED** — plan `c2c1b4d` (CI **#101** green);
+> implementation `5ed8271` (CI **#102** green, REST-verified); user approval given at the Tier-2 gate AFTER the
+> review below was folded and re-validated (1091 PG-backed tests; `alembic check` clean; downgrade smoke green).
+
 Six independent finder agents (line-scan / changed-behavior / cross-file / governance-tenancy / numeric-methodology /
 test-quality) over the full P3-5 working-tree diff; every candidate verified empirically before folding. The numeric
 finder independently confirmed the z constants (incl. the rounding direction — truncation would give …040), all four

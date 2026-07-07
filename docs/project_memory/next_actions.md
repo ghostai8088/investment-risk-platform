@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `c2bd126` / CI #99 (refreshed 2026-07-07).** What to do
+> **As of HEAD `5ed8271` / CI #102 (refreshed 2026-07-07).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -57,30 +57,43 @@ discharge). The independent 6-finder review confirmed + folded **12 findings** p
 `p3_4_decision_record.md` Part 7; incl. the cross-slice vacuous-hybrid-probe fix in BOTH PG suites); nothing
 deferred from this review.
 
-**NEXT — P3-5 PLANNING (on explicit approval):** parametric VaR, per `p3_implementation_plan.md` (P3-5 row) and
-`p3_0_decision_record.md`: ENT-027 `risk_result`; **REQ-MKT-001 advances here** (the RTM substrate note);
-σ_p² = x'Σx over the P3-4 covariance + the P3-3 factor exposures; registered `model_version` + methodology doc
-(confidence level / horizon / distribution — all declared assumptions); IA append-only; the derived-number output
-contract verbatim; dual-path verification. PLANNING ONLY — decision record + implementation plan under
-`10_delivery_backlog/`; no code. Carry into planning the standing deferral register: run-scaffold extraction;
-`_ERROR_MAP` exact-type lookup; both-modes silent snapshot preference; latent mixed-base grain; GET
-`failure_reason` persistence; the covariance v2 carry-forwards (shrinkage/EWMA/correlation/annualization;
-max-lookback bound); the sensitivity/factor-exposure v2 carry-forwards (standalone-spread CS01; beta-loading
-seam).
+**DONE since:** **P3-5 PLANNING** (`c2c1b4d`, CI **#101** — OQ-P3-5-1…10 RATIFIED; the user additionally set the
+**historical-sim + Monte-Carlo ROADMAP** direction) → **P3-5 IMPLEMENTATION (`5ed8271`, CI #102 green)**: the
+parametric-VaR engine (delta-normal v1) — `var_result` (**ENT-027 REALIZED**, migration `0026_var`), `run_var`
+with the declared-parameter identity + both-path adjudication (coverage/canonical-order/magnitude/malformed-content
+gates) + own-tenant provenance re-resolution (the review's principal fold — PG FK checks bypass RLS), the
+`VAR_INPUT` snapshot pins, `PreciseDecimal` σ/VaR, the methodology doc, the VaR PG CI step, 52 new tests incl. the
+dual-path exactness legs. Independent 6-finder review: **13 findings folded**, 2 deferrals recorded
+(`p3_5_decision_record.md` Part 7). **REQ-MKT-001 → In-Progress (parametric leg).**
+
+**NEXT — THE NEXT-SLICE DECISION (on explicit direction; none pre-approved):**
+1. **P3-6 stress/scenario planning** (ENT-029/030; REQ-MKT-004 — **RTM-phase P5**: flagged by the P3-0 record as
+   possibly a later phase, not core P3).
+2. **A VaR ROADMAP method slice** (user-directed 2026-07-07): factor-based **historical simulation** (feasible with
+   current data; new model family; quantile-interpolation + window-adequacy declarations) or **Monte-Carlo** (gated
+   on a seeded simulator + revaluation engine; binds `random_seed`, QS-18).
+3. **The hardening/parity carry-ins** (recorded): the `assert_registered_model_version` status-bind check
+   (cross-slice, all four binders); shipped result-column `PreciseDecimal` parity; run-scaffold extraction (third
+   copy); `_ERROR_MAP` exact-type lookup; both-modes silent snapshot preference; latent mixed-base grain; GET
+   `failure_reason` persistence.
+4. **P3-7 benchmark-relative** (blocked for return-based analytics on the deferred `benchmark_level`/`return`
+   captured-data slice).
+Whichever is chosen: PLANNING ONLY first — decision record + implementation plan under `10_delivery_backlog/`.
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
 - **Each slice/step is separately gated** — plan, implementation, and commit are distinct approvals.
-- **Do not start P3-5 planning** until directed; do not start P3-5 implementation until its plan + sign-offs are
-  ratified. P3-6 (stress), P3-7 (benchmark-relative) — each its own later planned slice.
+- **Do not start the next slice's planning** until directed; do not start any implementation until its plan +
+  sign-offs are ratified. P3-6 (stress), P3-7 (benchmark-relative), the VaR roadmap methods, and the hardening
+  carry-ins — each its own separately planned + approved slice.
 - Commit/push follow the **gate tiers** (`claude_operating_instructions.md`): Tier 0/1 land-and-report; Tier 2/3
   (code, migrations, new slices, governed surfaces) need explicit approval.
 
 ## CI gates (must be green before a phase is "closed")
 - Backend (ruff format + lint, mypy, pytest), Frontend, **DB migration (Postgres)** incl. `alembic check` drift +
-  ALL per-table RLS/append-only PG suites (complete since `7c50c43`; the Covariance step added at `c2bd126`) +
-  downgrade smoke, Documentation check, Secret scan. **HEAD `c2bd126` = run #99 = success** (user-confirmed;
-  R0 `a9b6567` = #98 REST-verified). Python 3.12 runners.
+  ALL per-table RLS/append-only PG suites (complete since `7c50c43`; Covariance added at `c2bd126`, VaR at
+  `5ed8271`) + downgrade smoke, Documentation check, Secret scan. **HEAD `5ed8271` = run #102 = success**
+  (REST-verified; #98–#102 all green). Python 3.12 runners.
   **This machine:** venv = Python 3.13.0; `irp_pg_local` IS stood up (`postgres:16`). After a schema reset just run
   `alembic upgrade head` — migration 0003 re-grants `irp_ops` itself; **NEVER manually grant schema USAGE to
   `irp_ops`** (it breaks the `downgrade base` smoke at DROP ROLE; fixed 2026-07-07 with
@@ -92,12 +105,12 @@ seam).
   CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO irp;` then `alembic upgrade head`.
 
 ## Stop conditions (halt and ask)
-- Any request to pull **P3-6+ scope into P3-5 planning**: stress/scenario, benchmark-relative/active-risk/
-  tracking-error, performance attribution, reporting/dashboards, frontend — refuse and flag. Regression/beta factor
-  loadings, computed factor returns, and covariance v2 (shrinkage/EWMA/correlation/annualization) stay deferred
-  named slices/versions.
+- Any request to pull unplanned scope into the next slice: benchmark-relative/active-risk/tracking-error,
+  performance attribution, reporting/dashboards, frontend — refuse and flag. Regression/beta factor loadings,
+  computed factor returns, covariance v2 (shrinkage/EWMA/correlation/annualization), and the VaR deferrals
+  (ES/√h/component-VaR/backtesting/quantile-function) stay deferred named slices/versions until planned.
 - Any change to **`audit/service.py`** (frozen) or **`entitlement/bootstrap.py`** outside the governed R-07 mint
-  (P3-3/P3-4 mint NO new permission — `risk.view`/`risk.run` are REUSED); any new audit code / permission / role /
+  (P3-3/P3-4/P3-5 mint NO new permission — `risk.view`/`risk.run` are REUSED); any new audit code / permission / role /
   migration without R-07.
 - Any weakening of the P2/P3 snapshot-run-model controls; any BYPASSRLS app path; any hybrid/SYSTEM_TENANT behavior
   beyond the closed 5-table set.
