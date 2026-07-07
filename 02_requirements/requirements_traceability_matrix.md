@@ -48,7 +48,7 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-PRV-004 | 4.4 | P-DS,P-CO | Plat/2L | P4 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-023 | REQ-ADM-003 (MNPI), DEP-DQF | Draft |
 | REQ-MKT-001 | 5.1 | P-RA,P-RM | 1L/2L | P2 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/003/018/020 | FW-RUN, DEP-MREG, DEP-MGW, DEP-LIN, CAP-1/3 | Draft |
 | REQ-MKT-002 | 5.2 | P-RA,P-RM | 1L/2L | P2 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/003/018 | FW-RUN, DEP-MREG, CAP-1/3 | In-Progress (P3-1: analytic curve-node DV01 / spread-DV01 — `sensitivity_result` ENT-028, migration `0022`; instrument-attributed greeks deferred) |
-| REQ-MKT-003 | 5.3 | P-RA,P-RM | 1L/2L | P2 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, DEP-MREG, CAP-3 | Draft |
+| REQ-MKT-003 | 5.3 | P-RA,P-RM | 1L/2L | P2 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/003/018 | FW-RUN, DEP-MREG, CAP-3 | In-Progress (P3-2 input leg: captured `factor`/`factor_return`, migration `0023`; P3-3 output leg: allocation-v1 factor exposures — `factor_exposure_result`, migration `0024`, contributions sum to total exactly; vendor-beta/regression exposures + contribution-to-risk deferred) |
 | REQ-MKT-004 | 5.5 | P-RA,P-RM | 1L/2L | P5 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-9, CAP-1/3 | Draft |
 | REQ-CRD-001 | 6.1 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/003/018 | FW-RUN, DEP-MREG, DEP-MGW, CAP-2/3 | Draft |
 | REQ-CRD-002 | 6.2 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-9, CAP-2/3 | Draft |

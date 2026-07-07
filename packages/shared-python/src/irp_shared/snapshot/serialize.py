@@ -177,6 +177,55 @@ def curve_content(row: Any, nodes: list[Any]) -> dict[str, Any]:
     }
 
 
+def exposure_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of an ``exposure_aggregate`` (IA) atom (P3-3 EXPOSURE
+    component). The atom is TRUE append-only — the strongest pin flavor (no valid axis, no
+    ``record_version``; ``system_from`` is the append time; re-verification is byte-identical
+    unless tampered). Scales: ``signed_quantity`` 8; ``mark_value``/``exposure_amount`` 6;
+    ``fx_rate`` 12 (the exposure column scales). ``fx_legs`` is the captured JSON leg evidence
+    (an opaque immutable string)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "calculation_run_id": _norm_guid(row.calculation_run_id),
+        "input_snapshot_id": _norm_guid(row.input_snapshot_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "base_currency": row.base_currency,
+        "mark_currency": row.mark_currency,
+        "signed_quantity": _norm_decimal(row.signed_quantity, _SCALE_QUANTITY),
+        "mark_value": _norm_decimal(row.mark_value, _SCALE_MONEY),
+        "fx_rate": _norm_decimal(row.fx_rate, _SCALE_FX_RATE),
+        "fx_legs": row.fx_legs,
+        "exposure_amount": _norm_decimal(row.exposure_amount, _SCALE_MONEY),
+        "exposure_type": row.exposure_type,
+        "system_from": _norm_datetime(row.system_from),
+    }
+
+
+def factor_content(row: Any) -> dict[str, Any]:
+    """The captured content of a ``factor`` (EV) definition version (P3-3 FACTOR component — the
+    ``portfolio_content`` EV flavor: no ``system_from``; ``record_version`` is the authoritative
+    drift discriminator; the scope/vocab fields are value-captured so an EV amend moves the
+    hash)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "factor_code": row.factor_code,
+        "factor_source": row.factor_source,
+        "factor_family": row.factor_family,
+        "factor_type": row.factor_type,
+        "region": row.region,
+        "currency_code": row.currency_code,
+        "asset_class": row.asset_class,
+        "frequency": row.frequency,
+        "factor_name": row.factor_name,
+        "description": row.description,
+        "valid_from": _norm_datetime(row.valid_from),
+        "record_version": row.record_version,
+    }
+
+
 def serialize_content(content: dict[str, Any]) -> str:
     """Canonical-serialize a per-kind content dict (sorted keys, compact, engine-independent)."""
     return canonicalize(content)

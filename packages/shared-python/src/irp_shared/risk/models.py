@@ -83,13 +83,69 @@ class SensitivityResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     bump_bps: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
 
 
+class FactorExposureResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One atom's indicator-loading allocation to one factor (P3-3, ENT-028 family — allocation
+    v1; IA TRUE append-only). Created once, never mutated; a re-run is a NEW ``calculation_run``.
+
+    **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** (the ``sensitivity_result`` exemplar): NOT-NULL
+    ``calculation_run_id`` + ``input_snapshot_id`` (a ``FACTOR_EXPOSURE_INPUT`` snapshot pinning
+    the consumed ``exposure_aggregate`` atoms + ``factor`` definitions) + a REGISTERED
+    ``model_version_id``. Grain = the 4-tuple
+    ``(calculation_run_id, portfolio_id, instrument_id, factor_id)`` (OD-P3-3-E);
+    ``input_snapshot_id``/``model_version_id`` carried NON-NULL but functionally run-determined
+    (out of the key). ``factor_id`` is deliberately **NOT a hard FK** — the EV ``factor`` head is
+    supersedable-in-place; the pinned ``COMPONENT_KIND_FACTOR`` component is the authoritative
+    version (the ``fx_legs``/``curve_id`` precedent). ``mark_currency`` is the carried mapping
+    attribute; ``loading`` (v1 constant 1) is the fractional/beta extension seam
+    (extend-by-value, not migration). No stored per-factor TOTAL rows — Σ is deterministic and
+    test-asserted (the P2-3 precedent)."""
+
+    __tablename__ = "factor_exposure_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        # One allocation per (run, atom, factor) — the OD-P3-3-E 4-tuple.
+        UniqueConstraint(
+            "calculation_run_id",
+            "portfolio_id",
+            "instrument_id",
+            "factor_id",
+            name="uq_factor_exposure_result_run_grain",
+        ),
+    )
+
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("dataset_snapshot.id"), nullable=False, index=True
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    )
+    # The pinned atom's identity + the pinned factor (self-describing; no live read to interpret).
+    portfolio_id: Mapped[str] = mapped_column(GUID, nullable=False)
+    instrument_id: Mapped[str] = mapped_column(GUID, nullable=False)
+    factor_id: Mapped[str] = mapped_column(GUID, nullable=False)
+    factor_code: Mapped[str] = mapped_column(String(150), nullable=False)
+    factor_family: Mapped[str] = mapped_column(String(30), nullable=False)
+    # Carried captured attributes: the run-uniform base + the mapping attribute (auditability).
+    base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    mark_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    # v1 indicator loading (= 1); the beta-extension seam (Numeric(20,12), the factor scale).
+    loading: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
+    # = quantize_HALF_UP(loading * atom.exposure_amount, 6); signed, base currency.
+    exposure_amount: Mapped[Decimal] = mapped_column(Numeric(28, 6), nullable=False)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{type(target).__name__} is append-only (AUD-01); update/delete is forbidden"
     )
 
 
-# True append-only: the ORM guard (paired with the migration-0022 P0001 trigger) forbids
-# update/delete. A sensitivity result is a fact of a run — never edited; a re-run is a new run.
+# True append-only: the ORM guard (paired with the migration-0022/0024 P0001 triggers) forbids
+# update/delete. A risk result is a fact of a run — never edited; a re-run is a new run.
 event.listen(SensitivityResult, "before_update", _block_mutation)
 event.listen(SensitivityResult, "before_delete", _block_mutation)
+event.listen(FactorExposureResult, "before_update", _block_mutation)
+event.listen(FactorExposureResult, "before_delete", _block_mutation)

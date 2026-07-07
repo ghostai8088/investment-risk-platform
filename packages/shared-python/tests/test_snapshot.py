@@ -576,8 +576,23 @@ def test_snapshot_computes_no_product_no_calc_import() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
                 assert "calc" not in node.module.split("."), f"{path.name} imports calc"
+                # P3-3: the ONLY sanctioned exposure import is the FUNCTION-LOCAL, models-only
+                # atom read in service.py (module-level would be a circular import — the exposure
+                # SERVICE imports snapshot; empirically verified in the 2026-07 review).
+                if "exposure" in node.module.split("."):
+                    assert (
+                        path.name == "service.py"
+                        and node.module == "irp_shared.exposure.models"
+                        and node.col_offset > 0
+                    ), (
+                        f"{path.name} imports {node.module} — only a function-local "
+                        f"irp_shared.exposure.models import in service.py is sanctioned"
+                    )
             if isinstance(node, ast.Import):
                 assert all("calc" not in a.name.split(".") for a in node.names)
+                assert all(
+                    "exposure" not in a.name.split(".") for a in node.names
+                ), f"{path.name} imports an exposure module wholesale"
 
 
 def test_nothing_imports_snapshot() -> None:

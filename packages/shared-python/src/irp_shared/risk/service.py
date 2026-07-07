@@ -60,7 +60,7 @@ from irp_shared.marketdata.models import (
     VALUE_TYPE_SPREAD,
     VALUE_TYPE_ZERO_RATE,
 )
-from irp_shared.model.service import assert_registered_model_version
+from irp_shared.risk.bootstrap import SENSITIVITY_MODEL_CODE, assert_model_version_of
 from irp_shared.risk.events import (
     RUN_TYPE_SENSITIVITY,
     SENSITIVITY_TYPE_DV01,
@@ -264,10 +264,17 @@ def run_sensitivities(
         raise SensitivityInputError("initiator is required (FW-RUN/TR-15)")
     if not model_version_id:
         raise SensitivityInputError("model_version_id is required (CTRL-003 inventory-before-use)")
-    # Inventory-before-use (CTRL-003 / BR-3): a REGISTERED model_version is MANDATORY. An unknown /
-    # unregistered version raises UnregisteredModelError BEFORE the run is created ⇒ zero
-    # run/result.
-    assert_registered_model_version(session, str(model_version_id), tenant_id=acting_tenant)
+    # Inventory-before-use + model identity (CTRL-003 / BR-3): a REGISTERED model_version OF THE
+    # SENSITIVITY MODEL is MANDATORY. An unknown/unregistered version raises UnregisteredModelError
+    # and a version of a DIFFERENT model family raises WrongModelVersionError — both BEFORE the run
+    # is created ⇒ zero run/result (the 2026-07 review hardening, reachable once a second model
+    # family exists).
+    assert_model_version_of(
+        session,
+        str(model_version_id),
+        tenant_id=acting_tenant,
+        expected_model_code=SENSITIVITY_MODEL_CODE,
+    )
 
     # --- Bind the curve snapshot (cross-tenant/unknown/missing-curve ⇒ pre-create refusal) ---
     if snapshot_id is not None:

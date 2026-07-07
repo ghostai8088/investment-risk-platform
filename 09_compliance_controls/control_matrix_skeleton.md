@@ -260,6 +260,22 @@ is an **INPUT**, not a governed derived number (**NO `calculation_run`, NO `mode
 returns are DEFERRED (would re-engage CTRL-003/009 with a registered `model_version` — the ENT-028 `sensitivity_result` precedent).
 `audit/service.py` **FROZEN**. **No control weakened; no new CTRL minted.**
 
+**P3-3 additions (factor-exposure engine — `factor_exposure_result`, ENT-028 family, IMPLEMENTED
+`0024_factor_exposure`):** the SECOND governed derived risk number — indicator-loading allocation exposures over pinned
+`exposure_aggregate` atoms × pinned `factor` EV definitions (**no control weakened; no new CTRL minted; NO new permission —
+`risk.view`/`risk.run` REUSED**). Controls exercised: **CTRL-003** (inventory-before-use — `assert_registered_model_version`
+pre-create on the SECOND model-driven run family, `risk.factor_exposure.allocation` v1; an unregistered version = zero
+run/rows/audit, negative-tested); **CTRL-002/014** (the `factor_exposure_allocation_v1.md` methodology doc + mirrored
+assumption/limitation rows); **CTRL-009** (governed output — non-null `input_snapshot_id` + complete `calculation_run`;
+snapshot-only compute); **CTRL-017** (IA TRUE append-only — `APPEND_ONLY_TABLES` + P0001 trigger + ORM guard, PG-proven);
+**CTRL-018/TR-13** (reproduction — re-run over the same snapshot identical; invariant under a later factor amend / exposure
+re-run); **CTRL-006/013** (lineage — `snapshot --DEPENDS_ON--> run --ORIGIN--> result`, the DEPENDS_ON edge kept on a FAILED
+run); **CTRL-011/023** (deny-by-default reused `risk.*` + symmetric FORCE-RLS, NEVER hybrid; closed 5-table hybrid set
+asserted unchanged); **CTRL-026** (`CALC.RUN_*` hash chain — `verify_chain`); **CTRL-029/032** (fail-closed
+`risk.factor_exposure.completeness` DQ — an unmapped atom ⇒ committed FAILED run + ZERO rows, no silent residual; Protocol
+untouched; co-transactional rollback). The `RISK.*` family stays reserved-not-emitted (`RISK.FACTOR_EXPOSURE_CREATE` joins
+`RISK.SENSITIVITY_CREATE`). `audit/service.py` **FROZEN**.
+
 ## 5. Open Decisions
 
 | ID | Open Decision |

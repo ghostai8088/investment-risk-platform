@@ -182,6 +182,36 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_curve_pg.py -q
+      - name: Benchmark symmetric-RLS + EV/FR tests (Postgres, ENT-009 / OD-P2-6-* / BR-17)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_benchmark_pg.py -q
+      - name: Holdings read-model FORCE-RLS tests (Postgres, P1C-5 / BR-17)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_holdings_pg.py -q
+      - name: Synthetic-seed FORCE-RLS tests (Postgres, P1C-6 / OD-P1C-L / BR-17)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_synthetic_pg.py -q
+      - name: Sensitivity symmetric-RLS + append-only tests (Postgres, ENT-028 / OD-P3-1-* / BR-17/BR-18)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_sensitivity_pg.py -q
+      - name: Factor symmetric-RLS + EV/FR tests (Postgres, ENT-025 / OD-P3-2-* / BR-17)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_factor_pg.py -q
+      - name: Factor-exposure symmetric-RLS + append-only tests (Postgres, ENT-028 family / OD-P3-3-* / BR-17/BR-18)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_factor_exposure_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

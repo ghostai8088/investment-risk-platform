@@ -22,9 +22,11 @@ supersede/correction;
 an EV ``portfolio`` amend (``record_version`` bump) is reported as drift.
 
 One-way imports: ``snapshot -> {portfolio, position, valuation, holdings, marketdata, lineage, dq,
-audit, db}`` (P2-3 adds ``marketdata`` for FX-leg pinning — imports NO ``calc``/``exposure``
-symbol,
-creates/wires no ``calculation_run``); nothing imports ``snapshot``.
+audit, db}`` (P2-3 adds ``marketdata`` for FX-leg pinning; P3-3 adds a **models-only,
+function-local** ``exposure.models`` read for atom pinning — the ``exposure`` SERVICE is never
+imported, it imports ``snapshot``, and hoisting the models import to module level is a circular
+import). Imports NO ``calc`` symbol; creates/wires no ``calculation_run``. Only the aggregator +
+the run consumers (``exposure``, ``risk``) import ``snapshot``.
 """
 
 from __future__ import annotations
@@ -55,6 +57,7 @@ from irp_shared.marketdata import (
     resolve_conversion_legs,
     resolve_curve,
 )
+from irp_shared.marketdata.factor import FactorNotVisible, resolve_factor
 from irp_shared.marketdata.models import REFERENCE_KEY_NONE
 from irp_shared.marketdata.service import FxRateNotVisible, resolve_fx_rate
 from irp_shared.portfolio import PortfolioNotVisible, resolve_portfolio
@@ -62,10 +65,13 @@ from irp_shared.position import PositionNotVisible, resolve_position
 from irp_shared.snapshot.events import SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
     COMPONENT_KIND_CURVE,
+    COMPONENT_KIND_EXPOSURE,
+    COMPONENT_KIND_FACTOR,
     COMPONENT_KIND_FX,
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
+    PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
     SNAPSHOT_PURPOSES,
     DatasetSnapshot,
@@ -74,6 +80,8 @@ from irp_shared.snapshot.models import (
 from irp_shared.snapshot.serialize import (
     content_hash,
     curve_content,
+    exposure_content,
+    factor_content,
     fx_content,
     manifest_hash,
     portfolio_content,
@@ -526,6 +534,156 @@ def build_curve_snapshot(
     return header_row
 
 
+class FactorExposureSnapshotError(Exception):
+    """Raised when a factor-exposure input snapshot cannot be built (an empty atom set for the
+    exposure run, an empty factor list, or an unresolvable input) — fail closed, BEFORE any
+    write. Maps to 409."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"factor-exposure snapshot input failed closed: {detail}")
+        self.detail = detail
+
+
+def _resolve_exposure_atom(session: Session, atom_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``exposure_aggregate`` atom by id with an EXPLICIT tenant predicate (models-only
+    import — ``exposure.models`` imports no ``snapshot``/``calc`` symbol, so the one-way surface
+    holds; the ``exposure`` SERVICE is deliberately NOT imported here, it imports ``snapshot``)."""
+    from irp_shared.exposure.models import ExposureAggregate  # models-only (no cycle)
+
+    row = session.execute(
+        select(ExposureAggregate).where(
+            ExposureAggregate.id == str(atom_id),
+            ExposureAggregate.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise FactorExposureSnapshotError(f"exposure atom {atom_id} is not visible")
+    return row
+
+
+def _list_exposure_atoms(session: Session, run_id: str, *, acting_tenant: str) -> list[Any]:
+    """The ``exposure_aggregate`` atoms of a run (tenant-scoped, stable order; models-only
+    import)."""
+    from irp_shared.exposure.models import ExposureAggregate  # models-only (no cycle)
+
+    return list(
+        session.execute(
+            select(ExposureAggregate)
+            .where(
+                ExposureAggregate.calculation_run_id == str(run_id),
+                ExposureAggregate.tenant_id == str(acting_tenant),
+            )
+            .order_by(ExposureAggregate.portfolio_id, ExposureAggregate.instrument_id)
+        )
+        .scalars()
+        .all()
+    )
+
+
+#: The factor-exposure binding/selection rule (a truthful descriptor — NOT the P2-1
+#: subtree-open-positions rule; the 2026-07 review finding).
+FACTOR_EXPOSURE_BINDING_PREDICATE = "v1:exposure-run-atoms+factor-list"
+
+
+def build_factor_exposure_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    exposure_run_id: str,
+    factor_ids: list[str],
+) -> DatasetSnapshot:
+    """Build one immutable ``FACTOR_EXPOSURE_INPUT`` snapshot (P3-3, OD-P3-3-I) pinning:
+
+    - one ``COMPONENT_KIND_EXPOSURE`` component per ``exposure_aggregate`` atom of the consumed
+      exposure run — the FIRST **IA-row pin flavor** (``pinned_valid_from``/``record_version``
+      NULL; ``pinned_system_from`` = the row's append time; drift impossible by construction), and
+    - one ``COMPONENT_KIND_FACTOR`` component per selected ``factor`` EV definition (the
+      ``PORTFOLIO`` EV-pin flavor; ``record_version`` the drift discriminator),
+
+    so a factor-exposure run is reproducible from the snapshot alone (the compute reads this
+    captured content — never a live exposure/factor read). Every input is re-resolved by id under
+    the acting tenant (cross-tenant/unknown fails closed BEFORE any write). The run-status /
+    factor-set partition validation is the RISK binder's pre-create gate — this builder pins,
+    it does not adjudicate; it needs **no as-of** (the atoms are immutable; the header cutoffs are
+    the pin time) and imports NO ``calc`` symbol. NO derived number is computed here. An empty
+    atom set OR an empty ``factor_ids`` list fails closed BEFORE any write (a factor-less
+    snapshot could only ever produce a refused run)."""
+    now = utcnow()
+
+    if not factor_ids:
+        raise FactorExposureSnapshotError("no factor ids to pin — an empty factor set is refused")
+    atoms = _list_exposure_atoms(session, exposure_run_id, acting_tenant=acting_tenant)
+    if not atoms:
+        raise FactorExposureSnapshotError(
+            f"exposure run {exposure_run_id} has no visible atoms to pin"
+        )
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for atom in atoms:
+        _append_spec(
+            specs, COMPONENT_KIND_EXPOSURE, "exposure_aggregate", atom, exposure_content(atom)
+        )
+    seen_factors: set[str] = set()
+    for fid in factor_ids:
+        factor = resolve_factor(session, str(fid), acting_tenant=acting_tenant)
+        if factor.id in seen_factors:
+            continue
+        seen_factors.add(factor.id)
+        _append_spec(specs, COMPONENT_KIND_FACTOR, "factor", factor, factor_content(factor))
+
+    m_hash = manifest_hash(
+        tenant_id=acting_tenant,
+        as_of_valid_at=now,
+        as_of_known_at=now,
+        as_of_valuation_date=now.date(),
+        binding_predicate_version=FACTOR_EXPOSURE_BINDING_PREDICATE,
+        component_count=len(specs),
+        component_hashes=[(kind, row.id, c_hash) for (kind, _t, row, _cc, c_hash) in specs],
+    )
+    header_row = DatasetSnapshot(
+        tenant_id=str(acting_tenant),
+        label="",
+        purpose=PURPOSE_FACTOR_EXPOSURE_INPUT,
+        as_of_valid_at=now,
+        as_of_known_at=now,
+        as_of_valuation_date=now.date(),
+        binding_predicate_version=FACTOR_EXPOSURE_BINDING_PREDICATE,
+        component_count=len(specs),
+        manifest_hash=m_hash,
+        created_by=actor.actor_id,
+    )
+    session.add(header_row)
+    session.flush()
+
+    for kind, ttype, row, captured, c_hash in specs:
+        comp = DatasetSnapshotComponent(
+            tenant_id=str(acting_tenant),
+            snapshot_id=header_row.id,
+            component_kind=kind,
+            target_entity_type=ttype,
+            target_entity_id=row.id,
+            # IA atoms: valid_from/record_version absent (NULL); EV factors: system_from absent.
+            pinned_valid_from=getattr(row, "valid_from", None),
+            pinned_system_from=getattr(row, "system_from", None),
+            pinned_record_version=getattr(row, "record_version", None),
+            captured_content=captured,
+            content_hash=c_hash,
+        )
+        session.add(comp)
+    session.flush()
+    for _kind, ttype, row, _captured, _ch in specs:
+        record_internal_lineage(
+            session, snapshot_id=header_row.id, target_entity_type=ttype, target_entity_id=row.id
+        )
+
+    # No build-time DQ gate: the pinned atoms exist by construction (an empty set is refused
+    # above) and the mapping-completeness gate is the RISK binder's fail-closed POST-create gate
+    # (OD-P3-3-N) — a snapshot-level gap class does not exist for immutable-atom pins.
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -585,6 +743,14 @@ def _reresolve_content(
         header = resolve_curve(session, comp.target_entity_id, acting_tenant=acting_tenant)
         nodes = list_curve_points(session, header.id, acting_tenant=acting_tenant)
         return curve_content(header, nodes)
+    if comp.component_kind == COMPONENT_KIND_EXPOSURE:
+        return exposure_content(
+            _resolve_exposure_atom(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
+    if comp.component_kind == COMPONENT_KIND_FACTOR:
+        return factor_content(
+            resolve_factor(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
     return portfolio_content(
         resolve_portfolio(session, comp.target_entity_id, acting_tenant=acting_tenant)
     )
@@ -608,6 +774,8 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             PortfolioNotVisible,
             FxRateNotVisible,
             CurveNotVisible,
+            FactorNotVisible,
+            FactorExposureSnapshotError,
         ):
             drifted.append(comp.id)
             continue

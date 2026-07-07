@@ -42,11 +42,14 @@ PURPOSE_EXPOSURE_INPUT = "EXPOSURE_INPUT"
 #: P3-1 (OD-P3-1-E): a curve-input snapshot for an analytic-sensitivity run (pins CURVE
 #: components).
 PURPOSE_SENSITIVITY_INPUT = "SENSITIVITY_INPUT"
+#: P3-3 (OD-P3-3-I): a factor-exposure input snapshot (pins EXPOSURE atoms + FACTOR definitions).
+PURPOSE_FACTOR_EXPOSURE_INPUT = "FACTOR_EXPOSURE_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
     PURPOSE_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
+    PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -66,12 +69,23 @@ COMPONENT_KIND_FX = "FX"
 #: the ``dataset_snapshot``/``component`` tables are UNCHANGED (``component_kind`` is
 #: unconstrained).
 COMPONENT_KIND_CURVE = "CURVE"
+#: P3-3 (OD-P3-3-I): a pinned ``exposure_aggregate`` (ENT-014) atom — the FIRST **IA-row pin
+#: flavor** (``pinned_valid_from``/``pinned_record_version`` NULL; ``pinned_system_from`` = the
+#: row's append time; the row is immutable, so drift is impossible by construction). App-constant;
+#: the tables are UNCHANGED.
+COMPONENT_KIND_EXPOSURE = "EXPOSURE"
+#: P3-3 (OD-P3-3-I): a pinned ``factor`` EV definition version (the PORTFOLIO EV-pin flavor: NULL
+#: system axis; ``record_version`` the drift discriminator). ``COMPONENT_KIND_FACTOR_RETURN`` stays
+#: readiness-noted, NOT minted (v1 consumes no return — OD-P3-2-G / OD-P3-3-I).
+COMPONENT_KIND_FACTOR = "FACTOR"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
     COMPONENT_KIND_FX,
     COMPONENT_KIND_CURVE,
+    COMPONENT_KIND_EXPOSURE,
+    COMPONENT_KIND_FACTOR,
 )
 
 
