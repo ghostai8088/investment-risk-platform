@@ -1,29 +1,56 @@
 # Claude Operating Instructions
 
-> **As of 2026-06-29.** How Claude Code works on this project. Read with `current_state.md`, `next_actions.md`,
-> and `decision_summary.md`. These encode the user's required cadence — follow them exactly.
+> **As of HEAD `f941d50` (amended 2026-07-06 for the Opus 4.8 → Fable 5 model change).** How Claude Code works
+> on this project. Read with `current_state.md`, `next_actions.md`, and `decision_summary.md`. These encode the
+> user's required cadence — follow them exactly. (`CLAUDE.md` at the repo root is the auto-loaded entry pointer.)
 
 ## Operating model (UltraCode)
-The project uses an **UltraCode multi-agent** model for planning and review:
-- **Planning workflow:** before implementing a slice, run a multi-lens planning workflow (N parallel reviewer
-  lenses → a synthesis agent producing the plan markdown). Commit the plan doc (on approval) before coding.
+Planning-first, per-slice, commit-only-on-approval:
+- **Planning:** the plan/decision-record markdown is authored single-threaded, then adversarially reviewed
+  (see below) and committed **on approval** before any coding.
 - **Implementation:** done directly (single-threaded) to keep conventions consistent — NOT fanned out across
   agents writing files in parallel.
-- **Adversarial review:** after implementing, run a multi-lens review workflow (read-only) over the actual
-  code/tests/docs; the agents return structured findings; reconcile (synthesize) into an in-scope fix list.
-- Use the **Workflow** tool for these fan-outs. Workflows run in the background and notify on completion —
-  do not poll aggressively; wait for the task-notification (a 0-byte output file means "not done", not "failed").
-  If a synthesis agent fails (e.g. a transient limit), synthesize the reviewers' findings manually.
+- **Adversarial review:** after implementing, the slice is reviewed through the review pattern below and the
+  in-scope findings are folded before the commit gate.
+- *(Tooling note: the legacy "Workflow tool" fan-out described in earlier revisions of this doc no longer
+  exists in the current harness. Its replacements are below; references to "8-lens UltraCode review" in older
+  slice docs map to this review pattern.)*
 
-## Multi-agent review pattern
-- Typical lenses: Product/Requirements, Chief Architect, Data Architecture, Security/RLS, Audit/Controls,
-  Data Quality, Lineage, QA/Test, Scope (subset per slice).
-- Each reviewer reads the artifact + verifies against the repo and returns: verdict, severity-tagged findings
-  (with file/section + fix + in-scope flag), scope/fact issues, confirmations.
-- **Ground the reviewers** with verified facts (commit hashes, contracts, baselines) so they reason against
-  reality, not hallucinations. Apply **only in-scope** findings; record deferred ones.
-- Reviews routinely catch real errors (e.g. wrong temporal class vs AD-005, baseline conflicts, test-passes-for-
-  wrong-reason). Treat "block" verdicts seriously and fix before committing.
+## Adversarial review pattern
+- **The property that matters is CONTEXT INDEPENDENCE:** a review run inside the authoring context inherits the
+  author's blind spots at any model capability level. Prefer, in descending order of independence:
+  (1) **`/code-review ultra`** — the user-triggered multi-agent cloud review of the slice branch/diff (the model
+  cannot launch it; the user runs it after implementation and the model folds the findings);
+  (2) **explicitly authorized subagent passes** in fresh contexts — fewer, deeper lenses (typically 2–3:
+  quant/correctness, security/controls/RLS, scope/consistency) rather than many shallow ones;
+  (3) a **disciplined single-pass** in-session review — acceptable as the floor for planning documents, and it
+  must be honestly labeled as single-pass, never dressed up as independent multi-agent review.
+- **Implementation slices get (1) and/or (2). Planning slices may use (3).**
+- Each review pass is **refute-by-default**: verify every material claim against the repo (symbols, signatures,
+  constants, grains, permission sets, EVT decades, control mappings) — read, don't recall. **Ground reviewers**
+  with verified facts (commit hashes, contracts, baselines).
+- **Record findings and their dispositions (folded / refuted / deferred), not verdict tallies** — "N approve /
+  M approve_with_changes" counts are only meaningful when the reviewers were genuinely independent contexts.
+- Apply **only in-scope** findings; record deferred ones. Reviews routinely catch real errors (wrong temporal
+  class vs AD-005, baseline conflicts, test-passes-for-wrong-reason, a 500→404 fail-closed bug). Treat "block"
+  findings seriously and fix before committing.
+
+## Verification & objectivity (standing rules)
+- **No quantitative claim from model recall.** Every formula, convention, day-count, sign, tolerance, or
+  financial-domain assertion in a methodology doc or kernel must trace to (a) an executed test whose reference
+  values were computed INDEPENDENTLY of the implementation (hand-computed, or an independent library on
+  synthetic data), or (b) a citation to an authoritative source — never to what the model "knows".
+- **External ground truth over self-consistency.** A test whose expected values were derived from the
+  implementation's own logic proves nothing about economic correctness (a consistently wrong convention passes
+  its own tests). For estimation/simulation methods (P3-4 covariance onward), acceptance includes **dual-path
+  verification**: property tests (e.g. PSD, symmetry), cross-checks against an independent implementation, and
+  analytic-vs-simulation agreement within declared tolerance, plus seeded determinism (QS-18).
+- **Capability is not evidence.** Verification gates (`make check`, full-PG validation, CI-watch-to-green,
+  reproduction-under-correction tests) are NEVER waived because output looks authoritative or the model is
+  more capable. Only executed verification counts.
+- **Objectivity over agreement.** Lead assessments with the strongest objection; state block verdicts plainly;
+  if the user's instruction conflicts with a ratified baseline OR a materially better alternative exists, say
+  so BEFORE acting. Never soften findings to match the user's perceived preference.
 
 ## Commit discipline
 - **Commit/push ONLY on explicit user approval**, per artifact. Branch is `main`; pushes go to `origin/main`.

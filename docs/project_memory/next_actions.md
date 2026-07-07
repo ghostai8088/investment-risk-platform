@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `c452229` / CI #90 (refreshed 2026-07-06, new machine — the Zscaler blockage is RESOLVED).** What to do
+> **As of HEAD `f941d50` / CI #91 (refreshed 2026-07-06, new machine — the Zscaler blockage is RESOLVED).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -19,7 +19,7 @@ captured series (migration `0023_factor_return`; captured INPUT — NO run/model
 `REFERENCE.*` audit; `marketdata.view`/`.ingest` reused; symmetric RLS, NEITHER table append-only; VENDOR_FACTOR ORIGIN
 lineage) → **P3-2 closeout / P3-3 readiness handoff** (`c452229`, CI **#90** green).
 
-**IN THIS WORKING TREE (commit pending approval):** the **P3-3 planning commit** —
+**DONE — the P3-3 planning commit (`f941d50`, CI #91 green):**
 1. `10_delivery_backlog/p3_3_decision_record.md` (OD-P3-3-A…O + OQ-P3-3-1…9 recommended defaults) and
    `10_delivery_backlog/p3_3_factor_exposure_implementation_plan.md`: the **factor-exposure engine (allocation v1)** —
    indicator-loading CURRENCY-family factor exposures over the pinned atoms of a COMPLETED `exposure_aggregate` run
@@ -33,9 +33,15 @@ lineage) → **P3-2 closeout / P3-3 readiness handoff** (`c452229`, CI **#90** g
    (`canonical_data_model_standard` / `audit_event_taxonomy` / `temporal_reproducibility_standard` /
    `entitlement_sod_model` / `control_matrix_skeleton`).
 
-**NEXT — P3-3 IMPLEMENTATION (on explicit approval, after the planning commit + OQ-P3-3 sign-offs):** build the
-factor-exposure engine per the committed plan. The exact kickoff prompt is
-`p3_3_factor_exposure_implementation_plan.md` **Part 11**. Implementation is a SEPARATE approval from the plan commit.
+**IN THE WORKING TREE (user-approved 2026-07-06, docs-only):** the **model-upgrade operating-discipline housekeeping** —
+the rewritten review pattern + "Verification & objectivity" standing rules in `claude_operating_instructions.md`; the new
+repo-root `CLAUDE.md` entry pointer; `project_state.yaml` RETIRED to a stub; `current_state.md` thinned + advanced;
+these files advanced to `f941d50`/#91.
+
+**NEXT — P3-3 IMPLEMENTATION (on explicit approval, after the OQ-P3-3-1…9 sign-offs):** build the factor-exposure
+engine per the committed plan. The exact kickoff prompt is `p3_3_factor_exposure_implementation_plan.md` **Part 11**.
+**Machine prerequisite:** stand up `irp_pg_local` (`postgres:16`) + `DATABASE_URL`/`IRP_TEST_DATABASE_URL` +
+`alembic upgrade head` on this machine first (not yet done here; the venv is Python 3.13 — CI runs 3.12).
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
@@ -49,8 +55,9 @@ factor-exposure engine per the committed plan. The exact kickoff prompt is
   the per-entity RLS suites (through **Sensitivity** `0022` + **Factor** `0023`; the migration job auto-covers new
   heads — the P2-6/P3-2 precedent) + downgrade smoke, Documentation check, Secret scan. **HEAD `c452229` = run #90 =
   success; P3-2 impl `402cb12` = run #89 = success** (verified via the REST API — `gh` is not installed; the public
-  repo answers unauthenticated). Python 3.12 runners; local validation also passes on 3.14 + full PG (`irp_pg_local`,
-  `postgres:16`).
+  repo answers unauthenticated). Python 3.12 runners; the prior machine also validated on 3.14 + full PG. **This
+  machine:** venv = Python 3.13.0; `irp_pg_local` NOT yet stood up (a prerequisite for the P3-3 implementation slice,
+  not for docs-only work).
 - **PG re-run gotcha:** don't run the full pytest twice against the same DB without a schema reset
   (`data_quality_pg`/`lineage_pg`/`synthetic_pg` self-seed a `GLOBAL_OK` system-tenant row) — `DROP SCHEMA public
   CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO irp;` then `alembic upgrade head`.
