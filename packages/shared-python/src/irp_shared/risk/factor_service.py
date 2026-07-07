@@ -49,9 +49,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.calc.service import create_run, update_run_status
-from irp_shared.dq.models import SEVERITY_ERROR, DataQualityRule
-from irp_shared.dq.rules import RULE_TYPE_NOT_NULL
-from irp_shared.dq.service import register_dq_rule, run_quality_check
+from irp_shared.dq.gates import ensure_presence_rule, run_presence_gate
 from irp_shared.exposure.service import resolve_run as resolve_exposure_run
 from irp_shared.lineage.models import EDGE_KIND_DEPENDENCY, EDGE_KIND_ORIGIN
 from irp_shared.lineage.service import record_internal_lineage, record_run_lineage
@@ -218,31 +216,6 @@ def _build_rows(
     return rows, gaps
 
 
-def _ensure_completeness_rule(
-    session: Session, *, tenant_id: str, actor: FactorExposureActor
-) -> DataQualityRule:
-    rule = session.execute(
-        select(DataQualityRule).where(
-            DataQualityRule.tenant_id == str(tenant_id),
-            DataQualityRule.code == _COMPLETENESS_RULE_CODE,
-        )
-    ).scalar_one_or_none()
-    if rule is not None:
-        return rule
-    return register_dq_rule(
-        session,
-        tenant_id=str(tenant_id),
-        code=_COMPLETENESS_RULE_CODE,
-        name="Factor-exposure run mapping completeness (every atom maps to exactly one factor)",
-        rule_type=RULE_TYPE_NOT_NULL,
-        actor_id=actor.actor_id,
-        params={"column": "present"},
-        target_entity_type="factor_exposure_result",
-        severity=SEVERITY_ERROR,
-        actor_type=actor.actor_type,
-    )
-
-
 def _run_completeness_gate(
     session: Session,
     *,
@@ -251,20 +224,26 @@ def _run_completeness_gate(
     run: CalculationRun,
     gaps: list[str],
 ) -> None:
-    """Fail-closed DQ gate (``DATA.VALIDATE``): one ``{'present': None}`` row per unmapped atom.
-    A non-empty gap fails ERROR ⇒ ``DataQualityError`` (the caller converts it to a post-create
-    FAILED run). Reuses ``run_quality_check`` NOT_NULL; the Protocol is UNTOUCHED."""
-    dataset: list[dict[str, Any]] = (
-        [{"present": None} for _ in gaps] if gaps else [{"present": True}]
+    """Fail-closed DQ gate (``DATA.VALIDATE``): one ``{'present': None}`` row per gap; a
+    non-empty gap fails ERROR ⇒ ``DataQualityError`` (the caller converts it to a post-create
+    FAILED run). The shared ``dq.gates`` presence helpers (P3-4-R0) — rule code/name/target
+    unchanged, so the persisted evidence shape is byte-identical to the pre-R0 copy."""
+    rule = ensure_presence_rule(
+        session,
+        tenant_id=str(acting_tenant),
+        code=_COMPLETENESS_RULE_CODE,
+        name="Factor-exposure run mapping completeness (every atom maps to exactly one factor)",
+        target_entity_type="factor_exposure_result",
+        actor_id=actor.actor_id,
+        actor_type=actor.actor_type,
     )
-    rule = _ensure_completeness_rule(session, tenant_id=acting_tenant, actor=actor)
-    run_quality_check(
+    run_presence_gate(
         session,
         rule=rule,
-        dataset=dataset,
-        actor_id=actor.actor_id,
+        gaps=gaps,
         target_entity_type="calculation_run",
         target_entity_id=run.run_id,
+        actor_id=actor.actor_id,
         actor_type=actor.actor_type,
     )
 

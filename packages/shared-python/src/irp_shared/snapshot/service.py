@@ -39,9 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.db.mixins import utcnow
-from irp_shared.dq.models import SEVERITY_ERROR, DataQualityRule
-from irp_shared.dq.rules import RULE_TYPE_NOT_NULL
-from irp_shared.dq.service import register_dq_rule, run_quality_check
+from irp_shared.dq.gates import ensure_presence_rule, run_presence_gate
 from irp_shared.holdings import (
     HoldingWithMark,
     attach_marks_as_of,
@@ -99,6 +97,20 @@ DEFAULT_BINDING_PREDICATE = "v1:subtree-open-positions"
 _COMPLETENESS_RULE_CODE = "snapshot.completeness"
 
 
+def _ensure_snapshot_presence_rule(session: Session, *, acting_tenant: str, actor: SnapshotActor):  # noqa: ANN202
+    """The snapshot-completeness presence rule via the shared ``dq.gates`` helper (P3-4-R0 —
+    rule code/name/target unchanged; evidence shape byte-identical to the pre-R0 copy)."""
+    return ensure_presence_rule(
+        session,
+        tenant_id=str(acting_tenant),
+        code=_COMPLETENESS_RULE_CODE,
+        name="Snapshot bound-set completeness",
+        target_entity_type="dataset_snapshot",
+        actor_id=actor.actor_id,
+        actor_type=actor.actor_type,
+    )
+
+
 class SnapshotPurposeError(Exception):
     """Raised when ``purpose`` is out of the controlled vocabulary (app-side allow-list; the row is
     immutable, so this must fail BEFORE any flush)."""
@@ -136,32 +148,6 @@ class VerifyResult:
     drifted_components: list[str] = field(default_factory=list)
 
 
-def _ensure_completeness_rule(
-    session: Session, *, tenant_id: str, actor: SnapshotActor
-) -> DataQualityRule:
-    """Resolve-or-register the per-tenant snapshot-completeness NOT_NULL rule (governed/audited)."""
-    rule = session.execute(
-        select(DataQualityRule).where(
-            DataQualityRule.tenant_id == str(tenant_id),
-            DataQualityRule.code == _COMPLETENESS_RULE_CODE,
-        )
-    ).scalar_one_or_none()
-    if rule is not None:
-        return rule
-    return register_dq_rule(
-        session,
-        tenant_id=str(tenant_id),
-        code=_COMPLETENESS_RULE_CODE,
-        name="Snapshot bound-set completeness",
-        rule_type=RULE_TYPE_NOT_NULL,
-        actor_id=actor.actor_id,
-        params={"column": "present"},
-        target_entity_type="dataset_snapshot",
-        severity=SEVERITY_ERROR,
-        actor_type=actor.actor_type,
-    )
-
-
 def _run_completeness_gate(
     session: Session,
     *,
@@ -184,19 +170,18 @@ def _run_completeness_gate(
         (e.holding.portfolio_id, e.holding.instrument_id) for e in enriched if e.mark is not None
     }
     gap = [
-        h
+        f"{h.portfolio_id}:{h.instrument_id}"
         for h in holdings
         if h.quantity != 0 and (h.portfolio_id, h.instrument_id) not in have_mark
     ]
-    dataset: list[dict[str, Any]] = [{"present": None} for _ in gap] if gap else [{"present": True}]
-    rule = _ensure_completeness_rule(session, tenant_id=acting_tenant, actor=actor)
-    run_quality_check(
+    rule = _ensure_snapshot_presence_rule(session, acting_tenant=acting_tenant, actor=actor)
+    run_presence_gate(
         session,
         rule=rule,
-        dataset=dataset,
-        actor_id=actor.actor_id,
+        gaps=gap,
         target_entity_type="dataset_snapshot",
         target_entity_id=header.id,
+        actor_id=actor.actor_id,
         actor_type=actor.actor_type,
     )
 
@@ -303,51 +288,19 @@ def build_snapshot(
     if not specs:
         raise EmptySnapshotError(str(portfolio_id))
 
-    # 5. Header (with the manifest hash over the component hashes + the cutoffs).
-    m_hash = manifest_hash(
-        tenant_id=acting_tenant,
-        as_of_valid_at=as_of_valid_at,
-        as_of_known_at=known,
-        as_of_valuation_date=val_date,
-        binding_predicate_version=binding_predicate_version,
-        component_count=len(specs),
-        component_hashes=[(kind, row.id, c_hash) for (kind, _t, row, _cc, c_hash) in specs],
-    )
-    header = DatasetSnapshot(
-        tenant_id=str(acting_tenant),
+    # 5+6. Header + components + internal lineage (the shared P3-4-R0 persistence tail).
+    header = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
         label=label,
         purpose=purpose,
         as_of_valid_at=as_of_valid_at,
         as_of_known_at=known,
         as_of_valuation_date=val_date,
         binding_predicate_version=binding_predicate_version,
-        component_count=len(specs),
-        manifest_hash=m_hash,
-        created_by=actor.actor_id,
     )
-    session.add(header)
-    session.flush()
-
-    # 6. Components (server-stamped tenant == header tenant) + one lineage edge each.
-    for kind, ttype, row, captured, c_hash in specs:
-        comp = DatasetSnapshotComponent(
-            tenant_id=str(acting_tenant),
-            snapshot_id=header.id,
-            component_kind=kind,
-            target_entity_type=ttype,
-            target_entity_id=row.id,
-            pinned_valid_from=getattr(row, "valid_from", None),
-            pinned_system_from=getattr(row, "system_from", None),  # NULL for EV portfolio
-            pinned_record_version=getattr(row, "record_version", None),
-            captured_content=captured,
-            content_hash=c_hash,
-        )
-        session.add(comp)
-    session.flush()
-    for _kind, ttype, row, _captured, _ch in specs:
-        record_internal_lineage(
-            session, snapshot_id=header.id, target_entity_type=ttype, target_entity_id=row.id
-        )
 
     # 7. Completeness gate (fail-closed; rollback on a gap) then the SNAPSHOT.CREATE event
     _run_completeness_gate(
@@ -359,6 +312,69 @@ def build_snapshot(
         enriched=enriched,
     )
     record_snapshot_create(session, header=header, actor=actor)
+    return header
+
+
+def _persist_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    specs: list[tuple[str, str, Any, str, str]],
+    label: str,
+    purpose: str,
+    as_of_valid_at: datetime,
+    as_of_known_at: datetime,
+    as_of_valuation_date: date,
+    binding_predicate_version: str,
+) -> DatasetSnapshot:
+    """The shared snapshot persistence tail (P3-4-R0 — extracted from the three builders at the
+    review-flagged tipping point): manifest hash over the specs + the immutable header + one
+    component row per spec + one internal lineage edge per pinned target. The caller runs its own
+    completeness gate(s) and ``record_snapshot_create`` AFTER this returns (ordering preserved
+    byte-identically from the pre-R0 builders)."""
+    m_hash = manifest_hash(
+        tenant_id=acting_tenant,
+        as_of_valid_at=as_of_valid_at,
+        as_of_known_at=as_of_known_at,
+        as_of_valuation_date=as_of_valuation_date,
+        binding_predicate_version=binding_predicate_version,
+        component_count=len(specs),
+        component_hashes=[(kind, row.id, c_hash) for (kind, _t, row, _cc, c_hash) in specs],
+    )
+    header = DatasetSnapshot(
+        tenant_id=str(acting_tenant),
+        label=label,
+        purpose=purpose,
+        as_of_valid_at=as_of_valid_at,
+        as_of_known_at=as_of_known_at,
+        as_of_valuation_date=as_of_valuation_date,
+        binding_predicate_version=binding_predicate_version,
+        component_count=len(specs),
+        manifest_hash=m_hash,
+        created_by=actor.actor_id,
+    )
+    session.add(header)
+    session.flush()
+    for kind, ttype, row, captured, c_hash in specs:
+        comp = DatasetSnapshotComponent(
+            tenant_id=str(acting_tenant),
+            snapshot_id=header.id,
+            component_kind=kind,
+            target_entity_type=ttype,
+            target_entity_id=row.id,
+            pinned_valid_from=getattr(row, "valid_from", None),
+            pinned_system_from=getattr(row, "system_from", None),
+            pinned_record_version=getattr(row, "record_version", None),
+            captured_content=captured,
+            content_hash=c_hash,
+        )
+        session.add(comp)
+    session.flush()
+    for _kind, ttype, row, _captured, _ch in specs:
+        record_internal_lineage(
+            session, snapshot_id=header.id, target_entity_type=ttype, target_entity_id=row.id
+        )
     return header
 
 
@@ -410,17 +426,14 @@ def _run_curve_completeness_gate(
     (a curve with zero ``curve_point`` rows) is one ``{'present': None}`` row through the shipped
     ``run_quality_check`` NOT_NULL rule (Protocol UNTOUCHED) -> ``DataQualityError`` ->
     rollback."""
-    dataset: list[dict[str, Any]] = (
-        [{"present": None} for _ in empty_curve_ids] if empty_curve_ids else [{"present": True}]
-    )
-    rule = _ensure_completeness_rule(session, tenant_id=acting_tenant, actor=actor)
-    run_quality_check(
+    rule = _ensure_snapshot_presence_rule(session, acting_tenant=acting_tenant, actor=actor)
+    run_presence_gate(
         session,
         rule=rule,
-        dataset=dataset,
-        actor_id=actor.actor_id,
+        gaps=empty_curve_ids,
         target_entity_type="dataset_snapshot",
         target_entity_id=header.id,
+        actor_id=actor.actor_id,
         actor_type=actor.actor_type,
     )
 
@@ -479,49 +492,18 @@ def build_curve_snapshot(
     if not specs:
         raise EmptySnapshotError("(no curve selectors)")
 
-    m_hash = manifest_hash(
-        tenant_id=acting_tenant,
-        as_of_valid_at=as_of_valid_at,
-        as_of_known_at=known,
-        as_of_valuation_date=val_date,
-        binding_predicate_version=binding_predicate_version,
-        component_count=len(specs),
-        component_hashes=[(kind, row.id, c_hash) for (kind, _t, row, _cc, c_hash) in specs],
-    )
-    header_row = DatasetSnapshot(
-        tenant_id=str(acting_tenant),
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
         label=label,
         purpose=purpose,
         as_of_valid_at=as_of_valid_at,
         as_of_known_at=known,
         as_of_valuation_date=val_date,
         binding_predicate_version=binding_predicate_version,
-        component_count=len(specs),
-        manifest_hash=m_hash,
-        created_by=actor.actor_id,
     )
-    session.add(header_row)
-    session.flush()
-
-    for kind, ttype, row, captured, c_hash in specs:
-        comp = DatasetSnapshotComponent(
-            tenant_id=str(acting_tenant),
-            snapshot_id=header_row.id,
-            component_kind=kind,
-            target_entity_type=ttype,
-            target_entity_id=row.id,
-            pinned_valid_from=getattr(row, "valid_from", None),
-            pinned_system_from=getattr(row, "system_from", None),
-            pinned_record_version=getattr(row, "record_version", None),
-            captured_content=captured,
-            content_hash=c_hash,
-        )
-        session.add(comp)
-    session.flush()
-    for _kind, ttype, row, _captured, _ch in specs:
-        record_internal_lineage(
-            session, snapshot_id=header_row.id, target_entity_type=ttype, target_entity_id=row.id
-        )
 
     _run_curve_completeness_gate(
         session,
@@ -632,50 +614,18 @@ def build_factor_exposure_snapshot(
         seen_factors.add(factor.id)
         _append_spec(specs, COMPONENT_KIND_FACTOR, "factor", factor, factor_content(factor))
 
-    m_hash = manifest_hash(
-        tenant_id=acting_tenant,
-        as_of_valid_at=now,
-        as_of_known_at=now,
-        as_of_valuation_date=now.date(),
-        binding_predicate_version=FACTOR_EXPOSURE_BINDING_PREDICATE,
-        component_count=len(specs),
-        component_hashes=[(kind, row.id, c_hash) for (kind, _t, row, _cc, c_hash) in specs],
-    )
-    header_row = DatasetSnapshot(
-        tenant_id=str(acting_tenant),
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
         label="",
         purpose=PURPOSE_FACTOR_EXPOSURE_INPUT,
         as_of_valid_at=now,
         as_of_known_at=now,
         as_of_valuation_date=now.date(),
         binding_predicate_version=FACTOR_EXPOSURE_BINDING_PREDICATE,
-        component_count=len(specs),
-        manifest_hash=m_hash,
-        created_by=actor.actor_id,
     )
-    session.add(header_row)
-    session.flush()
-
-    for kind, ttype, row, captured, c_hash in specs:
-        comp = DatasetSnapshotComponent(
-            tenant_id=str(acting_tenant),
-            snapshot_id=header_row.id,
-            component_kind=kind,
-            target_entity_type=ttype,
-            target_entity_id=row.id,
-            # IA atoms: valid_from/record_version absent (NULL); EV factors: system_from absent.
-            pinned_valid_from=getattr(row, "valid_from", None),
-            pinned_system_from=getattr(row, "system_from", None),
-            pinned_record_version=getattr(row, "record_version", None),
-            captured_content=captured,
-            content_hash=c_hash,
-        )
-        session.add(comp)
-    session.flush()
-    for _kind, ttype, row, _captured, _ch in specs:
-        record_internal_lineage(
-            session, snapshot_id=header_row.id, target_entity_type=ttype, target_entity_id=row.id
-        )
 
     # No build-time DQ gate: the pinned atoms exist by construction (an empty set is refused
     # above) and the mapping-completeness gate is the RISK binder's fail-closed POST-create gate
