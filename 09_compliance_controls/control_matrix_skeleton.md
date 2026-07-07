@@ -297,6 +297,23 @@ imputation, no pairwise deletion**; a short/misaligned/wrong-N/unpaired pinned s
 defensive output-sanity DQ `risk.covariance.completeness` ⇒ committed FAILED run + ZERO rows; co-transactional rollback).
 The `RISK.*` family stays reserved-not-emitted (`RISK.COVARIANCE_CREATE` joins the row). `audit/service.py` **FROZEN**.
 
+**P3-5 additions (parametric VaR — `var_result`, ENT-027 realized, IMPLEMENTED `0026_var`):** the FOURTH governed
+derived risk number and the FIRST derived-of-derived one (**no control weakened; no new CTRL minted; NO new permission —
+`risk.view`/`risk.run` REUSED**). Controls exercised: **CTRL-003** (inventory-before-use with model IDENTITY on the
+FOURTH family, `risk.var.parametric` v1 — incl. the DECLARED confidence/horizon/z: a malformed/absent/tampered
+declaration (mintable via the generic registration) is a fail-closed identity refusal, never a parse crash);
+**CTRL-002/014** (the `var_parametric_v1.md` methodology + mirrored declarations incl. the radicand tolerance and the
+**specific-risk = 0** first-class limitation); **CTRL-009** (governed output — snapshot-only compute over the pinned
+result rows of TWO upstream governed runs; hard-FK provenance columns); **CTRL-017** (IA TRUE append-only, PG-proven);
+**CTRL-018/TR-13** (reproduction — exact hand references through kernel AND the governed consume path; the numpy float
+cross-check; the erf round-trip z-constant verification; pin INVARIANCE under upstream re-runs); **CTRL-006/013**
+(lineage — DEPENDS_ON kept on FAILED); **CTRL-011/023** (deny-by-default reused `risk.*` + symmetric FORCE-RLS, NEVER
+hybrid; the hybrid probe uses the REAL system-tenant id + set EQUALITY); **CTRL-026** (`CALC.RUN_*` chain);
+**CTRL-029/032** (fail-closed COVERAGE/consistency adjudication on BOTH paths — an uncovered exposure factor, mixed-run
+rows, mixed base currency, or wrong vocabulary refuse pre-create with ZERO writes, **NO zero-variance imputation**; the
+REACHABLE non-PSD radicand gate ⇒ committed FAILED run + DQ evidence + ZERO rows). The `RISK.*` family stays
+reserved-not-emitted (`RISK.VAR_CREATE` joins the row). `audit/service.py` **FROZEN**.
+
 ## 5. Open Decisions
 
 | ID | Open Decision |

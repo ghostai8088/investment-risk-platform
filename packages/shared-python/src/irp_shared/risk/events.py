@@ -39,6 +39,12 @@ RUN_TYPE_COVARIANCE = "COVARIANCE"
 #: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in P3-4 (OD-P3-4-L).
 RISK_COVARIANCE_CREATE_EVENT_RESERVED = "RISK.COVARIANCE_CREATE"
 
+#: The ``calculation_run.run_type`` discriminator for a VaR run (P3-5).
+RUN_TYPE_VAR = "VAR"
+
+#: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in P3-5 (OD-P3-5-K).
+RISK_VAR_CREATE_EVENT_RESERVED = "RISK.VAR_CREATE"
+
 #: Controlled-vocab ``sensitivity_type`` (plain String, no enum/CHECK; app-side allow-list).
 SENSITIVITY_TYPE_DV01 = "DV01"
 SENSITIVITY_TYPE_SPREAD_DV01 = "SPREAD_DV01"
@@ -49,6 +55,12 @@ SENSITIVITY_TYPES = (SENSITIVITY_TYPE_DV01, SENSITIVITY_TYPE_SPREAD_DV01)
 STATISTIC_TYPE_COVARIANCE = "COVARIANCE"
 STATISTIC_TYPE_CORRELATION_RESERVED = "CORRELATION"
 STATISTIC_TYPES = (STATISTIC_TYPE_COVARIANCE,)
+
+#: Controlled-vocab ``var_result.metric_type`` (P3-5; ``ES_PARAMETRIC`` is reserved — the
+#: closed-form seam ``ES = sigma * phi(z) / (1 - alpha)`` is recorded, never emitted in v1).
+METRIC_TYPE_VAR_PARAMETRIC = "VAR_PARAMETRIC"
+METRIC_TYPE_ES_PARAMETRIC_RESERVED = "ES_PARAMETRIC"
+METRIC_TYPES = (METRIC_TYPE_VAR_PARAMETRIC,)
 
 
 @dataclass(frozen=True)
@@ -70,6 +82,14 @@ class FactorExposureActor:
 @dataclass(frozen=True)
 class CovarianceActor:
     """The principal initiating a covariance-estimation run (mirrors :class:`SensitivityActor`)."""
+
+    actor_id: str
+    actor_type: str = "user"
+
+
+@dataclass(frozen=True)
+class VarActor:
+    """The principal initiating a VaR run (mirrors :class:`SensitivityActor`)."""
 
     actor_id: str
     actor_type: str = "user"

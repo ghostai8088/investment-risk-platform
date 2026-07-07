@@ -190,6 +190,62 @@ class CovarianceResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, B
     covariance_value: Mapped[Decimal] = mapped_column(PreciseDecimal(38, 20), nullable=False)
 
 
+class VarResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One parametric-VaR summary (P3-5, **ENT-027 `risk_result` REALIZED**; IA TRUE append-only)
+    — the platform's first SINGLE-SUMMARY-ROW governed result: ONE row per COMPLETED run
+    (grain ``(calculation_run_id, metric_type)``; ``VAR_PARAMETRIC``, ``ES_PARAMETRIC`` reserved
+    — extend by value) and the first DERIVED-OF-DERIVED number (two upstream governed runs).
+
+    **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** (the P3-4 exemplar): NOT-NULL
+    ``calculation_run_id`` + ``input_snapshot_id`` (a ``VAR_INPUT`` snapshot pinning the consumed
+    ``factor_exposure_result`` + ``covariance_result`` rows) + a REGISTERED, identity-checked
+    ``model_version_id`` whose DECLARED confidence/horizon/z fixed the parameters (OD-P3-5-D).
+    ``exposure_run_id``/``covariance_run_id`` are hard-FK PROVENANCE columns (``calculation_run.
+    run_id`` is unique and never deleted) — which upstream runs fed this number, queryable
+    without parsing the snapshot. ``sigma``/``var_value`` = ``quantize_HALF_UP(…, 6)`` in the
+    run-uniform ``base_currency`` (positive ``var_value`` = potential loss); the covariance
+    window is echoed (``n_observations``/``window_start``/``window_end``) so the row is
+    self-describing."""
+
+    __tablename__ = "var_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        UniqueConstraint("calculation_run_id", "metric_type", name="uq_var_result_run_grain"),
+    )
+
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("dataset_snapshot.id"), nullable=False, index=True
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    )
+    exposure_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    covariance_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    # Controlled vocab (plain String): 'VAR_PARAMETRIC' v1; 'ES_PARAMETRIC' reserved.
+    metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    confidence_level: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
+    horizon_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    z_score: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
+    # PreciseDecimal (PG NUMERIC(28,6) / SQLite fixed-scale TEXT): a 16+-significant-digit
+    # currency value does not survive SQLite's float roundtrip (the P3-4 covariance lesson,
+    # applied to the NEW columns; the shipped P3-1/P3-3 result columns are a recorded parity
+    # deferral).
+    sigma: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 6), nullable=False)
+    var_value: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 6), nullable=False)
+    n_factors: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_observations: Mapped[int] = mapped_column(Integer, nullable=False)
+    window_start: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    window_end: Mapped[dt_date] = mapped_column(Date, nullable=False)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{type(target).__name__} is append-only (AUD-01); update/delete is forbidden"
@@ -204,3 +260,5 @@ event.listen(FactorExposureResult, "before_update", _block_mutation)
 event.listen(FactorExposureResult, "before_delete", _block_mutation)
 event.listen(CovarianceResult, "before_update", _block_mutation)
 event.listen(CovarianceResult, "before_delete", _block_mutation)
+event.listen(VarResult, "before_update", _block_mutation)
+event.listen(VarResult, "before_delete", _block_mutation)

@@ -46,6 +46,9 @@ PURPOSE_SENSITIVITY_INPUT = "SENSITIVITY_INPUT"
 PURPOSE_FACTOR_EXPOSURE_INPUT = "FACTOR_EXPOSURE_INPUT"
 #: P3-4 (OD-P3-4-I): a covariance input snapshot (pins FACTOR definitions + FACTOR_RETURN windows).
 PURPOSE_COVARIANCE_INPUT = "COVARIANCE_INPUT"
+#: P3-5 (OD-P3-5-I): a VaR input snapshot (pins the consumed FACTOR_EXPOSURE + COVARIANCE result
+#: rows of the two upstream governed runs — the first derived-of-derived input set).
+PURPOSE_VAR_INPUT = "VAR_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -53,6 +56,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_SENSITIVITY_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_COVARIANCE_INPUT,
+    PURPOSE_VAR_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -87,6 +91,11 @@ COMPONENT_KIND_FACTOR = "FACTOR"
 #: first consumer). ``target_entity_type='factor'`` (the series parent; the kind disambiguates
 #: from the COMPONENT_KIND_FACTOR definition pin).
 COMPONENT_KIND_FACTOR_RETURN = "FACTOR_RETURN"
+#: P3-5 (OD-P3-5-I): a pinned ``factor_exposure_result`` row (IA-row pin flavor — the source row
+#: is TRUE append-only; drift impossible by construction; the P3-3 EXPOSURE precedent).
+COMPONENT_KIND_FACTOR_EXPOSURE = "FACTOR_EXPOSURE"
+#: P3-5 (OD-P3-5-I): a pinned ``covariance_result`` row (IA-row pin flavor).
+COMPONENT_KIND_COVARIANCE = "COVARIANCE"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -96,6 +105,8 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
     COMPONENT_KIND_FACTOR_RETURN,
+    COMPONENT_KIND_FACTOR_EXPOSURE,
+    COMPONENT_KIND_COVARIANCE,
 )
 
 

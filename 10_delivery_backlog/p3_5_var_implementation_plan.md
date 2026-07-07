@@ -71,8 +71,8 @@ radicand  = Σ_i Σ_j x_i·σ_ij·x_j                          (σ_ij symmetric 
 - Decimal `localcontext(prec=50)`; outputs HALF_UP-6 (`Numeric(28,6)`).
 - **Verification legs:** (1) hand-computed exact rational reference (2-factor + 3-factor cases, incl. an
   offsetting-x near-null case exercising the tolerance); (2) `numpy` float cross-check
-  (`z*sqrt(x@S@x)`, ε_rel 1e-9, TEST-ONLY); (3) properties: positive homogeneity `VaR(λx)=λ·VaR(x)` (exact at
-  the quantum), confidence monotonicity (z₉₉ > z₉₅ ⇒ VaR₉₉ > VaR₉₅ for σ>0), σ_p invariant under exposure-row
+  (`z*sqrt(x@S@x)`, ε_rel 1e-9, TEST-ONLY); (3) properties: positive homogeneity `VaR(λx)=λ·VaR(x)` (exact
+  unrounded/for σ; within (λ+1)/2 quanta after rounding), confidence monotonicity (z₉₉ > z₉₅ ⇒ VaR₉₉ > VaR₉₅ for σ>0), σ_p invariant under exposure-row
   ORDER; (4) z-constant verification: `Φ(z)=(1+erf(z/√2))/2` reproduces α to 1e-12 (stdlib `math.erf`) +
   the literature values quoted in the methodology; (5) exact re-run + consume≡build + pin invariance under an
   upstream exposure/covariance RE-RUN (new upstream runs must not move a pinned VaR).

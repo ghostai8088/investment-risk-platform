@@ -16,9 +16,11 @@ from __future__ import annotations
 
 from irp_shared.snapshot.events import SNAPSHOT_CREATE_EVENT, SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
+    COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_CURVE,
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
+    COMPONENT_KIND_FACTOR_EXPOSURE,
     COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FX,
     COMPONENT_KIND_POSITION,
@@ -26,6 +28,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
+    PURPOSE_VAR_INPUT,
     SNAPSHOT_COMPONENT_KINDS,
     SNAPSHOT_PURPOSES,
     DatasetSnapshot,
@@ -34,6 +37,7 @@ from irp_shared.snapshot.models import (
 from irp_shared.snapshot.service import (
     COVARIANCE_BINDING_PREDICATE,
     DEFAULT_BINDING_PREDICATE,
+    VAR_BINDING_PREDICATE,
     CovarianceSnapshotError,
     CurveSelector,
     CurveSnapshotError,
@@ -41,11 +45,13 @@ from irp_shared.snapshot.service import (
     FactorExposureSnapshotError,
     SnapshotNotFound,
     SnapshotPurposeError,
+    VarSnapshotError,
     VerifyResult,
     build_covariance_snapshot,
     build_curve_snapshot,
     build_factor_exposure_snapshot,
     build_snapshot,
+    build_var_snapshot,
     list_components,
     resolve_snapshot,
     verify_snapshot,
@@ -86,4 +92,10 @@ __all__ = [
     "COVARIANCE_BINDING_PREDICATE",
     "build_covariance_snapshot",
     "CovarianceSnapshotError",
+    "COMPONENT_KIND_FACTOR_EXPOSURE",
+    "COMPONENT_KIND_COVARIANCE",
+    "PURPOSE_VAR_INPUT",
+    "VAR_BINDING_PREDICATE",
+    "build_var_snapshot",
+    "VarSnapshotError",
 ]

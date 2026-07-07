@@ -68,9 +68,11 @@ from irp_shared.portfolio import PortfolioNotVisible, resolve_portfolio
 from irp_shared.position import PositionNotVisible, resolve_position
 from irp_shared.snapshot.events import SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
+    COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_CURVE,
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
+    COMPONENT_KIND_FACTOR_EXPOSURE,
     COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FX,
     COMPONENT_KIND_PORTFOLIO,
@@ -79,15 +81,18 @@ from irp_shared.snapshot.models import (
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
+    PURPOSE_VAR_INPUT,
     SNAPSHOT_PURPOSES,
     DatasetSnapshot,
     DatasetSnapshotComponent,
 )
 from irp_shared.snapshot.serialize import (
     content_hash,
+    covariance_content,
     curve_content,
     exposure_content,
     factor_content,
+    factor_exposure_content,
     factor_return_series_content,
     fx_content,
     manifest_hash,
@@ -822,6 +827,162 @@ def build_covariance_snapshot(
     return header_row
 
 
+class VarSnapshotError(Exception):
+    """Raised when a VaR-input snapshot cannot be built (an upstream run with no visible result
+    rows, or an unresolvable pinned row) — fail closed, BEFORE any write. Maps to 409."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"VaR snapshot input failed closed: {detail}")
+        self.detail = detail
+
+
+def _resolve_factor_exposure_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``factor_exposure_result`` row by id with an EXPLICIT tenant predicate
+    (models-only, FUNCTION-LOCAL import — hoisting would execute ``irp_shared.risk.__init__``,
+    which imports the risk services, which import ``snapshot``: a circular import. The risk
+    SERVICE is never imported here — the P3-3 ``_resolve_exposure_atom`` precedent)."""
+    from irp_shared.risk.models import FactorExposureResult  # models-only (no cycle)
+
+    row = session.execute(
+        select(FactorExposureResult).where(
+            FactorExposureResult.id == str(row_id),
+            FactorExposureResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise VarSnapshotError(f"factor exposure row {row_id} is not visible")
+    return row
+
+
+def _resolve_covariance_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``covariance_result`` row by id with an EXPLICIT tenant predicate (models-only
+    function-local import — see :func:`_resolve_factor_exposure_row`)."""
+    from irp_shared.risk.models import CovarianceResult  # models-only (no cycle)
+
+    row = session.execute(
+        select(CovarianceResult).where(
+            CovarianceResult.id == str(row_id),
+            CovarianceResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise VarSnapshotError(f"covariance row {row_id} is not visible")
+    return row
+
+
+def _list_factor_exposure_rows(session: Session, run_id: str, *, acting_tenant: str) -> list[Any]:
+    """The ``factor_exposure_result`` rows of a run (tenant-scoped, stable order; models-only
+    function-local import — the reader twin of ``risk.factor_service.list_factor_exposures``,
+    re-implemented here because importing the risk SERVICE is a circular import)."""
+    from irp_shared.risk.models import FactorExposureResult  # models-only (no cycle)
+
+    return list(
+        session.execute(
+            select(FactorExposureResult)
+            .where(
+                FactorExposureResult.calculation_run_id == str(run_id),
+                FactorExposureResult.tenant_id == str(acting_tenant),
+            )
+            .order_by(
+                FactorExposureResult.factor_id,
+                FactorExposureResult.portfolio_id,
+                FactorExposureResult.instrument_id,
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _list_covariance_rows(session: Session, run_id: str, *, acting_tenant: str) -> list[Any]:
+    """The ``covariance_result`` rows of a run (tenant-scoped, canonical-pair order; models-only
+    function-local import — the reader twin of ``risk.covariance_service.list_covariances``)."""
+    from irp_shared.risk.models import CovarianceResult  # models-only (no cycle)
+
+    return list(
+        session.execute(
+            select(CovarianceResult)
+            .where(
+                CovarianceResult.calculation_run_id == str(run_id),
+                CovarianceResult.tenant_id == str(acting_tenant),
+            )
+            .order_by(CovarianceResult.factor_id_1, CovarianceResult.factor_id_2)
+        )
+        .scalars()
+        .all()
+    )
+
+
+#: The VaR binding/selection rule (OD-P3-5-I): every result row of the two consumed runs.
+VAR_BINDING_PREDICATE = "v1:exposure-run-rows+covariance-run-rows"
+
+
+def build_var_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    exposure_run_id: str,
+    covariance_run_id: str,
+) -> DatasetSnapshot:
+    """Build one immutable ``VAR_INPUT`` snapshot (P3-5, OD-P3-5-I) pinning EVERY result row of
+    the two consumed upstream governed runs:
+
+    - one ``COMPONENT_KIND_FACTOR_EXPOSURE`` component per ``factor_exposure_result`` row, and
+    - one ``COMPONENT_KIND_COVARIANCE`` component per ``covariance_result`` row
+
+    (both the IA-row pin flavor — the source rows are TRUE append-only; drift impossible by
+    construction), so a VaR run is reproducible from the snapshot alone (the compute reads this
+    captured content — never a live result read; a later upstream RE-RUN produces new rows under
+    a NEW run and cannot move a pinned VaR). **NO factor-definition pin** — both row types carry
+    ``factor_id`` + ``factor_code`` (self-describing; OD-P3-5-I). An empty row set on either run
+    fails closed BEFORE any write. The run-status / coverage / consistency adjudication is the
+    RISK binder's pre-create gate — this builder pins, it does not adjudicate; it needs no as-of
+    (the rows are immutable) and imports NO ``calc``/risk-service symbol."""
+    now = utcnow()
+
+    exposure_rows = _list_factor_exposure_rows(
+        session, exposure_run_id, acting_tenant=acting_tenant
+    )
+    if not exposure_rows:
+        raise VarSnapshotError(f"exposure run {exposure_run_id} has no visible result rows")
+    covariance_rows = _list_covariance_rows(session, covariance_run_id, acting_tenant=acting_tenant)
+    if not covariance_rows:
+        raise VarSnapshotError(f"covariance run {covariance_run_id} has no visible result rows")
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in exposure_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_FACTOR_EXPOSURE,
+            "factor_exposure_result",
+            row,
+            factor_exposure_content(row),
+        )
+    for row in covariance_rows:
+        _append_spec(
+            specs, COMPONENT_KIND_COVARIANCE, "covariance_result", row, covariance_content(row)
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_VAR_INPUT,
+        as_of_valid_at=now,
+        as_of_known_at=now,
+        as_of_valuation_date=covariance_rows[0].window_end,
+        binding_predicate_version=VAR_BINDING_PREDICATE,
+    )
+
+    # No build-time DQ gate: the pinned rows exist by construction (empty sets are refused
+    # above) — the P3-3/P3-4 no-snapshot-gap-class rationale.
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -889,6 +1050,16 @@ def _reresolve_content(
         return factor_content(
             resolve_factor(session, comp.target_entity_id, acting_tenant=acting_tenant)
         )
+    if comp.component_kind == COMPONENT_KIND_FACTOR_EXPOSURE:
+        return factor_exposure_content(
+            _resolve_factor_exposure_row(
+                session, comp.target_entity_id, acting_tenant=acting_tenant
+            )
+        )
+    if comp.component_kind == COMPONENT_KIND_COVARIANCE:
+        return covariance_content(
+            _resolve_covariance_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
     if comp.component_kind == COMPONENT_KIND_FACTOR_RETURN:
         # Re-read the series parent + each pinned FR row by surrogate id (tenant-predicated). A
         # gone/cross-tenant row reports as drift; a superseded/corrected row is byte-stable (its
@@ -926,6 +1097,7 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             FactorNotVisible,
             FactorExposureSnapshotError,
             CovarianceSnapshotError,
+            VarSnapshotError,
         ):
             drifted.append(comp.id)
             continue

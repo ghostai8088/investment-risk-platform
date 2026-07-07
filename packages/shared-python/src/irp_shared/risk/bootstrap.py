@@ -19,6 +19,10 @@ validate or approve it.
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
+from decimal import Decimal
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -402,5 +406,221 @@ def register_covariance_model(
             f"{WINDOW_ASSUMPTION_PREFIX}{int(window_observations)}",
         ),
         limitations=COVARIANCE_LIMITATIONS,
+        actor_type=actor_type,
+    )
+
+
+#: The per-tenant inventory identity of the parametric-VaR model (P3-5, OD-P3-5-A/D).
+VAR_MODEL_CODE = "risk.var.parametric"
+VAR_MODEL_NAME = "Parametric portfolio VaR (delta-normal, zero-mean, 1-day)"
+VAR_MODEL_TYPE = "VAR"
+VAR_VERSION_LABEL = "v1"
+
+#: MANDATORY methodology pointer — the versioned doc under the existing methodology home.
+VAR_METHODOLOGY_REF = "05_analytics_methodologies/var_parametric_v1.md"
+
+#: The declared-parameter assumption prefixes (OD-P3-5-D: confidence/horizon/z are part of the
+#: version identity — parsed back for the identity check + the binder's read; the OD-P3-4-G
+#: window precedent extended).
+CONFIDENCE_ASSUMPTION_PREFIX = "confidence_level="
+HORIZON_ASSUMPTION_PREFIX = "horizon_days="
+Z_ASSUMPTION_PREFIX = "z_score="
+
+#: The v1 confidence vocabulary -> the REGISTERED z constants (OD-P3-5-D): recorded to 12dp,
+#: dual-sourced from published standard-normal tables and test-verified via the stdlib
+#: ``math.erf`` round-trip Phi(z) = (1+erf(z/sqrt(2)))/2 == alpha to 1e-12 AND an independent
+#: bisection inversion (2026-07-07). NO runtime inverse-CDF exists (capability-is-not-evidence).
+VAR_Z_SCORES: dict[str, str] = {
+    "0.9500": "1.644853626951",
+    "0.9900": "2.326347874041",
+}
+#: The v1 horizon (the covariance substrate is DAILY/unannualized; sqrt(h) is a recorded seam).
+VAR_HORIZON_DAYS = 1
+
+#: The declared methodology choices EXCLUDING the per-registration declarations (appended per
+#: call; OD-P3-5-D/E/F/G).
+VAR_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Zero-mean delta-normal parametric VaR under the linear factor model dV = SUM_i(x_i * r_i): "
+    "sigma_p = sqrt(x' * Sigma * x); VaR_alpha = z_alpha * sigma_p (1-day; no sqrt(h) scaling).",
+    "Inputs: the per-factor CURRENCY-exposure totals of ONE COMPLETED factor-exposure run (base "
+    "currency, signed) x the sample covariance matrix of ONE COMPLETED covariance run "
+    "(SIMPLE/DAILY, unannualized); every exposure factor MUST be covered by the covariance "
+    "factor set - a gap fails closed (NO zero-variance imputation).",
+    "z_alpha is a REGISTERED constant from an enumerated confidence vocabulary - no runtime "
+    "inverse-normal-CDF is computed.",
+    "Radicand quantization floor: x'*Sigma*x in [-tol, 0) with tol = F^2 * max(x_i^2) * 1E-19 "
+    "(the 20dp storage-quantum bound, 20x headroom) is treated as 0; below -tol the run FAILS "
+    "closed (a non-PSD input).",
+    "Computed in Decimal at 50-digit context precision; sigma/VaR quantize_HALF_UP to 6 decimal "
+    "places (the Numeric(28,6) base-currency scale).",
+)
+
+#: The recorded scope-outs (mirrored into model_limitation rows; OD-P3-5-M).
+VAR_LIMITATIONS: tuple[str, ...] = (
+    "SPECIFIC/IDIOSYNCRATIC RISK = 0: the linear CURRENCY-family indicator-loading factor model "
+    "carries NO residual variance term - portfolio risk outside the factor covariance is "
+    "invisible to this number (the allocation-v1 limitation propagates).",
+    "Joint normality of factor returns assumed - tail risk is understated for fat-tailed "
+    "returns; the empirical-distribution alternative (factor-based historical simulation) is a "
+    "recorded roadmap method.",
+    "1-day horizon only (the covariance is daily/unannualized); multi-horizon sqrt(h) scaling "
+    "is a later, separately declared transform.",
+    "Parametric method only; ONE confidence level per registered version (the declared-parameter "
+    "identity); ES (closed-form seam), historical simulation, and Monte-Carlo are later, "
+    "separately declared model versions/families (user-directed roadmap).",
+    "Inherits the sample-covariance estimation error (equal weights, no shrinkage; rank-deficient "
+    "for F >= N).",
+    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+)
+
+#: Strict decimal-fraction pattern for the declared confidence (e.g. '0.9500').
+_CONFIDENCE_PATTERN = re.compile(r"0\.[0-9]{1,6}")
+
+
+@dataclass(frozen=True)
+class VarParameters:
+    """The version's declared VaR parameters, parsed back from its ``model_assumption`` rows."""
+
+    confidence_level: Decimal
+    horizon_days: int
+    z_score: Decimal
+
+
+def declared_var_parameters(session: Session, version: ModelVersion) -> VarParameters:
+    """Parse the version's declared confidence/horizon/z from its ``model_assumption`` rows (the
+    OD-P3-5-D identity: exactly ONE strictly-well-formed declaration of EACH). A malformed,
+    absent, or ambiguous declaration is NOT a parametric-VaR identity — refuse fail-closed
+    (:class:`WrongModelVersionError`, 422), never a bare parse crash (the P3-4 review lesson:
+    such versions are mintable via the GENERIC registration endpoint)."""
+    rows = (
+        session.execute(
+            select(ModelAssumption).where(ModelAssumption.model_version_id == version.id)
+        )
+        .scalars()
+        .all()
+    )
+
+    def _single(prefix: str) -> str | None:
+        found = [
+            r.assumption_text[len(prefix) :] for r in rows if r.assumption_text.startswith(prefix)
+        ]
+        return found[0] if len(found) == 1 else None
+
+    confidence_text = _single(CONFIDENCE_ASSUMPTION_PREFIX)
+    horizon_text = _single(HORIZON_ASSUMPTION_PREFIX)
+    z_text = _single(Z_ASSUMPTION_PREFIX)
+    # The v1 identity is EXACT: an enumerated confidence with its table z AND horizon '1'
+    # verbatim (isdigit() accepted Unicode digits and any horizon like '250' — a generically
+    # minted version could stamp a horizon its 1-day number does not reflect; 2026-07 review).
+    if (
+        confidence_text is None
+        or horizon_text is None
+        or z_text is None
+        or not _CONFIDENCE_PATTERN.fullmatch(confidence_text)
+        or horizon_text != str(VAR_HORIZON_DAYS)
+        or VAR_Z_SCORES.get(confidence_text) != z_text
+    ):
+        raise WrongModelVersionError(str(version.id), VAR_MODEL_CODE)
+    return VarParameters(
+        confidence_level=Decimal(confidence_text),
+        horizon_days=int(horizon_text),
+        z_score=Decimal(z_text),
+    )
+
+
+def register_var_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    confidence_level: str | Decimal,
+    horizon_days: int = VAR_HORIZON_DAYS,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the parametric-VaR ``model`` + a ``model_version`` for this
+    ``(code_version, confidence_level, horizon_days)`` identity through the governed model
+    service (P3-5, OD-P3-5-D). The declarations are recorded as ``model_assumption``s AND are
+    part of the version-resolution identity: re-registering the same ``version_label`` with ANY
+    different declaration raises :class:`ModelVersionConflictError` — mint a new label instead.
+    The v1 vocabulary: ``confidence_level`` in {0.95, 0.99} (the registered z table);
+    ``horizon_days`` == 1."""
+    # STRICT parse — never coerce: a malformed string must not crash (Decimal('abc') raises
+    # InvalidOperation, which is NOT a ValueError) and a near-vocabulary value like '0.94995'
+    # must be REFUSED, not silently rounded onto 0.9500 (2026-07 review). A <=4dp match
+    # quantizes exactly (zero-padding only).
+    text = str(confidence_level).strip()
+    if not _CONFIDENCE_PATTERN.fullmatch(text) or len(text) > 6:
+        raise ValueError(
+            f"confidence_level {confidence_level!r} is not in the v1 vocabulary "
+            f"{sorted(VAR_Z_SCORES)} (a new level is a new declared registration, "
+            f"never a runtime quantile)"
+        )
+    confidence_key = f"{Decimal(text).quantize(Decimal('0.0001')):f}"
+    z_text = VAR_Z_SCORES.get(confidence_key)
+    if z_text is None:
+        raise ValueError(
+            f"confidence_level {confidence_level} is not in the v1 vocabulary "
+            f"{sorted(VAR_Z_SCORES)} (a new level is a new declared registration, "
+            f"never a runtime quantile)"
+        )
+    if int(horizon_days) != VAR_HORIZON_DAYS:
+        raise ValueError(
+            f"horizon_days must be {VAR_HORIZON_DAYS} in v1 (sqrt(h) scaling is a recorded seam)"
+        )
+    model = session.execute(
+        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == VAR_MODEL_CODE)
+    ).scalar_one_or_none()
+    if model is None:
+        model = register_model(
+            session,
+            tenant_id=str(tenant_id),
+            code=VAR_MODEL_CODE,
+            name=VAR_MODEL_NAME,
+            model_type=VAR_MODEL_TYPE,
+            actor_id=actor_id,
+            description=(
+                "Zero-mean delta-normal parametric portfolio VaR over governed factor "
+                "exposures x a governed sample covariance (P3-5, ENT-027)."
+            ),
+            actor_type=actor_type,
+        )
+
+    version = session.execute(
+        select(ModelVersion).where(
+            ModelVersion.model_id == model.id,
+            ModelVersion.version_label == VAR_VERSION_LABEL,
+        )
+    ).scalar_one_or_none()
+    if version is not None:
+        declared = declared_var_parameters(session, version)  # malformed existing -> 422 class
+        if (
+            version.code_version != str(code_version)
+            or f"{declared.confidence_level:f}" != confidence_key
+            or declared.horizon_days != int(horizon_days)
+        ):
+            raise ModelVersionConflictError(
+                VAR_MODEL_CODE,
+                VAR_VERSION_LABEL,
+                f"{code_version} (confidence_level={confidence_key}, "
+                f"horizon_days={horizon_days})",
+            )
+        return version
+
+    return register_model_version(
+        session,
+        model=model,
+        version_label=VAR_VERSION_LABEL,
+        actor_id=actor_id,
+        methodology_ref=VAR_METHODOLOGY_REF,
+        code_version=str(code_version),
+        status="REGISTERED",
+        assumptions=(
+            *VAR_ASSUMPTIONS_BASE,
+            f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
+            f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
+            f"{Z_ASSUMPTION_PREFIX}{z_text}",
+        ),
+        limitations=VAR_LIMITATIONS,
         actor_type=actor_type,
     )

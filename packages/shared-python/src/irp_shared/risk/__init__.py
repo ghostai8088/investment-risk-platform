@@ -9,7 +9,9 @@ risk number escapes the model inventory. P3-1 analytic sensitivities (curve-intr
 instrument/position attribution, NO interpolation, NO pricing engine); P3-3 indicator-loading
 factor-exposure allocation; P3-4 equal-weighted unbiased sample covariance (ENT-051 — NO
 shrinkage/EWMA/correlation output; the window is version identity; **numpy is TEST-ONLY, never a
-runtime import**).
+runtime import**); P3-5 zero-mean delta-normal parametric VaR (ENT-027 `risk_result` realized —
+the first derived-of-derived number; confidence/horizon/z are version identity; NO runtime
+quantile function, NO simulation, NO ES/historical/MC in v1).
 """
 
 from __future__ import annotations
@@ -21,14 +23,20 @@ from irp_shared.risk.bootstrap import (
     FACTOR_EXPOSURE_MODEL_CODE,
     SENSITIVITY_METHODOLOGY_REF,
     SENSITIVITY_MODEL_CODE,
+    VAR_METHODOLOGY_REF,
+    VAR_MODEL_CODE,
+    VAR_Z_SCORES,
     WINDOW_ASSUMPTION_PREFIX,
     ModelVersionConflictError,
+    VarParameters,
     WrongModelVersionError,
     assert_model_version_of,
+    declared_var_parameters,
     declared_window_observations,
     register_covariance_model,
     register_factor_exposure_model,
     register_sensitivity_model,
+    register_var_model,
 )
 from irp_shared.risk.covariance_kernel import (
     CovarianceKernelError,
@@ -46,12 +54,16 @@ from irp_shared.risk.covariance_service import (
     run_covariance,
 )
 from irp_shared.risk.events import (
+    METRIC_TYPE_VAR_PARAMETRIC,
+    METRIC_TYPES,
     RISK_COVARIANCE_CREATE_EVENT_RESERVED,
     RISK_FACTOR_EXPOSURE_CREATE_EVENT_RESERVED,
     RISK_SENSITIVITY_CREATE_EVENT_RESERVED,
+    RISK_VAR_CREATE_EVENT_RESERVED,
     RUN_TYPE_COVARIANCE,
     RUN_TYPE_FACTOR_EXPOSURE,
     RUN_TYPE_SENSITIVITY,
+    RUN_TYPE_VAR,
     SENSITIVITY_TYPE_DV01,
     SENSITIVITY_TYPE_SPREAD_DV01,
     SENSITIVITY_TYPES,
@@ -60,6 +72,7 @@ from irp_shared.risk.events import (
     CovarianceActor,
     FactorExposureActor,
     SensitivityActor,
+    VarActor,
 )
 from irp_shared.risk.factor_kernel import FactorKernelError
 from irp_shared.risk.factor_service import (
@@ -74,7 +87,12 @@ from irp_shared.risk.factor_service import (
     run_factor_exposure,
 )
 from irp_shared.risk.kernel import SensitivityKernelError, node_dv01, node_spread_dv01
-from irp_shared.risk.models import CovarianceResult, FactorExposureResult, SensitivityResult
+from irp_shared.risk.models import (
+    CovarianceResult,
+    FactorExposureResult,
+    SensitivityResult,
+    VarResult,
+)
 from irp_shared.risk.service import (
     SensitivityInputError,
     SensitivityNotVisible,
@@ -84,6 +102,17 @@ from irp_shared.risk.service import (
     resolve_run,
     resolve_sensitivity,
     run_sensitivities,
+)
+from irp_shared.risk.var_kernel import VarEstimate, VarKernelError, compute_parametric_var
+from irp_shared.risk.var_service import (
+    VarInputError,
+    VarNotVisible,
+    VarRunNotVisible,
+    VarRunResult,
+    list_vars,
+    resolve_var,
+    resolve_var_run,
+    run_var,
 )
 
 __all__ = [
@@ -150,4 +179,27 @@ __all__ = [
     "COVARIANCE_MODEL_CODE",
     "COVARIANCE_METHODOLOGY_REF",
     "WINDOW_ASSUMPTION_PREFIX",
+    "VarResult",
+    "VarActor",
+    "RUN_TYPE_VAR",
+    "RISK_VAR_CREATE_EVENT_RESERVED",
+    "METRIC_TYPE_VAR_PARAMETRIC",
+    "METRIC_TYPES",
+    "VarKernelError",
+    "VarEstimate",
+    "compute_parametric_var",
+    "run_var",
+    "list_vars",
+    "resolve_var_run",
+    "resolve_var",
+    "VarRunResult",
+    "VarInputError",
+    "VarNotVisible",
+    "VarRunNotVisible",
+    "register_var_model",
+    "declared_var_parameters",
+    "VarParameters",
+    "VAR_MODEL_CODE",
+    "VAR_METHODOLOGY_REF",
+    "VAR_Z_SCORES",
 ]

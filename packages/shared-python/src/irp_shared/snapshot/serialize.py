@@ -18,7 +18,7 @@ immutable. ``restatement_reason``/``supersedes_id`` ARE included (write-once ver
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import Any
 
 from irp_shared.audit.hashing import canonicalize, sha256_hex
@@ -30,6 +30,7 @@ _SCALE_QUANTITY = 8
 _SCALE_MONEY = 6
 _SCALE_FX_RATE = 12
 _SCALE_CURVE_POINT = 12
+_SCALE_COVARIANCE = 20  # covariance_result.covariance_value Numeric(38,20) (P3-5)
 
 
 def _norm_datetime(value: datetime) -> str:
@@ -47,8 +48,15 @@ def _norm_decimal(value: Decimal, scale: int) -> str:
     stores a sub-scale value. Without an explicit quantize a value carrying more precision than the
     column scale (e.g. ``0.0000005`` at scale 6) would hash differently build-time (in-memory,
     un-roundtripped) vs verify-time (PG-roundtripped), and differently on SQLite vs PG — a spurious
-    drift. Quantizing HALF_UP here makes BOTH ends, on BOTH engines, hash the same scaled value."""
-    quantized = value.quantize(Decimal(1).scaleb(-scale), rounding=ROUND_HALF_UP)
+    drift. Quantizing HALF_UP here makes BOTH ends, on BOTH engines, hash the same scaled value.
+
+    Quantized inside a WIDE local context: the DEFAULT context is prec 28, which raises
+    ``InvalidOperation`` for a value a wide column legitimately holds (the P3-5 20dp covariance
+    scale permits 18 integer digits = a 38-digit coefficient — the same bug class the P3-4
+    ``PreciseDecimal`` fix closed at the bind side; 2026-07 review)."""
+    with localcontext() as ctx:
+        ctx.prec = 60  # >= every column's precision + scale, with headroom
+        quantized = value.quantize(Decimal(1).scaleb(-scale), rounding=ROUND_HALF_UP)
     return f"{quantized:f}"
 
 
@@ -250,6 +258,53 @@ def factor_return_series_content(factor: Any, rows: list[Any]) -> dict[str, Any]
             }
             for r in sorted(rows, key=lambda x: x.return_date)
         ],
+    }
+
+
+def factor_exposure_content(row: Any) -> dict[str, Any]:
+    """The captured content of one ``factor_exposure_result`` row (P3-5 FACTOR_EXPOSURE component
+    — an IA TRUE append-only row: the pin is byte-stable by construction). The full immutable
+    column set at column scale (loading 12dp; exposure_amount 6dp)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "calculation_run_id": _norm_guid(row.calculation_run_id),
+        "input_snapshot_id": _norm_guid(row.input_snapshot_id),
+        "model_version_id": _norm_guid(row.model_version_id),
+        "system_from": _norm_datetime(row.system_from),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "factor_id": _norm_guid(row.factor_id),
+        "factor_code": row.factor_code,
+        "factor_family": row.factor_family,
+        "base_currency": row.base_currency,
+        "mark_currency": row.mark_currency,
+        "loading": _norm_decimal(row.loading, _SCALE_CURVE_POINT),
+        "exposure_amount": _norm_decimal(row.exposure_amount, _SCALE_MONEY),
+    }
+
+
+def covariance_content(row: Any) -> dict[str, Any]:
+    """The captured content of one ``covariance_result`` row (P3-5 COVARIANCE component — an IA
+    TRUE append-only row). ``covariance_value`` at the 20dp covariance scale."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "calculation_run_id": _norm_guid(row.calculation_run_id),
+        "input_snapshot_id": _norm_guid(row.input_snapshot_id),
+        "model_version_id": _norm_guid(row.model_version_id),
+        "system_from": _norm_datetime(row.system_from),
+        "factor_id_1": _norm_guid(row.factor_id_1),
+        "factor_id_2": _norm_guid(row.factor_id_2),
+        "factor_code_1": row.factor_code_1,
+        "factor_code_2": row.factor_code_2,
+        "statistic_type": row.statistic_type,
+        "return_type": row.return_type,
+        "frequency": row.frequency,
+        "n_observations": row.n_observations,
+        "window_start": row.window_start.isoformat(),
+        "window_end": row.window_end.isoformat(),
+        "covariance_value": _norm_decimal(row.covariance_value, _SCALE_COVARIANCE),
     }
 
 

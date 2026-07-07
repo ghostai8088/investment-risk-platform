@@ -127,3 +127,66 @@ declared-parameter version identity, the coverage adjudication, the VAR_INPUT sn
 the radicand tolerance, the audit/entitlement reuse, the dual-path verification contract, and migration `0026_var`
 are all fixed against the ratified standards and the hardened P3-4 exemplar. The build contract is
 `p3_5_var_implementation_plan.md`. **P3-5 planning implements nothing.**
+
+---
+
+## Part 7 — Implementation adversarial review log (2026-07-07, independent-context — the plan Part 11 gate)
+
+Six independent finder agents (line-scan / changed-behavior / cross-file / governance-tenancy / numeric-methodology /
+test-quality) over the full P3-5 working-tree diff; every candidate verified empirically before folding. The numeric
+finder independently confirmed the z constants (incl. the rounding direction — truncation would give …040), all four
+hand references, the tolerance derivation (valid majorant, 20× headroom, clamp error economically nil), and the numpy
+legs' non-vacuity. **Thirteen findings CONFIRMED and FOLDED** (fixes + regression tests in the same slice); two
+recorded deferrals:
+
+1. **Cross-tenant provenance FK stamping (the principal finding).** The `exposure_run_id`/`covariance_run_id` hard-FK
+   values come from PINNED CONTENT, and on the consume path were never re-resolved own-tenant — PG FK checks run as
+   the table owner and BYPASS RLS, so a hand-minted snapshot could make tenant A's governed row durably reference
+   tenant B's runs (plus a run-id existence oracle). → both parsed ids now re-resolve through the tenant-predicated
+   run resolvers (run_type + COMPLETED) on BOTH paths before `create_run`; regression-tested with a foreign-tenant
+   chain.
+2. **`_norm_decimal` default-context crash** — the serializer quantized at 20dp under prec-28 (the exact P3-4
+   `PreciseDecimal` bug class, reintroduced): a covariance ≥1e8 crashed `build_var_snapshot`/`verify_snapshot`. →
+   quantize inside a prec-60 localcontext (behavior-preserving for all existing hashes).
+3. **Non-canonical pinned pair order** let a REVERSED duplicate carry a conflicting value past the duplicate check
+   (and falsely refused a reversed-but-complete matrix). → non-canonical order is refused outright (the OD-P3-4-D
+   storage contract); probes added.
+4. **Duplicate-exposure-content smuggle** — identical captured rows under distinct component targets double-counted
+   x. → dedup on the captured row id; probe added (with the target/content-id decoupling shape).
+5. **Column-overflow escape** — column-legal extremes (x=1e18, σ_ij=1e12) give σ≈1e24 > Numeric(28,6): a PG
+   NumericValueOutOfRange 500 with NO durable evidence. → a magnitude gate in the post-compute DQ (committed FAILED
+   run); tested.
+6. **Absurd-pin kernel crash** — a pinned `exposure_amount` of 1e50 (beyond its SOURCE column's envelope) crashed the
+   kernel quantize POST-create. → source-column magnitude envelopes adjudicated pre-create (exposure <1e22,
+   covariance <1e18) + a kernel `InvalidOperation`→`VarKernelError` defense; tested.
+7. **Malformed-pinned-content 500s** — missing keys / non-decimal values / bad dates raised raw
+   KeyError/InvalidOperation/ValueError instead of the documented 422. → a well-formedness envelope converts the
+   parse/adjudication error classes to `VarInputError`; probes added.
+8. **Horizon identity hole** — `isdigit()` accepted any digit-string (incl. Unicode digits that then crashed `int()`),
+   so a generically-minted version could stamp `horizon_days=250` onto an immutable 1-day number. → the declared
+   horizon must equal `1` verbatim (v1 identity); tampered/Unicode cases tested.
+9. **Confidence parse escapes + silent coercion** — `Decimal('abc')` raised `InvalidOperation` (NOT a ValueError →
+   500), and `0.94995` was silently ROUNDED onto 0.9500 instead of refused. → strict pattern-first parse (exact
+   zero-padding only); endpoint 422s tested for both classes.
+10. **σ/VaR SQLite float roundtrip** — plain Numeric(28,6) loses the low digits of 16+-significant-digit currency
+    values on the dev engine. → `PreciseDecimal(28,6)` (PG DDL unchanged; drift-checked).
+11. **Serializer pin-flavor parity** — the new content serializers omitted `input_snapshot_id`/`model_version_id`/
+    `system_from`, narrowing verify's tamper-evidence surface vs the P3-3 EXPOSURE flavor. → columns added.
+12. **σ-homogeneity overclaim** in the methodology (exactness holds only for perfect-square radicands; the stored
+    values satisfy the (λ+1)/2-quanta bound). → wording fixed; the property test asserts BOTH regimes.
+13. **Vacuous pin-invariance + coverage gaps** (test-quality): the invariance test's re-seed produced identical
+    upstream data (a live-read defect would have passed) → rebuilt with a vendor supersede so the fresh build
+    DIFFERS while the pinned consume is invariant; added: the endpoint FAILED-surfacing contract, the endpoint
+    `WrongModelVersionError` arm, duplicate-pair / missing-off-diagonal probes, a 3-factor exact reference (σ=700).
+
+**Recorded deferrals (not folded, with rationale):**
+- **`assert_registered_model_version` has NO `status=='REGISTERED'` predicate** (pre-existing; newly load-bearing —
+  generically-minted versions bind with `status=None` across ALL FOUR risk binders). Tightening it is a cross-slice
+  semantic change needing its own decision (what statuses bind; existing-data audit) — a P3-6-planning carry-in. The
+  P3-5-specific exposure is materially reduced by the strict declared-parameter identity (folds 8/9).
+- **Shipped result-column float parity** — `sensitivity_result`/`factor_exposure_result` (and `exposure_aggregate`)
+  carry plain Numeric columns with the same SQLite-roundtrip latency the new columns just escaped; converting shipped
+  columns to `PreciseDecimal` is a dedicated parity slice (behavior-preserving on PG), not a P3-5 ride-along.
+
+Post-fold validation: format/lint/mypy/docs/secret-scan clean; **1091 passed** full-PG suite (52 P3-5 tests);
+`alembic check` clean; downgrade-base smoke green.

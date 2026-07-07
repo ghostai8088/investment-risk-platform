@@ -1,6 +1,7 @@
 """Risk endpoints (P3-1 sensitivities + P3-3 factor exposures — ENT-028; P3-4 covariance
-matrices — ENT-051): the governed risk numbers (curve-node DV01 / spread-DV01; indicator-loading
-CURRENCY-family factor exposures; equal-weighted unbiased sample factor covariances).
+matrices — ENT-051; P3-5 parametric VaR — ENT-027): the governed risk numbers (curve-node DV01 /
+spread-DV01; indicator-loading CURRENCY-family factor exposures; equal-weighted unbiased sample
+factor covariances; zero-mean delta-normal 1-day VaR).
 
 Thin layer over the ``irp_shared.risk`` binder. PROPRIETARY tenant-scoped (NEVER hybrid), IA TRUE
 append-only, run-bound + snapshot-gated + **model_version-bound** (AD-014 / FW-RUN / TR-15 /
@@ -52,22 +53,33 @@ from irp_shared.risk import (
     SensitivityResult,
     SensitivityRunNotVisible,
     SensitivityRunResult,
+    VarActor,
+    VarInputError,
+    VarNotVisible,
+    VarResult,
+    VarRunNotVisible,
+    VarRunResult,
     WrongModelVersionError,
     list_covariances,
     list_factor_exposures,
     list_sensitivities,
+    list_vars,
     register_covariance_model,
     register_factor_exposure_model,
     register_sensitivity_model,
+    register_var_model,
     resolve_covariance,
     resolve_covariance_run,
     resolve_factor_exposure,
     resolve_factor_exposure_run,
     resolve_run,
     resolve_sensitivity,
+    resolve_var,
+    resolve_var_run,
     run_covariance,
     run_factor_exposure,
     run_sensitivities,
+    run_var,
 )
 from irp_shared.snapshot import (
     CovarianceSnapshotError,
@@ -77,6 +89,7 @@ from irp_shared.snapshot import (
     FactorExposureSnapshotError,
     SnapshotNotFound,
     SnapshotPurposeError,
+    VarSnapshotError,
 )
 
 router = APIRouter(prefix="/risk", tags=["risk"])
@@ -124,6 +137,10 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
         status.HTTP_409_CONFLICT,
         "covariance snapshot input failed closed",
     ),
+    VarInputError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid VaR run input"),
+    VarSnapshotError: (status.HTTP_409_CONFLICT, "VaR snapshot input failed closed"),
+    FactorExposureRunNotVisible: (status.HTTP_404_NOT_FOUND, "factor-exposure run not found"),
+    CovarianceRunNotVisible: (status.HTTP_404_NOT_FOUND, "covariance run not found"),
 }
 
 
@@ -791,3 +808,225 @@ def get_covariance(
             status_code=status.HTTP_404_NOT_FOUND, detail="covariance not found"
         ) from None
     return _cov_row_out(row)
+
+
+# ---------- P3-5: parametric VaR (delta-normal v1) ----------
+
+
+def _var_actor(principal: Principal) -> VarActor:
+    return VarActor(actor_id=principal.user_id)
+
+
+class VarModelIn(BaseModel):
+    code_version: str
+    confidence_level: str  # the DECLARED confidence (v1 vocabulary {0.95, 0.99}) — OD-P3-5-D
+    horizon_days: int = 1
+
+
+class VarRunIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    environment_id: str  # the run environment (FW-RUN §5 item 7; required)
+    model_version_id: uuid.UUID  # a REGISTERED model_version (CTRL-003; required)
+    exposure_run_id: uuid.UUID | None = None  # build-in-request (with covariance_run_id)
+    covariance_run_id: uuid.UUID | None = None
+    snapshot_id: uuid.UUID | None = None  # consume-existing alternative
+
+
+class VarRowOut(BaseModel):
+    id: str
+    metric_type: str
+    base_currency: str
+    confidence_level: str
+    horizon_days: int
+    z_score: str
+    sigma: str
+    var_value: str
+    n_factors: int
+    n_observations: int
+    window_start: date
+    window_end: date
+    exposure_run_id: str
+    covariance_run_id: str
+    model_version_id: str
+
+
+class VarRunOut(BaseModel):
+    run_id: str
+    status: str
+    run_type: str
+    input_snapshot_id: str | None
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    initiated_by: str
+    failure_reason: str | None
+    rows: list[VarRowOut]
+
+
+def _var_row_out(row: VarResult) -> VarRowOut:
+    return VarRowOut(
+        id=row.id,
+        metric_type=row.metric_type,
+        base_currency=row.base_currency,
+        confidence_level=f"{row.confidence_level:f}",
+        horizon_days=row.horizon_days,
+        z_score=f"{row.z_score:f}",
+        # Fixed-point, never scientific (the P3-4 serialization lesson).
+        sigma=f"{row.sigma:f}",
+        var_value=f"{row.var_value:f}",
+        n_factors=row.n_factors,
+        n_observations=row.n_observations,
+        window_start=row.window_start,
+        window_end=row.window_end,
+        exposure_run_id=row.exposure_run_id,
+        covariance_run_id=row.covariance_run_id,
+        model_version_id=row.model_version_id,
+    )
+
+
+def _var_run_out(result: VarRunResult) -> VarRunOut:
+    run = result.run
+    return VarRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_var_row_out(r) for r in result.rows],
+    )
+
+
+@router.post("/models/var", response_model=SensitivityModelOut, status_code=status.HTTP_201_CREATED)
+def register_var(
+    body: VarModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed parametric-VaR model + a model_version for this
+    ``(code_version, confidence_level, horizon_days)`` identity and return its id (OD-P3-5-D —
+    the declarations are version identity; a same-label re-register with a different declaration
+    is a 409; a confidence outside the v1 vocabulary is a 422). The shared registration
+    envelope."""
+    try:
+        version = register_var_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            confidence_level=body.confidence_level,
+            horizon_days=body.horizon_days,
+        )
+    except ValueError:  # out-of-vocabulary confidence / non-v1 horizon
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="confidence_level/horizon_days outside the v1 declared vocabulary",
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _ERROR_MAP[type(exc)]
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post("/vars/runs", response_model=VarRunOut, status_code=status.HTTP_201_CREATED)
+def create_var_run(
+    body: VarRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> VarRunOut:
+    """Run a governed parametric-VaR calculation. A pre-create refusal raises + rolls back (no
+    run — incl. an uncovered exposure factor, 422); a post-create FAILED run is committed
+    (``status='FAILED'``, zero rows — the OD-P3-5-G non-PSD radicand gate)."""
+    try:
+        result = run_var(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_var_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            exposure_run_id=(None if body.exposure_run_id is None else str(body.exposure_run_id)),
+            covariance_run_id=(
+                None if body.covariance_run_id is None else str(body.covariance_run_id)
+            ),
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        VarInputError,
+        UnregisteredModelError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        VarSnapshotError,
+        FactorExposureRunNotVisible,
+        CovarianceRunNotVisible,
+    ) as exc:
+        # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
+        db.rollback()
+        code, detail = _ERROR_MAP[type(exc)]
+        raise HTTPException(status_code=code, detail=detail) from None
+
+    # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a
+    # post-create FAILED run are committed (the FAILED run is durable refusal evidence).
+    response = _var_run_out(result)
+    db.commit()
+    return response
+
+
+@router.get("/vars/runs/{run_id}", response_model=VarRunOut)
+def get_var_run(
+    run_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> VarRunOut:
+    """Read a VaR run + its summary row (tenant-scoped; read-only). A committed FAILED run (zero
+    rows) is surfaced with ``status='FAILED'`` (durable refusal evidence), NOT a 404."""
+    try:
+        run = resolve_var_run(db, str(run_id), acting_tenant=principal.tenant_id)
+    except VarRunNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="VaR run not found"
+        ) from None
+    rows = list_vars(db, run_id=str(run_id), acting_tenant=principal.tenant_id)
+    return VarRunOut(
+        run_id=run.run_id,
+        status=run.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=None,
+        rows=[_var_row_out(r) for r in rows],
+    )
+
+
+@router.get("/vars/{var_id}", response_model=VarRowOut)
+def get_var(
+    var_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> VarRowOut:
+    """Read a single ``var_result`` row (tenant-scoped; read-only)."""
+    try:
+        row = resolve_var(db, str(var_id), acting_tenant=principal.tenant_id)
+    except VarNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="VaR result not found"
+        ) from None
+    return _var_row_out(row)
