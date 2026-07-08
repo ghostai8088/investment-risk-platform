@@ -37,15 +37,19 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24" # active LTS (Node 20 EOL 2026-04); TC-1 / OD-TC-1-C
       - name: Install dependencies (reproducible from lockfile)
         run: npm ci
+      - name: Runtime-dependency audit (production tree only — TC-1 / OD-TC-1-D)
+        run: npm audit --omit=dev --audit-level=high
       - name: Shared package tests
         run: npm run -w packages/shared-ts test
       - name: Lint
         run: npm run -w apps/frontend lint
       - name: Typecheck
         run: npm run -w apps/frontend typecheck
+      - name: Format check
+        run: npm run -w apps/frontend format:check
       - name: Test
         run: npm run -w apps/frontend test
       - name: Build
