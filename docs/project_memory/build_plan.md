@@ -90,11 +90,16 @@ mandatory methodology doc per method (`05_analytics_methodologies/`); `RISK.*` r
 - **FE-1** read-only frontend runs view (a cross-cutting UI slice OUTSIDE the P3 numbering) — **DONE / CLOSED (`678a651`, CI #108; plan `416cb1d` OQ-ratified, #107).** The platform's FIRST VISIBLE UI: the runs list + deep-linkable run detail over the four risk families (FAILED reasons prominent; decimal strings byte-for-byte); the ONE backend addition `GET /risk/runs` (`risk.view`; EXPOSURE_AGGREGATE fenced; fail-closed filters); dev header-shim session + permanent DEV banner; NO migration; 16 review findings folded. Follow-ups recorded: the vite/vitest toolchain-bump slice (+ production-deps `npm audit` CI step); exposure runs in the listing.
 - **P3-6** stress/scenario (ENT-029/030; RTM-P5, possibly a later phase) → **P3-7** benchmark-relative (return-based legs blocked on the benchmark-levels captured-data slice) → the VaR roadmap methods + the remaining recorded carry-ins — each its own planned + separately-approved slice; none pulled forward.
 
-**Still FUTURE (each separately planned + approved):** private assets (ENT-015–019), ES/historical-sim/Monte-Carlo VaR (roadmap method slices), scenarios (ENT-029/030, P3-6), benchmark-relative (P3-7), vendor factor loadings + computed factor returns (deferred captured-input slices), the limit framework, breach workflow, reporting/dashboards, real SSO/OIDC, vendor/SFTP/API ingestion adapters (REQ-INT-002/003, P9), production AV (OD-042), WORM/anchored audit hardening, the model-validation workflow (P7).
+**Still FUTURE (each separately planned + approved):** private assets (ENT-015–019), ES/Monte-Carlo VaR + FHS/BRW
+historical-VaR variants (roadmap method slices — plain historical-sim is DONE, VAR-HS-1), scenarios (ENT-029/030,
+P3-6), benchmark-relative (P3-7), vendor factor loadings + computed factor returns (deferred captured-input
+slices), the limit framework, breach workflow, reporting/dashboards, real SSO/OIDC, vendor/SFTP/API ingestion
+adapters (REQ-INT-002/003, P9), production AV (OD-042), WORM/anchored audit hardening, the model-validation
+workflow (P7).
 
 ## Operative sequencing
 The near-term slice ORDER lives in **`10_delivery_backlog/delivery_roadmap.md`** (rolling-wave; Wave 1 =
-**TC-1 ✅ DONE `c34b346`** → VAR-HS-1 historical-simulation VaR → P3-C2 hardening bundle → P2-7 benchmark levels →
+**TC-1 ✅ DONE `c34b346`** → **VAR-HS-1 ✅ DONE `29ae31b`** → P3-C2 hardening bundle → P2-7 benchmark levels →
 P3-7 benchmark-relative → P3-6 stress; re-baselined at wave closes). This file stays the executed ledger;
 `10_delivery_backlog/build_sequence.md` stays the RTM theme map.
 

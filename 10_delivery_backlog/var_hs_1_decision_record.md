@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **PLANNING RATIFIED** — OQ-VAR-HS-1-1…7 approved by the user at the commit gate (2026-07-08, after a plain-language briefing incl. the Part-2 benchmark verdict); implementation is a SEPARATE approval |
+| Status | **IMPLEMENTED and CLOSED** — plan `ec1f582` (CI #116 green); implementation `29ae31b` (CI **#117** green); OQ-VAR-HS-1-1…7 ratified 2026-07-08; the Tier-2 implementation commit was separately user-approved after the Part 5 review (30 filings, 16 folds incl. two ratification amendments — see Part 5) |
 | Date | 2026-07-08 |
 | Basis | `delivery_roadmap.md` Wave 1, slice 2 (user-directed method roadmap 2026-07-07). The FIRST slice under roadmap Part 4 rule 6 (thesis alignment — the cited external-benchmark section, Part 2 below). |
 | Grounding | Verified against HEAD `afed75c`: the P3-5 parametric engine (`var_result`, ENT-027; declared-parameter identity; hard-FK provenance; `PreciseDecimal(28,6)`), the P3-3 factor-exposure totals (x), the P3-2 captured factor-return series, the P3-4 per-date bitemporal window pins (`COMPONENT_KIND_FACTOR_RETURN`), and the P3-C1 shared run scaffold are all shipped — historical simulation needs NO new captured data. |

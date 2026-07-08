@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `c34b346` / CI #112 (refreshed 2026-07-08).** What to do
+> **As of HEAD `29ae31b` / CI #117 (refreshed 2026-07-08).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -105,16 +105,38 @@ changes; CI frontend job → Node 24 + the blocking `npm audit --omit=dev --audi
 3-finder review (supply-chain CLEAN; behavior parity CLEAN with mutation-probes proving the FE-1 fences bite;
 the moderate-runtime-advisory gap folded into OD-TC-1-D; one observed-once test exit dispositioned 12/12-serial-green).
 
+**DONE since:** TC-1 closeout memory (`df04e1d`, #113) → **VAR-HS-1 PLANNING** (`ec1f582`, CI **#116** —
+`var_hs_1_decision_record.md` OD-VHS-A…G + `var_hs_1_implementation_plan.md`; **OQ-VAR-HS-1-1…7 RATIFIED**; the
+record's Part 2 carries roadmap rule 6's FIRST discharge — cited external benchmarks: BoE WP525, Pritsker 2006,
+arXiv 2505.05646, BIS d305/d457) → **VAR-HS-1 IMPLEMENTATION (`29ae31b`, CI #117 green)**: **the platform's FIFTH
+governed risk number and second VaR method** — plain equal-weight factor-based historical simulation
+(`risk.var.historical` v1; the empirical lower order statistic over pinned factor-return windows, no
+distributional assumption). Reuses `var_result` (`metric_type='VAR_HISTORICAL'`) via additive migration
+`0028_var_historical` (z_score/sigma/covariance_run_id nullable, GUARDED by a new metric-conditional
+`ck_var_result_parametric_not_null` CHECK — the parametric invariant stays DB-enforced); the downgrade is
+DESTRUCTIVE + RLS-safe (deletes hist-sim rows; disables FORCE RLS + the append-only trigger transactionally —
+cycled twice in both directions with real exit codes over suite-created data). New snapshot purpose
+`VAR_HS_INPUT` + `build_var_hs_snapshot`; two new endpoints; reads reuse the EXISTING parametric VaR GET family +
+the FE-1 listing with **zero frontend changes**. **Independent 6-finder review: 30 filings folded into 16 fixes**,
+incl. TWO ratification amendments (OD-VHS-E tightened — the adequacy floor still permitted the sample minimum at
+its own boundary, now strict `N·(1−c)>1`, 21@0.95/101@0.99, closing the generic-registration bypass too;
+OD-VHS-C widened — the third nullable column + the CHECK constraint + the RLS-safe destructive downgrade), kernel/
+binder precision fixes (the magnitude-FAILED gate was dead code — now reachable, test-proven both engines),
+registry-honesty corrections, and a hand-minted adjudication vehicle driving 16 new gate-probe tests (incl. a
+cross-tenant provenance regression that had silently survived the original 17-test suite). Full-PG 1142 passed.
+
 **NEXT — per the RATIFIED `10_delivery_backlog/delivery_roadmap.md` (Wave 1; no option menu — the sequence IS the
 decision; re-sequencing only via its Part 4 rules):**
 1. ✅ **TC-1 — FE toolchain bump** — **DONE (`c34b346`, CI #112)**
-2. **VAR-HS-1 — historical-simulation VaR** (own model family + methodology; runs surface in FE-1 automatically)
+2. ✅ **VAR-HS-1 — historical-simulation VaR** — **DONE (`29ae31b`, CI #117)**
 3. **P3-C2 — hardening bundle** (exposure scaffold/reason + FE listing; captured-table PreciseDecimal parity;
    the DQ-rule registration race)
 4. **P2-7 — benchmark price/level capture** (net-new canonical ENT id; unblocks P3-7)
 5. **P3-7 — benchmark-relative analytics** → 6. **P3-6 — stress/scenario** → the Wave-1 close review + re-baseline.
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
-Tier-2 commit approval. The next concrete step is **VAR-HS-1 planning, on explicit direction**.
+Tier-2 commit approval. The next concrete step is **P3-C2 planning, on explicit direction** — a templated
+consolidation slice (the P3-C1 exemplar); model/effort recommendation: **Opus 4.8 / high** (per the 2026-07-08
+standing rule — Fable is reserved for novel methodology/planning work, not templated hardening bundles).
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
@@ -129,10 +151,11 @@ Tier-2 commit approval. The next concrete step is **VAR-HS-1 planning, on explic
 - Backend (ruff format + lint, mypy, pytest), Frontend, **DB migration (Postgres)** incl. `alembic check` drift +
   ALL per-table RLS/append-only PG suites (complete since `7c50c43`; Covariance added at `c2bd126`, VaR at
   `5ed8271`; migration head `0027_run_failure_reason` auto-covered since `0599f7f` — a FAILED run now executes on
-  PG in CI; the **Risk-runs-listing PG step** added at `678a651`) + downgrade smoke, Documentation check, Secret
-  scan. The **Frontend job (TC-1): Node 24, `npm audit --omit=dev --audit-level=high` (blocking), lint, typecheck,
-  `format:check`, 37 vitest, build**. **HEAD `c34b346` = run #112 = success** (user-confirmed + watcher; #98–#112
-  all green). Python 3.12 runners.
+  PG in CI; the **Risk-runs-listing PG step** added at `678a651`; the **Historical-VaR PG step**
+  (`test_var_hs_pg.py`) added at `29ae31b`) + downgrade smoke, Documentation check, Secret scan. The **Frontend
+  job (TC-1): Node 24, `npm audit --omit=dev --audit-level=high` (blocking), lint, typecheck, `format:check`, 37
+  vitest, build**. **HEAD `29ae31b` = run #117 = success** (user-confirmed + watcher; #98–#117 all green). Python
+  3.12 runners. Migration head `0028_var_historical`.
   **This machine:** venv = Python 3.13.0; `irp_pg_local` IS stood up (`postgres:16`). After a schema reset just run
   `alembic upgrade head` — migration 0003 re-grants `irp_ops` itself; **NEVER manually grant schema USAGE to
   `irp_ops`** (it breaks the `downgrade base` smoke at DROP ROLE; fixed 2026-07-07 with
