@@ -66,6 +66,10 @@ deferral-register reconciliation, and the Wave-2 proposal briefed plain-language
    PROPOSED between slices but still ratify before starting.
 4. **Ambiguity rule (user-stated, 2026-07-08):** where a slice hits a genuine fork, ask the user — always with an
    objective recommendation attached; the user decides.
+5. **What never moves without its own gate:** the per-slice planning/review/commit discipline; the hard
+   invariants (frozen audit service; no BYPASSRLS; R-07 for permissions/audit codes; the governed derived-number
+   contract).
+
 6. **Thesis alignment (ratified 2026-07-08 — see `01_product_strategy/differentiation_thesis.md`):**
    (a) every METHODOLOGY slice's decision record includes a **cited external-benchmark research section**
    (published/academic/regulatory sources + dates checked; deviations fixed or justified) — explicitly including
@@ -73,10 +77,6 @@ deferral-register reconciliation, and the Wave-2 proposal briefed plain-language
    **outward-facing benchmark review** (architecture / data design / methodologies / security / engineering
    practice vs. current published best practice) and **evaluates progress toward the public+private destination**
    — the Wave-1 close must explicitly weigh pulling private-asset foundations forward.
-5. **What never moves without its own gate:** the per-slice planning/review/commit discipline; the hard
-   invariants (frozen audit service; no BYPASSRLS; R-07 for permissions/audit codes; the governed derived-number
-   contract).
-
 ## Part 5 — Amendment log
 
 | Date | Change | Why |
