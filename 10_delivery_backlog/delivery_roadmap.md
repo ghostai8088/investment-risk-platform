@@ -66,6 +66,13 @@ deferral-register reconciliation, and the Wave-2 proposal briefed plain-language
    PROPOSED between slices but still ratify before starting.
 4. **Ambiguity rule (user-stated, 2026-07-08):** where a slice hits a genuine fork, ask the user — always with an
    objective recommendation attached; the user decides.
+6. **Thesis alignment (ratified 2026-07-08 — see `01_product_strategy/differentiation_thesis.md`):**
+   (a) every METHODOLOGY slice's decision record includes a **cited external-benchmark research section**
+   (published/academic/regulatory sources + dates checked; deviations fixed or justified) — explicitly including
+   transformation/proxy math when private-asset slices begin; (b) every wave-close re-baseline includes an
+   **outward-facing benchmark review** (architecture / data design / methodologies / security / engineering
+   practice vs. current published best practice) and **evaluates progress toward the public+private destination**
+   — the Wave-1 close must explicitly weigh pulling private-asset foundations forward.
 5. **What never moves without its own gate:** the per-slice planning/review/commit discipline; the hard
    invariants (frozen audit service; no BYPASSRLS; R-07 for permissions/audit codes; the governed derived-number
    contract).
@@ -75,3 +82,4 @@ deferral-register reconciliation, and the Wave-2 proposal briefed plain-language
 | Date | Change | Why |
 |---|---|---|
 | 2026-07-08 | Document created; Wave 1 = TC-1 → VAR-HS-1 → P3-C2 → P2-7 → P3-7 → P3-6. | User direction: replace per-slice option menus with a ratified rolling-wave sequence. |
+| 2026-07-08 | Part 4 rule 6 added (thesis alignment: per-methodology external-benchmark research; wave-close outward benchmark review + public/private destination check). TC-1 marked DONE. | The ratified differentiation thesis (`01_product_strategy/differentiation_thesis.md`); user-directed best-in-breed review approach. |
