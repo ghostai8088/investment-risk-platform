@@ -94,7 +94,7 @@ mandatory methodology doc per method (`05_analytics_methodologies/`); `RISK.*` r
 
 ## Operative sequencing
 The near-term slice ORDER lives in **`10_delivery_backlog/delivery_roadmap.md`** (rolling-wave; Wave 1 =
-TC-1 toolchain bump → VAR-HS-1 historical-simulation VaR → P3-C2 hardening bundle → P2-7 benchmark levels →
+**TC-1 ✅ DONE `c34b346`** → VAR-HS-1 historical-simulation VaR → P3-C2 hardening bundle → P2-7 benchmark levels →
 P3-7 benchmark-relative → P3-6 stress; re-baselined at wave closes). This file stays the executed ledger;
 `10_delivery_backlog/build_sequence.md` stays the RTM theme map.
 

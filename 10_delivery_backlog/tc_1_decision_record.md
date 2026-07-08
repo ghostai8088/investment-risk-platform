@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **PLANNING RATIFIED** — OQ-TC-1-1…5 approved by the user at the commit gate (2026-07-08, after a plain-language decision briefing); implementation is a SEPARATE approval |
+| Status | **IMPLEMENTED and CLOSED** — plan `76c7942` (CI #111 green); implementation `c34b346` (CI **#112** green — the first run OF the upgraded pipeline itself: Node 24 + the audit and format gates all executed); OQ-TC-1-1…5 ratified 2026-07-08; Tier-2 commit separately user-approved after the Part 6 review was folded |
 | Date | 2026-07-08 |
 | Basis | `delivery_roadmap.md` Wave 1, slice 1 (the FE-1 recorded follow-up: the scaffold-era vite5/vitest2 dev-only advisory chain; the keep-Vite/Vitest decision was accepted by the user 2026-07-08 — switching tools does not escape the advisory class). |
 | Grounding | Verified 2026-07-08 against HEAD `63a1bb8` (CI #110): installed vite **5.4.21** / vitest **2.1.9** (the audit-flagged chain: 3 moderate + 1 high + 1 critical, ALL dev-server/test-runner surfaces; the critical requires the uninstalled Vitest UI). Targets: **vite 8.1.3** (engines `^20.19 \|\| >=22.12`), **vitest 4.1.10** (peer `vite ^6\|\|^7\|\|^8`), **@vitejs/plugin-react 6.0.3** (peer `vite ^8`). jsdom 29.1.1 + @testing-library/react 16.3.2 remain current. CI's frontend/shared-ts job runs **Node 20 — END-OF-LIFE since 2026-04**; local dev is Node 24.16. CI does NOT currently run the frontend `format:check`. Runtime deps (react/react-dom/react-router-dom) are UNTOUCHED by this slice. |
@@ -49,6 +49,10 @@ Implementation-ready once OQ-TC-1-1…5 are ratified. Build contract = `tc_1_imp
 ---
 
 ## Part 6 — Implementation adversarial review log (2026-07-08, independent-context, 3-finder per OD-TC-1-F)
+
+> **CLOSEOUT STAMP (2026-07-08):** TC-1 **IMPLEMENTED and CLOSED** — plan `76c7942` (CI **#111**); implementation
+> `c34b346` (CI **#112** green, user-confirmed + watcher-verified — the new frontend job's own first execution).
+> `npm audit`: 0 vulnerabilities full-tree. Wave-1 slice 1 done; next per the roadmap: **VAR-HS-1**.
 
 Findings: **1 folded, 1 dispositioned-with-evidence, 0 code changes.** The build itself needed ZERO source edits
 (the Part 2 expectation held); `npm audit` = 0 vulnerabilities full-tree; the diff fence held at exactly 4 files.

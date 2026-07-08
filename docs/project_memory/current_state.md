@@ -1,9 +1,8 @@
 # Current State
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
-> history. Read this first, then `10_delivery_backlog/fe_1_decision_record.md` (the latest record; Part 7 =
-> the implementation review log), `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD
-> `678a651` / CI #108 (refreshed 2026-07-08).** Values that
+> history. Read this first, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence) + `tc_1_decision_record.md` (the latest record), `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD
+> `c34b346` / CI #112 (refreshed 2026-07-08).** Values that
 > drift are flagged; re-verify the ones in "Re-check at session start" before acting. *(`project_state.yaml`
 > is RETIRED — see its stub; the recovery set is `CLAUDE.md` → this file → `phase_status.md` → `next_actions.md`.)*
 
@@ -13,31 +12,26 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `678a651` — "Implement FE-1 read-only frontend runs view with adversarial-review folds" (**CI run #108 green**, REST-verified + user-confirmed). Chain since P3-3: `7c50c43` (**P3-3 implementation**, #95) → `362481a` (P3-3 closeout memory) → `8abe764` (**P3-4 planning**, OQs ratified) → `a9b6567` (**P3-4-R0 refactor**, #98) → `c2bd126` (**P3-4 IMPLEMENTATION + 12 review folds**, #99) → `c2480a4` (P3-4 closeout memory, #100) → `c2c1b4d` (**P3-5 parametric-VaR planning**, OQ-P3-5-1..10 ratified + the historical-sim/MC ROADMAP note, #101) → `5ed8271` (**P3-5 IMPLEMENTATION + 13 review folds**, #102) → `d94e572` (P3-5 closeout memory, #103) → `c2e85ac` (**P3-C1 hardening planning**, OQ-P3-C1-1..8 ratified after a plain-language briefing, #104) → `0599f7f` (**P3-C1 IMPLEMENTATION + 12 review folds**, #105) → `ee3c581` (P3-C1 closeout memory, #106) → `416cb1d` (**FE-1 frontend runs-view planning**, OQ-FE-1-1..8 ratified, #107) → `678a651` (**FE-1 IMPLEMENTATION + 16 review folds — the FIRST VISIBLE UI SLICE**, **CI #108 green**). Earlier chain: Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
+- **origin/main HEAD:** `c34b346` — "Implement TC-1 FE toolchain bump with adversarial-review folds" (**CI run #112 green** — the upgraded pipeline's own first execution). Chain since P3-3: `7c50c43` (**P3-3 implementation**, #95) → `362481a` (P3-3 closeout memory) → `8abe764` (**P3-4 planning**, OQs ratified) → `a9b6567` (**P3-4-R0 refactor**, #98) → `c2bd126` (**P3-4 IMPLEMENTATION + 12 review folds**, #99) → `c2480a4` (P3-4 closeout memory, #100) → `c2c1b4d` (**P3-5 parametric-VaR planning**, OQ-P3-5-1..10 ratified + the historical-sim/MC ROADMAP note, #101) → `5ed8271` (**P3-5 IMPLEMENTATION + 13 review folds**, #102) → `d94e572` (P3-5 closeout memory, #103) → `c2e85ac` (**P3-C1 hardening planning**, OQ-P3-C1-1..8 ratified after a plain-language briefing, #104) → `0599f7f` (**P3-C1 IMPLEMENTATION + 12 review folds**, #105) → `ee3c581` (P3-C1 closeout memory, #106) → `416cb1d` (**FE-1 frontend runs-view planning**, OQ-FE-1-1..8 ratified, #107) → `678a651` (**FE-1 IMPLEMENTATION + 16 review folds — the FIRST VISIBLE UI SLICE**, #108) → `945661d` (FE-1 closeout memory, #109) → `63a1bb8` (**the RATIFIED delivery roadmap + the documentation-alignment audit**, #110) → `76c7942` (**TC-1 planning**, OQ-TC-1-1..5 ratified, #111) → `c34b346` (**TC-1 IMPLEMENTATION — Wave-1 slice 1**, **CI #112 green**). Earlier chain: Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
 - **Local == origin:** yes (0 ahead / 0 behind); only this closeout memory refresh is uncommitted.
-- **Latest CI:** **GREEN** — `678a651` = GitHub Actions **run #108** = success (all jobs; the frontend job now tests/builds REAL content — 37 vitest; the new Risk-runs-listing PG step). Chain #98–#108 all green.
+- **Latest CI:** **GREEN** — `c34b346` = GitHub Actions **run #112** = success — the FIRST run of the TC-1-upgraded frontend job (Node 24; the blocking `npm audit --omit=dev --audit-level=high` step; the `format:check` step) plus all prior jobs. Chain #98–#112 all green.
 - **Migration head:** `0027_run_failure_reason` (unchanged by FE-1 — NO migration in that slice; `alembic check` verified a no-op). Advanced `0026_var` → `0027` at P3-C1 (`0599f7f`: the additive nullable `calculation_run.failure_reason` Text column). Drift-clean; downgrade smoke green.
 - **Networking note (this machine):** SSH to GitHub is unreliable on some networks (lossy-link/PMTU class — pushes stall mid-key-exchange while HTTPS works); the reliable push path is **HTTPS + the keychain-cached PAT**; CI verification via the public REST API always works. A full-repo safety bundle exists at `../irp-p3-3-7c50c43.bundle`.
 
 ## Working tree (uncommitted)
-- **This FE-1 closeout memory refresh only** (Tier 0 — docs-only project-memory; no code, no migration): `current_state.md` / `next_actions.md` / `phase_status.md` / `decision_summary.md` / `build_plan.md` + the `fe_1_decision_record.md` status/closeout stamps advanced to `678a651`/#108.
+- **This TC-1 closeout memory refresh only** (Tier 0 — docs-only): the five project-memory files + the `tc_1_decision_record.md` status/closeout stamps advanced to `c34b346`/#112 + the roadmap's Wave-1 slice-1 DONE marker.
 
 ## Current active gate
-**P3-0 … P3-5 + P3-C1 + FE-1 are ALL COMPLETE and CI-green.** FE-1 (`678a651`, CI #108; plan `416cb1d`, #107 —
-OQ-FE-1-1…8 ratified after a plain-language briefing) delivered **the platform's FIRST VISIBLE UI — the read-only
-"risk runs & results" view** — see the deliverables section below. The independent 6-finder review confirmed +
-folded 16 findings pre-commit (log = `fe_1_decision_record.md` Part 7); the user exercised the view live against a
-seeded local demo tenant before approving. **The next gate is the NEXT-SLICE DECISION, on explicit direction — the
-honest options: (a) the FE toolchain-bump slice (vite 5→current / vitest 2→current majors — the recorded dev-only
-advisory follow-up — plus a production-deps `npm audit` CI step; SMALL, mostly mechanical; the user accepted the
-keep-Vite recommendation 2026-07-08); (b) P3-6 stress/scenario planning (ENT-029/030 — NOTE: RTM-phase P5, possibly
-a later phase); (c) a VaR ROADMAP method slice (factor-based historical simulation — feasible with current data —
-or Monte-Carlo — gated on a seeded simulator + revaluation; both user-directed 2026-07-07); (d) P3-7
-benchmark-relative (needs the deferred benchmark-levels captured-data slice); (e) the remaining recorded follow-ups
-(exposure-family scaffold/failure_reason adoption + exposure runs in the FE listing; captured-input-table
-PreciseDecimal parity).** Strict planning-first cadence + the gate tiers hold. **Frontend visibility: the FE-1
-read-only view EXISTS (dev-shim session, permanent DEV banner); anything further (dashboards, charts, mutations,
-more domains) remains explicitly gated.**
+**P3-0 … P3-5 + P3-C1 + FE-1 + TC-1 are ALL COMPLETE and CI-green; the RATIFIED `delivery_roadmap.md` (Wave 1)
+is the operative sequence.** TC-1 (`c34b346`, CI #112; plan `76c7942`, #111) closed Wave-1 slice 1: vite 8.1.3 /
+vitest 4.1.10 / plugin-react 6 (npm audit = 0 vulnerabilities full-tree; ZERO source changes; mutation probes
+proved the FE-1 test fences bite under vitest 4); CI frontend job on Node 24 with the blocking production-deps
+audit + format:check gates. **Next per the roadmap: VAR-HS-1 (historical-simulation VaR) planning, on explicit
+direction.** Prior slice: FE-1 (`678a651`, CI #108) delivered **the platform's FIRST VISIBLE UI — the read-only
+"risk runs & results" view** (16 review folds; the user exercised it live against a seeded local demo tenant
+before approving — see the deliverables section below). Strict planning-first cadence + the gate tiers hold.
+**Frontend visibility: the FE-1 read-only view EXISTS (dev-shim session, permanent DEV banner); anything further
+(dashboards, charts, mutations, more domains) remains explicitly gated.**
 
 ## FE-1 key deliverables (closed, `678a651`, CI-green run #108) — the FIRST VISIBLE UI slice; NO migration
 The read-only **"risk runs & results" view** (OD-FE-1-A…H; plan `416cb1d`, #107): TWO screens — the **runs list**
@@ -285,15 +279,18 @@ realized. **NO risk analytics yet** — VaR/ES/factor/covariance/stress/scenario
 - **P3-C1 hardening/consolidation planning** — `c2e85ac` (CI-green, run #104; OQ-P3-C1-1…8 RATIFIED at the commit gate after a plain-language decision briefing).
 - **P3-C1 hardening/consolidation implementation** — `0599f7f` (CI-green, run #105; 12 review folds + 1 pre-existing residual recorded). **P3-C1 CLOSED** — the deferral-register paydown (migration `0027_run_failure_reason`; the run-scaffold extraction; the REGISTERED-status bind + register/run consistency; PreciseDecimal parity ×8; `deps.map_refusal`; both-modes refusal ×5; the mixed-base check). Closeout memory — `ee3c581` (#106).
 - **FE-1 frontend runs-view planning** — `416cb1d` (CI-green, run #107; OQ-FE-1-1…8 RATIFIED at the commit gate; chosen on the walking-skeleton recommendation with the user explicitly deferring to best practices).
-- **FE-1 frontend runs-view implementation** — `678a651` (CI-green, run #108; 16 review folds). **FE-1 CLOSED — the FIRST VISIBLE UI** (two read-only screens + `GET /risk/runs`; NO migration; dev-shim session + permanent DEV banner; user exercised it live pre-approval).
+- **FE-1 frontend runs-view implementation** — `678a651` (CI-green, run #108; 16 review folds). **FE-1 CLOSED — the FIRST VISIBLE UI** (two read-only screens + `GET /risk/runs`; NO migration; dev-shim session + permanent DEV banner; user exercised it live pre-approval). Closeout memory — `945661d` (#109).
+- **The delivery roadmap ratification + documentation-alignment audit** — `63a1bb8` (CI-green, run #110). Rolling-wave Wave 1 fixed; ten stale genesis-era docs aligned to the true state.
+- **TC-1 FE toolchain-bump planning** — `76c7942` (CI-green, run #111; OQ-TC-1-1…5 RATIFIED).
+- **TC-1 FE toolchain-bump implementation** — `c34b346` (CI-green, run #112 — the upgraded pipeline's own first run; 3-finder review: 1 fold + 1 evidence-based disposition). **TC-1 CLOSED — Wave-1 slice 1** (vite 8/vitest 4/plugin-react 6; audit 0 vulns; Node 24 CI; the audit + format gates; ZERO source changes).
 
 ## Next required action
 **THE RATIFIED ROADMAP SEQUENCE** (`10_delivery_backlog/delivery_roadmap.md`, Wave 1 — the sequence replaces the
-per-slice option menu; re-sequencing only via its Part 4 rules): **TC-1** FE toolchain bump → **VAR-HS-1**
+per-slice option menu; re-sequencing only via its Part 4 rules): **TC-1 ✅ DONE (`c34b346`, #112)** → **VAR-HS-1**
 historical-simulation VaR → **P3-C2** hardening bundle → **P2-7** benchmark price/level capture → **P3-7**
 benchmark-relative → **P3-6** stress/scenario → the Wave-1 close review + re-baseline. Each slice still gets its
 own decision record + plan + OQ ratification + adversarial review + Tier-2 commit approval, and starts only on
-explicit direction. **Next concrete step: TC-1 planning, on direction.** Genuine ambiguity inside a slice → ask
+explicit direction. **Next concrete step: VAR-HS-1 planning, on direction.** Genuine ambiguity inside a slice → ask
 the user with a recommendation attached (their standing rule, 2026-07-08).
 
 ## What MUST NOT be started yet
@@ -314,8 +311,8 @@ the user with a recommendation attached (their standing rule, 2026-07-08).
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `678a651`) and whether this FE-1 closeout memory refresh was committed.
-- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated, 60 req/hr — poll WIDE; `678a651` = run #108 = success at this refresh). **Push over HTTPS + keychain PAT when SSH stalls** (the lossy-network note above); URL-pushes don't move the tracking ref — `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)` after.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `c34b346`) and whether this TC-1 closeout memory refresh was committed.
+- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated, 60 req/hr — the watcher script now polls 30s-then-75s within budget; `c34b346` = run #112 = success at this refresh). **Push over HTTPS + keychain PAT when SSH stalls** (the lossy-network note above); URL-pushes don't move the tracking ref — `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)` after.
 - `git remote -v` — origin is SSH (`git@github.com:ghostai8088/…`).
 - Migration head is `0027_run_failure_reason` (P3-C1 / `0599f7f`); the next migration lands ONLY at the next separately-approved implementation slice.
 - `project_state.yaml` is **RETIRED** (2026-07-06 stub; found drifted at the P3-3 planning session) — the recovery set is `CLAUDE.md` + this file + `phase_status.md` + `next_actions.md`.

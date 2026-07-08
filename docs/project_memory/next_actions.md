@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `678a651` / CI #108 (refreshed 2026-07-08).** What to do
+> **As of HEAD `c34b346` / CI #112 (refreshed 2026-07-08).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -97,16 +97,24 @@ fence-test re-pin with the real `EXPOSURE_AGGREGATE` witness, NEW `test_risk_run
 the row-click miss the USER caught exercising the view live). Full-PG 1119 passed; frontend 37 vitest; the demo
 run-book verified end-to-end (`apps/frontend/README.md`).
 
+**DONE since:** FE-1 closeout memory (`945661d`, #109) → **the RATIFIED delivery roadmap + documentation-alignment
+audit** (`63a1bb8`, #110) → **TC-1 PLANNING** (`76c7942`, #111; OQ-TC-1-1…5 ratified) → **TC-1 IMPLEMENTATION
+(`c34b346`, CI #112 green — the upgraded pipeline's own first run)**: vite 8.1.3 / vitest 4.1.10 / plugin-react 6
+(+ shared-ts's own vitest — the hidden old-chain keeper); `npm audit` 0 vulnerabilities full-tree; ZERO source
+changes; CI frontend job → Node 24 + the blocking `npm audit --omit=dev --audit-level=high` gate + `format:check`;
+3-finder review (supply-chain CLEAN; behavior parity CLEAN with mutation-probes proving the FE-1 fences bite;
+the moderate-runtime-advisory gap folded into OD-TC-1-D; one observed-once test exit dispositioned 12/12-serial-green).
+
 **NEXT — per the RATIFIED `10_delivery_backlog/delivery_roadmap.md` (Wave 1; no option menu — the sequence IS the
 decision; re-sequencing only via its Part 4 rules):**
-1. **TC-1 — FE toolchain bump** (vite/vitest majors + CI Node alignment + a production-deps `npm audit` CI step)
+1. ✅ **TC-1 — FE toolchain bump** — **DONE (`c34b346`, CI #112)**
 2. **VAR-HS-1 — historical-simulation VaR** (own model family + methodology; runs surface in FE-1 automatically)
 3. **P3-C2 — hardening bundle** (exposure scaffold/reason + FE listing; captured-table PreciseDecimal parity;
    the DQ-rule registration race)
 4. **P2-7 — benchmark price/level capture** (net-new canonical ENT id; unblocks P3-7)
 5. **P3-7 — benchmark-relative analytics** → 6. **P3-6 — stress/scenario** → the Wave-1 close review + re-baseline.
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
-Tier-2 commit approval. The next concrete step is **TC-1 planning, on explicit direction**.
+Tier-2 commit approval. The next concrete step is **VAR-HS-1 planning, on explicit direction**.
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
@@ -122,8 +130,9 @@ Tier-2 commit approval. The next concrete step is **TC-1 planning, on explicit d
   ALL per-table RLS/append-only PG suites (complete since `7c50c43`; Covariance added at `c2bd126`, VaR at
   `5ed8271`; migration head `0027_run_failure_reason` auto-covered since `0599f7f` — a FAILED run now executes on
   PG in CI; the **Risk-runs-listing PG step** added at `678a651`) + downgrade smoke, Documentation check, Secret
-  scan. The **Frontend job now tests/builds REAL content** (37 vitest + the production build). **HEAD `678a651` =
-  run #108 = success** (REST-verified + user-confirmed; #98–#108 all green). Python 3.12 runners.
+  scan. The **Frontend job (TC-1): Node 24, `npm audit --omit=dev --audit-level=high` (blocking), lint, typecheck,
+  `format:check`, 37 vitest, build**. **HEAD `c34b346` = run #112 = success** (user-confirmed + watcher; #98–#112
+  all green). Python 3.12 runners.
   **This machine:** venv = Python 3.13.0; `irp_pg_local` IS stood up (`postgres:16`). After a schema reset just run
   `alembic upgrade head` — migration 0003 re-grants `irp_ops` itself; **NEVER manually grant schema USAGE to
   `irp_ops`** (it breaks the `downgrade base` smoke at DROP ROLE; fixed 2026-07-07 with
