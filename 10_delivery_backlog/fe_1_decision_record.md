@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **PLANNING RATIFIED** — OQ-FE-1-1…8 approved by the user at the commit gate (2026-07-07, after a plain-language decision briefing); implementation is a SEPARATE approval |
+| Status | **IMPLEMENTED and CLOSED** — plan `416cb1d` (CI #107 green); implementation `678a651` (CI **#108** green); OQ-FE-1-1…8 were ratified at the plan-commit gate (2026-07-07, after a plain-language decision briefing) and the Tier-2 implementation commit was separately user-approved (2026-07-08) after the Part 7 review was folded and the user exercised the running view live |
 | Date | 2026-07-07 |
 | Basis | User direction 2026-07-07: the read-only frontend view chosen as the next slice on the walking-skeleton / thin-vertical-slice recommendation (integrate end-to-end early; the API surface has never had an external consumer). Sits OUTSIDE the P3 number-sequence (a cross-cutting UI slice; the P3 roadmap — P3-6/P3-7/roadmap VaR methods — is unchanged). |
 | Grounding | Verified against shipped HEAD `ee3c581` (CI #106): `apps/frontend` is a React 18 + Vite 5 + TypeScript 5.5 scaffold (vitest/eslint/prettier; CI job runs lint/typecheck/test/build; `App.tsx` is a placeholder shell); the `/risk` router exposes per-family `GET …/runs/{run_id}` (run + embedded result rows + `failure_reason`) and `GET …/{row_id}` but **NO list endpoint**; `get_principal` is the documented DEV header shim (`X-User-Id`/`X-Tenant-Id` — "unverified and not a security boundary until SSO", DR-P1A0-3); no CORS middleware exists; all result DTOs already serialize decimal values as exact strings; `calculation_run` carries `run_type/status/created_at/completed_at/failure_reason` + full provenance columns. |
@@ -96,6 +96,15 @@ Implementation-ready once OQ-FE-1-1…8 are ratified. Build contract = `fe_1_imp
 ---
 
 ## Part 7 — Implementation adversarial review log (2026-07-07, independent-context)
+
+> **CLOSEOUT STAMP (2026-07-08):** FE-1 **IMPLEMENTED and CLOSED** — plan `416cb1d` (CI **#107**
+> green); implementation `678a651` (CI **#108** green, REST-verified + user-confirmed). User
+> approval given at the Tier-2 gate AFTER the review below was folded, re-validated (full-PG
+> 1119 passed on a clean run; frontend 37 vitest + lint/typecheck/format/build; `alembic check`
+> a no-op — NO migration), and the user exercised the view live against a seeded local demo
+> tenant (during which they caught the row-click conformance miss, folded as finding 11).
+> Recorded follow-ups: the vite5/vitest2 toolchain major-bump slice (+ a production-deps
+> `npm audit` CI step); exposure-family runs in the listing (needs `exposure.view` handling).
 
 Six independent finder agents (backend line-scan / governance-tenancy / frontend-correctness /
 cross-file tracer / test-quality / plan-conformance) over the full FE-1 working-tree diff; every

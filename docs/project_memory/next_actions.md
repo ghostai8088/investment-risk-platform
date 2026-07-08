@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `0599f7f` / CI #105 (refreshed 2026-07-07).** What to do
+> **As of HEAD `678a651` / CI #108 (refreshed 2026-07-08).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -82,20 +82,35 @@ as-of); the P3-3 mixed-base adjudication check. **Independent 6-finder review: 1
 residual recorded (the DQ-rule first-registration race) (`p3_c1_decision_record.md` Part 7). 1111 PG-backed tests;
 a FAILED run now executes on PG in CI.
 
+**DONE since:** **P3-C1 closeout memory** (`ee3c581`, CI #106) → **FE-1 PLANNING** (`416cb1d`, CI **#107** —
+`fe_1_decision_record.md` OD-FE-1-A…H + `fe_1_implementation_plan.md`; **OQ-FE-1-1…8 RATIFIED**; chosen on the
+walking-skeleton recommendation, the user explicitly deferring to best practices over their own preference — they
+coincided) → **FE-1 IMPLEMENTATION (`678a651`, CI #108 green)**: **the platform's FIRST VISIBLE UI** — the
+read-only "risk runs & results" view. Two screens (runs list: 4 RISK families / filters / has-more pagination /
+truncated reasons / row click-through; run detail: `/runs/:family/:runId` deep links, provenance verbatim,
+per-family result tables, FAILED reason prominent, **decimal strings byte-for-byte**) + the ONE backend addition
+`GET /risk/runs` (`risk.view`; the EXPOSURE_AGGREGATE fence; fail-closed filters; deterministic order; NO audit on
+reads; NEW `irp_shared/risk/queries.py`). Dev header-shim session + the permanent DEV banner; enforcement
+server-side; NO migration; runtime deps = react/react-dom/react-router-dom only. **Independent 6-finder review: 16
+findings folded** (record Part 7 — incl. 2 stale-response races, runId URL-injection, the has-more pager, the
+fence-test re-pin with the real `EXPOSURE_AGGREGATE` witness, NEW `test_risk_runs_pg.py` + its ci.yml step, and
+the row-click miss the USER caught exercising the view live). Full-PG 1119 passed; frontend 37 vitest; the demo
+run-book verified end-to-end (`apps/frontend/README.md`).
+
 **NEXT — THE NEXT-SLICE DECISION (on explicit direction; none pre-approved):**
-1. **P3-6 stress/scenario planning** (ENT-029/030; REQ-MKT-004 — **RTM-phase P5**: flagged by the P3-0 record as
+1. **The FE toolchain-bump slice** (SMALL; recorded FE-1 follow-up; user accepted the keep-Vite recommendation
+   2026-07-08): vite 5→current + vitest 2→current majors (the dev-only advisory chain), CI Node alignment, + a
+   production-deps `npm audit` CI step.
+2. **P3-6 stress/scenario planning** (ENT-029/030; REQ-MKT-004 — **RTM-phase P5**: flagged by the P3-0 record as
    possibly a later phase, not core P3).
-2. **A VaR ROADMAP method slice** (user-directed 2026-07-07): factor-based **historical simulation** (feasible with
+3. **A VaR ROADMAP method slice** (user-directed 2026-07-07): factor-based **historical simulation** (feasible with
    current data; new model family; quantile-interpolation + window-adequacy declarations) or **Monte-Carlo** (gated
    on a seeded simulator + revaluation engine; binds `random_seed`, QS-18).
-3. **A read-only frontend "risk runs & results" view** (the user asked 2026-07-07 when the frontend would be
-   visible; all the read APIs exist — the four GET-run/result families incl. `failure_reason`; one planning slice +
-   one build slice; still gated on explicit direction).
 4. **P3-7 benchmark-relative** (blocked for return-based analytics on the deferred `benchmark_level`/`return`
    captured-data slice).
-5. **The remaining recorded follow-ups** (the old carry-in register was largely PAID DOWN at P3-C1):
-   exposure-family scaffold/`failure_reason` adoption; captured-input-table `PreciseDecimal` parity; the DQ-rule
-   first-registration race (a deliberate behavior change — its own slice).
+5. **The remaining recorded follow-ups**: exposure-family scaffold/`failure_reason` adoption + exposure runs in the
+   FE listing (`exposure.view`); captured-input-table `PreciseDecimal` parity; the DQ-rule first-registration race
+   (a deliberate behavior change — its own slice).
 Whichever is chosen: PLANNING ONLY first — decision record + implementation plan under `10_delivery_backlog/`.
 
 ## Approval gates (hard)
@@ -111,8 +126,9 @@ Whichever is chosen: PLANNING ONLY first — decision record + implementation pl
 - Backend (ruff format + lint, mypy, pytest), Frontend, **DB migration (Postgres)** incl. `alembic check` drift +
   ALL per-table RLS/append-only PG suites (complete since `7c50c43`; Covariance added at `c2bd126`, VaR at
   `5ed8271`; migration head `0027_run_failure_reason` auto-covered since `0599f7f` — a FAILED run now executes on
-  PG in CI) + downgrade smoke, Documentation check, Secret scan. **HEAD `0599f7f` = run #105 = success**
-  (REST-verified; #98–#105 all green). Python 3.12 runners.
+  PG in CI; the **Risk-runs-listing PG step** added at `678a651`) + downgrade smoke, Documentation check, Secret
+  scan. The **Frontend job now tests/builds REAL content** (37 vitest + the production build). **HEAD `678a651` =
+  run #108 = success** (REST-verified + user-confirmed; #98–#108 all green). Python 3.12 runners.
   **This machine:** venv = Python 3.13.0; `irp_pg_local` IS stood up (`postgres:16`). After a schema reset just run
   `alembic upgrade head` — migration 0003 re-grants `irp_ops` itself; **NEVER manually grant schema USAGE to
   `irp_ops`** (it breaks the `downgrade base` smoke at DROP ROLE; fixed 2026-07-07 with
