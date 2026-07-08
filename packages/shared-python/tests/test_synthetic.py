@@ -498,8 +498,8 @@ def test_no_migration_and_no_entity() -> None:
     for py in versions.glob("*.py"):
         assert "synthetic" not in py.read_text().lower(), f"{py} references synthetic"
     # P2-1..P2-6 own 0016..0021; P3-1..P3-5 own 0022..0026; P3-C1 owns 0027_run_failure_reason;
-    # the synthetic slice still adds no migration, so the next slot (0028+) must remain empty.
-    assert not list(versions.glob("0028*")), "no 0028 migration may be added by the synthetic slice"
+    # the synthetic slice still adds no migration, so the next slot (0029+) must remain empty.
+    assert not list(versions.glob("0029*")), "no 0029 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -

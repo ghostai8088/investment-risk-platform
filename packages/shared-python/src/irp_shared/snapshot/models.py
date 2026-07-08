@@ -49,6 +49,9 @@ PURPOSE_COVARIANCE_INPUT = "COVARIANCE_INPUT"
 #: P3-5 (OD-P3-5-I): a VaR input snapshot (pins the consumed FACTOR_EXPOSURE + COVARIANCE result
 #: rows of the two upstream governed runs — the first derived-of-derived input set).
 PURPOSE_VAR_INPUT = "VAR_INPUT"
+#: VAR-HS-1 (OD-VHS-F): the historical-simulation input purpose — a SIBLING of VAR_INPUT so the
+#: wrong-purpose refusal stays sharp (the two shapes are not interchangeable).
+PURPOSE_VAR_HS_INPUT = "VAR_HS_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -57,6 +60,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_VAR_INPUT,
+    PURPOSE_VAR_HS_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )

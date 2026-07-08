@@ -58,3 +58,64 @@ What the literature and regulation say, and where v1 stands:
 ## Part 4 — Implementation readiness gate
 Implementation-ready once OQ-VAR-HS-1-1…7 are ratified. Build contract = `var_hs_1_implementation_plan.md`.
 **VAR-HS-1 planning implements nothing.**
+
+---
+
+## Part 5 — Implementation adversarial review log (2026-07-08, independent-context, 6-finder)
+
+Six finders (numeric / governance-tenancy / line-scan / cross-file / test-quality / conformance)
+over the full working-tree diff; every candidate verified empirically. **30 filings → ~16 deduped
+folds; 0 unresolved.** The cross-file tracer verified every pin-content key, builder guard, and
+endpoint raise-path CLEAN; governance verified the enforcement invariants (provenance
+re-resolution, both purpose fences, both-direction model identity, the 5th registrar's status
+contract, zero new permissions/audit codes) present and correct in code.
+
+**Ratification amendments (folded tightenings of the user-approved ODs):**
+- **OD-VHS-E AMENDED:** the ratified floor `N ≥ ⌈1/(1−c)⌉` still yielded k=1 (the sample
+  minimum — the floor's own stated refusal) at every integral boundary, incl. BOTH v1
+  confidences. Tightened to guarantee **k ≥ 2**: `N·(1−c) > 1` strictly (21 @ 0.95; 101 @ 0.99),
+  enforced at the registrar AND re-checked in `declared_hs_var_parameters` (the generic
+  `POST /models` mint bypassed the floor entirely; window=0 additionally reached an
+  IndexError 500 — three finders independently).
+- **OD-VHS-C AMENDED (×2):** (1) `covariance_run_id` is ALSO nullable in 0028 — the method
+  consumes no covariance run and a stuffed placeholder would be dishonest provenance; (2) the
+  relaxation is METRIC-CONDITIONAL at the DB (`ck_var_result_parametric_not_null` CHECK) so a
+  parametric row can never lose its declared parameters to a binder bug; and 0028's DOWNGRADE is
+  DESTRUCTIVE (deletes VAR_HISTORICAL rows — unrepresentable pre-0028; the 0026 drop-table
+  precedent) with the append-only trigger AND FORCE RLS disabled transactionally around the
+  delete (the RLS policy binds even the table owner: under any non-superuser migrator the delete
+  silently matched zero rows and bricked the downgrade midway — three finders independently; CI's
+  green smoke had only ever proven the container-superuser path).
+- **OD-VHS-F recorded picks:** a NEW `var_hs_service.py` binder (the plan's smaller-diff clause);
+  the SIBLING purpose `PURPOSE_VAR_HS_INPUT` (now also a `SNAPSHOT_PURPOSES` member — it had been
+  left out of the controlled vocabulary, three finders); **2 new POSTs + GET reuse** instead of
+  "4 endpoints" (the reads are the parametric family's — same run family/table; verified
+  functionally complete incl. the FE-1 listing and null-rendering with ZERO frontend changes).
+
+**Code folds (numeric finder, all empirically verified):** the kernel's sort/negate/quantize
+moved INSIDE the prec-50 context (at prec 28 a ≥1E22 result raised InvalidOperation — a raw 500
+— and unary minus HALF_EVEN-rounded >28-digit P&Ls BEFORE the declared HALF_UP quantize); the
+binder's per-factor totaling now runs at prec 50 (cross-method parity on duplicate-factor pins)
+with a NEW per-factor-TOTAL envelope gate (m duplicates could reach m×1E22 with every pin
+column-legal); the magnitude gate is now REACHABLE (was dead code) and test-proven to commit a
+FAILED run with a persisted reason on BOTH engines.
+
+**Registry/doc honesty folds:** the parametric `VAR_LIMITATIONS` no longer tells future
+registrants that historical simulation "is a roadmap method" (it ships in this slice; existing
+rows are registration-time snapshots, untouched); `VAR_HS_LIMITATIONS` gains the
+backtesting/Monte-Carlo seam line; the `risk/__init__` docstring no longer denies the method the
+module exports.
+
+**Test folds (test-quality finder — incl. one probe-verified mutation survival):** a hand-minted
+VAR_HS_INPUT snapshot vehicle now drives 16 adjudication-gate probes; the foreign/unknown pinned
+run id refusal is tested (deleting the provenance re-resolution had survived all 17 tests —
+the P3-5 principal-finding class, now defended); FAILED-run proofs on SQLite + PG + the reason
+persistence; pin invariance is non-vacuous (the fresh build moves to 190 while the pin holds
+200); reverse model identity + both purpose cross-feeds; six generic-mint malformed-declaration
+refusals + the non-REGISTERED twin; typed `VarSnapshotError` asserts; all floor-shifted
+references updated (N=21 ⇒ k=2 ⇒ VaR=200 — the hand constant survives).
+
+Post-fold validation: `make check` 937 passed; full-PG **1142 passed** (clean reset run);
+`alembic check` a no-op; the 0028 cycle proven twice in BOTH directions with real exit codes
+over suite-created rows; frontend untouched (37 vitest green); the diff fence = the slice's
+files only.

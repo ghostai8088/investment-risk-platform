@@ -3,15 +3,19 @@ sensitivities: curve-node DV01 / spread-DV01).
 
 Leaf domain package: ``risk -> {snapshot, marketdata(constants/kernel), calc, model, lineage, dq,
 audit, db}``; nothing imports ``risk``. Every compute reads ONLY snapshot-pinned captured content
-(never a live curve/exposure/factor/return read) and imports no VaR/ES/scenario/stress symbol.
+(never a live curve/exposure/factor/return read); no ES/scenario/stress symbol exists yet.
 Run-bound + snapshot-gated + **model_version-bound** (AD-014 / FW-RUN / TR-15 / CTRL-003) — no
 risk number escapes the model inventory. P3-1 analytic sensitivities (curve-intrinsic — NO
 instrument/position attribution, NO interpolation, NO pricing engine); P3-3 indicator-loading
 factor-exposure allocation; P3-4 equal-weighted unbiased sample covariance (ENT-051 — NO
 shrinkage/EWMA/correlation output; the window is version identity; **numpy is TEST-ONLY, never a
 runtime import**); P3-5 zero-mean delta-normal parametric VaR (ENT-027 `risk_result` realized —
-the first derived-of-derived number; confidence/horizon/z are version identity; NO runtime
-quantile function, NO simulation, NO ES/historical/MC in v1).
+the first derived-of-derived number; confidence/horizon/z are version identity; the PARAMETRIC
+method computes NO runtime quantile — its z is registration-declared). VAR-HS-1 plain
+equal-weight factor-based historical simulation (the SECOND VaR method, family
+``risk.var.historical``: the EMPIRICAL lower order statistic over pinned return windows —
+confidence/horizon/window/quantile-convention are version identity; NO FHS/BRW/ES/MC — those
+stay separately declared versions/families).
 """
 
 from __future__ import annotations
@@ -23,18 +27,23 @@ from irp_shared.risk.bootstrap import (
     FACTOR_EXPOSURE_MODEL_CODE,
     SENSITIVITY_METHODOLOGY_REF,
     SENSITIVITY_MODEL_CODE,
+    VAR_HS_METHODOLOGY_REF,
+    VAR_HS_MODEL_CODE,
     VAR_METHODOLOGY_REF,
     VAR_MODEL_CODE,
     VAR_Z_SCORES,
     WINDOW_ASSUMPTION_PREFIX,
+    HsVarParameters,
     ModelVersionConflictError,
     VarParameters,
     WrongModelVersionError,
     assert_model_version_of,
+    declared_hs_var_parameters,
     declared_var_parameters,
     declared_window_observations,
     register_covariance_model,
     register_factor_exposure_model,
+    register_historical_var_model,
     register_sensitivity_model,
     register_var_model,
 )
@@ -54,6 +63,7 @@ from irp_shared.risk.covariance_service import (
     run_covariance,
 )
 from irp_shared.risk.events import (
+    METRIC_TYPE_VAR_HISTORICAL,
     METRIC_TYPE_VAR_PARAMETRIC,
     METRIC_TYPES,
     RISK_COVARIANCE_CREATE_EVENT_RESERVED,
@@ -108,6 +118,17 @@ from irp_shared.risk.service import (
     resolve_sensitivity,
     run_sensitivities,
 )
+from irp_shared.risk.var_hs_kernel import (
+    HsVarEstimate,
+    HsVarKernelError,
+    compute_historical_var,
+    order_statistic_index,
+)
+from irp_shared.risk.var_hs_service import (
+    HsVarInputError,
+    HsVarRunResult,
+    run_var_historical,
+)
 from irp_shared.risk.var_kernel import VarEstimate, VarKernelError, compute_parametric_var
 from irp_shared.risk.var_service import (
     VarInputError,
@@ -121,6 +142,19 @@ from irp_shared.risk.var_service import (
 )
 
 __all__ = [
+    "HsVarEstimate",
+    "HsVarKernelError",
+    "HsVarInputError",
+    "HsVarRunResult",
+    "compute_historical_var",
+    "order_statistic_index",
+    "run_var_historical",
+    "register_historical_var_model",
+    "declared_hs_var_parameters",
+    "VAR_HS_MODEL_CODE",
+    "METRIC_TYPE_VAR_HISTORICAL",
+    "HsVarParameters",
+    "VAR_HS_METHODOLOGY_REF",
     "RISK_RUN_TYPES",
     "RiskRunQueryError",
     "list_risk_runs",

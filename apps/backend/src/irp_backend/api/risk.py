@@ -46,6 +46,8 @@ from irp_shared.risk import (
     FactorExposureResult,
     FactorExposureRunNotVisible,
     FactorExposureRunResult,
+    HsVarInputError,
+    HsVarRunResult,
     ModelVersionConflictError,
     RiskRunQueryError,
     SensitivityActor,
@@ -68,6 +70,7 @@ from irp_shared.risk import (
     list_vars,
     register_covariance_model,
     register_factor_exposure_model,
+    register_historical_var_model,
     register_sensitivity_model,
     register_var_model,
     resolve_covariance,
@@ -82,6 +85,7 @@ from irp_shared.risk import (
     run_factor_exposure,
     run_sensitivities,
     run_var,
+    run_var_historical,
 )
 from irp_shared.risk.queries import LIST_LIMIT_DEFAULT
 from irp_shared.snapshot import (
@@ -141,6 +145,10 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
         "covariance snapshot input failed closed",
     ),
     VarInputError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid VaR run input"),
+    HsVarInputError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid historical-VaR run input",
+    ),
     VarSnapshotError: (status.HTTP_409_CONFLICT, "VaR snapshot input failed closed"),
     FactorExposureRunNotVisible: (status.HTTP_404_NOT_FOUND, "factor-exposure run not found"),
     CovarianceRunNotVisible: (status.HTTP_404_NOT_FOUND, "covariance run not found"),
@@ -918,15 +926,15 @@ class VarRowOut(BaseModel):
     base_currency: str
     confidence_level: str
     horizon_days: int
-    z_score: str
-    sigma: str
+    z_score: str | None  # None for VAR_HISTORICAL (0028 — no normal quantile)
+    sigma: str | None  # None for VAR_HISTORICAL (no volatility estimate)
     var_value: str
     n_factors: int
     n_observations: int
     window_start: date
     window_end: date
     exposure_run_id: str
-    covariance_run_id: str
+    covariance_run_id: str | None  # None for VAR_HISTORICAL (no covariance run)
     model_version_id: str
 
 
@@ -950,9 +958,9 @@ def _var_row_out(row: VarResult) -> VarRowOut:
         base_currency=row.base_currency,
         confidence_level=f"{row.confidence_level:f}",
         horizon_days=row.horizon_days,
-        z_score=f"{row.z_score:f}",
+        z_score=(None if row.z_score is None else f"{row.z_score:f}"),
         # Fixed-point, never scientific (the P3-4 serialization lesson).
-        sigma=f"{row.sigma:f}",
+        sigma=(None if row.sigma is None else f"{row.sigma:f}"),
         var_value=f"{row.var_value:f}",
         n_factors=row.n_factors,
         n_observations=row.n_observations,
@@ -1110,3 +1118,130 @@ def get_var(
             status_code=status.HTTP_404_NOT_FOUND, detail="VaR result not found"
         ) from None
     return _var_row_out(row)
+
+
+# ---------- VAR-HS-1: historical-simulation VaR (OD-VHS-A..G) ----------
+
+
+class HsVarModelIn(BaseModel):
+    code_version: str
+    confidence_level: str  # the DECLARED confidence (shared v1 vocabulary) — OD-VHS-B
+    window_observations: int  # window-as-identity (>= the OD-VHS-E adequacy floor)
+    horizon_days: int = 1
+
+
+class HsVarRunIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    environment_id: str  # the run environment (FW-RUN §5 item 7; required)
+    model_version_id: uuid.UUID  # a REGISTERED historical-VaR model_version (CTRL-003)
+    exposure_run_id: uuid.UUID | None = None  # build-in-request
+    snapshot_id: uuid.UUID | None = None  # consume-existing alternative
+
+
+def _hs_var_run_out(result: HsVarRunResult) -> VarRunOut:
+    run = result.run
+    return VarRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_var_row_out(r) for r in result.rows],
+    )
+
+
+@router.post(
+    "/models/var-historical",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_var_historical(
+    body: HsVarModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed historical-simulation VaR model + a model_version
+    for this (code_version, confidence_level, horizon_days, window_observations,
+    quantile_convention) identity (OD-VHS-B). Same-label different-declaration = 409; an
+    out-of-vocabulary confidence, non-v1 horizon, or a window below the OD-VHS-E adequacy
+    floor = 422. The shared registration envelope."""
+    try:
+        version = register_historical_var_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            confidence_level=body.confidence_level,
+            window_observations=body.window_observations,
+            horizon_days=body.horizon_days,
+        )
+    except ValueError:  # vocabulary / horizon / adequacy-floor refusals
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "confidence_level/horizon_days/window_observations outside the v1 declared "
+                "vocabulary or below the adequacy floor"
+            ),
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post("/vars-historical/runs", response_model=VarRunOut, status_code=status.HTTP_201_CREATED)
+def create_var_historical_run(
+    body: HsVarRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> VarRunOut:
+    """Run a governed historical-simulation VaR calculation (VAR-HS-1). A pre-create refusal
+    raises + rolls back (no run, 422/404/409); a post-create FAILED run is committed
+    (``status='FAILED'``, zero rows — the magnitude gate). The run + row read back through the
+    EXISTING ``GET /risk/vars/runs/{run_id}`` / ``GET /risk/vars/{var_id}`` (same run family +
+    result table; ``metric_type='VAR_HISTORICAL'``, ``z_score``/``sigma``/``covariance_run_id``
+    honestly null)."""
+    try:
+        result = run_var_historical(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_var_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            exposure_run_id=(None if body.exposure_run_id is None else str(body.exposure_run_id)),
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        HsVarInputError,
+        UnregisteredModelError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        VarSnapshotError,
+        FactorExposureRunNotVisible,
+    ) as exc:
+        # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+
+    # Build the response BEFORE commit (the request GUC clears at commit).
+    response = _hs_var_run_out(result)
+    db.commit()
+    return response

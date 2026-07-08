@@ -59,8 +59,10 @@ STATISTIC_TYPES = (STATISTIC_TYPE_COVARIANCE,)
 #: Controlled-vocab ``var_result.metric_type`` (P3-5; ``ES_PARAMETRIC`` is reserved — the
 #: closed-form seam ``ES = sigma * phi(z) / (1 - alpha)`` is recorded, never emitted in v1).
 METRIC_TYPE_VAR_PARAMETRIC = "VAR_PARAMETRIC"
+#: VAR-HS-1 (OD-VHS-C): the historical-simulation metric on the SAME var_result grain.
+METRIC_TYPE_VAR_HISTORICAL = "VAR_HISTORICAL"
 METRIC_TYPE_ES_PARAMETRIC_RESERVED = "ES_PARAMETRIC"
-METRIC_TYPES = (METRIC_TYPE_VAR_PARAMETRIC,)
+METRIC_TYPES = (METRIC_TYPE_VAR_PARAMETRIC, METRIC_TYPE_VAR_HISTORICAL)
 
 
 @dataclass(frozen=True)

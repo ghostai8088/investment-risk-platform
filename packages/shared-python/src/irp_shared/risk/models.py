@@ -228,22 +228,27 @@ class VarResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     exposure_run_id: Mapped[str] = mapped_column(
         GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
     )
-    covariance_run_id: Mapped[str] = mapped_column(
-        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    # Nullable since 0028 (VAR-HS-1): a VAR_HISTORICAL run consumes NO covariance run — NULL is
+    # the honest provenance (the parametric binder still always writes it).
+    covariance_run_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=True, index=True
     )
-    # Controlled vocab (plain String): 'VAR_PARAMETRIC' v1; 'ES_PARAMETRIC' reserved.
+    # Controlled vocab (plain String): 'VAR_PARAMETRIC' (P3-5), 'VAR_HISTORICAL' (VAR-HS-1);
+    # 'ES_PARAMETRIC' reserved.
     metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     confidence_level: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
     horizon_days: Mapped[int] = mapped_column(Integer, nullable=False)
     # PreciseDecimal (2026-07 review: the OD-E contract criterion applied consistently —
     # 20 declared digits exceed float53 even though today's z vocabulary is 13 digits).
-    z_score: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    # Nullable since 0028 (VAR-HS-1): VAR_HISTORICAL rows have no normal quantile and no
+    # volatility estimate; the parametric binder still ALWAYS writes both (binder-enforced).
+    z_score: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
     # PreciseDecimal (PG NUMERIC(28,6) / SQLite fixed-scale TEXT): a 16+-significant-digit
     # currency value does not survive SQLite's float roundtrip (the P3-4 covariance lesson,
     # applied to the NEW columns; the shipped P3-1/P3-3 result columns are a recorded parity
     # deferral).
-    sigma: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 6), nullable=False)
+    sigma: Mapped[Decimal | None] = mapped_column(PreciseDecimal(28, 6), nullable=True)
     var_value: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 6), nullable=False)
     n_factors: Mapped[int] = mapped_column(Integer, nullable=False)
     n_observations: Mapped[int] = mapped_column(Integer, nullable=False)

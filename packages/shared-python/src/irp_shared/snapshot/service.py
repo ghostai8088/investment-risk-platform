@@ -81,6 +81,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
+    PURPOSE_VAR_HS_INPUT,
     PURPOSE_VAR_INPUT,
     SNAPSHOT_PURPOSES,
     DatasetSnapshot,
@@ -1104,3 +1105,103 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
         if content_hash(serialize_content(live)) != comp.content_hash:
             drifted.append(comp.id)
     return VerifyResult(ok=not drifted, component_count=len(comps), drifted_components=drifted)
+
+
+#: VAR-HS-1 truthful binding predicate (OD-VHS-F).
+VAR_HS_BINDING_PREDICATE = "v1:exposure-run-rows+aligned-factor-return-windows"
+
+
+def build_var_hs_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    exposure_run_id: str,
+    window_observations: int,
+    as_of_valid_at: datetime | None = None,
+    as_of_known_at: datetime | None = None,
+) -> DatasetSnapshot:
+    """Build one immutable ``VAR_HS_INPUT`` snapshot (VAR-HS-1, OD-VHS-F) pinning:
+
+    - one ``COMPONENT_KIND_FACTOR_EXPOSURE`` component per ``factor_exposure_result`` row of the
+      consumed exposure run (the IA-row pin flavor — ``build_var_snapshot``'s exposure leg), and
+    - one ``COMPONENT_KIND_FACTOR_RETURN`` component per DISTINCT factor of that run — the
+      factor's aligned RETURN WINDOW (``build_covariance_snapshot``'s bitemporal per-date pin:
+      the ``window_observations`` most recent dates COMMON to every factor; fail-closed, no
+      imputation, OD-P3-0-L),
+
+    so a historical-simulation run is reproducible from the snapshot alone (the compute reads
+    this captured content — never a live read; later supersedes/re-runs cannot move a pinned
+    number, TR-09). The factor SET is the exposure run's own factor set — an uncovered factor is
+    impossible by construction on this path (hand-minted snapshots are still adjudicated by the
+    binder). Declared-window/model adjudication is the RISK binder's pre-create gate — this
+    builder pins; it does not read the model registry."""
+    now = utcnow()
+    valid_at = as_of_valid_at if as_of_valid_at is not None else now
+    known = as_of_known_at if as_of_known_at is not None else now  # FROZEN once (header == pin)
+
+    if window_observations < 2:
+        raise VarSnapshotError(f"window_observations must be >= 2 (got {window_observations})")
+
+    exposure_rows = _list_factor_exposure_rows(
+        session, exposure_run_id, acting_tenant=acting_tenant
+    )
+    if not exposure_rows:
+        raise VarSnapshotError(f"exposure run {exposure_run_id} has no visible result rows")
+
+    factor_ids = list(dict.fromkeys(str(row.factor_id).lower() for row in exposure_rows))
+    factors = [resolve_factor(session, fid, acting_tenant=acting_tenant) for fid in factor_ids]
+    by_date = {
+        factor.id: _factor_window_rows(
+            session,
+            acting_tenant=acting_tenant,
+            factor_id=factor.id,
+            valid_at=valid_at,
+            known_at=known,
+        )
+        for factor in factors
+    }
+    common: set[date] = set.intersection(*(set(rows.keys()) for rows in by_date.values()))
+    if len(common) < window_observations:
+        raise VarSnapshotError(
+            f"only {len(common)} common return dates across {len(factors)} factors — "
+            f"the declared window needs {window_observations} (no imputation, OD-P3-0-L)"
+        )
+    window_dates = sorted(common)[-window_observations:]
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in exposure_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_FACTOR_EXPOSURE,
+            "factor_exposure_result",
+            row,
+            factor_exposure_content(row),
+        )
+    for factor in factors:
+        window_rows = [by_date[factor.id][d] for d in window_dates]
+        _append_spec(
+            specs,
+            COMPONENT_KIND_FACTOR_RETURN,
+            "factor",
+            factor,
+            factor_return_series_content(factor, window_rows),
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_VAR_HS_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=window_dates[-1],
+        binding_predicate_version=VAR_HS_BINDING_PREDICATE,
+    )
+
+    # No build-time DQ gate: pinned content is complete by construction (empty/short/misaligned
+    # inputs are refused above, before any write) — the P3-3/P3-4 rationale.
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row

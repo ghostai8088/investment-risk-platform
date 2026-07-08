@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -486,13 +486,13 @@ VAR_LIMITATIONS: tuple[str, ...] = (
     "carries NO residual variance term - portfolio risk outside the factor covariance is "
     "invisible to this number (the allocation-v1 limitation propagates).",
     "Joint normality of factor returns assumed - tail risk is understated for fat-tailed "
-    "returns; the empirical-distribution alternative (factor-based historical simulation) is a "
-    "recorded roadmap method.",
+    "returns; the empirical-distribution alternative SHIPS as the separately declared family "
+    "risk.var.historical v1 (VAR-HS-1).",
     "1-day horizon only (the covariance is daily/unannualized); multi-horizon sqrt(h) scaling "
     "is a later, separately declared transform.",
     "Parametric method only; ONE confidence level per registered version (the declared-parameter "
-    "identity); ES (closed-form seam), historical simulation, and Monte-Carlo are later, "
-    "separately declared model versions/families (user-directed roadmap).",
+    "identity); historical simulation ships as the separate family risk.var.historical v1; "
+    "ES (closed-form seam) and Monte-Carlo remain later, separately declared versions/families.",
     "Inherits the sample-covariance estimation error (equal weights, no shrinkage; rank-deficient "
     "for F >= N).",
     "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
@@ -653,5 +653,227 @@ def register_var_model(
             f"{Z_ASSUMPTION_PREFIX}{z_text}",
         ),
         limitations=VAR_LIMITATIONS,
+        actor_type=actor_type,
+    )
+
+
+# --- VAR-HS-1: the historical-simulation VaR model family (OD-VHS-B) ---
+
+VAR_HS_MODEL_CODE = "risk.var.historical"
+VAR_HS_MODEL_NAME = "Historical-simulation portfolio VaR (plain equal-weight, 1-day)"
+VAR_HS_MODEL_TYPE = "VAR"
+VAR_HS_VERSION_LABEL = "v1"
+VAR_HS_METHODOLOGY_REF = "05_analytics_methodologies/var_historical_v1.md"
+
+#: The v1 quantile convention — REGISTRATION-DECLARED (OD-VHS-D): the lower empirical order
+#: statistic k = ceil(N*(1-c)), no interpolation. An interpolated estimator is a NEW declared
+#: version, never a silent change.
+QUANTILE_ASSUMPTION_PREFIX = "quantile_convention="
+VAR_HS_QUANTILE_CONVENTION = "LOWER_ORDER_STATISTIC"
+
+VAR_HS_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Plain EQUAL-WEIGHT historical simulation: every pinned window date is one scenario with "
+    "weight 1/N - no volatility filtering, no time decay (FHS/BRW are recorded v2 versions).",
+    "Linear factor model dV_t = SUM_i x_i * r_(t,i) over the FACTOR_EXPOSURE run's per-factor "
+    "totals - the same substrate as the parametric method; NO revaluation.",
+    "The scenario P&L distribution is the EMPIRICAL one - no distributional assumption "
+    "(the method's point versus delta-normal).",
+    "var_value = -(k-th smallest scenario P&L), quantized HALF_UP to 6 decimal places "
+    "(Numeric(28,6)); the value may be negative when the k-th tail scenario is a gain - "
+    "reported honestly, never clamped.",
+)
+
+VAR_HS_LIMITATIONS: tuple[str, ...] = (
+    "SPECIFIC/IDIOSYNCRATIC RISK = 0: x spans registered factors only (the allocation-v1 "
+    "limitation propagates - identical to the parametric method).",
+    "Equal weighting reacts SLOWLY to volatility shifts; filtered (FHS) and time-weighted "
+    "(BRW) variants outperform in the cited literature and are recorded v2 model versions "
+    "requiring a declared volatility model (decision record Part 2.1).",
+    "The estimate cannot exceed the worst scenario IN the window - regime changes outside the "
+    "pinned window are invisible (window-as-declared-identity; the OD-VHS-E adequacy floor is "
+    "a statistical minimum, not a sufficiency guarantee).",
+    "1-day horizon only; overlapping/multi-day windows and sqrt(h) scaling are recorded seams.",
+    "ES (the FRTB-preferred tail measure) is a recorded seam for this family too; backtesting "
+    "(Kupiec/traffic-light) is a recorded later slice and Monte-Carlo remains gated on a seeded "
+    "simulator (the OD-VHS-G register).",
+    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+)
+
+
+@dataclass(frozen=True)
+class HsVarParameters:
+    """The version's declared HS-VaR parameters, parsed from its ``model_assumption`` rows."""
+
+    confidence_level: Decimal
+    horizon_days: int
+    window_observations: int
+    quantile_convention: str
+
+
+def declared_hs_var_parameters(session: Session, version: ModelVersion) -> HsVarParameters:
+    """Parse the declared confidence/horizon/window/quantile-convention (the OD-VHS-B identity:
+    exactly ONE strictly-well-formed declaration of EACH). Malformed/absent/ambiguous -> the
+    fail-closed :class:`WrongModelVersionError` (the generic endpoint can mint anything)."""
+    rows = (
+        session.execute(
+            select(ModelAssumption).where(ModelAssumption.model_version_id == version.id)
+        )
+        .scalars()
+        .all()
+    )
+
+    def _single(prefix: str) -> str | None:
+        found = [
+            r.assumption_text[len(prefix) :] for r in rows if r.assumption_text.startswith(prefix)
+        ]
+        return found[0] if len(found) == 1 else None
+
+    confidence_text = _single(CONFIDENCE_ASSUMPTION_PREFIX)
+    horizon_text = _single(HORIZON_ASSUMPTION_PREFIX)
+    window_text = _single(WINDOW_ASSUMPTION_PREFIX)
+    quantile_text = _single(QUANTILE_ASSUMPTION_PREFIX)
+    if (
+        confidence_text is None
+        or horizon_text is None
+        or window_text is None
+        or quantile_text is None
+        or not _CONFIDENCE_PATTERN.fullmatch(confidence_text)
+        or confidence_text not in VAR_Z_SCORES  # the shared v1 confidence vocabulary
+        or horizon_text != str(VAR_HORIZON_DAYS)
+        or re.fullmatch(r"[0-9]+", window_text) is None
+        or quantile_text != VAR_HS_QUANTILE_CONVENTION
+        # The adequacy floor is IDENTITY, not registrar courtesy: a generically-minted version
+        # (POST /models can stamp any assumptions) with an inadequate window must not bind —
+        # window=0 additionally sailed through the 0==0 length check into an IndexError 500
+        # (2026-07 review, numeric + line-scan finders independently).
+        or int(window_text) < _hs_window_floor(confidence_text)
+    ):
+        raise WrongModelVersionError(str(version.id), VAR_HS_MODEL_CODE)
+    return HsVarParameters(
+        confidence_level=Decimal(confidence_text),
+        horizon_days=int(horizon_text),
+        window_observations=int(window_text),
+        quantile_convention=quantile_text,
+    )
+
+
+def _hs_window_floor(confidence_key: str) -> int:
+    """The OD-VHS-E adequacy floor, TIGHTENED at the implementation review (2026-07, numeric
+    finder): the ratified ``N >= ceil(1/(1-c))`` still yielded ``k = 1`` (the sample MINIMUM —
+    the exact condition the floor's rationale refuses) at every integral boundary, incl. BOTH
+    v1 vocabulary confidences. Guaranteeing ``k >= 2`` requires ``N·(1-c) > 1`` strictly — the
+    floor is the smallest such N (21 at 0.95; 101 at 0.99)."""
+    one_minus_c = Decimal(1) - Decimal(confidence_key)
+    floor = int((Decimal(1) / one_minus_c).to_integral_value(rounding=ROUND_CEILING))
+    while Decimal(floor) * one_minus_c <= Decimal(1):
+        floor += 1
+    return floor
+
+
+def _assert_hs_window_adequate(n: int, confidence_key: str) -> None:
+    floor = _hs_window_floor(confidence_key)
+    if n < floor:
+        raise ValueError(
+            f"window_observations={n} is below the adequacy floor {floor} for confidence "
+            f"{confidence_key} (the order statistic would be the sample minimum - "
+            f"statistically meaningless; k >= 2 requires N > 1/(1-c))"
+        )
+
+
+def register_historical_var_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    confidence_level: str | Decimal,
+    window_observations: int,
+    horizon_days: int = VAR_HORIZON_DAYS,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the historical-simulation VaR model family (VAR-HS-1, OD-VHS-B):
+    identity = (code_version, confidence_level, horizon_days, window_observations,
+    quantile_convention). Same-label different-declaration -> :class:`ModelVersionConflictError`;
+    a non-REGISTERED same-label twin -> :class:`WrongModelVersionError` (the P3-C1 contract).
+    The window floor (OD-VHS-E): N >= ceil(1/(1-c)) - below it the order statistic is the
+    sample minimum and the estimate is statistically meaningless."""
+    text = str(confidence_level).strip()
+    if not _CONFIDENCE_PATTERN.fullmatch(text) or len(text) > 6:
+        raise ValueError(
+            f"confidence_level {confidence_level!r} is not in the v1 vocabulary "
+            f"{sorted(VAR_Z_SCORES)} (a new level is a new declared registration)"
+        )
+    confidence_key = f"{Decimal(text).quantize(Decimal('0.0001')):f}"
+    if confidence_key not in VAR_Z_SCORES:
+        raise ValueError(
+            f"confidence_level {confidence_level} is not in the v1 vocabulary "
+            f"{sorted(VAR_Z_SCORES)} (a new level is a new declared registration)"
+        )
+    if int(horizon_days) != VAR_HORIZON_DAYS:
+        raise ValueError(
+            f"horizon_days must be {VAR_HORIZON_DAYS} in v1 (sqrt(h) scaling is a recorded seam)"
+        )
+    n = int(window_observations)
+    _assert_hs_window_adequate(n, confidence_key)
+
+    model = session.execute(
+        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == VAR_HS_MODEL_CODE)
+    ).scalar_one_or_none()
+    if model is None:
+        model = register_model(
+            session,
+            tenant_id=str(tenant_id),
+            code=VAR_HS_MODEL_CODE,
+            name=VAR_HS_MODEL_NAME,
+            model_type=VAR_HS_MODEL_TYPE,
+            actor_id=actor_id,
+            description=(
+                "Plain equal-weight factor-based historical-simulation portfolio VaR over "
+                "governed factor exposures x pinned captured factor-return windows "
+                "(VAR-HS-1, ENT-027)."
+            ),
+            actor_type=actor_type,
+        )
+
+    version = session.execute(
+        select(ModelVersion).where(
+            ModelVersion.model_id == model.id,
+            ModelVersion.version_label == VAR_HS_VERSION_LABEL,
+        )
+    ).scalar_one_or_none()
+    if version is not None:
+        if version.status != "REGISTERED":
+            raise WrongModelVersionError(str(version.id), str(model.code))
+        declared = declared_hs_var_parameters(session, version)
+        if (
+            version.code_version != str(code_version)
+            or f"{declared.confidence_level:f}" != confidence_key
+            or declared.horizon_days != int(horizon_days)
+            or declared.window_observations != n
+        ):
+            raise ModelVersionConflictError(
+                VAR_HS_MODEL_CODE,
+                VAR_HS_VERSION_LABEL,
+                f"{code_version} (confidence_level={confidence_key}, horizon_days="
+                f"{horizon_days}, window_observations={n})",
+            )
+        return version
+
+    return register_model_version(
+        session,
+        model=model,
+        version_label=VAR_HS_VERSION_LABEL,
+        actor_id=actor_id,
+        methodology_ref=VAR_HS_METHODOLOGY_REF,
+        code_version=str(code_version),
+        status="REGISTERED",
+        assumptions=(
+            *VAR_HS_ASSUMPTIONS_BASE,
+            f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
+            f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
+            f"{WINDOW_ASSUMPTION_PREFIX}{n}",
+            f"{QUANTILE_ASSUMPTION_PREFIX}{VAR_HS_QUANTILE_CONVENTION}",
+        ),
+        limitations=VAR_HS_LIMITATIONS,
         actor_type=actor_type,
     )
