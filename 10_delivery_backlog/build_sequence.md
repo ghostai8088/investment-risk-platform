@@ -26,9 +26,9 @@ prototype. A phase opens only when its dependencies are met and its requirements
 
 | Phase | Theme | Primary requirements | Key dependencies delivered | Status |
 |---|---|---|---|---|
-| **P0** | Foundation slice + hardening | REQ-AUD-002; DEP-CIH, DEP-FELOCK | Audit/entitlement/calc-run/temporal frameworks (done); CI drift check + audit-write concurrency; frontend lockfile/`npm ci` | Partly done (slice committed; hardening pending) |
-| **P1** | Reference & portfolio core + governance skeletons | PPM-001..004, SMR-001..004, LIN-001, MDG-001, DQR-001, INT-001, AUD-001 | DEP-SMR, DEP-LIN, DEP-MREG (skeleton), DEP-DQF (skeleton) | Not started |
-| **P2** | Public market data + market-risk core | PUB-001..003, MKT-001..003 | Market-data store usage; first FR-class domain + first governed calc runs | Not started |
+| **P0** | Foundation slice + hardening | REQ-AUD-002; DEP-CIH, DEP-FELOCK | Audit/entitlement/calc-run/temporal frameworks (done); CI drift check + audit-write concurrency; frontend lockfile/`npm ci` | **DONE** (executed as P0.5) |
+| **P1** | Reference & portfolio core + governance skeletons | PPM-001..004, SMR-001..004, LIN-001, MDG-001, DQR-001, INT-001, AUD-001 | DEP-SMR, DEP-LIN, DEP-MREG (skeleton), DEP-DQF (skeleton) | **DONE** (executed as P1A/P1B/P1C) |
+| **P2** | Public market data + market-risk core | PUB-001..003, MKT-001..003 | Market-data store usage; first FR-class domain + first governed calc runs | **DONE for market risk** (executed as P2 captured data + P3 risk engines: sensitivities, factor exposures, covariance, parametric VaR; +FE-1 read-only UI). MKT-004 stress + further VaR methods per the delivery roadmap |
 | **P3** | Credit & counterparty risk | CRD-001..004, CPT-001..004 | Credit/counterparty analytics; seeded MC (PFE/VaR) | Not started |
 | **P4** | Private assets + liquidity risk | PRV-001..004, LIQ-001..004, ADM-003 (MNPI barriers) | Private-markets data; MNPI classification; liquidity analytics | Not started |
 | **P5** | Scenario & stress testing | SCN-001..003, MKT-004 | Versioned scenarios; combined stress | Not started |
@@ -90,3 +90,9 @@ depend on it (BX-SOD).
 
 This sequence depends on the requirements backbone (scope), the RTM (per-requirement dependencies), and the foundational ADRs
 (AD-002 phasing principle, AD-004…012). Phase boundaries are revisited after each enterprise review.
+
+> **Status note (2026-07-08).** This map remains the ratified THEME order (what the platform must eventually
+> contain). The EXECUTED phase numbering diverged early (this map's P2 theme was delivered as the executed P2+P3;
+> hence "RTM-P5" caveats on stress in later records). The **operative near-term slice sequence is
+> `delivery_roadmap.md`** (rolling-wave; re-baselined at wave closes); the executed ledger is
+> `docs/project_memory/build_plan.md`. This map's Status column is refreshed only at wave closes.

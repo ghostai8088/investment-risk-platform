@@ -9,7 +9,8 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
 2. `docs/project_memory/current_state.md` — the entry-point snapshot (re-verify HEAD/CI at session start).
 3. `docs/project_memory/phase_status.md` — the per-phase ledger.
 4. `docs/project_memory/next_actions.md` — the next gated step + exact prompts.
-5. The latest resume anchor under `10_delivery_backlog/` (currently `p3_2_closeout_p3_3_readiness.md`).
+5. `10_delivery_backlog/delivery_roadmap.md` — the operative rolling-wave slice sequence (the next slice comes
+   from here by default; re-sequencing follows its Part 4 rules) — plus the latest decision record it points at.
 
 ## Hard invariants (non-negotiable)
 - **Commit/push ONLY on explicit user approval, per artifact.** Planning-first; plan / implement / commit are

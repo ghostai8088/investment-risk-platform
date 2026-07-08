@@ -97,21 +97,16 @@ fence-test re-pin with the real `EXPOSURE_AGGREGATE` witness, NEW `test_risk_run
 the row-click miss the USER caught exercising the view live). Full-PG 1119 passed; frontend 37 vitest; the demo
 run-book verified end-to-end (`apps/frontend/README.md`).
 
-**NEXT — THE NEXT-SLICE DECISION (on explicit direction; none pre-approved):**
-1. **The FE toolchain-bump slice** (SMALL; recorded FE-1 follow-up; user accepted the keep-Vite recommendation
-   2026-07-08): vite 5→current + vitest 2→current majors (the dev-only advisory chain), CI Node alignment, + a
-   production-deps `npm audit` CI step.
-2. **P3-6 stress/scenario planning** (ENT-029/030; REQ-MKT-004 — **RTM-phase P5**: flagged by the P3-0 record as
-   possibly a later phase, not core P3).
-3. **A VaR ROADMAP method slice** (user-directed 2026-07-07): factor-based **historical simulation** (feasible with
-   current data; new model family; quantile-interpolation + window-adequacy declarations) or **Monte-Carlo** (gated
-   on a seeded simulator + revaluation engine; binds `random_seed`, QS-18).
-4. **P3-7 benchmark-relative** (blocked for return-based analytics on the deferred `benchmark_level`/`return`
-   captured-data slice).
-5. **The remaining recorded follow-ups**: exposure-family scaffold/`failure_reason` adoption + exposure runs in the
-   FE listing (`exposure.view`); captured-input-table `PreciseDecimal` parity; the DQ-rule first-registration race
-   (a deliberate behavior change — its own slice).
-Whichever is chosen: PLANNING ONLY first — decision record + implementation plan under `10_delivery_backlog/`.
+**NEXT — per the RATIFIED `10_delivery_backlog/delivery_roadmap.md` (Wave 1; no option menu — the sequence IS the
+decision; re-sequencing only via its Part 4 rules):**
+1. **TC-1 — FE toolchain bump** (vite/vitest majors + CI Node alignment + a production-deps `npm audit` CI step)
+2. **VAR-HS-1 — historical-simulation VaR** (own model family + methodology; runs surface in FE-1 automatically)
+3. **P3-C2 — hardening bundle** (exposure scaffold/reason + FE listing; captured-table PreciseDecimal parity;
+   the DQ-rule registration race)
+4. **P2-7 — benchmark price/level capture** (net-new canonical ENT id; unblocks P3-7)
+5. **P3-7 — benchmark-relative analytics** → 6. **P3-6 — stress/scenario** → the Wave-1 close review + re-baseline.
+Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
+Tier-2 commit approval. The next concrete step is **TC-1 planning, on explicit direction**.
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.

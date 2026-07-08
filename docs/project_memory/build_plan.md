@@ -92,6 +92,12 @@ mandatory methodology doc per method (`05_analytics_methodologies/`); `RISK.*` r
 
 **Still FUTURE (each separately planned + approved):** private assets (ENT-015–019), ES/historical-sim/Monte-Carlo VaR (roadmap method slices), scenarios (ENT-029/030, P3-6), benchmark-relative (P3-7), vendor factor loadings + computed factor returns (deferred captured-input slices), the limit framework, breach workflow, reporting/dashboards, real SSO/OIDC, vendor/SFTP/API ingestion adapters (REQ-INT-002/003, P9), production AV (OD-042), WORM/anchored audit hardening, the model-validation workflow (P7).
 
+## Operative sequencing
+The near-term slice ORDER lives in **`10_delivery_backlog/delivery_roadmap.md`** (rolling-wave; Wave 1 =
+TC-1 toolchain bump → VAR-HS-1 historical-simulation VaR → P3-C2 hardening bundle → P2-7 benchmark levels →
+P3-7 benchmark-relative → P3-6 stress; re-baselined at wave closes). This file stays the executed ledger;
+`10_delivery_backlog/build_sequence.md` stays the RTM theme map.
+
 ## Future risk-domain roadmap (north-star capabilities, sequenced later)
 Reproducible calculation runs (FW-RUN); market/credit/liquidity risk; scenario & stress; limit monitoring
 and breach lifecycle (1L/2L/3L); model validation & effective challenge (REQ-MDG-002/003); reconciliation

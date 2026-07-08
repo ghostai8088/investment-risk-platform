@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Purpose | The P3 build roadmap: a **governance-first, reproducibility-first** subphase structure (P3-1…P3-7) that lands the risk methodology + model-governance contract **proven by the lowest-dependency reproducible number (analytic sensitivities)**, then the factor / covariance / VaR / stress / benchmark-relative analytics. Companion to `p3_0_decision_record.md` (OD-P3-0-A…N). |
-| Status | **Implementation PLAN — PLANNING ONLY; NO code, NO migrations, NO risk/factor/model/scenario implementation.** |
+| Status | **Implementation PLAN — PLANNING ONLY (historical).** P3-1…P3-5 + the inserted P3-C1 hardening slice and FE-1 UI slice are DELIVERED (see `docs/project_memory/build_plan.md`); the remaining legs (P3-6 stress, P3-7 benchmark-relative, further VaR methods) are sequenced by **`delivery_roadmap.md`** (Wave 1), which supersedes this document's ordering. |
 | HEAD at writing | `6663452`; migration head `0021_benchmark`; origin/main clean. The full P2 captured market-data / reproducibility foundation (P2-1…P2-6) is committed + CI-green. |
 | Predecessors | `p3_0_decision_record.md`; `p2_closeout_p3_readiness.md` (the readiness assessment); `p2_implementation_plan.md` (the per-subphase template + the reproducibility-first precedent); the `exposure_aggregate` (P2-3) governed-derived-number realization. |
 | Review | 8-lens UltraCode review — **Part 7**. |

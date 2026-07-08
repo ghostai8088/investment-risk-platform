@@ -120,7 +120,7 @@ the model's self-assessed confidence ("zero areas of concern" is not a criterion
 
 ## Scope-control rules
 - **Planning-first, thin slices.** No domain functionality during foundation/skeleton/planning phases.
-- **Do not start the next slice until directed.** Plan / implement / commit are separate approvals.
+- **Do not start the next slice until directed.** Plan / implement / commit are separate approvals. WHAT comes next defaults to `10_delivery_backlog/delivery_roadmap.md` (no per-slice option menus); re-sequencing follows its Part 4 rules — on genuine ambiguity, ask the user WITH a recommendation.
 - **Genericity:** type/scheme/status columns are controlled-vocab **strings** (no enum/CHECK); polymorphic
   `(entity_type, entity_id)`, no domain FK — new families extend by value, never a migration.
 - **No new audit code, permission, or role** without the governed update (R-07 owns the taxonomy/catalog).

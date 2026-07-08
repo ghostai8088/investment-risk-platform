@@ -23,9 +23,9 @@ runs four jobs; any failing step fails its job and blocks the merge (BR-1: no fe
 
 | CI Job | Steps | Enforces | Maps to control |
 |---|---|---|---|
-| `backend` | ruff format --check, ruff check, mypy, pytest (foundation + P0.5 tests) | BR-1, BR-11, BR-12, BR-17, BR-18, BR-19 | CTRL-001, CTRL-005, CTRL-011, CTRL-016, CTRL-017, CTRL-026 |
+| `backend` | ruff format --check, ruff check, mypy, pytest (the FULL `packages/shared-python` + `apps/backend` suite — foundation frameworks through the P3 risk engines and the FE-1 listing; SQLite; PG-only suites skip here and run in `migration`) | BR-1, BR-11, BR-12, BR-17, BR-18, BR-19 | CTRL-001, CTRL-005, CTRL-011, CTRL-016, CTRL-017, CTRL-026 |
 | `frontend` | **npm ci** (reproducible from lockfile), eslint, tsc, vitest, vite build | BR-1, reproducible UI build | CTRL-001 |
-| `migration` | alembic upgrade head → **alembic check (drift)** → **audit-write concurrency test (PG)** → **tenant-context RLS tests (PG)** → **lineage RLS tests (PG, P1A-1)** → **model registry RLS tests (PG, P1A-2)** → **data-quality RLS tests (PG, P1A-3)** → **ingestion RLS + append-only tests (PG, P1A-4)** → downgrade base | DB schema, RLS tenant isolation end-to-end (BR-17), append-only triggers + concurrency (BR-12/18), lineage/model + data-quality + ingestion (`ingestion_batch` status-mutable, `ingestion_staged_record` append-only, cross-tenant staged-payload invisibility) isolation + fail-closed under the constrained `irp_app` role, drift (OD-052) | CTRL-003, CTRL-005, CTRL-006, CTRL-011, CTRL-013, CTRL-014, CTRL-027, CTRL-029, CTRL-026, CTRL-033 |
+| `migration` | alembic upgrade head → **alembic check (drift)** → the per-table **PG RLS/append-only suites** (audit concurrency, tenant context, lineage, model registry, data quality, ingestion, reference, entities, instruments, corporate actions, portfolio, transaction, position, valuation, snapshot, FX, exposure, price, curve, benchmark, synthetic, factor, sensitivity, factor-exposure, covariance, VaR, risk-runs listing — the authoritative step list is `.github/workflows/ci.yml`) → downgrade smoke (`alembic downgrade base`) | DB schema, RLS tenant isolation end-to-end (BR-17), append-only triggers + concurrency (BR-12/18), lineage/model + data-quality + ingestion (`ingestion_batch` status-mutable, `ingestion_staged_record` append-only, cross-tenant staged-payload invisibility) isolation + fail-closed under the constrained `irp_app` role, drift (OD-052) | CTRL-003, CTRL-005, CTRL-006, CTRL-011, CTRL-013, CTRL-014, CTRL-027, CTRL-029, CTRL-026, CTRL-033 |
 | `secret-scan` | scripts/secret_scan.py (gitleaks later) | BR-10 (no secrets in source) | CTRL-010 |
 | `docs-check` | scripts/check_docs.py | documentation present & doc-control headers | CTRL-002, CTRL-004 |
 
@@ -152,8 +152,9 @@ realized, **REQ-PPM-003 is now Done** (OD-P1C4-5).
 - **docs-check** verifies README presence and Document Control headers; extend to code-change → required-doc-change checks
   (automation_hooks: documentation-consistency hook).
 - **Identity** is a dev header shim, not SSO (AD-007); the entitlement gate is real but the principal source is a placeholder.
-- **Lineage and model-inventory enforcement checks** are not active yet — they activate when those frameworks/domains are
-  built (BR-3, BR-13). No governed surface bypasses audit/entitlement; the foundation simply has no domain surfaces yet.
+- **Lineage and model-inventory enforcement are ACTIVE** (superseding the scaffold-era note): every governed
+  derived number binds a registered `model_version` (CTRL-003 executable since P3-1) and records
+  snapshot--DEPENDS_ON-->run--ORIGIN-->result lineage; the PG suites above prove it per table.
 
 ## 4. Local equivalents
 

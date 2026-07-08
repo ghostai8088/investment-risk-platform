@@ -288,22 +288,13 @@ realized. **NO risk analytics yet** — VaR/ES/factor/covariance/stress/scenario
 - **FE-1 frontend runs-view implementation** — `678a651` (CI-green, run #108; 16 review folds). **FE-1 CLOSED — the FIRST VISIBLE UI** (two read-only screens + `GET /risk/runs`; NO migration; dev-shim session + permanent DEV banner; user exercised it live pre-approval).
 
 ## Next required action
-**THE NEXT-SLICE DECISION (on explicit direction)** — present the options honestly; none is pre-approved:
-- **The FE toolchain-bump slice** (SMALL; the FE-1 recorded follow-up): vite 5→current + vitest 2→current majors
-  (the dev-only advisory chain), CI Node alignment, + a production-deps `npm audit` CI step. The user accepted the
-  keep-Vite/Vitest recommendation 2026-07-08 (switching tools doesn't escape the advisory class).
-- **P3-6 stress/scenario planning** (ENT-029 `scenario_definition` EV + ENT-030 `scenario_result`; REQ-MKT-004 —
-  **RTM-phase P5**: the P3-0 record itself flags it as possibly a later phase, not core P3).
-- **A VaR ROADMAP method slice** (user-directed 2026-07-07): factor-based historical simulation (feasible with
-  current data; own model family + methodology + quantile-interpolation declarations) or Monte-Carlo (gated on a
-  seeded simulator + revaluation engine; binds `random_seed`, QS-18).
-- **P3-7 benchmark-relative** (return-based analytics need the deferred `benchmark_level`/`benchmark_return`
-  captured-data slice first).
-- **The remaining recorded follow-ups**: exposure-family scaffold/`failure_reason` adoption + exposure runs in the
-  FE listing (`exposure.view`); captured-input-table `PreciseDecimal` parity; the DQ-rule first-registration race
-  (a deliberate behavior change — needs its own slice).
-Whichever is chosen: planning first — decision record + implementation plan under `10_delivery_backlog/`; build
-**nothing else**.
+**THE RATIFIED ROADMAP SEQUENCE** (`10_delivery_backlog/delivery_roadmap.md`, Wave 1 — the sequence replaces the
+per-slice option menu; re-sequencing only via its Part 4 rules): **TC-1** FE toolchain bump → **VAR-HS-1**
+historical-simulation VaR → **P3-C2** hardening bundle → **P2-7** benchmark price/level capture → **P3-7**
+benchmark-relative → **P3-6** stress/scenario → the Wave-1 close review + re-baseline. Each slice still gets its
+own decision record + plan + OQ ratification + adversarial review + Tier-2 commit approval, and starts only on
+explicit direction. **Next concrete step: TC-1 planning, on direction.** Genuine ambiguity inside a slice → ask
+the user with a recommendation attached (their standing rule, 2026-07-08).
 
 ## What MUST NOT be started yet
 - **No next-slice implementation** — not until its planning is committed + ratified AND the user directs it (the planning itself also awaits explicit direction; see "Next required action").
