@@ -66,6 +66,16 @@ establishes the run recipe a demo needs.
 - **OQ-FE-1-7 — recommend APPROVE.** Decimal values displayed as exact strings verbatim — never converted to floats anywhere in the frontend. (OD-FE-1-G.)
 - **OQ-FE-1-8 — recommend APPROVE.** The test bar of OD-FE-1-H (frontend component tests + backend list-endpoint tests incl. tenant separation and 403) as the slice's definition of done, inside the existing CI jobs.
 
+### Dependency disposition at implementation (recorded 2026-07-07, review fold)
+OD-FE-1-F's "exactly ONE new runtime dependency" held: `react-router-dom` is the only runtime
+addition. Two **dev-only** test-tooling packages were additionally required to meet the OD-FE-1-H
+test bar (component tests need a DOM): `jsdom` and `@testing-library/react`, as
+`devDependencies`. Lockfile delta audited: all packages from registry.npmjs.org, no install
+scripts. They ship nothing (the production bundle is unaffected). **Recorded follow-up (dev
+toolchain, pre-existing):** `npm audit` reports advisories in the scaffold-era vite 5 / vitest 2
+chain (dev-server/test-runner surfaces only); the fix is a major-version toolchain bump — its own
+separately-planned hygiene slice, not smuggled into FE-1.
+
 ## Part 5 — Planning review (single-pass, 8-lens)
 
 | Lens | Conclusion |
@@ -82,3 +92,69 @@ establishes the run recipe a demo needs.
 ## Part 6 — FE-1 implementation readiness gate
 Implementation-ready once OQ-FE-1-1…8 are ratified. Build contract = `fe_1_implementation_plan.md`.
 **FE-1 planning implements nothing.**
+
+---
+
+## Part 7 — Implementation adversarial review log (2026-07-07, independent-context)
+
+Six independent finder agents (backend line-scan / governance-tenancy / frontend-correctness /
+cross-file tracer / test-quality / plan-conformance) over the full FE-1 working-tree diff; every
+candidate verified empirically before folding. The backend line-scan and the cross-file tracer
+came back CLEAN (the tracer verified every query param, every DTO field name-for-name and
+type-for-type, all four detail routes, every table column against the RowOut DTOs
+character-by-character, route ordering, proxy coverage, and both engines' ORM types). The
+governance finder confirmed every enforcement invariant (gating before query, explicit tenant
+predicate in the compiled SQL, pure-read service, frozen audit module untouched, zero new
+permissions). **Sixteen findings CONFIRMED and FOLDED** (deduped from 18; fixes + regression
+tests in the same slice):
+
+1. **Stale-response races ×2** (frontend finder; proven with a probe): RunsList and RunDetail
+   had no staleness guard — a slow older response overwrote a newer filter's/run's data (rows
+   rendered under the wrong filter; run A's numbers under run B's heading). → cleanup-flag
+   guards in both effects + a deterministic out-of-order-resolution regression test.
+2. **runId URL-injection** (frontend finder; proven): the router DECODES %2F/%3F/%23 in the
+   param, so a crafted deep link (`/runs/vars/..%2F..%2Fadmin`) made the SPA fetch an
+   attacker-chosen same-origin path WITH the session headers. → `encodeURIComponent(runId)`
+   (family already allowlisted) + the attack-shaped regression test.
+3. **Pagination dead-end** (frontend finder): `length < PAGE_SIZE` cannot detect the last page
+   at exact multiples of 50. → fetch PAGE_SIZE+1 as a has-more probe, render 50; pager tests
+   incl. the exactly-full-page case.
+4. **Non-ASCII session ids** (frontend finder; proven): a pasted em-dash made the header
+   constructor throw pre-network, masquerading as "API unreachable" persistently. →
+   printable-ASCII validation at the form AND on sessionStorage load, with honest wording;
+   tests both.
+5. **Fence-test witness wrong + self-referential** (governance + test-quality finders,
+   independently): the exposure witness used `MARKET_VALUE` (an exposure_type — no run ever
+   carries it; the real run_type is `EXPOSURE_AGGREGATE`) and expectations derived from
+   `RISK_RUN_TYPES` itself — widening OR shrinking the constant self-adopted silently. → the
+   ratified four pinned as LITERALS + equality assert + the REAL production constant as the
+   witness (imported and value-pinned).
+6. **Tie-break proof probabilistic** (test-quality finder): random uuid4 ids + uncontrolled
+   insertion order meant deleting the ORDER BY tie-break still passed ~1/6 of runs. → explicit
+   never-ascending insertion order in both the SQLite and PG suites.
+7. **PG coverage missing** (plan-conformance finder — planned-but-not-built): OD-FE-1-H's "PG
+   coverage via the existing suites' pattern" had not been built. → NEW
+   `test_risk_runs_pg.py` (irp_app NOSUPERUSER/NOBYPASSRLS posture: RLS isolation through the
+   listing, no-context fails closed, the fence on PG, the uuid-ordering tie-break) + its
+   explicit ci.yml step.
+8. **RunDetail masked 401/403** (plan-conformance finder): the deep-link screen — precisely
+   where a foreign identity lands — showed a generic error instead of OD-FE-1-D's honest
+   states. → dedicated 401/403 wording mirroring RunsList + test.
+9. **Pager never exercised / path never asserted / row order never asserted / 2-of-4 families
+   untested / vacuous decimal fence / session-clear half-proven** (test-quality finder, six
+   items): → pager click-through tests (offset=50 request; exactly-full-page disable), the
+   full `/risk/runs?` path pinned, DOM row-order assertion, covariance + factor-exposure
+   detail tests with URL pins, NON-round-tripping decimal constants verified with node
+   (`"1.0000"→"1"`, `"-0.000098765430"→"-0.00009876543"`), shape-invalid sessionStorage
+   removal asserted.
+10. **README run-book gaps** (plan-conformance finder): no seeded-session example, no migration
+    prerequisite. → a VERIFIED seeding recipe (executed against local PG; the printed ids
+    proven end-to-end: 200 through the real app, 401 without) + `alembic upgrade head` step.
+
+**Dependency disposition** folded into Part 2 (jsdom/@testing-library/react = dev-only test
+tooling; lockfile audited; the pre-existing vite5/vitest2 advisory chain = a recorded
+toolchain-bump follow-up, not FE-1 scope).
+
+Post-fold validation: ruff/mypy/format clean; backend 12 endpoint tests + the 2-test PG suite
+green on local PG; frontend 36 vitest green + lint/format/typecheck/build clean; full-PG suite
+re-run green; `alembic check` a no-op (NO migration — as ratified).

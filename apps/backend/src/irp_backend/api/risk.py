@@ -23,7 +23,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -47,6 +47,7 @@ from irp_shared.risk import (
     FactorExposureRunNotVisible,
     FactorExposureRunResult,
     ModelVersionConflictError,
+    RiskRunQueryError,
     SensitivityActor,
     SensitivityInputError,
     SensitivityNotVisible,
@@ -62,6 +63,7 @@ from irp_shared.risk import (
     WrongModelVersionError,
     list_covariances,
     list_factor_exposures,
+    list_risk_runs,
     list_sensitivities,
     list_vars,
     register_covariance_model,
@@ -81,6 +83,7 @@ from irp_shared.risk import (
     run_sensitivities,
     run_var,
 )
+from irp_shared.risk.queries import LIST_LIMIT_DEFAULT
 from irp_shared.snapshot import (
     CovarianceSnapshotError,
     CurveSelector,
@@ -141,6 +144,7 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     VarSnapshotError: (status.HTTP_409_CONFLICT, "VaR snapshot input failed closed"),
     FactorExposureRunNotVisible: (status.HTTP_404_NOT_FOUND, "factor-exposure run not found"),
     CovarianceRunNotVisible: (status.HTTP_404_NOT_FOUND, "covariance run not found"),
+    RiskRunQueryError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid run listing filter"),
 }
 
 
@@ -152,6 +156,72 @@ def _map_error(exc: Exception) -> tuple[int, str]:
 
 def _actor(principal: Principal) -> SensitivityActor:
     return SensitivityActor(actor_id=principal.user_id)
+
+
+# ---------- FE-1: the read-only runs listing (OD-FE-1-C) ----------
+
+
+class RiskRunSummaryOut(BaseModel):
+    run_id: str
+    run_type: str
+    status: str
+    created_at: datetime
+    completed_at: datetime | None
+    initiated_by: str
+    input_snapshot_id: str | None
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    failure_reason: str | None
+
+
+class RiskRunListOut(BaseModel):
+    items: list[RiskRunSummaryOut]
+
+
+@router.get("/runs", response_model=RiskRunListOut)
+def get_risk_runs(
+    run_type: str | None = None,
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = LIST_LIMIT_DEFAULT,
+    offset: int = 0,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> RiskRunListOut:
+    """List the tenant's risk runs, newest first (the FOUR risk families only; read-only;
+    fail-closed filters — an unknown ``run_type``/``status`` or out-of-bounds page is a 422,
+    never a silently-empty page). The query param is ``status`` (aliased here — the FastAPI
+    ``status`` module shadows the name)."""
+    try:
+        runs = list_risk_runs(
+            db,
+            acting_tenant=principal.tenant_id,
+            run_type=run_type,
+            status=status_filter,
+            limit=limit,
+            offset=offset,
+        )
+    except RiskRunQueryError as exc:
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from exc
+    return RiskRunListOut(
+        items=[
+            RiskRunSummaryOut(
+                run_id=r.run_id,
+                run_type=r.run_type,
+                status=r.status,
+                created_at=r.created_at,
+                completed_at=r.completed_at,
+                initiated_by=r.initiated_by,
+                input_snapshot_id=r.input_snapshot_id,
+                model_version_id=r.model_version_id,
+                code_version=r.code_version,
+                environment_id=r.environment_id,
+                failure_reason=r.failure_reason,
+            )
+            for r in runs
+        ]
+    )
 
 
 class CurveSelectorIn(BaseModel):

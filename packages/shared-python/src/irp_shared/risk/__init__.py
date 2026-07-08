@@ -93,6 +93,11 @@ from irp_shared.risk.models import (
     SensitivityResult,
     VarResult,
 )
+from irp_shared.risk.queries import (
+    RISK_RUN_TYPES,
+    RiskRunQueryError,
+    list_risk_runs,
+)
 from irp_shared.risk.service import (
     SensitivityInputError,
     SensitivityNotVisible,
@@ -116,6 +121,9 @@ from irp_shared.risk.var_service import (
 )
 
 __all__ = [
+    "RISK_RUN_TYPES",
+    "RiskRunQueryError",
+    "list_risk_runs",
     "SensitivityResult",
     "SensitivityActor",
     "RUN_TYPE_SENSITIVITY",

@@ -1,0 +1,193 @@
+/* FE-1 minimal hand-written styles (OD-FE-1-F: no CSS framework). */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: #1a1a2e;
+  background: #fafafa;
+}
+
+main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 3rem;
+}
+
+.dev-banner {
+  background: #7a1f1f;
+  color: #fff;
+  text-align: center;
+  padding: 0.4rem 1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.app-header h1 {
+  font-size: 1.25rem;
+}
+
+.session-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
+.session-form {
+  max-width: 26rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.session-form label {
+  display: grid;
+  gap: 0.25rem;
+  font-weight: 600;
+}
+
+.session-form input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.filters {
+  display: flex;
+  gap: 1.25rem;
+  margin: 0.75rem 0;
+}
+
+.filters label {
+  display: grid;
+  gap: 0.2rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+select,
+button {
+  font: inherit;
+  padding: 0.35rem 0.6rem;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  border: 1px solid #ddd;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+thead th {
+  background: #eef0f4;
+}
+
+tbody tr.clickable {
+  cursor: pointer;
+}
+
+tbody tr.clickable:hover {
+  background: #f0f4fa;
+}
+
+.provenance th {
+  width: 12rem;
+  background: #eef0f4;
+}
+
+.status {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.status-completed {
+  background: #d9f2e0;
+  color: #1e6b3a;
+}
+
+.status-failed {
+  background: #fadcdc;
+  color: #8f1d1d;
+}
+
+.status-running,
+.status-created {
+  background: #e8e8f5;
+  color: #3a3a7a;
+}
+
+.failure {
+  border: 1px solid #d99;
+  background: #fff3f3;
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.failure pre {
+  margin: 0.25rem 0 0;
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+}
+
+.state {
+  color: #555;
+  font-style: italic;
+}
+
+.state.error {
+  color: #8f1d1d;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.reason {
+  max-width: 22rem;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
