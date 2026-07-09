@@ -128,6 +128,29 @@ describe("RunsList", () => {
     expect(last).toContain("offset=0");
   });
 
+  it("routes the Exposure family to /exposure/runs (source-switch, not run_type=)", async () => {
+    const mock = stubItems([]);
+    renderList();
+    await screen.findByText(/No runs yet/);
+    // A risk family stays on /risk/runs with a run_type filter.
+    fireEvent.change(screen.getByLabelText(/Run type/), { target: { value: "VAR" } });
+    await waitFor(() => {
+      const calls = mock.mock.calls.map((c) => String(c[0]));
+      expect(calls.some((u) => u.startsWith("/risk/runs?") && u.includes("run_type=VAR"))).toBe(
+        true,
+      );
+    });
+    // Selecting Exposure switches the SOURCE endpoint and drops run_type (singleton family).
+    fireEvent.change(screen.getByLabelText(/Run type/), {
+      target: { value: "EXPOSURE_AGGREGATE" },
+    });
+    await waitFor(() => {
+      const last = String(mock.mock.calls[mock.mock.calls.length - 1]?.[0]);
+      expect(last.startsWith("/exposure/runs?")).toBe(true);
+      expect(last).not.toContain("run_type=");
+    });
+  });
+
   it("pages with Older/Newer: 51 rows means has-more, click requests offset=50", async () => {
     const fullPage = Array.from({ length: PAGE_SIZE + 1 }, (_, i) =>
       run({ run_id: `bbbbbbbb-0000-0000-0000-${String(i).padStart(12, "0")}` }),

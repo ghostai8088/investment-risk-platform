@@ -17,6 +17,11 @@ from irp_shared.exposure.models import (
     EXPOSURE_TYPES,
     ExposureAggregate,
 )
+from irp_shared.exposure.queries import (
+    LIST_LIMIT_DEFAULT,
+    ExposureRunQueryError,
+    list_exposure_runs,
+)
 from irp_shared.exposure.service import (
     ExposureInputError,
     ExposureNotVisible,
@@ -36,6 +41,9 @@ __all__ = [
     "RUN_TYPE_EXPOSURE_AGGREGATE",
     "run_exposure",
     "list_exposure",
+    "list_exposure_runs",
+    "ExposureRunQueryError",
+    "LIST_LIMIT_DEFAULT",
     "resolve_exposure",
     "resolve_run",
     "ExposureRunResult",

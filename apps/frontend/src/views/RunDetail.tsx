@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { ApiError, apiGet } from "../api/client";
-import { FAMILIES, FAMILY_ROW_COLUMNS } from "../api/types";
+import { FAMILIES, FAMILY_ROW_COLUMNS, runDetailUrl } from "../api/types";
 import type { Family, RunDetailBase } from "../api/types";
 import type { DevSession } from "../session";
 
@@ -38,10 +38,11 @@ export function RunDetail({ session }: { session: DevSession }): ReactElement {
     let stale = false;
     setRun(null);
     setError(null);
-    // encodeURIComponent (review fold): the router DECODES %2F/%3F/%23 in the param, so an
-    // unencoded runId in a crafted deep link could rewrite the request path/query — and it
-    // would carry the session headers. The family segment is allowlisted above.
-    apiGet<RunDetailBase>(`/risk/${validFamily}/runs/${encodeURIComponent(runId)}`, session)
+    // runDetailUrl encodeURIComponent's the runId (review fold: the router DECODES %2F/%3F/%23,
+    // so an unencoded id in a crafted deep link could rewrite the request path/query with the
+    // session headers attached) and routes exposure to its own endpoint (P3-C2 OD-C). The
+    // family segment is allowlisted above (validFamily).
+    apiGet<RunDetailBase>(runDetailUrl(validFamily, runId), session)
       .then((body) => {
         if (!stale) setRun(body);
       })
@@ -76,7 +77,7 @@ export function RunDetail({ session }: { session: DevSession }): ReactElement {
           {error.kind === "not-found"
             ? "Run not found (or not visible to this identity)."
             : error.kind === "forbidden"
-              ? "This identity is not entitled to view risk runs (403)."
+              ? "This identity is not entitled to view this run (403)."
               : error.kind === "unauthorized"
                 ? "The backend rejected the session headers (401)."
                 : `Could not load the run: ${error.message}`}

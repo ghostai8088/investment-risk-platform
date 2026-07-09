@@ -49,6 +49,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.models import (
     VALUE_TYPE_DISCOUNT_FACTOR,
     VALUE_TYPE_SPREAD,
@@ -63,7 +64,6 @@ from irp_shared.risk.events import (
 )
 from irp_shared.risk.kernel import node_dv01, node_spread_dv01
 from irp_shared.risk.models import SensitivityResult
-from irp_shared.risk.scaffold import execute_governed_run
 from irp_shared.snapshot import (
     COMPONENT_KIND_CURVE,
     PURPOSE_SENSITIVITY_INPUT,

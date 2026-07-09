@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Index, Integer, Numeric, String, text
+from sqlalchemy import ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from irp_shared.db.base import Base
@@ -36,7 +36,7 @@ from irp_shared.db.mixins import (
     TenantMixin,
     TimestampMixin,
 )
-from irp_shared.db.types import GUID
+from irp_shared.db.types import GUID, PreciseDecimal
 from irp_shared.temporal import TemporalClass
 
 
@@ -69,9 +69,9 @@ class Position(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMix
     )
     # Signed holding (long > 0, short < 0) — the grain measure; captured, NEVER recomputed (no
     # calc).
-    quantity: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 8), nullable=False)
     # Opaque captured reference value only (OD-P1C-3) — never recomputed; NOT a market value.
-    cost_basis: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    cost_basis: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 6), nullable=True)
     # Controlled-vocab plain string (SHARES/UNITS/PAR/...); extend by value (MG-01).
     quantity_unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
     position_source: Mapped[str | None] = mapped_column(String(150), nullable=True)  # provenance

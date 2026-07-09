@@ -41,6 +41,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.risk.bootstrap import (
     VAR_HS_MODEL_CODE,
     HsVarParameters,
@@ -54,7 +55,6 @@ from irp_shared.risk.events import (
 )
 from irp_shared.risk.factor_service import resolve_factor_exposure_run
 from irp_shared.risk.models import VarResult
-from irp_shared.risk.scaffold import execute_governed_run
 from irp_shared.risk.var_hs_kernel import compute_historical_var
 from irp_shared.snapshot import (
     COMPONENT_KIND_FACTOR_EXPOSURE,

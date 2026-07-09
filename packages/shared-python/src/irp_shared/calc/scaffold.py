@@ -1,4 +1,11 @@
-"""The shared governed-run lifecycle scaffold (P3-C1, OD-P3-C1-D — the deferral paydown).
+"""The shared governed-run lifecycle scaffold (P3-C1 OD-P3-C1-D; relocated to ``calc`` at P3-C2).
+
+Lives in ``calc`` (the calculation-run package) — a NEUTRAL home below both ``risk`` and
+``exposure`` (P3-C2 OD-B amendment): it began under ``risk`` with its first four consumers, but
+the fifth consumer is the model-less ``exposure`` binder, and the ratified layering fence
+(``test_scope_fence_no_risk_imports_or_identifiers``) forbids ``exposure`` importing ``risk``.
+A generic governed-run lifecycle is not risk-specific, so it belongs with the run framework it
+orchestrates (`calc`). Consumers: the FOUR risk binders + ``exposure`` (five total).
 
 Extracted VERBATIM from the four risk binders (P3-1 sensitivities, P3-3 factor exposures, P3-4
 covariance, P3-5 VaR), which had accreted four copies of the identical tail:

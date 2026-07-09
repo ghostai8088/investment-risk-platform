@@ -15,7 +15,14 @@ function truncate(text: string, max = 80): string {
 
 function ErrorState({ error }: { error: ApiError }): ReactElement {
   if (error.kind === "forbidden") {
-    return <p className="state error">This identity is not entitled to view risk runs (403).</p>;
+    // Family-neutral: exposure runs need exposure.view, risk runs need risk.view — a session
+    // may hold one and not the other (the permission-family separation, P3-C2 OD-C).
+    return (
+      <p className="state error">
+        This identity is not entitled to view the selected runs (403 — risk runs need risk.view,
+        exposure runs need exposure.view).
+      </p>
+    );
   }
   if (error.kind === "unauthorized") {
     return <p className="state error">The backend rejected the session headers (401).</p>;
@@ -37,15 +44,24 @@ export function RunsList({ session }: { session: DevSession }): ReactElement {
     // filter's results — the table would show non-matching rows under the selected filter.
     let stale = false;
     const params = new URLSearchParams();
-    if (runType) params.set("run_type", runType);
     if (statusFilter) params.set("status", statusFilter);
     // Fetch one extra row as the has-more signal (review fold: `length < PAGE_SIZE` cannot
     // detect the last page when the count is an exact multiple of the page size).
     params.set("limit", String(PAGE_SIZE + 1));
     params.set("offset", String(offset));
+    // The family selector chooses the SOURCE (P3-C2 OD-C): EXPOSURE_AGGREGATE is a separate
+    // permission family (exposure.view) listed by /exposure/runs; the four risk families (and
+    // the "All risk" default) are listed by /risk/runs. Selecting a source per family keeps
+    // server-side pagination correct — merging two independently-paginated endpoints would
+    // recreate the FE-1 has-more trap.
+    const isExposure = runType === "EXPOSURE_AGGREGATE";
+    if (runType && !isExposure) params.set("run_type", runType);
+    const url = isExposure
+      ? `/exposure/runs?${params.toString()}`
+      : `/risk/runs?${params.toString()}`;
     setItems(null);
     setError(null);
-    apiGet<RiskRunList>(`/risk/runs?${params.toString()}`, session)
+    apiGet<RiskRunList>(url, session)
       .then((list) => {
         if (stale) return;
         setHasMore(list.items.length > PAGE_SIZE);
@@ -62,7 +78,9 @@ export function RunsList({ session }: { session: DevSession }): ReactElement {
 
   return (
     <section>
-      <h2>Risk runs</h2>
+      {/* Family-neutral heading: this view now also lists the exposure family (P3-C2 OD-C),
+          so it is no longer "Risk runs" — the family selector below scopes the source. */}
+      <h2>Runs</h2>
       <div className="filters">
         <label>
           Run type
@@ -73,7 +91,7 @@ export function RunsList({ session }: { session: DevSession }): ReactElement {
               setRunType(e.target.value);
             }}
           >
-            <option value="">All</option>
+            <option value="">All risk families</option>
             {Object.values(FAMILIES).map((f) => (
               <option key={f.runType} value={f.runType}>
                 {f.label}

@@ -190,6 +190,35 @@ describe("RunDetail", () => {
     );
   });
 
+  it("routes the exposure family to its OWN endpoint (/exposure/runs/{id}), not /risk", async () => {
+    const mock = stubDetail(
+      detail({
+        run_type: "EXPOSURE_AGGREGATE",
+        model_version_id: null, // exposure is model-less
+        rows: [
+          {
+            id: "row-1",
+            portfolio_id: "pf-1",
+            instrument_id: "in-1",
+            exposure_type: "MARKET_VALUE",
+            base_currency: "USD",
+            mark_currency: "EUR",
+            signed_quantity: "100.00000000",
+            mark_value: "7.000000",
+            fx_rate: "1.100000000000",
+            exposure_amount: "770.000000",
+          },
+        ],
+      }),
+    );
+    renderDetail("exposure", "55555555-5555-5555-5555-555555555555");
+    expect(await screen.findByText("770.000000")).toBeTruthy();
+    expect(screen.getByText("MARKET_VALUE")).toBeTruthy();
+    expect(String(mock.mock.calls[0]?.[0])).toBe(
+      "/exposure/runs/55555555-5555-5555-5555-555555555555",
+    );
+  });
+
   it("URL-encodes the runId so a crafted deep link cannot escape the /risk path", async () => {
     const mock = stubDetail(detail({}));
     // The attack shape: percent-encoded traversal in the deep link — the router DECODES it
@@ -209,7 +238,7 @@ describe("RunDetail", () => {
       vi.fn().mockResolvedValue({ ok: false, status: 403, json: () => Promise.resolve({}) }),
     );
     renderDetail("vars", "22222222-2222-2222-2222-222222222222");
-    expect(await screen.findByText(/not entitled to view risk runs \(403\)/)).toBeTruthy();
+    expect(await screen.findByText(/not entitled to view this run \(403\)/)).toBeTruthy();
   });
 
   it("renders a FAILED run's persisted reason prominently with zero rows", async () => {

@@ -48,6 +48,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.factor import resolve_factor
 from irp_shared.marketdata.models import FREQUENCY_DAILY, RETURN_TYPE_SIMPLE
 from irp_shared.risk.bootstrap import (
@@ -58,7 +59,6 @@ from irp_shared.risk.bootstrap import (
 from irp_shared.risk.covariance_kernel import FactorSeriesPin, estimate_covariance
 from irp_shared.risk.events import RUN_TYPE_COVARIANCE, STATISTIC_TYPE_COVARIANCE, CovarianceActor
 from irp_shared.risk.models import CovarianceResult
-from irp_shared.risk.scaffold import execute_governed_run
 from irp_shared.snapshot import (
     COMPONENT_KIND_FACTOR,
     COMPONENT_KIND_FACTOR_RETURN,

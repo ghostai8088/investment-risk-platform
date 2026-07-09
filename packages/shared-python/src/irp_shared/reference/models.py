@@ -52,7 +52,7 @@ from irp_shared.db.mixins import (
     TenantMixin,
     TimestampMixin,
 )
-from irp_shared.db.types import GUID
+from irp_shared.db.types import GUID, PreciseDecimal
 from irp_shared.temporal import TemporalClass
 
 #: Table names of the closed hybrid set (mirrors ``HYBRID_TABLES`` in migration 0008). Kept here as
@@ -351,7 +351,7 @@ class InstrumentTerms(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, Times
     denomination_currency: Mapped[str | None] = mapped_column(
         String(3), nullable=True
     )  # ISO-4217 plain str
-    face_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    face_value: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 4), nullable=True)
     term_source: Mapped[str | None] = mapped_column(
         String(150), nullable=True
     )  # methodology/source pointer
@@ -458,8 +458,12 @@ class CorporateAction(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, Timesta
     effective_date: Mapped[date | None] = mapped_column(
         Date, nullable=True
     )  # stored attribute; nothing applied
-    ratio: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)  # inert (no calc)
-    amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)  # inert (no calc)
+    ratio: Mapped[Decimal | None] = mapped_column(
+        PreciseDecimal(18, 8), nullable=True
+    )  # inert (no calc)
+    amount: Mapped[Decimal | None] = mapped_column(
+        PreciseDecimal(20, 6), nullable=True
+    )  # inert (no calc)
     currency_code: Mapped[str | None] = mapped_column(String(3), nullable=True)  # plain ISO, no FK
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source: Mapped[str | None] = mapped_column(

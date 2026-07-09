@@ -29,7 +29,6 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     Index,
-    Numeric,
     String,
     event,
     text,
@@ -39,7 +38,7 @@ from sqlalchemy.orm import Mapped, Mapper, mapped_column
 from irp_shared.audit.models import AppendOnlyViolation
 from irp_shared.db.base import Base
 from irp_shared.db.mixins import ImmutableAppendOnlyMixin, PrimaryKeyMixin, TenantMixin
-from irp_shared.db.types import GUID
+from irp_shared.db.types import GUID, PreciseDecimal
 from irp_shared.temporal import TemporalClass
 
 
@@ -74,9 +73,16 @@ class Transaction(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     txn_type: Mapped[str] = mapped_column(String(50), nullable=False)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)  # business event date (inert)
     settle_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # inert
-    quantity: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)  # signed; inert
-    price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)  # inert
-    gross_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)  # inert
+    # PreciseDecimal (not plain Numeric): these captured/inert decimals are float53-unsafe
+    # (precision >= 16) — the P3-C2 OD-D criterion applied consistently, closing the SQLite
+    # test-engine roundtrip divergence. PG DDL is byte-identical (NUMERIC(p,s)); no migration.
+    quantity: Mapped[Decimal] = mapped_column(
+        PreciseDecimal(28, 8), nullable=False
+    )  # signed; inert
+    price: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 6), nullable=True)  # inert
+    gross_amount: Mapped[Decimal | None] = mapped_column(
+        PreciseDecimal(20, 6), nullable=True
+    )  # inert
     currency_code: Mapped[str | None] = mapped_column(
         String(3), nullable=True
     )  # plain ISO str, inert

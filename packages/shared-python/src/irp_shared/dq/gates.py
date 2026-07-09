@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from irp_shared.dq.models import SEVERITY_ERROR, DataQualityRule
@@ -37,27 +38,44 @@ def ensure_presence_rule(
     actor_type: str = "user",
 ) -> DataQualityRule:
     """Resolve-or-register the per-tenant presence (NOT_NULL ``present``) rule — governed +
-    audited (the ``ensure_manual_source`` resolve-or-register pattern)."""
-    rule = session.execute(
-        select(DataQualityRule).where(
-            DataQualityRule.tenant_id == str(tenant_id),
-            DataQualityRule.code == code,
-        )
-    ).scalar_one_or_none()
+    audited (the ``ensure_manual_source`` resolve-or-register pattern).
+
+    Race-safe (P3-C2 OD-E): two concurrent FIRST governed runs of a tenant both SELECT-miss then
+    both INSERT the same ``(tenant_id, code)`` → one hits ``uq_data_quality_rule_tenant_code``.
+    The INSERT is wrapped in a SAVEPOINT (``begin_nested``) so that IntegrityError rolls back
+    ONLY the failed INSERT (not the whole co-transactional governed run — which on PostgreSQL an
+    unwrapped IntegrityError would abort, turning the race into a 500); the loser then re-SELECTs
+    the peer's committed rule and proceeds. The audit event is emitted AFTER the rule INSERT
+    inside ``register_dq_rule``, so the losing branch (which fails AT the INSERT flush) leaves NO
+    dangling audit row — the savepoint unwinds it."""
+    q = select(DataQualityRule).where(
+        DataQualityRule.tenant_id == str(tenant_id),
+        DataQualityRule.code == code,
+    )
+    rule = session.execute(q).scalar_one_or_none()
     if rule is not None:
         return rule
-    return register_dq_rule(
-        session,
-        tenant_id=str(tenant_id),
-        code=code,
-        name=name,
-        rule_type=RULE_TYPE_NOT_NULL,
-        actor_id=actor_id,
-        params={"column": "present"},
-        target_entity_type=target_entity_type,
-        severity=SEVERITY_ERROR,
-        actor_type=actor_type,
-    )
+    try:
+        with session.begin_nested():  # SAVEPOINT around the racy INSERT
+            return register_dq_rule(
+                session,
+                tenant_id=str(tenant_id),
+                code=code,
+                name=name,
+                rule_type=RULE_TYPE_NOT_NULL,
+                actor_id=actor_id,
+                params={"column": "present"},
+                target_entity_type=target_entity_type,
+                severity=SEVERITY_ERROR,
+                actor_type=actor_type,
+            )
+    except IntegrityError:
+        # A concurrent first run committed the same (tenant, code) — the savepoint rolled the
+        # failed INSERT back; resolve the peer's now-visible rule (READ COMMITTED sees it).
+        peer = session.execute(q).scalar_one_or_none()
+        if peer is None:  # not the unique-collision we handle — re-raise loudly
+            raise
+        return peer
 
 
 def run_presence_gate(

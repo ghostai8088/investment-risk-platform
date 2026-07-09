@@ -30,7 +30,7 @@ describe("App", () => {
     renderApp();
     expect(screen.getByText(BANNER)).toBeTruthy();
     expect(screen.getByText(/Start a dev session/)).toBeTruthy();
-    expect(screen.queryByText(/Risk runs/)).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Runs" })).toBeNull();
     expect(mock).not.toHaveBeenCalled();
   });
 
@@ -56,7 +56,7 @@ describe("App", () => {
       vi.fn().mockResolvedValue({ ok: false, status: 403, json: () => Promise.resolve({}) }),
     );
     renderApp();
-    expect(await screen.findByText(/not entitled to view risk runs \(403\)/)).toBeTruthy();
+    expect(await screen.findByText(/not entitled to view the selected runs/)).toBeTruthy();
     expect(screen.getByText(BANNER)).toBeTruthy();
   });
 });

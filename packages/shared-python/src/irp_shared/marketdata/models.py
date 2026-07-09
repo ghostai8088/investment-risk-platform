@@ -55,7 +55,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    Numeric,
     String,
     UniqueConstraint,
     event,
@@ -73,7 +72,7 @@ from irp_shared.db.mixins import (
     TenantMixin,
     TimestampMixin,
 )
-from irp_shared.db.types import GUID
+from irp_shared.db.types import GUID, PreciseDecimal
 from irp_shared.temporal import TemporalClass
 
 #: Controlled-vocab ``rate_type`` values for P2-2 (app-side allow-list; BID/ASK reserved, not
@@ -184,7 +183,7 @@ class FxRate(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin
     rate_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     # The captured rate, "1 base = rate quote" (QS-08); inert (captured, NEVER computed).
     # Numeric(28,12).
-    rate: Mapped[Decimal] = mapped_column(Numeric(28, 12), nullable=False)
+    rate: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 12), nullable=False)
     # Controlled-vocab rate-type label (MID only in v1; logical-key component).
     rate_type: Mapped[str] = mapped_column(String(20), nullable=False, default=RATE_TYPE_MID)
     # Inert provenance LABEL (e.g. "ECB" / "WMR_4PM_LON"); NOT a market-data FK (the mark_source
@@ -265,7 +264,7 @@ class PricePoint(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampM
     # precedent).
     price_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     # The captured price, in currency_code (money scale 6); inert (captured, NEVER computed).
-    price: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    price: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 6), nullable=False)
     # Controlled-vocab price-type (CLOSE/MID/NAV v1); a NOT-NULL logical-key component.
     price_type: Mapped[str] = mapped_column(String(20), nullable=False, default=PRICE_TYPE_CLOSE)
     # The captured native currency (ISO; validated via resolve_currency); a NOT-NULL key component.
@@ -388,7 +387,7 @@ class CurvePoint(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     # What point_value MEANS: ZERO_RATE/PAR_RATE/DISCOUNT_FACTOR/SPREAD (controlled-vocab).
     value_type: Mapped[str] = mapped_column(String(30), nullable=False)
     # The captured value as a canonical DECIMAL fraction (not %/bps); inert (NEVER computed).
-    point_value: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
+    point_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
 
 
 def _block_curve_point_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
@@ -512,7 +511,7 @@ class BenchmarkConstituent(
     # precedent).
     effective_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     # The captured index weight as a canonical DECIMAL fraction (not %/bps); inert (NEVER computed).
-    weight: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
+    weight: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
     # Optional captured per-name currency (validated via resolve_currency when present); NO
     # conversion.
     constituent_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
@@ -626,7 +625,7 @@ class FactorReturn(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, Timestam
     return_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     return_type: Mapped[str] = mapped_column(String(20), nullable=False, default=RETURN_TYPE_SIMPLE)
     # The captured return as a canonical DECIMAL fraction (0.01 = 1%); inert (NEVER computed).
-    return_value: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
+    return_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
     restatement_reason: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )  # set ONLY on a correction (TR-08)

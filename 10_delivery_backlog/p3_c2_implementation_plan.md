@@ -41,8 +41,10 @@
    exposure detail table renders decimals verbatim).
 
 ## Step 3 — Captured-input `PreciseDecimal` parity (OD-D)
-9. Convert the ten columns (OD-D list) from `Numeric(p,s)` to `PreciseDecimal(p,s)` in
-   `position/valuation/marketdata/reference` models. `coupon_rate(12,6)` untouched.
+9. Convert the OD-D columns (the eleven named in the record — position has quantity+cost_basis,
+   corporate_action has ratio+amount — PLUS the three `transaction` columns added by the review fold =
+   fourteen) from `Numeric(p,s)` to `PreciseDecimal(p,s)` in
+   `position/valuation/marketdata/reference/transaction` models. `coupon_rate(12,6)` untouched.
 10. **`alembic check` MUST stay a no-op** (assert in the run): PreciseDecimal → `NUMERIC(p,s)` on PG is
     byte-identical DDL. If `alembic check` reports drift, STOP — the type is not rendering identically and the
     scope assumption is wrong.

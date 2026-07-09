@@ -44,13 +44,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.calc.models import CalculationRun, RunStatus
-from irp_shared.calc.service import create_run, update_run_status
-from irp_shared.dq.gates import ensure_presence_rule, run_presence_gate
+from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.exposure.events import RUN_TYPE_EXPOSURE_AGGREGATE, ExposureActor
 from irp_shared.exposure.models import EXPOSURE_TYPE_MARKET_VALUE, ExposureAggregate
-from irp_shared.lineage.models import EDGE_KIND_DEPENDENCY, EDGE_KIND_ORIGIN
-from irp_shared.lineage.service import record_internal_lineage, record_run_lineage
 from irp_shared.marketdata import DEFAULT_BASE, compose_effective_rate
 from irp_shared.portfolio import resolve_portfolio
 from irp_shared.snapshot import (
@@ -204,38 +201,6 @@ def _build_rows(
     return rows, gaps
 
 
-def _run_completeness_gate(
-    session: Session,
-    *,
-    acting_tenant: str,
-    actor: ExposureActor,
-    run: CalculationRun,
-    gaps: list[str],
-) -> None:
-    """Fail-closed DQ gate (``DATA.VALIDATE``): one ``{'present': None}`` row per gap; a
-    non-empty gap fails ERROR ⇒ ``DataQualityError`` (the caller converts it to a post-create
-    FAILED run). The shared ``dq.gates`` presence helpers (P3-4-R0) — rule code/name/target
-    unchanged, so the persisted evidence shape is byte-identical to the pre-R0 copy."""
-    rule = ensure_presence_rule(
-        session,
-        tenant_id=str(acting_tenant),
-        code=_COMPLETENESS_RULE_CODE,
-        name="Exposure run input completeness (mark + FX)",
-        target_entity_type="exposure_aggregate",
-        actor_id=actor.actor_id,
-        actor_type=actor.actor_type,
-    )
-    run_presence_gate(
-        session,
-        rule=rule,
-        gaps=gaps,
-        target_entity_type="calculation_run",
-        target_entity_id=run.run_id,
-        actor_id=actor.actor_id,
-        actor_type=actor.actor_type,
-    )
-
-
 def run_exposure(
     session: Session,
     *,
@@ -252,10 +217,6 @@ def run_exposure(
     """Run a governed exposure aggregation. Build-in-request (default — ``portfolio_id`` +
     ``as_of_valid_at``: builds an ``EXPOSURE_INPUT`` snapshot with FX pinned) or consume-existing
     (``snapshot_id``). See the module docstring for the failure model + the AD-014 invariant."""
-    from irp_shared.dq.service import (
-        DataQualityError,
-    )  # local: keep the import-fence surface minimal
-
     # --- Pre-create prerequisite gate (raise BEFORE create_run ⇒ zero run/exposure/audit) ---
     if not code_version:
         raise ExposureInputError("code_version is required (FW-RUN/TR-15)")
@@ -307,68 +268,50 @@ def run_exposure(
             base_currency=base,
         )
 
-    # --- Create the run + RUNNING (the run now exists; failures below are POST-CREATE FAILED) ---
-    run = create_run(
+    # --- The shared governed-run lifecycle (P3-C2: adopt the P3-C1 scaffold — the model-less
+    # fifth variant). Two INTENDED improvements over the prior hand-rolled tail: the FAILED run
+    # now PERSISTS its ``failure_reason`` (was returned-only ⇒ the GET showed None), and the
+    # snapshot->run DEPENDS_ON edge is recorded BEFORE the DQ gate (a committed FAILED run keeps
+    # its input-lineage link — the P3-1 lineage fold, extended to the exposure family). The
+    # compute stays a pure callback over the pinned content; the reason format is preserved
+    # verbatim (bare ``str(gate)`` — the P3-1 format exposure already used). ---
+    def _compute(run: CalculationRun) -> tuple[list[ExposureAggregate], list[str]]:
+        positions, marks, rate_map = _read_components(
+            list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+        )
+        return _build_rows(
+            positions=positions,
+            marks=marks,
+            rate_map=rate_map,
+            base_currency=base,
+            acting_tenant=acting_tenant,
+            run=run,
+            snapshot_id=snapshot.id,
+        )
+
+    outcome = execute_governed_run(
         session,
-        tenant_id=acting_tenant,
+        acting_tenant=str(acting_tenant),
+        actor_id=actor.actor_id,
+        actor_type=actor.actor_type,
         run_type=RUN_TYPE_EXPOSURE_AGGREGATE,
-        initiated_by=actor.actor_id,
-        input_snapshot_id=snapshot.id,
+        snapshot_id=snapshot.id,
+        model_version_id=None,  # a model-less deterministic rollup
         code_version=code_version,
         environment_id=environment_id,
-        # model_version_id / assumption_set_id / random_seed: N/A — a model-less deterministic
-        # rollup.
+        rule_code=_COMPLETENESS_RULE_CODE,
+        rule_name="Exposure run input completeness (mark + FX)",
+        rule_target_entity_type="exposure_aggregate",
+        result_entity_type="exposure_aggregate",
+        compute=_compute,
+        format_reason=lambda gate, gaps: str(gate),  # verbatim pre-P3-C2 exposure format
     )
-    update_run_status(session, run, RunStatus.RUNNING, actor_id=actor.actor_id)
-
-    positions, marks, rate_map = _read_components(
-        list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+    return ExposureRunResult(
+        run=outcome.run,
+        status=outcome.status,
+        rows=outcome.rows,
+        failure_reason=outcome.failure_reason,
     )
-    rows, gaps = _build_rows(
-        positions=positions,
-        marks=marks,
-        rate_map=rate_map,
-        base_currency=base,
-        acting_tenant=acting_tenant,
-        run=run,
-        snapshot_id=snapshot.id,
-    )
-    try:
-        # Fail-closed BEFORE any exposure INSERT (emits DATA.VALIDATE; raises on a gap).
-        _run_completeness_gate(
-            session, acting_tenant=acting_tenant, actor=actor, run=run, gaps=gaps
-        )
-    except DataQualityError as gate:
-        update_run_status(
-            session, run, RunStatus.FAILED, actor_id=actor.actor_id, outcome="failure"
-        )
-        return ExposureRunResult(
-            run=run, status=RunStatus.FAILED.value, rows=[], failure_reason=str(gate)
-        )
-
-    # --- Governed write: snapshot->run (DEPENDS_ON) + rows + run->result (ORIGIN, run_id) ---
-    record_internal_lineage(
-        session,
-        snapshot_id=snapshot.id,
-        target_entity_type="calculation_run",
-        target_entity_id=run.run_id,
-        edge_kind=EDGE_KIND_DEPENDENCY,
-        run_id=run.run_id,
-    )
-    for row in rows:
-        session.add(row)
-    session.flush()
-    for row in rows:
-        record_run_lineage(
-            session,
-            run_id=run.run_id,
-            target_entity_type="exposure_aggregate",
-            target_entity_id=row.id,
-            edge_kind=EDGE_KIND_ORIGIN,
-        )
-
-    update_run_status(session, run, RunStatus.COMPLETED, actor_id=actor.actor_id)
-    return ExposureRunResult(run=run, status=RunStatus.COMPLETED.value, rows=rows)
 
 
 def list_exposure(session: Session, *, run_id: str, acting_tenant: str) -> list[ExposureAggregate]:

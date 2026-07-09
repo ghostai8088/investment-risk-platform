@@ -48,6 +48,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.exposure.service import resolve_run as resolve_exposure_run
 from irp_shared.marketdata.models import FACTOR_FAMILY_CURRENCY
 from irp_shared.risk.bootstrap import FACTOR_EXPOSURE_MODEL_CODE, assert_model_version_of
@@ -60,7 +61,6 @@ from irp_shared.risk.factor_kernel import (
     build_factor_index,
 )
 from irp_shared.risk.models import FactorExposureResult
-from irp_shared.risk.scaffold import execute_governed_run
 from irp_shared.snapshot import (
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,

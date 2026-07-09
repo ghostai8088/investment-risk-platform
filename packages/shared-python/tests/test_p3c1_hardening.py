@@ -500,8 +500,10 @@ def test_scope_fence_scaffold_and_compute_closures_make_no_live_reads() -> None:
         "list_curve_points",
         "reconstruct_curve_as_of",
     }
-    # (a) the whole scaffold module
-    tree = ast.parse((root / "scaffold.py").read_text())
+    # (a) the whole scaffold module (relocated to calc/ at P3-C2 — the neutral home below both
+    # risk and exposure; the live-read fence still applies wherever it lives)
+    scaffold_path = root.parent / "calc" / "scaffold.py"
+    tree = ast.parse(scaffold_path.read_text())
     idents = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {
         n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)
     }

@@ -24,7 +24,7 @@ import json
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -32,13 +32,16 @@ from irp_backend.deps import get_tenant_session, map_refusal, require_permission
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
 from irp_shared.exposure import (
+    LIST_LIMIT_DEFAULT,
     ExposureActor,
     ExposureAggregate,
     ExposureInputError,
     ExposureNotVisible,
     ExposureRunNotVisible,
+    ExposureRunQueryError,
     ExposureRunResult,
     list_exposure,
+    list_exposure_runs,
     resolve_exposure,
     resolve_run,
     run_exposure,
@@ -64,7 +67,28 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     EmptySnapshotError: (status.HTTP_409_CONFLICT, "bound scope yields no components"),
     FxRateNotFound: (status.HTTP_409_CONFLICT, "no published FX path for a mark currency as-of"),
     DataQualityError: (status.HTTP_409_CONFLICT, "bound input set is incomplete"),
+    ExposureRunQueryError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid run listing filter"),
 }
+
+
+class ExposureRunSummaryOut(BaseModel):
+    run_id: str
+    run_type: str
+    status: str
+    created_at: datetime
+    completed_at: datetime | None
+    initiated_by: str
+    input_snapshot_id: str | None
+    # Always None for the model-less exposure family; carried for byte-for-byte parity with the
+    # risk sibling (RiskRunSummaryOut) so the shared FE RiskRunSummary contract is satisfied.
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    failure_reason: str | None
+
+
+class ExposureRunListOut(BaseModel):
+    items: list[ExposureRunSummaryOut]
 
 
 def _actor(principal: Principal) -> ExposureActor:
@@ -181,6 +205,48 @@ def create_exposure_run(
     return response
 
 
+@router.get("/runs", response_model=ExposureRunListOut)
+def get_exposure_runs(
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = LIST_LIMIT_DEFAULT,
+    offset: int = 0,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> ExposureRunListOut:
+    """List the tenant's EXPOSURE_AGGREGATE runs, newest first (gated ``exposure.view`` — the
+    sibling of ``GET /risk/runs`` for the exposure family; read-only; fail-closed filters). The
+    query param is ``status`` (aliased — the FastAPI ``status`` module shadows the name)."""
+    try:
+        runs = list_exposure_runs(
+            db,
+            acting_tenant=principal.tenant_id,
+            status=status_filter,
+            limit=limit,
+            offset=offset,
+        )
+    except ExposureRunQueryError as exc:
+        code, detail = map_refusal(exc, _ERROR_MAP)
+        raise HTTPException(status_code=code, detail=detail) from exc
+    return ExposureRunListOut(
+        items=[
+            ExposureRunSummaryOut(
+                run_id=r.run_id,
+                run_type=r.run_type,
+                status=r.status,
+                created_at=r.created_at,
+                completed_at=r.completed_at,
+                initiated_by=r.initiated_by,
+                input_snapshot_id=r.input_snapshot_id,
+                model_version_id=r.model_version_id,
+                code_version=r.code_version,
+                environment_id=r.environment_id,
+                failure_reason=r.failure_reason,
+            )
+            for r in runs
+        ]
+    )
+
+
 @router.get("/runs/{run_id}", response_model=ExposureRunOut)
 def get_exposure_run(
     run_id: uuid.UUID,
@@ -205,7 +271,7 @@ def get_exposure_run(
         code_version=run.code_version,
         environment_id=run.environment_id,
         initiated_by=run.initiated_by,
-        failure_reason=None,
+        failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C2 scaffold)
         rows=[_row_out(r) for r in rows],
     )
 

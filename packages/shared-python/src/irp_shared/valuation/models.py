@@ -33,7 +33,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Index, Integer, Numeric, String, text
+from sqlalchemy import Date, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from irp_shared.db.base import Base
@@ -43,7 +43,7 @@ from irp_shared.db.mixins import (
     TenantMixin,
     TimestampMixin,
 )
-from irp_shared.db.types import GUID
+from irp_shared.db.types import GUID, PreciseDecimal
 from irp_shared.temporal import TemporalClass
 
 
@@ -80,7 +80,7 @@ class Valuation(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMi
     # axis (NOT reused as valuation_date). Indexed for the list/as-of filters.
     valuation_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     # The captured mark/value — inert (captured, NEVER recomputed; no valuation/pricing model).
-    mark_value: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    mark_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 6), nullable=False)
     # Nullable captured labels (capture-not-validate). mark_source is a provenance LABEL, NOT a
     # market-data FK; price_basis is inert metadata (DIRTY/CLEAN/NAV-basis label, not a measure).
     currency_code: Mapped[str | None] = mapped_column(String(3), nullable=True)

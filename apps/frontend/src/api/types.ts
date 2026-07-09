@@ -37,13 +37,21 @@ export interface RunDetailBase {
   rows: Record<string, string | number | null>[];
 }
 
-/** The four risk run families and their API path segments (the run detail route carries the
- * family so a deep link needs exactly ONE fetch — OD-FE-1-B). */
+/** The run families and their API path segments (the run detail route carries the family so a
+ * deep link needs exactly ONE fetch — OD-FE-1-B). The four RISK families are gated ``risk.view``
+ * and listed by ``/risk/runs``; ``exposure`` (P3-C2 OD-C) is gated ``exposure.view`` and listed
+ * by ``/exposure/runs`` — a SEPARATE permission family, so the runs view selects the source per
+ * family rather than merging two independently-paginated endpoints. */
 export const FAMILIES = {
-  sensitivities: { runType: "SENSITIVITY", label: "Sensitivities" },
-  "factor-exposures": { runType: "FACTOR_EXPOSURE", label: "Factor exposures" },
-  covariances: { runType: "COVARIANCE", label: "Covariances" },
-  vars: { runType: "VAR", label: "VaR" },
+  sensitivities: { runType: "SENSITIVITY", label: "Sensitivities", permissionFamily: "risk" },
+  "factor-exposures": {
+    runType: "FACTOR_EXPOSURE",
+    label: "Factor exposures",
+    permissionFamily: "risk",
+  },
+  covariances: { runType: "COVARIANCE", label: "Covariances", permissionFamily: "risk" },
+  vars: { runType: "VAR", label: "VaR", permissionFamily: "risk" },
+  exposure: { runType: "EXPOSURE_AGGREGATE", label: "Exposure", permissionFamily: "exposure" },
 } as const;
 
 export type Family = keyof typeof FAMILIES;
@@ -53,7 +61,15 @@ export const RUN_TYPE_TO_FAMILY: Record<string, Family> = {
   FACTOR_EXPOSURE: "factor-exposures",
   COVARIANCE: "covariances",
   VAR: "vars",
+  EXPOSURE_AGGREGATE: "exposure",
 };
+
+/** The run-detail fetch URL for a family: exposure has its own endpoint shape
+ * (``/exposure/runs/{id}``), the risk families share ``/risk/{family}/runs/{id}``. */
+export function runDetailUrl(family: Family, runId: string): string {
+  const id = encodeURIComponent(runId);
+  return family === "exposure" ? `/exposure/runs/${id}` : `/risk/${family}/runs/${id}`;
+}
 
 export const RUN_STATUSES = ["CREATED", "RUNNING", "COMPLETED", "FAILED"] as const;
 
@@ -101,5 +117,16 @@ export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]
     { key: "var_value", label: "VaR" },
     { key: "n_factors", label: "Factors" },
     { key: "n_observations", label: "N" },
+  ],
+  exposure: [
+    { key: "portfolio_id", label: "Portfolio" },
+    { key: "instrument_id", label: "Instrument" },
+    { key: "exposure_type", label: "Type" },
+    { key: "base_currency", label: "Base ccy" },
+    { key: "mark_currency", label: "Mark ccy" },
+    { key: "signed_quantity", label: "Quantity" },
+    { key: "mark_value", label: "Mark" },
+    { key: "fx_rate", label: "FX rate" },
+    { key: "exposure_amount", label: "Exposure" },
   ],
 };
