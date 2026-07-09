@@ -51,6 +51,7 @@ export const FAMILIES = {
   },
   covariances: { runType: "COVARIANCE", label: "Covariances", permissionFamily: "risk" },
   vars: { runType: "VAR", label: "VaR", permissionFamily: "risk" },
+  "active-risk": { runType: "ACTIVE_RISK", label: "Active risk", permissionFamily: "risk" },
   exposure: { runType: "EXPOSURE_AGGREGATE", label: "Exposure", permissionFamily: "exposure" },
 } as const;
 
@@ -61,6 +62,7 @@ export const RUN_TYPE_TO_FAMILY: Record<string, Family> = {
   FACTOR_EXPOSURE: "factor-exposures",
   COVARIANCE: "covariances",
   VAR: "vars",
+  ACTIVE_RISK: "active-risk",
   EXPOSURE_AGGREGATE: "exposure",
 };
 
@@ -117,6 +119,16 @@ export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]
     { key: "var_value", label: "VaR" },
     { key: "n_factors", label: "Factors" },
     { key: "n_observations", label: "N" },
+  ],
+  "active-risk": [
+    { key: "metric_type", label: "Metric" },
+    { key: "base_currency", label: "Base ccy" },
+    { key: "te_value", label: "Tracking error" },
+    { key: "portfolio_value", label: "Portfolio value" },
+    { key: "n_factors", label: "Factors" },
+    { key: "n_constituents", label: "Constituents" },
+    { key: "benchmark_id", label: "Benchmark" },
+    { key: "benchmark_effective_date", label: "Effective date" },
   ],
   exposure: [
     { key: "portfolio_id", label: "Portfolio" },

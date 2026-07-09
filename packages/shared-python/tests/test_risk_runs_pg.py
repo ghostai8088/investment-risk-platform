@@ -3,7 +3,7 @@ constrained NOSUPERUSER/NOBYPASSRLS ``irp_app`` role (the CI/pipeline posture):
 
 - FORCE-RLS tenant isolation THROUGH the listing (tenant A never sees B; no-context = zero
   rows — RLS fails closed underneath the query's own tenant predicate);
-- the four-run_type fence on PG (a real ``EXPOSURE_AGGREGATE`` run in the same table never
+- the five-run_type fence on PG (a real ``EXPOSURE_AGGREGATE`` run in the same table never
   appears; requesting it refuses);
 - the ``created_at DESC, run_id`` tie-break under PostgreSQL's native GUID ordering (explicit
   non-ascending insertion order — the tie-break is the only thing that can sort the page).
@@ -32,7 +32,7 @@ URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
 _T0 = datetime(2026, 6, 1, tzinfo=UTC)
-_RATIFIED = frozenset({"SENSITIVITY", "FACTOR_EXPOSURE", "COVARIANCE", "VAR"})
+_RATIFIED = frozenset({"SENSITIVITY", "FACTOR_EXPOSURE", "COVARIANCE", "VAR", "ACTIVE_RISK"})
 
 
 @pytest.fixture(scope="module")
@@ -93,7 +93,7 @@ def test_listing_is_tenant_isolated_and_fenced_under_rls(app_url: str) -> None:
     with factory() as s:
         set_tenant_context(s, tenant_a)
         got = {r.run_id for r in list_risk_runs(s, acting_tenant=tenant_a)}
-        assert ids_a <= got  # all four families visible
+        assert ids_a <= got  # all five risk families visible (incl. ACTIVE_RISK) under RLS
         assert id_b not in got  # tenant B invisible
         assert not any(
             r.run_type not in RISK_RUN_TYPES for r in list_risk_runs(s, acting_tenant=tenant_a)

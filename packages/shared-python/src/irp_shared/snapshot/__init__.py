@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from irp_shared.snapshot.events import SNAPSHOT_CREATE_EVENT, SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
+    COMPONENT_KIND_BENCHMARK,
     COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_CURVE,
     COMPONENT_KIND_EXPOSURE,
@@ -25,6 +26,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_FX,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
+    PURPOSE_ACTIVE_RISK_INPUT,
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
@@ -36,9 +38,11 @@ from irp_shared.snapshot.models import (
     DatasetSnapshotComponent,
 )
 from irp_shared.snapshot.service import (
+    ACTIVE_RISK_BINDING_PREDICATE,
     COVARIANCE_BINDING_PREDICATE,
     DEFAULT_BINDING_PREDICATE,
     VAR_BINDING_PREDICATE,
+    ActiveRiskSnapshotError,
     CovarianceSnapshotError,
     CurveSelector,
     CurveSnapshotError,
@@ -48,6 +52,7 @@ from irp_shared.snapshot.service import (
     SnapshotPurposeError,
     VarSnapshotError,
     VerifyResult,
+    build_active_risk_snapshot,
     build_covariance_snapshot,
     build_curve_snapshot,
     build_factor_exposure_snapshot,
@@ -102,4 +107,9 @@ __all__ = [
     "build_var_hs_snapshot",
     "build_var_snapshot",
     "VarSnapshotError",
+    "COMPONENT_KIND_BENCHMARK",
+    "PURPOSE_ACTIVE_RISK_INPUT",
+    "ACTIVE_RISK_BINDING_PREDICATE",
+    "build_active_risk_snapshot",
+    "ActiveRiskSnapshotError",
 ]

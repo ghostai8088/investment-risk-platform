@@ -45,6 +45,14 @@ RUN_TYPE_VAR = "VAR"
 #: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in P3-5 (OD-P3-5-K).
 RISK_VAR_CREATE_EVENT_RESERVED = "RISK.VAR_CREATE"
 
+#: The ``calculation_run.run_type`` FAMILY discriminator for an active-risk run (P3-7). Distinct
+#: from the ``metric_type`` (``TRACKING_ERROR`` in v1): the family hosts the reserved active-return
+#: / information-ratio metrics of the deferred ex-post slice — as ``VAR`` hosts VAR_PARAMETRIC +
+#: VAR_HISTORICAL (review: run_type must never equal metric_type).
+RUN_TYPE_ACTIVE_RISK = "ACTIVE_RISK"
+#: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in P3-7 (OD-P3-7-A).
+RISK_ACTIVE_RISK_CREATE_EVENT_RESERVED = "RISK.ACTIVE_RISK_CREATE"
+
 #: Controlled-vocab ``sensitivity_type`` (plain String, no enum/CHECK; app-side allow-list).
 SENSITIVITY_TYPE_DV01 = "DV01"
 SENSITIVITY_TYPE_SPREAD_DV01 = "SPREAD_DV01"
@@ -63,6 +71,11 @@ METRIC_TYPE_VAR_PARAMETRIC = "VAR_PARAMETRIC"
 METRIC_TYPE_VAR_HISTORICAL = "VAR_HISTORICAL"
 METRIC_TYPE_ES_PARAMETRIC_RESERVED = "ES_PARAMETRIC"
 METRIC_TYPES = (METRIC_TYPE_VAR_PARAMETRIC, METRIC_TYPE_VAR_HISTORICAL)
+
+#: Controlled-vocab ``active_risk_result.metric_type`` (P3-7; further active metrics reserved by
+#: value — e.g. active return / information ratio ship with the deferred ex-post slice).
+METRIC_TYPE_TRACKING_ERROR = "TRACKING_ERROR"
+ACTIVE_RISK_METRIC_TYPES = (METRIC_TYPE_TRACKING_ERROR,)
 
 
 @dataclass(frozen=True)
@@ -92,6 +105,14 @@ class CovarianceActor:
 @dataclass(frozen=True)
 class VarActor:
     """The principal initiating a VaR run (mirrors :class:`SensitivityActor`)."""
+
+    actor_id: str
+    actor_type: str = "user"
+
+
+@dataclass(frozen=True)
+class ActiveRiskActor:
+    """The principal initiating an active-risk (tracking-error) run (mirrors :class:`VarActor`)."""
 
     actor_id: str
     actor_type: str = "user"

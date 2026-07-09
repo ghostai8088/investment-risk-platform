@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.risk.events import (
+    RUN_TYPE_ACTIVE_RISK,
     RUN_TYPE_COVARIANCE,
     RUN_TYPE_FACTOR_EXPOSURE,
     RUN_TYPE_SENSITIVITY,
@@ -24,7 +25,13 @@ from irp_shared.risk.events import (
 
 #: The closed set this listing may surface (OD-FE-1-C). Exposure runs are OUT.
 RISK_RUN_TYPES: frozenset[str] = frozenset(
-    {RUN_TYPE_SENSITIVITY, RUN_TYPE_FACTOR_EXPOSURE, RUN_TYPE_COVARIANCE, RUN_TYPE_VAR}
+    {
+        RUN_TYPE_SENSITIVITY,
+        RUN_TYPE_FACTOR_EXPOSURE,
+        RUN_TYPE_COVARIANCE,
+        RUN_TYPE_VAR,
+        RUN_TYPE_ACTIVE_RISK,
+    }
 )
 
 _STATUS_VALUES: frozenset[str] = frozenset(s.value for s in RunStatus)

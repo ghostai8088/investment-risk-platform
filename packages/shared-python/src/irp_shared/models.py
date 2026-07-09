@@ -46,7 +46,13 @@ from irp_shared.reference.models import (
     RatingGrade,
     RatingScale,
 )
-from irp_shared.risk.models import FactorExposureResult, SensitivityResult
+from irp_shared.risk.models import (
+    ActiveRiskResult,
+    CovarianceResult,
+    FactorExposureResult,
+    SensitivityResult,
+    VarResult,
+)
 from irp_shared.snapshot.models import DatasetSnapshot, DatasetSnapshotComponent
 from irp_shared.transaction.models import Transaction
 from irp_shared.valuation.models import Valuation
@@ -103,4 +109,7 @@ __all__ = [
     "ExposureAggregate",
     "SensitivityResult",
     "FactorExposureResult",
+    "CovarianceResult",
+    "VarResult",
+    "ActiveRiskResult",
 ]

@@ -805,5 +805,5 @@ def test_migration_head_is_benchmark_series() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0029_benchmark_series"
+    assert script.get_current_head() == "0030_active_risk"
     assert script.get_revision("0029_benchmark_series").down_revision == "0028_var_historical"

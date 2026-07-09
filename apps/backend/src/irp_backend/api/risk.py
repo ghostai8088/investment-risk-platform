@@ -31,9 +31,16 @@ from irp_backend.deps import get_tenant_session, map_refusal, require_permission
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
 from irp_shared.exposure.service import ExposureRunNotVisible
+from irp_shared.marketdata.benchmark import BenchmarkNotVisible
 from irp_shared.marketdata.factor import FactorNotVisible
 from irp_shared.model.service import UnregisteredModelError
 from irp_shared.risk import (
+    ActiveRiskActor,
+    ActiveRiskInputError,
+    ActiveRiskNotVisible,
+    ActiveRiskResult,
+    ActiveRiskRunNotVisible,
+    ActiveRiskRunResult,
     CovarianceActor,
     CovarianceInputError,
     CovarianceNotVisible,
@@ -63,16 +70,20 @@ from irp_shared.risk import (
     VarRunNotVisible,
     VarRunResult,
     WrongModelVersionError,
+    list_active_risks,
     list_covariances,
     list_factor_exposures,
     list_risk_runs,
     list_sensitivities,
     list_vars,
+    register_active_risk_model,
     register_covariance_model,
     register_factor_exposure_model,
     register_historical_var_model,
     register_sensitivity_model,
     register_var_model,
+    resolve_active_risk,
+    resolve_active_risk_run,
     resolve_covariance,
     resolve_covariance_run,
     resolve_factor_exposure,
@@ -81,6 +92,7 @@ from irp_shared.risk import (
     resolve_sensitivity,
     resolve_var,
     resolve_var_run,
+    run_active_risk,
     run_covariance,
     run_factor_exposure,
     run_sensitivities,
@@ -89,6 +101,7 @@ from irp_shared.risk import (
 )
 from irp_shared.risk.queries import LIST_LIMIT_DEFAULT
 from irp_shared.snapshot import (
+    ActiveRiskSnapshotError,
     CovarianceSnapshotError,
     CurveSelector,
     CurveSnapshotError,
@@ -150,8 +163,18 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
         "invalid historical-VaR run input",
     ),
     VarSnapshotError: (status.HTTP_409_CONFLICT, "VaR snapshot input failed closed"),
+    # Subclass of VarSnapshotError — listed FIRST so the MRO walk gives the active-risk detail.
+    ActiveRiskSnapshotError: (
+        status.HTTP_409_CONFLICT,
+        "active-risk snapshot input failed closed",
+    ),
+    ActiveRiskInputError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid active-risk run input",
+    ),
     FactorExposureRunNotVisible: (status.HTTP_404_NOT_FOUND, "factor-exposure run not found"),
     CovarianceRunNotVisible: (status.HTTP_404_NOT_FOUND, "covariance run not found"),
+    BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
     RiskRunQueryError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid run listing filter"),
 }
 
@@ -196,7 +219,7 @@ def get_risk_runs(
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> RiskRunListOut:
-    """List the tenant's risk runs, newest first (the FOUR risk families only; read-only;
+    """List the tenant's risk runs, newest first (the FIVE risk families only; read-only;
     fail-closed filters — an unknown ``run_type``/``status`` or out-of-bounds page is a 422,
     never a silently-empty page). The query param is ``status`` (aliased here — the FastAPI
     ``status`` module shadows the name)."""
@@ -1245,3 +1268,223 @@ def create_var_historical_run(
     response = _hs_var_run_out(result)
     db.commit()
     return response
+
+
+# ---------- P3-7: ex-ante active risk / tracking error (parametric v1) ----------
+
+
+def _active_risk_actor(principal: Principal) -> ActiveRiskActor:
+    return ActiveRiskActor(actor_id=principal.user_id)
+
+
+class ActiveRiskModelIn(BaseModel):
+    code_version: str  # the ONLY identity input — no numeric parameters (OD-P3-7-D)
+
+
+class ActiveRiskRunIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    environment_id: str  # the run environment (FW-RUN §5 item 7; required)
+    model_version_id: uuid.UUID  # a REGISTERED active-risk model_version (CTRL-003; required)
+    # build-in-request (all four together) XOR consume-existing (snapshot_id) — the P3-C1 gate.
+    exposure_run_id: uuid.UUID | None = None
+    covariance_run_id: uuid.UUID | None = None
+    benchmark_id: uuid.UUID | None = None
+    benchmark_effective_date: date | None = None
+    snapshot_id: uuid.UUID | None = None
+
+
+class ActiveRiskRowOut(BaseModel):
+    id: str
+    metric_type: str
+    base_currency: str
+    te_value: str  # a DAILY active-return volatility FRACTION (12dp; fixed-point, never scientific)
+    portfolio_value: str  # the net book value used as the active-weight denominator (evidence)
+    n_factors: int
+    n_constituents: int
+    benchmark_id: str
+    benchmark_effective_date: date
+    factor_exposure_run_id: str
+    covariance_run_id: str
+    model_version_id: str
+
+
+class ActiveRiskRunOut(BaseModel):
+    run_id: str
+    status: str
+    run_type: str
+    input_snapshot_id: str | None
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    initiated_by: str
+    failure_reason: str | None
+    rows: list[ActiveRiskRowOut]
+
+
+def _active_risk_row_out(row: ActiveRiskResult) -> ActiveRiskRowOut:
+    return ActiveRiskRowOut(
+        id=row.id,
+        metric_type=row.metric_type,
+        base_currency=row.base_currency,
+        # Fixed-point, never scientific (the P3-4 serialization lesson).
+        te_value=f"{row.te_value:f}",
+        portfolio_value=f"{row.portfolio_value:f}",
+        n_factors=row.n_factors,
+        n_constituents=row.n_constituents,
+        benchmark_id=row.benchmark_id,
+        benchmark_effective_date=row.benchmark_effective_date,
+        factor_exposure_run_id=row.factor_exposure_run_id,
+        covariance_run_id=row.covariance_run_id,
+        model_version_id=row.model_version_id,
+    )
+
+
+def _active_risk_run_out(result: ActiveRiskRunResult) -> ActiveRiskRunOut:
+    run = result.run
+    return ActiveRiskRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_active_risk_row_out(r) for r in result.rows],
+    )
+
+
+@router.post(
+    "/models/active-risk",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_active_risk(
+    body: ActiveRiskModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed active-risk model + a model_version for this
+    ``code_version`` identity and return its id (OD-P3-7-D — the v1 conventions ARE the identity;
+    a same-label re-register with a different ``code_version`` is a 409). No numeric parameters."""
+    try:
+        version = register_active_risk_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+        )
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/active-risk/runs",
+    response_model=ActiveRiskRunOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_active_risk_run(
+    body: ActiveRiskRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> ActiveRiskRunOut:
+    """Run a governed ex-ante active-risk (tracking-error) calculation. A pre-create refusal raises
+    + rolls back (no run — incl. an uncovered exposure factor, a NULL/unmappable constituent
+    currency, or a non-positive benchmark weight sum, 422); a post-create FAILED run is committed
+    (``status='FAILED'``, zero rows — the OD-P3-5-G non-PSD radicand gate + a magnitude gate)."""
+    try:
+        result = run_active_risk(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_active_risk_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            exposure_run_id=(None if body.exposure_run_id is None else str(body.exposure_run_id)),
+            covariance_run_id=(
+                None if body.covariance_run_id is None else str(body.covariance_run_id)
+            ),
+            benchmark_id=(None if body.benchmark_id is None else str(body.benchmark_id)),
+            benchmark_effective_date=body.benchmark_effective_date,
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        ActiveRiskInputError,
+        UnregisteredModelError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        VarSnapshotError,  # incl. the ActiveRiskSnapshotError subclass (mapped to its own detail)
+        FactorExposureRunNotVisible,
+        CovarianceRunNotVisible,
+        FactorNotVisible,  # build_active_risk_snapshot resolves each covariance factor definition
+        BenchmarkNotVisible,
+    ) as exc:
+        # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+
+    # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a
+    # post-create FAILED run are committed (the FAILED run is durable refusal evidence).
+    response = _active_risk_run_out(result)
+    db.commit()
+    return response
+
+
+@router.get("/active-risk/runs/{run_id}", response_model=ActiveRiskRunOut)
+def get_active_risk_run(
+    run_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> ActiveRiskRunOut:
+    """Read an active-risk run + its summary row (tenant-scoped; read-only). A committed FAILED run
+    (zero rows) is surfaced with ``status='FAILED'`` (durable refusal evidence), NOT a 404."""
+    try:
+        run = resolve_active_risk_run(db, str(run_id), acting_tenant=principal.tenant_id)
+    except ActiveRiskRunNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="active-risk run not found"
+        ) from None
+    rows = list_active_risks(db, run_id=str(run_id), acting_tenant=principal.tenant_id)
+    return ActiveRiskRunOut(
+        run_id=run.run_id,
+        status=run.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
+        rows=[_active_risk_row_out(r) for r in rows],
+    )
+
+
+@router.get("/active-risk/{active_risk_id}", response_model=ActiveRiskRowOut)
+def get_active_risk(
+    active_risk_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> ActiveRiskRowOut:
+    """Read a single ``active_risk_result`` row (tenant-scoped; read-only)."""
+    try:
+        row = resolve_active_risk(db, str(active_risk_id), acting_tenant=principal.tenant_id)
+    except ActiveRiskNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="active-risk result not found"
+        ) from None
+    return _active_risk_row_out(row)

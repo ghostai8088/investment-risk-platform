@@ -50,7 +50,7 @@ export function RunsList({ session }: { session: DevSession }): ReactElement {
     params.set("limit", String(PAGE_SIZE + 1));
     params.set("offset", String(offset));
     // The family selector chooses the SOURCE (P3-C2 OD-C): EXPOSURE_AGGREGATE is a separate
-    // permission family (exposure.view) listed by /exposure/runs; the four risk families (and
+    // permission family (exposure.view) listed by /exposure/runs; the five risk families (and
     // the "All risk" default) are listed by /risk/runs. Selecting a source per family keeps
     // server-side pagination correct — merging two independently-paginated endpoints would
     // recreate the FE-1 has-more trap.

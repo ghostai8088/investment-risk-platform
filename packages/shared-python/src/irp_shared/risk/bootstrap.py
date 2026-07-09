@@ -877,3 +877,121 @@ def register_historical_var_model(
         limitations=VAR_HS_LIMITATIONS,
         actor_type=actor_type,
     )
+
+
+# --- P3-7: the ex-ante active-risk / parametric tracking-error model family (OD-P3-7-D) ---
+
+ACTIVE_RISK_MODEL_CODE = "risk.active_risk.parametric"
+ACTIVE_RISK_MODEL_NAME = "Ex-ante active risk (parametric tracking error, factor model, 1-day)"
+ACTIVE_RISK_MODEL_TYPE = "ACTIVE_RISK"
+ACTIVE_RISK_VERSION_LABEL = "v1"
+ACTIVE_RISK_METHODOLOGY_REF = "05_analytics_methodologies/active_risk_parametric_v1.md"
+
+#: The declared methodology choices (OD-P3-7-B/D). There are NO free numeric request parameters —
+#: the version identity IS ``code_version`` + these fixed conventions (v1). A same-label re-register
+#: with a different ``code_version`` is a governed conflict (a new convention set = a new label).
+ACTIVE_RISK_ASSUMPTIONS: tuple[str, ...] = (
+    "Ex-ANTE (forecast) parametric tracking error under the linear factor model: "
+    "TE = sqrt(w_a' * Sigma * w_a), w_a = w_p - w_b (active weights, per factor). This is a "
+    "STANDARD DEVIATION (a daily active-return volatility), NOT a quantile - there is NO z factor.",
+    "Both sides map through the SAME allocation-v1 CURRENCY-factor model (methodological "
+    "symmetry): the PORTFOLIO weight w_p[f] = (sum of the pinned FACTOR_EXPOSURE amounts for "
+    "factor f) / portfolio_value, where portfolio_value = the net signed total of all pinned "
+    "exposure atoms; the BENCHMARK weight w_b[f] = the sum of the pinned constituent weights whose "
+    "constituent_currency maps to factor f (matched on the factor's currency_code scope, the same "
+    "index the portfolio allocation uses), NORMALIZED by the total pinned constituent weight.",
+    "Inputs: ONE COMPLETED factor-exposure run x ONE COMPLETED covariance run "
+    "(SIMPLE/DAILY, unannualized) x ONE captured benchmark membership set x the factor "
+    "definitions. Every portfolio factor AND every benchmark-mapped currency factor MUST be in "
+    "the covariance factor set - a gap fails closed (NO imputation). A constituent with a NULL "
+    "currency, an unmappable currency, a zero total benchmark weight, or a zero portfolio value "
+    "fails closed pre-create.",
+    "Units: DAILY, UNANNUALIZED active-return volatility (the covariance substrate is daily; "
+    "annualization is a later, declared transform - the Pope-Yadav caution).",
+    "Radicand quantization floor: w_a'*Sigma*w_a in [-tol, 0) with tol = F^2 * max(w_i^2) * 1E-19 "
+    "is treated as 0 (a benchmark-matching portfolio yields TE 0); below -tol the run FAILS closed "
+    "(a non-PSD input). Computed in Decimal at 50-digit precision; te quantize_HALF_UP to 12 "
+    "decimal places (the Numeric(20,12) return-fraction scale).",
+)
+
+#: The recorded scope-outs (mirrored into model_limitation rows; OD-P3-7-B/G/H).
+ACTIVE_RISK_LIMITATIONS: tuple[str, ...] = (
+    "SPECIFIC/IDIOSYNCRATIC ACTIVE RISK = 0: the CURRENCY-family indicator-loading factor model "
+    "carries NO residual term - active risk outside the factor covariance is invisible (the "
+    "allocation-v1 limitation propagates to both sides; the Grinold-Kahn specific term is 0 here).",
+    "EX-ANTE (forecast) only. The EX-POST / realized tracking error (ESMA: the volatility of the "
+    "realized fund-minus-benchmark return difference) and active return / information ratio are "
+    "DEFERRED - they require a portfolio RETURN series, which does not exist; deriving it "
+    "(flow-adjusted TWR) is a performance-measurement methodology (its own planned slice). The "
+    "shipped number is a FORECAST and MUST NOT be read as the UCITS ex-post disclosure figure.",
+    "DAILY, UNANNUALIZED; sqrt(T) annualization is a later, separately declared transform "
+    "(Pope-Yadav: naive annualization biases TE under serial correlation).",
+    "Benchmark weights are NORMALIZED by their captured sum (vendor rounding tolerance); a NULL "
+    "constituent currency is a refusal, NEVER imputed to the benchmark header currency (which "
+    "would misattribute currency risk).",
+    "Relative VaR (the CESR/10-788 sibling), active-share, and benchmark-relative sensitivities "
+    "are recorded seams, not built here. Inherits the sample-covariance estimation error.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+)
+
+
+def register_active_risk_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the active-risk ``model`` + a ``model_version`` for this
+    ``code_version`` identity (P3-7, OD-P3-7-D). Unlike VaR/covariance there are NO free numeric
+    request parameters — the v1 conventions ARE the identity — so the version resolution keys on
+    ``code_version`` alone: re-registering the same ``version_label`` with a DIFFERENT
+    ``code_version`` raises :class:`ModelVersionConflictError` (mint a new label instead)."""
+    model = session.execute(
+        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == ACTIVE_RISK_MODEL_CODE)
+    ).scalar_one_or_none()
+    if model is None:
+        model = register_model(
+            session,
+            tenant_id=str(tenant_id),
+            code=ACTIVE_RISK_MODEL_CODE,
+            name=ACTIVE_RISK_MODEL_NAME,
+            model_type=ACTIVE_RISK_MODEL_TYPE,
+            actor_id=actor_id,
+            description=(
+                "Ex-ante parametric tracking error over governed factor exposures, a governed "
+                "sample covariance, and a captured benchmark membership set (P3-7, ENT-027)."
+            ),
+            actor_type=actor_type,
+        )
+
+    version = session.execute(
+        select(ModelVersion).where(
+            ModelVersion.model_id == model.id,
+            ModelVersion.version_label == ACTIVE_RISK_VERSION_LABEL,
+        )
+    ).scalar_one_or_none()
+    if version is not None:
+        if version.status != "REGISTERED":
+            # A same-label twin minted via the GENERIC registration (status=None) is a
+            # REGISTRATION conflict too (the P3-C1 register/run-consistency lesson).
+            raise WrongModelVersionError(str(version.id), str(model.code))
+        if version.code_version != str(code_version):
+            raise ModelVersionConflictError(
+                ACTIVE_RISK_MODEL_CODE, ACTIVE_RISK_VERSION_LABEL, str(code_version)
+            )
+        return version
+
+    return register_model_version(
+        session,
+        model=model,
+        version_label=ACTIVE_RISK_VERSION_LABEL,
+        actor_id=actor_id,
+        methodology_ref=ACTIVE_RISK_METHODOLOGY_REF,
+        code_version=str(code_version),
+        status="REGISTERED",
+        assumptions=ACTIVE_RISK_ASSUMPTIONS,
+        limitations=ACTIVE_RISK_LIMITATIONS,
+        actor_type=actor_type,
+    )

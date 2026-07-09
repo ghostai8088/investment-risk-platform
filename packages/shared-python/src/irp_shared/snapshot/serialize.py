@@ -308,6 +308,31 @@ def covariance_content(row: Any) -> dict[str, Any]:
     }
 
 
+def benchmark_membership_content(benchmark: Any, constituent: Any) -> dict[str, Any]:
+    """The captured content of one pinned ``benchmark_constituent`` FR version (P3-7 BENCHMARK
+    component — the ``factor_return`` per-row FR flavor: each row is an immutable FR VERSION, so a
+    later vendor supersede/correction closes it out and inserts a successor and is invisible to the
+    pin, TR-09). Each component carries the benchmark HEADER identity + the effective_date so the
+    binder can read ``(benchmark_id, effective_date)`` + code/source from any pin. ``weight`` at the
+    constituent scale 12; ``constituent_currency`` captured verbatim (its NULL-ness is a binder
+    refusal, never imputed)."""
+    return {
+        "id": _norm_guid(constituent.id),
+        "tenant_id": _norm_guid(constituent.tenant_id),
+        "benchmark_id": _norm_guid(benchmark.id),
+        "benchmark_code": benchmark.benchmark_code,
+        "benchmark_source": benchmark.benchmark_source,
+        "benchmark_currency": benchmark.benchmark_currency,
+        "effective_date": constituent.effective_date.isoformat(),
+        "instrument_id": _norm_guid(constituent.instrument_id),
+        "weight": _norm_decimal(constituent.weight, _SCALE_CURVE_POINT),
+        "constituent_currency": constituent.constituent_currency,
+        "valid_from": _norm_datetime(constituent.valid_from),
+        "system_from": _norm_datetime(constituent.system_from),
+        "record_version": constituent.record_version,
+    }
+
+
 def serialize_content(content: dict[str, Any]) -> str:
     """Canonical-serialize a per-kind content dict (sorted keys, compact, engine-independent)."""
     return canonicalize(content)

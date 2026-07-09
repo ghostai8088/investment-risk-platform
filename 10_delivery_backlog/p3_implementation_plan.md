@@ -68,6 +68,7 @@ Each subphase, when planned, fills the standard fields: **(1) Requirements inclu
 
 ### P3-7 — Benchmark-relative analytics
 - **Included:** active risk / tracking error over captured benchmark membership (the confirmed P2-6 dependency); **Excluded:** performance attribution (unless separately scoped). **Captured-data gate:** **return-based** active analytics need `benchmark_level`/`benchmark_return` (a prerequisite captured-data slice); membership-based active risk uses the captured constituents + a risk model. IA append-only result; `model_version` mandatory; the full output contract.
+- **Delivered scope (P3-7 slice, 2026-07-09; `p3_7_decision_record.md` OD-P3-7-A…E, `p3_7_implementation_plan.md`):** the **EX-ANTE, membership-based** leg — `active_risk_result` (ENT-027 third realization, migration `0030`), `TE = √(wₐᵀΣwₐ)` over the pinned factor-exposure + covariance runs and the reconstructed benchmark membership; the registered `risk.active_risk.parametric` v1 model (code_version = sole identity). The **EX-POST / return-based** leg (realized TE / active return / IR / tracking difference — the first governed `benchmark_return` consumer) is **DEFERRED on a governed portfolio-return series** (a separate performance-measurement slice; OD-G).
 
 ---
 

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **PLANNING RATIFIED** — OQ-P3-7-1…10 approved by the user (2026-07-09, after a plain-language decision briefing); implementation is a SEPARATE approval |
+| Status | **IMPLEMENTED + REVIEWED — commit approved 2026-07-09.** OQ-P3-7-1…10 ratified; the full slice built (kernel, registrar `risk.active_risk.parametric` v1, `ACTIVE_RISK_INPUT` snapshot builder + `COMPONENT_KIND_BENCHMARK`, migration `0030_active_risk`, binder `active_risk_service.py`, API + FE, docs, tests); **FULL max-effort review complete (Part 6 — 10 finder angles + 6 empirical verifiers + gap sweep; 21 findings folded, 3 refuted/rejected-as-designed, 3 recorded-deferred)**; validation green post-fold. Closeout stamp follows CI-green. |
 | Date | 2026-07-09 |
 | Basis | `delivery_roadmap.md` Wave 1, slice 5: "Tracking error / active risk over the P2-7 data + the existing engine — the P3 plan's final analytic leg." The original contract (`p3_implementation_plan.md` §P3-7 + OD-P3-0-G/K): **"active risk / tracking error over captured benchmark membership… membership-based active risk uses the captured constituents + a risk model"**; performance attribution EXCLUDED; `COMPONENT_KIND_BENCHMARK` reserved for this slice. A **methodology slice** → roadmap Part 4 **rule 6 applies** (Part 2 below is the cited external-benchmark section). |
 | Grounding | Verified against shipped HEAD `367f602`: FIVE governed risk numbers exist (DV01, factor exposure, covariance, parametric VaR, historical VaR); `factor_exposure_result` = per-atom `(run, portfolio, instrument, factor)` currency amounts under **allocation v1** (currency-indicator loadings; specific risk = 0); `covariance_result` = daily UNANNUALIZED sample covariance over `SIMPLE` factor returns; `var_result` = the single-summary-row precedent (grain `(calculation_run_id, metric_type)`; hard-FK upstream-run provenance). `benchmark` (ENT-009 EV) + `benchmark_constituent` (FR; `weight` fraction, RANGE [0,1]; **`constituent_currency` OPTIONAL**; weight-SUM completeness deferred at P2-6 OQ-P2-6-8) + `benchmark_level`/`benchmark_return` (ENT-052, P2-7) all captured. `RISK_RUN_TYPES` = {SENSITIVITY, FACTOR_EXPOSURE, COVARIANCE, VAR}; the FE lists risk families from a FAMILIES map (a new run_type needs one small additive FE entry — the P3-C2 exposure-family precedent). Migration head `0029_benchmark_series`; next free `0030`. The shared governed-run scaffold lives at `calc/scaffold.py`. |
@@ -55,3 +55,69 @@ Ex-post/realized TE, active return, tracking difference, IR (OD-G — deferred o
 ## Part 5 — P3-7 implementation readiness gate
 Implementation-ready once OQ-P3-7-1…10 are ratified. Build contract = `p3_7_implementation_plan.md`.
 **P3-7 planning implements nothing.**
+
+## Part 6 — Implementation + review log (2026-07-09)
+
+**Built per `p3_7_implementation_plan.md` Steps 0–8:** pure kernel `active_risk_kernel.py` (Decimal-50,
+12dp HALF_UP, the OD-P3-5-G radicand floor re-derived for the weight scale); registrar
+`risk.active_risk.parametric` v1 (code_version-only identity, OD-P3-7-D); `ACTIVE_RISK_INPUT`
+snapshot builder pinning FACTOR_EXPOSURE + COVARIANCE + FACTOR + the NEW `COMPONENT_KIND_BENCHMARK`
+(FR-version constituent pins, TR-09); migration `0030_active_risk` (`active_risk_result`, IA
+append-only, symmetric FORCE RLS, 3 hard-FK provenance columns incl. `benchmark_id`); binder
+`active_risk_service.py` (active weights `wₐ = w_p − w_b`, both sides through ONE
+`build_factor_index` — the Barra-style symmetry); API POST/GET family + FE FAMILIES entry; docs
+(canonical ENT-027 cell, audit-taxonomy reserve, RTM REQ-PUB-003 consumer note, roadmap OD-G
+precision amendment); tests (kernel goldens 0.0005/0.0007, consume-path golden **0.007211102551**,
+numpy cross-check, pin invariance under upstream re-runs AND a benchmark restatement, PG
+RLS/append-only/forged-tenant, endpoint, FE).
+
+**Review — FULL max-effort multi-agent ("ultrareview", user-directed):** 10 finder angles
+(line-by-line, removed-behavior, cross-file, language-pitfall, adversarial gate-bypass, reuse,
+simplification, efficiency, altitude, conventions) → ~35 raw candidates → 22 deduped → **6
+verifiers with mandatory empirical probes** (3-state verdicts) → a fresh-eyes gap sweep.
+Honesty note: the adversarial cluster (V1–V6) is **defense-in-depth** — no API path lets a user
+mint arbitrary snapshot content (`POST /snapshots` builds server-side); the adjudicator is a
+deliberate trust boundary (the P3-5 envelope precedent), so those folds harden a gate users cannot
+currently reach.
+
+| # | Finding (verdict) | Fold |
+|---|---|---|
+| V1 | te ≥ ~1E38 → kernel quantize raise escaped as post-create 500, defeating the magnitude gate (CONFIRMED, empirical) | `_compute` catches `ActiveRiskKernelError` → committed FAILED run + DQ evidence; test via kernel seam |
+| V2 | `TypeError` (JSON-null numerics, non-object content) escaped the malformed-pin catch → 500 (CONFIRMED) | `TypeError` added to the catch tuple; 3-leg null-field test |
+| V3 | duplicate FACTOR pins, same id + conflicting `currency_code`, passed set-equality → wrong COMPLETED TE (CONFIRMED — the one silent-wrong-number finding) | per-id duplicate refusal (parity with exposure/constituent dup checks); test |
+| V4 | weight/exposure sums ran at default prec-28 outside the localcontext — an exact-zero book could round past the `==0` refusal (CONFIRMED, adversarial-only) | all accumulation moved inside the prec-50 context; exact-zero-book test |
+| V5 | all-NULL or >3-char `base_currency` passed the set-of-one uniformity check → post-create NOT-NULL/varchar(3) 500 (CONFIRMED) | 3-letter-string gate at adjudication; test |
+| V6 | empty-string currency bypassed the `is None` named-gap refusal (CONFIRMED, hand-mint-only) | `_is_present_currency` (None + blank refused) in binder; test |
+| V7 | `FactorNotVisible` missing from the endpoint tuple (PLAUSIBLE — covariance-endpoint parity) | added to the except tuple |
+| V8 | active-risk snapshot refusals surfaced as "VaR snapshot input failed closed" (CONFIRMED) | `ActiveRiskSnapshotError` subclass + own map entry; test asserts the detail |
+| V9 | `test_risk_runs_pg.py` never minted the new run type — PG listing proof gap (CONFIRMED) | `_RATIFIED` widened to five; comments fixed |
+| V11/V13/V17 | dead code: unreachable defense-in-depth branch, dead `_ERROR_MAP` entry, no-op `_canonical_pair` (CONFIRMED, cosmetic) | removed (pair-completeness check retained — probe-proven reachable) |
+| V14 | binding predicate `fx-rows` collided with FX=foreign-exchange (durable, API-visible); varchar(50) cap unenforced, one sibling at exactly 50 (CONFIRMED) | renamed `fexp-rows` (47 chars) pre-commit; import-time length assert over ALL predicates |
+| V15 | covariance adjudication duplicated from `var_service` incl. a review hardening, UNTESTED in the copy (CONFIRMED) | reversed-pair + duplicate-pair refusals now test-pinned in this copy; extraction deferred (below) |
+| V16a | verify re-resolved the one benchmark header once per constituent (CONFIRMED) | per-snapshot header memo in `verify_snapshot` |
+| V19/V22 | aggregator names + fixture asserts decayed vs siblings (CONFIRMED, cosmetic) | `ActiveRiskResult`+`CovarianceResult`+`VarResult` registered in `irp_shared.models`; exposure-status + row-count asserts restored |
+| V20/GS1 | stale "FOUR risk families" (OpenAPI + FE comment); "THIRD table under ENT-027" (two tables exist) (CONFIRMED) | FIVE; "SECOND physical table (third realization)" |
+| GS2 | **`run_type` was the METRIC string `TRACKING_ERROR`** — every sibling keeps family ≠ metric; the reserved ex-post metrics would land under a misnomer (PLAUSIBLE→adopted) | **amends OQ-P3-7-7/OD-F: `RUN_TYPE_ACTIVE_RISK = "ACTIVE_RISK"`** (pre-commit = the only zero-cost moment; `metric_type` stays `TRACKING_ERROR`) |
+| conventions | **CI had NO step for `test_active_risk_pg.py`** — the new table's RLS/append-only proofs never ran in CI (CONFIRMED; rule: every new tenant table → a CI RLS step) | step added; the two PRE-EXISTING gaps (`test_benchmark_series_pg.py`, `test_exposure_runs_pg.py`) fixed in the same edit |
+
+**Refuted / rejected-as-designed (kept):** the build-path `resolve_benchmark` is NOT redundant (it
+sets 404-over-409 precedence — REFUTED); the FE exhaustiveness test is NOT tautological (vitest
+does not type-check — REFUTED); the benchmark pin correctly omits the header `record_version`
+(capturing it would drift N constituent pins on display-only name edits — rejected-as-designed);
+build-then-re-read adjudication is the declared uniform-both-paths design (as-designed).
+
+**Recorded-DEFERRED (follow-up hardening candidates, NOT in this slice):**
+1. **`var_service.py` twins of V2/V5** — the identical `TypeError` catch gap and
+   `base_currency` uniformity-only gap exist in the shipped VaR binder (verifier-confirmed,
+   byte-identical template class). Same-class fix, separate slice (touches a closed slice's binder).
+2. **Shared covariance-pin adjudicator** — `_adjudicate_covariance` is the second copy of the v1
+   covariance-contract validation (exception-type parameterization needed); extract at the third
+   consumer or in a P3-C3-style hardening slice (the P3-4-R0 tipping-point precedent).
+3. **`_persist_snapshot` per-component lineage SELECT+flush** — pre-existing shared-code seam,
+   newly exercised at constituent scale; batch in a hardening slice.
+
+**Validation (post-fold, all green):** `make check` (ruff format+lint, mypy 143 files, **1044
+passed / 230 skipped**, secret-scan, docs-check) · **full-PG 230 passed** (incl. the three newly
+CI'd `_pg` files) · downgrade smoke `0030 → 0029 → 0030` + `alembic check` no-op · `fe-check`
+(tsc, **43 FE tests**, build) · diff fence (`audit/service.py` + `entitlement/bootstrap.py`
+untouched; no new permission/audit code; no BYPASSRLS/hybrid).

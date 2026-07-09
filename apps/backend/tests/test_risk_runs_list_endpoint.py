@@ -35,7 +35,9 @@ _T0 = datetime(2026, 6, 1, tzinfo=UTC)
 #: The ratified fence, pinned as LITERALS (review fold: deriving expectations from
 #: RISK_RUN_TYPES itself made the guard self-referential — a widened or shrunk constant
 #: would self-adopt). A membership change must turn THIS file red first.
-_RATIFIED_RISK_RUN_TYPES = frozenset({"SENSITIVITY", "FACTOR_EXPOSURE", "COVARIANCE", "VAR"})
+_RATIFIED_RISK_RUN_TYPES = frozenset(
+    {"SENSITIVITY", "FACTOR_EXPOSURE", "COVARIANCE", "VAR", "ACTIVE_RISK"}
+)
 
 
 def test_risk_run_types_is_exactly_the_ratified_set() -> None:
@@ -133,7 +135,7 @@ def test_lists_only_own_tenant_and_only_risk_run_types(ctx) -> None:
 
     body = client.get("/risk/runs", headers=_hdr(viewer_a, tenant_a)).json()
     got = {item["run_id"] for item in body["items"]}
-    assert got == ids_a  # all four families, no exposure run, nothing of tenant B
+    assert got == ids_a  # all five risk families, no exposure run, nothing of tenant B
 
     body_b = client.get("/risk/runs", headers=_hdr(viewer_b, tenant_b)).json()
     assert {item["run_id"] for item in body_b["items"]} == {id_b}

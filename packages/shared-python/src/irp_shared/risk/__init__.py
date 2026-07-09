@@ -20,7 +20,24 @@ stay separately declared versions/families).
 
 from __future__ import annotations
 
+from irp_shared.risk.active_risk_kernel import (
+    ActiveRiskKernelError,
+    TeEstimate,
+    compute_tracking_error,
+)
+from irp_shared.risk.active_risk_service import (
+    ActiveRiskInputError,
+    ActiveRiskNotVisible,
+    ActiveRiskRunNotVisible,
+    ActiveRiskRunResult,
+    list_active_risks,
+    resolve_active_risk,
+    resolve_active_risk_run,
+    run_active_risk,
+)
 from irp_shared.risk.bootstrap import (
+    ACTIVE_RISK_METHODOLOGY_REF,
+    ACTIVE_RISK_MODEL_CODE,
     COVARIANCE_METHODOLOGY_REF,
     COVARIANCE_MODEL_CODE,
     FACTOR_EXPOSURE_METHODOLOGY_REF,
@@ -41,6 +58,7 @@ from irp_shared.risk.bootstrap import (
     declared_hs_var_parameters,
     declared_var_parameters,
     declared_window_observations,
+    register_active_risk_model,
     register_covariance_model,
     register_factor_exposure_model,
     register_historical_var_model,
@@ -63,13 +81,17 @@ from irp_shared.risk.covariance_service import (
     run_covariance,
 )
 from irp_shared.risk.events import (
+    ACTIVE_RISK_METRIC_TYPES,
+    METRIC_TYPE_TRACKING_ERROR,
     METRIC_TYPE_VAR_HISTORICAL,
     METRIC_TYPE_VAR_PARAMETRIC,
     METRIC_TYPES,
+    RISK_ACTIVE_RISK_CREATE_EVENT_RESERVED,
     RISK_COVARIANCE_CREATE_EVENT_RESERVED,
     RISK_FACTOR_EXPOSURE_CREATE_EVENT_RESERVED,
     RISK_SENSITIVITY_CREATE_EVENT_RESERVED,
     RISK_VAR_CREATE_EVENT_RESERVED,
+    RUN_TYPE_ACTIVE_RISK,
     RUN_TYPE_COVARIANCE,
     RUN_TYPE_FACTOR_EXPOSURE,
     RUN_TYPE_SENSITIVITY,
@@ -79,6 +101,7 @@ from irp_shared.risk.events import (
     SENSITIVITY_TYPES,
     STATISTIC_TYPE_COVARIANCE,
     STATISTIC_TYPES,
+    ActiveRiskActor,
     CovarianceActor,
     FactorExposureActor,
     SensitivityActor,
@@ -98,6 +121,7 @@ from irp_shared.risk.factor_service import (
 )
 from irp_shared.risk.kernel import SensitivityKernelError, node_dv01, node_spread_dv01
 from irp_shared.risk.models import (
+    ActiveRiskResult,
     CovarianceResult,
     FactorExposureResult,
     SensitivityResult,
@@ -244,4 +268,24 @@ __all__ = [
     "VAR_MODEL_CODE",
     "VAR_METHODOLOGY_REF",
     "VAR_Z_SCORES",
+    "ActiveRiskResult",
+    "ActiveRiskActor",
+    "RUN_TYPE_ACTIVE_RISK",
+    "RISK_ACTIVE_RISK_CREATE_EVENT_RESERVED",
+    "METRIC_TYPE_TRACKING_ERROR",
+    "ACTIVE_RISK_METRIC_TYPES",
+    "ActiveRiskKernelError",
+    "TeEstimate",
+    "compute_tracking_error",
+    "run_active_risk",
+    "list_active_risks",
+    "resolve_active_risk_run",
+    "resolve_active_risk",
+    "ActiveRiskRunResult",
+    "ActiveRiskInputError",
+    "ActiveRiskNotVisible",
+    "ActiveRiskRunNotVisible",
+    "register_active_risk_model",
+    "ACTIVE_RISK_MODEL_CODE",
+    "ACTIVE_RISK_METHODOLOGY_REF",
 ]

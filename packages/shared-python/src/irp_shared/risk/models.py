@@ -256,6 +256,62 @@ class VarResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     window_end: Mapped[dt_date] = mapped_column(Date, nullable=False)
 
 
+class ActiveRiskResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One ex-ante active-risk summary (P3-7, **ENT-027 `risk_result` REALIZED** — the third
+    realization, NO new canonical id; IA TRUE append-only). ONE row per COMPLETED run (grain
+    ``(calculation_run_id, metric_type)``; ``TRACKING_ERROR`` v1 — extend by value).
+
+    **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** (the ``var_result`` exemplar): NOT-NULL
+    ``calculation_run_id`` + ``input_snapshot_id`` (an ``ACTIVE_RISK_INPUT`` snapshot pinning the
+    consumed FACTOR_EXPOSURE + COVARIANCE + FACTOR + BENCHMARK content) + a REGISTERED,
+    identity-checked ``model_version_id`` (``risk.active_risk.parametric`` v1).
+    ``factor_exposure_run_id``/``covariance_run_id`` are hard-FK PROVENANCE columns (which upstream
+    governed runs fed this number); ``benchmark_id`` (+ the echoed ``benchmark_effective_date``)
+    records WHICH captured membership set was used. ``te_value`` = ``quantize_HALF_UP(sqrt(w_a' Σ
+    w_a), 12)`` — a DAILY active-return volatility (a FRACTION, NOT currency);
+    ``portfolio_value`` (base currency) is the weight denominator, recorded as evidence."""
+
+    __tablename__ = "active_risk_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        UniqueConstraint(
+            "calculation_run_id", "metric_type", name="uq_active_risk_result_run_grain"
+        ),
+    )
+
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("dataset_snapshot.id"), nullable=False, index=True
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    )
+    # Hard-FK provenance: which upstream governed runs + which benchmark fed this number.
+    factor_exposure_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    covariance_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    benchmark_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("benchmark.id"), nullable=False, index=True
+    )
+    # WHICH captured membership set (the pinned (benchmark_id, effective_date) logical key).
+    benchmark_effective_date: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    # Controlled vocab (plain String): 'TRACKING_ERROR' v1 (extend by value).
+    metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    # te_value = sqrt(w_a' Σ w_a) HALF_UP@12 — a daily active-return volatility (fraction scale,
+    # the factor-return Numeric(20,12); PreciseDecimal for cross-engine byte-fidelity).
+    te_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    # The weight denominator (net signed portfolio value, base currency), recorded as evidence.
+    portfolio_value: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 6), nullable=False)
+    n_factors: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_constituents: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{type(target).__name__} is append-only (AUD-01); update/delete is forbidden"
@@ -272,3 +328,5 @@ event.listen(CovarianceResult, "before_update", _block_mutation)
 event.listen(CovarianceResult, "before_delete", _block_mutation)
 event.listen(VarResult, "before_update", _block_mutation)
 event.listen(VarResult, "before_delete", _block_mutation)
+event.listen(ActiveRiskResult, "before_update", _block_mutation)
+event.listen(ActiveRiskResult, "before_delete", _block_mutation)

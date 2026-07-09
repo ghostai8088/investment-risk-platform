@@ -52,6 +52,9 @@ PURPOSE_VAR_INPUT = "VAR_INPUT"
 #: VAR-HS-1 (OD-VHS-F): the historical-simulation input purpose — a SIBLING of VAR_INPUT so the
 #: wrong-purpose refusal stays sharp (the two shapes are not interchangeable).
 PURPOSE_VAR_HS_INPUT = "VAR_HS_INPUT"
+#: P3-7 (OD-P3-7-E): the ex-ante active-risk input purpose — pins the FACTOR_EXPOSURE + COVARIANCE
+#: result rows, the FACTOR definitions (the currency→factor map), and the BENCHMARK membership.
+PURPOSE_ACTIVE_RISK_INPUT = "ACTIVE_RISK_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -61,6 +64,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_VAR_INPUT,
     PURPOSE_VAR_HS_INPUT,
+    PURPOSE_ACTIVE_RISK_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -100,6 +104,12 @@ COMPONENT_KIND_FACTOR_RETURN = "FACTOR_RETURN"
 COMPONENT_KIND_FACTOR_EXPOSURE = "FACTOR_EXPOSURE"
 #: P3-5 (OD-P3-5-I): a pinned ``covariance_result`` row (IA-row pin flavor).
 COMPONENT_KIND_COVARIANCE = "COVARIANCE"
+#: P3-7 (OD-P3-7-E): a pinned ``benchmark_constituent`` FR row — the captured membership of the
+#: declared ``(benchmark_id, effective_date)`` set, ONE component per constituent (the
+#: ``factor_return`` per-row FR flavor; a later vendor supersede/correction is invisible to the
+#: pin, TR-09). The benchmark HEADER identity is carried in each component's content. Reserved at
+#: OD-P3-0-G, MINTED here at its designed first consumer.
+COMPONENT_KIND_BENCHMARK = "BENCHMARK"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -111,6 +121,7 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FACTOR_EXPOSURE,
     COMPONENT_KIND_COVARIANCE,
+    COMPONENT_KIND_BENCHMARK,
 )
 
 

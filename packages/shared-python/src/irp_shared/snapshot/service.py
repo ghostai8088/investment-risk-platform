@@ -50,9 +50,12 @@ from irp_shared.holdings.service import HoldingRow
 from irp_shared.lineage.service import record_internal_lineage
 from irp_shared.marketdata import (
     DEFAULT_BASE,
+    BenchmarkNotVisible,
     CurveNotVisible,
     list_curve_points,
     reconstruct_curve_as_of,
+    reconstruct_membership_as_of,
+    resolve_benchmark,
     resolve_conversion_legs,
     resolve_curve,
 )
@@ -68,6 +71,7 @@ from irp_shared.portfolio import PortfolioNotVisible, resolve_portfolio
 from irp_shared.position import PositionNotVisible, resolve_position
 from irp_shared.snapshot.events import SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
+    COMPONENT_KIND_BENCHMARK,
     COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_CURVE,
     COMPONENT_KIND_EXPOSURE,
@@ -78,6 +82,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
+    PURPOSE_ACTIVE_RISK_INPUT,
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
@@ -88,6 +93,7 @@ from irp_shared.snapshot.models import (
     DatasetSnapshotComponent,
 )
 from irp_shared.snapshot.serialize import (
+    benchmark_membership_content,
     content_hash,
     covariance_content,
     curve_content,
@@ -837,6 +843,19 @@ class VarSnapshotError(Exception):
         self.detail = detail
 
 
+class ActiveRiskSnapshotError(VarSnapshotError):
+    """Raised when an ACTIVE_RISK_INPUT snapshot cannot be built (an upstream run with no visible
+    rows, or a benchmark with no membership as-of) — fail closed, BEFORE any write. Subclasses
+    :class:`VarSnapshotError` (shares the 409 + the row-resolver helpers) but carries an active-risk
+    diagnostic so the wire detail names the right family (review). Maps to 409."""
+
+    def __init__(self, detail: str) -> None:
+        super(VarSnapshotError, self).__init__(
+            f"active-risk snapshot input failed closed: {detail}"
+        )
+        self.detail = detail
+
+
 def _resolve_factor_exposure_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
     """Resolve one ``factor_exposure_result`` row by id with an EXPLICIT tenant predicate
     (models-only, FUNCTION-LOCAL import — hoisting would execute ``irp_shared.risk.__init__``,
@@ -868,6 +887,23 @@ def _resolve_covariance_row(session: Session, row_id: str, *, acting_tenant: str
     ).scalar_one_or_none()
     if row is None:
         raise VarSnapshotError(f"covariance row {row_id} is not visible")
+    return row
+
+
+def _resolve_benchmark_constituent_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``benchmark_constituent`` FR row by surrogate id with an EXPLICIT tenant
+    predicate (models-only function-local import — see :func:`_resolve_factor_exposure_row`; the
+    marketdata SERVICE is never imported here)."""
+    from irp_shared.marketdata.models import BenchmarkConstituent  # models-only (no cycle)
+
+    row = session.execute(
+        select(BenchmarkConstituent).where(
+            BenchmarkConstituent.id == str(row_id),
+            BenchmarkConstituent.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise VarSnapshotError(f"benchmark constituent {row_id} is not visible")
     return row
 
 
@@ -984,6 +1020,119 @@ def build_var_snapshot(
     return header_row
 
 
+#: The active-risk binding/selection rule (OD-P3-7-E): the two runs' rows + the covariance factor
+#: definitions + the declared benchmark membership set. "fexp-rows" = factor-EXPOSURE rows (NOT
+#: "fx-rows" — "fx" means foreign-exchange everywhere else in this module: COMPONENT_KIND_FX).
+#: Length-guarded (see ``_assert_binding_predicate_lengths`` at module end) against varchar(50).
+ACTIVE_RISK_BINDING_PREDICATE = "v1:fexp-rows+cov-rows+cov-factors+benchmark-set"
+
+
+def build_active_risk_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    exposure_run_id: str,
+    covariance_run_id: str,
+    benchmark_id: str,
+    benchmark_effective_date: date,
+    as_of_valid_at: datetime | None = None,
+    as_of_known_at: datetime | None = None,
+) -> DatasetSnapshot:
+    """Build one immutable ``ACTIVE_RISK_INPUT`` snapshot (P3-7, OD-P3-7-E) pinning:
+
+    - one ``COMPONENT_KIND_FACTOR_EXPOSURE`` per ``factor_exposure_result`` row (the portfolio side)
+      + one ``COMPONENT_KIND_COVARIANCE`` per ``covariance_result`` row (Sigma) — both IA-row pins;
+    - one ``COMPONENT_KIND_FACTOR`` per distinct factor of the covariance set (the EV definition —
+      the ``currency_code -> factor`` map the benchmark side needs); and
+    - one ``COMPONENT_KIND_BENCHMARK`` per constituent of the declared ``(benchmark_id,
+      effective_date)`` membership resolved as-of the FROZEN instants (FR-version pins; a later
+      vendor supersede/correction is invisible — TR-09),
+
+    so an active-risk run is reproducible from the snapshot alone. An empty exposure/covariance row
+    set OR an empty membership fails closed BEFORE any write. The run-status / coverage / currency
+    adjudication is the RISK binder's pre-create gate — this builder pins a well-formed set; it does
+    not read the model registry and imports NO ``calc``/risk-service symbol."""
+    now = utcnow()
+    valid_at = as_of_valid_at if as_of_valid_at is not None else now
+    known = as_of_known_at if as_of_known_at is not None else now  # FROZEN once (header == pin)
+
+    exposure_rows = _list_factor_exposure_rows(
+        session, exposure_run_id, acting_tenant=acting_tenant
+    )
+    if not exposure_rows:
+        raise ActiveRiskSnapshotError(f"exposure run {exposure_run_id} has no visible result rows")
+    covariance_rows = _list_covariance_rows(session, covariance_run_id, acting_tenant=acting_tenant)
+    if not covariance_rows:
+        raise ActiveRiskSnapshotError(
+            f"covariance run {covariance_run_id} has no visible result rows"
+        )
+
+    benchmark = resolve_benchmark(session, str(benchmark_id), acting_tenant=acting_tenant)
+    constituents = reconstruct_membership_as_of(
+        session,
+        acting_tenant=acting_tenant,
+        benchmark_id=benchmark.id,
+        effective_date=benchmark_effective_date,
+        valid_at=valid_at,
+        known_at=known,
+    )
+    if not constituents:
+        raise ActiveRiskSnapshotError(
+            f"benchmark {benchmark_id} has no membership for {benchmark_effective_date} "
+            f"as-of the declared instants"
+        )
+
+    # The distinct factor definitions of the covariance set (lowercase-normalized), in stable order.
+    covariance_factor_ids = list(
+        dict.fromkeys(
+            str(fid).lower()
+            for row in covariance_rows
+            for fid in (row.factor_id_1, row.factor_id_2)
+        )
+    )
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in exposure_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_FACTOR_EXPOSURE,
+            "factor_exposure_result",
+            row,
+            factor_exposure_content(row),
+        )
+    for row in covariance_rows:
+        _append_spec(
+            specs, COMPONENT_KIND_COVARIANCE, "covariance_result", row, covariance_content(row)
+        )
+    for fid in covariance_factor_ids:
+        factor = resolve_factor(session, fid, acting_tenant=acting_tenant)
+        _append_spec(specs, COMPONENT_KIND_FACTOR, "factor", factor, factor_content(factor))
+    for constituent in constituents:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_BENCHMARK,
+            "benchmark_constituent",
+            constituent,
+            benchmark_membership_content(benchmark, constituent),
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_ACTIVE_RISK_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=benchmark_effective_date,
+        binding_predicate_version=ACTIVE_RISK_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -1021,12 +1170,17 @@ def list_components(
 
 
 def _reresolve_content(
-    session: Session, comp: DatasetSnapshotComponent, *, acting_tenant: str
+    session: Session,
+    comp: DatasetSnapshotComponent,
+    *,
+    acting_tenant: str,
+    benchmark_cache: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Re-resolve a component's target by id (explicit-tenant-predicate resolver, never
     session.get)
     and return its current canonical content dict. Raises the resolver's ``*NotVisible`` if
-    gone."""
+    gone. ``benchmark_cache`` (when supplied) memoizes the single benchmark header across a
+    snapshot's many BENCHMARK constituent components — one point-SELECT instead of N (review)."""
     if comp.component_kind == COMPONENT_KIND_POSITION:
         return position_content(
             resolve_position(session, comp.target_entity_id, acting_tenant=acting_tenant)
@@ -1072,6 +1226,22 @@ def _reresolve_content(
             for r in pinned["rows"]
         ]
         return factor_return_series_content(factor, rows)
+    if comp.component_kind == COMPONENT_KIND_BENCHMARK:
+        # Re-read the benchmark header (from the pinned id) + the constituent FR row by surrogate
+        # id (tenant-predicated). A gone/cross-tenant row reports as drift; a superseded/corrected
+        # row is byte-stable (its immutable content is what was pinned — TR-09).
+        pinned = json.loads(comp.captured_content)
+        bid = str(pinned["benchmark_id"])
+        if benchmark_cache is not None and bid in benchmark_cache:
+            benchmark = benchmark_cache[bid]  # one header per snapshot — resolved once
+        else:
+            benchmark = resolve_benchmark(session, bid, acting_tenant=acting_tenant)
+            if benchmark_cache is not None:
+                benchmark_cache[bid] = benchmark
+        constituent = _resolve_benchmark_constituent_row(
+            session, comp.target_entity_id, acting_tenant=acting_tenant
+        )
+        return benchmark_membership_content(benchmark, constituent)
     return portfolio_content(
         resolve_portfolio(session, comp.target_entity_id, acting_tenant=acting_tenant)
     )
@@ -1086,9 +1256,12 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
     resolve_snapshot(session, snapshot_id, acting_tenant=acting_tenant)
     comps = list_components(session, snapshot_id=snapshot_id, acting_tenant=acting_tenant)
     drifted: list[str] = []
+    benchmark_cache: dict[str, Any] = {}  # the single benchmark header, resolved once per snapshot
     for comp in comps:
         try:
-            live = _reresolve_content(session, comp, acting_tenant=acting_tenant)
+            live = _reresolve_content(
+                session, comp, acting_tenant=acting_tenant, benchmark_cache=benchmark_cache
+            )
         except (
             PositionNotVisible,
             ValuationNotVisible,
@@ -1099,6 +1272,7 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             FactorExposureSnapshotError,
             CovarianceSnapshotError,
             VarSnapshotError,
+            BenchmarkNotVisible,
         ):
             drifted.append(comp.id)
             continue
@@ -1205,3 +1379,20 @@ def build_var_hs_snapshot(
     # inputs are refused above, before any write) — the P3-3/P3-4 rationale.
     record_snapshot_create(session, header=header_row, actor=actor)
     return header_row
+
+
+#: Every binding predicate is stamped verbatim into ``dataset_snapshot.binding_predicate_version``
+#: (``String(50)``); SQLite ignores the length, so an over-long constant would surface only as an
+#: opaque PG ``StringDataRightTruncation`` on the build path (review). Enforce the ceiling at import
+#: time so the failure is a loud, unit-tier import error at the site of the offending constant.
+_BINDING_PREDICATES = (
+    DEFAULT_BINDING_PREDICATE,
+    COVARIANCE_BINDING_PREDICATE,
+    VAR_BINDING_PREDICATE,
+    ACTIVE_RISK_BINDING_PREDICATE,
+    VAR_HS_BINDING_PREDICATE,
+)
+assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
+    "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "
+    + repr([p for p in _BINDING_PREDICATES if len(p) > 50])
+)
