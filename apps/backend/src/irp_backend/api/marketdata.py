@@ -34,7 +34,10 @@ from irp_shared.marketdata import (
     Benchmark,
     BenchmarkActor,
     BenchmarkConstituent,
+    BenchmarkLevel,
     BenchmarkNotVisible,
+    BenchmarkReturn,
+    BenchmarkSeriesValueError,
     BenchmarkValueError,
     ConstituentInput,
     Curve,
@@ -53,6 +56,7 @@ from irp_shared.marketdata import (
     FxRateNotFound,
     FxRateNotVisible,
     FxRateValueError,
+    NoCurrentBenchmarkSeries,
     NoCurrentCurve,
     NoCurrentFactorReturn,
     NoCurrentFxRate,
@@ -63,6 +67,8 @@ from irp_shared.marketdata import (
     PricePoint,
     PriceValueError,
     capture_benchmark,
+    capture_benchmark_level,
+    capture_benchmark_return,
     capture_curve,
     capture_factor,
     capture_factor_return,
@@ -70,15 +76,21 @@ from irp_shared.marketdata import (
     capture_membership,
     capture_price,
     convert,
+    correct_benchmark_level,
+    correct_benchmark_return,
     correct_curve,
     correct_factor_return,
     correct_fx_rate,
     correct_membership,
     correct_price,
+    list_benchmark_levels,
+    list_benchmark_returns,
     list_benchmarks,
     list_curve_points,
     list_factor_returns,
     list_factors,
+    reconstruct_benchmark_level_as_of,
+    reconstruct_benchmark_return_as_of,
     reconstruct_curve_as_of,
     reconstruct_factor_return_as_of,
     reconstruct_fx_rate_as_of,
@@ -89,6 +101,8 @@ from irp_shared.marketdata import (
     resolve_factor,
     resolve_fx_rate,
     resolve_price,
+    supersede_benchmark_level,
+    supersede_benchmark_return,
     supersede_curve,
     supersede_factor_return,
     supersede_fx_rate,
@@ -1621,3 +1635,447 @@ def list_factors_endpoint(
 ) -> list[FactorOut]:
     """All current factor definitions for the acting tenant."""
     return [_factor_out(row) for row in list_factors(db, acting_tenant=principal.tenant_id)]
+
+
+# --- benchmark time series (P2-7, ENT-052) — captured index levels + vendor-published returns ---
+# Under the EXISTING benchmark_router (/benchmarks/{id}/levels|returns); MARKET.BENCHMARK_LEVEL_*/
+# _RETURN_* audit; VENDOR_BENCHMARK lineage; marketdata.view/.ingest REUSED. Decimals serialized as
+# STRINGS (never a float). NOTE (the fx/price/curve/factor family behavior): a write ECHOES the
+# submitted Decimal (e.g. "4500.25"), while a READ (as-of/list) returns the PERSISTED canonical
+# NUMERIC(p,s) form (e.g. "4500.250000") — the same number, and the read form is the byte-for-byte,
+# cross-engine-identical value P3-7 pins (P3-7 consumes the persisted rows, not the write echo).
+
+
+class BenchmarkLevelIn(BaseModel):
+    level_date: date
+    level_type: str
+    level_value: Decimal
+
+
+class BenchmarkLevelSupersedeIn(BenchmarkLevelIn):
+    effective_at: datetime
+
+
+class BenchmarkLevelCorrectIn(BenchmarkLevelIn):
+    restatement_reason: str
+
+
+class BenchmarkLevelOut(BaseModel):
+    id: str
+    benchmark_id: str
+    level_date: date
+    level_type: str
+    level_value: str
+    valid_from: datetime
+    valid_to: datetime | None
+    system_from: datetime
+    system_to: datetime | None
+    supersedes_id: str | None
+    record_version: int
+
+
+class BenchmarkReturnIn(BaseModel):
+    return_date: date
+    return_basis: str
+    return_value: Decimal
+    return_type: str = RETURN_TYPE_SIMPLE
+
+
+class BenchmarkReturnSupersedeIn(BenchmarkReturnIn):
+    effective_at: datetime
+
+
+class BenchmarkReturnCorrectIn(BenchmarkReturnIn):
+    restatement_reason: str
+
+
+class BenchmarkReturnOut(BaseModel):
+    id: str
+    benchmark_id: str
+    return_date: date
+    return_type: str
+    return_basis: str
+    return_value: str
+    valid_from: datetime
+    valid_to: datetime | None
+    system_from: datetime
+    system_to: datetime | None
+    supersedes_id: str | None
+    record_version: int
+
+
+def _benchmark_level_out(row: BenchmarkLevel) -> BenchmarkLevelOut:
+    return BenchmarkLevelOut(
+        id=row.id,
+        benchmark_id=row.benchmark_id,
+        level_date=row.level_date,
+        level_type=row.level_type,
+        level_value=str(row.level_value),  # byte-for-byte captured level (never a float)
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        system_from=row.system_from,
+        system_to=row.system_to,
+        supersedes_id=row.supersedes_id,
+        record_version=row.record_version,
+    )
+
+
+def _benchmark_return_out(row: BenchmarkReturn) -> BenchmarkReturnOut:
+    return BenchmarkReturnOut(
+        id=row.id,
+        benchmark_id=row.benchmark_id,
+        return_date=row.return_date,
+        return_type=row.return_type,
+        return_basis=row.return_basis,
+        return_value=str(row.return_value),  # byte-for-byte captured return (never a float)
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        system_from=row.system_from,
+        system_to=row.system_to,
+        supersedes_id=row.supersedes_id,
+        record_version=row.record_version,
+    )
+
+
+#: Governed-write error → (status, detail). Fail-closed; rolls back before mapping.
+_BENCHMARK_SERIES_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
+    BenchmarkSeriesValueError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid benchmark series input",
+    ),
+    BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
+    NoCurrentBenchmarkSeries: (
+        status.HTTP_409_CONFLICT,
+        "no current benchmark level/return to supersede/correct",
+    ),
+    DataQualityError: (status.HTTP_409_CONFLICT, "benchmark series failed a data-quality gate"),
+}
+
+
+def _raise_benchmark_series_write(db: Session, exc: Exception) -> None:
+    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
+    code, detail = _BENCHMARK_SERIES_WRITE_ERRORS[type(exc)]
+    raise HTTPException(status_code=code, detail=detail) from None
+
+
+# --- benchmark_level endpoints ---
+
+
+@benchmark_router.post(
+    "/{benchmark_id}/levels",
+    response_model=BenchmarkLevelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def capture_benchmark_level_endpoint(
+    benchmark_id: str,
+    body: BenchmarkLevelIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkLevelOut:
+    """Capture the first open index level for (benchmark, level_date, level_type)."""
+    try:
+        benchmark = resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+        row = capture_benchmark_level(
+            db,
+            benchmark,
+            level_date=body.level_date,
+            level_type=body.level_type,
+            level_value=body.level_value,
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+        )
+    except (BenchmarkSeriesValueError, BenchmarkNotVisible, DataQualityError) as exc:
+        _raise_benchmark_series_write(db, exc)
+    out = _benchmark_level_out(row)
+    db.commit()
+    return out
+
+
+@benchmark_router.post(
+    "/{benchmark_id}/levels/supersede",
+    response_model=BenchmarkLevelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def supersede_benchmark_level_endpoint(
+    benchmark_id: str,
+    body: BenchmarkLevelSupersedeIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkLevelOut:
+    """Effective-dated re-capture of an index level (valid-time; a new version)."""
+    try:
+        benchmark = resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+        row = supersede_benchmark_level(
+            db,
+            benchmark,
+            level_date=body.level_date,
+            level_type=body.level_type,
+            level_value=body.level_value,
+            effective_at=body.effective_at,
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+        )
+    except (
+        BenchmarkSeriesValueError,
+        BenchmarkNotVisible,
+        NoCurrentBenchmarkSeries,
+        DataQualityError,
+    ) as exc:
+        _raise_benchmark_series_write(db, exc)
+    out = _benchmark_level_out(row)
+    db.commit()
+    return out
+
+
+@benchmark_router.post(
+    "/{benchmark_id}/levels/correct",
+    response_model=BenchmarkLevelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def correct_benchmark_level_endpoint(
+    benchmark_id: str,
+    body: BenchmarkLevelCorrectIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkLevelOut:
+    """As-known restatement (system-time) of an index level; a corrected version."""
+    try:
+        benchmark = resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+        row = correct_benchmark_level(
+            db,
+            benchmark,
+            level_date=body.level_date,
+            level_type=body.level_type,
+            level_value=body.level_value,
+            restatement_reason=body.restatement_reason,
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+        )
+    except (
+        BenchmarkSeriesValueError,
+        BenchmarkNotVisible,
+        NoCurrentBenchmarkSeries,
+        DataQualityError,
+    ) as exc:
+        _raise_benchmark_series_write(db, exc)
+    out = _benchmark_level_out(row)
+    db.commit()
+    return out
+
+
+@benchmark_router.get("/{benchmark_id}/levels/as-of", response_model=BenchmarkLevelOut)
+def get_benchmark_level_as_of(
+    benchmark_id: str,
+    level_date: date = Query(...),
+    level_type: str = Query(...),
+    valid_at: datetime = Query(...),
+    known_at: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkLevelOut:
+    """Bitemporal as-of read of an index level (fail-closed on unknown benchmark / no version)."""
+    try:
+        resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+    except BenchmarkNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="benchmark not found"
+        ) from None
+    row = reconstruct_benchmark_level_as_of(
+        db,
+        acting_tenant=principal.tenant_id,
+        benchmark_id=benchmark_id,
+        level_date=level_date,
+        level_type=level_type,
+        valid_at=valid_at,
+        known_at=known_at,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="no benchmark level as-of"
+        ) from None
+    return _benchmark_level_out(row)
+
+
+@benchmark_router.get("/{benchmark_id}/levels", response_model=list[BenchmarkLevelOut])
+def list_benchmark_levels_endpoint(
+    benchmark_id: str,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[BenchmarkLevelOut]:
+    """The current-head index-level series for a benchmark (tenant-scoped)."""
+    try:
+        resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+    except BenchmarkNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="benchmark not found"
+        ) from None
+    return [
+        _benchmark_level_out(row)
+        for row in list_benchmark_levels(
+            db, acting_tenant=principal.tenant_id, benchmark_id=benchmark_id
+        )
+    ]
+
+
+# --- benchmark_return endpoints ---
+
+
+@benchmark_router.post(
+    "/{benchmark_id}/returns",
+    response_model=BenchmarkReturnOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def capture_benchmark_return_endpoint(
+    benchmark_id: str,
+    body: BenchmarkReturnIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkReturnOut:
+    """Capture the first open vendor-published return for (benchmark, return_date, type, basis)."""
+    try:
+        benchmark = resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+        row = capture_benchmark_return(
+            db,
+            benchmark,
+            return_date=body.return_date,
+            return_basis=body.return_basis,
+            return_value=body.return_value,
+            return_type=body.return_type,
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+        )
+    except (BenchmarkSeriesValueError, BenchmarkNotVisible, DataQualityError) as exc:
+        _raise_benchmark_series_write(db, exc)
+    out = _benchmark_return_out(row)
+    db.commit()
+    return out
+
+
+@benchmark_router.post(
+    "/{benchmark_id}/returns/supersede",
+    response_model=BenchmarkReturnOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def supersede_benchmark_return_endpoint(
+    benchmark_id: str,
+    body: BenchmarkReturnSupersedeIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkReturnOut:
+    """Effective-dated re-capture of a vendor-published return (valid-time; a new version)."""
+    try:
+        benchmark = resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+        row = supersede_benchmark_return(
+            db,
+            benchmark,
+            return_date=body.return_date,
+            return_basis=body.return_basis,
+            return_value=body.return_value,
+            return_type=body.return_type,
+            effective_at=body.effective_at,
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+        )
+    except (
+        BenchmarkSeriesValueError,
+        BenchmarkNotVisible,
+        NoCurrentBenchmarkSeries,
+        DataQualityError,
+    ) as exc:
+        _raise_benchmark_series_write(db, exc)
+    out = _benchmark_return_out(row)
+    db.commit()
+    return out
+
+
+@benchmark_router.post(
+    "/{benchmark_id}/returns/correct",
+    response_model=BenchmarkReturnOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def correct_benchmark_return_endpoint(
+    benchmark_id: str,
+    body: BenchmarkReturnCorrectIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkReturnOut:
+    """As-known restatement (system-time) of a vendor-published return; a corrected version."""
+    try:
+        benchmark = resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+        row = correct_benchmark_return(
+            db,
+            benchmark,
+            return_date=body.return_date,
+            return_basis=body.return_basis,
+            return_value=body.return_value,
+            return_type=body.return_type,
+            restatement_reason=body.restatement_reason,
+            acting_tenant=principal.tenant_id,
+            actor=_benchmark_actor(principal),
+        )
+    except (
+        BenchmarkSeriesValueError,
+        BenchmarkNotVisible,
+        NoCurrentBenchmarkSeries,
+        DataQualityError,
+    ) as exc:
+        _raise_benchmark_series_write(db, exc)
+    out = _benchmark_return_out(row)
+    db.commit()
+    return out
+
+
+@benchmark_router.get("/{benchmark_id}/returns/as-of", response_model=BenchmarkReturnOut)
+def get_benchmark_return_as_of(
+    benchmark_id: str,
+    return_date: date = Query(...),
+    return_basis: str = Query(...),
+    valid_at: datetime = Query(...),
+    return_type: str = Query(default=RETURN_TYPE_SIMPLE),
+    known_at: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkReturnOut:
+    """Bitemporal as-of read of a vendor return (fail-closed on unknown benchmark / no version)."""
+    try:
+        resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+    except BenchmarkNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="benchmark not found"
+        ) from None
+    row = reconstruct_benchmark_return_as_of(
+        db,
+        acting_tenant=principal.tenant_id,
+        benchmark_id=benchmark_id,
+        return_date=return_date,
+        return_basis=return_basis,
+        return_type=return_type,
+        valid_at=valid_at,
+        known_at=known_at,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="no benchmark return as-of"
+        ) from None
+    return _benchmark_return_out(row)
+
+
+@benchmark_router.get("/{benchmark_id}/returns", response_model=list[BenchmarkReturnOut])
+def list_benchmark_returns_endpoint(
+    benchmark_id: str,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[BenchmarkReturnOut]:
+    """The current-head vendor-published-return series for a benchmark (tenant-scoped)."""
+    try:
+        resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+    except BenchmarkNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="benchmark not found"
+        ) from None
+    return [
+        _benchmark_return_out(row)
+        for row in list_benchmark_returns(
+            db, acting_tenant=principal.tenant_id, benchmark_id=benchmark_id
+        )
+    ]

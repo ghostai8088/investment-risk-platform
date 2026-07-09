@@ -147,6 +147,25 @@ FACTOR_RETURN_TYPES = (RETURN_TYPE_SIMPLE,)
 FREQUENCY_DAILY = "DAILY"
 FACTOR_FREQUENCIES = (FREQUENCY_DAILY,)
 
+# --- benchmark time series (P2-7, ENT-052) — captured index levels + vendor-published returns ---
+#: ``benchmark_level.level_type`` / ``benchmark_return.return_basis`` — WHICH published index
+#: variant a captured level/return describes (extend by value — MG-01; the vendor SPX/SPXT
+#: convention as separate ``benchmark`` rows also works, one type/basis value each).
+LEVEL_TYPE_PRICE_RETURN = "PRICE_RETURN"
+LEVEL_TYPE_TOTAL_RETURN = "TOTAL_RETURN"
+LEVEL_TYPE_NET_TOTAL_RETURN = "NET_TOTAL_RETURN"
+BENCHMARK_LEVEL_TYPES = (
+    LEVEL_TYPE_PRICE_RETURN,
+    LEVEL_TYPE_TOTAL_RETURN,
+    LEVEL_TYPE_NET_TOTAL_RETURN,
+)
+RETURN_BASIS_PRICE = "PRICE"
+RETURN_BASIS_TOTAL = "TOTAL"
+RETURN_BASIS_NET_TOTAL = "NET_TOTAL"
+BENCHMARK_RETURN_BASES = (RETURN_BASIS_PRICE, RETURN_BASIS_TOTAL, RETURN_BASIS_NET_TOTAL)
+#: ``benchmark_return.return_type`` reuses the ENT-025 vocabulary (SIMPLE v1; LOG reserved).
+BENCHMARK_RETURN_TYPES = (RETURN_TYPE_SIMPLE,)
+
 
 class FxRate(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):
     """Captured vendor FX rate (ENT-024, FR bitemporal). PROPRIETARY/symmetric; NOT append-only."""
@@ -640,3 +659,120 @@ class FactorReturn(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, Timestam
 # requires close-out UPDATEs).
 # Content immutability is binder-enforced + tested (the benchmark precedent, a difference from
 # curve_point).
+
+
+class BenchmarkLevel(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):
+    """Captured benchmark/index LEVEL observation (ENT-052, P2-7, FR bitemporal) — the captured
+    vendor-published index level for a business date; the ``factor_return`` single-row FR protocol.
+
+    A **captured** vendor index level (a value supplied to the platform), **NEVER computed** — no
+    return calculation, no analytics, no ``calculation_run``/``model_version``/snapshot pin (an
+    INPUT, not a governed derived number). Child of the existing ENT-009 ``benchmark`` EV header
+    (``benchmark_id`` NOT-NULL FK). PROPRIETARY/symmetric; NEVER hybrid; **NOT append-only** (the FR
+    protocol requires close-out UPDATEs; content-immutability service-enforced + tested). Logical
+    key ``(benchmark_id, level_date, level_type)``:
+
+    - **``level_date``** (the ``return_date``/``rate_date`` precedent): a separate immutable
+      logical-key ``Date`` — the business date the level is FOR — carried verbatim, DISTINCT from
+      the FR ``valid_from`` axis.
+    - **``level_type``:** controlled-vocab (``BENCHMARK_LEVEL_TYPES``); WHICH published variant
+      (price / total / net-total return index) — a NOT-NULL key so one ``benchmark`` definition can
+      carry its variants without duplicating the constituent membership.
+    - **``level_value``:** the captured index level, ``PreciseDecimal(20, 6)`` (the
+      ``price_point.price`` money scale; a level is price-like; float53-unsafe → PreciseDecimal from
+      birth). Denominated in the header's ``benchmark_currency`` (NO per-row currency). A binder
+      finiteness+positivity guard rejects NaN/±Inf/≤0; a ``> 0`` DQ RANGE.
+
+    Current-head partial-unique ``(tenant_id, benchmark_id, level_date, level_type)`` WHERE
+    ``valid_to IS NULL AND system_to IS NULL``.
+    """
+
+    __tablename__ = "benchmark_level"
+    __temporal_class__ = TemporalClass.FULL_REPRODUCIBLE
+    __table_args__ = (
+        Index(
+            "uq_benchmark_level_current",
+            "tenant_id",
+            "benchmark_id",
+            "level_date",
+            "level_type",
+            unique=True,
+            postgresql_where=text("valid_to IS NULL AND system_to IS NULL"),
+            sqlite_where=text("valid_to IS NULL AND system_to IS NULL"),
+        ),
+    )
+
+    benchmark_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("benchmark.id"), nullable=False, index=True
+    )
+    # Immutable logical-key: the business date the level is FOR (the return_date precedent).
+    level_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    level_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # The captured index level (price-like money scale); inert (NEVER computed).
+    level_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 6), nullable=False)
+    restatement_reason: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )  # set ONLY on a correction (TR-08)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("benchmark_level.id"), nullable=True
+    )  # link to the superseded version (set on supersede + correction)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class BenchmarkReturn(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):
+    """Captured benchmark/index RETURN observation (ENT-052, P2-7, FR bitemporal) — the captured
+    **vendor-published** return for a business date; the ``factor_return`` single-row FR protocol.
+
+    **Captured vendor-published values ONLY — NEVER computed from levels** (OQ-P2-6-9; a
+    level-derived return is a methodology choice needing a registered ``model_version``, DEFERRED).
+    No analytics, no ``calculation_run``/``model_version``/snapshot pin. Child of the ENT-009
+    ``benchmark`` EV header. PROPRIETARY/symmetric; NEVER hybrid; **NOT append-only**. Logical key
+    ``(benchmark_id, return_date, return_type, return_basis)``:
+
+    - **``return_date``:** a separate immutable logical-key ``Date`` (the ``rate_date`` precedent).
+    - **``return_type``:** controlled-vocab (``BENCHMARK_RETURN_TYPES``: SIMPLE v1; LOG reserved).
+    - **``return_basis``:** controlled-vocab (``BENCHMARK_RETURN_BASES``: PRICE/TOTAL/NET_TOTAL) —
+      WHICH index variant the vendor return describes; a NOT-NULL key so PR/TR returns for one
+      benchmark+date do not collide (captured verbatim, never guessed).
+    - **``return_value``:** the captured return as a canonical DECIMAL fraction (``0.01`` = 1%, NOT
+      percent/bps — the ENT-025 convention), ``PreciseDecimal(20, 12)``; inert. A binder finiteness
+      guard rejects NaN/±Inf; a ``> -1`` economic-sanity DQ RANGE.
+
+    Current-head partial-unique ``(tenant_id, benchmark_id, return_date, return_type, return_basis)
+    WHERE valid_to IS NULL AND system_to IS NULL``.
+    """
+
+    __tablename__ = "benchmark_return"
+    __temporal_class__ = TemporalClass.FULL_REPRODUCIBLE
+    __table_args__ = (
+        Index(
+            "uq_benchmark_return_current",
+            "tenant_id",
+            "benchmark_id",
+            "return_date",
+            "return_type",
+            "return_basis",
+            unique=True,
+            postgresql_where=text("valid_to IS NULL AND system_to IS NULL"),
+            sqlite_where=text("valid_to IS NULL AND system_to IS NULL"),
+        ),
+    )
+
+    benchmark_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("benchmark.id"), nullable=False, index=True
+    )
+    return_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    return_type: Mapped[str] = mapped_column(String(20), nullable=False, default=RETURN_TYPE_SIMPLE)
+    return_basis: Mapped[str] = mapped_column(String(20), nullable=False)
+    # The captured vendor-published return as a canonical DECIMAL fraction (0.01 = 1%); inert.
+    return_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    restatement_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("benchmark_return.id"), nullable=True
+    )
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+# NOTE: benchmark_level + benchmark_return (both FR, ENT-052) are NOT append-only — the
+# factor_return/benchmark precedent (FR requires close-out UPDATEs). Content-immutability is
+# binder-enforced + tested.

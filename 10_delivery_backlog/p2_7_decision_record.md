@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **PLANNING RATIFIED** — OQ-P2-7-1…8 approved by the user (2026-07-09, after a plain-language decision briefing); implementation is a SEPARATE approval |
+| Status | **IMPLEMENTED + REVIEWED — HOLDING for Tier-2 commit approval.** OQ-P2-7-1…8 ratified (2026-07-09); ENT-052 `benchmark_level`+`benchmark_return` built (migration `0029`, binder `benchmark_series.py`, endpoints, docs); FULL 6-finder review complete (Part 6 — 3 finders clean, ~10 findings folded, no deferrals); validation green post-fold. Commit is a SEPARATE approval (not yet given). |
 | Date | 2026-07-09 |
 | Basis | `delivery_roadmap.md` Wave 1, slice 4: "benchmark price/level capture — the captured-input slice (`benchmark_level`/`benchmark_return`, a NET-NEW canonical ENT id) that unblocks every return-based benchmark-relative analytic. Follows the P2 captured-data pattern (FR/bitemporal; no run/model/snapshot binding)." Discharges the recorded **OD-P2-6-K** deferral. |
 | Grounding | Verified against shipped HEAD `13f71df` (P3-C2 closed): `benchmark` (ENT-009, EV definition header) + `benchmark_constituent` (FR membership) REALIZED in P2-6 (migration `0021`) with `VENDOR_BENCHMARK` lineage + `marketdata.view`/`.ingest` entitlement; NO level/return series tables exist. The direct template is P3-2's `factor_return` (ENT-025): FR bitemporal captured series over an EV definition — capture / effective-dated supersede / as-known correction / both-axes reconstruct; row-grained; binder finiteness guard; NOT_NULL + min-only RANGE DQ gates; `MARKET.FACTOR_RETURN_*` single-row-grain audit at the EVT-200 block. Canonical registry runs ENT-001…ENT-051 (ENT-051 minted at P3-4 — the Part-3 mint precedent); **ENT-052 is the next free id**. Migration head `0028_var_historical`. RTM home = REQ-PUB-003 (explicitly lists `benchmark_level`/`benchmark_return` as deferred legs). |
@@ -85,3 +85,47 @@ labels stay inert.
 
 Implementation-ready once OQ-P2-7-1…8 are ratified. Build contract = `p2_7_implementation_plan.md`.
 **P2-7 planning implements nothing.**
+
+## Part 6 — Implementation + review log (2026-07-09)
+
+**Built as ratified** (OD-A…H conformant): ENT-052 minted; `benchmark_level` + `benchmark_return`
+FR bitemporal tables under the ENT-009 header; migration `0029_benchmark_series`; a new binder
+`marketdata/benchmark_series.py` (a `_SeriesSpec`-parameterized generic FR core + thin per-table
+wrappers — the two tables are near-identical, so the shared shape is extracted rather than copied,
+the P3-C1/P3-4-R0 spirit); endpoints under the existing `benchmark_router` (gated
+`marketdata.ingest`/`.view`, REUSED — no new permission); six additive `MARKET.BENCHMARK_LEVEL_*`/
+`_RETURN_*` audit codes (the audit-taxonomy row is the R-07 record; `audit/service.py` FROZEN); the
+DQ resolve-or-register written **race-safe from birth** (P3-C2 OD-E savepoint); captured
+vendor-published returns ONLY (no calc from levels). **NO migration to any other table; NO new
+permission/role; NO snapshot/run/model binding** (captured INPUT).
+
+**One recorded design note (review Finder C/F6):** the write endpoints ECHO the submitted Decimal
+(e.g. `"4500.25"`), while reads (`as-of`/`list`) return the PERSISTED canonical `NUMERIC(p,s)` form
+(e.g. `"4500.250000"`) — the same number; the read/persisted form is the byte-for-byte,
+cross-engine-identical value P3-7 pins (P3-7 consumes the persisted rows, not the write echo). This
+is the fx/price/curve/factor family behavior; recorded here as a known, benign serialization detail.
+
+**Review — FULL 6-finder** (OD-H). **Finders B (governance/tenancy/layering), D (cross-file), and
+the behavioral core of A (line-scan) returned clean**; the slice conforms to every house invariant
+(symmetric-RLS-never-hybrid with the closed hybrid set unchanged, leaf import direction, captured-
+input binds nothing derived, DC-2 audit excludes the value payload, ENT-052 genuinely next-free,
+models↔migration DDL identity, alembic no-op). ~10 findings folded, **no deferrals** — all
+test-hardening + doc accuracy, no shipped logic bug:
+
+| Finder | Finding | Fold |
+|---|---|---|
+| A/D | `NoCurrentBenchmarkSeries` docstring said "maps to 422"; code correctly returns **409** (the factor precedent). | Docstring corrected to 409. |
+| C1/E6 | The race-recovery branch (`except IntegrityError` → re-SELECT peer) had NO behavioral test (only a `begin_nested`-called spy); and `test_gates_imports_integrity_error` was vacuous. | **Replaced** the vacuous test with a real forced-collision race test (P3-C2 pattern: monkeypatched stale-snapshot SELECT-miss → INSERT collision → savepoint recovery → peer, no dangling audit). |
+| E1 | The return DQ band was tested only with `-2`; the strict `> -1` boundary was unpinned (a `min_inclusive` flip survived). | Added exact-boundary rejections: `-1` rejected, `-0.99` accepted. |
+| E2 | The PG "17-sig-digit" precision value was actually 14 sig / 9 fractional (float-safe) — didn't exercise the contract. | Changed to a full NUMERIC(20,12)-width, float64-unsafe value; relabeled as a precision probe. |
+| E3 | The audit test proved the value is ABSENT but not the logical key PRESENT (dropping `return_basis` from the grain survived). | Assert the CREATE audit payload carries the logical key; added a spec-fence pinning both tables' `key_attrs`. |
+| E4 | `test_level_current_head_uniqueness` used `pytest.raises(Exception)` (too broad). | Narrowed to `pytest.raises(IntegrityError)`. |
+| E5 | The level DQ `>0` band was never exercised as a rejection (the binder positivity guard shadows it). | Pinned both specs' `value_rule_params` in the spec-fence test. |
+| D (obs) | No endpoint test exercised the 409 no-current-head mapping. | Added an endpoint 409 supersede-without-head test. |
+| F6/C | The endpoint comment overclaimed "byte-for-byte reproduce exactly" on the WRITE-echo path. | Comment corrected + the behavior recorded (design note above). |
+| F2–F5 | current_state/roadmap/phase_status still say "P2-7 PLANNED / not implemented". | **CLOSEOUT obligations** (docs-only, at closeout — not blockers). |
+
+**Validation (post-fold, all green):** `make check` (993 → +new tests) · full-PG suite exit 0 ·
+`alembic check` no-op (PreciseDecimal→NUMERIC byte-identical) · downgrade→base→head clean (head
+`0029`) · `make fe-check` green (frontend untouched) · diff fence clean (audit/service.py +
+entitlement/bootstrap.py untouched, no new permission/role, exactly ONE migration).

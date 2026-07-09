@@ -20,6 +20,8 @@ from irp_shared.exposure.models import ExposureAggregate
 from irp_shared.ingestion.models import IngestionBatch, IngestionStagedRecord
 from irp_shared.lineage.models import DataSource, LineageEdge
 from irp_shared.marketdata.models import (
+    BenchmarkLevel,
+    BenchmarkReturn,
     Curve,
     CurvePoint,
     Factor,
@@ -96,6 +98,8 @@ __all__ = [
     "CurvePoint",
     "Factor",
     "FactorReturn",
+    "BenchmarkLevel",
+    "BenchmarkReturn",
     "ExposureAggregate",
     "SensitivityResult",
     "FactorExposureResult",

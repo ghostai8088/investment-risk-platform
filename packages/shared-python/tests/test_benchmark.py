@@ -815,10 +815,10 @@ def test_benchmark_module_no_analytics_symbols() -> None:
         assert verb not in blob, verb
 
 
-def test_no_benchmark_level_or_return_tables() -> None:
-    # the deferred levels/returns (OD-P2-6-K — a net-new canonical ENT id) are NOT minted in P2-6.
-    assert "benchmark_level" not in Base.metadata.tables
-    assert "benchmark_return" not in Base.metadata.tables
+def test_benchmark_level_and_return_tables_realized() -> None:
+    # P2-7 realized the levels/returns as the net-new ENT-052 (OD-P2-6-K discharged).
+    assert "benchmark_level" in Base.metadata.tables
+    assert "benchmark_return" in Base.metadata.tables
 
 
 # ---------- review folds: TR-08 justification + DC-2-only after_value + no-op update ----------
