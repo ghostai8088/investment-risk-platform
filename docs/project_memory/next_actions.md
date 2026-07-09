@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `65e6dbe` / CI run #130 green (P3-7; refreshed 2026-07-09).** What to do
+> **As of HEAD `1bf172b` / CI run #132 green (P3-C3; refreshed 2026-07-09).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -179,6 +179,10 @@ decision; re-sequencing only via its Part 4 rules):**
 5. ✅ **P3-7 — benchmark-relative analytics (ex-ante)** — **DONE (`65e6dbe`, CI #130 green)** (the SIXTH governed
    risk number; ultrareview 21 folds + 3 recorded deferrals; ex-post leg deferred on the portfolio-return
    prerequisite)
+5.5. ✅ **P3-C3 — binder adjudication consistency** — **DONE (`1bf172b`, CI #132 green)** (a hardening CARRY-IN,
+   Part 4 rule 3, paying the P3-7 item-A deferral: `TypeError` + `base_currency` shape gate across var/var_hs/
+   factor so every binder fails-close identically on malformed pins; factor also gained the malformed-pin wrapper
+   it lacked. Test-and-binder only; NO migration. Items B+C re-deferred, record OD-E)
 6. **P3-6 — stress/scenario** ← **NEXT** → the Wave-1 close review + re-baseline.
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
 Tier-2 commit approval. The next concrete step is **P3-6 PLANNING, on explicit direction** — stress/scenario
@@ -207,8 +211,10 @@ the TD-1 realism rule.**
   `test_exposure_runs_pg.py` added at `65e6dbe` — an ultrareview conventions finding: every new tenant table
   needs its CI RLS step AND the step must actually be added) + downgrade smoke, Documentation check, Secret
   scan. The **Frontend job (TC-1): Node 24, `npm audit --omit=dev --audit-level=high` (blocking), lint,
-  typecheck, `format:check`, 43 vitest, build**. **HEAD `65e6dbe` = run #130 = success** (REST-API watcher;
-  #98–#130 all green). Python 3.12 runners. Migration head `0030_active_risk`.
+  typecheck, `format:check`, 43 vitest, build**. **HEAD `1bf172b` = run #132 = success** (REST-API watcher;
+  #98–#132 all green; P3-7 impl #130 / closeout #131). Python 3.12 runners. Migration head `0030_active_risk`
+  (P3-C3 added NO migration). **origin flipped SSH→HTTPS at P3-C3** (SSH:22 blocked on this network) — plain
+  `git push` works over HTTPS + the cached PAT.
   **This machine:** venv = Python 3.13.0; `irp_pg_local` IS stood up (`postgres:16`). After a schema reset just run
   `alembic upgrade head` — migration 0003 re-grants `irp_ops` itself; **NEVER manually grant schema USAGE to
   `irp_ops`** (it breaks the `downgrade base` smoke at DROP ROLE; fixed 2026-07-07 with
