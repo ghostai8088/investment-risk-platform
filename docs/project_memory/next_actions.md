@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `6fb1a13` / CI green (P3-C2; refreshed 2026-07-08).** What to do
+> **As of HEAD `4534a38` / CI green (TD-1; refreshed 2026-07-09).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -134,6 +134,14 @@ not merge — Part 4.6); `PreciseDecimal` parity for every captured decimal colu
 `transaction` table via the review — NO migration, DDL-identical); the DQ-rule first-registration savepoint race.
 **Full 6-finder review: 9 findings, ALL folded, no deferrals** (2 finders clean). Validation: make check 968 /
 full-PG 1177 / alembic no-op / downgrade clean / fe-check 39+build / diff fence clean (30 files).
+→ **P2-7 PLANNING** (`04c4135`, CI green — `p2_7_decision_record.md` OD-P2-7-A…H; OQ-P2-7-1…8 ratified; ENT-052
+`benchmark_level`+`benchmark_return`, migration `0029`; captured returns ONLY). → **TD-1** (test-data realism
+audit, Wave-1 slice **3.5** insertion): **PLANNING** `2569151` → **IMPLEMENTATION** `ac92e0b` + follow-up
+`4534a38` (CI green). The base market-value fixtures were already plausible; 8 implausible values in the
+factor-return/covariance/VaR/sensitivity/exposure test fixtures were remediated (three-bucket classify-then-fix;
+test-and-docs only; NO golden re-derivation). **4 independent finder passes corrected 2 author errors + caught 2
+same-class completeness misses**, all folded. NEW `08_testing_qa/test_data_realism.md` + a standing review-angle;
+the fixture-realism rule is now in force for all future slices.
 
 **NEXT — per the RATIFIED `10_delivery_backlog/delivery_roadmap.md` (Wave 1; no option menu — the sequence IS the
 decision; re-sequencing only via its Part 4 rules):**
@@ -142,13 +150,18 @@ decision; re-sequencing only via its Part 4 rules):**
 3. ✅ **P3-C2 — hardening bundle** — **DONE (`6fb1a13`, CI green)** (exposure scaffold/reason + FE listing;
    captured-table PreciseDecimal parity incl. `transaction`; the DQ-rule registration savepoint race; scaffold
    relocated risk→calc; full 6-finder review, 9 folds; NO migration)
-4. **P2-7 — benchmark price/level capture** (net-new canonical ENT id; unblocks P3-7) ← **NEXT**
+3.5. ✅ **TD-1 — test-data realism audit** — **DONE (`ac92e0b` + `4534a38`, CI green)** (a hygiene insertion; 8
+   implausible test fixtures remediated to the new fixture-realism standing rule; test-and-docs only; 4 independent
+   finder passes; `08_testing_qa/test_data_realism.md` + a standing review-angle)
+4. ✅ **P2-7 — benchmark price/level capture** — **PLANNED + ratified (`04c4135`); NOT yet implemented** ← **NEXT = IMPLEMENTATION**
 5. **P3-7 — benchmark-relative analytics** → 6. **P3-6 — stress/scenario** → the Wave-1 close review + re-baseline.
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
-Tier-2 commit approval. The next concrete step is **P2-7 planning, on explicit direction** — a **net-new canonical
-entity + captured-data methodology** slice (benchmark price/level capture, unblocking P3-7's return-based legs);
-model/effort recommendation: **Fable / high** (per the 2026-07-08 standing rule — Fable IS the best fit for
-novel methodology/captured-data + canonical-id design, regardless of usage budget).
+Tier-2 commit approval. The next concrete step is **P2-7 IMPLEMENTATION, on explicit direction** — the build
+contract is `p2_7_implementation_plan.md` (ENT-052 `benchmark_level`+`benchmark_return`; migration `0029`; the
+`factor_return` template; captured returns ONLY; the new-binder DQ resolve-or-register written race-safe from birth
+per P3-C2 OD-E; full 6-finder review + unreduced gates). Model/effort: **Opus 4.8 / high** — the novel design was
+settled at planning (on Fable); the build is templated on a shipped exemplar, so Opus is the fit now (Fable only if
+review/build surfaces a genuine methodology fork). **All new fixtures follow the TD-1 realism rule.**
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
