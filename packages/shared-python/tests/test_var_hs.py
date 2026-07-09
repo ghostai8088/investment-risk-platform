@@ -662,6 +662,20 @@ def test_adjudication_gate_probes(session: Session) -> None:  # noqa: F811
         [_win(f1, V21), _win(f2, V21)],
         "mixed base currencies",
     )
+    # P3-C3 binder-consistency (the active-risk/VaR twins): a uniformly-NULL/>3-char base_currency
+    # passes the set-of-one check but must refuse pre-create (else it 500s on the NOT-NULL
+    # varchar(3) column); a JSON-null numeric field (Decimal(None) -> TypeError) is a governed 422.
+    for bad in (None, "USDX"):
+        probe(
+            [_exp(run_id, f1, "1", base=bad)],  # type: ignore[arg-type]
+            [_win(f1, V21)],
+            "base_currency is not a 3-letter code",
+        )
+    probe(
+        [{**_exp(run_id, f1, "1"), "exposure_amount": None}],
+        [_win(f1, V21)],
+        "not a well-formed v1 input",
+    )
     dup = _exp(run_id, f1, "1")
     dup2 = dict(dup)
     dup2["_anchor"] = str(uuid.uuid4())  # distinct component, identical pinned row id

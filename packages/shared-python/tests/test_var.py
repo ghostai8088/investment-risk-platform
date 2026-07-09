@@ -940,6 +940,36 @@ def test_mixed_run_and_mixed_currency_and_wrong_vocab_refused(session: Session) 
     assert _count_runs(session, tenant) == 0
 
 
+def test_p3c3_null_or_long_base_currency_and_malformed_pin_refused(session: Session) -> None:
+    # P3-C3 binder-consistency pass (the active-risk twins): a uniformly-NULL/>3-char base_currency
+    # passes the set-of-one uniformity check but must refuse PRE-create — else it reaches the
+    # NOT-NULL varchar(3) column as a post-create 500; and a JSON-null numeric field (Decimal(None)
+    # -> TypeError) is a governed 422, not a raw parse 500.
+    tenant = str(uuid.uuid4())
+    mv = _var_model(session, tenant)
+    fa, fb = str(uuid.uuid4()).lower(), str(uuid.uuid4()).lower()
+    run1, cov_run = str(uuid.uuid4()).lower(), str(uuid.uuid4()).lower()
+    diag = [
+        _covariance_content(cov_run, fa, fa, "0.0001"),
+        _covariance_content(cov_run, fb, fb, "0.0001"),
+        _covariance_content(cov_run, fa, fb, "0"),
+    ]
+    for bad in (None, "USDX"):
+        rows = [
+            _exposure_content(run1, fa, "A", "1.000000", base=bad),  # type: ignore[arg-type]
+            _exposure_content(run1, fb, "B", "1.000000", base=bad),  # type: ignore[arg-type]
+        ]
+        snap = _mint_var_snapshot(session, tenant, rows, diag)
+        with pytest.raises(VarInputError, match="base_currency is not a 3-letter code"):
+            _run(session, tenant, mv, None, None, snapshot_id=snap.id)
+    malformed = _exposure_content(run1, fa, "A", "1.000000")
+    malformed["exposure_amount"] = None  # JSON-null numeric -> TypeError -> governed 422
+    snap = _mint_var_snapshot(session, tenant, [malformed], diag)
+    with pytest.raises(VarInputError, match="not a well-formed v1 input"):
+        _run(session, tenant, mv, None, None, snapshot_id=snap.id)
+    assert _count_runs(session, tenant) == 0
+
+
 def test_adjudication_pair_shape_probes(session: Session) -> None:
     # Reversed-order pins, duplicate canonical pairs, a missing OFF-DIAGONAL pair (all factors
     # covered), and a duplicated exposure pin each refuse pre-create (the 2026-07 review folds).

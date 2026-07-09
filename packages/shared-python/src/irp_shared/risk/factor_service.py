@@ -170,6 +170,14 @@ def _adjudicate_pins(atoms: list[AtomPin], factors: list[FactorPin]) -> dict[str
         raise FactorExposureInputError(
             f"the pinned atoms carry mixed base currencies {sorted(base_currencies)} — refused"
         )
+    base_currency = next(iter(base_currencies))
+    if not isinstance(base_currency, str) or len(base_currency) != 3:
+        # A uniformly-NULL or non-3-letter base_currency ({None} / {"USDX"} pass the set-of-one
+        # check) would otherwise reach the NOT-NULL varchar(3) result column as a post-create 500
+        # (P3-C3 binder-consistency pass — the active-risk/VaR twin).
+        raise FactorExposureInputError(
+            "the pinned atoms' base_currency is not a 3-letter code — refused"
+        )
     for pin in factors:
         if pin.factor_family not in SUPPORTED_FACTOR_FAMILIES:
             raise FactorExposureInputError(
@@ -300,10 +308,22 @@ def run_factor_exposure(
     # --- Adjudicate the PINNED content pre-create (uniform for both paths; kernel-rule-sourced):
     # zero atoms / zero factors / unsupported family / NULL scope / duplicate currency all refuse
     # HERE — before a run (or any run-audit) can exist.
-    atoms, factors = _parse_pins(
-        list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
-    )
-    index = _adjudicate_pins(atoms, factors)
+    try:
+        atoms, factors = _parse_pins(
+            list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+        )
+        index = _adjudicate_pins(atoms, factors)
+    except FactorExposureInputError:
+        raise
+    except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+        # Structurally malformed pinned content (missing keys, non-decimal/JSON-null values,
+        # non-object captured_content) is the SAME refusal class as a semantically ill-formed input
+        # — a governed 422, never a raw parse 500. This wrapper was ABSENT here while its VaR/
+        # active-risk siblings had it (P3-C3 binder-consistency pass, OD-A Part 3 — the third
+        # same-class gap, folded on discovery).
+        raise FactorExposureInputError(
+            f"pinned content is not a well-formed v1 input ({type(exc).__name__})"
+        ) from exc
 
     # --- The shared governed-run lifecycle (P3-C1 scaffold; behavior-preserving) ---
     def _compute(run: CalculationRun) -> tuple[list[FactorExposureResult], list[str]]:

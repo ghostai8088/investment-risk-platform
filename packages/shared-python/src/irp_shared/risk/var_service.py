@@ -184,6 +184,12 @@ def _adjudicate_pins(
             f"the pinned exposure rows carry mixed base currencies {sorted(base_currencies)} — "
             f"refused"
         )
+    base_currency = next(iter(base_currencies))
+    if not isinstance(base_currency, str) or len(base_currency) != 3:
+        # A uniformly-NULL or non-3-letter base_currency ({None} / {"USDX"} pass the set-of-one
+        # check) would otherwise reach the NOT-NULL varchar(3) column as a post-create 500 (P3-C3
+        # binder-consistency pass — the active-risk twin).
+        raise VarInputError("the pinned exposure base_currency is not a 3-letter code — refused")
 
     exposure_ids_seen: set[str] = set()
     for r in exposure_raw:
@@ -266,7 +272,7 @@ def _adjudicate_pins(
         covariance=covariance,
         exposure_run_id=next(iter(exposure_run_ids)),
         covariance_run_id=next(iter(covariance_run_ids)),
-        base_currency=next(iter(base_currencies)),
+        base_currency=base_currency,
         n_factors=len(exposure_factors),
         n_observations=int(n_observations),
         window_start=date.fromisoformat(window_start),
@@ -364,11 +370,12 @@ def run_var(
         parsed = _adjudicate_pins(exposure_raw, covariance_raw)
     except VarInputError:
         raise
-    except (KeyError, ValueError, ArithmeticError) as exc:
-        # Structurally malformed pinned content (missing keys, non-decimal values, bad dates,
-        # non-JSON) is the SAME refusal class as a semantically ill-formed input — a governed
-        # 422, never a raw parse 500 (2026-07 review). JSONDecodeError/InvalidOperation are
-        # ValueError/ArithmeticError subclasses.
+    except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+        # Structurally malformed pinned content (missing keys, non-decimal/JSON-null values, bad
+        # dates, non-object captured_content) is the SAME refusal class as a semantically ill-formed
+        # input — a governed 422, never a raw parse 500 (2026-07 review). JSONDecodeError/
+        # InvalidOperation subclass ValueError/Arithmetic; Decimal(None)/list-indexing raise
+        # TypeError (P3-C3 binder-consistency pass — the active-risk twin).
         raise VarInputError(
             f"pinned content is not a well-formed v1 input ({type(exc).__name__})"
         ) from exc

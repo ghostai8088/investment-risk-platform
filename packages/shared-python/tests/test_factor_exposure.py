@@ -679,6 +679,100 @@ def test_cross_tenant_factor_refused(session: Session) -> None:
     assert _count_runs(session, tenant) == 0
 
 
+def _mint_fe_snapshot(session: Session, tenant: str, atoms: list[dict], factors: list[dict]):  # noqa: ANN202
+    """Hand-mint a FACTOR_EXPOSURE_INPUT snapshot with ARBITRARY pinned content (bypassing the
+    governed builder) — the adjudication-gate probe vehicle (the test_var precedent)."""
+    from types import SimpleNamespace
+
+    from irp_shared.snapshot import (
+        COMPONENT_KIND_EXPOSURE,
+        COMPONENT_KIND_FACTOR,
+        PURPOSE_FACTOR_EXPOSURE_INPUT,
+        SnapshotActor,
+    )
+    from irp_shared.snapshot.service import _append_spec, _persist_snapshot
+
+    specs: list = []
+    for kind, ent, rows in (
+        (COMPONENT_KIND_EXPOSURE, "exposure_aggregate", atoms),
+        (COMPONENT_KIND_FACTOR, "factor", factors),
+    ):
+        for content in rows:
+            content = dict(content)
+            anchor = SimpleNamespace(
+                id=content["id"], valid_from=None, system_from=T0, record_version=None
+            )
+            _append_spec(specs, kind, ent, anchor, content)
+    header = _persist_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=SnapshotActor(actor_id="s"),
+        specs=specs,
+        label="",
+        purpose=PURPOSE_FACTOR_EXPOSURE_INPUT,
+        as_of_valid_at=VALID_AT,
+        as_of_known_at=VALID_AT,
+        as_of_valuation_date=VD,
+        binding_predicate_version="test:hand-minted",
+    )
+    session.flush()
+    return header
+
+
+def _atom(base: str | None = "USD", amount: str = "10.000000") -> dict:
+    return {
+        "id": str(uuid.uuid4()),
+        "portfolio_id": str(uuid.uuid4()),
+        "instrument_id": str(uuid.uuid4()),
+        "base_currency": base,
+        "mark_currency": "USD",
+        "exposure_amount": amount,
+    }
+
+
+def _fac(code: str = "FX_USD", ccy: str = "USD") -> dict:
+    return {
+        "id": str(uuid.uuid4()),
+        "factor_code": code,
+        "factor_family": "CURRENCY",
+        "currency_code": ccy,
+    }
+
+
+def test_p3c3_null_base_currency_and_malformed_pin_refused(session: Session) -> None:
+    # P3-C3 binder-consistency pass (the active-risk/VaR twins): factor_service pins a hand-mintable
+    # atom whose base_currency reaches the NOT-NULL varchar(3) result column, and it was the one
+    # binder with NO malformed-pin wrapper at all (OD-A Part 3, folded on discovery). A
+    # uniformly-NULL/>3-char base_currency refuses PRE-create; a JSON-null exposure_amount
+    # (Decimal(None) -> TypeError) is a governed 422, not a raw parse 500.
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    mv = _model(session, tenant)
+    session.flush()
+
+    def consume(snapshot_id: str):  # noqa: ANN202
+        return run_factor_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=FactorExposureActor(actor_id="a"),
+            code_version="risk-v1",
+            environment_id="ci",
+            model_version_id=mv,
+            snapshot_id=snapshot_id,
+        )
+
+    for bad in (None, "USDX"):
+        snap = _mint_fe_snapshot(session, tenant, [_atom(base=bad)], [_fac()])
+        with pytest.raises(FactorExposureInputError, match="base_currency is not a 3-letter code"):
+            consume(snap.id)
+    malformed = _atom()
+    malformed["exposure_amount"] = None  # JSON-null numeric -> TypeError -> governed 422
+    snap = _mint_fe_snapshot(session, tenant, [malformed], [_fac()])
+    with pytest.raises(FactorExposureInputError, match="not a well-formed v1 input"):
+        consume(snap.id)
+    assert _count_runs(session, tenant) == 0
+
+
 # ---------- (6) post-create FAILED (fail-closed DQ; zero rows; durable evidence) ----------
 
 

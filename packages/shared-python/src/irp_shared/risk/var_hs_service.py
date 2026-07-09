@@ -152,6 +152,12 @@ def _adjudicate_pins(
             f"the pinned exposure rows carry mixed base currencies {sorted(base_currencies)} — "
             f"refused"
         )
+    base_currency = next(iter(base_currencies))
+    if not isinstance(base_currency, str) or len(base_currency) != 3:
+        # A uniformly-NULL or non-3-letter base_currency ({None} / {"USDX"} pass the set-of-one
+        # check) would otherwise reach the NOT-NULL varchar(3) column as a post-create 500 (P3-C3
+        # binder-consistency pass — the active-risk twin).
+        raise HsVarInputError("the pinned exposure base_currency is not a 3-letter code — refused")
 
     exposures: dict[str, Decimal] = {}
     exposure_ids_seen: set[str] = set()
@@ -241,7 +247,7 @@ def _adjudicate_pins(
         exposures=exposures,
         returns_by_date=returns_by_date,
         exposure_run_id=next(iter(exposure_run_ids)),
-        base_currency=next(iter(base_currencies)),
+        base_currency=base_currency,
         n_factors=len(exposures),
         n_observations=len(window_dates),
         window_start=window_dates[0],
@@ -322,9 +328,10 @@ def run_var_historical(
         )
     except HsVarInputError:
         raise
-    except (KeyError, ValueError, ArithmeticError) as exc:
+    except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
         # Structurally malformed pinned content is the SAME refusal class as a semantically
-        # ill-formed input — a governed 422, never a raw parse 500 (the P3-5 review lesson).
+        # ill-formed input — a governed 422, never a raw parse 500 (the P3-5 review lesson;
+        # TypeError added in the P3-C3 binder-consistency pass — Decimal(None)/list-indexing).
         raise HsVarInputError(
             f"pinned content is not a well-formed v1 input ({type(exc).__name__})"
         ) from exc
