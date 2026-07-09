@@ -22,8 +22,17 @@
 - **This P3-C3 closeout memory refresh only** (Tier 0 — docs-only): the project-memory files + the roadmap changelog entry + the decision-record CLOSED stamp advanced to `1bf172b`/CI-#132-green.
 
 ## Current active gate
-**P3-0 … P3-5 + P3-C1 + FE-1 + TC-1 + VAR-HS-1 + P3-C2 + TD-1 + P2-7 + P3-7 + P3-C3 are ALL COMPLETE and CI-green;
-the RATIFIED `delivery_roadmap.md` (Wave 1) is the operative sequence.** Most recent: **P3-C3**
+**WAVE 1 IS CLOSED — `wave_1_close_review.md` RATIFIED (2026-07-09, OQ-W1C-1…6); the RATIFIED Wave-2 sequence
+(`delivery_roadmap.md` Part 2.5: PM-1 → P3-8 → BT-1 → PA-0 → P3-6) is now the operative sequence.** The close:
+honest audit (5 slices + 2 insertions, all CI-green; ~90 review findings folded; npm audit 0 at all severities);
+deferral register reconciled (P3-3/P3-5/P3-C1 deferrals all PAID in-wave; open items trigger-based incl. P3-7
+B+C); outward benchmark review; the thesis destination check answered "forward, in dependency order" — Wave 2 is
+organized around the **return-series triple unlock** (ex-post TE/IR + VaR backtesting + the desmoothing substrate
+share ONE missing primitive, the governed portfolio-return series → PM-1 first). P3-6 moved to Wave-2 slot 5
+(pre-authorized). npm CI gate tightened high→moderate at the close; **branch protection (OD-050) = a pending
+USER GitHub-settings action.** **Next: PM-1 planning on explicit direction (Fable/high).** Prior state:
+P3-0 … P3-5 + P3-C1 + FE-1 + TC-1 + VAR-HS-1 + P3-C2 + TD-1 + P2-7 + P3-7 + P3-C3 all complete and CI-green.
+Most recent slice: **P3-C3**
 (`1bf172b`, CI run #132 green) — a hardening CARRY-IN (not a numbered slice) paying the P3-7 ultrareview's item-A deferral: binder
 adjudication consistency (`TypeError` + a `base_currency` 3-letter shape gate across var/var_hs/factor so every
 binder fails-close identically on malformed pins; factor_service also gained the malformed-pin wrapper it

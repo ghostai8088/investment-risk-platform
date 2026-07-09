@@ -40,8 +40,8 @@ jobs:
           node-version: "24" # active LTS (Node 20 EOL 2026-04); TC-1 / OD-TC-1-C
       - name: Install dependencies (reproducible from lockfile)
         run: npm ci
-      - name: Runtime-dependency audit (production tree only — TC-1 / OD-TC-1-D)
-        run: npm audit --omit=dev --audit-level=high
+      - name: Runtime-dependency audit (production tree only — TC-1 / OD-TC-1-D; tightened high→moderate at the Wave-1 close, OQ-W1C-4)
+        run: npm audit --omit=dev --audit-level=moderate
       - name: Shared package tests
         run: npm run -w packages/shared-ts test
       - name: Lint

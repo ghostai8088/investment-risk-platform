@@ -183,23 +183,29 @@ decision; re-sequencing only via its Part 4 rules):**
    Part 4 rule 3, paying the P3-7 item-A deferral: `TypeError` + `base_currency` shape gate across var/var_hs/
    factor so every binder fails-close identically on malformed pins; factor also gained the malformed-pin wrapper
    it lacked. Test-and-binder only; NO migration. Items B+C re-deferred, record OD-E)
-6. **P3-6 — stress/scenario** ← **NEXT** → the Wave-1 close review + re-baseline.
+6. ✅ **WAVE 1 CLOSED** — **`wave_1_close_review.md` RATIFIED (2026-07-09, OQ-W1C-1…6)**: honest audit +
+   reconciled deferral register (all P3-3/P3-5/P3-C1 deferrals PAID in-wave; open items trigger-based) + the
+   outward benchmark review + the thesis destination check. P3-6 moved to Wave 2 slot 5 (pre-authorized). The
+   npm-audit CI gate tightened high→moderate at this close (tree at 0); **branch protection (OD-050) remains a
+   USER GitHub-settings action** (Settings → Branches → protect `main` — cannot be done from the repo).
+
+**WAVE 2 (ratified — roadmap Part 2.5): PM-1 → P3-8 → BT-1 → PA-0 → P3-6.** Organized around the return-series
+triple unlock: ONE new primitive (a governed portfolio-return series) unblocks ex-post TE/IR (P3-7 OD-G), VaR
+backtesting (the P7 prerequisite), and the private-asset desmoothing substrate (the thesis destination).
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
-Tier-2 commit approval. The next concrete step is **P3-6 PLANNING, on explicit direction** — stress/scenario
-analytics (ENT-029 `scenario_definition` + ENT-030 `scenario_result` realization; RTM-P5 — the roadmap notes
-deferring it into Wave 2 is an EXPECTED possible outcome of the wave-close review, not a failure; if the user
-prefers, the Wave-1 close review can run FIRST and decide). This IS a **methodology slice** → roadmap Part 4
-rule 6 applies; model/effort: **Fable / high** (novel methodology design — scenario semantics + revaluation
-seam are genuinely new design surface). Alternative next steps if directed: the recorded P3-7 deferrals as a
-small hardening slice (Opus 4.8 / high), or the Wave-1 close review (Fable / high). **All new fixtures follow
-the TD-1 realism rule.**
+Tier-2 commit approval. The next concrete step is **PM-1 PLANNING, on explicit direction** — the governed
+portfolio-return series (performance-measurement v1: flow-adjusted TWR + Modified-Dietz over captured
+valuations + transactions; a NEW governed number family `perf.return.twr`; rule-6 externals: GIPS 2020). This
+IS a **methodology slice** → roadmap Part 4 rule 6 applies; model/effort: **Fable / high** (a new methodology
+family — GIPS-grade return math is genuinely novel design surface). **All new fixtures follow the TD-1 realism
+rule.**
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
 - **Each slice/step is separately gated** — plan, implementation, and commit are distinct approvals.
 - **Do not start the next slice's planning** until directed; do not start any implementation until its plan +
-  sign-offs are ratified. P3-6 (stress), P3-7 (benchmark-relative), the VaR roadmap methods, and the hardening
-  carry-ins — each its own separately planned + approved slice.
+  sign-offs are ratified. The Wave-2 slices (PM-1, P3-8, BT-1, PA-0, P3-6), the VaR roadmap methods, and the
+  trigger-based register items — each its own separately planned + approved slice.
 - Commit/push follow the **gate tiers** (`claude_operating_instructions.md`): Tier 0/1 land-and-report; Tier 2/3
   (code, migrations, new slices, governed surfaces) need explicit approval.
 
