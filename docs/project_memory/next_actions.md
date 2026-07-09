@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `ea2863d` / CI green (P2-7; refreshed 2026-07-09).** What to do
+> **As of HEAD `65e6dbe` / CI run #130 green (P3-7; refreshed 2026-07-09).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -147,7 +147,22 @@ tables under the ENT-009 header; migration `0029`). Captured vendor-published re
 `level_type`/`return_basis` variant discriminators; a `_SeriesSpec`-parameterized binder; race-safe DQ from birth;
 six additive `MARKET.BENCHMARK_LEVEL_*`/`_RETURN_*` codes; no new permission. **Full 6-finder review: ~10 findings
 folded, no deferrals, no shipped logic bug** (a real forced-collision race test + a genuinely float-unsafe
-precision value among the folds). Discharges OD-P2-6-K; unblocks P3-7.
+precision value among the folds). Discharges OD-P2-6-K; unblocks P3-7. → **P3-7 PLANNING** (`552b954` —
+`p3_7_decision_record.md` OD-P3-7-A…H; OQ-P3-7-1…10 RATIFIED; Part 2 = the rule-6 external-benchmark section:
+Roll 1992, Grinold-Kahn 2000, Pope-Yadav 1994, CESR/10-788, ESMA 2012/832, MSCI Barra) → **P3-7 IMPLEMENTATION
+(`65e6dbe`, CI #130 green)**: **Wave-1 slice 5 — the SIXTH governed risk number**, ex-ante active risk /
+parametric tracking error `TE = √(wₐᵀΣwₐ)` — `active_risk_result` (ENT-027 third realization, migration
+`0030_active_risk`, IA append-only, symmetric FORCE RLS, hard-FK provenance incl. `benchmark_id`); the
+`ACTIVE_RISK_INPUT` snapshot pinning FACTOR_EXPOSURE + COVARIANCE + FACTOR + the newly minted
+`COMPONENT_KIND_BENCHMARK` (FR-version pins, TR-09); registered `risk.active_risk.parametric` v1
+(code_version-only identity); run family `ACTIVE_RISK` ≠ metric `TRACKING_ERROR` (a review amendment to OD-F);
+EX-ANTE only (ex-post deferred on the portfolio-return prerequisite, OD-G). **The FIRST user-directed FULL
+max-effort multi-agent review ("ultrareview"): 10 finder angles → 6 empirical verifiers → a gap sweep — 21
+findings folded** (adjudication hardening each test-pinned; kernel overflow → committed FAILED never a 500;
+the `fexp-rows` binding-predicate rename + import-time varchar(50) guard; **3 previously-missing CI PG RLS
+steps** incl. two pre-existing gaps), 3 refuted/rejected-as-designed, **3 recorded-deferred** (record Part 6:
+the `var_service.py` TypeError/base_currency twins; the shared covariance-pin adjudicator; `_persist_snapshot`
+lineage batching). Validation: make check 1044 / full-PG 230 / downgrade smoke / fe-check 43+build.
 
 **NEXT — per the RATIFIED `10_delivery_backlog/delivery_roadmap.md` (Wave 1; no option menu — the sequence IS the
 decision; re-sequencing only via its Part 4 rules):**
@@ -161,13 +176,19 @@ decision; re-sequencing only via its Part 4 rules):**
    finder passes; `08_testing_qa/test_data_realism.md` + a standing review-angle)
 4. ✅ **P2-7 — benchmark price/level capture** — **DONE (`ea2863d`, CI green)** (ENT-052 `benchmark_level`+
    `benchmark_return`, migration `0029`; captured returns only; full 6-finder review, ~10 folds; unblocks P3-7)
-5. **P3-7 — benchmark-relative analytics** ← **NEXT** → 6. **P3-6 — stress/scenario** → the Wave-1 close review + re-baseline.
+5. ✅ **P3-7 — benchmark-relative analytics (ex-ante)** — **DONE (`65e6dbe`, CI #130 green)** (the SIXTH governed
+   risk number; ultrareview 21 folds + 3 recorded deferrals; ex-post leg deferred on the portfolio-return
+   prerequisite)
+6. **P3-6 — stress/scenario** ← **NEXT** → the Wave-1 close review + re-baseline.
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
-Tier-2 commit approval. The next concrete step is **P3-7 PLANNING, on explicit direction** — tracking error /
-active risk / active return over the now-captured benchmark levels+returns (P2-7) + the existing risk engine (the
-P3 plan's final analytic leg). This IS a **methodology slice** (a governed derived number / registered model
-version) → roadmap Part 4 rule 6 applies (a cited external-benchmark research section is required in its record);
-model/effort: **Fable / high** (novel methodology design). **All new fixtures follow the TD-1 realism rule.**
+Tier-2 commit approval. The next concrete step is **P3-6 PLANNING, on explicit direction** — stress/scenario
+analytics (ENT-029 `scenario_definition` + ENT-030 `scenario_result` realization; RTM-P5 — the roadmap notes
+deferring it into Wave 2 is an EXPECTED possible outcome of the wave-close review, not a failure; if the user
+prefers, the Wave-1 close review can run FIRST and decide). This IS a **methodology slice** → roadmap Part 4
+rule 6 applies; model/effort: **Fable / high** (novel methodology design — scenario semantics + revaluation
+seam are genuinely new design surface). Alternative next steps if directed: the recorded P3-7 deferrals as a
+small hardening slice (Opus 4.8 / high), or the Wave-1 close review (Fable / high). **All new fixtures follow
+the TD-1 realism rule.**
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
@@ -181,12 +202,13 @@ model/effort: **Fable / high** (novel methodology design). **All new fixtures fo
 ## CI gates (must be green before a phase is "closed")
 - Backend (ruff format + lint, mypy, pytest), Frontend, **DB migration (Postgres)** incl. `alembic check` drift +
   ALL per-table RLS/append-only PG suites (complete since `7c50c43`; Covariance added at `c2bd126`, VaR at
-  `5ed8271`; migration head `0027_run_failure_reason` auto-covered since `0599f7f` — a FAILED run now executes on
-  PG in CI; the **Risk-runs-listing PG step** added at `678a651`; the **Historical-VaR PG step**
-  (`test_var_hs_pg.py`) added at `29ae31b`) + downgrade smoke, Documentation check, Secret scan. The **Frontend
-  job (TC-1): Node 24, `npm audit --omit=dev --audit-level=high` (blocking), lint, typecheck, `format:check`, 37
-  vitest, build**. **HEAD `29ae31b` = run #117 = success** (user-confirmed + watcher; #98–#117 all green). Python
-  3.12 runners. Migration head `0028_var_historical`.
+  `5ed8271`; the **Risk-runs-listing PG step** at `678a651`; the **Historical-VaR PG step** at `29ae31b`; the
+  **Active-risk PG step + the two previously-MISSING steps** `test_benchmark_series_pg.py`/
+  `test_exposure_runs_pg.py` added at `65e6dbe` — an ultrareview conventions finding: every new tenant table
+  needs its CI RLS step AND the step must actually be added) + downgrade smoke, Documentation check, Secret
+  scan. The **Frontend job (TC-1): Node 24, `npm audit --omit=dev --audit-level=high` (blocking), lint,
+  typecheck, `format:check`, 43 vitest, build**. **HEAD `65e6dbe` = run #130 = success** (REST-API watcher;
+  #98–#130 all green). Python 3.12 runners. Migration head `0030_active_risk`.
   **This machine:** venv = Python 3.13.0; `irp_pg_local` IS stood up (`postgres:16`). After a schema reset just run
   `alembic upgrade head` — migration 0003 re-grants `irp_ops` itself; **NEVER manually grant schema USAGE to
   `irp_ops`** (it breaks the `downgrade base` smoke at DROP ROLE; fixed 2026-07-07 with
@@ -198,10 +220,13 @@ model/effort: **Fable / high** (novel methodology design). **All new fixtures fo
   CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO irp;` then `alembic upgrade head`.
 
 ## Stop conditions (halt and ask)
-- Any request to pull unplanned scope into the next slice: benchmark-relative/active-risk/tracking-error,
-  performance attribution, reporting/dashboards, frontend — refuse and flag. Regression/beta factor loadings,
-  computed factor returns, covariance v2 (shrinkage/EWMA/correlation/annualization), and the VaR deferrals
-  (ES/√h/component-VaR/backtesting/quantile-function) stay deferred named slices/versions until planned.
+- Any request to pull unplanned scope into the next slice: EX-POST tracking error / active return / IR (needs
+  the governed portfolio-return series — a performance-measurement slice, OD-G), performance attribution,
+  relative VaR, TE annualization, reporting/dashboards, frontend — refuse and flag. Regression/beta factor
+  loadings, computed factor returns, covariance v2 (shrinkage/EWMA/correlation/annualization), the VaR deferrals
+  (ES/√h/component-VaR/backtesting/quantile-function), and the P3-7 recorded deferrals (var_service
+  TypeError/base_currency twins; the shared covariance-pin adjudicator; lineage batching) stay deferred named
+  slices/versions until planned.
 - Any change to **`audit/service.py`** (frozen) or **`entitlement/bootstrap.py`** outside the governed R-07 mint
   (P3-3/P3-4/P3-5/P3-C1 mint NO new permission — `risk.view`/`risk.run` are REUSED); any new audit code / permission /
   role / migration without R-07.

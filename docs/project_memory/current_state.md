@@ -1,8 +1,8 @@
 # Current State
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
-> history. Read this first, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence) + `p2_7_decision_record.md` (the latest record), `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD
-> `ea2863d` / CI green (P2-7 benchmark price/level capture, ENT-052; refreshed 2026-07-09).** Values that
+> history. Read this first, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence) + `p3_7_decision_record.md` (the latest record), `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD
+> `65e6dbe` / CI green (P3-7 ex-ante active risk / tracking error; refreshed 2026-07-09).** Values that
 > drift are flagged; re-verify the ones in "Re-check at session start" before acting. *(`project_state.yaml`
 > is RETIRED — see its stub; the recovery set is `CLAUDE.md` → this file → `phase_status.md` → `next_actions.md`.)*
 
@@ -12,34 +12,64 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `29ae31b` — "Implement VAR-HS-1 historical-simulation VaR with adversarial-review folds" (**CI run #117 green**). Chain since P3-3: `7c50c43` (**P3-3 implementation**, #95) → `362481a` (P3-3 closeout memory) → `8abe764` (**P3-4 planning**, OQs ratified) → `a9b6567` (**P3-4-R0 refactor**, #98) → `c2bd126` (**P3-4 IMPLEMENTATION + 12 review folds**, #99) → `c2480a4` (P3-4 closeout memory, #100) → `c2c1b4d` (**P3-5 parametric-VaR planning**, OQ-P3-5-1..10 ratified + the historical-sim/MC ROADMAP note, #101) → `5ed8271` (**P3-5 IMPLEMENTATION + 13 review folds**, #102) → `d94e572` (P3-5 closeout memory, #103) → `c2e85ac` (**P3-C1 hardening planning**, OQ-P3-C1-1..8 ratified after a plain-language briefing, #104) → `0599f7f` (**P3-C1 IMPLEMENTATION + 12 review folds**, #105) → `ee3c581` (P3-C1 closeout memory, #106) → `416cb1d` (**FE-1 frontend runs-view planning**, OQ-FE-1-1..8 ratified, #107) → `678a651` (**FE-1 IMPLEMENTATION + 16 review folds — the FIRST VISIBLE UI SLICE**, #108) → `945661d` (FE-1 closeout memory, #109) → `63a1bb8` (**the RATIFIED delivery roadmap + the documentation-alignment audit**, #110) → `76c7942` (**TC-1 planning**, OQ-TC-1-1..5 ratified, #111) → `c34b346` (**TC-1 IMPLEMENTATION — Wave-1 slice 1**, #112) → `df04e1d` (TC-1 closeout memory, #113) → `ec1f582` (**VAR-HS-1 planning**, OQ-VAR-HS-1-1..7 ratified, #116) → `29ae31b` (**VAR-HS-1 IMPLEMENTATION — Wave-1 slice 2 — the FIFTH governed risk number**, **CI #117 green**) → `a4d0f89` (**P3-C2 hardening/consolidation planning**, OQ-P3-C2-1..6 ratified, #118) → `6fb1a13` (**P3-C2 IMPLEMENTATION — Wave-1 slice 3 — the four-follow-up paydown; scaffold relocated risk→calc; full 6-finder review, 9 folds; NO migration**, **CI green**) → `13f71df` (P3-C2 closeout memory) → `a4d0f89`…`04c4135` (**P2-7 planning** — benchmark price/level capture / ENT-052, OQ-P2-7-1..8 ratified, CI green) → `2569151` (**TD-1 planning** — test-data realism audit, Wave-1 slice 3.5 insertion, OQ-TD-1-1..6 ratified) → `ac92e0b` (**TD-1 IMPLEMENTATION — fixture-realism remediation; 4 independent finder passes; test-and-docs only; NO migration**, **CI green**) → `4534a38` (**TD-1 follow-up** — 2 more completeness-sweep folds, **CI green**) → `ea2863d` (**P2-7 IMPLEMENTATION — Wave-1 slice 4 — ENT-052 benchmark_level+benchmark_return; migration `0029`; captured returns only; full 6-finder review, ~10 folds; unblocks P3-7**, **CI green**). Earlier chain: Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
-- **Local == origin:** yes (0 ahead / 0 behind); only this P2-7 closeout memory refresh is uncommitted.
-- **Latest CI:** **GREEN** — `ea2863d` (P2-7) = GitHub Actions success. Locally `make check` 995 passed + full-PG exit 0. Prior `4534a38` (TD-1) green; chain #98–P2-7 all green.
-- **Migration head:** `0029_benchmark_series` — advanced `0028_var_historical` → `0029_benchmark_series` at **P2-7** (`ea2863d`): the two ENT-052 FR tables `benchmark_level` (level_value NUMERIC(20,6)) + `benchmark_return` (return_value NUMERIC(20,12)) under the ENT-009 header; symmetric FORCE RLS (NEVER hybrid); NEITHER append-only; partial-unique current-head indexes; `PreciseDecimal`→`NUMERIC(p,s)` byte-identical so `alembic check` is a no-op; downgrade→base→head cycled clean. `0028_var_historical` (VAR-HS-1) was the prior head. Drift-clean. **Next migration lands at the next separately-approved implementation slice.**
+- **origin/main HEAD:** `65e6dbe` — "Implement P3-7 ex-ante active risk / tracking error with full ultrareview folds" (**CI run #130 green**). Chain since P3-3: `7c50c43` (**P3-3 implementation**, #95) → `362481a` (P3-3 closeout memory) → `8abe764` (**P3-4 planning**, OQs ratified) → `a9b6567` (**P3-4-R0 refactor**, #98) → `c2bd126` (**P3-4 IMPLEMENTATION + 12 review folds**, #99) → `c2480a4` (P3-4 closeout memory, #100) → `c2c1b4d` (**P3-5 parametric-VaR planning**, OQ-P3-5-1..10 ratified + the historical-sim/MC ROADMAP note, #101) → `5ed8271` (**P3-5 IMPLEMENTATION + 13 review folds**, #102) → `d94e572` (P3-5 closeout memory, #103) → `c2e85ac` (**P3-C1 hardening planning**, OQ-P3-C1-1..8 ratified after a plain-language briefing, #104) → `0599f7f` (**P3-C1 IMPLEMENTATION + 12 review folds**, #105) → `ee3c581` (P3-C1 closeout memory, #106) → `416cb1d` (**FE-1 frontend runs-view planning**, OQ-FE-1-1..8 ratified, #107) → `678a651` (**FE-1 IMPLEMENTATION + 16 review folds — the FIRST VISIBLE UI SLICE**, #108) → `945661d` (FE-1 closeout memory, #109) → `63a1bb8` (**the RATIFIED delivery roadmap + the documentation-alignment audit**, #110) → `76c7942` (**TC-1 planning**, OQ-TC-1-1..5 ratified, #111) → `c34b346` (**TC-1 IMPLEMENTATION — Wave-1 slice 1**, #112) → `df04e1d` (TC-1 closeout memory, #113) → `ec1f582` (**VAR-HS-1 planning**, OQ-VAR-HS-1-1..7 ratified, #116) → `29ae31b` (**VAR-HS-1 IMPLEMENTATION — Wave-1 slice 2 — the FIFTH governed risk number**, **CI #117 green**) → `a4d0f89` (**P3-C2 hardening/consolidation planning**, OQ-P3-C2-1..6 ratified, #118) → `6fb1a13` (**P3-C2 IMPLEMENTATION — Wave-1 slice 3 — the four-follow-up paydown; scaffold relocated risk→calc; full 6-finder review, 9 folds; NO migration**, **CI green**) → `13f71df` (P3-C2 closeout memory) → `a4d0f89`…`04c4135` (**P2-7 planning** — benchmark price/level capture / ENT-052, OQ-P2-7-1..8 ratified, CI green) → `2569151` (**TD-1 planning** — test-data realism audit, Wave-1 slice 3.5 insertion, OQ-TD-1-1..6 ratified) → `ac92e0b` (**TD-1 IMPLEMENTATION — fixture-realism remediation; 4 independent finder passes; test-and-docs only; NO migration**, **CI green**) → `4534a38` (**TD-1 follow-up** — 2 more completeness-sweep folds, **CI green**) → `ea2863d` (**P2-7 IMPLEMENTATION — Wave-1 slice 4 — ENT-052 benchmark_level+benchmark_return; migration `0029`; captured returns only; full 6-finder review, ~10 folds; unblocks P3-7**, **CI green**) → `367f602` (P2-7 closeout memory) → `552b954` (**P3-7 planning** — ex-ante active risk / tracking error, OQ-P3-7-1..10 ratified) → `65e6dbe` (**P3-7 IMPLEMENTATION — Wave-1 slice 5 — the SIXTH governed risk number: `active_risk_result` ENT-027, migration `0030`, `COMPONENT_KIND_BENCHMARK`; the FIRST user-directed FULL max-effort multi-agent review ("ultrareview": 10 finders + 6 empirical verifiers + gap sweep), 21 folds incl. run_type=ACTIVE_RISK + 3 missing CI PG steps; 3 deferred findings in the record Part 6**, **CI green**). Earlier chain: Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
+- **Local == origin:** yes (0 ahead / 0 behind); only this P3-7 closeout memory refresh is uncommitted.
+- **Latest CI:** **GREEN** — `65e6dbe` (P3-7) = GitHub Actions run **#130** success — the FIRST run executing the three previously-missing PG RLS steps (`test_active_risk_pg.py` + the pre-existing gaps `test_benchmark_series_pg.py`/`test_exposure_runs_pg.py`, an ultrareview conventions finding). Locally `make check` 1044 passed + full-PG 230 + downgrade smoke `0030→0029→0030`. Chain #98–P3-7 all green.
+- **Migration head:** `0030_active_risk` — advanced `0029_benchmark_series` → `0030_active_risk` at **P3-7** (`65e6dbe`): the ENT-027 third-realization table `active_risk_result` (te_value NUMERIC(20,12) daily fraction; portfolio_value NUMERIC(28,6) evidence; 3 hard-FK provenance columns incl. `benchmark_id`; UNIQUE `(calculation_run_id, metric_type)`); **IA TRUE append-only** (P0001 trigger + ORM guard); symmetric FORCE RLS (NEVER hybrid); `alembic check` no-op; downgrade smoke cycled clean. **Next migration lands at the next separately-approved implementation slice.**
 - **Networking note (this machine):** SSH to GitHub is unreliable on some networks (lossy-link/PMTU class — pushes stall mid-key-exchange while HTTPS works); the reliable push path is **HTTPS + the keychain-cached PAT**; CI verification via the public REST API always works. A full-repo safety bundle exists at `../irp-p3-3-7c50c43.bundle`.
 
 ## Working tree (uncommitted)
-- **This P2-7 closeout memory refresh only** (Tier 0 — docs-only): the project-memory files + the roadmap's Wave-1 slice-4 DONE marker advanced to `ea2863d`/CI-green.
+- **This P3-7 closeout memory refresh only** (Tier 0 — docs-only): the project-memory files + the roadmap's Wave-1 slice-5 DONE marker + the decision-record CLOSED stamp advanced to `65e6dbe`/CI-#130-green.
 
 ## Current active gate
-**P3-0 … P3-5 + P3-C1 + FE-1 + TC-1 + VAR-HS-1 + P3-C2 + TD-1 + P2-7 are ALL COMPLETE and CI-green; the RATIFIED
-`delivery_roadmap.md` (Wave 1) is the operative sequence.** Most recent: **P2-7** (`ea2863d`, CI-green; plan
-`04c4135`) closed Wave-1 slice **4** — benchmark price/level capture: the net-new **ENT-052**
-(`benchmark_level` + `benchmark_return`, two FR bitemporal captured-input tables under the ENT-009 benchmark
-header; migration `0029`). Captured vendor-published returns ONLY (no calc from levels); `level_type` /
-`return_basis` variant discriminators; REUSE `marketdata.view`/`.ingest` (no new permission); six additive
-`MARKET.BENCHMARK_LEVEL_*`/`_RETURN_*` audit codes; the new-binder DQ resolve-or-register written race-safe from
-birth (P3-C2 OD-E). Full 6-finder review (~10 folds, no shipped bug). **Discharges OD-P2-6-K; unblocks P3-7.**
-Before it, **TD-1** (`ac92e0b`+`4534a38`) closed the slice-3.5 test-data-realism hygiene insertion (the standing
-fixture-realism rule in `08_testing_qa/test_data_realism.md`). **Next per the roadmap: P3-7 — benchmark-relative
-analytics** (tracking error / active risk over the P2-7 data + the existing engine; planning on explicit
-direction). Model/effort recommendation standing rule (2026-07-08): append a
+**P3-0 … P3-5 + P3-C1 + FE-1 + TC-1 + VAR-HS-1 + P3-C2 + TD-1 + P2-7 + P3-7 are ALL COMPLETE and CI-green; the
+RATIFIED `delivery_roadmap.md` (Wave 1) is the operative sequence.** Most recent: **P3-7** (`65e6dbe`,
+CI run #130 green; plan `552b954`) closed Wave-1 slice **5** — the **SIXTH governed risk number: ex-ante active risk /
+tracking error** `TE = √(wₐᵀΣwₐ)` (Grinold-Kahn/Roll, daily unannualized, EX-ANTE only — ex-post deferred on
+the portfolio-return prerequisite, OD-G): `active_risk_result` (ENT-027 third realization, migration `0030`,
+IA append-only, 3 hard-FK provenance columns incl. `benchmark_id`); `ACTIVE_RISK_INPUT` snapshot pinning
+FACTOR_EXPOSURE + COVARIANCE + FACTOR + the newly minted `COMPONENT_KIND_BENCHMARK` (FR-version pins, TR-09);
+registered `risk.active_risk.parametric` v1 (code_version-only identity); run family `ACTIVE_RISK`, metric
+`TRACKING_ERROR`; fail-closed adjudication (NO imputation). **The FIRST user-directed FULL max-effort
+multi-agent review ("ultrareview"): 10 finder angles + 6 empirical verifiers + a gap sweep — 21 findings
+folded** (incl. the run_type family/metric split, kernel-overflow→committed-FAILED, adjudication hardening
+each test-pinned, and 3 previously-missing CI PG RLS steps), 3 refuted/rejected-as-designed, **3
+recorded-deferred in `p3_7_decision_record.md` Part 6** (var_service V2/V5 twins; shared covariance
+adjudicator; lineage batching). **Remaining Wave-1: P3-6 (stress/scenario) then the Wave-1 close review**
+(planning on explicit direction). Model/effort recommendation standing rule (2026-07-08): append a
 next-step model+effort suggestion to every gate briefing (Sonnet/medium for commit-and-closeout mechanics;
 Opus 4.8/high for templated implementation with a shipped exemplar like P3-C2; Fable/high for novel
 methodology/planning/review-synthesis — extra-high/max reserved for wave-close benchmark reviews or gnarly
 debugging). Strict planning-first cadence + the gate tiers hold. **Frontend visibility: the FE-1 read-only view
 EXISTS (dev-shim session, permanent DEV banner) and now ALSO surfaces VAR-HS-1 runs with zero frontend changes;
 anything further (dashboards, charts, mutations, more domains) remains explicitly gated.**
+
+## P3-7 key deliverables (closed, `65e6dbe`, CI-green run #130) — Wave-1 slice 5; the SIXTH governed RISK number (record `p3_7_decision_record.md`)
+**Ex-ante active risk / parametric tracking error** (OD-P3-7-A…H; plan `552b954`): `TE = √(wₐᵀΣwₐ)` — active
+weights `wₐ = w_p − w_b`, BOTH sides mapped through the ONE allocation-v1 currency-factor model
+(`build_factor_index` — Barra-style symmetry); daily UNANNUALIZED; EX-ANTE only (ex-post TE / active return /
+IR deferred on a governed portfolio-return series — OD-G).
+- **`active_risk_result`** (ENT-027, third realization; migration `0030`): single-summary-row grain
+  `(calculation_run_id, metric_type='TRACKING_ERROR')`; IA TRUE append-only; symmetric FORCE RLS; hard-FK
+  provenance `factor_exposure_run_id`/`covariance_run_id`/`benchmark_id` + `benchmark_effective_date` +
+  `portfolio_value` evidence. **Run family `ACTIVE_RISK` ≠ metric `TRACKING_ERROR`** (a review amendment to
+  OD-F — the family hosts the reserved ex-post metrics).
+- **`ACTIVE_RISK_INPUT`** snapshot: FACTOR_EXPOSURE + COVARIANCE IA-row pins + FACTOR EV pins + the newly
+  minted **`COMPONENT_KIND_BENCHMARK`** (FR-version constituent pins — supersede/correction invisible, TR-09;
+  pin invariance test-proven under upstream re-runs AND a benchmark restatement). Binding predicate
+  `v1:fexp-rows+cov-rows+cov-factors+benchmark-set` (+ an import-time varchar(50) guard over ALL predicates).
+- **Registered `risk.active_risk.parametric` v1** — code_version-only identity (NO numeric parameter);
+  methodology doc `active_risk_parametric_v1.md`; `risk.view`/`risk.run` REUSED; `RISK.ACTIVE_RISK_CREATE`
+  reserved-not-minted; consume-path golden **0.007211102551**; fail-closed adjudication (NO imputation:
+  NULL/blank currencies, unmappable currency, zero book, Σw_b ≤ 0, coverage gaps, duplicate pins of EVERY
+  kind all refuse pre-create; kernel magnitude overflow → committed FAILED, never a 500).
+- **Review (Part 6):** the FIRST user-directed FULL max-effort multi-agent "ultrareview" — 10 finder angles →
+  22 deduped candidates → 6 verifiers with empirical probes → gap sweep. **21 folds** (correctness hardening
+  each test-pinned; 3 previously-missing CI PG RLS steps incl. two PRE-EXISTING gaps; the run_type split; the
+  fexp-rows rename), 3 refuted/rejected-as-designed (kept), **3 recorded-deferred**: the `var_service.py`
+  TypeError/base_currency twins, the shared covariance-pin adjudicator extraction, `_persist_snapshot`
+  lineage batching. Validation post-fold: make check 1044 / full-PG 230 / downgrade smoke / fe-check 43 +
+  build / diff fence clean.
 
 ## P3-C2 key deliverables (closed, `6fb1a13`, CI-green) — Wave-1 slice 3; hardening/consolidation (record `p3_c2_decision_record.md`)
 The four recorded FE-1/P3-C1/P3-5 follow-ups swept in one slice; NO new governed number/entity/permission/audit code; NO migration.
@@ -359,9 +389,9 @@ ambiguity inside a slice → ask the user with a recommendation attached (their 
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `ea2863d`) and whether this P2-7 closeout memory refresh was committed.
-- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated, 60 req/hr — the watcher script polls 30s-then-75s within budget; `29ae31b` = run #117 = success at this refresh). **Push over HTTPS + keychain PAT when SSH stalls** (the lossy-network note above); URL-pushes don't move the tracking ref — `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)` after.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `65e6dbe`) and whether this P3-7 closeout memory refresh was committed.
+- Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated, 60 req/hr — the watcher script polls 30s-then-75s within budget; `65e6dbe` = run #130 = success at this refresh; SSH pushed cleanly this session). **Push over HTTPS + keychain PAT when SSH stalls** (the lossy-network note above); URL-pushes don't move the tracking ref — `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)` after.
 - `git remote -v` — origin is SSH (`git@github.com:ghostai8088/…`).
-- Migration head is `0029_benchmark_series` (P2-7 / `ea2863d`); the next migration lands ONLY at the next separately-approved implementation slice.
+- Migration head is `0030_active_risk` (P3-7 / `65e6dbe`); the next migration lands ONLY at the next separately-approved implementation slice.
 - `project_state.yaml` is **RETIRED** (2026-07-06 stub; found drifted at the P3-3 planning session) — the recovery set is `CLAUDE.md` + this file + `phase_status.md` + `next_actions.md`.
 - **This machine's environment (verified 2026-07-07):** the repo sits nested at `~/Projects/investment_risk_platform/investment-risk-platform/`; the venv is **Python 3.13.0** (CI runs 3.12); **`irp_pg_local` IS stood up** (reused `postgres:16`; `postgresql+psycopg://irp:irp@localhost:5432/irp`) — reset the schema between full PG pytest runs and NEVER manually grant `irp_ops` schema USAGE (migrations re-grant; the extra grant breaks the downgrade smoke); `gh` is not installed (use the public REST API).
