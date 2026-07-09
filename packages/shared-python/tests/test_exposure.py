@@ -317,7 +317,9 @@ def test_reproducible_under_fx_correction(session: Session) -> None:
         restatement_reason="vendor restatement",
         acting_tenant=tenant,
         actor=FxRateActor(actor_id="s"),
-        rate=Decimal("9.99"),
+        # a realistic EUR/USD, distinct from the pinned base 1.10 (the correction must NOT leak
+        # into the snapshot-reproduced rerun asserted below)
+        rate=Decimal("1.25"),
     )
     session.flush()
     # Re-run over the SAME snapshot — the captured FX is reused; exposure is identical.

@@ -365,7 +365,9 @@ def test_reproducible_under_curve_correction(session: Session) -> None:
                 tenor_label="1Y",
                 tenor_days=365,
                 value_type="ZERO_RATE",
-                point_value=Decimal("0.99"),
+                # a realistic zero rate, distinct from the pinned base 0.05 (the correction must
+                # NOT leak into the snapshot-reproduced rerun asserted below)
+                point_value=Decimal("0.07"),
             )
         ],
         acting_tenant=tenant,

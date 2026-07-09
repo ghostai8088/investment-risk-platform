@@ -99,3 +99,15 @@ it was run:
 **Validation (post-fold, all green):** `make check` (968 passed) · full-PG suite exit 0 · `make fe-check` 39 +
 build (frontend untouched) · diff fence clean (4 test files + 2 docs) · `alembic check` N/A (no migration). No
 TD-2 split needed — the escape hatch (OD-TD-1-6) was not triggered; the whole audit fit in one slice.
+
+**Follow-up completeness sweep (post-commit `ac92e0b`, user-directed).** Because the review had already caught two
+completeness misses, a 4th independent finder was run over the fixture-value FORMS the author's `return_value=`
+grep under-covered (dict helpers, positional args, list constants, JSON bodies, kernel kwargs). It found TWO more
+of the SAME class — implausible post-correction "distinguishing" values in the `field=Decimal(...)` kwarg form,
+in files the first pass never touched: `test_sensitivity.py` (a curve correction `point_value=0.99`, a 99% zero
+rate → `0.07`) and `test_exposure.py` (an FX correction `rate=9.99`, ≈9× EUR/USD → `1.25`). Both are correction
+values that never enter an asserted output (the rerun consumes the pinned snapshot and asserts `again == before`),
+so a plausible-but-distinct value preserves the pin-invariance signal with no re-derivation. FOLDED; the two
+touched suites (+ `test_exposure_pg`) and `make check` re-verified green; fence still test-and-docs only. This
+sweep VALIDATES the earlier proportionality concern: the reduced review missed same-class items in untouched
+files, confirming that for a completeness-type slice, broad form-coverage matters more than depth on the diff.
