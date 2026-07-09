@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `29ae31b` / CI #117 (refreshed 2026-07-08).** What to do
+> **As of HEAD `6fb1a13` / CI green (P3-C2; refreshed 2026-07-08).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -124,19 +124,31 @@ OD-VHS-C widened — the third nullable column + the CHECK constraint + the RLS-
 binder precision fixes (the magnitude-FAILED gate was dead code — now reachable, test-proven both engines),
 registry-honesty corrections, and a hand-minted adjudication vehicle driving 16 new gate-probe tests (incl. a
 cross-tenant provenance regression that had silently survived the original 17-test suite). Full-PG 1142 passed.
+→ **P3-C2 PLANNING** (`a4d0f89`, CI **#118** — `p3_c2_decision_record.md` OD-P3-C2-A…F; OQ-P3-C2-1…6 RATIFIED) →
+**P3-C2 IMPLEMENTATION (`6fb1a13`, CI green)**: **Wave-1 slice 3 — the four-follow-up hardening paydown.** Exposure
+adopts the shared `execute_governed_run` scaffold (RELOCATED `risk/scaffold.py`→`calc/scaffold.py` so exposure
+adopts it without crossing the one-way exposure↛risk fence — Part 4.5; FAILED exposure runs now persist
+`failure_reason` + keep the DEPENDS_ON edge, COMPLETED byte-preserved to the P3-C1 golden bar); new
+`exposure.view`-gated `GET /exposure/runs` + the FE runs view surfacing exposure as a fifth family (source-switch,
+not merge — Part 4.6); `PreciseDecimal` parity for every captured decimal column with precision ≥16 (incl. the
+`transaction` table via the review — NO migration, DDL-identical); the DQ-rule first-registration savepoint race.
+**Full 6-finder review: 9 findings, ALL folded, no deferrals** (2 finders clean). Validation: make check 968 /
+full-PG 1177 / alembic no-op / downgrade clean / fe-check 39+build / diff fence clean (30 files).
 
 **NEXT — per the RATIFIED `10_delivery_backlog/delivery_roadmap.md` (Wave 1; no option menu — the sequence IS the
 decision; re-sequencing only via its Part 4 rules):**
 1. ✅ **TC-1 — FE toolchain bump** — **DONE (`c34b346`, CI #112)**
 2. ✅ **VAR-HS-1 — historical-simulation VaR** — **DONE (`29ae31b`, CI #117)**
-3. **P3-C2 — hardening bundle** (exposure scaffold/reason + FE listing; captured-table PreciseDecimal parity;
-   the DQ-rule registration race)
-4. **P2-7 — benchmark price/level capture** (net-new canonical ENT id; unblocks P3-7)
+3. ✅ **P3-C2 — hardening bundle** — **DONE (`6fb1a13`, CI green)** (exposure scaffold/reason + FE listing;
+   captured-table PreciseDecimal parity incl. `transaction`; the DQ-rule registration savepoint race; scaffold
+   relocated risk→calc; full 6-finder review, 9 folds; NO migration)
+4. **P2-7 — benchmark price/level capture** (net-new canonical ENT id; unblocks P3-7) ← **NEXT**
 5. **P3-7 — benchmark-relative analytics** → 6. **P3-6 — stress/scenario** → the Wave-1 close review + re-baseline.
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
-Tier-2 commit approval. The next concrete step is **P3-C2 planning, on explicit direction** — a templated
-consolidation slice (the P3-C1 exemplar); model/effort recommendation: **Opus 4.8 / high** (per the 2026-07-08
-standing rule — Fable is reserved for novel methodology/planning work, not templated hardening bundles).
+Tier-2 commit approval. The next concrete step is **P2-7 planning, on explicit direction** — a **net-new canonical
+entity + captured-data methodology** slice (benchmark price/level capture, unblocking P3-7's return-based legs);
+model/effort recommendation: **Fable / high** (per the 2026-07-08 standing rule — Fable IS the best fit for
+novel methodology/captured-data + canonical-id design, regardless of usage budget).
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.

@@ -1,8 +1,8 @@
 # Current State
 
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
-> history. Read this first, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence) + `var_hs_1_decision_record.md` (the latest record), `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD
-> `29ae31b` / CI #117 (refreshed 2026-07-08).** Values that
+> history. Read this first, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence) + `p3_c2_decision_record.md` (the latest record), `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD
+> `6fb1a13` / CI green (P3-C2 implementation; refreshed 2026-07-08).** Values that
 > drift are flagged; re-verify the ones in "Re-check at session start" before acting. *(`project_state.yaml`
 > is RETIRED — see its stub; the recovery set is `CLAUDE.md` → this file → `phase_status.md` → `next_actions.md`.)*
 
@@ -12,28 +12,41 @@
 - **Remote:** `github.com/ghostai8088/investment-risk-platform` (branch `main`). **origin is now SSH** (`git@github.com:…`; Keychain-backed key — see Housekeeping).
 
 ## Latest known committed state
-- **origin/main HEAD:** `29ae31b` — "Implement VAR-HS-1 historical-simulation VaR with adversarial-review folds" (**CI run #117 green**). Chain since P3-3: `7c50c43` (**P3-3 implementation**, #95) → `362481a` (P3-3 closeout memory) → `8abe764` (**P3-4 planning**, OQs ratified) → `a9b6567` (**P3-4-R0 refactor**, #98) → `c2bd126` (**P3-4 IMPLEMENTATION + 12 review folds**, #99) → `c2480a4` (P3-4 closeout memory, #100) → `c2c1b4d` (**P3-5 parametric-VaR planning**, OQ-P3-5-1..10 ratified + the historical-sim/MC ROADMAP note, #101) → `5ed8271` (**P3-5 IMPLEMENTATION + 13 review folds**, #102) → `d94e572` (P3-5 closeout memory, #103) → `c2e85ac` (**P3-C1 hardening planning**, OQ-P3-C1-1..8 ratified after a plain-language briefing, #104) → `0599f7f` (**P3-C1 IMPLEMENTATION + 12 review folds**, #105) → `ee3c581` (P3-C1 closeout memory, #106) → `416cb1d` (**FE-1 frontend runs-view planning**, OQ-FE-1-1..8 ratified, #107) → `678a651` (**FE-1 IMPLEMENTATION + 16 review folds — the FIRST VISIBLE UI SLICE**, #108) → `945661d` (FE-1 closeout memory, #109) → `63a1bb8` (**the RATIFIED delivery roadmap + the documentation-alignment audit**, #110) → `76c7942` (**TC-1 planning**, OQ-TC-1-1..5 ratified, #111) → `c34b346` (**TC-1 IMPLEMENTATION — Wave-1 slice 1**, #112) → `df04e1d` (TC-1 closeout memory, #113) → `ec1f582` (**VAR-HS-1 planning**, OQ-VAR-HS-1-1..7 ratified, #116) → `29ae31b` (**VAR-HS-1 IMPLEMENTATION — Wave-1 slice 2 — the FIFTH governed risk number**, **CI #117 green**). Earlier chain: Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
-- **Local == origin:** yes (0 ahead / 0 behind); only this closeout memory refresh is uncommitted.
-- **Latest CI:** **GREEN** — `29ae31b` = GitHub Actions **run #117** = success (full-PG 1142 passed at implementation time; the new `test_var_hs_pg.py` step green). Chain #98–#117 all green.
-- **Migration head:** `0028_var_historical` — advanced `0027_run_failure_reason` → `0028_var_historical` (VAR-HS-1, `29ae31b`: `var_result.z_score`/`sigma`/`covariance_run_id` made nullable, metric-conditional via a new `ck_var_result_parametric_not_null` CHECK; the downgrade is DESTRUCTIVE — it deletes `VAR_HISTORICAL` rows, RLS-safe, cycled twice in both directions with real exit codes over suite-created data). Drift-clean.
+- **origin/main HEAD:** `29ae31b` — "Implement VAR-HS-1 historical-simulation VaR with adversarial-review folds" (**CI run #117 green**). Chain since P3-3: `7c50c43` (**P3-3 implementation**, #95) → `362481a` (P3-3 closeout memory) → `8abe764` (**P3-4 planning**, OQs ratified) → `a9b6567` (**P3-4-R0 refactor**, #98) → `c2bd126` (**P3-4 IMPLEMENTATION + 12 review folds**, #99) → `c2480a4` (P3-4 closeout memory, #100) → `c2c1b4d` (**P3-5 parametric-VaR planning**, OQ-P3-5-1..10 ratified + the historical-sim/MC ROADMAP note, #101) → `5ed8271` (**P3-5 IMPLEMENTATION + 13 review folds**, #102) → `d94e572` (P3-5 closeout memory, #103) → `c2e85ac` (**P3-C1 hardening planning**, OQ-P3-C1-1..8 ratified after a plain-language briefing, #104) → `0599f7f` (**P3-C1 IMPLEMENTATION + 12 review folds**, #105) → `ee3c581` (P3-C1 closeout memory, #106) → `416cb1d` (**FE-1 frontend runs-view planning**, OQ-FE-1-1..8 ratified, #107) → `678a651` (**FE-1 IMPLEMENTATION + 16 review folds — the FIRST VISIBLE UI SLICE**, #108) → `945661d` (FE-1 closeout memory, #109) → `63a1bb8` (**the RATIFIED delivery roadmap + the documentation-alignment audit**, #110) → `76c7942` (**TC-1 planning**, OQ-TC-1-1..5 ratified, #111) → `c34b346` (**TC-1 IMPLEMENTATION — Wave-1 slice 1**, #112) → `df04e1d` (TC-1 closeout memory, #113) → `ec1f582` (**VAR-HS-1 planning**, OQ-VAR-HS-1-1..7 ratified, #116) → `29ae31b` (**VAR-HS-1 IMPLEMENTATION — Wave-1 slice 2 — the FIFTH governed risk number**, **CI #117 green**) → `a4d0f89` (**P3-C2 hardening/consolidation planning**, OQ-P3-C2-1..6 ratified, #118) → `6fb1a13` (**P3-C2 IMPLEMENTATION — Wave-1 slice 3 — the four-follow-up paydown; scaffold relocated risk→calc; full 6-finder review, 9 folds; NO migration**, **CI green**). Earlier chain: Chain since P2-6: `ae2be8e` (P2-6 closeout memory, #85) → `bb73211` (**P2 closeout / P3 readiness review**; CI re-trigger `6663452` = #86) → `07607a5` (**P3-0 decision record + P3 implementation plan**, #87) → `1a8b2a4` (**P3-1 plan**, #88) → `e8e2e59` (**P3-1 implementation**, batch-pushed) → `5466a09` (**P3-2 plan**, batch-pushed) → `402cb12` (**P3-2 implementation**, #89) → `c452229` (**P3-2 closeout / P3-3 readiness anchor**, #90) → `f941d50` (**P3-3 plan + memory refresh + governance-qualifier cleanup + model-agnostic trailer rule**, #91) → `b3d3923` (**operating-discipline modernization**, #92) → `5c64cf1` (**retrospective model-upgrade audit + status-decay fixes**, #93) → `bd5ba3c` (**gate tiers + OQ-P3-3 ratification**, #94) → `7c50c43` (**P3-3 IMPLEMENTATION + review folds**, #95).
+- **Local == origin:** yes (0 ahead / 0 behind); only this P3-C2 closeout memory refresh is uncommitted.
+- **Latest CI:** **GREEN** — `6fb1a13` (P3-C2) = GitHub Actions success (full-PG 1177 items, 0 failures at implementation time; the new `test_exposure_runs_pg.py` step green). Prior `29ae31b` = run #117. Chain #98–P3-C2 all green.
+- **Migration head:** `0028_var_historical` — **UNCHANGED by P3-C2** (the slice is type-decorator-only + additive-read + concurrency-logic; `PreciseDecimal` renders `NUMERIC(p,s)` byte-identically on PG, so `alembic check` stays a no-op — verified on the local PG run + downgrade→base→head cycled clean, head stayed `0028`). VAR-HS-1 (`29ae31b`) was the last migration: `0027_run_failure_reason` → `0028_var_historical` (`var_result.z_score`/`sigma`/`covariance_run_id` nullable, metric-conditional `ck_var_result_parametric_not_null` CHECK; DESTRUCTIVE RLS-safe downgrade). Drift-clean.
 - **Networking note (this machine):** SSH to GitHub is unreliable on some networks (lossy-link/PMTU class — pushes stall mid-key-exchange while HTTPS works); the reliable push path is **HTTPS + the keychain-cached PAT**; CI verification via the public REST API always works. A full-repo safety bundle exists at `../irp-p3-3-7c50c43.bundle`.
 
 ## Working tree (uncommitted)
-- **This VAR-HS-1 closeout memory refresh only** (Tier 0 — docs-only): the five project-memory files + the `var_hs_1_decision_record.md` status/closeout stamps advanced to `29ae31b`/#117 + the roadmap's Wave-1 slice-2 DONE marker.
+- **This P3-C2 closeout memory refresh only** (Tier 0 — docs-only): the five project-memory files + the `p3_c2_decision_record.md` status/closeout stamps advanced to `6fb1a13`/CI-green + the roadmap's Wave-1 slice-3 DONE marker.
 
 ## Current active gate
-**P3-0 … P3-5 + P3-C1 + FE-1 + TC-1 + VAR-HS-1 are ALL COMPLETE and CI-green; the RATIFIED `delivery_roadmap.md`
-(Wave 1) is the operative sequence.** VAR-HS-1 (`29ae31b`, CI #117; plan `ec1f582`, #116) closed Wave-1 slice 2:
-**the platform's FIFTH governed risk number and second VaR method** — plain equal-weight factor-based historical
-simulation (`risk.var.historical` v1; the empirical lower order statistic over pinned factor-return windows, no
-distributional assumption). See the deliverables section below. **Next per the roadmap: P3-C2 (the hardening
-bundle), planning on explicit direction.** Model/effort recommendation standing rule (2026-07-08): append a
+**P3-0 … P3-5 + P3-C1 + FE-1 + TC-1 + VAR-HS-1 + P3-C2 are ALL COMPLETE and CI-green; the RATIFIED
+`delivery_roadmap.md` (Wave 1) is the operative sequence.** P3-C2 (`6fb1a13`, CI-green; plan `a4d0f89`, #118)
+closed Wave-1 slice 3: **the four-follow-up hardening/consolidation paydown** — exposure adopts the shared
+governed-run scaffold (relocated `risk/scaffold.py`→`calc/scaffold.py` so exposure adopts it without crossing the
+one-way exposure↛risk fence; FAILED exposure runs now persist `failure_reason` + keep their DEPENDS_ON edge); a
+new `exposure.view`-gated `GET /exposure/runs` + the FE runs view surfacing exposure as a fifth family
+(source-switch, not merge); `PreciseDecimal` parity for every captured decimal column with precision ≥16 (incl.
+the `transaction` table via the review — NO migration, DDL-identical); and the DQ-rule first-registration savepoint
+race fix. Full 6-finder review, 9 findings all folded. See the deliverables section below. **Next per the roadmap:
+the next Wave-1 slice on explicit direction (P2-7 benchmark price/level capture is a live Fable-tier methodology
+candidate; see `next_actions.md`/roadmap).** Model/effort recommendation standing rule (2026-07-08): append a
 next-step model+effort suggestion to every gate briefing (Sonnet/medium for commit-and-closeout mechanics;
 Opus 4.8/high for templated implementation with a shipped exemplar like P3-C2; Fable/high for novel
 methodology/planning/review-synthesis — extra-high/max reserved for wave-close benchmark reviews or gnarly
 debugging). Strict planning-first cadence + the gate tiers hold. **Frontend visibility: the FE-1 read-only view
 EXISTS (dev-shim session, permanent DEV banner) and now ALSO surfaces VAR-HS-1 runs with zero frontend changes;
 anything further (dashboards, charts, mutations, more domains) remains explicitly gated.**
+
+## P3-C2 key deliverables (closed, `6fb1a13`, CI-green) — Wave-1 slice 3; hardening/consolidation (record `p3_c2_decision_record.md`)
+The four recorded FE-1/P3-C1/P3-5 follow-ups swept in one slice; NO new governed number/entity/permission/audit code; NO migration.
+- **OD-B — exposure on the shared scaffold.** `run_exposure` adopts `execute_governed_run`, RELOCATED `risk/scaffold.py`→`calc/scaffold.py` (neutral home; keeps the ratified `test_scope_fence_no_risk_imports_or_identifiers` exposure↛risk fence clean — Part 4.5). FAILED exposure runs now PERSIST `failure_reason` and keep the snapshot→run DEPENDS_ON edge; COMPLETED-path behavior byte-preserved (golden at `test_p3c2_exposure_scaffold.py`, held to the P3-C1 audit-sequence + DQ-identity bar).
+- **OD-C — exposure in the FE listing.** New `exposure.view`-gated `GET /exposure/runs` + `list_exposure_runs` (`irp_shared/exposure/queries.py`, fenced to `EXPOSURE_AGGREGATE`). FE runs view SOURCE-SWITCHES per family (not a client-side merge — Part 4.6); heading is now family-neutral "Runs"; `ExposureRunSummaryOut` carries `model_version_id: str|None` (always None) for byte parity with risk.
+- **OD-D — captured-input `PreciseDecimal` parity.** Every captured decimal column with precision ≥16 converted (position/valuation/marketdata/reference + `transaction.{quantity,price,gross_amount}` via the review); `coupon_rate(12,6)`/`bump_bps(10,4)`/`confidence_level(6,4)` stay plain. DDL-identical on PG; invariant pinned by `test_p3c2_precision_parity._CONVERTED` (14 cols).
+- **OD-E — DQ-rule first-registration race.** `ensure_presence_rule` wraps the INSERT in `begin_nested()` + `except IntegrityError` re-SELECT — 500-on-race → clean resolve, no dangling audit (`test_p3c2_dq_rule_race.py`).
+- **Review (Part 6):** full 6-finder, 9 findings ALL folded (model_version_id parity, transaction completeness, exposure golden-bar proofs, exposure PG coverage `test_exposure_runs_pg.py`, doc conformance); 2 finders clean. Validation: make check 968 / full-PG 1177 / alembic no-op / downgrade clean / fe-check 39 + build / diff fence clean (30 files).
 
 ## VAR-HS-1 key deliverables (closed, `29ae31b`, CI-green run #117) — Wave-1 slice 2; the FIFTH governed risk number
 **Historical-simulation VaR** (OD-VHS-A…G; plan `ec1f582`, #116): plain equal-weight factor-based historical
@@ -92,8 +105,10 @@ generic resolver + P7 validation semantics untouched). **(C) persisted `calculat
 Text; migration `0027_run_failure_reason`; `update_run_status(failure_reason=)` persists on the FAILED transition
 ONLY; the audit payload UNCHANGED — DQ rows remain the durable evidence; the four GET-run endpoints surface it; all
 four binder reason formats preserved VERBATIM). **(D) the run-scaffold extraction** —
-`risk/scaffold.py::execute_governed_run` (create_run → RUNNING → DEPENDS_ON → compute → fail-closed gate → FAILED+
-reason | rows+ORIGIN+COMPLETED) consumed by all four risk binders under the R0 behavior-preservation bar, **proven
+`calc/scaffold.py::execute_governed_run` (**relocated from `risk/scaffold.py` at P3-C2** so exposure could adopt it
+without crossing the one-way exposure↛risk fence; create_run → RUNNING → DEPENDS_ON → compute → fail-closed gate →
+FAILED+reason | rows+ORIGIN+COMPLETED) consumed by all four risk binders AND exposure under the R0
+behavior-preservation bar, **proven
 by golden captures written green PRE-extraction** (`test_p3c1_scaffold_preservation.py`: audit sequences + lineage
 CONTENT + DQ-rule CONTENT + exact reason formats; one finder re-ran the goldens against the stashed pre-extraction
 code). **(E) `PreciseDecimal` parity** for the 8 float53-unsafe result columns (`sensitivity_value(28,12)`,
@@ -343,7 +358,7 @@ ambiguity inside a slice → ask the user with a recommendation attached (their 
 - A **plaintext GitHub PAT file** was observed in the **parent directory** (one level ABOVE the repo root, OUTSIDE version control — never staged/tracked). The user **deleted the file** and **revoked the token** on GitHub (2026-06-22), and migrated git auth to an **SSH key** (ed25519, passphrase cached in the macOS Keychain; `origin` switched to `git@github.com`). **Standing rule: never read/copy/print/use any credential file found on disk — flag it for the user to revoke/rotate. Do NOT inspect token contents.**
 
 ## Re-check at session start (may have drifted)
-- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `29ae31b`) and whether this VAR-HS-1 closeout memory refresh was committed.
+- `git log -1 --oneline` and `git status --short` — confirm HEAD (≥ `6fb1a13`) and whether this P3-C2 closeout memory refresh was committed.
 - Latest CI conclusion for the current HEAD (GitHub Actions; `gh` CLI is NOT installed — the public repo REST API answers unauthenticated, 60 req/hr — the watcher script polls 30s-then-75s within budget; `29ae31b` = run #117 = success at this refresh). **Push over HTTPS + keychain PAT when SSH stalls** (the lossy-network note above); URL-pushes don't move the tracking ref — `git update-ref refs/remotes/origin/main $(git rev-parse HEAD)` after.
 - `git remote -v` — origin is SSH (`git@github.com:ghostai8088/…`).
 - Migration head is `0028_var_historical` (VAR-HS-1 / `29ae31b`); the next migration lands ONLY at the next separately-approved implementation slice.
