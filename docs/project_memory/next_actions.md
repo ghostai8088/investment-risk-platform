@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `4534a38` / CI green (TD-1; refreshed 2026-07-09).** What to do
+> **As of HEAD `ea2863d` / CI green (P2-7; refreshed 2026-07-09).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -141,7 +141,13 @@ audit, Wave-1 slice **3.5** insertion): **PLANNING** `2569151` → **IMPLEMENTAT
 factor-return/covariance/VaR/sensitivity/exposure test fixtures were remediated (three-bucket classify-then-fix;
 test-and-docs only; NO golden re-derivation). **4 independent finder passes corrected 2 author errors + caught 2
 same-class completeness misses**, all folded. NEW `08_testing_qa/test_data_realism.md` + a standing review-angle;
-the fixture-realism rule is now in force for all future slices.
+the fixture-realism rule is now in force for all future slices. → **P2-7 IMPLEMENTATION (`ea2863d`, CI green)**:
+Wave-1 slice 4 — the net-new **ENT-052** (`benchmark_level` + `benchmark_return`, two FR bitemporal captured-input
+tables under the ENT-009 header; migration `0029`). Captured vendor-published returns ONLY (no calc from levels);
+`level_type`/`return_basis` variant discriminators; a `_SeriesSpec`-parameterized binder; race-safe DQ from birth;
+six additive `MARKET.BENCHMARK_LEVEL_*`/`_RETURN_*` codes; no new permission. **Full 6-finder review: ~10 findings
+folded, no deferrals, no shipped logic bug** (a real forced-collision race test + a genuinely float-unsafe
+precision value among the folds). Discharges OD-P2-6-K; unblocks P3-7.
 
 **NEXT — per the RATIFIED `10_delivery_backlog/delivery_roadmap.md` (Wave 1; no option menu — the sequence IS the
 decision; re-sequencing only via its Part 4 rules):**
@@ -153,15 +159,15 @@ decision; re-sequencing only via its Part 4 rules):**
 3.5. ✅ **TD-1 — test-data realism audit** — **DONE (`ac92e0b` + `4534a38`, CI green)** (a hygiene insertion; 8
    implausible test fixtures remediated to the new fixture-realism standing rule; test-and-docs only; 4 independent
    finder passes; `08_testing_qa/test_data_realism.md` + a standing review-angle)
-4. ✅ **P2-7 — benchmark price/level capture** — **PLANNED + ratified (`04c4135`); NOT yet implemented** ← **NEXT = IMPLEMENTATION**
-5. **P3-7 — benchmark-relative analytics** → 6. **P3-6 — stress/scenario** → the Wave-1 close review + re-baseline.
+4. ✅ **P2-7 — benchmark price/level capture** — **DONE (`ea2863d`, CI green)** (ENT-052 `benchmark_level`+
+   `benchmark_return`, migration `0029`; captured returns only; full 6-finder review, ~10 folds; unblocks P3-7)
+5. **P3-7 — benchmark-relative analytics** ← **NEXT** → 6. **P3-6 — stress/scenario** → the Wave-1 close review + re-baseline.
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
-Tier-2 commit approval. The next concrete step is **P2-7 IMPLEMENTATION, on explicit direction** — the build
-contract is `p2_7_implementation_plan.md` (ENT-052 `benchmark_level`+`benchmark_return`; migration `0029`; the
-`factor_return` template; captured returns ONLY; the new-binder DQ resolve-or-register written race-safe from birth
-per P3-C2 OD-E; full 6-finder review + unreduced gates). Model/effort: **Opus 4.8 / high** — the novel design was
-settled at planning (on Fable); the build is templated on a shipped exemplar, so Opus is the fit now (Fable only if
-review/build surfaces a genuine methodology fork). **All new fixtures follow the TD-1 realism rule.**
+Tier-2 commit approval. The next concrete step is **P3-7 PLANNING, on explicit direction** — tracking error /
+active risk / active return over the now-captured benchmark levels+returns (P2-7) + the existing risk engine (the
+P3 plan's final analytic leg). This IS a **methodology slice** (a governed derived number / registered model
+version) → roadmap Part 4 rule 6 applies (a cited external-benchmark research section is required in its record);
+model/effort: **Fable / high** (novel methodology design). **All new fixtures follow the TD-1 realism rule.**
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
