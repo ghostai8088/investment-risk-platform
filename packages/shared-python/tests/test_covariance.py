@@ -466,11 +466,14 @@ def test_invariant_under_post_pin_supersede_and_correction(session: Session) -> 
     first = _run(session, tenant, mv, [f_a, f_b, f_c])
     factor_a = resolve_factor(session, f_a, acting_tenant=tenant)
     # A vendor SUPERSEDE of one window return AND a CORRECTION of another, both post-pin.
+    # The restated values are realistic daily returns deliberately DIFFERENT from the pinned
+    # originals (SERIES_A: D2=0.02, D3=0.03) — the point is that a real, different vendor
+    # restatement does NOT leak into the already-pinned covariance (the invariance assert below).
     supersede_factor_return(
         session,
         factor_a,
         return_date=D2,
-        return_value=Decimal("0.99"),
+        return_value=Decimal("-0.03"),
         acting_tenant=tenant,
         actor=FactorActor(actor_id="s"),
         effective_at=datetime(2026, 6, 2, tzinfo=UTC),
@@ -479,7 +482,7 @@ def test_invariant_under_post_pin_supersede_and_correction(session: Session) -> 
         session,
         factor_a,
         return_date=D3,
-        return_value=Decimal("0.88"),
+        return_value=Decimal("-0.04"),
         restatement_reason="vendor restatement",
         acting_tenant=tenant,
         actor=FactorActor(actor_id="s"),
@@ -557,7 +560,8 @@ def test_valid_time_cut_honored_without_known_at(session: Session) -> None:
         session,
         resolve_factor(session, f_a, acting_tenant=tenant),
         return_date=D2,
-        return_value=Decimal("0.99"),
+        # a realistic restatement, distinct from the pinned v1 (0.02)
+        return_value=Decimal("-0.03"),
         acting_tenant=tenant,
         actor=FactorActor(actor_id="s"),
         effective_at=datetime(2026, 6, 2, tzinfo=UTC),  # AFTER the backdated valid_at below
@@ -578,7 +582,7 @@ def test_valid_time_cut_honored_without_known_at(session: Session) -> None:
     d2_value = next(
         r["return_value"] for r in pinned_a["rows"] if r["return_date"] == D2.isoformat()
     )
-    assert d2_value == "0.020000000000"  # v1 (valid at 2026-06-01), NOT the 0.99 head
+    assert d2_value == "0.020000000000"  # v1 (valid at 2026-06-01), NOT the -0.03 head
     diag = [r for r in result.rows if r.factor_id_1 == r.factor_id_2]
     assert all(r.covariance_value == REF_VAR for r in diag)
 

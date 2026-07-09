@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **PLANNING RATIFIED** — OQ-TD-1-1…6 approved by the user (2026-07-09, after a plain-language decision briefing); implementation is a SEPARATE approval |
+| Status | **IMPLEMENTED + REVIEWED — HOLDING for Tier-2 commit approval.** OQ-TD-1-1…6 ratified (2026-07-09); 6 fixture sites remediated (test-and-docs only); 3 independent finder passes (Part 6 — corrected the author's own `0.5` misjudgement + caught a missed kernel series); validation green post-fold. Commit is a SEPARATE approval (not yet given). |
 | Date | 2026-07-09 |
 | Basis | User standing rule (2026-07-09): all dummy/fixture data must be economically plausible by default; deliberately extreme values only in clearly-labeled boundary/adversarial tests. User directed a **full hygiene slice now** to retrospectively audit + remediate existing fixture data (chosen over "recon-only" / "fold into Wave-1 close" / "going-forward only"). A Wave-1 **insertion** ahead of P2-7 implementation (roadmap Part 4 rule 3 — hygiene insertion, ratify before starting). |
 | Grounding (recon, read-only, 2026-07-09) | ~98 test files; **~34 carry economic-value fixtures** (returns/fx/prices/levels/marks/quantities/weights/cost_basis/covariance+VaR inputs). Spot-check CONFIRMS a real, mixed problem: `test_factor.py:350` `Decimal("-1.5")` is a LEGITIMATE labeled boundary (`pytest.raises(DataQualityError)`, below the −1 band) — stays; `test_factor.py:306` `Decimal("9.9")` (=990%) is an ORDINARY correction fixture — implausible; `test_var.py:805` `0.90` + `test_covariance.py:482` `0.88`/`0.99` are implausible returns **deliberately chosen to force a distinguishable covariance/VaR delta** (comment-documented) yet **unlabeled** and **assertion-load-bearing**. So the fix is NOT a find-replace: many implausible values are load-bearing (golden assertions or signal-forcing). |
@@ -58,3 +58,44 @@ Implementation-ready once OQ-TD-1-1…6 are ratified. Build contract = `td_1_imp
 **TD-1 planning implements nothing.** Model/effort: **Opus 4.8 / high** — classification + careful re-derivation is
 templated judgement over a large surface, not novel methodology (not a Fable case); the re-derivation correctness
 risk is what warrants /high + the full review.
+
+## Part 6 — Implementation + review log (2026-07-09)
+
+**Outcome vs. plan.** The audit found the slice was FAR smaller than the "full hygiene" framing feared: the
+recon proved the representative market-value fixtures (fx/price/mark/weight/quantity), covariance base windows
+(`SERIES_A/B/C` = 0.01–0.04), and confidence-level params were ALREADY plausible. The offenders were a small,
+precise set of signal-forcing/ordinary values in the factor-return / covariance / VaR test fixtures. Remediation
+required NO golden re-derivation for the first pass — the chosen plausible values PRESERVE the existing
+invariance/inequality/pinning assertions (and the one golden-entangled case was handled by scaling, below).
+
+**Remediated sites (test-and-docs only; diff fence: zero production/schema/migration/permission/audit change):**
+- `test_factor.py` — a correction value `9.9` → `0.0456` (bucket 1; the earlier as-known view still asserts the
+  original 0.0123).
+- `test_covariance.py` — post-pin supersede/correction `0.99`/`0.88` → `-0.03`/`-0.04` and a second `0.99` →
+  `-0.03` (bucket 3; the invariance/pinning asserts hold for any value ≠ the pinned original).
+- `test_var.py` — a supersede `0.90` → `-0.02` (bucket 3; the `fresh != first` inequality retains teeth —
+  mutation-probed).
+- `test_var_hs.py` — the hand-reference kernel series `-0.50…0.40` → `-0.05…0.04` with the single-factor exposure
+  scaled `100`→`1000` so the P&Ls (and goldens `50`/`20`) are byte-identical; the worst-day correction `0.5` →
+  `0.03` (a realistic positive return still lifts day-21 out of the loss tail → identical golden `190`).
+- `08_testing_qa/test_data_realism.md` (NEW) + a review-angle bullet in `claude_operating_instructions.md` — the
+  standing rule + three-bucket method + per-domain bands, so future slices are checked at review time.
+
+**Review — 3 deep independent finder passes** (per the operating-instructions "2–3 deeper lenses" guidance; the
+ratified OD-TD-1-F said "6-finder" anticipating a large slice, but the slice reduced to 6 fixture edits + docs
+with no production code, so 3 focused lenses — completeness / vacuity-&-mutation-sensitivity / fence-classification-
+docs — fit better than 6 padded ones). **The review corrected the author's own judgement**, which is exactly why
+it was run:
+- **Finder 1 (completeness)** found a MISS the author's `return_value=` grep didn't catch: the `test_var_hs.py`
+  kernel series (a `_series({...})` dict form) used 30–50% "returns" as an unlabeled ordinary fixture → FOLDED
+  via the exposure-scaling fix (identical P&Ls, plausible returns).
+- **Finder 3 (classification)** + **Finder 2 (mutation)** independently showed the author's `0.5`
+  keep-and-relabel was MISJUDGED — a plausible `0.03` achieves the identical worst-day flip, so bucket-3's
+  plausible-preferred rule applied → FOLDED (`0.5`→`0.03`, honest comment). Finder 3 also flagged a doc
+  provenance overclaim ("captured-market base data" for synthetic hand-reference fixtures) → FOLDED (reworded).
+- **Finder 2 (vacuity/mutation)** returned clean on the original 5 sites (probed the var inequality and the
+  var_hs golden — both fail on a regression) and confirmed no assertion was loosened; tree restored clean.
+
+**Validation (post-fold, all green):** `make check` (968 passed) · full-PG suite exit 0 · `make fe-check` 39 +
+build (frontend untouched) · diff fence clean (4 test files + 2 docs) · `alembic check` N/A (no migration). No
+TD-2 split needed — the escape hatch (OD-TD-1-6) was not triggered; the whole audit fit in one slice.

@@ -303,7 +303,8 @@ def test_reproducible_by_capture_under_correction(session: Session) -> None:
         session,
         f,
         return_date=RD,
-        return_value=Decimal("9.9"),
+        # a realistic restated return, distinct from the original 0.0123
+        return_value=Decimal("0.0456"),
         restatement_reason="restate",
         acting_tenant=tenant,
         actor=ACTOR,

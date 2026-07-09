@@ -88,14 +88,16 @@ def test_order_statistic_index_hand_cases() -> None:
 
 
 def test_kernel_hand_reference_and_sign_convention() -> None:
-    # 5 scenarios, single factor, x=100: P&Ls = -50, -20, 10, 30, 40.
-    returns = _series({0: "-0.50", 1: "-0.20", 2: "0.10", 3: "0.30", 4: "0.40"})
-    est = compute_historical_var({"f": Decimal(100)}, returns, confidence=Decimal("0.80"))
+    # 5 scenarios, single factor, x=1000 with realistic daily returns: P&Ls = -50, -20, 10, 30, 40
+    # (the exposure is scaled x10 and the returns /10 vs an earlier draft so the P&Ls — and the
+    # hand-computed goldens below — are byte-identical, but the returns are now plausible).
+    returns = _series({0: "-0.05", 1: "-0.02", 2: "0.01", 3: "0.03", 4: "0.04"})
+    est = compute_historical_var({"f": Decimal(1000)}, returns, confidence=Decimal("0.80"))
     # k = ceil(5*0.2) = 1 -> worst P&L -50 -> VaR = +50 (loss positive).
     assert (est.k, est.n_observations) == (1, 5)
     assert est.var_value == Decimal("50.000000")
     # c=0.60 -> k = ceil(2) = 2 -> 2nd worst -20 -> VaR = 20.
-    est2 = compute_historical_var({"f": Decimal(100)}, returns, confidence=Decimal("0.60"))
+    est2 = compute_historical_var({"f": Decimal(1000)}, returns, confidence=Decimal("0.60"))
     assert (est2.k, est2.var_value) == (2, Decimal("20.000000"))
 
 
@@ -417,7 +419,11 @@ def test_consume_path_equals_build_and_pin_invariance(session: Session) -> None:
             session,
             factor,
             return_date=worst_day,
-            return_value=Decimal("0.5"),
+            # A realistic positive daily return: it lifts the corrected worst-day P&L
+            # (0.03*30000 + 0.03*40000 = +2100) out of the loss tail, so the fresh k=2 lands on the
+            # -190 day. Any corrected P&L > -190 does this, so a plausible value suffices (TD-1
+            # bucket-3: a plausible-but-distinguishable fix, not the 0.5 an earlier draft used).
+            return_value=Decimal("0.03"),
             restatement_reason="test restatement",
             acting_tenant=tenant,
             actor=FactorActor(actor_id="s"),
@@ -425,7 +431,7 @@ def test_consume_path_equals_build_and_pin_invariance(session: Session) -> None:
         factor_id = r.factor_id
     assert factor_id is not None
     # NON-VACUITY (review fold): the correction must MOVE a fresh build — day-21's P&L flips
-    # from -210 to +35000 (0.5×30000 + 0.5×40000), so the fresh window's k=2 lands on -190.
+    # from -210 to +2100 (0.03×30000 + 0.03×40000), so the fresh window's k=2 lands on -190.
     fresh = _hs_run(session, tenant, mv.id, exposure_run_id=fx_run)
     assert fresh.rows[0].var_value == Decimal("190.000000")
     again = _hs_run(session, tenant, mv.id, snapshot_id=snapshot.id)

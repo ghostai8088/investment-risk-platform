@@ -802,7 +802,8 @@ def test_pin_invariance_under_upstream_reruns(session: Session) -> None:
         session,
         usd,
         return_date=D2,
-        return_value=Decimal("0.90"),
+        # a realistic restatement, distinct from the pinned 0.02 head
+        return_value=Decimal("-0.02"),
         acting_tenant=tenant,
         actor=FactorActor(actor_id="s"),
         effective_at=datetime(2026, 5, 27, tzinfo=UTC),

@@ -34,6 +34,10 @@ Planning-first, per-slice, commit-only-on-approval:
 - Apply **only in-scope** findings; record deferred ones. Reviews routinely catch real errors (wrong temporal
   class vs AD-005, baseline conflicts, test-passes-for-wrong-reason, a 500→404 fail-closed bug). Treat "block"
   findings seriously and fix before committing.
+- **Standing review angle — fixture realism (TD-1, 2026-07-09):** every slice's review checks that new
+  economic-value fixtures are economically plausible by default; deliberately extreme values are allowed ONLY in
+  clearly-labeled boundary/adversarial tests (the three-bucket rule + per-domain bands live in
+  `08_testing_qa/test_data_realism.md`).
 
 ## Verification & objectivity (standing rules)
 - **No quantitative claim from model recall.** Every formula, convention, day-count, sign, tolerance, or
