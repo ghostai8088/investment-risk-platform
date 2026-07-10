@@ -313,9 +313,7 @@ def create_portfolio_return_run(
             environment_id=body.environment_id,
             model_version_id=str(body.model_version_id),
             exposure_run_ids=(
-                None
-                if body.exposure_run_ids is None
-                else [str(r) for r in body.exposure_run_ids]
+                None if body.exposure_run_ids is None else [str(r) for r in body.exposure_run_ids]
             ),
             snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
         )

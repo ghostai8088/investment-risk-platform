@@ -357,9 +357,7 @@ def transaction_content(row: Any) -> dict[str, Any]:
         "currency_code": row.currency_code,
         "external_ref": row.external_ref,
         "reverses_transaction_id": (
-            None
-            if row.reverses_transaction_id is None
-            else _norm_guid(row.reverses_transaction_id)
+            None if row.reverses_transaction_id is None else _norm_guid(row.reverses_transaction_id)
         ),
         "description": row.description,
         "system_from": _norm_datetime(row.system_from),

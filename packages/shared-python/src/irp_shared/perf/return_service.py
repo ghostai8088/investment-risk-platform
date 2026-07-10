@@ -347,9 +347,7 @@ def _adjudicate_pins(
                     "a pinned flow gross_amount exceeds its source-column envelope — refused"
                 )
             signed = amount if t["txn_type"] == FLOW_TXN_TYPE_TRANSFER_IN else -amount
-            signed_base = _convert_flow_to_base(
-                signed, ccy, t["trade_date"], base_currency, fx_raw
-            )
+            signed_base = _convert_flow_to_base(signed, ccy, t["trade_date"], base_currency, fx_raw)
             day_offset = (trade_date - ordered_dates[period_idx]).days  # 1..period_days (half-open)
             flows_by_period[period_idx].append((day_offset, signed_base))
 
@@ -561,9 +559,7 @@ def run_portfolio_return(
         rows: list[PortfolioReturnResult] = []
         try:
             for sp in parsed.sub_periods:
-                estimate = compute_dietz_period(
-                    sp.begin_mv, sp.end_mv, sp.flows, sp.period_days
-                )
+                estimate = compute_dietz_period(sp.begin_mv, sp.end_mv, sp.flows, sp.period_days)
                 # The kernel's 12dp-quantize guard bounds the SCALE, not the integer magnitude, so
                 # it only trips at ~1E38 (the prec-50 ceiling) — far above the Numeric(20,12) column
                 # (|value| < 1E8). Gate the column envelope HERE so a column-legal-but-extreme pin

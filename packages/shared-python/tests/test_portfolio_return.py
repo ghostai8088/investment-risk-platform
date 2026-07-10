@@ -85,9 +85,10 @@ def test_kernel_goldens() -> None:
     est = compute_dietz_period(Decimal("1000000"), Decimal("1050000"), [(15, Decimal("20000"))], 30)
     assert str(est.return_value) == "0.029702970297"
     # A no-flow sub-period reduces EXACTLY to EMV/BMV - 1.
-    assert str(
-        compute_dietz_period(Decimal("1000000"), Decimal("1030000"), [], 30).return_value
-    ) == "0.030000000000"
+    assert (
+        str(compute_dietz_period(Decimal("1000000"), Decimal("1030000"), [], 30).return_value)
+        == "0.030000000000"
+    )
     # Geometric linking (1.03)(0.98)(1.01) - 1.
     assert str(link_periods([Decimal("0.03"), Decimal("-0.02"), Decimal("0.01")])) == (
         "0.019494000000"
@@ -116,9 +117,12 @@ def test_kernel_pathologies_refuse() -> None:
 def _seed_currency(db: Session, code: str) -> None:
     from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 
-    if db.execute(
-        select(Currency).where(Currency.tenant_id == SYSTEM_TENANT_ID, Currency.code == code)
-    ).scalar_one_or_none() is None:
+    if (
+        db.execute(
+            select(Currency).where(Currency.tenant_id == SYSTEM_TENANT_ID, Currency.code == code)
+        ).scalar_one_or_none()
+        is None
+    ):
         db.add(Currency(tenant_id=SYSTEM_TENANT_ID, code=code, name=code, valid_from=T0))
     db.flush()
 
@@ -187,8 +191,14 @@ def _boundary_run(
 
 
 def _flow(
-    db: Session, pf: str, inst: str, trade_date: date, amount: str, txn_type: str = "TRANSFER_IN",
-    currency: str | None = "USD", tenant: str = TENANT,
+    db: Session,
+    pf: str,
+    inst: str,
+    trade_date: date,
+    amount: str,
+    txn_type: str = "TRANSFER_IN",
+    currency: str | None = "USD",
+    tenant: str = TENANT,
 ) -> None:
     record_transaction(
         db,
@@ -345,9 +355,9 @@ def test_single_boundary_refused(session: Session) -> None:
         _run(session, [r0], mv)
     # Zero run: pre-create refusal never created a portfolio-return run.
     after = session.execute(
-        select(func.count()).select_from(CalculationRun).where(
-            CalculationRun.run_type == RUN_TYPE_PORTFOLIO_RETURN
-        )
+        select(func.count())
+        .select_from(CalculationRun)
+        .where(CalculationRun.run_type == RUN_TYPE_PORTFOLIO_RETURN)
     ).scalar()
     assert after == 0
     assert before == session.execute(select(func.count()).select_from(CalculationRun)).scalar()
@@ -395,14 +405,24 @@ def test_unregistered_and_ambiguous_refused(session: Session) -> None:
     # Unregistered model_version id => the CTRL-003 inventory-before-use gate (422 at the API).
     with pytest.raises(UnregisteredModelError):
         run_portfolio_return(
-            session, acting_tenant=TENANT, actor=ACTOR, code_version="perf-v1",
-            environment_id="ci", model_version_id=str(uuid.uuid4()), exposure_run_ids=[r0, r1],
+            session,
+            acting_tenant=TENANT,
+            actor=ACTOR,
+            code_version="perf-v1",
+            environment_id="ci",
+            model_version_id=str(uuid.uuid4()),
+            exposure_run_ids=[r0, r1],
         )
     # Ambiguous (both snapshot_id and exposure_run_ids) => refused BEFORE the model gate.
     with pytest.raises(PortfolioReturnInputError):
         run_portfolio_return(
-            session, acting_tenant=TENANT, actor=ACTOR, code_version="perf-v1",
-            environment_id="ci", model_version_id=mv, exposure_run_ids=[r0, r1],
+            session,
+            acting_tenant=TENANT,
+            actor=ACTOR,
+            code_version="perf-v1",
+            environment_id="ci",
+            model_version_id=mv,
+            exposure_run_ids=[r0, r1],
             snapshot_id=str(uuid.uuid4()),
         )
 

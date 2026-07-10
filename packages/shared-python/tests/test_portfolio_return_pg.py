@@ -234,9 +234,7 @@ def test_no_context_read_returns_zero_rows(app_url: str) -> None:
     _seed_and_run(factory, str(uuid.uuid4()))
     session = factory()
     try:
-        count = session.execute(
-            text("SELECT count(*) FROM portfolio_return_result")
-        ).scalar_one()
+        count = session.execute(text("SELECT count(*) FROM portfolio_return_result")).scalar_one()
         assert count == 0  # FORCE RLS: no tenant context -> zero rows
     finally:
         session.close()
