@@ -56,7 +56,7 @@ destination in dependency order.
 | 3 | **BT-1 — VaR backtesting** | Kupiec POF + Basel traffic-light over realized P&L vs BOTH shipped VaR methods; the P7 model-validation prerequisite (SR 11-7 "outcomes analysis"). | M |
 | 4 | **PA-0 — private-asset foundations** | The thesis destination begins: captured appraisal/NAV series + ENT-019 `proxy_mapping` realization + the desmoothing/proxy decision record (rule-6: Geltner 1993; Getmansky-Lo-Makarov 2004; Okunev-White). Its planning may split capture-first. | M/L |
 | 5 | **P3-6 — stress/scenario** | Moved from Wave 1; richer after the return work; may defer again to Wave 3 at the next close — same rule. | L |
-| — | **Hygiene ride-alongs** (no slice slot): runtime npm-audit CI gate `high`→`moderate` (applied AT this close — the tree is at zero); branch protection on `main` (OD-050 — a GitHub settings action, see the close review); ES leg DEFERRED (OQ-W1C-4). | | S |
+| — | **Hygiene ride-alongs** (no slice slot): runtime npm-audit CI gate `high`→`moderate` (applied AT this close — the tree is at zero); branch protection on `main` (OD-050) **✅ DONE 2026-07-10** — `enforce_admins=everyone` + all 5 CI checks required; no direct pushes to `main`, PR flow binds everyone from P3-8 on; ES leg DEFERRED (OQ-W1C-4). | | S |
 
 **Wave-2 close = the same mandatory review + re-baseline** (incl. the rule-6(b) outward benchmark review + the
 destination-progress check).

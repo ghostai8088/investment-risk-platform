@@ -29,8 +29,9 @@ deferral register reconciled (P3-3/P3-5/P3-C1 deferrals all PAID in-wave; open i
 B+C); outward benchmark review; the thesis destination check answered "forward, in dependency order" — Wave 2 is
 organized around the **return-series triple unlock** (ex-post TE/IR + VaR backtesting + the desmoothing substrate
 share ONE missing primitive, the governed portfolio-return series → PM-1 first). P3-6 moved to Wave-2 slot 5
-(pre-authorized). npm CI gate tightened high→moderate at the close; **branch protection (OD-050) = a pending
-USER GitHub-settings action.** **PM-1 (Wave-2 slice 1) IMPLEMENTED + FULL-ultrareviewed (3 HIGH + 1 MED folds) —
+(pre-authorized). npm CI gate tightened high→moderate at the close; **branch protection (OD-050) ✅ DONE
+2026-07-10 — `enforce_admins=everyone` + 5 required CI checks; no direct pushes to `main`, PR flow binds
+everyone (P3-8 onward).** **PM-1 (Wave-2 slice 1) IMPLEMENTED + FULL-ultrareviewed (3 HIGH + 1 MED folds) —
 `b2445c7` + ruff-format `f5e16b6`, CI #137 green; the SEVENTH governed number, FIRST non-risk (the `perf` family).
 Next: P3-8 planning on explicit direction (ex-post benchmark-relative — the FIRST consumer of this return series).**
 Prior state: P3-0 … P3-5 + P3-C1 + FE-1 + TC-1 + VAR-HS-1 + P3-C2 + TD-1 + P2-7 + P3-7 + P3-C3 + PM-1 all complete and CI-green.
