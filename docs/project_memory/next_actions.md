@@ -187,8 +187,9 @@ decision; re-sequencing only via its Part 4 rules):**
 6. ✅ **WAVE 1 CLOSED** — **`wave_1_close_review.md` RATIFIED (2026-07-09, OQ-W1C-1…6)**: honest audit +
    reconciled deferral register (all P3-3/P3-5/P3-C1 deferrals PAID in-wave; open items trigger-based) + the
    outward benchmark review + the thesis destination check. P3-6 moved to Wave 2 slot 5 (pre-authorized). The
-   npm-audit CI gate tightened high→moderate at this close (tree at 0); **branch protection (OD-050) remains a
-   USER GitHub-settings action** (Settings → Branches → protect `main` — cannot be done from the repo).
+   npm-audit CI gate tightened high→moderate at this close (tree at 0); **branch protection (OD-050) ✅ DONE
+   2026-07-10** (`enforce_admins=everyone` + 5 required CI checks — no direct pushes to `main`; PR flow binds
+   everyone from P3-8 on; the repo's first PRs are the P3-8 planning + implementation commits).
 
 **WAVE 2 (ratified — roadmap Part 2.5): PM-1 → P3-8 → BT-1 → PA-0 → P3-6.** Organized around the return-series
 triple unlock: ONE new primitive (a governed portfolio-return series) unblocks ex-post TE/IR (P3-7 OD-G), VaR
