@@ -1,6 +1,7 @@
 # Next Actions
 
-> **As of HEAD `1bf172b` / CI run #132 green (P3-C3; refreshed 2026-07-09).** What to do
+> **As of HEAD `f5e16b6` / CI run #137 green (PM-1 governed portfolio-return series, ENT-053 + migration 0031;
+> refreshed 2026-07-09).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -193,9 +194,13 @@ decision; re-sequencing only via its Part 4 rules):**
 triple unlock: ONE new primitive (a governed portfolio-return series) unblocks ex-post TE/IR (P3-7 OD-G), VaR
 backtesting (the P7 prerequisite), and the private-asset desmoothing substrate (the thesis destination).
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
-Tier-2 commit approval. The next concrete step is **PM-1 PLANNING, on explicit direction** — the governed
-portfolio-return series (performance-measurement v1: flow-adjusted TWR + Modified-Dietz over captured
-valuations + transactions; a NEW governed number family `perf.return.twr`; rule-6 externals: GIPS 2020). This
+Tier-2 commit approval. **PM-1 (slice 1) is DONE** (`b2445c7` + ruff-format `f5e16b6`, CI #137 green — the SEVENTH
+governed number + FIRST non-risk, the `perf` family; `portfolio_return_result` ENT-053, migration `0031`,
+`perf.run`/`perf.view` R-07 mint, CAP-20 + REQ-PRF-001; FULL 5-finder ultrareview, 3 HIGH + 1 MED folds). The next
+concrete step is **P3-8 PLANNING, on explicit direction** — ex-post benchmark-relative (realized TE / active
+return / tracking difference / IR), the FIRST governed consumer of the PM-1 return series (closes P3-7 OD-G;
+rule-6 externals: ESMA 2012/832). Legacy PM-1 planning note (superseded): the governed portfolio-return series
+(performance-measurement v1: flow-adjusted TWR + Modified-Dietz over captured valuations + transactions). This
 IS a **methodology slice** → roadmap Part 4 rule 6 applies; model/effort: **Fable / high** (a new methodology
 family — GIPS-grade return math is genuinely novel design surface). **All new fixtures follow the TD-1 realism
 rule.**
