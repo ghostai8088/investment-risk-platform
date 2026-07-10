@@ -55,6 +55,11 @@ PURPOSE_VAR_HS_INPUT = "VAR_HS_INPUT"
 #: P3-7 (OD-P3-7-E): the ex-ante active-risk input purpose — pins the FACTOR_EXPOSURE + COVARIANCE
 #: result rows, the FACTOR definitions (the currency→factor map), and the BENCHMARK membership.
 PURPOSE_ACTIVE_RISK_INPUT = "ACTIVE_RISK_INPUT"
+#: PM-1 (OD-PM-1-E): the portfolio-return input purpose — pins the EXPOSURE atoms of N>=2 COMPLETED
+#: exposure runs (the sub-period valuation boundaries), the in-window TRANSACTION rows (external
+#: flows filtered by the binder), and the FX legs for non-base flow currencies at each flow date.
+#: The FIRST non-risk (``perf``-family) snapshot purpose.
+PURPOSE_RETURN_INPUT = "RETURN_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -65,6 +70,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_VAR_INPUT,
     PURPOSE_VAR_HS_INPUT,
     PURPOSE_ACTIVE_RISK_INPUT,
+    PURPOSE_RETURN_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -110,6 +116,12 @@ COMPONENT_KIND_COVARIANCE = "COVARIANCE"
 #: pin, TR-09). The benchmark HEADER identity is carried in each component's content. Reserved at
 #: OD-P3-0-G, MINTED here at its designed first consumer.
 COMPONENT_KIND_BENCHMARK = "BENCHMARK"
+#: PM-1 (OD-PM-1-E): a pinned ``transaction`` (ENT-011) row — an IA-row pin flavor (the source row
+#: is TRUE append-only; drift impossible by construction; the P3-3 EXPOSURE precedent). The
+#: portfolio-return binder filters these to the declared external-flow set {TRANSFER_IN,
+#: TRANSFER_OUT}; the snapshot pins the full in-window set (staying perf-agnostic — ``snapshot``
+#: never imports the flow set). ``target_entity_type='transaction'``.
+COMPONENT_KIND_TRANSACTION = "TRANSACTION"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -122,6 +134,7 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_FACTOR_EXPOSURE,
     COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_BENCHMARK,
+    COMPONENT_KIND_TRANSACTION,
 )
 
 

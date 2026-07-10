@@ -36,3 +36,36 @@ describe("active-risk (P3-7) family wiring", () => {
     }
   });
 });
+
+describe("portfolio-returns (PM-1) family wiring", () => {
+  it("registers the perf family keyed to PORTFOLIO_RETURN (family, not metric) under perf.view", () => {
+    expect(FAMILIES["portfolio-returns"]).toEqual({
+      runType: "PORTFOLIO_RETURN",
+      label: "Portfolio returns",
+      permissionFamily: "perf",
+    });
+    expect(RUN_TYPE_TO_FAMILY.PORTFOLIO_RETURN).toBe("portfolio-returns");
+  });
+
+  it("builds the perf-specific /perf/portfolio-returns/runs/{id} detail URL (own route shape)", () => {
+    expect(runDetailUrl("portfolio-returns", "abc-123")).toBe(
+      "/perf/portfolio-returns/runs/abc-123",
+    );
+  });
+
+  it("surfaces the return series columns", () => {
+    const keys = FAMILY_ROW_COLUMNS["portfolio-returns"].map((c) => c.key);
+    expect(keys).toEqual([
+      "metric_type",
+      "period_start",
+      "period_end",
+      "begin_mv",
+      "end_mv",
+      "net_external_flow",
+      "return_value",
+      "n_flows",
+      "n_periods",
+      "base_currency",
+    ]);
+  });
+});

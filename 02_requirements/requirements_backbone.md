@@ -81,6 +81,7 @@ These limits define the explicit forward dependencies in §6.
 | **CAP-17 Administration & Entitlements** | 17.1 Authentication/SSO · 17.2 RBAC/ABAC entitlements · 17.3 SoD/maker-checker · 17.4 Admin console · 17.5 Export controls/classification (MNPI) |
 | **CAP-18 Integration Readiness** | 18.1 CSV/Excel upload · 18.2 API adapter · 18.3 SFTP adapter · 18.4 Vendor/accounting/market-data adapters · 18.5 GP report ingestion adapter |
 | **CAP-19 BAU AI Agent Support** | 19.1 DQ monitoring agent · 19.2 Breach triage agent · 19.3 Scenario commentary agent · 19.4 Model monitoring agent · 19.5 Board reporting/evidence agent |
+| **CAP-20 Performance Measurement** *(MINTED PM-1, 2026-07-09; the ENT-mint analog for a homeless governed number — OQ-PM-1-9)* | 20.1 Portfolio return (time-weighted, Modified-Dietz) · 20.2 Money-weighted return / IRR *(PA-0)* · 20.3 Performance attribution *(deferred)* · 20.4 Composites / GIPS presentation *(deferred)* |
 
 ## 5. Baseline Cross-Cutting Requirements (BX) — inherited by every applicable requirement
 
@@ -280,6 +281,12 @@ entitlement/lineage/model-gov/control/phase/dependency are in the [RTM](requirem
 | REQ-BAI-001 | DQ & private-asset monitoring agent | 19.1 | Scale data ops | Agent summarizes DQ exceptions; recommends remediation | DQ results (read-only) | — | Agent-logging test | Agent actions logged (BR-16); read-only tier; cites sources | Draft |
 | REQ-BAI-002 | Breach triage & scenario commentary agents | 19.2/19.3 | Faster, clearer ops | Draft breach narratives / scenario commentary | approved results | — | Cite-don't-invent test | Agent cites governed metrics; no invented numbers; human approves action | Draft |
 | REQ-BAI-003 | Model monitoring & board/evidence assistants | 19.4/19.5 | Governance & reporting support | Flag model drift; draft board/evidence packs | monitoring/approved data | — | Approval-gate test | Drafts only; publication needs human approval (BR-15/16) | Draft |
+
+### CAP-20 Performance Measurement (PRF)
+
+| REQ | Title | CAP | Business purpose | Functional | Data | Calc | Test | Acceptance | Status |
+|---|---|---|---|---|---|---|---|---|---|
+| REQ-PRF-001 | Portfolio return (time-weighted) | 20.1 | Measure the return a book actually earned, external cash flows neutralised (the prerequisite for ex-post benchmark-relative analytics, VaR backtesting, and private-asset returns) | Governed chain-linked TWR (Modified-Dietz within caller-supplied exposure-run valuation boundaries) as a run — a `DIETZ_PERIOD` series + a `TWR_LINKED` summary | exposure-run market values + `transaction` external flows (`TRANSFER_IN`/`TRANSFER_OUT`) + FX legs, all snapshot-pinned | Modified-Dietz + geometric linking (GIPS 2020); Decimal-50, `Numeric(20,12)` fraction | Hand golden + independent float cross-check + reproduction-under-correction (TR-09) | Return matches hand/independent reference within ε; re-run identical; a later exposure re-run OR a transaction append cannot move a historical return; method has methodology doc + inventory entry | **In-Progress (PM-1, 2026-07-09, migration `0031`):** `portfolio_return_result` (ENT-053) — time-weighted return v1 (`perf.return.twr`), single-portfolio book; gross-of-fees, unannualized. **Money-weighted/IRR (PA-0), net-of-fees, attribution, composites, annualization, and multi-portfolio/subtree books DEFERRED; captured-holdings book (no cash ledger) a first-class recorded limitation.** REQ does **NOT** close |
 
 ## 8. Open Questions
 

@@ -333,6 +333,39 @@ def benchmark_membership_content(benchmark: Any, constituent: Any) -> dict[str, 
     }
 
 
+def transaction_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``transaction`` (ENT-011, IA) row (PM-1 TRANSACTION
+    component — the P3-3 EXPOSURE true-append-only pin flavor: no valid axis, no ``record_version``;
+    ``system_from`` is the append time; re-verification is byte-identical unless tampered). The FULL
+    immutable column set is pinned so the row reconstructs exactly (the return binder reads only the
+    pinned content, never a live transaction). Scales: ``quantity`` 8; ``price``/``gross_amount`` 6
+    (the transaction column scales). ``gross_amount``/``currency_code`` MAY be NULL — captured
+    verbatim; a NULL on an in-set flow is a binder refusal (never imputed)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "txn_type": row.txn_type,
+        "trade_date": row.trade_date.isoformat(),
+        "settle_date": (None if row.settle_date is None else row.settle_date.isoformat()),
+        "quantity": _norm_decimal(row.quantity, _SCALE_QUANTITY),
+        "price": (None if row.price is None else _norm_decimal(row.price, _SCALE_MONEY)),
+        "gross_amount": (
+            None if row.gross_amount is None else _norm_decimal(row.gross_amount, _SCALE_MONEY)
+        ),
+        "currency_code": row.currency_code,
+        "external_ref": row.external_ref,
+        "reverses_transaction_id": (
+            None
+            if row.reverses_transaction_id is None
+            else _norm_guid(row.reverses_transaction_id)
+        ),
+        "description": row.description,
+        "system_from": _norm_datetime(row.system_from),
+    }
+
+
 def serialize_content(content: dict[str, Any]) -> str:
     """Canonical-serialize a per-kind content dict (sorted keys, compact, engine-independent)."""
     return canonicalize(content)

@@ -588,17 +588,33 @@ def test_snapshot_computes_no_product_no_calc_import() -> None:
                         f"{path.name} imports {node.module} — only a function-local "
                         f"irp_shared.exposure.models import in service.py is sanctioned"
                     )
+                # PM-1: the ONLY sanctioned transaction import is the same function-local,
+                # models-only read in service.py (build_return_snapshot pins in-window txns; the
+                # transaction SERVICE is never imported — the exposure.models precedent).
+                if "transaction" in node.module.split("."):
+                    assert (
+                        path.name == "service.py"
+                        and node.module == "irp_shared.transaction.models"
+                        and node.col_offset > 0
+                    ), (
+                        f"{path.name} imports {node.module} — only a function-local "
+                        f"irp_shared.transaction.models import in service.py is sanctioned"
+                    )
             if isinstance(node, ast.Import):
                 assert all("calc" not in a.name.split(".") for a in node.names)
                 assert all(
                     "exposure" not in a.name.split(".") for a in node.names
                 ), f"{path.name} imports an exposure module wholesale"
+                assert all(
+                    "transaction" not in a.name.split(".") for a in node.names
+                ), f"{path.name} imports a transaction module wholesale"
 
 
 def test_nothing_imports_snapshot() -> None:
     """``snapshot`` is a leaf: no other ``irp_shared`` package imports it at runtime, EXCEPT the
     central ``models.py`` aggregator (every model) and the run consumers ``exposure`` (P2-3) +
-    ``risk`` (P3-1) — which read the bound snapshot's pinned components + build the curve snapshot
+    ``risk`` (P3-1) + ``perf`` (PM-1 — builds the RETURN_INPUT snapshot + reads its pinned
+    components) — which read the bound snapshot's pinned components + build the curve snapshot
     (the AD-014 single-bind)."""
     root = pathlib.Path(snapshot_service.__file__).parents[1]
     for path in root.rglob("*.py"):
@@ -606,6 +622,7 @@ def test_nothing_imports_snapshot() -> None:
             "snapshot" in path.parts
             or "exposure" in path.parts
             or "risk" in path.parts
+            or "perf" in path.parts
             or path.name == "models.py"
         ):
             continue

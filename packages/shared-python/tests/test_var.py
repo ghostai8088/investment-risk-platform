@@ -1433,5 +1433,5 @@ def test_migration_head_is_var() -> None:
     cfg = Config(str(_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(_ROOT / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0030_active_risk"
+    assert script.get_current_head() == "0031_portfolio_return"
     assert script.get_revision("0026_var").down_revision == "0025_covariance"

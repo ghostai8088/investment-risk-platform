@@ -498,8 +498,9 @@ def test_marketdata_imports_no_calc_exposure_snapshot_risk() -> None:
 def test_nothing_imports_marketdata() -> None:
     """``marketdata`` is a leaf, EXCEPT ``models.py`` (every model) and the downstream consumers:
     ``snapshot`` (pins FX/curve components) + ``exposure`` (composes the effective rate) + ``risk``
-    (P3-1 consumes the curve ``value_type`` constants for the sensitivity dispatch). ``marketdata``
-    still imports none — a one-way dependency."""
+    (P3-1 consumes the curve ``value_type`` constants for the sensitivity dispatch) + ``perf`` (PM-1
+    converts external flows via the composite-rate helper). ``marketdata`` still imports none — a
+    one-way dependency."""
     root = pathlib.Path(fx_service.__file__).parents[1]
     for path in root.rglob("*.py"):
         if (
@@ -507,6 +508,7 @@ def test_nothing_imports_marketdata() -> None:
             or "snapshot" in path.parts
             or "exposure" in path.parts
             or "risk" in path.parts
+            or "perf" in path.parts
             or path.name == "models.py"
         ):
             continue

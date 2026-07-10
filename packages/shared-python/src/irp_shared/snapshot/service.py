@@ -32,8 +32,9 @@ the run consumers (``exposure``, ``risk``) import ``snapshot``.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time
 from typing import Any
 
 from sqlalchemy import select
@@ -81,10 +82,12 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_FX,
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
+    COMPONENT_KIND_TRANSACTION,
     COMPONENT_KIND_VALUATION,
     PURPOSE_ACTIVE_RISK_INPUT,
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
+    PURPOSE_RETURN_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
     PURPOSE_VAR_HS_INPUT,
     PURPOSE_VAR_INPUT,
@@ -106,6 +109,7 @@ from irp_shared.snapshot.serialize import (
     portfolio_content,
     position_content,
     serialize_content,
+    transaction_content,
     valuation_content,
 )
 from irp_shared.valuation import ValuationNotVisible, resolve_valuation
@@ -1023,7 +1027,7 @@ def build_var_snapshot(
 #: The active-risk binding/selection rule (OD-P3-7-E): the two runs' rows + the covariance factor
 #: definitions + the declared benchmark membership set. "fexp-rows" = factor-EXPOSURE rows (NOT
 #: "fx-rows" — "fx" means foreign-exchange everywhere else in this module: COMPONENT_KIND_FX).
-#: Length-guarded (see ``_assert_binding_predicate_lengths`` at module end) against varchar(50).
+#: Length-guarded (see the ``_BINDING_PREDICATES`` module-end assert) against varchar(50).
 ACTIVE_RISK_BINDING_PREDICATE = "v1:fexp-rows+cov-rows+cov-factors+benchmark-set"
 
 
@@ -1133,6 +1137,208 @@ def build_active_risk_snapshot(
     return header_row
 
 
+class ReturnSnapshotError(Exception):
+    """Raised when a portfolio-return input snapshot cannot be built (fewer than two exposure-run
+    boundaries, a boundary run with no atoms, an unresolvable input, or a missing FX leg for a
+    non-base external flow) — fail closed, BEFORE any write. Its OWN class (a perf number never
+    borrows a risk-family error — the V8 lesson). Maps to 409."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"portfolio-return snapshot input failed closed: {detail}")
+        self.detail = detail
+
+
+def _resolve_transaction_row(session: Session, txn_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``transaction`` by id with an EXPLICIT tenant predicate (models-only import — the
+    ``_resolve_exposure_atom`` precedent: ``transaction.models`` imports no ``snapshot`` symbol, so
+    the one-way surface holds; the ``transaction`` SERVICE is deliberately NOT imported here)."""
+    from irp_shared.transaction.models import Transaction  # models-only (no cycle / fence-safe)
+
+    row = session.execute(
+        select(Transaction).where(
+            Transaction.id == str(txn_id),
+            Transaction.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ReturnSnapshotError(f"transaction {txn_id} is not visible")
+    return row
+
+
+def _list_transactions_in_window(
+    session: Session,
+    portfolio_ids: Sequence[str],
+    *,
+    start_exclusive: date,
+    end_inclusive: date,
+    acting_tenant: str,
+) -> list[Any]:
+    """The ``transaction`` rows of the given portfolios whose ``trade_date`` is in the half-open
+    window ``(start_exclusive, end_inclusive]`` (tenant-scoped, stable ``(trade_date, id)`` order;
+    models-only import). The FULL captured set is returned — ``snapshot`` never imports the perf
+    external-flow set, so the binder does the flow filtering (a flow ON the first boundary is
+    already in BMV, hence the exclusive lower bound)."""
+    from irp_shared.transaction.models import Transaction  # models-only (no cycle / fence-safe)
+
+    if not portfolio_ids:
+        return []
+    return list(
+        session.execute(
+            select(Transaction)
+            .where(
+                Transaction.tenant_id == str(acting_tenant),
+                Transaction.portfolio_id.in_([str(p) for p in portfolio_ids]),
+                Transaction.trade_date > start_exclusive,
+                Transaction.trade_date <= end_inclusive,
+            )
+            .order_by(Transaction.trade_date, Transaction.id)
+        )
+        .scalars()
+        .all()
+    )
+
+
+#: The portfolio-return binding/selection rule (a truthful descriptor; PM-1, OD-PM-1-E).
+RETURN_BINDING_PREDICATE = "v1:exposure-run-atoms+flow-txns+fx-legs"
+
+
+def build_return_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    exposure_run_ids: Sequence[str],
+    flow_txn_types: Sequence[str],
+    as_of_valid_at: datetime | None = None,
+    as_of_known_at: datetime | None = None,
+) -> DatasetSnapshot:
+    """Build one immutable ``RETURN_INPUT`` snapshot (PM-1, OD-PM-1-E) pinning:
+
+    - one ``COMPONENT_KIND_EXPOSURE`` per ``exposure_aggregate`` atom of EACH consumed run (the
+      P3-3 IA-row pin flavor) — the ``N >= 2`` valuation boundaries whose ``as_of_valuation_date``s
+      (read from each run's input snapshot) are the sub-period edges;
+    - one ``COMPONENT_KIND_TRANSACTION`` per ``transaction`` whose ``trade_date`` falls in the
+      half-open span ``(earliest_boundary, latest_boundary]`` for the boundary portfolios (the FULL
+      in-window set — ``snapshot`` never imports the flow set; the binder filters to flows); and
+    - one ``COMPONENT_KIND_FX`` per distinct FX leg needed to convert a non-base external FLOW's
+      currency to the boundary base currency, resolved at the flow's ``trade_date`` (rate_date =
+      ``valid_at.date()`` via end-of-day) as-known at the FROZEN header ``known_at`` (a later FX
+      correction is invisible — TR-09),
+
+    so a portfolio-return run is reproducible from the snapshot alone (the binder reads this
+    captured content — never a live exposure/transaction/FX read). ``flow_txn_types`` is passed as
+    DATA (a sequence of ``txn_type`` strings — NOT a ``perf`` import; the ``snapshot -> ...`` fence
+    holds) so FX legs are pinned ONLY for genuine flows: a foreign-currency BUY does not force an FX
+    leg, but a missing leg for a real non-base flow DOES fail closed (no imputation). Fewer than two
+    runs, or a boundary run with no atoms, fails closed BEFORE any write
+    (:class:`ReturnSnapshotError`, its OWN class). The run-status / scope / base-currency /
+    boundary-ordering adjudication is the PERF binder's pre-create gate — this builder pins a
+    well-formed set; it reads no model registry and imports NO ``calc``/``perf`` symbol."""
+    now = utcnow()
+    valid_at = as_of_valid_at if as_of_valid_at is not None else now
+    known = as_of_known_at if as_of_known_at is not None else now  # FROZEN once (header == pin)
+
+    run_ids = list(exposure_run_ids)
+    if len(run_ids) < 2:
+        raise ReturnSnapshotError(
+            f"a portfolio-return snapshot needs >= 2 exposure-run boundaries (got {len(run_ids)})"
+        )
+    if len({str(rid).lower() for rid in run_ids}) != len(run_ids):
+        # A repeated run id would pin its atoms twice -> a duplicate (kind, target) violating
+        # uq_dataset_snapshot_component_snapshot_kind_target at the SECOND flush, AFTER the header
+        # is written -> a raw IntegrityError, NOT the "fail closed BEFORE any write" contract (the
+        # build_covariance_snapshot duplicate-id precedent). Refuse here.
+        raise ReturnSnapshotError("duplicate exposure-run boundary ids — an ambiguous set refused")
+    flow_types = {str(t) for t in flow_txn_types}
+
+    # 1. Resolve each boundary run's atoms + its valuation date (from the run's input snapshot). The
+    #    binder validates run status / single scope / single base / strict ordering pre-create.
+    per_run_atoms: list[list[Any]] = []
+    boundary_dates: list[date] = []
+    base_currency: str | None = None
+    for run_id in run_ids:
+        atoms = _list_exposure_atoms(session, run_id, acting_tenant=acting_tenant)
+        if not atoms:
+            raise ReturnSnapshotError(f"exposure run {run_id} has no visible atoms to pin")
+        boundary = resolve_snapshot(
+            session, atoms[0].input_snapshot_id, acting_tenant=acting_tenant
+        )
+        per_run_atoms.append(atoms)
+        boundary_dates.append(boundary.as_of_valuation_date)
+        if base_currency is None:
+            base_currency = atoms[0].base_currency
+    if base_currency is None:  # exposure atoms are NOT NULL base_currency; fail closed if ever not
+        raise ReturnSnapshotError("boundary exposure runs carry no base currency to convert flows")
+
+    # 2. The measured span + the boundary portfolio scope.
+    start_exclusive = min(boundary_dates)
+    end_inclusive = max(boundary_dates)
+    portfolio_ids = list(
+        dict.fromkeys(atom.portfolio_id for atoms in per_run_atoms for atom in atoms)
+    )
+
+    # 3. Pin every atom of every boundary run (EXPOSURE).
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for atoms in per_run_atoms:
+        for atom in atoms:
+            _append_spec(
+                specs, COMPONENT_KIND_EXPOSURE, "exposure_aggregate", atom, exposure_content(atom)
+            )
+
+    # 4. Pin every in-window transaction (TRANSACTION) — the FULL set; the binder filters to flows.
+    transactions = _list_transactions_in_window(
+        session,
+        portfolio_ids,
+        start_exclusive=start_exclusive,
+        end_inclusive=end_inclusive,
+        acting_tenant=acting_tenant,
+    )
+    for txn in transactions:
+        _append_spec(
+            specs, COMPONENT_KIND_TRANSACTION, "transaction", txn, transaction_content(txn)
+        )
+
+    # 5. Pin the FX legs for the non-base FLOW currencies at each flow's trade_date (FR-version
+    #    pins; a missing leg for a genuine flow fails closed — no imputation). rate_date ==
+    #    trade_date via valid_at = end-of-day(trade_date); known_at frozen at the header (TR-09).
+    seen_fx: set[str] = set()
+    for txn in transactions:
+        if txn.txn_type not in flow_types:
+            continue  # not an external flow — the binder ignores it, so no conversion is needed
+        ccy = txn.currency_code
+        if ccy is None or ccy == base_currency:
+            continue  # a NULL currency on a flow is a binder refusal (never imputed); base = no leg
+        flow_valid_at = datetime.combine(txn.trade_date, time.max, tzinfo=UTC)
+        for fx_row in resolve_conversion_legs(
+            session,
+            from_currency=ccy,
+            to_currency=base_currency,
+            valid_at=flow_valid_at,
+            acting_tenant=acting_tenant,
+            known_at=known,
+            base=DEFAULT_BASE,
+        ):
+            if fx_row.id in seen_fx:
+                continue
+            seen_fx.add(fx_row.id)
+            _append_spec(specs, COMPONENT_KIND_FX, "fx_rate", fx_row, fx_content(fx_row))
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_RETURN_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=end_inclusive,
+        binding_predicate_version=RETURN_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -1200,6 +1406,10 @@ def _reresolve_content(
     if comp.component_kind == COMPONENT_KIND_EXPOSURE:
         return exposure_content(
             _resolve_exposure_atom(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
+    if comp.component_kind == COMPONENT_KIND_TRANSACTION:
+        return transaction_content(
+            _resolve_transaction_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
         )
     if comp.component_kind == COMPONENT_KIND_FACTOR:
         return factor_content(
@@ -1272,6 +1482,7 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             FactorExposureSnapshotError,
             CovarianceSnapshotError,
             VarSnapshotError,
+            ReturnSnapshotError,
             BenchmarkNotVisible,
         ):
             drifted.append(comp.id)
@@ -1387,10 +1598,12 @@ def build_var_hs_snapshot(
 #: time so the failure is a loud, unit-tier import error at the site of the offending constant.
 _BINDING_PREDICATES = (
     DEFAULT_BINDING_PREDICATE,
+    FACTOR_EXPOSURE_BINDING_PREDICATE,
     COVARIANCE_BINDING_PREDICATE,
     VAR_BINDING_PREDICATE,
     ACTIVE_RISK_BINDING_PREDICATE,
     VAR_HS_BINDING_PREDICATE,
+    RETURN_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "

@@ -9,7 +9,10 @@ read — the ``exposure`` SERVICE is never imported, it imports ``snapshot``) + 
 definitions for ``FACTOR_EXPOSURE_INPUT`` snapshots — pinning outputs-as-inputs, computing nothing.
 P3-4 pins aligned ``factor_return`` FR windows (``COMPONENT_KIND_FACTOR_RETURN``, via the EXISTING
 ``marketdata.factor`` reads) for ``COVARIANCE_INPUT`` snapshots — capturing series, estimating
-nothing.
+nothing. PM-1 pins immutable ``transaction`` rows (``COMPONENT_KIND_TRANSACTION``, the P3-3 IA-row
+flavor) alongside the N boundary exposure runs' atoms + per-flow FX legs for ``RETURN_INPUT``
+snapshots (the first non-risk, ``perf``-family purpose) — the flow set arrives as DATA
+(``flow_txn_types``), so the ``snapshot -> ...`` fence never imports ``perf``.
 """
 
 from __future__ import annotations
@@ -25,10 +28,12 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FX,
     COMPONENT_KIND_POSITION,
+    COMPONENT_KIND_TRANSACTION,
     COMPONENT_KIND_VALUATION,
     PURPOSE_ACTIVE_RISK_INPUT,
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
+    PURPOSE_RETURN_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
     PURPOSE_VAR_HS_INPUT,
     PURPOSE_VAR_INPUT,
@@ -41,6 +46,7 @@ from irp_shared.snapshot.service import (
     ACTIVE_RISK_BINDING_PREDICATE,
     COVARIANCE_BINDING_PREDICATE,
     DEFAULT_BINDING_PREDICATE,
+    RETURN_BINDING_PREDICATE,
     VAR_BINDING_PREDICATE,
     ActiveRiskSnapshotError,
     CovarianceSnapshotError,
@@ -48,6 +54,7 @@ from irp_shared.snapshot.service import (
     CurveSnapshotError,
     EmptySnapshotError,
     FactorExposureSnapshotError,
+    ReturnSnapshotError,
     SnapshotNotFound,
     SnapshotPurposeError,
     VarSnapshotError,
@@ -56,6 +63,7 @@ from irp_shared.snapshot.service import (
     build_covariance_snapshot,
     build_curve_snapshot,
     build_factor_exposure_snapshot,
+    build_return_snapshot,
     build_snapshot,
     build_var_hs_snapshot,
     build_var_snapshot,
@@ -112,4 +120,9 @@ __all__ = [
     "ACTIVE_RISK_BINDING_PREDICATE",
     "build_active_risk_snapshot",
     "ActiveRiskSnapshotError",
+    "COMPONENT_KIND_TRANSACTION",
+    "PURPOSE_RETURN_INPUT",
+    "RETURN_BINDING_PREDICATE",
+    "build_return_snapshot",
+    "ReturnSnapshotError",
 ]

@@ -253,6 +253,65 @@ def assert_registered_model_version(
     return version
 
 
+class WrongModelVersionError(Exception):
+    """The ``model_version`` is registered but belongs to a DIFFERENT model than the run requires
+    (a governed-number binder must not bind a methodology from another model family). A CTRL-003
+    tightening; fail-closed pre-create. Maps to 422. (Promoted from ``risk.bootstrap`` at PM-1 — a
+    generic model-registry-governance concern once a SECOND governed-number family, ``perf``,
+    consumes it; re-exported from ``risk.bootstrap`` for API stability.)"""
+
+    def __init__(self, model_version_id: str, expected_model_code: str) -> None:
+        super().__init__(
+            f"model_version {model_version_id} is not a version of {expected_model_code!r}"
+        )
+        self.model_version_id = str(model_version_id)
+        self.expected_model_code = expected_model_code
+
+
+class ModelVersionConflictError(Exception):
+    """``(tenant, model, version_label)`` is already registered with a DIFFERENT ``code_version``
+    — the immutable inventory identity cannot be silently re-pointed (registering a genuinely new
+    code requires a NEW version_label). Maps to 409. (Promoted from ``risk.bootstrap`` at PM-1;
+    re-exported there for API stability.)"""
+
+    def __init__(self, model_code: str, version_label: str, code_version: str) -> None:
+        super().__init__(
+            f"{model_code!r} {version_label!r} is already registered with a different "
+            f"code_version (requested {code_version!r}); mint a new version_label instead"
+        )
+        self.model_code = model_code
+        self.version_label = version_label
+        self.code_version = code_version
+
+
+def assert_model_version_of(
+    session: Session,
+    model_version_id: str,
+    *,
+    tenant_id: str,
+    expected_model_code: str,
+) -> ModelVersion:
+    """CTRL-003 with model-identity: the version must be REGISTERED (fail-closed) AND belong to the
+    model ``expected_model_code`` — raising :class:`WrongModelVersionError` otherwise. Used
+    pre-create by every governed-number binder (risk + perf) so a run can never bind a methodology
+    from a different model family. (Promoted from ``risk.bootstrap`` at PM-1 — the model-family
+    identity gate is generic once ``perf`` also consumes it; re-exported from ``risk.bootstrap`` for
+    API stability.)"""
+    version = assert_registered_model_version(session, str(model_version_id), tenant_id=tenant_id)
+    if version.status != "REGISTERED":
+        # The binders' documented contract is "a REGISTERED model_version"; a version minted via
+        # the GENERIC registration can carry status=None and previously bound anyway (the P3-5
+        # review's recorded deferral; P3-C1 OD-B). The generic resolver + P7 validation semantics
+        # are untouched — this gate is governed-number-binder-scoped.
+        raise UnregisteredModelError(str(model_version_id))
+    model = session.execute(
+        select(Model).where(Model.id == version.model_id, Model.tenant_id == str(tenant_id))
+    ).scalar_one_or_none()
+    if model is None or model.code != expected_model_code:
+        raise WrongModelVersionError(str(model_version_id), expected_model_code)
+    return version
+
+
 def _resolve_version(session: Session, model_version_id: str) -> ModelVersion:
     version = session.execute(
         select(ModelVersion).where(ModelVersion.id == str(model_version_id))

@@ -53,6 +53,11 @@ export const FAMILIES = {
   vars: { runType: "VAR", label: "VaR", permissionFamily: "risk" },
   "active-risk": { runType: "ACTIVE_RISK", label: "Active risk", permissionFamily: "risk" },
   exposure: { runType: "EXPOSURE_AGGREGATE", label: "Exposure", permissionFamily: "exposure" },
+  "portfolio-returns": {
+    runType: "PORTFOLIO_RETURN",
+    label: "Portfolio returns",
+    permissionFamily: "perf",
+  },
 } as const;
 
 export type Family = keyof typeof FAMILIES;
@@ -64,13 +69,17 @@ export const RUN_TYPE_TO_FAMILY: Record<string, Family> = {
   VAR: "vars",
   ACTIVE_RISK: "active-risk",
   EXPOSURE_AGGREGATE: "exposure",
+  PORTFOLIO_RETURN: "portfolio-returns",
 };
 
-/** The run-detail fetch URL for a family: exposure has its own endpoint shape
- * (``/exposure/runs/{id}``), the risk families share ``/risk/{family}/runs/{id}``. */
+/** The run-detail fetch URL for a family: exposure and perf have their own endpoint shapes
+ * (``/exposure/runs/{id}``; ``/perf/portfolio-returns/runs/{id}``), the risk families share
+ * ``/risk/{family}/runs/{id}``. */
 export function runDetailUrl(family: Family, runId: string): string {
   const id = encodeURIComponent(runId);
-  return family === "exposure" ? `/exposure/runs/${id}` : `/risk/${family}/runs/${id}`;
+  if (family === "exposure") return `/exposure/runs/${id}`;
+  if (family === "portfolio-returns") return `/perf/portfolio-returns/runs/${id}`;
+  return `/risk/${family}/runs/${id}`;
 }
 
 export const RUN_STATUSES = ["CREATED", "RUNNING", "COMPLETED", "FAILED"] as const;
@@ -140,5 +149,17 @@ export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]
     { key: "mark_value", label: "Mark" },
     { key: "fx_rate", label: "FX rate" },
     { key: "exposure_amount", label: "Exposure" },
+  ],
+  "portfolio-returns": [
+    { key: "metric_type", label: "Metric" },
+    { key: "period_start", label: "Period start" },
+    { key: "period_end", label: "Period end" },
+    { key: "begin_mv", label: "Begin MV" },
+    { key: "end_mv", label: "End MV" },
+    { key: "net_external_flow", label: "Net flow" },
+    { key: "return_value", label: "Return" },
+    { key: "n_flows", label: "Flows" },
+    { key: "n_periods", label: "Periods" },
+    { key: "base_currency", label: "Base ccy" },
   ],
 };

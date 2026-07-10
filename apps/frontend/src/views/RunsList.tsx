@@ -15,12 +15,13 @@ function truncate(text: string, max = 80): string {
 
 function ErrorState({ error }: { error: ApiError }): ReactElement {
   if (error.kind === "forbidden") {
-    // Family-neutral: exposure runs need exposure.view, risk runs need risk.view — a session
-    // may hold one and not the other (the permission-family separation, P3-C2 OD-C).
+    // Family-neutral: exposure runs need exposure.view, risk runs need risk.view, perf runs need
+    // perf.view — a session may hold one and not the others (the permission-family separation,
+    // P3-C2 OD-C; PM-1).
     return (
       <p className="state error">
         This identity is not entitled to view the selected runs (403 — risk runs need risk.view,
-        exposure runs need exposure.view).
+        exposure runs need exposure.view, portfolio-return runs need perf.view).
       </p>
     );
   }
@@ -49,16 +50,18 @@ export function RunsList({ session }: { session: DevSession }): ReactElement {
     // detect the last page when the count is an exact multiple of the page size).
     params.set("limit", String(PAGE_SIZE + 1));
     params.set("offset", String(offset));
-    // The family selector chooses the SOURCE (P3-C2 OD-C): EXPOSURE_AGGREGATE is a separate
-    // permission family (exposure.view) listed by /exposure/runs; the five risk families (and
-    // the "All risk" default) are listed by /risk/runs. Selecting a source per family keeps
-    // server-side pagination correct — merging two independently-paginated endpoints would
-    // recreate the FE-1 has-more trap.
+    // The family selector chooses the SOURCE (P3-C2 OD-C; PM-1): EXPOSURE_AGGREGATE is a separate
+    // permission family (exposure.view) listed by /exposure/runs; PORTFOLIO_RETURN is the perf
+    // family (perf.view) listed by /perf/runs; the five risk families (and the "All risk" default)
+    // are listed by /risk/runs. Selecting a source per family keeps server-side pagination correct —
+    // merging independently-paginated endpoints would recreate the FE-1 has-more trap.
     const isExposure = runType === "EXPOSURE_AGGREGATE";
-    if (runType && !isExposure) params.set("run_type", runType);
-    const url = isExposure
-      ? `/exposure/runs?${params.toString()}`
-      : `/risk/runs?${params.toString()}`;
+    const isPerf = runType === "PORTFOLIO_RETURN";
+    if (runType && !isExposure && !isPerf) params.set("run_type", runType);
+    let base = "/risk/runs";
+    if (isExposure) base = "/exposure/runs";
+    else if (isPerf) base = "/perf/runs";
+    const url = `${base}?${params.toString()}`;
     setItems(null);
     setError(null);
     apiGet<RiskRunList>(url, session)

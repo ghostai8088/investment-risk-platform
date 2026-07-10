@@ -20,6 +20,7 @@ from irp_backend.api.marketdata import factor_router as marketdata_factor_router
 from irp_backend.api.marketdata import price_router as marketdata_price_router
 from irp_backend.api.marketdata import router as marketdata_router
 from irp_backend.api.models import router as models_router
+from irp_backend.api.perf import router as perf_router
 from irp_backend.api.portfolios import router as portfolios_router
 from irp_backend.api.positions import router as positions_router
 from irp_backend.api.reference import router as reference_router
@@ -57,3 +58,4 @@ app.include_router(marketdata_benchmark_router)
 app.include_router(marketdata_factor_router)
 app.include_router(exposure_router)
 app.include_router(risk_router)
+app.include_router(perf_router)
