@@ -20,6 +20,7 @@ from __future__ import annotations
 from irp_shared.snapshot.events import SNAPSHOT_CREATE_EVENT, SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
     COMPONENT_KIND_BENCHMARK,
+    COMPONENT_KIND_BENCHMARK_RETURN,
     COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_CURVE,
     COMPONENT_KIND_EXPOSURE,
@@ -27,10 +28,12 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_FACTOR_EXPOSURE,
     COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FX,
+    COMPONENT_KIND_PORTFOLIO_RETURN,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_TRANSACTION,
     COMPONENT_KIND_VALUATION,
     PURPOSE_ACTIVE_RISK_INPUT,
+    PURPOSE_BENCHMARK_RELATIVE_INPUT,
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_RETURN_INPUT,
@@ -44,11 +47,13 @@ from irp_shared.snapshot.models import (
 )
 from irp_shared.snapshot.service import (
     ACTIVE_RISK_BINDING_PREDICATE,
+    BENCHMARK_RELATIVE_BINDING_PREDICATE,
     COVARIANCE_BINDING_PREDICATE,
     DEFAULT_BINDING_PREDICATE,
     RETURN_BINDING_PREDICATE,
     VAR_BINDING_PREDICATE,
     ActiveRiskSnapshotError,
+    BenchmarkRelativeSnapshotError,
     CovarianceSnapshotError,
     CurveSelector,
     CurveSnapshotError,
@@ -60,6 +65,7 @@ from irp_shared.snapshot.service import (
     VarSnapshotError,
     VerifyResult,
     build_active_risk_snapshot,
+    build_benchmark_relative_snapshot,
     build_covariance_snapshot,
     build_curve_snapshot,
     build_factor_exposure_snapshot,
@@ -125,4 +131,10 @@ __all__ = [
     "RETURN_BINDING_PREDICATE",
     "build_return_snapshot",
     "ReturnSnapshotError",
+    "COMPONENT_KIND_PORTFOLIO_RETURN",
+    "COMPONENT_KIND_BENCHMARK_RETURN",
+    "PURPOSE_BENCHMARK_RELATIVE_INPUT",
+    "BENCHMARK_RELATIVE_BINDING_PREDICATE",
+    "build_benchmark_relative_snapshot",
+    "BenchmarkRelativeSnapshotError",
 ]

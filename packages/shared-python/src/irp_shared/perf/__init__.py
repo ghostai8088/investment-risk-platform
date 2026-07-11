@@ -15,22 +15,53 @@ measure, deferred to PA-0); NO net-of-fees (no fee capture exists); NO attributi
 
 from __future__ import annotations
 
+from irp_shared.perf.benchmark_relative_kernel import (
+    BenchmarkRelativeKernelError,
+    active_series,
+    compound_returns,
+    information_ratio,
+    mean_return,
+    sample_stdev,
+)
+from irp_shared.perf.benchmark_relative_service import (
+    BenchmarkRelativeInputError,
+    BenchmarkRelativeNotVisible,
+    BenchmarkRelativeRunNotVisible,
+    BenchmarkRelativeRunResult,
+    list_benchmark_relatives,
+    resolve_benchmark_relative,
+    resolve_benchmark_relative_run,
+    run_benchmark_relative,
+)
 from irp_shared.perf.bootstrap import (
+    BENCHMARK_RELATIVE_MODEL_CODE,
+    BENCHMARK_RELATIVE_MODEL_NAME,
+    BENCHMARK_RELATIVE_MODEL_TYPE,
+    BENCHMARK_RELATIVE_VERSION_LABEL,
     PORTFOLIO_RETURN_MODEL_CODE,
     PORTFOLIO_RETURN_MODEL_NAME,
     PORTFOLIO_RETURN_MODEL_TYPE,
     PORTFOLIO_RETURN_VERSION_LABEL,
+    register_benchmark_relative_model,
     register_portfolio_return_model,
 )
 from irp_shared.perf.events import (
     EXTERNAL_FLOW_TXN_TYPES,
+    PERF_BENCHMARK_RELATIVE_CREATE_EVENT_RESERVED,
     PERF_RETURN_CREATE_EVENT_RESERVED,
+    RUN_TYPE_BENCHMARK_RELATIVE,
     RUN_TYPE_PORTFOLIO_RETURN,
+    BenchmarkRelativeActor,
     PortfolioReturnActor,
 )
 from irp_shared.perf.models import (
+    METRIC_TYPE_ACTIVE_RETURN,
     METRIC_TYPE_DIETZ_PERIOD,
+    METRIC_TYPE_INFORMATION_RATIO,
+    METRIC_TYPE_TRACKING_DIFFERENCE,
+    METRIC_TYPE_TRACKING_ERROR,
     METRIC_TYPE_TWR_LINKED,
+    BenchmarkRelativeResult,
     PortfolioReturnResult,
 )
 from irp_shared.perf.queries import (
@@ -93,4 +124,36 @@ __all__ = [
     "PerfRunQueryError",
     "PERF_RUN_TYPES",
     "LIST_LIMIT_DEFAULT",
+    # P3-8 benchmark-relative — kernel
+    "BenchmarkRelativeKernelError",
+    "compound_returns",
+    "active_series",
+    "mean_return",
+    "sample_stdev",
+    "information_ratio",
+    # P3-8 registrar
+    "BENCHMARK_RELATIVE_MODEL_CODE",
+    "BENCHMARK_RELATIVE_MODEL_NAME",
+    "BENCHMARK_RELATIVE_MODEL_TYPE",
+    "BENCHMARK_RELATIVE_VERSION_LABEL",
+    "register_benchmark_relative_model",
+    # P3-8 events / vocab
+    "RUN_TYPE_BENCHMARK_RELATIVE",
+    "PERF_BENCHMARK_RELATIVE_CREATE_EVENT_RESERVED",
+    "BenchmarkRelativeActor",
+    # P3-8 model + metric vocab
+    "BenchmarkRelativeResult",
+    "METRIC_TYPE_ACTIVE_RETURN",
+    "METRIC_TYPE_TRACKING_DIFFERENCE",
+    "METRIC_TYPE_TRACKING_ERROR",
+    "METRIC_TYPE_INFORMATION_RATIO",
+    # P3-8 binder
+    "run_benchmark_relative",
+    "list_benchmark_relatives",
+    "resolve_benchmark_relative",
+    "resolve_benchmark_relative_run",
+    "BenchmarkRelativeRunResult",
+    "BenchmarkRelativeInputError",
+    "BenchmarkRelativeNotVisible",
+    "BenchmarkRelativeRunNotVisible",
 ]

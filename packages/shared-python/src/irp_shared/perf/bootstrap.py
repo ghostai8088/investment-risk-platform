@@ -143,3 +143,119 @@ def register_portfolio_return_model(
         limitations=PORTFOLIO_RETURN_LIMITATIONS,
         actor_type=actor_type,
     )
+
+
+# --------------------------------------------------------------------------------------------------
+# P3-8 — the ex-post benchmark-relative model (ENT-054). The SAME code_version-only registrar shape
+# (no free numeric parameter — the v1 conventions ARE the version identity). Its OWN model family
+# under the perf domain (a benchmark-relative run is a distinct governed number from a portfolio
+# return; the run family `BENCHMARK_RELATIVE` reuses `perf.run`/`perf.view`, no new permission).
+# --------------------------------------------------------------------------------------------------
+
+#: The per-tenant inventory identity of the ex-post benchmark-relative model (PM/P3-8, OD-P3-8-A).
+BENCHMARK_RELATIVE_MODEL_CODE = "perf.benchmark_relative"
+BENCHMARK_RELATIVE_MODEL_NAME = "Ex-post benchmark-relative performance (active return/TE/IR, v1)"
+BENCHMARK_RELATIVE_MODEL_TYPE = "BENCHMARK_RELATIVE"
+BENCHMARK_RELATIVE_VERSION_LABEL = "v1"
+BENCHMARK_RELATIVE_METHODOLOGY_REF = "05_analytics_methodologies/benchmark_relative_expost_v1.md"
+
+#: Declared methodology choices (mirrored into model_assumption rows; OD-P3-8-C/D/E). NO free
+#: numeric request parameter — the identity IS ``code_version`` + these fixed conventions.
+BENCHMARK_RELATIVE_ASSUMPTIONS: tuple[str, ...] = (
+    "Per sub-period ARITHMETIC active return a_i = r_p,i - r_b,i, where r_p,i are the DIETZ_PERIOD "
+    "rows of ONE COMPLETED portfolio-return run (PM-1) and r_b,i is the GEOMETRIC compounding "
+    "prod(1 + r_d) - 1 of the pinned SIMPLE benchmark_return rows whose return_date falls in the "
+    "SAME half-open sub-period window (start, end]. The sub-periods are the PM-1 run's boundaries.",
+    "TRACKING DIFFERENCE TD = R_p - R_b (each side geometrically compounded over the full span, "
+    "the ESMA definition). TRACKING ERROR TE = the unbiased SAMPLE standard deviation (n-1 "
+    "denominator) of the a_i (the ESMA ex-post definition; requires n >= 2 sub-periods). "
+    "INFORMATION RATIO IR = mean(a_i) / TE (Grinold-Kahn); UNDEFINED and OMITTED when TE == 0.",
+    "SIMPLE return_type; the CALLER chooses return_basis (PRICE/TOTAL/NET_TOTAL), echoed on every "
+    "row. benchmark.benchmark_currency MUST equal the portfolio run's base_currency (no FX "
+    "translation of return series in v1). All values Decimal-50 -> quantize_HALF_UP 12dp "
+    "fractions/ratios; UNANNUALIZED (the ESMA disclosure TE is typically annualized - the DECLARED "
+    "deviation, so these figures are never conflated with the UCITS disclosure numbers).",
+)
+
+#: The recorded scope-outs (mirrored into model_limitation rows; OD-P3-8-J + the PM-1 OD-K carry).
+BENCHMARK_RELATIVE_LIMITATIONS: tuple[str, ...] = (
+    "CAPTURED-HOLDINGS BOOK PROPAGATION: the portfolio side (PM-1) measures the captured-holdings "
+    "book with no cash ledger, so uncaptured dividend/interest income understates the portfolio "
+    "return - and that understatement flows INTO every P3-8 number (active return, TD, TE, IR) as "
+    "a bias against a TOTAL-return benchmark. First-class limitation; mitigation is operational "
+    "(capture the cash), NOT mathematical imputation. Named again per the PM-1 OD-K obligation.",
+    "MISSING-DAY COMPOUNDING HAZARD: the benchmark side compounds the AVAILABLE pinned rows in "
+    "each window; a vendor GAP inside a window silently understates the compounded benchmark "
+    "return. Trading-calendar completeness validation is DEFERRED (the reference calendar tables "
+    "exist; wiring them is a data-quality slice). A window with ZERO benchmark rows refuses.",
+    "GROSS-vs-BASIS comparability: PM-1 returns are gross-of-fees over a captured-holdings book; "
+    "the caller owns the return_basis choice (PRICE/TOTAL/NET_TOTAL) and NO silent basis "
+    "adjustment is made - a gross portfolio vs a NET_TOTAL benchmark is the caller's comparison.",
+    "ARITHMETIC active returns (geometric excess deferred); UNANNUALIZED; single benchmark per "
+    "run; no active share; no relative VaR; no attribution; LOG return_type reserved. "
+    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+)
+
+
+def register_benchmark_relative_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the ex-post benchmark-relative ``model`` + a ``model_version`` for
+    this ``code_version`` identity (P3-8, OD-P3-8-A). NO free numeric request parameter — the v1
+    conventions ARE the identity — so version resolution keys on ``code_version`` alone: a same-
+    label re-register with a DIFFERENT ``code_version`` raises :class:`ModelVersionConflictError`;
+    a same-label twin minted via the GENERIC registration (status != REGISTERED) raises
+    :class:`WrongModelVersionError` (the P3-C1 register/run-consistency lesson)."""
+    model = session.execute(
+        select(Model).where(
+            Model.tenant_id == str(tenant_id), Model.code == BENCHMARK_RELATIVE_MODEL_CODE
+        )
+    ).scalar_one_or_none()
+    if model is None:
+        model = register_model(
+            session,
+            tenant_id=str(tenant_id),
+            code=BENCHMARK_RELATIVE_MODEL_CODE,
+            name=BENCHMARK_RELATIVE_MODEL_NAME,
+            model_type=BENCHMARK_RELATIVE_MODEL_TYPE,
+            actor_id=actor_id,
+            description=(
+                "Ex-post benchmark-relative performance (realized active return / tracking "
+                "difference / tracking error / information ratio) over a portfolio-return run + a "
+                "captured benchmark_return series, unannualized (P3-8, ENT-054)."
+            ),
+            actor_type=actor_type,
+        )
+
+    version = session.execute(
+        select(ModelVersion).where(
+            ModelVersion.model_id == model.id,
+            ModelVersion.version_label == BENCHMARK_RELATIVE_VERSION_LABEL,
+        )
+    ).scalar_one_or_none()
+    if version is not None:
+        if version.status != "REGISTERED":
+            raise WrongModelVersionError(str(version.id), str(model.code))
+        if version.code_version != str(code_version):
+            raise ModelVersionConflictError(
+                BENCHMARK_RELATIVE_MODEL_CODE, BENCHMARK_RELATIVE_VERSION_LABEL, str(code_version)
+            )
+        return version
+
+    return register_model_version(
+        session,
+        model=model,
+        version_label=BENCHMARK_RELATIVE_VERSION_LABEL,
+        actor_id=actor_id,
+        methodology_ref=BENCHMARK_RELATIVE_METHODOLOGY_REF,
+        code_version=str(code_version),
+        status="REGISTERED",
+        assumptions=BENCHMARK_RELATIVE_ASSUMPTIONS,
+        limitations=BENCHMARK_RELATIVE_LIMITATIONS,
+        actor_type=actor_type,
+    )

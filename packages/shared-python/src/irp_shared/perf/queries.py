@@ -15,10 +15,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
-from irp_shared.perf.events import RUN_TYPE_PORTFOLIO_RETURN
+from irp_shared.perf.events import RUN_TYPE_BENCHMARK_RELATIVE, RUN_TYPE_PORTFOLIO_RETURN
 
-#: The closed set this listing may surface (v1: the single perf family). Risk/exposure runs are OUT.
-PERF_RUN_TYPES: frozenset[str] = frozenset({RUN_TYPE_PORTFOLIO_RETURN})
+#: The closed set this listing may surface (the perf families). Risk/exposure runs are OUT.
+PERF_RUN_TYPES: frozenset[str] = frozenset({RUN_TYPE_PORTFOLIO_RETURN, RUN_TYPE_BENCHMARK_RELATIVE})
 
 _STATUS_VALUES: frozenset[str] = frozenset(s.value for s in RunStatus)
 

@@ -60,6 +60,10 @@ from irp_shared.marketdata import (
     resolve_conversion_legs,
     resolve_curve,
 )
+from irp_shared.marketdata.benchmark_series import (
+    list_benchmark_returns,
+    reconstruct_benchmark_return_as_of,
+)
 from irp_shared.marketdata.factor import (
     FactorNotVisible,
     list_factor_returns,
@@ -73,6 +77,7 @@ from irp_shared.position import PositionNotVisible, resolve_position
 from irp_shared.snapshot.events import SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
     COMPONENT_KIND_BENCHMARK,
+    COMPONENT_KIND_BENCHMARK_RETURN,
     COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_CURVE,
     COMPONENT_KIND_EXPOSURE,
@@ -81,10 +86,12 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FX,
     COMPONENT_KIND_PORTFOLIO,
+    COMPONENT_KIND_PORTFOLIO_RETURN,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_TRANSACTION,
     COMPONENT_KIND_VALUATION,
     PURPOSE_ACTIVE_RISK_INPUT,
+    PURPOSE_BENCHMARK_RELATIVE_INPUT,
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_RETURN_INPUT,
@@ -97,6 +104,7 @@ from irp_shared.snapshot.models import (
 )
 from irp_shared.snapshot.serialize import (
     benchmark_membership_content,
+    benchmark_return_series_content,
     content_hash,
     covariance_content,
     curve_content,
@@ -107,6 +115,7 @@ from irp_shared.snapshot.serialize import (
     fx_content,
     manifest_hash,
     portfolio_content,
+    portfolio_return_content,
     position_content,
     serialize_content,
     transaction_content,
@@ -1339,6 +1348,209 @@ def build_return_snapshot(
     return header_row
 
 
+class BenchmarkRelativeSnapshotError(Exception):
+    """Raised when an ex-post benchmark-relative input snapshot cannot be built (a return run with
+    no visible result rows, an unresolvable input, or an empty benchmark window over the whole span)
+    — fail closed, BEFORE any write. Its OWN class (a perf number never borrows a risk-family error
+    — the V8 lesson). Maps to 409."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"benchmark-relative snapshot input failed closed: {detail}")
+        self.detail = detail
+
+
+def _resolve_portfolio_return_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``portfolio_return_result`` by id with an EXPLICIT tenant predicate (models-only
+    import — the ``_resolve_exposure_atom`` precedent: ``perf.models`` imports no ``snapshot``
+    symbol, so the one-way surface holds; the ``perf`` SERVICE is deliberately not imported)."""
+    from irp_shared.perf.models import PortfolioReturnResult  # models-only (no cycle / fence-safe)
+
+    row = session.execute(
+        select(PortfolioReturnResult).where(
+            PortfolioReturnResult.id == str(row_id),
+            PortfolioReturnResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise BenchmarkRelativeSnapshotError(f"portfolio_return_result {row_id} is not visible")
+    return row
+
+
+def _list_portfolio_return_rows(session: Session, run_id: str, *, acting_tenant: str) -> list[Any]:
+    """The ``portfolio_return_result`` rows of a return run (tenant-scoped, stable
+    ``(metric_type, period_start)`` order; models-only import). ALL metrics are returned — the
+    binder reads the DIETZ_PERIOD series + the TWR_LINKED row for the exact-linkage cross-check."""
+    from irp_shared.perf.models import PortfolioReturnResult  # models-only (no cycle / fence-safe)
+
+    return list(
+        session.execute(
+            select(PortfolioReturnResult)
+            .where(
+                PortfolioReturnResult.calculation_run_id == str(run_id),
+                PortfolioReturnResult.tenant_id == str(acting_tenant),
+            )
+            .order_by(PortfolioReturnResult.metric_type, PortfolioReturnResult.period_start)
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _resolve_benchmark_return_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``benchmark_return`` FR version by surrogate id with an EXPLICIT tenant predicate
+    (models-only import — for the verify re-resolution of a pinned window row)."""
+    from irp_shared.marketdata.models import BenchmarkReturn  # models-only (no cycle)
+
+    row = session.execute(
+        select(BenchmarkReturn).where(
+            BenchmarkReturn.id == str(row_id),
+            BenchmarkReturn.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise BenchmarkRelativeSnapshotError(f"benchmark_return {row_id} is not visible")
+    return row
+
+
+def _benchmark_return_window(
+    session: Session,
+    *,
+    benchmark_id: str,
+    return_basis: str,
+    start_exclusive: date,
+    end_inclusive: date,
+    valid_at: datetime,
+    known_at: datetime,
+    acting_tenant: str,
+) -> list[Any]:
+    """The ``SIMPLE`` ``benchmark_return`` VERSIONS of ``return_basis`` true at ``valid_at`` as
+    known at ``known_at`` whose ``return_date`` is in the half-open span ``(start_exclusive,
+    end_inclusive]`` — via the EXISTING reads only (the ``_factor_window_rows`` pattern). The
+    current-head list only
+    ENUMERATES candidate dates; the pinned VERSION per date always comes from
+    ``reconstruct_benchmark_return_as_of`` on BOTH axes, so the frozen header cutoffs reproduce the
+    pinned content (a later vendor supersede/correction is invisible — TR-09)."""
+    head_dates = {
+        r.return_date
+        for r in list_benchmark_returns(
+            session, acting_tenant=acting_tenant, benchmark_id=benchmark_id
+        )
+        if r.return_type == RETURN_TYPE_SIMPLE
+        and r.return_basis == return_basis
+        and start_exclusive < r.return_date <= end_inclusive
+    }
+    out: list[Any] = []
+    for return_date in sorted(head_dates):
+        row = reconstruct_benchmark_return_as_of(
+            session,
+            acting_tenant=acting_tenant,
+            benchmark_id=benchmark_id,
+            return_date=return_date,
+            return_basis=return_basis,
+            valid_at=valid_at,
+            return_type=RETURN_TYPE_SIMPLE,
+            known_at=known_at,
+        )
+        if row is not None:
+            out.append(row)
+    return out
+
+
+#: The benchmark-relative binding/selection rule (a truthful descriptor; P3-8, OD-P3-8-G).
+BENCHMARK_RELATIVE_BINDING_PREDICATE = "v1:return-run-rows+benchmark-window"
+
+
+def build_benchmark_relative_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    portfolio_return_run_id: str,
+    benchmark_id: str,
+    return_basis: str,
+    as_of_valid_at: datetime | None = None,
+    as_of_known_at: datetime | None = None,
+) -> DatasetSnapshot:
+    """Build one immutable ``BENCHMARK_RELATIVE_INPUT`` snapshot (P3-8, OD-P3-8-G) pinning:
+
+    - one ``COMPONENT_KIND_PORTFOLIO_RETURN`` per ``portfolio_return_result`` row of the consumed
+      return run (the P3-3 IA-row pin flavor — the DIETZ_PERIOD series + the TWR_LINKED row); and
+    - one ``COMPONENT_KIND_BENCHMARK_RETURN`` series component pinning the in-span ``SIMPLE`` /
+      ``return_basis`` benchmark_return rows (the FACTOR_RETURN header+rows flavor; ENT-052's FIRST
+      governed consumer),
+
+    so a benchmark-relative run is reproducible from the snapshot alone (the binder reads this
+    captured content — never a live return/benchmark read; a later PM-1 re-run OR a benchmark vendor
+    correction cannot move a historical result, TR-09). The span is ``(min period_start, max
+    period_end]`` over the pinned return rows. A return run with NO visible rows OR an EMPTY
+    benchmark span fails closed BEFORE any write (:class:`BenchmarkRelativeSnapshotError`). The
+    currency / basis-uniformity / linkage adjudication is the PERF binder's pre-create gate — this
+    builder pins a well-formed set; it reads no model registry and imports NO ``calc``/``perf``
+    SERVICE symbol (the return rows are a models-only read)."""
+    now = utcnow()
+    valid_at = as_of_valid_at if as_of_valid_at is not None else now
+    known = as_of_known_at if as_of_known_at is not None else now  # FROZEN once (header == pin)
+
+    return_rows = _list_portfolio_return_rows(
+        session, portfolio_return_run_id, acting_tenant=acting_tenant
+    )
+    if not return_rows:
+        raise BenchmarkRelativeSnapshotError(
+            f"portfolio-return run {portfolio_return_run_id} has no visible result rows to pin"
+        )
+    span_start = min(r.period_start for r in return_rows)
+    span_end = max(r.period_end for r in return_rows)
+
+    benchmark = resolve_benchmark(session, str(benchmark_id), acting_tenant=acting_tenant)
+    window = _benchmark_return_window(
+        session,
+        benchmark_id=benchmark.id,
+        return_basis=return_basis,
+        start_exclusive=span_start,
+        end_inclusive=span_end,
+        valid_at=valid_at,
+        known_at=known,
+        acting_tenant=acting_tenant,
+    )
+    if not window:
+        raise BenchmarkRelativeSnapshotError(
+            f"benchmark {benchmark_id} has no {return_basis} returns in "
+            f"({span_start}, {span_end}] as-of the declared instants"
+        )
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in return_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_PORTFOLIO_RETURN,
+            "portfolio_return_result",
+            row,
+            portfolio_return_content(row),
+        )
+    _append_spec(
+        specs,
+        COMPONENT_KIND_BENCHMARK_RETURN,
+        "benchmark",
+        benchmark,
+        benchmark_return_series_content(benchmark, window),
+    )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_BENCHMARK_RELATIVE_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=span_end,
+        binding_predicate_version=BENCHMARK_RELATIVE_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -1411,6 +1623,23 @@ def _reresolve_content(
         return transaction_content(
             _resolve_transaction_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
         )
+    if comp.component_kind == COMPONENT_KIND_PORTFOLIO_RETURN:
+        return portfolio_return_content(
+            _resolve_portfolio_return_row(
+                session, comp.target_entity_id, acting_tenant=acting_tenant
+            )
+        )
+    if comp.component_kind == COMPONENT_KIND_BENCHMARK_RETURN:
+        # Re-read the benchmark header (by the pinned target id) + each pinned FR row by surrogate
+        # id (tenant-predicated). A superseded/corrected row is byte-stable (its immutable content
+        # is what was pinned — close-out markers excluded, TR-09); a gone row reports as drift.
+        benchmark = resolve_benchmark(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        pinned = json.loads(comp.captured_content)
+        rows = [
+            _resolve_benchmark_return_row(session, r["id"], acting_tenant=acting_tenant)
+            for r in pinned["rows"]
+        ]
+        return benchmark_return_series_content(benchmark, rows)
     if comp.component_kind == COMPONENT_KIND_FACTOR:
         return factor_content(
             resolve_factor(session, comp.target_entity_id, acting_tenant=acting_tenant)
@@ -1483,6 +1712,7 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             CovarianceSnapshotError,
             VarSnapshotError,
             ReturnSnapshotError,
+            BenchmarkRelativeSnapshotError,
             BenchmarkNotVisible,
         ):
             drifted.append(comp.id)
@@ -1604,6 +1834,7 @@ _BINDING_PREDICATES = (
     ACTIVE_RISK_BINDING_PREDICATE,
     VAR_HS_BINDING_PREDICATE,
     RETURN_BINDING_PREDICATE,
+    BENCHMARK_RELATIVE_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "

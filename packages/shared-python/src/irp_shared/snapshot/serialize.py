@@ -364,6 +364,65 @@ def transaction_content(row: Any) -> dict[str, Any]:
     }
 
 
+def portfolio_return_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``portfolio_return_result`` (ENT-053, IA) row (P3-8
+    PORTFOLIO_RETURN component — the P3-3 EXPOSURE true-append-only pin flavor: no valid axis, no
+    ``record_version``; ``system_from`` the append time; byte-identical on re-verify). The FULL
+    immutable column set is pinned so the benchmark-relative binder reconstructs each sub-period
+    return (``metric_type``/``period_start``/``period_end``/``return_value``) exactly. Scales:
+    ``begin_mv``/``end_mv``/``net_external_flow`` 6; ``return_value`` 12 (the result scales)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "calculation_run_id": _norm_guid(row.calculation_run_id),
+        "input_snapshot_id": _norm_guid(row.input_snapshot_id),
+        "model_version_id": _norm_guid(row.model_version_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "metric_type": row.metric_type,
+        "period_start": row.period_start.isoformat(),
+        "period_end": row.period_end.isoformat(),
+        "begin_mv": _norm_decimal(row.begin_mv, _SCALE_MONEY),
+        "end_mv": _norm_decimal(row.end_mv, _SCALE_MONEY),
+        "net_external_flow": _norm_decimal(row.net_external_flow, _SCALE_MONEY),
+        "return_value": _norm_decimal(row.return_value, _SCALE_CURVE_POINT),
+        "n_flows": row.n_flows,
+        "n_periods": row.n_periods,
+        "base_currency": row.base_currency,
+        "system_from": _norm_datetime(row.system_from),
+    }
+
+
+def benchmark_return_series_content(benchmark: Any, rows: list[Any]) -> dict[str, Any]:
+    """The captured content of one benchmark's pinned RETURN WINDOW (P3-8 BENCHMARK_RETURN component
+    — the ``factor_return_series_content`` header+rows shape over ``benchmark_return`` FR rows).
+    Each row is an immutable FR VERSION (corrections close it out + insert a successor) ⇒ per-row id
+    re-resolution is byte-stable; a later vendor supersede/correction is invisible to the pinned
+    window (TR-09; ENT-052's first governed consumer). The benchmark HEADER identity + the uniform
+    ``return_type``/``return_basis`` are carried so the binder reads them from the pin. Rows ordered
+    by ``return_date``; values at the return scale 12."""
+    return {
+        "benchmark_id": _norm_guid(benchmark.id),
+        "benchmark_code": benchmark.benchmark_code,
+        "benchmark_source": benchmark.benchmark_source,
+        "benchmark_currency": benchmark.benchmark_currency,
+        "return_type": rows[0].return_type if rows else None,
+        "return_basis": rows[0].return_basis if rows else None,
+        "rows": [
+            {
+                "id": _norm_guid(r.id),
+                "return_date": r.return_date.isoformat(),
+                "return_type": r.return_type,
+                "return_basis": r.return_basis,
+                "return_value": _norm_decimal(r.return_value, _SCALE_CURVE_POINT),
+                "valid_from": _norm_datetime(r.valid_from),
+                "system_from": _norm_datetime(r.system_from),
+                "record_version": r.record_version,
+            }
+            for r in sorted(rows, key=lambda x: x.return_date)
+        ],
+    }
+
+
 def serialize_content(content: dict[str, Any]) -> str:
     """Canonical-serialize a per-kind content dict (sorted keys, compact, engine-independent)."""
     return canonicalize(content)

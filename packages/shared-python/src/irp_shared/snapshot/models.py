@@ -60,6 +60,10 @@ PURPOSE_ACTIVE_RISK_INPUT = "ACTIVE_RISK_INPUT"
 #: flows filtered by the binder), and the FX legs for non-base flow currencies at each flow date.
 #: The FIRST non-risk (``perf``-family) snapshot purpose.
 PURPOSE_RETURN_INPUT = "RETURN_INPUT"
+#: P3-8 (OD-P3-8-G): the ex-post benchmark-relative input purpose — pins ALL portfolio_return_result
+#: rows of ONE COMPLETED return run (PORTFOLIO_RETURN kind) + the in-window benchmark_return series
+#: (BENCHMARK_RETURN kind). ENT-052's FIRST governed consumer.
+PURPOSE_BENCHMARK_RELATIVE_INPUT = "BENCHMARK_RELATIVE_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -71,6 +75,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_VAR_HS_INPUT,
     PURPOSE_ACTIVE_RISK_INPUT,
     PURPOSE_RETURN_INPUT,
+    PURPOSE_BENCHMARK_RELATIVE_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -122,6 +127,16 @@ COMPONENT_KIND_BENCHMARK = "BENCHMARK"
 #: TRANSFER_OUT}; the snapshot pins the full in-window set (staying perf-agnostic — ``snapshot``
 #: never imports the flow set). ``target_entity_type='transaction'``.
 COMPONENT_KIND_TRANSACTION = "TRANSACTION"
+#: P3-8 (OD-P3-8-G): a pinned ``portfolio_return_result`` (ENT-053) row — an IA-row pin flavor (the
+#: source row is TRUE append-only; drift impossible). The benchmark-relative binder reads the
+#: DIETZ_PERIOD rows as the per-sub-period portfolio returns + the TWR_LINKED row for the exact-
+#: linkage cross-check. ``target_entity_type='portfolio_return_result'``.
+COMPONENT_KIND_PORTFOLIO_RETURN = "PORTFOLIO_RETURN"
+#: P3-8 (OD-P3-8-G): a pinned ``benchmark_return`` (ENT-052) RETURN WINDOW — the ``factor_return``
+#: series flavor (ONE component pinning the ordered in-window FR rows + the benchmark HEADER
+#: identity + return_type/basis). A later vendor supersede/correction is invisible to the pin
+#: (TR-09). ENT-052's FIRST governed consumer. ``target_entity_type='benchmark'``.
+COMPONENT_KIND_BENCHMARK_RETURN = "BENCHMARK_RETURN"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -135,6 +150,8 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_BENCHMARK,
     COMPONENT_KIND_TRANSACTION,
+    COMPONENT_KIND_PORTFOLIO_RETURN,
+    COMPONENT_KIND_BENCHMARK_RETURN,
 )
 
 

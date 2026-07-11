@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, map_refusal, require_permission
 from irp_shared.entitlement.service import Principal
-from irp_shared.marketdata import FxRateNotFound
+from irp_shared.marketdata import BenchmarkNotVisible, FxRateNotFound
 from irp_shared.model.service import (
     ModelVersionConflictError,
     UnregisteredModelError,
@@ -37,6 +37,12 @@ from irp_shared.model.service import (
 )
 from irp_shared.perf import (
     LIST_LIMIT_DEFAULT,
+    BenchmarkRelativeActor,
+    BenchmarkRelativeInputError,
+    BenchmarkRelativeNotVisible,
+    BenchmarkRelativeResult,
+    BenchmarkRelativeRunNotVisible,
+    BenchmarkRelativeRunResult,
     PerfRunQueryError,
     PortfolioReturnActor,
     PortfolioReturnInputError,
@@ -44,14 +50,20 @@ from irp_shared.perf import (
     PortfolioReturnResult,
     PortfolioReturnRunNotVisible,
     PortfolioReturnRunResult,
+    list_benchmark_relatives,
     list_perf_runs,
     list_portfolio_returns,
+    register_benchmark_relative_model,
     register_portfolio_return_model,
+    resolve_benchmark_relative,
+    resolve_benchmark_relative_run,
     resolve_portfolio_return,
     resolve_portfolio_return_run,
+    run_benchmark_relative,
     run_portfolio_return,
 )
 from irp_shared.snapshot import (
+    BenchmarkRelativeSnapshotError,
     ReturnSnapshotError,
     SnapshotNotFound,
     SnapshotPurposeError,
@@ -90,6 +102,15 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     ),
     FxRateNotFound: (status.HTTP_409_CONFLICT, "no FX leg for a flow currency as-of"),
     PerfRunQueryError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid run listing filter"),
+    BenchmarkRelativeInputError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid benchmark-relative run input",
+    ),
+    BenchmarkRelativeSnapshotError: (
+        status.HTTP_409_CONFLICT,
+        "benchmark-relative snapshot input failed closed",
+    ),
+    BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
 }
 
 
@@ -381,3 +402,228 @@ def get_portfolio_return(
             status_code=status.HTTP_404_NOT_FOUND, detail="portfolio-return result not found"
         ) from None
     return _row_out(row)
+
+
+# ---------- P3-8: ex-post benchmark-relative (ENT-054; REUSES perf.run/perf.view) ----------
+
+
+def _br_actor(principal: Principal) -> BenchmarkRelativeActor:
+    return BenchmarkRelativeActor(actor_id=principal.user_id)
+
+
+class BenchmarkRelativeModelIn(BaseModel):
+    code_version: str  # the ONLY identity input — no numeric parameters (OD-P3-8-A)
+
+
+class BenchmarkRelativeRunIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    environment_id: str  # the run environment (FW-RUN §5 item 7; required)
+    model_version_id: uuid.UUID  # a REGISTERED perf.benchmark_relative version (CTRL-003; required)
+    # build-in-request (all three) XOR consume-existing (snapshot_id) — the P3-C1 gate.
+    portfolio_return_run_id: uuid.UUID | None = None
+    benchmark_id: uuid.UUID | None = None
+    return_basis: str | None = None  # PRICE / TOTAL / NET_TOTAL
+    snapshot_id: uuid.UUID | None = None
+
+
+class BenchmarkRelativeRowOut(BaseModel):
+    id: str
+    metric_type: str  # ACTIVE_RETURN | TRACKING_DIFFERENCE | TRACKING_ERROR | INFORMATION_RATIO
+    period_start: date
+    period_end: date
+    metric_value: str  # a fraction/ratio (12dp; fixed-point, never scientific)
+    portfolio_return_value: str | None  # None for TE/IR rows
+    benchmark_return_value: str | None
+    n_benchmark_obs: int
+    n_periods: int
+    base_currency: str
+    return_basis: str
+    benchmark_id: str
+    portfolio_return_run_id: str
+    model_version_id: str
+
+
+class BenchmarkRelativeRunOut(BaseModel):
+    run_id: str
+    status: str
+    run_type: str
+    input_snapshot_id: str | None
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    initiated_by: str
+    failure_reason: str | None
+    rows: list[BenchmarkRelativeRowOut]
+
+
+def _br_row_out(row: BenchmarkRelativeResult) -> BenchmarkRelativeRowOut:
+    return BenchmarkRelativeRowOut(
+        id=row.id,
+        metric_type=row.metric_type,
+        period_start=row.period_start,
+        period_end=row.period_end,
+        # Fixed-point, never scientific (the P3-4 serialization lesson).
+        metric_value=f"{row.metric_value:f}",
+        portfolio_return_value=(
+            None if row.portfolio_return_value is None else f"{row.portfolio_return_value:f}"
+        ),
+        benchmark_return_value=(
+            None if row.benchmark_return_value is None else f"{row.benchmark_return_value:f}"
+        ),
+        n_benchmark_obs=row.n_benchmark_obs,
+        n_periods=row.n_periods,
+        base_currency=row.base_currency,
+        return_basis=row.return_basis,
+        benchmark_id=row.benchmark_id,
+        portfolio_return_run_id=row.portfolio_return_run_id,
+        model_version_id=row.model_version_id,
+    )
+
+
+def _br_run_out(result: BenchmarkRelativeRunResult) -> BenchmarkRelativeRunOut:
+    run = result.run
+    return BenchmarkRelativeRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_br_row_out(r) for r in result.rows],
+    )
+
+
+@router.post(
+    "/models/benchmark-relative",
+    response_model=PortfolioReturnModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_benchmark_relative(
+    body: BenchmarkRelativeModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> PortfolioReturnModelOut:
+    """Register (idempotently) the governed ex-post benchmark-relative model + a model_version for
+    this ``code_version`` identity and return its id (OD-P3-8-A — the v1 conventions ARE the
+    identity; a same-label re-register with a different ``code_version`` is a 409). The shared
+    model-registration response envelope."""
+    try:
+        version = register_benchmark_relative_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+        )
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = PortfolioReturnModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/benchmark-relative/runs",
+    response_model=BenchmarkRelativeRunOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_benchmark_relative_run(
+    body: BenchmarkRelativeRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkRelativeRunOut:
+    """Run a governed ex-post benchmark-relative calculation. A pre-create refusal raises + rolls
+    back (no run — incl. a currency mismatch, a zero-benchmark-window, or a linkage mismatch,
+    422/404/409); a post-create FAILED run is committed (``status='FAILED'``, zero rows — the
+    magnitude gate)."""
+    try:
+        result = run_benchmark_relative(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_br_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            portfolio_return_run_id=(
+                None if body.portfolio_return_run_id is None else str(body.portfolio_return_run_id)
+            ),
+            benchmark_id=(None if body.benchmark_id is None else str(body.benchmark_id)),
+            return_basis=body.return_basis,
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        BenchmarkRelativeInputError,
+        UnregisteredModelError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        BenchmarkRelativeSnapshotError,
+        BenchmarkNotVisible,
+    ) as exc:
+        # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+
+    # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a
+    # post-create FAILED run are committed (the FAILED run is durable refusal evidence).
+    response = _br_run_out(result)
+    db.commit()
+    return response
+
+
+@router.get("/benchmark-relative/runs/{run_id}", response_model=BenchmarkRelativeRunOut)
+def get_benchmark_relative_run(
+    run_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkRelativeRunOut:
+    """Read a benchmark-relative run + its series rows (tenant-scoped; read-only). A committed
+    FAILED run (zero rows) is surfaced with ``status='FAILED'`` (durable refusal evidence), NOT a
+    404."""
+    try:
+        run = resolve_benchmark_relative_run(db, str(run_id), acting_tenant=principal.tenant_id)
+    except BenchmarkRelativeRunNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="benchmark-relative run not found"
+        ) from None
+    rows = list_benchmark_relatives(db, run_id=str(run_id), acting_tenant=principal.tenant_id)
+    return BenchmarkRelativeRunOut(
+        run_id=run.run_id,
+        status=run.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
+        rows=[_br_row_out(r) for r in rows],
+    )
+
+
+@router.get("/benchmark-relative/{result_id}", response_model=BenchmarkRelativeRowOut)
+def get_benchmark_relative(
+    result_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> BenchmarkRelativeRowOut:
+    """Read a single ``benchmark_relative_result`` row (tenant-scoped; read-only)."""
+    try:
+        row = resolve_benchmark_relative(db, str(result_id), acting_tenant=principal.tenant_id)
+    except BenchmarkRelativeNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="benchmark-relative result not found"
+        ) from None
+    return _br_row_out(row)

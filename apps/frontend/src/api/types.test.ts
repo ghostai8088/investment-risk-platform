@@ -69,3 +69,36 @@ describe("portfolio-returns (PM-1) family wiring", () => {
     ]);
   });
 });
+
+describe("benchmark-relative (P3-8) family wiring", () => {
+  it("registers the perf family keyed to BENCHMARK_RELATIVE, REUSING the perf permission family", () => {
+    expect(FAMILIES["benchmark-relative"]).toEqual({
+      runType: "BENCHMARK_RELATIVE",
+      label: "Benchmark-relative",
+      permissionFamily: "perf",
+    });
+    expect(RUN_TYPE_TO_FAMILY.BENCHMARK_RELATIVE).toBe("benchmark-relative");
+  });
+
+  it("builds the perf-specific /perf/benchmark-relative/runs/{id} detail URL (own route shape)", () => {
+    expect(runDetailUrl("benchmark-relative", "abc-123")).toBe(
+      "/perf/benchmark-relative/runs/abc-123",
+    );
+  });
+
+  it("surfaces the ex-post benchmark-relative columns", () => {
+    const keys = FAMILY_ROW_COLUMNS["benchmark-relative"].map((c) => c.key);
+    expect(keys).toEqual([
+      "metric_type",
+      "period_start",
+      "period_end",
+      "metric_value",
+      "portfolio_return_value",
+      "benchmark_return_value",
+      "return_basis",
+      "n_benchmark_obs",
+      "n_periods",
+      "base_currency",
+    ]);
+  });
+});
