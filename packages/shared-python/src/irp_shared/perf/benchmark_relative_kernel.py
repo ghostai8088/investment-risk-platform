@@ -22,6 +22,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 
+from irp_shared.perf.return_kernel import ReturnKernelError, link_periods
+
 #: Result quantum: HALF_UP to 12dp = the ``benchmark_relative_result.metric_value`` Numeric(20,12)
 #: fraction/ratio scale.
 _RESULT_QUANTUM = Decimal(1).scaleb(-12)
@@ -45,17 +47,19 @@ def _quantize(value: Decimal) -> Decimal:
 
 def compound_returns(returns: Sequence[Decimal]) -> Decimal:
     """Geometrically compound a per-sub-period return series: ``R = Π(1 + r_i) - 1``,
-    ``quantize_HALF_UP`` to 12dp. Raises :class:`BenchmarkRelativeKernelError` on an empty set (a
-    period with no returns has no compounded value — the binder refuses a zero-observation window
-    upstream)."""
+    ``quantize_HALF_UP`` to 12dp. DELEGATES to PM-1's :func:`~irp_shared.perf.return_kernel
+    .link_periods` — the binder's exact-linkage cross-check demands the recomputed link EQUAL the
+    ``TWR_LINKED`` value PM-1 produced with that function, so sharing ONE implementation makes the
+    bit-identical coupling structural, not conventional. Raises
+    :class:`BenchmarkRelativeKernelError` on an empty set (a period with no returns has no
+    compounded value — the binder refuses a zero-observation window upstream) and on a magnitude
+    past the 12dp result scale."""
     if not returns:
         raise BenchmarkRelativeKernelError("no returns to compound")
-    with localcontext() as ctx:
-        ctx.prec = _COMPUTE_PREC
-        product = Decimal(1)
-        for r in returns:
-            product *= Decimal(1) + r
-        return _quantize(product - Decimal(1))
+    try:
+        return link_periods(returns)
+    except ReturnKernelError as exc:
+        raise BenchmarkRelativeKernelError(str(exc)) from exc
 
 
 def active_series(portfolio: Sequence[Decimal], benchmark: Sequence[Decimal]) -> list[Decimal]:

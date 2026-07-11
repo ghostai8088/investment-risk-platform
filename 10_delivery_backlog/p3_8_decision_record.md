@@ -55,3 +55,47 @@
 ## Part 5 — Implementation readiness gate
 
 Implementation starts ONLY on explicit direction after OQ ratification, against `p3_8_implementation_plan.md` (the 8-step build contract). Model/effort: **Opus 4.8 / high** (design settled here; templated end-to-end on PM-1/P3-7 — the benchmark-series component and the conditional-emission rows are the only new shapes). Validation: unreduced gates + full-PG + downgrade smoke `0032↔0031` + fe-check + diff fence; then the FULL ultrareview; then fold + revalidate; then the implementation PR (CI green ON the PR) + Tier-2 merge approval.
+
+## Part 6 — Review dispositions + closure (appended at closeout, 2026-07-10)
+
+**CLOSED.** Planning landed via **PR #1** (`4880b36`); implementation `86ef3ec` merged via **PR #2** (`d769f59`),
+**CI #142 green** — the first slices through the mandatory branch-protection PR flow. Migration `0032`; validation:
+`make check` 1123 / full local-PG green (incl. 7 new RLS/trigger legs) / downgrade smoke 0032↔0031 / fe-check 49.
+
+**Review (OD-K):** a FULL 4-finder local max-effort review (kernel+binder math; persistence+migration+ORM;
+cross-file+API+FE; cleanup/altitude/conventions), user-authorized in lieu of the cloud ultrareview. All hard
+invariants verified intact. **5 folds, each with a regression test where applicable:**
+
+1. **HIGH — evidence-echo magnitude gate.** `portfolio_return_value`/`benchmark_return_value` were not gated; a
+   hand-minted pin could overflow the `Numeric(20,12)` echoes while the differenced metric passed → a raw 500 with
+   the run orphaned in `RUNNING` (the scaffold flush is outside the caught `DataQualityError`). Fixed: `_out_of_range`
+   gates EVERY persisted `Numeric(20,12)` value. (PM-1 gates its evidence via `_MAX_EVIDENCE_ABS`; P3-8 had dropped
+   the precedent.)
+2. **MED — contiguity + all-rows-consumed.** Adjudication refused overlap but tolerated a GAP between sub-periods;
+   pinned benchmark returns dated inside a gap (or outside the span) were silently dropped → a wrong
+   `TRACKING_DIFFERENCE` presented as governed. Fixed: `start == prev_end` enforced + a consumed-rows == pinned-rows
+   assertion. (Two finder angles converged on this independently.)
+3. **LOW — uniform build-path refusal.** An unknown `benchmark_id` on the build path escaped as a bare 404
+   `BenchmarkNotVisible`, breaking the module's uniform pre-create-422 contract; now wrapped to
+   `BenchmarkRelativeInputError`.
+4. **Comment fix** — the `_MAX_RESULT_ABS` prose now states the deliberate one-order-inside-the-1E8-ceiling choice.
+5. **False-fence removal** — `_RETURN_RUN_TYPE` was a same-package "fence copy" with no import barrier; replaced by a
+   direct `perf.events` import; its tautological sync test replaced by a REAL `compound_returns` ↔ `link_periods`
+   equivalence test (the exact-linkage cross-check depends on that coupling).
+
+**Cleanup folds (the clean-code standing bar, set 2026-07-10 — "as clean as possible", proof-of-concept build; ships
+in the cleanup+closeout PR):** (a) `compound_returns` now DELEGATES to PM-1's `link_periods` — one compounding
+implementation, the coupling structural; (b) `perf/guards.py::assert_portfolio_in_tenant` — the P3-5
+cross-tenant-FK guard lives once, parameterized by each binder's error class; (c) `bootstrap._register_perf_model`
+— one `code_version`-only registrar core, both public registrars delegate. All behavior-preserving.
+
+**Still deferred (trigger-based):** the `_reresolve_content` parse-hardening in snapshot verify (a malformed
+`rows`/`id` in pinned series content would escape the verify except-tuple as a 500 rather than surfacing as drift)
+— a pre-existing P3-4 `FACTOR_RETURN` pattern, unreachable via the trusted builder (captured content is
+builder-written + append-only). Trigger: the next slice that touches the snapshot verify path.
+
+**Build finding worth the record:** the auto-style FK name
+`fk_benchmark_relative_result_portfolio_return_run_id_calculation_run` (68 chars) exceeded PostgreSQL's 63-char
+identifier cap — SQLite never enforces it, so `make check` passed and ONLY the local-PG migration run caught it
+(shortened to `fk_benchmark_relative_result_portfolio_return`). The local-PG gate is non-negotiable for exactly
+this class of failure.

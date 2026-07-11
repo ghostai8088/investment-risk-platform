@@ -75,6 +75,7 @@ from irp_shared.perf.events import (
     RUN_TYPE_PORTFOLIO_RETURN,
     PortfolioReturnActor,
 )
+from irp_shared.perf.guards import assert_portfolio_in_tenant
 from irp_shared.perf.models import (
     METRIC_TYPE_DIETZ_PERIOD,
     METRIC_TYPE_TWR_LINKED,
@@ -398,27 +399,6 @@ def _adjudicate_pins(
     )
 
 
-def _assert_portfolio_in_tenant(session: Session, portfolio_id: str, *, acting_tenant: str) -> None:
-    """Re-resolve the measured book's ``portfolio_id`` under the acting tenant with an EXPLICIT
-    tenant predicate (models-only import — the snapshot ``exposure``/``transaction`` precedent; the
-    ``portfolio`` SERVICE is not imported, keeping the perf fence). Raises
-    :class:`PortfolioReturnInputError` if the id is not visible in the acting tenant — a
-    FOREIGN/non-existent portfolio_id (from a hand-minted snapshot's atom JSON) must never be
-    stamped into the NOT-NULL ``portfolio`` FK (P3-5 principal finding)."""
-    from irp_shared.portfolio.models import Portfolio  # models-only (no cycle / fence-safe)
-
-    row = session.execute(
-        select(Portfolio).where(
-            Portfolio.id == str(portfolio_id),
-            Portfolio.tenant_id == str(acting_tenant),
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        raise PortfolioReturnInputError(
-            f"the measured portfolio {portfolio_id} is not visible in the acting tenant — refused"
-        )
-
-
 def _resolve_boundary_dates(
     session: Session, run_ids: set[str], *, acting_tenant: str
 ) -> dict[str, date]:
@@ -550,7 +530,9 @@ def run_portfolio_return(
     # RLS, so a hand-minted snapshot carrying a FOREIGN/non-existent portfolio_id would durably
     # reference another tenant's row (+ a cross-tenant existence oracle) or 500 at flush — the P3-5
     # principal finding, extended to this FK (the active-risk run re-resolution precedent).
-    _assert_portfolio_in_tenant(session, parsed.portfolio_id, acting_tenant=acting_tenant)
+    assert_portfolio_in_tenant(
+        session, parsed.portfolio_id, acting_tenant=acting_tenant, error=PortfolioReturnInputError
+    )
 
     # --- The shared governed-run lifecycle (P3-C1 scaffold; behavior-preserving) ---
     def _compute(run: CalculationRun) -> tuple[list[PortfolioReturnResult], list[str]]:

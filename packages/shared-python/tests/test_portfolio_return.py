@@ -560,15 +560,18 @@ def test_foreign_portfolio_id_refused_pre_create(session: Session) -> None:
     """The measured book's portfolio_id (from pinned atom JSON) is re-resolved under the acting
     tenant before it is stamped into the NOT-NULL portfolio FK — a foreign/non-existent id is
     refused pre-create (the P3-5 cross-tenant-FK guard), never a durable cross-tenant reference or a
-    flush 500."""
-    from irp_shared.perf.return_service import _assert_portfolio_in_tenant
+    flush 500. The guard is the SHARED perf implementation (``perf.guards``) with THIS binder's
+    error class."""
+    from irp_shared.perf.guards import assert_portfolio_in_tenant
 
     pf, inst = _book(session)
     # A real portfolio in the tenant resolves cleanly.
-    _assert_portfolio_in_tenant(session, pf, acting_tenant=TENANT)
+    assert_portfolio_in_tenant(session, pf, acting_tenant=TENANT, error=PortfolioReturnInputError)
     # A non-existent / foreign portfolio id is refused.
     with pytest.raises(PortfolioReturnInputError):
-        _assert_portfolio_in_tenant(session, str(uuid.uuid4()), acting_tenant=TENANT)
+        assert_portfolio_in_tenant(
+            session, str(uuid.uuid4()), acting_tenant=TENANT, error=PortfolioReturnInputError
+        )
 
 
 # --------------------------------------------------------------------------- governance guards
