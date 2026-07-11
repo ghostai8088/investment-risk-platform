@@ -934,7 +934,7 @@ def test_migration_head_is_var_backtest() -> None:
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_current_head() == "0033_var_backtest"
+    assert script.get_current_head() == "0034_proxy_mapping"
     assert script.get_revision("0033_var_backtest").down_revision == "0032_benchmark_relative"
 
 

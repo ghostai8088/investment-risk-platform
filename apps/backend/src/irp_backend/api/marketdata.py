@@ -27,6 +27,7 @@ from irp_shared.entitlement.service import Principal
 from irp_shared.marketdata import (
     DEFAULT_BASE,
     FREQUENCY_DAILY,
+    MAPPING_METHOD_MANUAL,
     PRICE_TYPE_CLOSE,
     RATE_TYPE_MID,
     REFERENCE_KEY_NONE,
@@ -66,6 +67,7 @@ from irp_shared.marketdata import (
     PriceNotVisible,
     PricePoint,
     PriceValueError,
+    ProxyMapping,
     capture_benchmark,
     capture_benchmark_level,
     capture_benchmark_return,
@@ -111,6 +113,17 @@ from irp_shared.marketdata import (
     update_benchmark,
     update_factor,
 )
+from irp_shared.marketdata.proxy_mapping import (
+    NoCurrentProxyMapping,
+    ProxyMappingActor,
+    ProxyMappingNotVisible,
+    ProxyMappingValueError,
+    capture_proxy_mapping,
+    correct_proxy_mapping,
+    list_proxy_mappings,
+    reconstruct_proxy_mapping_as_of,
+    supersede_proxy_mapping,
+)
 from irp_shared.reference.instrument import InstrumentNotVisible
 from irp_shared.reference.service import CurrencyNotVisible
 
@@ -119,6 +132,7 @@ price_router = APIRouter(prefix="/prices", tags=["marketdata"])
 curve_router = APIRouter(prefix="/curves", tags=["marketdata"])
 benchmark_router = APIRouter(prefix="/benchmarks", tags=["marketdata"])
 factor_router = APIRouter(prefix="/factors", tags=["marketdata"])
+proxy_mapping_router = APIRouter(prefix="/proxy-mappings", tags=["marketdata"])
 
 #: Module-level guard singletons (deny-by-default; built once, not in argument defaults).
 _require_ingest = require_permission("marketdata.ingest")
@@ -2077,5 +2091,208 @@ def list_benchmark_returns_endpoint(
         _benchmark_return_out(row)
         for row in list_benchmark_returns(
             db, acting_tenant=principal.tenant_id, benchmark_id=benchmark_id
+        )
+    ]
+
+
+# ---------- PA-0: proxy_mapping (ENT-019; captured private→public factor proxies) ----------
+
+
+def _proxy_mapping_actor(principal: Principal) -> ProxyMappingActor:
+    return ProxyMappingActor(actor_id=principal.user_id)
+
+
+class ProxyMappingIn(BaseModel):
+    private_instrument_id: str
+    factor_id: str
+    weight: Decimal
+    mapping_method: str = MAPPING_METHOD_MANUAL
+
+
+class ProxyMappingSupersedeIn(ProxyMappingIn):
+    effective_at: datetime
+
+
+class ProxyMappingCorrectIn(ProxyMappingIn):
+    restatement_reason: str
+
+
+class ProxyMappingOut(BaseModel):
+    id: str
+    private_instrument_id: str
+    factor_id: str
+    weight: Decimal
+    mapping_method: str
+    valid_from: datetime
+    valid_to: datetime | None
+    system_from: datetime
+    system_to: datetime | None
+    supersedes_id: str | None
+    restatement_reason: str | None
+    record_version: int
+
+
+def _proxy_mapping_out(row: ProxyMapping) -> ProxyMappingOut:
+    return ProxyMappingOut(
+        id=row.id,
+        private_instrument_id=row.private_instrument_id,
+        factor_id=row.factor_id,
+        weight=row.weight,
+        mapping_method=row.mapping_method,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        system_from=row.system_from,
+        system_to=row.system_to,
+        supersedes_id=row.supersedes_id,
+        restatement_reason=row.restatement_reason,
+        record_version=row.record_version,
+    )
+
+
+#: Governed-write error → (status, detail). Fail-closed; rolls back before mapping.
+_PROXY_MAPPING_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
+    ProxyMappingValueError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid proxy-mapping input",
+    ),
+    ProxyMappingNotVisible: (status.HTTP_404_NOT_FOUND, "proxy_mapping not found"),
+    NoCurrentProxyMapping: (
+        status.HTTP_409_CONFLICT,
+        "no current proxy mapping to supersede/correct",
+    ),
+    DataQualityError: (
+        status.HTTP_409_CONFLICT,
+        "proxy mapping failed a data-quality gate",
+    ),
+}
+
+
+def _raise_proxy_mapping_write(db: Session, exc: Exception) -> None:
+    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
+    code, detail = _PROXY_MAPPING_WRITE_ERRORS[type(exc)]
+    raise HTTPException(status_code=code, detail=detail) from None
+
+
+@proxy_mapping_router.post("", response_model=ProxyMappingOut, status_code=status.HTTP_201_CREATED)
+def capture_proxy_mapping_endpoint(
+    body: ProxyMappingIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> ProxyMappingOut:
+    """Capture the first open proxy weight for (private_instrument, factor) — a MANUAL_PROXY
+    ORIGIN edge + MARKET.PROXY_MAPPING_CREATE + the DQ gate. Both FK targets are re-resolved
+    tenant-filtered pre-write (a foreign/absent instrument or factor is a 422)."""
+    try:
+        row = capture_proxy_mapping(
+            db,
+            private_instrument_id=body.private_instrument_id,
+            factor_id=body.factor_id,
+            weight=body.weight,
+            mapping_method=body.mapping_method,
+            acting_tenant=principal.tenant_id,
+            actor=_proxy_mapping_actor(principal),
+        )
+    except (ProxyMappingValueError, DataQualityError) as exc:
+        _raise_proxy_mapping_write(db, exc)
+    out = _proxy_mapping_out(row)
+    db.commit()
+    return out
+
+
+@proxy_mapping_router.post(
+    "/supersede", response_model=ProxyMappingOut, status_code=status.HTTP_201_CREATED
+)
+def supersede_proxy_mapping_endpoint(
+    body: ProxyMappingSupersedeIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> ProxyMappingOut:
+    """Effective-dated re-capture of the proxy weight for (private_instrument, factor): close the
+    head's valid_to (MARKET.PROXY_MAPPING_UPDATE) + insert a new version — a proxy REVISION."""
+    try:
+        row = supersede_proxy_mapping(
+            db,
+            private_instrument_id=body.private_instrument_id,
+            factor_id=body.factor_id,
+            weight=body.weight,
+            mapping_method=body.mapping_method,
+            effective_at=body.effective_at,
+            acting_tenant=principal.tenant_id,
+            actor=_proxy_mapping_actor(principal),
+        )
+    except (ProxyMappingValueError, NoCurrentProxyMapping, DataQualityError) as exc:
+        _raise_proxy_mapping_write(db, exc)
+    out = _proxy_mapping_out(row)
+    db.commit()
+    return out
+
+
+@proxy_mapping_router.post(
+    "/correct", response_model=ProxyMappingOut, status_code=status.HTTP_201_CREATED
+)
+def correct_proxy_mapping_endpoint(
+    body: ProxyMappingCorrectIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> ProxyMappingOut:
+    """As-known (system-time) correction of the proxy weight for (private_instrument, factor): close
+    the head's system_to + insert a corrected version over the SAME valid window with a
+    restatement_reason (MARKET.PROXY_MAPPING_CORRECTION). Prior content is never mutated (TR-08)."""
+    try:
+        row = correct_proxy_mapping(
+            db,
+            private_instrument_id=body.private_instrument_id,
+            factor_id=body.factor_id,
+            weight=body.weight,
+            mapping_method=body.mapping_method,
+            restatement_reason=body.restatement_reason,
+            acting_tenant=principal.tenant_id,
+            actor=_proxy_mapping_actor(principal),
+        )
+    except (ProxyMappingValueError, NoCurrentProxyMapping, DataQualityError) as exc:
+        _raise_proxy_mapping_write(db, exc)
+    out = _proxy_mapping_out(row)
+    db.commit()
+    return out
+
+
+@proxy_mapping_router.get("/as-of", response_model=ProxyMappingOut)
+def reconstruct_proxy_mapping_endpoint(
+    private_instrument_id: str,
+    factor_id: str,
+    valid_at: datetime,
+    known_at: datetime,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> ProxyMappingOut:
+    """The proxy weight for (instrument, factor) true at ``valid_at`` as known at ``known_at`` (the
+    both-axes bitemporal read). 404 if no version covers both instants."""
+    row = reconstruct_proxy_mapping_as_of(
+        db,
+        private_instrument_id=private_instrument_id,
+        factor_id=factor_id,
+        valid_at=valid_at,
+        known_at=known_at,
+        acting_tenant=principal.tenant_id,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="proxy_mapping not found as-of"
+        )
+    return _proxy_mapping_out(row)
+
+
+@proxy_mapping_router.get("", response_model=list[ProxyMappingOut])
+def list_proxy_mappings_endpoint(
+    private_instrument_id: str,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[ProxyMappingOut]:
+    """The current-head proxy blend for one private instrument (all OPEN factor loadings; the
+    residual 1 − Σweight is NOT computed — a partial proxy is honest)."""
+    return [
+        _proxy_mapping_out(row)
+        for row in list_proxy_mappings(
+            db, private_instrument_id=private_instrument_id, acting_tenant=principal.tenant_id
         )
     ]
