@@ -74,6 +74,7 @@ from irp_shared.perf.events import (
     RUN_TYPE_PORTFOLIO_RETURN,
     BenchmarkRelativeActor,
 )
+from irp_shared.perf.guards import assert_portfolio_in_tenant
 from irp_shared.perf.models import (
     METRIC_TYPE_ACTIVE_RETURN,
     METRIC_TYPE_INFORMATION_RATIO,
@@ -352,24 +353,6 @@ def _resolve_return_run(session: Session, run_id: str, *, acting_tenant: str) ->
     return run
 
 
-def _assert_portfolio_in_tenant(session: Session, portfolio_id: str, *, acting_tenant: str) -> None:
-    """Re-resolve the measured book's ``portfolio_id`` under the acting tenant (models-only import —
-    the PM-1 precedent) BEFORE it is stamped into the NOT-NULL ``portfolio`` FK. Raises
-    :class:`BenchmarkRelativeInputError` if not visible (the P3-5 cross-tenant-FK guard)."""
-    from irp_shared.portfolio.models import Portfolio  # models-only (no cycle / fence-safe)
-
-    row = session.execute(
-        select(Portfolio).where(
-            Portfolio.id == str(portfolio_id),
-            Portfolio.tenant_id == str(acting_tenant),
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        raise BenchmarkRelativeInputError(
-            f"the measured portfolio {portfolio_id} is not visible in the acting tenant — refused"
-        )
-
-
 def run_benchmark_relative(
     session: Session,
     *,
@@ -474,7 +457,12 @@ def run_benchmark_relative(
         raise BenchmarkRelativeInputError(
             f"the pinned benchmark {parsed.benchmark_id} is not visible — refused"
         ) from exc
-    _assert_portfolio_in_tenant(session, parsed.portfolio_id, acting_tenant=acting_tenant)
+    assert_portfolio_in_tenant(
+        session,
+        parsed.portfolio_id,
+        acting_tenant=acting_tenant,
+        error=BenchmarkRelativeInputError,
+    )
 
     # --- The shared governed-run lifecycle (P3-C1 scaffold; behavior-preserving) ---
     def _compute(run: CalculationRun) -> tuple[list[BenchmarkRelativeResult], list[str]]:

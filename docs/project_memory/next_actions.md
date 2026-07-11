@@ -1,6 +1,6 @@
 # Next Actions
 
-> **As of HEAD `f5e16b6` / CI run #137 green (PM-1 governed portfolio-return series, ENT-053 + migration 0031;
+> **As of HEAD `d769f59` (merge of PR #2 = `86ef3ec`, P3-8 ex-post benchmark-relative, ENT-054 + migration 0032; CI #142 green;
 > refreshed 2026-07-09).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
@@ -196,11 +196,16 @@ triple unlock: ONE new primitive (a governed portfolio-return series) unblocks e
 backtesting (the P7 prerequisite), and the private-asset desmoothing substrate (the thesis destination).
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
 Tier-2 commit approval. **PM-1 (slice 1) is DONE** (`b2445c7` + ruff-format `f5e16b6`, CI #137 green — the SEVENTH
-governed number + FIRST non-risk, the `perf` family; `portfolio_return_result` ENT-053, migration `0031`,
-`perf.run`/`perf.view` R-07 mint, CAP-20 + REQ-PRF-001; FULL 5-finder ultrareview, 3 HIGH + 1 MED folds). The next
-concrete step is **P3-8 PLANNING, on explicit direction** — ex-post benchmark-relative (realized TE / active
-return / tracking difference / IR), the FIRST governed consumer of the PM-1 return series (closes P3-7 OD-G;
-rule-6 externals: ESMA 2012/832). Legacy PM-1 planning note (superseded): the governed portfolio-return series
+governed number + FIRST non-risk, the `perf` family; ENT-053, migration `0031`, `perf.run`/`perf.view` R-07 mint).
+**P3-8 (slice 2) is DONE** (planning `4880b36` via PR #1; impl `86ef3ec` merged via PR #2 = `d769f59`, CI #142
+green — the EIGHTH governed number: ex-post benchmark-relative AR/TD/TE/IR, ENT-054, migration `0032`, run family
+`BENCHMARK_RELATIVE` reusing `perf.run`/`perf.view`; FULL 4-finder local review, 5 folds; closes P3-7 OD-G).
+The next concrete steps, in order: **(1) land the P3-8 cleanup+closeout PR** (branch `p3-8-cleanup` — the 3 dedup
+folds per the clean-code standing bar: shared compounding via `link_periods` delegation, `perf/guards.py` tenant
+guard, `_register_perf_model` core; plus this docs refresh; behavior-preserving, NO migration) — Claude pushes the
+branch on Tier-2 approval, the USER opens+merges the PR after CI green; then **(2) BT-1 PLANNING, on explicit
+direction** — VaR backtesting (realized P&L vs the VaR forecast; the PM-1 return series is the unblocked
+prerequisite; rule-6 externals: Basel traffic-light / Kupiec POF). Legacy PM-1 planning note (superseded): the governed portfolio-return series
 (performance-measurement v1: flow-adjusted TWR + Modified-Dietz over captured valuations + transactions). This
 IS a **methodology slice** → roadmap Part 4 rule 6 applies; model/effort: **Fable / high** (a new methodology
 family — GIPS-grade return math is genuinely novel design surface). **All new fixtures follow the TD-1 realism

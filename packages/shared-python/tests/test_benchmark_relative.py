@@ -567,12 +567,15 @@ def test_zero_benchmark_window_refused_full_stack(session: Session) -> None:
 
 
 def test_foreign_portfolio_id_refused_pre_create(session: Session) -> None:
-    from irp_shared.perf.benchmark_relative_service import _assert_portfolio_in_tenant
+    """The shared perf guard (one implementation for PM-1 + P3-8) with THIS binder's error class."""
+    from irp_shared.perf.guards import assert_portfolio_in_tenant
 
     pf, _ = _book(session)
-    _assert_portfolio_in_tenant(session, pf, acting_tenant=TENANT)
+    assert_portfolio_in_tenant(session, pf, acting_tenant=TENANT, error=BenchmarkRelativeInputError)
     with pytest.raises(BenchmarkRelativeInputError):
-        _assert_portfolio_in_tenant(session, str(uuid.uuid4()), acting_tenant=TENANT)
+        assert_portfolio_in_tenant(
+            session, str(uuid.uuid4()), acting_tenant=TENANT, error=BenchmarkRelativeInputError
+        )
 
 
 def test_foreign_tenant_return_run_refused(session: Session) -> None:

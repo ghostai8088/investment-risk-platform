@@ -1,14 +1,14 @@
-"""Governed registration of the portfolio-return model (PM-1, OD-PM-1-D).
+"""Governed registration of the perf-family models (PM-1 return + P3-8 benchmark-relative).
 
-The performance-measurement method is a **registered model** (the risk-family precedent, but a
-PEER family — ``perf``, never under ``risk``): ``register_portfolio_return_model`` inventories the
-``model`` head + an immutable ``model_version`` through the governed model service, emitting
-``MODEL.REGISTER``/``MODEL.VERSION``. There are **NO free numeric request parameters** — the v1
-conventions (the external-flow set, flow timing, day-count, gross-of-fees basis, the MV convention,
-geometric linking) ARE the version identity, recorded as ``model_assumption`` rows and parsed back
-by the binder; a same-label re-register with a different ``code_version`` is a governed 409 (mint a
-new label for a new convention set). ``run_portfolio_return`` then asserts the version is REGISTERED
-and OF THIS MODEL pre-create (``assert_model_version_of``; CTRL-003).
+Each performance-measurement method is a **registered model** (the risk-family precedent, but a
+PEER family — ``perf``, never under ``risk``): the per-model registrars inventory the ``model``
+head + an immutable ``model_version`` through the governed model service via the ONE shared
+``_register_perf_model`` core, emitting ``MODEL.REGISTER``/``MODEL.VERSION``. There are **NO free
+numeric request parameters** — each model's fixed v1 conventions ARE the version identity, recorded
+as ``model_assumption`` rows and parsed back by its binder; a same-label re-register with a
+different ``code_version`` is a governed 409 (mint a new label for a new convention set). Each
+binder then asserts the version is REGISTERED and OF ITS MODEL pre-create
+(``assert_model_version_of``; CTRL-003).
 
 ``Model.validation_status`` stays ``UNVALIDATED`` — recorded, non-enforcing until P7.
 
@@ -29,6 +29,72 @@ from irp_shared.model.service import (
     register_model,
     register_model_version,
 )
+
+
+def _register_perf_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    actor_type: str,
+    model_code: str,
+    model_name: str,
+    model_type: str,
+    version_label: str,
+    methodology_ref: str,
+    description: str,
+    assumptions: tuple[str, ...],
+    limitations: tuple[str, ...],
+) -> ModelVersion:
+    """The ONE ``code_version``-only perf registrar (idempotent). Every perf governed number carries
+    NO free numeric request parameter — the fixed conventions ARE the version identity — so version
+    resolution keys on ``code_version`` alone: a same-label re-register with a DIFFERENT
+    ``code_version`` raises :class:`ModelVersionConflictError` (mint a new label); a same-label twin
+    minted via the GENERIC registration (status != REGISTERED) raises
+    :class:`WrongModelVersionError` (the P3-C1 register/run-consistency lesson). The public
+    per-model registrars supply only their identity constants."""
+    model = session.execute(
+        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == model_code)
+    ).scalar_one_or_none()
+    if model is None:
+        model = register_model(
+            session,
+            tenant_id=str(tenant_id),
+            code=model_code,
+            name=model_name,
+            model_type=model_type,
+            actor_id=actor_id,
+            description=description,
+            actor_type=actor_type,
+        )
+
+    version = session.execute(
+        select(ModelVersion).where(
+            ModelVersion.model_id == model.id,
+            ModelVersion.version_label == version_label,
+        )
+    ).scalar_one_or_none()
+    if version is not None:
+        if version.status != "REGISTERED":
+            raise WrongModelVersionError(str(version.id), str(model.code))
+        if version.code_version != str(code_version):
+            raise ModelVersionConflictError(model_code, version_label, str(code_version))
+        return version
+
+    return register_model_version(
+        session,
+        model=model,
+        version_label=version_label,
+        actor_id=actor_id,
+        methodology_ref=methodology_ref,
+        code_version=str(code_version),
+        status="REGISTERED",
+        assumptions=assumptions,
+        limitations=limitations,
+        actor_type=actor_type,
+    )
+
 
 #: The per-tenant inventory identity of the portfolio-return model (PM-1, OD-PM-1-D).
 PORTFOLIO_RETURN_MODEL_CODE = "perf.return.twr"
@@ -90,58 +156,26 @@ def register_portfolio_return_model(
     actor_type: str = "user",
 ) -> ModelVersion:
     """Register (idempotently) the portfolio-return ``model`` + a ``model_version`` for this
-    ``code_version`` identity (PM-1, OD-PM-1-D). NO free numeric request parameters — the v1
-    conventions ARE the identity — so version resolution keys on ``code_version`` alone: a same-
-    label re-register with a DIFFERENT ``code_version`` raises :class:`ModelVersionConflictError`
-    (mint a new label); a same-label twin minted via the GENERIC registration (status != REGISTERED)
-    raises :class:`WrongModelVersionError` (the P3-C1 register/run-consistency lesson)."""
-    model = session.execute(
-        select(Model).where(
-            Model.tenant_id == str(tenant_id), Model.code == PORTFOLIO_RETURN_MODEL_CODE
-        )
-    ).scalar_one_or_none()
-    if model is None:
-        model = register_model(
-            session,
-            tenant_id=str(tenant_id),
-            code=PORTFOLIO_RETURN_MODEL_CODE,
-            name=PORTFOLIO_RETURN_MODEL_NAME,
-            model_type=PORTFOLIO_RETURN_MODEL_TYPE,
-            actor_id=actor_id,
-            description=(
-                "Chain-linked time-weighted portfolio return (Modified-Dietz within "
-                "caller-supplied exposure-run valuation boundaries), gross-of-fees, unannualized "
-                "(PM-1, ENT-053)."
-            ),
-            actor_type=actor_type,
-        )
-
-    version = session.execute(
-        select(ModelVersion).where(
-            ModelVersion.model_id == model.id,
-            ModelVersion.version_label == PORTFOLIO_RETURN_VERSION_LABEL,
-        )
-    ).scalar_one_or_none()
-    if version is not None:
-        if version.status != "REGISTERED":
-            raise WrongModelVersionError(str(version.id), str(model.code))
-        if version.code_version != str(code_version):
-            raise ModelVersionConflictError(
-                PORTFOLIO_RETURN_MODEL_CODE, PORTFOLIO_RETURN_VERSION_LABEL, str(code_version)
-            )
-        return version
-
-    return register_model_version(
+    ``code_version`` identity (PM-1, OD-PM-1-D). Delegates to :func:`_register_perf_model` — see
+    its docstring for the conflict/wrong-version semantics."""
+    return _register_perf_model(
         session,
-        model=model,
-        version_label=PORTFOLIO_RETURN_VERSION_LABEL,
+        tenant_id=tenant_id,
         actor_id=actor_id,
+        code_version=code_version,
+        actor_type=actor_type,
+        model_code=PORTFOLIO_RETURN_MODEL_CODE,
+        model_name=PORTFOLIO_RETURN_MODEL_NAME,
+        model_type=PORTFOLIO_RETURN_MODEL_TYPE,
+        version_label=PORTFOLIO_RETURN_VERSION_LABEL,
         methodology_ref=PORTFOLIO_RETURN_METHODOLOGY_REF,
-        code_version=str(code_version),
-        status="REGISTERED",
+        description=(
+            "Chain-linked time-weighted portfolio return (Modified-Dietz within "
+            "caller-supplied exposure-run valuation boundaries), gross-of-fees, unannualized "
+            "(PM-1, ENT-053)."
+        ),
         assumptions=PORTFOLIO_RETURN_ASSUMPTIONS,
         limitations=PORTFOLIO_RETURN_LIMITATIONS,
-        actor_type=actor_type,
     )
 
 
@@ -206,56 +240,24 @@ def register_benchmark_relative_model(
     actor_type: str = "user",
 ) -> ModelVersion:
     """Register (idempotently) the ex-post benchmark-relative ``model`` + a ``model_version`` for
-    this ``code_version`` identity (P3-8, OD-P3-8-A). NO free numeric request parameter — the v1
-    conventions ARE the identity — so version resolution keys on ``code_version`` alone: a same-
-    label re-register with a DIFFERENT ``code_version`` raises :class:`ModelVersionConflictError`;
-    a same-label twin minted via the GENERIC registration (status != REGISTERED) raises
-    :class:`WrongModelVersionError` (the P3-C1 register/run-consistency lesson)."""
-    model = session.execute(
-        select(Model).where(
-            Model.tenant_id == str(tenant_id), Model.code == BENCHMARK_RELATIVE_MODEL_CODE
-        )
-    ).scalar_one_or_none()
-    if model is None:
-        model = register_model(
-            session,
-            tenant_id=str(tenant_id),
-            code=BENCHMARK_RELATIVE_MODEL_CODE,
-            name=BENCHMARK_RELATIVE_MODEL_NAME,
-            model_type=BENCHMARK_RELATIVE_MODEL_TYPE,
-            actor_id=actor_id,
-            description=(
-                "Ex-post benchmark-relative performance (realized active return / tracking "
-                "difference / tracking error / information ratio) over a portfolio-return run + a "
-                "captured benchmark_return series, unannualized (P3-8, ENT-054)."
-            ),
-            actor_type=actor_type,
-        )
-
-    version = session.execute(
-        select(ModelVersion).where(
-            ModelVersion.model_id == model.id,
-            ModelVersion.version_label == BENCHMARK_RELATIVE_VERSION_LABEL,
-        )
-    ).scalar_one_or_none()
-    if version is not None:
-        if version.status != "REGISTERED":
-            raise WrongModelVersionError(str(version.id), str(model.code))
-        if version.code_version != str(code_version):
-            raise ModelVersionConflictError(
-                BENCHMARK_RELATIVE_MODEL_CODE, BENCHMARK_RELATIVE_VERSION_LABEL, str(code_version)
-            )
-        return version
-
-    return register_model_version(
+    this ``code_version`` identity (P3-8, OD-P3-8-A). Delegates to :func:`_register_perf_model` —
+    see its docstring for the conflict/wrong-version semantics."""
+    return _register_perf_model(
         session,
-        model=model,
-        version_label=BENCHMARK_RELATIVE_VERSION_LABEL,
+        tenant_id=tenant_id,
         actor_id=actor_id,
+        code_version=code_version,
+        actor_type=actor_type,
+        model_code=BENCHMARK_RELATIVE_MODEL_CODE,
+        model_name=BENCHMARK_RELATIVE_MODEL_NAME,
+        model_type=BENCHMARK_RELATIVE_MODEL_TYPE,
+        version_label=BENCHMARK_RELATIVE_VERSION_LABEL,
         methodology_ref=BENCHMARK_RELATIVE_METHODOLOGY_REF,
-        code_version=str(code_version),
-        status="REGISTERED",
+        description=(
+            "Ex-post benchmark-relative performance (realized active return / tracking "
+            "difference / tracking error / information ratio) over a portfolio-return run + a "
+            "captured benchmark_return series, unannualized (P3-8, ENT-054)."
+        ),
         assumptions=BENCHMARK_RELATIVE_ASSUMPTIONS,
         limitations=BENCHMARK_RELATIVE_LIMITATIONS,
-        actor_type=actor_type,
     )
