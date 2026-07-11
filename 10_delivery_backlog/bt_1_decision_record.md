@@ -95,3 +95,92 @@ adjudication), which the FULL review covers.
    P3-8 cleanup as `perf/guards.py`) moved to `portfolio/guards.py`: BT-1's risk binder needs the
    same P3-5 cross-tenant-FK check and the perf home violated the fence. Both perf binders + both
    tests updated; one implementation, no wrapper.
+
+## Part 6 — Review dispositions + closure (appended at closeout, 2026-07-11)
+
+**CLOSED.** Planning `3e81ef4` merged via **PR #4** (`1da87c7`); implementation `e7b615d` merged
+via **PR #5** (`868f892`), CI green. Migration `0033`; validation: `make check` 1168 / local PG
+28/28 / downgrade smoke 0033↔0032 / fe-check 52.
+
+**Review (OD-9):** a FULL 4-finder local max-effort review (kernel+binder math; persistence+
+migration+ORM; cross-file+API+FE; cleanup/conventions+test-quality+docs-sync), user-authorized in
+lieu of the cloud ultrareview. All hard invariants verified intact. **14 findings, 13 folded:**
+
+1. **HIGH — NaN VaR-value detonation.** A hand-minted `NaN` `var_value` passed adjudication
+   unchecked and raised an uncaught `InvalidOperation` inside `_compute` — a raw 500 with the run
+   orphaned in `RUNNING` (PG's `numeric` type accepts `NaN`, so this was column-legal). Fixed:
+   `var_value` is quantized at parse INSIDE the pre-create wrapper, so `NaN` now raises
+   `InvalidOperation` → the governed 422, never a post-create crash. This also fixed finding 3.
+2. **MED — Basel zone gate was horizon-blind.** The domain gate checked only
+   `(confidence == 0.99, n_pairs == 250)`; the Basel table is defined over 250 ONE-DAY
+   observations, and a future multi-day-horizon VaR registration (the recorded sqrt(h) seam) would
+   have minted an off-domain zone row. Fixed: `horizon_days == 1` added to the gate
+   (`_BASEL_HORIZON_DAYS`).
+3. **MED — unquantized `var_value` echo.** Folded into finding 1's fix (one quantize-at-parse
+   line kills the NaN hole AND pins the stored echo byte-identical across engines).
+4. **MED — snapshot builder accepted an empty `var_run_ids` list.** `build_var_backtest_snapshot`
+   would mint a permanent, undeletable "VAR-less" `VAR_BACKTEST_INPUT` snapshot on `[]` — contrary
+   to its own docstring and the `build_factor_exposure_snapshot` precedent. Fixed: refuses BEFORE
+   any write; a direct-builder test added (`test_builder_refuses_empty_var_run_ids`).
+5. **MED — the BASEL_ZONE emission branch had ZERO test coverage.** The only code path that mints
+   the flagship supervisory row never executed in any test (only the off-domain negative was
+   covered). Fixed: `test_basel_zone_emitted_on_domain` (the `_BASEL_PAIRS` monkeypatch seam,
+   mirroring the existing `_MAX_RESULT_ABS` precedent) exercises the mint path end-to-end.
+6. **LOW — unnecessary FK-name shortening.** The auto-style FK name
+   `fk_var_backtest_result_portfolio_return_run_id_calculation_run` is 62 chars — UNDER the 63-char
+   cap — but I shortened it anyway, over-applying the P3-8 lesson (where the analogous name really
+   was 68 chars) without re-measuring. Reverted to the naming-convention name; ORM and PG now carry
+   identical constraint names (no spurious future schema-diff).
+7. **LOW — unused backdatable `as_of` params on the builder.** `build_var_backtest_snapshot`
+   accepted `as_of_valid_at`/`as_of_known_at` but performed zero as-of reads (both sides are IA
+   rows read as they exist now) — the params bound nothing yet let a caller stamp a permanent,
+   pre-content knowledge-time claim onto the immutable header. Dropped (the `build_var_snapshot`
+   precedent: an IA-only pin set takes no cutoffs).
+8. **LOW — methodology doc contradicted the code.** The doc still promised the exact-linkage check
+   Part 5.5 deviation 1 replaced, and claimed "BOTH VaR methods" golden-tested when
+   `VAR_HISTORICAL` had zero coverage anywhere. Fixed: the doc now describes the MV-chain gate +
+   the 6dp decision-basis + the horizon-gated Basel domain; a full HS-VaR backtest golden
+   (`test_build_path_historical_var_method`) makes the "both methods" claim true rather than
+   softening it.
+9. **LOW — one-sided TR-09 test.** The reproducibility test re-ran only the VaR side; the
+   docstring/RTM claimed "either side". Fixed: the test now re-runs BOTH the VaR side and the
+   return side (a whole new `portfolio_return_result` run) and proves the pinned snapshot still
+   reproduces the ORIGINAL rows.
+10. **LOW — misleading registrar error details.** A same-label re-registration with a different
+    declared `alpha` mapped to a 409 detail claiming a `code_version` mismatch (factually wrong for
+    that case); a malformed/non-REGISTERED twin mapped to a "different model" 422 (also wrong).
+    Fixed in both `api/risk.py` and `api/perf.py` (the same pattern) with accurate, uniform detail
+    strings; the raw `str(exc)` echo on the alpha-vocabulary `ValueError` replaced with a fixed
+    opaque detail (the file's own convention elsewhere).
+11. **Docs — stale family-count comments.** "the FOUR/FIVE risk families" bumped to "the SIX" in
+    `api/risk.py` and `risk/queries.py` after BT-1 joined the listing.
+12. **Docs — Kupiec decision basis undeclared.** The registered assumption text said only "12dp
+    internally"; it now states the decision is taken on the STORED 6dp value against the 6dp
+    critical (a knife-edge LR within ~5e-7 of a critical follows the stored value, not the
+    unquantized statistic) — an intentional, now-documented design choice.
+13. **Docs — ENT-055 registry row.** Amended to say "250 ONE-DAY pairs" (the horizon leg of the
+    Basel domain), matching finding 2.
+
+**Deferred, with recorded reasons (not silently):**
+- **A — the P3-8/BT-1 return-side adjudication-shape duplication.** `_adjudicate_pins`'s DIETZ/
+  TWR_LINKED/contiguity/single-run-portfolio-base checks are near-verbatim between
+  `benchmark_relative_service.py` and `var_backtest_service.py`. The "nothing imports perf" fence
+  justifies not sharing the *adjudicator function*, but not the duplication itself — a neutral-
+  homed "well-formed ENT-053 shape" helper is plausible. Per the ratified P3-4-R0 tipping-point
+  rule (extract at the THIRD consumer, not the second), this is deferred — BT-1 is ENT-053's
+  SECOND downstream consumer (PM-1 → P3-8 → BT-1 is the return-run chain; P3-8 and BT-1 are its
+  two consumers so far). Trigger: a third governed number reading `portfolio_return_result` shape.
+- **B — concurrent first-registration returns a raw 500.** Two simultaneous first-registrations of
+  the SAME `(code, code_version, …)` identity both pass the existence check and race to INSERT;
+  the loser's `IntegrityError` at flush is uncaught → 500. This is a PRE-EXISTING pattern shared
+  identically by ALL SIX family registrars (sensitivity/factor-exposure/covariance/var/active-risk/
+  portfolio-return/benchmark-relative/var-backtest) — not a BT-1 defect, and fixing it properly
+  means one shared hardening pass (a savepoint-and-retry or an `IntegrityError` → identity-conflict
+  translation) across the whole registrar family, not a ride-along patch to one. Trigger: the next
+  slice that touches model registration, or a dedicated hardening slice if concurrent registration
+  becomes an observed operational risk.
+
+**Build finding worth the record:** the HS-VaR adequacy floor (`window_observations` must exceed
+`1/(1-confidence)`) surfaced during test-writing, not design — the 0.99-confidence test fixture
+needed 101 observations where 4 sufficed for the parametric method; the second HS golden used
+0.95/21 instead to keep the fixture small while staying realistic (TD-1).
