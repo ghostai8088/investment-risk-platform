@@ -1,7 +1,7 @@
 # Next Actions
 
-> **As of HEAD `d769f59` (merge of PR #2 = `86ef3ec`, P3-8 ex-post benchmark-relative, ENT-054 + migration 0032; CI #142 green;
-> refreshed 2026-07-09).** What to do
+> **As of HEAD `868f892` (merge of PR #5 = `e7b615d`, BT-1 VaR backtesting, ENT-055 + migration 0033; CI green;
+> refreshed 2026-07-11).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -197,18 +197,21 @@ backtesting (the P7 prerequisite), and the private-asset desmoothing substrate (
 Each slice still: PLANNING ONLY first (decision record + plan + OQ ratification) → implementation on direction →
 Tier-2 commit approval. **PM-1 (slice 1) is DONE** (`b2445c7` + ruff-format `f5e16b6`, CI #137 green — the SEVENTH
 governed number + FIRST non-risk, the `perf` family; ENT-053, migration `0031`, `perf.run`/`perf.view` R-07 mint).
-**P3-8 (slice 2) is DONE** (planning `4880b36` via PR #1; impl `86ef3ec` merged via PR #2 = `d769f59`, CI #142
-green — the EIGHTH governed number: ex-post benchmark-relative AR/TD/TE/IR, ENT-054, migration `0032`, run family
-`BENCHMARK_RELATIVE` reusing `perf.run`/`perf.view`; FULL 4-finder local review, 5 folds; closes P3-7 OD-G).
-The next concrete steps, in order: **(1) land the P3-8 cleanup+closeout PR** (branch `p3-8-cleanup` — the 3 dedup
-folds per the clean-code standing bar: shared compounding via `link_periods` delegation, `perf/guards.py` tenant
-guard, `_register_perf_model` core; plus this docs refresh; behavior-preserving, NO migration) — Claude pushes the
-branch on Tier-2 approval, the USER opens+merges the PR after CI green; then **(2) BT-1 PLANNING, on explicit
-direction** — VaR backtesting (realized P&L vs the VaR forecast; the PM-1 return series is the unblocked
-prerequisite; rule-6 externals: Basel traffic-light / Kupiec POF). Legacy PM-1 planning note (superseded): the governed portfolio-return series
-(performance-measurement v1: flow-adjusted TWR + Modified-Dietz over captured valuations + transactions). This
+**P3-8 (slice 2) is DONE** (planning PR #1 `4880b36`; impl PR #2 `86ef3ec` merged as `d769f59`, CI #142; cleanup+
+closeout PR #3 `962974f` merged as `503a9e2` — the 3 dedup folds per the clean-code standing bar). **BT-1 (slice 3)
+is DONE** (planning PR #4 `3e81ef4` merged as `1da87c7`, OD-BT-1-A..K + OQ-BT-1-1..9 ratified; impl PR #5
+`e7b615d` merged as `868f892`, CI green — the NINTH governed number: VaR backtesting, Kupiec POF + Basel
+traffic-light zone over realized flow-adjusted P&L vs ONE VaR method's pinned forecasts, `var_backtest_result`
+ENT-055, migration `0033`, run family `VAR_BACKTEST` reusing `risk.run`/`risk.view`; FULL 4-finder local review,
+14 findings/13 folded; closes the Wave-1 close review's named nearest supervisory gap, SR 11-7 outcomes
+analysis). The next concrete steps, in order: **(1) land THIS closeout PR** (branch `bt-1-closeout` — the
+decision-record Part 6 review dispositions incl. 2 deferred-with-reasons items + this docs refresh;
+docs-only) — Claude pushes the branch on Tier-2 approval, the USER opens+merges the PR after CI green; then
+**(2) PA-0 PLANNING, on explicit direction** — private-asset foundations (captured appraisal/NAV series +
+ENT-019 `proxy_mapping` realization + the desmoothing/proxy decision record; rule-6 externals: Geltner 1993,
+Getmansky-Lo-Makarov 2004, Okunev-White). This
 IS a **methodology slice** → roadmap Part 4 rule 6 applies; model/effort: **Fable / high** (a new methodology
-family — GIPS-grade return math is genuinely novel design surface). **All new fixtures follow the TD-1 realism
+family — the desmoothing substrate is genuinely novel design surface). **All new fixtures follow the TD-1 realism
 rule.**
 
 ## Approval gates (hard)
