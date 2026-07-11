@@ -30,7 +30,7 @@ from irp_shared.marketdata.models import (
     PricePoint,
 )
 from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, ModelVersion
-from irp_shared.perf.models import PortfolioReturnResult
+from irp_shared.perf.models import BenchmarkRelativeResult, PortfolioReturnResult
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.position.models import Position
 from irp_shared.reference.models import (
@@ -114,4 +114,5 @@ __all__ = [
     "VarResult",
     "ActiveRiskResult",
     "PortfolioReturnResult",
+    "BenchmarkRelativeResult",
 ]

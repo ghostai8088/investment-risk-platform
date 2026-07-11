@@ -58,6 +58,11 @@ export const FAMILIES = {
     label: "Portfolio returns",
     permissionFamily: "perf",
   },
+  "benchmark-relative": {
+    runType: "BENCHMARK_RELATIVE",
+    label: "Benchmark-relative",
+    permissionFamily: "perf",
+  },
 } as const;
 
 export type Family = keyof typeof FAMILIES;
@@ -70,15 +75,17 @@ export const RUN_TYPE_TO_FAMILY: Record<string, Family> = {
   ACTIVE_RISK: "active-risk",
   EXPOSURE_AGGREGATE: "exposure",
   PORTFOLIO_RETURN: "portfolio-returns",
+  BENCHMARK_RELATIVE: "benchmark-relative",
 };
 
-/** The run-detail fetch URL for a family: exposure and perf have their own endpoint shapes
- * (``/exposure/runs/{id}``; ``/perf/portfolio-returns/runs/{id}``), the risk families share
- * ``/risk/{family}/runs/{id}``. */
+/** The run-detail fetch URL for a family: exposure and the perf families have their own endpoint
+ * shapes (``/exposure/runs/{id}``; ``/perf/portfolio-returns/runs/{id}``;
+ * ``/perf/benchmark-relative/runs/{id}``), the risk families share ``/risk/{family}/runs/{id}``. */
 export function runDetailUrl(family: Family, runId: string): string {
   const id = encodeURIComponent(runId);
   if (family === "exposure") return `/exposure/runs/${id}`;
   if (family === "portfolio-returns") return `/perf/portfolio-returns/runs/${id}`;
+  if (family === "benchmark-relative") return `/perf/benchmark-relative/runs/${id}`;
   return `/risk/${family}/runs/${id}`;
 }
 
@@ -159,6 +166,18 @@ export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]
     { key: "net_external_flow", label: "Net flow" },
     { key: "return_value", label: "Return" },
     { key: "n_flows", label: "Flows" },
+    { key: "n_periods", label: "Periods" },
+    { key: "base_currency", label: "Base ccy" },
+  ],
+  "benchmark-relative": [
+    { key: "metric_type", label: "Metric" },
+    { key: "period_start", label: "Period start" },
+    { key: "period_end", label: "Period end" },
+    { key: "metric_value", label: "Value" },
+    { key: "portfolio_return_value", label: "Portfolio ret" },
+    { key: "benchmark_return_value", label: "Benchmark ret" },
+    { key: "return_basis", label: "Basis" },
+    { key: "n_benchmark_obs", label: "Bmk obs" },
     { key: "n_periods", label: "Periods" },
     { key: "base_currency", label: "Base ccy" },
   ],

@@ -106,6 +106,84 @@ class PortfolioReturnResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMix
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
 
 
+#: The ``benchmark_relative_result.metric_type`` controlled vocabulary (P3-8; plain String; extend
+#: by value). ACTIVE_RETURN is per sub-period; the other three are per-run summary rows.
+METRIC_TYPE_ACTIVE_RETURN = "ACTIVE_RETURN"
+METRIC_TYPE_TRACKING_DIFFERENCE = "TRACKING_DIFFERENCE"
+METRIC_TYPE_TRACKING_ERROR = "TRACKING_ERROR"
+METRIC_TYPE_INFORMATION_RATIO = "INFORMATION_RATIO"
+
+
+class BenchmarkRelativeResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One ex-post benchmark-relative row (P3-8, **ENT-054**, IA TRUE append-only). Created once,
+    never mutated. Per COMPLETED run: ``n`` ``ACTIVE_RETURN`` sub-period rows + one
+    ``TRACKING_DIFFERENCE`` summary + (when ``n >= 2``) a ``TRACKING_ERROR`` summary + (when
+    ``TE > 0``) an ``INFORMATION_RATIO`` summary — grain ``(calculation_run_id, metric_type,
+    period_start)`` (the ENT-053 precedent; summary rows carry ``period_start`` = first boundary).
+
+    **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** (the ``var_result`` exemplar): NOT-NULL
+    ``calculation_run_id`` + ``input_snapshot_id`` (a ``BENCHMARK_RELATIVE_INPUT`` snapshot) + a
+    REGISTERED, identity-checked ``model_version_id`` (``perf.benchmark_relative`` v1). Hard-FK
+    PROVENANCE: ``portfolio_return_run_id`` (the ONE consumed PM-1 run — feasible as a column,
+    unlike PM-1's variable N boundaries), ``benchmark_id``, ``portfolio_id`` (the measured book).
+    ``metric_value`` Numeric(20,12) is a FRACTION/RATIO (a return, TE, TD, or IR — NOT currency);
+    ``portfolio_return_value``/``benchmark_return_value`` are the per-row return evidence (the
+    per-period returns for ACTIVE_RETURN, the compounded sides for TRACKING_DIFFERENCE, NULL for the
+    TE/IR rows where a single return is not defined — the ``var_result`` nullable-evidence pattern);
+    ``return_basis`` echoes the caller's PRICE/TOTAL/NET_TOTAL choice."""
+
+    __tablename__ = "benchmark_relative_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        UniqueConstraint(
+            "calculation_run_id",
+            "metric_type",
+            "period_start",
+            name="uq_benchmark_relative_result_run_grain",
+        ),
+    )
+
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("dataset_snapshot.id"), nullable=False, index=True
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    )
+    # Hard-FK provenance: the consumed PM-1 return run + the compared benchmark + the measured book.
+    portfolio_return_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    benchmark_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("benchmark.id"), nullable=False, index=True
+    )
+    portfolio_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("portfolio.id"), nullable=False, index=True
+    )
+    # Controlled vocab: ACTIVE_RETURN | TRACKING_DIFFERENCE | TRACKING_ERROR | INFORMATION_RATIO.
+    metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    period_start: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    # The number: a_i (ACTIVE_RETURN) / TD / TE / IR. A FRACTION or RATIO, NOT currency.
+    metric_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    # Per-row return evidence (NULL for TE/IR — a single return is not defined there).
+    portfolio_return_value: Mapped[Decimal | None] = mapped_column(
+        PreciseDecimal(20, 12), nullable=True
+    )
+    benchmark_return_value: Mapped[Decimal | None] = mapped_column(
+        PreciseDecimal(20, 12), nullable=True
+    )
+    # Counts: benchmark rows compounded (per sub-period for ACTIVE_RETURN; total for summaries) +
+    # linked sub-periods (1 for an ACTIVE_RETURN row).
+    n_benchmark_obs: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_periods: Mapped[int] = mapped_column(Integer, nullable=False)
+    base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    # The caller's benchmark return basis (PRICE/TOTAL/NET_TOTAL), echoed on every row.
+    return_basis: Mapped[str] = mapped_column(String(20), nullable=False)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{target.__tablename__} is IA true append-only — UPDATE/DELETE is prohibited "
@@ -115,3 +193,5 @@ def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
 
 event.listen(PortfolioReturnResult, "before_update", _block_mutation)
 event.listen(PortfolioReturnResult, "before_delete", _block_mutation)
+event.listen(BenchmarkRelativeResult, "before_update", _block_mutation)
+event.listen(BenchmarkRelativeResult, "before_delete", _block_mutation)

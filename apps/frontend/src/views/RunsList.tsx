@@ -50,14 +50,15 @@ export function RunsList({ session }: { session: DevSession }): ReactElement {
     // detect the last page when the count is an exact multiple of the page size).
     params.set("limit", String(PAGE_SIZE + 1));
     params.set("offset", String(offset));
-    // The family selector chooses the SOURCE (P3-C2 OD-C; PM-1): EXPOSURE_AGGREGATE is a separate
-    // permission family (exposure.view) listed by /exposure/runs; PORTFOLIO_RETURN is the perf
-    // family (perf.view) listed by /perf/runs; the five risk families (and the "All risk" default)
-    // are listed by /risk/runs. Selecting a source per family keeps server-side pagination correct —
-    // merging independently-paginated endpoints would recreate the FE-1 has-more trap.
+    // The family selector chooses the SOURCE (P3-C2 OD-C; PM-1/P3-8): EXPOSURE_AGGREGATE is a
+    // separate permission family (exposure.view) listed by /exposure/runs; the perf families
+    // (PORTFOLIO_RETURN, BENCHMARK_RELATIVE — perf.view) are listed by /perf/runs; the risk families
+    // (and the "All risk" default) are listed by /risk/runs. Selecting a source per family keeps
+    // server-side pagination correct — merging independently-paginated endpoints would recreate the
+    // FE-1 has-more trap. The run_type filter narrows /risk/runs and /perf/runs to the chosen family.
     const isExposure = runType === "EXPOSURE_AGGREGATE";
-    const isPerf = runType === "PORTFOLIO_RETURN";
-    if (runType && !isExposure && !isPerf) params.set("run_type", runType);
+    const isPerf = runType === "PORTFOLIO_RETURN" || runType === "BENCHMARK_RELATIVE";
+    if (runType && !isExposure) params.set("run_type", runType);
     let base = "/risk/runs";
     if (isExposure) base = "/exposure/runs";
     else if (isPerf) base = "/perf/runs";

@@ -46,9 +46,12 @@ RUN_TYPE_VAR = "VAR"
 RISK_VAR_CREATE_EVENT_RESERVED = "RISK.VAR_CREATE"
 
 #: The ``calculation_run.run_type`` FAMILY discriminator for an active-risk run (P3-7). Distinct
-#: from the ``metric_type`` (``TRACKING_ERROR`` in v1): the family hosts the reserved active-return
-#: / information-ratio metrics of the deferred ex-post slice — as ``VAR`` hosts VAR_PARAMETRIC +
-#: VAR_HISTORICAL (review: run_type must never equal metric_type).
+#: from the ``metric_type`` (``TRACKING_ERROR`` in v1): the family hosts further reserved EX-ANTE
+#: active metrics — as ``VAR`` hosts VAR_PARAMETRIC + VAR_HISTORICAL (review: run_type must never
+#: equal metric_type). **P3-8 amendment:** the EX-POST (realized) active-return / IR metrics do NOT
+#: land here — they ship in the ``perf`` family under ``BENCHMARK_RELATIVE`` (a realized performance
+#: statistic is a perf number, and its inputs differ; the P3-7 planning note that parked them here
+#: predated the perf family's existence — superseded, OD-P3-8-B).
 RUN_TYPE_ACTIVE_RISK = "ACTIVE_RISK"
 #: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in P3-7 (OD-P3-7-A).
 RISK_ACTIVE_RISK_CREATE_EVENT_RESERVED = "RISK.ACTIVE_RISK_CREATE"

@@ -641,7 +641,7 @@ def test_migration_head_is_portfolio_return() -> None:
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_current_head() == "0031_portfolio_return"
+    assert script.get_current_head() == "0032_benchmark_relative"
     assert script.get_revision("0031_portfolio_return").down_revision == "0030_active_risk"
 
 
