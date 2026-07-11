@@ -36,7 +36,9 @@ _T0 = datetime(2026, 6, 1, tzinfo=UTC)
 #: RISK_RUN_TYPES itself made the guard self-referential — a widened or shrunk constant
 #: would self-adopt). A membership change must turn THIS file red first.
 _RATIFIED_RISK_RUN_TYPES = frozenset(
-    {"SENSITIVITY", "FACTOR_EXPOSURE", "COVARIANCE", "VAR", "ACTIVE_RISK"}
+    # VAR_BACKTEST joined at BT-1 (OD-BT-1-B, ratified 2026-07-10) — the risk-family run listing
+    # surfaces the backtest family under the REUSED risk.view.
+    {"SENSITIVITY", "FACTOR_EXPOSURE", "COVARIANCE", "VAR", "ACTIVE_RISK", "VAR_BACKTEST"}
 )
 
 

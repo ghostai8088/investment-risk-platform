@@ -75,7 +75,6 @@ from irp_shared.perf.events import (
     RUN_TYPE_PORTFOLIO_RETURN,
     PortfolioReturnActor,
 )
-from irp_shared.perf.guards import assert_portfolio_in_tenant
 from irp_shared.perf.models import (
     METRIC_TYPE_DIETZ_PERIOD,
     METRIC_TYPE_TWR_LINKED,
@@ -87,6 +86,7 @@ from irp_shared.perf.return_kernel import (
     dietz_denominator,
     link_periods,
 )
+from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.snapshot import (
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FX,

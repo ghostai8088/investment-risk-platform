@@ -312,6 +312,75 @@ class ActiveRiskResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, B
     n_constituents: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class VarBacktestResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One VaR-backtesting row (BT-1, **ENT-055**, IA TRUE append-only). Created once, never
+    mutated. Per COMPLETED run: ``n`` per-pair ``EXCEPTION_INDICATOR`` rows (0/1 + the
+    ``realized_pnl``/``var_value`` evidence echoes) + one ``EXCEPTION_COUNT`` + one ``KUPIEC_LR``
+    summary (+ its ``test_decision``) + (ONLY on the Basel domain — confidence 0.99, 250 pairs) one
+    ``BASEL_ZONE`` row whose zone lives in the DEDICATED ``basel_zone`` string column — grain
+    ``(calculation_run_id, metric_type, period_start)`` (summary rows carry ``period_start`` = the
+    first pair boundary; the ENT-053/ENT-054 precedent).
+
+    **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** (the ``var_result`` exemplar): NOT-NULL
+    ``calculation_run_id`` + ``input_snapshot_id`` (a ``VAR_BACKTEST_INPUT`` snapshot) + a
+    REGISTERED, identity-checked ``model_version_id`` (``risk.var_backtest`` v1, DECLARED alpha).
+    Hard-FK PROVENANCE: ``portfolio_return_run_id`` (the ONE consumed PM-1 run) + ``portfolio_id``
+    (the measured book). ``var_metric_type`` records WHICH VaR method was backtested
+    (VAR_PARAMETRIC xor VAR_HISTORICAL — one method per run); ``confidence_level``/``horizon_days``
+    echo the uniform forecast parameters. ``metric_value`` Numeric(28,6): a 0/1 indicator, a count,
+    or the Kupiec LR statistic (OQ-BT-1-6 — the exact inputs are reproducible from the pins)."""
+
+    __tablename__ = "var_backtest_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        UniqueConstraint(
+            "calculation_run_id",
+            "metric_type",
+            "period_start",
+            name="uq_var_backtest_result_run_grain",
+        ),
+    )
+
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("dataset_snapshot.id"), nullable=False, index=True
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    )
+    # Hard-FK provenance: the consumed PM-1 return run + the measured book.
+    portfolio_return_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    portfolio_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("portfolio.id"), nullable=False, index=True
+    )
+    # Controlled vocab: EXCEPTION_INDICATOR | EXCEPTION_COUNT | KUPIEC_LR | BASEL_ZONE.
+    metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # WHICH VaR method was backtested (VAR_PARAMETRIC xor VAR_HISTORICAL; uniform per run).
+    var_metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    period_start: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    # The number: 0/1 (indicator), the exception count, or the Kupiec LR statistic. For the
+    # BASEL_ZONE row this echoes the exception count; the zone itself is the string column.
+    metric_value: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 6), nullable=False)
+    # Per-pair evidence (NULL for summary rows where a single pair is not defined).
+    realized_pnl: Mapped[Decimal | None] = mapped_column(PreciseDecimal(28, 6), nullable=True)
+    var_value: Mapped[Decimal | None] = mapped_column(PreciseDecimal(28, 6), nullable=True)
+    n_pairs: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_exceptions: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The uniform forecast parameters, echoed on every row.
+    confidence_level: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
+    horizon_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    # REJECT / FAIL_TO_REJECT at the declared alpha (KUPIEC_LR row only; NULL elsewhere).
+    test_decision: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # GREEN / YELLOW / RED (BASEL_ZONE row only; NULL elsewhere — incl. off the (0.99, 250) domain).
+    basel_zone: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{type(target).__name__} is append-only (AUD-01); update/delete is forbidden"
@@ -330,3 +399,5 @@ event.listen(VarResult, "before_update", _block_mutation)
 event.listen(VarResult, "before_delete", _block_mutation)
 event.listen(ActiveRiskResult, "before_update", _block_mutation)
 event.listen(ActiveRiskResult, "before_delete", _block_mutation)
+event.listen(VarBacktestResult, "before_update", _block_mutation)
+event.listen(VarBacktestResult, "before_delete", _block_mutation)

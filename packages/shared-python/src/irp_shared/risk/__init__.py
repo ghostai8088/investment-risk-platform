@@ -44,6 +44,7 @@ from irp_shared.risk.bootstrap import (
     FACTOR_EXPOSURE_MODEL_CODE,
     SENSITIVITY_METHODOLOGY_REF,
     SENSITIVITY_MODEL_CODE,
+    VAR_BACKTEST_MODEL_CODE,
     VAR_HS_METHODOLOGY_REF,
     VAR_HS_MODEL_CODE,
     VAR_METHODOLOGY_REF,
@@ -56,6 +57,7 @@ from irp_shared.risk.bootstrap import (
     WrongModelVersionError,
     assert_model_version_of,
     declared_hs_var_parameters,
+    declared_var_backtest_alpha,
     declared_var_parameters,
     declared_window_observations,
     register_active_risk_model,
@@ -63,6 +65,7 @@ from irp_shared.risk.bootstrap import (
     register_factor_exposure_model,
     register_historical_var_model,
     register_sensitivity_model,
+    register_var_backtest_model,
     register_var_model,
 )
 from irp_shared.risk.covariance_kernel import (
@@ -82,6 +85,10 @@ from irp_shared.risk.covariance_service import (
 )
 from irp_shared.risk.events import (
     ACTIVE_RISK_METRIC_TYPES,
+    METRIC_TYPE_BASEL_ZONE,
+    METRIC_TYPE_EXCEPTION_COUNT,
+    METRIC_TYPE_EXCEPTION_INDICATOR,
+    METRIC_TYPE_KUPIEC_LR,
     METRIC_TYPE_TRACKING_ERROR,
     METRIC_TYPE_VAR_HISTORICAL,
     METRIC_TYPE_VAR_PARAMETRIC,
@@ -96,16 +103,19 @@ from irp_shared.risk.events import (
     RUN_TYPE_FACTOR_EXPOSURE,
     RUN_TYPE_SENSITIVITY,
     RUN_TYPE_VAR,
+    RUN_TYPE_VAR_BACKTEST,
     SENSITIVITY_TYPE_DV01,
     SENSITIVITY_TYPE_SPREAD_DV01,
     SENSITIVITY_TYPES,
     STATISTIC_TYPE_COVARIANCE,
     STATISTIC_TYPES,
+    VAR_BACKTEST_METRIC_TYPES,
     ActiveRiskActor,
     CovarianceActor,
     FactorExposureActor,
     SensitivityActor,
     VarActor,
+    VarBacktestActor,
 )
 from irp_shared.risk.factor_kernel import FactorKernelError
 from irp_shared.risk.factor_service import (
@@ -125,6 +135,7 @@ from irp_shared.risk.models import (
     CovarianceResult,
     FactorExposureResult,
     SensitivityResult,
+    VarBacktestResult,
     VarResult,
 )
 from irp_shared.risk.queries import (
@@ -141,6 +152,24 @@ from irp_shared.risk.service import (
     resolve_run,
     resolve_sensitivity,
     run_sensitivities,
+)
+from irp_shared.risk.var_backtest_kernel import (
+    CHI2_1DF_CRITICALS,
+    VarBacktestKernelError,
+    basel_zone,
+    exception_indicator,
+    kupiec_decision,
+    kupiec_lr,
+)
+from irp_shared.risk.var_backtest_service import (
+    VarBacktestInputError,
+    VarBacktestNotVisible,
+    VarBacktestRunNotVisible,
+    VarBacktestRunResult,
+    list_var_backtests,
+    resolve_var_backtest,
+    resolve_var_backtest_run,
+    run_var_backtest,
 )
 from irp_shared.risk.var_hs_kernel import (
     HsVarEstimate,
@@ -288,4 +317,29 @@ __all__ = [
     "register_active_risk_model",
     "ACTIVE_RISK_MODEL_CODE",
     "ACTIVE_RISK_METHODOLOGY_REF",
+    "VAR_BACKTEST_MODEL_CODE",
+    "declared_var_backtest_alpha",
+    "register_var_backtest_model",
+    "METRIC_TYPE_BASEL_ZONE",
+    "METRIC_TYPE_EXCEPTION_COUNT",
+    "METRIC_TYPE_EXCEPTION_INDICATOR",
+    "METRIC_TYPE_KUPIEC_LR",
+    "RUN_TYPE_VAR_BACKTEST",
+    "VAR_BACKTEST_METRIC_TYPES",
+    "VarBacktestActor",
+    "VarBacktestResult",
+    "CHI2_1DF_CRITICALS",
+    "VarBacktestKernelError",
+    "basel_zone",
+    "exception_indicator",
+    "kupiec_decision",
+    "kupiec_lr",
+    "VarBacktestInputError",
+    "VarBacktestNotVisible",
+    "VarBacktestRunNotVisible",
+    "VarBacktestRunResult",
+    "list_var_backtests",
+    "resolve_var_backtest",
+    "resolve_var_backtest_run",
+    "run_var_backtest",
 ]

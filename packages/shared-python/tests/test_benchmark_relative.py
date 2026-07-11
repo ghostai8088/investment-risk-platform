@@ -568,7 +568,7 @@ def test_zero_benchmark_window_refused_full_stack(session: Session) -> None:
 
 def test_foreign_portfolio_id_refused_pre_create(session: Session) -> None:
     """The shared perf guard (one implementation for PM-1 + P3-8) with THIS binder's error class."""
-    from irp_shared.perf.guards import assert_portfolio_in_tenant
+    from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 
     pf, _ = _book(session)
     assert_portfolio_in_tenant(session, pf, acting_tenant=TENANT, error=BenchmarkRelativeInputError)
@@ -678,7 +678,7 @@ def test_migration_head_is_benchmark_relative() -> None:
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_current_head() == "0032_benchmark_relative"
+    assert script.get_current_head() == "0033_var_backtest"
     assert script.get_revision("0032_benchmark_relative").down_revision == "0031_portfolio_return"
 
 

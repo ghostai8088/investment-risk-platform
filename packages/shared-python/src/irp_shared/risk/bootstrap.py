@@ -945,3 +945,178 @@ def register_active_risk_model(
         limitations=ACTIVE_RISK_LIMITATIONS,
         actor_type=actor_type,
     )
+
+
+# --- BT-1: the VaR-backtesting model family (OD-BT-1-A) ---
+
+VAR_BACKTEST_MODEL_CODE = "risk.var_backtest"
+VAR_BACKTEST_MODEL_NAME = "VaR backtesting (exception count, Kupiec POF, Basel zone, v1)"
+VAR_BACKTEST_MODEL_TYPE = "VAR_BACKTEST"
+VAR_BACKTEST_VERSION_LABEL = "v1"
+VAR_BACKTEST_METHODOLOGY_REF = "05_analytics_methodologies/var_backtesting_v1.md"
+
+#: The declared-parameter assumption prefix (OD-BT-1-A: the Kupiec test significance level is part
+#: of the version identity — parsed back for the identity check + the binder's read; the P3-5
+#: declared-parameter precedent). The v1 vocabulary is EXACTLY the fixed chi-square(1) critical
+#: set (``var_backtest_kernel.CHI2_1DF_CRITICALS``) — extending it is a NEW declared registration,
+#: never a runtime quantile.
+ALPHA_ASSUMPTION_PREFIX = "alpha="
+
+#: Strict decimal-fraction pattern for the declared alpha (e.g. '0.05').
+_ALPHA_PATTERN = re.compile(r"0\.[0-9]{1,4}")
+
+#: The declared methodology choices EXCLUDING the per-registration alpha (appended per call;
+#: OD-BT-1-D/E/F/G).
+VAR_BACKTEST_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Outcomes analysis (SR 11-7) of ONE VaR method per run: per aligned pair the exception "
+    "indicator e_i = 1 iff -P&L_i > VaR_i (STRICT - a loss exactly AT VaR is not an exception; "
+    "the Basel 'loss exceeding VaR' convention).",
+    "Realized P&L_i = end_mv - begin_mv - net_external_flow per DIETZ sub-period of ONE COMPLETED "
+    "portfolio-return run (the flow-adjusted ACTUAL-P&L leg; hypothetical/clean P&L is a deferred "
+    "leg, never conflated). Each VaR forecast applies as of its window_end and pairs with EXACTLY "
+    "the sub-period starting there and spanning horizon_days CALENDAR days; ANY unpaired forecast "
+    "refuses the whole run (NO imputation, no silent partial pairing).",
+    "Kupiec (1995) POF: LR = -2 ln[(1-p)^(N-x) p^x] + 2 ln[(1-x/N)^(N-x) (x/N)^x], asymptotically "
+    "chi-square(1), TWO-SIDED (too few exceptions also rejects); decision = REJECT iff LR exceeds "
+    "the FIXED chi-square(1) critical value for the declared alpha - NO p-value/erf at runtime.",
+    "Basel (BCBS Jan-1996) traffic-light zone GREEN 0-4 / YELLOW 5-9 / RED >= 10, emitted ONLY on "
+    "its defined domain (confidence_level == 0.99 AND n_pairs == 250) - never scaled or "
+    "extrapolated off-domain.",
+    "Computed in Decimal at 50-digit context; the LR statistic quantize_HALF_UP internally to 12 "
+    "decimal places, then quantize_HALF_UP to the Numeric(28,6) result scale - and the "
+    "REJECT/FAIL_TO_REJECT decision is taken on that STORED 6dp value against the 6dp critical, "
+    "so the persisted row always reproduces its own decision (a knife-edge LR within ~5e-7 of a "
+    "critical follows the stored value; the exact inputs are reproducible from the pinned "
+    "snapshot).",
+)
+
+#: The recorded scope-outs (mirrored into model_limitation rows; decision record Part 3).
+VAR_BACKTEST_LIMITATIONS: tuple[str, ...] = (
+    "CAPTURED-HOLDINGS P&L BIAS (the PM-1 first-class limitation, third named carry): uncaptured "
+    "income understates realized losses' offsets and realized P&L alike - a backtest over a leaky "
+    "book is ANTI-CONSERVATIVE. Mitigation stays operational (capture the cash), never imputation.",
+    "ACTUAL (flow-adjusted) P&L only - the Basel hypothetical/clean-P&L leg needs static-portfolio "
+    "repricing the platform does not yet have; DEFERRED and recorded.",
+    "Kupiec POF only: no Christoffersen independence/conditional-coverage (the natural BT-2), no "
+    "Basel multiplier arithmetic (the zone is the recorded output), no p-values (critical-value "
+    "decisions at the declared alpha).",
+    "Small-N honesty: the POF test is asymptotic; KUPIEC_LR is emitted for any N >= 1 with n_pairs "
+    "recorded on every row so a reader can weigh it; the Basel zone refuses to exist off-domain.",
+    "Calendar-day horizon interpretation (consistent with PM-1's calendar-day Dietz weighting); "
+    "trading-day calendar validation is the same deferred data-quality slice P3-8 recorded.",
+    "One backtest run = ONE VaR method (uniform metric_type); cross-method comparison is two runs "
+    "side by side - no joint test.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+)
+
+
+def declared_var_backtest_alpha(session: Session, version: ModelVersion) -> Decimal:
+    """Parse the version's declared Kupiec ``alpha`` from its ``model_assumption`` rows (the
+    OD-BT-1-A identity: exactly ONE strictly-well-formed declaration, inside the fixed critical
+    set). A malformed, absent, ambiguous, or off-vocabulary declaration is NOT a var-backtest
+    identity — refuse fail-closed (:class:`WrongModelVersionError`, 422), never a bare parse
+    crash (generically minted same-label versions exist — the P3-4 review lesson)."""
+    from irp_shared.risk.var_backtest_kernel import CHI2_1DF_CRITICALS
+
+    rows = (
+        session.execute(
+            select(ModelAssumption).where(ModelAssumption.model_version_id == version.id)
+        )
+        .scalars()
+        .all()
+    )
+    found = [
+        r.assumption_text[len(ALPHA_ASSUMPTION_PREFIX) :]
+        for r in rows
+        if r.assumption_text.startswith(ALPHA_ASSUMPTION_PREFIX)
+    ]
+    if len(found) != 1 or not _ALPHA_PATTERN.fullmatch(found[0]):
+        raise WrongModelVersionError(str(version.id), VAR_BACKTEST_MODEL_CODE)
+    alpha = Decimal(found[0])
+    if alpha not in CHI2_1DF_CRITICALS:
+        raise WrongModelVersionError(str(version.id), VAR_BACKTEST_MODEL_CODE)
+    return alpha
+
+
+def register_var_backtest_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    alpha: str | Decimal = "0.05",
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the VaR-backtesting ``model`` + a ``model_version`` for this
+    ``(code_version, alpha)`` identity (BT-1, OD-BT-1-A — the P3-5 declared-parameter precedent).
+    The v1 alpha vocabulary is the fixed chi-square(1) critical set {0.05, 0.01}; re-registering
+    the same label with ANY different declaration raises :class:`ModelVersionConflictError` (mint
+    a new label); a same-label twin minted via the GENERIC registration (status != REGISTERED)
+    raises :class:`WrongModelVersionError` (the P3-C1 register/run-consistency lesson)."""
+    from irp_shared.risk.var_backtest_kernel import CHI2_1DF_CRITICALS
+
+    # STRICT parse — never coerce (the P3-5 lesson: Decimal('abc') raises InvalidOperation, not
+    # ValueError; a near-vocabulary value must be REFUSED, not rounded onto the set).
+    text = str(alpha).strip()
+    if not _ALPHA_PATTERN.fullmatch(text) or Decimal(text) not in CHI2_1DF_CRITICALS:
+        raise ValueError(
+            f"alpha {alpha!r} is not in the v1 critical-value vocabulary "
+            f"{sorted(str(a) for a in CHI2_1DF_CRITICALS)} (a new level is a new declared "
+            f"registration, never a runtime quantile)"
+        )
+    alpha_key = f"{Decimal(text).normalize():f}"
+
+    model = session.execute(
+        select(Model).where(
+            Model.tenant_id == str(tenant_id), Model.code == VAR_BACKTEST_MODEL_CODE
+        )
+    ).scalar_one_or_none()
+    if model is None:
+        model = register_model(
+            session,
+            tenant_id=str(tenant_id),
+            code=VAR_BACKTEST_MODEL_CODE,
+            name=VAR_BACKTEST_MODEL_NAME,
+            model_type=VAR_BACKTEST_MODEL_TYPE,
+            actor_id=actor_id,
+            description=(
+                "VaR backtesting - exception counting, the Kupiec POF coverage test, and the "
+                "Basel traffic-light zone over realized flow-adjusted P&L vs the pinned VaR "
+                "forecasts of one method (BT-1, ENT-055)."
+            ),
+            actor_type=actor_type,
+        )
+
+    version = session.execute(
+        select(ModelVersion).where(
+            ModelVersion.model_id == model.id,
+            ModelVersion.version_label == VAR_BACKTEST_VERSION_LABEL,
+        )
+    ).scalar_one_or_none()
+    if version is not None:
+        if version.status != "REGISTERED":
+            raise WrongModelVersionError(str(version.id), str(model.code))
+        declared = declared_var_backtest_alpha(session, version)  # malformed -> 422 class
+        if version.code_version != str(code_version) or f"{declared.normalize():f}" != alpha_key:
+            raise ModelVersionConflictError(
+                VAR_BACKTEST_MODEL_CODE,
+                VAR_BACKTEST_VERSION_LABEL,
+                f"{code_version} (alpha={alpha_key})",
+            )
+        return version
+
+    return register_model_version(
+        session,
+        model=model,
+        version_label=VAR_BACKTEST_VERSION_LABEL,
+        actor_id=actor_id,
+        methodology_ref=VAR_BACKTEST_METHODOLOGY_REF,
+        code_version=str(code_version),
+        status="REGISTERED",
+        assumptions=(
+            *VAR_BACKTEST_ASSUMPTIONS_BASE,
+            f"{ALPHA_ASSUMPTION_PREFIX}{alpha_key}",
+        ),
+        limitations=VAR_BACKTEST_LIMITATIONS,
+        actor_type=actor_type,
+    )

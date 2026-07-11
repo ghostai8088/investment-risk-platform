@@ -64,6 +64,10 @@ PURPOSE_RETURN_INPUT = "RETURN_INPUT"
 #: rows of ONE COMPLETED return run (PORTFOLIO_RETURN kind) + the in-window benchmark_return series
 #: (BENCHMARK_RETURN kind). ENT-052's FIRST governed consumer.
 PURPOSE_BENCHMARK_RELATIVE_INPUT = "BENCHMARK_RELATIVE_INPUT"
+#: BT-1 (OD-BT-1-J): the VaR-backtesting input purpose — pins ALL portfolio_return_result rows
+#: of ONE COMPLETED return run (PORTFOLIO_RETURN kind, REUSED) + ALL var_result rows of the
+#: listed VAR runs (VAR kind). The SR 11-7 outcomes-analysis input set.
+PURPOSE_VAR_BACKTEST_INPUT = "VAR_BACKTEST_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -76,6 +80,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_ACTIVE_RISK_INPUT,
     PURPOSE_RETURN_INPUT,
     PURPOSE_BENCHMARK_RELATIVE_INPUT,
+    PURPOSE_VAR_BACKTEST_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -137,6 +142,10 @@ COMPONENT_KIND_PORTFOLIO_RETURN = "PORTFOLIO_RETURN"
 #: identity + return_type/basis). A later vendor supersede/correction is invisible to the pin
 #: (TR-09). ENT-052's FIRST governed consumer. ``target_entity_type='benchmark'``.
 COMPONENT_KIND_BENCHMARK_RETURN = "BENCHMARK_RETURN"
+#: BT-1 (OD-BT-1-J): a pinned ``var_result`` (ENT-027, IA) row — the P3-3 EXPOSURE
+#: true-append-only pin flavor (full immutable column set; byte-identical on re-verify).
+#: ``target_entity_type='var_result'``.
+COMPONENT_KIND_VAR = "VAR"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -152,6 +161,7 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_TRANSACTION,
     COMPONENT_KIND_PORTFOLIO_RETURN,
     COMPONENT_KIND_BENCHMARK_RETURN,
+    COMPONENT_KIND_VAR,
 )
 
 

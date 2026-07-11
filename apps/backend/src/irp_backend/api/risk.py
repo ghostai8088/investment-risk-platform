@@ -64,6 +64,12 @@ from irp_shared.risk import (
     SensitivityRunNotVisible,
     SensitivityRunResult,
     VarActor,
+    VarBacktestActor,
+    VarBacktestInputError,
+    VarBacktestNotVisible,
+    VarBacktestResult,
+    VarBacktestRunNotVisible,
+    VarBacktestRunResult,
     VarInputError,
     VarNotVisible,
     VarResult,
@@ -75,12 +81,14 @@ from irp_shared.risk import (
     list_factor_exposures,
     list_risk_runs,
     list_sensitivities,
+    list_var_backtests,
     list_vars,
     register_active_risk_model,
     register_covariance_model,
     register_factor_exposure_model,
     register_historical_var_model,
     register_sensitivity_model,
+    register_var_backtest_model,
     register_var_model,
     resolve_active_risk,
     resolve_active_risk_run,
@@ -91,12 +99,15 @@ from irp_shared.risk import (
     resolve_run,
     resolve_sensitivity,
     resolve_var,
+    resolve_var_backtest,
+    resolve_var_backtest_run,
     resolve_var_run,
     run_active_risk,
     run_covariance,
     run_factor_exposure,
     run_sensitivities,
     run_var,
+    run_var_backtest,
     run_var_historical,
 )
 from irp_shared.risk.queries import LIST_LIMIT_DEFAULT
@@ -109,6 +120,7 @@ from irp_shared.snapshot import (
     FactorExposureSnapshotError,
     SnapshotNotFound,
     SnapshotPurposeError,
+    VarBacktestSnapshotError,
     VarSnapshotError,
 )
 
@@ -143,11 +155,11 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     FactorNotVisible: (status.HTTP_404_NOT_FOUND, "factor not found"),
     WrongModelVersionError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
-        "model_version belongs to a different model (CTRL-003)",
+        "model_version does not match this model's registered identity (CTRL-003)",
     ),
     ModelVersionConflictError: (
         status.HTTP_409_CONFLICT,
-        "version_label already registered with a different code_version",
+        "version_label already registered with a different declared identity",
     ),
     CovarianceInputError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -171,6 +183,14 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     ActiveRiskInputError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "invalid active-risk run input",
+    ),
+    VarBacktestInputError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid var-backtest run input",
+    ),
+    VarBacktestSnapshotError: (
+        status.HTTP_409_CONFLICT,
+        "var-backtest snapshot input failed closed",
     ),
     FactorExposureRunNotVisible: (status.HTTP_404_NOT_FOUND, "factor-exposure run not found"),
     CovarianceRunNotVisible: (status.HTTP_404_NOT_FOUND, "covariance run not found"),
@@ -219,7 +239,7 @@ def get_risk_runs(
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> RiskRunListOut:
-    """List the tenant's risk runs, newest first (the FIVE risk families only; read-only;
+    """List the tenant's risk runs, newest first (the SIX risk families only; read-only;
     fail-closed filters — an unknown ``run_type``/``status`` or out-of-bounds page is a 422,
     never a silently-empty page). The query param is ``status`` (aliased here — the FastAPI
     ``status`` module shadows the name)."""
@@ -1488,3 +1508,236 @@ def get_active_risk(
             status_code=status.HTTP_404_NOT_FOUND, detail="active-risk result not found"
         ) from None
     return _active_risk_row_out(row)
+
+
+# ---------- BT-1: VaR backtesting (ENT-055; REUSES risk.run/risk.view) ----------
+
+
+def _var_backtest_actor(principal: Principal) -> VarBacktestActor:
+    return VarBacktestActor(actor_id=principal.user_id)
+
+
+class VarBacktestModelIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    alpha: str = "0.05"  # the DECLARED Kupiec significance level (OD-BT-1-A; {0.05, 0.01})
+
+
+class VarBacktestRunIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    environment_id: str  # the run environment (FW-RUN §5 item 7; required)
+    model_version_id: uuid.UUID  # a REGISTERED risk.var_backtest version (CTRL-003; required)
+    # build-in-request (both) XOR consume-existing (snapshot_id) — the P3-C1 gate.
+    portfolio_return_run_id: uuid.UUID | None = None
+    var_run_ids: list[uuid.UUID] | None = None
+    snapshot_id: uuid.UUID | None = None
+
+
+class VarBacktestRowOut(BaseModel):
+    id: str
+    metric_type: str  # EXCEPTION_INDICATOR | EXCEPTION_COUNT | KUPIEC_LR | BASEL_ZONE
+    var_metric_type: str  # WHICH VaR method was backtested (VAR_PARAMETRIC | VAR_HISTORICAL)
+    period_start: date
+    period_end: date
+    metric_value: str  # 0/1, a count, or the Kupiec LR (fixed-point, never scientific)
+    realized_pnl: str | None  # per-pair money evidence (None for summary rows)
+    var_value: str | None
+    n_pairs: int
+    n_exceptions: int
+    confidence_level: str
+    horizon_days: int
+    test_decision: str | None  # REJECT / FAIL_TO_REJECT (KUPIEC_LR row only)
+    basel_zone: str | None  # GREEN / YELLOW / RED (BASEL_ZONE row only; domain-gated)
+    base_currency: str
+    portfolio_return_run_id: str
+    model_version_id: str
+
+
+class VarBacktestRunOut(BaseModel):
+    run_id: str
+    status: str
+    run_type: str
+    input_snapshot_id: str | None
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    initiated_by: str
+    failure_reason: str | None
+    rows: list[VarBacktestRowOut]
+
+
+def _var_backtest_row_out(row: VarBacktestResult) -> VarBacktestRowOut:
+    return VarBacktestRowOut(
+        id=row.id,
+        metric_type=row.metric_type,
+        var_metric_type=row.var_metric_type,
+        period_start=row.period_start,
+        period_end=row.period_end,
+        # Fixed-point, never scientific (the P3-4 serialization lesson).
+        metric_value=f"{row.metric_value:f}",
+        realized_pnl=None if row.realized_pnl is None else f"{row.realized_pnl:f}",
+        var_value=None if row.var_value is None else f"{row.var_value:f}",
+        n_pairs=row.n_pairs,
+        n_exceptions=row.n_exceptions,
+        confidence_level=f"{row.confidence_level:f}",
+        horizon_days=row.horizon_days,
+        test_decision=row.test_decision,
+        basel_zone=row.basel_zone,
+        base_currency=row.base_currency,
+        portfolio_return_run_id=row.portfolio_return_run_id,
+        model_version_id=row.model_version_id,
+    )
+
+
+def _var_backtest_run_out(result: VarBacktestRunResult) -> VarBacktestRunOut:
+    run = result.run
+    return VarBacktestRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_var_backtest_row_out(r) for r in result.rows],
+    )
+
+
+@router.post(
+    "/models/var-backtest",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_var_backtest(
+    body: VarBacktestModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed VaR-backtesting model + a model_version for this
+    ``(code_version, alpha)`` identity and return its id (OD-BT-1-A — the DECLARED alpha is part
+    of the version identity; a same-label re-register with a different declaration is a 409; an
+    off-vocabulary alpha is a 422)."""
+    try:
+        version = register_var_backtest_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            alpha=body.alpha,
+        )
+    except ValueError:
+        # The strict alpha-vocabulary parse (never a 500 for an off-vocab declaration). A FIXED
+        # opaque detail — the file's uniform refusal style (review fold: no raw str(exc) echo).
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="alpha is not in the declared v1 vocabulary {0.05, 0.01}",
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/var-backtests/runs",
+    response_model=VarBacktestRunOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_var_backtest_run(
+    body: VarBacktestRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> VarBacktestRunOut:
+    """Run a governed VaR backtest. A pre-create refusal raises + rolls back (no run — incl. an
+    unpaired forecast, a horizon mismatch, mixed methods, a broken MV chain, or a cross-portfolio
+    identity failure, 422/404/409); a post-create FAILED run is committed (``status='FAILED'``,
+    zero rows — the magnitude gate)."""
+    try:
+        result = run_var_backtest(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_var_backtest_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            portfolio_return_run_id=(
+                None if body.portfolio_return_run_id is None else str(body.portfolio_return_run_id)
+            ),
+            var_run_ids=(None if body.var_run_ids is None else [str(r) for r in body.var_run_ids]),
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        VarBacktestInputError,
+        UnregisteredModelError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        VarBacktestSnapshotError,
+    ) as exc:
+        # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+
+    # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a
+    # post-create FAILED run are committed (the FAILED run is durable refusal evidence).
+    response = _var_backtest_run_out(result)
+    db.commit()
+    return response
+
+
+@router.get("/var-backtests/runs/{run_id}", response_model=VarBacktestRunOut)
+def get_var_backtest_run(
+    run_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> VarBacktestRunOut:
+    """Read a var-backtest run + its result rows (tenant-scoped; read-only). A committed FAILED
+    run (zero rows) is surfaced with ``status='FAILED'`` (durable refusal evidence), NOT a 404."""
+    try:
+        run = resolve_var_backtest_run(db, str(run_id), acting_tenant=principal.tenant_id)
+    except VarBacktestRunNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="var-backtest run not found"
+        ) from None
+    rows = list_var_backtests(db, run_id=str(run_id), acting_tenant=principal.tenant_id)
+    return VarBacktestRunOut(
+        run_id=run.run_id,
+        status=run.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
+        rows=[_var_backtest_row_out(r) for r in rows],
+    )
+
+
+@router.get("/var-backtests/{result_id}", response_model=VarBacktestRowOut)
+def get_var_backtest(
+    result_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> VarBacktestRowOut:
+    """Read a single ``var_backtest_result`` row (tenant-scoped; read-only)."""
+    try:
+        row = resolve_var_backtest(db, str(result_id), acting_tenant=principal.tenant_id)
+    except VarBacktestNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="var-backtest result not found"
+        ) from None
+    return _var_backtest_row_out(row)

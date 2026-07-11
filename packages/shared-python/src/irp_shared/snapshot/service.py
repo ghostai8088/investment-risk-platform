@@ -90,12 +90,14 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_TRANSACTION,
     COMPONENT_KIND_VALUATION,
+    COMPONENT_KIND_VAR,
     PURPOSE_ACTIVE_RISK_INPUT,
     PURPOSE_BENCHMARK_RELATIVE_INPUT,
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_RETURN_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
+    PURPOSE_VAR_BACKTEST_INPUT,
     PURPOSE_VAR_HS_INPUT,
     PURPOSE_VAR_INPUT,
     SNAPSHOT_PURPOSES,
@@ -120,6 +122,7 @@ from irp_shared.snapshot.serialize import (
     serialize_content,
     transaction_content,
     valuation_content,
+    var_result_content,
 )
 from irp_shared.valuation import ValuationNotVisible, resolve_valuation
 
@@ -1551,6 +1554,133 @@ def build_benchmark_relative_snapshot(
     return header_row
 
 
+class VarBacktestSnapshotError(Exception):
+    """Raised when a VaR-backtesting input snapshot cannot be built (a return/VaR run with no
+    visible result rows, or an unresolvable input) — fail closed, BEFORE any write. Its OWN class
+    (the V8 lesson). Maps to 409."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"var-backtest snapshot input failed closed: {detail}")
+        self.detail = detail
+
+
+def _resolve_var_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``var_result`` by id with an EXPLICIT tenant predicate (models-only import —
+    the ``_resolve_portfolio_return_row`` precedent; the ``risk`` SERVICE is not imported)."""
+    from irp_shared.risk.models import VarResult  # models-only (no cycle / fence-safe)
+
+    row = session.execute(
+        select(VarResult).where(
+            VarResult.id == str(row_id),
+            VarResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise VarBacktestSnapshotError(f"var_result {row_id} is not visible")
+    return row
+
+
+def _list_var_rows(session: Session, run_id: str, *, acting_tenant: str) -> list[Any]:
+    """The ``var_result`` rows of a VAR run (tenant-scoped, stable ``window_end`` order;
+    models-only import)."""
+    from irp_shared.risk.models import VarResult  # models-only (no cycle / fence-safe)
+
+    return list(
+        session.execute(
+            select(VarResult)
+            .where(
+                VarResult.calculation_run_id == str(run_id),
+                VarResult.tenant_id == str(acting_tenant),
+            )
+            .order_by(VarResult.window_end, VarResult.id)
+        )
+        .scalars()
+        .all()
+    )
+
+
+#: The var-backtest binding/selection rule (a truthful descriptor; BT-1, OD-BT-1-J).
+VAR_BACKTEST_BINDING_PREDICATE = "v1:return-run-rows+var-run-rows"
+
+
+def build_var_backtest_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    portfolio_return_run_id: str,
+    var_run_ids: list[str],
+) -> DatasetSnapshot:
+    """Build one immutable ``VAR_BACKTEST_INPUT`` snapshot (BT-1, OD-BT-1-J) pinning:
+
+    - one ``COMPONENT_KIND_PORTFOLIO_RETURN`` per ``portfolio_return_result`` row of the consumed
+      return run (REUSED from P3-8 — the realized-P&L side); and
+    - one ``COMPONENT_KIND_VAR`` per ``var_result`` row of EACH listed VAR run (the P3-3 IA-row
+      pin flavor — the forecast side),
+
+    so a backtest is reproducible from the snapshot alone (the binder reads this captured content —
+    never a live result read; a later re-run of either side cannot move a historical backtest,
+    TR-09). A run with NO visible rows — either side — or a DUPLICATE ``var_run_ids`` entry fails
+    closed BEFORE any write (:class:`VarBacktestSnapshotError`). The alignment / uniformity /
+    identity adjudication is the RISK binder's pre-create gate — this builder pins a well-formed
+    set; it imports NO ``calc``/``perf``/``risk`` SERVICE symbol (both sides are models-only
+    reads)."""
+    now = utcnow()
+    # Both sides are IA rows (no valid/known axis to reconstruct): the header instants are stamped
+    # now/now — the build_var_snapshot precedent. Caller-supplied cutoffs would be a backdatable
+    # knowledge-time claim binding NOTHING (review fold).
+    valid_at = known = now
+
+    if not var_run_ids:
+        # The build_factor_exposure_snapshot precedent: a VAR-less "backtest input" could only ever
+        # produce a refused run — refuse BEFORE any write, never mint immutable governance garbage
+        # (review fold).
+        raise VarBacktestSnapshotError("var_run_ids is empty — nothing to backtest")
+    if len(var_run_ids) != len({str(r).lower() for r in var_run_ids}):
+        raise VarBacktestSnapshotError("duplicate var_run_ids — each VAR run pins once")
+
+    return_rows = _list_portfolio_return_rows(
+        session, portfolio_return_run_id, acting_tenant=acting_tenant
+    )
+    if not return_rows:
+        raise VarBacktestSnapshotError(
+            f"portfolio-return run {portfolio_return_run_id} has no visible result rows to pin"
+        )
+    var_rows: list[Any] = []
+    for run_id in var_run_ids:
+        rows = _list_var_rows(session, str(run_id), acting_tenant=acting_tenant)
+        if not rows:
+            raise VarBacktestSnapshotError(f"VAR run {run_id} has no visible result rows to pin")
+        var_rows.extend(rows)
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in return_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_PORTFOLIO_RETURN,
+            "portfolio_return_result",
+            row,
+            portfolio_return_content(row),
+        )
+    for row in var_rows:
+        _append_spec(specs, COMPONENT_KIND_VAR, "var_result", row, var_result_content(row))
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_VAR_BACKTEST_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=max(r.period_end for r in return_rows),
+        binding_predicate_version=VAR_BACKTEST_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -1628,6 +1758,10 @@ def _reresolve_content(
             _resolve_portfolio_return_row(
                 session, comp.target_entity_id, acting_tenant=acting_tenant
             )
+        )
+    if comp.component_kind == COMPONENT_KIND_VAR:
+        return var_result_content(
+            _resolve_var_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
         )
     if comp.component_kind == COMPONENT_KIND_BENCHMARK_RETURN:
         # Re-read the benchmark header (by the pinned target id) + each pinned FR row by surrogate
@@ -1713,6 +1847,7 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             VarSnapshotError,
             ReturnSnapshotError,
             BenchmarkRelativeSnapshotError,
+            VarBacktestSnapshotError,
             BenchmarkNotVisible,
         ):
             drifted.append(comp.id)
@@ -1835,6 +1970,7 @@ _BINDING_PREDICATES = (
     VAR_HS_BINDING_PREDICATE,
     RETURN_BINDING_PREDICATE,
     BENCHMARK_RELATIVE_BINDING_PREDICATE,
+    VAR_BACKTEST_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "

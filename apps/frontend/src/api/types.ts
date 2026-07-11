@@ -63,6 +63,11 @@ export const FAMILIES = {
     label: "Benchmark-relative",
     permissionFamily: "perf",
   },
+  "var-backtests": {
+    runType: "VAR_BACKTEST",
+    label: "VaR backtests",
+    permissionFamily: "risk",
+  },
 } as const;
 
 export type Family = keyof typeof FAMILIES;
@@ -76,6 +81,7 @@ export const RUN_TYPE_TO_FAMILY: Record<string, Family> = {
   EXPOSURE_AGGREGATE: "exposure",
   PORTFOLIO_RETURN: "portfolio-returns",
   BENCHMARK_RELATIVE: "benchmark-relative",
+  VAR_BACKTEST: "var-backtests",
 };
 
 /** The run-detail fetch URL for a family: exposure and the perf families have their own endpoint
@@ -179,6 +185,20 @@ export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]
     { key: "return_basis", label: "Basis" },
     { key: "n_benchmark_obs", label: "Bmk obs" },
     { key: "n_periods", label: "Periods" },
+    { key: "base_currency", label: "Base ccy" },
+  ],
+  "var-backtests": [
+    { key: "metric_type", label: "Metric" },
+    { key: "var_metric_type", label: "VaR method" },
+    { key: "period_start", label: "Period start" },
+    { key: "period_end", label: "Period end" },
+    { key: "metric_value", label: "Value" },
+    { key: "realized_pnl", label: "Realized P&L" },
+    { key: "var_value", label: "VaR" },
+    { key: "test_decision", label: "Kupiec" },
+    { key: "basel_zone", label: "Basel zone" },
+    { key: "n_pairs", label: "Pairs" },
+    { key: "n_exceptions", label: "Exceptions" },
     { key: "base_currency", label: "Base ccy" },
   ],
 };

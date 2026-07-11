@@ -392,6 +392,38 @@ def portfolio_return_content(row: Any) -> dict[str, Any]:
     }
 
 
+def var_result_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``var_result`` (ENT-027, IA) row (BT-1 VAR component —
+    the P3-3 EXPOSURE true-append-only pin flavor: no valid axis, no ``record_version``;
+    ``system_from`` the append time; byte-identical on re-verify). The FULL immutable column set is
+    pinned so the backtest binder reconstructs each forecast (``metric_type``/``confidence_level``/
+    ``horizon_days``/``window_end``/``var_value``) exactly. Scales: ``var_value``/``sigma`` 6 (the
+    base-currency money scale); ``confidence_level`` 4; ``z_score`` 12."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "calculation_run_id": _norm_guid(row.calculation_run_id),
+        "input_snapshot_id": _norm_guid(row.input_snapshot_id),
+        "model_version_id": _norm_guid(row.model_version_id),
+        "exposure_run_id": _norm_guid(row.exposure_run_id),
+        "covariance_run_id": (
+            None if row.covariance_run_id is None else _norm_guid(row.covariance_run_id)
+        ),
+        "metric_type": row.metric_type,
+        "base_currency": row.base_currency,
+        "confidence_level": _norm_decimal(row.confidence_level, 4),
+        "horizon_days": row.horizon_days,
+        "z_score": None if row.z_score is None else _norm_decimal(row.z_score, _SCALE_CURVE_POINT),
+        "sigma": None if row.sigma is None else _norm_decimal(row.sigma, _SCALE_MONEY),
+        "var_value": _norm_decimal(row.var_value, _SCALE_MONEY),
+        "n_factors": row.n_factors,
+        "n_observations": row.n_observations,
+        "window_start": row.window_start.isoformat(),
+        "window_end": row.window_end.isoformat(),
+        "system_from": _norm_datetime(row.system_from),
+    }
+
+
 def benchmark_return_series_content(benchmark: Any, rows: list[Any]) -> dict[str, Any]:
     """The captured content of one benchmark's pinned RETURN WINDOW (P3-8 BENCHMARK_RETURN component
     — the ``factor_return_series_content`` header+rows shape over ``benchmark_return`` FR rows).
