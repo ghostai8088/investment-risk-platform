@@ -102,3 +102,36 @@ describe("benchmark-relative (P3-8) family wiring", () => {
     ]);
   });
 });
+
+describe("var-backtests (BT-1) family wiring", () => {
+  it("registers the risk family keyed to VAR_BACKTEST, REUSING the risk permission family", () => {
+    expect(FAMILIES["var-backtests"]).toEqual({
+      runType: "VAR_BACKTEST",
+      label: "VaR backtests",
+      permissionFamily: "risk",
+    });
+    expect(RUN_TYPE_TO_FAMILY.VAR_BACKTEST).toBe("var-backtests");
+  });
+
+  it("uses the shared /risk/{family}/runs/{id} detail URL (no special case)", () => {
+    expect(runDetailUrl("var-backtests", "abc-123")).toBe("/risk/var-backtests/runs/abc-123");
+  });
+
+  it("surfaces the backtest columns", () => {
+    const keys = FAMILY_ROW_COLUMNS["var-backtests"].map((c) => c.key);
+    expect(keys).toEqual([
+      "metric_type",
+      "var_metric_type",
+      "period_start",
+      "period_end",
+      "metric_value",
+      "realized_pnl",
+      "var_value",
+      "test_decision",
+      "basel_zone",
+      "n_pairs",
+      "n_exceptions",
+      "base_currency",
+    ]);
+  });
+});

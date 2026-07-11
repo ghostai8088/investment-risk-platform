@@ -79,3 +79,19 @@ Implementation starts ONLY on explicit direction after OQ ratification, against
 implementation: **Opus 4.8 / high** — templated on the PM-1/P3-8 exemplars (kernel + binder +
 snapshot + migration + API + FE + tests) with one genuinely novel leg (the alignment/pairing
 adjudication), which the FULL review covers.
+
+## Part 5.5 — Implementation deviations from the ratified plan (recorded during the build)
+
+1. **Exact-linkage cross-check → MV-CHAIN check.** The plan carried the P3-8 exact-linkage gate
+   (`Π(1+r_i)−1 == TWR_LINKED`) into the return-side adjudication, but recomputing the link needs
+   perf's compounding kernel and **risk must not import perf** ("nothing imports perf"); duplicating
+   the kernel in risk would recreate the exact duplication the P3-8 cleanup removed. The binder
+   instead enforces `begin_mv_{i+1} == end_mv_i` across contiguous sub-periods (the SAME boundary
+   valuation appears on both sides in a well-formed PM-1 output) — a STRONGER gate for THIS number,
+   because it adjudicates exactly the columns the realized P&L consumes (`begin_mv`/`end_mv`/
+   `net_external_flow`; `return_value` is not read at all). The one-TWR_LINKED-row and contiguity
+   shape checks are kept as planned.
+2. **`portfolio.guards` relocation.** The shared `assert_portfolio_in_tenant` guard (created in the
+   P3-8 cleanup as `perf/guards.py`) moved to `portfolio/guards.py`: BT-1's risk binder needs the
+   same P3-5 cross-tenant-FK check and the perf home violated the fence. Both perf binders + both
+   tests updated; one implementation, no wrapper.

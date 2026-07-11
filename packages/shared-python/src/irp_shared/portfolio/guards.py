@@ -1,8 +1,13 @@
-"""Shared perf-binder guards (PM-1 + P3-8 — one implementation of the cross-slice security checks).
+"""Shared portfolio guards — one implementation of the cross-family tenant-resolution checks.
+
+(Relocated from ``perf/guards.py`` at BT-1: once a RISK binder also needed the check, the perf
+home violated the "nothing imports perf" fence — the guard is about PORTFOLIO tenant resolution,
+so it lives with portfolio.)
 
 The P3-5 principal finding: PG FK checks BYPASS RLS, so an id lifted from a hand-minted snapshot's
 pinned JSON must be re-resolved under the acting tenant BEFORE it is stamped into a NOT-NULL FK
-column — otherwise a durable cross-tenant reference (or a flush 500) is possible. Every perf binder
+column — otherwise a durable cross-tenant reference (or a flush 500) is possible. Every
+governed-number binder that stamps a portfolio FK
 applies the same guard; it lives ONCE here, parameterized by the binder's own pre-create refusal
 error class (each governed number keeps its own error vocabulary — the API maps them per family).
 """

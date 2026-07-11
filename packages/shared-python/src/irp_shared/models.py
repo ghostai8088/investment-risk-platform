@@ -52,6 +52,7 @@ from irp_shared.risk.models import (
     CovarianceResult,
     FactorExposureResult,
     SensitivityResult,
+    VarBacktestResult,
     VarResult,
 )
 from irp_shared.snapshot.models import DatasetSnapshot, DatasetSnapshotComponent
@@ -111,6 +112,7 @@ __all__ = [
     "SensitivityResult",
     "FactorExposureResult",
     "CovarianceResult",
+    "VarBacktestResult",
     "VarResult",
     "ActiveRiskResult",
     "PortfolioReturnResult",

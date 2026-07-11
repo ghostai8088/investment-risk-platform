@@ -74,7 +74,6 @@ from irp_shared.perf.events import (
     RUN_TYPE_PORTFOLIO_RETURN,
     BenchmarkRelativeActor,
 )
-from irp_shared.perf.guards import assert_portfolio_in_tenant
 from irp_shared.perf.models import (
     METRIC_TYPE_ACTIVE_RETURN,
     METRIC_TYPE_INFORMATION_RATIO,
@@ -82,6 +81,7 @@ from irp_shared.perf.models import (
     METRIC_TYPE_TRACKING_ERROR,
     BenchmarkRelativeResult,
 )
+from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.snapshot import (
     COMPONENT_KIND_BENCHMARK_RETURN,
     COMPONENT_KIND_PORTFOLIO_RETURN,

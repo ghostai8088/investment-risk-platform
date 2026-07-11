@@ -560,9 +560,9 @@ def test_foreign_portfolio_id_refused_pre_create(session: Session) -> None:
     """The measured book's portfolio_id (from pinned atom JSON) is re-resolved under the acting
     tenant before it is stamped into the NOT-NULL portfolio FK — a foreign/non-existent id is
     refused pre-create (the P3-5 cross-tenant-FK guard), never a durable cross-tenant reference or a
-    flush 500. The guard is the SHARED perf implementation (``perf.guards``) with THIS binder's
+    flush 500. The guard is the SHARED perf implementation (``portfolio.guards``) with THIS binder's
     error class."""
-    from irp_shared.perf.guards import assert_portfolio_in_tenant
+    from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 
     pf, inst = _book(session)
     # A real portfolio in the tenant resolves cleanly.
@@ -644,7 +644,7 @@ def test_migration_head_is_portfolio_return() -> None:
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_current_head() == "0032_benchmark_relative"
+    assert script.get_current_head() == "0033_var_backtest"
     assert script.get_revision("0031_portfolio_return").down_revision == "0030_active_risk"
 
 

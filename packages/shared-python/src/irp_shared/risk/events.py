@@ -56,6 +56,13 @@ RUN_TYPE_ACTIVE_RISK = "ACTIVE_RISK"
 #: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in P3-7 (OD-P3-7-A).
 RISK_ACTIVE_RISK_CREATE_EVENT_RESERVED = "RISK.ACTIVE_RISK_CREATE"
 
+#: BT-1 (OD-BT-1-B): the VaR-backtesting run family — SR 11-7 outcomes analysis of ONE VaR method
+#: per run over realized flow-adjusted P&L (PM-1). DISTINCT from every metric (GS2). Reuses
+#: ``risk.run``/``risk.view`` (no mint) + ``CALC.RUN_*`` (no new audit code).
+RUN_TYPE_VAR_BACKTEST = "VAR_BACKTEST"
+#: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in BT-1.
+RISK_VAR_BACKTEST_CREATE_EVENT_RESERVED = "RISK.VAR_BACKTEST_CREATE"
+
 #: Controlled-vocab ``sensitivity_type`` (plain String, no enum/CHECK; app-side allow-list).
 SENSITIVITY_TYPE_DV01 = "DV01"
 SENSITIVITY_TYPE_SPREAD_DV01 = "SPREAD_DV01"
@@ -79,6 +86,20 @@ METRIC_TYPES = (METRIC_TYPE_VAR_PARAMETRIC, METRIC_TYPE_VAR_HISTORICAL)
 #: value — e.g. active return / information ratio ship with the deferred ex-post slice).
 METRIC_TYPE_TRACKING_ERROR = "TRACKING_ERROR"
 ACTIVE_RISK_METRIC_TYPES = (METRIC_TYPE_TRACKING_ERROR,)
+
+#: Controlled-vocab ``var_backtest_result.metric_type`` (BT-1): the per-pair exception series +
+#: the summary statistics. The Basel zone value itself lives in the DEDICATED ``basel_zone``
+#: string column (GREEN/YELLOW/RED is not a number); its metric row carries the exception count.
+METRIC_TYPE_EXCEPTION_INDICATOR = "EXCEPTION_INDICATOR"
+METRIC_TYPE_EXCEPTION_COUNT = "EXCEPTION_COUNT"
+METRIC_TYPE_KUPIEC_LR = "KUPIEC_LR"
+METRIC_TYPE_BASEL_ZONE = "BASEL_ZONE"
+VAR_BACKTEST_METRIC_TYPES = (
+    METRIC_TYPE_EXCEPTION_INDICATOR,
+    METRIC_TYPE_EXCEPTION_COUNT,
+    METRIC_TYPE_KUPIEC_LR,
+    METRIC_TYPE_BASEL_ZONE,
+)
 
 
 @dataclass(frozen=True)
@@ -116,6 +137,14 @@ class VarActor:
 @dataclass(frozen=True)
 class ActiveRiskActor:
     """The principal initiating an active-risk (tracking-error) run (mirrors :class:`VarActor`)."""
+
+    actor_id: str
+    actor_type: str = "user"
+
+
+@dataclass(frozen=True)
+class VarBacktestActor:
+    """The principal initiating a VaR-backtesting run (mirrors :class:`VarActor`)."""
 
     actor_id: str
     actor_type: str = "user"

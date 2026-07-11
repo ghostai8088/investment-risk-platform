@@ -88,11 +88,11 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     ),
     WrongModelVersionError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
-        "model_version belongs to a different model (CTRL-003)",
+        "model_version does not match this model's registered identity (CTRL-003)",
     ),
     ModelVersionConflictError: (
         status.HTTP_409_CONFLICT,
-        "version_label already registered with a different code_version",
+        "version_label already registered with a different declared identity",
     ),
     SnapshotPurposeError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid snapshot purpose"),
     SnapshotNotFound: (status.HTTP_404_NOT_FOUND, "snapshot not found"),
