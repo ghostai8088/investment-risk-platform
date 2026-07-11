@@ -166,6 +166,16 @@ BENCHMARK_RETURN_BASES = (RETURN_BASIS_PRICE, RETURN_BASIS_TOTAL, RETURN_BASIS_N
 #: ``benchmark_return.return_type`` reuses the ENT-025 vocabulary (SIMPLE v1; LOG reserved).
 BENCHMARK_RETURN_TYPES = (RETURN_TYPE_SIMPLE,)
 
+# --- private-asset proxy mapping (PA-0, ENT-019) — captured private→public factor proxies ---
+#: ``proxy_mapping.mapping_method`` — HOW the proxy weight was derived (recorded provenance, NOT a
+#: computation in v1). ``MANUAL`` = a captured governance judgment call; ``PEER_GROUP`` /
+#: ``REGRESSION`` reserved-by-value for later (a regression-DERIVED weight is a v2 extension). The
+#: v1 weight is CAPTURED, never computed (OD-PA-0-C).
+MAPPING_METHOD_MANUAL = "MANUAL"
+MAPPING_METHOD_PEER_GROUP_RESERVED = "PEER_GROUP"
+MAPPING_METHOD_REGRESSION_RESERVED = "REGRESSION"
+PROXY_MAPPING_METHODS = (MAPPING_METHOD_MANUAL,)
+
 
 class FxRate(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):
     """Captured vendor FX rate (ENT-024, FR bitemporal). PROPRIETARY/symmetric; NOT append-only."""
@@ -776,3 +786,73 @@ class BenchmarkReturn(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, Times
 # NOTE: benchmark_level + benchmark_return (both FR, ENT-052) are NOT append-only — the
 # factor_return/benchmark precedent (FR requires close-out UPDATEs). Content-immutability is
 # binder-enforced + tested.
+
+
+class ProxyMapping(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):
+    """Captured private-asset → public-risk-factor proxy weight (PA-0, **ENT-019**, FR bitemporal).
+
+    The FIRST private-asset foundation (the differentiation-thesis destination §2.1): records that a
+    PRIVATE instrument's risk behaves like a loading ``weight`` on a public ``factor`` — so a later
+    governed number (PA-1, the desmoothing/proxy transform) can project the private holding onto the
+    same public factor substrate the risk engines already consume. **CAPTURED, NEVER computed** — a
+    governance judgment call (``mapping_method``), not a runtime regression (a regression-derived
+    weight is a v2 extension, OD-PA-0-C). PROPRIETARY/symmetric RLS; NEVER hybrid; NOT append-only
+    (the FR protocol requires close-out UPDATEs — a proxy weight is revisited; content-immutability
+    is service-enforced + tested, the ``factor_return`` precedent).
+
+    A **multi-row blend** per instrument (a buyout fund proxied by an equity factor + a
+    credit-spread factor is normal); the weights are NOT constrained to sum to 1 (a partial proxy —
+    the residual left as unmodeled private/idiosyncratic risk — is a legitimate, recorded choice,
+    OD-PA-0-D). Logical key ``(private_instrument_id, factor_id)``:
+
+    - **``private_instrument_id``:** NOT-NULL FK to the ``instrument`` head (tenant-filtered;
+      a private asset is an ORDINARY instrument with a documented private ``asset_class`` convention
+      — OD-PA-0-B, no new schema).
+    - **``factor_id``:** NOT-NULL FK to the public ``factor`` definition (CURRENCY-family in v1 —
+      OD-PA-0-H; resolved tenant-filtered).
+    - **``weight``:** the signed factor loading, a canonical DECIMAL ``Numeric(20, 12)`` (the
+      ``factor_return``/``curve`` scale; a loading, NOT currency); inert (NEVER computed). A
+      service-side finiteness guard rejects NaN/±Inf.
+    - **``mapping_method``:** controlled-vocab (``MANUAL`` v1; ``PEER_GROUP``/``REGRESSION``
+      reserved) — HOW the weight was derived (recorded provenance).
+
+    Current-head partial-unique ``(tenant_id, private_instrument_id, factor_id) WHERE valid_to IS
+    NULL AND system_to IS NULL`` — exactly one OPEN weight per instrument+factor pair on both axes.
+    """
+
+    __tablename__ = "proxy_mapping"
+    __temporal_class__ = TemporalClass.FULL_REPRODUCIBLE
+    __table_args__ = (
+        Index(
+            "uq_proxy_mapping_current",
+            "tenant_id",
+            "private_instrument_id",
+            "factor_id",
+            unique=True,
+            postgresql_where=text("valid_to IS NULL AND system_to IS NULL"),
+            sqlite_where=text("valid_to IS NULL AND system_to IS NULL"),
+        ),
+    )
+
+    private_instrument_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("instrument.id"), nullable=False, index=True
+    )
+    factor_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("factor.id"), nullable=False, index=True
+    )
+    # The signed public-factor loading (a DECIMAL, NOT currency); inert (NEVER computed).
+    weight: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    mapping_method: Mapped[str] = mapped_column(
+        String(30), nullable=False, default=MAPPING_METHOD_MANUAL
+    )
+    restatement_reason: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )  # set ONLY on a correction (TR-08)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("proxy_mapping.id"), nullable=True
+    )  # link to the superseded version (set on supersede + correction)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+# NOTE: proxy_mapping (FR, ENT-019) is NOT append-only — the factor_return precedent (FR requires
+# close-out UPDATEs). Content-immutability is service-enforced + tested.

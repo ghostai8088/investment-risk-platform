@@ -28,6 +28,7 @@ from irp_shared.marketdata.models import (
     FactorReturn,
     FxRate,
     PricePoint,
+    ProxyMapping,
 )
 from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, ModelVersion
 from irp_shared.perf.models import BenchmarkRelativeResult, PortfolioReturnResult
@@ -108,6 +109,7 @@ __all__ = [
     "FactorReturn",
     "BenchmarkLevel",
     "BenchmarkReturn",
+    "ProxyMapping",
     "ExposureAggregate",
     "SensitivityResult",
     "FactorExposureResult",
