@@ -141,3 +141,11 @@ rows post-commit because the RLS GUC is transaction-scoped (`SET LOCAL`) — re-
 model (declared-α); the **Okunev-White citation remains UNVERIFIED** (OD-PA-0-I — must be resolved
 before PA-1's methodology doc); capital calls/distributions/money-weighted IRR (OD-PA-0-F);
 regression-derived weights (v2).
+
+**[RESOLUTION, 2026-07-12 — the OD-PA-0-I flag is DISCHARGED at PA-1 planning:** Okunev-White
+VERIFIED as Okunev & White (Oct 2003), "Hedge Fund Risk Factors and Value at Risk of Credit Trading
+Strategies", SSRN 460641 (published: Loudon, Okunev & White, *J. Fixed Income* 16(2), 2006). The
+tentative substance recorded above ("dynamic/time-varying-exposure, Kalman-style") was **incorrect**
+— the method is an ITERATIVE HIGHER-ORDER extension of the Geltner filter. See
+`pa_1_decision_record.md` OD-PA-1-J for the corrected v2 register; the flag worked as designed (the
+unverified claim was quarantined and never entered a methodology doc).**]**
