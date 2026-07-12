@@ -836,5 +836,5 @@ def test_migration_head_is_benchmark_series() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0034_proxy_mapping"
+    assert script.get_current_head() == "0035_scenario"
     assert script.get_revision("0029_benchmark_series").down_revision == "0028_var_historical"
