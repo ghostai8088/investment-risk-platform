@@ -1,6 +1,6 @@
 """Read-only risk-run listing (FE-1, OD-FE-1-C — the runs-view's one backend addition).
 
-One tenant-scoped query over ``calculation_run`` restricted to the SIX risk run families —
+One tenant-scoped query over ``calculation_run`` restricted to the risk run families —
 the ``risk.view`` permission's honest scope (exposure runs are gated by ``exposure.view`` and
 are a recorded follow-up, never silently mixed in). Filters fail CLOSED: an unknown
 ``run_type``/``status`` or an out-of-bounds page is a refusal (422 at the router), never a
@@ -19,6 +19,7 @@ from irp_shared.risk.events import (
     RUN_TYPE_ACTIVE_RISK,
     RUN_TYPE_COVARIANCE,
     RUN_TYPE_FACTOR_EXPOSURE,
+    RUN_TYPE_SCENARIO,
     RUN_TYPE_SENSITIVITY,
     RUN_TYPE_VAR,
     RUN_TYPE_VAR_BACKTEST,
@@ -33,6 +34,7 @@ RISK_RUN_TYPES: frozenset[str] = frozenset(
         RUN_TYPE_VAR,
         RUN_TYPE_ACTIVE_RISK,
         RUN_TYPE_VAR_BACKTEST,
+        RUN_TYPE_SCENARIO,
     }
 )
 

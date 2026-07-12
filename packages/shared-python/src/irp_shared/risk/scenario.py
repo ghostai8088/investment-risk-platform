@@ -114,11 +114,25 @@ def _validate_shock_type(shock_type: str) -> None:
         raise ScenarioValueError(f"shock_type {shock_type!r} not in {sorted(SHOCK_TYPES)}")
 
 
+#: The magnitude the ``scenario_shock.shock_value`` ``Numeric(20,12)`` column can represent — 8
+#: integer digits. A shock is a signed RETURN fraction with no natural economic bound, but the
+#: column has a physical one: a caller-supplied value AT/BEYOND this overflows at flush as a PG
+#: DataError (a NON-IntegrityError the write handler cannot map) → an opaque 500. We refuse it as a
+#: governed 422 BEFORE the write instead (the fail-closed-not-500 principle).
+_SHOCK_VALUE_ABS_MAX = Decimal("1E8")
+
+
 def _validate_shock_value(shock_value: Decimal) -> None:
-    """Finiteness guard: reject NaN / ±Infinity BEFORE any write (a shock is a signed RETURN
-    fraction; there is no natural economic bound, so NO RANGE — the proxy_mapping precedent)."""
+    """Finiteness + column-capacity guard: reject NaN / ±Infinity and any value the
+    ``Numeric(20,12)`` column cannot hold (|value| >= 1E8) BEFORE any write — a governed 422,
+    never a flush-time 500."""
     if not isinstance(shock_value, Decimal) or not shock_value.is_finite():
         raise ScenarioValueError(f"shock_value must be a finite Decimal (got {shock_value!r})")
+    if abs(shock_value) >= _SHOCK_VALUE_ABS_MAX:
+        raise ScenarioValueError(
+            f"shock_value magnitude {shock_value!r} exceeds the Numeric(20,12) column capacity "
+            f"(|value| must be < 1E8); refused"
+        )
 
 
 def _resolve_factor_id(session: Session, factor_id: str, *, acting_tenant: str) -> str:

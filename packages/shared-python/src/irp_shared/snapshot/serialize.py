@@ -333,6 +333,28 @@ def benchmark_membership_content(benchmark: Any, constituent: Any) -> dict[str, 
     }
 
 
+def scenario_shock_content(definition: Any, shock: Any) -> dict[str, Any]:
+    """The captured content of one pinned ``scenario_shock`` FR version (P3-6 SCENARIO component —
+    the ``benchmark_constituent`` per-row FR flavor: each row is an immutable FR VERSION, so a later
+    shock supersede/correction closes it out + inserts a successor and is invisible to the pin,
+    TR-09). Each component carries the scenario DEFINITION identity (id/code/scenario_type) so the
+    run binder can read the scenario from any pin. ``shock_value`` at the 12dp shock scale;
+    ``shock_type`` verbatim."""
+    return {
+        "id": _norm_guid(shock.id),
+        "tenant_id": _norm_guid(shock.tenant_id),
+        "scenario_definition_id": _norm_guid(definition.id),
+        "scenario_code": definition.code,
+        "scenario_type": definition.scenario_type,
+        "factor_id": _norm_guid(shock.factor_id),
+        "shock_value": _norm_decimal(shock.shock_value, _SCALE_CURVE_POINT),
+        "shock_type": shock.shock_type,
+        "valid_from": _norm_datetime(shock.valid_from),
+        "system_from": _norm_datetime(shock.system_from),
+        "record_version": shock.record_version,
+    }
+
+
 def transaction_content(row: Any) -> dict[str, Any]:
     """The immutable captured content of a ``transaction`` (ENT-011, IA) row (PM-1 TRANSACTION
     component — the P3-3 EXPOSURE true-append-only pin flavor: no valid axis, no ``record_version``;

@@ -64,11 +64,13 @@ _IDENTIFIERS = (
     "fk_scenario_result_calculation_run_id_calculation_run",
     "fk_scenario_result_input_snapshot_id_dataset_snapshot",
     "fk_scenario_result_model_version_id_model_version",
+    "fk_scenario_result_scenario_definition_id_scenario_definition",
     "uq_scenario_result_run_grain",
     "ix_scenario_result_tenant_id",
     "ix_scenario_result_calculation_run_id",
     "ix_scenario_result_input_snapshot_id",
     "ix_scenario_result_model_version_id",
+    "ix_scenario_result_scenario_definition_id",
     "tenant_isolation_scenario_result",
     "scenario_result_append_only",
 )
@@ -188,6 +190,11 @@ def upgrade() -> None:
             ["model_version.id"],
             name="fk_scenario_result_model_version_id_model_version",
         ),
+        sa.ForeignKeyConstraint(
+            ["scenario_definition_id"],
+            ["scenario_definition.id"],
+            name="fk_scenario_result_scenario_definition_id_scenario_definition",
+        ),
         sa.UniqueConstraint(
             "calculation_run_id",
             "metric_type",
@@ -204,6 +211,11 @@ def upgrade() -> None:
     )
     op.create_index(
         "ix_scenario_result_model_version_id", "scenario_result", ["model_version_id"]
+    )
+    op.create_index(
+        "ix_scenario_result_scenario_definition_id",
+        "scenario_result",
+        ["scenario_definition_id"],
     )
 
     # --- Tenant isolation: SYMMETRIC RLS (USING == WITH CHECK == own-tenant); NOT hybrid (BR-17).

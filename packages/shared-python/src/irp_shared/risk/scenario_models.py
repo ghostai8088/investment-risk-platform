@@ -61,10 +61,6 @@ SHOCK_TYPE_RETURN = "RETURN"
 #: v1 = a RETURN fraction (-0.10 = -10%). ABSOLUTE_BPS reserved for non-return factor families.
 SHOCK_TYPES = frozenset({SHOCK_TYPE_RETURN})
 
-#: scenario_result.metric_type vocab.
-METRIC_TYPE_SCENARIO_PNL = "SCENARIO_PNL"  # one per exposed factor (shock echoed)
-METRIC_TYPE_SCENARIO_PNL_TOTAL = "SCENARIO_PNL_TOTAL"  # the single factor_id-NULL total row
-
 
 class ScenarioDefinition(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):
     """A versioned, named scenario definition header (ENT-029, EV; BR-8 saved assumptions).
@@ -163,7 +159,11 @@ class ScenarioResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Bas
     model_version_id: Mapped[str] = mapped_column(
         GUID, ForeignKey("model_version.id"), nullable=False, index=True
     )
-    scenario_definition_id: Mapped[str] = mapped_column(GUID, nullable=False)
+    #: Hard-FK PROVENANCE to the applied definition (the var_backtest single-pointer precedent; the
+    #: EV id is stable across in-place re-versions, so the FK is always satisfiable).
+    scenario_definition_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("scenario_definition.id"), nullable=False, index=True
+    )
     scenario_code: Mapped[str] = mapped_column(String(150), nullable=False)
     #: SCENARIO_PNL (per exposed factor) | SCENARIO_PNL_TOTAL (the factor_id-NULL total).
     metric_type: Mapped[str] = mapped_column(String(30), nullable=False)

@@ -81,4 +81,81 @@ header+membership protocol. Full 4-finder review at the end.
 
 ## Part 6 — Review dispositions + closure
 
-*(Appended at P3-6 closeout.)*
+**Review (OD-P3-6-J) — appended 2026-07-12.** A FULL 4-finder local max-effort review (kernel/
+adjudication correctness; governance/temporal/RLS/snapshot; API/entitlement/cross-file/FE; cleanup/
+conventions/sweep) over the complete 4804-line PR-scope diff, in lieu of the cloud ultrareview
+(Claude cannot launch it). All hard invariants verified intact by the cleanup finder: symmetric
+FORCE RLS ×3 (never hybrid), append-only trigger on `scenario_result` ONLY, `audit/service.py`
+UNTOUCHED, `RISK.SCENARIO_CREATE` reserved-not-emitted, no new permission (reuses `risk.run`/
+`risk.view`), no BYPASSRLS, snapshot+run+model binding present, shock pin precision matches the
+`Numeric(20,12)` column. **10 findings; 7 folded, 3 deferred:**
+
+1. **HIGH (correctness) — per-factor P&L quantize could detonate before the magnitude gate.** In
+   `_compute`, `pnl = (exposure × shock).quantize(6dp)` ran BEFORE the `_MAX_RESULT_ABS` check;
+   `Decimal.quantize` raises `InvalidOperation` once the result needs > 28 significant digits, and a
+   below-gate exposure (< 1E21) times a `Numeric(20,12)` shock (< 1E8) can reach ~1E29 — so the
+   unguarded quantize escaped as a raw 500 AFTER the run was RUNNING, defeating the very gate meant
+   to yield a clean post-create FAILED (the BT-1/P3-8 echo-overflow class). **Folded:** gate the RAW
+   product (Decimal multiply only rounds, never raises) BEFORE quantizing; a below-1E21 product then
+   quantizes within precision. New boundary test `test_magnitude_overflow_is_committed_failed_not_raised`
+   (exposure 1E15 × shock 1E7 = 1E22) proves the committed-FAILED path.
+2. **HIGH (governance) — `verify_snapshot` had no SCENARIO branch, so every scenario snapshot
+   reported drift.** `_reresolve_content` lacked a `COMPONENT_KIND_SCENARIO` case, so a pristine
+   `SCENARIO_INPUT` snapshot fell through to `portfolio_content(resolve_portfolio(shock.id))` →
+   `PortfolioNotVisible` → always `ok=False`. The AD-014 reproducibility/tamper check for the tenth
+   governed number was inoperative. (The run itself was unaffected — it reads captured content
+   directly.) **Folded:** added the branch (re-reads the shock FR row + its definition, TR-09-byte-
+   stable) + `_resolve_scenario_shock_row`; new test `test_scenario_snapshot_verifies_and_survives_supersede`
+   asserts `ok=True` on a pristine snapshot AND after a post-pin shock supersede.
+3. **MED (governance) — pin `target_entity_type` mismatch.** `build_scenario_snapshot` pinned each
+   `scenario_shock` row with `target_entity_type='scenario_definition'` while `target_entity_id` was
+   the shock id — a type/id mismatch corrupting the provenance/lineage graph and precluding a correct
+   reresolve branch. **Folded:** corrected to `'scenario_shock'` (the `benchmark_constituent` per-row
+   precedent), which also unblocked finding 2's branch.
+4. **MED (governance) — documented hard FK on `scenario_result.scenario_definition_id` did not
+   exist.** The canonical doc (Step 9) asserted a hard FK, but the migration/ORM carried a bare GUID
+   (no referential backstop, inconsistent with the var_backtest single-pointer precedent). **Folded:**
+   added the FK + index to migration `0035` (+ `_IDENTIFIERS`) and the ORM `ForeignKey` (the EV id is
+   stable across in-place re-versions, so the FK is always satisfiable; downgrade order already drops
+   result→shock→definition). Doc is now accurate; PG-verified the constraint exists.
+5. **MED (API) — a shock value beyond the column's capacity returned 500, not 422.** `_validate_shock_value`
+   claimed "NO RANGE," but `shock_value` is `Numeric(20,12)` (8 integer digits); `|value| >= 1E8`
+   overflowed at flush as a PG `DataError` (a NON-`IntegrityError` the write handler cannot map) → an
+   opaque 500. **Folded:** the binder now refuses `|value| >= 1E8` as a governed 422 BEFORE the write
+   (`_SHOCK_VALUE_ABS_MAX`); SQLite unit + endpoint 422 tests added.
+6. **LOW (API) — misleading 409 detail on a duplicate scenario CODE.** The shared `_raise_scenario_write`
+   emitted the shock-worded detail ("a current open shock already exists…") for a duplicate-definition-
+   code collision (status 409 was correct; the message misdescribed the conflict). **Folded:** the raiser
+   now discriminates by the colliding constraint (definition-code vs shock vs generic); endpoint test
+   asserts the definition-worded detail.
+7. **LOW (cleanup) — `_list_scenario_shocks` duplicated the binder's open-shock query.** The snapshot
+   builder re-implemented `risk.scenario.list_scenario_shocks` verbatim (a self-documented "reader
+   twin"), risking silent divergence between the pinned set and the live `/scenarios/{id}/shocks`
+   list. **Folded:** deleted the local copy; the builder now calls the shared binder function (the
+   function-local import carries no new cycle).
+
+**Deferred (3 — recorded, not silently dropped):**
+
+- **D-1 (cleanup) — extract the `resolve_*_run` / `_resolve_run` family to one shared helper.**
+  `scenario_service._resolve_run` (COMPLETED-run pre-FK guard) and `resolve_scenario_run` (family
+  read) are near-verbatim copies of the var_backtest/active_risk equivalents, differing only in the
+  run-type constant + exception class. The clean form is a shared `calc/` helper taking an injectable
+  `error=`/`not_visible=` (the `assert_portfolio_in_tenant(error=…)` precedent already in this diff).
+- **D-2 (altitude) — generalize the FR-bitemporal membership protocol.** `risk/scenario.py`'s
+  capture/supersede/correct/reconstruct skeleton (incl. the MD-H1 window-coherence guard) is a second
+  full instance of `marketdata/proxy_mapping.py`'s; a parameterized FR-membership helper (by model,
+  source constants, event family, summary fn) would collapse both.
+- **Rationale for deferring D-1/D-2:** both are cross-slice extractions spanning 2–3 already-merged
+  slices (proxy_mapping / var_backtest / active_risk); the P3-8 precedent shipped cross-cutting dedup
+  as its OWN focused closeout pass rather than folding it into a feature PR, keeping the governed-
+  number PR reviewable and not re-opening merged slices' validation surface. Recommend a dedicated
+  **`RD-1` dedup slice** collapsing the `resolve_*_run` family (D-1) and the FR-membership protocol
+  (D-2, larger — a design-scale extraction) across ALL families at once. The clean-code standing bar
+  leans toward folding; this is a scope/altitude call for the user at the gate, not a file-ownership
+  dodge.
+
+**Post-fold validation (2026-07-12):** `make check` 1269 passed / 266 skipped (+4 new tests) +
+secret-scan + docs-check; local-PG clean-schema 266 PG green; `alembic check` no drift; new FK
+present; downgrade-base smoke clean + restore clean.
+
+*(Final commit/PR refs appended at closeout.)*
