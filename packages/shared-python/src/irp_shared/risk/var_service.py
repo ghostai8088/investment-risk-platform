@@ -48,6 +48,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.risk.bootstrap import (
     VAR_MODEL_CODE,
@@ -479,16 +480,13 @@ def resolve_var_run(session: Session, run_id: str, *, acting_tenant: str) -> Cal
     """Resolve a VAR ``calculation_run`` by ``run_id`` with an EXPLICIT tenant predicate +
     ``run_type`` filter (fail-closed). Surfaces a committed FAILED run (the durable refusal
     evidence). Raises :class:`VarRunNotVisible` on a hidden/unknown id or a non-VaR run."""
-    run = session.execute(
-        select(CalculationRun).where(
-            CalculationRun.run_id == str(run_id),
-            CalculationRun.tenant_id == str(acting_tenant),
-            CalculationRun.run_type == RUN_TYPE_VAR,
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise VarRunNotVisible(str(run_id))
-    return run
+    return resolve_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_VAR,
+        not_visible=VarRunNotVisible,
+    )
 
 
 def resolve_var(session: Session, var_id: str, *, acting_tenant: str) -> VarResult:

@@ -61,6 +61,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.benchmark import resolve_benchmark
 from irp_shared.risk.active_risk_kernel import ActiveRiskKernelError, compute_tracking_error
@@ -668,16 +669,13 @@ def resolve_active_risk_run(session: Session, run_id: str, *, acting_tenant: str
     ``run_type`` filter (fail-closed). Surfaces a committed FAILED run (the durable refusal
     evidence). Raises :class:`ActiveRiskRunNotVisible` on a hidden/unknown id or a non-active-risk
     run."""
-    run = session.execute(
-        select(CalculationRun).where(
-            CalculationRun.run_id == str(run_id),
-            CalculationRun.tenant_id == str(acting_tenant),
-            CalculationRun.run_type == RUN_TYPE_ACTIVE_RISK,
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise ActiveRiskRunNotVisible(str(run_id))
-    return run
+    return resolve_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_ACTIVE_RISK,
+        not_visible=ActiveRiskRunNotVisible,
+    )
 
 
 def resolve_active_risk(

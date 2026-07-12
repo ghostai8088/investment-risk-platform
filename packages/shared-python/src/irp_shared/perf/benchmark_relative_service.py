@@ -56,6 +56,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata import BenchmarkNotVisible, resolve_benchmark
 from irp_shared.marketdata.models import BENCHMARK_RETURN_BASES, RETURN_TYPE_SIMPLE
@@ -621,16 +622,13 @@ def resolve_benchmark_relative_run(
     predicate + ``run_type`` filter (fail-closed). Surfaces a committed FAILED run (the durable
     refusal evidence). Raises :class:`BenchmarkRelativeRunNotVisible` on a hidden/unknown/other
     run."""
-    run = session.execute(
-        select(CalculationRun).where(
-            CalculationRun.run_id == str(run_id),
-            CalculationRun.tenant_id == str(acting_tenant),
-            CalculationRun.run_type == RUN_TYPE_BENCHMARK_RELATIVE,
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise BenchmarkRelativeRunNotVisible(str(run_id))
-    return run
+    return resolve_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_BENCHMARK_RELATIVE,
+        not_visible=BenchmarkRelativeRunNotVisible,
+    )
 
 
 def resolve_benchmark_relative(

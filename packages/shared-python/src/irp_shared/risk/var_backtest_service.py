@@ -67,8 +67,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
+from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
@@ -356,22 +357,14 @@ def _resolve_run(
 ) -> CalculationRun:
     """Re-resolve a consumed run under the acting tenant (+ run_type + COMPLETED) BEFORE its id is
     stamped into a hard-FK column (PG FK checks bypass RLS — P3-5)."""
-    run = session.execute(
-        select(CalculationRun).where(
-            CalculationRun.run_id == str(run_id),
-            CalculationRun.tenant_id == str(acting_tenant),
-            CalculationRun.run_type == run_type,
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise VarBacktestInputError(
-            f"{label} run {run_id} is not a visible {run_type} run — refused"
-        )
-    if run.status != RunStatus.COMPLETED.value:
-        raise VarBacktestInputError(
-            f"{label} run {run_id} status {run.status!r} != COMPLETED — refused"
-        )
-    return run
+    return resolve_completed_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=run_type,
+        label=label,
+        error=VarBacktestInputError,
+    )
 
 
 def _assert_exposure_runs_portfolio(
@@ -698,16 +691,13 @@ def resolve_var_backtest_run(
     """Resolve a var-backtest ``calculation_run`` by ``run_id`` with an EXPLICIT tenant predicate
     + ``run_type`` filter (fail-closed). Surfaces a committed FAILED run (the durable refusal
     evidence). Raises :class:`VarBacktestRunNotVisible` on a hidden/unknown/other run."""
-    run = session.execute(
-        select(CalculationRun).where(
-            CalculationRun.run_id == str(run_id),
-            CalculationRun.tenant_id == str(acting_tenant),
-            CalculationRun.run_type == RUN_TYPE_VAR_BACKTEST,
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise VarBacktestRunNotVisible(str(run_id))
-    return run
+    return resolve_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_VAR_BACKTEST,
+        not_visible=VarBacktestRunNotVisible,
+    )
 
 
 def resolve_var_backtest(
