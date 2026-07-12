@@ -4,8 +4,9 @@ ONE tenant-scoped PROPRIETARY table under the **SYMMETRIC** tenant-isolation RLS
 (``USING == WITH CHECK == own-tenant``) — the 0009..0035 pattern; NOT hybrid, no SYSTEM_TENANT.
 
 - ``desmoothed_return_result`` (ENT-056, **IA TRUE append-only**) — the Geltner AR(1) desmoothed
-  return series of ONE (portfolio, instrument) appraisal mark window: ``n−1`` per-period
-  ``DESMOOTHED_PERIOD`` rows + ONE ``DESMOOTHING_SUMMARY`` row (desmoothed vs observed stdev — the
+  return series of ONE (portfolio, instrument) appraisal mark window: ``n−2`` per-period
+  ``DESMOOTHED_PERIOD`` rows (for ``n`` marks; the first observed return seeds the recursion) +
+  ONE ``DESMOOTHING_SUMMARY`` row (desmoothed vs observed stdev — the
   honest-uncertainty statement, OD-PA-1-C). In this migration's ``APPEND_ONLY_TABLES`` -> the
   ``irp_prevent_mutation`` P0001 trigger (reusing the 0001 function) + the ORM guard. Run-bound +
   snapshot-gated + model-bound (NOT-NULL FKs) + provenance FKs to the measured subject

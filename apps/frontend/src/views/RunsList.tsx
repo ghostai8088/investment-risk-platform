@@ -56,8 +56,12 @@ export function RunsList({ session }: { session: DevSession }): ReactElement {
     // (and the "All risk" default) are listed by /risk/runs. Selecting a source per family keeps
     // server-side pagination correct — merging independently-paginated endpoints would recreate the
     // FE-1 has-more trap. The run_type filter narrows /risk/runs and /perf/runs to the chosen family.
-    const isExposure = runType === "EXPOSURE_AGGREGATE";
-    const isPerf = runType === "PORTFOLIO_RETURN" || runType === "BENCHMARK_RELATIVE";
+    // Derive the source from the family's OWN permissionFamily (review fold: a hardcoded
+    // run-type list silently dropped each newly added perf family from the listing).
+    const family = runType ? RUN_TYPE_TO_FAMILY[runType] : undefined;
+    const permissionFamily = family ? FAMILIES[family].permissionFamily : "risk";
+    const isExposure = permissionFamily === "exposure";
+    const isPerf = permissionFamily === "perf";
     if (runType && !isExposure) params.set("run_type", runType);
     let base = "/risk/runs";
     if (isExposure) base = "/exposure/runs";

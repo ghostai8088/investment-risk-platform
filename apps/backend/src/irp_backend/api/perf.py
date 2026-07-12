@@ -73,6 +73,7 @@ from irp_shared.perf import (
     run_desmoothed_return,
     run_portfolio_return,
 )
+from irp_shared.portfolio import PortfolioNotVisible
 from irp_shared.snapshot import (
     BenchmarkRelativeSnapshotError,
     DesmoothingSnapshotError,
@@ -123,6 +124,7 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
         "benchmark-relative snapshot input failed closed",
     ),
     BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
+    PortfolioNotVisible: (status.HTTP_404_NOT_FOUND, "portfolio not found"),
     DesmoothingInputError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "invalid desmoothed-return run input",
@@ -827,6 +829,7 @@ def create_desmoothed_return_run(
         SnapshotPurposeError,
         SnapshotNotFound,
         DesmoothingSnapshotError,
+        PortfolioNotVisible,  # the builder's resolve_portfolio leg (review fold: was a raw 500)
     ) as exc:
         # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
         db.rollback()

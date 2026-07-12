@@ -425,7 +425,7 @@ def run_scenario(
         run=outcome.run,
         status=outcome.status,
         rows=list(outcome.rows),
-        failure_reason=getattr(outcome, "failure_reason", None),
+        failure_reason=outcome.failure_reason,
     )
 
 

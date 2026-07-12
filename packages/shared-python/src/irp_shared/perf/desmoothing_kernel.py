@@ -53,7 +53,7 @@ def observed_returns(marks: Sequence[Decimal]) -> list[Decimal]:
         ctx.prec = _CTX_PRECISION
         return [
             _quantize(curr / prev - Decimal(1))
-            for prev, curr in zip(marks[:-1], marks[1:], strict=False)
+            for prev, curr in zip(marks[:-1], marks[1:], strict=True)
         ]
 
 
@@ -71,5 +71,5 @@ def desmooth_geltner(observed: Sequence[Decimal], alpha: Decimal) -> list[Decima
         one_minus_alpha = Decimal(1) - alpha
         return [
             _quantize((curr - one_minus_alpha * prev) / alpha)
-            for prev, curr in zip(observed[:-1], observed[1:], strict=False)
+            for prev, curr in zip(observed[:-1], observed[1:], strict=True)
         ]

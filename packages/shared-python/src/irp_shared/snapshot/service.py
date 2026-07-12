@@ -1821,7 +1821,7 @@ def build_desmoothing_snapshot(
     instrument; FEWER THAN TWO visible marks (no return series exists — structurally nothing to
     desmooth; the >=4-mark STATISTICAL gate is the binder's pre-create adjudication, OD-PA-1-H).
     Imports NO ``calc``/``perf`` SERVICE symbol (models-only reads)."""
-    from irp_shared.reference.models import Instrument  # models-only (no cycle)
+    from irp_shared.reference.guards import assert_instrument_in_tenant  # no service cycle
     from irp_shared.valuation.models import Valuation  # models-only (no cycle)
 
     if window_start > window_end:
@@ -1829,16 +1829,9 @@ def build_desmoothing_snapshot(
             f"window_start {window_start} is after window_end {window_end} — refused"
         )
     resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
-    instrument = session.execute(
-        select(Instrument).where(
-            Instrument.id == str(instrument_id),
-            Instrument.tenant_id == str(acting_tenant),
-        )
-    ).scalar_one_or_none()
-    if instrument is None:
-        raise DesmoothingSnapshotError(
-            f"instrument {instrument_id} is not visible in the acting tenant — refused"
-        )
+    assert_instrument_in_tenant(
+        session, str(instrument_id), acting_tenant=acting_tenant, error=DesmoothingSnapshotError
+    )
 
     marks = list(
         session.execute(

@@ -424,6 +424,45 @@ def test_adjudication_duplicate_dates_and_nonpositive_marks() -> None:
         _adjudicate_pins(zero)
 
 
+def test_magnitude_overflow_is_committed_failed_not_raised(session: Session) -> None:
+    # BOUNDARY: marks 100.00 -> 100.00 -> 100000000000.00 jump gives an observed return ~1E9 and a
+    # desmoothed value ~2.5E9 — both >= _MAX_RESULT_ABS (1E8) — so the run must COMMIT as FAILED
+    # with ZERO rows (never a raised 500; the fold also wraps any deeper Decimal detonation as the
+    # same committed-FAILED outcome).
+    t = str(uuid.uuid4())
+    pf, inst = _seed_marks(
+        session,
+        t,
+        values=("100.00", "100.00", "100000000000.00", "100000000000.00"),
+    )
+    result = _run(session, t, pf, inst)
+    assert result.status == RunStatus.FAILED.value  # committed FAILED, NOT a raised error
+    assert result.rows == []  # zero rows on a FAILED run
+    assert result.failure_reason and "magnitude" in result.failure_reason
+    assert_no_running_orphan(session, run_type=RUN_TYPE_DESMOOTHED_RETURN)
+
+
+def test_adjudication_mixed_portfolio_and_instrument_refused() -> None:
+    # The OD-PA-1-H uniform-subject gates — reachable only via a hand-minted/consume-existing
+    # snapshot (the build path filters on one (portfolio, instrument)), so pinned-unit-tested.
+    base = [_mark_dict(f"2026-0{m}-15", v) for m, v in zip("1234", MARK_VALUES, strict=True)]
+    mixed_pf = [*base[:3], _mark_dict("2026-04-15", "101.00", pf="p2")]
+    with pytest.raises(DesmoothingInputError):
+        _adjudicate_pins(mixed_pf)
+    mixed_inst = [*base[:3], _mark_dict("2026-04-15", "101.00", inst="i2")]
+    with pytest.raises(DesmoothingInputError):
+        _adjudicate_pins(mixed_inst)
+
+
+def test_adjudication_duplicate_date_representations_refused() -> None:
+    # Review fold: date.fromisoformat also accepts the ISO BASIC form — two representations of ONE
+    # date must still collide (the dedupe keys on the PARSED date, not the raw string).
+    base = [_mark_dict(f"2026-0{m}-15", v) for m, v in zip("123", MARK_VALUES[:3], strict=True)]
+    twin = [*base, _mark_dict("20260315", "99.00")]  # the BASIC form of 2026-03-15
+    with pytest.raises(DesmoothingInputError):
+        _adjudicate_pins(twin)
+
+
 # ---------- governed-number guards ----------
 
 

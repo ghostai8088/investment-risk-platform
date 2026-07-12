@@ -171,7 +171,8 @@ def test_register_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     summary = next(r for r in body["rows"] if r["metric_type"] == "DESMOOTHING_SUMMARY")
     assert summary["metric_value"] == "0.067175144213"  # desmoothed stdev
     assert summary["observed_stdev"] == "0.024748737342"  # the honest-uncertainty pair
-    assert summary["n_periods"] == 2 and summary["alpha"] == "0.4"
+    assert summary["n_periods"] == 2
+    assert summary["alpha"] == "0.400000000000"  # column-scale echo, byte-stable POST vs GET
     for r in body["rows"]:
         assert "E" not in r["metric_value"] and "e" not in r["metric_value"]  # fixed-point
 
@@ -258,6 +259,14 @@ def test_pre_create_refusals(ctx) -> None:  # noqa: ANN001
         headers=_h(p),
     )
     assert resp.status_code == 409
+    # An unknown/cross-tenant PORTFOLIO => 404, never a raw 500 (review fold: PortfolioNotVisible
+    # was absent from the handler's except tuple + error map).
+    resp = client.post(
+        "/perf/desmoothed-returns/runs",
+        json=_run_body(mv, str(uuid.uuid4()), inst),
+        headers=_h(p),
+    )
+    assert resp.status_code == 404
     assert _count_runs(db, p.tenant_id) == 0  # every refusal left ZERO run
 
 

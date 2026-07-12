@@ -135,3 +135,35 @@ describe("var-backtests (BT-1) family wiring", () => {
     ]);
   });
 });
+
+describe("desmoothed-returns (PA-1) family wiring", () => {
+  it("registers the perf family keyed to DESMOOTHED_RETURN, REUSING the perf permission family", () => {
+    expect(FAMILIES["desmoothed-returns"]).toEqual({
+      runType: "DESMOOTHED_RETURN",
+      label: "Desmoothed returns",
+      permissionFamily: "perf",
+    });
+    expect(RUN_TYPE_TO_FAMILY.DESMOOTHED_RETURN).toBe("desmoothed-returns");
+  });
+
+  it("uses the perf-family detail URL special case", () => {
+    expect(runDetailUrl("desmoothed-returns", "abc-123")).toBe(
+      "/perf/desmoothed-returns/runs/abc-123",
+    );
+  });
+
+  it("surfaces the desmoothing columns", () => {
+    const keys = FAMILY_ROW_COLUMNS["desmoothed-returns"].map((c) => c.key);
+    expect(keys).toEqual([
+      "metric_type",
+      "period_start",
+      "period_end",
+      "metric_value",
+      "observed_return",
+      "observed_stdev",
+      "alpha",
+      "n_periods",
+      "mark_currency",
+    ]);
+  });
+});

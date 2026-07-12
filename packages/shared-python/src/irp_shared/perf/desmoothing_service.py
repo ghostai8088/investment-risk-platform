@@ -58,6 +58,7 @@ from irp_shared.perf.models import (
     DesmoothedReturnResult,
 )
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
+from irp_shared.reference.guards import assert_instrument_in_tenant
 from irp_shared.snapshot import (
     COMPONENT_KIND_VALUATION,
     PURPOSE_DESMOOTHING_INPUT,
@@ -73,6 +74,12 @@ _COMPLETENESS_RULE_CODE = "perf.desmoothed_return.completeness"
 #: (metric_value, observed_return, observed_stdev — the P3-8/BT-1 echo lesson baked in from birth;
 #: alpha is domain-bounded ≤ 1 at registration).
 _MAX_RESULT_ABS = Decimal("1E8")
+#: The Numeric(28,6) mark-echo ceiling is |value| < 1E22; the echo gate sits one order inside it
+#: (the P3-8/BT-1 echo lesson — begin/end_mark are persisted evidence too).
+_MAX_MARK_ABS = Decimal("1E21")
+#: Column quanta (quantize at parse/assign so SQLite + PG persist byte-identical values).
+_MARK_QUANTUM = Decimal("0.000001")
+_RETURN_QUANTUM = Decimal("1E-12")
 #: The OD-PA-1-H series-quality floor: 4 marks → 3 observed returns → 2 desmoothed returns → a
 #: meaningful (n−1) summary stdev.
 _MIN_MARKS = 4
@@ -152,30 +159,46 @@ def _adjudicate_pins(mark_raw: list[dict[str, Any]]) -> _ParsedInput:
     portfolios: set[str] = set()
     instruments: set[str] = set()
     currencies: set[str] = set()
-    seen_dates: set[str] = set()
+    seen_dates: set[date] = set()
     marks: list[_Mark] = []
     for row in mark_raw:
         date_text = str(row["valuation_date"])
-        if date_text in seen_dates:
+        try:
+            mark_date = date.fromisoformat(date_text)
+        except ValueError as exc:
             raise DesmoothingInputError(
-                f"duplicate valuation_date {date_text} in the pinned mark series — refused"
+                f"valuation_date {date_text!r} is not an ISO date — refused"
+            ) from exc
+        # Dedupe on the PARSED date (review fold: fromisoformat also accepts the ISO BASIC form,
+        # so two string representations of ONE date must still collide here).
+        if mark_date in seen_dates:
+            raise DesmoothingInputError(
+                f"duplicate valuation_date {mark_date} in the pinned mark series — refused"
             )
-        seen_dates.add(date_text)
+        seen_dates.add(mark_date)
+        # quantum= pins the stored echo to the Numeric(28,6) scale (the BT-1 pattern) — and the
+        # strictly-positive gate then runs on the QUANTIZED value, so a sub-quantum positive mark
+        # (e.g. 1E-13, which would persist as 0.000000) refuses instead of storing a zero echo.
         value = parse_strict_decimal(
-            row["mark_value"], error=DesmoothingInputError, field="mark_value"
+            row["mark_value"],
+            error=DesmoothingInputError,
+            field="mark_value",
+            quantum=_MARK_QUANTUM,
         )
         if value <= 0:
             raise DesmoothingInputError(
-                f"mark_value {value} at {date_text} is not strictly positive — a simple return "
-                f"is undefined; refused (NO imputation)"
+                f"mark_value {value} at {date_text} is not strictly positive at the column scale "
+                f"— a simple return is undefined; refused (NO imputation)"
             )
-        currency = row["currency_code"]
-        if not currency:
-            raise DesmoothingInputError(f"mark at {date_text} has no currency_code — refused")
+        currency = str(row["currency_code"] or "")
+        if len(currency) != 3:
+            raise DesmoothingInputError(
+                f"mark at {date_text} has a malformed currency_code {currency!r} — refused"
+            )
         portfolios.add(str(row["portfolio_id"]).lower())
         instruments.add(str(row["instrument_id"]).lower())
-        currencies.add(str(currency))
-        marks.append(_Mark(valuation_date=date.fromisoformat(date_text), mark_value=value))
+        currencies.add(currency)
+        marks.append(_Mark(valuation_date=mark_date, mark_value=value))
     if len(portfolios) != 1:
         raise DesmoothingInputError("the pinned marks span multiple portfolios — refused")
     if len(instruments) != 1:
@@ -234,7 +257,10 @@ def run_desmoothed_return(
         tenant_id=acting_tenant,
         expected_model_code=DESMOOTHED_RETURN_MODEL_CODE,
     )
-    alpha = declared_desmoothing_alpha(session, version)
+    # Quantize the declared alpha to the column scale ONCE so the row echo is byte-identical
+    # between the create response and every later read (review fold: the unquantized Decimal
+    # serialized '0.4' pre-flush but '0.400000000000' after the DB round-trip).
+    alpha = declared_desmoothing_alpha(session, version).quantize(_RETURN_QUANTUM)
 
     # --- Bind the snapshot (cross-tenant/unknown/ill-formed => pre-create refusal) ---
     if snapshot_id is not None:
@@ -287,14 +313,31 @@ def run_desmoothed_return(
     assert_portfolio_in_tenant(
         session, parsed.portfolio_id, acting_tenant=acting_tenant, error=DesmoothingInputError
     )
-    _assert_instrument_in_tenant(session, parsed.instrument_id, acting_tenant=acting_tenant)
+    assert_instrument_in_tenant(
+        session, parsed.instrument_id, acting_tenant=acting_tenant, error=DesmoothingInputError
+    )
 
     # --- The shared governed-run lifecycle (P3-C1 scaffold; behavior-preserving) ---
     def _compute(run: CalculationRun) -> tuple[list[DesmoothedReturnResult], list[str]]:
         gaps: list[str] = []
         marks = parsed.marks
-        observed = observed_returns([m.mark_value for m in marks])
-        desmoothed = desmooth_geltner(observed, alpha)
+        # A column-legal-but-extreme pinned mark must be a committed FAILED run, never a flush-time
+        # DataError (the echo columns are Numeric(28,6); the gate sits one order inside — review
+        # fold, the P3-8/BT-1 echo lesson).
+        for m in marks:
+            if m.mark_value >= _MAX_MARK_ABS:
+                gaps.append(f"magnitude-out-of-range:mark:{m.valuation_date}")
+                return [], gaps
+        # An extreme pin/alpha combination can push the inversion past the 50-digit Decimal
+        # context, where quantize raises InvalidOperation — convert ANY arithmetic detonation to
+        # the contracted committed-FAILED outcome (review fold: the P3-6 quantize-detonation
+        # class; the run is already RUNNING here, so raising would strand it).
+        try:
+            observed = observed_returns([m.mark_value for m in marks])
+            desmoothed = desmooth_geltner(observed, alpha)
+        except ArithmeticError as exc:
+            gaps.append(f"numeric-envelope:{type(exc).__name__}")
+            return [], gaps
         # desmoothed[j] pairs observed (j, j+1) => the mark pair (marks[j+1], marks[j+2]).
         rows: list[DesmoothedReturnResult] = []
         for j, value in enumerate(desmoothed):
@@ -323,8 +366,12 @@ def run_desmoothed_return(
             )
         # The honest-uncertainty pair over the SAME periods the desmoothed series covers
         # (observed[1:] aligns 1:1 with desmoothed — like-for-like, OD-PA-1-C).
-        desmoothed_stdev = sample_stdev(desmoothed)
-        obs_stdev = sample_stdev(observed[1:])
+        try:
+            desmoothed_stdev = sample_stdev(desmoothed)
+            obs_stdev = sample_stdev(observed[1:])
+        except ArithmeticError as exc:
+            gaps.append(f"numeric-envelope:{type(exc).__name__}")
+            return [], gaps
         if any(abs(v) >= _MAX_RESULT_ABS for v in (desmoothed_stdev, obs_stdev)):
             gaps.append("magnitude-out-of-range:summary-stdev")
             return [], gaps
@@ -372,27 +419,8 @@ def run_desmoothed_return(
         run=outcome.run,
         status=outcome.status,
         rows=list(outcome.rows),
-        failure_reason=getattr(outcome, "failure_reason", None),
+        failure_reason=outcome.failure_reason,
     )
-
-
-def _assert_instrument_in_tenant(
-    session: Session, instrument_id: str, *, acting_tenant: str
-) -> None:
-    """Re-resolve the instrument under the acting tenant BEFORE its id is stamped into the hard FK
-    (the P3-5 cross-tenant-FK guard; models-only import — no cycle)."""
-    from irp_shared.reference.models import Instrument
-
-    row = session.execute(
-        select(Instrument.id).where(
-            Instrument.id == str(instrument_id),
-            Instrument.tenant_id == str(acting_tenant),
-        )
-    ).one_or_none()
-    if row is None:
-        raise DesmoothingInputError(
-            f"instrument {instrument_id} is not visible in the acting tenant — refused"
-        )
 
 
 def list_desmoothed_results(

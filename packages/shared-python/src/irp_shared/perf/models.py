@@ -194,9 +194,10 @@ METRIC_TYPE_DESMOOTHING_SUMMARY = "DESMOOTHING_SUMMARY"
 
 class DesmoothedReturnResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     """One desmoothed-return series row (PA-1, **ENT-056**, IA TRUE append-only). Created once,
-    never mutated. Per COMPLETED run: ``n−1`` ``DESMOOTHED_PERIOD`` per-period rows (one per
-    consecutive appraisal-mark pair AFTER the seed period — the Geltner recursion consumes the
-    prior observed return, OD-PA-1-D) + ONE ``DESMOOTHING_SUMMARY`` row (``metric_value`` = the
+    never mutated. Per COMPLETED run: ``n−2`` ``DESMOOTHED_PERIOD`` per-period rows for ``n``
+    marks (``n−1`` observed returns, the FIRST seeding the recursion — the Geltner inversion
+    consumes the prior observed return, OD-PA-1-D) + ONE ``DESMOOTHING_SUMMARY`` row
+    (``metric_value`` = the
     desmoothed sample stdev, ``observed_stdev`` its observed twin — the honest-uncertainty pair,
     OD-PA-1-C) — grain ``(calculation_run_id, metric_type, period_start)`` (the ENT-053 precedent;
     the summary carries ``period_start`` = the first desmoothed period's start).
