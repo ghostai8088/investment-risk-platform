@@ -158,4 +158,8 @@ UNTOUCHED, `RISK.SCENARIO_CREATE` reserved-not-emitted, no new permission (reuse
 secret-scan + docs-check; local-PG clean-schema 266 PG green; `alembic check` no drift; new FK
 present; downgrade-base smoke clean + restore clean.
 
-*(Final commit/PR refs appended at closeout.)*
+**CLOSED (2026-07-12).** Planning merged via **PR #12** (`28c5225`); implementation `fe3bb55`
+(stacked on WIP foundation `058f7a2`) merged via **PR #13** (merge commit `0f66220`), CI green.
+Migration `0035`. The TENTH governed number ships. **Deferred to a dedicated `RD-1` dedup slice:**
+the cross-slice `resolve_*_run` helper family (D-1) + the FR-membership protocol generalization
+(D-2).
