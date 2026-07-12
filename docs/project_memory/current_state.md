@@ -41,8 +41,11 @@ findings/13 folded; closeout PR #6. PA-0 (slice 4) DONE — planning PR #7 `07e5
 capture-first split ratified; the Okunev-White citation flagged UNVERIFIED for PA-1), impl PR #8 `c9d41a7`
 (merge `ad3d3fe`, CI green); the FIRST private-asset foundation: ENT-019 `proxy_mapping` REALIZED (migration
 0034); proportionate 2-finder review, 4 folds + 2 family-wide deferrals. Next: THIS closeout PR (branch
-`pa-0-closeout`), then P3-6 planning (stress/scenario — the LAST Wave-2 slice; may defer again at the close,
-an expected outcome) on explicit direction, then the Wave-2 close review (incl. the PA-1 sequencing decision).**
+`pa-0-closeout`), then **MD-H1** (slice 4.5 — a user-ratified 2026-07-11 Part-4-rule-3 hardening insertion
+paying the three bug-shaped register items: FR supersede window-coherence guard, IntegrityError→409 capture
+mapping, registrar first-registration race; NO migration), then P3-6 planning (stress/scenario — the LAST
+Wave-2 slice; may defer again at the close, an expected outcome) on explicit direction, then the Wave-2 close
+review (incl. the PA-1 sequencing decision).**
 Prior state: P3-0 … P3-5 + P3-C1 + FE-1 + TC-1 + VAR-HS-1 + P3-C2 + TD-1 + P2-7 + P3-7 + P3-C3 + PM-1 + P3-8 + BT-1 + PA-0 all complete and CI-green.
 Earlier slice detail: **P3-C3**
 (`1bf172b`, CI run #132 green) — a hardening CARRY-IN (not a numbered slice) paying the P3-7 ultrareview's item-A deferral: binder

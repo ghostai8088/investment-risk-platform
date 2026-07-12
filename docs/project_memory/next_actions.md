@@ -210,16 +210,22 @@ OD-PA-0-A..J + OQ-PA-0-1..8, the Okunev-White citation honestly flagged UNVERIFI
 CURRENCY-family v1 scope ENFORCED per a review fold, `marketdata.*` reused; proportionate 2-finder review,
 4 folds + 2 family-wide deferrals in the record Part 6). The next concrete steps, in order: **(1) land THIS
 closeout PR** (branch `pa-0-closeout` — the Part 6 dispositions + this docs refresh; docs-only) — Claude
-pushes on Tier-2 approval, the USER opens+merges after CI green; then **(2) P3-6 PLANNING, on explicit
-direction** — stress/scenario, the LAST Wave-2 slice (ENT-029/030 scenario definitions + results; moved from
-Wave 1 pre-authorized; MAY defer again at the Wave-2 close — an expected outcome, not a failure); then **(3)
-the WAVE-2 CLOSE REVIEW** (the mandatory Part-4 rule-2 re-baseline: honest audit, deferral-register
-reconciliation — now incl. the P3-8/BT-1/PA-0 Part-6 items — the outward benchmark review, the thesis
-destination check, and the PA-1 sequencing decision: the desmoothing governed number is the natural Wave-3
-opener, with the Okunev-White citation to resolve first). P3-6
-IS a **methodology-adjacent slice** → roadmap Part 4 rule 6 applies; model/effort: **Fable / High** (scenario
-definition/shock design is novel surface). **All new fixtures follow the TD-1 realism
-rule.**
+pushes on Tier-2 approval, the USER opens+merges after CI green; then **(2) MD-H1, on explicit direction** —
+a USER-RATIFIED (2026-07-11) hygiene insertion per roadmap Part 4 rule 3 (the TD-1/P3-C3 precedent), paying
+the three bug-shaped register items before the wave close: (a) the FR supersede **window-coherence guard**
+across all six FR series (the only integrity-flavored open item — a backdated supersede silently inverts the
+prior validity window), (b) the shared **IntegrityError→409** mapping for every marketdata capture endpoint,
+(c) the **registrar first-registration concurrency race** (500 on the loser) across all governed families.
+No migration; guards + tests; the dedup/perf register rows (P3-7 B/C, BT-1 A) stay trigger-based. Then
+**(3) P3-6 PLANNING, on explicit direction** — stress/scenario, the LAST Wave-2 slice (ENT-029/030 scenario
+definitions + results; moved from Wave 1 pre-authorized; MAY defer again at the Wave-2 close — an expected
+outcome, not a failure); then **(4) the WAVE-2 CLOSE REVIEW** (the mandatory Part-4 rule-2 re-baseline: honest
+audit, deferral-register reconciliation — now incl. the P3-8/BT-1/PA-0 Part-6 items — the outward benchmark
+review, the thesis destination check, and the PA-1 sequencing decision: the desmoothing governed number is the
+natural Wave-3 opener, with the Okunev-White citation to resolve first). P3-6
+IS a **methodology-adjacent slice** → roadmap Part 4 rule 6 applies; model/effort: MD-H1 = **Opus / High**;
+P3-6 planning = **Fable / High** (scenario definition/shock design is novel surface). **All new fixtures
+follow the TD-1 realism rule.**
 
 ## Approval gates (hard)
 - **Commit only on explicit approval.** Never commit/push without the user saying so for that specific artifact.
