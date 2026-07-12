@@ -5,7 +5,15 @@
 > user's required cadence — follow them exactly. (`CLAUDE.md` at the repo root is the auto-loaded entry pointer.)
 
 ## Operating model (UltraCode)
-Planning-first, per-slice, commit-only-on-approval:
+> **Delivery autonomy (granted 2026-07-12).** Claude self-drives the plan → implement → review → commit →
+> push cycle WITHOUT per-step / per-artifact approval. The user's control points are now (a) opening + merging
+> every PR to `main` (branch protection; Claude never touches the token) and (b) genuine DECISIONS — the Tier-3
+> OQ sign-off ledger, design forks, scope/sequencing changes. Where the text below says "approval required
+> before commit," read it as "commit + push autonomously; the gate is the PR merge + any genuine decision." The
+> other hard invariants are UNCHANGED (frozen `audit/service.py`; no BYPASSRLS / no new audit-permission-role
+> outside the R-07 mint; verification gates never waived; adversarial review still runs before the push).
+
+Planning-first, per-slice; Claude commits + pushes autonomously:
 - **Planning:** the plan/decision-record markdown is authored single-threaded, then adversarially reviewed
   (see below) and committed **on approval** before any coding.
 - **Implementation:** done directly (single-threaded) to keep conventions consistent — NOT fanned out across
@@ -73,11 +81,14 @@ the model's self-assessed confidence ("zero areas of concern" is not a criterion
   a red CI on a just-committed slice; R-07 governance amendments that mechanically **record** an
   already-approved decision (incl. flipping a sign-off ledger to RATIFIED after explicit user approval).
   Conditions: fully covered by executable verification; trivially revertible; no new decision embedded.
-- **Tier 2 — approval required BEFORE commit.** Any production/shared/API code change (even with green tests —
-  tests prove consistency, not intent); any migration; any new permission / audit code / canonical id /
+- **Tier 2 — commit + push autonomously; the user's gate is the PR merge (delivery autonomy, 2026-07-12).**
+  Any production/shared/API code change; any migration; any new permission / audit code / canonical id /
   component kind / vocab value; any edit to ratified-decision text, methodology docs, numerical conventions, or
-  acceptance criteria; anything touching frozen files or the RLS/tenancy surface; **starting any new slice**
-  (plan or implementation) — direction control is the user's.
+  acceptance criteria; anything touching frozen files or the RLS/tenancy surface. These proceed to commit +
+  push on a feature branch without a pre-commit approval ceremony; they reach `main` only when the USER merges
+  the PR. **Starting the next roadmap slice is autonomous** (the sequence is `delivery_roadmap.md`); a genuine
+  RE-SEQUENCING, scope change, or design fork still surfaces to the user WITH a recommendation (a Tier-3
+  decision, below).
 - **Tier 3 — the explicit OQ sign-off ledger (unchanged).** Methodology/model choices, grains, entity mappings,
   scope narrowings.
 - **Auto-escalation:** ANY failed check (make check / docs-check / secret-scan / PG / CI), or ANY file outside
@@ -85,7 +96,10 @@ the model's self-assessed confidence ("zero areas of concern" is not a criterion
   Changing THESE gate rules is itself Tier 2/3.
 
 ## Commit discipline
-- **Commit/push per the gate tiers above** (Tier 0/1 land-and-report; Tier 2/3 explicit approval per artifact). Branch is `main`; pushes go to `origin/main`.
+- **Commit + push autonomously at every tier (delivery autonomy, 2026-07-12).** No per-artifact pre-commit
+  approval. Work lands on a **feature branch** pushed to `origin`; the USER opens + merges the PR to `main`
+  (branch protection; Claude never touches the token). Tier 3 genuine DECISIONS still get user sign-off before
+  being encoded. CI-watch-to-green after each push stays mandatory.
 - **Per-commit pre-checks:** run `make check` (lint, format, mypy, pytest, secret-scan, docs-check); confirm
   the staged set is exactly the intended files; no generated artifacts / `node_modules` / `dist` / caches /
   `.pyc` / secrets / `.env` staged; the scope-specific exclusions hold.
@@ -124,7 +138,7 @@ the model's self-assessed confidence ("zero areas of concern" is not a criterion
 
 ## Scope-control rules
 - **Planning-first, thin slices.** No domain functionality during foundation/skeleton/planning phases.
-- **Do not start the next slice until directed.** Plan / implement / commit are separate approvals. WHAT comes next defaults to `10_delivery_backlog/delivery_roadmap.md` (no per-slice option menus); re-sequencing follows its Part 4 rules — on genuine ambiguity, ask the user WITH a recommendation.
+- **The next slice starts autonomously (delivery autonomy, 2026-07-12); WHAT comes next defaults to `10_delivery_backlog/delivery_roadmap.md`** (no per-slice option menus). Claude self-drives plan → implement → review → commit → push and leaves the PR for the user to merge. A genuine re-sequencing (deviating from the roadmap order) or scope/design ambiguity still surfaces to the user WITH a recommendation before acting; re-sequencing follows the roadmap's Part 4 rules.
 - **Genericity:** type/scheme/status columns are controlled-vocab **strings** (no enum/CHECK); polymorphic
   `(entity_type, entity_id)`, no domain FK — new families extend by value, never a migration.
 - **No new audit code, permission, or role** without the governed update (R-07 owns the taxonomy/catalog).
