@@ -245,7 +245,13 @@ def run_desmoothed_return(
                 f"{PURPOSE_DESMOOTHING_INPUT}"
             )
     else:
-        if any(a is None for a in build_args):
+        # Explicit per-arg narrowing (mypy: `any(a is None ...)` does not narrow the Optionals).
+        if (
+            portfolio_id is None
+            or instrument_id is None
+            or window_start is None
+            or window_end is None
+        ):
             raise DesmoothingInputError(
                 "portfolio_id + instrument_id + window_start + window_end are all required to "
                 "build a desmoothing snapshot"
