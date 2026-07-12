@@ -1,7 +1,7 @@
 # PA-1 Decision Record — private-asset desmoothing (Wave-3 slice 2, the thesis payload)
 
-> **Status: DRAFT for ratification (2026-07-12).** Drafted against `main` `82f5f1d` (Wave-2 closed;
-> RD-1 merged PR #17). Scope: the **ELEVENTH governed number** and the differentiation-thesis
+> **Status: RATIFIED 2026-07-12** — OQ-PA-1-1…7 approved as recommended (user: "Approved").
+> Drafted against `main` `82f5f1d` (Wave-2 closed; RD-1 merged PR #17). Scope: the **ELEVENTH governed number** and the differentiation-thesis
 > payload (`01_product_strategy/differentiation_thesis.md` §2.1) — **Geltner AR(1) unsmoothing of a
 > captured private-asset appraisal mark series** (the model family RATIFIED at OD-PA-0-G /
 > OQ-PA-0-7), producing a governed desmoothed return series with the introduced uncertainty stated
