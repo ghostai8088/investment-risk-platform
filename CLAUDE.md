@@ -13,8 +13,11 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
    from here by default; re-sequencing follows its Part 4 rules) — plus the latest decision record it points at.
 
 ## Hard invariants (non-negotiable)
-- **Commit/push ONLY on explicit user approval, per artifact.** Planning-first; plan / implement / commit are
-  separate approvals. Do not start the next slice until directed.
+- **Delivery autonomy (granted 2026-07-12): Claude may commit and push feature branches and self-drive the
+  plan → implement → commit → push cycle WITHOUT per-step approval.** The USER still opens and merges every PR
+  to `main` (branch protection); Claude never touches the GitHub token. Still surface genuine decisions (design
+  forks, scope/ambiguity) and anything hard-to-reverse or outward-facing beyond pushing a branch. The next
+  slice comes from the roadmap sequence by default.
 - **`packages/shared-python/src/irp_shared/audit/service.py` is FROZEN** — never modify it.
 - **No BYPASSRLS app path; no hybrid/SYSTEM_TENANT behavior** beyond the closed 5-table hybrid set; proprietary
   data = symmetric FORCE RLS.
