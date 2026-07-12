@@ -1,7 +1,7 @@
 # Next Actions
 
-> **As of HEAD `868f892` (merge of PR #5 = `e7b615d`, BT-1 VaR backtesting, ENT-055 + migration 0033; CI green;
-> refreshed 2026-07-11).** What to do
+> **As of HEAD `ad3d3fe` (merge of PR #8 = `c9d41a7`, PA-0 private-asset foundations, ENT-019 + migration 0034;
+> CI green; refreshed 2026-07-11).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /
 > HEAD / CI before acting (state may have advanced since this snapshot).
 
@@ -204,14 +204,21 @@ is DONE** (planning PR #4 `3e81ef4` merged as `1da87c7`, OD-BT-1-A..K + OQ-BT-1-
 traffic-light zone over realized flow-adjusted P&L vs ONE VaR method's pinned forecasts, `var_backtest_result`
 ENT-055, migration `0033`, run family `VAR_BACKTEST` reusing `risk.run`/`risk.view`; FULL 4-finder local review,
 14 findings/13 folded; closes the Wave-1 close review's named nearest supervisory gap, SR 11-7 outcomes
-analysis). The next concrete steps, in order: **(1) land THIS closeout PR** (branch `bt-1-closeout` — the
-decision-record Part 6 review dispositions incl. 2 deferred-with-reasons items + this docs refresh;
-docs-only) — Claude pushes the branch on Tier-2 approval, the USER opens+merges the PR after CI green; then
-**(2) PA-0 PLANNING, on explicit direction** — private-asset foundations (captured appraisal/NAV series +
-ENT-019 `proxy_mapping` realization + the desmoothing/proxy decision record; rule-6 externals: Geltner 1993,
-Getmansky-Lo-Makarov 2004, Okunev-White). This
-IS a **methodology slice** → roadmap Part 4 rule 6 applies; model/effort: **Fable / high** (a new methodology
-family — the desmoothing substrate is genuinely novel design surface). **All new fixtures follow the TD-1 realism
+analysis). **PA-0 (slice 4) is DONE** (planning PR #7 `07e5d6a` merged as `7a422aa` — the capture-first split ratified,
+OD-PA-0-A..J + OQ-PA-0-1..8, the Okunev-White citation honestly flagged UNVERIFIED for PA-1; impl PR #8
+`c9d41a7` merged as `ad3d3fe`, CI green — ENT-019 `proxy_mapping` REALIZED, migration `0034`, the
+CURRENCY-family v1 scope ENFORCED per a review fold, `marketdata.*` reused; proportionate 2-finder review,
+4 folds + 2 family-wide deferrals in the record Part 6). The next concrete steps, in order: **(1) land THIS
+closeout PR** (branch `pa-0-closeout` — the Part 6 dispositions + this docs refresh; docs-only) — Claude
+pushes on Tier-2 approval, the USER opens+merges after CI green; then **(2) P3-6 PLANNING, on explicit
+direction** — stress/scenario, the LAST Wave-2 slice (ENT-029/030 scenario definitions + results; moved from
+Wave 1 pre-authorized; MAY defer again at the Wave-2 close — an expected outcome, not a failure); then **(3)
+the WAVE-2 CLOSE REVIEW** (the mandatory Part-4 rule-2 re-baseline: honest audit, deferral-register
+reconciliation — now incl. the P3-8/BT-1/PA-0 Part-6 items — the outward benchmark review, the thesis
+destination check, and the PA-1 sequencing decision: the desmoothing governed number is the natural Wave-3
+opener, with the Okunev-White citation to resolve first). P3-6
+IS a **methodology-adjacent slice** → roadmap Part 4 rule 6 applies; model/effort: **Fable / High** (scenario
+definition/shock design is novel surface). **All new fixtures follow the TD-1 realism
 rule.**
 
 ## Approval gates (hard)

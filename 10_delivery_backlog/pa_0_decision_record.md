@@ -86,3 +86,58 @@ builder, NO calculation_run, since there is no governed number in this slice). M
 recommendation for the implementation: **Opus 4.8 / high** — templated on the P2-7 FR-capture
 exemplar (`benchmark_level`/`benchmark_return`), not novel design; the honest external-research gap
 (OD-I) means PA-1's eventual methodology work is the genuinely novel slice, not this one.
+
+## Part 6 — Review dispositions + closure (appended at closeout, 2026-07-11)
+
+**CLOSED.** Planning `07e5d6a` merged via **PR #7** (`7a422aa`); implementation `c9d41a7` merged via
+**PR #8** (`ad3d3fe`), CI green — merged in the correct order (planning first) after the
+implementation branch was rebased onto the merged planning docs. Migration `0034`; validation:
+`make check` 1191 / local PG 7/7 / downgrade smoke 0034↔0033 / fe-check 52 (no FE surface added —
+the captured-input precedent).
+
+**Review (OQ-8):** a PROPORTIONATE 2-finder local review (service+FR-protocol+persistence;
+API+docs-sync+conventions) — right-sized for a captured-input slice, per the ratified OQ. All hard
+invariants verified intact (frozen `audit/service.py` + `entitlement/bootstrap.py` untouched; the
+`MARKET.PROXY_MAPPING_*` codes are caller-side constants, never an audit-service mint; no
+BYPASSRLS; the scope fence AST-verified — no `calc`/`model`/`snapshot` import). **No HIGH bugs;
+4 folds + 2 deferrals:**
+
+1. **Fold — CORRECTION audit `action` convention.** The correction event carried
+   `action="update"` where all five sibling FR-correction emitters (fx/price/curve/benchmark/
+   factor) use `action="correct"` — an `action == "correct"` audit query would silently omit every
+   proxy restatement. Fixed + the grain test now pins the action.
+2. **Fold — the CURRENCY-family v1 scope (OD-PA-0-H) was doc-stated but UNGATED.** A non-CURRENCY
+   factor (e.g. a STYLE factor) was silently accepted at capture. Now ENFORCED fail-closed in
+   `_resolve_factor_id` (a style/sector/rate proxy family is a recorded v2 extension) + a refusal
+   test; the ENT-019 registry row updated to say "ENFORCED".
+3. **Fold — asymmetric correction audit payload.** `before_value` carried the old weight but
+   `after_value` omitted the new one; an auditor could not answer "corrected to WHAT?" from the
+   event alone. Now symmetric (a single scalar, not the bulk payload the DC-2 rule guards).
+4. **Fold — dead `order_by` in `reconstruct_proxy_mapping_as_of`.** Paired with
+   `scalar_one_or_none()` the ordering could never act (raises on >1), and it diverged from the
+   `reconstruct_factor_return_as_of` precedent, implying a pick-latest semantic the code cannot
+   deliver. Removed; a comment pins the fail-loud invariant.
+
+**Deferred, with recorded reasons (both precedent-consistent, NOT PA-0 regressions):**
+- **A — supersede does not guard `effective_at < prior.valid_from`.** A backdated revision below
+  the original capture instant would invert the prior version's valid window and shadow it from
+  reconstruction. IDENTICAL to the unguarded `factor_return`/`benchmark_return` supersede —
+  guarding only proxy_mapping would break family parity. Trigger: a family-wide FR
+  window-coherence guard pass (all six FR series at once), or the first observed backdating
+  incident.
+- **B — a duplicate-open-head capture returns HTTP 500, not 409.** `POST /proxy-mappings` twice
+  for the same (instrument, factor) trips the partial-unique index as an uncaught
+  `IntegrityError`. Shared by EVERY captured-entity capture endpoint in the marketdata family — a
+  cross-cutting `IntegrityError → 409` mapping pass, not a one-entity patch. Trigger: the next
+  marketdata-family hardening slice (natural companion to the BT-1 Part-6 deferral B, the
+  registrar-concurrency race).
+
+**Bugs caught mid-build (before the review, worth the record):** a `Decimal` in the audit
+`before_value` crashed JSON serialization at flush (`_json_safe` extended to stringify Decimal —
+the correction path was the only emitter passing a raw Decimal); the PG supersede test read zero
+rows post-commit because the RLS GUC is transaction-scoped (`SET LOCAL`) — re-arm after commit.
+
+**Standing items for PA-1 (carried from Parts 1-4, unchanged):** the Geltner AR(1) v1 desmoothing
+model (declared-α); the **Okunev-White citation remains UNVERIFIED** (OD-PA-0-I — must be resolved
+before PA-1's methodology doc); capital calls/distributions/money-weighted IRR (OD-PA-0-F);
+regression-derived weights (v2).
