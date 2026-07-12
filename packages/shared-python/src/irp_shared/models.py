@@ -31,7 +31,11 @@ from irp_shared.marketdata.models import (
     ProxyMapping,
 )
 from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, ModelVersion
-from irp_shared.perf.models import BenchmarkRelativeResult, PortfolioReturnResult
+from irp_shared.perf.models import (
+    BenchmarkRelativeResult,
+    DesmoothedReturnResult,
+    PortfolioReturnResult,
+)
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.position.models import Position
 from irp_shared.reference.models import (
@@ -127,4 +131,5 @@ __all__ = [
     "ScenarioResult",
     "PortfolioReturnResult",
     "BenchmarkRelativeResult",
+    "DesmoothedReturnResult",
 ]

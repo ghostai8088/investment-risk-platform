@@ -69,6 +69,11 @@ export const FAMILIES = {
     permissionFamily: "risk",
   },
   scenarios: { runType: "SCENARIO", label: "Scenarios", permissionFamily: "risk" },
+  "desmoothed-returns": {
+    runType: "DESMOOTHED_RETURN",
+    label: "Desmoothed returns",
+    permissionFamily: "perf",
+  },
 } as const;
 
 export type Family = keyof typeof FAMILIES;
@@ -84,6 +89,7 @@ export const RUN_TYPE_TO_FAMILY: Record<string, Family> = {
   BENCHMARK_RELATIVE: "benchmark-relative",
   VAR_BACKTEST: "var-backtests",
   SCENARIO: "scenarios",
+  DESMOOTHED_RETURN: "desmoothed-returns",
 };
 
 /** The run-detail fetch URL for a family: exposure and the perf families have their own endpoint
@@ -94,6 +100,7 @@ export function runDetailUrl(family: Family, runId: string): string {
   if (family === "exposure") return `/exposure/runs/${id}`;
   if (family === "portfolio-returns") return `/perf/portfolio-returns/runs/${id}`;
   if (family === "benchmark-relative") return `/perf/benchmark-relative/runs/${id}`;
+  if (family === "desmoothed-returns") return `/perf/desmoothed-returns/runs/${id}`;
   // Scenario runs are a separate collection (/risk/scenario-runs/{id}) so the run path never
   // collides with /risk/scenarios/{scenario_id} (the definition + its shocks).
   if (family === "scenarios") return `/risk/scenario-runs/${id}`;
@@ -205,6 +212,17 @@ export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]
     { key: "n_pairs", label: "Pairs" },
     { key: "n_exceptions", label: "Exceptions" },
     { key: "base_currency", label: "Base ccy" },
+  ],
+  "desmoothed-returns": [
+    { key: "metric_type", label: "Metric" },
+    { key: "period_start", label: "Period start" },
+    { key: "period_end", label: "Period end" },
+    { key: "metric_value", label: "Value" },
+    { key: "observed_return", label: "Observed ret" },
+    { key: "observed_stdev", label: "Observed stdev" },
+    { key: "alpha", label: "Alpha" },
+    { key: "n_periods", label: "Periods" },
+    { key: "mark_currency", label: "Mark ccy" },
   ],
   scenarios: [
     { key: "metric_type", label: "Metric" },

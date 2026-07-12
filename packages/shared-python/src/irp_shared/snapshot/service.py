@@ -95,6 +95,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_ACTIVE_RISK_INPUT,
     PURPOSE_BENCHMARK_RELATIVE_INPUT,
     PURPOSE_COVARIANCE_INPUT,
+    PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_RETURN_INPUT,
     PURPOSE_SCENARIO_INPUT,
@@ -1790,6 +1791,100 @@ def build_scenario_snapshot(
     return header_row
 
 
+class DesmoothingSnapshotError(Exception):
+    """A desmoothing-input snapshot cannot be built (an inverted window; fewer than two visible
+    marks — nothing to desmooth; an unresolvable portfolio/instrument) — raised BEFORE any write;
+    never mints immutable governance garbage. Maps to 409."""
+
+
+#: The desmoothing binding/selection rule (OD-PA-1-G): every current-head mark in the window.
+DESMOOTHING_BINDING_PREDICATE = "v1:valuation-mark-window"
+
+
+def build_desmoothing_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    portfolio_id: str,
+    instrument_id: str,
+    window_start: date,
+    window_end: date,
+) -> DatasetSnapshot:
+    """Build one immutable ``DESMOOTHING_INPUT`` snapshot (PA-1, OD-PA-1-G) pinning one
+    ``COMPONENT_KIND_VALUATION`` per CURRENT-HEAD ``valuation`` mark of the (portfolio, instrument)
+    pair with ``valuation_date`` in ``[window_start, window_end]`` (REUSED kind — the
+    exposure-snapshot flavor), so a desmoothing run is reproducible from the snapshot alone (a
+    later mark correction cannot move a historical run, TR-09; AD-014 pinned-content-only reads).
+
+    Fails closed BEFORE any write on: an inverted window; a hidden/cross-tenant portfolio or
+    instrument; FEWER THAN TWO visible marks (no return series exists — structurally nothing to
+    desmooth; the >=4-mark STATISTICAL gate is the binder's pre-create adjudication, OD-PA-1-H).
+    Imports NO ``calc``/``perf`` SERVICE symbol (models-only reads)."""
+    from irp_shared.reference.models import Instrument  # models-only (no cycle)
+    from irp_shared.valuation.models import Valuation  # models-only (no cycle)
+
+    if window_start > window_end:
+        raise DesmoothingSnapshotError(
+            f"window_start {window_start} is after window_end {window_end} — refused"
+        )
+    resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
+    instrument = session.execute(
+        select(Instrument).where(
+            Instrument.id == str(instrument_id),
+            Instrument.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if instrument is None:
+        raise DesmoothingSnapshotError(
+            f"instrument {instrument_id} is not visible in the acting tenant — refused"
+        )
+
+    marks = list(
+        session.execute(
+            select(Valuation)
+            .where(
+                Valuation.tenant_id == str(acting_tenant),
+                Valuation.portfolio_id == str(portfolio_id),
+                Valuation.instrument_id == str(instrument_id),
+                Valuation.valuation_date >= window_start,
+                Valuation.valuation_date <= window_end,
+                Valuation.valid_to.is_(None),
+                Valuation.system_to.is_(None),
+            )
+            .order_by(Valuation.valuation_date)
+        )
+        .scalars()
+        .all()
+    )
+    if len(marks) < 2:
+        raise DesmoothingSnapshotError(
+            f"only {len(marks)} visible mark(s) in [{window_start}, {window_end}] — a return "
+            f"series needs at least two; nothing to desmooth"
+        )
+
+    now = utcnow()
+    valid_at = known = now  # both sides pinned as-known-now (the build_var precedent).
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in marks:
+        _append_spec(specs, COMPONENT_KIND_VALUATION, "valuation", row, valuation_content(row))
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_DESMOOTHING_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=window_end,
+        binding_predicate_version=DESMOOTHING_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -2096,6 +2191,7 @@ _BINDING_PREDICATES = (
     BENCHMARK_RELATIVE_BINDING_PREDICATE,
     VAR_BACKTEST_BINDING_PREDICATE,
     SCENARIO_BINDING_PREDICATE,
+    DESMOOTHING_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "
