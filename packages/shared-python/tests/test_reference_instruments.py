@@ -31,6 +31,7 @@ from irp_shared.reference.instrument import (
     create_instrument,
 )
 from irp_shared.reference.instrument_terms import (
+    InstrumentTermsValueError,
     NoCurrentTerms,
     correct_instrument_terms,
     create_instrument_terms,
@@ -319,6 +320,22 @@ def test_supersede_without_current_terms_raises(session: Session) -> None:
     with pytest.raises(NoCurrentTerms):
         supersede_instrument_terms(
             session, instrument_id=inst.id, acting_tenant=tenant, actor=_actor(), effective_at=_T1
+        )
+
+
+def test_supersede_backdated_effective_at_refused(session: Session) -> None:
+    # MD-H1 window-coherence (Option-A extension): effective_at at/before the head's valid_from
+    # (_T0) would invert or zero-width the closed window — refused pre-write (→ 422).
+    tenant = _t()
+    inst, _v1 = _seed_terms(session, tenant)  # valid_from=_T0
+    with pytest.raises(InstrumentTermsValueError):
+        supersede_instrument_terms(
+            session,
+            instrument_id=inst.id,
+            acting_tenant=tenant,
+            actor=_actor(),
+            effective_at=_T0,  # == valid_from → zero-width, refused (strictly-greater)
+            coupon_rate=Decimal("6.0"),
         )
 
 

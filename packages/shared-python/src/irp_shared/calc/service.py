@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CREATE, ACTION_STATUS_CHANGE
 from irp_shared.audit.service import record_event
 from irp_shared.calc.models import TERMINAL_STATUSES, CalculationRun, RunStatus
 from irp_shared.db.mixins import utcnow
@@ -46,7 +47,7 @@ def create_run(
         source_module="calc",
         entity_type="calculation_run",
         entity_id=run.run_id,
-        action="create",
+        action=ACTION_CREATE,
         after_value={"status": run.status, "run_type": run_type},
     )
     return run
@@ -90,7 +91,7 @@ def update_run_status(
         source_module="calc",
         entity_type="calculation_run",
         entity_id=run.run_id,
-        action="status_change",
+        action=ACTION_STATUS_CHANGE,
         before_value={"status": before},
         after_value={"status": run.status},
         outcome=outcome,

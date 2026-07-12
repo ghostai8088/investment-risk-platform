@@ -178,6 +178,26 @@ def test_terms_supersede_without_effective_at_422(ctx) -> None:  # noqa: ANN001
     assert r.status_code == 422
 
 
+def test_terms_supersede_backdated_effective_at_is_422(ctx) -> None:  # noqa: ANN001
+    # MD-H1 window-coherence end-to-end: effective_at at/before the head's valid_from is a
+    # pre-write refusal surfaced as 422, not a silent inverted window.
+    client, principal, _ = ctx
+    inst = _make_instrument(client, principal)
+    r = client.post(
+        f"/reference/instruments/{inst['id']}/terms",
+        json={"mode": "create", "valid_from": "2026-01-01T00:00:00Z", "coupon_rate": "5.5"},
+        headers=_h(principal),
+    )
+    assert r.status_code == 201, r.text
+    r = client.post(
+        f"/reference/instruments/{inst['id']}/terms",
+        json={"mode": "supersede", "effective_at": "2025-12-01T00:00:00Z", "coupon_rate": "6.0"},
+        headers=_h(principal),
+    )
+    assert r.status_code == 422, r.text
+    assert "strictly after" in r.json()["detail"]
+
+
 def test_identifier_create_and_resolve(ctx) -> None:  # noqa: ANN001
     client, principal, _ = ctx
     inst = _make_instrument(client, principal)

@@ -33,13 +33,15 @@ valuation / transaction-derivation math.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.payload import json_safe as _json_safe
+from irp_shared.db.bitemporal import assert_supersede_effective_at
 from irp_shared.db.mixins import utcnow
 from irp_shared.portfolio import resolve_portfolio
 from irp_shared.position.models import Position
@@ -54,6 +56,11 @@ from irp_shared.reference.instrument import resolve_instrument
 #: The captured holding fields the binder accepts / carries-forward (inert — no math; ``quantity``
 #: is signed + required, the rest optional/opaque).
 POSITION_FIELDS = ("quantity", "cost_basis", "quantity_unit", "position_source")
+
+
+class PositionValueError(Exception):
+    """Raised for a binder-side value breach (e.g. a window-incoherent supersede ``effective_at``)
+    — caught BEFORE any write (fail-closed; maps to 422). The marketdata *ValueError precedent."""
 
 
 class NoCurrentPosition(Exception):
@@ -75,15 +82,6 @@ class PositionNotVisible(Exception):
     def __init__(self, position_id: str) -> None:
         super().__init__(f"position {position_id} is not visible in the current tenant context")
         self.position_id = str(position_id)
-
-
-def _json_safe(value: Any) -> Any:
-    """DC-2 audit metadata must be JSON-serializable: Decimal→str, date/datetime→isoformat."""
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, date | datetime):
-        return value.isoformat()
-    return value
 
 
 def _summary(row: Position, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -210,6 +208,7 @@ def supersede_position(
     if prior is None:
         raise NoCurrentPosition(str(portfolio_id), str(instrument_id))
 
+    assert_supersede_effective_at(prior.valid_from, effective_at, error=PositionValueError)
     now = now or utcnow()
     # CLOSE-FIRST: stamp + flush the prior valid_to close-out before adding the new open row.
     before = {"valid_to": _json_safe(prior.valid_to)}

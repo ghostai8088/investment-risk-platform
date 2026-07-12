@@ -68,6 +68,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
@@ -324,10 +325,15 @@ def _adjudicate_pins(
                 period_start=as_of,
                 period_end=period_end,
                 realized_pnl=pnl.quantize(_MONEY_QUANTUM, rounding=ROUND_HALF_UP),
-                # Quantized at the money scale INSIDE the pre-create wrapper: kills a hand-minted
-                # NaN (InvalidOperation -> the governed 422, never a post-create 500) AND pins the
-                # stored echo byte-identical across engines (review folds).
-                var_value=Decimal(r["var_value"]).quantize(_MONEY_QUANTUM, rounding=ROUND_HALF_UP),
+                # Strict-parsed at the money scale INSIDE the pre-create wrapper (MD-H1 annex 5,
+                # generalizing the BT-1 fold): a hand-minted NaN is a governed 422, never a
+                # post-create 500; the quantum pins the stored echo byte-identical across engines.
+                var_value=parse_strict_decimal(
+                    r["var_value"],
+                    error=VarBacktestInputError,
+                    field="var_value",
+                    quantum=_MONEY_QUANTUM,
+                ),
             )
         )
     pairs.sort(key=lambda p: p.period_start)

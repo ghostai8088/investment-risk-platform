@@ -29,6 +29,7 @@ from irp_shared.valuation.service import ValuationActor
 from irp_shared.valuation.valuation import (
     NoCurrentValuation,
     ValuationNotVisible,
+    ValuationValueError,
     correct_valuation,
     create_valuation,
     reconstruct_valuation_as_of,
@@ -40,6 +41,7 @@ __all__ = [
     "Valuation",
     "ValuationActor",
     "ValuationNotVisible",
+    "ValuationValueError",
     "NoCurrentValuation",
     "VALUATION_CREATE_EVENT",
     "VALUATION_UPDATE_EVENT",

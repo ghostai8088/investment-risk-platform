@@ -187,6 +187,26 @@ def test_supersede_closes_valid_to_fresh_nodes_carries_date(session: Session) ->
     assert len(list_curve_points(session, new.id, acting_tenant=t)) == 1
 
 
+def test_supersede_backdated_effective_at_refused(session: Session) -> None:
+    # MD-H1 window-coherence: effective_at at/before the head's valid_from (VA) is refused (→ 422).
+    t = str(uuid.uuid4())
+    _seed_currency(session)
+    _capture(session, t)  # valid_from=VA
+    session.commit()
+    with pytest.raises(CurveValueError):
+        supersede_curve(
+            session,
+            curve_type="TREASURY",
+            currency_code="USD",
+            curve_date=CD,
+            curve_source="BLOOMBERG",
+            nodes=[CurveNode("3M", 90, "ZERO_RATE", Decimal("0.0500"))],
+            acting_tenant=t,
+            actor=ACTOR,
+            effective_at=VA,  # == valid_from → zero-width, refused (strictly-greater)
+        )
+
+
 def test_correct_closes_system_to_content_immutable(session: Session) -> None:
     t = str(uuid.uuid4())
     _seed_currency(session)

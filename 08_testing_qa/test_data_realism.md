@@ -35,6 +35,16 @@ Classify each economic-value fixture site into exactly one bucket:
 Plumbing values — tenant/actor/GUID ids, `code_version`, `environment_id`, opaque labels — where realism is
 meaningless. Do not churn them.
 
+## Golden-derivation rule (standing, 2026-07-12; MD-H1)
+Every full-stack golden (a hand-derived expected value asserted against a real multi-engine chain) MUST ship
+with its derivation — a comment or script that reproduces the number from the EXACT fixture chain the test
+builds, so a reviewer can re-derive it without trusting the author. The incident: BT-1's first full-stack VaR
+golden (1163.173937) was hand-computed for a *diagonal* covariance while the test built the *real* sample
+covariance chain (correct value 300.330219) — the mismatch surfaced only because the test failed; a plausible
+wrong golden would have shipped. The model: P3-4's dual-path numeric legs (hand-derived rational references +
+an independent library cross-check) and BT-1's post-fold `BT1_VAR99` constant with its full hand-derivation
+comment. A bare magic number asserted deep in a governed chain is a review-blocking finding.
+
 ## Provenance
 TD-1 (`td_1_decision_record.md`, OD-TD-1-A…F) established this rule and remediated the pre-existing fixtures.
 (The representative market-value fixtures — fx / price / mark / weight / quantity — were already plausible;

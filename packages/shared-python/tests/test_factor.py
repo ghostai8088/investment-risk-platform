@@ -183,6 +183,7 @@ def test_supersede_and_correct_and_reconstruct(session: Session) -> None:
         return_value=Decimal("0.0123"),
         acting_tenant=tenant,
         actor=ACTOR,
+        valid_from=VA,  # explicit early valid_from so the VA2 supersede is window-coherent
     )
     session.flush()
     # supersede (valid-time): a NEW valid version; return_date carried forward.
@@ -246,7 +247,13 @@ def test_list_binders_current_head_and_tenant_scope(session: Session) -> None:
     _factor(session, tenant, code="VALUE")
     _factor(session, other, code="MOMENTUM")  # another tenant — must NOT leak
     capture_factor_return(
-        session, f, return_date=RD, return_value=Decimal("0.01"), acting_tenant=tenant, actor=ACTOR
+        session,
+        f,
+        return_date=RD,
+        return_value=Decimal("0.01"),
+        acting_tenant=tenant,
+        actor=ACTOR,
+        valid_from=VA,  # explicit early valid_from so the VA2 supersede is window-coherent
     )
     session.flush()
     # supersede -> the OLD return version is closed; the list returns only the current head.
@@ -279,6 +286,33 @@ def test_supersede_without_current_fails(session: Session) -> None:
             acting_tenant=tenant,
             actor=ACTOR,
             effective_at=VA2,
+        )
+
+
+def test_supersede_backdated_effective_at_refused(session: Session) -> None:
+    # MD-H1 window-coherence: effective_at at/before the head's valid_from (VA) is refused (→ 422).
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    f = _factor(session, tenant)
+    capture_factor_return(
+        session,
+        f,
+        return_date=RD,
+        return_value=Decimal("0.01"),
+        acting_tenant=tenant,
+        actor=ACTOR,
+        valid_from=VA,
+    )
+    session.flush()
+    with pytest.raises(FactorValueError):
+        supersede_factor_return(
+            session,
+            f,
+            return_date=RD,
+            return_value=Decimal("0.02"),
+            acting_tenant=tenant,
+            actor=ACTOR,
+            effective_at=VA,  # == valid_from → zero-width, refused (strictly-greater)
         )
 
 
@@ -396,7 +430,13 @@ def test_supersede_correct_audit_grain(session: Session) -> None:
     _ccy(session, "USD")
     f = _factor(session, tenant)
     capture_factor_return(
-        session, f, return_date=RD, return_value=Decimal("0.01"), acting_tenant=tenant, actor=ACTOR
+        session,
+        f,
+        return_date=RD,
+        return_value=Decimal("0.01"),
+        acting_tenant=tenant,
+        actor=ACTOR,
+        valid_from=VA,  # explicit early valid_from so the VA2 supersede is window-coherent
     )
     supersede_factor_return(
         session,

@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.payload import json_safe as _json_safe
 from irp_shared.reference.instrument import resolve_instrument
 from irp_shared.reference.models import CorporateAction
 from irp_shared.reference.service import (
@@ -215,12 +216,3 @@ def transition_corporate_action_status(
         reason=reason,
     )
     return corporate_action
-
-
-def _json_safe(value: Any) -> Any:
-    """DC-2 audit metadata must be JSON-serializable: Decimal→str, date→isoformat."""
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, date):
-        return value.isoformat()
-    return value

@@ -97,7 +97,12 @@ def _create_factor(client: TestClient, p: Principal, source: str = "MSCI_BARRA",
 def _capture_return(client: TestClient, p: Principal, fid: str, value: str = "0.0123"):  # noqa: ANN202
     return client.post(
         f"/factors/{fid}/returns",
-        json={"return_date": _RD.isoformat(), "return_value": value},
+        # explicit early valid_from so a later effective-dated supersede is window-coherent (MD-H1).
+        json={
+            "return_date": _RD.isoformat(),
+            "return_value": value,
+            "valid_from": "2026-06-01T00:00:00+00:00",
+        },
         headers=_h(p),
     )
 

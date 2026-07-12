@@ -14,11 +14,14 @@ workflow is implemented — governance fields are non-enforcing placeholders.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CREATE
 from irp_shared.audit.service import record_event
 from irp_shared.model.models import (
     Model,
@@ -97,7 +100,7 @@ def register_model(
         source_module="model",
         entity_type="model",
         entity_id=model.id,
-        action="create",
+        action=ACTION_CREATE,
         after_value={
             "code": code,
             "name": name,
@@ -217,7 +220,7 @@ def register_model_version(
         source_module="model",
         entity_type="model_version",
         entity_id=version.id,
-        action="create",
+        action=ACTION_CREATE,
         after_value={
             "model_id": parent.id,
             "version_label": version_label,
@@ -232,6 +235,82 @@ def register_model_version(
         data_classification="DC-1",
     )
     return version
+
+
+def resolve_or_register_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    code: str,
+    name: str,
+    model_type: str,
+    actor_id: str,
+    **kwargs: Any,
+) -> Model:
+    """Resolve the ``(tenant_id, code)`` model inventory head, registering it if absent — race-safe.
+
+    Two concurrent FIRST bootstraps of the same model both SELECT-miss then INSERT the same
+    ``(tenant_id, code)`` → one hits the unique constraint. The INSERT is wrapped in a SAVEPOINT
+    (``begin_nested``) so the loser's ``IntegrityError`` rolls back ONLY that INSERT — not the
+    caller's governed unit, which an unwrapped error would abort into a 500 on PostgreSQL; the loser
+    then re-SELECTs the peer's committed row (READ COMMITTED). Mirrors the ``dq/gates`` resolve-or-
+    register savepoint pattern (MD-H1 OD-D). ``kwargs`` are the optional ``register_model`` metadata
+    (``description``/``owner``/``developer``/``tier``/``actor_type``/agent fields).
+    """
+    q = select(Model).where(Model.tenant_id == str(tenant_id), Model.code == code)
+    model = session.execute(q).scalar_one_or_none()
+    if model is not None:
+        return model
+    try:
+        with session.begin_nested():  # SAVEPOINT around the racy INSERT
+            return register_model(
+                session,
+                tenant_id=str(tenant_id),
+                code=code,
+                name=name,
+                model_type=model_type,
+                actor_id=actor_id,
+                **kwargs,
+            )
+    except IntegrityError:
+        peer = session.execute(q).scalar_one_or_none()
+        if peer is None:  # not the unique-collision we handle — re-raise loudly
+            raise
+        return peer
+
+
+def resolve_or_register_version(
+    session: Session,
+    *,
+    model: Model,
+    version_label: str,
+    register: Callable[[], ModelVersion],
+) -> ModelVersion:
+    """Resolve the ``(model, version_label)`` immutable version, registering if absent — race-safe.
+
+    The caller supplies ``register`` — a zero-arg closure over ``register_model_version`` carrying
+    the family's methodology/assumptions/status. SELECT-miss → register inside a SAVEPOINT; on the
+    concurrent-first-registration ``IntegrityError`` (both racers INSERT the same
+    ``(model_id, version_label)``), re-SELECT the peer. The caller runs its family-specific
+    identity/conflict checks on the returned row — they pass trivially for a row THIS call minted
+    and catch a squatted/mismatched peer (the race + idempotent-re-invocation path). Mirrors the
+    ``dq/gates`` savepoint pattern (MD-H1 OD-D).
+    """
+    q = select(ModelVersion).where(
+        ModelVersion.model_id == model.id,
+        ModelVersion.version_label == version_label,
+    )
+    version = session.execute(q).scalar_one_or_none()
+    if version is not None:
+        return version
+    try:
+        with session.begin_nested():  # SAVEPOINT around the racy INSERT
+            return register()
+    except IntegrityError:
+        peer = session.execute(q).scalar_one_or_none()
+        if peer is None:  # not the unique-collision we handle — re-raise loudly
+            raise
+        return peer
 
 
 def assert_registered_model_version(

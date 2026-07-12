@@ -36,6 +36,9 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.payload import json_safe as _json_safe
+from irp_shared.db.bitemporal import assert_supersede_effective_at
+from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.db.mixins import utcnow
 from irp_shared.dq.models import SEVERITY_ERROR, DataQualityRule
 from irp_shared.dq.rules import RULE_TYPE_NOT_NULL, RULE_TYPE_RANGE
@@ -88,14 +91,6 @@ class NoCurrentFxRate(Exception):
         self.rate_date, self.rate_type = rate_date, rate_type
 
 
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, date | datetime):
-        return value.isoformat()
-    return value
-
-
 def _summary(row: FxRate, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
     """A DC-2 FX-summary dict (metadata only) for the audit after_value (never bulk vendor data)."""
     data: dict[str, Any] = {field: _json_safe(getattr(row, field)) for field in FX_RATE_FIELDS}
@@ -143,25 +138,28 @@ def _ensure_rule(
     params: dict[str, Any],
 ) -> DataQualityRule:
     """Resolve-or-register a per-tenant governed DQ rule (audited; the P2-1 pattern)."""
-    rule = session.execute(
-        select(DataQualityRule).where(
-            DataQualityRule.tenant_id == str(tenant_id),
-            DataQualityRule.code == code,
-        )
-    ).scalar_one_or_none()
-    if rule is not None:
-        return rule
-    return register_dq_rule(
+    # Race-safe (MD-H1 review fold): two concurrent FIRST callers both SELECT-miss then
+    # INSERT the same key; the loser re-resolves the peer instead of aborting the unit.
+    return resolve_or_insert(
         session,
-        tenant_id=str(tenant_id),
-        code=code,
-        name=name,
-        rule_type=rule_type,
-        actor_id=actor.actor_id,
-        params=params,
-        target_entity_type=ENTITY_FX_RATE,
-        severity=SEVERITY_ERROR,
-        actor_type=actor.actor_type,
+        resolve=lambda: session.execute(
+            select(DataQualityRule).where(
+                DataQualityRule.tenant_id == str(tenant_id),
+                DataQualityRule.code == code,
+            )
+        ).scalar_one_or_none(),
+        insert=lambda: register_dq_rule(
+            session,
+            tenant_id=str(tenant_id),
+            code=code,
+            name=name,
+            rule_type=rule_type,
+            actor_id=actor.actor_id,
+            params=params,
+            target_entity_type=ENTITY_FX_RATE,
+            severity=SEVERITY_ERROR,
+            actor_type=actor.actor_type,
+        ),
     )
 
 
@@ -330,6 +328,7 @@ def supersede_fx_rate(
     if prior is None:
         raise NoCurrentFxRate(base_currency, quote_currency, rate_date, rate_type)
 
+    assert_supersede_effective_at(prior.valid_from, effective_at, error=FxRateValueError)
     now = now or utcnow()
     before = {"valid_to": _json_safe(prior.valid_to)}
     prior.valid_to = effective_at  # CLOSE-FIRST

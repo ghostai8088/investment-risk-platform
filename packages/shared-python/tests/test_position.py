@@ -35,6 +35,7 @@ from irp_shared.position import (
     Position,
     PositionActor,
     PositionNotVisible,
+    PositionValueError,
     correct_position,
     create_position,
     reconstruct_position_as_of,
@@ -231,6 +232,25 @@ def test_supersede_without_current_head_raises(session: Session) -> None:
             actor=_actor(),
             effective_at=T1,
             quantity=Decimal("10"),
+        )
+
+
+def test_supersede_backdated_effective_at_refused(session: Session) -> None:
+    # MD-H1 window-coherence (Option-A extension): effective_at at/before the head's valid_from
+    # (T0) would invert or zero-width the closed window — refused pre-write (→ 422).
+    tenant = _tenant()
+    pf_id, inst_id = _seed_pf_inst(session, tenant)
+    _create(session, tenant, pf_id, inst_id, quantity=Decimal("100"))  # valid_from=T0
+    session.commit()
+    with pytest.raises(PositionValueError):
+        supersede_position(
+            session,
+            portfolio_id=pf_id,
+            instrument_id=inst_id,
+            acting_tenant=tenant,
+            actor=_actor(),
+            effective_at=T0,  # == valid_from → zero-width, refused (strictly-greater)
+            quantity=Decimal("175"),
         )
 
 

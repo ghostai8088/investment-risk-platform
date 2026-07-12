@@ -677,7 +677,10 @@ def test_migration_head_is_benchmark_relative() -> None:
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
-    script = ScriptDirectory.from_config(Config("alembic.ini"))
+    root = pathlib.Path(__file__).resolve().parents[3]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "migrations"))
+    script = ScriptDirectory.from_config(cfg)
     assert script.get_current_head() == "0034_proxy_mapping"
     assert script.get_revision("0032_benchmark_relative").down_revision == "0031_portfolio_return"
 

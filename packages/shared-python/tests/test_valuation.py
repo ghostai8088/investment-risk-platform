@@ -37,6 +37,7 @@ from irp_shared.valuation import (
     Valuation,
     ValuationActor,
     ValuationNotVisible,
+    ValuationValueError,
     correct_valuation,
     create_valuation,
     reconstruct_valuation_as_of,
@@ -229,6 +230,26 @@ def test_supersede_without_current_head_raises(session: Session) -> None:
             actor=_actor(),
             effective_at=T1,
             mark_value=Decimal("1"),
+        )
+
+
+def test_supersede_backdated_effective_at_refused(session: Session) -> None:
+    # MD-H1 window-coherence (Option-A extension): effective_at at/before the head's valid_from
+    # (T0) would invert or zero-width the closed window — refused pre-write (→ 422).
+    tenant = _tenant()
+    pf_id, inst_id = _seed_pf_inst(session, tenant)
+    _create(session, tenant, pf_id, inst_id)  # valid_from=T0
+    session.commit()
+    with pytest.raises(ValuationValueError):
+        supersede_valuation(
+            session,
+            portfolio_id=pf_id,
+            instrument_id=inst_id,
+            valuation_date=VD,
+            acting_tenant=tenant,
+            actor=_actor(),
+            effective_at=T0,  # == valid_from → zero-width, refused (strictly-greater)
+            mark_value=Decimal("105"),
         )
 
 

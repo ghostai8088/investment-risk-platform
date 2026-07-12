@@ -113,6 +113,8 @@ def _body(pf_id: str, inst_id: str, **kw) -> dict:  # noqa: ANN003
         "instrument_id": inst_id,
         "valuation_date": VD,
         "mark_value": "100",
+        # explicit early valid_from so an effective-dated supersede is window-coherent (MD-H1).
+        "valid_from": "2026-01-01T00:00:00Z",
     }
     base.update(kw)
     return base
@@ -184,6 +186,33 @@ def test_supersede_books_new_version(ctx) -> None:  # noqa: ANN001
     assert Decimal(new["mark_value"]) == Decimal("105") and new["supersedes_id"] == original["id"]
     assert new["record_version"] == 2 and new["valuation_date"] == VD
     assert db.execute(select(func.count()).select_from(Valuation)).scalar_one() == 2
+
+
+def test_duplicate_create_is_409_not_500(ctx) -> None:  # noqa: ANN001
+    # MD-H1 review fold (sibling consistency): a second open mark for the same (portfolio,
+    # instrument, valuation_date) collides on the current-head unique → clean 409, not a raw 500.
+    client, maker, _v, _db, pf_id, inst_id = ctx
+    first = _create(client, maker, pf_id, inst_id, mark_value="100")
+    assert first["record_version"] == 1
+    dup = client.post(
+        "/valuations", json=_body(pf_id, inst_id, mark_value="200"), headers=_h(maker)
+    )
+    assert dup.status_code == 409, dup.text
+    assert "already exists" in dup.json()["detail"]
+
+
+def test_supersede_backdated_effective_at_is_422(ctx) -> None:  # noqa: ANN001
+    # MD-H1 window-coherence end-to-end: effective_at at/before the head's valid_from (2026-01-01)
+    # is a pre-write refusal surfaced as 422, not a silent inverted window.
+    client, maker, _v, _db, pf_id, inst_id = ctx
+    original = _create(client, maker, pf_id, inst_id, mark_value="100")  # valid_from=2026-01-01
+    r = client.post(
+        f"/valuations/{original['id']}/supersede",
+        json={"effective_at": "2025-12-01T00:00:00Z", "mark_value": "105"},
+        headers=_h(maker),
+    )
+    assert r.status_code == 422, r.text
+    assert "strictly after" in r.json()["detail"]
 
 
 def test_correct_books_restatement(ctx) -> None:  # noqa: ANN001

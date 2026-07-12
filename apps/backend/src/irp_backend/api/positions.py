@@ -21,9 +21,11 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, require_permission
+from irp_shared.db.integrity import is_unique_violation
 from irp_shared.entitlement.service import Principal
 from irp_shared.portfolio import PortfolioNotVisible
 from irp_shared.position import (
@@ -31,6 +33,7 @@ from irp_shared.position import (
     Position,
     PositionActor,
     PositionNotVisible,
+    PositionValueError,
     correct_position,
     create_position,
     reconstruct_position_as_of,
@@ -137,6 +140,14 @@ def create_position_endpoint(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="portfolio or instrument not found"
         ) from None
+    except IntegrityError as exc:  # duplicate open head -> 409 (MD-H1 sibling consistency)
+        db.rollback()
+        if not is_unique_violation(exc):
+            raise  # a real data-integrity bug stays a loud 500, never a mislabeled 409
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="a current open position already exists for this (portfolio, instrument)",
+        ) from None
     db.commit()
     return _out(row)
 
@@ -169,6 +180,11 @@ def supersede_position_endpoint(
     except NoCurrentPosition:  # no open head to supersede -> 409
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="no current open position to supersede"
+        ) from None
+    except PositionValueError:  # window-incoherent effective_at (MD-H1) -> 422
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="effective_at must be strictly after the current version's valid_from",
         ) from None
     db.commit()
     return _out(new)

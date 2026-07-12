@@ -29,7 +29,14 @@ from typing import Any, Protocol, TypeVar
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import (
+    ACTION_CORRECT,
+    ACTION_CREATE,
+    ACTION_STATUS_CHANGE,
+    ACTION_UPDATE,
+)
 from irp_shared.audit.service import record_event
+from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.lineage.models import EDGE_KIND_ORIGIN, DataSource
 from irp_shared.lineage.service import record_lineage, register_data_source
@@ -92,21 +99,24 @@ def ensure_manual_source(session: Session, tenant_id: str, actor_id: str) -> Dat
     is correct on SQLite (no RLS) as well as PostgreSQL. The first reference write for a tenant
     registers the source (emitting ``DATA.SOURCE_REGISTER``); later writes reuse it. SYSTEM seeds
     call this under SYSTEM context, producing the SYSTEM_TENANT MANUAL source."""
-    existing = session.execute(
-        select(DataSource).where(
-            DataSource.tenant_id == str(tenant_id),
-            DataSource.code == MANUAL_SOURCE_CODE,
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    return register_data_source(
+    # Race-safe (MD-H1 review fold): two concurrent FIRST callers both SELECT-miss then
+    # INSERT the same key; the loser re-resolves the peer instead of aborting the unit.
+    return resolve_or_insert(
         session,
-        tenant_id=str(tenant_id),
-        code=MANUAL_SOURCE_CODE,
-        name=MANUAL_SOURCE_NAME,
-        source_type=MANUAL_SOURCE_TYPE,
-        actor_id=actor_id,
+        resolve=lambda: session.execute(
+            select(DataSource).where(
+                DataSource.tenant_id == str(tenant_id),
+                DataSource.code == MANUAL_SOURCE_CODE,
+            )
+        ).scalar_one_or_none(),
+        insert=lambda: register_data_source(
+            session,
+            tenant_id=str(tenant_id),
+            code=MANUAL_SOURCE_CODE,
+            name=MANUAL_SOURCE_NAME,
+            source_type=MANUAL_SOURCE_TYPE,
+            actor_id=actor_id,
+        ),
     )
 
 
@@ -143,7 +153,7 @@ def record_reference_create(
         source_module=SOURCE_MODULE,
         entity_type=entity_type,
         entity_id=entity.id,
-        action="create",
+        action=ACTION_CREATE,
         after_value=after_value,
         correlation_id=actor.correlation_id,
         agent_model=actor.agent_model,
@@ -176,7 +186,7 @@ def record_reference_update(
         source_module=SOURCE_MODULE,
         entity_type=entity_type,
         entity_id=entity.id,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before_value,
         after_value=after_value,
         correlation_id=actor.correlation_id,
@@ -222,7 +232,7 @@ def record_reference_correction(
         source_module=SOURCE_MODULE,
         entity_type=entity_type,
         entity_id=entity.id,
-        action="correct",
+        action=ACTION_CORRECT,
         before_value=before_value,
         after_value=after_value,
         justification=restatement_reason,  # TR-08 reason on the canonical audit field
@@ -262,7 +272,7 @@ def record_reference_status_change(
         source_module=SOURCE_MODULE,
         entity_type=entity_type,
         entity_id=entity.id,
-        action="status_change",
+        action=ACTION_STATUS_CHANGE,
         before_value=before_value,
         after_value=after_value,
         justification=reason,

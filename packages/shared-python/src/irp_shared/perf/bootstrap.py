@@ -19,15 +19,15 @@ were promoted to ``model.service`` at PM-1 for exactly this).
 
 from __future__ import annotations
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.model.models import Model, ModelVersion
+from irp_shared.model.models import ModelVersion
 from irp_shared.model.service import (
     ModelVersionConflictError,
     WrongModelVersionError,
-    register_model,
     register_model_version,
+    resolve_or_register_model,
+    resolve_or_register_version,
 )
 
 
@@ -54,46 +54,42 @@ def _register_perf_model(
     minted via the GENERIC registration (status != REGISTERED) raises
     :class:`WrongModelVersionError` (the P3-C1 register/run-consistency lesson). The public
     per-model registrars supply only their identity constants."""
-    model = session.execute(
-        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == model_code)
-    ).scalar_one_or_none()
-    if model is None:
-        model = register_model(
-            session,
-            tenant_id=str(tenant_id),
-            code=model_code,
-            name=model_name,
-            model_type=model_type,
-            actor_id=actor_id,
-            description=description,
-            actor_type=actor_type,
-        )
-
-    version = session.execute(
-        select(ModelVersion).where(
-            ModelVersion.model_id == model.id,
-            ModelVersion.version_label == version_label,
-        )
-    ).scalar_one_or_none()
-    if version is not None:
-        if version.status != "REGISTERED":
-            raise WrongModelVersionError(str(version.id), str(model.code))
-        if version.code_version != str(code_version):
-            raise ModelVersionConflictError(model_code, version_label, str(code_version))
-        return version
-
-    return register_model_version(
+    # Both the model and the version are resolve-or-register (race-safe savepoint; MD-H1 OD-D): a
+    # concurrent first bootstrap re-SELECTs the peer instead of a 500.
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=model_code,
+        name=model_name,
+        model_type=model_type,
+        actor_id=actor_id,
+        description=description,
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
         session,
         model=model,
         version_label=version_label,
-        actor_id=actor_id,
-        methodology_ref=methodology_ref,
-        code_version=str(code_version),
-        status="REGISTERED",
-        assumptions=assumptions,
-        limitations=limitations,
-        actor_type=actor_type,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=version_label,
+            actor_id=actor_id,
+            methodology_ref=methodology_ref,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=assumptions,
+            limitations=limitations,
+            actor_type=actor_type,
+        ),
     )
+    # Identity/conflict checks run unconditionally: trivially pass for a row THIS call minted, catch
+    # a squatted (non-REGISTERED) or code_version-mismatched peer (race + idempotent re-invocation).
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    if version.code_version != str(code_version):
+        raise ModelVersionConflictError(model_code, version_label, str(code_version))
+    return version
 
 
 #: The per-tenant inventory identity of the portfolio-return model (PM-1, OD-PM-1-D).

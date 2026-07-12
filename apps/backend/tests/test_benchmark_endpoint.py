@@ -172,7 +172,12 @@ def test_membership_capture_supersede_correct_as_of(ctx) -> None:  # noqa: ANN00
     bid = _create_benchmark(client, p).json()["id"]
     cap = client.post(
         f"/benchmarks/{bid}/membership",
-        json={"effective_date": _ED.isoformat(), "constituents": _members(ids[:2], ["0.6", "0.4"])},
+        # explicit early valid_from so the 2026-04-01 supersede is window-coherent (MD-H1).
+        json={
+            "effective_date": _ED.isoformat(),
+            "constituents": _members(ids[:2], ["0.6", "0.4"]),
+            "valid_from": "2026-03-01T00:00:00+00:00",
+        },
         headers=_h(p),
     )
     assert cap.status_code == 201 and len(cap.json()["constituents"]) == 2

@@ -159,6 +159,16 @@ analogous plan/decision return format the user specifies.) **Then hold for commi
 - FastAPI: `get_tenant_session` (sets context), `require_permission` (deny-by-default, module-level guard
   singletons to avoid B008), `uuid.UUID` path params (422 + indistinguishable 404), single end-of-request commit.
 
+## Design-completeness checklist (standing, 2026-07-12; MD-H1)
+The judgment-gap bug class no mechanical guardrail catches — run these four questions at DESIGN time for
+every new gate/input/scope, not just at review time (each line names the shipped incident it would have caught):
+- **Every gate: both sides?** (one-sided TR-09; the horizon-blind Basel zone gate — P3-7/BT-1)
+- **Every list/collection input: empty behavior defined and refused-or-handled?** (the empty `var_run_ids`
+  snapshot — BT-1)
+- **Every doc-stated scope or convention: enforced in code, not just documented?** (the CURRENCY-family
+  proxy scope, doc-stated but ungated — PA-0)
+- **Every failure path: no RUNNING orphan, whole-unit rollback?** (the NaN 500 + RUNNING orphan — BT-1)
+
 ## Prohibited behavior
 - Committing/pushing without explicit approval; starting the next slice unprompted.
 - Writing application code during a planning/decision turn.

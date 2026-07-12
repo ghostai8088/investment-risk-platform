@@ -32,7 +32,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_RECORD, ACTION_REVERSE
 from irp_shared.audit.service import record_event
+from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.lineage.models import EDGE_KIND_ORIGIN, DataSource
 from irp_shared.lineage.service import record_lineage, register_data_source
 from irp_shared.transaction.events import (
@@ -68,21 +70,24 @@ def ensure_manual_source(session: Session, tenant_id: str, actor_id: str) -> Dat
     """Idempotently resolve-or-register the acting tenant's ``MANUAL`` ``data_source`` (shared per-
     tenant ``code='MANUAL'`` root; resolve-or-register so it is shared with reference/portfolio
     writes). Filtered by ``tenant_id`` explicitly so the lookup is correct on SQLite AND PG."""
-    existing = session.execute(
-        select(DataSource).where(
-            DataSource.tenant_id == str(tenant_id),
-            DataSource.code == MANUAL_SOURCE_CODE,
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    return register_data_source(
+    # Race-safe (MD-H1 review fold): two concurrent FIRST callers both SELECT-miss then
+    # INSERT the same key; the loser re-resolves the peer instead of aborting the unit.
+    return resolve_or_insert(
         session,
-        tenant_id=str(tenant_id),
-        code=MANUAL_SOURCE_CODE,
-        name=MANUAL_SOURCE_NAME,
-        source_type=MANUAL_SOURCE_TYPE,
-        actor_id=actor_id,
+        resolve=lambda: session.execute(
+            select(DataSource).where(
+                DataSource.tenant_id == str(tenant_id),
+                DataSource.code == MANUAL_SOURCE_CODE,
+            )
+        ).scalar_one_or_none(),
+        insert=lambda: register_data_source(
+            session,
+            tenant_id=str(tenant_id),
+            code=MANUAL_SOURCE_CODE,
+            name=MANUAL_SOURCE_NAME,
+            source_type=MANUAL_SOURCE_TYPE,
+            actor_id=actor_id,
+        ),
     )
 
 
@@ -145,7 +150,7 @@ def record_transaction_record(
         session,
         entity=entity,
         event_type=TRANSACTION_RECORD_EVENT,
-        action="record",
+        action=ACTION_RECORD,
         after_value=after_value,
         actor=actor,
         now=now,
@@ -169,7 +174,7 @@ def record_transaction_reverse(
         session,
         entity=entity,
         event_type=TRANSACTION_REVERSE_EVENT,
-        action="reverse",
+        action=ACTION_REVERSE,
         after_value=after_value,
         actor=actor,
         justification=reason,

@@ -21,6 +21,13 @@ make docs-check   # scripts/check_docs.py
 make check        # all of the above
 ```
 
+Enable the fast pre-commit gate (MD-H1; format + lint on every commit — the CI-#136 class becomes
+uncommittable; full `make check` remains the pre-push bar):
+
+```bash
+git config core.hooksPath .githooks
+```
+
 Run the API locally (needs the database at head — see below):
 
 ```bash

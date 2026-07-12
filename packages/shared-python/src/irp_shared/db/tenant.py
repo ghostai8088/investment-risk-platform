@@ -11,6 +11,7 @@ Cross-tenant operational tasks use a separate **BYPASSRLS ops role** (AD-015), n
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any, TypeVar
@@ -48,6 +49,50 @@ def current_tenant(session: Session) -> str | None:
         return None
     value = session.execute(text("SELECT current_setting('app.current_tenant', true)")).scalar()
     return value or None
+
+
+#: The live re-arm listener per session (review fold: re-arming a session for a NEW tenant must
+#: REPLACE the old listener, not stack under it — a stacked stale listener would silently flip the
+#: RLS scope back to the previous tenant on the next transaction).
+_REARM_LISTENERS: weakref.WeakKeyDictionary[Session, Callable[..., None]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def persistent_tenant_context(session: Session, tenant_id: str) -> Callable[[], None]:
+    """Arm ``app.current_tenant`` NOW and RE-ARM it at every new transaction (commit-safe).
+
+    ``set_tenant_context``'s ``SET LOCAL`` semantics auto-clear at COMMIT/ROLLBACK — correct for
+    the per-request app path (one transaction per request), but a recurring trap for LONG-LIVED
+    sessions that commit mid-flow and read after (the MD-H1 annex-4 incident: a PG test read 0 rows
+    post-commit because the re-arm was forgotten). This registers an ``after_begin`` listener that
+    re-issues the transaction-local ``set_config`` whenever the session opens a new transaction, so
+    a forgotten manual re-arm can no longer silently drop the tenant scope.
+
+    Re-invoking on the same session (a NEW tenant) REPLACES the prior listener — never stacks
+    (review fold). The dialect check reads the ``connection`` the event delivered, not
+    ``session.get_bind()`` (correct for externally-bound sessions). Returns a ``detach`` callable
+    that removes the listener (call it before dropping back to plain per-transaction scoping).
+    """
+    prior = _REARM_LISTENERS.pop(session, None)
+    if prior is not None:
+        event.remove(session, "after_begin", prior)
+    set_tenant_context(session, tenant_id)
+
+    def _rearm(sess: Session, transaction: Any, connection: Any) -> None:
+        if connection.dialect.name == "postgresql":
+            connection.execute(
+                text("SELECT set_config('app.current_tenant', :t, true)"), {"t": str(tenant_id)}
+            )
+
+    event.listen(session, "after_begin", _rearm)
+    _REARM_LISTENERS[session] = _rearm
+
+    def detach() -> None:
+        if _REARM_LISTENERS.pop(session, None) is _rearm:
+            event.remove(session, "after_begin", _rearm)
+
+    return detach
 
 
 def attach_tenant_reset(engine: Engine) -> None:
