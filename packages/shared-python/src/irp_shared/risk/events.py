@@ -63,6 +63,13 @@ RUN_TYPE_VAR_BACKTEST = "VAR_BACKTEST"
 #: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in BT-1.
 RISK_VAR_BACKTEST_CREATE_EVENT_RESERVED = "RISK.VAR_BACKTEST_CREATE"
 
+#: P3-6 (OD-P3-6-E): the stress/scenario run family — deterministic linear factor-shock P&L over ONE
+#: factor-exposure run x a pinned scenario shock set. DISTINCT from its metric_types (SCENARIO_PNL /
+#: SCENARIO_PNL_TOTAL). Reuses ``risk.run``/``risk.view`` (no mint) + ``CALC.RUN_*`` (no new audit).
+RUN_TYPE_SCENARIO = "SCENARIO"
+#: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in P3-6.
+RISK_SCENARIO_CREATE_EVENT_RESERVED = "RISK.SCENARIO_CREATE"
+
 #: Controlled-vocab ``sensitivity_type`` (plain String, no enum/CHECK; app-side allow-list).
 SENSITIVITY_TYPE_DV01 = "DV01"
 SENSITIVITY_TYPE_SPREAD_DV01 = "SPREAD_DV01"
@@ -100,6 +107,12 @@ VAR_BACKTEST_METRIC_TYPES = (
     METRIC_TYPE_KUPIEC_LR,
     METRIC_TYPE_BASEL_ZONE,
 )
+
+#: P3-6 scenario metric types: one SCENARIO_PNL per exposed factor + one SCENARIO_PNL_TOTAL
+#: (factor_id NULL) carrying the coverage counts. DISTINCT from the run_type (SCENARIO).
+METRIC_TYPE_SCENARIO_PNL = "SCENARIO_PNL"
+METRIC_TYPE_SCENARIO_PNL_TOTAL = "SCENARIO_PNL_TOTAL"
+SCENARIO_METRIC_TYPES = (METRIC_TYPE_SCENARIO_PNL, METRIC_TYPE_SCENARIO_PNL_TOTAL)
 
 
 @dataclass(frozen=True)

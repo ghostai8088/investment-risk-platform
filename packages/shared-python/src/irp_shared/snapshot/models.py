@@ -68,6 +68,11 @@ PURPOSE_BENCHMARK_RELATIVE_INPUT = "BENCHMARK_RELATIVE_INPUT"
 #: of ONE COMPLETED return run (PORTFOLIO_RETURN kind, REUSED) + ALL var_result rows of the
 #: listed VAR runs (VAR kind). The SR 11-7 outcomes-analysis input set.
 PURPOSE_VAR_BACKTEST_INPUT = "VAR_BACKTEST_INPUT"
+#: P3-6 (OD-P3-6-F): the stress/scenario input purpose — pins ALL factor_exposure_result rows of
+#: ONE COMPLETED factor-exposure run (FACTOR_EXPOSURE kind, REUSED — the exposures shocked) + the
+#: scenario definition header & its OPEN shock set (SCENARIO kind). The tenth governed number's
+#: input set. A later shock supersede is invisible to the pin (TR-09).
+PURPOSE_SCENARIO_INPUT = "SCENARIO_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -81,6 +86,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_RETURN_INPUT,
     PURPOSE_BENCHMARK_RELATIVE_INPUT,
     PURPOSE_VAR_BACKTEST_INPUT,
+    PURPOSE_SCENARIO_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -146,6 +152,11 @@ COMPONENT_KIND_BENCHMARK_RETURN = "BENCHMARK_RETURN"
 #: true-append-only pin flavor (full immutable column set; byte-identical on re-verify).
 #: ``target_entity_type='var_result'``.
 COMPONENT_KIND_VAR = "VAR"
+#: P3-6 (OD-P3-6-F): a pinned ``scenario_shock`` (ENT-029, FR) row — the ``benchmark_constituent``
+#: per-row FR flavor (ONE component per OPEN shock, the scenario definition header identity carried
+#: in each component's content; a later shock supersede/correction is invisible to the pin, TR-09).
+#: ``target_entity_type='scenario_definition'``.
+COMPONENT_KIND_SCENARIO = "SCENARIO"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -162,6 +173,7 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO_RETURN,
     COMPONENT_KIND_BENCHMARK_RETURN,
     COMPONENT_KIND_VAR,
+    COMPONENT_KIND_SCENARIO,
 )
 
 

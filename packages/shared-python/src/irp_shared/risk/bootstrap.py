@@ -1075,3 +1075,97 @@ def register_var_backtest_model(
             f"{code_version} (alpha={alpha_key})",
         )
     return version
+
+
+# --- P3-6: the deterministic factor-shock scenario model family (OD-P3-6-D) ---
+
+SCENARIO_MODEL_CODE = "risk.scenario.factor_shock"
+SCENARIO_MODEL_NAME = "Deterministic linear factor-shock scenario P&L (v1)"
+SCENARIO_MODEL_TYPE = "SCENARIO"
+SCENARIO_VERSION_LABEL = "v1"
+SCENARIO_METHODOLOGY_REF = "05_analytics_methodologies/scenario_factor_shock_v1.md"
+
+#: NO free numeric request parameter — the shocks live in the PINNED, versioned scenario content
+#: (audited THERE), not in the model; the model is the fixed APPLICATION RULE. Version identity is
+#: ``code_version`` alone (the active-risk precedent).
+SCENARIO_ASSUMPTIONS: tuple[str, ...] = (
+    "Deterministic LINEAR first-order P&L over the pinned per-factor exposures of ONE COMPLETED "
+    "FACTOR_EXPOSURE run: pnl_i = quantize_HALF_UP(exposure_i * shock_i, 6) per factor; total = "
+    "sum of the per-factor rows (the same linear factor substrate dV = sum x_i*r_i every risk "
+    "number uses). A shock is a signed RETURN fraction (-0.10 = -10%); the shock vector is the "
+    "pinned scenario content, NOT a request parameter.",
+    "Partial-coverage semantics (OD-P3-6-G): an exposed factor the scenario does NOT name is "
+    "shock 0 (a deterministic scenario is a COMPLETE specification of what moves — 'unnamed = "
+    "unchanged', NOT statistical imputation). Every exposed factor gets a result row (its shock "
+    "echoed, 0 included); the TOTAL row carries n_factors_exposed / n_factors_shocked / "
+    "n_shocks_unmatched. A shock naming a factor with no exposure produces no row (counted in "
+    "n_shocks_unmatched).",
+    "CURRENCY factor family only (v1 platform scope; enforced at the shock binder). RETURN shock "
+    "type only. Computed in Decimal; base currency = the exposure run's base.",
+)
+
+SCENARIO_LIMITATIONS: tuple[str, ...] = (
+    "LINEAR first-order only — NO instrument revaluation, convexity, gamma, or path dependence; a "
+    "large shock on a nonlinear book is mis-stated with no warning beyond this limitation.",
+    "DECLARED shocks only (whatever their provenance — hypothetical / offline-historical / "
+    "regulatory). In-platform historical-window replay (shocks computed from the captured "
+    "factor_return series) is a recorded v2; worst-case / plausibility-constrained scenario search "
+    "(Studer 1997; Breuer et al. 2009) is a recorded v3.",
+    "scenario_type is a PROVENANCE LABEL, not an attestation — REGULATORY does not imply approval; "
+    "maker-checker on definitions is the P7 validation workflow.",
+    "Inherits the captured-holdings-book limitation from the consumed exposure run.",
+    "validation_status UNVALIDATED — recorded, non-enforcing until the P7 validation workflow.",
+)
+
+
+def register_scenario_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the scenario ``model`` + a ``model_version`` for this
+    ``code_version`` identity (P3-6, OD-P3-6-D). NO free numeric request parameter — the shocks are
+    the pinned scenario content — so version resolution keys on ``code_version`` alone (the
+    active-risk precedent); a same-label re-register with a different code_version is a conflict."""
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=SCENARIO_MODEL_CODE,
+        name=SCENARIO_MODEL_NAME,
+        model_type=SCENARIO_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Deterministic linear factor-shock scenario P&L over the pinned exposures of one "
+            "COMPLETED factor-exposure run x a pinned versioned scenario shock set (P3-6, ENT-030)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=SCENARIO_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=SCENARIO_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=SCENARIO_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=SCENARIO_ASSUMPTIONS,
+            limitations=SCENARIO_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    # Identity/conflict checks run unconditionally: trivially pass for a row THIS call minted, catch
+    # a squatted (non-REGISTERED) or code_version-mismatched peer.
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    if version.code_version != str(code_version):
+        raise ModelVersionConflictError(
+            SCENARIO_MODEL_CODE, SCENARIO_VERSION_LABEL, str(code_version)
+        )
+    return version

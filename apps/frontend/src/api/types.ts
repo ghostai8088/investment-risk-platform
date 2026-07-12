@@ -68,6 +68,7 @@ export const FAMILIES = {
     label: "VaR backtests",
     permissionFamily: "risk",
   },
+  scenarios: { runType: "SCENARIO", label: "Scenarios", permissionFamily: "risk" },
 } as const;
 
 export type Family = keyof typeof FAMILIES;
@@ -82,6 +83,7 @@ export const RUN_TYPE_TO_FAMILY: Record<string, Family> = {
   PORTFOLIO_RETURN: "portfolio-returns",
   BENCHMARK_RELATIVE: "benchmark-relative",
   VAR_BACKTEST: "var-backtests",
+  SCENARIO: "scenarios",
 };
 
 /** The run-detail fetch URL for a family: exposure and the perf families have their own endpoint
@@ -92,6 +94,9 @@ export function runDetailUrl(family: Family, runId: string): string {
   if (family === "exposure") return `/exposure/runs/${id}`;
   if (family === "portfolio-returns") return `/perf/portfolio-returns/runs/${id}`;
   if (family === "benchmark-relative") return `/perf/benchmark-relative/runs/${id}`;
+  // Scenario runs are a separate collection (/risk/scenario-runs/{id}) so the run path never
+  // collides with /risk/scenarios/{scenario_id} (the definition + its shocks).
+  if (family === "scenarios") return `/risk/scenario-runs/${id}`;
   return `/risk/${family}/runs/${id}`;
 }
 
@@ -199,6 +204,19 @@ export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]
     { key: "basel_zone", label: "Basel zone" },
     { key: "n_pairs", label: "Pairs" },
     { key: "n_exceptions", label: "Exceptions" },
+    { key: "base_currency", label: "Base ccy" },
+  ],
+  scenarios: [
+    { key: "metric_type", label: "Metric" },
+    { key: "scenario_code", label: "Scenario" },
+    { key: "factor_code", label: "Factor" },
+    { key: "factor_family", label: "Family" },
+    { key: "shock_value", label: "Shock" },
+    { key: "exposure_amount", label: "Exposure" },
+    { key: "pnl", label: "P&L" },
+    { key: "n_factors_exposed", label: "Exposed" },
+    { key: "n_factors_shocked", label: "Shocked" },
+    { key: "n_shocks_unmatched", label: "Unmatched" },
     { key: "base_currency", label: "Base ccy" },
   ],
 };

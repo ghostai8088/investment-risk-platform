@@ -88,6 +88,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_PORTFOLIO_RETURN,
     COMPONENT_KIND_POSITION,
+    COMPONENT_KIND_SCENARIO,
     COMPONENT_KIND_TRANSACTION,
     COMPONENT_KIND_VALUATION,
     COMPONENT_KIND_VAR,
@@ -96,6 +97,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_RETURN_INPUT,
+    PURPOSE_SCENARIO_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
     PURPOSE_VAR_BACKTEST_INPUT,
     PURPOSE_VAR_HS_INPUT,
@@ -119,6 +121,7 @@ from irp_shared.snapshot.serialize import (
     portfolio_content,
     portfolio_return_content,
     position_content,
+    scenario_shock_content,
     serialize_content,
     transaction_content,
     valuation_content,
@@ -923,6 +926,23 @@ def _resolve_benchmark_constituent_row(session: Session, row_id: str, *, acting_
     return row
 
 
+def _resolve_scenario_shock_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``scenario_shock`` FR row by surrogate id with an EXPLICIT tenant predicate
+    (models-only function-local import — the ``_resolve_benchmark_constituent_row`` precedent; the
+    risk SERVICE is never imported here). Used by ``_reresolve_content`` for SCENARIO components."""
+    from irp_shared.risk.scenario_models import ScenarioShock  # models-only (no cycle)
+
+    row = session.execute(
+        select(ScenarioShock).where(
+            ScenarioShock.id == str(row_id),
+            ScenarioShock.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ScenarioSnapshotError(f"scenario shock {row_id} is not visible")
+    return row
+
+
 def _list_factor_exposure_rows(session: Session, run_id: str, *, acting_tenant: str) -> list[Any]:
     """The ``factor_exposure_result`` rows of a run (tenant-scoped, stable order; models-only
     function-local import — the reader twin of ``risk.factor_service.list_factor_exposures``,
@@ -1681,6 +1701,95 @@ def build_var_backtest_snapshot(
     return header_row
 
 
+class ScenarioSnapshotError(Exception):
+    """A scenario-input snapshot cannot be built (empty exposure run / empty shock set) — raised
+    BEFORE any write; never mints immutable governance garbage."""
+
+
+#: The scenario binding/selection rule (OD-P3-6-F): every exposure row + every open shock.
+SCENARIO_BINDING_PREDICATE = "v1:fexp-run-rows+scenario-shocks"
+
+
+def build_scenario_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    factor_exposure_run_id: str,
+    scenario_definition_id: str,
+) -> DatasetSnapshot:
+    """Build one immutable ``SCENARIO_INPUT`` snapshot (P3-6, OD-P3-6-F) pinning:
+
+    - one ``COMPONENT_KIND_FACTOR_EXPOSURE`` per ``factor_exposure_result`` row of the consumed
+      run (REUSED — the exposures the scenario shocks); and
+    - one ``COMPONENT_KIND_SCENARIO`` per OPEN ``scenario_shock`` of the definition (the
+      ``benchmark_constituent`` per-row FR flavor — each carries the definition identity),
+
+    so a scenario run is reproducible from the snapshot alone (the binder reads this captured
+    content — never a live result/shock read; a later shock supersede cannot move a historical run,
+    TR-09). An exposure run with NO visible rows, or a definition with NO open shocks, fails closed
+    BEFORE any write (:class:`ScenarioSnapshotError`). The exposed↔shock adjudication is the RISK
+    binder's pre-create gate — this builder pins a well-formed set; it imports NO ``calc``/``risk``
+    SERVICE symbol (both sides are models-only reads)."""
+    # The binder reads (no cycle): reuse the SAME open-shock query the /scenarios/{id}/shocks
+    # endpoint serves, so the pinned set can never diverge from the live list a caller sees.
+    from irp_shared.risk.scenario import list_scenario_shocks, resolve_scenario_definition
+
+    now = utcnow()
+    valid_at = known = now  # both sides pinned as-known-now (the build_var precedent).
+
+    exposure_rows = _list_factor_exposure_rows(
+        session, factor_exposure_run_id, acting_tenant=acting_tenant
+    )
+    if not exposure_rows:
+        raise ScenarioSnapshotError(
+            f"factor-exposure run {factor_exposure_run_id} has no visible result rows to pin"
+        )
+    definition = resolve_scenario_definition(
+        session, scenario_definition_id, acting_tenant=acting_tenant
+    )
+    shocks = list_scenario_shocks(
+        session, scenario_definition_id=str(definition.id), acting_tenant=acting_tenant
+    )
+    if not shocks:
+        raise ScenarioSnapshotError(
+            f"scenario {scenario_definition_id} has no open shocks — nothing to apply"
+        )
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in exposure_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_FACTOR_EXPOSURE,
+            "factor_exposure_result",
+            row,
+            factor_exposure_content(row),
+        )
+    for shock in shocks:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_SCENARIO,
+            "scenario_shock",  # the pinned ROW is a shock (its id is target_entity_id), NOT the
+            shock,  # definition — the benchmark_constituent per-row FR precedent; keeps the
+            scenario_shock_content(definition, shock),  # provenance type/id consistent + lets
+        )  # _reresolve_content re-read the row by its true type (verify_snapshot integrity)
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_SCENARIO_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=now.date(),
+        binding_predicate_version=SCENARIO_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -1815,6 +1924,21 @@ def _reresolve_content(
             session, comp.target_entity_id, acting_tenant=acting_tenant
         )
         return benchmark_membership_content(benchmark, constituent)
+    if comp.component_kind == COMPONENT_KIND_SCENARIO:
+        # Re-read the scenario DEFINITION (from the pinned id) + the shock FR row by surrogate id
+        # (tenant-predicated). A gone/cross-tenant row reports as drift; a superseded/corrected row
+        # is byte-stable (its immutable content is what was pinned — TR-09). Without this branch a
+        # SCENARIO_INPUT snapshot would fall through to portfolio_content and ALWAYS report drift.
+        from irp_shared.risk.scenario import resolve_scenario_definition  # binder read (no cycle)
+
+        pinned = json.loads(comp.captured_content)
+        definition = resolve_scenario_definition(
+            session, str(pinned["scenario_definition_id"]), acting_tenant=acting_tenant
+        )
+        shock = _resolve_scenario_shock_row(
+            session, comp.target_entity_id, acting_tenant=acting_tenant
+        )
+        return scenario_shock_content(definition, shock)
     return portfolio_content(
         resolve_portfolio(session, comp.target_entity_id, acting_tenant=acting_tenant)
     )
@@ -1971,6 +2095,7 @@ _BINDING_PREDICATES = (
     RETURN_BINDING_PREDICATE,
     BENCHMARK_RELATIVE_BINDING_PREDICATE,
     VAR_BACKTEST_BINDING_PREDICATE,
+    SCENARIO_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "

@@ -22,12 +22,15 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, map_refusal, require_permission
+from irp_shared.db.integrity import is_unique_violation
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
 from irp_shared.exposure.service import ExposureRunNotVisible
@@ -56,7 +59,18 @@ from irp_shared.risk import (
     HsVarInputError,
     HsVarRunResult,
     ModelVersionConflictError,
+    NoCurrentScenarioShock,
     RiskRunQueryError,
+    ScenarioActor,
+    ScenarioDefinition,
+    ScenarioInputError,
+    ScenarioNotVisible,
+    ScenarioResult,
+    ScenarioResultNotVisible,
+    ScenarioRunNotVisible,
+    ScenarioRunResult,
+    ScenarioShock,
+    ScenarioValueError,
     SensitivityActor,
     SensitivityInputError,
     SensitivityNotVisible,
@@ -76,17 +90,25 @@ from irp_shared.risk import (
     VarRunNotVisible,
     VarRunResult,
     WrongModelVersionError,
+    capture_scenario_shock,
+    correct_scenario_shock,
+    create_scenario_definition,
     list_active_risks,
     list_covariances,
     list_factor_exposures,
     list_risk_runs,
+    list_scenario_definitions,
+    list_scenario_results,
+    list_scenario_shocks,
     list_sensitivities,
     list_var_backtests,
     list_vars,
+    reconstruct_scenario_shock_as_of,
     register_active_risk_model,
     register_covariance_model,
     register_factor_exposure_model,
     register_historical_var_model,
+    register_scenario_model,
     register_sensitivity_model,
     register_var_backtest_model,
     register_var_model,
@@ -97,6 +119,8 @@ from irp_shared.risk import (
     resolve_factor_exposure,
     resolve_factor_exposure_run,
     resolve_run,
+    resolve_scenario_definition,
+    resolve_scenario_run,
     resolve_sensitivity,
     resolve_var,
     resolve_var_backtest,
@@ -105,10 +129,13 @@ from irp_shared.risk import (
     run_active_risk,
     run_covariance,
     run_factor_exposure,
+    run_scenario,
     run_sensitivities,
     run_var,
     run_var_backtest,
     run_var_historical,
+    supersede_scenario_shock,
+    update_scenario_definition,
 )
 from irp_shared.risk.queries import LIST_LIMIT_DEFAULT
 from irp_shared.snapshot import (
@@ -118,6 +145,7 @@ from irp_shared.snapshot import (
     CurveSnapshotError,
     EmptySnapshotError,
     FactorExposureSnapshotError,
+    ScenarioSnapshotError,
     SnapshotNotFound,
     SnapshotPurposeError,
     VarBacktestSnapshotError,
@@ -192,6 +220,16 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
         status.HTTP_409_CONFLICT,
         "var-backtest snapshot input failed closed",
     ),
+    ScenarioInputError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid scenario run input"),
+    ScenarioSnapshotError: (
+        status.HTTP_409_CONFLICT,
+        "scenario snapshot input failed closed",
+    ),
+    ScenarioValueError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid scenario input"),
+    NoCurrentScenarioShock: (status.HTTP_409_CONFLICT, "no current scenario shock to supersede"),
+    ScenarioNotVisible: (status.HTTP_404_NOT_FOUND, "scenario not found"),
+    ScenarioRunNotVisible: (status.HTTP_404_NOT_FOUND, "scenario run not found"),
+    ScenarioResultNotVisible: (status.HTTP_404_NOT_FOUND, "scenario result not found"),
     FactorExposureRunNotVisible: (status.HTTP_404_NOT_FOUND, "factor-exposure run not found"),
     CovarianceRunNotVisible: (status.HTTP_404_NOT_FOUND, "covariance run not found"),
     BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
@@ -1741,3 +1779,497 @@ def get_var_backtest(
             status_code=status.HTTP_404_NOT_FOUND, detail="var-backtest result not found"
         ) from None
     return _var_backtest_row_out(row)
+
+
+# ---------- P3-6: stress/scenario (ENT-029/030 — the tenth governed number) ----------
+
+
+class ScenarioDefinitionIn(BaseModel):
+    code: str
+    name: str
+    scenario_type: str  # HYPOTHETICAL | HISTORICAL | REGULATORY (binder-enforced)
+    description: str | None = None
+    valid_from: datetime | None = None  # capture-only EV valid-time; defaults to now
+
+
+class ScenarioDefinitionUpdateIn(BaseModel):
+    name: str | None = None
+    scenario_type: str | None = None
+    description: str | None = None
+
+
+class ScenarioShockIn(BaseModel):
+    factor_id: uuid.UUID
+    shock_value: Decimal  # a signed RETURN fraction (-0.10 = -10%)
+    shock_type: str = "RETURN"
+    valid_from: datetime | None = None  # capture-only; a supersede uses effective_at
+
+
+class ScenarioShockSupersedeIn(BaseModel):
+    factor_id: uuid.UUID
+    shock_value: Decimal
+    shock_type: str = "RETURN"
+    effective_at: datetime
+
+
+class ScenarioShockCorrectIn(BaseModel):
+    factor_id: uuid.UUID
+    shock_value: Decimal
+    shock_type: str = "RETURN"
+    restatement_reason: str
+
+
+class ScenarioDefinitionOut(BaseModel):
+    id: str
+    code: str
+    name: str
+    scenario_type: str
+    description: str | None
+    record_version: int
+
+
+class ScenarioShockOut(BaseModel):
+    id: str
+    scenario_definition_id: str
+    factor_id: str
+    shock_value: str  # fixed-point, never scientific
+    shock_type: str
+    record_version: int
+    valid_from: datetime
+    valid_to: datetime | None
+
+
+class ScenarioModelIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+
+
+class ScenarioRunIn(BaseModel):
+    code_version: str
+    environment_id: str
+    model_version_id: uuid.UUID  # a REGISTERED risk.scenario.factor_shock version (CTRL-003)
+    # build-in-request (both) XOR consume-existing (snapshot_id) — the P3-C1 gate.
+    factor_exposure_run_id: uuid.UUID | None = None
+    scenario_definition_id: uuid.UUID | None = None
+    snapshot_id: uuid.UUID | None = None
+
+
+class ScenarioRowOut(BaseModel):
+    id: str
+    metric_type: str  # SCENARIO_PNL | SCENARIO_PNL_TOTAL
+    scenario_definition_id: str
+    scenario_code: str
+    factor_id: str | None  # NULL on the TOTAL row
+    factor_code: str | None
+    factor_family: str | None
+    pnl: str  # fixed-point
+    shock_value: str | None  # echoed input (per-factor rows only)
+    exposure_amount: str | None
+    n_factors_exposed: int | None  # TOTAL row only
+    n_factors_shocked: int | None
+    n_shocks_unmatched: int | None
+    base_currency: str
+    model_version_id: str
+
+
+class ScenarioRunOut(BaseModel):
+    run_id: str
+    status: str
+    run_type: str
+    input_snapshot_id: str | None
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    initiated_by: str
+    failure_reason: str | None
+    rows: list[ScenarioRowOut]
+
+
+def _scenario_actor(principal: Principal) -> ScenarioActor:
+    return ScenarioActor(actor_id=principal.user_id, correlation_id=str(uuid.uuid4()))
+
+
+def _definition_out(row: ScenarioDefinition) -> ScenarioDefinitionOut:
+    return ScenarioDefinitionOut(
+        id=row.id,
+        code=row.code,
+        name=row.name,
+        scenario_type=row.scenario_type,
+        description=row.description,
+        record_version=row.record_version,
+    )
+
+
+def _shock_out(row: ScenarioShock) -> ScenarioShockOut:
+    return ScenarioShockOut(
+        id=row.id,
+        scenario_definition_id=row.scenario_definition_id,
+        factor_id=row.factor_id,
+        shock_value=f"{row.shock_value:f}",
+        shock_type=row.shock_type,
+        record_version=row.record_version,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+    )
+
+
+def _scenario_row_out(row: ScenarioResult) -> ScenarioRowOut:
+    return ScenarioRowOut(
+        id=row.id,
+        metric_type=row.metric_type,
+        scenario_definition_id=row.scenario_definition_id,
+        scenario_code=row.scenario_code,
+        factor_id=row.factor_id,
+        factor_code=row.factor_code,
+        factor_family=row.factor_family,
+        pnl=f"{row.pnl:f}",
+        shock_value=(None if row.shock_value is None else f"{row.shock_value:f}"),
+        exposure_amount=(None if row.exposure_amount is None else f"{row.exposure_amount:f}"),
+        n_factors_exposed=row.n_factors_exposed,
+        n_factors_shocked=row.n_factors_shocked,
+        n_shocks_unmatched=row.n_shocks_unmatched,
+        base_currency=row.base_currency,
+        model_version_id=row.model_version_id,
+    )
+
+
+def _scenario_run_out(result: ScenarioRunResult) -> ScenarioRunOut:
+    run = result.run
+    return ScenarioRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_scenario_row_out(r) for r in result.rows],
+    )
+
+
+def _raise_scenario_write(db: Session, exc: Exception) -> None:
+    """Roll back, then map a scenario-write refusal. A unique-violation IntegrityError is a 409 with
+    a detail DISCRIMINATED by which current-head constraint collided (the shared raiser serves both
+    the definition-code path and the shock path — a shock-worded message on a duplicate code would
+    misdescribe the conflict); any other integrity failure stays a loud 500."""
+    db.rollback()
+    if isinstance(exc, IntegrityError):
+        if not is_unique_violation(exc):
+            raise exc
+        text = str(getattr(exc, "orig", exc))
+        if "scenario_shock" in text:
+            detail = "a current open shock already exists for this (scenario, factor)"
+        elif "scenario_definition" in text:
+            detail = "a scenario definition with this code already exists"
+        else:
+            detail = "a conflicting current-head scenario row already exists"
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from None
+    code, detail = _map_error(exc)
+    raise HTTPException(status_code=code, detail=detail) from None
+
+
+@router.post(
+    "/scenarios", response_model=ScenarioDefinitionOut, status_code=status.HTTP_201_CREATED
+)
+def create_scenario(
+    body: ScenarioDefinitionIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> ScenarioDefinitionOut:
+    """Create a versioned scenario definition (EV; ``risk.run``-gated — defining IS the running
+    persona's action). An out-of-vocab ``scenario_type`` is 422; a duplicate ``code`` is 409."""
+    try:
+        row = create_scenario_definition(
+            db,
+            code=body.code,
+            name=body.name,
+            scenario_type=body.scenario_type,
+            acting_tenant=principal.tenant_id,
+            actor=_scenario_actor(principal),
+            description=body.description,
+            valid_from=body.valid_from,
+        )
+    except (ScenarioValueError, IntegrityError) as exc:
+        _raise_scenario_write(db, exc)
+    out = _definition_out(row)
+    db.commit()
+    return out
+
+
+@router.post("/scenarios/{scenario_id}/update", response_model=ScenarioDefinitionOut)
+def update_scenario(
+    scenario_id: uuid.UUID,
+    body: ScenarioDefinitionUpdateIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> ScenarioDefinitionOut:
+    """In-place EV re-version of a scenario header (``record_version`` bump)."""
+    try:
+        definition = resolve_scenario_definition(
+            db, str(scenario_id), acting_tenant=principal.tenant_id
+        )
+        row = update_scenario_definition(
+            db,
+            definition,
+            acting_tenant=principal.tenant_id,
+            actor=_scenario_actor(principal),
+            name=body.name,
+            scenario_type=body.scenario_type,
+            description=body.description,
+        )
+    except (ScenarioNotVisible, ScenarioValueError) as exc:
+        _raise_scenario_write(db, exc)
+    out = _definition_out(row)
+    db.commit()
+    return out
+
+
+@router.get("/scenarios", response_model=list[ScenarioDefinitionOut])
+def list_scenarios(
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[ScenarioDefinitionOut]:
+    """List the tenant's scenario definitions (read-only)."""
+    rows = list_scenario_definitions(db, acting_tenant=principal.tenant_id)
+    return [_definition_out(r) for r in rows]
+
+
+@router.get("/scenarios/{scenario_id}/shocks", response_model=list[ScenarioShockOut])
+def list_shocks(
+    scenario_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[ScenarioShockOut]:
+    """The current-head shock set of a scenario (read-only)."""
+    try:
+        resolve_scenario_definition(db, str(scenario_id), acting_tenant=principal.tenant_id)
+    except ScenarioNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="scenario not found"
+        ) from None
+    rows = list_scenario_shocks(
+        db, scenario_definition_id=str(scenario_id), acting_tenant=principal.tenant_id
+    )
+    return [_shock_out(r) for r in rows]
+
+
+@router.post(
+    "/scenarios/{scenario_id}/shocks",
+    response_model=ScenarioShockOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def capture_shock(
+    scenario_id: uuid.UUID,
+    body: ScenarioShockIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> ScenarioShockOut:
+    """Capture the first open shock for a (scenario, factor). Vocab/finiteness/CURRENCY-scope are
+    422; a duplicate open shock is a discriminated 409."""
+    try:
+        row = capture_scenario_shock(
+            db,
+            scenario_definition_id=str(scenario_id),
+            factor_id=str(body.factor_id),
+            shock_value=body.shock_value,
+            acting_tenant=principal.tenant_id,
+            actor=_scenario_actor(principal),
+            shock_type=body.shock_type,
+            valid_from=body.valid_from,
+        )
+    except (ScenarioNotVisible, ScenarioValueError, DataQualityError, IntegrityError) as exc:
+        _raise_scenario_write(db, exc)
+    out = _shock_out(row)
+    db.commit()
+    return out
+
+
+@router.post(
+    "/scenarios/{scenario_id}/shocks/supersede",
+    response_model=ScenarioShockOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def supersede_shock(
+    scenario_id: uuid.UUID,
+    body: ScenarioShockSupersedeIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> ScenarioShockOut:
+    """Effective-dated re-capture of a shock (valid-time). A backdated ``effective_at`` (window
+    incoherence, MD-H1) is 422; no open head is 409."""
+    try:
+        row = supersede_scenario_shock(
+            db,
+            scenario_definition_id=str(scenario_id),
+            factor_id=str(body.factor_id),
+            shock_value=body.shock_value,
+            acting_tenant=principal.tenant_id,
+            actor=_scenario_actor(principal),
+            effective_at=body.effective_at,
+            shock_type=body.shock_type,
+        )
+    except (ScenarioValueError, NoCurrentScenarioShock, DataQualityError, IntegrityError) as exc:
+        _raise_scenario_write(db, exc)
+    out = _shock_out(row)
+    db.commit()
+    return out
+
+
+@router.post(
+    "/scenarios/{scenario_id}/shocks/correct",
+    response_model=ScenarioShockOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def correct_shock(
+    scenario_id: uuid.UUID,
+    body: ScenarioShockCorrectIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> ScenarioShockOut:
+    """As-known (system-time) correction of a shock (TR-08; a restatement_reason is required)."""
+    try:
+        row = correct_scenario_shock(
+            db,
+            scenario_definition_id=str(scenario_id),
+            factor_id=str(body.factor_id),
+            shock_value=body.shock_value,
+            restatement_reason=body.restatement_reason,
+            acting_tenant=principal.tenant_id,
+            actor=_scenario_actor(principal),
+            shock_type=body.shock_type,
+        )
+    except (ScenarioValueError, NoCurrentScenarioShock, DataQualityError, IntegrityError) as exc:
+        _raise_scenario_write(db, exc)
+    out = _shock_out(row)
+    db.commit()
+    return out
+
+
+@router.get("/scenarios/{scenario_id}/shocks/as-of", response_model=ScenarioShockOut)
+def get_shock_as_of(
+    scenario_id: uuid.UUID,
+    factor_id: uuid.UUID,
+    valid_at: datetime,
+    known_at: datetime,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> ScenarioShockOut:
+    """The bitemporal reconstruct of one shock (read-only). 404 if no version covers both."""
+    row = reconstruct_scenario_shock_as_of(
+        db,
+        scenario_definition_id=str(scenario_id),
+        factor_id=str(factor_id),
+        valid_at=valid_at,
+        known_at=known_at,
+        acting_tenant=principal.tenant_id,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="no scenario shock as-of that instant"
+        )
+    return _shock_out(row)
+
+
+@router.post(
+    "/models/scenario", response_model=SensitivityModelOut, status_code=status.HTTP_201_CREATED
+)
+def register_scenario(
+    body: ScenarioModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed scenario model + a model_version for this
+    ``code_version`` identity and return its id (a same-label re-register with a different
+    ``code_version`` is a 409)."""
+    try:
+        version = register_scenario_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+        )
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post("/scenario-runs", response_model=ScenarioRunOut, status_code=status.HTTP_201_CREATED)
+def create_scenario_run(
+    body: ScenarioRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> ScenarioRunOut:
+    """Run a governed factor-shock scenario. A pre-create refusal raises + rolls back (no run —
+    422/404/409); a post-create FAILED run is committed (``status='FAILED'``, zero rows — the
+    magnitude gate)."""
+    try:
+        result = run_scenario(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_scenario_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            factor_exposure_run_id=(
+                None if body.factor_exposure_run_id is None else str(body.factor_exposure_run_id)
+            ),
+            scenario_definition_id=(
+                None if body.scenario_definition_id is None else str(body.scenario_definition_id)
+            ),
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        ScenarioInputError,
+        UnregisteredModelError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        ScenarioSnapshotError,
+    ) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    response = _scenario_run_out(result)
+    db.commit()
+    return response
+
+
+@router.get("/scenario-runs/{run_id}", response_model=ScenarioRunOut)
+def get_scenario_run(
+    run_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> ScenarioRunOut:
+    """Read a scenario run + its result rows (tenant-scoped; read-only). A committed FAILED run
+    (zero rows) is surfaced with ``status='FAILED'``, NOT a 404."""
+    try:
+        run = resolve_scenario_run(db, str(run_id), acting_tenant=principal.tenant_id)
+    except ScenarioRunNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="scenario run not found"
+        ) from None
+    rows = list_scenario_results(db, run_id=str(run_id), acting_tenant=principal.tenant_id)
+    return ScenarioRunOut(
+        run_id=run.run_id,
+        status=run.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=run.failure_reason,
+        rows=[_scenario_row_out(r) for r in rows],
+    )
