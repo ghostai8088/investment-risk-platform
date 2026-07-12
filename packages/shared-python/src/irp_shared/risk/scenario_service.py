@@ -32,8 +32,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
+from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
@@ -224,20 +225,14 @@ def _resolve_run(
     session: Session, run_id: str, *, acting_tenant: str, run_type: str, label: str
 ) -> CalculationRun:
     """Resolve a COMPLETED run of the expected type under the acting tenant (fail-closed)."""
-    run = session.execute(
-        select(CalculationRun).where(
-            CalculationRun.run_id == str(run_id),
-            CalculationRun.tenant_id == str(acting_tenant),
-            CalculationRun.run_type == run_type,
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise ScenarioInputError(f"{label} run {run_id} is not a visible {run_type} run — refused")
-    if run.status != RunStatus.COMPLETED.value:
-        raise ScenarioInputError(
-            f"{label} run {run_id} status {run.status!r} != COMPLETED — refused"
-        )
-    return run
+    return resolve_completed_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=run_type,
+        label=label,
+        error=ScenarioInputError,
+    )
 
 
 def run_scenario(
@@ -454,13 +449,10 @@ def list_scenario_results(
 
 def resolve_scenario_run(session: Session, run_id: str, *, acting_tenant: str) -> CalculationRun:
     """Resolve a SCENARIO ``calculation_run`` by id (tenant + run_type predicated; fail-closed)."""
-    run = session.execute(
-        select(CalculationRun).where(
-            CalculationRun.run_id == str(run_id),
-            CalculationRun.tenant_id == str(acting_tenant),
-            CalculationRun.run_type == RUN_TYPE_SCENARIO,
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise ScenarioRunNotVisible(str(run_id))
-    return run
+    return resolve_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_SCENARIO,
+        not_visible=ScenarioRunNotVisible,
+    )
