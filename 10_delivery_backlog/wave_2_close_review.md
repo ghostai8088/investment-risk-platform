@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **DRAFT for ratification (2026-07-12).** Wave-3 proposal below (Part 5); each Wave-3 slice still gets its own decision record + plan + OQ ratification + adversarial review. Delivery now runs under the **full-autonomy grant** (2026-07-12): Claude self-drives plan→implement→review→commit→push; the USER opens+merges every PR to `main` and signs off Tier-3 decisions (incl. THIS document's OQs). |
+| Status | **RATIFIED by the user (2026-07-12: "Approved" — OQ-W2C-1…5 all approved as recommended).** Wave 3 = RD-1 (dedup) → PA-1 (desmoothing, the thesis payload) → PA-2 (proxy-risk end-to-end); each Wave-3 slice still gets its own decision record + plan + OQ ratification + adversarial review. Delivery runs under the **full-autonomy grant** (2026-07-12): Claude self-drives plan→implement→review→commit→push; the USER opens+merges every PR to `main` and signs off Tier-3 decisions. |
 | Contract | `delivery_roadmap.md` Part 2.5 tail: "Wave-2 close = the same mandatory review + re-baseline (incl. the rule-6(b) outward benchmark review + the destination-progress check)." Plus Part 4 rule 6(b) / `differentiation_thesis.md` §2.1: an **outward-facing benchmark review** and an **explicit evaluation of progress toward the public+private destination**. |
 | Grounding | Verified live at `main` HEAD **`3d5a6d0`** (PRs #1–#15 merged; migration head `0035_scenario`): `make check` **1269** passed / 266 skipped, full-PG **266** (clean-schema, no drift, downgrade smoke clean) + FE **52** green; `npm audit` (full tree, all severities) = **0 vulnerabilities**; local == origin; origin HTTPS (SSH:22 blocked, recorded). |
 
