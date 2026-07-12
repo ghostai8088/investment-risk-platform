@@ -29,6 +29,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.payload import json_safe as _json_safe
 from irp_shared.portfolio import resolve_portfolio
 from irp_shared.reference.instrument import resolve_instrument
 from irp_shared.transaction.models import Transaction
@@ -51,14 +52,6 @@ class TransactionNotVisible(Exception):
             f"transaction {transaction_id} is not visible in the current tenant context"
         )
         self.transaction_id = str(transaction_id)
-
-
-def _json_safe(value: object) -> object:
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, date):
-        return value.isoformat()
-    return value
 
 
 def _after(txn: Transaction) -> dict[str, object]:

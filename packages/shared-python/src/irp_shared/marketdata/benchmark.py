@@ -40,7 +40,11 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CORRECT, ACTION_CREATE, ACTION_UPDATE
+from irp_shared.audit.payload import json_safe as _json_safe
 from irp_shared.audit.service import record_event
+from irp_shared.db.bitemporal import assert_supersede_effective_at
+from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.db.mixins import utcnow
 from irp_shared.dq.models import SEVERITY_ERROR, DataQualityRule
 from irp_shared.dq.rules import RULE_TYPE_NOT_NULL, RULE_TYPE_RANGE
@@ -129,14 +133,6 @@ class NoCurrentMembership(Exception):
         self.effective_date = effective_date
 
 
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, date | datetime):
-        return value.isoformat()
-    return value
-
-
 # --- binder-side value checks (BenchmarkValueError -> 422, BEFORE any write; not the DQ gate) ---
 
 
@@ -171,25 +167,28 @@ def _ensure_rule(
     params: dict[str, Any],
 ) -> DataQualityRule:
     """Resolve-or-register a per-tenant governed DQ rule (audited; the ``curve`` pattern)."""
-    rule = session.execute(
-        select(DataQualityRule).where(
-            DataQualityRule.tenant_id == str(tenant_id),
-            DataQualityRule.code == code,
-        )
-    ).scalar_one_or_none()
-    if rule is not None:
-        return rule
-    return register_dq_rule(
+    # Race-safe (MD-H1 review fold): two concurrent FIRST callers both SELECT-miss then
+    # INSERT the same key; the loser re-resolves the peer instead of aborting the unit.
+    return resolve_or_insert(
         session,
-        tenant_id=str(tenant_id),
-        code=code,
-        name=name,
-        rule_type=rule_type,
-        actor_id=actor.actor_id,
-        params=params,
-        target_entity_type=ENTITY_BENCHMARK,
-        severity=SEVERITY_ERROR,
-        actor_type=actor.actor_type,
+        resolve=lambda: session.execute(
+            select(DataQualityRule).where(
+                DataQualityRule.tenant_id == str(tenant_id),
+                DataQualityRule.code == code,
+            )
+        ).scalar_one_or_none(),
+        insert=lambda: register_dq_rule(
+            session,
+            tenant_id=str(tenant_id),
+            code=code,
+            name=name,
+            rule_type=rule_type,
+            actor_id=actor.actor_id,
+            params=params,
+            target_entity_type=ENTITY_BENCHMARK,
+            severity=SEVERITY_ERROR,
+            actor_type=actor.actor_type,
+        ),
     )
 
 
@@ -257,21 +256,24 @@ def _run_membership_dq_gate(
 def ensure_vendor_source(session: Session, tenant_id: str, actor_id: str) -> DataSource:
     """Idempotently resolve-or-register the acting tenant's shared ``VENDOR_BENCHMARK``
     ``data_source`` (governed provenance root; the ``VENDOR_CURVE`` precedent). Module-local."""
-    existing = session.execute(
-        select(DataSource).where(
-            DataSource.tenant_id == str(tenant_id),
-            DataSource.code == VENDOR_BENCHMARK_SOURCE_CODE,
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    return register_data_source(
+    # Race-safe (MD-H1 review fold): two concurrent FIRST callers both SELECT-miss then
+    # INSERT the same key; the loser re-resolves the peer instead of aborting the unit.
+    return resolve_or_insert(
         session,
-        tenant_id=str(tenant_id),
-        code=VENDOR_BENCHMARK_SOURCE_CODE,
-        name=VENDOR_BENCHMARK_SOURCE_NAME,
-        source_type=VENDOR_BENCHMARK_SOURCE_TYPE,
-        actor_id=actor_id,
+        resolve=lambda: session.execute(
+            select(DataSource).where(
+                DataSource.tenant_id == str(tenant_id),
+                DataSource.code == VENDOR_BENCHMARK_SOURCE_CODE,
+            )
+        ).scalar_one_or_none(),
+        insert=lambda: register_data_source(
+            session,
+            tenant_id=str(tenant_id),
+            code=VENDOR_BENCHMARK_SOURCE_CODE,
+            name=VENDOR_BENCHMARK_SOURCE_NAME,
+            source_type=VENDOR_BENCHMARK_SOURCE_TYPE,
+            actor_id=actor_id,
+        ),
     )
 
 
@@ -408,7 +410,7 @@ def capture_benchmark(
         session,
         benchmark=row,
         event_type=REFERENCE_CREATE_EVENT,
-        action="create",
+        action=ACTION_CREATE,
         after_value=_benchmark_summary(row),
         actor=actor,
         now=now,
@@ -450,7 +452,7 @@ def update_benchmark(
         session,
         benchmark=benchmark,
         event_type=REFERENCE_UPDATE_EVENT,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value={key: _json_safe(getattr(benchmark, key)) for key in changes},
         actor=actor,
@@ -565,7 +567,7 @@ def capture_membership(
         session,
         benchmark=benchmark,
         event_type=MARKET_BENCHMARK_CONSTITUENT_CREATE_EVENT,
-        action="create",
+        action=ACTION_CREATE,
         after_value=_membership_summary(
             benchmark, effective_date=effective_date, constituent_count=len(rows)
         ),
@@ -601,6 +603,8 @@ def supersede_membership(
     if not prior:
         raise NoCurrentMembership(benchmark.id, effective_date)
 
+    for row in prior:  # window-coherence: every closed row must keep a positive-width validity span
+        assert_supersede_effective_at(row.valid_from, effective_at, error=BenchmarkValueError)
     now = now or utcnow()
     for row in prior:  # CLOSE-FIRST (valid-time)
         row.valid_to = effective_at
@@ -609,7 +613,7 @@ def supersede_membership(
         session,
         benchmark=benchmark,
         event_type=MARKET_BENCHMARK_CONSTITUENT_UPDATE_EVENT,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=_membership_summary(
             benchmark, effective_date=effective_date, constituent_count=len(prior)
         ),
@@ -644,7 +648,7 @@ def supersede_membership(
         session,
         benchmark=benchmark,
         event_type=MARKET_BENCHMARK_CONSTITUENT_CREATE_EVENT,
-        action="create",
+        action=ACTION_CREATE,
         after_value=_membership_summary(
             benchmark, effective_date=effective_date, constituent_count=len(rows)
         ),
@@ -690,7 +694,7 @@ def correct_membership(
         session,
         benchmark=benchmark,
         event_type=MARKET_BENCHMARK_CONSTITUENT_UPDATE_EVENT,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=_membership_summary(
             benchmark, effective_date=effective_date, constituent_count=len(prior)
         ),
@@ -725,7 +729,7 @@ def correct_membership(
         session,
         benchmark=benchmark,
         event_type=MARKET_BENCHMARK_CONSTITUENT_CORRECTION_EVENT,
-        action="correct",
+        action=ACTION_CORRECT,
         after_value=_membership_summary(
             benchmark, effective_date=effective_date, constituent_count=len(rows)
         ),

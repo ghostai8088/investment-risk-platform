@@ -33,7 +33,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CORRECT, ACTION_CREATE, ACTION_UPDATE
 from irp_shared.audit.service import record_event
+from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.lineage.models import EDGE_KIND_ORIGIN, DataSource
 from irp_shared.lineage.service import record_lineage, register_data_source
 from irp_shared.position.events import (
@@ -71,21 +73,24 @@ def ensure_manual_source(session: Session, tenant_id: str, actor_id: str) -> Dat
     tenant ``code='MANUAL'`` root; resolve-or-register so it is shared with reference/portfolio/
     transaction writes). Filtered by ``tenant_id`` explicitly so the lookup is correct on SQLite AND
     PG."""
-    existing = session.execute(
-        select(DataSource).where(
-            DataSource.tenant_id == str(tenant_id),
-            DataSource.code == MANUAL_SOURCE_CODE,
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    return register_data_source(
+    # Race-safe (MD-H1 review fold): two concurrent FIRST callers both SELECT-miss then
+    # INSERT the same key; the loser re-resolves the peer instead of aborting the unit.
+    return resolve_or_insert(
         session,
-        tenant_id=str(tenant_id),
-        code=MANUAL_SOURCE_CODE,
-        name=MANUAL_SOURCE_NAME,
-        source_type=MANUAL_SOURCE_TYPE,
-        actor_id=actor_id,
+        resolve=lambda: session.execute(
+            select(DataSource).where(
+                DataSource.tenant_id == str(tenant_id),
+                DataSource.code == MANUAL_SOURCE_CODE,
+            )
+        ).scalar_one_or_none(),
+        insert=lambda: register_data_source(
+            session,
+            tenant_id=str(tenant_id),
+            code=MANUAL_SOURCE_CODE,
+            name=MANUAL_SOURCE_NAME,
+            source_type=MANUAL_SOURCE_TYPE,
+            actor_id=actor_id,
+        ),
     )
 
 
@@ -151,7 +156,7 @@ def record_position_create(
         session,
         entity=entity,
         event_type=POSITION_CREATE_EVENT,
-        action="create",
+        action=ACTION_CREATE,
         after_value=after_value,
         actor=actor,
         now=now,
@@ -173,7 +178,7 @@ def record_position_update(
         session,
         entity=entity,
         event_type=POSITION_UPDATE_EVENT,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before_value,
         after_value=after_value,
         actor=actor,
@@ -199,7 +204,7 @@ def record_position_correction(
         session,
         entity=entity,
         event_type=POSITION_CORRECTION_EVENT,
-        action="correct",
+        action=ACTION_CORRECT,
         after_value=after_value,
         actor=actor,
         justification=restatement_reason,

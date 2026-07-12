@@ -26,12 +26,13 @@ from decimal import ROUND_CEILING, Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.model.models import Model, ModelAssumption, ModelVersion
+from irp_shared.model.models import ModelAssumption, ModelVersion
 from irp_shared.model.service import (
     ModelVersionConflictError,
     WrongModelVersionError,
-    register_model,
     register_model_version,
+    resolve_or_register_model,
+    resolve_or_register_version,
 )
 
 # ``assert_model_version_of`` (+ the two error classes above) were PROMOTED to ``model.service`` at
@@ -125,55 +126,48 @@ def register_sensitivity_model(
     duplicate inventory). The returned ``model_version.id`` is what a sensitivity run binds +
     asserts.
     """
-    model = session.execute(
-        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == SENSITIVITY_MODEL_CODE)
-    ).scalar_one_or_none()
-    if model is None:
-        model = register_model(
-            session,
-            tenant_id=str(tenant_id),
-            code=SENSITIVITY_MODEL_CODE,
-            name=SENSITIVITY_MODEL_NAME,
-            model_type=SENSITIVITY_MODEL_TYPE,
-            actor_id=actor_id,
-            description="Closed-form curve-node DV01 / spread-DV01 (P3-1, ENT-028).",
-            actor_type=actor_type,
-        )
-
-    # The inventory identity is (tenant, model, version_label) — the DB unique key. Resolve on
-    # THAT key; a same-label registration with a DIFFERENT code_version is a governed conflict
-    # (never an IntegrityError 500), because an immutable version cannot be re-pointed.
-    version = session.execute(
-        select(ModelVersion).where(
-            ModelVersion.model_id == model.id,
-            ModelVersion.version_label == SENSITIVITY_VERSION_LABEL,
-        )
-    ).scalar_one_or_none()
-    if version is not None:
-        if version.status != "REGISTERED":
-            # P3-C1 (OD-B residual, 2026-07 review): a same-label twin minted via the
-            # GENERIC registration (status=None) must be a REGISTRATION conflict too —
-            # otherwise register reports success while every bind refuses it (a
-            # register/run contract split; the label is squatted either way, but honestly).
-            raise WrongModelVersionError(str(version.id), str(model.code))
-        if version.code_version != str(code_version):
-            raise ModelVersionConflictError(
-                SENSITIVITY_MODEL_CODE, SENSITIVITY_VERSION_LABEL, str(code_version)
-            )
-        return version
-
-    return register_model_version(
+    # The inventory identity is (tenant, model, version_label) — the DB unique key. Both the model
+    # and the version are resolve-or-register (race-safe savepoint; MD-H1 OD-D): a concurrent first
+    # bootstrap re-SELECTs the peer instead of a 500. A same-label registration with a DIFFERENT
+    # code_version is a governed conflict (never an IntegrityError), because an immutable version
+    # cannot be re-pointed.
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=SENSITIVITY_MODEL_CODE,
+        name=SENSITIVITY_MODEL_NAME,
+        model_type=SENSITIVITY_MODEL_TYPE,
+        actor_id=actor_id,
+        description="Closed-form curve-node DV01 / spread-DV01 (P3-1, ENT-028).",
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
         session,
         model=model,
         version_label=SENSITIVITY_VERSION_LABEL,
-        actor_id=actor_id,
-        methodology_ref=SENSITIVITY_METHODOLOGY_REF,
-        code_version=str(code_version),
-        status="REGISTERED",
-        assumptions=SENSITIVITY_ASSUMPTIONS,
-        limitations=SENSITIVITY_LIMITATIONS,
-        actor_type=actor_type,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=SENSITIVITY_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=SENSITIVITY_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=SENSITIVITY_ASSUMPTIONS,
+            limitations=SENSITIVITY_LIMITATIONS,
+            actor_type=actor_type,
+        ),
     )
+    # Identity/conflict checks run unconditionally on the resolved row: they pass trivially for a
+    # row THIS call minted, and catch a squatted (non-REGISTERED GENERIC-path twin — P3-C1 OD-B)
+    # or code_version-mismatched peer (the race + idempotent re-invocation path).
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    if version.code_version != str(code_version):
+        raise ModelVersionConflictError(
+            SENSITIVITY_MODEL_CODE, SENSITIVITY_VERSION_LABEL, str(code_version)
+        )
+    return version
 
 
 def register_factor_exposure_model(
@@ -190,59 +184,48 @@ def register_factor_exposure_model(
     Re-invocation with the same ``(tenant, code, version_label, code_version)`` returns the
     existing version. The returned ``model_version.id`` is what a factor-exposure run binds +
     asserts pre-create (CTRL-003)."""
-    model = session.execute(
-        select(Model).where(
-            Model.tenant_id == str(tenant_id), Model.code == FACTOR_EXPOSURE_MODEL_CODE
-        )
-    ).scalar_one_or_none()
-    if model is None:
-        model = register_model(
-            session,
-            tenant_id=str(tenant_id),
-            code=FACTOR_EXPOSURE_MODEL_CODE,
-            name=FACTOR_EXPOSURE_MODEL_NAME,
-            model_type=FACTOR_EXPOSURE_MODEL_TYPE,
-            actor_id=actor_id,
-            description=(
-                "Indicator-loading CURRENCY-family factor-exposure allocation over pinned "
-                "exposure atoms (P3-3, ENT-028 family)."
-            ),
-            actor_type=actor_type,
-        )
-
-    # (tenant, model, version_label) is the DB unique key — resolve on it; a different
-    # code_version under the same label is a governed conflict (see the sensitivity twin above).
-    version = session.execute(
-        select(ModelVersion).where(
-            ModelVersion.model_id == model.id,
-            ModelVersion.version_label == FACTOR_EXPOSURE_VERSION_LABEL,
-        )
-    ).scalar_one_or_none()
-    if version is not None:
-        if version.status != "REGISTERED":
-            # P3-C1 (OD-B residual, 2026-07 review): a same-label twin minted via the
-            # GENERIC registration (status=None) must be a REGISTRATION conflict too —
-            # otherwise register reports success while every bind refuses it (a
-            # register/run contract split; the label is squatted either way, but honestly).
-            raise WrongModelVersionError(str(version.id), str(model.code))
-        if version.code_version != str(code_version):
-            raise ModelVersionConflictError(
-                FACTOR_EXPOSURE_MODEL_CODE, FACTOR_EXPOSURE_VERSION_LABEL, str(code_version)
-            )
-        return version
-
-    return register_model_version(
+    # (tenant, model, version_label) is the DB unique key — both legs resolve-or-register (race-safe
+    # savepoint; MD-H1 OD-D). A different code_version under the same label is a governed conflict
+    # (see the sensitivity twin above), never an IntegrityError 500.
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=FACTOR_EXPOSURE_MODEL_CODE,
+        name=FACTOR_EXPOSURE_MODEL_NAME,
+        model_type=FACTOR_EXPOSURE_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Indicator-loading CURRENCY-family factor-exposure allocation over pinned "
+            "exposure atoms (P3-3, ENT-028 family)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
         session,
         model=model,
         version_label=FACTOR_EXPOSURE_VERSION_LABEL,
-        actor_id=actor_id,
-        methodology_ref=FACTOR_EXPOSURE_METHODOLOGY_REF,
-        code_version=str(code_version),
-        status="REGISTERED",
-        assumptions=FACTOR_EXPOSURE_ASSUMPTIONS,
-        limitations=FACTOR_EXPOSURE_LIMITATIONS,
-        actor_type=actor_type,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=FACTOR_EXPOSURE_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=FACTOR_EXPOSURE_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=FACTOR_EXPOSURE_ASSUMPTIONS,
+            limitations=FACTOR_EXPOSURE_LIMITATIONS,
+            actor_type=actor_type,
+        ),
     )
+    # Identity/conflict checks run unconditionally: trivially pass for a row THIS call minted, catch
+    # a squatted (non-REGISTERED GENERIC-path twin — P3-C1 OD-B) or code_version-mismatched peer.
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    if version.code_version != str(code_version):
+        raise ModelVersionConflictError(
+            FACTOR_EXPOSURE_MODEL_CODE, FACTOR_EXPOSURE_VERSION_LABEL, str(code_version)
+        )
+    return version
 
 
 #: The per-tenant inventory identity of the covariance estimation model (P3-4, OD-P3-4-A/G).
@@ -327,62 +310,55 @@ def register_covariance_model(
     identity cannot be re-pointed) — mint a new ``version_label`` instead."""
     if window_observations < 2:
         raise ValueError("window_observations must be >= 2 (the N-1 sample denominator)")
-    model = session.execute(
-        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == COVARIANCE_MODEL_CODE)
-    ).scalar_one_or_none()
-    if model is None:
-        model = register_model(
-            session,
-            tenant_id=str(tenant_id),
-            code=COVARIANCE_MODEL_CODE,
-            name=COVARIANCE_MODEL_NAME,
-            model_type=COVARIANCE_MODEL_TYPE,
-            actor_id=actor_id,
-            description=(
-                "Equal-weighted unbiased sample covariance of captured factor returns "
-                "(P3-4, ENT-051)."
-            ),
-            actor_type=actor_type,
-        )
-
-    version = session.execute(
-        select(ModelVersion).where(
-            ModelVersion.model_id == model.id,
-            ModelVersion.version_label == COVARIANCE_VERSION_LABEL,
-        )
-    ).scalar_one_or_none()
-    if version is not None:
-        if version.status != "REGISTERED":
-            # P3-C1 (OD-B residual, 2026-07 review): a same-label twin minted via the
-            # GENERIC registration (status=None) must be a REGISTRATION conflict too —
-            # otherwise register reports success while every bind refuses it (a
-            # register/run contract split; the label is squatted either way, but honestly).
-            raise WrongModelVersionError(str(version.id), str(model.code))
-        if version.code_version != str(code_version) or declared_window_observations(
-            session, version
-        ) != int(window_observations):
-            raise ModelVersionConflictError(
-                COVARIANCE_MODEL_CODE,
-                COVARIANCE_VERSION_LABEL,
-                f"{code_version} (window_observations={window_observations})",
-            )
-        return version
-
-    return register_model_version(
+    # Both legs resolve-or-register (race-safe savepoint; MD-H1 OD-D). The version identity includes
+    # the declared window (OD-P3-4-G) — a same-label re-register with a different code_version OR
+    # window is a governed conflict, never an IntegrityError 500.
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=COVARIANCE_MODEL_CODE,
+        name=COVARIANCE_MODEL_NAME,
+        model_type=COVARIANCE_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Equal-weighted unbiased sample covariance of captured factor returns "
+            "(P3-4, ENT-051)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
         session,
         model=model,
         version_label=COVARIANCE_VERSION_LABEL,
-        actor_id=actor_id,
-        methodology_ref=COVARIANCE_METHODOLOGY_REF,
-        code_version=str(code_version),
-        status="REGISTERED",
-        assumptions=(
-            *COVARIANCE_ASSUMPTIONS_BASE,
-            f"{WINDOW_ASSUMPTION_PREFIX}{int(window_observations)}",
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=COVARIANCE_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=COVARIANCE_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *COVARIANCE_ASSUMPTIONS_BASE,
+                f"{WINDOW_ASSUMPTION_PREFIX}{int(window_observations)}",
+            ),
+            limitations=COVARIANCE_LIMITATIONS,
+            actor_type=actor_type,
         ),
-        limitations=COVARIANCE_LIMITATIONS,
-        actor_type=actor_type,
     )
+    # Identity/conflict checks run unconditionally (trivially pass for a row THIS call minted — the
+    # window is registered into its assumptions — and catch a squatted or code_version/window peer).
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    if version.code_version != str(code_version) or declared_window_observations(
+        session, version
+    ) != int(window_observations):
+        raise ModelVersionConflictError(
+            COVARIANCE_MODEL_CODE,
+            COVARIANCE_VERSION_LABEL,
+            f"{code_version} (window_observations={window_observations})",
+        )
+    return version
 
 
 #: The per-tenant inventory identity of the parametric-VaR model (P3-5, OD-P3-5-A/D).
@@ -543,68 +519,60 @@ def register_var_model(
         raise ValueError(
             f"horizon_days must be {VAR_HORIZON_DAYS} in v1 (sqrt(h) scaling is a recorded seam)"
         )
-    model = session.execute(
-        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == VAR_MODEL_CODE)
-    ).scalar_one_or_none()
-    if model is None:
-        model = register_model(
-            session,
-            tenant_id=str(tenant_id),
-            code=VAR_MODEL_CODE,
-            name=VAR_MODEL_NAME,
-            model_type=VAR_MODEL_TYPE,
-            actor_id=actor_id,
-            description=(
-                "Zero-mean delta-normal parametric portfolio VaR over governed factor "
-                "exposures x a governed sample covariance (P3-5, ENT-027)."
-            ),
-            actor_type=actor_type,
-        )
-
-    version = session.execute(
-        select(ModelVersion).where(
-            ModelVersion.model_id == model.id,
-            ModelVersion.version_label == VAR_VERSION_LABEL,
-        )
-    ).scalar_one_or_none()
-    if version is not None:
-        if version.status != "REGISTERED":
-            # P3-C1 (OD-B residual, 2026-07 review): a same-label twin minted via the
-            # GENERIC registration (status=None) must be a REGISTRATION conflict too —
-            # otherwise register reports success while every bind refuses it (a
-            # register/run contract split; the label is squatted either way, but honestly).
-            raise WrongModelVersionError(str(version.id), str(model.code))
-        declared = declared_var_parameters(session, version)  # malformed existing -> 422 class
-        if (
-            version.code_version != str(code_version)
-            or f"{declared.confidence_level:f}" != confidence_key
-            or declared.horizon_days != int(horizon_days)
-        ):
-            raise ModelVersionConflictError(
-                VAR_MODEL_CODE,
-                VAR_VERSION_LABEL,
-                f"{code_version} (confidence_level={confidence_key}, "
-                f"horizon_days={horizon_days})",
-            )
-        return version
-
-    return register_model_version(
+    # Both legs resolve-or-register (race-safe savepoint; MD-H1 OD-D). The version identity includes
+    # the declared confidence/horizon (OD-P3-5-D) — a same-label re-register differing on
+    # code_version/confidence/horizon is a governed conflict, never an IntegrityError 500.
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=VAR_MODEL_CODE,
+        name=VAR_MODEL_NAME,
+        model_type=VAR_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Zero-mean delta-normal parametric portfolio VaR over governed factor "
+            "exposures x a governed sample covariance (P3-5, ENT-027)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
         session,
         model=model,
         version_label=VAR_VERSION_LABEL,
-        actor_id=actor_id,
-        methodology_ref=VAR_METHODOLOGY_REF,
-        code_version=str(code_version),
-        status="REGISTERED",
-        assumptions=(
-            *VAR_ASSUMPTIONS_BASE,
-            f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
-            f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
-            f"{Z_ASSUMPTION_PREFIX}{z_text}",
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=VAR_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=VAR_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *VAR_ASSUMPTIONS_BASE,
+                f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
+                f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
+                f"{Z_ASSUMPTION_PREFIX}{z_text}",
+            ),
+            limitations=VAR_LIMITATIONS,
+            actor_type=actor_type,
         ),
-        limitations=VAR_LIMITATIONS,
-        actor_type=actor_type,
     )
+    # Identity/conflict checks run unconditionally (trivially pass for a row THIS call minted — the
+    # declared params are in its assumptions — and catch a squatted or mismatched peer).
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_var_parameters(session, version)  # malformed existing -> 422 class
+    if (
+        version.code_version != str(code_version)
+        or f"{declared.confidence_level:f}" != confidence_key
+        or declared.horizon_days != int(horizon_days)
+    ):
+        raise ModelVersionConflictError(
+            VAR_MODEL_CODE,
+            VAR_VERSION_LABEL,
+            f"{code_version} (confidence_level={confidence_key}, horizon_days={horizon_days})",
+        )
+    return version
 
 
 # --- VAR-HS-1: the historical-simulation VaR model family (OD-VHS-B) ---
@@ -766,67 +734,64 @@ def register_historical_var_model(
     n = int(window_observations)
     _assert_hs_window_adequate(n, confidence_key)
 
-    model = session.execute(
-        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == VAR_HS_MODEL_CODE)
-    ).scalar_one_or_none()
-    if model is None:
-        model = register_model(
-            session,
-            tenant_id=str(tenant_id),
-            code=VAR_HS_MODEL_CODE,
-            name=VAR_HS_MODEL_NAME,
-            model_type=VAR_HS_MODEL_TYPE,
-            actor_id=actor_id,
-            description=(
-                "Plain equal-weight factor-based historical-simulation portfolio VaR over "
-                "governed factor exposures x pinned captured factor-return windows "
-                "(VAR-HS-1, ENT-027)."
-            ),
-            actor_type=actor_type,
-        )
-
-    version = session.execute(
-        select(ModelVersion).where(
-            ModelVersion.model_id == model.id,
-            ModelVersion.version_label == VAR_HS_VERSION_LABEL,
-        )
-    ).scalar_one_or_none()
-    if version is not None:
-        if version.status != "REGISTERED":
-            raise WrongModelVersionError(str(version.id), str(model.code))
-        declared = declared_hs_var_parameters(session, version)
-        if (
-            version.code_version != str(code_version)
-            or f"{declared.confidence_level:f}" != confidence_key
-            or declared.horizon_days != int(horizon_days)
-            or declared.window_observations != n
-        ):
-            raise ModelVersionConflictError(
-                VAR_HS_MODEL_CODE,
-                VAR_HS_VERSION_LABEL,
-                f"{code_version} (confidence_level={confidence_key}, horizon_days="
-                f"{horizon_days}, window_observations={n})",
-            )
-        return version
-
-    return register_model_version(
+    # Both legs resolve-or-register (race-safe savepoint; MD-H1 OD-D). The version identity includes
+    # the declared confidence/horizon/window (OD-VHS-D) — a same-label re-register differing on any
+    # of those is a governed conflict, never an IntegrityError 500.
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=VAR_HS_MODEL_CODE,
+        name=VAR_HS_MODEL_NAME,
+        model_type=VAR_HS_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Plain equal-weight factor-based historical-simulation portfolio VaR over "
+            "governed factor exposures x pinned captured factor-return windows "
+            "(VAR-HS-1, ENT-027)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
         session,
         model=model,
         version_label=VAR_HS_VERSION_LABEL,
-        actor_id=actor_id,
-        methodology_ref=VAR_HS_METHODOLOGY_REF,
-        code_version=str(code_version),
-        status="REGISTERED",
-        assumptions=(
-            *VAR_HS_ASSUMPTIONS_BASE,
-            f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
-            f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
-            f"{WINDOW_ASSUMPTION_PREFIX}{n}",
-            f"{QUANTILE_ASSUMPTION_PREFIX}{VAR_HS_QUANTILE_CONVENTION}",
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=VAR_HS_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=VAR_HS_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *VAR_HS_ASSUMPTIONS_BASE,
+                f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
+                f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
+                f"{WINDOW_ASSUMPTION_PREFIX}{n}",
+                f"{QUANTILE_ASSUMPTION_PREFIX}{VAR_HS_QUANTILE_CONVENTION}",
+            ),
+            limitations=VAR_HS_LIMITATIONS,
+            actor_type=actor_type,
         ),
-        limitations=VAR_HS_LIMITATIONS,
-        actor_type=actor_type,
     )
+    # Identity/conflict checks run unconditionally (trivially pass for a row THIS call minted, catch
+    # a squatted or code_version/confidence/horizon/window-mismatched peer).
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_hs_var_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or f"{declared.confidence_level:f}" != confidence_key
+        or declared.horizon_days != int(horizon_days)
+        or declared.window_observations != n
+    ):
+        raise ModelVersionConflictError(
+            VAR_HS_MODEL_CODE,
+            VAR_HS_VERSION_LABEL,
+            f"{code_version} (confidence_level={confidence_key}, horizon_days="
+            f"{horizon_days}, window_observations={n})",
+        )
+    return version
 
 
 # --- P3-7: the ex-ante active-risk / parametric tracking-error model family (OD-P3-7-D) ---
@@ -898,53 +863,48 @@ def register_active_risk_model(
     request parameters — the v1 conventions ARE the identity — so the version resolution keys on
     ``code_version`` alone: re-registering the same ``version_label`` with a DIFFERENT
     ``code_version`` raises :class:`ModelVersionConflictError` (mint a new label instead)."""
-    model = session.execute(
-        select(Model).where(Model.tenant_id == str(tenant_id), Model.code == ACTIVE_RISK_MODEL_CODE)
-    ).scalar_one_or_none()
-    if model is None:
-        model = register_model(
-            session,
-            tenant_id=str(tenant_id),
-            code=ACTIVE_RISK_MODEL_CODE,
-            name=ACTIVE_RISK_MODEL_NAME,
-            model_type=ACTIVE_RISK_MODEL_TYPE,
-            actor_id=actor_id,
-            description=(
-                "Ex-ante parametric tracking error over governed factor exposures, a governed "
-                "sample covariance, and a captured benchmark membership set (P3-7, ENT-027)."
-            ),
-            actor_type=actor_type,
-        )
-
-    version = session.execute(
-        select(ModelVersion).where(
-            ModelVersion.model_id == model.id,
-            ModelVersion.version_label == ACTIVE_RISK_VERSION_LABEL,
-        )
-    ).scalar_one_or_none()
-    if version is not None:
-        if version.status != "REGISTERED":
-            # A same-label twin minted via the GENERIC registration (status=None) is a
-            # REGISTRATION conflict too (the P3-C1 register/run-consistency lesson).
-            raise WrongModelVersionError(str(version.id), str(model.code))
-        if version.code_version != str(code_version):
-            raise ModelVersionConflictError(
-                ACTIVE_RISK_MODEL_CODE, ACTIVE_RISK_VERSION_LABEL, str(code_version)
-            )
-        return version
-
-    return register_model_version(
+    # Both legs resolve-or-register (race-safe savepoint; MD-H1 OD-D). No free numeric request
+    # parameter — the v1 conventions ARE the identity — so a same-label re-register with a different
+    # code_version is a governed conflict, never an IntegrityError 500.
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=ACTIVE_RISK_MODEL_CODE,
+        name=ACTIVE_RISK_MODEL_NAME,
+        model_type=ACTIVE_RISK_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Ex-ante parametric tracking error over governed factor exposures, a governed "
+            "sample covariance, and a captured benchmark membership set (P3-7, ENT-027)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
         session,
         model=model,
         version_label=ACTIVE_RISK_VERSION_LABEL,
-        actor_id=actor_id,
-        methodology_ref=ACTIVE_RISK_METHODOLOGY_REF,
-        code_version=str(code_version),
-        status="REGISTERED",
-        assumptions=ACTIVE_RISK_ASSUMPTIONS,
-        limitations=ACTIVE_RISK_LIMITATIONS,
-        actor_type=actor_type,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=ACTIVE_RISK_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=ACTIVE_RISK_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=ACTIVE_RISK_ASSUMPTIONS,
+            limitations=ACTIVE_RISK_LIMITATIONS,
+            actor_type=actor_type,
+        ),
     )
+    # Identity/conflict checks run unconditionally: trivially pass for a row THIS call minted, catch
+    # a squatted (non-REGISTERED GENERIC-path twin) or code_version-mismatched peer.
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    if version.code_version != str(code_version):
+        raise ModelVersionConflictError(
+            ACTIVE_RISK_MODEL_CODE, ACTIVE_RISK_VERSION_LABEL, str(code_version)
+        )
+    return version
 
 
 # --- BT-1: the VaR-backtesting model family (OD-BT-1-A) ---
@@ -1066,57 +1026,52 @@ def register_var_backtest_model(
         )
     alpha_key = f"{Decimal(text).normalize():f}"
 
-    model = session.execute(
-        select(Model).where(
-            Model.tenant_id == str(tenant_id), Model.code == VAR_BACKTEST_MODEL_CODE
-        )
-    ).scalar_one_or_none()
-    if model is None:
-        model = register_model(
-            session,
-            tenant_id=str(tenant_id),
-            code=VAR_BACKTEST_MODEL_CODE,
-            name=VAR_BACKTEST_MODEL_NAME,
-            model_type=VAR_BACKTEST_MODEL_TYPE,
-            actor_id=actor_id,
-            description=(
-                "VaR backtesting - exception counting, the Kupiec POF coverage test, and the "
-                "Basel traffic-light zone over realized flow-adjusted P&L vs the pinned VaR "
-                "forecasts of one method (BT-1, ENT-055)."
-            ),
-            actor_type=actor_type,
-        )
-
-    version = session.execute(
-        select(ModelVersion).where(
-            ModelVersion.model_id == model.id,
-            ModelVersion.version_label == VAR_BACKTEST_VERSION_LABEL,
-        )
-    ).scalar_one_or_none()
-    if version is not None:
-        if version.status != "REGISTERED":
-            raise WrongModelVersionError(str(version.id), str(model.code))
-        declared = declared_var_backtest_alpha(session, version)  # malformed -> 422 class
-        if version.code_version != str(code_version) or f"{declared.normalize():f}" != alpha_key:
-            raise ModelVersionConflictError(
-                VAR_BACKTEST_MODEL_CODE,
-                VAR_BACKTEST_VERSION_LABEL,
-                f"{code_version} (alpha={alpha_key})",
-            )
-        return version
-
-    return register_model_version(
+    # Both legs resolve-or-register (race-safe savepoint; MD-H1 OD-D). The version identity includes
+    # the declared Kupiec alpha (OD-BT-1-A) — a same-label re-register differing on code_version or
+    # alpha is a governed conflict, never an IntegrityError 500.
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=VAR_BACKTEST_MODEL_CODE,
+        name=VAR_BACKTEST_MODEL_NAME,
+        model_type=VAR_BACKTEST_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "VaR backtesting - exception counting, the Kupiec POF coverage test, and the "
+            "Basel traffic-light zone over realized flow-adjusted P&L vs the pinned VaR "
+            "forecasts of one method (BT-1, ENT-055)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
         session,
         model=model,
         version_label=VAR_BACKTEST_VERSION_LABEL,
-        actor_id=actor_id,
-        methodology_ref=VAR_BACKTEST_METHODOLOGY_REF,
-        code_version=str(code_version),
-        status="REGISTERED",
-        assumptions=(
-            *VAR_BACKTEST_ASSUMPTIONS_BASE,
-            f"{ALPHA_ASSUMPTION_PREFIX}{alpha_key}",
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=VAR_BACKTEST_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=VAR_BACKTEST_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *VAR_BACKTEST_ASSUMPTIONS_BASE,
+                f"{ALPHA_ASSUMPTION_PREFIX}{alpha_key}",
+            ),
+            limitations=VAR_BACKTEST_LIMITATIONS,
+            actor_type=actor_type,
         ),
-        limitations=VAR_BACKTEST_LIMITATIONS,
-        actor_type=actor_type,
     )
+    # Identity/conflict checks run unconditionally: trivially pass for a row THIS call minted, catch
+    # a squatted or code_version/alpha-mismatched peer.
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_var_backtest_alpha(session, version)  # malformed -> 422 class
+    if version.code_version != str(code_version) or f"{declared.normalize():f}" != alpha_key:
+        raise ModelVersionConflictError(
+            VAR_BACKTEST_MODEL_CODE,
+            VAR_BACKTEST_VERSION_LABEL,
+            f"{code_version} (alpha={alpha_key})",
+        )
+    return version

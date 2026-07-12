@@ -282,6 +282,32 @@ def test_prior_content_immutable_across_supersede(session: Session) -> None:
     assert prior.valid_to == VA2  # only the temporal axis closed
 
 
+def test_supersede_backdated_effective_at_refused(session: Session) -> None:
+    # MD-H1 window-coherence: effective_at at/before the head's valid_from (VA) is refused (→ 422).
+    tenant = str(uuid.uuid4())
+    inst, f_eq, _ = _book(session, tenant)
+    capture_proxy_mapping(
+        session,
+        private_instrument_id=inst,
+        factor_id=f_eq,
+        weight=Decimal("0.7"),
+        acting_tenant=tenant,
+        actor=ACTOR,
+        valid_from=VA,
+    )
+    session.flush()
+    with pytest.raises(ProxyMappingValueError):
+        supersede_proxy_mapping(
+            session,
+            private_instrument_id=inst,
+            factor_id=f_eq,
+            weight=Decimal("0.75"),
+            acting_tenant=tenant,
+            actor=ACTOR,
+            effective_at=VA,  # == valid_from → zero-width, refused (strictly-greater)
+        )
+
+
 def test_supersede_without_current_fails(session: Session) -> None:
     tenant = str(uuid.uuid4())
     inst, f_eq, _ = _book(session, tenant)
@@ -571,7 +597,10 @@ def test_migration_head_is_proxy_mapping() -> None:
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
-    script = ScriptDirectory.from_config(Config("alembic.ini"))
+    root = pathlib.Path(__file__).resolve().parents[3]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "migrations"))
+    script = ScriptDirectory.from_config(cfg)
     assert script.get_current_head() == "0034_proxy_mapping"
     assert script.get_revision("0034_proxy_mapping").down_revision == "0033_var_backtest"
 

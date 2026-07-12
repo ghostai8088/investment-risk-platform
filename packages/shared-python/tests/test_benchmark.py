@@ -251,6 +251,71 @@ def test_membership_capture_supersede_correct_reconstruct_both_axes(session: Ses
     assert {r.instrument_id for r in orig} == {ids[0], ids[1]}  # the original members
 
 
+def test_membership_guard_covers_every_row_not_just_the_first(session: Session) -> None:
+    # Review fold (finder 4): with uniform valid_from fixtures, a wrong "guard only the first row"
+    # refactor of the per-row loop would be invisible. Hand-shift ONE row's valid_from later (not
+    # reachable via the capture API, which stamps a uniform set — a labeled synthetic boundary),
+    # then supersede between the two valid_froms: the LATER row's window would invert → refused.
+    t = str(uuid.uuid4())
+    _seed_currency(session)
+    ids = _seed_instruments(session, t, 2)
+    bm = _capture_benchmark(session, t)
+    session.commit()
+    rows = capture_membership(
+        session,
+        bm,
+        effective_date=ED,
+        constituents=_cons(ids[:2], ["0.6", "0.4"]),
+        acting_tenant=t,
+        actor=ACTOR,
+        now=VA,  # both rows valid_from=VA
+    )
+    session.flush()
+    rows[1].valid_to = None  # keep open; shift ONLY its valid_from later (synthetic boundary)
+    rows[1].valid_from = VA3
+    session.flush()
+    with pytest.raises(BenchmarkValueError):
+        supersede_membership(
+            session,
+            bm,
+            effective_date=ED,
+            constituents=_cons(ids[:2], ["0.5", "0.5"]),
+            acting_tenant=t,
+            actor=ACTOR,
+            effective_at=VA2,  # after row0's VA but AT/BEFORE row1's VA3? VA2 < VA3 → inverts row1
+        )
+
+
+def test_membership_supersede_backdated_effective_at_refused(session: Session) -> None:
+    # MD-H1 window-coherence (multi-row variant): effective_at at/before ANY closed row's valid_from
+    # (VA) would invert that row's window — refused pre-write with BenchmarkValueError (→ 422).
+    t = str(uuid.uuid4())
+    _seed_currency(session)
+    ids = _seed_instruments(session, t, 3)
+    bm = _capture_benchmark(session, t)
+    session.commit()
+    capture_membership(
+        session,
+        bm,
+        effective_date=ED,
+        constituents=_cons(ids[:2], ["0.6", "0.4"]),
+        acting_tenant=t,
+        actor=ACTOR,
+        now=VA,  # valid_from=VA on both rows
+    )
+    session.commit()
+    with pytest.raises(BenchmarkValueError):
+        supersede_membership(
+            session,
+            bm,
+            effective_date=ED,
+            constituents=_cons([ids[0], ids[2]], ["0.5", "0.5"]),
+            acting_tenant=t,
+            actor=ACTOR,
+            effective_at=VA,  # == valid_from → zero-width, refused (strictly-greater)
+        )
+
+
 def test_membership_effective_date_carried_forward_and_distinct_from_valid_from(
     session: Session,
 ) -> None:
@@ -576,6 +641,7 @@ def test_audit_split_family_and_per_op_grain(session: Session) -> None:
         constituents=_cons(ids[:2], ["0.6", "0.4"]),
         acting_tenant=t,
         actor=ACTOR,
+        now=VA,  # explicit early valid_from so the VA2 supersede is window-coherent
     )
     session.commit()
     supersede_membership(
@@ -673,6 +739,7 @@ def test_vendor_benchmark_lineage_per_version(session: Session) -> None:
         constituents=_cons(ids, ["0.5", "0.5"]),
         acting_tenant=t,
         actor=ACTOR,
+        now=VA,  # explicit early valid_from so the VA2 supersede is window-coherent
     )  # capture -> 1
     session.commit()
     supersede_membership(

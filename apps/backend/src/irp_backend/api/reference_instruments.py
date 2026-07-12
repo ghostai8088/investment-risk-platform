@@ -36,6 +36,7 @@ from irp_shared.reference.instrument import (
 )
 from irp_shared.reference.instrument_terms import (
     TERM_FIELDS,
+    InstrumentTermsValueError,
     NoCurrentTerms,
     correct_instrument_terms,
     create_instrument_terms,
@@ -270,6 +271,11 @@ def post_instrument_terms(
     except NoCurrentTerms:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="no current terms to supersede"
+        ) from None
+    except InstrumentTermsValueError:  # window-incoherent effective_at (MD-H1) -> 422
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="effective_at must be strictly after the current version's valid_from",
         ) from None
     except IntegrityError:
         raise HTTPException(

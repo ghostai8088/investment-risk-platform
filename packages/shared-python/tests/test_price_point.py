@@ -199,6 +199,28 @@ def test_supersede_closes_valid_to_and_carries_forward(session: Session) -> None
     assert new.price_date == PD and new.record_version == 2  # price_date carried verbatim
 
 
+def test_supersede_backdated_effective_at_refused(session: Session) -> None:
+    # MD-H1 window-coherence: effective_at at/before the head's valid_from (VA) is refused (→ 422).
+    t = str(uuid.uuid4())
+    _seed_currencies(session)
+    iid = _seed_instrument(session, t)
+    _capture(session, t, iid, "150.25")  # valid_from=VA
+    session.commit()
+    with pytest.raises(PriceValueError):
+        supersede_price(
+            session,
+            instrument_id=iid,
+            price_date=PD,
+            price_type="CLOSE",
+            currency_code="USD",
+            price_source="BLOOMBERG",
+            acting_tenant=t,
+            actor=ACTOR,
+            effective_at=VA,  # == valid_from → zero-width, refused (strictly-greater)
+            price=Decimal("151.00"),
+        )
+
+
 def test_correct_closes_system_to_content_immutable(session: Session) -> None:
     t = str(uuid.uuid4())
     _seed_currencies(session)

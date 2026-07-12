@@ -41,7 +41,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CORRECT, ACTION_CREATE, ACTION_UPDATE
+from irp_shared.audit.payload import json_safe as _json_safe
 from irp_shared.audit.service import record_event
+from irp_shared.db.bitemporal import assert_supersede_effective_at
 from irp_shared.db.mixins import utcnow
 from irp_shared.dq.models import SEVERITY_ERROR, DataQualityRule
 from irp_shared.dq.rules import RULE_TYPE_NOT_NULL, RULE_TYPE_RANGE
@@ -94,14 +97,6 @@ class NoCurrentBenchmarkSeries(Exception):
         self.entity_type = entity_type
         self.benchmark_id = str(benchmark_id)
         self.keys = dict(keys)
-
-
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, date | datetime):
-        return value.isoformat()
-    return value
 
 
 # --- the per-table spec: the only differences between the two FR series ---
@@ -468,7 +463,7 @@ def _capture(
         entity_type=spec.entity_type,
         entity_id=row.id,
         event_type=spec.create_event,
-        action="create",
+        action=ACTION_CREATE,
         after_value=_summary(spec, benchmark, row),
         actor=actor,
         now=now,
@@ -496,6 +491,7 @@ def _supersede(
     )
     if prior is None:
         raise NoCurrentBenchmarkSeries(spec.entity_type, benchmark.id, keys)
+    assert_supersede_effective_at(prior.valid_from, effective_at, error=BenchmarkSeriesValueError)
     now = now or utcnow()
     before = {"valid_to": _json_safe(prior.valid_to)}
     prior.valid_to = effective_at  # CLOSE-FIRST (valid-time)
@@ -506,7 +502,7 @@ def _supersede(
         entity_type=spec.entity_type,
         entity_id=prior.id,
         event_type=spec.update_event,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value={"valid_to": _json_safe(prior.valid_to)},
         actor=actor,
@@ -540,7 +536,7 @@ def _supersede(
         entity_type=spec.entity_type,
         entity_id=new.id,
         event_type=spec.create_event,
-        action="create",
+        action=ACTION_CREATE,
         after_value=_summary(spec, benchmark, new),
         actor=actor,
         now=now,
@@ -581,7 +577,7 @@ def _correct(
         entity_type=spec.entity_type,
         entity_id=prior.id,
         event_type=spec.update_event,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value={"system_to": _json_safe(prior.system_to)},
         actor=actor,
@@ -618,7 +614,7 @@ def _correct(
         entity_type=spec.entity_type,
         entity_id=corrected.id,
         event_type=spec.correction_event,
-        action="correct",
+        action=ACTION_CORRECT,
         after_value=_summary(spec, benchmark, corrected),
         actor=actor,
         justification=restatement_reason,

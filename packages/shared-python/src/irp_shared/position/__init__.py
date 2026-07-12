@@ -26,6 +26,7 @@ from irp_shared.position.models import Position
 from irp_shared.position.position import (
     NoCurrentPosition,
     PositionNotVisible,
+    PositionValueError,
     correct_position,
     create_position,
     reconstruct_position_as_of,
@@ -38,6 +39,7 @@ __all__ = [
     "Position",
     "PositionActor",
     "PositionNotVisible",
+    "PositionValueError",
     "NoCurrentPosition",
     "POSITION_CREATE_EVENT",
     "POSITION_UPDATE_EVENT",

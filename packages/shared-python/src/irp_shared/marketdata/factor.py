@@ -48,7 +48,11 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CORRECT, ACTION_CREATE, ACTION_UPDATE
+from irp_shared.audit.payload import json_safe as _json_safe
 from irp_shared.audit.service import record_event
+from irp_shared.db.bitemporal import assert_supersede_effective_at
+from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.db.mixins import utcnow
 from irp_shared.dq.models import SEVERITY_ERROR, DataQualityRule
 from irp_shared.dq.rules import RULE_TYPE_NOT_NULL, RULE_TYPE_RANGE
@@ -139,14 +143,6 @@ class NoCurrentFactorReturn(Exception):
         self.return_type = return_type
 
 
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, date | datetime):
-        return value.isoformat()
-    return value
-
-
 # --- binder-side value checks (FactorValueError -> 422, BEFORE any write; NOT the DQ Protocol) ---
 
 
@@ -186,25 +182,28 @@ def _ensure_rule(
     params: dict[str, Any],
 ) -> DataQualityRule:
     """Resolve-or-register a per-tenant governed DQ rule (audited; the ``curve`` pattern)."""
-    rule = session.execute(
-        select(DataQualityRule).where(
-            DataQualityRule.tenant_id == str(tenant_id),
-            DataQualityRule.code == code,
-        )
-    ).scalar_one_or_none()
-    if rule is not None:
-        return rule
-    return register_dq_rule(
+    # Race-safe (MD-H1 review fold): two concurrent FIRST callers both SELECT-miss then
+    # INSERT the same key; the loser re-resolves the peer instead of aborting the unit.
+    return resolve_or_insert(
         session,
-        tenant_id=str(tenant_id),
-        code=code,
-        name=name,
-        rule_type=rule_type,
-        actor_id=actor.actor_id,
-        params=params,
-        target_entity_type=ENTITY_FACTOR_RETURN,
-        severity=SEVERITY_ERROR,
-        actor_type=actor.actor_type,
+        resolve=lambda: session.execute(
+            select(DataQualityRule).where(
+                DataQualityRule.tenant_id == str(tenant_id),
+                DataQualityRule.code == code,
+            )
+        ).scalar_one_or_none(),
+        insert=lambda: register_dq_rule(
+            session,
+            tenant_id=str(tenant_id),
+            code=code,
+            name=name,
+            rule_type=rule_type,
+            actor_id=actor.actor_id,
+            params=params,
+            target_entity_type=ENTITY_FACTOR_RETURN,
+            severity=SEVERITY_ERROR,
+            actor_type=actor.actor_type,
+        ),
     )
 
 
@@ -272,21 +271,24 @@ def ensure_vendor_source(session: Session, tenant_id: str, actor_id: str) -> Dat
     ``data_source``
     (governed provenance root; the ``VENDOR_CURVE``/``VENDOR_BENCHMARK`` precedent).
     Module-local."""
-    existing = session.execute(
-        select(DataSource).where(
-            DataSource.tenant_id == str(tenant_id),
-            DataSource.code == VENDOR_FACTOR_SOURCE_CODE,
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    return register_data_source(
+    # Race-safe (MD-H1 review fold): two concurrent FIRST callers both SELECT-miss then
+    # INSERT the same key; the loser re-resolves the peer instead of aborting the unit.
+    return resolve_or_insert(
         session,
-        tenant_id=str(tenant_id),
-        code=VENDOR_FACTOR_SOURCE_CODE,
-        name=VENDOR_FACTOR_SOURCE_NAME,
-        source_type=VENDOR_FACTOR_SOURCE_TYPE,
-        actor_id=actor_id,
+        resolve=lambda: session.execute(
+            select(DataSource).where(
+                DataSource.tenant_id == str(tenant_id),
+                DataSource.code == VENDOR_FACTOR_SOURCE_CODE,
+            )
+        ).scalar_one_or_none(),
+        insert=lambda: register_data_source(
+            session,
+            tenant_id=str(tenant_id),
+            code=VENDOR_FACTOR_SOURCE_CODE,
+            name=VENDOR_FACTOR_SOURCE_NAME,
+            source_type=VENDOR_FACTOR_SOURCE_TYPE,
+            actor_id=actor_id,
+        ),
     )
 
 
@@ -438,7 +440,7 @@ def capture_factor(
         entity_type=ENTITY_FACTOR,
         entity_id=row.id,
         event_type=REFERENCE_CREATE_EVENT,
-        action="create",
+        action=ACTION_CREATE,
         after_value=_factor_summary(row),
         actor=actor,
         now=now,
@@ -483,7 +485,7 @@ def update_factor(
         entity_type=ENTITY_FACTOR,
         entity_id=factor.id,
         event_type=REFERENCE_UPDATE_EVENT,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value={key: _json_safe(getattr(factor, key)) for key in changes},
         actor=actor,
@@ -583,7 +585,7 @@ def capture_factor_return(
         entity_type=ENTITY_FACTOR_RETURN,
         entity_id=row.id,
         event_type=MARKET_FACTOR_RETURN_CREATE_EVENT,
-        action="create",
+        action=ACTION_CREATE,
         after_value=_return_summary(factor, row),
         actor=actor,
         now=now,
@@ -620,6 +622,7 @@ def supersede_factor_return(
     if prior is None:
         raise NoCurrentFactorReturn(factor.id, return_date, return_type)
 
+    assert_supersede_effective_at(prior.valid_from, effective_at, error=FactorValueError)
     now = now or utcnow()
     before = {"valid_to": _json_safe(prior.valid_to)}
     prior.valid_to = effective_at  # CLOSE-FIRST (valid-time)
@@ -630,7 +633,7 @@ def supersede_factor_return(
         entity_type=ENTITY_FACTOR_RETURN,
         entity_id=prior.id,
         event_type=MARKET_FACTOR_RETURN_UPDATE_EVENT,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value={"valid_to": _json_safe(prior.valid_to)},
         actor=actor,
@@ -670,7 +673,7 @@ def supersede_factor_return(
         entity_type=ENTITY_FACTOR_RETURN,
         entity_id=new.id,
         event_type=MARKET_FACTOR_RETURN_CREATE_EVENT,
-        action="create",
+        action=ACTION_CREATE,
         after_value=_return_summary(factor, new),
         actor=actor,
         now=now,
@@ -720,7 +723,7 @@ def correct_factor_return(
         entity_type=ENTITY_FACTOR_RETURN,
         entity_id=prior.id,
         event_type=MARKET_FACTOR_RETURN_UPDATE_EVENT,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value={"system_to": _json_safe(prior.system_to)},
         actor=actor,
@@ -765,7 +768,7 @@ def correct_factor_return(
         entity_type=ENTITY_FACTOR_RETURN,
         entity_id=corrected.id,
         event_type=MARKET_FACTOR_RETURN_CORRECTION_EVENT,
-        action="correct",
+        action=ACTION_CORRECT,
         after_value=_return_summary(factor, corrected),
         actor=actor,
         justification=restatement_reason,

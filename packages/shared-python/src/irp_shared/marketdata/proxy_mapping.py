@@ -38,7 +38,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CORRECT, ACTION_CREATE, ACTION_UPDATE
+from irp_shared.audit.payload import json_safe as _json_safe
 from irp_shared.audit.service import record_event
+from irp_shared.db.bitemporal import assert_supersede_effective_at
+from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.db.mixins import utcnow
 from irp_shared.dq.models import SEVERITY_ERROR, DataQualityRule
 from irp_shared.dq.rules import RULE_TYPE_NOT_NULL
@@ -109,16 +113,6 @@ class NoCurrentProxyMapping(Exception):
         self.factor_id = str(factor_id)
 
 
-def _json_safe(value: Any) -> Any:
-    """Datetime → ISO string; Decimal → canonical string; passthrough otherwise (DC-2 audit-summary
-    JSON safety — the audit ``before_value``/``after_value`` payloads are JSON-serialized)."""
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return f"{value:f}"
-    return value
-
-
 def _validate_mapping_method(mapping_method: str) -> None:
     if mapping_method not in PROXY_MAPPING_METHODS:
         raise ProxyMappingValueError(
@@ -141,25 +135,28 @@ def _ensure_required_rule(
 ) -> DataQualityRule:
     """Resolve-or-register the per-tenant required-fields DQ rule (audited; the factor pattern —
     the single-column ``(params, dataset)`` Protocol UNTOUCHED)."""
-    rule = session.execute(
-        select(DataQualityRule).where(
-            DataQualityRule.tenant_id == str(tenant_id),
-            DataQualityRule.code == _REQUIRED_RULE_CODE,
-        )
-    ).scalar_one_or_none()
-    if rule is not None:
-        return rule
-    return register_dq_rule(
+    # Race-safe (MD-H1 review fold): two concurrent FIRST callers both SELECT-miss then
+    # INSERT the same key; the loser re-resolves the peer instead of aborting the unit.
+    return resolve_or_insert(
         session,
-        tenant_id=str(tenant_id),
-        code=_REQUIRED_RULE_CODE,
-        name="proxy_mapping required fields present",
-        rule_type=RULE_TYPE_NOT_NULL,
-        actor_id=actor.actor_id,
-        params={"column": "present"},
-        target_entity_type=ENTITY_PROXY_MAPPING,
-        severity=SEVERITY_ERROR,
-        actor_type=actor.actor_type,
+        resolve=lambda: session.execute(
+            select(DataQualityRule).where(
+                DataQualityRule.tenant_id == str(tenant_id),
+                DataQualityRule.code == _REQUIRED_RULE_CODE,
+            )
+        ).scalar_one_or_none(),
+        insert=lambda: register_dq_rule(
+            session,
+            tenant_id=str(tenant_id),
+            code=_REQUIRED_RULE_CODE,
+            name="proxy_mapping required fields present",
+            rule_type=RULE_TYPE_NOT_NULL,
+            actor_id=actor.actor_id,
+            params={"column": "present"},
+            target_entity_type=ENTITY_PROXY_MAPPING,
+            severity=SEVERITY_ERROR,
+            actor_type=actor.actor_type,
+        ),
     )
 
 
@@ -193,21 +190,24 @@ def _run_dq_gate(
 def ensure_manual_source(session: Session, tenant_id: str, actor_id: str) -> DataSource:
     """Idempotently resolve-or-register the acting tenant's ``MANUAL_PROXY`` ``data_source``
     (governed provenance root; the ``VENDOR_FACTOR`` precedent, non-vendor variant)."""
-    existing = session.execute(
-        select(DataSource).where(
-            DataSource.tenant_id == str(tenant_id),
-            DataSource.code == MANUAL_PROXY_SOURCE_CODE,
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    return register_data_source(
+    # Race-safe (MD-H1 review fold): two concurrent FIRST callers both SELECT-miss then
+    # INSERT the same key; the loser re-resolves the peer instead of aborting the unit.
+    return resolve_or_insert(
         session,
-        tenant_id=str(tenant_id),
-        code=MANUAL_PROXY_SOURCE_CODE,
-        name=MANUAL_PROXY_SOURCE_NAME,
-        source_type=MANUAL_PROXY_SOURCE_TYPE,
-        actor_id=actor_id,
+        resolve=lambda: session.execute(
+            select(DataSource).where(
+                DataSource.tenant_id == str(tenant_id),
+                DataSource.code == MANUAL_PROXY_SOURCE_CODE,
+            )
+        ).scalar_one_or_none(),
+        insert=lambda: register_data_source(
+            session,
+            tenant_id=str(tenant_id),
+            code=MANUAL_PROXY_SOURCE_CODE,
+            name=MANUAL_PROXY_SOURCE_NAME,
+            source_type=MANUAL_PROXY_SOURCE_TYPE,
+            actor_id=actor_id,
+        ),
     )
 
 
@@ -398,7 +398,7 @@ def capture_proxy_mapping(
         tenant_id=row.tenant_id,
         entity_id=row.id,
         event_type=MARKET_PROXY_MAPPING_CREATE_EVENT,
-        action="create",
+        action=ACTION_CREATE,
         after_value=_summary(row),
         actor=actor,
         now=now,
@@ -434,6 +434,7 @@ def supersede_proxy_mapping(
     if prior is None:
         raise NoCurrentProxyMapping(private_instrument_id, factor_id)
 
+    assert_supersede_effective_at(prior.valid_from, effective_at, error=ProxyMappingValueError)
     now = now or utcnow()
     before = {"valid_to": _json_safe(prior.valid_to)}
     prior.valid_to = effective_at  # CLOSE-FIRST (valid-time)
@@ -443,7 +444,7 @@ def supersede_proxy_mapping(
         tenant_id=prior.tenant_id,
         entity_id=prior.id,
         event_type=MARKET_PROXY_MAPPING_UPDATE_EVENT,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value={"valid_to": _json_safe(prior.valid_to)},
         actor=actor,
@@ -474,7 +475,7 @@ def supersede_proxy_mapping(
         tenant_id=new.tenant_id,
         entity_id=new.id,
         event_type=MARKET_PROXY_MAPPING_CREATE_EVENT,
-        action="create",
+        action=ACTION_CREATE,
         after_value=_summary(new),
         actor=actor,
         now=now,
@@ -521,7 +522,7 @@ def correct_proxy_mapping(
         tenant_id=prior.tenant_id,
         entity_id=prior.id,
         event_type=MARKET_PROXY_MAPPING_UPDATE_EVENT,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value={"system_to": _json_safe(prior.system_to)},
         actor=actor,
@@ -553,7 +554,7 @@ def correct_proxy_mapping(
         tenant_id=corrected.tenant_id,
         entity_id=corrected.id,
         event_type=MARKET_PROXY_MAPPING_CORRECTION_EVENT,
-        action="correct",  # the sibling FR-correction convention, not "update" (factor/benchmark)
+        action=ACTION_CORRECT,  # the sibling FR-correction convention (not "update")
         # Symmetric old->new weight on the correction event (a single scalar, NOT the bulk payload
         # the DC-2 rule guards — review fold: before carried the old weight; after now the new)
         before_value={"weight": _json_safe(prior.weight)},

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CREATE
 from irp_shared.audit.service import record_event
 from irp_shared.snapshot.models import DatasetSnapshot
 
@@ -43,7 +44,7 @@ def record_snapshot_create(
         source_module="snapshot",
         entity_type="dataset_snapshot",
         entity_id=header.id,
-        action="create",
+        action=ACTION_CREATE,
         after_value={
             "component_count": header.component_count,
             "manifest_hash": header.manifest_hash,

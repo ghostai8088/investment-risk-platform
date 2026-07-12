@@ -332,3 +332,51 @@ def test_ops_role_has_no_grant_on_model_tables() -> None:
                     assert has is False, f"irp_ops unexpectedly has {priv} on {table}"
     finally:
         engine.dispose()
+
+
+def test_resolve_or_register_race_recovers_on_postgres(app_url: str) -> None:
+    """MD-H1 review fold (finder 4 / plan Step 2.3): the savepoint race recovery proven where the
+    constraint (and RLS) is REAL. A committed peer model exists; the loser's resolve is forced to
+    stale-miss once, so its INSERT hits ``uq_model``'s unique key on PG — the savepoint must roll
+    back ONLY that INSERT (not abort the transaction, the pre-fix 500) and re-resolve the peer."""
+    from irp_shared.model.service import resolve_or_register_model
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    peer_id = _seed_model(factory, tenant, "RACE_M")
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        real_execute = session.execute
+        state = {"missed": 0}
+
+        class _Miss:
+            def scalar_one_or_none(self):  # noqa: ANN202
+                return None
+
+        def fake_execute(statement, *args, **kwargs):  # noqa: ANN001, ANN202
+            if state["missed"] < 1:  # ONLY the first resolve stale-misses; recovery runs real
+                state["missed"] += 1
+                return _Miss()
+            return real_execute(statement, *args, **kwargs)
+
+        session.execute = fake_execute  # type: ignore[method-assign]
+        try:
+            resolved = resolve_or_register_model(
+                session,
+                tenant_id=tenant,
+                code="RACE_M",
+                name="n",
+                model_type="STATISTICAL",
+                actor_id="b",
+            )
+        finally:
+            session.execute = real_execute  # type: ignore[method-assign]
+        assert str(resolved.id) == str(peer_id)  # recovered to the peer on REAL PG
+        # the transaction is NOT aborted (the savepoint contained the failure): a write still works.
+        session.execute(text("SELECT 1")).scalar()
+        session.rollback()
+    finally:
+        session.close()
+        engine.dispose()

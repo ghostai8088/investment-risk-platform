@@ -165,6 +165,27 @@ def test_supersede_closes_valid_to_and_carries_forward(session: Session) -> None
     assert new.rate_date == RD and new.record_version == 2  # rate_date carried verbatim
 
 
+def test_supersede_backdated_effective_at_refused(session: Session) -> None:
+    # MD-H1 window-coherence: effective_at at/before the head's valid_from (VA) would invert or
+    # zero-width the closed window — refused pre-write with the family value error (→ 422).
+    t = str(uuid.uuid4())
+    _seed_currencies(session)
+    _capture(session, t, "EUR", "USD", "1.08")  # valid_from=VA
+    session.commit()
+    with pytest.raises(FxRateValueError):
+        supersede_fx_rate(
+            session,
+            base_currency="EUR",
+            quote_currency="USD",
+            rate_date=RD,
+            rate_type="MID",
+            acting_tenant=t,
+            actor=ACTOR,
+            effective_at=VA,  # == valid_from → zero-width, refused (strictly-greater)
+            rate=Decimal("1.10"),
+        )
+
+
 def test_correct_closes_system_to_content_immutable(session: Session) -> None:
     t = str(uuid.uuid4())
     _seed_currencies(session)

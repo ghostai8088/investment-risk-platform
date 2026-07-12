@@ -27,6 +27,7 @@ from typing import Any, NoReturn, TypedDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CREATE, ACTION_STATUS_CHANGE
 from irp_shared.audit.service import record_event
 from irp_shared.db.mixins import utcnow
 from irp_shared.dq.models import OUTCOME_WARN, DataQualityRule
@@ -204,7 +205,7 @@ def stage_upload(
     _ingest_event(
         session,
         batch,
-        action="create",
+        action=ACTION_CREATE,
         before_status=None,
         outcome="success",
         reason=None,
@@ -291,7 +292,7 @@ def stage_upload(
     _ingest_event(
         session,
         batch,
-        action="status_change",
+        action=ACTION_STATUS_CHANGE,
         before_status=before,
         outcome="success",
         reason=None,
@@ -325,7 +326,7 @@ def _reject(
     _ingest_event(
         session,
         batch,
-        action="status_change",
+        action=ACTION_STATUS_CHANGE,
         before_status=before,
         outcome="failure",
         reason=reason,

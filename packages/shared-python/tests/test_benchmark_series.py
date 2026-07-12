@@ -330,6 +330,37 @@ def test_capture_return_and_bases_coexist(session: Session) -> None:
     assert all(r.return_type == RETURN_TYPE_SIMPLE for r in rows)
 
 
+def test_supersede_backdated_effective_at_refused(session: Session) -> None:
+    # MD-H1 window-coherence: effective_at at/before the head's valid_from (T0) is refused (→ 422).
+    # Covers BOTH series (level + return share the _supersede helper the guard lives in).
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    bm = _benchmark(session, tenant)
+    capture_benchmark_level(
+        session,
+        bm,
+        level_date=LD,
+        level_type=LEVEL_TYPE_PRICE_RETURN,
+        level_value=Decimal("4500.25"),
+        acting_tenant=tenant,
+        actor=ACTOR,
+        valid_from=T0,
+        now=VA,
+    )
+    session.flush()
+    with pytest.raises(BenchmarkSeriesValueError):
+        supersede_benchmark_level(
+            session,
+            bm,
+            level_date=LD,
+            level_type=LEVEL_TYPE_PRICE_RETURN,
+            level_value=Decimal("4512.75"),
+            acting_tenant=tenant,
+            actor=ACTOR,
+            effective_at=T0,  # == valid_from → zero-width, refused (strictly-greater)
+        )
+
+
 def test_return_supersede_correct_reconstruct(session: Session) -> None:
     tenant = str(uuid.uuid4())
     _ccy(session, "USD")

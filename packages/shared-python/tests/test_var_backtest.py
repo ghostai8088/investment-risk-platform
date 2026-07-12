@@ -28,6 +28,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from run_assertions import assert_no_running_orphan
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -773,6 +774,7 @@ def test_unknown_runs_refused_zero_run(session: Session) -> None:
     ).scalar()
     assert after == 0
     assert before == session.execute(select(func.count()).select_from(CalculationRun)).scalar()
+    assert_no_running_orphan(session, run_type=RUN_TYPE_VAR_BACKTEST)  # MD-H1 annex item 6
 
 
 def test_cross_portfolio_identity_refused(session: Session) -> None:
@@ -933,7 +935,10 @@ def test_migration_head_is_var_backtest() -> None:
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
-    script = ScriptDirectory.from_config(Config("alembic.ini"))
+    root = pathlib.Path(__file__).resolve().parents[3]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "migrations"))
+    script = ScriptDirectory.from_config(cfg)
     assert script.get_current_head() == "0034_proxy_mapping"
     assert script.get_revision("0033_var_backtest").down_revision == "0032_benchmark_relative"
 

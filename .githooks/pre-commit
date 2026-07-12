@@ -1,0 +1,45 @@
+#!/bin/sh
+# MD-H1 process item 7: the fast format/lint gate as MECHANISM, not discipline.
+#
+# The CI #136 lesson: a commit that skipped `ruff format --check` went red in CI. This hook runs
+# the FAST subset (format check + lint, on the STAGED Python files only — seconds, not the full
+# test battery) so that class of red cannot be committed. Full `make check` remains the manual
+# pre-push/pre-review gate (tests, mypy, secret scan, docs).
+#
+# Install (opt-in, once per clone):   git config core.hooksPath .githooks
+# Escape hatch (emergencies only):    git commit --no-verify
+
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+RUFF=".venv/bin/python -m ruff"
+if [ ! -x ".venv/bin/python" ]; then
+    # A fresh clone without the venv cannot run the gate — skip loudly rather than block every
+    # commit with a confusing 'no such file' (which trains --no-verify habits). CI still gates.
+    echo "[pre-commit] .venv not found — skipping the fast gate (run 'make setup' to enable it)" >&2
+    exit 0
+fi
+
+# Staged Python files only (review fold): checking the whole worktree both misses staged-vs-worktree
+# divergence AND blocks clean commits on unrelated dirty files. NOTE: this checks the WORKTREE copy
+# of each staged file (the standard pragmatic compromise; a divergent unstaged edit of the same file
+# is rare and CI backstops it).
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+if [ -z "$STAGED_PY" ]; then
+    echo "[pre-commit] no staged Python files — fast gate skipped"
+    exit 0
+fi
+
+echo "[pre-commit] ruff format --check (staged files)"
+echo "$STAGED_PY" | xargs $RUFF format --check || {
+    echo "[pre-commit] FORMAT FAILED — run: .venv/bin/python -m ruff format <files>" >&2
+    exit 1
+}
+
+echo "[pre-commit] ruff check (staged files)"
+echo "$STAGED_PY" | xargs $RUFF check || {
+    echo "[pre-commit] LINT FAILED — fix (or 'ruff check --fix') before committing" >&2
+    exit 1
+}
+
+echo "[pre-commit] fast gate green (full 'make check' is still the pre-push bar)"

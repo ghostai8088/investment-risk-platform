@@ -31,13 +31,14 @@ day-count/valuation math.
 
 from __future__ import annotations
 
-from datetime import date, datetime
-from decimal import Decimal
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.payload import json_safe as _json_safe
+from irp_shared.db.bitemporal import assert_supersede_effective_at
 from irp_shared.db.mixins import utcnow
 from irp_shared.reference.instrument import resolve_instrument
 from irp_shared.reference.models import InstrumentTerms
@@ -62,21 +63,17 @@ TERM_FIELDS = (
 )
 
 
+class InstrumentTermsValueError(Exception):
+    """Raised for a binder-side value breach (e.g. a window-incoherent supersede ``effective_at``)
+    — caught BEFORE any write (fail-closed; maps to 422). The marketdata *ValueError precedent."""
+
+
 class NoCurrentTerms(Exception):
     """Raised when a supersede is requested but the instrument has no dual-open current terms."""
 
     def __init__(self, instrument_id: str) -> None:
         super().__init__(f"instrument {instrument_id} has no current (open) terms to supersede")
         self.instrument_id = str(instrument_id)
-
-
-def _json_safe(value: Any) -> Any:
-    """DC-2 audit metadata must be JSON-serializable: Decimal→str, date/datetime→isoformat."""
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, date | datetime):
-        return value.isoformat()
-    return value
 
 
 def _summary(row: InstrumentTerms, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -166,6 +163,7 @@ def supersede_instrument_terms(
     if prior is None:
         raise NoCurrentTerms(str(instrument_id))
 
+    assert_supersede_effective_at(prior.valid_from, effective_at, error=InstrumentTermsValueError)
     now = utcnow()
     # CLOSE-FIRST: stamp + flush the prior valid_to close-out before adding the new open row.
     before = {"valid_to": _json_safe(prior.valid_to)}

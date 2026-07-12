@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import Column, MetaData, Table, select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CREATE, ACTION_UPDATE
 from irp_shared.audit.service import record_event
 from irp_shared.db.types import GUID
 from irp_shared.lineage.models import (
@@ -103,7 +104,7 @@ def register_data_source(
         source_module="lineage",
         entity_type="data_source",
         entity_id=source.id,
-        action="create",
+        action=ACTION_CREATE,
         after_value={"code": code, "name": name, "source_type": source_type},
     )
     return source
@@ -137,7 +138,7 @@ def update_data_source(
         source_module="lineage",
         entity_type="data_source",
         entity_id=source.id,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value={key: getattr(source, key) for key in changes},
     )

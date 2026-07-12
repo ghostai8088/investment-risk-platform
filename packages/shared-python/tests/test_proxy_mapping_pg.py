@@ -23,7 +23,7 @@ from sqlalchemy.pool import NullPool
 
 from irp_shared.audit.service import verify_chain
 from irp_shared.db.session import make_engine, make_session_factory
-from irp_shared.db.tenant import set_tenant_context
+from irp_shared.db.tenant import persistent_tenant_context, set_tenant_context
 from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.marketdata import (
     FactorActor,
@@ -241,7 +241,9 @@ def test_not_append_only_supersede_updates_succeed(app_url: str) -> None:
         inst, factor = _seed(factory, tenant)
         session = factory()
         try:
-            set_tenant_context(session, tenant)
+            # MD-H1 annex item 4 (this test WAS the incident): persistent_tenant_context re-arms
+            # the SET LOCAL GUC after every commit automatically — no manual re-arm to forget.
+            persistent_tenant_context(session, tenant)
             supersede_proxy_mapping(
                 session,
                 private_instrument_id=inst,
@@ -252,11 +254,10 @@ def test_not_append_only_supersede_updates_succeed(app_url: str) -> None:
                 effective_at=_VA2,
             )
             session.commit()  # the FR close-out UPDATE committed — NOT blocked
-            set_tenant_context(session, tenant)  # re-arm the GUC (SET LOCAL cleared at commit)
             rows = session.execute(
                 text("SELECT count(*) FROM proxy_mapping WHERE valid_to IS NOT NULL")
             ).scalar_one()
-            assert rows == 1  # the prior head was closed out
+            assert rows == 1  # the prior head was closed out (read works WITHOUT a manual re-arm)
         finally:
             session.close()
     finally:

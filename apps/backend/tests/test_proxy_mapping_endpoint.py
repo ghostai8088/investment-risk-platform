@@ -160,6 +160,48 @@ def test_capture_supersede_correct_and_read_roundtrip(ctx) -> None:  # noqa: ANN
     assert asof2.status_code == 200 and Decimal(asof2.json()["weight"]) == Decimal("0.8")
 
 
+def test_duplicate_capture_is_409_not_500(ctx) -> None:  # noqa: ANN001
+    # MD-H1 OD-C: a second capture of the same open (instrument, factor) head collides on the
+    # current-head unique constraint → the IntegrityError is mapped to a clean 409 (not a raw 500),
+    # and the transaction rolls back leaving the original row intact + readable.
+    client, p, db, inst, factor = ctx
+    first = client.post("/proxy-mappings", json=_body(inst, factor, weight="0.7"), headers=_h(p))
+    assert first.status_code == 201
+    dup = client.post("/proxy-mappings", json=_body(inst, factor, weight="0.9"), headers=_h(p))
+    assert dup.status_code == 409, dup.text
+    assert "already exists" in dup.json()["detail"]
+    # the original head is intact (the failed capture rolled back cleanly, no partial write).
+    head = client.get(
+        "/proxy-mappings/as-of",
+        params={
+            "private_instrument_id": inst,
+            "factor_id": factor,
+            "valid_at": _FAR,
+            "known_at": _FAR,
+        },
+        headers=_h(p),
+    )
+    assert head.status_code == 200 and Decimal(head.json()["weight"]) == Decimal("0.7")
+
+
+def test_supersede_backdated_effective_at_is_422(ctx) -> None:  # noqa: ANN001
+    # MD-H1 OD-B end-to-end: a supersede whose effective_at precedes the capture's valid_from is a
+    # window-coherence refusal surfaced as 422 at the API (not a 500, not a silent inverted window).
+    client, p, db, inst, factor = ctx
+    cap = client.post(
+        "/proxy-mappings",
+        json=_body(inst, factor, weight="0.7", valid_from="2026-06-01T00:00:00+00:00"),
+        headers=_h(p),
+    )
+    assert cap.status_code == 201
+    bad = client.post(
+        "/proxy-mappings/supersede",
+        json=_body(inst, factor, weight="0.75", effective_at="2026-05-01T00:00:00+00:00"),
+        headers=_h(p),
+    )
+    assert bad.status_code == 422, bad.text
+
+
 def test_deny_by_default_and_view_cannot_ingest(ctx) -> None:  # noqa: ANN001
     client, p, db, inst, factor = ctx
     nobody = Principal(user_id=str(uuid.uuid4()), tenant_id=p.tenant_id)

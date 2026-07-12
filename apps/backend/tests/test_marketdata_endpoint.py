@@ -115,6 +115,16 @@ def test_capture_201_stamps_tenant_and_audits(ctx) -> None:  # noqa: ANN001
     )
 
 
+def test_duplicate_capture_is_409_not_500(ctx) -> None:  # noqa: ANN001
+    # MD-H1 OD-C on the fx family: a second open head for the same (pair, rate_date, rate_type)
+    # collides on the current-head unique → clean 409 with the honest detail, never a raw 500.
+    client, p, _db = ctx
+    assert _capture(client, p, rate="1.08").status_code == 201
+    dup = _capture(client, p, rate="1.10")
+    assert dup.status_code == 409, dup.text
+    assert "already exists" in dup.json()["detail"]
+
+
 def test_capture_without_ingest_403_no_write(ctx) -> None:  # noqa: ANN001
     client, p, db = ctx
     resp = client.post(

@@ -23,6 +23,7 @@ from typing import Any
 from sqlalchemy import Column, MetaData, Table, select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CREATE, ACTION_UPDATE, ACTION_VALIDATE
 from irp_shared.audit.service import record_event
 from irp_shared.db.types import GUID
 from irp_shared.dq.models import (
@@ -120,7 +121,7 @@ def register_dq_rule(
         source_module="dataquality",
         entity_type="data_quality_rule",
         entity_id=rule.id,
-        action="create",
+        action=ACTION_CREATE,
         after_value={
             "code": code,
             "name": name,
@@ -165,7 +166,7 @@ def update_dq_rule(
         source_module="dataquality",
         entity_type="data_quality_rule",
         entity_id=rule.id,
-        action="update",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value={key: getattr(rule, key) for key in changes},
         data_classification="DC-1",
@@ -250,7 +251,7 @@ def run_quality_check(
         source_module="dataquality",
         entity_type="data_quality_result",
         entity_id=result.id,
-        action="validate",
+        action=ACTION_VALIDATE,
         outcome=("success" if outcome == OUTCOME_PASS else "failure"),
         after_value={
             "rule_id": resolved.id,

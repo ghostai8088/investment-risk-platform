@@ -19,9 +19,11 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, require_permission
+from irp_shared.db.integrity import is_unique_violation
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
 from irp_shared.marketdata import (
@@ -210,6 +212,23 @@ def _out(row: FxRate) -> FxRateOut:
     )
 
 
+def _raise_mapped_write(
+    db: Session, exc: Exception, errors: dict[type[Exception], tuple[int, str]]
+) -> None:
+    """The ONE governed-write error dispatcher (all 7 family `_raise_*_write` fns delegate here).
+
+    Rolls the whole unit back (CTRL-032), then maps the exception to its family (status, detail).
+    An ``IntegrityError`` maps to the 409 duplicate detail ONLY when it is a real unique-constraint
+    collision (MD-H1 review fold): any OTHER integrity failure inside the governed unit — FK /
+    NOT NULL / RLS ``WITH CHECK`` — is RE-RAISED (fail-loud 500), never mislabeled "already exists".
+    """
+    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
+    if isinstance(exc, IntegrityError) and not is_unique_violation(exc):
+        raise exc  # NOT the duplicate class — a real data-integrity bug must stay a loud 500
+    code, detail = errors[type(exc)]
+    raise HTTPException(status_code=code, detail=detail) from None
+
+
 #: Governed-write error → (status, detail). Fail-closed; rolls back before mapping.
 _WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
     FxRateValueError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid fx_rate input"),
@@ -217,13 +236,15 @@ _WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
     FxRateNotVisible: (status.HTTP_404_NOT_FOUND, "fx_rate not found"),
     NoCurrentFxRate: (status.HTTP_409_CONFLICT, "no current fx_rate version to supersede"),
     DataQualityError: (status.HTTP_409_CONFLICT, "fx_rate failed a data-quality gate"),
+    IntegrityError: (
+        status.HTTP_409_CONFLICT,
+        "a current open fx_rate already exists for this key",
+    ),
 }
 
 
 def _raise_write(db: Session, exc: Exception) -> None:
-    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
-    code, detail = _WRITE_ERRORS[type(exc)]
-    raise HTTPException(status_code=code, detail=detail) from None
+    _raise_mapped_write(db, exc, _WRITE_ERRORS)
 
 
 @router.post("", response_model=FxRateOut, status_code=status.HTTP_201_CREATED)
@@ -247,7 +268,7 @@ def create_fx_rate(
             valid_from=body.valid_from,
             rate_source=body.rate_source,
         )
-    except (FxRateValueError, CurrencyNotVisible, DataQualityError) as exc:
+    except (FxRateValueError, CurrencyNotVisible, DataQualityError, IntegrityError) as exc:
         _raise_write(db, exc)
     out = _out(row)
     db.commit()
@@ -284,6 +305,7 @@ def supersede_fx_rate_endpoint(
         FxRateNotVisible,
         NoCurrentFxRate,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_write(db, exc)
     out = _out(row)
@@ -311,7 +333,13 @@ def correct_fx_rate_endpoint(
             actor=_actor(principal),
             **overrides,
         )
-    except (FxRateValueError, CurrencyNotVisible, FxRateNotVisible, DataQualityError) as exc:
+    except (
+        FxRateValueError,
+        CurrencyNotVisible,
+        FxRateNotVisible,
+        DataQualityError,
+        IntegrityError,
+    ) as exc:
         _raise_write(db, exc)
     out = _out(row)
     db.commit()
@@ -495,13 +523,15 @@ _PRICE_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
     PriceNotVisible: (status.HTTP_404_NOT_FOUND, "price_point not found"),
     NoCurrentPrice: (status.HTTP_409_CONFLICT, "no current price_point version to supersede"),
     DataQualityError: (status.HTTP_409_CONFLICT, "price_point failed a data-quality gate"),
+    IntegrityError: (
+        status.HTTP_409_CONFLICT,
+        "a current open price_point already exists for this key",
+    ),
 }
 
 
 def _raise_price_write(db: Session, exc: Exception) -> None:
-    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
-    code, detail = _PRICE_WRITE_ERRORS[type(exc)]
-    raise HTTPException(status_code=code, detail=detail) from None
+    _raise_mapped_write(db, exc, _PRICE_WRITE_ERRORS)
 
 
 @price_router.post("", response_model=PriceOut, status_code=status.HTTP_201_CREATED)
@@ -525,7 +555,13 @@ def create_price(
             price_type=body.price_type,
             valid_from=body.valid_from,
         )
-    except (PriceValueError, InstrumentNotVisible, CurrencyNotVisible, DataQualityError) as exc:
+    except (
+        PriceValueError,
+        InstrumentNotVisible,
+        CurrencyNotVisible,
+        DataQualityError,
+        IntegrityError,
+    ) as exc:
         _raise_price_write(db, exc)
     out = _price_out(row)
     db.commit()
@@ -564,6 +600,7 @@ def supersede_price_endpoint(
         PriceNotVisible,
         NoCurrentPrice,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_price_write(db, exc)
     out = _price_out(row)
@@ -599,6 +636,7 @@ def correct_price_endpoint(
         CurrencyNotVisible,
         PriceNotVisible,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_price_write(db, exc)
     out = _price_out(row)
@@ -788,13 +826,12 @@ _CURVE_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
     CurveNotVisible: (status.HTTP_404_NOT_FOUND, "curve not found"),
     NoCurrentCurve: (status.HTTP_409_CONFLICT, "no current curve version to supersede"),
     DataQualityError: (status.HTTP_409_CONFLICT, "curve failed a data-quality gate"),
+    IntegrityError: (status.HTTP_409_CONFLICT, "a current open curve already exists for this key"),
 }
 
 
 def _raise_curve_write(db: Session, exc: Exception) -> None:
-    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
-    code, detail = _CURVE_WRITE_ERRORS[type(exc)]
-    raise HTTPException(status_code=code, detail=detail) from None
+    _raise_mapped_write(db, exc, _CURVE_WRITE_ERRORS)
 
 
 def _curve_with_nodes(db: Session, header: Curve, principal: Principal) -> CurveOut:
@@ -824,7 +861,7 @@ def create_curve(
             interpolation_method=body.interpolation_method,
             valid_from=body.valid_from,
         )
-    except (CurveValueError, CurrencyNotVisible, DataQualityError) as exc:
+    except (CurveValueError, CurrencyNotVisible, DataQualityError, IntegrityError) as exc:
         _raise_curve_write(db, exc)
     out = _curve_with_nodes(db, header, principal)
     db.commit()
@@ -863,6 +900,7 @@ def supersede_curve_endpoint(
         CurveNotVisible,
         NoCurrentCurve,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_curve_write(db, exc)
     out = _curve_with_nodes(db, header, principal)
@@ -892,7 +930,13 @@ def correct_curve_endpoint(
             actor=_curve_actor(principal),
             interpolation_method=body.interpolation_method,
         )
-    except (CurveValueError, CurrencyNotVisible, CurveNotVisible, DataQualityError) as exc:
+    except (
+        CurveValueError,
+        CurrencyNotVisible,
+        CurveNotVisible,
+        DataQualityError,
+        IntegrityError,
+    ) as exc:
         _raise_curve_write(db, exc)
     out = _curve_with_nodes(db, header, principal)
     db.commit()
@@ -1031,16 +1075,22 @@ class ConstituentOut(BaseModel):
     record_version: int
 
 
-class MembershipIn(BaseModel):
+class _MembershipBase(BaseModel):
     effective_date: date
     constituents: list[ConstituentIn]
 
 
-class MembershipSupersedeIn(MembershipIn):
+class MembershipIn(_MembershipBase):
+    # capture-only (MD-H1): sets the FIRST version's valid_from; NOT inherited by the
+    # supersede/correct bodies (review fold: those must not advertise a silently-ignored field).
+    valid_from: datetime | None = None
+
+
+class MembershipSupersedeIn(_MembershipBase):
     effective_at: datetime
 
 
-class MembershipCorrectIn(MembershipIn):
+class MembershipCorrectIn(_MembershipBase):
     restatement_reason: str
 
 
@@ -1110,13 +1160,15 @@ _BENCHMARK_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
     BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
     NoCurrentMembership: (status.HTTP_409_CONFLICT, "no current membership to supersede/correct"),
     DataQualityError: (status.HTTP_409_CONFLICT, "benchmark failed a data-quality gate"),
+    IntegrityError: (
+        status.HTTP_409_CONFLICT,
+        "a current open benchmark/membership already exists for this key",
+    ),
 }
 
 
 def _raise_benchmark_write(db: Session, exc: Exception) -> None:
-    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
-    code, detail = _BENCHMARK_WRITE_ERRORS[type(exc)]
-    raise HTTPException(status_code=code, detail=detail) from None
+    _raise_mapped_write(db, exc, _BENCHMARK_WRITE_ERRORS)
 
 
 @benchmark_router.post("", response_model=BenchmarkOut, status_code=status.HTTP_201_CREATED)
@@ -1139,7 +1191,7 @@ def create_benchmark(
             vendor_code=body.vendor_code,
             methodology_label=body.methodology_label,
         )
-    except (BenchmarkValueError, CurrencyNotVisible) as exc:
+    except (BenchmarkValueError, CurrencyNotVisible, IntegrityError) as exc:
         _raise_benchmark_write(db, exc)
     out = _benchmark_out(row)
     db.commit()
@@ -1163,7 +1215,7 @@ def update_benchmark_endpoint(
             actor=_benchmark_actor(principal),
             **body.model_dump(exclude_unset=True),
         )
-    except (BenchmarkValueError, BenchmarkNotVisible, CurrencyNotVisible) as exc:
+    except (BenchmarkValueError, BenchmarkNotVisible, CurrencyNotVisible, IntegrityError) as exc:
         _raise_benchmark_write(db, exc)
     out = _benchmark_out(row)
     db.commit()
@@ -1189,6 +1241,7 @@ def capture_membership_endpoint(
             constituents=_constituents_in(body.constituents),
             acting_tenant=principal.tenant_id,
             actor=_benchmark_actor(principal),
+            valid_from=body.valid_from,
         )
     except (
         BenchmarkValueError,
@@ -1196,6 +1249,7 @@ def capture_membership_endpoint(
         InstrumentNotVisible,
         CurrencyNotVisible,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_benchmark_write(db, exc)
     out = _membership_out(benchmark_id, body.effective_date, rows)
@@ -1233,6 +1287,7 @@ def supersede_membership_endpoint(
         CurrencyNotVisible,
         NoCurrentMembership,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_benchmark_write(db, exc)
     out = _membership_out(benchmark_id, body.effective_date, rows)
@@ -1270,6 +1325,7 @@ def correct_membership_endpoint(
         CurrencyNotVisible,
         NoCurrentMembership,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_benchmark_write(db, exc)
     out = _membership_out(benchmark_id, body.effective_date, rows)
@@ -1361,17 +1417,23 @@ class FactorOut(BaseModel):
     record_version: int
 
 
-class FactorReturnIn(BaseModel):
+class _FactorReturnBase(BaseModel):
     return_date: date
     return_value: Decimal
     return_type: str = RETURN_TYPE_SIMPLE
 
 
-class FactorReturnSupersedeIn(FactorReturnIn):
+class FactorReturnIn(_FactorReturnBase):
+    # capture-only (MD-H1): sets the FIRST version's valid_from; NOT inherited by the
+    # supersede/correct bodies (review fold: those must not advertise a silently-ignored field).
+    valid_from: datetime | None = None
+
+
+class FactorReturnSupersedeIn(_FactorReturnBase):
     effective_at: datetime
 
 
-class FactorReturnCorrectIn(FactorReturnIn):
+class FactorReturnCorrectIn(_FactorReturnBase):
     restatement_reason: str
 
 
@@ -1434,13 +1496,15 @@ _FACTOR_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
         "no current factor return to supersede/correct",
     ),
     DataQualityError: (status.HTTP_409_CONFLICT, "factor return failed a data-quality gate"),
+    IntegrityError: (
+        status.HTTP_409_CONFLICT,
+        "a current open factor/factor_return already exists for this key",
+    ),
 }
 
 
 def _raise_factor_write(db: Session, exc: Exception) -> None:
-    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
-    code, detail = _FACTOR_WRITE_ERRORS[type(exc)]
-    raise HTTPException(status_code=code, detail=detail) from None
+    _raise_mapped_write(db, exc, _FACTOR_WRITE_ERRORS)
 
 
 @factor_router.post("", response_model=FactorOut, status_code=status.HTTP_201_CREATED)
@@ -1466,7 +1530,7 @@ def create_factor(
             factor_name=body.factor_name,
             description=body.description,
         )
-    except (FactorValueError, CurrencyNotVisible) as exc:
+    except (FactorValueError, CurrencyNotVisible, IntegrityError) as exc:
         _raise_factor_write(db, exc)
     out = _factor_out(row)
     db.commit()
@@ -1490,7 +1554,7 @@ def update_factor_endpoint(
             actor=_factor_actor(principal),
             **body.model_dump(exclude_unset=True),
         )
-    except (FactorValueError, FactorNotVisible, CurrencyNotVisible) as exc:
+    except (FactorValueError, FactorNotVisible, CurrencyNotVisible, IntegrityError) as exc:
         _raise_factor_write(db, exc)
     out = _factor_out(row)
     db.commit()
@@ -1517,8 +1581,9 @@ def capture_factor_return_endpoint(
             return_type=body.return_type,
             acting_tenant=principal.tenant_id,
             actor=_factor_actor(principal),
+            valid_from=body.valid_from,
         )
-    except (FactorValueError, FactorNotVisible, DataQualityError) as exc:
+    except (FactorValueError, FactorNotVisible, DataQualityError, IntegrityError) as exc:
         _raise_factor_write(db, exc)
     out = _factor_return_out(row)
     db.commit()
@@ -1549,7 +1614,13 @@ def supersede_factor_return_endpoint(
             acting_tenant=principal.tenant_id,
             actor=_factor_actor(principal),
         )
-    except (FactorValueError, FactorNotVisible, NoCurrentFactorReturn, DataQualityError) as exc:
+    except (
+        FactorValueError,
+        FactorNotVisible,
+        NoCurrentFactorReturn,
+        DataQualityError,
+        IntegrityError,
+    ) as exc:
         _raise_factor_write(db, exc)
     out = _factor_return_out(row)
     db.commit()
@@ -1580,7 +1651,13 @@ def correct_factor_return_endpoint(
             acting_tenant=principal.tenant_id,
             actor=_factor_actor(principal),
         )
-    except (FactorValueError, FactorNotVisible, NoCurrentFactorReturn, DataQualityError) as exc:
+    except (
+        FactorValueError,
+        FactorNotVisible,
+        NoCurrentFactorReturn,
+        DataQualityError,
+        IntegrityError,
+    ) as exc:
         _raise_factor_write(db, exc)
     out = _factor_return_out(row)
     db.commit()
@@ -1660,17 +1737,23 @@ def list_factors_endpoint(
 # cross-engine-identical value P3-7 pins (P3-7 consumes the persisted rows, not the write echo).
 
 
-class BenchmarkLevelIn(BaseModel):
+class _BenchmarkLevelBase(BaseModel):
     level_date: date
     level_type: str
     level_value: Decimal
 
 
-class BenchmarkLevelSupersedeIn(BenchmarkLevelIn):
+class BenchmarkLevelIn(_BenchmarkLevelBase):
+    # capture-only (MD-H1): sets the FIRST version's valid_from; NOT inherited by the
+    # supersede/correct bodies (review fold: those must not advertise a silently-ignored field).
+    valid_from: datetime | None = None
+
+
+class BenchmarkLevelSupersedeIn(_BenchmarkLevelBase):
     effective_at: datetime
 
 
-class BenchmarkLevelCorrectIn(BenchmarkLevelIn):
+class BenchmarkLevelCorrectIn(_BenchmarkLevelBase):
     restatement_reason: str
 
 
@@ -1688,18 +1771,24 @@ class BenchmarkLevelOut(BaseModel):
     record_version: int
 
 
-class BenchmarkReturnIn(BaseModel):
+class _BenchmarkReturnBase(BaseModel):
     return_date: date
     return_basis: str
     return_value: Decimal
     return_type: str = RETURN_TYPE_SIMPLE
 
 
-class BenchmarkReturnSupersedeIn(BenchmarkReturnIn):
+class BenchmarkReturnIn(_BenchmarkReturnBase):
+    # capture-only (MD-H1): sets the FIRST version's valid_from; NOT inherited by the
+    # supersede/correct bodies (review fold: those must not advertise a silently-ignored field).
+    valid_from: datetime | None = None
+
+
+class BenchmarkReturnSupersedeIn(_BenchmarkReturnBase):
     effective_at: datetime
 
 
-class BenchmarkReturnCorrectIn(BenchmarkReturnIn):
+class BenchmarkReturnCorrectIn(_BenchmarkReturnBase):
     restatement_reason: str
 
 
@@ -1763,13 +1852,15 @@ _BENCHMARK_SERIES_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
         "no current benchmark level/return to supersede/correct",
     ),
     DataQualityError: (status.HTTP_409_CONFLICT, "benchmark series failed a data-quality gate"),
+    IntegrityError: (
+        status.HTTP_409_CONFLICT,
+        "a current open benchmark series row already exists for this key",
+    ),
 }
 
 
 def _raise_benchmark_series_write(db: Session, exc: Exception) -> None:
-    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
-    code, detail = _BENCHMARK_SERIES_WRITE_ERRORS[type(exc)]
-    raise HTTPException(status_code=code, detail=detail) from None
+    _raise_mapped_write(db, exc, _BENCHMARK_SERIES_WRITE_ERRORS)
 
 
 # --- benchmark_level endpoints ---
@@ -1797,8 +1888,14 @@ def capture_benchmark_level_endpoint(
             level_value=body.level_value,
             acting_tenant=principal.tenant_id,
             actor=_benchmark_actor(principal),
+            valid_from=body.valid_from,
         )
-    except (BenchmarkSeriesValueError, BenchmarkNotVisible, DataQualityError) as exc:
+    except (
+        BenchmarkSeriesValueError,
+        BenchmarkNotVisible,
+        DataQualityError,
+        IntegrityError,
+    ) as exc:
         _raise_benchmark_series_write(db, exc)
     out = _benchmark_level_out(row)
     db.commit()
@@ -1834,6 +1931,7 @@ def supersede_benchmark_level_endpoint(
         BenchmarkNotVisible,
         NoCurrentBenchmarkSeries,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_benchmark_series_write(db, exc)
     out = _benchmark_level_out(row)
@@ -1870,6 +1968,7 @@ def correct_benchmark_level_endpoint(
         BenchmarkNotVisible,
         NoCurrentBenchmarkSeries,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_benchmark_series_write(db, exc)
     out = _benchmark_level_out(row)
@@ -1957,8 +2056,14 @@ def capture_benchmark_return_endpoint(
             return_type=body.return_type,
             acting_tenant=principal.tenant_id,
             actor=_benchmark_actor(principal),
+            valid_from=body.valid_from,
         )
-    except (BenchmarkSeriesValueError, BenchmarkNotVisible, DataQualityError) as exc:
+    except (
+        BenchmarkSeriesValueError,
+        BenchmarkNotVisible,
+        DataQualityError,
+        IntegrityError,
+    ) as exc:
         _raise_benchmark_series_write(db, exc)
     out = _benchmark_return_out(row)
     db.commit()
@@ -1995,6 +2100,7 @@ def supersede_benchmark_return_endpoint(
         BenchmarkNotVisible,
         NoCurrentBenchmarkSeries,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_benchmark_series_write(db, exc)
     out = _benchmark_return_out(row)
@@ -2032,6 +2138,7 @@ def correct_benchmark_return_endpoint(
         BenchmarkNotVisible,
         NoCurrentBenchmarkSeries,
         DataQualityError,
+        IntegrityError,
     ) as exc:
         _raise_benchmark_series_write(db, exc)
     out = _benchmark_return_out(row)
@@ -2102,18 +2209,24 @@ def _proxy_mapping_actor(principal: Principal) -> ProxyMappingActor:
     return ProxyMappingActor(actor_id=principal.user_id)
 
 
-class ProxyMappingIn(BaseModel):
+class _ProxyMappingBase(BaseModel):
     private_instrument_id: str
     factor_id: str
     weight: Decimal
     mapping_method: str = MAPPING_METHOD_MANUAL
 
 
-class ProxyMappingSupersedeIn(ProxyMappingIn):
+class ProxyMappingIn(_ProxyMappingBase):
+    # capture-only (MD-H1): sets the FIRST version's valid_from; NOT inherited by the
+    # supersede/correct bodies (review fold: those must not advertise a silently-ignored field).
+    valid_from: datetime | None = None
+
+
+class ProxyMappingSupersedeIn(_ProxyMappingBase):
     effective_at: datetime
 
 
-class ProxyMappingCorrectIn(ProxyMappingIn):
+class ProxyMappingCorrectIn(_ProxyMappingBase):
     restatement_reason: str
 
 
@@ -2164,13 +2277,15 @@ _PROXY_MAPPING_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
         status.HTTP_409_CONFLICT,
         "proxy mapping failed a data-quality gate",
     ),
+    IntegrityError: (
+        status.HTTP_409_CONFLICT,
+        "a current open proxy mapping already exists for this key",
+    ),
 }
 
 
 def _raise_proxy_mapping_write(db: Session, exc: Exception) -> None:
-    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
-    code, detail = _PROXY_MAPPING_WRITE_ERRORS[type(exc)]
-    raise HTTPException(status_code=code, detail=detail) from None
+    _raise_mapped_write(db, exc, _PROXY_MAPPING_WRITE_ERRORS)
 
 
 @proxy_mapping_router.post("", response_model=ProxyMappingOut, status_code=status.HTTP_201_CREATED)
@@ -2191,8 +2306,9 @@ def capture_proxy_mapping_endpoint(
             mapping_method=body.mapping_method,
             acting_tenant=principal.tenant_id,
             actor=_proxy_mapping_actor(principal),
+            valid_from=body.valid_from,
         )
-    except (ProxyMappingValueError, DataQualityError) as exc:
+    except (ProxyMappingValueError, DataQualityError, IntegrityError) as exc:
         _raise_proxy_mapping_write(db, exc)
     out = _proxy_mapping_out(row)
     db.commit()
@@ -2220,7 +2336,7 @@ def supersede_proxy_mapping_endpoint(
             acting_tenant=principal.tenant_id,
             actor=_proxy_mapping_actor(principal),
         )
-    except (ProxyMappingValueError, NoCurrentProxyMapping, DataQualityError) as exc:
+    except (ProxyMappingValueError, NoCurrentProxyMapping, DataQualityError, IntegrityError) as exc:
         _raise_proxy_mapping_write(db, exc)
     out = _proxy_mapping_out(row)
     db.commit()
@@ -2249,7 +2365,7 @@ def correct_proxy_mapping_endpoint(
             acting_tenant=principal.tenant_id,
             actor=_proxy_mapping_actor(principal),
         )
-    except (ProxyMappingValueError, NoCurrentProxyMapping, DataQualityError) as exc:
+    except (ProxyMappingValueError, NoCurrentProxyMapping, DataQualityError, IntegrityError) as exc:
         _raise_proxy_mapping_write(db, exc)
     out = _proxy_mapping_out(row)
     db.commit()

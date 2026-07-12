@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_GRANT
 from irp_shared.audit.service import record_event
 from irp_shared.db.mixins import utcnow
 from irp_shared.entitlement.errors import PermissionDenied
@@ -103,7 +104,7 @@ def grant_role(
         source_module="entitlement",
         entity_type="user_role",
         entity_id=assignment.id,
-        action="grant",
+        action=ACTION_GRANT,
         after_value={"user_id": user_id, "role_id": role_id},
         data_classification="DC-2",
         severity="notice",

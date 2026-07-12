@@ -57,6 +57,68 @@
 
 Ratify OQ-MD-H1-1…8, then the implementation plan (`md_h1_implementation_plan.md`) sequences: the shared guard + its 8 applications; the registrar helper + its 8 applications; the API 409 mapping; the six annex items; the two process amendments + checklist; then the full local gate battery and the 4-finder review. Model/effort for implementation: **Opus 4.8 · High** — known scope, established in-repo patterns (dq/gates savepoint, the `_*_WRITE_ERRORS` dispatch), no novel methodology; the risk is breadth (many files) not depth.
 
-## Part 6 — Review dispositions + closure
+## Part 5.5 — Mid-build amendments (dated; ratified or forced-by-discovery)
 
-*(Appended at MD-H1 closeout.)*
+| Date | Amendment | Why |
+|---|---|---|
+| 2026-07-12 | **OD-B scope EXTENDED (Option A, user-ratified "Go with Option A")**: the window-coherence guard covers EVERY effective-dated supersede path — precise count (review fold, finder 4): **11 supersede functions through 10 guard call sites** (8 marketdata supersede fns per OD-B, of which benchmark level+return share one `_supersede` core, across 7 marketdata modules; PLUS `position`, `valuation`, `instrument_terms` — all API-exposed, all carrying the identical `prior.valid_to = effective_at` inversion). Each extension entity gained a `*ValueError` class (→ 422 at its router) + service- and endpoint-level negative tests. | The clean-code bar: shipping a fix that covers the marketdata siblings and leaves 3 corruptible would be an inconsistent partial fix. |
+| 2026-07-12 | **Guard home = `db/bitemporal.py`** (not `marketdata/_bitemporal.py` as built first): the Option-A extension made a marketdata home a circular import for the lower-level entities; `db` is the zero-dependency leaf every binder already imports. | Forced by the package graph. |
+| 2026-07-12 | **OQ-7 home DEVIATION: `audit/payload.py`** (not `snapshot/serialize.py` as ratified): importing `snapshot.serialize` from a marketdata binder pulls `snapshot/__init__` → `snapshot.service` → `marketdata` — a circular import discovered at integration. `audit` has a cycle-free bare-docstring `__init__` and is already every binder's dependency; `audit/service.py` stays FROZEN and untouched. | Forced by the package graph; the ratified intent (one shared serializer, no new frozen-file edge) is preserved. |
+| 2026-07-12 | **Annex-2 count corrected: TWELVE `_json_safe` copies, not ten** — the conformance test itself found two more (`reference/instrument_terms.py`, `reference/corporate_action.py`); all twelve consolidated. | The guardrail caught its own planning undercount — working as intended. |
+| 2026-07-12 | **Ride-along fold: `valid_from` exposed on the five FR capture endpoints that lacked it** (factor-return, benchmark-level, benchmark-return, membership, proxy-mapping; fx/price already had it). The guard made the asymmetry load-bearing: without a caller-suppliable `valid_from`, no coherent backdated valid-time history can be captured via the API at all. Plus: four fragile `Config("alembic.ini")` relative-path migration-head tests fixed (cwd-dependent false confidence). | Discovered by the guard's own refusals during test adaptation. |
+
+## Part 6 — Review dispositions + closure (4-finder review, 2026-07-12)
+
+**Review mode (OD-H as ratified): 4 independent parallel finders** (line-scan; behavior-preservation
+auditor; pitfall/wrapper specialist; fresh-eyes gap sweep). 20 candidates → deduped to 17 distinct
+findings → **13 FOLDED pre-commit, 4 DEFERRED with recorded reasons**. Two finder claims were
+execution-verified before folding. The behavior-preservation auditor explicitly CLEARED the 8
+registrar refactors ("passes trivially for a fresh mint" verified per-family incl. the
+declared-parameter round-trips), the 12-copy `json_safe` consolidation (no consumer relied on the
+old `str(Decimal)` form), and the `persistent_tenant_context` event wiring.
+
+### Folded (13)
+
+| # | Finding (finder) | Fold |
+|---|---|---|
+| 1 | `parse_strict_decimal` ran `quantize` OUTSIDE the refusal envelope — a finite-but-huge value (1E+40 at a 6dp quantum) escaped as an InvalidOperation 500, the exact BT-1 class the helper closes (F3, **execution-verified**; F1 cross-checked that the BT-1 site's outer wrapper masked it there) | quantize moved inside the try → the family 422; boundary test added |
+| 2 | The IntegrityError→409 mapping was INDISCRIMINATE — an FK/NOT NULL/RLS `WITH CHECK` failure inside a capture would be mislabeled 409 "already exists", hiding real integrity bugs from monitoring (F1+F2+F4 — three-finder convergence) | `db/integrity.is_unique_violation` (SQLSTATE 23505 / sqlite message); the 7 family dispatchers deduped into ONE `_raise_mapped_write` that RE-RAISES non-unique integrity failures (fail-loud 500) |
+| 3 | `ensure_vendor_source` (and the whole resolve-or-register family) carries the SAME first-caller race MD-H1 fixed for registrars — two concurrent first captures both SELECT-miss on the shared `data_source`/DQ-rule row (F1) | generic `db/integrity.resolve_or_insert` (savepoint + unique-discriminated re-resolve); **17 sites converted** (7 marketdata `_ensure_rule`/`ensure_*_source` modules + the 5 `ensure_manual_source` copies in transaction/position/valuation/portfolio/reference) |
+| 4 | `create_position`/`create_valuation` still 500 on a duplicate open head — the slice's own headline class open on two Option-A siblings (F4) | discriminated IntegrityError→409 on both endpoints + endpoint tests |
+| 5 | All 18 marketdata supersede/correct endpoints omitted IntegrityError from their except tuples — a concurrent-supersede race 500s one tuple-line from the mapped 409 (F4) | IntegrityError added to all 18 tuples (safe under the #2 discrimination) |
+| 6 | The 5 new capture schemas leaked `valid_from` into their Supersede/Correct subclasses — OpenAPI advertised a silently-ignored field on 10 endpoints (F1+F2+F4) | schema split per family: `_XBase` (shared) / `XIn(_XBase)` adds capture-only `valid_from`; supersede/correct inherit the base — verified via `model_fields` |
+| 7 | `persistent_tenant_context` stacked listeners on re-arm (a stale listener could silently flip RLS scope back to the PREVIOUS tenant) and read the dialect off `session.get_bind()` instead of the delivered connection (F1+F3) | per-session WeakKeyDictionary registry: re-arm REPLACES the prior listener; guarded detach; `connection.dialect.name` |
+| 8 | The race tests never drove a REAL bootstrap registrar and the plan's PG variant was missing (F4, plan Step 2.3) | 2 bootstrap-driven tests (recovery end-to-end + race-then-`ModelVersionConflictError`) + a PG race-recovery test in `test_model_registry_pg.py` |
+| 9 | The migration-identifier sweep is Constant-only — blind to the repo's own f-string-built `tenant_isolation_{table}` policy names (F3) | second sweep: every `op.create_table` name × every known built-identifier prefix must fit 63 |
+| 10 | The membership multi-row guard was indistinguishable from a wrong "first-row-only" guard under uniform-valid_from fixtures (F4) | labeled synthetic-boundary test: one row's `valid_from` hand-shifted later; a supersede between the two valid_froms is refused |
+| 11 | The pre-commit hook checked the whole WORKTREE (staged-vs-worktree divergence defeats it; unrelated dirty files block clean commits) and hard-failed confusingly without the venv (F1+F4) | staged-`.py`-files-only + a loud venv-missing skip (CI still gates) |
+| 12 | Count incoherence in this record's own Part 5.5 ("six"/"TEN" vs the enumerated functions) + a stale guard-test docstring (F4) | both corrected (11 supersede fns / 10 guard call sites / 7 marketdata modules + 3 entities) |
+| 13 | Only 1 of 10 capture families had a duplicate-409 endpoint test (F4) | fx added as a second pinned family; the remaining families share the single tested `_raise_mapped_write` core (see deferral D) |
+
+### Deferred (4, recorded reasons)
+
+- **A — SQLite `begin_nested` first-statement semantics (F3, execution-verified):** on pysqlite, a
+  savepoint opened as the FIRST statement of a transaction commits durably at RELEASE (no driver
+  BEGIN), so an outer rollback does not undo it — SQLite-test-semantics only; **PostgreSQL
+  (production) is correct**, and every current test opens a driver transaction before the savepoint.
+  Pre-existing platform-wide class (the `dq/gates` pattern since P3-C2). The documented pysqlite
+  workaround (connect-event `isolation_level=None` + emit-BEGIN) changes the WHOLE suite's
+  transactional semantics — its own tested change, not a review ride-along. Trigger: any test that
+  asserts cross-savepoint outer-rollback semantics on SQLite.
+- **B — audit-actions conformance residual (F3):** the AST check misses a locally-assigned alias
+  (`_U = "update"; action=_U`). Zero current occurrences; `record_event`'s keyword-only `action`
+  closes the positional hole; full literal-tracing needs dataflow analysis — disproportionate.
+- **C — annex adoption breadth (F4):** `persistent_tenant_context` / `parse_strict_decimal` /
+  `assert_no_running_orphan` are adopted at their incident sites as exemplars; the ~30-suite manual
+  re-arm sweep and the per-binder parser adoption are a wave-close candidate (mechanical, zero
+  behavior change), not an MD-H1 ride-along.
+- **D — per-family duplicate-409 endpoint seeds (F4):** 2 of 10 families pinned end-to-end
+  (proxy_mapping + fx); the other 8 share the one tested dispatcher core and grep-verified wiring; a
+  10-family seed matrix is disproportionate today. Trigger: any family's capture wiring diverges
+  from the uniform shape.
+
+### Plan Step 4.1 disposition (the per-migration `_IDENTIFIERS` asserts)
+
+**KEPT** in 0033/0034 alongside the repo-wide sweep: the asserts fire at IMPORT time (the earliest
+possible moment, incl. inside `alembic upgrade` itself), the sweep guarantees ALL migrations at test
+time — different trip-wires for the same invariant, not duplication worth removing.

@@ -97,7 +97,13 @@ def _create_benchmark(client: TestClient, p: Principal) -> str:
 def _capture_level(client, p, bid, value="4500.25", ltype="PRICE_RETURN"):  # noqa: ANN001, ANN202
     return client.post(
         f"/benchmarks/{bid}/levels",
-        json={"level_date": _LD.isoformat(), "level_type": ltype, "level_value": value},
+        # explicit early valid_from so a later effective-dated supersede is window-coherent (MD-H1).
+        json={
+            "level_date": _LD.isoformat(),
+            "level_type": ltype,
+            "level_value": value,
+            "valid_from": "2026-06-01T00:00:00+00:00",
+        },
         headers=_h(p),
     )
 
@@ -105,7 +111,13 @@ def _capture_level(client, p, bid, value="4500.25", ltype="PRICE_RETURN"):  # no
 def _capture_return(client, p, bid, value="0.0123", basis="PRICE"):  # noqa: ANN001, ANN202
     return client.post(
         f"/benchmarks/{bid}/returns",
-        json={"return_date": _LD.isoformat(), "return_basis": basis, "return_value": value},
+        # explicit early valid_from so a later effective-dated supersede is window-coherent (MD-H1).
+        json={
+            "return_date": _LD.isoformat(),
+            "return_basis": basis,
+            "return_value": value,
+            "valid_from": "2026-06-01T00:00:00+00:00",
+        },
         headers=_h(p),
     )
 

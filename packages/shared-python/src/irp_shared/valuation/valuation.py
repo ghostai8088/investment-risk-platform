@@ -46,6 +46,8 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.payload import json_safe as _json_safe
+from irp_shared.db.bitemporal import assert_supersede_effective_at
 from irp_shared.db.mixins import utcnow
 from irp_shared.portfolio import resolve_portfolio
 from irp_shared.reference.instrument import resolve_instrument
@@ -60,6 +62,11 @@ from irp_shared.valuation.service import (
 #: The captured mark fields the binder accepts / carries-forward (inert — no math; ``mark_value`` is
 #: required, the rest optional/nullable). ``valuation_date`` is a LOGICAL-KEY component, NOT here.
 VALUATION_FIELDS = ("mark_value", "currency_code", "mark_source", "price_basis")
+
+
+class ValuationValueError(Exception):
+    """Raised for a binder-side value breach (e.g. a window-incoherent supersede ``effective_at``)
+    — caught BEFORE any write (fail-closed; maps to 422). The marketdata *ValueError precedent."""
 
 
 class NoCurrentValuation(Exception):
@@ -83,15 +90,6 @@ class ValuationNotVisible(Exception):
     def __init__(self, valuation_id: str) -> None:
         super().__init__(f"valuation {valuation_id} is not visible in the current tenant context")
         self.valuation_id = str(valuation_id)
-
-
-def _json_safe(value: Any) -> Any:
-    """DC-2 audit metadata must be JSON-serializable: Decimal→str, date/datetime→isoformat."""
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, date | datetime):
-        return value.isoformat()
-    return value
 
 
 def _summary(row: Valuation, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -231,6 +229,7 @@ def supersede_valuation(
     if prior is None:
         raise NoCurrentValuation(str(portfolio_id), str(instrument_id), valuation_date)
 
+    assert_supersede_effective_at(prior.valid_from, effective_at, error=ValuationValueError)
     now = now or utcnow()
     # CLOSE-FIRST: stamp + flush the prior valid_to close-out before adding the new open row.
     before = {"valid_to": _json_safe(prior.valid_to)}
