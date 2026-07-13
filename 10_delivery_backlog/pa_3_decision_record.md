@@ -1,6 +1,6 @@
 # PA-3 Decision Record — regression-estimated proxy weights (Wave-4 slice 2, the headline payload)
 
-> **Status: DRAFT — awaiting OQ ratification (OQ-PA-3-1…6).** The TWELFTH governed number and the
+> **Status: RATIFIED 2026-07-13** (OQ-PA-3-1…6 all approved as recommended). The TWELFTH governed number and the
 > Wave-4 loop-closer: estimate private→public proxy factor weights by regressing the **desmoothed**
 > appraisal return series (PA-1's governed output — its FIRST downstream consumer) on captured public
 > factor returns, replacing judgment-only captured weights with evidence + stated uncertainty. The

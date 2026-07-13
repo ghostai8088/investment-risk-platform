@@ -381,6 +381,77 @@ class VarBacktestResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
 
 
+#: ``proxy_weight_estimate_result.metric_type`` vocabulary (PA-3, ENT-057).
+METRIC_TYPE_WEIGHT = "WEIGHT"  # one per candidate factor: coefficient + std_error
+METRIC_TYPE_INTERCEPT = "INTERCEPT"  # the regression intercept: coefficient + std_error (singleton)
+METRIC_TYPE_ESTIMATION_SUMMARY = (
+    "ESTIMATION_SUMMARY"  # R^2 / n / n_regressors / residual (singleton)
+)
+
+
+class ProxyWeightEstimateResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One coefficient of the OLS regression of a private instrument's DESMOOTHED appraisal return
+    series on the candidate public factor returns (PA-3, **ENT-057**, IA true append-only — the
+    TWELFTH governed number, the loop-closer). Created once, never mutated; a re-run is a NEW
+    ``calculation_run``.
+
+    **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** (the ``factor_exposure_result`` exemplar): NOT-NULL
+    ``calculation_run_id`` + ``input_snapshot_id`` (a ``PROXY_WEIGHT_INPUT`` snapshot pinning the
+    consumed ``DESMOOTHED_RETURN`` rows + the candidate ``factor_return`` windows) + a REGISTERED
+    ``model_version_id``. ``source_desmoothed_run_id`` echoes the consumed desmoothed run (the
+    provenance the estimate regresses). Grain = ``(calculation_run_id, metric_type, factor_id)``:
+    ``WEIGHT`` rows unique per candidate factor; ``INTERCEPT`` / ``ESTIMATION_SUMMARY`` are single
+    (``factor_id`` NULL). ``factor_id`` is deliberately NOT a hard FK — the EV ``factor`` head is
+    supersedable and the pinned ``COMPONENT_KIND_FACTOR`` component is authoritative (the
+    ``factor_exposure_result`` precedent). Estimated weights are MODEL OUTPUT — never written into
+    ``proxy_mapping`` by the run (OD-PA-3-A); promotion is a deliberate second capture step."""
+
+    __tablename__ = "proxy_weight_estimate_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        UniqueConstraint(
+            "calculation_run_id",
+            "metric_type",
+            "factor_id",
+            name="uq_proxy_weight_estimate_result_run_grain",
+        ),
+    )
+
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("dataset_snapshot.id"), nullable=False, index=True
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    )
+    portfolio_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("portfolio.id"), nullable=False, index=True
+    )
+    instrument_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("instrument.id"), nullable=False, index=True
+    )
+    # The consumed DESMOOTHED_RETURN run whose series was regressed (provenance echo, every row).
+    source_desmoothed_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False
+    )
+    metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # The candidate factor on a WEIGHT row; NULL on INTERCEPT / ESTIMATION_SUMMARY (not a hard FK).
+    factor_id: Mapped[str | None] = mapped_column(GUID, nullable=True)
+    # WEIGHT/INTERCEPT: the estimated coefficient. ESTIMATION_SUMMARY: the R^2.
+    metric_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    # WEIGHT/INTERCEPT: the coefficient's standard error (the honest-uncertainty statement).
+    std_error: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
+    # ESTIMATION_SUMMARY evidence (NULL on WEIGHT/INTERCEPT rows).
+    n_observations: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_regressors: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    residual_stdev: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
+    # The DECLARED minimum-observations floor (model identity), echoed on EVERY row as evidence.
+    min_observations: Mapped[int] = mapped_column(Integer, nullable=False)
+    series_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{type(target).__name__} is append-only (AUD-01); update/delete is forbidden"
@@ -401,3 +472,5 @@ event.listen(ActiveRiskResult, "before_update", _block_mutation)
 event.listen(ActiveRiskResult, "before_delete", _block_mutation)
 event.listen(VarBacktestResult, "before_update", _block_mutation)
 event.listen(VarBacktestResult, "before_delete", _block_mutation)
+event.listen(ProxyWeightEstimateResult, "before_update", _block_mutation)
+event.listen(ProxyWeightEstimateResult, "before_delete", _block_mutation)
