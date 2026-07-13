@@ -29,6 +29,7 @@ from irp_shared.audit.service import verify_chain
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import set_tenant_context
 from irp_shared.exposure import ExposureActor, run_exposure
+from irp_shared.marketdata import ProxyMappingActor, capture_proxy_mapping
 from irp_shared.marketdata.factor import FactorActor, capture_factor
 from irp_shared.portfolio import PortfolioActor, create_portfolio
 from irp_shared.position import create_position
@@ -38,6 +39,7 @@ from irp_shared.reference.service import ReferenceActor
 from irp_shared.risk import (
     FactorExposureActor,
     register_factor_exposure_model,
+    register_factor_exposure_proxy_model,
     run_factor_exposure,
 )
 from irp_shared.valuation import create_valuation
@@ -49,6 +51,7 @@ pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_D
 _P3_3 = ("factor_exposure_result",)
 _P1B1_HYBRID = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
 _DEPS = (
+    "proxy_mapping",
     "portfolio",
     "position",
     "valuation",
@@ -497,6 +500,112 @@ def test_failed_run_persists_reason_on_pg(app_url: str) -> None:
             text("SELECT failure_reason FROM calculation_run WHERE run_id = :r"), {"r": run_id}
         ).scalar_one()
         assert persisted == reason and "unmapped-atom" in persisted
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_proxy_pins_and_run_under_rls(app_url: str) -> None:
+    """PA-2: the proxy model's snapshot pins proxy_mapping FR rows and the dispatched run
+    COMPLETES as the constrained irp_app role under FORCE RLS (the one promised PG proxy case;
+    verify_snapshot proves the pinned proxy content re-resolves tenant-scoped)."""
+    from irp_shared.snapshot import verify_snapshot
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        session.add(_currency(tenant, "USD"))
+        session.flush()
+        pf = create_portfolio(
+            session,
+            tenant_id=tenant,
+            code=f"PE-{uuid.uuid4().hex[:6]}",
+            name="private book",
+            node_type="ACCOUNT",
+            actor=PortfolioActor(actor_id="s"),
+        ).id
+        inst = create_instrument(
+            session,
+            tenant_id=tenant,
+            code=f"I-PE-{uuid.uuid4().hex[:6]}",
+            name="Buyout Fund IV",
+            asset_class="PRIVATE_EQUITY",
+            actor=ReferenceActor(actor_id="s"),
+        ).id
+        create_position(
+            session,
+            portfolio_id=pf,
+            instrument_id=inst,
+            acting_tenant=tenant,
+            actor=PositionActor(actor_id="s"),
+            quantity=Decimal("100"),
+            valid_from=_T0,
+        )
+        create_valuation(
+            session,
+            portfolio_id=pf,
+            instrument_id=inst,
+            valuation_date=_VD,
+            acting_tenant=tenant,
+            actor=ValuationActor(actor_id="s"),
+            mark_value=Decimal("500.00"),
+            currency_code="USD",
+            valid_from=_T0,
+        )
+        exp = run_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=ExposureActor(actor_id="a"),
+            code_version="v1",
+            environment_id="ci",
+            portfolio_id=pf,
+            as_of_valid_at=_VALID_AT,
+            as_of_known_at=_KNOWN_AT,
+            base_currency="USD",
+        )
+        fac = capture_factor(
+            session,
+            factor_code=f"FX_USD_{uuid.uuid4().hex[:6]}",
+            factor_source="VENDOR_F",
+            factor_family="CURRENCY",
+            currency_code="USD",
+            acting_tenant=tenant,
+            actor=FactorActor(actor_id="s"),
+            valid_from=_T0,
+        ).id
+        capture_proxy_mapping(
+            session,
+            private_instrument_id=inst,
+            factor_id=fac,
+            weight=Decimal("0.6"),
+            acting_tenant=tenant,
+            actor=ProxyMappingActor(actor_id="s"),
+            valid_from=_T0,
+        )
+        mv = register_factor_exposure_proxy_model(
+            session, tenant_id=tenant, actor_id="a", code_version="pa2-v1"
+        )
+        session.flush()
+        result = run_factor_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=_ACT,
+            code_version="pa2-v1",
+            environment_id="ci",
+            model_version_id=mv.id,
+            exposure_run_id=exp.run.run_id,
+            factor_ids=[fac],
+        )
+        assert result.status == "COMPLETED" and len(result.rows) == 1
+        assert result.rows[0].loading == Decimal("0.6")
+        assert result.rows[0].exposure_amount == Decimal("30000.000000")  # 0.6 * 50000
+        assert verify_snapshot(
+            session, snapshot_id=result.run.input_snapshot_id, acting_tenant=tenant
+        ).ok
+        session.commit()
     finally:
         session.close()
         engine.dispose()
