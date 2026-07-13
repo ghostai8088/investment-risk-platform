@@ -176,4 +176,4 @@ verified intact. **19 raw findings → 12 distinct; 10 folded, 2 deferred:**
 secret-scan + docs-check; FE 55 (+3) + typecheck + lint; local-PG clean-schema 273 green;
 `alembic check` no drift; downgrade-base smoke + restore clean.
 
-*(Final commit/PR refs appended at closeout.)*
+**CLOSED (2026-07-12).** Planning merged via **PR #18** (`366a5c4`); implementation (`af155d2` → `11079c9` → `34e8830`) merged via **PR #19** (merge `f8bc20d`), CI green. Migration `0036`. The ELEVENTH governed number — the thesis payload — ships. Deferred to the register: **RD-2 candidate** (the 6-copy declared-parameter parse-back) + the two pre-existing instrument-guard variants (next-touch, likely PA-2).
