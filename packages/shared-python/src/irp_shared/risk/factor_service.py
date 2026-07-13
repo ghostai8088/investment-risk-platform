@@ -83,13 +83,13 @@ from irp_shared.snapshot import (
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
     COMPONENT_KIND_PROXY_MAPPING,
+    FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     SnapshotActor,
     build_factor_exposure_snapshot,
     list_components,
     resolve_snapshot,
 )
-from irp_shared.snapshot.service import FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE
 
 #: The v1 supported mapping families (OD-P3-3-C; anything else is a pre-create refusal — enforced
 #: on the PINNED factor content for both entry paths).
