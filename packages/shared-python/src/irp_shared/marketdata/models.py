@@ -173,8 +173,10 @@ BENCHMARK_RETURN_TYPES = (RETURN_TYPE_SIMPLE,)
 #: v1 weight is CAPTURED, never computed (OD-PA-0-C).
 MAPPING_METHOD_MANUAL = "MANUAL"
 MAPPING_METHOD_PEER_GROUP_RESERVED = "PEER_GROUP"
-MAPPING_METHOD_REGRESSION_RESERVED = "REGRESSION"
-PROXY_MAPPING_METHODS = (MAPPING_METHOD_MANUAL,)
+#: PA-3 activated REGRESSION: a promoted weight from a governed proxy-weight estimation run (must
+#: cite ``source_calculation_run_id``; the analyst-mediated promotion of a model output).
+MAPPING_METHOD_REGRESSION = "REGRESSION"
+PROXY_MAPPING_METHODS = (MAPPING_METHOD_MANUAL, MAPPING_METHOD_REGRESSION)
 
 
 class FxRate(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):

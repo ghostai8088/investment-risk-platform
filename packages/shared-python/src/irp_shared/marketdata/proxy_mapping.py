@@ -3,11 +3,13 @@ factor proxy INPUTS.
 
 ``proxy_mapping`` (FR bitemporal) records that a PRIVATE instrument's risk loads on a public
 ``factor`` with a signed ``weight`` — the FIRST private-asset foundation (the differentiation-thesis
-destination §2.1). A proxy weight is a **captured** governance judgment call (``mapping_method``)
-supplied to the platform, **NEVER computed** — NO regression, NO factor model, NO
-``calculation_run``, NO ``model_version`` (an INPUT, not a governed derived number). A
-regression-DERIVED weight is a DEFERRED v2 extension (needs a registered ``model_version``); the
-desmoothing/proxy TRANSFORM that consumes this is the LATER PA-1 slice.
+destination §2.1). A proxy weight is a **captured** value (``mapping_method``), **NEVER computed in
+this binder** — it is an INPUT, not a governed derived number. A ``MANUAL`` weight is a pure
+governance judgment call. A ``REGRESSION`` weight (PA-3) is the deliberate, analyst-mediated
+PROMOTION of a governed ``proxy_weight_estimate_result`` run's output: still captured verbatim here,
+but it MUST cite the estimation run (``source_calculation_run_id``) as its evidence — the estimate
+itself is the governed number (snapshot/run/model-bound), and this capture step is where a human
+turns a reviewed model output into a live proxy weight (OD-PA-3-A/E).
 
 The FR series re-versions over time (a proxy weight is revisited) →
 ``MARKET.PROXY_MAPPING_CREATE``/``_UPDATE``/``_CORRECTION`` at the EVT-200 block (the
@@ -41,6 +43,7 @@ from sqlalchemy.orm import Session
 from irp_shared.audit.actions import ACTION_CORRECT, ACTION_CREATE, ACTION_UPDATE
 from irp_shared.audit.payload import json_safe as _json_safe
 from irp_shared.audit.service import record_event
+from irp_shared.calc.runs import resolve_completed_run_of_type
 from irp_shared.db.bitemporal import assert_supersede_effective_at
 from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.db.mixins import utcnow
@@ -52,6 +55,7 @@ from irp_shared.lineage.service import record_lineage, register_data_source
 from irp_shared.marketdata.models import (
     FACTOR_FAMILY_CURRENCY,
     MAPPING_METHOD_MANUAL,
+    MAPPING_METHOD_REGRESSION,
     PROXY_MAPPING_METHODS,
     Factor,
     ProxyMapping,
@@ -118,6 +122,45 @@ def _validate_mapping_method(mapping_method: str) -> None:
         raise ProxyMappingValueError(
             f"mapping_method {mapping_method!r} not in {PROXY_MAPPING_METHODS}"
         )
+
+
+#: The PA-3 estimation run's ``run_type`` (a string literal, NOT a ``risk.events`` import —
+#: marketdata is BELOW risk in the layering, so importing it would be a reverse-import cycle).
+_PROXY_WEIGHT_RUN_TYPE = "PROXY_WEIGHT_ESTIMATE"
+
+
+def _validate_promotion(
+    session: Session,
+    mapping_method: str,
+    source_calculation_run_id: str | None,
+    *,
+    acting_tenant: str,
+) -> str | None:
+    """Fail-closed BOTH directions (OD-PA-3-E): a ``REGRESSION`` capture MUST cite a tenant-resolved
+    COMPLETED ``PROXY_WEIGHT_ESTIMATE`` run (returns its normalized id); a ``MANUAL`` capture
+    MUST NOT cite one (methods never blur). The estimate stays MODEL OUTPUT — this promotion is the
+    deliberate, evidence-citing analyst step that turns it into a captured weight."""
+    if mapping_method == MAPPING_METHOD_REGRESSION:
+        if source_calculation_run_id is None:
+            raise ProxyMappingValueError(
+                "a REGRESSION-method proxy weight must cite its estimation run "
+                "(source_calculation_run_id) — refused"
+            )
+        run = resolve_completed_run_of_type(
+            session,
+            source_calculation_run_id,
+            acting_tenant=acting_tenant,
+            run_type=_PROXY_WEIGHT_RUN_TYPE,
+            label="proxy-weight estimate",
+            error=ProxyMappingValueError,
+        )
+        return str(run.run_id)
+    if source_calculation_run_id is not None:
+        raise ProxyMappingValueError(
+            f"source_calculation_run_id is only valid with mapping_method="
+            f"{MAPPING_METHOD_REGRESSION!r} (got {mapping_method!r}) — refused"
+        )
+    return None
 
 
 def _validate_weight(weight: Decimal) -> None:
@@ -360,6 +403,7 @@ def capture_proxy_mapping(
     acting_tenant: str,
     actor: ProxyMappingActor,
     mapping_method: str = MAPPING_METHOD_MANUAL,
+    source_calculation_run_id: str | None = None,
     valid_from: datetime | None = None,
     entity_id: str | None = None,
     now: datetime | None = None,
@@ -367,9 +411,14 @@ def capture_proxy_mapping(
     """Capture the first open proxy weight for a (private_instrument, factor) as ONE governed unit
     (FR row + MANUAL_PROXY ORIGIN edge + ``MARKET.PROXY_MAPPING_CREATE`` + the DQ gate). The
     mapping_method + finiteness are validated, and BOTH FK targets re-resolved tenant-filtered,
-    BEFORE any write; the weight is captured verbatim (NEVER computed)."""
+    BEFORE any write; the weight is captured verbatim (NEVER computed). PA-3: a ``REGRESSION``
+    capture PROMOTES a governed estimation run — it MUST cite ``source_calculation_run_id`` (a
+    tenant-resolved COMPLETED ``PROXY_WEIGHT_ESTIMATE`` run); a ``MANUAL`` capture must NOT."""
     _validate_mapping_method(mapping_method)
     _validate_weight(weight)
+    resolved_source = _validate_promotion(
+        session, mapping_method, source_calculation_run_id, acting_tenant=acting_tenant
+    )
     resolved_instrument = _resolve_instrument_id(
         session, private_instrument_id, acting_tenant=acting_tenant
     )
@@ -381,6 +430,7 @@ def capture_proxy_mapping(
         factor_id=resolved_factor,
         weight=weight,
         mapping_method=mapping_method,
+        source_calculation_run_id=resolved_source,
         valid_from=(valid_from or now),
         valid_to=None,
         system_from=now,
