@@ -333,6 +333,23 @@ def benchmark_membership_content(benchmark: Any, constituent: Any) -> dict[str, 
     }
 
 
+def proxy_mapping_content(row: Any) -> dict[str, Any]:
+    """The captured content of one pinned ``proxy_mapping`` FR version (PA-2 PROXY_MAPPING
+    component — the per-row FR flavor: a later weight supersede/correction closes this version out
+    and inserts a successor, invisible to the pin; TR-09). ``weight`` at the 12dp loading scale."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "private_instrument_id": _norm_guid(row.private_instrument_id),
+        "factor_id": _norm_guid(row.factor_id),
+        "weight": _norm_decimal(row.weight, _SCALE_CURVE_POINT),
+        "mapping_method": row.mapping_method,
+        "valid_from": _norm_datetime(row.valid_from),
+        "system_from": _norm_datetime(row.system_from),
+        "record_version": row.record_version,
+    }
+
+
 def scenario_shock_content(definition: Any, shock: Any) -> dict[str, Any]:
     """The captured content of one pinned ``scenario_shock`` FR version (P3-6 SCENARIO component —
     the ``benchmark_constituent`` per-row FR flavor: each row is an immutable FR VERSION, so a later

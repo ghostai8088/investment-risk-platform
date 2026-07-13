@@ -88,6 +88,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_PORTFOLIO_RETURN,
     COMPONENT_KIND_POSITION,
+    COMPONENT_KIND_PROXY_MAPPING,
     COMPONENT_KIND_SCENARIO,
     COMPONENT_KIND_TRANSACTION,
     COMPONENT_KIND_VALUATION,
@@ -122,6 +123,7 @@ from irp_shared.snapshot.serialize import (
     portfolio_content,
     portfolio_return_content,
     position_content,
+    proxy_mapping_content,
     scenario_shock_content,
     serialize_content,
     transaction_content,
@@ -613,6 +615,9 @@ def _list_exposure_atoms(session: Session, run_id: str, *, acting_tenant: str) -
 #: The factor-exposure binding/selection rule (a truthful descriptor — NOT the P2-1
 #: subtree-open-positions rule; the 2026-07 review finding).
 FACTOR_EXPOSURE_BINDING_PREDICATE = "v1:exposure-run-atoms+factor-list"
+#: The PA-2 proxy-model selection rule (OD-PA-2-C): atoms + factors + the CURRENT-HEAD proxy rows
+#: of every pinned atom's instrument. The proxy binder REQUIRES this predicate.
+FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE = "v1:exposure-run-atoms+factor-list+proxy-rows"
 
 
 def build_factor_exposure_snapshot(
@@ -622,6 +627,7 @@ def build_factor_exposure_snapshot(
     actor: SnapshotActor,
     exposure_run_id: str,
     factor_ids: list[str],
+    include_proxy_rows: bool = False,
 ) -> DatasetSnapshot:
     """Build one immutable ``FACTOR_EXPOSURE_INPUT`` snapshot (P3-3, OD-P3-3-I) pinning:
 
@@ -662,6 +668,37 @@ def build_factor_exposure_snapshot(
         seen_factors.add(factor.id)
         _append_spec(specs, COMPONENT_KIND_FACTOR, "factor", factor, factor_content(factor))
 
+    if include_proxy_rows:
+        # PA-2 (OD-PA-2-C): pin the CURRENT-HEAD proxy_mapping rows of every pinned atom's
+        # instrument (the per-row FR flavor — a later weight supersede is invisible, TR-09). An
+        # instrument WITHOUT proxy rows is fine (the indicator path); zero rows overall is fine
+        # too (the binder then behaves as allocation-v1 over the whole book).
+        from irp_shared.marketdata.models import ProxyMapping  # models-only (no cycle)
+
+        instrument_ids = sorted({str(a.instrument_id) for a in atoms})
+        proxy_rows = (
+            session.execute(
+                select(ProxyMapping)
+                .where(
+                    ProxyMapping.tenant_id == str(acting_tenant),
+                    ProxyMapping.private_instrument_id.in_(instrument_ids),
+                    ProxyMapping.valid_to.is_(None),
+                    ProxyMapping.system_to.is_(None),
+                )
+                .order_by(ProxyMapping.private_instrument_id, ProxyMapping.factor_id)
+            )
+            .scalars()
+            .all()
+        )
+        for row in proxy_rows:
+            _append_spec(
+                specs,
+                COMPONENT_KIND_PROXY_MAPPING,
+                "proxy_mapping",
+                row,
+                proxy_mapping_content(row),
+            )
+
     header_row = _persist_snapshot(
         session,
         acting_tenant=acting_tenant,
@@ -672,7 +709,11 @@ def build_factor_exposure_snapshot(
         as_of_valid_at=now,
         as_of_known_at=now,
         as_of_valuation_date=now.date(),
-        binding_predicate_version=FACTOR_EXPOSURE_BINDING_PREDICATE,
+        binding_predicate_version=(
+            FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE
+            if include_proxy_rows
+            else FACTOR_EXPOSURE_BINDING_PREDICATE
+        ),
     )
 
     # No build-time DQ gate: the pinned atoms exist by construction (an empty set is refused
@@ -924,6 +965,22 @@ def _resolve_benchmark_constituent_row(session: Session, row_id: str, *, acting_
     ).scalar_one_or_none()
     if row is None:
         raise VarSnapshotError(f"benchmark constituent {row_id} is not visible")
+    return row
+
+
+def _resolve_proxy_mapping_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``proxy_mapping`` FR row by surrogate id with an EXPLICIT tenant predicate
+    (models-only function-local import — the ``_resolve_benchmark_constituent_row`` precedent)."""
+    from irp_shared.marketdata.models import ProxyMapping  # models-only (no cycle)
+
+    row = session.execute(
+        select(ProxyMapping).where(
+            ProxyMapping.id == str(row_id),
+            ProxyMapping.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise FactorExposureSnapshotError(f"proxy mapping {row_id} is not visible")
     return row
 
 
@@ -2012,6 +2069,12 @@ def _reresolve_content(
             session, comp.target_entity_id, acting_tenant=acting_tenant
         )
         return benchmark_membership_content(benchmark, constituent)
+    if comp.component_kind == COMPONENT_KIND_PROXY_MAPPING:
+        # Re-read the proxy_mapping FR row by surrogate id (tenant-predicated). A superseded/
+        # corrected row is byte-stable (its immutable content is what was pinned — TR-09).
+        return proxy_mapping_content(
+            _resolve_proxy_mapping_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
     if comp.component_kind == COMPONENT_KIND_SCENARIO:
         # Re-read the scenario DEFINITION (from the pinned id) + the shock FR row by surrogate id
         # (tenant-predicated). A gone/cross-tenant row reports as drift; a superseded/corrected row
@@ -2176,6 +2239,7 @@ def build_var_hs_snapshot(
 _BINDING_PREDICATES = (
     DEFAULT_BINDING_PREDICATE,
     FACTOR_EXPOSURE_BINDING_PREDICATE,
+    FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE,
     COVARIANCE_BINDING_PREDICATE,
     VAR_BINDING_PREDICATE,
     ACTIVE_RISK_BINDING_PREDICATE,
