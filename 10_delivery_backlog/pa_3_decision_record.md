@@ -147,11 +147,25 @@ singular; magnitude-FAILED; coverage-gap; constant-target; the PG RLS/append-onl
 - *Governance/snapshot finder — ONE real defect, FOLDED (the review's single most valuable finding):*
   `supersede_proxy_mapping`/`correct_proxy_mapping` accepted `mapping_method=REGRESSION` (now in the
   vocab) but carry no `source_calculation_run_id` and never called `_validate_promotion` → they could
-  mint a live REGRESSION weight with a NULL citation, violating OD-PA-3-E. Fold: `_reject_regression_
-  revision` fail-closes both revision paths (a promoted REGRESSION weight is re-derived by
-  re-promoting, never silently null-cited/downgraded) + a regression test. Everything else verified
+  mint a live REGRESSION weight with a NULL citation, violating OD-PA-3-E. Everything else verified
   clean (migration↔ORM match, TR-09 no drift, the estimate→promote fence, declared identity, the
   provenance echoes).
+
+  **Fold, as refined by the Fable fold-synthesis pass (2026-07-13):** the first (Opus-session) fold
+  hard-refused REGRESSION on BOTH revision paths — safe, but empirically OVER-closed: the one-open-
+  head constraint makes a second `promote` on an existing key 409, so the guard's own "re-promote"
+  advice could never succeed and the loop-closer could not LOOP (re-estimate → re-promote is the
+  steady-state use case). The Fable pass (per the standing fold-synthesis-on-Fable rule) caught this
+  and implemented the finder's own recommended direction: `supersede_proxy_mapping` now carries an
+  optional `source_calculation_run_id` under the SAME fence-safe blur guard as capture (REGRESSION
+  requires a citation; MANUAL forbids one), and `risk.promote_proxy_weight_estimate` is
+  promote-or-REpromote (capture on a fresh key; a citation-carrying supersede on an open head — the
+  run-TYPE gate still resolved in `risk` first). The HTTP supersede body deliberately gains NO
+  citation field (an API-level REGRESSION supersede always refuses — the original bypass stays
+  closed); a CORRECTION can never mint REGRESSION (`_reject_regression_correction`, a v1 recorded
+  limitation — re-promote instead). Tests: re-promotion succeeds (version 2, method preserved,
+  citation updated, supersedes link); REGRESSION-supersede-without-citation, MANUAL-with-citation,
+  and REGRESSION-correction all refuse; wrong-run-type on the revision path refuses.
 - *Cross-file/API finder — CLEAN + one fold.* All routes/schemas/error-maps/exports/response-before-
   commit sound. Fold: `RISK_RUN_TYPES` had not gained `PROXY_WEIGHT_ESTIMATE` (the runs were invisible
   to `GET /risk/runs`) — added, with the ratified-set guard test updated (a deliberate addition).

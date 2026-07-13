@@ -12,8 +12,10 @@ consume-existing (``snapshot_id``); BOTH paths adjudicate the PINNED content pre
 never a live read; a later mark/return correction cannot move a historical estimate, TR-09).
 
 Estimates are MODEL OUTPUT — snapshot/run/model-bound, IA append-only — and are **never written**
-into ``proxy_mapping`` by the run (OD-PA-3-A). Promotion is a deliberate second capture step (the
-``marketdata`` REGRESSION-method path citing this run).
+into ``proxy_mapping`` by the run (OD-PA-3-A). Promotion is a deliberate second step
+(:func:`promote_proxy_weight_estimate`): a first promotion CAPTURES a ``REGRESSION``-method row
+citing this run; a RE-promotion SUPERSEDES the open head with the new citation (the steady-state
+loop as new marks arrive).
 
 The declared ``min_observations`` is the MODEL identity (OD-PA-3-D) — parsed from the registered
 version, never a request parameter — and echoed on every persisted row; the run additionally
@@ -48,12 +50,18 @@ from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
+from irp_shared.db.mixins import utcnow
 from irp_shared.marketdata.models import (
     FACTOR_FAMILY_CURRENCY,
     MAPPING_METHOD_REGRESSION,
     ProxyMapping,
 )
-from irp_shared.marketdata.proxy_mapping import ProxyMappingActor, capture_proxy_mapping
+from irp_shared.marketdata.proxy_mapping import (
+    NoCurrentProxyMapping,
+    ProxyMappingActor,
+    capture_proxy_mapping,
+    supersede_proxy_mapping,
+)
 from irp_shared.model.service import assert_model_version_of
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.reference.guards import assert_instrument_in_tenant
@@ -539,9 +547,12 @@ def promote_proxy_weight_estimate(
     """Promote a REVIEWED estimate into a live captured proxy weight (OD-PA-3-E, the deliberate
     analyst-mediated second step). Resolves the cited run to a tenant-visible COMPLETED
     ``PROXY_WEIGHT_ESTIMATE`` run — the run-TYPE gate that ``marketdata`` cannot see (the captured-
-    input fence) — then captures a ``REGRESSION``-method ``proxy_mapping`` row citing it. The
-    ``weight`` is supplied by the caller (the analyst's chosen coefficient), NOT read from the run:
-    the human decides which estimated loading to promote and at what value."""
+    input fence) — then writes a ``REGRESSION``-method ``proxy_mapping`` row citing it: a CAPTURE
+    when the ``(instrument, factor)`` key has no open head, else a citation-carrying SUPERSEDE (a
+    RE-promotion — the steady-state loop as new marks arrive: re-estimate → review → re-promote;
+    ``valid_from`` doubles as the supersede's ``effective_at``). The ``weight`` is supplied by the
+    caller (the analyst's chosen coefficient), NOT read from the run: the human decides which
+    estimated loading to promote and at what value."""
     run = resolve_completed_run_of_type(
         session,
         source_calculation_run_id,
@@ -550,14 +561,27 @@ def promote_proxy_weight_estimate(
         label="proxy-weight estimate",
         error=ProxyWeightInputError,
     )
-    return capture_proxy_mapping(
-        session,
-        private_instrument_id=private_instrument_id,
-        factor_id=factor_id,
-        weight=weight,
-        acting_tenant=acting_tenant,
-        actor=actor,
-        mapping_method=MAPPING_METHOD_REGRESSION,
-        source_calculation_run_id=str(run.run_id),
-        valid_from=valid_from,
-    )
+    try:
+        return supersede_proxy_mapping(
+            session,
+            private_instrument_id=private_instrument_id,
+            factor_id=factor_id,
+            weight=weight,
+            acting_tenant=acting_tenant,
+            actor=actor,
+            effective_at=(valid_from if valid_from is not None else utcnow()),
+            mapping_method=MAPPING_METHOD_REGRESSION,
+            source_calculation_run_id=str(run.run_id),
+        )
+    except NoCurrentProxyMapping:
+        return capture_proxy_mapping(
+            session,
+            private_instrument_id=private_instrument_id,
+            factor_id=factor_id,
+            weight=weight,
+            acting_tenant=acting_tenant,
+            actor=actor,
+            mapping_method=MAPPING_METHOD_REGRESSION,
+            source_calculation_run_id=str(run.run_id),
+            valid_from=valid_from,
+        )

@@ -598,9 +598,11 @@ def test_kernel_refuses_constant_target() -> None:
     assert exc.value.reason == "constant-target"
 
 
-def test_supersede_correct_refuse_regression(session: Session) -> None:
-    # A promoted REGRESSION weight cannot be revised via supersede/correct (they carry no citation),
-    # closing the OD-PA-3-E leak — a REGRESSION revision must re-promote.
+def test_supersede_correct_regression_citation_guards(session: Session) -> None:
+    # The OD-PA-3-E invariant on the REVISION paths: a REGRESSION supersede without a citation
+    # refuses (the same blur guard as capture — and the HTTP supersede body cannot carry one, so
+    # via the API a REGRESSION supersede ALWAYS refuses); a correction can never mint REGRESSION
+    # (v1 recorded limitation — re-promote instead).
     tenant = str(uuid.uuid4())
     _run, _pf, inst = _desmoothed_run(session, tenant)
     fx = _factor(session, tenant, "FX_USD")
@@ -614,7 +616,7 @@ def test_supersede_correct_refuse_regression(session: Session) -> None:
         actor=ProxyMappingActor(actor_id="s"),
         mapping_method=MAPPING_METHOD_MANUAL,
     )
-    with pytest.raises(ProxyMappingValueError, match="cannot mint a REGRESSION"):
+    with pytest.raises(ProxyMappingValueError, match="must cite"):
         supersede_proxy_mapping(
             session,
             private_instrument_id=inst,
@@ -635,4 +637,89 @@ def test_supersede_correct_refuse_regression(session: Session) -> None:
             actor=ProxyMappingActor(actor_id="s"),
             restatement_reason="fix",
             mapping_method=MAPPING_METHOD_REGRESSION,
+        )
+    # A MANUAL supersede carrying a citation also refuses (methods never blur on revision either).
+    with pytest.raises(ProxyMappingValueError, match="only valid with"):
+        supersede_proxy_mapping(
+            session,
+            private_instrument_id=inst,
+            factor_id=fx,
+            weight=Decimal("0.6"),
+            acting_tenant=tenant,
+            actor=ProxyMappingActor(actor_id="s"),
+            effective_at=datetime(2026, 6, 1, tzinfo=UTC),
+            mapping_method=MAPPING_METHOD_MANUAL,
+            source_calculation_run_id=str(uuid.uuid4()),
+        )
+
+
+def test_repromotion_supersedes_with_citation(session: Session) -> None:
+    # The steady-state loop: promote once (capture), then RE-promote the same key (a
+    # citation-carrying supersede) — new version, method preserved, citation updated.
+    tenant = str(uuid.uuid4())
+    run_id, _pf, inst = _desmoothed_run(session, tenant)
+    fx_usd = _factor(session, tenant, "FX_USD")
+    fx_eur = _factor(session, tenant, "FX_EUR")
+    _factor_returns(session, tenant, fx_usd, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    _factor_returns(session, tenant, fx_eur, ["0.02", "-0.01", "0.01", "0.00", "0.02"])
+    model_id = _proxy_model(session, tenant)
+    est1 = str(
+        run_proxy_weight_estimate(
+            session,
+            acting_tenant=tenant,
+            actor=ProxyWeightEstimateActor(actor_id="a"),
+            code_version="v1",
+            environment_id="test",
+            model_version_id=model_id,
+            desmoothed_run_id=run_id,
+            factor_ids=[fx_usd, fx_eur],
+        ).run.run_id
+    )
+    act = ProxyMappingActor(actor_id="s")
+    first = promote_proxy_weight_estimate(
+        session,
+        private_instrument_id=inst,
+        factor_id=fx_usd,
+        weight=Decimal("0.6"),
+        acting_tenant=tenant,
+        actor=act,
+        source_calculation_run_id=est1,
+    )
+    assert first.record_version == 1 and str(first.source_calculation_run_id) == est1
+    # a NEW estimate run -> the analyst re-promotes an updated weight.
+    est2 = str(
+        run_proxy_weight_estimate(
+            session,
+            acting_tenant=tenant,
+            actor=ProxyWeightEstimateActor(actor_id="a"),
+            code_version="v1",
+            environment_id="test",
+            model_version_id=model_id,
+            desmoothed_run_id=run_id,
+            factor_ids=[fx_usd, fx_eur],
+        ).run.run_id
+    )
+    second = promote_proxy_weight_estimate(
+        session,
+        private_instrument_id=inst,
+        factor_id=fx_usd,
+        weight=Decimal("0.55"),
+        acting_tenant=tenant,
+        actor=act,
+        source_calculation_run_id=est2,
+    )
+    assert second.record_version == 2
+    assert second.mapping_method == MAPPING_METHOD_REGRESSION
+    assert str(second.source_calculation_run_id) == est2
+    assert str(second.supersedes_id) == str(first.id)
+    # promoting a wrong-type run on the REVISION path refuses too (the run-TYPE gate).
+    with pytest.raises(ProxyWeightInputError, match="not a visible"):
+        promote_proxy_weight_estimate(
+            session,
+            private_instrument_id=inst,
+            factor_id=fx_usd,
+            weight=Decimal("0.5"),
+            acting_tenant=tenant,
+            actor=act,
+            source_calculation_run_id=run_id,  # the DESMOOTHED_RETURN run
         )

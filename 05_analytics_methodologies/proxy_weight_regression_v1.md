@@ -69,10 +69,15 @@ family, ≠ the metric); REUSES `risk.run`/`risk.view` (no mint); `CALC.RUN_*`-a
 **Estimate → promote (OD-PA-3-A/E):** an estimate is MODEL OUTPUT, NEVER auto-written into
 `proxy_mapping`. Promotion is a deliberate second step — `risk.promote_proxy_weight_estimate`
 resolves the cited COMPLETED `PROXY_WEIGHT_ESTIMATE` run (the run-TYPE gate; `marketdata` imports no
-`calc`, so this lives one layer up) then captures a `REGRESSION`-method `proxy_mapping` row whose
-`source_calculation_run_id` cites the run. The analyst chooses the weight VALUE to promote (not
-auto-read from the run) — a human decision point by design. PA-2's proxy factor-exposure runs then
-consume the promoted rows unchanged.
+`calc`, so this lives one layer up) then writes a `REGRESSION`-method `proxy_mapping` row whose
+`source_calculation_run_id` cites the run: a CAPTURE when the `(instrument, factor)` key has no open
+head, else a citation-carrying SUPERSEDE (a RE-promotion — the steady-state loop as new marks
+arrive: re-estimate → review → re-promote). The analyst chooses the weight VALUE to promote (not
+auto-read from the run) — a human decision point by design. The blur guard holds on every path
+(REGRESSION requires a citation; MANUAL forbids one; the HTTP supersede body carries no citation
+field, so an API-level REGRESSION supersede always refuses); a CORRECTION can never mint REGRESSION
+(v1 recorded limitation — re-promote instead). PA-2's proxy factor-exposure runs then consume the
+promoted rows unchanged.
 
 ## Known limitations
 
