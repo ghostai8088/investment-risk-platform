@@ -43,7 +43,6 @@ from sqlalchemy.orm import Session
 from irp_shared.audit.actions import ACTION_CORRECT, ACTION_CREATE, ACTION_UPDATE
 from irp_shared.audit.payload import json_safe as _json_safe
 from irp_shared.audit.service import record_event
-from irp_shared.calc.runs import resolve_completed_run_of_type
 from irp_shared.db.bitemporal import assert_supersede_effective_at
 from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.db.mixins import utcnow
@@ -124,43 +123,23 @@ def _validate_mapping_method(mapping_method: str) -> None:
         )
 
 
-#: The PA-3 estimation run's ``run_type`` (a string literal, NOT a ``risk.events`` import —
-#: marketdata is BELOW risk in the layering, so importing it would be a reverse-import cycle).
-_PROXY_WEIGHT_RUN_TYPE = "PROXY_WEIGHT_ESTIMATE"
-
-
-def _validate_promotion(
-    session: Session,
-    mapping_method: str,
-    source_calculation_run_id: str | None,
-    *,
-    acting_tenant: str,
-) -> str | None:
-    """Fail-closed BOTH directions (OD-PA-3-E): a ``REGRESSION`` capture MUST cite a tenant-resolved
-    COMPLETED ``PROXY_WEIGHT_ESTIMATE`` run (returns its normalized id); a ``MANUAL`` capture
-    MUST NOT cite one (methods never blur). The estimate stays MODEL OUTPUT — this promotion is the
-    deliberate, evidence-citing analyst step that turns it into a captured weight."""
+def _validate_promotion(mapping_method: str, source_calculation_run_id: str | None) -> None:
+    """The method↔citation blur guard, fail-closed BOTH directions (OD-PA-3-E): a ``REGRESSION``
+    capture MUST carry a ``source_calculation_run_id``; a ``MANUAL`` capture must NOT. The run-TYPE
+    resolution (a tenant-visible COMPLETED ``PROXY_WEIGHT_ESTIMATE`` run) lives ONE LAYER UP in
+    ``risk.promote_proxy_weight_estimate`` — ``marketdata`` imports no ``calc``/``risk`` (the
+    captured-INPUT fence). The FK to ``calculation_run`` still guarantees a real run here."""
     if mapping_method == MAPPING_METHOD_REGRESSION:
         if source_calculation_run_id is None:
             raise ProxyMappingValueError(
                 "a REGRESSION-method proxy weight must cite its estimation run "
                 "(source_calculation_run_id) — refused"
             )
-        run = resolve_completed_run_of_type(
-            session,
-            source_calculation_run_id,
-            acting_tenant=acting_tenant,
-            run_type=_PROXY_WEIGHT_RUN_TYPE,
-            label="proxy-weight estimate",
-            error=ProxyMappingValueError,
-        )
-        return str(run.run_id)
-    if source_calculation_run_id is not None:
+    elif source_calculation_run_id is not None:
         raise ProxyMappingValueError(
             f"source_calculation_run_id is only valid with mapping_method="
             f"{MAPPING_METHOD_REGRESSION!r} (got {mapping_method!r}) — refused"
         )
-    return None
 
 
 def _validate_weight(weight: Decimal) -> None:
@@ -416,8 +395,9 @@ def capture_proxy_mapping(
     tenant-resolved COMPLETED ``PROXY_WEIGHT_ESTIMATE`` run); a ``MANUAL`` capture must NOT."""
     _validate_mapping_method(mapping_method)
     _validate_weight(weight)
-    resolved_source = _validate_promotion(
-        session, mapping_method, source_calculation_run_id, acting_tenant=acting_tenant
+    _validate_promotion(mapping_method, source_calculation_run_id)
+    resolved_source = (
+        str(source_calculation_run_id) if source_calculation_run_id is not None else None
     )
     resolved_instrument = _resolve_instrument_id(
         session, private_instrument_id, acting_tenant=acting_tenant

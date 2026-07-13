@@ -553,6 +553,6 @@ def test_migration_0019_chain_position() -> None:
         assert root != root.parent, "alembic.ini not found"
         root = root.parent
     script = ScriptDirectory(str(root / "migrations"))
-    assert script.get_current_head() == "0036_desmoothed_return"
+    assert script.get_current_head() == "0037_proxy_weight_estimate"
     assert script.get_revision("0019_price_point").down_revision == "0018_exposure_aggregate"
     assert "0019_price_point" in {r.revision for r in script.walk_revisions()}

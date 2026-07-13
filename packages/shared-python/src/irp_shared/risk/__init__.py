@@ -42,6 +42,7 @@ from irp_shared.risk.bootstrap import (
     COVARIANCE_MODEL_CODE,
     FACTOR_EXPOSURE_METHODOLOGY_REF,
     FACTOR_EXPOSURE_MODEL_CODE,
+    PROXY_WEIGHT_MODEL_CODE,
     SENSITIVITY_METHODOLOGY_REF,
     SENSITIVITY_MODEL_CODE,
     VAR_BACKTEST_MODEL_CODE,
@@ -57,6 +58,7 @@ from irp_shared.risk.bootstrap import (
     WrongModelVersionError,
     assert_model_version_of,
     declared_hs_var_parameters,
+    declared_min_observations,
     declared_var_backtest_alpha,
     declared_var_parameters,
     declared_window_observations,
@@ -65,6 +67,7 @@ from irp_shared.risk.bootstrap import (
     register_factor_exposure_model,
     register_factor_exposure_proxy_model,
     register_historical_var_model,
+    register_proxy_weight_regression_model,
     register_scenario_model,
     register_sensitivity_model,
     register_var_backtest_model,
@@ -106,6 +109,7 @@ from irp_shared.risk.events import (
     RUN_TYPE_ACTIVE_RISK,
     RUN_TYPE_COVARIANCE,
     RUN_TYPE_FACTOR_EXPOSURE,
+    RUN_TYPE_PROXY_WEIGHT_ESTIMATE,
     RUN_TYPE_SCENARIO,
     RUN_TYPE_SENSITIVITY,
     RUN_TYPE_VAR,
@@ -120,6 +124,7 @@ from irp_shared.risk.events import (
     ActiveRiskActor,
     CovarianceActor,
     FactorExposureActor,
+    ProxyWeightEstimateActor,
     SensitivityActor,
     VarActor,
     VarBacktestActor,
@@ -138,12 +143,31 @@ from irp_shared.risk.factor_service import (
 )
 from irp_shared.risk.kernel import SensitivityKernelError, node_dv01, node_spread_dv01
 from irp_shared.risk.models import (
+    METRIC_TYPE_ESTIMATION_SUMMARY,
+    METRIC_TYPE_INTERCEPT,
+    METRIC_TYPE_WEIGHT,
     ActiveRiskResult,
     CovarianceResult,
     FactorExposureResult,
+    ProxyWeightEstimateResult,
     SensitivityResult,
     VarBacktestResult,
     VarResult,
+)
+from irp_shared.risk.proxy_weight_kernel import (
+    OlsEstimate,
+    ProxyWeightKernelError,
+    estimate_ols,
+)
+from irp_shared.risk.proxy_weight_service import (
+    ProxyWeightEstimateResultNotVisible,
+    ProxyWeightEstimateRunNotVisible,
+    ProxyWeightEstimateRunResult,
+    ProxyWeightInputError,
+    list_proxy_weight_results,
+    promote_proxy_weight_estimate,
+    resolve_proxy_weight_run,
+    run_proxy_weight_estimate,
 )
 from irp_shared.risk.queries import (
     RISK_RUN_TYPES,
@@ -236,6 +260,26 @@ from irp_shared.risk.var_service import (
 )
 
 __all__ = [
+    "register_proxy_weight_regression_model",
+    "declared_min_observations",
+    "PROXY_WEIGHT_MODEL_CODE",
+    "RUN_TYPE_PROXY_WEIGHT_ESTIMATE",
+    "ProxyWeightEstimateActor",
+    "OlsEstimate",
+    "ProxyWeightKernelError",
+    "estimate_ols",
+    "ProxyWeightEstimateResultNotVisible",
+    "ProxyWeightEstimateRunNotVisible",
+    "ProxyWeightEstimateRunResult",
+    "ProxyWeightInputError",
+    "list_proxy_weight_results",
+    "resolve_proxy_weight_run",
+    "promote_proxy_weight_estimate",
+    "run_proxy_weight_estimate",
+    "METRIC_TYPE_ESTIMATION_SUMMARY",
+    "METRIC_TYPE_INTERCEPT",
+    "METRIC_TYPE_WEIGHT",
+    "ProxyWeightEstimateResult",
     "METRIC_TYPE_SCENARIO_PNL",
     "METRIC_TYPE_SCENARIO_PNL_TOTAL",
     "NoCurrentScenarioShock",

@@ -1,0 +1,445 @@
+"""SQLite unit/behavior tests for PA-3 proxy-weight regression (ENT-057, the TWELFTH governed number
+and the loop-closer). Covers: the FULL-STACK chain (portfolio → private instrument → quarterly
+appraisal marks → a DESMOOTHED_RETURN run → candidate CURRENCY factors + returns → an OLS
+proxy-weight estimate) with the persisted coefficients/std-errors/R^2 asserted BYTE-EQUAL to an
+independent ``estimate_ols`` recomputation on the extracted (y, X); the promotion loop (a REGRESSION
+capture cites the run; a MANUAL capture must not; a REGRESSION without a citation is refused); the
+pre-create refusal battery (too-few periods, non-CURRENCY candidate, wrong-purpose snapshot,
+coverage gap) with NO RUNNING orphan; and the append-only / run_type!=metric guards. PG legs live in
+test_proxy_weight_pg.py.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+import pytest
+from run_assertions import assert_no_running_orphan
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+
+from irp_shared.audit.models import AppendOnlyViolation
+from irp_shared.db.session import make_engine, make_session_factory
+from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
+from irp_shared.marketdata import (
+    MAPPING_METHOD_MANUAL,
+    MAPPING_METHOD_REGRESSION,
+    FactorActor,
+    ProxyMappingActor,
+    capture_factor,
+    capture_factor_return,
+    capture_proxy_mapping,
+    resolve_factor,
+)
+from irp_shared.marketdata.proxy_mapping import ProxyMappingValueError
+from irp_shared.models import Base
+from irp_shared.perf import (
+    DesmoothedReturnActor,
+    register_desmoothed_return_model,
+    run_desmoothed_return,
+)
+from irp_shared.portfolio import PortfolioActor, create_portfolio
+from irp_shared.reference.instrument import create_instrument
+from irp_shared.reference.models import Currency
+from irp_shared.reference.service import ReferenceActor
+from irp_shared.risk import (
+    METRIC_TYPE_ESTIMATION_SUMMARY,
+    METRIC_TYPE_INTERCEPT,
+    METRIC_TYPE_WEIGHT,
+    ProxyWeightEstimateActor,
+    ProxyWeightInputError,
+    estimate_ols,
+    list_proxy_weight_results,
+    promote_proxy_weight_estimate,
+    register_proxy_weight_regression_model,
+    run_proxy_weight_estimate,
+)
+from irp_shared.valuation import create_valuation
+from irp_shared.valuation.service import ValuationActor
+
+T0 = datetime(2024, 6, 1, tzinfo=UTC)
+_RQ = Decimal("1E-12")
+# Six quarterly appraisal marks => five observed returns => FOUR desmoothed periods (n-2). All dates
+# are in the PAST relative to the system clock so the snapshot's valid_at=now pins the full window.
+MARK_DATES = (
+    date(2024, 9, 30),
+    date(2024, 12, 31),
+    date(2025, 3, 31),
+    date(2025, 6, 30),
+    date(2025, 9, 30),
+    date(2025, 12, 31),
+)
+MARK_VALUES = ("100.00", "103.00", "104.50", "108.00", "106.00", "111.00")
+WINDOW = (date(2024, 6, 1), date(2026, 1, 1))
+
+
+@pytest.fixture
+def session() -> Session:
+    engine = make_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    db = make_session_factory(engine)()
+    try:
+        yield db
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def _currency(db: Session, code: str) -> None:
+    if (
+        db.execute(
+            select(Currency).where(Currency.tenant_id == SYSTEM_TENANT_ID, Currency.code == code)
+        ).scalar_one_or_none()
+        is None
+    ):
+        db.add(Currency(tenant_id=SYSTEM_TENANT_ID, code=code, name=code, valid_from=T0))
+        db.flush()
+
+
+def _desmoothed_run(db: Session, tenant: str) -> tuple[str, str, str]:
+    """Seed a PE instrument + quarterly marks and run desmoothing. Returns
+    (desmoothed_run_id, portfolio_id, instrument_id)."""
+    _currency(db, "USD")
+    pf = create_portfolio(
+        db,
+        tenant_id=tenant,
+        code=f"PE-{uuid.uuid4().hex[:6]}",
+        name="book",
+        node_type="ACCOUNT",
+        actor=PortfolioActor(actor_id="s"),
+    ).id
+    inst = create_instrument(
+        db,
+        tenant_id=tenant,
+        code=f"FUND-{uuid.uuid4().hex[:6]}",
+        name="Buyout Fund",
+        asset_class="PRIVATE_EQUITY",
+        actor=ReferenceActor(actor_id="s"),
+    ).id
+    for d, v in zip(MARK_DATES, MARK_VALUES, strict=True):
+        create_valuation(
+            db,
+            portfolio_id=pf,
+            instrument_id=inst,
+            valuation_date=d,
+            acting_tenant=tenant,
+            actor=ValuationActor(actor_id="s"),
+            mark_value=Decimal(v),
+            currency_code="USD",
+        )
+    db.flush()
+    model = register_desmoothed_return_model(
+        db, tenant_id=tenant, actor_id="s", code_version="v1", alpha="0.5"
+    )
+    out = run_desmoothed_return(
+        db,
+        acting_tenant=tenant,
+        actor=DesmoothedReturnActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=str(model.id),
+        portfolio_id=pf,
+        instrument_id=inst,
+        window_start=WINDOW[0],
+        window_end=WINDOW[1],
+    )
+    assert out.status == "COMPLETED"
+    return str(out.run.run_id), pf, inst
+
+
+def _factor(db: Session, tenant: str, code: str, family: str = "CURRENCY") -> str:
+    return capture_factor(
+        db,
+        factor_code=code,
+        factor_source="VENDOR_F",
+        factor_family=family,
+        currency_code=None,
+        acting_tenant=tenant,
+        actor=FactorActor(actor_id="s"),
+        valid_from=T0,
+    ).id
+
+
+def _factor_returns(db: Session, tenant: str, factor_id: str, values: list[str]) -> None:
+    # One return per appraisal period_end (MARK_DATES[1:]) so each period compounds a single value.
+    factor = resolve_factor(db, factor_id, acting_tenant=tenant)
+    for d, v in zip(MARK_DATES[1:], values, strict=True):
+        capture_factor_return(
+            db,
+            factor,
+            return_date=d,
+            return_value=Decimal(v),
+            acting_tenant=tenant,
+            actor=FactorActor(actor_id="s"),
+            valid_from=T0,
+        )
+    db.flush()
+
+
+def _proxy_model(db: Session, tenant: str, min_obs: int = 4) -> str:
+    return str(
+        register_proxy_weight_regression_model(
+            db, tenant_id=tenant, actor_id="s", code_version="v1", min_observations=min_obs
+        ).id
+    )
+
+
+def test_full_stack_estimate_matches_independent_ols(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    run_id, pf, inst = _desmoothed_run(session, tenant)
+    fx_usd = _factor(session, tenant, "FX_USD")
+    fx_eur = _factor(session, tenant, "FX_EUR")
+    # Distinct, non-collinear return patterns across the four periods.
+    _factor_returns(session, tenant, fx_usd, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    _factor_returns(session, tenant, fx_eur, ["0.02", "-0.01", "0.01", "0.00", "0.02"])
+    model_id = _proxy_model(session, tenant)
+
+    out = run_proxy_weight_estimate(
+        session,
+        acting_tenant=tenant,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=model_id,
+        desmoothed_run_id=run_id,
+        factor_ids=[fx_usd, fx_eur],
+    )
+    assert out.status == "COMPLETED"
+    rows = list_proxy_weight_results(session, str(out.run.run_id), acting_tenant=tenant)
+    kinds = sorted(r.metric_type for r in rows)
+    assert kinds == [
+        METRIC_TYPE_ESTIMATION_SUMMARY,
+        METRIC_TYPE_INTERCEPT,
+        METRIC_TYPE_WEIGHT,
+        METRIC_TYPE_WEIGHT,
+    ]
+
+    # --- Independent recomputation: extract y (desmoothed periods) + X (per-period factor returns),
+    # run the kernel directly, assert the persisted values are byte-identical. ---
+    from irp_shared.perf.models import METRIC_TYPE_DESMOOTHED_PERIOD, DesmoothedReturnResult
+
+    periods = list(
+        session.execute(
+            select(DesmoothedReturnResult)
+            .where(
+                DesmoothedReturnResult.calculation_run_id == run_id,
+                DesmoothedReturnResult.metric_type == METRIC_TYPE_DESMOOTHED_PERIOD,
+            )
+            .order_by(DesmoothedReturnResult.period_start)
+        )
+        .scalars()
+        .all()
+    )
+    assert len(periods) == 4
+    y = [p.metric_value for p in periods]
+    ends = [p.period_end for p in periods]
+    # one return per period_end for each factor (compound of a single value == that value)
+    usd = {
+        d: Decimal(v)
+        for d, v in zip(MARK_DATES[1:], ["0.01", "0.02", "-0.01", "0.03", "0.00"], strict=False)
+    }
+    eur = {
+        d: Decimal(v)
+        for d, v in zip(MARK_DATES[1:], ["0.02", "-0.01", "0.01", "0.00", "0.02"], strict=False)
+    }
+    # candidates are ordered by factor_id (lowercase) inside the service; match that order here.
+    cols_by_fid = {
+        fx_usd.lower(): [usd[e] for e in ends],
+        fx_eur.lower(): [eur[e] for e in ends],
+    }
+    ordered_fids = sorted(cols_by_fid)
+    fit = estimate_ols(y, [cols_by_fid[f] for f in ordered_fids])
+
+    intercept = next(r for r in rows if r.metric_type == METRIC_TYPE_INTERCEPT)
+    assert intercept.metric_value == fit.coefficients[0].quantize(_RQ)
+    assert intercept.std_error == fit.std_errors[0].quantize(_RQ)
+    weights = {r.factor_id: r for r in rows if r.metric_type == METRIC_TYPE_WEIGHT}
+    for j, fid in enumerate(ordered_fids):
+        assert weights[fid].metric_value == fit.coefficients[j + 1].quantize(_RQ)
+        assert weights[fid].std_error == fit.std_errors[j + 1].quantize(_RQ)
+    summary = next(r for r in rows if r.metric_type == METRIC_TYPE_ESTIMATION_SUMMARY)
+    assert summary.metric_value == fit.r_squared.quantize(_RQ)
+    assert summary.residual_stdev == fit.residual_stdev.quantize(_RQ)
+    assert summary.n_observations == 4 and summary.n_regressors == 3
+    # every row echoes the declared identity + subject + provenance.
+    for r in rows:
+        assert r.min_observations == 4
+        assert r.series_currency == "USD"
+        assert str(r.source_desmoothed_run_id) == run_id
+        assert str(r.portfolio_id) == pf and str(r.instrument_id) == inst
+
+
+def test_promotion_regression_cites_run_manual_refuses(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    run_id, _pf, inst = _desmoothed_run(session, tenant)
+    fx_usd = _factor(session, tenant, "FX_USD")
+    fx_eur = _factor(session, tenant, "FX_EUR")
+    _factor_returns(session, tenant, fx_usd, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    _factor_returns(session, tenant, fx_eur, ["0.02", "-0.01", "0.01", "0.00", "0.02"])
+    out = run_proxy_weight_estimate(
+        session,
+        acting_tenant=tenant,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=_proxy_model(session, tenant),
+        desmoothed_run_id=run_id,
+        factor_ids=[fx_usd, fx_eur],
+    )
+    est_run = str(out.run.run_id)
+
+    # The governed promotion resolves the run (COMPLETED PROXY_WEIGHT_ESTIMATE) then captures a
+    # REGRESSION weight citing it — the analyst picks the coefficient (0.6) to promote.
+    promoted = promote_proxy_weight_estimate(
+        session,
+        private_instrument_id=inst,
+        factor_id=fx_usd,
+        weight=Decimal("0.6"),
+        acting_tenant=tenant,
+        actor=ProxyMappingActor(actor_id="s"),
+        source_calculation_run_id=est_run,
+    )
+    assert promoted.mapping_method == MAPPING_METHOD_REGRESSION
+    assert str(promoted.source_calculation_run_id) == est_run
+
+    # Promoting a run that is NOT a proxy-weight-estimate (here the desmoothed run) is refused.
+    with pytest.raises(ProxyWeightInputError, match="not a visible"):
+        promote_proxy_weight_estimate(
+            session,
+            private_instrument_id=inst,
+            factor_id=fx_eur,
+            weight=Decimal("0.3"),
+            acting_tenant=tenant,
+            actor=ProxyMappingActor(actor_id="s"),
+            source_calculation_run_id=run_id,  # the DESMOOTHED_RETURN run — wrong type
+        )
+
+    # A REGRESSION capture WITHOUT a citation is refused (the marketdata method-blur guard).
+    with pytest.raises(ProxyMappingValueError, match="must cite"):
+        capture_proxy_mapping(
+            session,
+            private_instrument_id=inst,
+            factor_id=fx_eur,
+            weight=Decimal("0.3"),
+            acting_tenant=tenant,
+            actor=ProxyMappingActor(actor_id="s"),
+            mapping_method=MAPPING_METHOD_REGRESSION,
+        )
+    # A MANUAL capture citing a run is refused (methods never blur).
+    with pytest.raises(ProxyMappingValueError, match="only valid with"):
+        capture_proxy_mapping(
+            session,
+            private_instrument_id=inst,
+            factor_id=fx_eur,
+            weight=Decimal("0.3"),
+            acting_tenant=tenant,
+            actor=ProxyMappingActor(actor_id="s"),
+            mapping_method=MAPPING_METHOD_MANUAL,
+            source_calculation_run_id=est_run,
+        )
+
+
+def _estimate(session: Session, tenant: str, run_id: str, factor_ids: list[str], **kw: object):
+    return run_proxy_weight_estimate(
+        session,
+        acting_tenant=tenant,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        desmoothed_run_id=run_id,
+        factor_ids=factor_ids,
+        **kw,  # type: ignore[arg-type]
+    )
+
+
+def test_refusals_leave_no_running_orphan(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    run_id, _pf, _inst = _desmoothed_run(session, tenant)
+    fx_usd = _factor(session, tenant, "FX_USD")
+    fx_eur = _factor(session, tenant, "FX_EUR")
+    fx_gbp = _factor(session, tenant, "FX_GBP")
+    _factor_returns(session, tenant, fx_usd, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    _factor_returns(session, tenant, fx_eur, ["0.02", "-0.01", "0.01", "0.00", "0.02"])
+    _factor_returns(session, tenant, fx_gbp, ["0.00", "0.01", "0.02", "-0.01", "0.01"])
+    model_id = _proxy_model(session, tenant)  # min_observations=4
+
+    # Too few periods for the regressor count: k=3 => floor max(4, k+2)=5 > n=4.
+    with pytest.raises(ProxyWeightInputError, match="need >= 5"):
+        _estimate(session, tenant, run_id, [fx_usd, fx_eur, fx_gbp], model_version_id=model_id)
+    assert_no_running_orphan(session)
+
+    # A non-CURRENCY candidate factor is refused.
+    market = _factor(session, tenant, "MKT_EQ", family="MARKET")
+    _factor_returns(session, tenant, market, ["0.01", "0.02", "0.03", "0.01", "0.02"])
+    with pytest.raises(ProxyWeightInputError, match="CURRENCY only"):
+        _estimate(session, tenant, run_id, [fx_usd, market], model_version_id=model_id)
+    assert_no_running_orphan(session)
+
+
+def test_append_only_and_run_type_not_metric(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    run_id, _pf, _inst = _desmoothed_run(session, tenant)
+    fx_usd = _factor(session, tenant, "FX_USD")
+    fx_eur = _factor(session, tenant, "FX_EUR")
+    _factor_returns(session, tenant, fx_usd, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    _factor_returns(session, tenant, fx_eur, ["0.02", "-0.01", "0.01", "0.00", "0.02"])
+    out = _estimate(
+        session,
+        tenant,
+        run_id,
+        [fx_usd, fx_eur],
+        model_version_id=_proxy_model(session, tenant),
+    )
+    row = list_proxy_weight_results(session, str(out.run.run_id), acting_tenant=tenant)[0]
+    # run_type (family) is never a metric_type (GS2).
+    assert out.run.run_type == "PROXY_WEIGHT_ESTIMATE"
+    assert out.run.run_type not in {
+        METRIC_TYPE_WEIGHT,
+        METRIC_TYPE_INTERCEPT,
+        METRIC_TYPE_ESTIMATION_SUMMARY,
+    }
+    # IA append-only: mutation is blocked by the ORM guard.
+    row.metric_value = Decimal("9.9")
+    with pytest.raises(AppendOnlyViolation):
+        session.flush()
+    session.rollback()
+
+
+def test_unregistered_and_wrong_purpose_snapshot(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    run_id, _pf, _inst = _desmoothed_run(session, tenant)
+    fx_usd = _factor(session, tenant, "FX_USD")
+    fx_eur = _factor(session, tenant, "FX_EUR")
+    _factor_returns(session, tenant, fx_usd, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    _factor_returns(session, tenant, fx_eur, ["0.02", "-0.01", "0.01", "0.00", "0.02"])
+    # A snapshot of the WRONG purpose (the desmoothing input) is refused.
+    from irp_shared.snapshot import build_desmoothing_snapshot
+    from irp_shared.snapshot.events import SnapshotActor
+
+    other = build_desmoothing_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=SnapshotActor(actor_id="s"),
+        portfolio_id=_pf,
+        instrument_id=_inst,
+        window_start=WINDOW[0],
+        window_end=WINDOW[1],
+    )
+    with pytest.raises(ProxyWeightInputError, match="purpose"):
+        run_proxy_weight_estimate(
+            session,
+            acting_tenant=tenant,
+            actor=ProxyWeightEstimateActor(actor_id="a"),
+            code_version="v1",
+            environment_id="test",
+            model_version_id=_proxy_model(session, tenant),
+            snapshot_id=str(other.id),
+        )
+    assert_no_running_orphan(session)

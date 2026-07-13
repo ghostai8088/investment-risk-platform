@@ -1433,5 +1433,5 @@ def test_migration_head_is_var() -> None:
     cfg = Config(str(_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(_ROOT / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0036_desmoothed_return"
+    assert script.get_current_head() == "0037_proxy_weight_estimate"
     assert script.get_revision("0026_var").down_revision == "0025_covariance"

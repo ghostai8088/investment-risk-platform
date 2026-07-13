@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, localcontext
 from typing import Any
 
@@ -45,9 +45,14 @@ from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
-from irp_shared.calc.runs import resolve_run_of_type
+from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
-from irp_shared.marketdata.models import FACTOR_FAMILY_CURRENCY
+from irp_shared.marketdata.models import (
+    FACTOR_FAMILY_CURRENCY,
+    MAPPING_METHOD_REGRESSION,
+    ProxyMapping,
+)
+from irp_shared.marketdata.proxy_mapping import ProxyMappingActor, capture_proxy_mapping
 from irp_shared.model.service import assert_model_version_of
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.reference.guards import assert_instrument_in_tenant
@@ -511,4 +516,42 @@ def resolve_proxy_weight_run(
         acting_tenant=acting_tenant,
         run_type=RUN_TYPE_PROXY_WEIGHT_ESTIMATE,
         not_visible=ProxyWeightEstimateRunNotVisible,
+    )
+
+
+def promote_proxy_weight_estimate(
+    session: Session,
+    *,
+    private_instrument_id: str,
+    factor_id: str,
+    weight: Decimal,
+    acting_tenant: str,
+    actor: ProxyMappingActor,
+    source_calculation_run_id: str,
+    valid_from: datetime | None = None,
+) -> ProxyMapping:
+    """Promote a REVIEWED estimate into a live captured proxy weight (OD-PA-3-E, the deliberate
+    analyst-mediated second step). Resolves the cited run to a tenant-visible COMPLETED
+    ``PROXY_WEIGHT_ESTIMATE`` run — the run-TYPE gate that ``marketdata`` cannot see (the captured-
+    input fence) — then captures a ``REGRESSION``-method ``proxy_mapping`` row citing it. The
+    ``weight`` is supplied by the caller (the analyst's chosen coefficient), NOT read from the run:
+    the human decides which estimated loading to promote and at what value."""
+    run = resolve_completed_run_of_type(
+        session,
+        source_calculation_run_id,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_PROXY_WEIGHT_ESTIMATE,
+        label="proxy-weight estimate",
+        error=ProxyWeightInputError,
+    )
+    return capture_proxy_mapping(
+        session,
+        private_instrument_id=private_instrument_id,
+        factor_id=factor_id,
+        weight=weight,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        mapping_method=MAPPING_METHOD_REGRESSION,
+        source_calculation_run_id=str(run.run_id),
+        valid_from=valid_from,
     )
