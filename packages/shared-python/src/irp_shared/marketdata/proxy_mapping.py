@@ -142,6 +142,19 @@ def _validate_promotion(mapping_method: str, source_calculation_run_id: str | No
         )
 
 
+def _reject_regression_revision(mapping_method: str) -> None:
+    """The supersede/correct revision paths carry NO ``source_calculation_run_id`` (a captured proxy
+    REVISION, not a promotion), so a ``REGRESSION`` weight cannot be minted there without dropping
+    its estimation-run citation — the OD-PA-3-E invariant. v1 refuses it fail-closed: a promoted
+    REGRESSION weight is re-derived by re-promoting (``risk.promote_proxy_weight_estimate``), never
+    silently downgraded or null-cited via supersede/correct."""
+    if mapping_method == MAPPING_METHOD_REGRESSION:
+        raise ProxyMappingValueError(
+            "supersede/correct cannot mint a REGRESSION-method proxy weight (it would carry no "
+            "estimation-run citation) — re-promote via risk.promote_proxy_weight_estimate; refused"
+        )
+
+
 def _validate_weight(weight: Decimal) -> None:
     """Finiteness guard: reject NaN / ±Infinity BEFORE any write (there is no economic RANGE on a
     factor loading — OD-PA-0-D)."""
@@ -454,6 +467,7 @@ def supersede_proxy_mapping(
     its own ORIGIN edge + the DQ gate). The head is sourced via the tenant-predicated
     ``_current_open`` (never a caller id) — a proxy REVISION, not an append-only fact."""
     _validate_mapping_method(mapping_method)
+    _reject_regression_revision(mapping_method)
     _validate_weight(weight)
     prior = _current_open(
         session,
@@ -531,6 +545,7 @@ def correct_proxy_mapping(
     with ``restatement_reason`` (``MARKET.PROXY_MAPPING_CORRECTION`` + its own ORIGIN edge + the DQ
     gate). A prior version's CONTENT is never mutated (TR-08)."""
     _validate_mapping_method(mapping_method)
+    _reject_regression_revision(mapping_method)
     _validate_weight(weight)
     if not restatement_reason:
         raise ProxyMappingValueError("restatement_reason is required for a correction (TR-08)")

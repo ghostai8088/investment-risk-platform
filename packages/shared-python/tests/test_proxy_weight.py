@@ -35,7 +35,11 @@ from irp_shared.marketdata import (
     resolve_factor,
 )
 from irp_shared.marketdata.factor import supersede_factor_return
-from irp_shared.marketdata.proxy_mapping import ProxyMappingValueError
+from irp_shared.marketdata.proxy_mapping import (
+    ProxyMappingValueError,
+    correct_proxy_mapping,
+    supersede_proxy_mapping,
+)
 from irp_shared.models import Base
 from irp_shared.perf import (
     DesmoothedReturnActor,
@@ -52,6 +56,7 @@ from irp_shared.risk import (
     METRIC_TYPE_WEIGHT,
     ProxyWeightEstimateActor,
     ProxyWeightInputError,
+    ProxyWeightKernelError,
     estimate_ols,
     list_proxy_weight_results,
     promote_proxy_weight_estimate,
@@ -543,3 +548,91 @@ def test_extreme_magnitude_is_committed_failed(session: Session) -> None:
     assert out.rows == []
     assert out.failure_reason is not None and "magnitude" in out.failure_reason
     assert_no_running_orphan(session)
+
+
+def test_per_period_coverage_gap_refused(session: Session) -> None:
+    # A candidate factor with returns in the span but MISSING one appraisal period's coverage is
+    # refused by the binder's no-zero-fill gate (distinct from "no returns at all" — the builder
+    # still pins it since it has span returns).
+    tenant = str(uuid.uuid4())
+    run_id, _pf, _inst = _desmoothed_run(session, tenant)
+    fx_ok = _factor(session, tenant, "FX_OK")
+    fx_gap = _factor(session, tenant, "FX_GAP")
+    _factor_returns(session, tenant, fx_ok, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    # fx_gap: covers periods 0/2/3 but SKIPS period 1's end (MARK_DATES[3]).
+    factor = resolve_factor(session, fx_gap, acting_tenant=tenant)
+    for d, v in (
+        (MARK_DATES[1], "0.01"),
+        (MARK_DATES[2], "0.02"),
+        (MARK_DATES[4], "0.03"),
+        (MARK_DATES[5], "0.00"),
+    ):
+        capture_factor_return(
+            session,
+            factor,
+            return_date=d,
+            return_value=Decimal(v),
+            acting_tenant=tenant,
+            actor=FactorActor(actor_id="s"),
+            valid_from=T0,
+        )
+    session.flush()
+    with pytest.raises(ProxyWeightInputError, match="no return covering"):
+        _estimate(
+            session,
+            tenant,
+            run_id,
+            [fx_ok, fx_gap],
+            model_version_id=_proxy_model(session, tenant),
+        )
+    assert_no_running_orphan(session)
+
+
+def test_kernel_refuses_constant_target() -> None:
+    # A constant target series has SS_tot == 0 (R^2 undefined) — the kernel refuses structurally
+    # (the service maps it to a pre-create ProxyWeightInputError, like the singular path).
+    y = [Decimal("0.1")] * 5
+    x = [Decimal("0.01"), Decimal("0.02"), Decimal("0.03"), Decimal("0.02"), Decimal("0.04")]
+    with pytest.raises(ProxyWeightKernelError) as exc:
+        estimate_ols(y, [x])
+    assert exc.value.reason == "constant-target"
+
+
+def test_supersede_correct_refuse_regression(session: Session) -> None:
+    # A promoted REGRESSION weight cannot be revised via supersede/correct (they carry no citation),
+    # closing the OD-PA-3-E leak — a REGRESSION revision must re-promote.
+    tenant = str(uuid.uuid4())
+    _run, _pf, inst = _desmoothed_run(session, tenant)
+    fx = _factor(session, tenant, "FX_USD")
+    # seed a MANUAL open head to supersede/correct.
+    capture_proxy_mapping(
+        session,
+        private_instrument_id=inst,
+        factor_id=fx,
+        weight=Decimal("0.5"),
+        acting_tenant=tenant,
+        actor=ProxyMappingActor(actor_id="s"),
+        mapping_method=MAPPING_METHOD_MANUAL,
+    )
+    with pytest.raises(ProxyMappingValueError, match="cannot mint a REGRESSION"):
+        supersede_proxy_mapping(
+            session,
+            private_instrument_id=inst,
+            factor_id=fx,
+            weight=Decimal("0.6"),
+            acting_tenant=tenant,
+            actor=ProxyMappingActor(actor_id="s"),
+            effective_at=datetime(2026, 6, 1, tzinfo=UTC),
+            mapping_method=MAPPING_METHOD_REGRESSION,
+        )
+    with pytest.raises(ProxyMappingValueError, match="cannot mint a REGRESSION"):
+        correct_proxy_mapping(
+            session,
+            private_instrument_id=inst,
+            factor_id=fx,
+            weight=Decimal("0.6"),
+            acting_tenant=tenant,
+            actor=ProxyMappingActor(actor_id="s"),
+            restatement_reason="fix",
+            mapping_method=MAPPING_METHOD_REGRESSION,
+        )

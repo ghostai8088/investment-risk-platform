@@ -28,8 +28,9 @@ Failure model (the established governed-run shape):
   ``failure_reason`` when a raw coefficient/std-error clears the ``Numeric(20,12)`` envelope.
 
 Reuses ``risk.run``/``risk.view`` (no mint) + ``CALC.RUN_*`` (``RISK.PROXY_WEIGHT_ESTIMATE_CREATE``
-reserved-not-emitted). One-way imports: ``risk -> {snapshot, calc, model, portfolio.guards,
-reference.guards}``.
+reserved-not-emitted). One-way imports: ``risk -> {snapshot, calc, model, marketdata,
+portfolio.guards, reference.guards}`` (``marketdata`` for the CURRENCY-family constant + the
+``promote_proxy_weight_estimate`` capture — the run-TYPE gate ``marketdata`` itself cannot see).
 """
 
 from __future__ import annotations
@@ -238,7 +239,12 @@ def _adjudicate_pins(
     for fr in factor_return_raw:
         fid = str(fr["factor_id"]).lower()
         rows = [
-            (date.fromisoformat(str(r["return_date"])), Decimal(str(r["return_value"])))
+            (
+                date.fromisoformat(str(r["return_date"])),
+                parse_strict_decimal(
+                    r["return_value"], error=ProxyWeightInputError, field="return_value"
+                ),
+            )
             for r in fr["rows"]
         ]
         returns_by_factor[fid] = sorted(rows, key=lambda x: x[0])

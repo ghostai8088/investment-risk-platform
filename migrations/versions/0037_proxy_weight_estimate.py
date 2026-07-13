@@ -137,8 +137,12 @@ def upgrade() -> None:
         #: ``factor_id`` is deliberately NOT a hard FK — the EV ``factor`` head is supersedable
         #: in place and the pinned ``COMPONENT_KIND_FACTOR`` component is the authoritative version
         #: (the ``factor_exposure_result`` precedent).
-        #: WEIGHT rows unique by factor; INTERCEPT/ESTIMATION_SUMMARY are singletons by construction
-        #: (factor_id NULL). Prevents a duplicate coefficient for one factor.
+        #: The constraint DB-enforces WEIGHT-row uniqueness per factor (a duplicate coefficient is
+        #: rejected). The INTERCEPT/ESTIMATION_SUMMARY singletons carry a NULL factor_id — PG treats
+        #: NULLs as distinct in a UNIQUE, so their one-per-run property is guaranteed by CODE
+        #: (``_compute`` emits exactly one each) + the append-only trigger (no post-hoc insert into a
+        #: committed run), NOT by this constraint. A partial unique index WHERE factor_id IS NULL is
+        #: the recorded defense-in-depth option (deferred — not reachable through the governed run).
         sa.UniqueConstraint(
             "calculation_run_id",
             "metric_type",

@@ -36,7 +36,6 @@ from irp_shared.entitlement.service import Principal
 from irp_shared.exposure.service import ExposureRunNotVisible
 from irp_shared.marketdata.benchmark import BenchmarkNotVisible
 from irp_shared.marketdata.factor import FactorNotVisible
-from irp_shared.marketdata.proxy_mapping import ProxyMappingValueError
 from irp_shared.model.service import UnregisteredModelError
 from irp_shared.risk import (
     ActiveRiskActor,
@@ -250,10 +249,6 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     ProxyWeightSnapshotError: (
         status.HTTP_409_CONFLICT,
         "proxy-weight snapshot input failed closed",
-    ),
-    ProxyMappingValueError: (
-        status.HTTP_422_UNPROCESSABLE_ENTITY,
-        "invalid proxy-weight promotion",
     ),
     ProxyWeightEstimateRunNotVisible: (
         status.HTTP_404_NOT_FOUND,

@@ -400,9 +400,10 @@ class ProxyWeightEstimateResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnl
     consumed ``DESMOOTHED_RETURN`` rows + the candidate ``factor_return`` windows) + a REGISTERED
     ``model_version_id``. ``source_desmoothed_run_id`` echoes the consumed desmoothed run (the
     provenance the estimate regresses). Grain = ``(calculation_run_id, metric_type, factor_id)``:
-    ``WEIGHT`` rows unique per candidate factor; ``INTERCEPT`` / ``ESTIMATION_SUMMARY`` are single
-    (``factor_id`` NULL). ``factor_id`` is deliberately NOT a hard FK — the EV ``factor`` head is
-    supersedable and the pinned ``COMPONENT_KIND_FACTOR`` component is authoritative (the
+    ``WEIGHT`` rows DB-unique per candidate factor; the ``INTERCEPT`` / ``ESTIMATION_SUMMARY``
+    singletons (``factor_id`` NULL) are one-per-run by ``_compute`` + append-only, NOT the
+    constraint (PG treats NULLs as distinct). ``factor_id`` is deliberately NOT a hard FK (the EV
+    ``factor`` head is supersedable; the pinned ``COMPONENT_KIND_FACTOR`` is authoritative — the
     ``factor_exposure_result`` precedent). Estimated weights are MODEL OUTPUT — never written into
     ``proxy_mapping`` by the run (OD-PA-3-A); promotion is a deliberate second capture step."""
 
