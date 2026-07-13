@@ -94,6 +94,15 @@
 - **OQ-7** — Series-quality gates as OD-H (min 4 marks; positive marks; unique dates; uniform
   currency; irregular spacing accepted-and-recorded; magnitude gate 1E8). *(Recommended: yes.)*
 
+**[CORRECTION, 2026-07-12 — implementation-time amendment to OD-PA-1-B (the OD-PA-0-I
+resolution-note precedent):** OD-B as ratified named the per-period ``metric_type``
+"DESMOOTHED_RETURN" and "``n−1`` per-period rows". As written, that metric name EQUALS the OD-F
+run-family name — violating OD-F's own "≠ every metric_type" (GS2) requirement — and the row count
+is arithmetically ``n−2`` (``n`` marks → ``n−1`` observed returns → the first seeds the recursion).
+The implementation ships ``metric_type = "DESMOOTHED_PERIOD"`` (the ``DIETZ_PERIOD`` naming
+precedent) and ``n−2`` per-period rows, honoring the ratified GS2 intent over the ratified literal.
+Caught in-build (the metric) + at the 4-finder review (the row count + this missing note).**]**
+
 ## Part 5 — Implementation readiness gate
 
 Implementation starts on ratification of OQ-1…7, against `pa_1_implementation_plan.md`. Model/effort
@@ -101,3 +110,70 @@ for implementation: **Fable 5 / High** for the kernel + methodology doc (novel m
 obligations — the first governed TRANSFORM of a captured series), **Opus 4.8 / High** acceptable for
 the templated remainder (migration/binder/API/tests mirror the PM-1/P3-6 exemplars). Full 4-finder
 review at the end (OD-K).
+
+## Part 6 — Review dispositions + closure
+
+**Review (OD-PA-1-K) — appended 2026-07-12.** A FULL 4-finder local max-effort review (kernel/math
+correctness; governance/persistence/snapshot; API/entitlement/cross-file/FE; cleanup/conventions/
+sweep) over the complete PR-scope diff. The golden derivation was independently re-derived
+digit-exact by TWO finders (incl. the HALF_UP round on the observed stdev's 13th digit); the
+Geltner inversion, row indexing, like-for-like stdev alignment, TR-09 determinism, migration/ORM
+parity, identifier lengths, alpha regex/identity round-trip, RLS symmetry, and all hard invariants
+verified intact. **19 raw findings → 12 distinct; 10 folded, 2 deferred:**
+
+1. **HIGH (API, 4×-confirmed) — unknown/cross-tenant `portfolio_id` on the build path escaped as a
+   raw 500.** `build_desmoothing_snapshot → resolve_portfolio` raises `PortfolioNotVisible`, which
+   was absent from the endpoint's except tuple AND `_ERROR_MAP` (the instrument leg was wrapped;
+   the portfolio leg was not — a cross-tenant prober could even distinguish the two). **Folded:**
+   mapped → 404 (the exposure.py precedent) + an endpoint test.
+2. **HIGH (FE) — the eleventh governed number was invisible in the UI runs list.** `RunsList`'s
+   `isPerf` was a hardcoded run-type list; the new family routed to `/risk/runs` → 422. **Folded at
+   altitude:** the source is now DERIVED from the family's own `permissionFamily` (a future perf
+   family cannot repeat this class) + the missing per-family FE wiring test block added.
+3. **HIGH (kernel) — `decimal.InvalidOperation` escape corridor.** An extreme-but-column-legal
+   pin/α combination could push the inversion past the 50-digit context, where quantize RAISES —
+   after the run was RUNNING (the P3-6 detonation class). **Folded:** `_compute` wraps the kernel +
+   stdev calls in `except ArithmeticError → committed FAILED` (`numeric-envelope:*` reason).
+4. **MED (adjudication) — mark echoes were not hardened to their column.** No `quantum=` on the
+   mark parse (a hand-minted 1E30 mark → PG DataError 500; a 1E-13 mark persisted a ZERO echo
+   contradicting the adjudicated invariant). **Folded:** `quantum=_MARK_QUANTUM` (the BT-1
+   pattern), the strictly-positive gate now runs on the QUANTIZED value, a `_MAX_MARK_ABS` (1E21)
+   gate in `_compute` → committed FAILED, and a `len(currency)==3` shape gate.
+5. **MED (adjudication) — duplicate-date detection keyed on the RAW string.** `date.fromisoformat`
+   accepts the ISO BASIC form, so `'20260331'` + `'2026-03-31'` bypassed the gate (grain
+   IntegrityError 500 mid-run, or a silently wrong series). **Folded:** dedupe on the PARSED date +
+   a malformed-date refusal + a two-representations test.
+6. **MED (echo stability) — the `alpha` evidence echo drifted between POST ('0.4') and GET
+   ('0.400000000000').** The one row column assigned unquantized. **Folded:** α is quantized to the
+   column scale once at the binder; the echo is byte-stable across both reads (test updated).
+7. **MED (coverage) — the post-create FAILED magnitude path had ZERO coverage** despite the plan
+   promising it. **Folded:** `test_magnitude_overflow_is_committed_failed_not_raised` (a labeled
+   boundary fixture) proves committed-FAILED + zero rows + reason + no orphan.
+8. **MED (coverage) — the mixed-portfolio/instrument OD-H gates were untested** (unreachable via
+   the build path). **Folded:** direct `_adjudicate_pins` unit cases for both.
+9. **LOW (dedup) — two NEW instrument tenant-guard copies in one diff.** **Folded:** NEW
+   `reference/guards.assert_instrument_in_tenant` (the `portfolio/guards` twin, injectable error
+   class); both new call sites converted.
+10. **LOW (docs/record) — the model + migration docstrings said `n−1` per-period rows (actual:
+    `n−2`), and the RATIFIED OD-B named a metric equal to the run family (violating its own OD-F
+    GS2 requirement).** **Folded:** docstrings corrected; a dated CORRECTION note added to this
+    record (Part 4 area) documenting the in-build `DESMOOTHED_PERIOD` rename + row count. Plus two
+    micro-folds: `getattr(outcome, "failure_reason")` → the direct contractual attribute (here AND
+    the P3-6 one-off it copied); kernel `zip(..., strict=True)` (the sibling-kernel convention).
+
+**Deferred (2 — recorded, not silently dropped):**
+
+- **D-1 — the declared-parameter parse-back family is at SIX near-verbatim copies**
+  (`declared_desmoothing_alpha` + five in `risk/bootstrap.py`): a shared
+  `declared_assumption(session, version, prefix)` accessor in `model/service.py` collapses the
+  boilerplate (each caller keeps its own pattern/domain check). Cross-slice (re-opens four merged
+  registrars) — the RD-1 precedent says a dedicated dedup pass; **register: RD-2 candidate.**
+- **D-2 — the two PRE-EXISTING instrument-guard variants** (`proxy_mapping._resolve_instrument_id`,
+  `reference.instrument.resolve_instrument`) could also route through the new shared guard —
+  next-touch of those files (PA-2 likely touches proxy_mapping).
+
+**Post-fold validation (2026-07-12):** `make check` 1298 passed / 273 skipped (+3 fold tests) +
+secret-scan + docs-check; FE 55 (+3) + typecheck + lint; local-PG clean-schema 273 green;
+`alembic check` no drift; downgrade-base smoke + restore clean.
+
+*(Final commit/PR refs appended at closeout.)*

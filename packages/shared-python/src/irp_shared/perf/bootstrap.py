@@ -19,9 +19,13 @@ were promoted to ``model.service`` at PM-1 for exactly this).
 
 from __future__ import annotations
 
+import re
+from decimal import Decimal
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.model.models import ModelVersion
+from irp_shared.model.models import ModelAssumption, ModelVersion
 from irp_shared.model.service import (
     ModelVersionConflictError,
     WrongModelVersionError,
@@ -257,3 +261,157 @@ def register_benchmark_relative_model(
         assumptions=BENCHMARK_RELATIVE_ASSUMPTIONS,
         limitations=BENCHMARK_RELATIVE_LIMITATIONS,
     )
+
+
+#: The per-tenant inventory identity of the desmoothed-return model (PA-1, OD-PA-1-E). UNLIKE the
+#: other perf models, this one carries a DECLARED numeric parameter: the Geltner speed-of-adjustment
+#: ``alpha`` is part of the version identity (the BT-1 declared-alpha precedent) — the smoothing
+#: profile is declared at registration, never a free request parameter.
+DESMOOTHED_RETURN_MODEL_CODE = "perf.return.desmoothed_geltner"
+DESMOOTHED_RETURN_MODEL_NAME = "Desmoothed return (Geltner AR(1) unsmoothing, v1)"
+DESMOOTHED_RETURN_MODEL_TYPE = "DESMOOTHED_RETURN"
+DESMOOTHED_RETURN_VERSION_LABEL = "v1"
+DESMOOTHED_RETURN_METHODOLOGY_REF = "05_analytics_methodologies/desmoothing_geltner_v1.md"
+
+#: The declared-parameter assumption prefix (OD-PA-1-E: alpha is part of the version identity —
+#: parsed back for the identity check + the binder's read; the BT-1 precedent).
+DESMOOTHING_ALPHA_ASSUMPTION_PREFIX = "alpha="
+
+#: Strict decimal-fraction pattern for the declared alpha: a fraction in (0, 1] at up to 12dp
+#: (e.g. '0.4', '0.25', '1'). The ZERO-valued match ('0.000...') is excluded by the domain check.
+_DESMOOTHING_ALPHA_PATTERN = re.compile(r"(?:0\.[0-9]{1,12}|1(?:\.0{1,12})?)")
+
+#: The declared methodology choices EXCLUDING the per-registration alpha (appended per call).
+DESMOOTHED_RETURN_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Geltner (1991/1993) AR(1) appraisal-unsmoothing: observed r_a,t = alpha*r_t + "
+    "(1-alpha)*r_a,t-1; inverted per period as r_t = (r_a,t - (1-alpha)*r_a,t-1)/alpha. The "
+    "single-lag AR(1) smoothing structure is ASSUMED (Getmansky-Lo-Makarov MA(q) and the "
+    "Okunev-White iterative higher-order filter are recorded v2 variants).",
+    "alpha ('speed of adjustment', 0 < alpha <= 1) is a DECLARED registration parameter estimated "
+    "OFFLINE (conventionally alpha ~= 1 - rho_1, the observed series' first-order "
+    "autocorrelation) - NOT a runtime regression; a different alpha is a different registered "
+    "version (the declared-not-computed precedent).",
+    "Observed returns are simple returns of consecutive appraisal marks (r_a,t = "
+    "mark_t/mark_{t-1} - 1) of ONE (portfolio, instrument) pair; the AR(1) step is "
+    "per-OBSERVATION (appraisal cadence is a convention, not schema-enforced).",
+    "The first observed return SEEDS the recursion and yields NO desmoothed row (no imputation).",
+    "Computed in Decimal at 50-digit context; per-period returns and stdevs quantize_HALF_UP to "
+    "12 decimal places (Numeric(20,12)); the DESMOOTHING_SUMMARY row carries the desmoothed "
+    "sample stdev (n-1) with the observed stdev as evidence - the honest-uncertainty statement.",
+)
+
+#: The recorded scope-outs (mirrored into model_limitation rows; decision record Part 3).
+DESMOOTHED_RETURN_LIMITATIONS: tuple[str, ...] = (
+    "SINGLE-LAG AR(1) ONLY: residual higher-order autocorrelation survives one Geltner pass; the "
+    "Getmansky-Lo-Makarov MA(q) profile and the Okunev-White iterative filter are the recorded "
+    "v2s.",
+    "alpha is DECLARED, not estimated in-run - an offline mis-estimated alpha propagates directly "
+    "into every desmoothed value; the desmoothed series is a MODEL OUTPUT, not an observation.",
+    "IRREGULAR APPRAISAL SPACING is accepted and recorded: the AR(1) coefficient applies per "
+    "observation step; a calendar-regularity gate is a recorded v2.",
+    "Single-currency mark series only (no FX translation); simple returns (no log-return leg).",
+    "Money-weighted return / IRR / capital-call handling deferred (the OD-PA-1-I re-recorded "
+    "PA-3 item).",
+    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+)
+
+
+def declared_desmoothing_alpha(session: Session, version: ModelVersion) -> Decimal:
+    """Parse the version's declared Geltner ``alpha`` from its ``model_assumption`` rows (the
+    OD-PA-1-E identity: exactly ONE strictly-well-formed declaration inside the (0, 1] domain).
+    A malformed, absent, ambiguous, zero, or out-of-domain declaration is NOT a desmoothing
+    identity — refuse fail-closed (:class:`WrongModelVersionError`, 422), never a bare parse
+    crash (the P3-4 review lesson)."""
+    rows = (
+        session.execute(
+            select(ModelAssumption).where(ModelAssumption.model_version_id == version.id)
+        )
+        .scalars()
+        .all()
+    )
+    found = [
+        r.assumption_text[len(DESMOOTHING_ALPHA_ASSUMPTION_PREFIX) :]
+        for r in rows
+        if r.assumption_text.startswith(DESMOOTHING_ALPHA_ASSUMPTION_PREFIX)
+    ]
+    if len(found) != 1 or not _DESMOOTHING_ALPHA_PATTERN.fullmatch(found[0]):
+        raise WrongModelVersionError(str(version.id), DESMOOTHED_RETURN_MODEL_CODE)
+    alpha = Decimal(found[0])
+    if not 0 < alpha <= 1:
+        raise WrongModelVersionError(str(version.id), DESMOOTHED_RETURN_MODEL_CODE)
+    return alpha
+
+
+def register_desmoothed_return_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    alpha: str | Decimal = "0.4",
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the desmoothed-return ``model`` + a ``model_version`` for this
+    ``(code_version, alpha)`` identity (PA-1, OD-PA-1-E — the BT-1 declared-parameter precedent).
+    ``alpha`` must be a strict decimal fraction in ``(0, 1]`` (up to 12dp; alpha=1 is the
+    no-smoothing boundary); re-registering the same label with ANY different declaration raises
+    :class:`ModelVersionConflictError` (mint a new label); a same-label twin minted via the
+    GENERIC registration (status != REGISTERED) raises :class:`WrongModelVersionError`."""
+    # STRICT parse — never coerce (the P3-5 lesson: refuse, don't round).
+    text = str(alpha).strip()
+    if not _DESMOOTHING_ALPHA_PATTERN.fullmatch(text) or not 0 < Decimal(text) <= 1:
+        raise ValueError(
+            f"alpha {alpha!r} must be a strict decimal fraction in (0, 1] (up to 12dp) — "
+            f"estimated OFFLINE and DECLARED, never a runtime regression (OD-PA-1-E)"
+        )
+    alpha_key = f"{Decimal(text).normalize():f}"
+
+    # Both legs resolve-or-register (race-safe savepoint; MD-H1 OD-D). The version identity
+    # includes the declared alpha — a same-label re-register differing on code_version or alpha is
+    # a governed conflict, never an IntegrityError 500.
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=DESMOOTHED_RETURN_MODEL_CODE,
+        name=DESMOOTHED_RETURN_MODEL_NAME,
+        model_type=DESMOOTHED_RETURN_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Geltner AR(1) unsmoothing of a captured private-asset appraisal mark series into a "
+            "governed desmoothed return series with the honest-uncertainty stdev pair (PA-1, "
+            "ENT-056)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=DESMOOTHED_RETURN_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=DESMOOTHED_RETURN_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=DESMOOTHED_RETURN_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *DESMOOTHED_RETURN_ASSUMPTIONS_BASE,
+                f"{DESMOOTHING_ALPHA_ASSUMPTION_PREFIX}{alpha_key}",
+            ),
+            limitations=DESMOOTHED_RETURN_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    # Identity/conflict checks run unconditionally: trivially pass for a row THIS call minted,
+    # catch a squatted or code_version/alpha-mismatched peer.
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_desmoothing_alpha(session, version)  # malformed -> 422 class
+    if version.code_version != str(code_version) or f"{declared.normalize():f}" != alpha_key:
+        raise ModelVersionConflictError(
+            DESMOOTHED_RETURN_MODEL_CODE,
+            DESMOOTHED_RETURN_VERSION_LABEL,
+            f"{code_version} (alpha={alpha_key})",
+        )
+    return version

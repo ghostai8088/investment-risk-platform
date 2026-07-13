@@ -43,6 +43,12 @@ from irp_shared.perf import (
     BenchmarkRelativeResult,
     BenchmarkRelativeRunNotVisible,
     BenchmarkRelativeRunResult,
+    DesmoothedReturnActor,
+    DesmoothedReturnResult,
+    DesmoothedReturnResultNotVisible,
+    DesmoothedReturnRunNotVisible,
+    DesmoothedReturnRunResult,
+    DesmoothingInputError,
     PerfRunQueryError,
     PortfolioReturnActor,
     PortfolioReturnInputError,
@@ -51,19 +57,26 @@ from irp_shared.perf import (
     PortfolioReturnRunNotVisible,
     PortfolioReturnRunResult,
     list_benchmark_relatives,
+    list_desmoothed_results,
     list_perf_runs,
     list_portfolio_returns,
     register_benchmark_relative_model,
+    register_desmoothed_return_model,
     register_portfolio_return_model,
     resolve_benchmark_relative,
     resolve_benchmark_relative_run,
+    resolve_desmoothed_result,
+    resolve_desmoothed_return_run,
     resolve_portfolio_return,
     resolve_portfolio_return_run,
     run_benchmark_relative,
+    run_desmoothed_return,
     run_portfolio_return,
 )
+from irp_shared.portfolio import PortfolioNotVisible
 from irp_shared.snapshot import (
     BenchmarkRelativeSnapshotError,
+    DesmoothingSnapshotError,
     ReturnSnapshotError,
     SnapshotNotFound,
     SnapshotPurposeError,
@@ -111,6 +124,23 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
         "benchmark-relative snapshot input failed closed",
     ),
     BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
+    PortfolioNotVisible: (status.HTTP_404_NOT_FOUND, "portfolio not found"),
+    DesmoothingInputError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid desmoothed-return run input",
+    ),
+    DesmoothingSnapshotError: (
+        status.HTTP_409_CONFLICT,
+        "desmoothing snapshot input failed closed",
+    ),
+    DesmoothedReturnRunNotVisible: (
+        status.HTTP_404_NOT_FOUND,
+        "desmoothed-return run not found",
+    ),
+    DesmoothedReturnResultNotVisible: (
+        status.HTTP_404_NOT_FOUND,
+        "desmoothed-return result not found",
+    ),
 }
 
 
@@ -627,3 +657,232 @@ def get_benchmark_relative(
             status_code=status.HTTP_404_NOT_FOUND, detail="benchmark-relative result not found"
         ) from None
     return _br_row_out(row)
+
+
+# --- PA-1: desmoothed returns (ENT-056 — the Geltner AR(1) transform; the thesis payload) ---
+
+
+class DesmoothedReturnModelIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    alpha: str = "0.4"  # the DECLARED speed-of-adjustment in (0, 1] (OD-PA-1-E; strict-parsed)
+
+
+class DesmoothedReturnRunIn(BaseModel):
+    code_version: str
+    environment_id: str
+    model_version_id: uuid.UUID  # a REGISTERED perf.return.desmoothed_geltner version (CTRL-003)
+    # build-in-request (all four) XOR consume-existing (snapshot_id) — the P3-C1 gate.
+    portfolio_id: uuid.UUID | None = None
+    instrument_id: uuid.UUID | None = None
+    window_start: date | None = None
+    window_end: date | None = None
+    snapshot_id: uuid.UUID | None = None
+
+
+class DesmoothedReturnRowOut(BaseModel):
+    id: str
+    metric_type: str  # DESMOOTHED_PERIOD | DESMOOTHING_SUMMARY
+    period_start: date
+    period_end: date
+    metric_value: str  # a fraction (12dp; fixed-point, never scientific)
+    observed_return: str | None  # None on the summary row
+    begin_mark: str | None
+    end_mark: str | None
+    alpha: str  # the declared model identity, echoed on every row
+    mark_currency: str
+    observed_stdev: str | None  # summary only — the honest-uncertainty pair
+    n_periods: int | None
+    portfolio_id: str
+    instrument_id: str
+    model_version_id: str
+
+
+class DesmoothedReturnRunOut(BaseModel):
+    run_id: str
+    status: str
+    run_type: str
+    input_snapshot_id: str | None
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    initiated_by: str
+    failure_reason: str | None
+    rows: list[DesmoothedReturnRowOut]
+
+
+def _dr_actor(principal: Principal) -> DesmoothedReturnActor:
+    return DesmoothedReturnActor(actor_id=principal.user_id)
+
+
+def _dr_row_out(row: DesmoothedReturnResult) -> DesmoothedReturnRowOut:
+    return DesmoothedReturnRowOut(
+        id=row.id,
+        metric_type=row.metric_type,
+        period_start=row.period_start,
+        period_end=row.period_end,
+        # Fixed-point, never scientific (the P3-4 serialization lesson).
+        metric_value=f"{row.metric_value:f}",
+        observed_return=(None if row.observed_return is None else f"{row.observed_return:f}"),
+        begin_mark=(None if row.begin_mark is None else f"{row.begin_mark:f}"),
+        end_mark=(None if row.end_mark is None else f"{row.end_mark:f}"),
+        alpha=f"{row.alpha:f}",
+        mark_currency=row.mark_currency,
+        observed_stdev=(None if row.observed_stdev is None else f"{row.observed_stdev:f}"),
+        n_periods=row.n_periods,
+        portfolio_id=row.portfolio_id,
+        instrument_id=row.instrument_id,
+        model_version_id=row.model_version_id,
+    )
+
+
+def _dr_run_out(result: DesmoothedReturnRunResult) -> DesmoothedReturnRunOut:
+    run = result.run
+    return DesmoothedReturnRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_dr_row_out(r) for r in result.rows],
+    )
+
+
+@router.post(
+    "/models/desmoothed-return",
+    response_model=PortfolioReturnModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_desmoothed_return(
+    body: DesmoothedReturnModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> PortfolioReturnModelOut:
+    """Register (idempotently) the governed desmoothing model + a model_version for this
+    ``(code_version, alpha)`` identity (OD-PA-1-E — the declared alpha IS part of the identity; a
+    same-label re-register with a different declaration is a 409; an out-of-domain alpha is a
+    422). The shared model-registration response envelope."""
+    try:
+        version = register_desmoothed_return_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            alpha=body.alpha,
+        )
+    except ValueError:  # out-of-domain / malformed alpha (the registration gate)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="alpha must be a strict decimal fraction in (0, 1]",
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = PortfolioReturnModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/desmoothed-returns/runs",
+    response_model=DesmoothedReturnRunOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_desmoothed_return_run(
+    body: DesmoothedReturnRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> DesmoothedReturnRunOut:
+    """Run a governed Geltner desmoothing. A pre-create refusal raises + rolls back (no run —
+    incl. a short/duplicate/non-positive/mixed-currency mark series, 422/404/409); a post-create
+    FAILED run is committed (``status='FAILED'``, zero rows — the magnitude gate)."""
+    try:
+        result = run_desmoothed_return(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_dr_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            portfolio_id=(None if body.portfolio_id is None else str(body.portfolio_id)),
+            instrument_id=(None if body.instrument_id is None else str(body.instrument_id)),
+            window_start=body.window_start,
+            window_end=body.window_end,
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        DesmoothingInputError,
+        UnregisteredModelError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        DesmoothingSnapshotError,
+        PortfolioNotVisible,  # the builder's resolve_portfolio leg (review fold: was a raw 500)
+    ) as exc:
+        # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+
+    # Build the response BEFORE commit (the request GUC clears at commit). Both a COMPLETED and a
+    # post-create FAILED run are committed (the FAILED run is durable refusal evidence).
+    response = _dr_run_out(result)
+    db.commit()
+    return response
+
+
+@router.get("/desmoothed-returns/runs/{run_id}", response_model=DesmoothedReturnRunOut)
+def get_desmoothed_return_run(
+    run_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> DesmoothedReturnRunOut:
+    """Read a desmoothed-return run + its series rows (tenant-scoped; read-only). A committed
+    FAILED run (zero rows) is surfaced with ``status='FAILED'``, NOT a 404."""
+    try:
+        run = resolve_desmoothed_return_run(db, str(run_id), acting_tenant=principal.tenant_id)
+    except DesmoothedReturnRunNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="desmoothed-return run not found"
+        ) from None
+    rows = list_desmoothed_results(db, run_id=str(run_id), acting_tenant=principal.tenant_id)
+    return DesmoothedReturnRunOut(
+        run_id=run.run_id,
+        status=run.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
+        rows=[_dr_row_out(r) for r in rows],
+    )
+
+
+@router.get("/desmoothed-returns/{result_id}", response_model=DesmoothedReturnRowOut)
+def get_desmoothed_return(
+    result_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> DesmoothedReturnRowOut:
+    """Read a single ``desmoothed_return_result`` row (tenant-scoped; read-only)."""
+    try:
+        row = resolve_desmoothed_result(db, str(result_id), acting_tenant=principal.tenant_id)
+    except DesmoothedReturnResultNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="desmoothed-return result not found"
+        ) from None
+    return _dr_row_out(row)

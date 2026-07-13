@@ -31,6 +31,15 @@ RUN_TYPE_BENCHMARK_RELATIVE = "BENCHMARK_RELATIVE"
 #: ``CALC.RUN_*``).
 PERF_BENCHMARK_RELATIVE_CREATE_EVENT_RESERVED = "PERF.BENCHMARK_RELATIVE_CREATE"
 
+#: The ``calculation_run.run_type`` FAMILY discriminator for a desmoothed-return run (PA-1, the
+#: private-asset Geltner AR(1) transform). Distinct from every ``metric_type`` — the per-period
+#: metric is deliberately named ``DESMOOTHED_PERIOD`` (the ``DIETZ_PERIOD`` precedent) so the GS2
+#: family≠metric rule holds. REUSES ``perf.run``/``perf.view`` (no new mint — OD-PA-1-F).
+RUN_TYPE_DESMOOTHED_RETURN = "DESMOOTHED_RETURN"
+#: RESERVED audit code (the PERF decade) — NOT emitted in PA-1 (OD-PA-1-F; the run reuses
+#: ``CALC.RUN_*``).
+PERF_DESMOOTHED_RETURN_CREATE_EVENT_RESERVED = "PERF.DESMOOTHED_RETURN_CREATE"
+
 #: The DECLARED external-flow set (the v1 model identity, OD-PM-1-C): a captured ``transaction`` is
 #: an external flow ONLY if its ``txn_type`` is one of these — TRANSFER_IN a +contribution,
 #: TRANSFER_OUT a -withdrawal. Every other captured txn_type (BUY/SELL/DIVIDEND/INTEREST/FEE/
@@ -55,6 +64,14 @@ class PortfolioReturnActor:
 class BenchmarkRelativeActor:
     """The principal initiating an ex-post benchmark-relative run (mirrors
     ``PortfolioReturnActor``)."""
+
+    actor_id: str
+    actor_type: str = "user"
+
+
+@dataclass(frozen=True)
+class DesmoothedReturnActor:
+    """The principal initiating a desmoothed-return run (mirrors ``PortfolioReturnActor``)."""
 
     actor_id: str
     actor_type: str = "user"

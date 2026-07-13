@@ -73,6 +73,9 @@ PURPOSE_VAR_BACKTEST_INPUT = "VAR_BACKTEST_INPUT"
 #: scenario definition header & its OPEN shock set (SCENARIO kind). The tenth governed number's
 #: input set. A later shock supersede is invisible to the pin (TR-09).
 PURPOSE_SCENARIO_INPUT = "SCENARIO_INPUT"
+#: PA-1 desmoothing input: the current-head ``valuation`` marks of ONE (portfolio, instrument)
+#: pair over a declared date window. A later mark correction is invisible to the pin (TR-09).
+PURPOSE_DESMOOTHING_INPUT = "DESMOOTHING_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -87,6 +90,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_BENCHMARK_RELATIVE_INPUT,
     PURPOSE_VAR_BACKTEST_INPUT,
     PURPOSE_SCENARIO_INPUT,
+    PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )

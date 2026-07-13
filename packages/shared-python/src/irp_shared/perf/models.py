@@ -184,6 +184,84 @@ class BenchmarkRelativeResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyM
     return_basis: Mapped[str] = mapped_column(String(20), nullable=False)
 
 
+#: The ``desmoothed_return_result.metric_type`` controlled vocabulary (PA-1; plain String; extend
+#: by value). DESMOOTHED_PERIOD is per mark-pair period (the ``DIETZ_PERIOD`` naming precedent —
+#: NOT "DESMOOTHED_RETURN", which is the run FAMILY: the GS2 family≠metric rule);
+#: DESMOOTHING_SUMMARY is once per run.
+METRIC_TYPE_DESMOOTHED_PERIOD = "DESMOOTHED_PERIOD"
+METRIC_TYPE_DESMOOTHING_SUMMARY = "DESMOOTHING_SUMMARY"
+
+
+class DesmoothedReturnResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One desmoothed-return series row (PA-1, **ENT-056**, IA TRUE append-only). Created once,
+    never mutated. Per COMPLETED run: ``n−2`` ``DESMOOTHED_PERIOD`` per-period rows for ``n``
+    marks (``n−1`` observed returns, the FIRST seeding the recursion — the Geltner inversion
+    consumes the prior observed return, OD-PA-1-D) + ONE ``DESMOOTHING_SUMMARY`` row
+    (``metric_value`` = the
+    desmoothed sample stdev, ``observed_stdev`` its observed twin — the honest-uncertainty pair,
+    OD-PA-1-C) — grain ``(calculation_run_id, metric_type, period_start)`` (the ENT-053 precedent;
+    the summary carries ``period_start`` = the first desmoothed period's start).
+
+    **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** (the ``var_result`` exemplar): NOT-NULL
+    ``calculation_run_id`` + ``input_snapshot_id`` (a ``DESMOOTHING_INPUT`` snapshot pinning the
+    window's ``valuation`` marks) + a REGISTERED, identity-checked ``model_version_id``
+    (``perf.return.desmoothed_geltner`` v1 — the DECLARED ``alpha`` IS the identity and is echoed
+    on every row as evidence). Hard-FK PROVENANCE: ``portfolio_id`` + ``instrument_id`` (the
+    measured subject — the PA-0 convention keys a private asset's marks by (portfolio,
+    instrument)). ``metric_value`` Numeric(20,12) is a FRACTION (a return, or a stdev of returns —
+    NOT currency); ``observed_return``/``begin_mark``/``end_mark`` are the per-period
+    consumed-input echoes (NULL on the summary — the nullable-evidence pattern);
+    ``mark_currency`` echoes the enforced single-currency mark series."""
+
+    __tablename__ = "desmoothed_return_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        # A per-period row and the summary can share period_start (metric_type disambiguates).
+        UniqueConstraint(
+            "calculation_run_id",
+            "metric_type",
+            "period_start",
+            name="uq_desmoothed_return_result_run_grain",
+        ),
+    )
+
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("dataset_snapshot.id"), nullable=False, index=True
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    )
+    # The measured subject (PA-0: a private asset's appraisal marks are the valuation rows of one
+    # (portfolio, instrument) pair).
+    portfolio_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("portfolio.id"), nullable=False, index=True
+    )
+    instrument_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("instrument.id"), nullable=False, index=True
+    )
+    # Controlled vocab: 'DESMOOTHED_PERIOD' (per period) | 'DESMOOTHING_SUMMARY' (once per run).
+    metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # The mark-pair window (per-period rows) or the full desmoothed span (the summary), in
+    # valuation dates.
+    period_start: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    # The number: r_t = (r_a,t − (1−α)·r_a,t−1)/α per period; the desmoothed stdev on the summary.
+    metric_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    # Per-period consumed-input echoes (NULL on the summary) — auditable row-by-row.
+    observed_return: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
+    begin_mark: Mapped[Decimal | None] = mapped_column(PreciseDecimal(28, 6), nullable=True)
+    end_mark: Mapped[Decimal | None] = mapped_column(PreciseDecimal(28, 6), nullable=True)
+    # The DECLARED speed-of-adjustment (the model identity), echoed on EVERY row as evidence.
+    alpha: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    mark_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    # Summary evidence (NULL on per-period rows) — the honest-uncertainty pair (OD-PA-1-C).
+    observed_stdev: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
+    n_periods: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{target.__tablename__} is IA true append-only — UPDATE/DELETE is prohibited "
@@ -195,3 +273,5 @@ event.listen(PortfolioReturnResult, "before_update", _block_mutation)
 event.listen(PortfolioReturnResult, "before_delete", _block_mutation)
 event.listen(BenchmarkRelativeResult, "before_update", _block_mutation)
 event.listen(BenchmarkRelativeResult, "before_delete", _block_mutation)
+event.listen(DesmoothedReturnResult, "before_update", _block_mutation)
+event.listen(DesmoothedReturnResult, "before_delete", _block_mutation)
