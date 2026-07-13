@@ -1,7 +1,7 @@
 # PA-2 Decision Record — private holdings on the public factor substrate (Wave-3 slice 3)
 
-> **Status: DRAFT for ratification (2026-07-12).** Drafted against `main` `f8bc20d` (PA-1 merged
-> PR #19, CI green). Scope: the END-TO-END demonstration the thesis destination promises — a
+> **Status: RATIFIED 2026-07-12** — OQ-PA-2-1…6 approved as recommended (user: "Approved").
+> Drafted against `main` `f8bc20d` (PA-1 merged PR #19, CI green). Scope: the END-TO-END demonstration the thesis destination promises — a
 > private holding, projected through its captured **`proxy_mapping`** weights (ENT-019, PA-0) onto
 > the public CURRENCY factors, flows through the EXISTING governed chain (factor-exposure →
 > covariance → VaR/active-risk/scenario) so **a private asset carries honest, factor-based risk**.
