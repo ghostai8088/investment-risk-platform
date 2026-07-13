@@ -45,6 +45,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.exposure.events import RUN_TYPE_EXPOSURE_AGGREGATE, ExposureActor
 from irp_shared.exposure.models import EXPOSURE_TYPE_MARKET_VALUE, ExposureAggregate
@@ -337,16 +338,13 @@ def resolve_run(session: Session, run_id: str, *, acting_tenant: str) -> Calcula
     ``input_snapshot_id``), so a reader surfaces a committed FAILED run (the durable refusal
     evidence a 3L auditor reviews) rather than synthesizing the envelope from rows. Raises
     :class:`ExposureRunNotVisible` on a hidden/unknown id or a non-exposure run."""
-    run = session.execute(
-        select(CalculationRun).where(
-            CalculationRun.run_id == str(run_id),
-            CalculationRun.tenant_id == str(acting_tenant),
-            CalculationRun.run_type == RUN_TYPE_EXPOSURE_AGGREGATE,
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise ExposureRunNotVisible(str(run_id))
-    return run
+    return resolve_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_EXPOSURE_AGGREGATE,
+        not_visible=ExposureRunNotVisible,
+    )
 
 
 def resolve_exposure(

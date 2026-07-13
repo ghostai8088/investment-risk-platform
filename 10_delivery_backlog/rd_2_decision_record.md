@@ -1,6 +1,7 @@
 # RD-2 Decision Record — declared-parameter + resolver dedup (Wave-4 slice 1)
 
-> **Status: DRAFT — awaiting OQ ratification (OQ-RD-2-1…5).** A hygiene/dedup slice — NO migration,
+> **Status: RATIFIED 2026-07-13** (OQ-RD-2-1…5 all approved as recommended — incl. OQ-3, the consumed-guard
+> message normalization). A hygiene/dedup slice — NO migration,
 > NO permission/audit/methodology, NO new governed number. Pays the two TIPPED items reconciled at the
 > Wave-3 close: the declared-parameter parse-back family (PA-1 D-1) and the RD-1 residual resolver
 > copies (the Wave-3-close census undercount). The early Wave-4 hygiene slice (fork A), done first so
@@ -126,3 +127,42 @@ resolver but left these guard bodies raw.
   (registration/resolution) uncluttered.*
 - **OQ-RD-2-5 — Scope stays test-and-refactor only (OD-RD-2-E): NO migration / permission / methodology / new
   number; FR-membership engine + covariance adjudicator stay trigger-deferred.** *Recommend APPROVE.*
+
+## Part 5 — Review dispositions + closure
+
+**Implemented 2026-07-13** (all OQs ratified as recommended, incl. OQ-3). `model/assumptions.py`
+(`load_assumption_texts` / `sole_declared` / `require_declared`); the five `declared_*` delegate
+byte-identically; the four resolver stragglers folded (2 read byte-identical; 2 consumed-guard with the
+ratified message normalization). `_DIGITS_PATTERN` deduped the two `re.fullmatch(r"[0-9]+")` sites.
+Net **−63** lines across the two bootstraps; **+60** in the shared module.
+
+**Proportionate 4-finder adversarial review — 3 finders CLEAN, the sweep found 3 test-hardening gaps
+(no shipped-code defect), ALL FOLDED:**
+- *Byte-identity finder — CLEAN.* Every declared_* fold logically identical across the found/absent/
+  ambiguous cases + the ordered domain checks + the composite cross-field validation; the four resolver
+  folds preserve run_type / tenant predicate / COMPLETED / error class (only the ratified message wording
+  changed).
+- *Imports/wiring finder — CLEAN.* No unused imports (`select`/`ModelAssumption`/`RunStatus` removed where
+  dead, `CalculationRun`/`re` retained where live); no circular import (`model/assumptions` imports only
+  `model/models`); all call sites intact; the `on_invalid` zero-arg factory correctly wrapped in a lambda.
+- *Cleanliness finder — CLEAN.* Dedup genuinely collapsed (the sole surviving `select(ModelAssumption)` is
+  in the shared module); docstrings accurate; **non-folds verified genuinely un-foldable** — the three
+  `select(CalculationRun)` sites in `*/queries.py` are multi-row LIST queries (different contract), and
+  `lineage/service.py`'s resolver is deliberately `calc`-decoupled (reads tenant off a Core row, no
+  run_type predicate).
+- *Sweep/coverage finder — 3 folds:* (1) added a **mid-string prefix** case to `sole_declared`'s test (a
+  `startswith`→`in` regression would else pass the suite yet break the prefix-anchoring contract); (2) the
+  `_version_with` fixture's model-code switched from a `datetime.timestamp()` (µs-collision flake risk under
+  the same-tenant unique constraint) to `uuid4().hex`; (3) added a **trailing-garbage** case
+  (`"alpha=0.4x"`) pinning `fullmatch` vs `match`. **Noted (acceptable, per OQ-3):** the per-caller
+  normalized consumed-guard message is not pinned by a family test, but the shared format IS pinned
+  generically in `test_calc_runs.py` and NO existing test asserted the old strings — nothing breaks.
+
+**Post-fold validation (2026-07-13):** `make check` **1315 passed / 274 skipped** (+4 new shared-contract
+tests, +3 folded cases) + secret-scan + docs-check clean; `ruff` (check + format) clean. **NO migration**
+and **NO ORM-model change** in the diff → no schema drift possible (alembic head stays `0036`; the
+migration-head tests pass in-suite). PG-tier RLS/append-only tests are untouched surface — verified by CI's
+per-table steps (the local `irp_pg_local` container was unavailable in the delivery session; recorded
+honestly, not waived).
+
+*(Final commit/PR refs appended at closeout.)*

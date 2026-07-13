@@ -49,6 +49,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.models import (
     VALUE_TYPE_DISCOUNT_FACTOR,
@@ -310,16 +311,13 @@ def resolve_run(session: Session, run_id: str, *, acting_tenant: str) -> Calcula
     rather than synthesizing it. Raises :class:`SensitivityRunNotVisible` on a hidden/unknown id or
     a
     non-sensitivity run."""
-    run = session.execute(
-        select(CalculationRun).where(
-            CalculationRun.run_id == str(run_id),
-            CalculationRun.tenant_id == str(acting_tenant),
-            CalculationRun.run_type == RUN_TYPE_SENSITIVITY,
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise SensitivityRunNotVisible(str(run_id))
-    return run
+    return resolve_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_SENSITIVITY,
+        not_visible=SensitivityRunNotVisible,
+    )
 
 
 def resolve_sensitivity(
