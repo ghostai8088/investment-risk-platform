@@ -34,6 +34,7 @@ from irp_shared.marketdata import (
     capture_proxy_mapping,
     resolve_factor,
 )
+from irp_shared.marketdata.factor import supersede_factor_return
 from irp_shared.marketdata.proxy_mapping import ProxyMappingValueError
 from irp_shared.models import Base
 from irp_shared.perf import (
@@ -57,6 +58,7 @@ from irp_shared.risk import (
     register_proxy_weight_regression_model,
     run_proxy_weight_estimate,
 )
+from irp_shared.snapshot import verify_snapshot
 from irp_shared.valuation import create_valuation
 from irp_shared.valuation.service import ValuationActor
 
@@ -442,4 +444,102 @@ def test_unregistered_and_wrong_purpose_snapshot(session: Session) -> None:
             model_version_id=_proxy_model(session, tenant),
             snapshot_id=str(other.id),
         )
+    assert_no_running_orphan(session)
+
+
+def test_tr09_supersede_does_not_move_estimate(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    run_id, _pf, _inst = _desmoothed_run(session, tenant)
+    fx_usd = _factor(session, tenant, "FX_USD")
+    fx_eur = _factor(session, tenant, "FX_EUR")
+    _factor_returns(session, tenant, fx_usd, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    _factor_returns(session, tenant, fx_eur, ["0.02", "-0.01", "0.01", "0.00", "0.02"])
+    model_id = _proxy_model(session, tenant)
+    out = run_proxy_weight_estimate(
+        session,
+        acting_tenant=tenant,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=model_id,
+        desmoothed_run_id=run_id,
+        factor_ids=[fx_usd, fx_eur],
+    )
+    snap = out.run.input_snapshot_id
+    before = {
+        (r.metric_type, r.factor_id): r.metric_value
+        for r in list_proxy_weight_results(session, str(out.run.run_id), acting_tenant=tenant)
+    }
+    # Supersede a pinned factor return with a WILDLY different value, effective now.
+    factor = resolve_factor(session, fx_usd, acting_tenant=tenant)
+    supersede_factor_return(
+        session,
+        factor,
+        return_date=MARK_DATES[2],
+        return_value=Decimal("0.99"),
+        acting_tenant=tenant,
+        actor=FactorActor(actor_id="s"),
+        effective_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+    session.flush()
+    # TR-09 side A: the pinned immutable versions are byte-stable.
+    assert verify_snapshot(session, snapshot_id=str(snap), acting_tenant=tenant).ok
+    # TR-09 side B: re-running the SAME snapshot reproduces the historical estimate byte-for-byte.
+    out2 = run_proxy_weight_estimate(
+        session,
+        acting_tenant=tenant,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=model_id,
+        snapshot_id=str(snap),
+    )
+    after = {
+        (r.metric_type, r.factor_id): r.metric_value
+        for r in list_proxy_weight_results(session, str(out2.run.run_id), acting_tenant=tenant)
+    }
+    assert before == after
+
+
+def test_singular_collinear_design_refused(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    run_id, _pf, _inst = _desmoothed_run(session, tenant)
+    fx_a = _factor(session, tenant, "FX_A")
+    fx_b = _factor(session, tenant, "FX_B")
+    # fx_b is exactly 2x fx_a every period => the design matrix is singular/collinear.
+    _factor_returns(session, tenant, fx_a, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    _factor_returns(session, tenant, fx_b, ["0.02", "0.04", "-0.02", "0.06", "0.00"])
+    with pytest.raises(ProxyWeightInputError, match="singular"):
+        _estimate(
+            session,
+            tenant,
+            run_id,
+            [fx_a, fx_b],
+            model_version_id=_proxy_model(session, tenant),
+        )
+    assert_no_running_orphan(session)
+
+
+def test_extreme_magnitude_is_committed_failed(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    run_id, _pf, _inst = _desmoothed_run(session, tenant)
+    tiny = _factor(session, tenant, "FX_TINY")
+    # A tiny-but-non-constant regressor => a huge OLS slope (~ y-scale / 1e-11 >> 1E8 envelope):
+    # the RAW coefficient is magnitude-gated to a committed FAILED run (not a raise).
+    _factor_returns(
+        session,
+        tenant,
+        tiny,
+        ["0.00000000001", "0.00000000002", "0.00000000001", "0.00000000003", "0.00000000001"],
+    )
+    out = _estimate(
+        session,
+        tenant,
+        run_id,
+        [tiny],
+        model_version_id=_proxy_model(session, tenant, min_obs=3),
+    )
+    assert out.status == "FAILED"
+    assert out.rows == []
+    assert out.failure_reason is not None and "magnitude" in out.failure_reason
     assert_no_running_orphan(session)
