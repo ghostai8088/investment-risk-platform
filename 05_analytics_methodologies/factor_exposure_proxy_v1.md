@@ -32,11 +32,16 @@ unproxied:                          the allocation-v1 mark-currency indicator ru
 ```
 
 A proxied instrument's rows REPLACE its indicator row. `loading` = the captured weight (signed,
-12dp). The unallocated residual of a partial proxy (`1 − Σw`) stays UNMODELED (PA-0 OD-D) —
-derivable as `atom − Σ allocated`, never imputed. Every proxy row's factor must be pinned — an
-unpinned proxy factor refuses the run closed. The contributions-sum-to-total identity (REQ-MKT-003)
-holds per-UNPROXIED-atom; a proxied atom sums to `Σw × atom` BY DESIGN (both regimes
-test-asserted). See `numerical_quant_standards.md`.
+12dp). **An explicit captured ZERO weight is a "no loading on this leg" judgment** (capture
+validates finiteness only): the leg emits no row and the instrument STAYS proxied — never the
+indicator fallback. The unallocated residual of a partial proxy (`1 − Σw`) stays UNMODELED
+(PA-0 OD-D) — derivable as `atom − Σ allocated`, never imputed. Fail-closed adjudication gates
+(the consume-existing trust boundary): an unpinned proxy factor; a proxy pin matching no atom;
+a duplicate (instrument, factor) pin; a non-finite weight; the predicate/model pairing checked
+in BOTH directions. The raw product is computed at 50-digit precision and envelope-gated
+(`|weight × atom| ≥ 1E21` → a committed FAILED run, never a quantize detonation). The
+contributions-sum-to-total identity (REQ-MKT-003) holds per-UNPROXIED-atom; a proxied atom sums
+to `Σw × atom` BY DESIGN (both regimes test-asserted). See `numerical_quant_standards.md`.
 
 ## Validation / reproduction tests
 
@@ -56,6 +61,14 @@ one-table/many-models precedent): run family `FACTOR_EXPOSURE` REUSED, `risk.run
 REUSED, `CALC.RUN_*` reused, NO migration, NO new canonical id. `code_version`-only identity — the
 weights are pinned content, never parameters (the P3-6 shock-vector precedent). The ONE
 `run_factor_exposure` binder dispatches on the bound model's code. `audit/service.py` FROZEN.
+
+## Downstream consumption (v1 boundary)
+
+VaR / HS-VaR / scenario consume ABSOLUTE exposures and accept proxy runs unchanged (the
+invariance golden proves the chain end-to-end). **ACTIVE RISK refuses a proxy run in v1**: its
+weight normalization divides by the summed pinned rows — the net book value only under a
+PARTITIONING run; a partial proxy would silently redistribute the unmodeled residual. The gate
+fails closed on both entry paths; a proxy-aware denominator is the recorded v2.
 
 ## Known limitations
 

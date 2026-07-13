@@ -644,7 +644,13 @@ def build_factor_exposure_snapshot(
     it does not adjudicate; it needs **no as-of** (the atoms are immutable; the header cutoffs are
     the pin time) and imports NO ``calc`` symbol. NO derived number is computed here. An empty
     atom set OR an empty ``factor_ids`` list fails closed BEFORE any write (a factor-less
-    snapshot could only ever produce a refused run)."""
+    snapshot could only ever produce a refused run).
+
+    **PA-2 (``include_proxy_rows=True`` — the proxy model's build path):** additionally pins
+    one ``COMPONENT_KIND_PROXY_MAPPING`` per CURRENT-HEAD ``proxy_mapping`` row of every
+    pinned atom's instrument (the per-row FR flavor; TR-09), and stamps the
+    ``...+proxy-rows`` binding predicate — LOAD-BEARING: the run binder gates on it in BOTH
+    directions (OD-PA-2-C), so never flip this flag independently of the bound model."""
     now = utcnow()
 
     if not factor_ids:

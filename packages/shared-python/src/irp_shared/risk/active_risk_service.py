@@ -450,6 +450,31 @@ def _adjudicate_pins(
     )
 
 
+def _assert_partitioning_exposure_run(session: Session, run: CalculationRun) -> None:
+    """PA-2 (review fold): the w_p normalization divides by portfolio_value = the SUM of the
+    pinned rows — the NET BOOK VALUE only when the factor-exposure run PARTITIONS the book
+    (allocation-v1, epsilon=0). A PARTIAL-proxy run (sum(w) < 1, the residual honestly unmodeled)
+    would silently REDISTRIBUTE the residual pro-rata; v1 accepts ONLY allocation-family runs
+    (a proxy-aware denominator is the recorded v2). Applied on BOTH entry paths."""
+    if run.model_version_id is None:
+        return
+    from irp_shared.model.models import Model, ModelVersion  # models-only (no cycle)
+    from irp_shared.risk.bootstrap import FACTOR_EXPOSURE_MODEL_CODE
+
+    fx_model_code = session.execute(
+        select(Model.code)
+        .join(ModelVersion, ModelVersion.model_id == Model.id)
+        .where(ModelVersion.id == str(run.model_version_id))
+    ).scalar_one_or_none()
+    if fx_model_code != FACTOR_EXPOSURE_MODEL_CODE:
+        raise ActiveRiskInputError(
+            f"the exposure run {run.run_id} was produced by {fx_model_code!r} — active risk v1 "
+            f"requires the PARTITIONING allocation model ({FACTOR_EXPOSURE_MODEL_CODE!r}; a "
+            f"partial-proxy book's residual would be silently redistributed by the weight "
+            f"normalization); refused"
+        )
+
+
 def run_active_risk(
     session: Session,
     *,
@@ -519,6 +544,7 @@ def run_active_risk(
             raise ActiveRiskInputError(
                 f"exposure run {exposure_run_id} status {exposure_run.status!r} != COMPLETED"
             )
+        _assert_partitioning_exposure_run(session, exposure_run)
         covariance_run = resolve_covariance_run(
             session, str(covariance_run_id), acting_tenant=acting_tenant
         )
@@ -572,6 +598,7 @@ def run_active_risk(
         raise ActiveRiskInputError(
             f"the pinned exposure run {parsed.exposure_run_id} is not COMPLETED"
         )
+    _assert_partitioning_exposure_run(session, pinned_exposure_run)
     pinned_covariance_run = resolve_covariance_run(
         session, parsed.covariance_run_id, acting_tenant=acting_tenant
     )

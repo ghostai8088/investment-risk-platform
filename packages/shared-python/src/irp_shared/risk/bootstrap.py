@@ -267,6 +267,11 @@ FACTOR_EXPOSURE_PROXY_LIMITATIONS: tuple[str, ...] = (
     "variance term is a v2 candidate alongside the regression weights.",
     "Proxied rows break the contributions-sum-to-total identity BY DESIGN (sum = sum(w) * atom); "
     "the REQ-MKT-003 exactness holds per-UNPROXIED-atom only (test-asserted in both regimes).",
+    "ACTIVE RISK does not consume proxy runs in v1: its weight normalization divides by the "
+    "summed pinned rows, which equals the net book value ONLY under a partitioning run - a "
+    "partial proxy would silently redistribute the unmodeled residual (fail-closed gate at "
+    "run_active_risk; a proxy-aware denominator is the recorded v2). VaR/HS-VaR/scenario "
+    "consume absolute exposures and are unaffected.",
     "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
 )
 
