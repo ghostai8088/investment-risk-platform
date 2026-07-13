@@ -80,6 +80,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_BENCHMARK_RETURN,
     COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_CURVE,
+    COMPONENT_KIND_DESMOOTHED_RETURN,
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
     COMPONENT_KIND_FACTOR_EXPOSURE,
@@ -98,6 +99,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
+    PURPOSE_PROXY_WEIGHT_INPUT,
     PURPOSE_RETURN_INPUT,
     PURPOSE_SCENARIO_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
@@ -114,6 +116,7 @@ from irp_shared.snapshot.serialize import (
     content_hash,
     covariance_content,
     curve_content,
+    desmoothed_return_content,
     exposure_content,
     factor_content,
     factor_exposure_content,
@@ -1941,6 +1944,160 @@ def build_desmoothing_snapshot(
     return header_row
 
 
+class ProxyWeightSnapshotError(Exception):
+    """A PROXY_WEIGHT_INPUT snapshot cannot be built (an empty desmoothed run, no candidate factor,
+    a candidate factor with no returns in the appraisal span) — raised BEFORE any write; never
+    mints immutable governance garbage. Maps to 409."""
+
+
+#: The proxy-weight binding rule (OD-PA-3-B): the consumed DESMOOTHED_RETURN run's per-period rows +
+#: each candidate factor's SIMPLE-return window over the appraisal span.
+PROXY_WEIGHT_BINDING_PREDICATE = "v1:desmoothed-period-rows+factor-return-span"
+
+
+def _resolve_desmoothed_return_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``desmoothed_return_result`` by id with an EXPLICIT tenant predicate (models-only
+    import — the ``perf`` SERVICE is deliberately not imported; used by ``_reresolve_content``)."""
+    from irp_shared.perf.models import DesmoothedReturnResult  # models-only (no cycle / fence-safe)
+
+    row = session.execute(
+        select(DesmoothedReturnResult).where(
+            DesmoothedReturnResult.id == str(row_id),
+            DesmoothedReturnResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ProxyWeightSnapshotError(f"desmoothed_return_result {row_id} is not visible")
+    return row
+
+
+def _list_desmoothed_period_rows(session: Session, run_id: str, *, acting_tenant: str) -> list[Any]:
+    """The per-period ``DESMOOTHED_PERIOD`` rows of a desmoothed-return run (tenant-scoped, ordered
+    by ``period_start``; models-only import). The SUMMARY row is NOT pinned — only the per-period
+    desmoothed series is the regression target."""
+    from irp_shared.perf.models import (  # models-only (no cycle / fence-safe)
+        METRIC_TYPE_DESMOOTHED_PERIOD,
+        DesmoothedReturnResult,
+    )
+
+    return list(
+        session.execute(
+            select(DesmoothedReturnResult)
+            .where(
+                DesmoothedReturnResult.calculation_run_id == str(run_id),
+                DesmoothedReturnResult.tenant_id == str(acting_tenant),
+                DesmoothedReturnResult.metric_type == METRIC_TYPE_DESMOOTHED_PERIOD,
+            )
+            .order_by(DesmoothedReturnResult.period_start)
+        )
+        .scalars()
+        .all()
+    )
+
+
+def build_proxy_weight_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    desmoothed_run_id: str,
+    factor_ids: list[str],
+    as_of_valid_at: datetime | None = None,
+    as_of_known_at: datetime | None = None,
+) -> DatasetSnapshot:
+    """Build one immutable ``PROXY_WEIGHT_INPUT`` snapshot (PA-3, OD-PA-3-B) pinning:
+
+    - one ``COMPONENT_KIND_DESMOOTHED_RETURN`` per ``DESMOOTHED_PERIOD`` row of the consumed
+      desmoothed run (the regression TARGET series — the source run's immutable output); and
+    - per candidate factor: one ``COMPONENT_KIND_FACTOR`` (the EV definition pin) + one
+      ``COMPONENT_KIND_FACTOR_RETURN`` — the factor's SIMPLE-return rows over the appraisal SPAN
+      ``(min period_start, max period_end]`` (the covariance window flavor),
+
+    so a proxy-weight estimation is reproducible from the snapshot alone (the binder reads this
+    captured content — never a live read; a later mark/return supersede cannot move a historical
+    estimate, TR-09). Fails closed BEFORE any write on an empty desmoothed run, a duplicate/empty
+    candidate set, or a candidate factor with NO return in the span
+    (:class:`ProxyWeightSnapshotError`).
+    Per-period factor COVERAGE (does every appraisal period have a return to compound?) is the RISK
+    binder's pre-create gate — this builder pins a well-formed superset. Models-only reads; NO
+    ``perf``/``risk`` SERVICE symbol is imported."""
+    now = utcnow()
+    valid_at = as_of_valid_at if as_of_valid_at is not None else now
+    known = as_of_known_at if as_of_known_at is not None else now  # FROZEN once (header == pin)
+
+    period_rows = _list_desmoothed_period_rows(
+        session, str(desmoothed_run_id), acting_tenant=acting_tenant
+    )
+    if not period_rows:
+        raise ProxyWeightSnapshotError(
+            f"desmoothed run {desmoothed_run_id} has no per-period result rows to pin"
+        )
+    distinct_ids = list(dict.fromkeys(str(fid).lower() for fid in factor_ids))
+    if len(distinct_ids) != len(factor_ids):
+        raise ProxyWeightSnapshotError(
+            "duplicate factor ids — an ambiguous candidate set is refused"
+        )
+    if not distinct_ids:
+        raise ProxyWeightSnapshotError("at least one candidate factor is required")
+
+    span_start = min(r.period_start for r in period_rows)
+    span_end = max(r.period_end for r in period_rows)
+
+    factors = [resolve_factor(session, fid, acting_tenant=acting_tenant) for fid in distinct_ids]
+    resolved_ids = [str(f.id).lower() for f in factors]
+    if len(set(resolved_ids)) != len(resolved_ids):  # any residual aliasing — refuse pre-write
+        raise ProxyWeightSnapshotError(
+            "duplicate factor ids — an ambiguous candidate set is refused"
+        )
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in period_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_DESMOOTHED_RETURN,
+            "desmoothed_return_result",
+            row,
+            desmoothed_return_content(row),
+        )
+    for factor in factors:
+        window = _factor_window_rows(
+            session,
+            acting_tenant=acting_tenant,
+            factor_id=factor.id,
+            valid_at=valid_at,
+            known_at=known,
+        )
+        span_rows = [window[d] for d in sorted(window) if span_start < d <= span_end]
+        if not span_rows:
+            raise ProxyWeightSnapshotError(
+                f"candidate factor {factor.id} has no returns in the appraisal span "
+                f"({span_start}..{span_end}) — refused"
+            )
+        _append_spec(specs, COMPONENT_KIND_FACTOR, "factor", factor, factor_content(factor))
+        _append_spec(
+            specs,
+            COMPONENT_KIND_FACTOR_RETURN,
+            "factor",
+            factor,
+            factor_return_series_content(factor, span_rows),
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_PROXY_WEIGHT_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=span_end,
+        binding_predicate_version=PROXY_WEIGHT_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -2016,6 +2173,12 @@ def _reresolve_content(
     if comp.component_kind == COMPONENT_KIND_PORTFOLIO_RETURN:
         return portfolio_return_content(
             _resolve_portfolio_return_row(
+                session, comp.target_entity_id, acting_tenant=acting_tenant
+            )
+        )
+    if comp.component_kind == COMPONENT_KIND_DESMOOTHED_RETURN:
+        return desmoothed_return_content(
+            _resolve_desmoothed_return_row(
                 session, comp.target_entity_id, acting_tenant=acting_tenant
             )
         )

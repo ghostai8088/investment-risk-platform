@@ -431,6 +431,40 @@ def portfolio_return_content(row: Any) -> dict[str, Any]:
     }
 
 
+def desmoothed_return_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``desmoothed_return_result`` (ENT-056, IA) row (PA-3
+    DESMOOTHED_RETURN component — the PORTFOLIO_RETURN/VAR governed-row pin flavor: no valid axis,
+    no ``record_version``; ``system_from`` the append time; byte-identical on re-verify). The FULL
+    immutable column set is pinned so the proxy-weight binder reconstructs the regression target
+    (``metric_type``/``period_start``/``period_end``/``metric_value``) exactly. Nullable echo
+    columns pin as null (the summary row's per-period echoes; a per-period row's summary echoes)."""
+
+    def _opt_dec(value: Any, scale: int) -> str | None:
+        return _norm_decimal(value, scale) if value is not None else None
+
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "calculation_run_id": _norm_guid(row.calculation_run_id),
+        "input_snapshot_id": _norm_guid(row.input_snapshot_id),
+        "model_version_id": _norm_guid(row.model_version_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "metric_type": row.metric_type,
+        "period_start": row.period_start.isoformat(),
+        "period_end": row.period_end.isoformat(),
+        "metric_value": _norm_decimal(row.metric_value, _SCALE_CURVE_POINT),
+        "observed_return": _opt_dec(row.observed_return, _SCALE_CURVE_POINT),
+        "begin_mark": _opt_dec(row.begin_mark, _SCALE_MONEY),
+        "end_mark": _opt_dec(row.end_mark, _SCALE_MONEY),
+        "alpha": _norm_decimal(row.alpha, _SCALE_CURVE_POINT),
+        "mark_currency": row.mark_currency,
+        "observed_stdev": _opt_dec(row.observed_stdev, _SCALE_CURVE_POINT),
+        "n_periods": row.n_periods,
+        "system_from": _norm_datetime(row.system_from),
+    }
+
+
 def var_result_content(row: Any) -> dict[str, Any]:
     """The immutable captured content of a ``var_result`` (ENT-027, IA) row (BT-1 VAR component —
     the P3-3 EXPOSURE true-append-only pin flavor: no valid axis, no ``record_version``;

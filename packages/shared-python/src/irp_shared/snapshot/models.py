@@ -76,6 +76,9 @@ PURPOSE_SCENARIO_INPUT = "SCENARIO_INPUT"
 #: PA-1 desmoothing input: the current-head ``valuation`` marks of ONE (portfolio, instrument)
 #: pair over a declared date window. A later mark correction is invisible to the pin (TR-09).
 PURPOSE_DESMOOTHING_INPUT = "DESMOOTHING_INPUT"
+#: PA-3: pins a consumed DESMOOTHED_RETURN run's per-period rows + the candidate factors' return
+#: windows — the OLS proxy-weight estimation input.
+PURPOSE_PROXY_WEIGHT_INPUT = "PROXY_WEIGHT_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -164,6 +167,10 @@ COMPONENT_KIND_SCENARIO = "SCENARIO"
 #: PA-2: a pinned ``proxy_mapping`` FR row (the private->public factor proxy weight consumed by
 #: the proxy factor-exposure model; a later supersede is invisible to the pin, TR-09).
 COMPONENT_KIND_PROXY_MAPPING = "PROXY_MAPPING"
+#: PA-3: a pinned ``desmoothed_return_result`` per-period row (the regression TARGET consumed by
+#: the proxy-weight model; the source run's immutable output — a re-run cannot move it, TR-09).
+#: ``target_entity_type='desmoothed_return_result'``.
+COMPONENT_KIND_DESMOOTHED_RETURN = "DESMOOTHED_RETURN"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -182,6 +189,7 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_VAR,
     COMPONENT_KIND_SCENARIO,
     COMPONENT_KIND_PROXY_MAPPING,
+    COMPONENT_KIND_DESMOOTHED_RETURN,
 )
 
 
