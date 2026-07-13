@@ -60,11 +60,11 @@ _IDENTIFIERS = (
     "fk_proxy_weight_estimate_result_source_run",
     "uq_proxy_weight_estimate_result_run_grain",
     "ix_proxy_weight_estimate_result_tenant_id",
-    "ix_proxy_weight_estimate_result_calc_run",
-    "ix_proxy_weight_estimate_result_input_snapshot",
-    "ix_proxy_weight_estimate_result_model_version",
-    "ix_proxy_weight_estimate_result_portfolio",
-    "ix_proxy_weight_estimate_result_instrument",
+    "ix_proxy_weight_estimate_result_calculation_run_id",
+    "ix_proxy_weight_estimate_result_input_snapshot_id",
+    "ix_proxy_weight_estimate_result_model_version_id",
+    "ix_proxy_weight_estimate_result_portfolio_id",
+    "ix_proxy_weight_estimate_result_instrument_id",
     "tenant_isolation_proxy_weight_estimate_result",
     "proxy_weight_estimate_result_append_only",
     "fk_proxy_mapping_source_calculation_run_id_calculation_run",
@@ -156,27 +156,27 @@ def upgrade() -> None:
         ["tenant_id"],
     )
     op.create_index(
-        "ix_proxy_weight_estimate_result_calc_run",
+        "ix_proxy_weight_estimate_result_calculation_run_id",
         "proxy_weight_estimate_result",
         ["calculation_run_id"],
     )
     op.create_index(
-        "ix_proxy_weight_estimate_result_input_snapshot",
+        "ix_proxy_weight_estimate_result_input_snapshot_id",
         "proxy_weight_estimate_result",
         ["input_snapshot_id"],
     )
     op.create_index(
-        "ix_proxy_weight_estimate_result_model_version",
+        "ix_proxy_weight_estimate_result_model_version_id",
         "proxy_weight_estimate_result",
         ["model_version_id"],
     )
     op.create_index(
-        "ix_proxy_weight_estimate_result_portfolio",
+        "ix_proxy_weight_estimate_result_portfolio_id",
         "proxy_weight_estimate_result",
         ["portfolio_id"],
     )
     op.create_index(
-        "ix_proxy_weight_estimate_result_instrument",
+        "ix_proxy_weight_estimate_result_instrument_id",
         "proxy_weight_estimate_result",
         ["instrument_id"],
     )
