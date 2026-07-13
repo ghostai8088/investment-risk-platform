@@ -26,7 +26,7 @@ from decimal import ROUND_HALF_UP, Decimal
 INDICATOR_LOADING = Decimal("1.000000000000")
 #: Result quantum: HALF_UP to 6dp = the ``factor_exposure_result.exposure_amount`` Numeric(28,6)
 #: scale (the ``exposure_aggregate.exposure_amount`` precedent).
-_RESULT_QUANTUM = Decimal(1).scaleb(-6)
+RESULT_QUANTUM = Decimal(1).scaleb(-6)
 
 
 class FactorKernelError(ValueError):
@@ -92,6 +92,6 @@ def allocate_atom(atom: AtomPin, index: dict[str, FactorPin]) -> AllocatedExposu
     if factor is None:
         return None
     amount = (INDICATOR_LOADING * atom.exposure_amount).quantize(
-        _RESULT_QUANTUM, rounding=ROUND_HALF_UP
+        RESULT_QUANTUM, rounding=ROUND_HALF_UP
     )
     return AllocatedExposure(factor=factor, loading=INDICATOR_LOADING, exposure_amount=amount)

@@ -228,6 +228,109 @@ def register_factor_exposure_model(
     return version
 
 
+#: The per-tenant inventory identity of the PROXY factor-exposure model (PA-2, OD-PA-2-A —
+#: the SECOND registered model family writing ``factor_exposure_result``; the VAR-HS-1
+#: one-table/many-models precedent). ``code_version``-only identity: the proxy WEIGHTS are pinned
+#: snapshot content (ENT-019 ``proxy_mapping``), never parameters.
+FACTOR_EXPOSURE_PROXY_MODEL_CODE = "risk.factor_exposure.proxy"
+FACTOR_EXPOSURE_PROXY_MODEL_NAME = (
+    "Factor-exposure proxy projection (captured private-asset proxy weights, CURRENCY family)"
+)
+FACTOR_EXPOSURE_PROXY_VERSION_LABEL = "v1"
+FACTOR_EXPOSURE_PROXY_METHODOLOGY_REF = "05_analytics_methodologies/factor_exposure_proxy_v1.md"
+
+#: The declared methodology choices (mirrored into model_assumption rows; OD-PA-2-B).
+FACTOR_EXPOSURE_PROXY_ASSUMPTIONS: tuple[str, ...] = (
+    "Proxied-else-indicator allocation over ONE mixed public+private book: an atom whose "
+    "instrument has >= 1 pinned CURRENT proxy_mapping row allocates exposure_amount * weight per "
+    "proxy factor (loading = the captured weight, signed); every other atom follows the "
+    "allocation-v1 mark_currency indicator rule unchanged.",
+    "A proxied instrument's rows REPLACE its indicator row (never both).",
+    "Proxy weights are CAPTURED governance judgments (proxy_mapping.mapping_method records "
+    "provenance) pinned into the snapshot - a later supersede cannot move a historical run "
+    "(TR-09); regression-estimated weights from the desmoothed return series are the recorded v2.",
+    "The unallocated residual (1 - sum(w)) of a partial proxy stays UNMODELED (PA-0 OD-D): "
+    "derivable as atom - sum(allocated), never imputed, no synthetic residual factor.",
+    "Every pinned proxy row's factor MUST be in the run's pinned factor list - an unpinned proxy "
+    "factor refuses the run closed (no silent dropping).",
+    "factor_exposure = quantize_HALF_UP(weight * exposure_amount, 6) (Numeric(28,6), base "
+    "currency); signs preserved.",
+)
+
+#: The recorded scope-outs (mirrored into model_limitation rows; decision record Part 2).
+FACTOR_EXPOSURE_PROXY_LIMITATIONS: tuple[str, ...] = (
+    "Captured MANUAL-judgment weights only - regression-estimated weights from the PA-1 "
+    "desmoothed return series are the recorded v2 (the moment the desmoothed number becomes an "
+    "input).",
+    "CURRENCY-family proxy factors only (the platform-wide v1 scope; PA-0 OD-H).",
+    "The unallocated residual of a partial proxy is unmodeled - a residual/idiosyncratic "
+    "variance term is a v2 candidate alongside the regression weights.",
+    "Proxied rows break the contributions-sum-to-total identity BY DESIGN (sum = sum(w) * atom); "
+    "the REQ-MKT-003 exactness holds per-UNPROXIED-atom only (test-asserted in both regimes).",
+    "ACTIVE RISK does not consume proxy runs in v1: its weight normalization divides by the "
+    "summed pinned rows, which equals the net book value ONLY under a partitioning run - a "
+    "partial proxy would silently redistribute the unmodeled residual (fail-closed gate at "
+    "run_active_risk; a proxy-aware denominator is the recorded v2). VaR/HS-VaR/scenario "
+    "consume absolute exposures and are unaffected.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+)
+
+
+def register_factor_exposure_proxy_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the PROXY factor-exposure ``model`` + a ``model_version`` for this
+    ``code_version`` (PA-2, OD-PA-2-A — the ``register_factor_exposure_model`` shape). The
+    returned ``model_version.id`` is what a proxy factor-exposure run binds; the SHARED
+    ``run_factor_exposure`` binder dispatches on the bound model's code."""
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=FACTOR_EXPOSURE_PROXY_MODEL_CODE,
+        name=FACTOR_EXPOSURE_PROXY_MODEL_NAME,
+        model_type=FACTOR_EXPOSURE_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Private-asset proxy projection: pinned proxy_mapping weights allocate a private "
+            "instrument's exposure onto public CURRENCY factors; unproxied atoms follow the "
+            "allocation-v1 indicator rule (PA-2, ENT-028 family; ENT-019's first governed "
+            "consumer)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=FACTOR_EXPOSURE_PROXY_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=FACTOR_EXPOSURE_PROXY_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=FACTOR_EXPOSURE_PROXY_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=FACTOR_EXPOSURE_PROXY_ASSUMPTIONS,
+            limitations=FACTOR_EXPOSURE_PROXY_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    if version.code_version != str(code_version):
+        raise ModelVersionConflictError(
+            FACTOR_EXPOSURE_PROXY_MODEL_CODE,
+            FACTOR_EXPOSURE_PROXY_VERSION_LABEL,
+            str(code_version),
+        )
+    return version
+
+
 #: The per-tenant inventory identity of the covariance estimation model (P3-4, OD-P3-4-A/G).
 COVARIANCE_MODEL_CODE = "risk.covariance.sample"
 COVARIANCE_MODEL_NAME = "Sample factor covariance (equal-weighted, unbiased N-1)"

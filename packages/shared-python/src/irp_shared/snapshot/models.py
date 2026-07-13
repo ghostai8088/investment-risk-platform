@@ -161,6 +161,9 @@ COMPONENT_KIND_VAR = "VAR"
 #: in each component's content; a later shock supersede/correction is invisible to the pin, TR-09).
 #: ``target_entity_type='scenario_definition'``.
 COMPONENT_KIND_SCENARIO = "SCENARIO"
+#: PA-2: a pinned ``proxy_mapping`` FR row (the private->public factor proxy weight consumed by
+#: the proxy factor-exposure model; a later supersede is invisible to the pin, TR-09).
+COMPONENT_KIND_PROXY_MAPPING = "PROXY_MAPPING"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -178,6 +181,7 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_BENCHMARK_RETURN,
     COMPONENT_KIND_VAR,
     COMPONENT_KIND_SCENARIO,
+    COMPONENT_KIND_PROXY_MAPPING,
 )
 
 

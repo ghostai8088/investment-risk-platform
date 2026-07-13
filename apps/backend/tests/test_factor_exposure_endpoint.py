@@ -370,3 +370,39 @@ def test_p3c1_both_modes_422(ctx) -> None:  # noqa: ANN001
     resp = client.post("/risk/factor-exposures/runs", json=body, headers=_h(p))
     assert resp.status_code == 422
     assert _count_fx_runs(db, p.tenant_id) == 0
+
+
+def test_proxy_model_registration_and_dispatched_run(ctx) -> None:  # noqa: ANN001
+    # PA-2: the proxy model registers via its OWN route and runs via the SHARED run endpoint
+    # (the binder dispatches on the bound model). The fixture book has NO proxy rows, so the
+    # proxy run degrades to the indicator rule (the MD-H1 checklist case — NOT a refusal).
+    client, p, db, exp_run, fac = ctx
+    resp = client.post(
+        "/risk/models/factor-exposure-proxy", json={"code_version": "pa2-v1"}, headers=_h(p)
+    )
+    assert resp.status_code == 201, resp.text
+    mv = resp.json()["model_version_id"]
+    again = client.post(
+        "/risk/models/factor-exposure-proxy", json={"code_version": "pa2-v1"}, headers=_h(p)
+    )
+    assert again.status_code == 201 and again.json()["model_version_id"] == mv  # idempotent
+    conflict = client.post(
+        "/risk/models/factor-exposure-proxy", json={"code_version": "pa2-v2"}, headers=_h(p)
+    )
+    assert conflict.status_code == 409  # same label, different code_version
+
+    run = client.post(
+        "/risk/factor-exposures/runs",
+        json={
+            "code_version": "pa2-v1",
+            "environment_id": "ci",
+            "model_version_id": mv,
+            "exposure_run_id": exp_run,
+            "factor_ids": [fac],
+        },
+        headers=_h(p),
+    )
+    assert run.status_code == 201, run.text
+    body = run.json()
+    assert body["status"] == "COMPLETED" and body["run_type"] == "FACTOR_EXPOSURE"
+    assert all(r["loading"] == "1.000000000000" for r in body["rows"])  # indicator degradation

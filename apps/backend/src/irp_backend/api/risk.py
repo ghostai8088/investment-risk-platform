@@ -107,6 +107,7 @@ from irp_shared.risk import (
     register_active_risk_model,
     register_covariance_model,
     register_factor_exposure_model,
+    register_factor_exposure_proxy_model,
     register_historical_var_model,
     register_scenario_model,
     register_sensitivity_model,
@@ -644,6 +645,42 @@ def register_factor_exposure(
     except (ModelVersionConflictError, WrongModelVersionError) as exc:
         # WrongModelVersionError: a same-label twin exists that is NOT a REGISTERED version of
         # this family (generically minted) — a governed refusal, not a 500 (P3-C1).
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/models/factor-exposure-proxy",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_factor_exposure_proxy(
+    body: SensitivityModelIn,  # the identical one-field payload — reused, not duplicated
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed PROXY factor-exposure model + a model_version for this
+    ``code_version`` (PA-2, OD-PA-2-A) — the run endpoint is the SHARED
+    ``POST /risk/factor-exposures/runs`` (the binder dispatches on the bound model)."""
+    try:
+        version = register_factor_exposure_proxy_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+        )
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
         db.rollback()
         code, detail = _map_error(exc)
         raise HTTPException(status_code=code, detail=detail) from None

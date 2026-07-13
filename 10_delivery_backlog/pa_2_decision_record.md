@@ -1,7 +1,7 @@
 # PA-2 Decision Record — private holdings on the public factor substrate (Wave-3 slice 3)
 
-> **Status: DRAFT for ratification (2026-07-12).** Drafted against `main` `f8bc20d` (PA-1 merged
-> PR #19, CI green). Scope: the END-TO-END demonstration the thesis destination promises — a
+> **Status: RATIFIED 2026-07-12** — OQ-PA-2-1…6 approved as recommended (user: "Approved").
+> Drafted against `main` `f8bc20d` (PA-1 merged PR #19, CI green). Scope: the END-TO-END demonstration the thesis destination promises — a
 > private holding, projected through its captured **`proxy_mapping`** weights (ENT-019, PA-0) onto
 > the public CURRENCY factors, flows through the EXISTING governed chain (factor-exposure →
 > covariance → VaR/active-risk/scenario) so **a private asset carries honest, factor-based risk**.
@@ -61,3 +61,57 @@ golden THROUGH VaR + TR-09 + refusals + guards; PG legs ride the existing factor
 one proxy-pin case; endpoint cases); (6) docs (methodology `factor_exposure_proxy_v1.md`; ENT-019/028
 registry notes; RTM REQ-PRV-005 consumer note); (7) full validation + the 4-finder battery.
 Model/effort: **Fable 5 / High** (the allocation-semantics leg), Opus/High acceptable for the rest.
+
+## Part 5 — Review dispositions + closure
+
+**Review (OD-PA-2-G) — appended 2026-07-12.** A FULL 4-finder local max-effort battery (allocation
+correctness; governance/snapshot/API; cross-file blast radius; test-quality/sweep) over the
+complete PR-scope diff. The goldens were independently re-derived by two finders (incl. the
+invariance argument's soundness — NOT a tautology); dispatch semantics, case normalization,
+TR-09/verify byte-stability under supersede AND correction, the non-proxy regression surface, and
+all hard invariants verified clean. **~24 raw findings → 13 distinct; ALL FOLDED (no deferrals):**
+
+1. **HIGH — no envelope gate on `weight × atom` (4×-confirmed).** The first unguarded multiply
+   writing `exposure_amount`: a capture-legal weight (finiteness-only gate) times a large atom
+   could detonate quantize AFTER RUNNING (the P3-6/BT-1 class) and silently double-round under the
+   28-digit context. **Folded:** prec-50 multiply + the RAW product gated at `_MAX_RESULT_ABS`
+   (1E21) → committed FAILED; boundary test (`1E6 × 1E16 = 1E22` → FAILED, zero rows, no orphan).
+2. **HIGH — the predicate gate was one-directional (3×-confirmed).** The ALLOCATION model over a
+   PROXY-predicate snapshot COMPLETED while silently discarding the pinned proxy rows — the exact
+   silent-degradation harm OD-PA-2-C names, mirrored. **Folded:** the reverse gate + test.
+3. **HIGH — downstream ACTIVE-RISK partition break (the review's most valuable find).**
+   `run_active_risk` normalizes by the summed pinned rows — the net book value ONLY under a
+   partitioning run; a partial-proxy run would silently REDISTRIBUTE the unmodeled residual
+   pro-rata and mis-persist `portfolio_value`. **Folded:** `_assert_partitioning_exposure_run`
+   fail-closed on BOTH entry paths (proxy-aware AR = the recorded v2); limitation minted into the
+   proxy model + methodology "Downstream consumption" section; refusal test. VaR/HS-VaR/scenario
+   verified unaffected (absolute exposures).
+4. **MED — the zero-weight refusal rested on a FALSE premise and bricked the book (3×-confirmed).**
+   Capture accepts weight 0 (finiteness only) and superseding-to-zero is the natural
+   leg-retirement action, yet one zero head row made EVERY proxy run over the book refuse.
+   **Folded (semantics corrected):** an explicit captured ZERO = "no loading on this leg" — the
+   pin passes adjudication, `_build_rows` emits no row, and the instrument STAYS proxied (never
+   the indicator fallback); non-finite still refuses; the false comment replaced; no-op test.
+5. **MED — duplicate + no-atom proxy pins escaped adjudication (3×-confirmed).** A hand-minted
+   snapshot could double-write the 4-tuple grain (IntegrityError 500 mid-run) or pin rows applied
+   to nothing. **Folded:** duplicate-(instrument, factor) + pin-matches-no-atom refusals in
+   `_adjudicate_proxies` (the var_service duplicate-pin twin) + direct unit gates.
+6. **MED — the ratified hand-derived end-to-end anchor was missing.** The invariance golden alone
+   could not catch a chain-symmetric regression. **Folded:** a FIRST-PRINCIPLES in-test Decimal
+   recomputation (sample covariance 20dp → radicand @ prec 50 → `z·√` @ 6dp) — matches the stored
+   VaR byte-exactly.
+7. **MED — TD-1: the EUR/USD = 1.0 knife-edge fixture masked the FX-conversion path.** **Folded:**
+   rate 1.25 (plausible; 2018-era EURUSD) with the public EUR leg re-derived (40 × 300 EUR × 1.25
+   = 15000) — the conversion path is now exercised by the invariance golden.
+8. **Cleanup folds:** the stale allocation-only module header rewritten for the two-family
+   dispatch (+ `_build_rows` + builder docstrings incl. the LOAD-BEARING predicate switch);
+   `_MONEY_QUANTUM` deduped onto the kernel's now-exported `RESULT_QUANTUM`; the deep
+   `snapshot.service` import replaced by package exports (both factor-exposure predicates);
+   the `_book.insts` function-attribute hack → a returned triple (+ its self-contradictory
+   docstring); the dead `**kw`; the `_currencies` EUR seed in the boundary test.
+
+**Post-fold validation (2026-07-12):** `make check` 1311 passed / 274 skipped (12 proxy tests) +
+secret-scan + docs-check; local-PG clean-schema green (incl. the RLS proxy-pin case);
+`alembic check` no drift (NO migration in this slice).
+
+*(Final commit/PR refs appended at closeout.)*

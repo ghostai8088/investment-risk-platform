@@ -1,19 +1,26 @@
-"""Factor-exposure binder (P3-3, ENT-028 family — allocation v1, the second governed risk number).
+"""Factor-exposure binder (P3-3 allocation v1 + PA-2 proxy projection, ENT-028 family).
 
 ``run_factor_exposure`` produces ``factor_exposure_result`` rows ONLY when bound to a
-``dataset_snapshot`` (``FACTOR_EXPOSURE_INPUT``, pinning the consumed ``exposure_aggregate`` atoms
-+ the ``factor`` EV definitions) + a complete ``calculation_run`` + a **REGISTERED
-``model_version`` OF THE FACTOR-EXPOSURE MODEL** (AD-014 / FW-RUN / TR-15 / CTRL-003 — the
-``run_sensitivities`` exemplar mirrored step-for-step, plus the model-identity tightening: a
-version of a DIFFERENT model family is refused pre-create). The number is the deterministic
-indicator-loading allocation (``irp_shared.risk.factor_kernel``): CURRENCY family, matched on the
-atom's captured ``mark_currency``; contributions sum to the pinned input total EXACTLY (ε = 0,
-REQ-MKT-003).
+``dataset_snapshot`` (``FACTOR_EXPOSURE_INPUT``) + a complete ``calculation_run`` + a **REGISTERED
+``model_version`` of ONE OF THE TWO factor-exposure model families** (AD-014 / FW-RUN / TR-15 /
+CTRL-003) — the ONE binder DISPATCHES on the bound model's code (PA-2, OD-PA-2-A):
 
-Reproducibility (the AD-014 invariant): the compute reads **ONLY the snapshot's pinned
-``COMPONENT_KIND_EXPOSURE``/``COMPONENT_KIND_FACTOR`` captured content** — it makes **NO** live
-exposure/factor read, so a later factor-definition amend or exposure re-run cannot change a
-historical factor exposure.
+- **``risk.factor_exposure.allocation`` v1 (P3-3):** the deterministic indicator-loading
+  allocation (``irp_shared.risk.factor_kernel``): CURRENCY family, matched on the atom's captured
+  ``mark_currency``; contributions sum to the pinned input total EXACTLY (ε = 0, REQ-MKT-003).
+  Pins: ``COMPONENT_KIND_EXPOSURE`` + ``COMPONENT_KIND_FACTOR``.
+- **``risk.factor_exposure.proxy`` v1 (PA-2):** proxied-else-indicator over a MIXED book — an
+  atom whose instrument has pinned CURRENT ``proxy_mapping`` rows allocates
+  ``quantize_HALF_UP(weight × atom, 6)`` per proxy factor (``loading`` = the captured weight,
+  signed; an explicit ZERO weight is a captured "no loading on this leg" — no row, never the
+  indicator fallback); every other atom follows the allocation-v1 rule. Adds
+  ``COMPONENT_KIND_PROXY_MAPPING`` pins + the ``...+proxy-rows`` binding predicate (checked BOTH
+  ways: the proxy model refuses a plain snapshot AND the allocation model refuses a proxy one).
+  The partial-proxy residual stays unmodeled; the sum-to-total identity holds per-UNPROXIED-atom.
+
+Reproducibility (the AD-014 invariant): the compute reads **ONLY the snapshot's pinned captured
+content** — it makes **NO** live exposure/factor/proxy read, so a later factor-definition amend,
+exposure re-run, or proxy-weight supersede cannot change a historical factor exposure.
 
 Failure model (the P2-3/P3-1 precedent, split by timing — and, post the 2026-07 adversarial
 review, UNIFORM across BOTH entry paths):
@@ -21,12 +28,16 @@ review, UNIFORM across BOTH entry paths):
   ``model_version_id``; an unregistered or WRONG-MODEL model_version; a non-COMPLETED /
   cross-tenant / empty exposure run; a wrong-purpose snapshot; **pinned content that is not a
   well-formed v1 input** — zero pinned atoms, zero pinned factors, a non-CURRENCY family, a
-  NULL ``currency_code`` scope, or a duplicate ``currency_code`` (an ambiguous partition)):
+  NULL ``currency_code`` scope, or a duplicate ``currency_code`` (an ambiguous partition);
+  **a proxy-mode input that is ill-formed** — an unpinned proxy factor, a proxy pin matching
+  no atom, a duplicate (instrument, factor) proxy pin, a non-finite weight, or a
+  predicate/model mismatch in EITHER direction):
   **raise BEFORE ``create_run``** ⇒ ZERO run + ZERO rows + ZERO run-audit. Both the
   build-in-request AND consume-existing (``snapshot_id``) paths adjudicate the PINNED content
   pre-create through the same kernel rules, so a snapshot minted by any other builder cannot
   smuggle an ill-formed input past the gate.
-- **Post-create FAILED** (the DQ gate failing AFTER RUNNING — an unmapped atom, OD-P3-3-N): mark
+- **Post-create FAILED** (the DQ gate failing AFTER RUNNING — an unmapped atom, OD-P3-3-N; or a
+  proxied product beyond the ``Numeric(28,6)`` envelope, ``|weight × atom| >= 1E21``): mark
   the run FAILED (``outcome='failure'``) and **return** ⇒ a committed FAILED run +
   ``CALC.RUN_STATUS_CHANGE`` + a ``DATA.VALIDATE`` DQ record + ZERO result rows (durable refusal
   evidence; the returned ``failure_reason`` names the unmapped atoms/currencies).
@@ -41,7 +52,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import Any
 
 from sqlalchemy import select
@@ -52,9 +63,15 @@ from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.exposure.service import resolve_run as resolve_exposure_run
 from irp_shared.marketdata.models import FACTOR_FAMILY_CURRENCY
-from irp_shared.risk.bootstrap import FACTOR_EXPOSURE_MODEL_CODE, assert_model_version_of
+from irp_shared.model.service import WrongModelVersionError
+from irp_shared.risk.bootstrap import (
+    FACTOR_EXPOSURE_MODEL_CODE,
+    FACTOR_EXPOSURE_PROXY_MODEL_CODE,
+    assert_model_version_of,
+)
 from irp_shared.risk.events import RUN_TYPE_FACTOR_EXPOSURE, FactorExposureActor
 from irp_shared.risk.factor_kernel import (
+    RESULT_QUANTUM,
     AtomPin,
     FactorKernelError,
     FactorPin,
@@ -65,12 +82,14 @@ from irp_shared.risk.models import FactorExposureResult
 from irp_shared.snapshot import (
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
+    COMPONENT_KIND_PROXY_MAPPING,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     SnapshotActor,
     build_factor_exposure_snapshot,
     list_components,
     resolve_snapshot,
 )
+from irp_shared.snapshot.service import FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE
 
 #: The v1 supported mapping families (OD-P3-3-C; anything else is a pre-create refusal — enforced
 #: on the PINNED factor content for both entry paths).
@@ -105,6 +124,22 @@ class FactorExposureRunNotVisible(Exception):
         self.run_id = str(run_id)
 
 
+#: The proxied-row envelope: Numeric(28,6) holds |value| < 1E22; the gate sits one order inside
+#: (the P3-6/BT-1/P3-8 echo-overflow class — the FIRST unguarded multiply on this table without it
+#: would detonate quantize AFTER the run is RUNNING; review fold).
+_MAX_RESULT_ABS = Decimal("1E21")
+
+
+@dataclass(frozen=True)
+class ProxyPin:
+    """One pinned ``proxy_mapping`` FR row (PA-2): the captured weight of a private instrument on
+    a public factor."""
+
+    instrument_id: str
+    factor_id: str
+    weight: Decimal
+
+
 @dataclass(frozen=True)
 class FactorExposureRunResult:
     """The outcome of ``run_factor_exposure``: the ``calculation_run`` + status + the rows
@@ -118,14 +153,23 @@ class FactorExposureRunResult:
     failure_reason: str | None = None
 
 
-def _parse_pins(comps: list[Any]) -> tuple[list[AtomPin], list[FactorPin]]:
+def _parse_pins(comps: list[Any]) -> tuple[list[AtomPin], list[FactorPin], list[ProxyPin]]:
     """Parse the pinned ``captured_content`` into kernel pins (PURE — no live read; the AD-014
     invariant)."""
     atoms: list[AtomPin] = []
     factors: list[FactorPin] = []
+    proxies: list[ProxyPin] = []
     for comp in comps:
         data = json.loads(comp.captured_content)
-        if comp.component_kind == COMPONENT_KIND_EXPOSURE:
+        if comp.component_kind == COMPONENT_KIND_PROXY_MAPPING:
+            proxies.append(
+                ProxyPin(
+                    instrument_id=str(data["private_instrument_id"]).lower(),
+                    factor_id=str(data["factor_id"]).lower(),
+                    weight=Decimal(data["weight"]),
+                )
+            )
+        elif comp.component_kind == COMPONENT_KIND_EXPOSURE:
             atoms.append(
                 AtomPin(
                     id=data["id"],
@@ -145,7 +189,7 @@ def _parse_pins(comps: list[Any]) -> tuple[list[AtomPin], list[FactorPin]]:
                     currency_code=data["currency_code"],
                 )
             )
-    return atoms, factors
+    return atoms, factors, proxies
 
 
 def _adjudicate_pins(atoms: list[AtomPin], factors: list[FactorPin]) -> dict[str, FactorPin]:
@@ -191,6 +235,57 @@ def _adjudicate_pins(atoms: list[AtomPin], factors: list[FactorPin]) -> dict[str
         raise FactorExposureInputError(str(exc)) from exc
 
 
+def _adjudicate_proxies(
+    proxies: list[ProxyPin], factors: list[FactorPin], atoms: list[AtomPin]
+) -> dict[str, list[ProxyPin]]:
+    """PA-2 (OD-PA-2-B) pre-create adjudication of the pinned proxy rows (the same trust boundary
+    ``_adjudicate_pins`` defends: consume-existing accepts ANY snapshot, so a hand-minted pin set
+    must not smuggle an ill-formed input past the gate — review fold). Fail-closed gates:
+
+    - every proxy factor MUST be in the pinned factor list (no silent dropping);
+    - every proxy instrument MUST have a pinned atom (a pin applied to nothing is ill-formed);
+    - a DUPLICATE (instrument, factor) pin refuses (it would double-write the 4-tuple grain —
+      an IntegrityError mid-run, or a double-counted exposure; the var_service duplicate-pin twin);
+    - a non-finite weight refuses.
+
+    A weight of EXACTLY ZERO is a legitimate CAPTURED judgment ("no loading on this leg" — the
+    natural way to retire one leg; capture validates finiteness only, PA-0 OD-D) — the pin is kept
+    so the instrument STAYS proxied, and ``_build_rows`` emits no row for it (never a fallback to
+    the indicator rule; review fold — the earlier refusal both bricked the whole book on one
+    zero-weight head row AND mis-claimed a capture-side gate that does not exist).
+
+    Returns ``{instrument_id: [ProxyPin, ...]}`` (empty when no proxies — the whole book then
+    follows the indicator rule)."""
+    pinned_factor_ids = {f.id.lower() for f in factors}
+    atom_instrument_ids = {str(a.instrument_id).lower() for a in atoms}
+    seen_pairs: set[tuple[str, str]] = set()
+    by_instrument: dict[str, list[ProxyPin]] = {}
+    for pin in proxies:
+        if pin.factor_id not in pinned_factor_ids:
+            raise FactorExposureInputError(
+                f"proxy factor {pin.factor_id} (instrument {pin.instrument_id}) is not in the "
+                f"pinned factor list — include it in factor_ids; refused (no silent dropping)"
+            )
+        if pin.instrument_id not in atom_instrument_ids:
+            raise FactorExposureInputError(
+                f"proxy pin for instrument {pin.instrument_id} matches no pinned atom — refused"
+            )
+        pair = (pin.instrument_id, pin.factor_id)
+        if pair in seen_pairs:
+            raise FactorExposureInputError(
+                f"duplicate proxy pin for (instrument {pin.instrument_id}, factor "
+                f"{pin.factor_id}) — refused (it would double-count the exposure)"
+            )
+        seen_pairs.add(pair)
+        if not pin.weight.is_finite():
+            raise FactorExposureInputError(
+                f"proxy weight {pin.weight} (instrument {pin.instrument_id}) is not a finite "
+                f"loading — refused"
+            )
+        by_instrument.setdefault(pin.instrument_id, []).append(pin)
+    return by_instrument
+
+
 def _build_rows(
     atoms: list[AtomPin],
     index: dict[str, FactorPin],
@@ -199,13 +294,60 @@ def _build_rows(
     snapshot_id: str,
     model_version_id: str,
     acting_tenant: str,
+    proxies_by_instrument: dict[str, list[ProxyPin]] | None = None,
+    factor_by_id: dict[str, FactorPin] | None = None,
 ) -> tuple[list[FactorExposureResult], list[str]]:
-    """Allocate each pinned atom to its factor (the pure kernel over pre-adjudicated pins only).
-    Returns ``(rows, gaps)`` — one gap per unmapped atom (the fail-closed DQ signal; rows are NOT
-    written when gaps exist)."""
+    """Allocate each pinned atom (the pure kernel over pre-adjudicated pins only). A PROXIED
+    instrument's atoms allocate ``weight × atom`` per pinned proxy leg (replace-not-add; zero
+    weights emit no row; the raw product is envelope-gated at ``_MAX_RESULT_ABS`` → FAILED);
+    every other atom follows the indicator rule. Returns ``(rows, gaps)`` — one gap per unmapped
+    atom or out-of-envelope product (the fail-closed DQ signal; rows are NOT written when gaps
+    exist)."""
     rows: list[FactorExposureResult] = []
     gaps: list[str] = []
+    proxies_by_instrument = proxies_by_instrument or {}
+    factor_by_id = factor_by_id or {}
     for atom in atoms:
+        # PA-2 (OD-PA-2-B): a proxied instrument's rows REPLACE its indicator row — allocate
+        # exposure x weight per pinned proxy factor (loading = the captured weight, signed).
+        proxy_pins = proxies_by_instrument.get(str(atom.instrument_id).lower())
+        if proxy_pins:
+            for pin in proxy_pins:
+                if pin.weight == 0:
+                    continue  # an explicit captured zero = "no loading on this leg" (no row;
+                    # the instrument STAYS proxied — never the indicator fallback)
+                factor = factor_by_id[pin.factor_id]  # presence adjudicated pre-create
+                # Multiply at 50-digit precision (the serializer's widened-context twin — the
+                # default 28-digit context would silently HALF_EVEN-pre-round a large product
+                # before the declared HALF_UP quantize), then gate the RAW product BEFORE
+                # quantizing (>= 1E22 raises InvalidOperation AFTER the run is RUNNING — the
+                # P3-6/BT-1 echo-overflow class; a committed FAILED run, never a raw 500).
+                with localcontext() as ctx:
+                    ctx.prec = 50
+                    raw = pin.weight * atom.exposure_amount
+                if abs(raw) >= _MAX_RESULT_ABS:
+                    gaps.append(
+                        f"magnitude-out-of-range:proxy:{atom.instrument_id}:{pin.factor_id}"
+                    )
+                    return [], gaps
+                rows.append(
+                    FactorExposureResult(
+                        tenant_id=str(acting_tenant),
+                        calculation_run_id=run.run_id,
+                        input_snapshot_id=str(snapshot_id),
+                        model_version_id=str(model_version_id),
+                        portfolio_id=atom.portfolio_id,
+                        instrument_id=atom.instrument_id,
+                        factor_id=factor.id,
+                        factor_code=factor.factor_code,
+                        factor_family=factor.factor_family,
+                        base_currency=atom.base_currency,
+                        mark_currency=atom.mark_currency,
+                        loading=pin.weight,
+                        exposure_amount=raw.quantize(RESULT_QUANTUM, rounding=ROUND_HALF_UP),
+                    )
+                )
+            continue
         allocated = allocate_atom(atom, index)
         if allocated is None:
             gaps.append(f"unmapped-atom:{atom.id}:{atom.mark_currency}")
@@ -268,12 +410,26 @@ def run_factor_exposure(
     # Inventory-before-use + model identity (CTRL-003 / BR-3): the version must be REGISTERED and
     # belong to the FACTOR-EXPOSURE model (a sensitivity/other-family version is refused — the
     # 2026-07 review hardening).
-    assert_model_version_of(
-        session,
-        str(model_version_id),
-        tenant_id=acting_tenant,
-        expected_model_code=FACTOR_EXPOSURE_MODEL_CODE,
-    )
+    # PA-2 (OD-PA-2-A): the ONE binder serves BOTH registered factor-exposure model families —
+    # dispatch on the bound model's code (allocation-v1 indicator vs proxy projection). An
+    # unregistered version raises from the FIRST assert (UnregisteredModelError); a version of
+    # NEITHER family raises WrongModelVersionError from the second.
+    try:
+        assert_model_version_of(
+            session,
+            str(model_version_id),
+            tenant_id=acting_tenant,
+            expected_model_code=FACTOR_EXPOSURE_MODEL_CODE,
+        )
+        is_proxy = False
+    except WrongModelVersionError:
+        assert_model_version_of(
+            session,
+            str(model_version_id),
+            tenant_id=acting_tenant,
+            expected_model_code=FACTOR_EXPOSURE_PROXY_MODEL_CODE,
+        )
+        is_proxy = True
 
     # --- Bind the atoms+factors snapshot (cross-tenant/unknown/ill-formed ⇒ pre-create refusal) --
     if snapshot_id is not None:
@@ -282,6 +438,27 @@ def run_factor_exposure(
             raise FactorExposureInputError(
                 f"snapshot {snapshot_id} purpose {snapshot.purpose!r} "
                 f"!= {PURPOSE_FACTOR_EXPOSURE_INPUT}"
+            )
+        if not is_proxy and snapshot.binding_predicate_version == (
+            FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE
+        ):
+            # The MIRROR of the gate below (review fold): the allocation model over a
+            # proxy-predicate snapshot would COMPLETE while silently discarding the pinned proxy
+            # rows — two materially different governed numbers from ONE snapshot; refuse.
+            raise FactorExposureInputError(
+                f"snapshot {snapshot_id} pins proxy rows "
+                f"({FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE!r}) — bind the proxy model_version, "
+                f"not the allocation one"
+            )
+        if is_proxy and snapshot.binding_predicate_version != (
+            FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE
+        ):
+            # OD-PA-2-C: a plain allocation-v1 snapshot pins NO proxy rows — running the proxy
+            # model over it would silently degrade to the indicator rule; refuse instead.
+            raise FactorExposureInputError(
+                f"snapshot {snapshot_id} predicate {snapshot.binding_predicate_version!r} does "
+                f"not pin proxy rows — build the snapshot under the proxy model "
+                f"({FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE!r})"
             )
     else:
         if not exposure_run_id or not factor_ids:
@@ -304,16 +481,19 @@ def run_factor_exposure(
             actor=SnapshotActor(actor_id=actor.actor_id, actor_type=actor.actor_type),
             exposure_run_id=str(exposure_run_id),
             factor_ids=[str(fid) for fid in factor_ids],
+            include_proxy_rows=is_proxy,
         )
 
     # --- Adjudicate the PINNED content pre-create (uniform for both paths; kernel-rule-sourced):
     # zero atoms / zero factors / unsupported family / NULL scope / duplicate currency all refuse
     # HERE — before a run (or any run-audit) can exist.
     try:
-        atoms, factors = _parse_pins(
+        atoms, factors, proxies = _parse_pins(
             list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
         )
         index = _adjudicate_pins(atoms, factors)
+        proxies_by_instrument = _adjudicate_proxies(proxies, factors, atoms) if is_proxy else {}
+        factor_by_id = {f.id.lower(): f for f in factors}
     except FactorExposureInputError:
         raise
     except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
@@ -335,6 +515,8 @@ def run_factor_exposure(
             snapshot_id=snapshot.id,
             model_version_id=str(model_version_id),
             acting_tenant=acting_tenant,
+            proxies_by_instrument=proxies_by_instrument,
+            factor_by_id=factor_by_id,
         )
 
     def _format_reason(gate: Exception, gaps: list[str]) -> str:  # verbatim P3-3 format
