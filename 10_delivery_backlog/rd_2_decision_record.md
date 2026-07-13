@@ -165,4 +165,6 @@ migration-head tests pass in-suite). PG-tier RLS/append-only tests are untouched
 per-table steps (the local `irp_pg_local` container was unavailable in the delivery session; recorded
 honestly, not waived).
 
-*(Final commit/PR refs appended at closeout.)*
+**CLOSED (2026-07-13).** Implementation `11f890d` merged via **PR #26** (merge `cc9679b`), CI green.
+NO migration (alembic head stays `0036`). Both TIPPED register items PAID; the RD-1 census-undercount
+deviation from the Wave-3 close is discharged. Next = PA-3 planning (the Wave-4 headline payload).
