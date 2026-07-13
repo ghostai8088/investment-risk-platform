@@ -22,10 +22,10 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.model.models import ModelAssumption, ModelVersion
+from irp_shared.model.assumptions import load_assumption_texts, require_declared
+from irp_shared.model.models import ModelVersion
 from irp_shared.model.service import (
     ModelVersionConflictError,
     WrongModelVersionError,
@@ -322,21 +322,13 @@ def declared_desmoothing_alpha(session: Session, version: ModelVersion) -> Decim
     A malformed, absent, ambiguous, zero, or out-of-domain declaration is NOT a desmoothing
     identity — refuse fail-closed (:class:`WrongModelVersionError`, 422), never a bare parse
     crash (the P3-4 review lesson)."""
-    rows = (
-        session.execute(
-            select(ModelAssumption).where(ModelAssumption.model_version_id == version.id)
-        )
-        .scalars()
-        .all()
+    raw = require_declared(
+        load_assumption_texts(session, version),
+        DESMOOTHING_ALPHA_ASSUMPTION_PREFIX,
+        pattern=_DESMOOTHING_ALPHA_PATTERN,
+        on_invalid=lambda: WrongModelVersionError(str(version.id), DESMOOTHED_RETURN_MODEL_CODE),
     )
-    found = [
-        r.assumption_text[len(DESMOOTHING_ALPHA_ASSUMPTION_PREFIX) :]
-        for r in rows
-        if r.assumption_text.startswith(DESMOOTHING_ALPHA_ASSUMPTION_PREFIX)
-    ]
-    if len(found) != 1 or not _DESMOOTHING_ALPHA_PATTERN.fullmatch(found[0]):
-        raise WrongModelVersionError(str(version.id), DESMOOTHED_RETURN_MODEL_CODE)
-    alpha = Decimal(found[0])
+    alpha = Decimal(raw)
     if not 0 < alpha <= 1:
         raise WrongModelVersionError(str(version.id), DESMOOTHED_RETURN_MODEL_CODE)
     return alpha

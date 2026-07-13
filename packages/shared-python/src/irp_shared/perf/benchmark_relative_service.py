@@ -55,8 +55,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.calc.models import CalculationRun, RunStatus
-from irp_shared.calc.runs import resolve_run_of_type
+from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata import BenchmarkNotVisible, resolve_benchmark
 from irp_shared.marketdata.models import BENCHMARK_RETURN_BASES, RETURN_TYPE_SIMPLE
@@ -336,22 +336,14 @@ def _resolve_return_run(session: Session, run_id: str, *, acting_tenant: str) ->
     """Re-resolve the consumed PORTFOLIO_RETURN run under the acting tenant (+ run_type + COMPLETED)
     BEFORE its id is stamped into the ``portfolio_return_run_id`` hard FK — PG FK checks bypass RLS,
     so a hand-minted snapshot could otherwise reference a FOREIGN tenant's run (P3-5)."""
-    run = session.execute(
-        select(CalculationRun).where(
-            CalculationRun.run_id == str(run_id),
-            CalculationRun.tenant_id == str(acting_tenant),
-            CalculationRun.run_type == RUN_TYPE_PORTFOLIO_RETURN,
-        )
-    ).scalar_one_or_none()
-    if run is None:
-        raise BenchmarkRelativeInputError(
-            f"portfolio-return run {run_id} is not a visible COMPLETED return run — refused"
-        )
-    if run.status != RunStatus.COMPLETED.value:
-        raise BenchmarkRelativeInputError(
-            f"portfolio-return run {run_id} status {run.status!r} != COMPLETED — refused"
-        )
-    return run
+    return resolve_completed_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_PORTFOLIO_RETURN,
+        label="portfolio-return",
+        error=BenchmarkRelativeInputError,
+    )
 
 
 def run_benchmark_relative(

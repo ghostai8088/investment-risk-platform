@@ -23,10 +23,14 @@ import re
 from dataclasses import dataclass
 from decimal import ROUND_CEILING, Decimal
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.model.models import ModelAssumption, ModelVersion
+from irp_shared.model.assumptions import (
+    load_assumption_texts,
+    require_declared,
+    sole_declared,
+)
+from irp_shared.model.models import ModelVersion
 from irp_shared.model.service import (
     ModelVersionConflictError,
     WrongModelVersionError,
@@ -373,27 +377,23 @@ COVARIANCE_LIMITATIONS: tuple[str, ...] = (
 )
 
 
+#: Strictly-decimal pattern (covariance window_observations + the HS-VaR window sub-field).
+_DIGITS_PATTERN = re.compile(r"[0-9]+")
+
+
 def declared_window_observations(session: Session, version: ModelVersion) -> int:
     """Parse the version's declared estimation window from its ``model_assumption`` rows (the
     OD-P3-4-G identity: exactly ONE ``window_observations=N`` assumption must exist)."""
-    rows = (
-        session.execute(
-            select(ModelAssumption).where(ModelAssumption.model_version_id == version.id)
-        )
-        .scalars()
-        .all()
-    )
-    declared = [
-        r.assumption_text[len(WINDOW_ASSUMPTION_PREFIX) :]
-        for r in rows
-        if r.assumption_text.startswith(WINDOW_ASSUMPTION_PREFIX)
-    ]
     # Exactly one, strictly-decimal declaration — a version minted with a malformed/absent window
     # (reachable via the GENERIC model-registration endpoint under the same permission) is NOT a
     # covariance-model identity; refuse fail-closed (422), never a bare int() ValueError (500).
-    if len(declared) != 1 or not re.fullmatch(r"[0-9]+", declared[0]):
-        raise WrongModelVersionError(str(version.id), COVARIANCE_MODEL_CODE)
-    return int(declared[0])
+    declared = require_declared(
+        load_assumption_texts(session, version),
+        WINDOW_ASSUMPTION_PREFIX,
+        pattern=_DIGITS_PATTERN,
+        on_invalid=lambda: WrongModelVersionError(str(version.id), COVARIANCE_MODEL_CODE),
+    )
+    return int(declared)
 
 
 def register_covariance_model(
@@ -546,23 +546,10 @@ def declared_var_parameters(session: Session, version: ModelVersion) -> VarParam
     absent, or ambiguous declaration is NOT a parametric-VaR identity — refuse fail-closed
     (:class:`WrongModelVersionError`, 422), never a bare parse crash (the P3-4 review lesson:
     such versions are mintable via the GENERIC registration endpoint)."""
-    rows = (
-        session.execute(
-            select(ModelAssumption).where(ModelAssumption.model_version_id == version.id)
-        )
-        .scalars()
-        .all()
-    )
-
-    def _single(prefix: str) -> str | None:
-        found = [
-            r.assumption_text[len(prefix) :] for r in rows if r.assumption_text.startswith(prefix)
-        ]
-        return found[0] if len(found) == 1 else None
-
-    confidence_text = _single(CONFIDENCE_ASSUMPTION_PREFIX)
-    horizon_text = _single(HORIZON_ASSUMPTION_PREFIX)
-    z_text = _single(Z_ASSUMPTION_PREFIX)
+    texts = load_assumption_texts(session, version)
+    confidence_text = sole_declared(texts, CONFIDENCE_ASSUMPTION_PREFIX)
+    horizon_text = sole_declared(texts, HORIZON_ASSUMPTION_PREFIX)
+    z_text = sole_declared(texts, Z_ASSUMPTION_PREFIX)
     # The v1 identity is EXACT: an enumerated confidence with its table z AND horizon '1'
     # verbatim (isdigit() accepted Unicode digits and any horizon like '250' — a generically
     # minted version could stamp a horizon its 1-day number does not reflect; 2026-07 review).
@@ -735,24 +722,11 @@ def declared_hs_var_parameters(session: Session, version: ModelVersion) -> HsVar
     """Parse the declared confidence/horizon/window/quantile-convention (the OD-VHS-B identity:
     exactly ONE strictly-well-formed declaration of EACH). Malformed/absent/ambiguous -> the
     fail-closed :class:`WrongModelVersionError` (the generic endpoint can mint anything)."""
-    rows = (
-        session.execute(
-            select(ModelAssumption).where(ModelAssumption.model_version_id == version.id)
-        )
-        .scalars()
-        .all()
-    )
-
-    def _single(prefix: str) -> str | None:
-        found = [
-            r.assumption_text[len(prefix) :] for r in rows if r.assumption_text.startswith(prefix)
-        ]
-        return found[0] if len(found) == 1 else None
-
-    confidence_text = _single(CONFIDENCE_ASSUMPTION_PREFIX)
-    horizon_text = _single(HORIZON_ASSUMPTION_PREFIX)
-    window_text = _single(WINDOW_ASSUMPTION_PREFIX)
-    quantile_text = _single(QUANTILE_ASSUMPTION_PREFIX)
+    texts = load_assumption_texts(session, version)
+    confidence_text = sole_declared(texts, CONFIDENCE_ASSUMPTION_PREFIX)
+    horizon_text = sole_declared(texts, HORIZON_ASSUMPTION_PREFIX)
+    window_text = sole_declared(texts, WINDOW_ASSUMPTION_PREFIX)
+    quantile_text = sole_declared(texts, QUANTILE_ASSUMPTION_PREFIX)
     if (
         confidence_text is None
         or horizon_text is None
@@ -761,7 +735,7 @@ def declared_hs_var_parameters(session: Session, version: ModelVersion) -> HsVar
         or not _CONFIDENCE_PATTERN.fullmatch(confidence_text)
         or confidence_text not in VAR_Z_SCORES  # the shared v1 confidence vocabulary
         or horizon_text != str(VAR_HORIZON_DAYS)
-        or re.fullmatch(r"[0-9]+", window_text) is None
+        or _DIGITS_PATTERN.fullmatch(window_text) is None
         or quantile_text != VAR_HS_QUANTILE_CONVENTION
         # The adequacy floor is IDENTITY, not registrar courtesy: a generically-minted version
         # (POST /models can stamp any assumptions) with an inadequate window must not bind —
@@ -1081,21 +1055,13 @@ def declared_var_backtest_alpha(session: Session, version: ModelVersion) -> Deci
     crash (generically minted same-label versions exist — the P3-4 review lesson)."""
     from irp_shared.risk.var_backtest_kernel import CHI2_1DF_CRITICALS
 
-    rows = (
-        session.execute(
-            select(ModelAssumption).where(ModelAssumption.model_version_id == version.id)
-        )
-        .scalars()
-        .all()
+    raw = require_declared(
+        load_assumption_texts(session, version),
+        ALPHA_ASSUMPTION_PREFIX,
+        pattern=_ALPHA_PATTERN,
+        on_invalid=lambda: WrongModelVersionError(str(version.id), VAR_BACKTEST_MODEL_CODE),
     )
-    found = [
-        r.assumption_text[len(ALPHA_ASSUMPTION_PREFIX) :]
-        for r in rows
-        if r.assumption_text.startswith(ALPHA_ASSUMPTION_PREFIX)
-    ]
-    if len(found) != 1 or not _ALPHA_PATTERN.fullmatch(found[0]):
-        raise WrongModelVersionError(str(version.id), VAR_BACKTEST_MODEL_CODE)
-    alpha = Decimal(found[0])
+    alpha = Decimal(raw)
     if alpha not in CHI2_1DF_CRITICALS:
         raise WrongModelVersionError(str(version.id), VAR_BACKTEST_MODEL_CODE)
     return alpha

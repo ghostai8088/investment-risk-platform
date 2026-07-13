@@ -64,8 +64,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.calc.models import CalculationRun, RunStatus
-from irp_shared.calc.runs import resolve_run_of_type
+from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata import DEFAULT_BASE, compose_effective_rate
 from irp_shared.model.service import assert_model_version_of
@@ -410,21 +410,14 @@ def _resolve_boundary_dates(
     Raises :class:`PortfolioReturnInputError` on a hidden/non-exposure/non-COMPLETED run."""
     dates: dict[str, date] = {}
     for run_id in run_ids:
-        run = session.execute(
-            select(CalculationRun).where(
-                CalculationRun.run_id == str(run_id),
-                CalculationRun.tenant_id == str(acting_tenant),
-                CalculationRun.run_type == _EXPOSURE_RUN_TYPE,
-            )
-        ).scalar_one_or_none()
-        if run is None:
-            raise PortfolioReturnInputError(
-                f"boundary run {run_id} is not a visible COMPLETED exposure run — refused"
-            )
-        if run.status != RunStatus.COMPLETED.value:
-            raise PortfolioReturnInputError(
-                f"boundary exposure run {run_id} status {run.status!r} != COMPLETED — refused"
-            )
+        run = resolve_completed_run_of_type(
+            session,
+            run_id,
+            acting_tenant=acting_tenant,
+            run_type=_EXPOSURE_RUN_TYPE,
+            label="boundary",
+            error=PortfolioReturnInputError,
+        )
         if run.input_snapshot_id is None:
             raise PortfolioReturnInputError(
                 f"boundary exposure run {run_id} has no input snapshot — refused"
