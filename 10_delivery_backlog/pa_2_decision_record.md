@@ -106,12 +106,20 @@ all hard invariants verified clean. **~24 raw findings → 13 distinct; ALL FOLD
 8. **Cleanup folds:** the stale allocation-only module header rewritten for the two-family
    dispatch (+ `_build_rows` + builder docstrings incl. the LOAD-BEARING predicate switch);
    `_MONEY_QUANTUM` deduped onto the kernel's now-exported `RESULT_QUANTUM`; the deep
-   `snapshot.service` import replaced by package exports (both factor-exposure predicates);
-   the `_book.insts` function-attribute hack → a returned triple (+ its self-contradictory
-   docstring); the dead `**kw`; the `_currencies` EUR seed in the boundary test.
+   `snapshot.service` import replaced by package exports (both factor-exposure predicates —
+   see the Wave-3 close-audit correction below); the `_book.insts` function-attribute hack →
+   a returned triple (+ its self-contradictory docstring); the dead `**kw`; the `_currencies`
+   EUR seed in the boundary test.
+
+**Wave-3 close-audit correction (2026-07-13):** the Wave-3 close review's PA-2 audit found that
+fold #8 was only half-applied at PR #22 — `snapshot/__init__.py` gained the two predicate exports (the
+enabling half), but the consumer `factor_service.py` still deep-imported
+`FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE` from `snapshot.service`. The consumer was switched to the
+package boundary in the `wave-3-close` branch, making this fold's claim true. Cosmetic import path
+only — identical value, no behavior/correctness/reproducibility impact.
 
 **Post-fold validation (2026-07-12):** `make check` 1311 passed / 274 skipped (12 proxy tests) +
 secret-scan + docs-check; local-PG clean-schema green (incl. the RLS proxy-pin case);
 `alembic check` no drift (NO migration in this slice).
 
-*(Final commit/PR refs appended at closeout.)*
+**CLOSED (2026-07-13).** Planning ratified in-branch; implementation (`1ac7b7f` → `8b45b0f` → `7855ed1` → `b20c736`) merged via **PR #22** (merge `96b2bd2`), CI green. NO migration. The thesis §2.1 end-to-end demonstration ships: capture (PA-0) → desmooth (PA-1) → proxy → factor risk (PA-2), with the byte-exact invariance proof. New register items: proxy-aware active-risk v2 (the partition-guard denominator); regression-estimated weights v2 (consumes the PA-1 desmoothed series); residual/idiosyncratic variance v2.
