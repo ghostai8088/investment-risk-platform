@@ -37,8 +37,9 @@ _T0 = datetime(2026, 6, 1, tzinfo=UTC)
 #: would self-adopt). A membership change must turn THIS file red first.
 _RATIFIED_RISK_RUN_TYPES = frozenset(
     # VAR_BACKTEST joined at BT-1 (OD-BT-1-B, ratified 2026-07-10); SCENARIO joined at P3-6
-    # (OD-P3-6-E, ratified 2026-07-12) — the risk-family run listing surfaces both under the
-    # REUSED risk.view.
+    # (OD-P3-6-E, ratified 2026-07-12); PROXY_WEIGHT_ESTIMATE joined at PA-3 (2026-07-13, the
+    # review fold — every governed risk family belongs in the listing) — all under the REUSED
+    # risk.view.
     {
         "SENSITIVITY",
         "FACTOR_EXPOSURE",
@@ -47,6 +48,7 @@ _RATIFIED_RISK_RUN_TYPES = frozenset(
         "ACTIVE_RISK",
         "VAR_BACKTEST",
         "SCENARIO",
+        "PROXY_WEIGHT_ESTIMATE",
     }
 )
 

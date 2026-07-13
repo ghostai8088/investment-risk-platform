@@ -1,6 +1,6 @@
 # PA-3 Decision Record — regression-estimated proxy weights (Wave-4 slice 2, the headline payload)
 
-> **Status: DRAFT — awaiting OQ ratification (OQ-PA-3-1…6).** The TWELFTH governed number and the
+> **Status: RATIFIED 2026-07-13** (OQ-PA-3-1…6 all approved as recommended). The TWELFTH governed number and the
 > Wave-4 loop-closer: estimate private→public proxy factor weights by regressing the **desmoothed**
 > appraisal return series (PA-1's governed output — its FIRST downstream consumer) on captured public
 > factor returns, replacing judgment-only captured weights with evidence + stated uncertainty. The
@@ -127,3 +127,64 @@ review with a Fable-class numeric finder** (methodology slice — the VAR-HS-1 p
   directions; methods never blur.*
 - **OQ-PA-3-6 — Permission/audit reuse per OD-F (no mint; EVT reserved-not-emitted).** *Recommend
   APPROVE — nothing about estimation warrants a new permission family.*
+
+## Part 6 — Review dispositions + closure
+
+**Implemented 2026-07-13** (all OQs ratified). The twelfth governed number + the Wave-4 loop-closer:
+`proxy_weight_estimate_result` (ENT-057, migration 0037) + the estimate→promote leg activating PA-0's
+reserved `MAPPING_METHOD_REGRESSION`. Full stack: OLS kernel, snapshot pins (COMPONENT_KIND_
+DESMOOTHED_RETURN), the run service, `risk.promote_proxy_weight_estimate`, the API (register/run/GET
++ the `/proxy-mappings/promote-estimate` endpoint), docs (methodology + ENT-057 + RTM), and the test
+battery (integration golden vs an independent OLS recompute; refusal battery; TR-09 both sides;
+singular; magnitude-FAILED; coverage-gap; constant-target; the PG RLS/append-only leg).
+
+**FULL 4-finder adversarial review (a governed number) — 3 finders CLEAN, 1 real defect, all folded:**
+- *Numerical/OLS finder (Fable-class, the VAR-HS-1 precedent) — CLEAN, math CONFIRMED.* Independently
+  re-derived the regression via an exact-rational (`Fraction`) solver across the fixture, a
+  hand-derived case, and 60 randomized fuzz cases: coefficients, standard errors, R², the singular
+  tolerance, the per-period compounding/alignment, and the magnitude gate all verified correct. Two
+  non-defect notes recorded as deferrals (below).
+- *Governance/snapshot finder — ONE real defect, FOLDED (the review's single most valuable finding):*
+  `supersede_proxy_mapping`/`correct_proxy_mapping` accepted `mapping_method=REGRESSION` (now in the
+  vocab) but carry no `source_calculation_run_id` and never called `_validate_promotion` → they could
+  mint a live REGRESSION weight with a NULL citation, violating OD-PA-3-E. Everything else verified
+  clean (migration↔ORM match, TR-09 no drift, the estimate→promote fence, declared identity, the
+  provenance echoes).
+
+  **Fold, as refined by the Fable fold-synthesis pass (2026-07-13):** the first (Opus-session) fold
+  hard-refused REGRESSION on BOTH revision paths — safe, but empirically OVER-closed: the one-open-
+  head constraint makes a second `promote` on an existing key 409, so the guard's own "re-promote"
+  advice could never succeed and the loop-closer could not LOOP (re-estimate → re-promote is the
+  steady-state use case). The Fable pass (per the standing fold-synthesis-on-Fable rule) caught this
+  and implemented the finder's own recommended direction: `supersede_proxy_mapping` now carries an
+  optional `source_calculation_run_id` under the SAME fence-safe blur guard as capture (REGRESSION
+  requires a citation; MANUAL forbids one), and `risk.promote_proxy_weight_estimate` is
+  promote-or-REpromote (capture on a fresh key; a citation-carrying supersede on an open head — the
+  run-TYPE gate still resolved in `risk` first). The HTTP supersede body deliberately gains NO
+  citation field (an API-level REGRESSION supersede always refuses — the original bypass stays
+  closed); a CORRECTION can never mint REGRESSION (`_reject_regression_correction`, a v1 recorded
+  limitation — re-promote instead). Tests: re-promotion succeeds (version 2, method preserved,
+  citation updated, supersedes link); REGRESSION-supersede-without-citation, MANUAL-with-citation,
+  and REGRESSION-correction all refuse; wrong-run-type on the revision path refuses.
+- *Cross-file/API finder — CLEAN + one fold.* All routes/schemas/error-maps/exports/response-before-
+  commit sound. Fold: `RISK_RUN_TYPES` had not gained `PROXY_WEIGHT_ESTIMATE` (the runs were invisible
+  to `GET /risk/runs`) — added, with the ratified-set guard test updated (a deliberate addition).
+- *Cleanup/sweep finder — CLEAN + three folds.* (a) the two doc-claimed-but-untested refusals
+  (per-period coverage-gap + constant-target) now have tests; (b) the stale `proxy_weight_service`
+  one-way-imports docstring gained `marketdata` (the fence-fix had added it); (c) the dead
+  `ProxyMappingValueError` `_ERROR_MAP` entry + import in `api/risk.py` removed. Plus the numeric
+  finder's parse-harmonization (factor `return_value` → `parse_strict_decimal`, defensive).
+
+**Deferrals (recorded, not folded):** a partial unique index `WHERE factor_id IS NULL` for the
+INTERCEPT/ESTIMATION_SUMMARY singletons (their one-per-run is a `_compute` + append-only guarantee,
+not the UNIQUE constraint since PG treats NULLs as distinct — not reachable through the governed run;
+the grain comments were corrected to stop overstating the DB guarantee); and the pre-existing
+platform-wide `[1E8−½ulp, 1E8)` quantize-up edge shared with `perf/desmoothing_service.py` (a global
+envelope-pattern question, not a PA-3 regression).
+
+**Post-fold validation (2026-07-13):** `make check` **1330 passed / 274 skipped** + secret-scan +
+docs-check clean; ruff (check + format) clean; the PG RLS/append-only leg collects+skips locally
+(docker unavailable; verified via the CI step). NO drift (migration 0037 is the head; `alembic check`
+expected clean).
+
+*(Final commit/PR refs appended at closeout.)*

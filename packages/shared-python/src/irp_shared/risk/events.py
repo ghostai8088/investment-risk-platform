@@ -63,6 +63,12 @@ RUN_TYPE_VAR_BACKTEST = "VAR_BACKTEST"
 #: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in BT-1.
 RISK_VAR_BACKTEST_CREATE_EVENT_RESERVED = "RISK.VAR_BACKTEST_CREATE"
 
+#: The ``calculation_run.run_type`` discriminator for a proxy-weight-estimation run (PA-3). Reuses
+#: ``risk.run``/``risk.view`` (no mint) + ``CALC.RUN_*`` (no new audit code).
+RUN_TYPE_PROXY_WEIGHT_ESTIMATE = "PROXY_WEIGHT_ESTIMATE"
+#: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in PA-3.
+RISK_PROXY_WEIGHT_ESTIMATE_CREATE_EVENT_RESERVED = "RISK.PROXY_WEIGHT_ESTIMATE_CREATE"
+
 #: P3-6 (OD-P3-6-E): the stress/scenario run family — deterministic linear factor-shock P&L over ONE
 #: factor-exposure run x a pinned scenario shock set. DISTINCT from its metric_types (SCENARIO_PNL /
 #: SCENARIO_PNL_TOTAL). Reuses ``risk.run``/``risk.view`` (no mint) + ``CALC.RUN_*`` (no new audit).
@@ -158,6 +164,14 @@ class ActiveRiskActor:
 @dataclass(frozen=True)
 class VarBacktestActor:
     """The principal initiating a VaR-backtesting run (mirrors :class:`VarActor`)."""
+
+    actor_id: str
+    actor_type: str = "user"
+
+
+@dataclass(frozen=True)
+class ProxyWeightEstimateActor:
+    """The principal initiating a proxy-weight-estimation run (PA-3; mirrors :class:`VarActor`)."""
 
     actor_id: str
     actor_type: str = "user"

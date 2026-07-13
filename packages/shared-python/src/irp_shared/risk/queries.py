@@ -19,6 +19,7 @@ from irp_shared.risk.events import (
     RUN_TYPE_ACTIVE_RISK,
     RUN_TYPE_COVARIANCE,
     RUN_TYPE_FACTOR_EXPOSURE,
+    RUN_TYPE_PROXY_WEIGHT_ESTIMATE,
     RUN_TYPE_SCENARIO,
     RUN_TYPE_SENSITIVITY,
     RUN_TYPE_VAR,
@@ -35,6 +36,7 @@ RISK_RUN_TYPES: frozenset[str] = frozenset(
         RUN_TYPE_ACTIVE_RISK,
         RUN_TYPE_VAR_BACKTEST,
         RUN_TYPE_SCENARIO,
+        RUN_TYPE_PROXY_WEIGHT_ESTIMATE,
     }
 )
 

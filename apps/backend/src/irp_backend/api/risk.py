@@ -60,6 +60,11 @@ from irp_shared.risk import (
     HsVarRunResult,
     ModelVersionConflictError,
     NoCurrentScenarioShock,
+    ProxyWeightEstimateActor,
+    ProxyWeightEstimateResult,
+    ProxyWeightEstimateRunNotVisible,
+    ProxyWeightEstimateRunResult,
+    ProxyWeightInputError,
     RiskRunQueryError,
     ScenarioActor,
     ScenarioDefinition,
@@ -96,6 +101,7 @@ from irp_shared.risk import (
     list_active_risks,
     list_covariances,
     list_factor_exposures,
+    list_proxy_weight_results,
     list_risk_runs,
     list_scenario_definitions,
     list_scenario_results,
@@ -109,6 +115,7 @@ from irp_shared.risk import (
     register_factor_exposure_model,
     register_factor_exposure_proxy_model,
     register_historical_var_model,
+    register_proxy_weight_regression_model,
     register_scenario_model,
     register_sensitivity_model,
     register_var_backtest_model,
@@ -119,6 +126,7 @@ from irp_shared.risk import (
     resolve_covariance_run,
     resolve_factor_exposure,
     resolve_factor_exposure_run,
+    resolve_proxy_weight_run,
     resolve_run,
     resolve_scenario_definition,
     resolve_scenario_run,
@@ -130,6 +138,7 @@ from irp_shared.risk import (
     run_active_risk,
     run_covariance,
     run_factor_exposure,
+    run_proxy_weight_estimate,
     run_scenario,
     run_sensitivities,
     run_var,
@@ -146,6 +155,7 @@ from irp_shared.snapshot import (
     CurveSnapshotError,
     EmptySnapshotError,
     FactorExposureSnapshotError,
+    ProxyWeightSnapshotError,
     ScenarioSnapshotError,
     SnapshotNotFound,
     SnapshotPurposeError,
@@ -232,6 +242,18 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     ScenarioRunNotVisible: (status.HTTP_404_NOT_FOUND, "scenario run not found"),
     ScenarioResultNotVisible: (status.HTTP_404_NOT_FOUND, "scenario result not found"),
     FactorExposureRunNotVisible: (status.HTTP_404_NOT_FOUND, "factor-exposure run not found"),
+    ProxyWeightInputError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid proxy-weight-estimate run input",
+    ),
+    ProxyWeightSnapshotError: (
+        status.HTTP_409_CONFLICT,
+        "proxy-weight snapshot input failed closed",
+    ),
+    ProxyWeightEstimateRunNotVisible: (
+        status.HTTP_404_NOT_FOUND,
+        "proxy-weight-estimate run not found",
+    ),
     CovarianceRunNotVisible: (status.HTTP_404_NOT_FOUND, "covariance run not found"),
     BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
     RiskRunQueryError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid run listing filter"),
@@ -2309,4 +2331,204 @@ def get_scenario_run(
         initiated_by=run.initiated_by,
         failure_reason=run.failure_reason,
         rows=[_scenario_row_out(r) for r in rows],
+    )
+
+
+# ---------- PA-3: proxy-weight regression estimates (ENT-057) ----------
+
+
+def _pw_actor(principal: Principal) -> ProxyWeightEstimateActor:
+    return ProxyWeightEstimateActor(actor_id=principal.user_id)
+
+
+class ProxyWeightModelIn(BaseModel):
+    code_version: str  # the deterministic anchor
+    min_observations: int  # the declared identity floor (>= 3; part of the model identity)
+
+
+class ProxyWeightRunIn(BaseModel):
+    code_version: str  # required (FW-RUN/TR-15)
+    environment_id: str  # required
+    model_version_id: uuid.UUID  # a REGISTERED proxy-weight model_version (CTRL-003)
+    desmoothed_run_id: uuid.UUID | None = None  # build-in-request (with factor_ids)
+    factor_ids: list[uuid.UUID] | None = None
+    snapshot_id: uuid.UUID | None = None  # consume-existing alternative
+
+
+class ProxyWeightRowOut(BaseModel):
+    id: str
+    metric_type: str  # WEIGHT | INTERCEPT | ESTIMATION_SUMMARY
+    factor_id: str | None  # set on WEIGHT rows; null on INTERCEPT/ESTIMATION_SUMMARY
+    metric_value: str  # coefficient (WEIGHT/INTERCEPT) | R^2 (ESTIMATION_SUMMARY)
+    std_error: str | None  # coefficient std error (WEIGHT/INTERCEPT)
+    n_observations: int | None  # ESTIMATION_SUMMARY only
+    n_regressors: int | None
+    residual_stdev: str | None
+    min_observations: int
+    series_currency: str
+    source_desmoothed_run_id: str
+    portfolio_id: str
+    instrument_id: str
+
+
+class ProxyWeightRunOut(BaseModel):
+    run_id: str
+    status: str
+    run_type: str
+    input_snapshot_id: str | None
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    initiated_by: str
+    failure_reason: str | None
+    rows: list[ProxyWeightRowOut]
+
+
+def _pw_row_out(row: ProxyWeightEstimateResult) -> ProxyWeightRowOut:
+    return ProxyWeightRowOut(
+        id=row.id,
+        metric_type=row.metric_type,
+        factor_id=row.factor_id,
+        metric_value=str(row.metric_value),
+        std_error=None if row.std_error is None else str(row.std_error),
+        n_observations=row.n_observations,
+        n_regressors=row.n_regressors,
+        residual_stdev=None if row.residual_stdev is None else str(row.residual_stdev),
+        min_observations=row.min_observations,
+        series_currency=row.series_currency,
+        source_desmoothed_run_id=row.source_desmoothed_run_id,
+        portfolio_id=row.portfolio_id,
+        instrument_id=row.instrument_id,
+    )
+
+
+def _pw_run_out(result: ProxyWeightEstimateRunResult) -> ProxyWeightRunOut:
+    run = result.run
+    return ProxyWeightRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_pw_row_out(r) for r in result.rows],
+    )
+
+
+@router.post(
+    "/models/proxy-weight-regression",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_proxy_weight_model(
+    body: ProxyWeightModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed proxy-weight regression model + a model_version for this
+    ``(code_version, min_observations)`` identity (PA-3, OD-PA-3-D) — a same-label re-register with
+    a different code_version OR floor is a governed 409 conflict. The run endpoint is
+    ``POST /risk/proxy-weight-estimates/runs``."""
+    try:
+        version = register_proxy_weight_regression_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            min_observations=body.min_observations,
+        )
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    except ValueError as exc:  # min_observations < 3 (the structural floor)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/proxy-weight-estimates/runs",
+    response_model=ProxyWeightRunOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_proxy_weight_run(
+    body: ProxyWeightRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> ProxyWeightRunOut:
+    """Run a governed proxy-weight OLS estimation. A pre-create refusal raises + rolls back (no
+    run); a post-create FAILED run (the magnitude gate) is committed with ``status='FAILED'`` + zero
+    rows (durable refusal evidence)."""
+    try:
+        result = run_proxy_weight_estimate(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_pw_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            desmoothed_run_id=(
+                None if body.desmoothed_run_id is None else str(body.desmoothed_run_id)
+            ),
+            factor_ids=(None if body.factor_ids is None else [str(f) for f in body.factor_ids]),
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        ProxyWeightInputError,
+        UnregisteredModelError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        ProxyWeightSnapshotError,
+        FactorNotVisible,
+    ) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    response = _pw_run_out(result)
+    db.commit()
+    return response
+
+
+@router.get("/proxy-weight-estimates/runs/{run_id}", response_model=ProxyWeightRunOut)
+def get_proxy_weight_run(
+    run_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> ProxyWeightRunOut:
+    """Read a proxy-weight-estimate run + its rows (tenant-scoped; read-only). A committed FAILED
+    run (zero rows) is surfaced with ``status='FAILED'`` (durable refusal evidence), NOT a 404."""
+    try:
+        run = resolve_proxy_weight_run(db, str(run_id), acting_tenant=principal.tenant_id)
+    except ProxyWeightEstimateRunNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="proxy-weight-estimate run not found"
+        ) from None
+    rows = list_proxy_weight_results(db, run_id=str(run_id), acting_tenant=principal.tenant_id)
+    return ProxyWeightRunOut(
+        run_id=run.run_id,
+        status=run.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=run.failure_reason,
+        rows=[_pw_row_out(r) for r in rows],
     )

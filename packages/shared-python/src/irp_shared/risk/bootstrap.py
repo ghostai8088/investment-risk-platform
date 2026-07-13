@@ -1238,3 +1238,122 @@ def register_scenario_model(
             SCENARIO_MODEL_CODE, SCENARIO_VERSION_LABEL, str(code_version)
         )
     return version
+
+
+#: The per-tenant inventory identity of the proxy-weight regression model (PA-3, OD-PA-3-A/D).
+PROXY_WEIGHT_MODEL_CODE = "risk.proxy_weight.regression"
+PROXY_WEIGHT_MODEL_NAME = "Regression-estimated proxy factor weights (OLS on desmoothed returns)"
+PROXY_WEIGHT_MODEL_TYPE = "PROXY_WEIGHT"
+PROXY_WEIGHT_VERSION_LABEL = "v1"
+PROXY_WEIGHT_METHODOLOGY_REF = "05_analytics_methodologies/proxy_weight_regression_v1.md"
+
+#: The declared minimum-observations floor is registration-supplied and part of the model identity
+#: (OD-PA-3-D), appended per call; the run additionally enforces max(declared, k + 2).
+MIN_OBSERVATIONS_ASSUMPTION_PREFIX = "min_observations="
+
+#: The declared methodology choices EXCLUDING min_observations (registration-supplied, appended).
+PROXY_WEIGHT_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Unconstrained ORDINARY LEAST SQUARES with an intercept: y = X b + e, X = [1 | f_1..f_k]; "
+    "b = (X'X)^-1 X'y. NO sum-to-1, NO non-negativity (the Sharpe-1992 constrained form is a "
+    "recorded v2; PA-0 deliberately admits negative/no-sum proxy weights).",
+    "Target y = the consumed DESMOOTHED_RETURN run's per-period desmoothed series (PA-1); the "
+    "regressors are the candidate factors' captured returns compounded over each appraisal period "
+    "(deterministic; a period lacking full factor coverage fails the run closed - NO zero-fill).",
+    "Reports per coefficient (intercept + k slopes) the estimate AND its standard error; plus R^2, "
+    "n_observations, and the residual stdev - the honest-uncertainty statement.",
+    "Computed in Decimal at 50-digit context; quantize_HALF_UP to 12 decimal places (the "
+    "Numeric(20,12) column scale).",
+)
+
+#: The recorded scope-outs (mirrored into model_limitation rows; OD-PA-3 Part 3).
+PROXY_WEIGHT_LIMITATIONS: tuple[str, ...] = (
+    "Estimates are MODEL OUTPUT, snapshot/run/model-bound - NEVER auto-written into proxy_mapping; "
+    "promotion is a deliberate second capture step citing the estimation run (OD-PA-3-E).",
+    "Appraisal series are SHORT (quarterly marks => wide standard errors, reported per coefficient "
+    "and never hidden); the estimate regresses a MODEL OUTPUT (the desmoothed series), so "
+    "desmoothing model risk (the declared alpha) propagates into the weights.",
+    "CURRENCY-family candidate factors only (the PA-2 factor-universe boundary); a non-CURRENCY "
+    "candidate fails the run closed. Single-currency series only (no FX translation).",
+    "Unconstrained OLS can produce weights an analyst should reject - which is WHY promotion is "
+    "human-mediated. Constrained (Sharpe 1992) and summed-lag (Dimson 1979 / Asness-Krail-Liew "
+    "2001) variants are recorded v2s.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+)
+
+
+def declared_min_observations(session: Session, version: ModelVersion) -> int:
+    """Parse the version's declared minimum-observations floor from its ``model_assumption`` rows
+    (the OD-PA-3-D identity: exactly ONE ``min_observations=N``). Malformed/absent/ambiguous -> the
+    fail-closed :class:`WrongModelVersionError` (the generic endpoint can mint anything)."""
+    declared = require_declared(
+        load_assumption_texts(session, version),
+        MIN_OBSERVATIONS_ASSUMPTION_PREFIX,
+        pattern=_DIGITS_PATTERN,
+        on_invalid=lambda: WrongModelVersionError(str(version.id), PROXY_WEIGHT_MODEL_CODE),
+    )
+    return int(declared)
+
+
+def register_proxy_weight_regression_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    min_observations: int,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the proxy-weight regression ``model`` + a ``model_version`` for this
+    ``(code_version, min_observations)`` identity (PA-3, OD-PA-3-D — the covariance-window
+    precedent). ``min_observations`` (>= 3: intercept + >= 1 slope + >= 1 residual df) is recorded
+    as a ``model_assumption`` AND is part of the version-resolution identity: a same-label
+    re-register with a DIFFERENT ``code_version`` OR floor raises :class:`ModelVersionConflictError`
+    (mint a new label instead)."""
+    if min_observations < 3:
+        raise ValueError(
+            "min_observations must be >= 3 (intercept + >= 1 slope + >= 1 residual df)"
+        )
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=PROXY_WEIGHT_MODEL_CODE,
+        name=PROXY_WEIGHT_MODEL_NAME,
+        model_type=PROXY_WEIGHT_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "OLS regression of a private instrument's desmoothed appraisal return series on "
+            "candidate public factor returns (PA-3, ENT-057)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=PROXY_WEIGHT_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=PROXY_WEIGHT_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=PROXY_WEIGHT_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *PROXY_WEIGHT_ASSUMPTIONS_BASE,
+                f"{MIN_OBSERVATIONS_ASSUMPTION_PREFIX}{int(min_observations)}",
+            ),
+            limitations=PROXY_WEIGHT_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    if version.code_version != str(code_version) or declared_min_observations(
+        session, version
+    ) != int(min_observations):
+        raise ModelVersionConflictError(
+            PROXY_WEIGHT_MODEL_CODE,
+            PROXY_WEIGHT_VERSION_LABEL,
+            f"{code_version} (min_observations={min_observations})",
+        )
+    return version

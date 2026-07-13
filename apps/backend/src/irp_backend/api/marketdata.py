@@ -128,6 +128,7 @@ from irp_shared.marketdata.proxy_mapping import (
 )
 from irp_shared.reference.instrument import InstrumentNotVisible
 from irp_shared.reference.service import CurrencyNotVisible
+from irp_shared.risk import ProxyWeightInputError, promote_proxy_weight_estimate
 
 router = APIRouter(prefix="/fx", tags=["marketdata"])
 price_router = APIRouter(prefix="/prices", tags=["marketdata"])
@@ -2269,6 +2270,10 @@ _PROXY_MAPPING_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
         "invalid proxy-mapping input",
     ),
     ProxyMappingNotVisible: (status.HTTP_404_NOT_FOUND, "proxy_mapping not found"),
+    ProxyWeightInputError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "cited run is not a visible COMPLETED proxy-weight-estimate run",
+    ),
     NoCurrentProxyMapping: (
         status.HTTP_409_CONFLICT,
         "no current proxy mapping to supersede/correct",
@@ -2309,6 +2314,43 @@ def capture_proxy_mapping_endpoint(
             valid_from=body.valid_from,
         )
     except (ProxyMappingValueError, DataQualityError, IntegrityError) as exc:
+        _raise_proxy_mapping_write(db, exc)
+    out = _proxy_mapping_out(row)
+    db.commit()
+    return out
+
+
+class ProxyWeightPromoteIn(BaseModel):
+    private_instrument_id: str
+    factor_id: str
+    weight: Decimal  # the analyst's chosen coefficient to promote (NOT auto-read from the run)
+    source_calculation_run_id: str  # the reviewed proxy-weight-estimate run this weight came from
+
+
+@proxy_mapping_router.post(
+    "/promote-estimate", response_model=ProxyMappingOut, status_code=status.HTTP_201_CREATED
+)
+def promote_proxy_weight_estimate_endpoint(
+    body: ProxyWeightPromoteIn,
+    principal: Principal = Depends(_require_ingest),
+    db: Session = Depends(get_tenant_session),
+) -> ProxyMappingOut:
+    """PA-3 (OD-PA-3-E): promote a REVIEWED governed proxy-weight estimate into a live captured
+    REGRESSION-method proxy weight. Resolves the cited run to a tenant-visible COMPLETED
+    PROXY_WEIGHT_ESTIMATE run (the run-TYPE gate), then captures the weight the analyst chose citing
+    it. A MANUAL weight uses the plain capture endpoint; a REGRESSION weight comes ONLY through
+    here."""
+    try:
+        row = promote_proxy_weight_estimate(
+            db,
+            private_instrument_id=body.private_instrument_id,
+            factor_id=body.factor_id,
+            weight=body.weight,
+            acting_tenant=principal.tenant_id,
+            actor=_proxy_mapping_actor(principal),
+            source_calculation_run_id=body.source_calculation_run_id,
+        )
+    except (ProxyWeightInputError, ProxyMappingValueError, DataQualityError, IntegrityError) as exc:
         _raise_proxy_mapping_write(db, exc)
     out = _proxy_mapping_out(row)
     db.commit()
