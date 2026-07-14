@@ -187,4 +187,10 @@ docs-check clean; ruff (check + format) clean; the PG RLS/append-only leg collec
 (docker unavailable; verified via the CI step). NO drift (migration 0037 is the head; `alembic check`
 expected clean).
 
-*(Final commit/PR refs appended at closeout.)*
+**CLOSED (2026-07-14).** Implementation `15ba13f`→`77149d6` (12 commits: 5 WIP foundation → API →
+docs → battery → the 4-finder folds → the Fable fold-synthesis correction `b078396` → the
+schema-drift index-name fix `77149d6`) merged via **PR #28** (merge `a98d380`), CI green — including
+the FIRST live execution of the ENT-057 PG RLS/append-only leg + downgrade smoke. Migration head →
+`0037_proxy_weight_estimate`. The Wave-4 loop-closer ships: PA-1's desmoothed series now drives the
+proxy weights PA-2 consumes, with per-coefficient honest uncertainty and the re-promotion loop
+working end-to-end. Next = the Wave-4 v2 companion (PA-4).
