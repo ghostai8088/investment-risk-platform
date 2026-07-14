@@ -44,6 +44,29 @@ be re-labelled (PA-5/PM-2-shaped) when its trigger fires — recorded here to pr
   unexplained. *Disposition:* the interpretation leg — PA-3's `residual_stdev` IS the unexplained
   volatility this slice carries into VaR.
 
+**Vendor-practice benchmark (user-directed 2026-07-14; sources checked same day):**
+
+- **MSCI Private Asset Factor Models** (Burgiss data; PE/infrastructure/credit) — private-asset
+  "true" returns decompose into (a) factors SHARED with listed assets, (b) pure-private factors,
+  and (c) an **asset-specific residual**, after desmoothing (theirs Bayesian; ours Geltner v1).
+  *Disposition:* a STRUCTURAL match to the platform's capture→desmooth→proxy→residual chain —
+  every major carries the residual for private assets, so PA-4 closes a gap where the current
+  residual-of-zero state is the outlier. MSCI's Bayesian desmoothing, pure-private factors, and
+  peer-group synthesis are recorded v2/v3 candidates for the PA chain.
+- **MSCI Barra (USE4/GEM3)** — per-security specific risk estimated from the residual-return time
+  series, DIAGONAL, with **Bayesian shrinkage** (size-decile means) correcting the tendency to
+  over-predict high-vol and under-predict low-vol names. *Disposition:* validates OD-E's diagonal
+  convention as vendor-standard; shrinkage on the residual estimate = a recorded v2.
+- **Axioma (AXWW4/AXUS4)** — idiosyncratic risk as the **EWMA stdev of daily specific returns**
+  (60/125-day half-lives), Newey-West autocorrelation adjustments, daily re-estimation.
+  *Disposition:* EWMA weighting of the residual = a recorded v2; equal-weighted v1 mirrors the
+  platform's covariance convention (OD-P3-4-A).
+- **Horizon-scaling practice** — √-time conversion on a **TRADING-day grid** (252/yr; ~63/quarter)
+  is the universal market-risk convention; calendar-day grids are reserved for 24/7-priced assets.
+  The √t rule assumes low autocorrelation — which the Geltner desmoothing (PA-1) exists to restore,
+  an honest supporting note. *Disposition:* **this benchmark UPGRADES OD-D/OQ-4** — v1 adopts the
+  trading-day-adjusted conversion (below) rather than plain calendar-day.
+
 ## Part 3 — Decisions
 
 - **OD-PA-4-A — the fork: residual variance (B) over proxy-aware active-risk (A).** Rationale in
@@ -65,12 +88,17 @@ be re-labelled (PA-5/PM-2-shaped) when its trigger fires — recorded here to pr
   is missing/not-COMPLETED/wrong-instrument). Binding-predicate switch with SYMMETRIC refusal (the
   PA-2 load-bearing-predicate precedent): the total family refuses a plain VAR_INPUT and the plain
   family refuses a total-predicate snapshot.
-- **OD-PA-4-D — the frequency conversion (declared):** `residual_stdev` is at APPRAISAL-PERIOD
-  frequency; Σ is DAILY. v1 declares **calendar-day √-time de-scaling from the pinned span**:
-  `σ_e,daily = σ_e,period / √d̄`, `d̄ = (summary.period_end − summary.period_start) / n_periods`
-  in calendar days — deterministic from pinned content alone (AD-014), no live read, no imputation;
-  `d̄ ≤ 0` fails closed. The trading-day refinement (× √(365/252)-style adjustments) is a recorded
-  v2; irregular spacing uses the honest MEAN period (inherited from PA-1, restated).
+- **OD-PA-4-D — the frequency conversion (declared; AMENDED per the vendor-practice benchmark):**
+  `residual_stdev` is at APPRAISAL-PERIOD frequency; Σ is DAILY (per captured-return day, a
+  trading-day grid). v1 declares **trading-day-adjusted √-time de-scaling from the pinned span**:
+  `σ_e,daily = σ_e,period / √d̄_t`, where `d̄_t = d̄_cal × (252/365)` and
+  `d̄_cal = (summary.period_end − summary.period_start) / n_periods` in calendar days — both
+  constants DECLARED model assumptions, everything else deterministic from pinned content alone
+  (AD-014), no live read, no imputation; `d̄_cal ≤ 0` fails closed. Plain calendar-day de-scaling
+  (the rejected alternative) would understate the daily residual ~17–20% against the universal
+  trading-day market-risk convention. A calendar-aware per-period trading-day count (pinning
+  holiday calendars) is the recorded v2; irregular spacing uses the honest MEAN period (inherited
+  from PA-1, restated).
 - **OD-PA-4-E — scope: proxied instruments only, diagonal residuals.** A residual term is added for
   each instrument that has (i) open REGRESSION-method proxy weights in the pinned set AND (ii) a
   valid cited estimate run. Indicator (non-proxied) instruments keep zero idiosyncratic risk — the
@@ -89,9 +117,11 @@ be re-labelled (PA-5/PM-2-shaped) when its trigger fires — recorded here to pr
 
 **Recorded v1 limitations:** diagonal residuals (no residual correlation — v2); non-proxied
 instruments still carry zero idiosyncratic risk; the residual is hostage to PA-3's estimation
-quality (short series ⇒ noisy σ_e — the std errors stay visible on the estimate); calendar-day
-√-time conversion (trading-day v2); ES/HS legs unchanged (the total treatment lands on the
-parametric family first — the HS analogue is a recorded v2).
+quality (short series ⇒ noisy σ_e — the std errors stay visible on the estimate); the √t conversion
+uses a DECLARED flat 252/365 trading-day ratio over the MEAN period (calendar-aware per-period
+counts + Barra-style shrinkage / Axioma-style EWMA on the residual are recorded v2s); ES/HS legs
+unchanged (the total treatment lands on the parametric family first — the HS analogue is a
+recorded v2).
 
 ## Part 4 — Verification plan
 
@@ -117,9 +147,13 @@ register/run/read. Full battery + `make check` + CI-watch-to-green.
 - **OQ-PA-4-3 — The pins + predicate switch (OD-C), incl. the NEW `COMPONENT_KIND_PROXY_WEIGHT`
   and the citation chain through the promoted weight's `source_calculation_run_id`.** *Recommend
   APPROVE — reproducible from the snapshot alone; symmetric refusal both directions.*
-- **OQ-PA-4-4 — The declared calendar-day √-time frequency conversion from the pinned span
-  (OD-D).** *Recommend APPROVE — deterministic from pins, no imputation; trading-day refinement a
-  recorded v2. The one real methodology judgment call.*
+- **OQ-PA-4-4 — The declared TRADING-DAY-adjusted √-time frequency conversion from the pinned span
+  (OD-D, as amended by the vendor-practice benchmark: `d̄_t = d̄_cal × 252/365`, both constants
+  declared).** *Recommend APPROVE — deterministic from pins + two declared constants; aligned with
+  the universal market-risk convention (Barra/Axioma/PORT all model on trading-day grids); plain
+  calendar-day (the earlier draft) would understate the residual ~17–20% and is recorded as the
+  rejected alternative. The calendar-aware per-period count is the v2. The one real methodology
+  judgment call.*
 - **OQ-PA-4-5 — The additive `var_result.residual_variance` evidence column, migration `0038`
   (OD-F).** *Recommend APPROVE — decomposable evidence beats an opaque total; additive + nullable.*
 - **OQ-PA-4-6 — Scope-outs per OD-E/G (diagonal residuals; zero idio for non-proxied/MANUAL; no
