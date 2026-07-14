@@ -48,6 +48,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.models import MAPPING_METHOD_REGRESSION
@@ -281,7 +282,14 @@ def _adjudicate_pins(
     uncovered: set[str] = set()
     for r in exposure_raw:
         fid = str(r["factor_id"]).lower()
-        exposure_rows.append((fid, Decimal(r["exposure_amount"])))
+        exposure_rows.append(
+            (
+                fid,
+                parse_strict_decimal(
+                    r["exposure_amount"], error=VarInputError, field="exposure_amount"
+                ),
+            )
+        )
         if fid not in covariance_factors:
             uncovered.add(r["factor_code"])
     if uncovered:
@@ -395,7 +403,9 @@ def _adjudicate_total_proxies(
                 f"PROXY_WEIGHT pin for instrument {instrument_id} carries no residual_stdev — "
                 f"refused"
             )
-        residual_stdev = Decimal(residual_stdev_raw)
+        residual_stdev = parse_strict_decimal(
+            residual_stdev_raw, error=VarInputError, field="residual_stdev"
+        )
         if residual_stdev < 0 or abs(residual_stdev) >= _MAX_RESIDUAL_STDEV_ABS:
             raise VarInputError(
                 f"PROXY_WEIGHT pin for instrument {instrument_id} residual_stdev is negative or "

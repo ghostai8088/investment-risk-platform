@@ -56,6 +56,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata import BenchmarkNotVisible, resolve_benchmark
@@ -249,12 +250,22 @@ def _adjudicate_pins(
                 "the pinned DIETZ sub-periods are not contiguous (a gap or overlap at "
                 f"{prev_end}..{start}) — refused"
             )
-        periods.append((start, end, Decimal(r["return_value"])))
+        periods.append(
+            (
+                start,
+                end,
+                parse_strict_decimal(
+                    r["return_value"], error=BenchmarkRelativeInputError, field="return_value"
+                ),
+            )
+        )
         prev_end = end
 
     # Exact-linkage cross-check: the recomputed geometric link of the DIETZ returns must EQUAL the
     # pinned TWR_LINKED value (PM-1 computed the link from these same 12dp inputs).
-    twr_linked = Decimal(linked[0]["return_value"])
+    twr_linked = parse_strict_decimal(
+        linked[0]["return_value"], error=BenchmarkRelativeInputError, field="return_value"
+    )
     if compound_returns([p[2] for p in periods]) != twr_linked:
         raise BenchmarkRelativeInputError(
             "the pinned DIETZ returns do not geometrically link to the pinned TWR_LINKED value "

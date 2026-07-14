@@ -2314,6 +2314,41 @@ def list_components(
     )
 
 
+class MalformedPinError(Exception):
+    """RD-3 OD-A: the pinned ``captured_content`` on a series/composite component could not be
+    parsed as a JSON object, or is missing a key ``_reresolve_content`` needs (truncated/tampered/
+    non-object). Raised ONLY by ``_parsed_pin`` below — scoped to the four branches that actually
+    parse ``captured_content`` (BENCHMARK_RETURN/FACTOR_RETURN/BENCHMARK/SCENARIO), not the whole
+    ``_reresolve_content`` dispatch, so a live-data serialization bug in one of the other 14
+    branches still raises loudly instead of being silently reported as drift (finder review)."""
+
+
+def _parsed_pin(comp: DatasetSnapshotComponent, *keys: str) -> tuple[Any, ...]:
+    """Parse ``comp.captured_content`` as a JSON object and pluck ``keys`` off it, refusing a
+    non-parseable/non-object/missing-key pin as :class:`MalformedPinError` — content that cannot
+    even be parsed has definitionally failed reproduction (OD-A rationale), never a raw 500."""
+    try:
+        pinned = json.loads(comp.captured_content)
+        return tuple(pinned[key] for key in keys)
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise MalformedPinError(
+            f"component {comp.id} captured_content is not a well-formed pin ({type(exc).__name__})"
+        ) from exc
+
+
+def _pinned_row_ids(comp: DatasetSnapshotComponent, rows: Any) -> list[str]:
+    """Pluck each pinned row's ``id`` out of a ``pinned["rows"]`` value, refusing a non-iterable or
+    element-missing-``id`` shape as :class:`MalformedPinError` (the same OD-A refusal class as
+    ``_parsed_pin``, split out because this operates on an already-extracted value, not the raw
+    JSON object)."""
+    try:
+        return [str(r["id"]) for r in rows]
+    except (KeyError, TypeError) as exc:
+        raise MalformedPinError(
+            f"component {comp.id} captured_content 'rows' is not well-formed ({type(exc).__name__})"
+        ) from exc
+
+
 def _reresolve_content(
     session: Session,
     comp: DatasetSnapshotComponent,
@@ -2371,10 +2406,10 @@ def _reresolve_content(
         # id (tenant-predicated). A superseded/corrected row is byte-stable (its immutable content
         # is what was pinned — close-out markers excluded, TR-09); a gone row reports as drift.
         benchmark = resolve_benchmark(session, comp.target_entity_id, acting_tenant=acting_tenant)
-        pinned = json.loads(comp.captured_content)
+        (pinned_rows,) = _parsed_pin(comp, "rows")
         rows = [
-            _resolve_benchmark_return_row(session, r["id"], acting_tenant=acting_tenant)
-            for r in pinned["rows"]
+            _resolve_benchmark_return_row(session, rid, acting_tenant=acting_tenant)
+            for rid in _pinned_row_ids(comp, pinned_rows)
         ]
         return benchmark_return_series_content(benchmark, rows)
     if comp.component_kind == COMPONENT_KIND_FACTOR:
@@ -2396,18 +2431,18 @@ def _reresolve_content(
         # gone/cross-tenant row reports as drift; a superseded/corrected row is byte-stable (its
         # immutable content is what was pinned — the close-out markers are excluded, TR-09).
         factor = resolve_factor(session, comp.target_entity_id, acting_tenant=acting_tenant)
-        pinned = json.loads(comp.captured_content)
+        (pinned_rows,) = _parsed_pin(comp, "rows")
         rows = [
-            _resolve_factor_return_row(session, r["id"], acting_tenant=acting_tenant)
-            for r in pinned["rows"]
+            _resolve_factor_return_row(session, rid, acting_tenant=acting_tenant)
+            for rid in _pinned_row_ids(comp, pinned_rows)
         ]
         return factor_return_series_content(factor, rows)
     if comp.component_kind == COMPONENT_KIND_BENCHMARK:
         # Re-read the benchmark header (from the pinned id) + the constituent FR row by surrogate
         # id (tenant-predicated). A gone/cross-tenant row reports as drift; a superseded/corrected
         # row is byte-stable (its immutable content is what was pinned — TR-09).
-        pinned = json.loads(comp.captured_content)
-        bid = str(pinned["benchmark_id"])
+        (pinned_bid,) = _parsed_pin(comp, "benchmark_id")
+        bid = str(pinned_bid)
         if benchmark_cache is not None and bid in benchmark_cache:
             benchmark = benchmark_cache[bid]  # one header per snapshot — resolved once
         else:
@@ -2440,9 +2475,9 @@ def _reresolve_content(
         # SCENARIO_INPUT snapshot would fall through to portfolio_content and ALWAYS report drift.
         from irp_shared.risk.scenario import resolve_scenario_definition  # binder read (no cycle)
 
-        pinned = json.loads(comp.captured_content)
+        (pinned_def_id,) = _parsed_pin(comp, "scenario_definition_id")
         definition = resolve_scenario_definition(
-            session, str(pinned["scenario_definition_id"]), acting_tenant=acting_tenant
+            session, str(pinned_def_id), acting_tenant=acting_tenant
         )
         shock = _resolve_scenario_shock_row(
             session, comp.target_entity_id, acting_tenant=acting_tenant
@@ -2482,6 +2517,19 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             BenchmarkRelativeSnapshotError,
             VarBacktestSnapshotError,
             BenchmarkNotVisible,
+            ScenarioSnapshotError,
+            ProxyWeightSnapshotError,
+            # RD-3 OD-A: the BENCHMARK_RETURN/FACTOR_RETURN/BENCHMARK/SCENARIO branches parse
+            # ``captured_content`` via ``_parsed_pin``/``_pinned_row_ids``, which raise ONLY this
+            # class on a truncated/tampered/non-object/missing-key pin — never a bare
+            # KeyError/TypeError/ValueError/ArithmeticError, which would ALSO catch a live-data
+            # serialization bug in one of the other 14 branches and mis-report it as drift (a
+            # finder-review correction: the except-tuple must stay scoped to "the pin didn't
+            # parse", not widen to "anything went wrong while re-resolving"). verify's contract is
+            # "does the pinned content still reproduce?"; content that can't even be parsed has
+            # definitionally failed reproduction, so it reports as drift, not a raw 500 (the P3-C3
+            # binder malformed-pin idiom, applied here to the read/verify path).
+            MalformedPinError,
         ):
             drifted.append(comp.id)
             continue

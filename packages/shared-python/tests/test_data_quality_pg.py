@@ -13,11 +13,12 @@ import os
 import uuid
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.pool import NullPool
 
+from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import set_tenant_context
 from irp_shared.dq.models import DataQualityResult, DataQualityRule
@@ -366,16 +367,55 @@ def test_system_tenant_rule_writable_only_under_system_context(app_url: str) -> 
         session = factory()
         try:
             set_tenant_context(session, SYSTEM_TENANT_ID)
-            rule = register_dq_rule(
+            # RD-3 OD-D: resolve-or-insert so a re-run against a dirty (unreset) local schema is a
+            # no-op instead of an IntegrityError on the fixed SYSTEM-tenant code (the lineage
+            # GLOBAL_OK precedent).
+            rule = resolve_or_insert(
                 session,
-                tenant_id=SYSTEM_TENANT_ID,
-                code="GLOBAL_OK",
-                name="g",
-                rule_type="NOT_NULL",
-                actor_id="a",
+                resolve=lambda: session.execute(
+                    select(DataQualityRule).where(
+                        DataQualityRule.tenant_id == SYSTEM_TENANT_ID,
+                        DataQualityRule.code == "GLOBAL_OK",
+                    )
+                ).scalar_one_or_none(),
+                insert=lambda: register_dq_rule(
+                    session,
+                    tenant_id=SYSTEM_TENANT_ID,
+                    code="GLOBAL_OK",
+                    name="g",
+                    rule_type="NOT_NULL",
+                    actor_id="a",
+                ),
             )
             session.commit()
             assert rule.tenant_id == SYSTEM_TENANT_ID
+        finally:
+            session.close()
+        # RD-3 OD-D regression proof: a SECOND resolve-or-insert against the now-committed
+        # GLOBAL_OK row must be a no-op — a real CI-exercised double-run, not just a manual local
+        # one (the lineage GLOBAL_OK precedent).
+        session = factory()
+        try:
+            set_tenant_context(session, SYSTEM_TENANT_ID)
+            rule2 = resolve_or_insert(
+                session,
+                resolve=lambda: session.execute(
+                    select(DataQualityRule).where(
+                        DataQualityRule.tenant_id == SYSTEM_TENANT_ID,
+                        DataQualityRule.code == "GLOBAL_OK",
+                    )
+                ).scalar_one_or_none(),
+                insert=lambda: register_dq_rule(
+                    session,
+                    tenant_id=SYSTEM_TENANT_ID,
+                    code="GLOBAL_OK",
+                    name="g",
+                    rule_type="NOT_NULL",
+                    actor_id="a",
+                ),
+            )
+            session.commit()
+            assert rule2.id == rule.id  # the existing row, not a new insert
         finally:
             session.close()
     finally:

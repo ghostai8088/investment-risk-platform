@@ -11,11 +11,12 @@ import os
 import uuid
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.pool import NullPool
 
+from irp_shared.db.integrity import resolve_or_insert
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import set_tenant_context
 from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
@@ -334,16 +335,56 @@ def test_system_tenant_source_writable_only_under_system_context(app_url: str) -
         session = factory()
         try:
             set_tenant_context(session, SYSTEM_TENANT_ID)
-            src = register_data_source(
+            # RD-3 OD-D: resolve-or-insert so a re-run against a dirty (unreset) local schema is a
+            # no-op instead of an IntegrityError on the fixed SYSTEM-tenant code (this fixed code is
+            # the ONLY thing making the seed non-idempotent — the deterministic-id product feature
+            # this fold must not touch lives in the synthetic seeder, not here).
+            src = resolve_or_insert(
                 session,
-                tenant_id=SYSTEM_TENANT_ID,
-                code="GLOBAL_OK",
-                name="g",
-                source_type="VENDOR_FEED",
-                actor_id="a",
+                resolve=lambda: session.execute(
+                    select(DataSource).where(
+                        DataSource.tenant_id == SYSTEM_TENANT_ID,
+                        DataSource.code == "GLOBAL_OK",
+                    )
+                ).scalar_one_or_none(),
+                insert=lambda: register_data_source(
+                    session,
+                    tenant_id=SYSTEM_TENANT_ID,
+                    code="GLOBAL_OK",
+                    name="g",
+                    source_type="VENDOR_FEED",
+                    actor_id="a",
+                ),
             )
             session.commit()
             assert src.tenant_id == SYSTEM_TENANT_ID
+        finally:
+            session.close()
+        # RD-3 OD-D regression proof: a SECOND resolve-or-insert against the now-committed
+        # GLOBAL_OK row must be a no-op (the resolve hit, not the IntegrityError-then-re-resolve
+        # race path) — a real CI-exercised double-run, not just a manual local one.
+        session = factory()
+        try:
+            set_tenant_context(session, SYSTEM_TENANT_ID)
+            src2 = resolve_or_insert(
+                session,
+                resolve=lambda: session.execute(
+                    select(DataSource).where(
+                        DataSource.tenant_id == SYSTEM_TENANT_ID,
+                        DataSource.code == "GLOBAL_OK",
+                    )
+                ).scalar_one_or_none(),
+                insert=lambda: register_data_source(
+                    session,
+                    tenant_id=SYSTEM_TENANT_ID,
+                    code="GLOBAL_OK",
+                    name="g",
+                    source_type="VENDOR_FEED",
+                    actor_id="a",
+                ),
+            )
+            session.commit()
+            assert src2.id == src.id  # the existing row, not a new insert
         finally:
             session.close()
     finally:

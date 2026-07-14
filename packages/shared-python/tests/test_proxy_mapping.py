@@ -410,7 +410,10 @@ def test_foreign_instrument_and_factor_refused(session: Session) -> None:
     factor is refused (the P3-5 cross-tenant-FK guard), never a durable cross-tenant row."""
     tenant = str(uuid.uuid4())
     inst, f_eq, _ = _book(session, tenant)
-    with pytest.raises(ProxyMappingValueError):
+    # RD-3 OD-B: _resolve_instrument_id now delegates to the shared reference/guards.py predicate;
+    # the message normalizes to the guard's own wording ("instrument …", not "private instrument
+    # …").
+    with pytest.raises(ProxyMappingValueError, match=r"^instrument .* is not visible"):
         capture_proxy_mapping(
             session,
             private_instrument_id=str(uuid.uuid4()),  # foreign/absent instrument

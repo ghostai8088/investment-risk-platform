@@ -65,6 +65,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata import DEFAULT_BASE, compose_effective_rate
@@ -274,7 +275,9 @@ def _adjudicate_pins(
                 raise PortfolioReturnInputError(f"duplicate pinned exposure atom {rid} — refused")
             exposure_ids_seen.add(rid)
             run_id = str(r["calculation_run_id"]).lower()
-            amount = Decimal(r["exposure_amount"])
+            amount = parse_strict_decimal(
+                r["exposure_amount"], error=PortfolioReturnInputError, field="exposure_amount"
+            )
             if abs(amount) >= _MAX_EXPOSURE_ABS:
                 raise PortfolioReturnInputError(
                     "a pinned exposure_amount exceeds its source-column envelope — refused"
@@ -343,7 +346,9 @@ def _adjudicate_pins(
                     f"external flow {t['id']} has a NULL/blank amount or currency — refused "
                     f"(no imputation)"
                 )
-            amount = Decimal(gross)
+            amount = parse_strict_decimal(
+                gross, error=PortfolioReturnInputError, field="gross_amount"
+            )
             if abs(amount) >= _MAX_FLOW_ABS:
                 raise PortfolioReturnInputError(
                     "a pinned flow gross_amount exceeds its source-column envelope — refused"
