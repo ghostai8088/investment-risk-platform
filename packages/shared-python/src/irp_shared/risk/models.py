@@ -254,6 +254,11 @@ class VarResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     n_observations: Mapped[int] = mapped_column(Integer, nullable=False)
     window_start: Mapped[dt_date] = mapped_column(Date, nullable=False)
     window_end: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    # PA-4 (migration 0038): the idiosyncratic leg Σ_i (MV_i·σ_e,i,daily)² (base-currency²) a
+    # VAR_PARAMETRIC_TOTAL run adds to the factor variance x'Σx; NULL on every prior/parametric/HS
+    # row. Persisted as decomposition evidence: σ_factor² = sigma² − residual_variance (sigma holds
+    # the TOTAL σ on a total-family row). Numeric(38,20) — the covariance/variance scale.
+    residual_variance: Mapped[Decimal | None] = mapped_column(PreciseDecimal(38, 20), nullable=True)
 
 
 class ActiveRiskResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):

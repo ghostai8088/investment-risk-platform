@@ -93,6 +93,9 @@ METRIC_TYPE_VAR_PARAMETRIC = "VAR_PARAMETRIC"
 #: VAR-HS-1 (OD-VHS-C): the historical-simulation metric on the SAME var_result grain.
 METRIC_TYPE_VAR_HISTORICAL = "VAR_HISTORICAL"
 METRIC_TYPE_ES_PARAMETRIC_RESERVED = "ES_PARAMETRIC"
+#: PA-4 (OD-PA-4-B): total parametric VaR = factor + idiosyncratic residual variance, on the SAME
+#: var_result grain (a NEW registered model dispatched through the parametric binder).
+METRIC_TYPE_VAR_PARAMETRIC_TOTAL = "VAR_PARAMETRIC_TOTAL"
 METRIC_TYPES = (METRIC_TYPE_VAR_PARAMETRIC, METRIC_TYPE_VAR_HISTORICAL)
 
 #: Controlled-vocab ``active_risk_result.metric_type`` (P3-7; further active metrics reserved by

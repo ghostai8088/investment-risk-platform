@@ -1,6 +1,7 @@
 # PA-4 Decision Record — residual/idiosyncratic variance (Wave-4 slice 3, the v2 companion)
 
-> **Status: DRAFT — awaiting OQ ratification (OQ-PA-4-1…6).** The Wave-4 companion slice, chosen at
+> **Status: RATIFIED 2026-07-14** (OQ-PA-4-1…6 all approved — incl. the amended OQ-4, the
+> trading-day-adjusted frequency conversion from the vendor-practice benchmark). The Wave-4 companion slice, chosen at
 > planning per the ratified roadmap's own criterion ("whichever the PA-3 record judges the tighter
 > dependency"): **residual/idiosyncratic variance** — carry the part of a proxied private
 > instrument's risk that the factor regression does NOT explain into VaR, instead of silently
