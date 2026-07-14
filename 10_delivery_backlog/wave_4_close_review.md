@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **DRAFT — pending user ratification of OQ-W4C-1…6 (Part 6).** |
+| Status | **RATIFIED by the user (2026-07-14): OQ-W4C-1/3/4/5/6 approved as recommended; OQ-W4C-2 (the Wave-5 direction fork) answered "A: Self-governance".** Wave 5 (ratified, roadmap Part 2.8): **RD-3 (hygiene) → VW-1 (model-validation workflow, SR 11-7, incl. estimate-staleness governance) → BT-2 (total-series backtest) → ES-1 (parametric ES)** — "the numbers govern themselves"; multi-family factor capture teed as the Wave-6 headline. |
 | Date | 2026-07-14 (main HEAD `2354a3f` at audit time) |
 | Method | Three independent parallel auditors (shipped-as-ratified; deferral-register reconciliation; outward benchmark + destination check), every claim verified in code/git/CI — not from records — then fold-synthesized. Mechanical hygiene fixes found by the audit are applied ON THIS BRANCH (the Wave-3 precedent) and documented in Part 1. |
 | Wave 4 | RD-2 (PR #26 = `cc9679b`) → PA-3 (PR #28 = `a98d380`, migration `0037`) → PA-4 (PR #30 = `8ef70db` + closeout PR #31 = `2354a3f`, migration `0038`). **First wave partially delivered under the 2026-07-14 EXTENDED autonomy grant** (PA-4's PRs opened + merged by Claude; RD-2/PA-3 merged by the user pre-extension). |
