@@ -81,14 +81,16 @@ the model's self-assessed confidence ("zero areas of concern" is not a criterion
   a red CI on a just-committed slice; R-07 governance amendments that mechanically **record** an
   already-approved decision (incl. flipping a sign-off ledger to RATIFIED after explicit user approval).
   Conditions: fully covered by executable verification; trivially revertible; no new decision embedded.
-- **Tier 2 — commit + push autonomously; the user's gate is the PR merge (delivery autonomy, 2026-07-12).**
-  Any production/shared/API code change; any migration; any new permission / audit code / canonical id /
-  component kind / vocab value; any edit to ratified-decision text, methodology docs, numerical conventions, or
-  acceptance criteria; anything touching frozen files or the RLS/tenancy surface. These proceed to commit +
-  push on a feature branch without a pre-commit approval ceremony; they reach `main` only when the USER merges
-  the PR. **Starting the next roadmap slice is autonomous** (the sequence is `delivery_roadmap.md`); a genuine
-  RE-SEQUENCING, scope change, or design fork still surfaces to the user WITH a recommendation (a Tier-3
-  decision, below).
+- **Tier 2 — commit + push + PR + merge autonomously (delivery autonomy 2026-07-12, EXTENDED 2026-07-14:
+  "I will defer to you on when to create pull requests and merge").** Any production/shared/API code change;
+  any migration; any new permission / audit code / canonical id / component kind / vocab value; any edit to
+  ratified-decision text, methodology docs, numerical conventions, or acceptance criteria; anything touching
+  frozen files or the RLS/tenancy surface. These proceed to commit + push on a feature branch, then Claude
+  opens the PR and merges it to `main` — the merge preconditions replacing the human gate are the adversarial
+  review folded + `make check` + full-PG + CI-to-green + branch protection's required checks (never merge
+  before ALL pass). **Starting the next roadmap slice is autonomous** (the sequence is
+  `delivery_roadmap.md`); a genuine RE-SEQUENCING, scope change, or design fork still surfaces to the user
+  WITH a recommendation (a Tier-3 decision, below).
 - **Tier 3 — the explicit OQ sign-off ledger (unchanged).** Methodology/model choices, grains, entity mappings,
   scope narrowings.
 - **Auto-escalation:** ANY failed check (make check / docs-check / secret-scan / PG / CI), or ANY file outside
@@ -96,10 +98,12 @@ the model's self-assessed confidence ("zero areas of concern" is not a criterion
   Changing THESE gate rules is itself Tier 2/3.
 
 ## Commit discipline
-- **Commit + push autonomously at every tier (delivery autonomy, 2026-07-12).** No per-artifact pre-commit
-  approval. Work lands on a **feature branch** pushed to `origin`; the USER opens + merges the PR to `main`
-  (branch protection; Claude never touches the token). Tier 3 genuine DECISIONS still get user sign-off before
-  being encoded. CI-watch-to-green after each push stays mandatory.
+- **Commit + push autonomously at every tier (delivery autonomy 2026-07-12; PR create + merge added
+  2026-07-14).** No per-artifact pre-commit approval. Work lands on a **feature branch** pushed to `origin`;
+  Claude opens the PR (GitHub REST API, keychain-cached credential — `gh` not installed) and merges it once
+  the review is folded and `make check` + full-PG + CI + the branch-protection required checks are ALL green.
+  Tier 3 genuine DECISIONS still get user sign-off before being encoded. CI-watch-to-green after each push
+  stays mandatory.
 - **Per-commit pre-checks:** run `make check` (lint, format, mypy, pytest, secret-scan, docs-check); confirm
   the staged set is exactly the intended files; no generated artifacts / `node_modules` / `dist` / caches /
   `.pyc` / secrets / `.env` staged; the scope-specific exclusions hold.

@@ -13,11 +13,15 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
    from here by default; re-sequencing follows its Part 4 rules) — plus the latest decision record it points at.
 
 ## Hard invariants (non-negotiable)
-- **Delivery autonomy (granted 2026-07-12): Claude may commit and push feature branches and self-drive the
-  plan → implement → commit → push cycle WITHOUT per-step approval.** The USER still opens and merges every PR
-  to `main` (branch protection); Claude never touches the GitHub token. Still surface genuine decisions (design
-  forks, scope/ambiguity) and anything hard-to-reverse or outward-facing beyond pushing a branch. The next
-  slice comes from the roadmap sequence by default.
+- **Delivery autonomy (granted 2026-07-12; EXTENDED 2026-07-14): Claude self-drives the full
+  plan → implement → review → commit → push → PR → merge cycle WITHOUT per-step approval.** The 2026-07-14
+  extension ("I will defer to you on when to create pull requests and merge") makes PR creation and merging
+  to `main` Claude's call too — via the GitHub REST API with the keychain-cached credential; branch
+  protection's required status checks stay on, and the adversarial review + `make check` + full-PG +
+  CI-to-green gates are the merge preconditions that replaced the human merge gate (never merge before they
+  all pass). Still surface genuine decisions (Tier-3 methodology/model/grain/entity sign-offs, design forks,
+  scope/ambiguity) and anything hard-to-reverse or outward-facing beyond the repo itself. The next slice
+  comes from the roadmap sequence by default.
 - **`packages/shared-python/src/irp_shared/audit/service.py` is FROZEN** — never modify it.
 - **No BYPASSRLS app path; no hybrid/SYSTEM_TENANT behavior** beyond the closed 5-table hybrid set; proprietary
   data = symmetric FORCE RLS.
