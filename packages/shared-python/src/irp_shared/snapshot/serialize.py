@@ -497,6 +497,39 @@ def var_result_content(row: Any) -> dict[str, Any]:
     }
 
 
+def proxy_weight_estimate_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of one ``proxy_weight_estimate_result`` (ENT-057, IA) row
+    (PA-4 PROXY_WEIGHT component — the ``var_result`` true-append-only pin flavor: no valid axis,
+    no ``record_version``; ``system_from`` the append time; byte-identical on re-verify). Pins the
+    cited ``ESTIMATION_SUMMARY`` singleton so the total-VaR binder reads its ``residual_stdev`` +
+    the row's own ``instrument_id`` (the correlation key back to the proxied instrument) WITHOUT a
+    live read. ``metric_value``/``std_error``/``residual_stdev`` at the 12dp regression scale."""
+
+    def _opt_dec(value: Any, scale: int) -> str | None:
+        return _norm_decimal(value, scale) if value is not None else None
+
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "calculation_run_id": _norm_guid(row.calculation_run_id),
+        "input_snapshot_id": _norm_guid(row.input_snapshot_id),
+        "model_version_id": _norm_guid(row.model_version_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "source_desmoothed_run_id": _norm_guid(row.source_desmoothed_run_id),
+        "metric_type": row.metric_type,
+        "factor_id": None if row.factor_id is None else _norm_guid(row.factor_id),
+        "metric_value": _norm_decimal(row.metric_value, _SCALE_CURVE_POINT),
+        "std_error": _opt_dec(row.std_error, _SCALE_CURVE_POINT),
+        "n_observations": row.n_observations,
+        "n_regressors": row.n_regressors,
+        "residual_stdev": _opt_dec(row.residual_stdev, _SCALE_CURVE_POINT),
+        "min_observations": row.min_observations,
+        "series_currency": row.series_currency,
+        "system_from": _norm_datetime(row.system_from),
+    }
+
+
 def benchmark_return_series_content(benchmark: Any, rows: list[Any]) -> dict[str, Any]:
     """The captured content of one benchmark's pinned RETURN WINDOW (P3-8 BENCHMARK_RETURN component
     — the ``factor_return_series_content`` header+rows shape over ``benchmark_return`` FR rows).

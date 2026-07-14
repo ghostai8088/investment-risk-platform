@@ -120,6 +120,7 @@ from irp_shared.risk import (
     register_sensitivity_model,
     register_var_backtest_model,
     register_var_model,
+    register_var_parametric_total_model,
     resolve_active_risk,
     resolve_active_risk_run,
     resolve_covariance,
@@ -161,6 +162,7 @@ from irp_shared.snapshot import (
     SnapshotPurposeError,
     VarBacktestSnapshotError,
     VarSnapshotError,
+    VarTotalSnapshotError,
 )
 
 router = APIRouter(prefix="/risk", tags=["risk"])
@@ -214,10 +216,14 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
         "invalid historical-VaR run input",
     ),
     VarSnapshotError: (status.HTTP_409_CONFLICT, "VaR snapshot input failed closed"),
-    # Subclass of VarSnapshotError — listed FIRST so the MRO walk gives the active-risk detail.
+    # Subclasses of VarSnapshotError — listed FIRST so the MRO walk gives the specific detail.
     ActiveRiskSnapshotError: (
         status.HTTP_409_CONFLICT,
         "active-risk snapshot input failed closed",
+    ),
+    VarTotalSnapshotError: (
+        status.HTTP_409_CONFLICT,
+        "total-VaR snapshot input failed closed",
     ),
     ActiveRiskInputError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1076,6 +1082,7 @@ class VarRowOut(BaseModel):
     exposure_run_id: str
     covariance_run_id: str | None  # None for VAR_HISTORICAL (no covariance run)
     model_version_id: str
+    residual_variance: str | None  # PA-4: the idiosyncratic leg; None off VAR_PARAMETRIC_TOTAL
 
 
 class VarRunOut(BaseModel):
@@ -1109,6 +1116,7 @@ def _var_row_out(row: VarResult) -> VarRowOut:
         exposure_run_id=row.exposure_run_id,
         covariance_run_id=row.covariance_run_id,
         model_version_id=row.model_version_id,
+        residual_variance=(None if row.residual_variance is None else f"{row.residual_variance:f}"),
     )
 
 
@@ -1153,6 +1161,64 @@ def register_var(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="confidence_level/horizon_days outside the v1 declared vocabulary",
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+class VarTotalModelIn(BaseModel):
+    code_version: str
+    confidence_level: str  # the DECLARED confidence (v1 vocabulary {0.95, 0.99}) — OD-P3-5-D
+    appraisal_days: int  # the DECLARED appraisal cadence (calendar days, e.g. 91) — OD-PA-4-D
+    horizon_days: int = 1
+
+
+@router.post(
+    "/models/var-parametric-total",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_var_parametric_total(
+    body: VarTotalModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed total-parametric-VaR model (PA-4 — factor variance +
+    the idiosyncratic residual of the proxied instruments' cited proxy-weight estimates) + a
+    model_version for this ``(code_version, confidence_level, horizon_days, appraisal_days)``
+    identity and return its id. Dispatched through the SAME ``POST /risk/vars/runs`` endpoint as
+    the plain parametric family — the binder resolves the bound model's code. A same-label
+    re-register with a different declaration is a 409; a confidence outside the v1 vocabulary or a
+    non-positive ``appraisal_days`` is a 422. The shared registration envelope."""
+    try:
+        version = register_var_parametric_total_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            confidence_level=body.confidence_level,
+            appraisal_days=body.appraisal_days,
+            horizon_days=body.horizon_days,
+        )
+    except ValueError:  # out-of-vocabulary confidence / non-v1 horizon / non-positive appraisal
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "confidence_level/horizon_days/appraisal_days outside the v1 declared vocabulary"
+            ),
         ) from None
     except (ModelVersionConflictError, WrongModelVersionError) as exc:
         db.rollback()

@@ -41,7 +41,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import Any
 
 from sqlalchemy import select
@@ -52,25 +52,40 @@ from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.risk.bootstrap import (
     VAR_MODEL_CODE,
+    VAR_TOTAL_CALENDAR_DAYS_PER_YEAR,
+    VAR_TOTAL_MODEL_CODE,
+    VAR_TOTAL_TRADING_DAYS_PER_YEAR,
     VarParameters,
+    WrongModelVersionError,
     assert_model_version_of,
+    declared_appraisal_days,
     declared_var_parameters,
 )
 from irp_shared.risk.covariance_service import resolve_covariance_run
 from irp_shared.risk.events import (
     METRIC_TYPE_VAR_PARAMETRIC,
+    METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
     RUN_TYPE_VAR,
     VarActor,
 )
 from irp_shared.risk.factor_service import resolve_factor_exposure_run
-from irp_shared.risk.models import VarResult
+from irp_shared.risk.models import METRIC_TYPE_ESTIMATION_SUMMARY, VarResult
 from irp_shared.risk.var_kernel import compute_parametric_var
+from irp_shared.risk.var_total_kernel import (
+    ResidualInstrument,
+    VarTotalKernelError,
+    total_var_residual,
+)
 from irp_shared.snapshot import (
     COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_FACTOR_EXPOSURE,
+    COMPONENT_KIND_PROXY_MAPPING,
+    COMPONENT_KIND_PROXY_WEIGHT,
     PURPOSE_VAR_INPUT,
+    VAR_TOTAL_BINDING_PREDICATE,
     SnapshotActor,
     build_var_snapshot,
+    build_var_total_snapshot,
     list_components,
     resolve_snapshot,
 )
@@ -91,6 +106,20 @@ _MAX_COVARIANCE_ABS = Decimal("1E18")
 #: inputs can still produce sigma ~1E31 — gate it into a committed FAILED run, never a PG
 #: NumericValueOutOfRange 500 (2026-07 review).
 _MAX_RESULT_ABS = Decimal("1E22")
+#: PA-4 total-family envelopes (the SAME source-column-envelope discipline, extended): a pinned
+#: PROXY_WEIGHT ``residual_stdev`` (PreciseDecimal(20,12), 8 integer digits) and the RAW
+#: ``residual_variance`` leg (Numeric(38,20), 18 integer digits) before quantize.
+_MAX_RESIDUAL_STDEV_ABS = Decimal("1E8")
+_MAX_RESIDUAL_VARIANCE_ABS = Decimal("1E18")
+#: sigma_total/var_value_total quantum (6dp, the var_kernel ``_RESULT_QUANTUM`` twin) and
+#: residual_variance quantum (20dp, the ``var_result.residual_variance`` Numeric(38,20) scale).
+_SIGMA_QUANTUM = Decimal(1).scaleb(-6)
+_RESIDUAL_VARIANCE_QUANTUM = Decimal(1).scaleb(-20)
+#: Compute precision for the total-family post-kernel arithmetic (the ``var_kernel``/
+#: ``var_total_kernel`` ``_COMPUTE_PREC``/``_CTX_PRECISION`` twin) — z*sigma_total + the quantize
+#: calls run at the SAME 50-digit precision the kernels used, so the zero-proxied-instrument
+#: invariance (total ≡ plain) is byte-exact, not merely numerically close.
+_COMPUTE_PREC = 50
 
 
 class VarInputError(Exception):
@@ -281,6 +310,104 @@ def _adjudicate_pins(
     )
 
 
+@dataclass(frozen=True)
+class _ParsedProxyWeight:
+    """One adjudicated proxied instrument's idiosyncratic input (PA-4): its cited estimate's
+    APPRAISAL-PERIOD residual stdev, keyed by lowercase instrument id."""
+
+    instrument_id: str
+    residual_stdev: Decimal
+
+
+def _parse_total_pins(comps: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Parse the pinned ``PROXY_MAPPING``/``PROXY_WEIGHT`` captured_content (PA-4, total-family
+    only; PURE — no live read; the ``_parse_pins`` twin)."""
+    mapping_raw: list[dict[str, Any]] = []
+    weight_raw: list[dict[str, Any]] = []
+    for comp in comps:
+        data = json.loads(comp.captured_content)
+        if comp.component_kind == COMPONENT_KIND_PROXY_MAPPING:
+            mapping_raw.append(data)
+        elif comp.component_kind == COMPONENT_KIND_PROXY_WEIGHT:
+            weight_raw.append(data)
+    return mapping_raw, weight_raw
+
+
+def _adjudicate_total_proxies(
+    mapping_raw: list[dict[str, Any]],
+    weight_raw: list[dict[str, Any]],
+    *,
+    base_currency: str,
+    exposure_instrument_ids: set[str],
+) -> list[_ParsedProxyWeight]:
+    """PRE-CREATE adjudication of the pinned PROXY_MAPPING/PROXY_WEIGHT pins (PA-4 — the same
+    trust boundary ``_adjudicate_pins`` defends: consume-existing accepts ANY snapshot, so a
+    hand-minted pin set must not smuggle an ill-formed idiosyncratic input past the gate). Fail-
+    closed gates: every ``PROXY_WEIGHT`` pin MUST be an ``ESTIMATION_SUMMARY`` row (the wrong-type
+    refusal); NO duplicate instrument across ``PROXY_WEIGHT`` pins; every ``PROXY_WEIGHT``
+    instrument MUST have >= 1 pinned ``PROXY_MAPPING`` AND >= 1 pinned ``FACTOR_EXPOSURE`` row for
+    the SAME instrument (the instrument-mismatch refusal, all three directions); the pinned
+    ``series_currency`` MUST equal the run-uniform ``base_currency`` (the currency-match gate — no
+    FX conversion, a v1 limitation); a missing/negative/envelope-exceeding ``residual_stdev``
+    refuses. Returns the adjudicated per-instrument residual inputs (empty ⇒ the book has no
+    proxied instrument, the total ≡ plain-parametric invariance case). Raises
+    :class:`VarInputError`."""
+    mapping_instruments = {str(r["private_instrument_id"]).lower() for r in mapping_raw}
+    seen_instruments: set[str] = set()
+    parsed: list[_ParsedProxyWeight] = []
+    for r in weight_raw:
+        if r["metric_type"] != METRIC_TYPE_ESTIMATION_SUMMARY:
+            raise VarInputError(
+                f"a pinned PROXY_WEIGHT component is not an ESTIMATION_SUMMARY row "
+                f"(metric_type={r['metric_type']!r}) — refused"
+            )
+        instrument_id = str(r["instrument_id"]).lower()
+        if instrument_id in seen_instruments:
+            raise VarInputError(
+                f"duplicate pinned PROXY_WEIGHT for instrument {instrument_id} — refused"
+            )
+        seen_instruments.add(instrument_id)
+        if instrument_id not in mapping_instruments:
+            raise VarInputError(
+                f"PROXY_WEIGHT pin for instrument {instrument_id} has no corresponding pinned "
+                f"PROXY_MAPPING — refused (instrument mismatch)"
+            )
+        if instrument_id not in exposure_instrument_ids:
+            raise VarInputError(
+                f"PROXY_WEIGHT pin for instrument {instrument_id} has no corresponding pinned "
+                f"FACTOR_EXPOSURE row — refused (instrument mismatch)"
+            )
+        residual_stdev_raw = r.get("residual_stdev")
+        if residual_stdev_raw is None:
+            raise VarInputError(
+                f"PROXY_WEIGHT pin for instrument {instrument_id} carries no residual_stdev — "
+                f"refused"
+            )
+        residual_stdev = Decimal(residual_stdev_raw)
+        if residual_stdev < 0 or abs(residual_stdev) >= _MAX_RESIDUAL_STDEV_ABS:
+            raise VarInputError(
+                f"PROXY_WEIGHT pin for instrument {instrument_id} residual_stdev is negative or "
+                f"exceeds its source-column envelope — refused"
+            )
+        series_currency = r["series_currency"]
+        if series_currency != base_currency:
+            raise VarInputError(
+                f"PROXY_WEIGHT pin for instrument {instrument_id} series_currency "
+                f"{series_currency!r} != the book's base_currency {base_currency!r} — refused "
+                f"(no FX conversion, a v1 limitation)"
+            )
+        parsed.append(
+            _ParsedProxyWeight(instrument_id=instrument_id, residual_stdev=residual_stdev)
+        )
+    for instrument_id in mapping_instruments:
+        if instrument_id not in seen_instruments:
+            raise VarInputError(
+                f"PROXY_MAPPING pin for instrument {instrument_id} has no corresponding pinned "
+                f"PROXY_WEIGHT — refused (instrument mismatch)"
+            )
+    return parsed
+
+
 def run_var(
     session: Session,
     *,
@@ -293,11 +420,13 @@ def run_var(
     covariance_run_id: str | None = None,
     snapshot_id: str | None = None,
 ) -> VarRunResult:
-    """Run a governed parametric-VaR calculation. Build-in-request (default —
+    """Run a governed parametric-VaR calculation — plain (``risk.var.parametric``) OR total
+    (``risk.var.parametric_total``, PA-4), dispatched on the BOUND model (the PA-2
+    one-binder-dispatches-on-bound-model precedent). Build-in-request (default —
     ``exposure_run_id`` + ``covariance_run_id``: builds a ``VAR_INPUT`` snapshot pinning both
-    runs' result rows) or consume-existing (``snapshot_id``). BOTH paths adjudicate the pinned
-    content pre-create. See the module docstring for the failure model + the AD-014 / CTRL-003 /
-    OD-P3-5-D invariants."""
+    runs' result rows, PLUS the proxied instruments' idiosyncratic evidence on the total path) or
+    consume-existing (``snapshot_id``). BOTH paths adjudicate the pinned content pre-create. See
+    the module docstring for the failure model + the AD-014 / CTRL-003 / OD-P3-5-D invariants."""
 
     # --- Pre-create prerequisite gate (raise BEFORE create_run ⇒ zero run/result/run-audit) ---
     if not code_version:
@@ -315,16 +444,30 @@ def run_var(
             "ambiguous input — pass either snapshot_id or the build arguments "
             "(exposure_run_id/covariance_run_id), not both"
         )
-    # Inventory-before-use + model identity (CTRL-003 / BR-3) + the DECLARED parameters
-    # (OD-P3-5-D: confidence/horizon/z are version identity, parsed from the registered
-    # assumptions — never free request parameters).
-    version = assert_model_version_of(
-        session,
-        str(model_version_id),
-        tenant_id=acting_tenant,
-        expected_model_code=VAR_MODEL_CODE,
-    )
+    # Inventory-before-use + model identity (CTRL-003 / BR-3): the version must be REGISTERED and
+    # belong to EITHER VaR family — PA-4 (OD-PA-4-B) dispatch on the bound model's code (plain
+    # parametric vs total). An unregistered version raises from the FIRST assert
+    # (UnregisteredModelError); a version of NEITHER family raises WrongModelVersionError from the
+    # second. The DECLARED confidence/horizon/z (OD-P3-5-D) are version identity for BOTH families
+    # (the SAME assumption-prefix machinery); the total family ALSO declares ``appraisal_days``.
+    try:
+        version = assert_model_version_of(
+            session,
+            str(model_version_id),
+            tenant_id=acting_tenant,
+            expected_model_code=VAR_MODEL_CODE,
+        )
+        is_total = False
+    except WrongModelVersionError:
+        version = assert_model_version_of(
+            session,
+            str(model_version_id),
+            tenant_id=acting_tenant,
+            expected_model_code=VAR_TOTAL_MODEL_CODE,
+        )
+        is_total = True
     declared: VarParameters = declared_var_parameters(session, version)
+    appraisal_days = declared_appraisal_days(session, version) if is_total else None
 
     # --- Bind the two-run snapshot (cross-tenant/unknown/ill-formed ⇒ pre-create refusal) ---
     if snapshot_id is not None:
@@ -332,6 +475,24 @@ def run_var(
         if snapshot.purpose != PURPOSE_VAR_INPUT:
             raise VarInputError(
                 f"snapshot {snapshot_id} purpose {snapshot.purpose!r} != {PURPOSE_VAR_INPUT}"
+            )
+        if not is_total and snapshot.binding_predicate_version == VAR_TOTAL_BINDING_PREDICATE:
+            # The MIRROR of the gate below (the OD-PA-2-C symmetric-refusal precedent): the plain
+            # model over a total-predicate snapshot would COMPLETE while silently discarding the
+            # pinned idiosyncratic evidence — two materially different governed numbers from ONE
+            # snapshot; refuse.
+            raise VarInputError(
+                f"snapshot {snapshot_id} pins the idiosyncratic leg "
+                f"({VAR_TOTAL_BINDING_PREDICATE!r}) — bind the total model_version, not the "
+                f"plain parametric one"
+            )
+        if is_total and snapshot.binding_predicate_version != VAR_TOTAL_BINDING_PREDICATE:
+            # A plain VAR_INPUT snapshot pins NO idiosyncratic evidence — running the total model
+            # over it would silently degrade to the plain number; refuse instead (OD-PA-4-C).
+            raise VarInputError(
+                f"snapshot {snapshot_id} predicate {snapshot.binding_predicate_version!r} does "
+                f"not pin the idiosyncratic leg — build the snapshot under the total model "
+                f"({VAR_TOTAL_BINDING_PREDICATE!r})"
             )
     else:
         if not exposure_run_id or not covariance_run_id:
@@ -353,7 +514,8 @@ def run_var(
                 f"covariance run {covariance_run_id} status {covariance_run.status!r} "
                 f"!= COMPLETED"
             )
-        snapshot = build_var_snapshot(
+        build_snapshot_fn = build_var_total_snapshot if is_total else build_var_snapshot
+        snapshot = build_snapshot_fn(
             session,
             acting_tenant=acting_tenant,
             actor=SnapshotActor(actor_id=actor.actor_id, actor_type=actor.actor_type),
@@ -363,12 +525,27 @@ def run_var(
 
     # --- Adjudicate the PINNED content pre-create (uniform for both paths; OD-P3-5-H): empty /
     # mixed-run / mixed-currency / wrong-vocab / uncovered-factor pins all refuse HERE — before
-    # a run (or any run-audit) can exist.
+    # a run (or any run-audit) can exist. The total path ADDITIONALLY adjudicates the pinned
+    # idiosyncratic evidence (OD-PA-4-C).
     try:
-        exposure_raw, covariance_raw = _parse_pins(
-            list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
-        )
+        comps = list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+        exposure_raw, covariance_raw = _parse_pins(comps)
         parsed = _adjudicate_pins(exposure_raw, covariance_raw)
+        proxy_weights: list[_ParsedProxyWeight] = []
+        mv_by_instrument: dict[str, Decimal] = {}
+        if is_total:
+            mapping_raw, weight_raw = _parse_total_pins(comps)
+            for r in exposure_raw:
+                iid = str(r["instrument_id"]).lower()
+                mv_by_instrument[iid] = mv_by_instrument.get(iid, Decimal(0)) + Decimal(
+                    r["exposure_amount"]
+                )
+            proxy_weights = _adjudicate_total_proxies(
+                mapping_raw,
+                weight_raw,
+                base_currency=parsed.base_currency,
+                exposure_instrument_ids=set(mv_by_instrument),
+            )
     except VarInputError:
         raise
     except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
@@ -409,11 +586,77 @@ def run_var(
         if estimate.sigma is None or estimate.var_value is None:
             gaps.append(f"non-psd-radicand:{estimate.radicand:E}<-tol:{estimate.tolerance:E}")
             return [], gaps
-        if abs(estimate.sigma) >= _MAX_RESULT_ABS or abs(estimate.var_value) >= _MAX_RESULT_ABS:
-            # Column-legal-but-extreme inputs can produce sigma beyond Numeric(28,6): a
-            # committed FAILED run with evidence, never a PG overflow 500 (2026-07 review).
-            gaps.append(f"magnitude-out-of-range:sigma:{estimate.sigma:E}")
+
+        if not is_total:
+            if abs(estimate.sigma) >= _MAX_RESULT_ABS or abs(estimate.var_value) >= _MAX_RESULT_ABS:
+                # Column-legal-but-extreme inputs can produce sigma beyond Numeric(28,6): a
+                # committed FAILED run with evidence, never a PG overflow 500 (2026-07 review).
+                gaps.append(f"magnitude-out-of-range:sigma:{estimate.sigma:E}")
+                return [], gaps
+            row = VarResult(
+                tenant_id=str(acting_tenant),
+                calculation_run_id=run.run_id,
+                input_snapshot_id=snapshot.id,
+                model_version_id=str(model_version_id),
+                exposure_run_id=parsed.exposure_run_id,
+                covariance_run_id=parsed.covariance_run_id,
+                metric_type=METRIC_TYPE_VAR_PARAMETRIC,
+                base_currency=parsed.base_currency,
+                confidence_level=declared.confidence_level,
+                horizon_days=declared.horizon_days,
+                z_score=declared.z_score,
+                sigma=estimate.sigma,
+                var_value=estimate.var_value,
+                n_factors=parsed.n_factors,
+                n_observations=parsed.n_observations,
+                window_start=parsed.window_start,
+                window_end=parsed.window_end,
+            )
+            return [row], gaps
+
+        # --- PA-4 total path: factor variance (the SAME clamped radicand the plain family
+        # would sqrt) + the diagonal idiosyncratic residual leg. ---
+        assert appraisal_days is not None  # guaranteed by the is_total branch above
+        factor_var = estimate.radicand if estimate.radicand > 0 else Decimal(0)
+        try:
+            residual = total_var_residual(
+                factor_var,
+                [
+                    ResidualInstrument(
+                        instrument_id=pw.instrument_id,
+                        market_value=mv_by_instrument[pw.instrument_id],
+                        residual_stdev_period=pw.residual_stdev,
+                        mean_period_calendar_days=Decimal(appraisal_days),
+                    )
+                    for pw in proxy_weights
+                ],
+                trading_days_per_year=VAR_TOTAL_TRADING_DAYS_PER_YEAR,
+                calendar_days_per_year=VAR_TOTAL_CALENDAR_DAYS_PER_YEAR,
+            )
+        except VarTotalKernelError as exc:
+            gaps.append(f"total-var-kernel:{exc.reason}:{exc}")
             return [], gaps
+
+        with localcontext() as ctx:
+            ctx.prec = _COMPUTE_PREC
+            raw_var_value = declared.z_score * residual.sigma_total
+        if (
+            abs(residual.sigma_total) >= _MAX_RESULT_ABS
+            or abs(raw_var_value) >= _MAX_RESULT_ABS
+            or abs(residual.residual_variance) >= _MAX_RESIDUAL_VARIANCE_ABS
+        ):
+            # The plain-family magnitude gate, extended to the total σ/VaR/residual_variance —
+            # RAW values gated BEFORE quantize (the envelope-discipline precedent).
+            gaps.append(f"magnitude-out-of-range:sigma-total:{residual.sigma_total:E}")
+            return [], gaps
+
+        with localcontext() as ctx:
+            ctx.prec = _COMPUTE_PREC
+            sigma_q = residual.sigma_total.quantize(_SIGMA_QUANTUM, rounding=ROUND_HALF_UP)
+            var_value_q = raw_var_value.quantize(_SIGMA_QUANTUM, rounding=ROUND_HALF_UP)
+            residual_variance_q = residual.residual_variance.quantize(
+                _RESIDUAL_VARIANCE_QUANTUM, rounding=ROUND_HALF_UP
+            )
         row = VarResult(
             tenant_id=str(acting_tenant),
             calculation_run_id=run.run_id,
@@ -421,17 +664,18 @@ def run_var(
             model_version_id=str(model_version_id),
             exposure_run_id=parsed.exposure_run_id,
             covariance_run_id=parsed.covariance_run_id,
-            metric_type=METRIC_TYPE_VAR_PARAMETRIC,
+            metric_type=METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
             base_currency=parsed.base_currency,
             confidence_level=declared.confidence_level,
             horizon_days=declared.horizon_days,
             z_score=declared.z_score,
-            sigma=estimate.sigma,
-            var_value=estimate.var_value,
+            sigma=sigma_q,
+            var_value=var_value_q,
             n_factors=parsed.n_factors,
             n_observations=parsed.n_observations,
             window_start=parsed.window_start,
             window_end=parsed.window_end,
+            residual_variance=residual_variance_q,
         )
         return [row], gaps
 

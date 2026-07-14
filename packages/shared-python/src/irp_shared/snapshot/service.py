@@ -90,6 +90,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_PORTFOLIO_RETURN,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_PROXY_MAPPING,
+    COMPONENT_KIND_PROXY_WEIGHT,
     COMPONENT_KIND_SCENARIO,
     COMPONENT_KIND_TRANSACTION,
     COMPONENT_KIND_VALUATION,
@@ -127,6 +128,7 @@ from irp_shared.snapshot.serialize import (
     portfolio_return_content,
     position_content,
     proxy_mapping_content,
+    proxy_weight_estimate_content,
     scenario_shock_content,
     serialize_content,
     transaction_content,
@@ -2098,6 +2100,184 @@ def build_proxy_weight_snapshot(
     return header_row
 
 
+class VarTotalSnapshotError(VarSnapshotError):
+    """Raised when a total-parametric-VaR-input snapshot cannot be built (a proxied instrument's
+    OPEN REGRESSION mapping(s) cite a missing/non-COMPLETED/ambiguous/wrong-instrument estimation
+    run) — fail closed, BEFORE any write. Subclasses :class:`VarSnapshotError` (shares the 409 +
+    the row-resolver helpers) but carries a total-VaR diagnostic so the wire detail names the right
+    family (the ``ActiveRiskSnapshotError`` precedent). Maps to 409."""
+
+    def __init__(self, detail: str) -> None:
+        super(VarSnapshotError, self).__init__(f"total-VaR snapshot input failed closed: {detail}")
+        self.detail = detail
+
+
+#: The total-VaR binding/selection rule (PA-4, OD-PA-4-C): everything ``VAR_BINDING_PREDICATE``
+#: pins PLUS the proxied instruments' open REGRESSION mappings + their cited ESTIMATION_SUMMARY —
+#: LOAD-BEARING (the binder gates on it in BOTH directions, the OD-PA-2-C precedent). Length-
+#: guarded (see the ``_BINDING_PREDICATES`` module-end assert) against varchar(50).
+VAR_TOTAL_BINDING_PREDICATE = "v1:exposure-run-rows+covariance-run-rows+proxy-wt"
+
+
+def _resolve_proxy_weight_estimate_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``proxy_weight_estimate_result`` row by id with an EXPLICIT tenant predicate
+    (models-only, function-local import — the ``_resolve_factor_exposure_row`` precedent)."""
+    from irp_shared.risk.models import ProxyWeightEstimateResult  # models-only (no cycle)
+
+    row = session.execute(
+        select(ProxyWeightEstimateResult).where(
+            ProxyWeightEstimateResult.id == str(row_id),
+            ProxyWeightEstimateResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise VarTotalSnapshotError(f"proxy weight estimate {row_id} is not visible")
+    return row
+
+
+def build_var_total_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    exposure_run_id: str,
+    covariance_run_id: str,
+) -> DatasetSnapshot:
+    """Build one immutable ``VAR_INPUT`` snapshot (PA-4, OD-PA-4-C) pinning EVERYTHING
+    ``build_var_snapshot`` pins PLUS, per distinct instrument of the pinned exposure rows carrying
+    an OPEN REGRESSION-method ``proxy_mapping``:
+
+    - one ``COMPONENT_KIND_PROXY_MAPPING`` per open REGRESSION row (REUSED PA-2 content — the
+      per-row FR flavor; a later weight supersede/correction is invisible to the pin, TR-09), and
+    - one ``COMPONENT_KIND_PROXY_WEIGHT`` — the row(s)' cited run's ``ESTIMATION_SUMMARY`` (the
+      residual_stdev + the row's own ``instrument_id``, the ``var_result`` IA-row pin flavor),
+
+    so a total-VaR run is reproducible from the snapshot alone (the compute reads this captured
+    content — never a live proxy/estimate read). Stamps ``VAR_TOTAL_BINDING_PREDICATE`` — the
+    total binder refuses a plain-predicate snapshot AND the plain binder refuses THIS predicate
+    (the OD-PA-2-C symmetric-refusal precedent), so the idiosyncratic leg can never be silently
+    dropped or silently smuggled in.
+
+    Fails closed BEFORE any write when a proxied instrument's open REGRESSION mapping(s) cite
+    MISSING/non-COMPLETED (no visible ``ESTIMATION_SUMMARY``)/AMBIGUOUS (span >1 distinct cited
+    run)/WRONG-INSTRUMENT (the cited run's summary names a different instrument) estimation
+    evidence (:class:`VarTotalSnapshotError`). Non-proxied and MANUAL-method instruments are
+    simply not pinned here (the OD-PA-4 zero-idiosyncratic-risk default; no snapshot-level gap
+    class for them — the P3-3/P3-4 no-gap-class rationale). Models-only, function-local reads;
+    imports NO ``calc``/risk-SERVICE symbol (the P3-3 precedent)."""
+    from irp_shared.marketdata.models import MAPPING_METHOD_REGRESSION, ProxyMapping
+    from irp_shared.risk.models import METRIC_TYPE_ESTIMATION_SUMMARY, ProxyWeightEstimateResult
+
+    now = utcnow()
+
+    exposure_rows = _list_factor_exposure_rows(
+        session, exposure_run_id, acting_tenant=acting_tenant
+    )
+    if not exposure_rows:
+        raise VarSnapshotError(f"exposure run {exposure_run_id} has no visible result rows")
+    covariance_rows = _list_covariance_rows(session, covariance_run_id, acting_tenant=acting_tenant)
+    if not covariance_rows:
+        raise VarSnapshotError(f"covariance run {covariance_run_id} has no visible result rows")
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in exposure_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_FACTOR_EXPOSURE,
+            "factor_exposure_result",
+            row,
+            factor_exposure_content(row),
+        )
+    for row in covariance_rows:
+        _append_spec(
+            specs, COMPONENT_KIND_COVARIANCE, "covariance_result", row, covariance_content(row)
+        )
+
+    # PA-4 (OD-PA-4-C): per distinct pinned-exposure instrument with >=1 OPEN REGRESSION mapping,
+    # cite + pin its ONE estimation run's ESTIMATION_SUMMARY (the PA-2 whole-book proxy-row query
+    # precedent, method-filtered — MANUAL rows carry no estimation evidence and are not pinned).
+    instrument_ids = sorted({str(r.instrument_id) for r in exposure_rows})
+    regression_rows = (
+        session.execute(
+            select(ProxyMapping)
+            .where(
+                ProxyMapping.tenant_id == str(acting_tenant),
+                ProxyMapping.private_instrument_id.in_(instrument_ids),
+                ProxyMapping.mapping_method == MAPPING_METHOD_REGRESSION,
+                ProxyMapping.valid_to.is_(None),
+                ProxyMapping.system_to.is_(None),
+            )
+            .order_by(ProxyMapping.private_instrument_id, ProxyMapping.factor_id)
+        )
+        .scalars()
+        .all()
+    )
+    by_instrument: dict[str, list[Any]] = {}
+    for row in regression_rows:
+        by_instrument.setdefault(str(row.private_instrument_id).lower(), []).append(row)
+
+    for instrument_id, mapping_rows in sorted(by_instrument.items()):
+        cited_run_ids = {
+            str(r.source_calculation_run_id).lower()
+            for r in mapping_rows
+            if r.source_calculation_run_id is not None
+        }
+        if len(cited_run_ids) != 1:
+            raise VarTotalSnapshotError(
+                f"instrument {instrument_id} has {len(cited_run_ids)} distinct/absent cited "
+                f"estimation runs across its open REGRESSION mapping(s) — an ambiguous or "
+                f"missing citation is refused"
+            )
+        run_id = next(iter(cited_run_ids))
+        summary = session.execute(
+            select(ProxyWeightEstimateResult).where(
+                ProxyWeightEstimateResult.tenant_id == str(acting_tenant),
+                ProxyWeightEstimateResult.calculation_run_id == run_id,
+                ProxyWeightEstimateResult.metric_type == METRIC_TYPE_ESTIMATION_SUMMARY,
+            )
+        ).scalar_one_or_none()
+        if summary is None:
+            raise VarTotalSnapshotError(
+                f"instrument {instrument_id}'s cited estimation run {run_id} has no visible "
+                f"ESTIMATION_SUMMARY row (missing/non-COMPLETED cited run) — refused"
+            )
+        if str(summary.instrument_id).lower() != instrument_id:
+            raise VarTotalSnapshotError(
+                f"instrument {instrument_id}'s cited estimation run {run_id} names a DIFFERENT "
+                f"instrument ({summary.instrument_id}) — refused"
+            )
+        for row in mapping_rows:
+            _append_spec(
+                specs,
+                COMPONENT_KIND_PROXY_MAPPING,
+                "proxy_mapping",
+                row,
+                proxy_mapping_content(row),
+            )
+        _append_spec(
+            specs,
+            COMPONENT_KIND_PROXY_WEIGHT,
+            "proxy_weight_estimate_result",
+            summary,
+            proxy_weight_estimate_content(summary),
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_VAR_INPUT,
+        as_of_valid_at=now,
+        as_of_known_at=now,
+        as_of_valuation_date=covariance_rows[0].window_end,
+        binding_predicate_version=VAR_TOTAL_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -2243,6 +2423,15 @@ def _reresolve_content(
         # corrected row is byte-stable (its immutable content is what was pinned — TR-09).
         return proxy_mapping_content(
             _resolve_proxy_mapping_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
+    if comp.component_kind == COMPONENT_KIND_PROXY_WEIGHT:
+        # Re-read the proxy_weight_estimate_result IA row by id (tenant-predicated) — true
+        # append-only, so re-verification is byte-identical unless tampered (the ``var_result``
+        # VAR-component precedent).
+        return proxy_weight_estimate_content(
+            _resolve_proxy_weight_estimate_row(
+                session, comp.target_entity_id, acting_tenant=acting_tenant
+            )
         )
     if comp.component_kind == COMPONENT_KIND_SCENARIO:
         # Re-read the scenario DEFINITION (from the pinned id) + the shock FR row by surrogate id
@@ -2418,6 +2607,7 @@ _BINDING_PREDICATES = (
     VAR_BACKTEST_BINDING_PREDICATE,
     SCENARIO_BINDING_PREDICATE,
     DESMOOTHING_BINDING_PREDICATE,
+    VAR_TOTAL_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "
