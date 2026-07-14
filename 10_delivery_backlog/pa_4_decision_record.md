@@ -1,14 +1,16 @@
 # PA-4 Decision Record — residual/idiosyncratic variance (Wave-4 slice 3, the v2 companion)
 
-> **Status: RATIFIED 2026-07-14** (OQ-PA-4-1…6 all approved — incl. the amended OQ-4, the
+> **Status: CLOSED 2026-07-14** (RATIFIED 2026-07-14; OQ-PA-4-1…6 all approved — incl. the amended OQ-4, the
 > trading-day-adjusted frequency conversion from the vendor-practice benchmark). The Wave-4 companion slice, chosen at
 > planning per the ratified roadmap's own criterion ("whichever the PA-3 record judges the tighter
 > dependency"): **residual/idiosyncratic variance** — carry the part of a proxied private
 > instrument's risk that the factor regression does NOT explain into VaR, instead of silently
 > dropping it. The SECOND direct consumer of PA-3's output (its `residual_stdev`), and the first
 > honest leg against the platform-wide "specific/idiosyncratic risk = 0" limitation carried
-> first-class since P3-3/P3-5. Delivered under the delivery-autonomy grant (Claude self-drives; the
-> USER merges the PR).
+> first-class since P3-3/P3-5. Delivered under the delivery-autonomy grant as EXTENDED
+> 2026-07-14 mid-slice: Claude self-drove plan→implement→review→commit→push AND opened + merged
+> the PRs (the original "USER merges the PR" sentence here predated the extension — amended at
+> the Wave-4 close).
 
 ## Part 1 — Problem
 
@@ -259,3 +261,15 @@ green incl. the local-PG leg (schema-reset `irp_pg_local`, head `0038_var_residu
 CI-watch-to-green on the fold commit. (Known pre-existing, PA-4-unrelated: the
 data_quality/lineage/synthetic PG cross-module seed collision under a single unreset full-suite
 session — isolated runs green; a test-infra item, not a product defect.)
+
+### Part 6.5 — CLOSED (2026-07-14)
+
+Impl + review folds merged via **PR #30** = `8ef70db` (commits `d3a6eae` → `f7d1b7f` → `232c3ea`
+→ `c04768e`; branch CI green runs 29351248611 + 29355954232; merged-main CI run 29357190562
+green). Closeout (roadmap DONE row + log entry + `current_state` pointer + the autonomy-extension
+doc amendment) via **PR #31** = `2354a3f` (CI run 29358298194 green). Migration head
+`0038_var_residual_variance`. **The FIRST slice opened AND merged by Claude under the 2026-07-14
+extended autonomy grant.** Meaning: the first honest idiosyncratic leg — the P3-3/P3-5
+specific-risk=0 limitation partially discharged for REGRESSION-cited instruments. Next: the
+Wave-4 close review. (This closure block was stamped AT the Wave-4 close — the closeout PR #31
+omitted it, caught by the close audit.)
