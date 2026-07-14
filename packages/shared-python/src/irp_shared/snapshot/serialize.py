@@ -468,10 +468,15 @@ def desmoothed_return_content(row: Any) -> dict[str, Any]:
 def var_result_content(row: Any) -> dict[str, Any]:
     """The immutable captured content of a ``var_result`` (ENT-027, IA) row (BT-1 VAR component —
     the P3-3 EXPOSURE true-append-only pin flavor: no valid axis, no ``record_version``;
-    ``system_from`` the append time; byte-identical on re-verify). The FULL immutable column set is
-    pinned so the backtest binder reconstructs each forecast (``metric_type``/``confidence_level``/
-    ``horizon_days``/``window_end``/``var_value``) exactly. Scales: ``var_value``/``sigma`` 6 (the
-    base-currency money scale); ``confidence_level`` 4; ``z_score`` 12."""
+    ``system_from`` the append time; byte-identical on re-verify). The BT-1-era immutable column
+    set is pinned so the backtest binder reconstructs each forecast (``metric_type``/
+    ``confidence_level``/``horizon_days``/``window_end``/``var_value``) exactly. The PA-4
+    ``residual_variance`` column is DELIBERATELY excluded: adding a key would change the
+    recomputed bytes of every ALREADY-PINNED var_result component and make ``verify_snapshot``
+    report false drift on historical BT-1 snapshots (and the backtest binder refuses
+    ``VAR_PARAMETRIC_TOTAL`` rows in v1 anyway — no consumer reads it from a pin). Scales:
+    ``var_value``/``sigma`` 6 (the base-currency money scale); ``confidence_level`` 4;
+    ``z_score`` 12."""
     return {
         "id": _norm_guid(row.id),
         "tenant_id": _norm_guid(row.tenant_id),

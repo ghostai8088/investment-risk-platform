@@ -171,9 +171,10 @@ COMPONENT_KIND_PROXY_MAPPING = "PROXY_MAPPING"
 #: the proxy-weight model; the source run's immutable output — a re-run cannot move it, TR-09).
 #: ``target_entity_type='desmoothed_return_result'``.
 COMPONENT_KIND_DESMOOTHED_RETURN = "DESMOOTHED_RETURN"
-#: PA-4: a pinned ``proxy_weight_estimate_result`` ESTIMATION_SUMMARY row (the residual_stdev + the
-#: appraisal-period span consumed by total-parametric VaR; the cited estimate run's immutable
-#: output — TR-09). ``target_entity_type='proxy_weight_estimate_result'``.
+#: PA-4: a pinned ``proxy_weight_estimate_result`` ESTIMATION_SUMMARY row (the ``residual_stdev``
+#: consumed by total-parametric VaR; the row carries NO period-span dates — the appraisal cadence
+#: is the DECLARED ``appraisal_days`` model parameter, OD-PA-4-D as refined. The cited estimate
+#: run's immutable output — TR-09). ``target_entity_type='proxy_weight_estimate_result'``.
 COMPONENT_KIND_PROXY_WEIGHT = "PROXY_WEIGHT"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,

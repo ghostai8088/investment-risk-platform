@@ -37,12 +37,15 @@ simulation/ES total analogues; backtesting.
   run whose `ESTIMATION_SUMMARY` names the SAME instrument — missing, ambiguous (>1 distinct
   cited run), or wrong-instrument citations refuse the snapshot build (409).
 - **Service-side adjudication (pre-create, both entry paths):** every `PROXY_WEIGHT` pin must be
-  an `ESTIMATION_SUMMARY` row (a wrong-type pin refuses); every `PROXY_WEIGHT` pin must have a
-  corresponding `PROXY_MAPPING` pin for the SAME instrument AND a corresponding pinned
-  `FACTOR_EXPOSURE` row (instrument-mismatch, either direction, refuses); NO duplicate
-  `PROXY_WEIGHT` pin per instrument; the pinned `series_currency` MUST equal the run-uniform
-  `base_currency` (the currency-match gate — **no FX conversion**, a v1 limitation); a missing,
-  negative, or source-column-envelope-exceeding `residual_stdev` refuses.
+  an `ESTIMATION_SUMMARY` row (a wrong-type pin refuses); every pinned `PROXY_MAPPING` must
+  carry `mapping_method = REGRESSION` (the predicate's contract — a MANUAL-method pin carries no
+  estimation evidence and must not smuggle a residual in; 2026-07 review fold); every
+  `PROXY_WEIGHT` pin must have a corresponding `PROXY_MAPPING` pin for the SAME instrument AND a
+  corresponding pinned `FACTOR_EXPOSURE` row (instrument-mismatch, either direction, refuses);
+  NO duplicate `PROXY_WEIGHT` pin per instrument; the pinned `series_currency` MUST equal the
+  run-uniform `base_currency` (the currency-match gate — **no FX conversion**, a v1 limitation);
+  a missing, negative, or source-column-envelope-exceeding `residual_stdev` refuses (a pinned
+  residual of exactly ZERO is a legitimate accepted input contributing zero variance).
 - **Data policy:** confidence, horizon, and z are declared exactly as the plain family (SAME
   assumption-prefix machinery); the total family ADDITIONALLY declares `appraisal_days` (the
   residual's calendar-day appraisal cadence, e.g. 91 for quarterly, ≥ 1) — the pinned
@@ -65,15 +68,22 @@ residual_variance  = Σᵢ (MVᵢ · σ_e,i,daily)²                            
   `residual_variance` `Numeric(38,20)` column; NO new table/RLS — `var_result` is already IA +
   symmetric RLS from `0026_var`).
 - **Decomposition evidence:** `residual_variance` is persisted so a reader can decompose total vs
-  factor risk WITHOUT recomputing: `σ_factor² ≈ σ_total² − residual_variance`. This holds EXACTLY
-  in the raw (unquantized) domain; the PERSISTED columns are each independently
-  `quantize_HALF_UP`'d to their own scale (`sigma` 6dp, `residual_variance` 20dp), so the
-  column-level identity is approximate evidence bounded by the 6dp sigma quantum, not bit-exact.
+  factor risk WITHOUT recomputing: `σ_factor² ≈ σ_total² − residual_variance`. The identity is
+  exact in unrounded arithmetic (at the prec-50 compute context it holds to within the context
+  rounding, ≈ σ²·1E-49); the PERSISTED columns are each independently `quantize_HALF_UP`'d to
+  their own scale (`sigma` 6dp, `residual_variance` 20dp), so the column-level identity is
+  approximate evidence with a SCALE-DEPENDENT bound — each quantize moves a σ by ≤ half a 6dp
+  quantum, so each σ² moves by ≤ σ·1E-6; worst case ≈ `(σ_total + σ_plain)·1E-6` (+ the 20dp
+  residual quantum), NOT a flat quantum (2026-07 numeric-finder correction).
 - **Rounding / precision:** computed in `Decimal` at 50-digit context precision (matching the
   plain family and the PA-3 estimate); `σ_total`/`VaR` `quantize_HALF_UP` to 6dp
   (`Numeric(28,6)`); `residual_variance` to 20dp (`Numeric(38,20)`, the covariance-scale
-  precedent). RAW `σ_total`/`VaR`/`residual_variance` are magnitude-gated against their source-
-  column envelopes BEFORE quantize (the P3-5 `_MAX_RESULT_ABS` precedent, extended).
+  precedent). `σ_total`/`VaR`/`residual_variance` are magnitude-gated against their result-column
+  envelopes before persistence (the P3-5 `_MAX_RESULT_ABS` precedent, extended); the gate
+  compares under the DEFAULT Decimal context deliberately — the prec-28 rounding of a prec-50
+  value closes the boundary windows just under each bound, so nothing that passes the gate can
+  overflow a result column at INSERT (probe-verified at all three boundaries, 2026-07 review; a
+  genuinely out-of-range input becomes a committed FAILED run with evidence, never a PG 500).
 - **Zero-proxied-instrument invariance:** with no proxied instrument, `residual_variance = 0` and
   `σ_total = √factor_var` — BYTE-IDENTICAL to the plain family on the same factor pins (the
   binder reuses the SAME clamped radicand the plain kernel would sqrt).
@@ -88,32 +98,35 @@ Mirrored content-identically into `model_assumption` rows (plus the registration
 - Idiosyncratic inputs: per proxied instrument, the pinned open REGRESSION `proxy_mapping` (which
   instruments are proxied + the citation) × the cited `PROXY_WEIGHT_ESTIMATE` run's
   `ESTIMATION_SUMMARY` row (`residual_stdev`). MV<sub>i</sub> = the instrument's total pinned
-  factor exposure. Indicator (non-proxied) and MANUAL-method instruments carry ZERO
-  idiosyncratic variance (no estimation evidence — the P3-3 limitation stands for them,
-  restated).
+  factor exposure (the projected market exposure the factor model sees — consistent with the
+  factor leg). Indicator (non-proxied) and MANUAL-method instruments carry ZERO idiosyncratic
+  variance (no estimation evidence — the P3-3 limitation stands for them, restated).
 - Frequency conversion (DECLARED): `σ_e,daily = σ_e,period / √d_t`,
-  `d_t = appraisal_days·(252/365)`; `appraisal_days` is a DECLARED model-identity parameter — the
-  `ESTIMATION_SUMMARY` carries no span, so the cadence is declared like confidence/horizon, not
-  derived. Calendar-aware per-period trading-day counts are a recorded v2.
+  `d_t = appraisal_days·(252/365)`; `appraisal_days` is a DECLARED model-identity parameter (the
+  appraisal cadence, e.g. 91 for quarterly) — the `ESTIMATION_SUMMARY` carries no span, so the
+  cadence is declared like confidence/horizon, not derived. Calendar-aware per-period
+  trading-day counts are a recorded v2.
 - `z_α` is a REGISTERED constant from the enumerated confidence vocabulary — no runtime
   inverse-normal-CDF. Computed in Decimal at 50-digit context; σ/VaR `quantize_HALF_UP` to 6dp
-  (`Numeric(28,6)`); `residual_variance` echoed at 20dp.
+  (`Numeric(28,6)`); `residual_variance` echoed at 20dp (`Numeric(38,20)`).
 
 ## Limitations
 Mirrored content-identically into `model_limitation` rows:
-- **DIAGONAL residuals only** (Sharpe 1963; Barra/Axioma vendor-standard) — NO residual
-  cross-correlation; residual shrinkage (Barra Bayesian) and EWMA weighting (Axioma) are v2s.
-- **Hostage to the PA-3 estimate quality** — a short appraisal series yields a noisy `σ_e`; the
-  estimate's per-coefficient standard errors stay visible on the pinned estimate for the reader
-  to judge.
-- **Non-proxied and MANUAL-method instruments carry ZERO idiosyncratic risk** — the allocation-v1
-  specific-risk-= 0 limitation (P3-3) PARTIALLY discharges for REGRESSION-cited instruments only;
-  it still propagates for everyone else.
-- **Flat 252/365 trading-day ratio over the MEAN period** (calendar-aware per-period counts a
-  v2); **1-day horizon only**; historical-simulation + ES total analogues are recorded v2s.
-- **No FX conversion** — a proxied instrument's `series_currency` must equal the book's
+- DIAGONAL residuals only (Sharpe 1963; Barra/Axioma vendor-standard) — no residual
+  cross-correlation; residual shrinkage (Barra Bayesian) + EWMA weighting (Axioma) are v2s.
+- The residual is hostage to the PA-3 estimate quality (short appraisal series ⇒ noisy `σ_e`;
+  the estimate's per-coefficient std errors stay visible on the pinned estimate).
+- Non-proxied and MANUAL-method instruments carry ZERO idiosyncratic risk (the allocation-v1
+  specific-risk=0 limitation propagates for them).
+- Flat 252/365 trading-day ratio over the MEAN period (calendar-aware per-period counts a v2);
+  1-day horizon only; historical-simulation + ES total analogues are recorded v2s.
+- No FX conversion — a proxied instrument's estimate `series_currency` must equal the book's
   `base_currency`; a mismatch refuses rather than converting.
 - `validation_status = UNVALIDATED` — recorded, non-enforcing until the P7 validation workflow.
+
+(The specific-risk=0 limitation of the PLAIN family is thereby PARTIALLY discharged — for
+REGRESSION-cited instruments only; it still propagates for everyone else. Recorded here outside
+the mirrored list: the registered rows are the byte-transliterated bullets above.)
 
 ## Validation / reproduction tests
 1. **Hand-computed exact references (kernel):** `test_var_total_kernel.py` — MV=1000,
@@ -126,20 +139,30 @@ Mirrored content-identically into `model_limitation` rows:
    250000`) plus ONE proxied instrument (MV=30000, `σ_e,period`=4%, `appraisal_days`=91) ⇒
    `residual_variance = 22919.93720565149136577708`, `σ_total = 522.417397`,
    `VaR₉₅ = 859.300151` — byte-matched.
-3. **Decomposition + independent cross-check (governed build path, real computed covariance):**
-   `σ_total² − residual_variance ≈` the plain family's `σ²` on the SAME upstream runs (bounded by
-   the 6dp quantum); an independent FRESH kernel recomputation from the pinned content matches
-   the persisted row.
-4. **Zero-proxied-instrument invariance:** total ≡ plain, byte-exact (both `sigma`/`var_value`).
+3. **Decomposition + independent cross-check (governed build path, real computed covariance,
+   TWO proxied instruments):** `σ_total² − residual_variance ≈` the plain family's `σ²` on the
+   SAME upstream runs, asserted against the DERIVED bound `(σ_total + σ_plain)·1E-6` (not a flat
+   tolerance); an independent FRESH kernel recomputation from the pinned content byte-matches
+   the persisted row — the multi-instrument diagonal summation exercised end-to-end.
+4. **Zero-proxied-instrument invariance:** total ≡ plain, byte-exact (both `sigma`/`var_value`);
+   **consume-existing ≡ build-in-request + exact re-run reproducibility** (a second run consuming
+   the first's governed-built snapshot is byte-identical under a new run id).
 5. **Refusal battery:** the symmetric binding-predicate refusal (both directions); missing/
-   ambiguous/wrong-instrument cited-run citation (build-time); wrong-type/instrument-mismatch/
-   duplicate/currency-mismatch/negative-`residual_stdev` pins (service-time, hand-minted
-   snapshots); a MANUAL-only mapping carries zero idiosyncratic risk; TR-09 (a later
-   re-promotion does not move an already-pinned estimate).
-6. **PG proofs:** `test_var_total_pg.py` — the `residual_variance` column round-trips its FULL
+   ambiguous/wrong-instrument cited-run citation (build-time, nothing persisted); wrong-type/
+   MANUAL-method-mapping/instrument-mismatch/duplicate/currency-mismatch/negative-or-NULL-or-
+   envelope-`residual_stdev` pins (service-time, hand-minted snapshots); a MANUAL-only mapping
+   carries zero idiosyncratic risk; a generically-minted `appraisal_days=0` version refuses at
+   BIND time (the declared-identity floor); TR-09 BOTH SIDES (a later re-promotion does not move
+   an already-pinned estimate AND a fresh run picks up the new estimate).
+6. **Post-create FAILED (reachable):** a column-legal-but-extreme pinned `residual_stdev`
+   (< 1E8) driving `residual_variance` past `Numeric(38,20)` produces a committed FAILED run
+   with a magnitude-naming reason — never a PG overflow 500 (the plain-family
+   `column_legal_extreme_magnitude` twin).
+7. **PG proofs:** `test_var_total_pg.py` — the `residual_variance` column round-trips its FULL
    20dp precision under a native PG `NUMERIC` (vs SQLite's fixed-scale TEXT emulation, the P3-4
    covariance-precision lesson); tenant isolation of a total-family row; the P0001 append-only
-   trigger still blocks UPDATE/DELETE on a row carrying a non-NULL `residual_variance`.
+   trigger still blocks UPDATE and DELETE on a row carrying a non-NULL `residual_variance`;
+   wired into CI as an explicit migration-job step (the per-slice PG-step pattern).
 
 ## Known limitations
 This is the FIRST total-risk (factor + idiosyncratic) VaR number and remains a diagonal,

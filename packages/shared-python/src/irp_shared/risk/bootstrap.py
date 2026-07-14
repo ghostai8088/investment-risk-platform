@@ -1414,6 +1414,8 @@ VAR_TOTAL_LIMITATIONS: tuple[str, ...] = (
     "specific-risk=0 limitation propagates for them).",
     "Flat 252/365 trading-day ratio over the MEAN period (calendar-aware per-period counts a v2); "
     "1-day horizon only; historical-simulation + ES total analogues are recorded v2s.",
+    "No FX conversion - a proxied instrument's estimate series_currency must equal the book's "
+    "base_currency; a mismatch refuses rather than converting.",
     "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
 )
 
@@ -1421,13 +1423,20 @@ VAR_TOTAL_LIMITATIONS: tuple[str, ...] = (
 def declared_appraisal_days(session: Session, version: ModelVersion) -> int:
     """Parse the total-VaR version's declared appraisal-period length (calendar days) from its
     ``model_assumption`` rows (the OD-PA-4-D identity: exactly ONE ``appraisal_days=N``, N >= 1).
-    Malformed/absent/ambiguous -> the fail-closed :class:`WrongModelVersionError`."""
+    Malformed/absent/ambiguous/sub-floor -> the fail-closed :class:`WrongModelVersionError`.
+    The floor is IDENTITY, not registrar courtesy (the ``_hs_window_floor`` precedent): a
+    generically-minted version (POST /models can stamp any assumptions) declaring
+    ``appraisal_days=0`` must refuse at BIND time, not surface later as a committed FAILED run
+    from the kernel's non-positive-period gate (2026-07 review, numeric + adversarial finders
+    independently)."""
     declared = require_declared(
         load_assumption_texts(session, version),
         APPRAISAL_DAYS_ASSUMPTION_PREFIX,
         pattern=_DIGITS_PATTERN,
         on_invalid=lambda: WrongModelVersionError(str(version.id), VAR_TOTAL_MODEL_CODE),
     )
+    if int(declared) < 1:
+        raise WrongModelVersionError(str(version.id), VAR_TOTAL_MODEL_CODE)
     return int(declared)
 
 

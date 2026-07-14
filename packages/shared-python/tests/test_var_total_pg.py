@@ -402,7 +402,7 @@ def test_tenant_isolation_total_family(app_url: str) -> None:
         engine.dispose()
 
 
-def test_append_only_trigger_blocks_update_on_total_row(app_url: str) -> None:
+def test_append_only_trigger_blocks_update_and_delete_on_total_row(app_url: str) -> None:
     engine = make_engine(app_url, poolclass=NullPool)
     factory = make_session_factory(engine)
     tenant = str(uuid.uuid4())
@@ -421,6 +421,13 @@ def test_append_only_trigger_blocks_update_on_total_row(app_url: str) -> None:
                 )
             )
         assert _is_append_only_violation(upd.value)
+        session.rollback()
+        set_tenant_context(session, tenant)
+        with pytest.raises(ProgrammingError) as dele:  # the plain-twin's DELETE leg (review fold)
+            session.execute(
+                text("DELETE FROM var_result WHERE metric_type = 'VAR_PARAMETRIC_TOTAL'")
+            )
+        assert _is_append_only_violation(dele.value)
         session.rollback()
     finally:
         session.close()

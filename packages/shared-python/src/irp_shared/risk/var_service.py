@@ -50,6 +50,7 @@ from sqlalchemy.orm import Session
 from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
+from irp_shared.marketdata.models import MAPPING_METHOD_REGRESSION
 from irp_shared.risk.bootstrap import (
     VAR_MODEL_CODE,
     VAR_TOTAL_CALENDAR_DAYS_PER_YEAR,
@@ -349,9 +350,20 @@ def _adjudicate_total_proxies(
     the SAME instrument (the instrument-mismatch refusal, all three directions); the pinned
     ``series_currency`` MUST equal the run-uniform ``base_currency`` (the currency-match gate — no
     FX conversion, a v1 limitation); a missing/negative/envelope-exceeding ``residual_stdev``
-    refuses. Returns the adjudicated per-instrument residual inputs (empty ⇒ the book has no
+    refuses; every pinned ``PROXY_MAPPING`` MUST carry ``mapping_method='REGRESSION'`` (the
+    predicate's open-REGRESSION contract — a MANUAL-method pin carries no estimation evidence and
+    must not smuggle a residual in; the 2026-07 review fold, the ``metric_type`` vocabulary-gate
+    twin). Returns the adjudicated per-instrument residual inputs (empty ⇒ the book has no
     proxied instrument, the total ≡ plain-parametric invariance case). Raises
     :class:`VarInputError`."""
+    for r in mapping_raw:
+        if r["mapping_method"] != MAPPING_METHOD_REGRESSION:
+            raise VarInputError(
+                f"a pinned PROXY_MAPPING for instrument "
+                f"{str(r['private_instrument_id']).lower()} carries mapping_method "
+                f"{r['mapping_method']!r} — the total-VaR predicate pins REGRESSION rows only; "
+                f"refused"
+            )
     mapping_instruments = {str(r["private_instrument_id"]).lower() for r in mapping_raw}
     seen_instruments: set[str] = set()
     parsed: list[_ParsedProxyWeight] = []
@@ -535,11 +547,16 @@ def run_var(
         mv_by_instrument: dict[str, Decimal] = {}
         if is_total:
             mapping_raw, weight_raw = _parse_total_pins(comps)
-            for r in exposure_raw:
-                iid = str(r["instrument_id"]).lower()
-                mv_by_instrument[iid] = mv_by_instrument.get(iid, Decimal(0)) + Decimal(
-                    r["exposure_amount"]
-                )
+            with localcontext() as ctx:
+                # prec-50 like every other total-path arithmetic step: a default-context (prec-28)
+                # sum of >= 2 near-envelope exposure rows silently rounds the MV — a breach of the
+                # registered "Decimal at 50-digit context" assumption (2026-07 review).
+                ctx.prec = _COMPUTE_PREC
+                for r in exposure_raw:
+                    iid = str(r["instrument_id"]).lower()
+                    mv_by_instrument[iid] = mv_by_instrument.get(iid, Decimal(0)) + Decimal(
+                        r["exposure_amount"]
+                    )
             proxy_weights = _adjudicate_total_proxies(
                 mapping_raw,
                 weight_raw,
@@ -645,8 +662,14 @@ def run_var(
             or abs(raw_var_value) >= _MAX_RESULT_ABS
             or abs(residual.residual_variance) >= _MAX_RESIDUAL_VARIANCE_ABS
         ):
-            # The plain-family magnitude gate, extended to the total σ/VaR/residual_variance —
-            # RAW values gated BEFORE quantize (the envelope-discipline precedent).
+            # The plain-family magnitude gate, extended to the total σ/VaR/residual_variance.
+            # DELIBERATELY under the DEFAULT context (prec 28): abs() ROUNDS the prec-50 value
+            # before comparing, which CLOSES the column-overflow windows — every raw value in
+            # [1E22−5E-7, 1E22) / [1E18−5E-21, 1E18) rounds UP to the bound and trips the gate,
+            # so nothing that passes can overflow Numeric(28,6)/(38,20) at INSERT (probe-verified
+            # at all three boundaries, 2026-07 review). Do NOT move this inside the prec-50
+            # localcontext: a prec-50 abs() reopens the window (quantize then mints exactly the
+            # bound → a PG NumericValueOutOfRange 500 instead of this governed FAILED run).
             gaps.append(f"magnitude-out-of-range:sigma-total:{residual.sigma_total:E}")
             return [], gaps
 

@@ -96,6 +96,11 @@ METRIC_TYPE_ES_PARAMETRIC_RESERVED = "ES_PARAMETRIC"
 #: PA-4 (OD-PA-4-B): total parametric VaR = factor + idiosyncratic residual variance, on the SAME
 #: var_result grain (a NEW registered model dispatched through the parametric binder).
 METRIC_TYPE_VAR_PARAMETRIC_TOTAL = "VAR_PARAMETRIC_TOTAL"
+#: The BACKTESTABLE subset of the var_result vocabulary — NOT the full vocabulary (PA-4 review):
+#: ``VAR_PARAMETRIC_TOTAL`` is DELIBERATELY excluded — backtesting the total series is a recorded
+#: v1 scope-out (the RTM + methodology deferral), so ``var_backtest_service`` refusing it is the
+#: designed behavior, not a missing entry. Do NOT "complete the vocabulary" here without ratifying
+#: a total-VaR backtest slice.
 METRIC_TYPES = (METRIC_TYPE_VAR_PARAMETRIC, METRIC_TYPE_VAR_HISTORICAL)
 
 #: Controlled-vocab ``active_risk_result.metric_type`` (P3-7; further active metrics reserved by

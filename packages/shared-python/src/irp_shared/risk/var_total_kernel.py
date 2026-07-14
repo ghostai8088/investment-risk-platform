@@ -12,8 +12,12 @@ The per-instrument daily residual stdev de-scales the appraisal-period residual 
 TRADING-day grid (OD-PA-4-D): ``σ_e,daily = σ_e,period / √(d̄_cal · trading/calendar)``, ``d̄_cal``
 the mean calendar-day period length. Computed in ``Decimal`` at 50-digit context; the binder gates
 magnitudes and quantizes (``σ`` → 6dp ``Numeric(28,6)``; ``residual_var`` → 20dp).
-Fail-closed (a :class:`VarTotalKernelError`, mapped by the binder to a pre-create refusal) on a
-non-positive mean period or a negative factor variance beyond the caller's PSD tolerance.
+Fail-closed (a :class:`VarTotalKernelError`, mapped by the binder to a **post-create committed
+FAILED run** — the DQ-gap mechanism, the OD-P3-5-G lifecycle) on a non-positive mean period or a
+negative total variance. Both raises are DEFENSE-IN-DEPTH, binder-unreachable through the
+governed path: the declared ``appraisal_days`` identity floors the period at 1 pre-create, and
+the binder passes a clamped ``factor_var ≥ 0`` plus a sum-of-squares residual (the P3-4
+defensive-gate precedent; kernel-unit-tested standalone).
 """
 
 from __future__ import annotations
@@ -27,7 +31,9 @@ _CTX_PRECISION = 50
 
 class VarTotalKernelError(ValueError):
     """A structural residual-leg failure (a non-positive mean period, a negative total variance).
-    The binder maps it to a pre-create refusal; ``reason`` is a stable short slug."""
+    The binder maps it to a post-create committed FAILED run (the DQ-gap mechanism);
+    binder-unreachable through the governed path — see the module docstring. ``reason`` is a
+    stable short slug."""
 
     def __init__(self, reason: str, message: str) -> None:
         super().__init__(message)
