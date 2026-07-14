@@ -1,5 +1,14 @@
 # Next Actions
 
+> **STALE-BELOW BANNER (Wave-4 close, 2026-07-14):** this ledger was last deep-refreshed at the
+> PA-0 era and everything below UNDERSTATES the current state (it stops before PA-1/PA-2/PA-3/PA-4;
+> migration head is now `0038_var_residual_variance`, thirteen governed numbers; delivery runs under
+> the 2026-07-14 EXTENDED autonomy grant — Claude opens + merges PRs). The OPERATIVE executed ledger
+> is `10_delivery_backlog/delivery_roadmap.md` (wave rows + dated log table); the session-start
+> anchor is `current_state.md`'s 2026-07-14 pointer. Retained below as history — where it disagrees
+> with the roadmap, the roadmap wins.
+
+
 > **As of HEAD `ad3d3fe` (merge of PR #8 = `c9d41a7`, PA-0 private-asset foundations, ENT-019 + migration 0034;
 > CI green; refreshed 2026-07-11).** What to do
 > next, the exact prompts, and the gates. **Nothing proceeds without explicit user approval.** Re-verify `git status` /

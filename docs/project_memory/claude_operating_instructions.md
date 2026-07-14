@@ -142,7 +142,7 @@ the model's self-assessed confidence ("zero areas of concern" is not a criterion
 
 ## Scope-control rules
 - **Planning-first, thin slices.** No domain functionality during foundation/skeleton/planning phases.
-- **The next slice starts autonomously (delivery autonomy, 2026-07-12); WHAT comes next defaults to `10_delivery_backlog/delivery_roadmap.md`** (no per-slice option menus). Claude self-drives plan → implement → review → commit → push and leaves the PR for the user to merge. A genuine re-sequencing (deviating from the roadmap order) or scope/design ambiguity still surfaces to the user WITH a recommendation before acting; re-sequencing follows the roadmap's Part 4 rules.
+- **The next slice starts autonomously (delivery autonomy, 2026-07-12); WHAT comes next defaults to `10_delivery_backlog/delivery_roadmap.md`** (no per-slice option menus). Claude self-drives plan → implement → review → commit → push → PR → merge (the 2026-07-14 extension — see the Tier-2 gate above; this line previously said "leaves the PR for the user to merge", corrected at the Wave-4 close). A genuine re-sequencing (deviating from the roadmap order) or scope/design ambiguity still surfaces to the user WITH a recommendation before acting; re-sequencing follows the roadmap's Part 4 rules.
 - **Genericity:** type/scheme/status columns are controlled-vocab **strings** (no enum/CHECK); polymorphic
   `(entity_type, entity_id)`, no domain FK — new families extend by value, never a migration.
 - **No new audit code, permission, or role** without the governed update (R-07 owns the taxonomy/catalog).
