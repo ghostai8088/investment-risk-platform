@@ -726,7 +726,7 @@ def test_migration_head_after_curves() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0037_proxy_weight_estimate"
+    assert script.get_current_head() == "0038_var_residual_variance"
     assert script.get_revision("0020_curves").down_revision == "0019_price_point"
     assert "0018_exposure_aggregate" in {r.revision for r in script.walk_revisions()}
 

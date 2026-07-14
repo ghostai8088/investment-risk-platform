@@ -468,10 +468,15 @@ def desmoothed_return_content(row: Any) -> dict[str, Any]:
 def var_result_content(row: Any) -> dict[str, Any]:
     """The immutable captured content of a ``var_result`` (ENT-027, IA) row (BT-1 VAR component —
     the P3-3 EXPOSURE true-append-only pin flavor: no valid axis, no ``record_version``;
-    ``system_from`` the append time; byte-identical on re-verify). The FULL immutable column set is
-    pinned so the backtest binder reconstructs each forecast (``metric_type``/``confidence_level``/
-    ``horizon_days``/``window_end``/``var_value``) exactly. Scales: ``var_value``/``sigma`` 6 (the
-    base-currency money scale); ``confidence_level`` 4; ``z_score`` 12."""
+    ``system_from`` the append time; byte-identical on re-verify). The BT-1-era immutable column
+    set is pinned so the backtest binder reconstructs each forecast (``metric_type``/
+    ``confidence_level``/``horizon_days``/``window_end``/``var_value``) exactly. The PA-4
+    ``residual_variance`` column is DELIBERATELY excluded: adding a key would change the
+    recomputed bytes of every ALREADY-PINNED var_result component and make ``verify_snapshot``
+    report false drift on historical BT-1 snapshots (and the backtest binder refuses
+    ``VAR_PARAMETRIC_TOTAL`` rows in v1 anyway — no consumer reads it from a pin). Scales:
+    ``var_value``/``sigma`` 6 (the base-currency money scale); ``confidence_level`` 4;
+    ``z_score`` 12."""
     return {
         "id": _norm_guid(row.id),
         "tenant_id": _norm_guid(row.tenant_id),
@@ -493,6 +498,39 @@ def var_result_content(row: Any) -> dict[str, Any]:
         "n_observations": row.n_observations,
         "window_start": row.window_start.isoformat(),
         "window_end": row.window_end.isoformat(),
+        "system_from": _norm_datetime(row.system_from),
+    }
+
+
+def proxy_weight_estimate_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of one ``proxy_weight_estimate_result`` (ENT-057, IA) row
+    (PA-4 PROXY_WEIGHT component — the ``var_result`` true-append-only pin flavor: no valid axis,
+    no ``record_version``; ``system_from`` the append time; byte-identical on re-verify). Pins the
+    cited ``ESTIMATION_SUMMARY`` singleton so the total-VaR binder reads its ``residual_stdev`` +
+    the row's own ``instrument_id`` (the correlation key back to the proxied instrument) WITHOUT a
+    live read. ``metric_value``/``std_error``/``residual_stdev`` at the 12dp regression scale."""
+
+    def _opt_dec(value: Any, scale: int) -> str | None:
+        return _norm_decimal(value, scale) if value is not None else None
+
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "calculation_run_id": _norm_guid(row.calculation_run_id),
+        "input_snapshot_id": _norm_guid(row.input_snapshot_id),
+        "model_version_id": _norm_guid(row.model_version_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "source_desmoothed_run_id": _norm_guid(row.source_desmoothed_run_id),
+        "metric_type": row.metric_type,
+        "factor_id": None if row.factor_id is None else _norm_guid(row.factor_id),
+        "metric_value": _norm_decimal(row.metric_value, _SCALE_CURVE_POINT),
+        "std_error": _opt_dec(row.std_error, _SCALE_CURVE_POINT),
+        "n_observations": row.n_observations,
+        "n_regressors": row.n_regressors,
+        "residual_stdev": _opt_dec(row.residual_stdev, _SCALE_CURVE_POINT),
+        "min_observations": row.min_observations,
+        "series_currency": row.series_currency,
         "system_from": _norm_datetime(row.system_from),
     }
 

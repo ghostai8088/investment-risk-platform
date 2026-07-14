@@ -50,6 +50,10 @@ from irp_shared.risk.bootstrap import (
     VAR_HS_MODEL_CODE,
     VAR_METHODOLOGY_REF,
     VAR_MODEL_CODE,
+    VAR_TOTAL_CALENDAR_DAYS_PER_YEAR,
+    VAR_TOTAL_METHODOLOGY_REF,
+    VAR_TOTAL_MODEL_CODE,
+    VAR_TOTAL_TRADING_DAYS_PER_YEAR,
     VAR_Z_SCORES,
     WINDOW_ASSUMPTION_PREFIX,
     HsVarParameters,
@@ -57,6 +61,7 @@ from irp_shared.risk.bootstrap import (
     VarParameters,
     WrongModelVersionError,
     assert_model_version_of,
+    declared_appraisal_days,
     declared_hs_var_parameters,
     declared_min_observations,
     declared_var_backtest_alpha,
@@ -72,6 +77,7 @@ from irp_shared.risk.bootstrap import (
     register_sensitivity_model,
     register_var_backtest_model,
     register_var_model,
+    register_var_parametric_total_model,
 )
 from irp_shared.risk.covariance_kernel import (
     CovarianceKernelError,
@@ -99,6 +105,7 @@ from irp_shared.risk.events import (
     METRIC_TYPE_TRACKING_ERROR,
     METRIC_TYPE_VAR_HISTORICAL,
     METRIC_TYPE_VAR_PARAMETRIC,
+    METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
     METRIC_TYPES,
     RISK_ACTIVE_RISK_CREATE_EVENT_RESERVED,
     RISK_COVARIANCE_CREATE_EVENT_RESERVED,
@@ -257,6 +264,13 @@ from irp_shared.risk.var_service import (
     resolve_var,
     resolve_var_run,
     run_var,
+)
+from irp_shared.risk.var_total_kernel import (
+    ResidualInstrument,
+    TotalVarResidual,
+    VarTotalKernelError,
+    daily_residual_stdev,
+    total_var_residual,
 )
 
 __all__ = [
@@ -417,6 +431,18 @@ __all__ = [
     "VAR_MODEL_CODE",
     "VAR_METHODOLOGY_REF",
     "VAR_Z_SCORES",
+    "METRIC_TYPE_VAR_PARAMETRIC_TOTAL",
+    "VAR_TOTAL_MODEL_CODE",
+    "VAR_TOTAL_METHODOLOGY_REF",
+    "VAR_TOTAL_TRADING_DAYS_PER_YEAR",
+    "VAR_TOTAL_CALENDAR_DAYS_PER_YEAR",
+    "register_var_parametric_total_model",
+    "declared_appraisal_days",
+    "ResidualInstrument",
+    "TotalVarResidual",
+    "VarTotalKernelError",
+    "total_var_residual",
+    "daily_residual_stdev",
     "ActiveRiskResult",
     "ActiveRiskActor",
     "RUN_TYPE_ACTIVE_RISK",

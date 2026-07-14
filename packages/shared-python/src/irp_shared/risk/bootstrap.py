@@ -1357,3 +1357,173 @@ def register_proxy_weight_regression_model(
             f"{code_version} (min_observations={min_observations})",
         )
     return version
+
+
+# --- PA-4: total parametric VaR = factor + idiosyncratic residual variance (OD-PA-4-B) ---
+
+#: The per-tenant inventory identity of the total-parametric-VaR model (PA-4). A DIFFERENT model
+#: CODE from the plain parametric family (so the plain family is byte-untouched), but the SAME
+#: declared-parameter machinery (confidence/horizon/z) — dispatched through the SAME binder.
+VAR_TOTAL_MODEL_CODE = "risk.var.parametric_total"
+VAR_TOTAL_MODEL_NAME = "Total parametric VaR (factor + idiosyncratic residual, 1-day)"
+VAR_TOTAL_VERSION_LABEL = "v1"
+VAR_TOTAL_METHODOLOGY_REF = "05_analytics_methodologies/var_parametric_total_v1.md"
+
+#: The DECLARED trading-day frequency-conversion constants (OD-PA-4-D, amended per the vendor-
+#: practice benchmark): the appraisal-period residual stdev de-scales to daily on a TRADING-day
+#: grid — d_t = appraisal_days * (TRADING/CALENDAR); the ratio constants are fixed, the appraisal
+#: cadence is a per-registration declared parameter (see APPRAISAL_DAYS_ASSUMPTION_PREFIX).
+VAR_TOTAL_TRADING_DAYS_PER_YEAR = 252
+VAR_TOTAL_CALENDAR_DAYS_PER_YEAR = 365
+#: The DECLARED appraisal-period length in CALENDAR days (model identity; e.g. 91 for quarterly).
+#: OD-D refinement: the pinned ESTIMATION_SUMMARY row carries no span dates, so the cadence is a
+#: declared parameter (auditable, like confidence/horizon) rather than derived from a pin.
+APPRAISAL_DAYS_ASSUMPTION_PREFIX = "appraisal_days="
+
+#: Total-family declared choices EXCLUDING the per-registration confidence/horizon/z (appended per
+#: call, exactly as the parametric family). Adds the residual leg + the frequency conversion.
+VAR_TOTAL_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Total parametric VaR: sigma_total = sqrt(x'*Sigma*x + SUM_i (MV_i * sigma_e,i,daily)^2); "
+    "VaR_alpha = z_alpha * sigma_total (1-day). The FACTOR leg x'*Sigma*x is the plain parametric "
+    "family unchanged; the IDIOSYNCRATIC leg adds, per PROXIED instrument, its cited proxy-weight "
+    "estimate's residual variance (Sharpe 1963 single-index diagonal - residuals independent "
+    "across instruments and of the factors).",
+    "Idiosyncratic inputs: per proxied instrument, the pinned open REGRESSION proxy_mapping (which "
+    "instruments are proxied + the citation) x the cited PROXY_WEIGHT_ESTIMATE run's "
+    "ESTIMATION_SUMMARY row (residual_stdev). MV_i = the instrument's total pinned factor exposure "
+    "(the projected market exposure the factor model sees - consistent with the factor leg). "
+    "Indicator (non-proxied) and MANUAL-method instruments carry ZERO idiosyncratic variance (no "
+    "estimation evidence - the P3-3 limitation stands for them, restated).",
+    "Frequency conversion (DECLARED): sigma_e,daily = sigma_e,period / sqrt(d_t), "
+    "d_t = appraisal_days * (252/365); appraisal_days is a DECLARED model-identity parameter (the "
+    "appraisal cadence, e.g. 91 for quarterly) - the ESTIMATION_SUMMARY carries no span, so the "
+    "cadence is declared like confidence/horizon, not derived. Calendar-aware per-period "
+    "trading-day counts are a recorded v2.",
+    "z_alpha is a REGISTERED constant from the enumerated confidence vocabulary - no runtime "
+    "inverse-normal-CDF. Computed in Decimal at 50-digit context; sigma/VaR quantize_HALF_UP to "
+    "6dp (Numeric(28,6)); residual_variance echoed at 20dp (Numeric(38,20)).",
+)
+
+#: Total-family recorded scope-outs.
+VAR_TOTAL_LIMITATIONS: tuple[str, ...] = (
+    "DIAGONAL residuals only (Sharpe 1963; Barra/Axioma vendor-standard) - no residual "
+    "cross-correlation; residual shrinkage (Barra Bayesian) + EWMA weighting (Axioma) are v2s.",
+    "The residual is hostage to the PA-3 estimate quality (short appraisal series => noisy "
+    "sigma_e; the estimate's per-coefficient std errors stay visible on the pinned estimate).",
+    "Non-proxied and MANUAL-method instruments carry ZERO idiosyncratic risk (the allocation-v1 "
+    "specific-risk=0 limitation propagates for them).",
+    "Flat 252/365 trading-day ratio over the MEAN period (calendar-aware per-period counts a v2); "
+    "1-day horizon only; historical-simulation + ES total analogues are recorded v2s.",
+    "No FX conversion - a proxied instrument's estimate series_currency must equal the book's "
+    "base_currency; a mismatch refuses rather than converting.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+)
+
+
+def declared_appraisal_days(session: Session, version: ModelVersion) -> int:
+    """Parse the total-VaR version's declared appraisal-period length (calendar days) from its
+    ``model_assumption`` rows (the OD-PA-4-D identity: exactly ONE ``appraisal_days=N``, N >= 1).
+    Malformed/absent/ambiguous/sub-floor -> the fail-closed :class:`WrongModelVersionError`.
+    The floor is IDENTITY, not registrar courtesy (the ``_hs_window_floor`` precedent): a
+    generically-minted version (POST /models can stamp any assumptions) declaring
+    ``appraisal_days=0`` must refuse at BIND time, not surface later as a committed FAILED run
+    from the kernel's non-positive-period gate (2026-07 review, numeric + adversarial finders
+    independently)."""
+    declared = require_declared(
+        load_assumption_texts(session, version),
+        APPRAISAL_DAYS_ASSUMPTION_PREFIX,
+        pattern=_DIGITS_PATTERN,
+        on_invalid=lambda: WrongModelVersionError(str(version.id), VAR_TOTAL_MODEL_CODE),
+    )
+    if int(declared) < 1:
+        raise WrongModelVersionError(str(version.id), VAR_TOTAL_MODEL_CODE)
+    return int(declared)
+
+
+def register_var_parametric_total_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    confidence_level: str | Decimal,
+    appraisal_days: int,
+    horizon_days: int = VAR_HORIZON_DAYS,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the TOTAL-parametric-VaR ``model`` + a ``model_version`` for this
+    ``(code_version, confidence_level, horizon_days, appraisal_days)`` identity (PA-4, OD-PA-4-B/D).
+    Mirrors :func:`register_var_model`'s declared-parameter machinery (the same confidence
+    vocabulary + z table + horizon gate) under a DIFFERENT model CODE, PLUS the declared
+    ``appraisal_days`` (the appraisal cadence, calendar days, >= 1) driving the residual frequency
+    conversion. The total run is dispatched through the SAME binder."""
+    if int(appraisal_days) < 1:
+        raise ValueError("appraisal_days must be >= 1 (the calendar-day appraisal cadence)")
+    text = str(confidence_level).strip()
+    if not _CONFIDENCE_PATTERN.fullmatch(text) or len(text) > 6:
+        raise ValueError(
+            f"confidence_level {confidence_level!r} is not in the v1 vocabulary "
+            f"{sorted(VAR_Z_SCORES)} (a new level is a new declared registration)"
+        )
+    confidence_key = f"{Decimal(text).quantize(Decimal('0.0001')):f}"
+    z_text = VAR_Z_SCORES.get(confidence_key)
+    if z_text is None:
+        raise ValueError(
+            f"confidence_level {confidence_level} not in the v1 vocabulary {sorted(VAR_Z_SCORES)}"
+        )
+    if int(horizon_days) != VAR_HORIZON_DAYS:
+        raise ValueError(
+            f"horizon_days must be {VAR_HORIZON_DAYS} in v1 (sqrt(h) scaling is a recorded seam)"
+        )
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=VAR_TOTAL_MODEL_CODE,
+        name=VAR_TOTAL_MODEL_NAME,
+        model_type=VAR_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Total parametric VaR = governed factor variance + the idiosyncratic residual variance "
+            "of the proxied instruments' cited proxy-weight estimates (PA-4, ENT-027)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=VAR_TOTAL_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=VAR_TOTAL_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=VAR_TOTAL_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *VAR_TOTAL_ASSUMPTIONS_BASE,
+                f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
+                f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
+                f"{Z_ASSUMPTION_PREFIX}{z_text}",
+                f"{APPRAISAL_DAYS_ASSUMPTION_PREFIX}{int(appraisal_days)}",
+            ),
+            limitations=VAR_TOTAL_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_var_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or f"{declared.confidence_level:f}" != confidence_key
+        or declared.horizon_days != int(horizon_days)
+        or declared_appraisal_days(session, version) != int(appraisal_days)
+    ):
+        raise ModelVersionConflictError(
+            VAR_TOTAL_MODEL_CODE,
+            VAR_TOTAL_VERSION_LABEL,
+            f"{code_version} (confidence_level={confidence_key}, horizon_days={horizon_days}, "
+            f"appraisal_days={appraisal_days})",
+        )
+    return version

@@ -1,6 +1,7 @@
 # PA-4 Decision Record — residual/idiosyncratic variance (Wave-4 slice 3, the v2 companion)
 
-> **Status: DRAFT — awaiting OQ ratification (OQ-PA-4-1…6).** The Wave-4 companion slice, chosen at
+> **Status: RATIFIED 2026-07-14** (OQ-PA-4-1…6 all approved — incl. the amended OQ-4, the
+> trading-day-adjusted frequency conversion from the vendor-practice benchmark). The Wave-4 companion slice, chosen at
 > planning per the ratified roadmap's own criterion ("whichever the PA-3 record judges the tighter
 > dependency"): **residual/idiosyncratic variance** — carry the part of a proxied private
 > instrument's risk that the factor regression does NOT explain into VaR, instead of silently
@@ -158,3 +159,103 @@ register/run/read. Full battery + `make check` + CI-watch-to-green.
   (OD-F).** *Recommend APPROVE — decomposable evidence beats an opaque total; additive + nullable.*
 - **OQ-PA-4-6 — Scope-outs per OD-E/G (diagonal residuals; zero idio for non-proxied/MANUAL; no
   mint; HS/ES analogues deferred).** *Recommend APPROVE.*
+
+## Part 6 — Review dispositions + closure
+
+**Implemented 2026-07-14 (all OQs ratified 2026-07-14).** The 13th governed number:
+`risk.var.parametric_total` v1 on the SAME `var_result` (metric_type `VAR_PARAMETRIC_TOTAL`),
+migration `0038_var_residual_variance` (one additive nullable `residual_variance
+Numeric(38,20)`). Full stack: the residual kernel (`risk/var_total_kernel.py`);
+`COMPONENT_KIND_PROXY_WEIGHT` + `proxy_weight_estimate_content` + `build_var_total_snapshot`
+under the load-bearing symmetric `VAR_TOTAL_BINDING_PREDICATE`; one-binder dispatch in `run_var`
+(the PA-2 precedent); `POST /risk/models/var-parametric-total` + `VarRowOut.residual_variance`;
+the methodology referent `05_analytics_methodologies/var_parametric_total_v1.md` + ENT-027/RTM
+notes; the battery (`test_var_total{,_kernel,_pg}.py` + `test_var_total_endpoint.py`) incl. the
+explicit CI PG step.
+
+### Part 6.1 — The TWO in-build design refinements (amendments to the ratified ODs)
+
+- **OD-D REFINEMENT — declared `appraisal_days` (commit `f7d1b7f`), superseding pin-the-span.**
+  OD-C(iii)/OD-D as ratified derived `d̄_cal` from the pinned `ESTIMATION_SUMMARY`'s period span —
+  but the summary row carries NO span dates (a factual discovery, not a preference). The cadence
+  became the FOURTH declared model-identity parameter (`appraisal_days=N`, N ≥ 1 enforced at
+  parse-back per the review, `d̄_t = appraisal_days × 252/365`) — auditable like
+  confidence/horizon/z, no desmoothed-run pin needed. OD-B's version identity is accordingly
+  `(code_version, confidence, horizon, z, appraisal_days)`.
+- **OD-C REFINEMENT — MV from factor-exposure sums (commit `232c3ea`), superseding the
+  exposure-atom pin.** OD-C(ii)'s ratified EXPOSURE-atom MV pin was dropped: MV_i = Σ of the
+  instrument's pinned `FACTOR_EXPOSURE` `exposure_amount` rows — the projected market exposure
+  the factor leg already sees (consistent legs; no partial-proxy partition ambiguity; one fewer
+  component kind pinned). No EXPOSURE component appears in a total snapshot.
+
+### Part 6.2 — Review dispositions (4-finder adversarial review, 2026-07-14, Fable)
+
+Four finders (numeric — the mandated Fable-class residual/√-time + decomposition pass;
+adversarial binder; governance/consistency; test-completeness): **26 findings → 23 folded, 3
+accepted/deferred with reasons. Zero HIGH-severity math defects — every golden number survived
+independent 120-digit re-derivation byte-exactly, and a 6000-case fuzz confirmed the
+zero-proxied-instrument byte-invariance.**
+
+- **Numeric (6):** goldens/z-constants/invariance CONFIRMED. Folded: the `appraisal_days=0`
+  generic-mint identity hole (parse-time floor, the `_hs_window_floor` precedent — also found
+  independently by the adversarial finder); the MV accumulation escaping the prec-50 context; the
+  false "RAW gated BEFORE quantize" comment (replaced with the probe-verified truth: the
+  DEFAULT-context abs() closes the overflow boundary windows, with an explicit do-not-wrap
+  warning); the scale-dependent decomposition bound (doc + a DERIVED test tolerance
+  `(σ_total+σ_plain)·1E-6` replacing the underived 0.001); a wrong digit-string in a
+  hand-reference comment; the PROXY_WEIGHT component comment claiming the pin carries a span.
+  Recorded, not taken: restructuring to quantize-then-gate (the plain-family order) — the comment
+  fix was chosen as the no-behavior-change fold; the alternative is safe if ever wanted.
+- **Adversarial binder (5; 12/12 empirical probes):** folded: the `mapping_method` vocabulary
+  gate in `_adjudicate_total_proxies` (a hand-minted MANUAL mapping pin + matching summary
+  COMPLETED with the residual attached — probe-verified; now refused + tested); the kernel
+  docstring's wrong failure lifecycle (post-create FAILED, not pre-create; both kernel raises now
+  honestly labeled binder-unreachable defensive). Attacked and HELD: cross-tenant/provenance (no
+  FK stamping from proxy pins, no existence oracle — the P3-5 principal-finding class does not
+  re-open); zero-proxy-pin consume parity; duplicate-mapping single-counting; refusal
+  completeness (5 malformed-pin mutations all governed 422, zero orphans); predicate leakage into
+  HS/backtest consumers (purpose + `METRIC_TYPES` gates hold). Accepted nit: the backtest
+  refusal message says "unknown VaR metric_type" for the now-known total family (message text
+  stable; the exclusion itself is the recorded v1 scope-out, now documented at the tuple).
+- **Governance (6):** folded: the registered `model_limitation` set missing the no-FX bullet the
+  doc claimed mirrored (added to `VAR_TOTAL_LIMITATIONS`); five doc/code mirror-drift spots +
+  the `specific-risk-= 0` typo (doc now byte-transliterates; the PARTIALLY-discharged expansion
+  moved outside the mirrored list); the ENT-027 row's truncated `OD-PA-4-A…D` citation (→ A…G);
+  the `METRIC_TYPES` comment re-documented as the BACKTESTABLE subset with the deliberate
+  total-exclusion warning; `var_result_content`'s now-false "FULL column set" claim (docs-only —
+  adding the key would false-drift every historical BT-1 pin). Clean: hard invariants
+  (audit/service.py untouched; no mint; no BYPASSRLS), import fences, exports, serializer/verify
+  parity, API gating/MRO. Closeout-scoped: the stale roadmap slice-3 row (updated at closeout
+  WITHOUT claiming the partial-proxy `1−Σw` leg — that stays honestly open).
+- **Test-completeness (9):** folded: the MISSING CI PG step for `test_var_total_pg.py` (the
+  P3-7-review miss-class, recurring — found independently by the fold-synthesis pre-check); the
+  magnitude→FAILED total-path test (the every-family precedent, was zero-coverage); TR-09's
+  second side (a fresh run picks up the re-promoted estimate — byte-asserted at 6.25× the
+  golden); consume-existing ≡ build-in-request + exact re-run reproducibility (a governed-built
+  total snapshot consumed happy-path — previously only hand-minted/refusal consumes); the 0038
+  chain assertion; the PG DELETE probe (plain-twin symmetry); snapshot-persistence asserts on
+  the three build-refusal tests; the residual_stdev boundary trio (zero=accepted-zero-variance
+  semantics defined, NULL-pin refused, envelope-exact refused); the multi-proxied-instrument
+  end-to-end leg (the governed build-path decomposition test now runs TWO proxied instruments
+  with distinct estimates). Reconciled against the adversarial finder: the "non-COMPLETED cited
+  run" collapse is SOUND through governed paths (scaffold inserts rows only on the success path
+  immediately before COMPLETED) — folded as fixture-docstring precision, not code.
+
+### Part 6.3 — Deferrals (recorded, not folded)
+
+1. **Backtesting the total series** — the standing v1 scope-out (RTM + methodology Known
+   limitations), now also guarded by the re-documented `METRIC_TYPES` comment; a total-VaR
+   backtest is its own ratifiable slice.
+2. **Quantize-then-gate restructure** of the total magnitude gate — behavior-identical
+   alternative to the chosen comment fix; take it only with fresh boundary probes.
+3. **Residual shrinkage/EWMA, calendar-aware per-period trading-day counts, HS/ES total
+   analogues** — the ratified OD-E/OD-G v2s, unchanged.
+
+### Part 6.4 — Post-fold validation
+
+`ruff format --check` + `ruff check` clean; `mypy` clean (173 files); the full pytest suite
+green incl. the local-PG leg (schema-reset `irp_pg_local`, head `0038_var_residual_variance`);
+`alembic check` no drift; downgrade→upgrade smoke clean; `audit/service.py` FROZEN untouched;
+CI-watch-to-green on the fold commit. (Known pre-existing, PA-4-unrelated: the
+data_quality/lineage/synthetic PG cross-module seed collision under a single unreset full-suite
+session — isolated runs green; a test-infra item, not a product defect.)

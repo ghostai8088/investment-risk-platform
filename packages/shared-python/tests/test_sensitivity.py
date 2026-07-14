@@ -721,7 +721,7 @@ def test_migration_head_is_sensitivity() -> None:
     cfg = Config(str(_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(_ROOT / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0037_proxy_weight_estimate"
+    assert script.get_current_head() == "0038_var_residual_variance"
     assert script.get_revision("0022_sensitivity").down_revision == "0021_benchmark"
 
 
