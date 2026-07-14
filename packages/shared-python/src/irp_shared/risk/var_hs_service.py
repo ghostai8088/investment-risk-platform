@@ -41,6 +41,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.risk.bootstrap import (
     VAR_HS_MODEL_CODE,
@@ -209,7 +210,9 @@ def _adjudicate_pins(
                 raise HsVarInputError(
                     f"duplicate return date {d.isoformat()} in factor {fid}'s window — refused"
                 )
-            value = Decimal(row["return_value"])
+            value = parse_strict_decimal(
+                row["return_value"], error=HsVarInputError, field="return_value"
+            )
             if abs(value) >= _MAX_RETURN_ABS:
                 raise HsVarInputError(
                     "a pinned return_value exceeds its source-column envelope — refused"

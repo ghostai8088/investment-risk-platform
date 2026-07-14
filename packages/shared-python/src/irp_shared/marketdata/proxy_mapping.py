@@ -59,6 +59,7 @@ from irp_shared.marketdata.models import (
     Factor,
     ProxyMapping,
 )
+from irp_shared.reference.guards import assert_instrument_in_tenant
 
 # --- audit / provenance constants (the MARKET.* EVT-200 family; the factor_return precedent) ---
 MARKET_PROXY_MAPPING_CREATE_EVENT = "MARKET.PROXY_MAPPING_CREATE"
@@ -327,20 +328,13 @@ def resolve_proxy_mapping(
 
 def _resolve_instrument_id(session: Session, instrument_id: str, *, acting_tenant: str) -> str:
     """Re-resolve the private instrument under the acting tenant BEFORE its id is stamped into the
-    NOT-NULL FK (PG FK checks bypass RLS — the P3-5 finding). Models-only import (no cycle)."""
-    from irp_shared.reference.models import Instrument
-
-    row = session.execute(
-        select(Instrument.id).where(
-            Instrument.id == str(instrument_id),
-            Instrument.tenant_id == str(acting_tenant),
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        raise ProxyMappingValueError(
-            f"private instrument {instrument_id} is not visible in the acting tenant — refused"
-        )
-    return str(row)
+    NOT-NULL FK (PG FK checks bypass RLS — the P3-5 finding). Delegates to the shared
+    ``reference/guards.py`` predicate (RD-3 OD-B — this was a byte-equivalent hand-rolled twin);
+    message normalizes to the guard's own wording."""
+    assert_instrument_in_tenant(
+        session, instrument_id, acting_tenant=acting_tenant, error=ProxyMappingValueError
+    )
+    return str(instrument_id)
 
 
 def _resolve_factor_id(session: Session, factor_id: str, *, acting_tenant: str) -> str:

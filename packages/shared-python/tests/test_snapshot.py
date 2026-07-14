@@ -14,13 +14,14 @@ nothing imports ``snapshot``). Entitlement parity + the migration head are also 
 from __future__ import annotations
 
 import ast
+import json
 import pathlib
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -435,6 +436,285 @@ def test_verify_reports_ev_portfolio_drift(session: Session) -> None:
     assert not result.ok and len(result.drifted_components) == 1  # the portfolio component drifted
     # verify emits ZERO audit events even on the drift branch (OD-023 no-emit-on-read).
     assert session.execute(select(func.count()).select_from(AuditEvent)).scalar_one() == n_before
+
+
+# ---------- RD-3 OD-A: widened except-tuple regression (drift, not raise) ----------
+#
+# ``verify_snapshot``'s except-tuple was widened (service.py, ``verify_snapshot``) to additionally
+# catch ``ScenarioSnapshotError``/``ProxyWeightSnapshotError`` (a gone pinned row on those
+# families) plus ``KeyError``/``TypeError``/``ValueError``/``ArithmeticError`` (a malformed
+# ``captured_content`` on any series/composite branch that does ``json.loads`` + keyed access).
+# Every test below proves BOTH that ``result.ok is False`` with the component id in
+# ``drifted_components`` AND that ``verify_snapshot`` itself does not raise.
+
+
+def test_verify_reports_drift_on_gone_scenario_shock_row(session: Session) -> None:
+    """A gone ``scenario_shock`` row -> ``ScenarioSnapshotError`` inside the SCENARIO branch of
+    ``_reresolve_content`` -> the widened except-tuple reports drift, not an unhandled raise."""
+    from test_scenario import _run as _scenario_run
+    from test_scenario import _scenario as _make_scenario
+    from test_scenario import _seed_factor_exposure_run
+
+    t = str(uuid.uuid4())
+    fx_run, fid_usd, fid_eur = _seed_factor_exposure_run(session, t)
+    def_id = _make_scenario(session, t, fid_usd, fid_eur)
+    result = _scenario_run(session, t, fx_run, def_id)
+    snap_id = result.run.input_snapshot_id
+    session.commit()
+    assert verify_snapshot(session, snapshot_id=snap_id, acting_tenant=t).ok is True
+
+    scen_comp = (
+        session.execute(
+            select(DatasetSnapshotComponent).where(
+                DatasetSnapshotComponent.snapshot_id == snap_id,
+                DatasetSnapshotComponent.component_kind == "SCENARIO",
+            )
+        )
+        .scalars()
+        .first()
+    )
+    assert scen_comp is not None
+    # A raw-SQL DELETE bypasses the ORM append-only guard (``before_delete`` only fires on an
+    # ORM-tracked flush) — simulating the pinned shock row genuinely being gone, not exercising the
+    # guard itself (the guard is already covered by ``test_append_only_orm_guard``).
+    session.execute(
+        text("DELETE FROM scenario_shock WHERE id = :id"), {"id": scen_comp.target_entity_id}
+    )
+    session.commit()
+    session.expire_all()
+
+    result2 = verify_snapshot(session, snapshot_id=snap_id, acting_tenant=t)  # must not raise
+    assert result2.ok is False
+    assert scen_comp.id in result2.drifted_components
+
+
+def test_verify_reports_drift_on_gone_desmoothed_return_row(session: Session) -> None:
+    """A gone ``desmoothed_return_result`` row -> ``ProxyWeightSnapshotError`` inside the
+    DESMOOTHED_RETURN branch of ``_reresolve_content`` (a PROXY_WEIGHT_INPUT snapshot pins the
+    consumed desmoothed run's per-period rows) -> drift, not an unhandled raise."""
+    from test_proxy_weight import _desmoothed_run, _factor, _factor_returns, _proxy_model
+
+    from irp_shared.risk import ProxyWeightEstimateActor, run_proxy_weight_estimate
+
+    t = str(uuid.uuid4())
+    run_id, _pf, _inst = _desmoothed_run(session, t)
+    fx_usd = _factor(session, t, "FX_USD")
+    fx_eur = _factor(session, t, "FX_EUR")
+    _factor_returns(session, t, fx_usd, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    _factor_returns(session, t, fx_eur, ["0.02", "-0.01", "0.01", "0.00", "0.02"])
+    out = run_proxy_weight_estimate(
+        session,
+        acting_tenant=t,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=_proxy_model(session, t),
+        desmoothed_run_id=run_id,
+        factor_ids=[fx_usd, fx_eur],
+    )
+    snap_id = out.run.input_snapshot_id
+    session.commit()
+    assert verify_snapshot(session, snapshot_id=snap_id, acting_tenant=t).ok is True
+
+    dr_comp = (
+        session.execute(
+            select(DatasetSnapshotComponent).where(
+                DatasetSnapshotComponent.snapshot_id == snap_id,
+                DatasetSnapshotComponent.component_kind == "DESMOOTHED_RETURN",
+            )
+        )
+        .scalars()
+        .first()
+    )
+    assert dr_comp is not None
+    session.execute(
+        text("DELETE FROM desmoothed_return_result WHERE id = :id"),
+        {"id": dr_comp.target_entity_id},
+    )
+    session.commit()
+    session.expire_all()
+
+    result2 = verify_snapshot(session, snapshot_id=snap_id, acting_tenant=t)  # must not raise
+    assert result2.ok is False
+    assert dr_comp.id in result2.drifted_components
+
+
+def test_verify_reports_drift_on_malformed_scenario_pin(session: Session) -> None:
+    """A truncated (non-parseable) ``captured_content`` on a SCENARIO component -> ``json.loads``
+    raises ``json.JSONDecodeError`` (a ``ValueError`` subclass) inside ``_reresolve_content`` ->
+    drift, not a raw 500. SCENARIO is the newest/highest-risk composite branch (P3-6)."""
+    from test_scenario import _run as _scenario_run
+    from test_scenario import _scenario as _make_scenario
+    from test_scenario import _seed_factor_exposure_run
+
+    t = str(uuid.uuid4())
+    fx_run, fid_usd, fid_eur = _seed_factor_exposure_run(session, t)
+    def_id = _make_scenario(session, t, fid_usd, fid_eur)
+    result = _scenario_run(session, t, fx_run, def_id)
+    snap_id = result.run.input_snapshot_id
+    session.commit()
+
+    scen_comp = (
+        session.execute(
+            select(DatasetSnapshotComponent).where(
+                DatasetSnapshotComponent.snapshot_id == snap_id,
+                DatasetSnapshotComponent.component_kind == "SCENARIO",
+            )
+        )
+        .scalars()
+        .first()
+    )
+    assert scen_comp is not None
+    # A raw-SQL UPDATE bypasses the ORM append-only guard — simulating storage-layer corruption of
+    # the pinned JSON blob (truncated mid-object), not exercising the guard itself.
+    session.execute(
+        text("UPDATE dataset_snapshot_component SET captured_content = :c WHERE id = :id"),
+        {"c": '{"scenario_definition_id": "abc", "shock_valu', "id": scen_comp.id},
+    )
+    session.commit()
+    session.expire_all()
+
+    result2 = verify_snapshot(session, snapshot_id=snap_id, acting_tenant=t)  # must not raise
+    assert result2.ok is False
+    assert scen_comp.id in result2.drifted_components
+
+
+def test_verify_reports_drift_on_malformed_factor_return_pin(session: Session) -> None:
+    """A well-formed JSON object MISSING the required ``"rows"`` key on a FACTOR_RETURN component
+    (the proxy-weight candidate-factor return window) -> ``KeyError`` on ``pinned["rows"]`` inside
+    ``_reresolve_content`` -> drift, not a raw 500. Proves the except-tuple widening generalizes
+    beyond the two new exception classes to malformed ``captured_content`` on a DIFFERENT composite
+    branch than SCENARIO."""
+    from test_proxy_weight import _desmoothed_run, _factor, _factor_returns, _proxy_model
+
+    from irp_shared.risk import ProxyWeightEstimateActor, run_proxy_weight_estimate
+
+    t = str(uuid.uuid4())
+    run_id, _pf, _inst = _desmoothed_run(session, t)
+    fx_usd = _factor(session, t, "FX_USD")
+    fx_eur = _factor(session, t, "FX_EUR")
+    _factor_returns(session, t, fx_usd, ["0.01", "0.02", "-0.01", "0.03", "0.00"])
+    _factor_returns(session, t, fx_eur, ["0.02", "-0.01", "0.01", "0.00", "0.02"])
+    out = run_proxy_weight_estimate(
+        session,
+        acting_tenant=t,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=_proxy_model(session, t),
+        desmoothed_run_id=run_id,
+        factor_ids=[fx_usd, fx_eur],
+    )
+    snap_id = out.run.input_snapshot_id
+    session.commit()
+
+    fr_comp = (
+        session.execute(
+            select(DatasetSnapshotComponent).where(
+                DatasetSnapshotComponent.snapshot_id == snap_id,
+                DatasetSnapshotComponent.component_kind == "FACTOR_RETURN",
+            )
+        )
+        .scalars()
+        .first()
+    )
+    assert fr_comp is not None
+    pinned = json.loads(fr_comp.captured_content)
+    del pinned["rows"]  # syntactically valid JSON, missing the key ``_reresolve_content`` needs
+    session.execute(
+        text("UPDATE dataset_snapshot_component SET captured_content = :c WHERE id = :id"),
+        {"c": json.dumps(pinned), "id": fr_comp.id},
+    )
+    session.commit()
+    session.expire_all()
+
+    result2 = verify_snapshot(session, snapshot_id=snap_id, acting_tenant=t)  # must not raise
+    assert result2.ok is False
+    assert fr_comp.id in result2.drifted_components
+
+
+def test_verify_reports_drift_on_non_object_scenario_pin(session: Session) -> None:
+    """A syntactically valid but non-object ``captured_content`` (a JSON array) on a SCENARIO
+    component -> ``pinned["scenario_definition_id"]`` raises ``TypeError`` (list indices must be
+    integers, not str) inside ``_parsed_pin`` -> drift, not a raw 500. The "non-object" malformed
+    shape named in the decision record (rd_3_decision_record.md Part 3 step 1), distinct from the
+    truncated-JSON and missing-key shapes already covered above."""
+    from test_scenario import _run as _scenario_run
+    from test_scenario import _scenario as _make_scenario
+    from test_scenario import _seed_factor_exposure_run
+
+    t = str(uuid.uuid4())
+    fx_run, fid_usd, fid_eur = _seed_factor_exposure_run(session, t)
+    def_id = _make_scenario(session, t, fid_usd, fid_eur)
+    result = _scenario_run(session, t, fx_run, def_id)
+    snap_id = result.run.input_snapshot_id
+    session.commit()
+
+    scen_comp = (
+        session.execute(
+            select(DatasetSnapshotComponent).where(
+                DatasetSnapshotComponent.snapshot_id == snap_id,
+                DatasetSnapshotComponent.component_kind == "SCENARIO",
+            )
+        )
+        .scalars()
+        .first()
+    )
+    assert scen_comp is not None
+    session.execute(
+        text("UPDATE dataset_snapshot_component SET captured_content = :c WHERE id = :id"),
+        {"c": "[1, 2, 3]", "id": scen_comp.id},
+    )
+    session.commit()
+    session.expire_all()
+
+    result2 = verify_snapshot(session, snapshot_id=snap_id, acting_tenant=t)  # must not raise
+    assert result2.ok is False
+    assert scen_comp.id in result2.drifted_components
+
+
+def test_verify_reports_drift_on_malformed_benchmark_return_pin(session: Session) -> None:
+    """A well-formed JSON object MISSING the required ``"rows"`` key on a BENCHMARK_RETURN
+    component -> ``KeyError`` inside ``_parsed_pin`` -> drift, not a raw 500. BENCHMARK_RETURN is
+    the fourth (and last untested) composite branch that parses ``captured_content``."""
+    from test_benchmark_relative import D0, D1, D2, TENANT, _return_run
+    from test_benchmark_relative import _bench_return as _bm_return
+    from test_benchmark_relative import _benchmark as _make_benchmark
+    from test_benchmark_relative import _model as _br_model
+    from test_benchmark_relative import _run as _br_run
+
+    run_id, _pf = _return_run(session, [(D0, "1000000"), (D1, "1030000"), (D2, "1019700")])
+    bm = _make_benchmark(session)
+    _bm_return(session, bm, D1, "0.025")
+    _bm_return(session, bm, D2, "0.005")
+    mv = _br_model(session)
+    result = _br_run(session, run_id, bm.id, mv)
+    snap_id = result.run.input_snapshot_id
+    session.commit()
+
+    br_comp = (
+        session.execute(
+            select(DatasetSnapshotComponent).where(
+                DatasetSnapshotComponent.snapshot_id == snap_id,
+                DatasetSnapshotComponent.component_kind == "BENCHMARK_RETURN",
+            )
+        )
+        .scalars()
+        .first()
+    )
+    assert br_comp is not None
+    pinned = json.loads(br_comp.captured_content)
+    del pinned["rows"]
+    session.execute(
+        text("UPDATE dataset_snapshot_component SET captured_content = :c WHERE id = :id"),
+        {"c": json.dumps(pinned), "id": br_comp.id},
+    )
+    session.commit()
+    session.expire_all()
+
+    result2 = verify_snapshot(session, snapshot_id=snap_id, acting_tenant=TENANT)  # must not raise
+    assert result2.ok is False
+    assert br_comp.id in result2.drifted_components
 
 
 # ---------- fail-closed gates ----------

@@ -31,6 +31,7 @@ from irp_shared.position.position import correct_position, create_position, supe
 from irp_shared.position.service import PositionActor
 from irp_shared.reference.identifier import create_identifier_xref
 from irp_shared.reference.instrument import create_instrument
+from irp_shared.reference.models import Instrument
 from irp_shared.reference.service import ReferenceActor
 from irp_shared.synthetic.ids import (
     SYNTHETIC_ACTOR_ID,
@@ -67,6 +68,31 @@ class SyntheticDatasetSummary:
     scenarios: tuple[str, ...]
 
 
+#: The fixed, deterministic summary — identical on every seed regardless of whether this run
+#: actually wrote rows or found them already present (RD-3 OD-D: the whole-seed no-op below).
+_SUMMARY = SyntheticDatasetSummary(
+    tenant_id=SYNTHETIC_TENANT_ID,
+    instruments=3,
+    identifiers=2,
+    portfolios=6,
+    transactions=3,  # BUY + reversal + SELL
+    positions=6,  # rows: acct1/bond(v1+v2) + acct1/eq + acct2/bond(v1+corr) + acct3/cash
+    valuations=4,  # rows: acct1/bond(vd1 v1 + vd1 corr + vd2) + acct2/bond vd1
+    scenarios=(
+        "baseline-hierarchy",
+        "multi-asset",
+        "short-position",
+        "reversal-with-price",
+        "position-correction",
+        "valuation-correction",
+        "multi-valuation-date",
+        "stale-missing-valuation",
+        "identifiers",
+        "bounded-subtree",
+    ),
+)
+
+
 def build_synthetic_dataset(
     session: Session,
     *,
@@ -91,6 +117,19 @@ def build_synthetic_dataset(
         raise SyntheticSeedRefused("synthetic seed refuses any non-synthetic tenant")
 
     set_tenant_context(session, SYNTHETIC_TENANT_ID)  # RLS-scoped; never BYPASSRLS
+
+    # RD-3 OD-D: the seed's ids are deterministic uuid5s (a documented product FEATURE, byte-
+    # identical across runs — the docstring's contract) but the individual binder CALLS are not
+    # idempotent (a re-run's supersede/correct chains would mint EXTRA versions, not raise a clean
+    # IntegrityError). Rather than rewrite every one of the ~25 binder call sites with per-row
+    # resolve-or-insert (and reason through what a second supersede/correct means), treat the whole
+    # seed as ONE unit: if its first row is already present, the seed already ran — return the
+    # same fixed summary as a no-op instead of re-inserting (fixes the local dirty-schema
+    # double-run collision against test_data_quality_pg/test_lineage_pg, PA-4 Part 6.4).
+    bond_id = synthetic_id("instrument:SYNTH-BOND-A")
+    if session.get(Instrument, bond_id) is not None:
+        return _SUMMARY
+
     clock = SeedClock()
     t = SYNTHETIC_TENANT_ID
     ref_actor = ReferenceActor(actor_id=SYNTHETIC_ACTOR_ID)
@@ -358,24 +397,4 @@ def build_synthetic_dataset(
     )
     # NOTE: acct1/equity has NO mark → the stale/missing-valuation scenario.
 
-    return SyntheticDatasetSummary(
-        tenant_id=t,
-        instruments=3,
-        identifiers=2,
-        portfolios=6,
-        transactions=3,  # BUY + reversal + SELL
-        positions=6,  # rows: acct1/bond(v1+v2) + acct1/eq + acct2/bond(v1+corr) + acct3/cash
-        valuations=4,  # rows: acct1/bond(vd1 v1 + vd1 corr + vd2) + acct2/bond vd1
-        scenarios=(
-            "baseline-hierarchy",
-            "multi-asset",
-            "short-position",
-            "reversal-with-price",
-            "position-correction",
-            "valuation-correction",
-            "multi-valuation-date",
-            "stale-missing-valuation",
-            "identifiers",
-            "bounded-subtree",
-        ),
-    )
+    return _SUMMARY

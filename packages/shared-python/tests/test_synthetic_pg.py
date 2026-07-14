@@ -3,8 +3,11 @@
 Gated on ``IRP_TEST_DATABASE_URL``; runs under the constrained non-superuser ``irp_app`` role
 (NOSUPERUSER NOBYPASSRLS). Proves the synthetic seed writes only the SYNTHETIC tenant's rows under
 FORCE ROW LEVEL SECURITY (never BYPASSRLS), that a DIFFERENT tenant sees none of them, that a
-no-context session sees zero rows, and that the per-tenant audit chain verifies. The deterministic
-seed is **not** idempotent (uuid5 ids), so it is seeded exactly ONCE per module; the tests read it.
+no-context session sees zero rows, and that the per-tenant audit chain verifies. Seeded once per
+module; the tests read it. RD-3 OD-D made a re-run against an already-seeded schema a NO-OP (the
+first row's presence short-circuits the whole seed) — proven directly by
+``test_reseed_is_a_no_op``, and it's what makes the local "dirty-schema double-run" validation
+mode (running the full PG suite twice without a schema reset) green.
 """
 
 from __future__ import annotations
@@ -122,5 +125,28 @@ def test_seed_audit_chain_verifies_under_force_rls(seeded_url: str) -> None:
         set_tenant_context(session, SYNTHETIC_TENANT_ID)
         assert verify_chain(session, SYNTHETIC_TENANT_ID).ok is True
     finally:
+        session.close()
+        engine.dispose()
+
+
+def test_reseed_is_a_no_op(seeded_url: str) -> None:
+    """RD-3 OD-D: calling ``build_synthetic_dataset`` again against a schema that already carries
+    the seed (the ``seeded_url`` fixture's own first run) must be a no-op — same summary, no
+    IntegrityError, no extra rows/versions from a second binder pass (the local dirty-schema
+    double-run collision this fold fixes)."""
+    engine = make_engine(seeded_url, poolclass=NullPool)
+    session = make_session_factory(engine)()
+    os.environ["IRP_ALLOW_SYNTHETIC_SEED"] = "1"
+    try:
+        summary = build_synthetic_dataset(session, allow_synthetic_seed=True)
+        session.commit()
+        assert summary.instruments == 3
+        assert summary.positions == 6
+        assert summary.valuations == 4
+
+        set_tenant_context(session, SYNTHETIC_TENANT_ID)
+        assert session.execute(select(func.count()).select_from(Position)).scalar_one() == 6
+    finally:
+        os.environ.pop("IRP_ALLOW_SYNTHETIC_SEED", None)
         session.close()
         engine.dispose()
