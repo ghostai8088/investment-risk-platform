@@ -6,8 +6,8 @@
 > `audit/service.py` FROZEN; **no shipped NUMBER moves** (not "no shipped behaviour changes" — OD-E
 > widens four families' registrable vocabulary and moves two shipped test probes; see Step 1).
 >
-> **Step 1 is conditional on OQ-ES-1-4's sub-fork** — (i) widen the shared `VAR_Z_SCORES` [the
-> recommendation] or (ii) a separate ES-only table. Steps below assume (i) and mark what (ii) drops.
+> **RATIFIED 2026-07-15, OQ-ES-1-4 = sub-fork (i): widen the shared `VAR_Z_SCORES`.** The (ii)
+> ES-only-table alternate is dead — every step below is now unconditional.
 > Folded after the 3-verifier planning pass (record Part 5): 2 HIGH + 8 MEDIUM + 6 LOW.
 
 ## Step 0 — Branch + pre-checks (the stacking matters)
@@ -21,11 +21,9 @@ live and still ORM-invisible** — `0028_var_historical.py:43-48`, the record's 
 
 ## Step 1 — The constants (OD-A/B/E) — `risk/bootstrap.py`
 
-- **Per OQ-4's ratified sub-fork.** If **(i) widen the shared table**: `VAR_Z_SCORES` gains
-  `"0.9750": "1.959963984540"`. If **(ii) ES-only**: a separate `VAR_ES_Z_SCORES` holding the ES
-  families' z, and Step 1's blast-radius bullet below does not apply. *The steps below assume (i);
-  if (ii) is ratified, drop the two test-probe edits and the four doc-drift sites.*
-- **Blast radius of (i) — NOT "no change"** (the record's OD-E ⑴; both confirmed by execution):
+- **`VAR_Z_SCORES` gains `"0.9750": "1.959963984540"`** (OQ-4 sub-fork (i), ratified). One shared
+  table stays the design; no second z table is minted.
+- **Blast radius — NOT "no change"** (the record's OD-E ⑴; both confirmed by execution):
   `VAR_Z_SCORES` is ONE table gating `risk.var.parametric`, `parametric_total` v1+v2 **and**
   `risk.var.historical`. **0.975 is the off-vocabulary probe two shipped tests use** — move both to
   `0.98` (free repo-wide) IN THIS STEP, don't discover them in the battery:
@@ -116,11 +114,11 @@ discriminator) — add a comment saying so. Error maps: existing classes only.
   ES-total leg's inherited BT-2 doctrine. Self-declare it immutable (the house pattern).
 - **Do NOT edit** `var_parametric_v1.md` / `var_parametric_total_v1.md` / `_v2.md` (self-declared
   immutable) — **two** staleness classes, both discharged via the RTM/catalog + this record (the
-  BT-2 precedent): their "ES deferred" lines, and — under OQ-4 sub-fork (i) only —
-  `var_parametric_v1.md:46-47`'s enumerated z-table, which OD-E ⑶ makes under-enumerate its own
-  family. (`..._total_v1.md:109` / `_v2.md:144` carry only the generic "z_α is a REGISTERED
+  BT-2 precedent): their "ES deferred" lines, and `var_parametric_v1.md:46-47`'s enumerated z-table,
+  which OD-E ⑶ makes under-enumerate its own family (a live consequence of the ratified sub-fork (i),
+  not a hypothetical). (`..._total_v1.md:109` / `_v2.md:144` carry only the generic "z_α is a REGISTERED
   constant" line and `var_historical_v1.md` enumerates nothing — both verified clean, stay true.)
-- **Vocabulary-drift sweep — sub-fork (i) only** (the PA-4 "doc/code mirror-drift" fold class; four
+- **Vocabulary-drift sweep** (the PA-4 "doc/code mirror-drift" fold class; four
   sites assert the 2-entry vocabulary and go stale at Step 1): `bootstrap.py:587`
   (`register_var_model` docstring, "{0.95, 0.99}"), `bootstrap.py:759` (`_hs_window_floor`
   docstring, "BOTH v1 vocabulary confidences" — now three), and `api/risk.py:1063` + `:1195`
