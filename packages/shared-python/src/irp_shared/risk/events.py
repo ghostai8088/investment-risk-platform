@@ -96,12 +96,24 @@ METRIC_TYPE_ES_PARAMETRIC_RESERVED = "ES_PARAMETRIC"
 #: PA-4 (OD-PA-4-B): total parametric VaR = factor + idiosyncratic residual variance, on the SAME
 #: var_result grain (a NEW registered model dispatched through the parametric binder).
 METRIC_TYPE_VAR_PARAMETRIC_TOTAL = "VAR_PARAMETRIC_TOTAL"
-#: The BACKTESTABLE subset of the var_result vocabulary — NOT the full vocabulary (PA-4 review):
-#: ``VAR_PARAMETRIC_TOTAL`` is DELIBERATELY excluded — backtesting the total series is a recorded
-#: v1 scope-out (the RTM + methodology deferral), so ``var_backtest_service`` refusing it is the
-#: designed behavior, not a missing entry. Do NOT "complete the vocabulary" here without ratifying
-#: a total-VaR backtest slice.
-METRIC_TYPES = (METRIC_TYPE_VAR_PARAMETRIC, METRIC_TYPE_VAR_HISTORICAL)
+#: The BACKTESTABLE subset of the var_result vocabulary — NOT the full vocabulary. PA-4 excluded
+#: ``VAR_PARAMETRIC_TOTAL`` as a recorded v1 scope-out; **BT-2 (2026-07-15, OD-BT-2-A) is the
+#: ratified slice that admits it** — with the honest-pairing DOCTRINE attached, not as a constant
+#: swap: every VaR here is a hard-enforced 1-DAY forecast (``VAR_HORIZON_DAYS``), so on an
+#: appraisal-marked book the daily total-series read is biased TWO WAYS by construction —
+#: exceptions are mechanically suppressed between marks (the private leg's realized P&L is flat)
+#: and clustered ON mark dates (a whole appraisal period's move lands against a 1-day allowance).
+#: The unconditional Kupiec/Basel verdict on such a book is therefore NOT valid evidence of
+#: adequacy in EITHER direction (validity degrades with the private-leg share); the dated per-pair
+#: EXCEPTION_INDICATOR rows are the honest evidence surface. See ``var_backtesting_v1.md`` (the
+#: BT-2 scope amendment) + the registered limitations. ``ES_PARAMETRIC`` stays out (unbuilt).
+#: The discipline stands for future methods: do NOT "complete the vocabulary" here without a
+#: ratified slice that confronts that method's pairing semantics.
+METRIC_TYPES = (
+    METRIC_TYPE_VAR_PARAMETRIC,
+    METRIC_TYPE_VAR_HISTORICAL,
+    METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
+)
 
 #: Controlled-vocab ``active_risk_result.metric_type`` (P3-7; further active metrics reserved by
 #: value — e.g. active return / information ratio ship with the deferred ex-post slice).

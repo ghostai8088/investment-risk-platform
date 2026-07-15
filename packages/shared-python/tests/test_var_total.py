@@ -18,7 +18,7 @@ no-orphan on every refusal.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -46,6 +46,7 @@ from irp_shared.marketdata.factor import (
     capture_factor_return,
     resolve_factor,
 )
+from irp_shared.model.models import ModelVersion
 from irp_shared.models import Base
 from irp_shared.portfolio import PortfolioActor, create_portfolio
 from irp_shared.position import create_position
@@ -59,6 +60,7 @@ from irp_shared.risk import (
     METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
     RUN_TYPE_PROXY_WEIGHT_ESTIMATE,
     VAR_TOTAL_METHODOLOGY_REF,
+    VAR_Z_SCORES,
     CovarianceActor,
     FactorExposureActor,
     ProxyWeightEstimateResult,
@@ -67,6 +69,7 @@ from irp_shared.risk import (
     VarResult,
     WrongModelVersionError,
     declared_appraisal_days,
+    declared_max_estimate_age_days,
     promote_proxy_weight_estimate,
     register_covariance_model,
     register_factor_exposure_model,
@@ -76,6 +79,10 @@ from irp_shared.risk import (
     run_factor_exposure,
     run_var,
 )
+from irp_shared.risk.bootstrap import (
+    APPRAISAL_DAYS_ASSUMPTION_PREFIX,
+    MAX_ESTIMATE_AGE_ASSUMPTION_PREFIX,
+)
 from irp_shared.snapshot import (
     COMPONENT_KIND_PROXY_MAPPING,
     COMPONENT_KIND_PROXY_WEIGHT,
@@ -83,7 +90,6 @@ from irp_shared.snapshot import (
     VAR_TOTAL_BINDING_PREDICATE,
     SnapshotActor,
     VarTotalSnapshotError,
-    build_snapshot,
     build_var_snapshot,
     build_var_total_snapshot,
     list_components,
@@ -100,6 +106,11 @@ D1, D2, D3, D4 = (date(2026, 5, 26), date(2026, 5, 27), date(2026, 5, 28), date(
 ACTOR = VarActor(actor_id="analyst")
 Z95 = Decimal("1.644853626951")
 APPRAISAL_DAYS = 91  # quarterly
+# BT-2: the declared staleness policy. 400 days ~ "the estimate may be up to a year-and-a-bit
+# old" — a plausible governance choice for a quarterly-appraised book (a fresh estimate arrives
+# each appraisal, so a >1y-old one means several cycles were skipped). The default keeps the
+# PA-4 fixtures (whose estimates are days old) comfortably inside the gate.
+MAX_ESTIMATE_AGE_DAYS = 400
 RESIDUAL_STDEV = Decimal("0.04")  # 4%/quarter
 
 #: HAND REFERENCE (independently derived, PA-4): I-USD's total pinned factor exposure MV=30000
@@ -278,6 +289,7 @@ def _mint_estimation_summary(
     residual_stdev: Decimal | None,
     series_currency: str = "USD",
     any_other_run_id: str,
+    estimate_span_end: date | None = None,
 ) -> str:
     """Directly persist a COMPLETED ``PROXY_WEIGHT_ESTIMATE`` run + its ``ESTIMATION_SUMMARY`` row
     (bypassing the full OLS regression chain — PA-4 needs a KNOWN, controlled ``residual_stdev``
@@ -286,20 +298,19 @@ def _mint_estimation_summary(
     (``input_snapshot_id`` a real dataset_snapshot; ``model_version_id`` a real proxy-weight
     model_version; ``source_desmoothed_run_id`` reuses ``any_other_run_id`` — the FK only requires
     an EXISTING ``calculation_run`` row, not a specific ``run_type``) so the fixture is PG-portable
-    (FK-enforced) as well as SQLite-safe."""
-    from irp_shared.risk.bootstrap import register_proxy_weight_regression_model
-    from irp_shared.snapshot.models import PURPOSE_TEST
+    (FK-enforced) as well as SQLite-safe.
 
-    snap = build_snapshot(
-        db,
-        acting_tenant=tenant,
-        actor=SnapshotActor(actor_id="a"),
-        purpose=PURPOSE_TEST,
-        portfolio_id=portfolio_id,
-        as_of_valid_at=VALID_AT,
-        as_of_known_at=KNOWN_AT,
-        as_of_valuation_date=VD,
-    )
+    BT-2 fixture-realism fold: the input snapshot now carries the purpose the REAL chain produces
+    (``PROXY_WEIGHT_INPUT``, not the ``TEST`` shortcut) and an ``as_of_valuation_date`` =
+    ``estimate_span_end`` — the regression SPAN END. The staleness gate reads exactly those two
+    fields off this header, so a TEST-purpose/valuation-date-VD shortcut modelled an estimate that
+    does not exist (and, at VD > D4, one that looks ahead). Default: 30 days before the covariance
+    window end — a plausible "estimated last month" fixture."""
+    from irp_shared.risk.bootstrap import register_proxy_weight_regression_model
+
+    # `_estimate_snapshot` (not the generic `build_snapshot`, whose purpose vocabulary excludes
+    # PROXY_WEIGHT_INPUT) mirrors what `build_proxy_weight_snapshot` really persists.
+    snap = _estimate_snapshot(db, tenant, estimate_span_end or (D4 - timedelta(days=30)))
     mv = register_proxy_weight_regression_model(
         db, tenant_id=tenant, actor_id="a", code_version="risk-v1", min_observations=4
     )
@@ -382,6 +393,7 @@ def _var_total_model(
     code_version: str = "risk-v1",
     confidence: str = "0.95",
     appraisal_days: int = APPRAISAL_DAYS,
+    max_estimate_age_days: int = MAX_ESTIMATE_AGE_DAYS,
 ) -> str:
     return register_var_parametric_total_model(
         db,
@@ -390,6 +402,7 @@ def _var_total_model(
         code_version=code_version,
         confidence_level=confidence,
         appraisal_days=appraisal_days,
+        max_estimate_age_days=max_estimate_age_days,
     ).id
 
 
@@ -730,6 +743,7 @@ def test_appraisal_days_identity_conflicts_and_floor(session: Session) -> None:
             code_version="risk-v1",
             confidence_level="0.95",
             appraisal_days=0,  # must be >= 1
+            max_estimate_age_days=MAX_ESTIMATE_AGE_DAYS,
         )
 
 
@@ -939,12 +953,30 @@ def _mint_total_snapshot(
     covariance_rows: list[dict],
     proxy_mapping_rows: list[dict],
     proxy_weight_rows: list[dict],
+    *,
+    estimate_span_end: date | None = None,
 ):  # noqa: ANN202
     """Hand-mint a total-predicate VAR_INPUT snapshot with ARBITRARY pinned content (bypassing the
     governed builder) — the service-layer adjudication-gate probe (the ``test_var.py``
-    ``_mint_var_snapshot`` precedent, extended with the two PA-4 component kinds)."""
+    ``_mint_var_snapshot`` precedent, extended with the two PA-4 component kinds).
+
+    BT-2: every weight pin is pointed at ONE real, resolvable estimation snapshot whose
+    ``as_of_valuation_date`` is ``estimate_span_end`` (default ``VD`` — a same-day, age-0
+    estimate), so the staleness gate can evaluate. The age battery passes an older span end to
+    drive the gate; a test wanting the unresolvable-citation refusal keeps a weight row's own
+    fabricated ``input_snapshot_id`` by passing it explicitly to ``_weight_content``."""
     from irp_shared.snapshot.service import _persist_snapshot
 
+    est_snapshot = _estimate_snapshot(session, tenant, estimate_span_end or VD)
+    rewritten: list[dict] = []
+    for w in proxy_weight_rows:
+        w = dict(w)
+        # `_keep_snapshot` (popped, never pinned) opts a row OUT of the rewrite so a test can
+        # probe the unresolvable-citation refusal with its own fabricated id.
+        if not w.pop("_keep_snapshot", False):
+            w["input_snapshot_id"] = est_snapshot.id
+        rewritten.append(w)
+    proxy_weight_rows = rewritten
     specs: list = []
     for content in exposure_rows:
         content = dict(content)
@@ -1039,17 +1071,40 @@ def _covariance_content(run_id: str, f1: str, f2: str, value: str, n: int = 4) -
     }
 
 
+def _estimate_snapshot(session: Session, tenant: str, span_end: date):  # noqa: ANN202
+    """Mint a minimal PROXY_WEIGHT_INPUT snapshot HEADER whose ``as_of_valuation_date`` is the
+    regression SPAN END — the anchor BT-2's staleness gate measures a cited estimate's age
+    against (OD-BT-2-C). Hand-minted pins cite it so the age is controllable per test."""
+    from irp_shared.snapshot.service import _persist_snapshot
+
+    return _persist_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=SnapshotActor(actor_id="a"),
+        specs=[],
+        label="",
+        purpose="PROXY_WEIGHT_INPUT",
+        as_of_valid_at=VALID_AT,
+        as_of_known_at=KNOWN_AT,
+        as_of_valuation_date=span_end,
+        binding_predicate_version="v1:test",
+    )
+
+
 def _weight_content(
     instrument_id: str,
     residual_stdev: str,
     series_currency: str = "USD",
     metric_type: str = "ESTIMATION_SUMMARY",
+    input_snapshot_id: str | None = None,
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
         "tenant_id": "t",
         "calculation_run_id": str(uuid.uuid4()),
-        "input_snapshot_id": str(uuid.uuid4()),
+        # BT-2: a genuine pin always cites its estimation snapshot; the age gate resolves it.
+        # Tests that don't care about age pass a fresh one via `input_snapshot_id`.
+        "input_snapshot_id": input_snapshot_id or str(uuid.uuid4()),
         "model_version_id": str(uuid.uuid4()),
         "portfolio_id": str(uuid.uuid4()),
         "instrument_id": instrument_id,
@@ -1407,8 +1462,345 @@ def test_migration_chain_0038(session: Session) -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0039_model_validation"
+    assert script.get_current_head() == "0040_var_estimate_age"
     assert (
         script.get_revision("0038_var_residual_variance").down_revision
         == "0037_proxy_weight_estimate"
     )
+
+
+# --------------------------------------------------------------------- BT-2: the estimate-age gate
+
+
+def _legacy_total_v1_version(
+    session: Session,
+    tenant: str,
+    *,
+    extra_assumptions: tuple[str, ...] = (),
+) -> str:
+    """Mint a pre-BT-2 total ``v1`` version — a row declaring the PA-4 four parameters and NO
+    ``max_estimate_age_days``. The BT-2 registrar mints only v2, so the grandfather is reproduced
+    the way it genuinely exists in a tenant that registered before this slice: the model head +
+    a REGISTERED version carrying the old assumption set."""
+    from irp_shared.model.service import register_model_version, resolve_or_register_model
+    from irp_shared.risk.bootstrap import (
+        CONFIDENCE_ASSUMPTION_PREFIX,
+        HORIZON_ASSUMPTION_PREFIX,
+        VAR_MODEL_TYPE,
+        VAR_TOTAL_MODEL_CODE,
+        VAR_TOTAL_MODEL_NAME,
+        Z_ASSUMPTION_PREFIX,
+    )
+
+    model = resolve_or_register_model(
+        session,
+        tenant_id=tenant,
+        code=VAR_TOTAL_MODEL_CODE,
+        name=VAR_TOTAL_MODEL_NAME,
+        model_type=VAR_MODEL_TYPE,
+        actor_id="legacy",
+    )
+    version = register_model_version(
+        session,
+        model=model,
+        version_label="v1",  # the pre-BT-2 label
+        actor_id="legacy",
+        methodology_ref="05_analytics_methodologies/var_parametric_total_v1.md",
+        code_version="risk-v1",
+        status="REGISTERED",
+        assumptions=(
+            f"{CONFIDENCE_ASSUMPTION_PREFIX}0.9500",
+            f"{HORIZON_ASSUMPTION_PREFIX}1",
+            f"{Z_ASSUMPTION_PREFIX}{VAR_Z_SCORES['0.9500']}",
+            f"{APPRAISAL_DAYS_ASSUMPTION_PREFIX}{APPRAISAL_DAYS}",
+            *extra_assumptions,
+        ),
+    )
+    session.flush()
+    return version.id
+
+
+def _aged_total_run(
+    session: Session,
+    tenant: str,
+    *,
+    span_end: date,
+    max_age: int = MAX_ESTIMATE_AGE_DAYS,
+):  # noqa: ANN202
+    """Run a total VaR whose single cited estimate's regression span ends at ``span_end``. The
+    run's own as-of is the pinned covariance ``window_end`` (D4), so the age the gate sees is
+    ``(D4 - span_end).days``."""
+    fx_run, cov_run, _pf, insts = _seed_upstream_runs(session, tenant)
+    iid = insts["I-USD"]
+    mv = _var_total_model(session, tenant, max_estimate_age_days=max_age)
+    exposure, covariance = _one_factor_pins(fx_run, iid, covariance_run_id=cov_run)
+    snap = _mint_total_snapshot(
+        session,
+        tenant,
+        exposure,
+        covariance,
+        [_mapping_content(iid, "f")],
+        [_weight_content(iid, "0.040000000000")],
+        estimate_span_end=span_end,
+    )
+    return _run_total(session, tenant, mv, None, None, snapshot_id=snap.id)
+
+
+def test_fresh_estimate_binds_and_echoes_age(session: Session) -> None:
+    """A same-day estimate: the gate passes and the age is ECHOED as evidence (OD-BT-2-D)."""
+    result = _aged_total_run(session, str(uuid.uuid4()), span_end=D4)
+    assert result.status == RunStatus.COMPLETED.value
+    assert result.rows[0].estimate_age_days == 0
+
+
+def test_stale_estimate_refused_pre_create(session: Session) -> None:
+    """An estimate older than the DECLARED policy refuses PRE-CREATE (422, zero run) — the
+    staleness register item's mechanical half (OD-BT-2-C)."""
+    tenant = str(uuid.uuid4())
+    with pytest.raises(VarInputError, match="max_estimate_age_days"):
+        _aged_total_run(session, tenant, span_end=D4 - timedelta(days=401), max_age=400)
+    session.rollback()
+    assert_no_running_orphan(session, run_type="VAR")
+
+
+def test_estimate_age_boundary_is_strict(session: Session) -> None:
+    """age == max PASSES (the gate is a strict >), age == max+1 refuses — the boundary pinned."""
+    result = _aged_total_run(session, str(uuid.uuid4()), span_end=D4 - timedelta(days=400))
+    assert result.status == RunStatus.COMPLETED.value
+    assert result.rows[0].estimate_age_days == 400
+    with pytest.raises(VarInputError):
+        _aged_total_run(session, str(uuid.uuid4()), span_end=D4 - timedelta(days=401))
+
+
+def test_look_ahead_estimate_passes_and_echoes_negative(session: Session) -> None:
+    """A NEGATIVE age (the estimate's data ends AFTER this run's as-of — a look-ahead) PASSES: the
+    ratified policy is a MAXIMUM age; a look-ahead gate is a different, unratified concern (the
+    recorded limitation, decision record Part 3 item 5). It is echoed honestly."""
+    result = _aged_total_run(session, str(uuid.uuid4()), span_end=D4 + timedelta(days=10))
+    assert result.status == RunStatus.COMPLETED.value
+    assert result.rows[0].estimate_age_days == -10
+
+
+def test_echo_is_max_across_cited_estimates(session: Session) -> None:
+    """Two proxied instruments with DIFFERENT estimate ages: the echo is the MAX (the binding
+    constraint), not the mean/min."""
+    tenant = str(uuid.uuid4())
+    fx_run, cov_run, _pf, insts = _seed_upstream_runs(session, tenant)
+    a, b = insts["I-USD"], insts["I-EUR"]
+    mv = _var_total_model(session, tenant)
+    exposure, covariance = _one_factor_pins(fx_run, a, covariance_run_id=cov_run)
+    exposure = exposure + [_exposure_content(fx_run, "f", "F", b, "10000.000000")]
+    older = _estimate_snapshot(session, tenant, D4 - timedelta(days=200))
+    newer = _estimate_snapshot(session, tenant, D4 - timedelta(days=5))
+    weights = [
+        {
+            **_weight_content(a, "0.040000000000", input_snapshot_id=older.id),
+            "_keep_snapshot": True,
+        },
+        {
+            **_weight_content(b, "0.030000000000", input_snapshot_id=newer.id),
+            "_keep_snapshot": True,
+        },
+    ]
+    snap = _mint_total_snapshot(
+        session,
+        tenant,
+        exposure,
+        covariance,
+        [_mapping_content(a, "f"), _mapping_content(b, "f")],
+        weights,
+    )
+    result = _run_total(session, tenant, mv, None, None, snapshot_id=snap.id)
+    assert result.status == RunStatus.COMPLETED.value
+    assert result.rows[0].estimate_age_days == 200  # the OLDER one binds
+
+
+def test_zero_proxied_total_run_echoes_null_age(session: Session) -> None:
+    """The byte-invariance case (no proxied instrument ⇒ total ≡ plain parametric): nothing to
+    age, so the echo is NULL — max() over an empty set must not raise."""
+    tenant = str(uuid.uuid4())
+    fx_run, cov_run, _pf, insts = _seed_upstream_runs(session, tenant)
+    mv = _var_total_model(session, tenant)
+    exposure, covariance = _one_factor_pins(fx_run, insts["I-USD"], covariance_run_id=cov_run)
+    snap = _mint_total_snapshot(session, tenant, exposure, covariance, [], [])
+    result = _run_total(session, tenant, mv, None, None, snapshot_id=snap.id)
+    assert result.status == RunStatus.COMPLETED.value
+    assert result.rows[0].estimate_age_days is None
+    assert result.rows[0].residual_variance == Decimal(0)
+
+
+def test_gated_bind_refuses_unresolvable_estimate_snapshot(session: Session) -> None:
+    """A GATED (v2) bind citing an estimation snapshot that is not visible cannot evaluate the
+    declared policy ⇒ fail-closed refusal (OD-BT-2-C)."""
+    tenant = str(uuid.uuid4())
+    fx_run, cov_run, _pf, insts = _seed_upstream_runs(session, tenant)
+    iid = insts["I-USD"]
+    mv = _var_total_model(session, tenant)
+    exposure, covariance = _one_factor_pins(fx_run, iid, covariance_run_id=cov_run)
+    phantom = {**_weight_content(iid, "0.040000000000"), "_keep_snapshot": True}  # random id
+    snap = _mint_total_snapshot(
+        session, tenant, exposure, covariance, [_mapping_content(iid, "f")], [phantom]
+    )
+    with pytest.raises(VarInputError, match="not visible"):
+        _run_total(session, tenant, mv, None, None, snapshot_id=snap.id)
+    session.rollback()
+    assert_no_running_orphan(session, run_type="VAR")
+
+
+def test_ungated_v1_grandfather_binds_and_echoes(session: Session) -> None:
+    """The recorded grandfather (OD-BT-2-C): a total version declaring NO max_estimate_age_days —
+    an immutable pre-BT-2 v1 row — binds UNGATED (a years-stale estimate does NOT refuse) while
+    the age is still ECHOED as evidence. Minted here the only way such a row can exist: the
+    GENERIC registration path, then status-forced (the registrar itself mints only v2)."""
+    tenant = str(uuid.uuid4())
+    fx_run, cov_run, _pf, insts = _seed_upstream_runs(session, tenant)
+    iid = insts["I-USD"]
+    v1 = _legacy_total_v1_version(session, tenant)
+    exposure, covariance = _one_factor_pins(fx_run, iid, covariance_run_id=cov_run)
+    snap = _mint_total_snapshot(
+        session,
+        tenant,
+        exposure,
+        covariance,
+        [_mapping_content(iid, "f")],
+        [_weight_content(iid, "0.040000000000")],
+        estimate_span_end=D4 - timedelta(days=3000),  # ~8 years stale
+    )
+    result = _run_total(session, tenant, v1, None, None, snapshot_id=snap.id)
+    assert result.status == RunStatus.COMPLETED.value  # ungated: no new refusal
+    assert result.rows[0].estimate_age_days == 3000  # but the staleness is VISIBLE
+
+
+def test_declared_policy_duplicate_declaration_refuses(session: Session) -> None:
+    """A version declaring the policy TWICE is ambiguous — fail-closed, never a silent ungate
+    (the parse spec's asymmetry: absent -> ungated, ambiguous -> refuse)."""
+    tenant = str(uuid.uuid4())
+    version = _legacy_total_v1_version(
+        session,
+        tenant,
+        extra_assumptions=(
+            f"{MAX_ESTIMATE_AGE_ASSUMPTION_PREFIX}400",
+            f"{MAX_ESTIMATE_AGE_ASSUMPTION_PREFIX}30",
+        ),
+    )
+    from irp_shared.model.service import WrongModelVersionError
+
+    with pytest.raises(WrongModelVersionError):
+        declared_max_estimate_age_days(session, session.get(ModelVersion, version))
+
+
+def test_var_result_pin_key_set_is_frozen() -> None:
+    """The 0038 false-drift LANDMINE, now guarded (BT-2 plan Step 2): ``var_result_content`` pins
+    the BT-1-era column set. Adding a key — ``residual_variance`` (PA-4) or ``estimate_age_days``
+    (BT-2) — would change the recomputed bytes of every ALREADY-PINNED var_result component and
+    make ``verify_snapshot`` report FALSE DRIFT on historical snapshots. Both columns are
+    deliberately absent; this test fails loudly if a future slice "completes" the serializer."""
+    from types import SimpleNamespace
+
+    from irp_shared.snapshot.serialize import var_result_content
+
+    row = SimpleNamespace(
+        id=str(uuid.uuid4()),
+        tenant_id=str(uuid.uuid4()),
+        calculation_run_id=str(uuid.uuid4()),
+        input_snapshot_id=str(uuid.uuid4()),
+        model_version_id=str(uuid.uuid4()),
+        exposure_run_id=str(uuid.uuid4()),
+        covariance_run_id=None,
+        metric_type=METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
+        base_currency="USD",
+        confidence_level=Decimal("0.9500"),
+        horizon_days=1,
+        z_score=None,
+        sigma=Decimal("1.000000"),
+        var_value=Decimal("1.000000"),
+        n_factors=1,
+        n_observations=4,
+        window_start=D1,
+        window_end=D4,
+        system_from=T0,
+        residual_variance=Decimal("1.00000000000000000000"),  # present on the row...
+        estimate_age_days=42,  # ...and so is the BT-2 echo
+    )
+    keys = set(var_result_content(row))
+    assert "residual_variance" not in keys  # ...but NEITHER is pinned
+    assert "estimate_age_days" not in keys
+    assert keys == {
+        "id",
+        "tenant_id",
+        "calculation_run_id",
+        "input_snapshot_id",
+        "model_version_id",
+        "exposure_run_id",
+        "covariance_run_id",
+        "metric_type",
+        "base_currency",
+        "confidence_level",
+        "horizon_days",
+        "z_score",
+        "sigma",
+        "var_value",
+        "n_factors",
+        "n_observations",
+        "window_start",
+        "window_end",
+        "system_from",
+    }
+
+
+def test_gated_bind_refuses_wrong_purpose_estimate_snapshot(session: Session) -> None:
+    """REVIEW FOLD (two finders converged): the gate must check the cited header's PURPOSE, not
+    just resolve it. Without this, a hand-minted pin citing a FRESH snapshot of some other kind
+    (e.g. the run's own VAR_INPUT header) defeats a tight staleness policy — its
+    as_of_valuation_date is not a regression span end at all."""
+    tenant = str(uuid.uuid4())
+    fx_run, cov_run, _pf, insts = _seed_upstream_runs(session, tenant)
+    iid = insts["I-USD"]
+    mv = _var_total_model(session, tenant, max_estimate_age_days=30)
+    exposure, covariance = _one_factor_pins(fx_run, iid, covariance_run_id=cov_run)
+    # A VAR_INPUT-purpose snapshot dated yesterday — fresh, real, resolvable, and WRONG.
+    decoy = _mint_total_snapshot(session, tenant, exposure, covariance, [], [])
+    weight = {
+        **_weight_content(iid, "0.040000000000", input_snapshot_id=decoy.id),
+        "_keep_snapshot": True,
+    }
+    snap = _mint_total_snapshot(
+        session, tenant, exposure, covariance, [_mapping_content(iid, "f")], [weight]
+    )
+    with pytest.raises(VarInputError, match="purpose"):
+        _run_total(session, tenant, mv, None, None, snapshot_id=snap.id)
+    session.rollback()
+    assert_no_running_orphan(session, run_type="VAR")
+
+
+def test_ungated_partial_resolve_echoes_null_not_subset_max(session: Session) -> None:
+    """REVIEW FOLD: on an UNGATED (v1) bind where SOME cited estimate is unmeasurable, the echo is
+    NULL — never the max over the resolvable subset. A subset max reads as a confident number and
+    UNDERSTATES staleness: a validator triaging v1 via VW-1's sunset lever would see "30 days"
+    while an unmeasured sibling could be years stale. UNKNOWN outranks any known max."""
+    tenant = str(uuid.uuid4())
+    fx_run, cov_run, _pf, insts = _seed_upstream_runs(session, tenant)
+    a, b = insts["I-USD"], insts["I-EUR"]
+    v1 = _legacy_total_v1_version(session, tenant)  # ungated grandfather
+    exposure, covariance = _one_factor_pins(fx_run, a, covariance_run_id=cov_run)
+    exposure = exposure + [_exposure_content(fx_run, "f", "F", b, "10000.000000")]
+    resolvable = _estimate_snapshot(session, tenant, D4 - timedelta(days=30))
+    weights = [
+        {
+            **_weight_content(a, "0.040000000000", input_snapshot_id=resolvable.id),
+            "_keep_snapshot": True,
+        },
+        # B cites a snapshot that does not exist -> unmeasurable.
+        {**_weight_content(b, "0.030000000000"), "_keep_snapshot": True},
+    ]
+    snap = _mint_total_snapshot(
+        session,
+        tenant,
+        exposure,
+        covariance,
+        [_mapping_content(a, "f"), _mapping_content(b, "f")],
+        weights,
+    )
+    result = _run_total(session, tenant, v1, None, None, snapshot_id=snap.id)
+    assert result.status == RunStatus.COMPLETED.value  # ungated: still no new refusal
+    assert result.rows[0].estimate_age_days is None  # NOT 30 — the honest answer is "unknown"

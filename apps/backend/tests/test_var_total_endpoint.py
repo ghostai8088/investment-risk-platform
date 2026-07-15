@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -66,6 +66,7 @@ _KA = datetime(2030, 1, 1, tzinfo=UTC)
 _VD = date(2026, 6, 1)
 _D = (date(2026, 5, 26), date(2026, 5, 27), date(2026, 5, 28), date(2026, 5, 29))
 _APPRAISAL_DAYS = 91
+_MAX_ESTIMATE_AGE_DAYS = 400  # BT-2: the declared staleness policy
 
 
 @pytest.fixture
@@ -209,18 +210,25 @@ def ctx() -> Iterator[tuple[TestClient, Principal, Session, str, str, str]]:
 
     # PA-4: proxy-map I-USD via a REGRESSION mapping citing a completed proxy-weight estimate.
     from irp_shared.risk.bootstrap import register_proxy_weight_regression_model
-    from irp_shared.snapshot import SnapshotActor, build_snapshot
-    from irp_shared.snapshot.models import PURPOSE_TEST
+    from irp_shared.snapshot import SnapshotActor
+    from irp_shared.snapshot.models import PURPOSE_PROXY_WEIGHT_INPUT
+    from irp_shared.snapshot.service import _persist_snapshot
 
-    snap = build_snapshot(
+    # BT-2 fixture realism: the estimate's input snapshot must be what the REAL chain persists —
+    # a PROXY_WEIGHT_INPUT header whose as_of_valuation_date is the regression SPAN END (the
+    # staleness gate reads exactly those two fields; a TEST-purpose header models an estimate that
+    # cannot exist). Span end = 30 days before the covariance window end -> a fresh estimate.
+    snap = _persist_snapshot(
         db,
         acting_tenant=tenant_id,
         actor=SnapshotActor(actor_id="a"),
-        purpose=PURPOSE_TEST,
-        portfolio_id=pf,
+        specs=[],
+        label="",
+        purpose=PURPOSE_PROXY_WEIGHT_INPUT,
         as_of_valid_at=_VA,
         as_of_known_at=_KA,
-        as_of_valuation_date=_VD,
+        as_of_valuation_date=_D[3] - timedelta(days=30),
+        binding_predicate_version="v1:test",
     )
     pw_mv = register_proxy_weight_regression_model(
         db, tenant_id=tenant_id, actor_id="a", code_version="risk-v1", min_observations=4
@@ -299,6 +307,7 @@ def _register_total(
     p: Principal,
     confidence: str = "0.95",
     appraisal_days: int = _APPRAISAL_DAYS,
+    max_estimate_age_days: int = _MAX_ESTIMATE_AGE_DAYS,
 ) -> str:
     resp = client.post(
         "/risk/models/var-parametric-total",
@@ -306,6 +315,8 @@ def _register_total(
             "code_version": "risk-v1",
             "confidence_level": confidence,
             "appraisal_days": appraisal_days,
+            # BT-2: the declared staleness policy is REQUIRED on the v2 identity.
+            "max_estimate_age_days": max_estimate_age_days,
         },
         headers=_h(p),
     )
@@ -357,7 +368,12 @@ def test_appraisal_days_vocabulary_floor(ctx) -> None:  # noqa: ANN001
     client, p, _db, _fx_run, _cov_run, _iid = ctx
     resp = client.post(
         "/risk/models/var-parametric-total",
-        json={"code_version": "risk-v1", "confidence_level": "0.95", "appraisal_days": 0},
+        json={
+            "code_version": "risk-v1",
+            "confidence_level": "0.95",
+            "appraisal_days": 0,
+            "max_estimate_age_days": _MAX_ESTIMATE_AGE_DAYS,
+        },
         headers=_h(p),
     )
     assert resp.status_code == 422

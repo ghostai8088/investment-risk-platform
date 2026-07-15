@@ -10,8 +10,76 @@ Accountability for the shipped VaR numbers: line each historical VaR forecast up
 realized flow-adjusted P&L of the SAME portfolio over the SAME horizon, count the exceptions
 (losses exceeding VaR), and judge the count with the standard minimal battery — the Kupiec (1995)
 proportion-of-failures coverage test and the Basel (BCBS January 1996) traffic-light zone.
-Applies to ONE VaR method per run (`VAR_PARAMETRIC` xor `VAR_HISTORICAL`); comparing methods is
-two runs side by side. This is model-risk monitoring evidence, not a capital calculation.
+Applies to ONE VaR method per run (`VAR_PARAMETRIC`, `VAR_HISTORICAL`, or `VAR_PARAMETRIC_TOTAL`
+— see the BT-2 scope amendment below); comparing methods is two runs side by side. This is
+model-risk monitoring evidence, not a capital calculation.
+
+### Scope amendment — BT-2 (2026-07-15): the total series, admitted with a doctrine
+
+`VAR_PARAMETRIC_TOTAL` (PA-4) was excluded from the backtestable vocabulary at v1. **BT-2 admits
+it** (OD-BT-2-A/B) — the mechanical half is one vocabulary entry; the half that matters is this
+doctrine, which a reader MUST apply when interpreting a total-series backtest.
+
+**The pathology, by construction.** Every VaR this platform registers is a **1-day** forecast
+(`VAR_HORIZON_DAYS = 1`, enforced fail-closed in the declared identity). A book holding
+appraisal-marked private assets revalues that leg only on mark dates. So:
+- **Between marks:** the private leg's realized P&L is *flat* — it cannot breach anything — while
+  the forecast includes its `σ_e,daily` every day. Exceptions are **mechanically suppressed**.
+- **On a mark date:** the whole appraisal period's move lands in ONE day's P&L against a ONE-day
+  allowance. Exceptions **cluster** there.
+
+The unconditional exception count mixes these two OPPOSITE biases.
+
+**Supervisory footing** (stated carefully — the honesty text is this slice's product, so a citation
+that does not say what we need it to say is worse than no citation):
+- **BCBS 22 (1996)** states the traffic-light framework's *primary* assumption is that "each day's
+  test (exception/no exception) is independent of the outcome of any of the others." An
+  appraisal-marked series violates that assumption **by construction**, not by bad luck. This is
+  the directly-on-point citation.
+- **FRTB's RFET/NMRF** machinery is Basel's actual answer to stale/unobservable inputs: a factor
+  that fails the real-price-observability test is **excluded from the daily-VaR-and-backtest
+  perimeter and capitalised separately** — it is never backtested daily. A quarterly-appraised
+  asset fails that test by an order of magnitude. (Secondary sourcing; the MAR31 text was not
+  fetched.)
+- **We deliberately do NOT cite MAR32.27** ("Smoothing of valuation adjustments that are not
+  calculated daily is not allowed") as footing, though an earlier draft did. Its subject is
+  *valuation adjustments* (the CVA/reserve family — accounting overlays on the base mark), not
+  positions' marks; and its direction is the opposite of what we would want it for: it *requires*
+  a non-daily adjustment to enter ACTUAL P&L unsmoothed (landing as a jump), which Basel then
+  backtests daily. Our carried marks are already MAR32.27-shaped. Basel's mitigation there is to
+  keep non-daily items out of the *hypothetical* (clean) leg — a mitigation unavailable to us,
+  since BT-1 ships the ACTUAL leg only. Recorded so no reader re-derives the stretch.
+
+**THE READ RULE (normative).** On a book with appraisal-marked positions:
+1. The unconditional `KUPIEC_LR` / `BASEL_ZONE` verdict is **NOT valid evidence of adequacy in
+   EITHER direction.** A clean record proves nothing (suppression); an excess count is confounded
+   (clustering). Do not cite it as validation evidence without this caveat attached.
+2. **Validity degrades with the private-leg share.** A liquid-dominated book with a small proxied
+   sleeve retains a near-valid daily read; a majority-private book's read is near-meaningless.
+3. **The dated per-pair `EXCEPTION_INDICATOR` rows are the honest evidence surface** — mark-date
+   clustering is directly visible in them. Read the series, not the scalar.
+4. *(Citation currency: **SR 11-7 was superseded 2026-04-17 by SR 26-2** / OCC 2026-13 — see
+   `vw_1_decision_record.md`'s citation-currency note. SR 11-7 is cited here as the more
+   prescriptive text on validation mechanics; SR 26-2 retains the three-component validation
+   anatomy, but this platform has NOT verified that it carries forward the specific
+   observation-frequency and clustering sentences quoted below. Treat them as SR 11-7 propositions,
+   not as confirmed current supervisory wording.)*
+5. **The statistically-honest configurations are named, not silently absent** (BT-3 candidates): an
+   **appraisal-frequency pairing** (SR 11-7: outcomes analysis at "an observation frequency that
+   matches the forecast horizon"; BCBS 22 gives the binomial recipe for non-250 sample sizes —
+   though note 99%/quarterly has near-zero power, green zone = {0}, so a 95% companion quantile is
+   the practical form) needs multi-day-horizon VaR, a standing deferral; and a **Christoffersen
+   (1998) independence leg** is the clustering diagnostic (SR 11-7 explicitly calls for "assessing
+   any clustering of exceptions").
+6. **The compensating control (SR 11-7).** Where outcomes analysis is limited, the guidance's
+   posture is documentation + compensating controls, never silence. VW-1's validation workflow is
+   that surface: a 2L validator records this concern as a FINDING (and, where warranted,
+   `APPROVED_WITH_CONDITIONS`) against the total model.
+
+*Honesty note:* the two-sided mechanism above is a first-principles reading of this platform's own
+construction. No published study of VaR backtest exception-count distortion for appraisal-marked
+assets was found; Getmansky-Lo-Makarov (2004) Prop 1 supplies the underlying smoothed-return
+variance shrinkage, not the backtest result itself.
 
 ## Inputs & data policy
 
@@ -87,6 +155,10 @@ post-create FAILED (committed run + DQ evidence + zero rows) for magnitude-gate 
 
 Mirrored into `model_limitation` rows (see `VAR_BACKTEST_LIMITATIONS`): the captured-holdings
 ANTI-CONSERVATIVE P&L bias (the PM-1 carry, third naming); ACTUAL-P&L leg only (hypothetical/clean
-P&L deferred — no static repricing engine); Kupiec-only (Christoffersen independence = BT-2; no
-Basel multiplier arithmetic; no p-values); small-N asymptotics recorded via `n_pairs` on every
-row; calendar-day horizon interpretation; one method per run.
+P&L deferred — no static repricing engine); Kupiec-only (Christoffersen independence is a **BT-3
+candidate** — the "BT-2" label in earlier texts predates Wave 5, whose ratified BT-2 is the
+total-series admit; no Basel multiplier arithmetic; no p-values); small-N asymptotics recorded via
+`n_pairs` on every row; calendar-day horizon interpretation; one method per run. **BT-2 adds** the
+total-series read-validity limitation + read rule (the scope amendment above) — registered on new
+registrations; existing immutable `model_version` rows cannot be appended to, so for those tenants
+the doctrine reaches only via this referent and a VW-1 validation finding.

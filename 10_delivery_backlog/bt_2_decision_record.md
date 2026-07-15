@@ -11,7 +11,7 @@
 | OD | Decision |
 |---|---|
 | **A — Admit the method** | Add `METRIC_TYPE_VAR_PARAMETRIC_TOTAL` to the BACKTESTABLE `METRIC_TYPES` tuple (the ratified extension its own comment demands). Everything else in the pairing machinery is method-agnostic and UNTOUCHED: same ENT-055 table (zero schema change for the admit itself), same kernel, same API schemas, same alignment/MV-chain/identity/uniformity gates, same Basel domain gate (a non-(0.99, 250, 1-day) run simply omits the zone row — already the shipped semantics). One backtest run = ONE method (unchanged); a TOTAL backtest is a third parallel lane, not a joint test. |
-| **B — The honest-pairing DOCTRINE (the "M methodology" half)** | The only mechanically available v1 pairing is **daily** (every VaR is a verbatim 1-day forecast — Grounding). Against an appraisal-marked book, a daily total-series backtest has a **TWO-SIDED pathology, by construction**: (i) between marks the private leg's realized P&L is identically zero (carried marks), while the forecast includes `σ_e,daily` every day — exceptions are mechanically SUPPRESSED (GLM 2004 Prop 1 direction; MAR32.27 explicitly bans smoothing low-frequency marks into daily P&L; BCBS 22's traffic-light rests on a stated independence assumption this series violates); (ii) ON a mark date, the entire appraisal period's private move lands in ONE day's P&L against a 1-day allowance (`σ_e,daily = σ_e,period/√d̄`) — exceptions CLUSTER on mark dates. The unconditional Kupiec count mixes the two opposite biases. **The doctrine, recorded as registered model limitations + the methodology amendment**: (1) on appraisal-marked books the unconditional Kupiec/Basel read is NOT valid evidence of adequacy in EITHER direction; its validity degrades with the private-leg share (a liquid-dominated book with a small proxied sleeve keeps a near-valid daily read); (2) the per-pair `EXCEPTION_INDICATOR` rows (dated, already emitted) are the honest evidence surface — mark-date clustering is VISIBLE in them; (3) the statistically-honest configurations are named follow-ups, NOT silently absent: an appraisal-frequency pairing requires the multi-day-horizon VaR capability (√t + calendar-aware conversion — the standing REQ-MKT-001 deferral; SR 11-7's "observation frequency that matches the forecast horizon" sentence and BCBS 22's own other-sample-sizes binomial recipe are the supervisory footing), and a Christoffersen independence leg is the clustering diagnostic (OD-F). SR 11-7's compensating-controls posture (documented limitation + other controls, never silent) is the citable frame — and VW-1's validation workflow is the compensating-control surface: a validator can now record exactly this concern as a finding/conditions on `risk.var.parametric_total`. |
+| **B — The honest-pairing DOCTRINE (the "M methodology" half)** | The only mechanically available v1 pairing is **daily** (every VaR is a verbatim 1-day forecast — Grounding). Against an appraisal-marked book, a daily total-series backtest has a **TWO-SIDED pathology, by construction**: (i) between marks the private leg's realized P&L is identically zero (carried marks), while the forecast includes `σ_e,daily` every day — exceptions are mechanically SUPPRESSED (GLM 2004 Prop 1 direction; **BCBS 22** states the traffic light's PRIMARY assumption is that each day's test is independent of the others — violated here by construction; **FRTB's RFET/NMRF** excludes stale/unobservable inputs from the daily VaR+backtest perimeter rather than testing them daily. **MAR32.27's anti-smoothing rule was CONSIDERED and REJECTED as footing at review** — its subject is *valuation adjustments* (the CVA/reserve family), not positions' marks, and its direction is the opposite of what it would be cited for: it REQUIRES a non-daily adjustment to enter ACTUAL P&L unsmoothed, which Basel then backtests daily. Recorded in the methodology referent so no reader re-derives the stretch); (ii) ON a mark date, the entire appraisal period's private move lands in ONE day's P&L against a 1-day allowance (`σ_e,daily = σ_e,period/√d̄`) — exceptions CLUSTER on mark dates. The unconditional Kupiec count mixes the two opposite biases. **The doctrine, recorded as registered model limitations + the methodology amendment**: (1) on appraisal-marked books the unconditional Kupiec/Basel read is NOT valid evidence of adequacy in EITHER direction; its validity degrades with the private-leg share (a liquid-dominated book with a small proxied sleeve keeps a near-valid daily read); (2) the per-pair `EXCEPTION_INDICATOR` rows (dated, already emitted) are the honest evidence surface — mark-date clustering is VISIBLE in them; (3) the statistically-honest configurations are named follow-ups, NOT silently absent: an appraisal-frequency pairing requires the multi-day-horizon VaR capability (√t + calendar-aware conversion — the standing REQ-MKT-001 deferral; SR 11-7's "observation frequency that matches the forecast horizon" sentence and BCBS 22's own other-sample-sizes binomial recipe are the supervisory footing), and a Christoffersen independence leg is the clustering diagnostic (OD-F). SR 11-7's compensating-controls posture (documented limitation + other controls, never silent) is the citable frame — and VW-1's validation workflow is the compensating-control surface: a validator can now record exactly this concern as a finding/conditions on `risk.var.parametric_total`. |
 | **C — The σ_e estimate-age GATE (the VW-1 fork-A ride-along, ACCEPTED)** | A NEW **required declared parameter `max_estimate_age_days`** on the total-VaR model, minted as **`risk.var.parametric_total` `v2`** (the immutable-version convention + mechanics force the new label — Grounding; the registrar's fixed label bumps v1→v2 and always declares the 5th parameter). **Age anchor**: `estimate_age_days = parsed.window_end − (the cited estimation run's PROXY_WEIGHT_INPUT snapshot header `as_of_valuation_date`)` — the regression span end, the economically honest "how old is the data under this σ_e"; read tenant-scoped via the PINNED `input_snapshot_id` (true-append-only IA header; the PM-1 drift-free-live-read precedent). Reference side = the pinned covariance `window_end` (the run's own economic as-of) — the comparison is reproducible across re-runs (AD-014 preserved). Gate: `age > max_estimate_age_days` (strict) ⇒ `VarInputError` pre-create refusal (422, zero run) **at bind-time adjudication in the total path** (AFTER `_parse_total_pins`; NOT inside `_adjudicate_total_proxies`, which stays deliberately pure/session-less — the gate needs the tenant-scoped snapshot read). On a GATED (v2) bind, a gone/cross-tenant estimation-snapshot header ⇒ refuse (the gate cannot evaluate — fail-closed); the ungated-v1 posture differs (OD-D). **Parse spec** (`declared_max_estimate_age_days`): absent → `None` (ungated — the v1 grandfather); present-but-malformed OR duplicated → `WrongModelVersionError` fail-closed (NOT `sole_declared`'s silent None-on-ambiguous — the family's fail-closed convention). **v1 grandfather posture**: existing immutable v1 registrations keep binding gate-UNGATED (recorded — v1 predates the policy; no shipped path appends a declaration to an existing version, and doing so would violate the immutability convention); every NEW registration is v2 and gated; the generic-mint bypass is CLOSED by the existing status-REGISTERED backstop (a generic `POST /models` version carries `status=None` and is refused at every bind before any declared-parameter parse). The API model-registration endpoint gains a **required** `max_estimate_age_days` field (no default — a staleness policy is consciously declared, the OD-P3-5-D philosophy). |
 | **D — The age ECHO (migration `0040`)** | The register item's own text names recording: "…or even **records estimate age at total-VaR time**." Additive nullable `var_result.estimate_age_days` (Integer; NULL off the total family; on a total row = the **MAX** age across cited estimates — the binding constraint). **The echo is EVIDENCE, the gate is POLICY: the age is computed and echoed on EVERY total bind, including ungated grandfathered v1 binds.** The one asymmetry, recorded: on an ungated v1 bind whose estimation-snapshot header cannot be resolved, the echo is `NULL` and the bind proceeds — a grandfathered path must not gain a NEW refusal; on a gated v2 bind the same condition refuses (OD-C). A zero-proxied-instrument total run (the byte-invariance case) echoes `NULL` (no cited estimates — max over an empty set). Mechanics: the exact `0038 residual_variance` precedent, including its landmine rule — the column is **EXCLUDED from `var_result_content`** (adding a pin key false-drifts every historical pinned VAR component). Surfaced on the VaR row API read (additive nullable field). |
 | **E — Registry accounting** | REUSE everything: `risk.run`/`risk.view` (no mint), `run_type=VAR_BACKTEST`, ENT-055 (amend the catalog row's "xor" clause), `RISK.*` stays reserved (no EVT), `model.inventory.register` for the v2 mint. REQ-MKT-005 stays In-Progress (advanced); REQ-MKT-001's total-series-backtest deferral clause DISCHARGED; PA-4 Part-6 deferral 1 DISCHARGED; the estimate-staleness register item's mechanical half PAID (closing the item — VW-1 paid the governance half). Methodology referents: **`var_parametric_total_v2.md`** minted (the v1 doc IS self-declared immutable; the carry-forward rule applies) for the v2 model; **`var_backtesting_v1.md` carries NO immutability self-declaration (grounding-verified)** — the operative branch is a **dated additive "Scope amendment (BT-2)" section** (three-method applicability + the OD-B doctrine + the BT-3 pointers), no versioned referent needed. |
@@ -22,7 +22,20 @@
 
 Incremental on BT-1's citations (Kupiec 1995; BCBS 22 incl. the zone table; Christoffersen 1998 named-deferred; SR 11-7) and PA-1/PA-4's (Geltner 1993; Getmansky-Lo-Makarov 2004; Sharpe 1963):
 
-- **BCBS MAR32** (Basel Framework, eff. 2023) — MAR32.25-27: hypothetical P&L = static revaluation; fees excluded; **"Smoothing of valuation adjustments that are not calculated daily is not allowed"** (32.27) — the direct supervisory anti-smoothing rule OD-B cites; MAR32.5(2): unavailable P&L/VaR COUNTS as an outlier (unavailability is penalized, not excused); MAR32.6: an outlier driven by a non-modellable risk factor may be disregarded with supervisory notification — the regulators' pattern for stale/unobservable factors is carve-out-and-capitalize (NMRF/RFET), never daily-backtest-the-smoothed-series. **VERIFIED (full text read via mirror).**
+- **BCBS MAR32** (Basel Framework, eff. 2023) — MAR32.25-27 read in full. **Review correction
+  (2026-07-15): MAR32.27's anti-smoothing rule is NOT footing for this doctrine and is no longer
+  cited as such.** Its verbatim text ("Smoothing of valuation adjustments that are not calculated
+  daily is not allowed") is accurate, but MAR32.26 fixes its subject as *valuation adjustments* —
+  the CVA/reserve family of accounting overlays on the base mark — **not positions' marks**; and
+  its direction is the opposite of the use it was drafted into: it REQUIRES a non-daily adjustment
+  to enter ACTUAL P&L unsmoothed (landing as a jump), which Basel then backtests daily. Our carried
+  marks are already MAR32.27-shaped; Basel's mitigation there (keep non-daily items out of the
+  *hypothetical* leg) is unavailable to us anyway, since BT-1 ships the ACTUAL leg only. Retained
+  from MAR32 as genuinely on-point: **MAR32.5(2)** (an unavailable P&L/VaR COUNTS as an outlier —
+  unavailability is penalised, not excused) and **MAR32.6** (an outlier driven by a non-modellable
+  risk factor may be disregarded with supervisory notification — the carve-out-and-capitalise
+  pattern). **VERIFIED (full text read via mirror); the correction is recorded because a citation
+  that does not say what we need it to say is worse than no citation.**
 - **BCBS 22** (1996) — the traffic-light's **stated primary assumption**: "each day's test … is independent of the outcome of any of the others" (violated by construction here — the citable hook for OD-B); the type-1/type-2 power tables; and the **other-sample-sizes recipe**: "For other sample sizes, the boundaries should be deduced by calculating the binomial probabilities associated with true coverage of 99%" — BCBS-native machinery for a future appraisal-frequency configuration (at 99%/quarterly n≈20 the green zone is {0} — near-zero power; a 95% companion quantile is the practical fix, recorded in the doctrine as usage guidance). **VERIFIED (full text).**
 - **SR 11-7** (2011; superseded by SR 26-2 as recorded at VW-1) — outcomes analysis "at an observation frequency that **matches the forecast horizon**" (the future appraisal-frequency configuration's footing — and, today, the reason a 1-day forecast pairs daily); "assessing any **clustering of exceptions**" as the beyond-counting test (the OD-F diagnostic's supervisory endorsement); the **compensating-controls** sentence (infeasible validation ⇒ documented + communicated + mitigated by other controls — the posture OD-B adopts, with VW-1 as the control surface). **VERIFIED (full text).**
 - **Getmansky, Lo & Makarov (2004)**, *JFE* 74(3) — Proposition 1: observed smoothed returns preserve the mean, shrink variance by `Σθ_j² ≤ 1`, bias betas to zero, and induce positive autocorrelation — the formal basis for the suppressed-exceptions direction. **VERIFIED (working-paper full text).** **Honesty flag: no published paper was found on VaR backtest exception-count distortion for appraisal-marked assets specifically** — the mechanical two-sided argument in OD-B (zero-P&L days + mark-date jumps) is stated as first-principles construction, not literature.
@@ -62,8 +75,97 @@ review per OD-G.
 
 ## Part 5.5 — Implementation deviations from the ratified plan
 
-*(recorded during the build)*
+1. **The TOTAL golden lane uses a ZERO-PROXY chain, not the plan's full PA-4 chain, and one window
+   end rather than two.** Plan Step 5 said "the PA-4 chain (proxy weights + residual_stdev +
+   declared appraisal_days) → total-VaR v2 runs at two window ends → backtest". The shipped
+   `test_build_path_total_var_method` runs a total-VaR over the backtest file's existing chain with
+   NO proxied instrument — PA-4's documented byte-invariance case, which is still a genuine
+   `VAR_PARAMETRIC_TOTAL` row. Rationale: the backtest lane consumes `var_value`/`window_end`/
+   `metric_type`, never the residual decomposition; standing up the PA-1→PA-3 chain inside
+   `test_var_backtest.py` would have made the fixture the subject. The residual arithmetic + the
+   age gate are proven end-to-end in `test_var_total.py` (which owns that chain). A review fold
+   ANCHORS the golden to the plain family's hand-derived `BT1_VAR99` so the invariance is asserted,
+   not assumed.
+2. **The registrar's absent-on-resolved-row refusal is a 409, not the plan's 422.** Plan Step 3
+   said "absent-on-resolved-row → 422". The identity post-check reaches it first and raises
+   `ModelVersionConflictError` (409) — the correct class: a resolved row that does not carry the
+   declaration this registrar claims to mint IS an identity conflict ("mint a new version_label"),
+   not a malformed request. The 422 path still exists at bind (`declared_max_estimate_age_days`
+   on a malformed/duplicated declaration).
+3. **`_estimate_age_days` lives in the binder, not `_adjudicate_total_proxies`** — as the RECORD's
+   OD-C says (the record was corrected at planning); noting it because the plan's prose could be
+   read either way. `_adjudicate_total_proxies` stays PURE/session-less; the gate needs a
+   tenant-scoped read.
+4. **The dead `span_end is None` branch was removed** at review — `as_of_valuation_date` is
+   `nullable=False`, so the guard could never fire.
 
 ## Part 6 — Review dispositions + closure
 
-*(written at fold/close per the house pattern)*
+**Battery:** `make check` **1419+** passed; full local-PG (schema-reset run, **dirty-schema
+double-run**, `alembic check` clean, downgrade-base→upgrade-head smoke) all green; migration head
+`0039`→`0040_var_estimate_age`.
+
+**Review: 4 finders (adversarial on the OD-C gate + numeric on the goldens + doctrine/docs + scope
+fence), per OD-G.** The adversarial finder could not break the refusal direction or AD-014; the
+scope-fence finder cleared all five clauses; the numeric finder independently re-derived every age,
+the `BT1_VAR99` golden, and the two-instrument residual decomposition (all correct). Dispositions:
+
+1. **MEDIUM ×2, CONVERGED (adversarial + numeric independently) — the gate never checked the cited
+   header's `purpose`.** `resolve_snapshot` filters on `(id, tenant_id)` only, so a hand-minted pin
+   citing a FRESH snapshot of another kind (e.g. the run's own `VAR_INPUT` header) defeated a tight
+   policy: probe-verified `max_estimate_age_days=30` + a decoy header dated `window_end−1` →
+   COMPLETED. The anchor's MEANING is the contract — an `as_of_valuation_date` off a non-
+   `PROXY_WEIGHT_INPUT` snapshot is not a regression span end, and the AD-014 argument itself rests
+   on the premise the code never enforced. **FIXED**: gated binds refuse a wrong-purpose citation
+   (ungated echo `None`); `test_gated_bind_refuses_wrong_purpose_estimate_snapshot` pins it.
+2. **MEDIUM, CONVERGED (adversarial F1 + doctrine LOW-4) — the ungated partial-resolve echo was a
+   SUBSET max, contradicting four doc sites.** With ≥2 cited estimates where only some resolve, the
+   echo reported the max over survivors — a confident-looking number that UNDERSTATES staleness on
+   the exact surface VW-1's grandfather-sunset lever reads. **FIXED**: any unmeasurable estimate on
+   an ungated bind ⇒ echo `None` (UNKNOWN outranks a known max); the ORM/migration/API/methodology
+   wording now matches; `test_ungated_partial_resolve_echoes_null_not_subset_max` pins it.
+3. **MEDIUM (doctrine) — MAR32.27 was STRETCHED in the honesty text itself.** The registered
+   limitation, the methodology amendment and the record all cited it as "bans smoothing non-daily
+   marks into daily P&L". Its subject is *valuation adjustments* (CVA/reserves), not marks; and its
+   direction is opposite — it REQUIRES a non-daily item to enter ACTUAL P&L unsmoothed, which Basel
+   then backtests daily (our carried marks are already MAR32.27-shaped). A validator checking the
+   citation behind the limitation would have found it forbids a practice we do not perform —
+   discrediting the honesty text that IS this slice. **FIXED**: MAR32.27 removed as footing from
+   all three sites and the rejection RECORDED (Part 2 + the referent) so no reader re-derives the
+   stretch; the doctrine now rests on BCBS 22's stated per-day independence assumption (directly on
+   point) and FRTB's RFET/NMRF carve-out pattern (correctly directed), with MAR32.5(2)/32.6
+   retained.
+4. **MEDIUM (doctrine) — SR 11-7 cited in the shipped referent with no supersession caveat**, three
+   months after the repo's own recorded SR 26-2 supersession (the record carried it; the referent
+   did not). **FIXED**: the caveat now rides the referent's citations, explicitly noting the
+   quoted sentences are SR 11-7 propositions this platform has NOT verified carry forward.
+5. **MEDIUM (doctrine) — migration `0040` and the v1→v2 identity bump were recorded in NO catalog.**
+   ENT-027 still named v1, enumerated four declared parameters, and ended its additive-column
+   history at `0038` — while a v2 bind can now REFUSE on a parameter the catalog never mentioned
+   (OD-E's accounting list omitted ENT-027: a planning gap the build inherited). **FIXED**: the
+   ENT-027 row carries v2, the 5th declared parameter, and `0040`.
+6. **LOW (adversarial F3 + numeric) — the parse pattern deviated from the ratified spec**
+   (`_DIGITS_PATTERN` `[0-9]+`, unbounded + leading zeros, vs the plan's `[1-9][0-9]{0,4}`).
+   **FIXED**: a dedicated `_MAX_ESTIMATE_AGE_PATTERN`.
+7. **LOW (numeric) — the TOTAL golden asserted its own computed row (self-referential).** **FIXED**:
+   anchored to the plain family's hand-derived `BT1_VAR99`, so a future residual leak into the
+   zero-proxy path fails the test.
+8. **Fixture-realism fold (found by the purpose fix):** PA-4's `_seed_estimate_run` minted its
+   estimate snapshot with `purpose=TEST` and `as_of_valuation_date=VD` — modelling an estimate that
+   cannot exist (and, at VD > D4, one that looks ahead). Now `PROXY_WEIGHT_INPUT` with a span end 30
+   days before the window end, mirroring `build_proxy_weight_snapshot`.
+
+**Accepted-as-recorded:** the ungated-v1 echo asymmetry (OD-D, by design); the look-ahead pass (Part
+3 item 5, now test-pinned); no PG leg for the age column and no API assertion of
+`estimate_age_days` — **recorded as a residual coverage gap** (the age is an `int` from `date`
+subtraction with no Decimal/round-trip hazard, and the PG leg's own rationale is decimal parity;
+trigger: the next slice touching `var_result`'s PG suite).
+
+**Registry accounting:** REQ-MKT-005 ADVANCED (not closed); REQ-MKT-001's total-series clause
+DISCHARGED; PA-4 Part-6 deferral 1 DISCHARGED; the **estimate-staleness register item CLOSED**
+(VW-1 governance half + BT-2 mechanical half); ENT-027/ENT-055 catalog rows amended; the stale
+"Christoffersen = BT-2" label fixed at five sites (Christoffersen + appraisal-frequency pairing =
+named **BT-3 candidates**).
+
+**BT-2 CLOSED** pending PR merge + CI green (commit hash recorded in the roadmap log + memory at
+close).

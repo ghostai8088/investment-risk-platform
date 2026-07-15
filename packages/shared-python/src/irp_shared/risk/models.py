@@ -259,6 +259,15 @@ class VarResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     # row. Persisted as decomposition evidence: σ_factor² = sigma² − residual_variance (sigma holds
     # the TOTAL σ on a total-family row). Numeric(38,20) — the covariance/variance scale.
     residual_variance: Mapped[Decimal | None] = mapped_column(PreciseDecimal(38, 20), nullable=True)
+    # BT-2 (migration 0040): on a VAR_PARAMETRIC_TOTAL row, how stale the cited PA-3 residual
+    # estimates were at the run's own economic as-of — pinned covariance window_end MINUS the
+    # cited estimation run's PROXY_WEIGHT_INPUT snapshot as_of_valuation_date (the regression span
+    # end), MAX across cited estimates. NULL on parametric/HS rows, on a total run citing no
+    # estimates, and on an ungated v1 bind with an unresolvable estimation-snapshot header (the
+    # echo is EVIDENCE, the gate is POLICY — OD-BT-2-D). Negative = a look-ahead estimate (legal,
+    # ungated in v1 — a recorded limitation). EXCLUDED from var_result_content (the 0038 false-
+    # drift landmine rule).
+    estimate_age_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ActiveRiskResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
