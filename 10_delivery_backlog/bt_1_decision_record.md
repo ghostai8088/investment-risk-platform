@@ -54,6 +54,13 @@
 2. **Actual-only P&L** — hypothetical/clean P&L backtesting deferred (no static repricing engine).
 3. **Kupiec only** — no Christoffersen independence/conditional coverage (BT-2), no Basel multiplier
    arithmetic, no p-values (critical-value decisions at the declared alpha only).
+   > **Cross-note added 2026-07-15 (BT-2, additive — the ratified text above is unchanged):** the
+   > "BT-2" label here predates Wave 5 and meant *the Christoffersen extension*. Wave 5's ratified
+   > **BT-2 is the total-series admit** (`bt_2_decision_record.md`), which took the name first. The
+   > Christoffersen independence/conditional-coverage leg is now a named **BT-3 candidate**, along
+   > with the appraisal-frequency pairing. BT-2 also DISCHARGED this record's implicit one-method
+   > scope-out for the total family: `VAR_PARAMETRIC_TOTAL` is backtestable, under the recorded
+   > honest-pairing doctrine (see `var_backtesting_v1.md`'s BT-2 scope amendment).
 4. **Small-N honesty** — Kupiec is asymptotic; `KUPIEC_LR` is emitted for any `N ≥ 1` with `n_pairs`
    recorded on every row so a reader can weigh it; the Basel zone refuses to exist off its domain.
 5. **Calendar-day horizon interpretation** (consistent with PM-1's calendar-day Dietz); trading-day

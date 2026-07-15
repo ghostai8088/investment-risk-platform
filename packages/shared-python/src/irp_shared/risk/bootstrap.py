@@ -1034,9 +1034,28 @@ VAR_BACKTEST_LIMITATIONS: tuple[str, ...] = (
     "book is ANTI-CONSERVATIVE. Mitigation stays operational (capture the cash), never imputation.",
     "ACTUAL (flow-adjusted) P&L only - the Basel hypothetical/clean-P&L leg needs static-portfolio "
     "repricing the platform does not yet have; DEFERRED and recorded.",
-    "Kupiec POF only: no Christoffersen independence/conditional-coverage (the natural BT-2), no "
-    "Basel multiplier arithmetic (the zone is the recorded output), no p-values (critical-value "
-    "decisions at the declared alpha).",
+    "Kupiec POF only: no Christoffersen independence/conditional-coverage (a named BT-3 candidate "
+    "- NOT the ratified BT-2, which is the total-series admit), no Basel multiplier arithmetic "
+    "(the zone is the recorded output), no p-values (critical-value decisions at the declared "
+    "alpha).",
+    "TOTAL-SERIES READ VALIDITY (BT-2, the honest-pairing doctrine): VAR_PARAMETRIC_TOTAL is "
+    "backtestable here, but every VaR is a 1-DAY forecast while an appraisal-marked book's "
+    "private leg only moves on mark dates. The daily pairing is therefore biased TWO WAYS BY "
+    "CONSTRUCTION: exceptions are mechanically SUPPRESSED between marks (the private leg's "
+    "realized P&L is flat, so it can never breach) and CLUSTERED on mark dates (a whole appraisal "
+    "period's move lands against a 1-day allowance). BCBS 22 states the traffic light's PRIMARY "
+    "assumption is that each day's test is independent of the others - an assumption this series "
+    "violates by construction. (Basel's own answer to stale/unobservable inputs is FRTB's "
+    "RFET/NMRF: exclude them from the daily VaR+backtest perimeter and capitalise separately - "
+    "not backtest them daily.)",
+    "READ RULE (BT-2): on a book with appraisal-marked positions the unconditional KUPIEC_LR / "
+    "BASEL_ZONE verdict is NOT valid evidence of adequacy in EITHER direction (a clean record "
+    "proves nothing; an excess count is confounded by mark-date clustering). Validity degrades "
+    "with the private-leg share - a liquid-dominated book with a small proxied sleeve keeps a "
+    "near-valid read. The DATED per-pair EXCEPTION_INDICATOR rows are the honest evidence "
+    "surface: mark-date clustering is visible in them. The statistically-honest configurations - "
+    "appraisal-frequency pairing (needs multi-day-horizon VaR) and a Christoffersen independence "
+    "leg - are named BT-3 candidates, not silently absent.",
     "Small-N honesty: the POF test is asymptotic; KUPIEC_LR is emitted for any N >= 1 with n_pairs "
     "recorded on every row so a reader can weigh it; the Basel zone refuses to exist off-domain.",
     "Calendar-day horizon interpretation (consistent with PM-1's calendar-day Dietz weighting); "
@@ -1366,8 +1385,14 @@ def register_proxy_weight_regression_model(
 #: declared-parameter machinery (confidence/horizon/z) — dispatched through the SAME binder.
 VAR_TOTAL_MODEL_CODE = "risk.var.parametric_total"
 VAR_TOTAL_MODEL_NAME = "Total parametric VaR (factor + idiosyncratic residual, 1-day)"
-VAR_TOTAL_VERSION_LABEL = "v1"
-VAR_TOTAL_METHODOLOGY_REF = "05_analytics_methodologies/var_parametric_total_v1.md"
+#: BT-2 (OD-BT-2-C): v1 -> **v2**, the label bump forced by the immutable-version convention — v2
+#: adds the DECLARED ``max_estimate_age_days`` staleness policy (the 5th identity parameter). An
+#: existing v1 registration is IMMUTABLE and cannot absorb the declaration, so v1 rows keep binding
+#: UNGATED (the recorded grandfather); the registrar mints only v2 from here. The governance sunset
+#: lever for a lingering v1 is VW-1: a 2L validator REJECTs the v1 model_version and every new v1
+#: bind refuses at the shared ``assert_model_version_of`` seam.
+VAR_TOTAL_VERSION_LABEL = "v2"
+VAR_TOTAL_METHODOLOGY_REF = "05_analytics_methodologies/var_parametric_total_v2.md"
 
 #: The DECLARED trading-day frequency-conversion constants (OD-PA-4-D, amended per the vendor-
 #: practice benchmark): the appraisal-period residual stdev de-scales to daily on a TRADING-day
@@ -1379,6 +1404,15 @@ VAR_TOTAL_CALENDAR_DAYS_PER_YEAR = 365
 #: OD-D refinement: the pinned ESTIMATION_SUMMARY row carries no span dates, so the cadence is a
 #: declared parameter (auditable, like confidence/horizon) rather than derived from a pin.
 APPRAISAL_DAYS_ASSUMPTION_PREFIX = "appraisal_days="
+#: BT-2 (OD-BT-2-C): the DECLARED staleness policy — the maximum age, in CALENDAR days, of a cited
+#: PA-3 residual estimate at the run's own economic as-of. Age = the pinned covariance
+#: ``window_end`` MINUS the cited estimation run's PROXY_WEIGHT_INPUT snapshot
+#: ``as_of_valuation_date`` (the regression span end — what data the sigma_e actually saw). The
+#: v2 identity's 5th declared parameter; ABSENT (a v1 row) = ungated, the recorded grandfather.
+MAX_ESTIMATE_AGE_ASSUMPTION_PREFIX = "max_estimate_age_days="
+#: The ratified declared-value pattern: 1..99999 calendar days, no leading zeros (the identity is
+#: an exact string — an unbounded/zero-padded value is not a policy).
+_MAX_ESTIMATE_AGE_PATTERN = re.compile(r"[1-9][0-9]{0,4}")
 
 #: Total-family declared choices EXCLUDING the per-registration confidence/horizon/z (appended per
 #: call, exactly as the parametric family). Adds the residual leg + the frequency conversion.
@@ -1440,6 +1474,38 @@ def declared_appraisal_days(session: Session, version: ModelVersion) -> int:
     return int(declared)
 
 
+def declared_max_estimate_age_days(session: Session, version: ModelVersion) -> int | None:
+    """Parse the total-VaR version's DECLARED staleness policy (BT-2, OD-BT-2-C), or ``None`` when
+    the version declares none — the ONE deliberately-optional declared parameter in the family.
+
+    Tri-state, and the asymmetry is the whole point:
+    - **ABSENT** (zero matches) -> ``None`` = UNGATED. This is the recorded v1 grandfather: a
+      pre-BT-2 ``risk.var.parametric_total`` v1 row is IMMUTABLE and cannot absorb the declaration,
+      so it must keep binding exactly as it did (a grandfathered path must not gain a NEW refusal).
+    - **MALFORMED or DUPLICATED** -> fail-closed :class:`WrongModelVersionError` (422). NOT
+      ``sole_declared``, whose None-on-ambiguous would fail OPEN here — a version declaring the
+      policy TWICE (mintable via the generic POST /models path under the same permission, the P3-4
+      lesson) must never silently degrade to ungated. Absent and ambiguous are DIFFERENT answers.
+    - **Well-formed** -> the int, ``>= 1`` (a zero/negative max-age is not a policy).
+    """
+    texts = load_assumption_texts(session, version)
+    found = [
+        t[len(MAX_ESTIMATE_AGE_ASSUMPTION_PREFIX) :]
+        for t in texts
+        if t.startswith(MAX_ESTIMATE_AGE_ASSUMPTION_PREFIX)
+    ]
+    if not found:
+        return None  # ungated — the v1 grandfather
+    if len(found) > 1:  # ambiguous is a REFUSAL here, never a silent ungate
+        raise WrongModelVersionError(str(version.id), VAR_TOTAL_MODEL_CODE)
+    # The RATIFIED pattern (plan Step 3): 1-99999, no leading zeros, bounded — NOT the shared
+    # unbounded _DIGITS_PATTERN (which admits "007" and 20-digit values that are ungated in
+    # practice). A declared policy is an exact identity string (review fold).
+    if not _MAX_ESTIMATE_AGE_PATTERN.fullmatch(found[0]):
+        raise WrongModelVersionError(str(version.id), VAR_TOTAL_MODEL_CODE)
+    return int(found[0])
+
+
 def register_var_parametric_total_model(
     session: Session,
     *,
@@ -1448,6 +1514,7 @@ def register_var_parametric_total_model(
     code_version: str,
     confidence_level: str | Decimal,
     appraisal_days: int,
+    max_estimate_age_days: int,
     horizon_days: int = VAR_HORIZON_DAYS,
     actor_type: str = "user",
 ) -> ModelVersion:
@@ -1456,9 +1523,20 @@ def register_var_parametric_total_model(
     Mirrors :func:`register_var_model`'s declared-parameter machinery (the same confidence
     vocabulary + z table + horizon gate) under a DIFFERENT model CODE, PLUS the declared
     ``appraisal_days`` (the appraisal cadence, calendar days, >= 1) driving the residual frequency
-    conversion. The total run is dispatched through the SAME binder."""
+    conversion, PLUS the BT-2 ``max_estimate_age_days`` staleness policy. The total run is
+    dispatched through the SAME binder.
+
+    **BT-2 (OD-BT-2-C):** the label is now ``v2`` — ``max_estimate_age_days`` is a REQUIRED
+    declared identity parameter (no default: a staleness policy is consciously chosen, the
+    OD-P3-5-D philosophy), and an immutable v1 row cannot absorb it. v1 registrations survive and
+    keep binding ungated (recorded grandfather); this registrar mints only v2."""
     if int(appraisal_days) < 1:
         raise ValueError("appraisal_days must be >= 1 (the calendar-day appraisal cadence)")
+    if int(max_estimate_age_days) < 1:
+        raise ValueError(
+            "max_estimate_age_days must be >= 1 (the calendar-day staleness policy for a cited "
+            "residual estimate)"
+        )
     text = str(confidence_level).strip()
     if not _CONFIDENCE_PATTERN.fullmatch(text) or len(text) > 6:
         raise ValueError(
@@ -1506,6 +1584,7 @@ def register_var_parametric_total_model(
                 f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
                 f"{Z_ASSUMPTION_PREFIX}{z_text}",
                 f"{APPRAISAL_DAYS_ASSUMPTION_PREFIX}{int(appraisal_days)}",
+                f"{MAX_ESTIMATE_AGE_ASSUMPTION_PREFIX}{int(max_estimate_age_days)}",
             ),
             limitations=VAR_TOTAL_LIMITATIONS,
             actor_type=actor_type,
@@ -1519,11 +1598,14 @@ def register_var_parametric_total_model(
         or f"{declared.confidence_level:f}" != confidence_key
         or declared.horizon_days != int(horizon_days)
         or declared_appraisal_days(session, version) != int(appraisal_days)
+        # A resolved v2 row MUST carry the policy (absent -> None -> conflict, never a silent
+        # ungate for a version this registrar claims to have minted).
+        or declared_max_estimate_age_days(session, version) != int(max_estimate_age_days)
     ):
         raise ModelVersionConflictError(
             VAR_TOTAL_MODEL_CODE,
             VAR_TOTAL_VERSION_LABEL,
             f"{code_version} (confidence_level={confidence_key}, horizon_days={horizon_days}, "
-            f"appraisal_days={appraisal_days})",
+            f"appraisal_days={appraisal_days}, max_estimate_age_days={max_estimate_age_days})",
         )
     return version

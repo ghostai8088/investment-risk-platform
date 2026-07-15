@@ -61,6 +61,7 @@ from irp_shared.risk.bootstrap import (
     WrongModelVersionError,
     assert_model_version_of,
     declared_appraisal_days,
+    declared_max_estimate_age_days,
     declared_var_parameters,
 )
 from irp_shared.risk.covariance_service import resolve_covariance_run
@@ -83,9 +84,11 @@ from irp_shared.snapshot import (
     COMPONENT_KIND_FACTOR_EXPOSURE,
     COMPONENT_KIND_PROXY_MAPPING,
     COMPONENT_KIND_PROXY_WEIGHT,
+    PURPOSE_PROXY_WEIGHT_INPUT,
     PURPOSE_VAR_INPUT,
     VAR_TOTAL_BINDING_PREDICATE,
     SnapshotActor,
+    SnapshotNotFound,
     build_var_snapshot,
     build_var_total_snapshot,
     list_components,
@@ -322,10 +325,13 @@ def _adjudicate_pins(
 @dataclass(frozen=True)
 class _ParsedProxyWeight:
     """One adjudicated proxied instrument's idiosyncratic input (PA-4): its cited estimate's
-    APPRAISAL-PERIOD residual stdev, keyed by lowercase instrument id."""
+    APPRAISAL-PERIOD residual stdev, keyed by lowercase instrument id. ``estimate_snapshot_id``
+    (BT-2) is the estimate's OWN pinned PROXY_WEIGHT_INPUT snapshot id — the handle to the
+    regression span end that the staleness gate measures age against (OD-BT-2-C)."""
 
     instrument_id: str
     residual_stdev: Decimal
+    estimate_snapshot_id: str | None
 
 
 def _parse_total_pins(comps: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -418,8 +424,19 @@ def _adjudicate_total_proxies(
                 f"{series_currency!r} != the book's base_currency {base_currency!r} — refused "
                 f"(no FX conversion, a v1 limitation)"
             )
+        estimate_snapshot_raw = r.get("input_snapshot_id")
         parsed.append(
-            _ParsedProxyWeight(instrument_id=instrument_id, residual_stdev=residual_stdev)
+            _ParsedProxyWeight(
+                instrument_id=instrument_id,
+                residual_stdev=residual_stdev,
+                # BT-2: the estimate's own input-snapshot handle (present on every genuine pin —
+                # the serializer has always emitted it). Kept OPTIONAL here so this function stays
+                # PURE and total; the age gate one layer up decides what an absent one means
+                # (gated v2 ⇒ refuse; ungated v1 ⇒ echo NULL).
+                estimate_snapshot_id=(
+                    str(estimate_snapshot_raw).lower() if estimate_snapshot_raw else None
+                ),
+            )
         )
     for instrument_id in mapping_instruments:
         if instrument_id not in seen_instruments:
@@ -428,6 +445,99 @@ def _adjudicate_total_proxies(
                 f"PROXY_WEIGHT — refused (instrument mismatch)"
             )
     return parsed
+
+
+def _estimate_age_days(
+    session: Session,
+    proxy_weights: list[_ParsedProxyWeight],
+    *,
+    acting_tenant: str,
+    window_end: date,
+    max_estimate_age_days: int | None,
+) -> int | None:
+    """The BT-2 staleness gate + evidence echo (OD-BT-2-C/D). Returns the MAX estimate age in
+    calendar days across the cited estimates (the binding constraint), or ``None`` when there is
+    nothing to measure.
+
+    **Age** = ``window_end`` (this run's OWN economic as-of — the pinned covariance window end)
+    MINUS the cited estimate's regression SPAN END (its PROXY_WEIGHT_INPUT snapshot header's
+    ``as_of_valuation_date`` = max desmoothed ``period_end``). That anchor answers the question a
+    staleness policy actually asks — *how old is the DATA under this σ_e* — rather than when the
+    estimate happened to be computed (the pin's ``system_from``, which a re-run would preserve but
+    which says nothing about data recency).
+
+    **Reproducibility (AD-014):** both sides are fixed by the snapshot — ``window_end`` is pinned
+    content, and the header is reached through the PINNED ``input_snapshot_id``. The header read
+    is live, but ``dataset_snapshot`` is true-append-only (created once, never mutated), so the
+    same snapshot re-run later yields the same age — the PM-1 "drift-free by construction"
+    precedent for live-reading a pinned id.
+
+    **The gate** (only when the version DECLARES a policy — a v2 identity): ``age >
+    max_estimate_age_days`` (strict) ⇒ pre-create :class:`VarInputError` (422, zero run). On a
+    gated bind ANY unmeasurable estimate REFUSES (the gate cannot evaluate — fail-closed): a pin
+    with no ``input_snapshot_id``, a snapshot not visible in the acting tenant, or a cited header
+    whose ``purpose`` is not ``PROXY_WEIGHT_INPUT`` (the anchor's MEANING is the contract — an
+    ``as_of_valuation_date`` read off some other snapshot kind is not a regression span end, and
+    without this check a hand-minted pin could cite a fresh VAR_INPUT header and defeat a tight
+    policy; review fold, converged on by two finders).
+
+    **The grandfather** (``max_estimate_age_days is None`` — an immutable pre-BT-2 v1 row): NO
+    refusal is ever added. The age is computed and echoed as evidence, but ONLY when EVERY cited
+    estimate is measurable: if any is unmeasurable the echo is ``None``, because a max over the
+    resolvable SUBSET is not "the max across cited estimates" — it would understate staleness and
+    read as a confident number (a validator triaging v1 staleness via VW-1's sunset lever must not
+    see "30 days" when an unmeasured sibling could be years stale). UNKNOWN outranks any known max
+    (review fold).
+    """
+    gated = max_estimate_age_days is not None
+    ages: list[int] = []
+    for weight in proxy_weights:
+        if weight.estimate_snapshot_id is None:
+            if gated:
+                raise VarInputError(
+                    f"PROXY_WEIGHT pin for instrument {weight.instrument_id} carries no "
+                    f"input_snapshot_id — the declared max_estimate_age_days policy cannot be "
+                    f"evaluated; refused"
+                )
+            return None  # ungated: unmeasurable ⇒ the whole echo is unknown, never a subset max
+        try:
+            estimate_snapshot = resolve_snapshot(
+                session, weight.estimate_snapshot_id, acting_tenant=acting_tenant
+            )
+        except SnapshotNotFound:
+            if gated:
+                raise VarInputError(
+                    f"PROXY_WEIGHT pin for instrument {weight.instrument_id} cites estimation "
+                    f"snapshot {weight.estimate_snapshot_id}, which is not visible in the acting "
+                    f"tenant — the declared max_estimate_age_days policy cannot be evaluated; "
+                    f"refused"
+                ) from None
+            return None
+        if estimate_snapshot.purpose != PURPOSE_PROXY_WEIGHT_INPUT:
+            if gated:
+                raise VarInputError(
+                    f"PROXY_WEIGHT pin for instrument {weight.instrument_id} cites snapshot "
+                    f"{weight.estimate_snapshot_id} of purpose "
+                    f"{estimate_snapshot.purpose!r} != {PURPOSE_PROXY_WEIGHT_INPUT} — its "
+                    f"as_of_valuation_date is not a regression span end, so the declared "
+                    f"max_estimate_age_days policy cannot be evaluated; refused"
+                )
+            return None
+        age = (window_end - estimate_snapshot.as_of_valuation_date).days
+        if max_estimate_age_days is not None and age > max_estimate_age_days:
+            raise VarInputError(
+                f"the residual estimate cited for instrument {weight.instrument_id} is "
+                f"{age} calendar days old at this run's as-of ({window_end.isoformat()}; the "
+                f"estimate's regression data ends "
+                f"{estimate_snapshot.as_of_valuation_date.isoformat()}), exceeding the declared "
+                f"max_estimate_age_days={max_estimate_age_days} — refused (re-estimate, or "
+                f"register a model version declaring a policy that admits it)"
+            )
+        ages.append(age)
+    # A NEGATIVE age (the estimate's data ends AFTER this run's as-of — a look-ahead) passes: the
+    # ratified policy is a MAXIMUM age, and a look-ahead gate is a different, unratified concern
+    # (a recorded limitation). It is echoed honestly so the evidence shows it.
+    return max(ages) if ages else None
 
 
 def run_var(
@@ -490,6 +600,9 @@ def run_var(
         is_total = True
     declared: VarParameters = declared_var_parameters(session, version)
     appraisal_days = declared_appraisal_days(session, version) if is_total else None
+    # BT-2 (OD-BT-2-C): the DECLARED staleness policy — None on the plain/HS families AND on a
+    # grandfathered pre-BT-2 total v1 row (immutable, cannot absorb the declaration ⇒ ungated).
+    max_estimate_age_days = declared_max_estimate_age_days(session, version) if is_total else None
 
     # --- Bind the two-run snapshot (cross-tenant/unknown/ill-formed ⇒ pre-create refusal) ---
     if snapshot_id is not None:
@@ -584,6 +697,18 @@ def run_var(
         raise VarInputError(
             f"pinned content is not a well-formed v1 input ({type(exc).__name__})"
         ) from exc
+
+    # BT-2 (OD-BT-2-C/D): the staleness gate + the age echo — OUTSIDE the pure-adjudication try
+    # (it makes a tenant-scoped live read of the PINNED estimate snapshot id, so it must not sit
+    # under the structural-parse net that would relabel a genuine refusal). No-op on the plain/HS
+    # paths (proxy_weights is empty ⇒ None).
+    estimate_age_days = _estimate_age_days(
+        session,
+        proxy_weights,
+        acting_tenant=str(acting_tenant),
+        window_end=parsed.window_end,
+        max_estimate_age_days=max_estimate_age_days,
+    )
 
     # The provenance ids come from the PINNED CONTENT — re-resolve BOTH under the acting tenant
     # (run_type + COMPLETED) before they are stamped into hard-FK columns: PG FK checks bypass
@@ -709,6 +834,10 @@ def run_var(
             window_start=parsed.window_start,
             window_end=parsed.window_end,
             residual_variance=residual_variance_q,
+            # BT-2: the MAX cited-estimate age at this run's as-of (evidence; NULL when nothing
+            # was measurable — no proxied instruments, or an ungated v1 whose estimate snapshot
+            # is unresolvable). The GATE already ran pre-create; this is the echo.
+            estimate_age_days=estimate_age_days,
         )
         return [row], gaps
 

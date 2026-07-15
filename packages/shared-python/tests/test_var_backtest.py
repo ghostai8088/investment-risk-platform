@@ -939,7 +939,7 @@ def test_migration_head_is_var_backtest() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0039_model_validation"
+    assert script.get_current_head() == "0040_var_estimate_age"
     assert script.get_revision("0033_var_backtest").down_revision == "0032_benchmark_relative"
 
 
@@ -1036,3 +1036,95 @@ def test_result_model_grain(session: Session) -> None:
     assert (METRIC_TYPE_EXCEPTION_COUNT, B0) in grain  # shares B0, distinct metric_type
     assert (METRIC_TYPE_KUPIEC_LR, B0) in grain
     assert isinstance(rows[0], VarBacktestResult)
+
+
+# ------------------------------------------------- BT-2: the TOTAL method admitted to the lane
+
+
+def test_build_path_total_var_method(session: Session) -> None:
+    """BT-2 (OD-BT-2-A) — the THIRD method end-to-end: a ``VAR_PARAMETRIC_TOTAL`` run backtests
+    against the same realized period, proving the ratified vocabulary admit reaches the whole lane
+    (adjudication -> pairing -> identity gate -> the method echo). PA-4 excluded this method by a
+    single ``METRIC_TYPES`` tuple; this is the test that would have failed before the admit.
+
+    The total run here cites NO proxied instruments — PA-4's documented byte-invariance case
+    (total ≡ plain parametric, residual leg 0). That is a genuine total-family row and exactly
+    what this test needs: the backtest consumes ``var_value``/``window_end``/``metric_type``, not
+    the residual decomposition (the residual leg's own arithmetic + the BT-2 estimate-age gate are
+    proven in ``test_var_total.py``). Keeping the chain minimal here keeps the SUBJECT the lane.
+    """
+    from irp_shared.risk import register_var_parametric_total_model
+
+    pf, fx_run, cov_run = _seed_var_chain(session)
+    total_mv = register_var_parametric_total_model(
+        session,
+        tenant_id=TENANT,
+        actor_id="a",
+        code_version="risk-v1",
+        confidence_level="0.99",
+        appraisal_days=91,
+        max_estimate_age_days=400,
+    ).id
+    total = run_var(
+        session,
+        acting_tenant=TENANT,
+        actor=VarActor(actor_id="a"),
+        code_version="risk-v1",
+        environment_id="ci",
+        model_version_id=total_mv,
+        exposure_run_id=fx_run,
+        covariance_run_id=cov_run,
+    )
+    assert total.status == RunStatus.COMPLETED.value
+    total_row = total.rows[0]
+    assert total_row.metric_type == "VAR_PARAMETRIC_TOTAL" and total_row.window_end == D4
+    assert total_row.estimate_age_days is None  # no cited estimates -> nothing to age
+    # ANCHOR the invariance to the hand-derived plain-family golden (review fold): without this the
+    # test only compares the total row to ITSELF, so a future residual leak into the zero-proxy
+    # path (e.g. a defaulted sigma_e) would drift var_value and still pass.
+    assert total_row.var_value == BT1_VAR99
+    assert total_row.residual_variance == Decimal(0)
+
+    return_run = _return_run(session, pf, ("290.00", "390.00"))  # end MV 68000 -> loss 2000
+    result = _run(session, return_run, [total.run.run_id], _bt_model(session))
+    assert result.status == RunStatus.COMPLETED.value
+    rows = {r.metric_type: r for r in result.rows}
+    ind = rows[METRIC_TYPE_EXCEPTION_INDICATOR]
+    assert ind.var_metric_type == "VAR_PARAMETRIC_TOTAL"  # the admitted method, echoed
+    assert ind.var_value == total_row.var_value  # the pinned total forecast, verbatim
+    assert ind.realized_pnl == Decimal("-2000.000000")
+    assert ind.metric_value == 1  # loss 2000 > the 99% forecast -> an exception
+
+
+def test_total_and_parametric_cannot_mix_in_one_backtest(session: Session) -> None:
+    """BT-2: admitting the total method does NOT relax the one-method-per-run rule — a run pinning
+    both a TOTAL and a PARAMETRIC forecast still refuses (the mixed-methods gate). Cross-method
+    comparison stays two runs side by side (BT-1's recorded limitation, unchanged)."""
+    from irp_shared.risk import register_var_parametric_total_model
+
+    pf, fx_run, cov_run = _seed_var_chain(session)
+    plain = _var_run(session, fx_run, cov_run)
+    total_mv = register_var_parametric_total_model(
+        session,
+        tenant_id=TENANT,
+        actor_id="a",
+        code_version="risk-v1",
+        confidence_level="0.99",
+        appraisal_days=91,
+        max_estimate_age_days=400,
+    ).id
+    total = run_var(
+        session,
+        acting_tenant=TENANT,
+        actor=VarActor(actor_id="a"),
+        code_version="risk-v1",
+        environment_id="ci",
+        model_version_id=total_mv,
+        exposure_run_id=fx_run,
+        covariance_run_id=cov_run,
+    )
+    return_run = _return_run(session, pf, ("290.00", "390.00"))
+    with pytest.raises(VarBacktestInputError, match="method"):
+        _run(session, return_run, [plain, total.run.run_id], _bt_model(session))
+    session.rollback()
+    assert_no_running_orphan(session, run_type="VAR_BACKTEST")

@@ -1090,6 +1090,10 @@ class VarRowOut(BaseModel):
     covariance_run_id: str | None  # None for VAR_HISTORICAL (no covariance run)
     model_version_id: str
     residual_variance: str | None  # PA-4: the idiosyncratic leg; None off VAR_PARAMETRIC_TOTAL
+    # BT-2: the MAX age (calendar days) of the cited residual estimates at this run's as-of.
+    # None off the total family, on a total run citing no estimates, and on an ungated
+    # grandfathered v1 bind whose estimate snapshot is unresolvable. Negative = a look-ahead.
+    estimate_age_days: int | None
 
 
 class VarRunOut(BaseModel):
@@ -1124,6 +1128,7 @@ def _var_row_out(row: VarResult) -> VarRowOut:
         covariance_run_id=row.covariance_run_id,
         model_version_id=row.model_version_id,
         residual_variance=(None if row.residual_variance is None else f"{row.residual_variance:f}"),
+        estimate_age_days=row.estimate_age_days,
     )
 
 
@@ -1189,6 +1194,11 @@ class VarTotalModelIn(BaseModel):
     code_version: str
     confidence_level: str  # the DECLARED confidence (v1 vocabulary {0.95, 0.99}) — OD-P3-5-D
     appraisal_days: int  # the DECLARED appraisal cadence (calendar days, e.g. 91) — OD-PA-4-D
+    # BT-2 (OD-BT-2-C): the DECLARED staleness policy — the max age (calendar days) of a cited
+    # residual estimate at the run's as-of. REQUIRED, no default: a staleness policy is a
+    # conscious declaration, not an inherited convenience (the OD-P3-5-D philosophy). Registers
+    # the total model at v2; pre-BT-2 v1 registrations stay ungated (the recorded grandfather).
+    max_estimate_age_days: int
     horizon_days: int = 1
 
 
@@ -1204,11 +1214,13 @@ def register_var_parametric_total(
 ) -> SensitivityModelOut:
     """Register (idempotently) the governed total-parametric-VaR model (PA-4 — factor variance +
     the idiosyncratic residual of the proxied instruments' cited proxy-weight estimates) + a
-    model_version for this ``(code_version, confidence_level, horizon_days, appraisal_days)``
-    identity and return its id. Dispatched through the SAME ``POST /risk/vars/runs`` endpoint as
+    model_version for this ``(code_version, confidence_level, horizon_days, appraisal_days,
+    max_estimate_age_days)`` identity (BT-2: **v2** — the declared staleness policy joined the
+    identity) and return its id. Dispatched through the SAME ``POST /risk/vars/runs`` endpoint as
     the plain parametric family — the binder resolves the bound model's code. A same-label
     re-register with a different declaration is a 409; a confidence outside the v1 vocabulary or a
-    non-positive ``appraisal_days`` is a 422. The shared registration envelope."""
+    non-positive ``appraisal_days``/``max_estimate_age_days`` is a 422. The shared registration
+    envelope."""
     try:
         version = register_var_parametric_total_model(
             db,
@@ -1217,14 +1229,16 @@ def register_var_parametric_total(
             code_version=body.code_version,
             confidence_level=body.confidence_level,
             appraisal_days=body.appraisal_days,
+            max_estimate_age_days=body.max_estimate_age_days,
             horizon_days=body.horizon_days,
         )
-    except ValueError:  # out-of-vocabulary confidence / non-v1 horizon / non-positive appraisal
+    except ValueError:  # out-of-vocab confidence / non-v1 horizon / non-positive days
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                "confidence_level/horizon_days/appraisal_days outside the v1 declared vocabulary"
+                "confidence_level/horizon_days/appraisal_days/max_estimate_age_days outside the "
+                "v1 declared vocabulary"
             ),
         ) from None
     except (ModelVersionConflictError, WrongModelVersionError) as exc:

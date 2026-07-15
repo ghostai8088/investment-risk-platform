@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -61,8 +61,8 @@ from irp_shared.risk import (
     run_factor_exposure,
     run_var,
 )
-from irp_shared.snapshot import SnapshotActor, build_snapshot
-from irp_shared.snapshot.models import PURPOSE_TEST
+from irp_shared.snapshot import SnapshotActor
+from irp_shared.snapshot.models import PURPOSE_PROXY_WEIGHT_INPUT
 from irp_shared.valuation import create_valuation
 from irp_shared.valuation.service import ValuationActor
 
@@ -103,6 +103,7 @@ _VD = date(2026, 6, 1)
 _D = (date(2026, 5, 26), date(2026, 5, 27), date(2026, 5, 28), date(2026, 5, 29))
 _ACT = VarActor(actor_id="a")
 _APPRAISAL_DAYS = 91
+_MAX_ESTIMATE_AGE_DAYS = 400  # BT-2: the declared staleness policy (see test_var_total.py)
 #: The 20dp-precision residual stdev — deliberately carries the FULL PreciseDecimal(20,12) scale
 #: (not a round decimal) so a SQLite/PG divergence in the round-trip would be caught.
 _RESIDUAL_STDEV = Decimal("0.040000000001")
@@ -272,15 +273,23 @@ def _seed_and_run_total(factory, tenant: str) -> tuple[str, Decimal]:  # noqa: A
         # (a hand-minted ESTIMATION_SUMMARY — every FK target is a REAL row, PG-enforced).
         from irp_shared.risk.bootstrap import register_proxy_weight_regression_model
 
-        snap = build_snapshot(
+        # BT-2 fixture realism: the estimate's input snapshot is what the REAL chain persists —
+        # a PROXY_WEIGHT_INPUT header whose as_of_valuation_date is the regression SPAN END (the
+        # two fields the staleness gate reads). Span end = 30 days before the covariance window
+        # end -> a fresh estimate that passes the declared policy.
+        from irp_shared.snapshot.service import _persist_snapshot
+
+        snap = _persist_snapshot(
             session,
             acting_tenant=tenant,
             actor=SnapshotActor(actor_id="a"),
-            purpose=PURPOSE_TEST,
-            portfolio_id=pf,
+            specs=[],
+            label="",
+            purpose=PURPOSE_PROXY_WEIGHT_INPUT,
             as_of_valid_at=_VALID_AT,
             as_of_known_at=_KNOWN_AT,
-            as_of_valuation_date=_VD,
+            as_of_valuation_date=_D[3] - timedelta(days=30),
+            binding_predicate_version="v1:test",
         )
         pw_mv = register_proxy_weight_regression_model(
             session, tenant_id=tenant, actor_id="a", code_version="risk-v1", min_observations=4
@@ -335,6 +344,7 @@ def _seed_and_run_total(factory, tenant: str) -> tuple[str, Decimal]:  # noqa: A
             code_version="risk-v1",
             confidence_level="0.95",
             appraisal_days=_APPRAISAL_DAYS,
+            max_estimate_age_days=_MAX_ESTIMATE_AGE_DAYS,
         )
         session.flush()
         result = run_var(
