@@ -834,6 +834,32 @@ def test_symmetric_predicate_refusal_both_directions(session: Session) -> None:
         _run_total(session, tenant, total_mv, None, None, snapshot_id=plain_snap.id)
     assert_no_running_orphan(session, run_type="VAR")
 
+    # ES-1: the SAME symmetry on the two ES families — all FOUR codes, both directions (8 cases).
+    # The gates read `family.total`, so today the ES families inherit them for free; this pins that.
+    # The failure it guards is a REFACTOR that re-keys the predicate check onto a model CODE (e.g.
+    # `code == VAR_TOTAL_MODEL_CODE`) — that would drop the gate for ES-total ONLY, letting an
+    # ES-total model complete over a plain snapshot while silently discarding the pinned
+    # idiosyncratic evidence (the OD-PA-2-C failure), with the compute path still correct and every
+    # other test green.
+    from irp_shared.risk import register_var_parametric_es_model
+
+    es_mv = register_var_parametric_es_model(
+        session,
+        tenant_id=tenant,
+        actor_id="analyst",
+        code_version="risk-v1",
+        confidence_level="0.95",
+    ).id
+    es_total_mv = _var_es_total_model(session, tenant)
+    # Direction 3: the plain-ES model over a total-predicate snapshot refuses.
+    with pytest.raises(VarInputError):
+        _run_total(session, tenant, es_mv, None, None, snapshot_id=total_snap.id)
+    assert_no_running_orphan(session, run_type="VAR")
+    # Direction 4: the ES-total model over a plain-predicate snapshot refuses.
+    with pytest.raises(VarInputError):
+        _run_total(session, tenant, es_total_mv, None, None, snapshot_id=plain_snap.id)
+    assert_no_running_orphan(session, run_type="VAR")
+
 
 # ---------- (5) snapshot-build-time citation adjudication (OD-PA-4-C) ----------
 
@@ -1804,3 +1830,183 @@ def test_ungated_partial_resolve_echoes_null_not_subset_max(session: Session) ->
     result = _run_total(session, tenant, v1, None, None, snapshot_id=snap.id)
     assert result.status == RunStatus.COMPLETED.value  # ungated: still no new refusal
     assert result.rows[0].estimate_age_days is None  # NOT 30 — the honest answer is "unknown"
+
+
+# ---------- (12) ES-1: the ES-TOTAL leg over THIS chain ----------
+#
+# ES_total = k_c * sigma_total, over the exact same hand reference as the total-VaR golden above —
+# so this golden inherits an exactly-known sigma_total (522.41739749519396280801883332...) and the
+# assertion is a hand-derived k*sigma, not a fixture echo:
+#:   k_0.95 * sigma_total = 1077.5970566778119285632... -> 1077.597057 @6dp
+REF_ES95_TOTAL = Decimal("1077.597057")
+
+
+def _var_es_total_model(
+    db: Session,
+    tenant: str,
+    *,
+    code_version: str = "risk-v1",
+    confidence: str = "0.95",
+    appraisal_days: int = APPRAISAL_DAYS,
+    max_estimate_age_days: int = MAX_ESTIMATE_AGE_DAYS,
+) -> str:
+    from irp_shared.risk import register_var_parametric_es_total_model
+
+    return register_var_parametric_es_total_model(
+        db,
+        tenant_id=tenant,
+        actor_id="analyst",
+        code_version=code_version,
+        confidence_level=confidence,
+        appraisal_days=appraisal_days,
+        max_estimate_age_days=max_estimate_age_days,
+    ).id
+
+
+def _total_chain_snapshot(db: Session, tenant: str, seeded=None):  # noqa: ANN001, ANN202
+    """The hand reference, minted under the TOTAL predicate: REF1's 3-4-5 triangle + ONE proxied
+    instrument with a known residual_stdev.
+
+    ``seeded`` reuses an existing ``_seed_upstream_runs`` result — that seeder captures FX rows
+    that are UNIQUE per (tenant, pair, date), so calling it twice for one tenant is an
+    IntegrityError. Pass it through when a test needs two snapshots over the same chain.
+    """
+    fx_run, cov_run, _pf, insts = seeded if seeded is not None else _seed_upstream_runs(db, tenant)
+    iid_usd, iid_eur = insts["I-USD"], insts["I-EUR"]
+    fa, fb = str(uuid.uuid4()).lower(), str(uuid.uuid4()).lower()
+    snap = _mint_total_snapshot(
+        db,
+        tenant,
+        [
+            _exposure_content(fx_run, fa, "A", iid_usd, "30000.000000"),
+            _exposure_content(fx_run, fb, "B", iid_eur, "40000.000000"),
+        ],
+        [
+            _covariance_content(cov_run, fa, fa, "0.00010000000000000000"),
+            _covariance_content(cov_run, fb, fb, "0.00010000000000000000"),
+            _covariance_content(cov_run, fa, fb, "0E-20"),
+        ],
+        [_mapping_content(iid_usd, fa)],
+        [_weight_content(iid_usd, str(RESIDUAL_STDEV))],
+    )
+    return snap, fx_run, cov_run
+
+
+def test_es_total_exact_hand_reference_via_consume_path(session: Session) -> None:
+    from irp_shared.risk import METRIC_TYPE_ES_PARAMETRIC
+
+    tenant = str(uuid.uuid4())
+    snap, fx_run, cov_run = _total_chain_snapshot(session, tenant)
+    mv = _var_es_total_model(session, tenant)
+    result = _run_total(session, tenant, mv, None, None, snapshot_id=snap.id)
+    assert result.status == RunStatus.COMPLETED.value and len(result.rows) == 1
+    row = result.rows[0]
+    assert row.metric_type == METRIC_TYPE_ES_PARAMETRIC  # ONE value for BOTH ES families
+    assert row.sigma == REF_SIGMA_TOTAL  # the SAME sigma_total the total-VaR family computes
+    assert row.var_value == REF_ES95_TOTAL  # ...times the registered k, quantized once
+    # The residual leg + BT-2's age echo ride the ES-total row exactly as they ride the total-VaR
+    # row — PA-4's machinery and BT-2's gate are reused verbatim, not reimplemented.
+    assert row.residual_variance == REF_RESIDUAL_VARIANCE
+    assert row.estimate_age_days is not None
+    assert row.exposure_run_id == fx_run and row.covariance_run_id == cov_run
+
+
+def test_es_total_is_the_multiplier_over_the_same_sigma_as_total_var(session: Session) -> None:
+    # The two families over the SAME hand reference: identical sigma_total + residual_variance,
+    # different multiplier. Pins that the ES-total leg reuses PA-4's residual machinery rather
+    # than recomputing it, and that ES > VaR at the row level for this (sigma > 0) fixture.
+    tenant = str(uuid.uuid4())
+    seeded = _seed_upstream_runs(session, tenant)  # ONE seed; two snapshots over the same chain
+    var_snap, _, _ = _total_chain_snapshot(session, tenant, seeded)
+    var_row = _run_total(
+        session, tenant, _var_total_model(session, tenant), None, None, snapshot_id=var_snap.id
+    ).rows[0]
+    es_snap, _, _ = _total_chain_snapshot(session, tenant, seeded)
+    es_row = _run_total(
+        session, tenant, _var_es_total_model(session, tenant), None, None, snapshot_id=es_snap.id
+    ).rows[0]
+    assert es_row.sigma == var_row.sigma == REF_SIGMA_TOTAL
+    assert es_row.residual_variance == var_row.residual_variance == REF_RESIDUAL_VARIANCE
+    assert var_row.var_value == REF_VAR95_TOTAL and es_row.var_value == REF_ES95_TOTAL
+    assert es_row.var_value > var_row.var_value
+
+
+def _aged_es_total_run(
+    session: Session,
+    tenant: str,
+    *,
+    span_end: date,
+    max_age: int = MAX_ESTIMATE_AGE_DAYS,
+):  # noqa: ANN202
+    """The `_aged_total_run` harness on the ES-TOTAL family: the run's as-of is the pinned
+    covariance ``window_end`` (D4), so the age the gate sees is ``(D4 - span_end).days``."""
+    fx_run, cov_run, _pf, insts = _seed_upstream_runs(session, tenant)
+    iid = insts["I-USD"]
+    mv = _var_es_total_model(session, tenant, max_estimate_age_days=max_age)
+    exposure, covariance = _one_factor_pins(fx_run, iid, covariance_run_id=cov_run)
+    snap = _mint_total_snapshot(
+        session,
+        tenant,
+        exposure,
+        covariance,
+        [_mapping_content(iid, "f")],
+        [_weight_content(iid, "0.040000000000")],
+        estimate_span_end=span_end,
+    )
+    return _run_total(session, tenant, mv, None, None, snapshot_id=snap.id)
+
+
+def test_es_total_staleness_gate_is_inherited_from_bt2(session: Session) -> None:
+    # BT-2's gate is REUSED, not reimplemented: a cited estimate older than the DECLARED policy
+    # refuses PRE-CREATE with zero run on the ES-total family exactly as on the total-VaR one,
+    # and a fresh one binds with the age echoed. Same boundary semantics (a strict >).
+    fresh = _aged_es_total_run(session, str(uuid.uuid4()), span_end=D4 - timedelta(days=400))
+    assert fresh.status == RunStatus.COMPLETED.value
+    assert fresh.rows[0].estimate_age_days == 400  # age == max PASSES
+
+    tenant = str(uuid.uuid4())
+    with pytest.raises(VarInputError, match="max_estimate_age_days"):
+        _aged_es_total_run(session, tenant, span_end=D4 - timedelta(days=401), max_age=400)
+    session.rollback()
+    assert_no_running_orphan(session, run_type="VAR")
+
+
+def test_es_total_absent_max_age_declaration_refuses_by_construction(session: Session) -> None:
+    # The ES-total code is BORN with the declaration, so — unlike BT-2's grandfathered total-VaR
+    # v1 — no legitimate ungated version can exist and an absent declaration must REFUSE rather
+    # than degrade to ungated. Minted via the generic path (the real threat model).
+    from irp_shared.model.models import ModelVersion
+    from irp_shared.model.service import register_model, register_model_version
+    from irp_shared.risk import ES_TOTAL_MODEL_CODE, VAR_ES_MULTIPLIERS, VAR_Z_SCORES
+    from irp_shared.risk.bootstrap import declared_es_total_max_estimate_age_days
+
+    tenant = str(uuid.uuid4())
+    model = register_model(
+        session,
+        tenant_id=tenant,
+        code=ES_TOTAL_MODEL_CODE,
+        name="generic",
+        model_type="VAR",
+        actor_id="a",
+    )
+    version = register_model_version(
+        session,
+        model=model,
+        version_label="v1",
+        actor_id="a",
+        methodology_ref="05_analytics_methodologies/var_parametric_es_v1.md",
+        code_version="risk-v1",
+        status="REGISTERED",
+        assumptions=[
+            "confidence_level=0.9500",
+            "horizon_days=1",
+            f"z_score={VAR_Z_SCORES['0.9500']}",
+            f"es_multiplier={VAR_ES_MULTIPLIERS['0.9500']}",
+            f"appraisal_days={APPRAISAL_DAYS}",
+            # NO max_estimate_age_days — ungated on the total-VaR family, REFUSED here.
+        ],
+    )
+    resolved = session.get(ModelVersion, version.id)
+    assert resolved is not None
+    with pytest.raises(WrongModelVersionError):
+        declared_es_total_max_estimate_age_days(session, resolved)

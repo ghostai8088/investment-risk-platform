@@ -328,7 +328,9 @@ def test_register_conflicts_and_vocabulary_floor(ctx) -> None:  # noqa: ANN001
     assert resp.status_code == 409
     resp = client.post(
         "/risk/models/var",
-        json={"code_version": "risk-v1", "confidence_level": "0.975"},  # outside the vocabulary
+        # outside the vocabulary. The probe was 0.975 until ES-1 (OQ-ES-1-4) admitted that value
+        # to the shared VAR_Z_SCORES; it would now register (409, not 422). 0.98 is unregistered.
+        json={"code_version": "risk-v1", "confidence_level": "0.98"},
         headers=_h(p),
     )
     assert resp.status_code == 422
@@ -475,3 +477,122 @@ def test_p3c1_both_modes_422(ctx) -> None:  # noqa: ANN001
     resp = client.post("/risk/vars/runs", json=body, headers=_h(p))
     assert resp.status_code == 422
     assert _count_var_runs(db, p.tenant_id) == 0
+
+
+# ---------- ES-1: the two new register endpoints ----------
+
+
+def _register_es(client: TestClient, p: Principal, confidence: str = "0.975") -> str:
+    resp = client.post(
+        "/risk/models/var-es",
+        json={"code_version": "risk-v1", "confidence_level": confidence},
+        headers=_h(p),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["model_version_id"]
+
+
+def test_es_model_registers_and_is_idempotent(ctx) -> None:  # noqa: ANN001
+    client, p, _db, _fx, _cov = ctx
+    first = _register_es(client, p)
+    assert _register_es(client, p) == first  # idempotent
+    resp = client.post(  # same label, different declaration -> governed conflict
+        "/risk/models/var-es",
+        json={"code_version": "risk-v2", "confidence_level": "0.975"},
+        headers=_h(p),
+    )
+    assert resp.status_code == 409
+
+
+def test_es_model_off_vocabulary_confidence_is_422(ctx) -> None:  # noqa: ANN001
+    client, p, _db, _fx, _cov = ctx
+    resp = client.post(
+        "/risk/models/var-es",
+        json={"code_version": "risk-v1", "confidence_level": "0.98"},  # unregistered
+        headers=_h(p),
+    )
+    assert resp.status_code == 422
+    resp = client.post(
+        "/risk/models/var-es",
+        json={"code_version": "risk-v1", "confidence_level": "0.95", "horizon_days": 10},
+        headers=_h(p),
+    )
+    assert resp.status_code == 422  # v1 is 1-day only
+
+
+def test_es_total_model_registers_and_validates_its_declarations(ctx) -> None:  # noqa: ANN001
+    client, p, _db, _fx, _cov = ctx
+    body = {
+        "code_version": "risk-v1",
+        "confidence_level": "0.975",
+        "appraisal_days": 91,
+        "max_estimate_age_days": 400,
+    }
+    resp = client.post("/risk/models/var-es-total", json=body, headers=_h(p))
+    assert resp.status_code == 201, resp.text
+    assert (
+        client.post("/risk/models/var-es-total", json=body, headers=_h(p)).json()[
+            "model_version_id"
+        ]
+        == resp.json()["model_version_id"]
+    )  # idempotent
+    for bad in ({"appraisal_days": 0}, {"max_estimate_age_days": 0}):
+        resp = client.post("/risk/models/var-es-total", json={**body, **bad}, headers=_h(p))
+        assert resp.status_code == 422
+
+
+def test_es_endpoints_reuse_the_existing_permissions_and_deny_by_default(ctx) -> None:  # noqa: ANN001
+    # OD-ES-1-G rests on "NO new permission — risk.run/risk.view REUSED"; that is a claim about
+    # these two endpoints' gating, so it gets a test (the per-family shipped precedent is
+    # test_deny_by_default_and_view_only_cannot_run).
+    client, p, db, _fx, _cov = ctx
+    es_body = {"code_version": "risk-v1", "confidence_level": "0.975"}
+    es_total_body = {**es_body, "appraisal_days": 91, "max_estimate_age_days": 400}
+    nobody = Principal(user_id=str(uuid.uuid4()), tenant_id=p.tenant_id)  # no roles at all
+    assert client.post("/risk/models/var-es", json=es_body, headers=_h(nobody)).status_code == 403
+    assert (
+        client.post("/risk/models/var-es-total", json=es_total_body, headers=_h(nobody)).status_code
+        == 403
+    )
+    viewer = AppUser(tenant_id=p.tenant_id, display_name="V2")
+    view_role = Role(tenant_id=p.tenant_id, code="v2", name="V2")
+    db.add_all([viewer, view_role])
+    db.flush()
+    perm_id = db.execute(select(Permission.id).where(Permission.code == "risk.view")).scalar_one()
+    db.add(RolePermission(role_id=view_role.id, permission_id=perm_id))
+    db.add(UserRole(tenant_id=p.tenant_id, user_id=viewer.id, role_id=view_role.id))
+    db.commit()
+    vp = Principal(user_id=viewer.id, tenant_id=p.tenant_id)
+    # .view does not grant the register permission — on the ES endpoints as on every other.
+    assert client.post("/risk/models/var-es", json=es_body, headers=_h(vp)).status_code == 403
+    assert (
+        client.post("/risk/models/var-es-total", json=es_total_body, headers=_h(vp)).status_code
+        == 403
+    )
+
+
+def test_es_run_dispatches_through_the_unchanged_runs_endpoint(ctx) -> None:  # noqa: ANN001
+    # POST /risk/vars/runs is UNCHANGED by ES-1 — the binder dispatches on the bound model. The ES
+    # number rides var_value and the row is discriminated by metric_type (VarRowOut unchanged).
+    client, p, _db, fx_run, cov_run = ctx
+    es_mv = _register_es(client, p, confidence="0.975")
+    resp = client.post("/risk/vars/runs", json=_run_body(es_mv, fx_run, cov_run), headers=_h(p))
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["status"] == "COMPLETED"
+    rows = resp.json()["rows"]
+    assert len(rows) == 1
+    assert rows[0]["metric_type"] == "ES_PARAMETRIC"
+    assert rows[0]["confidence_level"] == "0.9750"
+    # The ES row surfaces its (unused-by-the-arithmetic) z_score and its sigma; residual_variance
+    # and estimate_age_days are None off the total family — by construction, so this pins the
+    # plain-ES shape only. BT-2's API assertion proper lives in test_var_total_endpoint.py's
+    # roundtrip, where the age is POPULATED and the assertion can actually fail.
+    assert rows[0]["z_score"] is not None and rows[0]["sigma"] is not None
+    assert rows[0]["residual_variance"] is None and rows[0]["estimate_age_days"] is None
+    # ES > VaR over the same book, through the API.
+    var_mv = _register(client, p, confidence="0.99")
+    var_resp = client.post(
+        "/risk/vars/runs", json=_run_body(var_mv, fx_run, cov_run), headers=_h(p)
+    )
+    assert var_resp.status_code == 201
+    assert Decimal(rows[0]["var_value"]) > Decimal(var_resp.json()["rows"][0]["var_value"])

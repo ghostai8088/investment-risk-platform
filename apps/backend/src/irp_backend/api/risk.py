@@ -120,6 +120,8 @@ from irp_shared.risk import (
     register_sensitivity_model,
     register_var_backtest_model,
     register_var_model,
+    register_var_parametric_es_model,
+    register_var_parametric_es_total_model,
     register_var_parametric_total_model,
     resolve_active_risk,
     resolve_active_risk_run,
@@ -1060,7 +1062,8 @@ def _var_actor(principal: Principal) -> VarActor:
 
 class VarModelIn(BaseModel):
     code_version: str
-    confidence_level: str  # the DECLARED confidence (v1 vocabulary {0.95, 0.99}) — OD-P3-5-D
+    # the DECLARED confidence (vocabulary {0.95, 0.975, 0.99}) — OD-P3-5-D; 0.975 admitted by ES-1
+    confidence_level: str
     horizon_days: int = 1
 
 
@@ -1081,6 +1084,12 @@ class VarRowOut(BaseModel):
     horizon_days: int
     z_score: str | None  # None for VAR_HISTORICAL (0028 — no normal quantile)
     sigma: str | None  # None for VAR_HISTORICAL (no volatility estimate)
+    # The METRIC's number, discriminated by ``metric_type`` — for an ES_PARAMETRIC row this is an
+    # Expected Shortfall, NOT a VaR (ES-1; the VAR_HISTORICAL generic-by-metric_type precedent).
+    # The shape is UNCHANGED by ES-1: the ES rides var_value and needs no new field. NOTE an ES
+    # row does not reconcile against its own columns — z_score is echoed (the PG CHECK forces it)
+    # but is NOT the ES arithmetic; the multiplier lives in the bound model_version's declared
+    # es_multiplier. Key off metric_type, and reproduce an ES through its model_version.
     var_value: str
     n_factors: int
     n_observations: int
@@ -1192,7 +1201,8 @@ def register_var(
 
 class VarTotalModelIn(BaseModel):
     code_version: str
-    confidence_level: str  # the DECLARED confidence (v1 vocabulary {0.95, 0.99}) — OD-P3-5-D
+    # the DECLARED confidence (vocabulary {0.95, 0.975, 0.99}) — OD-P3-5-D; 0.975 admitted by ES-1
+    confidence_level: str
     appraisal_days: int  # the DECLARED appraisal cadence (calendar days, e.g. 91) — OD-PA-4-D
     # BT-2 (OD-BT-2-C): the DECLARED staleness policy — the max age (calendar days) of a cited
     # residual estimate at the run's as-of. REQUIRED, no default: a staleness policy is a
@@ -1239,6 +1249,129 @@ def register_var_parametric_total(
             detail=(
                 "confidence_level/horizon_days/appraisal_days/max_estimate_age_days outside the "
                 "v1 declared vocabulary"
+            ),
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+class VarEsModelIn(BaseModel):
+    code_version: str
+    # the DECLARED confidence (vocabulary {0.95, 0.975, 0.99}) — 0.975 is BCBS d457 MAR33.3's
+    # prescribed ES level and the only externally-anchored one. The es_multiplier k_c is NOT a
+    # body field: it is looked up from the registered table for this confidence and declared by
+    # the registrar, so a caller cannot pair a confidence with a mismatched multiplier.
+    confidence_level: str
+    horizon_days: int = 1
+
+
+class VarEsTotalModelIn(BaseModel):
+    code_version: str
+    # the DECLARED confidence (vocabulary {0.95, 0.975, 0.99}) — see VarEsModelIn
+    confidence_level: str
+    appraisal_days: int  # the DECLARED appraisal cadence (calendar days, e.g. 91) — OD-PA-4-D
+    # REQUIRED from birth on this family: unlike risk.var.parametric_total (whose immutable v1
+    # predates BT-2 and is the recorded ungated grandfather), the ES-total code is born with the
+    # declaration, so no legitimate ungated version can exist and an absent one REFUSES at bind.
+    max_estimate_age_days: int
+    horizon_days: int = 1
+
+
+@router.post(
+    "/models/var-es",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_var_parametric_es(
+    body: VarEsModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed parametric-Expected-Shortfall model (ES-1 — the
+    alpha-tail mean, ``ES_c = k_c * sigma_p``, over the SAME governed factor sigma as the plain
+    parametric VaR family) + a model_version for this ``(code_version, confidence_level,
+    horizon_days, z, es_multiplier)`` identity, and return its id. Dispatched through the SAME
+    ``POST /risk/vars/runs`` endpoint as every VaR family — the binder resolves the bound model's
+    code. A same-label re-register with a different declaration is a 409; a confidence outside the
+    vocabulary or a non-v1 horizon is a 422. The shared registration envelope."""
+    try:
+        version = register_var_parametric_es_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            confidence_level=body.confidence_level,
+            horizon_days=body.horizon_days,
+        )
+    except ValueError:  # out-of-vocab confidence / non-v1 horizon
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="confidence_level/horizon_days outside the declared vocabulary",
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/models/var-es-total",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_var_parametric_es_total(
+    body: VarEsTotalModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed TOTAL parametric-Expected-Shortfall model (ES-1 —
+    ``ES_c = k_c * sigma_total``, the registered multiplier over PA-4's factor+idiosyncratic sigma,
+    carrying BT-2's staleness gate) + a model_version for this ``(code_version, confidence_level,
+    horizon_days, z, es_multiplier, appraisal_days, max_estimate_age_days)`` identity, and return
+    its id. Dispatched through the SAME ``POST /risk/vars/runs`` endpoint. A same-label re-register
+    with a different declaration is a 409; a confidence outside the vocabulary, a non-v1 horizon or
+    a non-positive ``appraisal_days``/``max_estimate_age_days`` is a 422."""
+    try:
+        version = register_var_parametric_es_total_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            confidence_level=body.confidence_level,
+            appraisal_days=body.appraisal_days,
+            max_estimate_age_days=body.max_estimate_age_days,
+            horizon_days=body.horizon_days,
+        )
+    except ValueError:  # out-of-vocab confidence / non-v1 horizon / non-positive days
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "confidence_level/horizon_days/appraisal_days/max_estimate_age_days outside the "
+                "declared vocabulary"
             ),
         ) from None
     except (ModelVersionConflictError, WrongModelVersionError) as exc:

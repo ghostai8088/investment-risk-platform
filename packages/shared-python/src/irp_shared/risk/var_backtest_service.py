@@ -76,6 +76,7 @@ from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.risk.bootstrap import VAR_BACKTEST_MODEL_CODE, declared_var_backtest_alpha
 from irp_shared.risk.events import (
     METRIC_TYPE_BASEL_ZONE,
+    METRIC_TYPE_ES_PARAMETRIC,
     METRIC_TYPE_EXCEPTION_COUNT,
     METRIC_TYPE_EXCEPTION_INDICATOR,
     METRIC_TYPE_KUPIEC_LR,
@@ -279,6 +280,17 @@ def _adjudicate_pins(
         )
     var_metric_type = next(iter(var_metric_types))
     if var_metric_type not in METRIC_TYPES:
+        # Distinguish "we do not know this value" from "we know it and ratified excluding it"
+        # (ES-1, OD-ES-1-F). ES_PARAMETRIC is a REAL, shipped metric deliberately kept out of the
+        # backtestable subset — calling that "unknown" would send a validator hunting a vocabulary
+        # bug instead of reading the recorded scope-out.
+        if var_metric_type == METRIC_TYPE_ES_PARAMETRIC:
+            raise VarBacktestInputError(
+                f"metric_type {var_metric_type!r} is DELIBERATELY not backtestable (ES-1, "
+                f"OD-ES-1-F: FRTB backtests VaR and never ES, and under this leg's normality an "
+                f"ES backtest is the VaR backtest with a rescaled threshold) — backtest the VaR "
+                f"run instead; refused"
+            )
         raise VarBacktestInputError(f"unknown VaR metric_type {var_metric_type!r} — refused")
     confidences = {Decimal(r["confidence_level"]) for r in var_raw}
     horizons = {int(r["horizon_days"]) for r in var_raw}

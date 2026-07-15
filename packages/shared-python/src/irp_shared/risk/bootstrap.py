@@ -480,13 +480,51 @@ CONFIDENCE_ASSUMPTION_PREFIX = "confidence_level="
 HORIZON_ASSUMPTION_PREFIX = "horizon_days="
 Z_ASSUMPTION_PREFIX = "z_score="
 
-#: The v1 confidence vocabulary -> the REGISTERED z constants (OD-P3-5-D): recorded to 12dp,
+#: The confidence vocabulary -> the REGISTERED z constants (OD-P3-5-D): recorded to 12dp,
 #: dual-sourced from published standard-normal tables and test-verified via the stdlib
 #: ``math.erf`` round-trip Phi(z) = (1+erf(z/sqrt(2)))/2 == alpha to 1e-12 AND an independent
 #: bisection inversion (2026-07-07). NO runtime inverse-CDF exists (capability-is-not-evidence).
+#:
+#: ONE table, shared by FOUR families (risk.var.parametric, .parametric_total v1+v2,
+#: .historical, and ES-1's .parametric_es/.parametric_es_total). ES-1 (OQ-ES-1-4, sub-fork (i))
+#: ADDED 0.9750 - the only externally-anchored ES confidence (BCBS d457 MAR33.3). Ratified with
+#: its disclosed cost: 97.5% became registrable on the historical/total families too, which ES-1
+#: did not analyze (the HS adequacy floor computes N >= 41 there - verified, not exercised).
 VAR_Z_SCORES: dict[str, str] = {
     "0.9500": "1.644853626951",
+    "0.9750": "1.959963984540",
     "0.9900": "2.326347874041",
+}
+
+#: The confidence vocabulary -> the REGISTERED ES multipliers k_c (OD-ES-1-A/B). The exact
+#: structural twin of VAR_Z_SCORES: a per-confidence declared constant, so NO runtime normal
+#: function of ANY kind exists - not the inverse CDF (already barred above) and not the forward
+#: PDF phi. The tail arithmetic lives HERE, in a registered constant, never in code.
+#:
+#: CONVENTION (pinned explicitly - the recorded P3-5 seam ``ES = sigma*phi(z)/(1-alpha)`` never
+#: defined ``alpha`` and the literature is genuinely split on that symbol: Acerbi-Tasche use the
+#: TAIL probability, Gneiting uses the CONFIDENCE level):
+#:
+#:     k_c := phi(Phi^-1(c)) / (1 - c),  c = the CONFIDENCE level (0.9750 -> tail mass 0.0250)
+#:     ES_c = k_c * sigma_p,  losses loss-POSITIVE, zero-mean (mu_L = 0)
+#:
+#: consistent with the shipped VaR_c = z_c * sigma_p. ES is the alpha-TAIL-MEAN INTEGRAL, never
+#: E[L | L > VaR] (that is TCE, which is NOT coherent for discontinuous distributions; they
+#: coincide only in the continuous/normal case - Acerbi-Tasche Cor. 5.3(i)). A later
+#: ES-over-historical-simulation leg MUST inherit the tail-mean estimator (Acerbi-Tasche Prop.
+#: 4.1: a FLOOR count plus a FRACTIONAL boundary weight, NOT the mean of the worst ceil(n*a)
+#: losses - that quantity IS the TCE forbidden above).
+#:
+#: Verified at 12dp by THREE independent routes (2026-07-15): Decimal bisection on Phi at prec
+#: 50-80 with pi via Machin; stdlib NormalDist.inv_cdf (Wichura AS241, a different algorithm);
+#: and composite-Simpson integration of the tail mean using NO closed form. All agree to the last
+#: digit. Test-pinned BYTE-EXACT with z re-derived in-test (test_es.py) - a tolerance-based check
+#: against a pre-rounded z CANNOT pin the 12th dp (its noise floor exceeds the quantum).
+#: Correctly ROUNDED, not truncated: k_0.9900 = 2.665214220345804... -> ...346.
+VAR_ES_MULTIPLIERS: dict[str, str] = {
+    "0.9500": "2.062712807507",
+    "0.9750": "2.337802792201",
+    "0.9900": "2.665214220346",
 }
 #: The v1 horizon (the covariance substrate is DAILY/unannualized; sqrt(h) is a recorded seam).
 VAR_HORIZON_DAYS = 1
@@ -584,7 +622,8 @@ def register_var_model(
     service (P3-5, OD-P3-5-D). The declarations are recorded as ``model_assumption``s AND are
     part of the version-resolution identity: re-registering the same ``version_label`` with ANY
     different declaration raises :class:`ModelVersionConflictError` — mint a new label instead.
-    The v1 vocabulary: ``confidence_level`` in {0.95, 0.99} (the registered z table);
+    The vocabulary: ``confidence_level`` in {0.95, 0.975, 0.99} (the registered z table; 0.975
+    admitted by ES-1/OQ-ES-1-4 — the table is SHARED across the VaR/ES families);
     ``horizon_days`` == 1."""
     # STRICT parse — never coerce: a malformed string must not crash (Decimal('abc') raises
     # InvalidOperation, which is NOT a ValueError) and a near-vocabulary value like '0.94995'
@@ -755,9 +794,10 @@ def declared_hs_var_parameters(session: Session, version: ModelVersion) -> HsVar
 def _hs_window_floor(confidence_key: str) -> int:
     """The OD-VHS-E adequacy floor, TIGHTENED at the implementation review (2026-07, numeric
     finder): the ratified ``N >= ceil(1/(1-c))`` still yielded ``k = 1`` (the sample MINIMUM —
-    the exact condition the floor's rationale refuses) at every integral boundary, incl. BOTH
-    v1 vocabulary confidences. Guaranteeing ``k >= 2`` requires ``N·(1-c) > 1`` strictly — the
-    floor is the smallest such N (21 at 0.95; 101 at 0.99)."""
+    the exact condition the floor's rationale refuses) at every integral boundary, incl. EVERY
+    vocabulary confidence (three since ES-1 widened the shared table; the floor is computed, not
+    tabulated, so 0.975 -> 41 needs no change here). Guaranteeing ``k >= 2`` requires
+    ``N·(1-c) > 1`` strictly — the floor is the smallest such N (21 at 0.95; 101 at 0.99)."""
     one_minus_c = Decimal(1) - Decimal(confidence_key)
     floor = int((Decimal(1) / one_minus_c).to_integral_value(rounding=ROUND_CEILING))
     while Decimal(floor) * one_minus_c <= Decimal(1):
@@ -1609,3 +1649,356 @@ def register_var_parametric_total_model(
             f"appraisal_days={appraisal_days}, max_estimate_age_days={max_estimate_age_days})",
         )
     return version
+
+
+# --------------------------------------------------------------------------------------------
+# ES-1 — the parametric Expected Shortfall families (OD-ES-1-C/D)
+# --------------------------------------------------------------------------------------------
+#: The PLAIN ES family: ES_c = k_c * sigma_p over the SAME factor sigma the plain parametric VaR
+#: computes. A NEW model CODE dispatched through the SAME binder (the PA-4 shape), NOT an extra row
+#: on the existing VaR run: the snapshot builder pins EVERY var_result row of a run with no
+#: metric_type filter and the backtest binder then refuses a snapshot whose pinned rows mix
+#: methods, so an extra ES row would break every BT-1/BT-2 backtest over a parametric run AND
+#: silently change a shipped v1 model's output (OD-ES-1-C — the alternative is DISQUALIFIED, not
+#: dispreferred). Also honours P3-5's own ratified words: each method is its own registered family.
+ES_MODEL_CODE = "risk.var.parametric_es"
+ES_MODEL_NAME = "Parametric Expected Shortfall (zero-mean delta-normal, 1-day)"
+ES_VERSION_LABEL = "v1"
+ES_METHODOLOGY_REF = "05_analytics_methodologies/var_parametric_es_v1.md"
+
+#: The TOTAL ES family: ES_c = k_c * sigma_total (PA-4's factor+idiosyncratic sigma, incl. BT-2's
+#: staleness gate). Ships with the plain leg because the mandate is "BOTH sigma and sigma_total"
+#: and the arithmetic is one multiplier over a sigma the platform already computes.
+ES_TOTAL_MODEL_CODE = "risk.var.parametric_es_total"
+ES_TOTAL_MODEL_NAME = "Total parametric Expected Shortfall (factor + idiosyncratic residual, 1-day)"
+ES_TOTAL_VERSION_LABEL = "v1"
+
+#: The DECLARED ES multiplier k_c (model identity). Declared like confidence/horizon/z so the row
+#: is auditable, and IDENTITY-CHECKED against VAR_ES_MULTIPLIERS[c] at bind: a generically-minted
+#: version (POST /models can stamp any assumptions — the P3-4 lesson) CANNOT declare a k that does
+#: not match its own declared c. The k is never recomputed at runtime; it is looked up and verified.
+ES_MULTIPLIER_ASSUMPTION_PREFIX = "es_multiplier="
+
+#: ES-family declared choices EXCLUDING the per-registration confidence/horizon/z/k.
+ES_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Zero-mean parametric Expected Shortfall under the SAME linear factor model as the plain "
+    "parametric VaR family: ES_c = k_c * sigma_p, k_c := phi(Phi^-1(c)) / (1 - c), with c the "
+    "CONFIDENCE level (0.9750 -> tail mass 0.0250), losses loss-POSITIVE and zero-mean (mu_L = 0) "
+    "- consistent with the shipped VaR_c = z_c * sigma_p. The Landsman-Valdez (2003) elliptical "
+    "closed form at mu = 0. ES is the alpha-TAIL-MEAN INTEGRAL, never E[L | L > VaR] (that is "
+    "TCE, NOT coherent for discontinuous distributions; they coincide only under continuity - "
+    "Acerbi-Tasche Cor. 5.3(i)).",
+    "k_c is a REGISTERED constant from the SAME enumerated confidence vocabulary as z_alpha - no "
+    "runtime normal function of ANY kind is computed: not the inverse CDF (barred since P3-5) and "
+    "not the forward PDF phi. The tail arithmetic lives in the registered constant, under model "
+    "governance, not in code. The declared es_multiplier is identity-checked against the "
+    "registered table at bind.",
+    "Inputs: IDENTICAL to the plain parametric VaR family (the per-factor CURRENCY-exposure totals "
+    "of ONE COMPLETED factor-exposure run x the sample covariance of ONE COMPLETED covariance run) "
+    "- ES multiplies the SAME sigma_p through the SAME adjudication, snapshot bind and provenance "
+    "re-resolution. Every input limitation of that family applies verbatim.",
+    "Computed in Decimal at 50-digit context precision; ES quantizes HALF_UP to 6 decimal places "
+    "(the Numeric(28,6) base-currency scale), exactly as sigma/VaR.",
+)
+
+#: ES-family recorded scope-outs. NOTE the coherence + backtest rows: both are written to the
+#: research corrections (OD-ES-1-F, Part 2), NOT to the tempting-but-false versions.
+ES_LIMITATIONS: tuple[str, ...] = (
+    "ES here is a fixed multiple of the SAME sigma_p as the parametric VaR family, so it inherits "
+    "EVERY limitation of that number verbatim: SPECIFIC/IDIOSYNCRATIC RISK = 0 (the plain leg; the "
+    "total ES family adds it), joint normality of factor returns, 1-day horizon only (no sqrt(h) "
+    "scaling), CURRENCY-family factors only, and the sample-covariance estimation error.",
+    "ES's practical content here is TAIL SEVERITY (VaR is a cut-off and says nothing about "
+    "magnitude beyond it) plus ROBUSTNESS: ES's coherence is UNCONDITIONAL (Acerbi-Tasche 2002 "
+    "Prop. 3.1, any distribution), whereas this platform's parametric VaR is coherent only "
+    "CONTINGENT on normality holding - under the model's OWN elliptical assumption VaR is ALREADY "
+    "subadditive (Embrechts-McNeil-Straumann 2002), so ES does NOT fix a defect in today's "
+    "arithmetic; it keeps the aggregation guarantee exactly when the model is WRONG. Do not read "
+    "this number as 'VaR was incoherent'. (BCBS's own stated rationale for ES is tail capture "
+    "only - d219; the coherence argument is academic, not regulatory.)",
+    "NO ES backtest leg: ES rows are deliberately EXCLUDED from the backtestable metric vocabulary "
+    "and a backtest over an ES run REFUSES. The reason is FRTB precedent + parametric redundancy, "
+    "NOT non-elicitability: 'ES cannot be backtested' is FALSE (Acerbi-Szekely 2014 give practical "
+    "ES backtests; Fissler-Ziegel 2016 show ES is jointly elicitable with VaR). FRTB backtests VaR "
+    "and never ES (MAR32.4/32.5/32.18), and under this leg's own normality an ES backtest would be "
+    "the VaR backtest with a rescaled threshold - no new information. A genuine ES backtest "
+    "becomes meaningful for a non-elliptical ES-over-historical-simulation leg (a BT-3 candidate).",
+    "ONE confidence level per registered version (the declared-parameter identity). ES over "
+    "historical simulation and Monte Carlo remain later, separately declared families - each MUST "
+    "inherit the alpha-tail-mean estimator: with a = 1-c the TAIL probability and L_(1) >= L_(2) "
+    ">= ... the losses sorted worst-first, ES_a = ( SUM_{i<=floor(n*a)} L_(i) + (n*a - "
+    "floor(n*a)) * L_(floor(n*a)+1) ) / (n*a) - a FLOOR count plus a FRACTIONAL weight on the "
+    "boundary observation (Acerbi-Tasche 2002 Prop. 4.1). It is NOT the mean of the worst "
+    "ceil(n*a) losses: that quantity IS the TCE this guard forbids (identical for untied "
+    "samples) and it UNDERSTATES ES whenever n*a is not an integer - by ~14% at n=41, which is "
+    "this platform's own historical-simulation adequacy floor at c=0.975. The two coincide only "
+    "when n*a is an integer.",
+    "An ES row does NOT reconcile against its own columns: var_value = k_c * sigma, but k_c is on "
+    "no column - the row carries the arithmetically-UNUSED quantile z_score instead (the live "
+    "ck_var_result_parametric_not_null CHECK forces it non-NULL). The multiplier lives only in "
+    "this "
+    "model_version's declared es_multiplier, so an ES row is reproducible THROUGH its bound "
+    "model_version, never from the row alone. Key off metric_type: var_value holds the METRIC's "
+    "number (the VAR_HISTORICAL precedent), and for an ES row that number is an ES, not a VaR.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
+)
+
+#: Total-ES-family scope-outs = the ES rows PLUS the total family's residual/smoothing doctrine.
+ES_TOTAL_LIMITATIONS: tuple[str, ...] = (
+    *ES_LIMITATIONS,
+    "The residual leg is PA-4's verbatim: DIAGONAL residuals only (Sharpe 1963), hostage to the "
+    "PA-3 estimate quality, ZERO idiosyncratic risk for non-proxied/MANUAL instruments, a flat "
+    "252/365 trading-day ratio over the mean period, and no FX conversion. Residual shrinkage + "
+    "EWMA weighting + calendar-aware per-period trading-day counts remain recorded v2s.",
+    "BT-2's smoothing doctrine carries over UNCHANGED - a sigma-multiple is exactly as honest as "
+    "its sigma. On an appraisal-marked book the 1-day total sigma is biased two ways by "
+    "construction (P&L suppressed between marks, clustered on mark dates), so the total ES "
+    "inherits that bias directly. The DECLARED max_estimate_age_days staleness policy is REQUIRED "
+    "on this family from birth (no grandfathered ungated version exists, unlike the total-VaR v1).",
+)
+
+
+def declared_es_multiplier(session: Session, version: ModelVersion, *, code: str) -> Decimal:
+    """Parse + IDENTITY-CHECK the version's declared ES multiplier (OD-ES-1-B).
+
+    Exactly ONE well-formed ``es_multiplier=K`` whose value equals ``VAR_ES_MULTIPLIERS[c]`` for
+    the version's OWN declared confidence. The equality is the point: a generically-minted version
+    (POST /models stamps arbitrary assumptions under the same permission — the P3-4 lesson) must
+    not be able to pair a 0.99 confidence with a 0.95 multiplier and emit a governed number that
+    is neither. Malformed/absent/ambiguous/mismatched -> fail-closed
+    :class:`WrongModelVersionError` (422), never a bare parse crash.
+    """
+    declared = declared_var_parameters(session, version)  # also gates confidence/horizon/z
+    texts = load_assumption_texts(session, version)
+    found = [
+        t[len(ES_MULTIPLIER_ASSUMPTION_PREFIX) :]
+        for t in texts
+        if t.startswith(ES_MULTIPLIER_ASSUMPTION_PREFIX)
+    ]
+    # Absent AND ambiguous both refuse: unlike BT-2's max_estimate_age_days (whose absent-branch is
+    # the recorded v1 grandfather), an ES version has NO legitimate ungated form — the multiplier IS
+    # the arithmetic. Never `sole_declared`, whose None-on-ambiguous would collapse the two.
+    if len(found) != 1:
+        raise WrongModelVersionError(str(version.id), code)
+    confidence_key = f"{declared.confidence_level:f}"
+    expected = VAR_ES_MULTIPLIERS.get(confidence_key)
+    if expected is None or found[0] != expected:
+        raise WrongModelVersionError(str(version.id), code)
+    return Decimal(expected)
+
+
+def register_var_parametric_es_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    confidence_level: str | Decimal,
+    horizon_days: int = VAR_HORIZON_DAYS,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the parametric-ES ``model`` + a ``model_version`` for this
+    ``(code_version, confidence_level, horizon_days, z, es_multiplier)`` identity (ES-1, OD-ES-1-C).
+
+    Mirrors :func:`register_var_model`'s declared-parameter machinery verbatim (the same shared
+    confidence vocabulary + z table + horizon gate) under a DIFFERENT model CODE, PLUS the declared
+    ``es_multiplier`` looked up from :data:`VAR_ES_MULTIPLIERS` and identity-checked at bind. The ES
+    run is dispatched through the SAME binder as the plain/total VaR families.
+    """
+    text = str(confidence_level).strip()
+    if not _CONFIDENCE_PATTERN.fullmatch(text) or len(text) > 6:
+        raise ValueError(
+            f"confidence_level {confidence_level!r} is not in the vocabulary "
+            f"{sorted(VAR_ES_MULTIPLIERS)} (a new level is a new declared registration, "
+            f"never a runtime quantile)"
+        )
+    confidence_key = f"{Decimal(text).quantize(Decimal('0.0001')):f}"
+    z_text = VAR_Z_SCORES.get(confidence_key)
+    k_text = VAR_ES_MULTIPLIERS.get(confidence_key)
+    if z_text is None or k_text is None:
+        raise ValueError(
+            f"confidence_level {confidence_level} is not in the vocabulary "
+            f"{sorted(VAR_ES_MULTIPLIERS)} (a new level is a new declared registration, "
+            f"never a runtime quantile)"
+        )
+    if int(horizon_days) != VAR_HORIZON_DAYS:
+        raise ValueError(
+            f"horizon_days must be {VAR_HORIZON_DAYS} in v1 (sqrt(h) scaling is a recorded seam)"
+        )
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=ES_MODEL_CODE,
+        name=ES_MODEL_NAME,
+        model_type=VAR_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Zero-mean parametric Expected Shortfall (the alpha-tail mean) over the SAME governed "
+            "factor sigma as the parametric VaR family (ES-1, ENT-027)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=ES_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=ES_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=ES_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *ES_ASSUMPTIONS_BASE,
+                f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
+                f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
+                f"{Z_ASSUMPTION_PREFIX}{z_text}",
+                f"{ES_MULTIPLIER_ASSUMPTION_PREFIX}{k_text}",
+            ),
+            limitations=ES_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_var_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or f"{declared.confidence_level:f}" != confidence_key
+        or declared.horizon_days != int(horizon_days)
+        or declared_es_multiplier(session, version, code=ES_MODEL_CODE) != Decimal(k_text)
+    ):
+        raise ModelVersionConflictError(
+            ES_MODEL_CODE,
+            ES_VERSION_LABEL,
+            f"{code_version} (confidence_level={confidence_key}, horizon_days={horizon_days}, "
+            f"es_multiplier={k_text})",
+        )
+    return version
+
+
+def register_var_parametric_es_total_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    confidence_level: str | Decimal,
+    appraisal_days: int,
+    max_estimate_age_days: int,
+    horizon_days: int = VAR_HORIZON_DAYS,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the TOTAL-parametric-ES ``model`` + ``model_version`` for this
+    ``(code_version, confidence_level, horizon_days, z, es_multiplier, appraisal_days,
+    max_estimate_age_days)`` identity (ES-1, OD-ES-1-D).
+
+    The ES multiplier over PA-4's ``sigma_total``, reusing the total family's residual machinery and
+    BT-2's staleness gate verbatim. ``max_estimate_age_days`` is REQUIRED from birth: unlike
+    ``risk.var.parametric_total``, this code has no pre-BT-2 v1, so no grandfathered ungated
+    registration can legitimately exist — the ES-total bind path refuses an absent declaration
+    outright rather than degrading to ungated (see :func:`declared_es_total_max_estimate_age_days`).
+    """
+    if int(appraisal_days) < 1:
+        raise ValueError("appraisal_days must be >= 1 (the calendar-day appraisal cadence)")
+    if int(max_estimate_age_days) < 1:
+        raise ValueError(
+            "max_estimate_age_days must be >= 1 (the calendar-day staleness policy for a cited "
+            "residual estimate)"
+        )
+    text = str(confidence_level).strip()
+    if not _CONFIDENCE_PATTERN.fullmatch(text) or len(text) > 6:
+        raise ValueError(
+            f"confidence_level {confidence_level!r} is not in the vocabulary "
+            f"{sorted(VAR_ES_MULTIPLIERS)} (a new level is a new declared registration)"
+        )
+    confidence_key = f"{Decimal(text).quantize(Decimal('0.0001')):f}"
+    z_text = VAR_Z_SCORES.get(confidence_key)
+    k_text = VAR_ES_MULTIPLIERS.get(confidence_key)
+    if z_text is None or k_text is None:
+        raise ValueError(
+            f"confidence_level {confidence_level} not in the vocabulary "
+            f"{sorted(VAR_ES_MULTIPLIERS)}"
+        )
+    if int(horizon_days) != VAR_HORIZON_DAYS:
+        raise ValueError(
+            f"horizon_days must be {VAR_HORIZON_DAYS} in v1 (sqrt(h) scaling is a recorded seam)"
+        )
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=ES_TOTAL_MODEL_CODE,
+        name=ES_TOTAL_MODEL_NAME,
+        model_type=VAR_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Total parametric Expected Shortfall = the registered ES multiplier over the governed "
+            "total sigma (factor + idiosyncratic residual) (ES-1, ENT-027)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=ES_TOTAL_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=ES_TOTAL_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=ES_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *ES_ASSUMPTIONS_BASE,
+                *VAR_TOTAL_ASSUMPTIONS_BASE[:3],  # the residual leg + frequency conversion
+                f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
+                f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
+                f"{Z_ASSUMPTION_PREFIX}{z_text}",
+                f"{ES_MULTIPLIER_ASSUMPTION_PREFIX}{k_text}",
+                f"{APPRAISAL_DAYS_ASSUMPTION_PREFIX}{int(appraisal_days)}",
+                f"{MAX_ESTIMATE_AGE_ASSUMPTION_PREFIX}{int(max_estimate_age_days)}",
+            ),
+            limitations=ES_TOTAL_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_var_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or f"{declared.confidence_level:f}" != confidence_key
+        or declared.horizon_days != int(horizon_days)
+        or declared_es_multiplier(session, version, code=ES_TOTAL_MODEL_CODE) != Decimal(k_text)
+        or declared_appraisal_days(session, version) != int(appraisal_days)
+        or declared_es_total_max_estimate_age_days(session, version) != int(max_estimate_age_days)
+    ):
+        raise ModelVersionConflictError(
+            ES_TOTAL_MODEL_CODE,
+            ES_TOTAL_VERSION_LABEL,
+            f"{code_version} (confidence_level={confidence_key}, horizon_days={horizon_days}, "
+            f"es_multiplier={k_text}, appraisal_days={appraisal_days}, "
+            f"max_estimate_age_days={max_estimate_age_days})",
+        )
+    return version
+
+
+def declared_es_total_max_estimate_age_days(session: Session, version: ModelVersion) -> int:
+    """The ES-total family's staleness policy — REQUIRED, never optional (ES-1, plan Step 3).
+
+    :func:`declared_max_estimate_age_days` returns ``None`` on ABSENT because BT-2's total-VaR v1
+    predates the policy and is immutable (the recorded grandfather). The ES-total CODE is born with
+    the declaration, so no legitimate ungated version can ever exist here — absent must REFUSE, not
+    degrade to ungated. Today an absent declaration is already unreachable through the governed path
+    (a generic POST /models version carries status != REGISTERED and is caught by the backstop at
+    every bind), so this costs nothing; it makes the record's claim true BY CONSTRUCTION rather than
+    by an inherited backstop, which is the difference between a guarantee and a coincidence.
+    """
+    declared = declared_max_estimate_age_days(session, version)
+    if declared is None:
+        raise WrongModelVersionError(str(version.id), ES_TOTAL_MODEL_CODE)
+    return declared

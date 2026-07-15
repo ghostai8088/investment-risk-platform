@@ -10,7 +10,7 @@
 
 | OD | Decision |
 |---|---|
-| **A — The formula + its CONVENTION, pinned** | `ES_c = k_c · σ_p` where `k_c := φ(Φ⁻¹(c)) / (1 − c)`, **`c` = the CONFIDENCE level** (0.975 ⇒ tail mass 0.025), losses loss-positive, zero-mean (`μ_L = 0`, consistent with the shipped `VaR = z_c·σ_p`). **The recorded seam `ES = σ·φ(z)/(1−α)` is CORRECT but under-specified — it never defines `α`, and the literature is genuinely split on that exact symbol** (Acerbi-Tasche use α = TAIL probability; Gneiting uses α = CONFIDENCE). The seam is the confidence form. This record pins the convention explicitly and the implementation must not rely on the symbol. **Definitional guard for the future:** ES is defined as the **α-tail-mean integral**, NEVER as `E[L \| L > VaR]` — the latter is TCE, which is *not* coherent for discontinuous distributions. They coincide for the normal case (Acerbi-Tasche Cor. 5.3(i)) so it costs nothing today, but recording it now means a later ES-over-historical-simulation leg inherits the correct estimator (the mean of the worst `⌈n(1−c)⌉` losses), not the naive one. |
+| **A — The formula + its CONVENTION, pinned** | `ES_c = k_c · σ_p` where `k_c := φ(Φ⁻¹(c)) / (1 − c)`, **`c` = the CONFIDENCE level** (0.975 ⇒ tail mass 0.025), losses loss-positive, zero-mean (`μ_L = 0`, consistent with the shipped `VaR = z_c·σ_p`). **The recorded seam `ES = σ·φ(z)/(1−α)` is CORRECT but under-specified — it never defines `α`, and the literature is genuinely split on that exact symbol** (Acerbi-Tasche use α = TAIL probability; Gneiting uses α = CONFIDENCE). The seam is the confidence form. This record pins the convention explicitly and the implementation must not rely on the symbol. **Definitional guard for the future:** ES is defined as the **α-tail-mean integral**, NEVER as `E[L \| L > VaR]` — the latter is TCE, which is *not* coherent for discontinuous distributions. They coincide for the normal case (Acerbi-Tasche Cor. 5.3(i)) so it costs nothing today, but recording it now means a later ES-over-historical-simulation leg inherits the correct estimator. **⚠️ CORRECTED at the implementation review (the doctrine finder, confirmed by execution): the drafted guard said that estimator is "the mean of the worst `⌈n(1−c)⌉` losses" — which is FALSE and self-defeating.** For an untied sample that quantity is *exactly* `E[L \| L ≥ VaR]`, i.e. the TCE the same sentence forbids, and it UNDERSTATES ES whenever `n·a ∉ ℤ` (−0.34% at n=504, −1.6% at n=100, **−13.9% at n=41 — the platform's own HS adequacy floor at c=0.975**). The correct estimator is **Acerbi-Tasche Prop. 4.1**: with `a = 1−c` and losses sorted worst-first, `ES_a = ( Σ_{i ≤ ⌊n·a⌋} L₍ᵢ₎ + (n·a − ⌊n·a⌋)·L₍⌊n·a⌋₊₁₎ ) / (n·a)` — a FLOOR count plus a FRACTIONAL boundary weight. No ES-1 number moves (the parametric leg is continuous, where ES = TCE); the damage would have been entirely to the future HS leg this guard exists to protect, which would have implemented the forbidden estimator and believed it had complied. Fixed at all six sites. |
 | **B — `k_c` as REGISTERED constants (the `VAR_Z_SCORES` twin), NOT a runtime φ** | `k_c` is the exact structural analogue of the registered `z_c`: a per-confidence declared constant, recorded to 12dp. This **preserves P3-5's enumerated-vocabulary invariant unchanged** and sidesteps the interpretive fork entirely (no runtime normal function of any kind). The alternative — computing `φ(z) = exp(−z²/2)/√(2π)` at runtime — is *feasible* (`Decimal.exp()` is spec-guaranteed correctly rounded; verified bit-identical across C and pure-Python) but would require declaring a π constant anyway, and buys nothing: the vocabulary is enumerated either way. Values: `0.9500 → 2.062712807507`, `0.9750 → 2.337802792201`, `0.9900 → 2.665214220346`. **Verification, stated at the precision that actually validates 12dp** (the planning verifier's correction — the draft cited the ≤1.4e-8 tail integration, which is ~4 orders too coarse to resolve the 12th dp and therefore over-claimed "test-verified"): each `k_c` was re-derived by THREE independent routes — `Decimal` bisection on `Φ(z)=½(1+erf(z/√2))` at prec 50–80 with π via Machin (agreement exact at 12dp), stdlib `NormalDist.inv_cdf` (Wichura AS241, a different algorithm — ≤1.1e-15), and composite-Simpson integration of the α-tail-mean `∫z·φ(z)dz` using **no closed form** (≤3.5e-13, which independently confirms OD-A's closed form IS the tail-mean integral rather than merely asserting it). All three agree; **all six constants are correctly ROUNDED, not truncated** — load-bearing at `c=0.99`, where `k = 2.665214220345804…` (13th digit **8**) rounds the 12th dp UP to `…346` — truncation would give `…345`. The 12 digits are pinned in the battery by a byte-exact test that derives `z` in-test (OQ-1's `sole_declared` twin — plan Step 7). |
 | **C — Shape: a NEW model code through the SAME binder (the PA-4 shape); ONE ES row per run** | `risk.var.parametric_es` v1 — a third dispatch branch in `run_var` alongside plain/total, reusing the ENTIRE adjudication/snapshot/provenance path and `declared_var_parameters` verbatim. One `var_result` row, `metric_type='ES_PARAMETRIC'`, the ES number in `var_value`, `sigma`/`z_score`/`confidence_level` echoed — **and the echo is DB-FORCED, not a design choice**: the live `ck_var_result_parametric_not_null` CHECK (Grounding) exempts only `VAR_HISTORICAL`, so any non-HS row MUST carry `z_score`+`sigma`+`covariance_run_id` non-NULL. Recording this because it is invisible to the SQLite battery — an ES row that tried to NULL its (arithmetically unused) `z_score` would pass every non-PG test and fail only in PG. This also honours P3-5's own ratified words: *"each method is its own registered model family/version"* (OD-P3-5-A). **The tempting alternative — emitting an extra ES row on the EXISTING VaR run — is DISQUALIFIED by a hard cross-slice regression** (census-verified): `snapshot/service.py::_list_var_rows` pins **every** `var_result` row of a run with **no metric_type filter**, and `var_backtest_service.py:274-280` then refuses a snapshot whose pinned rows mix methods ⇒ **every BT-1/BT-2 backtest over a post-ES parametric run would break immediately**, and a shipped v1 model would silently start emitting two rows. Its true cost is re-opening BT-1/BT-2, not "appending a row". |
 | **D — The TOTAL leg (the mandate's "BOTH σ and σ_total")** | ES over the total σ ships in the SAME slice as a SECOND registered code, `risk.var.parametric_es_total` v1, carrying the total family's declared identity (`appraisal_days` + BT-2's `max_estimate_age_days`) and reusing PA-4's residual machinery + BT-2's staleness gate verbatim: `ES_total = k_c · σ_total`. This DISCHARGES the "ES total analogue" half of PA-4's Part-6 deferral 3 (shrinkage/EWMA/calendar-aware trading-day counts stay open — recorded). Rationale for one slice: the arithmetic is the same multiplier over a σ the platform already computes; splitting would ship the mandate's "BOTH" halfway. |
@@ -23,12 +23,12 @@
 **Two corrections this research forced on the obvious drafting — both recorded because the honest version is weaker but true:**
 
 - **⚠️ The coherence argument does NOT discriminate against THIS platform's parametric VaR.** The tempting sentence — "we add ES because VaR is incoherent" — is **wrong as applied to our own leg**. **Embrechts, McNeil & Straumann (2002)**, verbatim: *"In the elliptical world the use of VaR as a measure of the risk of a portfolio Z makes sense because **VaR is a coherent risk measure in this world**."* Our parametric VaR is delta-normal; normal ⊂ elliptical; PA-4's diagonal residual keeps it normal. **Under the platform's own modelling assumption its VaR is already subadditive** (`σ_p = √(x'Σx)` is a norm). The honest four-part *why*: (1) **tail severity** — VaR is a cut-off and says nothing about magnitude beyond it (model-independent, and BCBS's only stated rationale); (2) **the HS-VaR leg is genuinely non-elliptical** (an empirical distribution is discrete — there VaR's subadditivity really can fail, so a coherent ES has real content); (3) **coherence as robustness insurance** — ES's coherence is *unconditional*, the parametric VaR's is *contingent on normality being true*, i.e. ES keeps the aggregation guarantee exactly when the model is wrong; (4) regulatory alignment. *(Sharp detail: Artzner's Remark under the monotonicity axiom rules out `ρ(X) = −E[X] + α·σ(X)` as a functional on arbitrary variables — the σ-multiple form's coherence lives ONLY inside the elliptical family. That is the cleanest statement of why ES-1 is about robustness, not a defect in today's arithmetic.)*
-- **⚠️ Do NOT attribute a coherence rationale to BCBS.** Greps of **d457, bcbs265 and d219** return **zero** occurrences of "coherent" / "sub-additive" / "subadditivity" / "elicitable". BCBS's stated rationale is **tail capture only** (d219: *"a number of weaknesses have been identified with VaR, including its inability to capture 'tail risk'"*). The coherence argument is **academic (Artzner; Acerbi-Tasche), not regulatory** — cite each to its actual source.
+- **⚠️ Do NOT attribute a coherence rationale to BCBS.** Their OPERATIVE rationale is **tail capture only** (d219 main text: VaR's *"inability to capture 'tail risk'"*). The coherence argument is **academic (Artzner; Acerbi-Tasche), not regulatory** — cite each to its actual source. **⚠️ The DRAFTED evidence for this was itself wrong and was corrected at the implementation review** (the doctrine finder re-downloaded all three primaries and re-ran the grep): the draft asserted **zero** occurrences of "coherent"/"sub-additive"/"subadditivity"/"elicitable" across **d457, bcbs265 AND d219**. True for d457 and bcbs265; **FALSE for d219**, which says verbatim: *"VaR has been criticised in the literature for lacking subadditivity. A prominent alternative to VaR is ES, which is subadditive."* **The conclusion SURVIVES and is strengthened** — that sentence sits in **Annex 2, "Lessons from the academic literature and banks' risk management practices"**, under "Messages from the academic literature", i.e. BCBS SUMMARISING the academic argument rather than reasoning from it, which is exactly the claim. But as drafted it was stamped VERIFIED and would have died to a single validator grep — **the BT-2 MAR32.27 failure mode, reproduced on this slice's own headline correction**. Recorded rather than quietly patched.
 
 *(Incremental on PA-4's covariance/coherence citations and BT-2's FRTB-backtesting set; the sources below are the ES-specific additions.)*
 
 - **Embrechts, McNeil & Straumann (2002)**, "Correlation and dependence in risk management: properties and pitfalls", in *Risk Management: Value at Risk and Beyond* (Cambridge UP) — §3: in the elliptical world VaR is coherent (the verbatim quote in correction #1 above). **VERIFIED.** Disposition: **correction #1 — the record's single most load-bearing claim** (it is why ES-1 is about robustness, not about fixing a defect in today's arithmetic). *Promoted to a labelled entry at planning-verification: the draft quoted it only inside the correction bullet, with no VERIFIED/SECONDARY stamp — the exact provenance gap that produced BT-2's MAR32.27 fold, and doubly unacceptable on the quote a Tier-3 OQ (OQ-6) asks the user to ratify.*
-- **BCBS d219** (May 2012), "Fundamental review of the trading book" (consultative) — the verbatim *"a number of weaknesses have been identified with VaR, including its inability to capture 'tail risk'"*; greps of d219/bcbs265/d457 return **zero** occurrences of "coherent"/"sub-additive"/"subadditivity"/"elicitable". **VERIFIED.** Disposition: **correction #2** (BCBS's stated rationale is tail capture only — attribute coherence to Artzner/Acerbi-Tasche, never to BCBS). *Promoted to a labelled entry at planning-verification, same reason as Embrechts.*
+- **BCBS d219** (May 2012), "Fundamental review of the trading book" (consultative) — the main text's *"inability to capture 'tail risk'"* as the operative VaR→ES rationale. **VERIFIED (full text, re-checked at the implementation review).** Occurrence counts, corrected: d457 and bcbs265 = **zero** occurrences of "coherent"/"sub-additive"/"subadditivity"/"elicitable"; **d219 = ONE** subadditivity sentence, in **Annex 2 ("Lessons from the academic literature")** — BCBS reporting the literature, not adopting its argument. *(The draft's flat "zero across all three" was false; see correction #2.)* Disposition: **correction #2** (BCBS's stated rationale is tail capture only — attribute coherence to Artzner/Acerbi-Tasche, never to BCBS). *Promoted to a labelled entry at planning-verification, same reason as Embrechts.*
 - **Artzner, Delbaen, Eber & Heath (1999)**, "Coherent Measures of Risk", *Mathematical Finance* — Def. 2.4: the four axioms (translation invariance, subadditivity, positive homogeneity, monotonicity). **VERIFIED.** The sub-claim that a Remark under the monotonicity axiom rules out `ρ(X) = −E[X] + α·σ(X)` on arbitrary variables is **SECONDARY** (outside the verified Def.-2.4 scope; flagged at planning-verification) — it is a sharpening of correction #1, not a load-bearing step: correction #1 stands on Embrechts alone. Disposition: ES-1's academic *why* (with the elliptical caveat above).
 - **Acerbi & Tasche (2002)**, "On the coherence of expected shortfall", *J. Banking & Finance* — Prop. 3.1 (ES satisfies all four axioms for any α ∈ (0,1) and any X with `E[X⁻] < ∞`, **regardless of distribution**); Cor. 4.3 (ES = CVaR); **Cor. 5.3(i)** (ES = WCE = TCE for continuous distributions — the normal case); Example 5.4 (for discontinuous distributions TCE/WCE are NOT subadditive — only ES survives). **VERIFIED.** Disposition: the coherence proof + OD-A's TCE guard.
 - **BCBS d457** (Jan 2019) — **MAR33.3** verbatim: *"In calculating ES, a bank must use a 97.5th percentile, one-tailed confidence level."* (⇒ α is CONFIDENCE in the regulatory text — OD-A/E). **MAR33.9**: *"**No particular type of ES model is prescribed** … historical simulation, Monte Carlo simulation, or other appropriate analytical methods."* ⚠️ *Nuance not to overstate:* d457 does **NOT** name variance-covariance/parametric explicitly — parametric ES falls under *"other appropriate analytical methods"*; **FRTB permits but does not endorse-by-name a parametric ES** (a web summary claiming it names variance-covariance was checked against the text and is wrong). **MAR32.4/32.5/32.18**: backtesting compares **VaR** (99th bank-wide; 97.5th *and* 99th desk-level) — **ES is never itself backtested**. **VERIFIED (full text).** Disposition: OD-E's 0.975 + OD-F's no-backtest precedent.
@@ -76,8 +76,99 @@ What verification **changed**, recorded because the honest version is weaker: **
 
 ## Part 5.5 — Implementation deviations from the ratified plan
 
-*(recorded during the build)*
+1. **The `_resolve_var_family` helper became a 2×2, not a 4-deep try/except chain.** The plan
+   offered the helper as an if-it-gets-unwieldy option (ratified in OD-G). Building it made the
+   real shape obvious: the four codes are `{plain, total} × {VaR, ES}` — two INDEPENDENT axes —
+   so the helper returns a frozen `_VarFamily(code, total, es)` and the compute path branches on
+   the axes rather than on model codes. A list-of-codes chain would have re-encoded the same 2×2
+   four times. **Behaviour-preserving**, and guarded by the byte-exact plain/total invariance
+   golden the plan required.
+2. **`declared_es_multiplier` refuses ABSENT as well as ambiguous** — the plan specified the
+   identity check (value must equal the registered table's) but did not state the absent-branch.
+   Made explicit and fail-closed: unlike BT-2's `max_estimate_age_days` (whose absent-branch is
+   the recorded v1 grandfather), an ES version has **no legitimate ungated form** — `k` *is* the
+   arithmetic. `sole_declared` is deliberately not used (its None-on-ambiguous would fail OPEN).
+3. **The plain-ES branch multiplies the RAW sqrt, not `estimate.sigma`.** Not in the plan; found
+   while reading `var_kernel`: the shipped plain path computes `var_value = (z·raw_sqrt).quantize()`,
+   i.e. it quantizes ONCE. Using the already-6dp-quantized `estimate.sigma` would double-round and
+   put the ES a quantum off its own hand-derived golden. The ES branch recomputes from
+   `estimate.radicand` exactly as the total path does.
+4. **Two test-harness corrections, both mine, neither a code defect** (recorded because a reader
+   comparing plan to battery will see the difference): the tampered-multiplier test mints
+   adversarial versions via the **generic registration path** rather than mutating an assumption
+   row — `model_assumption` is append-only (AUD-01), so a mutate-the-row test fails on the audit
+   guard instead of on the gate under test, *and* a real attacker mints rather than UPDATEs; and
+   the ES-total staleness test uses BT-2's own `estimate_span_end` harness (my first version set no
+   span end, so the age was 0 and the gate correctly did not fire).
+5. **`test_es.py` derives `z` in-test at prec 40 / 100 bisection steps, not prec 60 / 220** — the
+   first version nested bisection inside bisection for the crossover golden (~44k high-precision
+   erf evaluations) and blew a 120s timeout. prec 40 leaves ~20 orders of headroom over the 1e-12
+   quantum being pinned; the crossover golden (which needs only 6dp) uses stdlib `NormalDist`
+   (Wichura AS241) — faster *and* a genuinely different algorithm from the byte-exact leg's
+   bisection, so the two legs stay independent.
 
 ## Part 6 — Review dispositions + closure
 
-*(written at fold/close per the house pattern)*
+### Part 6.1 — The 4-finder implementation review (numeric / adversarial / doctrine / scope+tests)
+
+**2 HIGH + 1 MEDIUM + 6 LOW — ALL FOLDED, zero deferrals.** The headline: **zero defects in the
+registered constants or the ES arithmetic** — the numeric finder re-derived all six to 40 significant
+digits through a stack sharing *no method* with the repo (Brent-Salamin AGM π, the all-positive
+confluent erf series, Newton inversion) and confirmed every digit and every golden. The adversarial
+finder mounted 18 attacks on the identity gate and could not break it, could not defeat the
+predicate/staleness/backtest gates, and could not produce a PG overflow. **Both HIGHs were in the
+research corrections this slice was proudest of** — which is precisely where BT-2 was burned.
+
+- **HIGH-1 — the TCE guard prescribed the TCE it forbids** (a REGISTERED `model_limitation` row +
+  5 more sites). The guard said the HS leg must inherit "the mean of the worst `⌈n(1−c)⌉` losses" —
+  but for an untied sample that quantity **is** `E[L | L ≥ VaR]`, i.e. the TCE the same sentence
+  forbids (verified by execution: identical to 1e-12 on every sample). It also **understates** the
+  true α-tail mean whenever `n·a ∉ ℤ` — **−13.9% at n=41, the platform's own HS adequacy floor at
+  c=0.975**. No ES-1 number moves (the parametric leg is continuous, where ES = TCE); the damage was
+  aimed squarely at the future ES-over-HS leg the guard exists to protect, which would have
+  implemented the forbidden estimator *and believed it had complied*. **FOLDED at all six sites**
+  with Acerbi-Tasche Prop. 4.1's actual form (a FLOOR count + a FRACTIONAL boundary weight).
+- **HIGH-2 — the "zero occurrences" grep was FALSE for d219** (referent + catalog + record ×2).
+  Re-verified independently against the primary: d457 and bcbs265 are genuinely zero, but **d219
+  says verbatim** *"VaR has been criticised in the literature for lacking subadditivity. A prominent
+  alternative to VaR is ES, which is subadditive."* **The conclusion SURVIVES and is strengthened** —
+  that sentence sits in **Annex 2, "Lessons from the academic literature and banks' risk management
+  practices"**, i.e. BCBS *summarising* the academic argument rather than reasoning from it, which is
+  exactly the claim being made. But as drafted it was stamped VERIFIED and would have died to one
+  validator grep: **the MAR32.27 failure mode, reproduced on this slice's own headline correction.**
+  FOLDED to the precise claim (operative rationale = tail capture; d219's mention is a lit-review).
+- **MEDIUM — BT-2's fired trigger was only half paid, and a comment claimed otherwise.** The sole
+  `estimate_age_days` API assertion sat on a **plain ES row, where the age is `None` by
+  construction** — proved vacuous by mutation (forcing `estimate_age_days=None` on every API
+  response left the whole backend suite green). BT-2's recorded gap would have survived the slice
+  that was supposed to close it. FOLDED into `test_var_total_endpoint.py`'s roundtrip, where the age
+  is **populated** — and re-verified by mutation: the same mutation now **fails** the test.
+- **LOW ×6, all folded:** the magnitude refusal named `sigma` and printed an **in-envelope** value on
+  the exact hazard the slice exists to guard (the FAILED run *is* the deliverable — it now names the
+  breaching ES, test-pinned); the ES predicate-symmetry refusals were untested (behaviour correct —
+  now pinned for all four families, guarding a refactor that re-keys the gate onto a model code);
+  stale ORM docstrings still called `ES_PARAMETRIC` "reserved" (the likeliest place a maintainer
+  looks to learn the vocabulary); `test_es.py`'s headroom comment claimed "~20 orders" which does not
+  follow from its own premises (~12) nor the truth (~17) — *an over-claim of exactly the class OD-B
+  struck, in the comment justifying the test that pins the constants*; a dangling reference to a test
+  name that never existed (the row-level bound lives in `test_var.py` under another name); and the ES
+  `quantize` sat outside its `try`, asymmetric with `var_kernel:111` which guards the identical
+  operation (unreachable — needs ~1e12 factors — now guarded anyway, the PA-4 defensive-gate
+  precedent).
+
+**Notable non-findings** (recorded so they are not re-litigated): `RejectedModelVersionError` does
+**not** subclass `WrongModelVersionError`, so the family loop cannot swallow VW-1's gate — probed
+live on all four families. The plain-ES branch closes the magnitude window by a *different and
+arguably stronger* mechanism than the total path (it gates the already-quantized value, so what is
+gated **is** what is stored). The double-rounding choice in Part 5.5 #3 is **load-bearing on the
+shipped fixture**: via the 6dp σ, `REF_ES95_TOTAL` would be `1077.597056`, one quantum off.
+
+### Part 6.2 — Post-fold validation
+
+`ruff format`/`ruff check` clean; `mypy` clean (175 source files); **`make check` 1448 passed / 293
+skipped**; **full local-PG 1741 passed, ZERO failures — on a fresh schema AND on a dirty-schema
+double-run**; `alembic check` no drift; **`alembic heads` still `0040_var_estimate_age` with 40
+revisions (the NO-migration claim, mechanically re-verified)**; `downgrade base` → `upgrade head`
+clean. *(One local-PG failure surfaced and was correctly diagnosed as an artifact of my own schema
+reset, not the code: `GRANT USAGE ON SCHEMA public TO PUBLIC` — recorded in the FE-1 memory and
+omitted from my reset. CI's fresh database has it by default.)*

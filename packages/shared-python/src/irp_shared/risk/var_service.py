@@ -41,7 +41,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal, localcontext
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from typing import Any
 
 from sqlalchemy import select
@@ -52,7 +52,10 @@ from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.models import MAPPING_METHOD_REGRESSION
+from irp_shared.model.models import ModelVersion
 from irp_shared.risk.bootstrap import (
+    ES_MODEL_CODE,
+    ES_TOTAL_MODEL_CODE,
     VAR_MODEL_CODE,
     VAR_TOTAL_CALENDAR_DAYS_PER_YEAR,
     VAR_TOTAL_MODEL_CODE,
@@ -61,11 +64,15 @@ from irp_shared.risk.bootstrap import (
     WrongModelVersionError,
     assert_model_version_of,
     declared_appraisal_days,
+    declared_es_multiplier,
+    declared_es_total_max_estimate_age_days,
     declared_max_estimate_age_days,
     declared_var_parameters,
 )
 from irp_shared.risk.covariance_service import resolve_covariance_run
+from irp_shared.risk.es_kernel import EsKernelError, compute_parametric_es
 from irp_shared.risk.events import (
+    METRIC_TYPE_ES_PARAMETRIC,
     METRIC_TYPE_VAR_PARAMETRIC,
     METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
     RUN_TYPE_VAR,
@@ -540,6 +547,63 @@ def _estimate_age_days(
     return max(ages) if ages else None
 
 
+@dataclass(frozen=True)
+class _VarFamily:
+    """Which of the FOUR model codes this run bound, decomposed onto the two axes the compute path
+    actually branches on (ES-1, OD-ES-1-C/D; the helper is ratified in OD-ES-1-G).
+
+    ``total`` = add PA-4's diagonal idiosyncratic residual leg to the factor variance.
+    ``es``    = multiply the sigma by the REGISTERED ES multiplier k_c instead of the quantile z_c.
+
+    The axes are independent, which is exactly why a 4-deep try/except chain over model codes was
+    the wrong shape: the four codes are a 2x2, not a list.
+    """
+
+    code: str
+    total: bool
+    es: bool
+
+
+#: The 2x2, in DISPATCH order. Order matters only for cost (each miss is a failed assert), not for
+#: correctness — the codes are mutually exclusive, so at most one can match a given version.
+_VAR_FAMILIES: tuple[_VarFamily, ...] = (
+    _VarFamily(code=VAR_MODEL_CODE, total=False, es=False),
+    _VarFamily(code=VAR_TOTAL_MODEL_CODE, total=True, es=False),
+    _VarFamily(code=ES_MODEL_CODE, total=False, es=True),
+    _VarFamily(code=ES_TOTAL_MODEL_CODE, total=True, es=True),
+)
+
+
+def _resolve_var_family(
+    session: Session, model_version_id: str, *, acting_tenant: str
+) -> tuple[ModelVersion, _VarFamily]:
+    """Inventory-before-use + model identity (CTRL-003 / BR-3), dispatching on the bound model's
+    code across the four VaR/ES families (PA-4's OD-PA-4-B dispatch, extended by ES-1).
+
+    An UNREGISTERED version raises :class:`UnregisteredModelError` from the first assert (it is not
+    a family question); a version of NONE of the four families raises the FIRST
+    :class:`WrongModelVersionError` — i.e. the one naming the PLAIN code, which keeps the pre-ES-1
+    message for the pre-ES-1 failure and is the family a caller passing an unrelated version most
+    likely meant.
+    """
+    first_error: WrongModelVersionError | None = None
+    for family in _VAR_FAMILIES:
+        try:
+            version = assert_model_version_of(
+                session,
+                str(model_version_id),
+                tenant_id=acting_tenant,
+                expected_model_code=family.code,
+            )
+        except WrongModelVersionError as exc:
+            if first_error is None:  # the PLAIN-code miss — the pre-ES-1 message, preserved
+                first_error = exc
+            continue
+        return version, family
+    assert first_error is not None  # the loop is non-empty, so a full miss always set it
+    raise first_error
+
+
 def run_var(
     session: Session,
     *,
@@ -577,32 +641,34 @@ def run_var(
             "(exposure_run_id/covariance_run_id), not both"
         )
     # Inventory-before-use + model identity (CTRL-003 / BR-3): the version must be REGISTERED and
-    # belong to EITHER VaR family — PA-4 (OD-PA-4-B) dispatch on the bound model's code (plain
-    # parametric vs total). An unregistered version raises from the FIRST assert
-    # (UnregisteredModelError); a version of NEITHER family raises WrongModelVersionError from the
-    # second. The DECLARED confidence/horizon/z (OD-P3-5-D) are version identity for BOTH families
-    # (the SAME assumption-prefix machinery); the total family ALSO declares ``appraisal_days``.
-    try:
-        version = assert_model_version_of(
-            session,
-            str(model_version_id),
-            tenant_id=acting_tenant,
-            expected_model_code=VAR_MODEL_CODE,
-        )
-        is_total = False
-    except WrongModelVersionError:
-        version = assert_model_version_of(
-            session,
-            str(model_version_id),
-            tenant_id=acting_tenant,
-            expected_model_code=VAR_TOTAL_MODEL_CODE,
-        )
-        is_total = True
+    # belong to ONE of the four VaR/ES families (PA-4's OD-PA-4-B dispatch on the bound model's
+    # code, extended by ES-1 to the 2x2 of {plain, total} x {VaR, ES}). The DECLARED
+    # confidence/horizon/z (OD-P3-5-D) are version identity for ALL four (the SAME assumption-prefix
+    # machinery); the total families ALSO declare ``appraisal_days``, and the ES families ALSO
+    # declare their ``es_multiplier``.
+    version, family = _resolve_var_family(
+        session, str(model_version_id), acting_tenant=acting_tenant
+    )
+    is_total = family.total
     declared: VarParameters = declared_var_parameters(session, version)
     appraisal_days = declared_appraisal_days(session, version) if is_total else None
+    # ES-1 (OD-ES-1-B): the DECLARED k_c, identity-checked against the registered table for the
+    # version's OWN declared confidence. None on the VaR families (they multiply by z).
+    es_multiplier = (
+        declared_es_multiplier(session, version, code=family.code) if family.es else None
+    )
     # BT-2 (OD-BT-2-C): the DECLARED staleness policy — None on the plain/HS families AND on a
     # grandfathered pre-BT-2 total v1 row (immutable, cannot absorb the declaration ⇒ ungated).
-    max_estimate_age_days = declared_max_estimate_age_days(session, version) if is_total else None
+    # The ES-TOTAL code has no such grandfather (it is born with the declaration), so absent
+    # REFUSES there rather than degrading to ungated (ES-1, plan Step 3).
+    if is_total:
+        max_estimate_age_days = (
+            declared_es_total_max_estimate_age_days(session, version)
+            if family.es
+            else declared_max_estimate_age_days(session, version)
+        )
+    else:
+        max_estimate_age_days = None
 
     # --- Bind the two-run snapshot (cross-tenant/unknown/ill-formed ⇒ pre-create refusal) ---
     if snapshot_id is not None:
@@ -740,10 +806,52 @@ def run_var(
             return [], gaps
 
         if not is_total:
-            if abs(estimate.sigma) >= _MAX_RESULT_ABS or abs(estimate.var_value) >= _MAX_RESULT_ABS:
+            if es_multiplier is None:
+                plain_value = estimate.var_value
+                plain_metric = METRIC_TYPE_VAR_PARAMETRIC
+            else:
+                # ES-1: ES = k_c * sigma_p over the SAME adjudicated pins. Multiply the RAW sqrt
+                # and quantize ONCE, exactly as the kernel derives var_value = (z*raw).quantize()
+                # — NOT k * estimate.sigma, which would double-round (the 6dp-quantized sigma
+                # times k is not the 6dp quantization of k*sigma).
+                with localcontext() as ctx:
+                    ctx.prec = _COMPUTE_PREC
+                    clamped = estimate.radicand if estimate.radicand > 0 else Decimal(0)
+                    try:
+                        raw_es = compute_parametric_es(clamped.sqrt(), es_multiplier=es_multiplier)
+                        # The quantize is INSIDE the try — the var_kernel:111 precedent, which
+                        # guards the identical operation. Because k_c > z_c there is a band where
+                        # the kernel's z*sigma quantize succeeds but k*sigma raises
+                        # InvalidOperation (6dp would need more than prec-50 digits), and the
+                        # magnitude gate cannot cover it: the gate runs AFTER this line. It is
+                        # UNREACHABLE today (column-legal pins cap sigma ~1e31; this needs ~4e43,
+                        # i.e. ~1e12 factors in one run) — defense-in-depth, symmetric with the
+                        # kernel it mirrors, per the PA-4 defensive-gate precedent.
+                        plain_value = raw_es.quantize(_SIGMA_QUANTUM, rounding=ROUND_HALF_UP)
+                    except EsKernelError as exc:  # defense-in-depth; binder-unreachable
+                        gaps.append(f"es-kernel:{exc.reason}:{exc}")
+                        return [], gaps
+                    except InvalidOperation:  # defense-in-depth; binder-unreachable (see above)
+                        gaps.append("es-kernel:magnitude-out-of-range")
+                        return [], gaps
+                plain_metric = METRIC_TYPE_ES_PARAMETRIC
+            # The magnitude gate runs on the value ACTUALLY STORED. k_c > z_c at every confidence,
+            # so an ES can breach the envelope where its VaR did not — the band is wide, not a
+            # knife-edge (sigma in [3.75e21, 4.30e21) at c=0.99, ~13% of the envelope). Gating
+            # z*sigma while storing k*sigma would be a real PG overflow 500. DELIBERATELY under
+            # the DEFAULT context (prec 28) — see the total path's note below.
+            if abs(estimate.sigma) >= _MAX_RESULT_ABS or abs(plain_value) >= _MAX_RESULT_ABS:
                 # Column-legal-but-extreme inputs can produce sigma beyond Numeric(28,6): a
                 # committed FAILED run with evidence, never a PG overflow 500 (2026-07 review).
-                gaps.append(f"magnitude-out-of-range:sigma:{estimate.sigma:E}")
+                # Name the value that ACTUALLY breached (ES-1 review): an ES trips this gate at a
+                # sigma the VaR passes (k_c > z_c), so reporting sigma alone showed a validator an
+                # in-envelope number next to an unexplained refusal — on a governed-number platform
+                # the FAILED run IS the deliverable, and its recorded reason has to be true.
+                breach = "sigma" if abs(estimate.sigma) >= _MAX_RESULT_ABS else plain_metric
+                breached_value = (
+                    estimate.sigma if abs(estimate.sigma) >= _MAX_RESULT_ABS else plain_value
+                )
+                gaps.append(f"magnitude-out-of-range:{breach}:{breached_value:E}")
                 return [], gaps
             row = VarResult(
                 tenant_id=str(acting_tenant),
@@ -752,13 +860,18 @@ def run_var(
                 model_version_id=str(model_version_id),
                 exposure_run_id=parsed.exposure_run_id,
                 covariance_run_id=parsed.covariance_run_id,
-                metric_type=METRIC_TYPE_VAR_PARAMETRIC,
+                metric_type=plain_metric,
                 base_currency=parsed.base_currency,
                 confidence_level=declared.confidence_level,
                 horizon_days=declared.horizon_days,
+                # z_score is echoed on an ES row too — it is NOT the ES arithmetic (k is), but the
+                # live ck_var_result_parametric_not_null CHECK forces it non-NULL for every
+                # non-VAR_HISTORICAL row, and that CHECK is ORM-invisible (PG-only). See the
+                # registered limitation: an ES row reproduces THROUGH its model_version's declared
+                # es_multiplier, never from the row's own columns.
                 z_score=declared.z_score,
                 sigma=estimate.sigma,
-                var_value=estimate.var_value,
+                var_value=plain_value,
                 n_factors=parsed.n_factors,
                 n_observations=parsed.n_observations,
                 window_start=parsed.window_start,
@@ -791,7 +904,19 @@ def run_var(
 
         with localcontext() as ctx:
             ctx.prec = _COMPUTE_PREC
-            raw_var_value = declared.z_score * residual.sigma_total
+            if es_multiplier is None:
+                raw_var_value = declared.z_score * residual.sigma_total
+            else:
+                # ES-1 (OD-ES-1-D): the SAME multiplier over PA-4's sigma_total. A sigma-multiple
+                # is exactly as honest as its sigma — the ES-total leg therefore inherits BT-2's
+                # smoothing doctrine and PA-4's residual limitations verbatim (registered).
+                try:
+                    raw_var_value = compute_parametric_es(
+                        residual.sigma_total, es_multiplier=es_multiplier
+                    )
+                except EsKernelError as exc:  # defense-in-depth; binder-unreachable
+                    gaps.append(f"es-kernel:{exc.reason}:{exc}")
+                    return [], gaps
         if (
             abs(residual.sigma_total) >= _MAX_RESULT_ABS
             or abs(raw_var_value) >= _MAX_RESULT_ABS
@@ -805,7 +930,17 @@ def run_var(
             # at all three boundaries, 2026-07 review). Do NOT move this inside the prec-50
             # localcontext: a prec-50 abs() reopens the window (quantize then mints exactly the
             # bound → a PG NumericValueOutOfRange 500 instead of this governed FAILED run).
-            gaps.append(f"magnitude-out-of-range:sigma-total:{residual.sigma_total:E}")
+            # Name the value that ACTUALLY breached (ES-1 review) — with k_c > z_c an ES-total can
+            # trip where its VaR-total would not, and "sigma-total: <in-range value>" would send a
+            # validator hunting a gate bug instead of reading the real cause.
+            if abs(residual.sigma_total) >= _MAX_RESULT_ABS:
+                breach, breached_value = "sigma-total", residual.sigma_total
+            elif abs(residual.residual_variance) >= _MAX_RESIDUAL_VARIANCE_ABS:
+                breach, breached_value = "residual-variance", residual.residual_variance
+            else:
+                breach = METRIC_TYPE_ES_PARAMETRIC if es_multiplier else "var-total"
+                breached_value = raw_var_value
+            gaps.append(f"magnitude-out-of-range:{breach}:{breached_value:E}")
             return [], gaps
 
         with localcontext() as ctx:
@@ -822,7 +957,11 @@ def run_var(
             model_version_id=str(model_version_id),
             exposure_run_id=parsed.exposure_run_id,
             covariance_run_id=parsed.covariance_run_id,
-            metric_type=METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
+            metric_type=(
+                METRIC_TYPE_VAR_PARAMETRIC_TOTAL
+                if es_multiplier is None
+                else METRIC_TYPE_ES_PARAMETRIC
+            ),
             base_currency=parsed.base_currency,
             confidence_level=declared.confidence_level,
             horizon_days=declared.horizon_days,
