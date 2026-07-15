@@ -41,6 +41,8 @@ _DEPS = (
     "currency",
     "model",
     "model_version",
+    # VW-1: every binder bind now reads the latest model_validation (the OD-B REJECTED gate).
+    "model_validation",
     "model_assumption",
     "model_limitation",
 )
