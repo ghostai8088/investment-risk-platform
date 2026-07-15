@@ -16,10 +16,22 @@
 
 ## 1. Purpose & Alignment
 
-Establish model risk governance consistent with recognized standards (e.g., US SR 11-7, UK PRA SS1/23) for the platform's
-calculations and embedded AI. It defines what a model is, tiering, the independence boundary (including AI), the validation
-lifecycle, and approval authority. This operationalizes BR-3 (inventory), BR-15 (human approval for Tier-1), and BR-16 (agent
-logging).
+Establish model risk governance consistent with recognized standards (e.g., US SR 11-7 — superseded 2026-04-17 by SR 26-2;
+UK PRA SS1/23) for the platform's calculations and embedded AI. It defines what a model is, tiering, the independence boundary
+(including AI), the validation lifecycle, and approval authority. This operationalizes BR-3 (inventory), BR-15 (human approval
+for Tier-1), and BR-16 (agent logging).
+
+> **VW-1 realization note (2026-07-14, migration `0039`; ENT-037):** the validation LIFECYCLE and INDEPENDENCE boundary are
+> now partially executable. A `model_validation` record (outcome ∈ {APPROVED, APPROVED_WITH_CONDITIONS, REJECTED}, type ∈
+> {INITIAL, PERIODIC, TRIGGERED}, findings, evidence incl. cited governed runs) is captured at `model_version` grain; a
+> latest-outcome REJECTED refuses new governed runs (CTRL-022). **MG-04 (dev≠validator) is enforced at the ROLE level** — the
+> `model.validate` write is 2L-only (`risk_manager_2l`), withheld from the `risk_analyst_1l` register-holder — but NOT yet at
+> the data level (the registry stamps no per-version developer identity; a same-person author-then-validate is not
+> code-blocked). **MG-07 (AI never sole approver)** is honored fail-safe: validation is **human-only in v1** (no tier exists,
+> so every model is potentially Tier-1). **MG-13/14 ongoing monitoring:** each non-REJECTED record carries a
+> validator-declared `next_review_due` + an `overdue` read flag; **OD-033 (periodic revalidation CADENCE per tier) stays
+> OPEN** — cadence is validator-declared until tiering (REQ-MDG-002) ships. The Tier-1 H-02 **approval** step and
+> `MODEL.APPROVE`/`.RESTRICT`/`.RETIRE` remain reserved (later slices).
 
 ## 2. Definition of a Model (MG)
 

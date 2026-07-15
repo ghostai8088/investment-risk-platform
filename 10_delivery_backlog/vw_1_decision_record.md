@@ -226,8 +226,72 @@ with one adversarial finder on the OD-B gate change.
 
 ## Part 5.5 — Implementation deviations from the ratified plan
 
-*(recorded during the build)*
+- **Single-column-index choice (minor).** Plan Step 1 described a composite `(tenant_id,
+  model_version_id, system_from)` latest-read index AND kept `index=True` on the FK column. The
+  build dropped the redundant single-column FK index and kept ONLY the composite
+  `ix_model_validation_latest` (it serves both the point query and the per-version listing under
+  RLS's always-present tenant predicate). ORM + migration stay in sync (`alembic check` clean).
+- Everything else was built as ratified: 3 IA tables (migration `0039`), the shared-seam REJECTED
+  gate, 2 new + 1 extended endpoint, the `model.validate` R-07 mint, the doc advances. No
+  migration beyond `0039`; `audit/service.py` untouched; no governed-number/binder-compute change.
 
 ## Part 6 — Review dispositions + closure
 
-*(written at fold/close per the house pattern)*
+**Implemented** (branch `vw-1-impl`): the 8-step build; `make check` **1407 passed** + full
+local-PG (schema-reset run, dirty-schema double-run, `alembic check` clean, downgrade-base/
+upgrade-head smoke) all green.
+
+**Review: 4 finders (1 adversarial on the OD-B gate, per OQ-VW-1-7).** Findings + dispositions:
+
+1. **HIGH (finder 4) — the REJECTED gate returned a raw 500, not the promised 422, at every real
+   family run endpoint.** `RejectedModelVersionError` was raised inside the shared
+   `assert_model_version_of` seam but was absent from the risk/perf run-endpoint `except` tuples
+   AND from their `_ERROR_MAP`s — so a REJECTED-version run driven through `risk.py`/`perf.py`
+   produced an unhandled 500, making the slice's headline ("a REJECTED verdict refuses new runs")
+   an overclaim relative to observable API behavior. The seam-only tests hid it. **FIXED**: added
+   `RejectedModelVersionError` → 422 to both `_ERROR_MAP`s and all 12 run-endpoint `except` tuples
+   (9 risk + 3 perf), and added END-TO-END tests driving a REJECTED version through a real risk
+   endpoint (`test_var_endpoint`) AND a real perf endpoint (`test_perf_endpoint`) asserting 422 +
+   no run persisted — the "one risk + one perf" integration proof the plan's Step 8 intended
+   (which, done seam-only, had masked this defect).
+2. **MEDIUM-safety/LOW-reachability (finder 1, adversarial) — the `latest_validation` recency read
+   is DETERMINISTIC but not write-order-recency-correct**, and the docstring overstated the
+   tiebreaker as a guarantee. Two validations of one version with an IDENTICAL `system_from`
+   resolve by UUID order, not insertion order. Not reachable through the human-only, non-injected-
+   clock production path (no same-microsecond tie); a coarse-granularity backfill could hit it, and
+   no such path exists today, and there is no sequence column on these IA tables to order by
+   instead. **FIXED as a documentation correction** (both `validation.latest_validation` and the
+   `ix_model_validation_latest` comment now say the id leg guarantees DETERMINISM/stable-plan, NOT
+   recency, and declare equal-timestamp validations of one version out of contract) + a new
+   `test_latest_uses_system_from_not_id` that anti-correlates `system_from` with `id` to prove the
+   `system_from` leg is load-bearing. The heavier fix (a monotonic sequence column) is not
+   warranted at POC scope. Adversarial findings 2-7 (tenant scoping, exposure exemption,
+   backtest-independence, dispatch error-class, index usage, bypass surface, REGISTERED coupling)
+   all CONFIRMED SOUND.
+3. **LOW (finder 2) — asymmetric evidence blur**: a `CALCULATION_RUN` evidence row silently
+   persisted a stray `reference`, and a `DOCUMENT` row's stray `run_id` was dropped-not-refused.
+   **FIXED**: the blur guard is now symmetric both ways (a CALCULATION_RUN row must NOT carry a
+   reference; a DOCUMENT row must NOT carry a run_id) + two new unit tests.
+4. **LOW (finder 3) — `overdue` used server-LOCAL `date.today()`** while the platform stamps UTC
+   everywhere. **FIXED**: `datetime.now(UTC).date()` (a read-time display flag; avoids a
+   near-midnight boundary flip on a non-UTC server).
+5. **LOW (finder 4) — the OD-G no-DQ half of the emission test was unpinned** (only zero-lineage
+   asserted). **FIXED**: added a zero-`DataQualityResult` assertion.
+6. **LOW (finder 4) — the cross-model version-id 404 branch was untested.** **FIXED**: added
+   `test_record_validation_cross_model_version_404`.
+
+**Accepted-as-recorded (no code change):** the input-length guard gap (finder 2 F3 — an
+over-2000-char `scope_summary` raises a DB `DataError` at flush rather than a pre-write 422) is
+consistent with the existing registry precedent (`assumption_text`/`limitation_text` are likewise
+unguarded); recorded as a family-wide convention, not a VW-1 regression. The findings/evidence
+read order degenerates to UUID order within a record's shared `system_from` (finder 2 F2) — a
+recorded limitation (no ordinal column; the API does not promise submission order); a future
+touch adds an ordinal if the FE needs ordered rendering.
+
+**Residual deferrals (trigger-based, from Part 3, unchanged):** no tiering/tier-cadence
+(REQ-MDG-002; OD-033 open); no Tier-1 H-02 approval leg (`MODEL.APPROVE` reserved); no data-level
+dev≠validator (MG-04, no per-version developer stamp); no remediation lifecycle; conditions
+recorded-not-enforced; the σ_e estimate-age gate → BT-2 ride-along; no FE surface.
+
+**VW-1 CLOSED** pending PR merge + CI green (commit hash recorded in delivery-roadmap-state memory
+at close).

@@ -25,6 +25,13 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("lineage.source.manage", "Register and manage data sources (lineage provenance roots)"),
     ("model.inventory.view", "View the model inventory"),
     ("model.inventory.register", "Register a model or model version"),
+    # VW-1 (ENT-037, SR 11-7 / P7): the 2L independent-validation write verb — a governed R-07 mint
+    # (the first model.* mint since P0.5). Granted to risk_manager_2l (ROLE-MV) + platform_admin
+    # ONLY; deliberately WITHHELD from risk_analyst_1l — the SOLE model.inventory.register holder
+    # (SOD-03: author ≠ validator) — and from data_steward (holds no model.* code; a maker-tier
+    # role must not gain a 2L assurance verb). Reads reuse model.inventory.view (a validation record
+    # is inventory metadata; the P3-8 no-new-view-code precedent).
+    ("model.validate", "Record a model validation (2L independent, SR 11-7)"),
     ("dq.rule.manage", "Manage data quality rules"),
     ("dq.result.view", "View data quality results"),
     ("reference.instrument.view", "View instruments"),
@@ -264,6 +271,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # PM-1 perf: 2L view-only (perf.run is maker/admin-only).
         "perf.view",
         "model.inventory.view",
+        # VW-1: the 2L independent validator (ROLE-MV) is the ONLY non-admin holder of
+        # model.validate — SOD-03 (author ≠ validator): risk_analyst_1l holds register, not this.
+        "model.validate",
         "dq.result.view",
         "lineage.view",
     ],

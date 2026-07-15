@@ -32,7 +32,9 @@ from irp_shared.model.service import (
 )
 from irp_shared.temporal import TemporalClass
 
-RESERVED_P7_CODES = ("MODEL.VALIDATE", "MODEL.APPROVE", "MODEL.RESTRICT", "MODEL.RETIRE")
+# MODEL.VALIDATE was ACTIVATED at VW-1 (emitted by model.validation.record_validation); the other
+# three stay reserved for the approval/restriction/retirement legs (P7, later slices).
+STILL_RESERVED_P7_CODES = ("MODEL.APPROVE", "MODEL.RESTRICT", "MODEL.RETIRE")
 
 
 def _tenant() -> str:
@@ -207,7 +209,9 @@ def test_reserved_p7_codes_never_emitted(session: Session) -> None:
     register_model_version(
         session, model=model, version_label="1.0.0", actor_id="dev", limitations=["x"]
     )
-    for code in RESERVED_P7_CODES:
+    # The still-reserved approval/restriction/retirement codes have no emitter anywhere; and a plain
+    # register/version path emits no MODEL.VALIDATE either (that requires a validation record).
+    for code in (*STILL_RESERVED_P7_CODES, "MODEL.VALIDATE"):
         assert _events(session, code) == 0
 
 

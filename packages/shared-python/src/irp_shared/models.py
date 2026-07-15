@@ -30,7 +30,15 @@ from irp_shared.marketdata.models import (
     PricePoint,
     ProxyMapping,
 )
-from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, ModelVersion
+from irp_shared.model.models import (
+    Model,
+    ModelAssumption,
+    ModelLimitation,
+    ModelValidation,
+    ModelValidationEvidence,
+    ModelValidationFinding,
+    ModelVersion,
+)
 from irp_shared.perf.models import (
     BenchmarkRelativeResult,
     DesmoothedReturnResult,
@@ -88,6 +96,9 @@ __all__ = [
     "ModelVersion",
     "ModelAssumption",
     "ModelLimitation",
+    "ModelValidation",
+    "ModelValidationFinding",
+    "ModelValidationEvidence",
     "DataQualityRule",
     "DataQualityResult",
     "IngestionBatch",

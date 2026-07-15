@@ -363,6 +363,21 @@ class ModelVersionConflictError(Exception):
         self.code_version = code_version
 
 
+class RejectedModelVersionError(Exception):
+    """The ``model_version`` is REGISTERED and of the right model, but its LATEST validation record
+    (ENT-037, VW-1) has outcome ``REJECTED`` — a validator has stood it down, so no NEW governed run
+    may bind it (CTRL-022). Fail-closed pre-create. Maps to 422. Re-validating it with an APPROVED
+    record clears the block (the recency semantics); its already-COMPLETED runs stay intact and
+    backtestable (the re-validation evidence loop)."""
+
+    def __init__(self, model_version_id: str) -> None:
+        super().__init__(
+            f"model_version {model_version_id} latest validation outcome is REJECTED — new runs "
+            f"refused (CTRL-022)"
+        )
+        self.model_version_id = str(model_version_id)
+
+
 def assert_model_version_of(
     session: Session,
     model_version_id: str,
@@ -388,6 +403,17 @@ def assert_model_version_of(
     ).scalar_one_or_none()
     if model is None or model.code != expected_model_code:
         raise WrongModelVersionError(str(model_version_id), expected_model_code)
+    # VW-1 OD-B (CTRL-022): a version whose LATEST validation record is REJECTED is stood down — no
+    # new governed run may bind it. Imported inside the function (not a cycle — validation.py does
+    # not import service.py — but this keeps the gate's VW-1 dependency local to the one call).
+    # UNVALIDATED (no record) and every non-REJECTED outcome bind normally — the documented SR 26-2
+    # use-before-validation posture.
+    from irp_shared.model.models import VALIDATION_OUTCOME_REJECTED
+    from irp_shared.model.validation import latest_validation
+
+    latest = latest_validation(session, str(version.id), acting_tenant=str(tenant_id))
+    if latest is not None and latest.outcome == VALIDATION_OUTCOME_REJECTED:
+        raise RejectedModelVersionError(str(model_version_id))
     return version
 
 
