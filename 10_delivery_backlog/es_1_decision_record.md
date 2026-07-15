@@ -76,7 +76,36 @@ What verification **changed**, recorded because the honest version is weaker: **
 
 ## Part 5.5 — Implementation deviations from the ratified plan
 
-*(recorded during the build)*
+1. **The `_resolve_var_family` helper became a 2×2, not a 4-deep try/except chain.** The plan
+   offered the helper as an if-it-gets-unwieldy option (ratified in OD-G). Building it made the
+   real shape obvious: the four codes are `{plain, total} × {VaR, ES}` — two INDEPENDENT axes —
+   so the helper returns a frozen `_VarFamily(code, total, es)` and the compute path branches on
+   the axes rather than on model codes. A list-of-codes chain would have re-encoded the same 2×2
+   four times. **Behaviour-preserving**, and guarded by the byte-exact plain/total invariance
+   golden the plan required.
+2. **`declared_es_multiplier` refuses ABSENT as well as ambiguous** — the plan specified the
+   identity check (value must equal the registered table's) but did not state the absent-branch.
+   Made explicit and fail-closed: unlike BT-2's `max_estimate_age_days` (whose absent-branch is
+   the recorded v1 grandfather), an ES version has **no legitimate ungated form** — `k` *is* the
+   arithmetic. `sole_declared` is deliberately not used (its None-on-ambiguous would fail OPEN).
+3. **The plain-ES branch multiplies the RAW sqrt, not `estimate.sigma`.** Not in the plan; found
+   while reading `var_kernel`: the shipped plain path computes `var_value = (z·raw_sqrt).quantize()`,
+   i.e. it quantizes ONCE. Using the already-6dp-quantized `estimate.sigma` would double-round and
+   put the ES a quantum off its own hand-derived golden. The ES branch recomputes from
+   `estimate.radicand` exactly as the total path does.
+4. **Two test-harness corrections, both mine, neither a code defect** (recorded because a reader
+   comparing plan to battery will see the difference): the tampered-multiplier test mints
+   adversarial versions via the **generic registration path** rather than mutating an assumption
+   row — `model_assumption` is append-only (AUD-01), so a mutate-the-row test fails on the audit
+   guard instead of on the gate under test, *and* a real attacker mints rather than UPDATEs; and
+   the ES-total staleness test uses BT-2's own `estimate_span_end` harness (my first version set no
+   span end, so the age was 0 and the gate correctly did not fire).
+5. **`test_es.py` derives `z` in-test at prec 40 / 100 bisection steps, not prec 60 / 220** — the
+   first version nested bisection inside bisection for the crossover golden (~44k high-precision
+   erf evaluations) and blew a 120s timeout. prec 40 leaves ~20 orders of headroom over the 1e-12
+   quantum being pinned; the crossover golden (which needs only 6dp) uses stdlib `NormalDist`
+   (Wichura AS241) — faster *and* a genuinely different algorithm from the byte-exact leg's
+   bisection, so the two legs stay independent.
 
 ## Part 6 — Review dispositions + closure
 

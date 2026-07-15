@@ -360,7 +360,9 @@ def test_register_idempotent_vocabulary_floor_and_identity_conflicts(session: Se
     with pytest.raises(ModelVersionConflictError):
         _var_model(session, tenant, code_version="risk-v2", confidence="0.95")  # new code
     with pytest.raises(ValueError):
-        _var_model(session, tenant, confidence="0.975")  # outside the v1 vocabulary
+        # outside the vocabulary. NOTE the probe was 0.975 until ES-1 (OQ-ES-1-4) ADMITTED that
+        # value to the shared VAR_Z_SCORES - it would now be ACCEPTED here. 0.98 is unregistered.
+        _var_model(session, tenant, confidence="0.98")
     with pytest.raises(ValueError):
         _var_model(session, tenant, confidence="0.94995")  # near-vocabulary: REFUSED, not coerced
     with pytest.raises(ValueError):
@@ -1435,3 +1437,155 @@ def test_migration_head_is_var() -> None:
     script = ScriptDirectory.from_config(cfg)
     assert script.get_current_head() == "0040_var_estimate_age"
     assert script.get_revision("0026_var").down_revision == "0025_covariance"
+
+
+# ---------- (10) ES-1: the ES leg through THIS chain (the exact-sigma goldens) ----------
+#
+# The ES families live in test_es.py (constants, kernel, declared identity, the backtest fence);
+# these two tests live HERE because they need this file's chain — the whole point is that the ES
+# golden inherits an EXACT sigma (the 3-4-5 construction => sigma_p = 500 exactly), so the assertion
+# is a hand-derived k*sigma and not a fixture echo.
+
+#: ES over REF1 (sigma = 500 EXACTLY), hand-derived: k_0.975 * 500 = 1168.9013961005 -> 6dp.
+REF1_ES975 = Decimal("1168.901396")
+#: VaR_99 over REF1, for the row-level ratio bound below.
+_REF1_VAR99 = REF1_VAR99
+
+
+def test_es_exact_hand_reference_via_consume_path(session: Session) -> None:
+    from irp_shared.risk import METRIC_TYPE_ES_PARAMETRIC, register_var_parametric_es_model
+
+    tenant = str(uuid.uuid4())
+    exp_run, cov_run = _seed_upstream_runs(session, tenant)
+    fa, fb = str(uuid.uuid4()).lower(), str(uuid.uuid4()).lower()
+    snap = _mint_var_snapshot(
+        session,
+        tenant,
+        [
+            _exposure_content(exp_run, fa, "A", "30000.000000"),
+            _exposure_content(exp_run, fb, "B", "40000.000000"),
+        ],
+        [
+            _covariance_content(cov_run, fa, fa, "0.00010000000000000000"),
+            _covariance_content(cov_run, fb, fb, "0.00010000000000000000"),
+            _covariance_content(cov_run, fa, fb, "0E-20"),
+        ],
+    )
+    es_mv = register_var_parametric_es_model(
+        session,
+        tenant_id=tenant,
+        actor_id="analyst",
+        code_version="risk-v1",
+        confidence_level="0.975",
+    ).id
+    result = _run(session, tenant, es_mv, None, None, snapshot_id=snap.id)
+    assert result.status == RunStatus.COMPLETED.value
+    row = result.rows[0]
+    # ONE row, discriminated by metric_type — NOT an extra row on a VaR run (OD-ES-1-C).
+    assert len(result.rows) == 1
+    assert row.metric_type == METRIC_TYPE_ES_PARAMETRIC
+    assert row.sigma == REF1_SIGMA  # the SAME sigma the plain family computes
+    assert row.var_value == REF1_ES975  # ...times the registered k, quantized once
+    # z_score is echoed but is NOT the arithmetic: the live PG CHECK forces it non-NULL, and an
+    # ES row therefore does NOT reconcile against its own columns (a registered limitation).
+    assert row.z_score == Decimal(VAR_Z_SCORES["0.9750"])
+    assert row.z_score * row.sigma != row.var_value
+    assert row.residual_variance is None and row.estimate_age_days is None
+
+
+def test_es_dispatch_leaves_the_plain_var_row_byte_identical(session: Session) -> None:
+    # OD-ES-1-G's central claim, guarded: the binder's dispatch gained two branches, so prove an
+    # existing plain-family number did not move — over the SAME snapshot the ES model consumes
+    # (the PA-4 plain-family INVARIANCE precedent). Byte-exact, not approximate.
+    from irp_shared.risk import register_var_parametric_es_model
+
+    tenant = str(uuid.uuid4())
+    exp_run, cov_run = _seed_upstream_runs(session, tenant)
+    fa, fb = str(uuid.uuid4()).lower(), str(uuid.uuid4()).lower()
+    exposures = [
+        _exposure_content(exp_run, fa, "A", "30000.000000"),
+        _exposure_content(exp_run, fb, "B", "40000.000000"),
+    ]
+    covariances = [
+        _covariance_content(cov_run, fa, fa, "0.00010000000000000000"),
+        _covariance_content(cov_run, fb, fb, "0.00010000000000000000"),
+        _covariance_content(cov_run, fa, fb, "0E-20"),
+    ]
+    var_snap = _mint_var_snapshot(session, tenant, exposures, covariances)
+    var_mv = _var_model(session, tenant, confidence="0.99")
+    var_row = _run(session, tenant, var_mv, None, None, snapshot_id=var_snap.id).rows[0]
+    # The pre-ES-1 golden, unmoved.
+    assert var_row.sigma == REF1_SIGMA and var_row.var_value == _REF1_VAR99
+
+    es_snap = _mint_var_snapshot(session, tenant, exposures, covariances)
+    es_mv = register_var_parametric_es_model(
+        session,
+        tenant_id=tenant,
+        actor_id="analyst",
+        code_version="risk-v1",
+        confidence_level="0.975",
+    ).id
+    es_row = _run(session, tenant, es_mv, None, None, snapshot_id=es_snap.id).rows[0]
+    assert es_row.sigma == REF1_SIGMA and es_row.var_value == REF1_ES975
+
+    # The row-level ES/VaR ratio: bounded by the quantum, NOT byte-equal to k/z. sigma cancels in
+    # EXACT arithmetic only — these two rows are quantized to 6dp independently and their rounding
+    # residuals do not cancel (here: 1.004923991862... vs the constants' 1.004923991931). The
+    # constants-level identity is asserted exactly in test_es.py; this is its honest row-level
+    # form, derived like `test_var.py`'s own |quantize(k*v) - k*quantize(v)| <= (k+1)/2 quanta.
+    from irp_shared.risk import VAR_ES_MULTIPLIERS
+
+    k_over_z = Decimal(VAR_ES_MULTIPLIERS["0.9750"]) / Decimal(VAR_Z_SCORES["0.9900"])
+    observed = es_row.var_value / var_row.var_value
+    bound = (_Q6 / 2) * (1 + k_over_z) / var_row.var_value
+    assert abs(observed - k_over_z) <= bound
+    assert observed != k_over_z  # non-vacuous: they are genuinely NOT equal
+
+
+def test_es_magnitude_gate_runs_on_the_es_not_the_var(session: Session) -> None:
+    # k_c > z_c at every confidence, so there is a band of sigma where the VaR passes the 1E22
+    # envelope and its ES does NOT. At c=0.99 that band is sigma in [3.752e21, 4.299e21) — wide
+    # (~13% of the envelope), not a knife-edge. sigma = 4e21 sits inside it:
+    #     VaR_99 = 2.326347874041 * 4e21 = 9.305e21  -> passes
+    #     ES_99  = 2.665214220346 * 4e21 = 1.066e22  -> MUST trip
+    # A binder that gated z*sigma while storing k*sigma would COMPLETE this run and then take a
+    # PG NumericValueOutOfRange 500 at INSERT. Both halves are asserted over the SAME pins, so the
+    # test is non-vacuous: it proves the VaR really does pass where the ES really does trip.
+    from irp_shared.risk import register_var_parametric_es_model
+
+    tenant = str(uuid.uuid4())
+    exp_run, cov_run = _seed_upstream_runs(session, tenant)
+    fa, fb = sorted(str(uuid.uuid4()).lower() for _ in range(2))
+    exposures = [
+        _exposure_content(exp_run, fa, "A", "4000000000000000000000.000000"),  # 4e21, column-legal
+        _exposure_content(exp_run, fb, "B", "1.000000"),
+    ]
+    covariances = [
+        _covariance_content(cov_run, fa, fa, "1.00000000000000000000"),  # unit variance => sigma=x
+        _covariance_content(cov_run, fb, fb, "0.00010000000000000000"),
+        _covariance_content(cov_run, fa, fb, "0E-20"),
+    ]
+    var_snap = _mint_var_snapshot(session, tenant, exposures, covariances)
+    var_result = _run(
+        session,
+        tenant,
+        _var_model(session, tenant, confidence="0.99"),
+        None,
+        None,
+        snapshot_id=var_snap.id,
+    )
+    assert var_result.status == RunStatus.COMPLETED.value  # the VaR fits under the envelope
+    assert var_result.rows[0].sigma == Decimal("4000000000000000000000.000000")
+
+    es_snap = _mint_var_snapshot(session, tenant, exposures, covariances)
+    es_mv = register_var_parametric_es_model(
+        session,
+        tenant_id=tenant,
+        actor_id="analyst",
+        code_version="risk-v1",
+        confidence_level="0.99",
+    ).id
+    es_result = _run(session, tenant, es_mv, None, None, snapshot_id=es_snap.id)
+    # A committed FAILED run with evidence — never a 500, and never a silently-stored overflow.
+    assert es_result.status == RunStatus.FAILED.value and es_result.rows == []
+    assert es_result.failure_reason and "magnitude-out-of-range" in es_result.failure_reason

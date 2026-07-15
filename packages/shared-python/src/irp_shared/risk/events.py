@@ -87,12 +87,18 @@ STATISTIC_TYPE_COVARIANCE = "COVARIANCE"
 STATISTIC_TYPE_CORRELATION_RESERVED = "CORRELATION"
 STATISTIC_TYPES = (STATISTIC_TYPE_COVARIANCE,)
 
-#: Controlled-vocab ``var_result.metric_type`` (P3-5; ``ES_PARAMETRIC`` is reserved — the
-#: closed-form seam ``ES = sigma * phi(z) / (1 - alpha)`` is recorded, never emitted in v1).
+#: Controlled-vocab ``var_result.metric_type`` (P3-5).
 METRIC_TYPE_VAR_PARAMETRIC = "VAR_PARAMETRIC"
 #: VAR-HS-1 (OD-VHS-C): the historical-simulation metric on the SAME var_result grain.
 METRIC_TYPE_VAR_HISTORICAL = "VAR_HISTORICAL"
-METRIC_TYPE_ES_PARAMETRIC_RESERVED = "ES_PARAMETRIC"
+#: ES-1 (OD-ES-1-C/D): REALIZED 2026-07-15. Reserved BY VALUE since P3-5, whose recorded seam
+#: ``ES = sigma * phi(z) / (1 - alpha)`` never defined ``alpha``; ES-1 pins the convention
+#: (``alpha`` = the CONFIDENCE level) and emits the number. ONE value for BOTH ES families — the
+#: plain ``risk.var.parametric_es`` and the total ``risk.var.parametric_es_total`` — exactly as
+#: ``VAR_PARAMETRIC_TOTAL`` is one value with its own model code. The row's ``var_value`` holds
+#: the ES (the VAR_HISTORICAL generic-by-metric_type precedent). NO migration was needed: the
+#: grain's UNIQUE (calculation_run_id, metric_type) already permitted it and every column existed.
+METRIC_TYPE_ES_PARAMETRIC = "ES_PARAMETRIC"
 #: PA-4 (OD-PA-4-B): total parametric VaR = factor + idiosyncratic residual variance, on the SAME
 #: var_result grain (a NEW registered model dispatched through the parametric binder).
 METRIC_TYPE_VAR_PARAMETRIC_TOTAL = "VAR_PARAMETRIC_TOTAL"
@@ -106,9 +112,17 @@ METRIC_TYPE_VAR_PARAMETRIC_TOTAL = "VAR_PARAMETRIC_TOTAL"
 #: The unconditional Kupiec/Basel verdict on such a book is therefore NOT valid evidence of
 #: adequacy in EITHER direction (validity degrades with the private-leg share); the dated per-pair
 #: EXCEPTION_INDICATOR rows are the honest evidence surface. See ``var_backtesting_v1.md`` (the
-#: BT-2 scope amendment) + the registered limitations. ``ES_PARAMETRIC`` stays out (unbuilt).
-#: The discipline stands for future methods: do NOT "complete the vocabulary" here without a
-#: ratified slice that confronts that method's pairing semantics.
+#: BT-2 scope amendment) + the registered limitations.
+#:
+#: **``ES_PARAMETRIC`` is DELIBERATELY ABSENT — a ratified omission (ES-1, OD-ES-1-F), not an
+#: oversight and no longer "unbuilt".** ES-1 built it and ratified NOT admitting it. The reason is
+#: FRTB precedent + parametric redundancy, NOT non-elicitability ("ES cannot be backtested" is
+#: FALSE — Acerbi-Szekely 2014; Fissler-Ziegel 2016): FRTB backtests VaR and never ES
+#: (MAR32.4/32.5/32.18), and under the ES leg's own normality an ES backtest is the VaR backtest
+#: with a rescaled threshold — no new information. A genuine ES backtest earns its place when a
+#: non-elliptical ES-over-historical-simulation leg exists (a BT-3 candidate). The discipline
+#: stands for every future method: do NOT "complete the vocabulary" here without a ratified slice
+#: that confronts that method's pairing semantics.
 METRIC_TYPES = (
     METRIC_TYPE_VAR_PARAMETRIC,
     METRIC_TYPE_VAR_HISTORICAL,

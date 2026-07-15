@@ -252,6 +252,11 @@ zero-proxied-instrument byte-invariance.**
    alternative to the chosen comment fix; take it only with fresh boundary probes.
 3. **Residual shrinkage/EWMA, calendar-aware per-period trading-day counts, HS/ES total
    analogues** — the ratified OD-E/OD-G v2s, unchanged.
+   > **PARTIALLY DISCHARGED (dated note, additive — ratified history is not rewritten).** The
+   > **ES total analogue** shipped at **ES-1 (2026-07-15)** as `risk.var.parametric_es_total` v1 —
+   > `ES_c = k_c·σ_total`, reusing this slice's residual machinery and BT-2's staleness gate
+   > verbatim, with NO migration. **Still open:** residual shrinkage/EWMA, calendar-aware
+   > per-period trading-day counts, and the **HS** total analogue.
 
 ### Part 6.4 — Post-fold validation
 

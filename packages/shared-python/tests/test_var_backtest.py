@@ -696,6 +696,7 @@ def test_adjudicate_valid_baseline() -> None:
         "two_linked",
         "no_var_rows",
         "unknown_method",
+        "es_parametric",
     ],
 )
 def test_adjudicate_refusals(mutate: str) -> None:
@@ -729,6 +730,11 @@ def test_adjudicate_refusals(mutate: str) -> None:
         var = []
     elif mutate == "unknown_method":
         var[0]["metric_type"] = var[1]["metric_type"] = "VAR_MONTECARLO"
+    elif mutate == "es_parametric":
+        # ES-1 (OD-ES-1-F): ES rows are a DELIBERATE omission from METRIC_TYPES, so a backtest
+        # over an ES run refuses correct-by-default. Pinned because the omission is a ratified
+        # decision, not an oversight — a future maintainer must not "complete the vocabulary".
+        var[0]["metric_type"] = var[1]["metric_type"] = "ES_PARAMETRIC"
     with pytest.raises(VarBacktestInputError):
         _adjudicate_pins(portfolio, var)
 
@@ -1128,3 +1134,22 @@ def test_total_and_parametric_cannot_mix_in_one_backtest(session: Session) -> No
         _run(session, return_run, [plain, total.run.run_id], _bt_model(session))
     session.rollback()
     assert_no_running_orphan(session, run_type="VAR_BACKTEST")
+
+
+def test_es_refusal_names_the_ratified_scope_out_not_an_unknown_vocabulary() -> None:
+    """ES-1 (OD-ES-1-F): ``ES_PARAMETRIC`` is KNOWN and deliberately excluded, so the refusal must
+    say so. Calling a shipped, ratified-as-out-of-scope metric "unknown" would send a validator
+    hunting a vocabulary bug instead of reading the recorded scope-out — and the honest reason is
+    FRTB precedent + parametric redundancy, NOT non-elicitability (which is false)."""
+    from irp_shared.risk.var_backtest_service import _adjudicate_pins
+
+    portfolio, var = _valid_pins()
+    var[0]["metric_type"] = var[1]["metric_type"] = "ES_PARAMETRIC"
+    with pytest.raises(VarBacktestInputError, match="DELIBERATELY not backtestable") as exc:
+        _adjudicate_pins(portfolio, var)
+    assert "unknown" not in str(exc.value)
+
+    portfolio, var = _valid_pins()
+    var[0]["metric_type"] = var[1]["metric_type"] = "VAR_MONTECARLO"
+    with pytest.raises(VarBacktestInputError, match="unknown"):  # a genuinely unknown value still
+        _adjudicate_pins(portfolio, var)  # gets the unknown-vocabulary message
