@@ -250,6 +250,39 @@ def _count_var_runs(db: Session, tenant: str) -> int:
     ).scalar_one()
 
 
+def test_rejected_model_version_run_is_422_not_500(ctx) -> None:  # noqa: ANN001
+    """VW-1 OD-B end-to-end through a REAL family run endpoint: a latest-outcome REJECTED validation
+    on the bound VaR model_version makes a new run refuse with a governed 422 (RejectedModelVersion
+    Error mapped in risk.py's _ERROR_MAP + except tuple), NOT a raw 500 — the seam-only unit test
+    can't catch a missing API error-map, so this drives the client-facing path (finder fold)."""
+    from irp_shared.model.validation import (
+        ModelValidationActor,
+        RecordValidationRequest,
+        record_validation,
+    )
+
+    client, p, db, fx_run, cov_run = ctx
+    mv = _register(client, p)
+    # A REGISTERED VaR version exists; a 2L validator REJECTS it (recorded via the service).
+    record_validation(
+        db,
+        acting_tenant=p.tenant_id,
+        actor=ModelValidationActor(actor_id="validator-2l"),
+        request=RecordValidationRequest(
+            model_version_id=mv,
+            validation_type="INITIAL",
+            outcome="REJECTED",
+            scope_summary="Conceptual soundness deficiency; not fit for use.",
+        ),
+    )
+    db.commit()
+    before = _count_var_runs(db, p.tenant_id)
+    resp = client.post("/risk/vars/runs", json=_run_body(mv, fx_run, cov_run), headers=_h(p))
+    assert resp.status_code == 422, resp.text  # governed refusal, not a 500
+    assert "REJECTED" in resp.json()["detail"]
+    assert _count_var_runs(db, p.tenant_id) == before  # no run persisted (whole-unit rollback)
+
+
 def test_register_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     client, p, db, fx_run, cov_run = ctx
     mv = _register(client, p)

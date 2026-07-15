@@ -183,6 +183,36 @@ def _count_runs(db: Session, tenant: str) -> int:
     ).scalar_one()
 
 
+def test_rejected_model_version_run_is_422_not_500(ctx) -> None:  # noqa: ANN001
+    """VW-1 OD-B end-to-end through a REAL PERF family run endpoint (the perf half of the "one risk
+    + one perf" proof): a latest-outcome REJECTED validation on the bound model_version makes a new
+    run refuse with a governed 422 (RejectedModelVersionError mapped in perf.py), not a raw 500."""
+    from irp_shared.model.validation import (
+        ModelValidationActor,
+        RecordValidationRequest,
+        record_validation,
+    )
+
+    client, p, db, r0, r1 = ctx
+    mv = _register(client, p)
+    record_validation(
+        db,
+        acting_tenant=p.tenant_id,
+        actor=ModelValidationActor(actor_id="validator-2l"),
+        request=RecordValidationRequest(
+            model_version_id=mv,
+            validation_type="INITIAL",
+            outcome="REJECTED",
+            scope_summary="Methodology not fit for use pending remediation.",
+        ),
+    )
+    db.commit()
+    resp = client.post("/perf/portfolio-returns/runs", json=_run_body(mv, r0, r1), headers=_h(p))
+    assert resp.status_code == 422, resp.text
+    assert "REJECTED" in resp.json()["detail"]
+    assert _count_runs(db, p.tenant_id) == 0  # no run persisted
+
+
 def test_register_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     client, p, db, r0, r1 = ctx
     mv = _register(client, p)

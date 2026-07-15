@@ -135,7 +135,7 @@ Grouped by bounded context. IDs are stable; attributes listed are indicative (th
 |---|---|---|
 | ENT-035 | `model` / `model_version` | Inventory + versioning |
 | ENT-036 | `model_assumption` / `model_limitation` | Declared per version |
-| ENT-037 | `model_validation` | Validation status, tier, approval |
+| ENT-037 | `model_validation` (+ `model_validation_finding` / `model_validation_evidence`) | Validation status, tier, approval. **REALIZED-IN-VW-1** (2026-07-14, migration `0039`; SR 11-7 validation records at `model_version` grain — IA append-only; outcome {APPROVED, APPROVED_WITH_CONDITIONS, REJECTED}; a latest-outcome REJECTED refuses new governed runs at `assert_model_version_of`, CTRL-022). Tiering columns stay on the `model` head (REQ-MDG-002, non-enforcing); `model.validation_status` deprecated-in-place (ENT-037 is version-grain truth). |
 
 ### Data Governance (BC-12)
 | ID | Entity | Notes |

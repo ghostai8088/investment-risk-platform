@@ -32,6 +32,7 @@ from irp_shared.entitlement.service import Principal
 from irp_shared.marketdata import BenchmarkNotVisible, FxRateNotFound
 from irp_shared.model.service import (
     ModelVersionConflictError,
+    RejectedModelVersionError,
     UnregisteredModelError,
     WrongModelVersionError,
 )
@@ -102,6 +103,10 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     WrongModelVersionError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "model_version does not match this model's registered identity (CTRL-003)",
+    ),
+    RejectedModelVersionError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "model_version latest validation outcome is REJECTED — new runs refused (VW-1 / CTRL-022)",
     ),
     ModelVersionConflictError: (
         status.HTTP_409_CONFLICT,
@@ -371,6 +376,7 @@ def create_portfolio_return_run(
     except (
         PortfolioReturnInputError,
         UnregisteredModelError,
+        RejectedModelVersionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -595,6 +601,7 @@ def create_benchmark_relative_run(
     except (
         BenchmarkRelativeInputError,
         UnregisteredModelError,
+        RejectedModelVersionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -825,6 +832,7 @@ def create_desmoothed_return_run(
     except (
         DesmoothingInputError,
         UnregisteredModelError,
+        RejectedModelVersionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,

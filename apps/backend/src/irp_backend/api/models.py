@@ -11,6 +11,7 @@ workflow exists here — governance fields are recorded as metadata and gate not
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -21,12 +22,24 @@ from irp_backend.deps import get_tenant_session, require_permission
 from irp_shared.entitlement.service import Principal
 from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, ModelVersion
 from irp_shared.model.service import register_model, register_model_version
+from irp_shared.model.validation import (
+    ModelValidationActor,
+    ModelValidationValueError,
+    RecordValidationRequest,
+    ValidationEvidenceInput,
+    ValidationFindingInput,
+    latest_validation,
+    list_validations,
+    record_validation,
+)
 
 router = APIRouter(prefix="/models", tags=["models"])
 
 #: Module-level guard singletons (deny-by-default; built once, not in argument defaults).
 _require_register = require_permission("model.inventory.register")
 _require_view = require_permission("model.inventory.view")
+#: VW-1: the 2L independent-validation write (SOD-03 — deliberately NOT the register permission).
+_require_validate = require_permission("model.validate")
 
 
 class RegisterModelIn(BaseModel):
@@ -59,6 +72,16 @@ class ModelSummary(BaseModel):
     is_active: bool
 
 
+class LatestValidationOut(BaseModel):
+    """The operative (most recent) validation record for a version, surfaced on the detail read."""
+
+    outcome: str
+    validation_type: str
+    validated_at: str  # the record's system_from (ISO), the "validated on" timestamp
+    next_review_due: date | None
+    overdue: bool  # next_review_due < today (computed at read; False when no due date)
+
+
 class ModelVersionOut(BaseModel):
     id: str
     version_label: str
@@ -67,6 +90,7 @@ class ModelVersionOut(BaseModel):
     status: str | None
     assumptions: list[str]
     limitations: list[str]
+    latest_validation: LatestValidationOut | None = None
 
 
 class ModelDetailOut(BaseModel):
@@ -172,6 +196,23 @@ def get_model(
             .scalars()
             .all()
         )
+        latest = latest_validation(db, v.id, acting_tenant=model.tenant_id)
+        latest_out = (
+            LatestValidationOut(
+                outcome=latest.outcome,
+                validation_type=latest.validation_type,
+                validated_at=latest.system_from.isoformat(),
+                next_review_due=latest.next_review_due,
+                overdue=(
+                    latest.next_review_due is not None
+                    # UTC to match the platform's utcnow() convention (finder fold) — avoids a
+                    # near-midnight local-vs-UTC boundary flip on a non-UTC server.
+                    and latest.next_review_due < datetime.now(UTC).date()
+                ),
+            )
+            if latest is not None
+            else None
+        )
         out_versions.append(
             ModelVersionOut(
                 id=v.id,
@@ -181,6 +222,7 @@ def get_model(
                 status=v.status,
                 assumptions=list(assumptions),
                 limitations=list(limitations),
+                latest_validation=latest_out,
             )
         )
 
@@ -194,3 +236,146 @@ def get_model(
         validation_status=model.validation_status,
         versions=out_versions,
     )
+
+
+# --- VW-1: model-validation workflow (ENT-037) — one gated write + one read ---
+
+
+class ValidationFindingIn(BaseModel):
+    finding_text: str
+    severity: str | None = None
+    authored_by: str | None = None
+
+
+class ValidationEvidenceIn(BaseModel):
+    evidence_type: str
+    run_id: str | None = None
+    reference: str | None = None
+
+
+class RecordValidationIn(BaseModel):
+    validation_type: str
+    outcome: str
+    scope_summary: str
+    conditions: str | None = None
+    report_ref: str | None = None
+    next_review_due: date | None = None
+    findings: list[ValidationFindingIn] = Field(default_factory=list)
+    evidence: list[ValidationEvidenceIn] = Field(default_factory=list)
+
+
+class RecordValidationOut(BaseModel):
+    id: str
+    model_version_id: str
+    outcome: str
+    validation_type: str
+    validated_at: str
+
+
+class ValidationSummaryOut(BaseModel):
+    id: str
+    outcome: str
+    validation_type: str
+    scope_summary: str
+    conditions: str | None
+    report_ref: str | None
+    next_review_due: date | None
+    validated_by: str
+    validated_at: str
+
+
+def _resolve_visible_version(
+    db: Session, model_id: uuid.UUID, version_id: uuid.UUID
+) -> ModelVersion:
+    """Resolve a version under the caller's tenant, 404-indistinguishable if the model OR the
+    version is hidden/unknown or the version does not belong to the model."""
+    model = db.get(Model, str(model_id))
+    if model is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="model not found")
+    version = db.get(ModelVersion, str(version_id))
+    if version is None or version.model_id != model.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="model_version not found")
+    return version
+
+
+@router.post(
+    "/{model_id}/versions/{version_id}/validations",
+    status_code=status.HTTP_201_CREATED,
+    response_model=RecordValidationOut,
+)
+def create_validation(
+    model_id: uuid.UUID,
+    version_id: uuid.UUID,
+    body: RecordValidationIn,
+    principal: Principal = Depends(_require_validate),
+    db: Session = Depends(get_tenant_session),
+) -> RecordValidationOut:
+    version = _resolve_visible_version(db, model_id, version_id)
+    request = RecordValidationRequest(
+        model_version_id=version.id,
+        validation_type=body.validation_type,
+        outcome=body.outcome,
+        scope_summary=body.scope_summary,
+        conditions=body.conditions,
+        report_ref=body.report_ref,
+        next_review_due=body.next_review_due,
+        findings=tuple(
+            ValidationFindingInput(
+                finding_text=f.finding_text, severity=f.severity, authored_by=f.authored_by
+            )
+            for f in body.findings
+        ),
+        evidence=tuple(
+            ValidationEvidenceInput(
+                evidence_type=e.evidence_type, run_id=e.run_id, reference=e.reference
+            )
+            for e in body.evidence
+        ),
+    )
+    try:
+        record = record_validation(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=ModelValidationActor(actor_id=principal.user_id),
+            request=request,
+        )
+    except ModelValidationValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    db.commit()
+    return RecordValidationOut(
+        id=record.id,
+        model_version_id=record.model_version_id,
+        outcome=record.outcome,
+        validation_type=record.validation_type,
+        validated_at=record.system_from.isoformat(),
+    )
+
+
+@router.get(
+    "/{model_id}/versions/{version_id}/validations",
+    response_model=list[ValidationSummaryOut],
+)
+def list_version_validations(
+    model_id: uuid.UUID,
+    version_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[ValidationSummaryOut]:
+    version = _resolve_visible_version(db, model_id, version_id)
+    rows = list_validations(db, version.id, acting_tenant=principal.tenant_id)
+    return [
+        ValidationSummaryOut(
+            id=r.id,
+            outcome=r.outcome,
+            validation_type=r.validation_type,
+            scope_summary=r.scope_summary,
+            conditions=r.conditions,
+            report_ref=r.report_ref,
+            next_review_due=r.next_review_due,
+            validated_by=r.validated_by,
+            validated_at=r.system_from.isoformat(),
+        )
+        for r in rows
+    ]

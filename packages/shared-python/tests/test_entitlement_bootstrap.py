@@ -53,6 +53,24 @@ def test_model_inventory_register_is_least_privilege() -> None:
         assert "model.inventory.view" in ROLE_TEMPLATES[role]
 
 
+def test_model_validate_grants_as_ratified() -> None:
+    # VW-1 (OD-VW-1-E): the 2L independent-validation write. Held by risk_manager_2l (ROLE-MV) +
+    # platform_admin ONLY. SOD-03: WITHHELD from risk_analyst_1l (the sole register holder) and from
+    # data_steward (a maker-tier role must not gain a 2L assurance verb). auditor_3l is view-only.
+    assert "model.validate" in ALL_CODES
+    assert "model.validate" in ROLE_TEMPLATES["risk_manager_2l"]
+    assert "model.validate" in ROLE_TEMPLATES["platform_admin"]
+    for role in ("risk_analyst_1l", "data_steward", "auditor_3l", "ops"):
+        assert "model.validate" not in ROLE_TEMPLATES[role], f"{role} must not hold model.validate"
+    # The SoD invariant made explicit: no role holds BOTH register and validate (except admin).
+    for role, codes in ROLE_TEMPLATES.items():
+        if role == "platform_admin":
+            continue
+        assert not (
+            "model.inventory.register" in codes and "model.validate" in codes
+        ), f"{role} violates SOD-03 (holds both register and validate)"
+
+
 def test_dq_rule_manage_is_least_privilege() -> None:
     # P1A-3: dq.rule.manage stays on the data steward (+ platform_admin) only — NOT the read roles
     # (least privilege ENT-P-01; pre-positions the P7 REQ-DQR-003 override SoD where P-DS is maker).

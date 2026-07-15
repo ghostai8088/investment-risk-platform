@@ -42,7 +42,7 @@ def client_and_principal() -> Iterator[tuple[TestClient, Principal, Session]]:
     role = Role(tenant_id=tenant_id, code="r", name="R")
     db.add_all([user, role])
     db.flush()
-    for code in ("model.inventory.view", "model.inventory.register"):
+    for code in ("model.inventory.view", "model.inventory.register", "model.validate"):
         perm = Permission(code=code, description="d")
         db.add(perm)
         db.flush()
@@ -167,3 +167,154 @@ def test_get_without_view_403(
         headers={"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": principal.tenant_id},
     )
     assert resp.status_code == 403
+
+
+# --- VW-1 validation endpoints ---
+
+
+def _seed_registered_version(db: Session, tenant_id: str) -> tuple[str, str]:
+    """Seed a Model + a REGISTERED ModelVersion directly (the generic POST /models path mints
+    status=None versions, which are deliberately not validatable). Returns (model_id,
+    version_id)."""
+    from irp_shared.model.models import ModelVersion
+
+    model = Model(tenant_id=tenant_id, code="risk.var.parametric", name="m", model_type="VAR")
+    db.add(model)
+    db.flush()
+    version = ModelVersion(
+        tenant_id=tenant_id, model_id=model.id, version_label="1.0.0", status="REGISTERED"
+    )
+    db.add(version)
+    db.commit()
+    return model.id, version.id
+
+
+_VALIDATION_BODY = {
+    "validation_type": "INITIAL",
+    "outcome": "APPROVED",
+    "scope_summary": "Reviewed conceptual soundness, implementation testing, and outcomes.",
+    "next_review_due": "2027-06-01",
+    "findings": [{"finding_text": "minor documentation gap", "severity": "LOW"}],
+}
+
+
+def test_record_validation_201_and_audited(
+    client_and_principal: tuple[TestClient, Principal, Session],
+) -> None:
+    client, principal, db = client_and_principal
+    model_id, version_id = _seed_registered_version(db, principal.tenant_id)
+    resp = client.post(
+        f"/models/{model_id}/versions/{version_id}/validations",
+        json=_VALIDATION_BODY,
+        headers=_headers(principal),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["outcome"] == "APPROVED"
+    assert (
+        db.execute(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(AuditEvent.event_type == "MODEL.VALIDATE")
+        ).scalar_one()
+        == 1
+    )
+
+
+def test_record_validation_without_validate_permission_403(
+    client_and_principal: tuple[TestClient, Principal, Session],
+) -> None:
+    """SOD-03: a 1L holder of register+view but NOT model.validate cannot validate."""
+    client, principal, db = client_and_principal
+    model_id, version_id = _seed_registered_version(db, principal.tenant_id)
+    # A second user granted only register+view (the 1L author profile), not model.validate.
+    author = AppUser(tenant_id=principal.tenant_id, display_name="author-1l")
+    role = Role(tenant_id=principal.tenant_id, code="r1l", name="1L")
+    db.add_all([author, role])
+    db.flush()
+    for code in ("model.inventory.view", "model.inventory.register"):
+        perm = db.execute(select(Permission).where(Permission.code == code)).scalar_one()
+        db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+    db.add(UserRole(tenant_id=principal.tenant_id, user_id=author.id, role_id=role.id))
+    db.commit()
+    resp = client.post(
+        f"/models/{model_id}/versions/{version_id}/validations",
+        json=_VALIDATION_BODY,
+        headers={"X-User-Id": author.id, "X-Tenant-Id": principal.tenant_id},
+    )
+    assert resp.status_code == 403
+
+
+def test_record_validation_on_non_registered_version_422(
+    client_and_principal: tuple[TestClient, Principal, Session],
+) -> None:
+    client, principal, _ = client_and_principal
+    created = client.post("/models", json=_BODY, headers=_headers(principal)).json()
+    resp = client.post(
+        f"/models/{created['id']}/versions/{created['version_id']}/validations",
+        json=_VALIDATION_BODY,
+        headers=_headers(principal),
+    )
+    assert resp.status_code == 422
+    assert "not REGISTERED" in resp.json()["detail"]
+
+
+def test_record_validation_unknown_version_404(
+    client_and_principal: tuple[TestClient, Principal, Session],
+) -> None:
+    client, principal, db = client_and_principal
+    model_id, _ = _seed_registered_version(db, principal.tenant_id)
+    resp = client.post(
+        f"/models/{model_id}/versions/{uuid.uuid4()}/validations",
+        json=_VALIDATION_BODY,
+        headers=_headers(principal),
+    )
+    assert resp.status_code == 404
+
+
+def test_record_validation_cross_model_version_404(
+    client_and_principal: tuple[TestClient, Principal, Session],
+) -> None:
+    """A real version id that belongs to a DIFFERENT model is 404 (indistinguishable), not a
+    cross-model validation write."""
+    client, principal, db = client_and_principal
+    model_a, _ = _seed_registered_version(db, principal.tenant_id)
+    from irp_shared.model.models import ModelVersion
+
+    other = Model(tenant_id=principal.tenant_id, code="other.model", name="m", model_type="VAR")
+    db.add(other)
+    db.flush()
+    other_version = ModelVersion(
+        tenant_id=principal.tenant_id, model_id=other.id, version_label="1.0.0", status="REGISTERED"
+    )
+    db.add(other_version)
+    db.commit()
+    resp = client.post(
+        f"/models/{model_a}/versions/{other_version.id}/validations",  # version_id ∉ model_a
+        json=_VALIDATION_BODY,
+        headers=_headers(principal),
+    )
+    assert resp.status_code == 404
+
+
+def test_list_validations_and_detail_latest_block(
+    client_and_principal: tuple[TestClient, Principal, Session],
+) -> None:
+    client, principal, db = client_and_principal
+    model_id, version_id = _seed_registered_version(db, principal.tenant_id)
+    # An overdue APPROVED validation (next_review_due in the past).
+    overdue_body = {**_VALIDATION_BODY, "next_review_due": "2020-01-01"}
+    client.post(
+        f"/models/{model_id}/versions/{version_id}/validations",
+        json=overdue_body,
+        headers=_headers(principal),
+    )
+    listed = client.get(
+        f"/models/{model_id}/versions/{version_id}/validations", headers=_headers(principal)
+    )
+    assert listed.status_code == 200 and len(listed.json()) == 1
+
+    detail = client.get(f"/models/{model_id}", headers=_headers(principal)).json()
+    latest = detail["versions"][0]["latest_validation"]
+    assert latest is not None
+    assert latest["outcome"] == "APPROVED"
+    assert latest["overdue"] is True  # next_review_due 2020-01-01 < today
