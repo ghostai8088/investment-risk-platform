@@ -28,7 +28,7 @@
 >   a new total **v2**; v1 grandfathered ungated; migration `0040`'s `estimate_age_days` echo). The
 >   honest work was the DOCTRINE: a daily read on an appraisal-marked book is biased two ways by
 >   construction, so the unconditional Kupiec/Basel verdict is NOT valid evidence in EITHER
->   direction. **The estimate-staleness register item is CLOSED** (VW-1 governance + BT-2 mechanics).
+>   direction. **The estimate-staleness item is ~~CLOSED~~ — an OVERCLAIM corrected at the Wave-5 close** (1 of 3 clauses paid: the age echo. The promotion path has no age check; every non-total family binds the same weight ungated; nothing expires a `proxy_mapping`). RE-OPENED as "estimate staleness — residual", TIPPED.
 > - **ES-1** (PR #41 `2abc1b1`) — **the 14th governed number: parametric Expected Shortfall**,
 >   `ES_c = k_c·σ` over BOTH σ_p and PA-4's σ_total (`risk.var.parametric_es` +
 >   `..._es_total` v1, two new codes through the SAME binder). **NO migration** — the reserved
