@@ -511,8 +511,9 @@ VAR_Z_SCORES: dict[str, str] = {
 #: consistent with the shipped VaR_c = z_c * sigma_p. ES is the alpha-TAIL-MEAN INTEGRAL, never
 #: E[L | L > VaR] (that is TCE, which is NOT coherent for discontinuous distributions; they
 #: coincide only in the continuous/normal case - Acerbi-Tasche Cor. 5.3(i)). A later
-#: ES-over-historical-simulation leg MUST inherit the tail-mean estimator (the mean of the worst
-#: ceil(n*(1-c)) losses), NOT the naive conditional average.
+#: ES-over-historical-simulation leg MUST inherit the tail-mean estimator (Acerbi-Tasche Prop.
+#: 4.1: a FLOOR count plus a FRACTIONAL boundary weight, NOT the mean of the worst ceil(n*a)
+#: losses - that quantity IS the TCE forbidden above).
 #:
 #: Verified at 12dp by THREE independent routes (2026-07-15): Decimal bisection on Phi at prec
 #: 50-80 with pi via Machin; stdlib NormalDist.inv_cdf (Wichura AS241, a different algorithm);
@@ -1724,8 +1725,14 @@ ES_LIMITATIONS: tuple[str, ...] = (
     "becomes meaningful for a non-elliptical ES-over-historical-simulation leg (a BT-3 candidate).",
     "ONE confidence level per registered version (the declared-parameter identity). ES over "
     "historical simulation and Monte Carlo remain later, separately declared families - each MUST "
-    "inherit the alpha-tail-mean estimator (the mean of the worst ceil(n*(1-c)) losses), not the "
-    "naive conditional average.",
+    "inherit the alpha-tail-mean estimator: with a = 1-c the TAIL probability and L_(1) >= L_(2) "
+    ">= ... the losses sorted worst-first, ES_a = ( SUM_{i<=floor(n*a)} L_(i) + (n*a - "
+    "floor(n*a)) * L_(floor(n*a)+1) ) / (n*a) - a FLOOR count plus a FRACTIONAL weight on the "
+    "boundary observation (Acerbi-Tasche 2002 Prop. 4.1). It is NOT the mean of the worst "
+    "ceil(n*a) losses: that quantity IS the TCE this guard forbids (identical for untied "
+    "samples) and it UNDERSTATES ES whenever n*a is not an integer - by ~14% at n=41, which is "
+    "this platform's own historical-simulation adequacy floor at c=0.975. The two coincide only "
+    "when n*a is an integer.",
     "An ES row does NOT reconcile against its own columns: var_value = k_c * sigma, but k_c is on "
     "no column - the row carries the arithmetically-UNUSED quantile z_score instead (the live "
     "ck_var_result_parametric_not_null CHECK forces it non-NULL). The multiplier lives only in "

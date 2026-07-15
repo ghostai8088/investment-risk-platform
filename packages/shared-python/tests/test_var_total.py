@@ -834,6 +834,32 @@ def test_symmetric_predicate_refusal_both_directions(session: Session) -> None:
         _run_total(session, tenant, total_mv, None, None, snapshot_id=plain_snap.id)
     assert_no_running_orphan(session, run_type="VAR")
 
+    # ES-1: the SAME symmetry on the two ES families — all FOUR codes, both directions (8 cases).
+    # The gates read `family.total`, so today the ES families inherit them for free; this pins that.
+    # The failure it guards is a REFACTOR that re-keys the predicate check onto a model CODE (e.g.
+    # `code == VAR_TOTAL_MODEL_CODE`) — that would drop the gate for ES-total ONLY, letting an
+    # ES-total model complete over a plain snapshot while silently discarding the pinned
+    # idiosyncratic evidence (the OD-PA-2-C failure), with the compute path still correct and every
+    # other test green.
+    from irp_shared.risk import register_var_parametric_es_model
+
+    es_mv = register_var_parametric_es_model(
+        session,
+        tenant_id=tenant,
+        actor_id="analyst",
+        code_version="risk-v1",
+        confidence_level="0.95",
+    ).id
+    es_total_mv = _var_es_total_model(session, tenant)
+    # Direction 3: the plain-ES model over a total-predicate snapshot refuses.
+    with pytest.raises(VarInputError):
+        _run_total(session, tenant, es_mv, None, None, snapshot_id=total_snap.id)
+    assert_no_running_orphan(session, run_type="VAR")
+    # Direction 4: the ES-total model over a plain-predicate snapshot refuses.
+    with pytest.raises(VarInputError):
+        _run_total(session, tenant, es_total_mv, None, None, snapshot_id=plain_snap.id)
+    assert_no_running_orphan(session, run_type="VAR")
+
 
 # ---------- (5) snapshot-build-time citation adjudication (OD-PA-4-C) ----------
 

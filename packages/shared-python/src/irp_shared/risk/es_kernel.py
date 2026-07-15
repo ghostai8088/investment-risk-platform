@@ -22,7 +22,16 @@ Definitional guard for later legs: ES is the alpha-TAIL-MEAN INTEGRAL, never ``E
 (that is TCE, which is NOT coherent for discontinuous distributions — Acerbi-Tasche Example 5.4).
 They coincide for continuous distributions (Cor. 5.3(i)), so the distinction costs nothing under
 normality — but an ES-over-historical-simulation leg is discrete and MUST inherit the tail-mean
-estimator (the mean of the worst ``ceil(n*(1-c))`` losses), not the naive conditional average.
+estimator. Concretely (Acerbi-Tasche 2002 Prop. 4.1), with ``a = 1-c`` the TAIL probability and
+``L_(1) >= L_(2) >= ...`` the losses sorted worst-first::
+
+    ES_a = ( SUM_{i <= floor(n*a)} L_(i) + (n*a - floor(n*a)) * L_(floor(n*a)+1) ) / (n*a)
+
+— a FLOOR count plus a FRACTIONAL weight on the boundary observation. **It is NOT "the mean of the
+worst ceil(n*a) losses"**: for an untied sample that quantity is exactly ``E[L | L >= VaR]``, i.e.
+the TCE this guard forbids, and it UNDERSTATES ES whenever ``n*a`` is not an integer (~14% at
+n=41 — this platform's own HS adequacy floor at c=0.975). The two coincide only when ``n*a`` is an
+integer. Stating the estimator wrongly here would have handed the future HS leg the forbidden one.
 
 Raw prec-50 out; the binder gates magnitudes and quantizes (``ES`` -> 6dp ``Numeric(28,6)``, the
 base-currency scale). Fail-closed on a negative sigma or a non-positive multiplier — both are

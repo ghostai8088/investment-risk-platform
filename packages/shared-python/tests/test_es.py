@@ -47,9 +47,16 @@ from irp_shared.risk.events import METRIC_TYPE_ES_PARAMETRIC, METRIC_TYPES
 # ---------------------------------------------------------------------------------------------
 
 _Q12 = Decimal("1E-12")
-#: prec 40 with ~100 bisection steps resolves z to ~1e-25. k's sensitivity is
-#: dk/dz = -z*phi(z)/(1-c) ~ 6 at these levels, so that is ~20 orders of headroom over the 1e-12
-#: quantum being pinned — while staying fast enough to belong in `make check`.
+#: prec 40 with 100 bisection steps resolves z to ~2e-30 (the interval halves from 10, so 100
+#: steps give 10/2^100 ~ 8e-30, floored by the prec-40 arithmetic). k's sensitivity is
+#: dk/dz = -z*phi(z)/(1-c), which is 3.4-6.2 across the vocabulary, so k resolves to ~1e-29 —
+#: about 17 orders of headroom over the 1e-12 quantum being pinned, and the nearest 12dp
+#: rounding boundary is >=3e-13 away (a ~1e15x safety factor). Fast enough for `make check`.
+#: (The first draft of this comment claimed "~20 orders" from a stated "~1e-25" resolution —
+#: which does not even follow from its own premises (6 * 1e-25 -> ~12 orders). Corrected at the
+#: ES-1 numeric review: this slice struck an over-claim of exactly this class in OD-B, and it
+#: would be absurd for the comment justifying the precision of the test that pins the constants
+#: to be the one place the over-claiming survived.)
 _PREC = 40
 _BISECT_STEPS = 100
 
@@ -178,7 +185,8 @@ def test_es_over_var_invariant_is_exact_at_the_constants_level() -> None:
     # INDEPENDENTLY and the rounding residuals do not cancel, so `ES_97.5/VaR_99 == <literal>` is
     # false at EVERY sigma (verified at planning: 0 hits in a 200,000-sigma scan; on this repo's
     # own sigma=500 fixture the row ratio is 1.004923991862..., not ...931). See
-    # `test_es_over_var_row_ratio_holds_only_to_the_quantum_bound` for the honest row-level form.
+    # `test_var.py::test_es_dispatch_leaves_the_plain_var_row_byte_identical` for the honest
+    # row-level form (a DERIVED quantum bound over real rows, never a bare `==` on the ratio).
     ratio = Decimal(VAR_ES_MULTIPLIERS["0.9750"]) / Decimal(VAR_Z_SCORES["0.9900"])
     assert ratio.quantize(_Q12, rounding=ROUND_HALF_UP) == Decimal("1.004923991931")
 

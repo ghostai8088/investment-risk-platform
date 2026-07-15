@@ -45,8 +45,24 @@ This is **Landsman & Valdez (2003)**'s elliptical tail-conditional-expectation c
 — the latter is TCE, which is **not coherent for discontinuous distributions** (Acerbi–Tasche
 Example 5.4). The two coincide for continuous distributions (Cor. 5.3(i)), so under normality the
 distinction costs nothing today. It is recorded because it will not be free later: an
-**ES-over-historical-simulation** leg is discrete and must inherit the tail-mean estimator (the
-mean of the worst `⌈n(1−c)⌉` losses), not the naive conditional average.
+**ES-over-historical-simulation** leg is discrete and must inherit the tail-mean estimator.
+
+Concretely — **Acerbi–Tasche (2002) Prop. 4.1**, with `a = 1 − c` the **tail** probability and
+`L₍₁₎ ≥ L₍₂₎ ≥ …` the losses sorted worst-first:
+
+```
+ES_a = ( Σ_{i ≤ ⌊n·a⌋} L₍ᵢ₎  +  (n·a − ⌊n·a⌋) · L₍⌊n·a⌋₊₁₎ ) / (n·a)
+```
+
+a **floor** count plus a **fractional weight** on the boundary observation.
+
+> ⚠️ **It is NOT "the mean of the worst `⌈n·a⌉` losses".** For an untied sample that quantity is
+> *exactly* `E[L | L ≥ VaR]` — the TCE this guard forbids — and it **understates ES** whenever
+> `n·a ∉ ℤ`: −0.34% at n=504, −1.6% at n=100, and **−13.9% at n=41**, which is this platform's own
+> historical-simulation adequacy floor at c=0.975. They coincide only when `n·a` is an integer.
+> *(An earlier draft of this guard prescribed the ⌈n·a⌉ mean — i.e. it forbade TCE in one sentence
+> and mandated it in the next. Caught by the ES-1 doctrine review and recorded here so the next
+> reader does not re-derive the wrong estimator from a plausible-sounding phrase.)*
 
 ## `k_c` is a REGISTERED constant, not a runtime function (OD-ES-1-B)
 
@@ -105,11 +121,23 @@ a functional on arbitrary variables — the σ-multiple form's coherence lives O
 elliptical family. That is the cleanest statement of why this slice is about robustness, not about
 fixing a defect in today's arithmetic.)*
 
-> ⚠️ **Do NOT attribute a coherence rationale to BCBS.** Greps of **d457**, **bcbs265** and
-> **d219** return **zero** occurrences of "coherent" / "sub-additive" / "subadditivity" /
-> "elicitable". BCBS's stated rationale is **tail capture only** (d219: *"a number of weaknesses
-> have been identified with VaR, including its inability to capture 'tail risk'"*). The coherence
-> argument is **academic** (Artzner; Acerbi–Tasche) — cite each to its actual source.
+> ⚠️ **Do NOT attribute a coherence rationale to BCBS.** Their stated rationale is **tail capture
+> only** — d219's main text names VaR's *"inability to capture 'tail risk'"* as the reason for the
+> move to ES. **d457** and **bcbs265** contain **zero** occurrences of "coherent" / "sub-additive" /
+> "subadditivity" / "elicitable".
+>
+> **d219 is the one exception, and it proves the point rather than breaking it.** It mentions
+> subadditivity exactly once — *"VaR has been criticised in the literature for lacking
+> subadditivity. A prominent alternative to VaR is ES, which is subadditive."* — inside **Annex 2,
+> "Lessons from the academic literature and banks' risk management practices"**, under "Messages
+> from the academic literature". That is BCBS **summarising** the academic argument, not advancing
+> it as their own rationale. The coherence argument is **academic** (Artzner; Acerbi–Tasche) — cite
+> each to its actual source.
+>
+> *(An earlier draft asserted a flat "zero occurrences across all three" grep. It was wrong about
+> d219 and would have died to a single validator grep — recorded per the BT-2 MAR32.27 lesson: a
+> citation that does not survive checking is worse than no citation, even when the conclusion is
+> right.)*
 
 **On the 97.5% ≈ 99% folklore.** bcbs265 §1.4(i) asserts 97.5% ES gives *"a broadly similar level
 of risk capture as the existing 99th percentile VaR threshold"* — **without arithmetic and without

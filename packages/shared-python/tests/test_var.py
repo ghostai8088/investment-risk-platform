@@ -1589,3 +1589,10 @@ def test_es_magnitude_gate_runs_on_the_es_not_the_var(session: Session) -> None:
     # A committed FAILED run with evidence — never a 500, and never a silently-stored overflow.
     assert es_result.status == RunStatus.FAILED.value and es_result.rows == []
     assert es_result.failure_reason and "magnitude-out-of-range" in es_result.failure_reason
+    # The evidence must name the value that ACTUALLY breached (an ES-1 review fold): sigma=4e21 is
+    # comfortably INSIDE the 1E22 envelope, so a reason reading "sigma:4E+21" would show a
+    # validator a legal number beside an unexplained refusal. The FAILED run IS the deliverable.
+    assert "magnitude-out-of-range:ES_PARAMETRIC:" in es_result.failure_reason
+    assert "sigma:" not in es_result.failure_reason
+    # k_0.99 * 4e21 = 1.0660856881384e22 — the breaching ES itself, in the evidence.
+    assert "1.0660856881384" in es_result.failure_reason

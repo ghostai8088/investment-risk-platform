@@ -196,8 +196,9 @@ class CovarianceResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, B
 class VarResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     """One parametric-VaR summary (P3-5, **ENT-027 `risk_result` REALIZED**; IA TRUE append-only)
     — the platform's first SINGLE-SUMMARY-ROW governed result: ONE row per COMPLETED run
-    (grain ``(calculation_run_id, metric_type)``; ``VAR_PARAMETRIC``, ``ES_PARAMETRIC`` reserved
-    — extend by value) and the first DERIVED-OF-DERIVED number (two upstream governed runs).
+    (grain ``(calculation_run_id, metric_type)``; extend BY VALUE — ``VAR_PARAMETRIC`` P3-5,
+    ``VAR_HISTORICAL`` VAR-HS-1, ``VAR_PARAMETRIC_TOTAL`` PA-4, ``ES_PARAMETRIC`` ES-1) and the
+    first DERIVED-OF-DERIVED number (two upstream governed runs).
 
     **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** (the P3-4 exemplar): NOT-NULL
     ``calculation_run_id`` + ``input_snapshot_id`` (a ``VAR_INPUT`` snapshot pinning the consumed
@@ -233,8 +234,11 @@ class VarResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     covariance_run_id: Mapped[str | None] = mapped_column(
         GUID, ForeignKey("calculation_run.run_id"), nullable=True, index=True
     )
-    # Controlled vocab (plain String): 'VAR_PARAMETRIC' (P3-5), 'VAR_HISTORICAL' (VAR-HS-1);
-    # 'ES_PARAMETRIC' reserved.
+    # Controlled vocab (plain String): 'VAR_PARAMETRIC' (P3-5), 'VAR_HISTORICAL' (VAR-HS-1),
+    # 'VAR_PARAMETRIC_TOTAL' (PA-4), 'ES_PARAMETRIC' (ES-1 — REALIZED 2026-07-15, no longer
+    # reserved: BOTH ES families emit it, and for those rows var_value holds an ES, not a VaR).
+    # NOTE a PG-only CHECK (0028, ORM-invisible) forces z_score+sigma+covariance_run_id
+    # non-NULL on every row EXCEPT 'VAR_HISTORICAL' — see ck_var_result_parametric_not_null.
     metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     confidence_level: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)

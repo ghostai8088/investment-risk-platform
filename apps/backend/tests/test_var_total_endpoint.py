@@ -355,6 +355,13 @@ def test_register_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     row = body["rows"][0]
     assert row["metric_type"] == "VAR_PARAMETRIC_TOTAL"
     assert Decimal(row["residual_variance"]) > 0
+    # BT-2's recorded gap, second half — PAID AT ES-1 (its trigger was "the next slice touching
+    # var_result's PG suite"). BT-2 shipped `estimate_age_days` with NO API assertion anywhere, so
+    # deleting the field from `_var_row_out` left every backend test green (mutation-verified at
+    # the ES-1 review). This is the total family, where the age is POPULATED — asserting it None on
+    # a plain/ES row proves nothing, since it is None there by construction.
+    assert row["estimate_age_days"] is not None
+    assert isinstance(row["estimate_age_days"], int)
     for field in ("sigma", "var_value", "residual_variance"):
         assert "E" not in row[field] and "e" not in row[field]  # fixed-point, never scientific
     run_read = client.get(f"/risk/vars/runs/{body['run_id']}", headers=_h(p))
@@ -362,6 +369,8 @@ def test_register_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     row_read = client.get(f"/risk/vars/{row['id']}", headers=_h(p))
     assert row_read.status_code == 200
     assert row_read.json()["residual_variance"] == row["residual_variance"]
+    # The single-row GET surfaces the age too — the read path a validator actually uses.
+    assert row_read.json()["estimate_age_days"] == row["estimate_age_days"]
 
 
 def test_appraisal_days_vocabulary_floor(ctx) -> None:  # noqa: ANN001

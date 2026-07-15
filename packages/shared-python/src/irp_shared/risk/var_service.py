@@ -41,7 +41,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal, localcontext
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from typing import Any
 
 from sqlalchemy import select
@@ -819,10 +819,21 @@ def run_var(
                     clamped = estimate.radicand if estimate.radicand > 0 else Decimal(0)
                     try:
                         raw_es = compute_parametric_es(clamped.sqrt(), es_multiplier=es_multiplier)
+                        # The quantize is INSIDE the try — the var_kernel:111 precedent, which
+                        # guards the identical operation. Because k_c > z_c there is a band where
+                        # the kernel's z*sigma quantize succeeds but k*sigma raises
+                        # InvalidOperation (6dp would need more than prec-50 digits), and the
+                        # magnitude gate cannot cover it: the gate runs AFTER this line. It is
+                        # UNREACHABLE today (column-legal pins cap sigma ~1e31; this needs ~4e43,
+                        # i.e. ~1e12 factors in one run) — defense-in-depth, symmetric with the
+                        # kernel it mirrors, per the PA-4 defensive-gate precedent.
+                        plain_value = raw_es.quantize(_SIGMA_QUANTUM, rounding=ROUND_HALF_UP)
                     except EsKernelError as exc:  # defense-in-depth; binder-unreachable
                         gaps.append(f"es-kernel:{exc.reason}:{exc}")
                         return [], gaps
-                    plain_value = raw_es.quantize(_SIGMA_QUANTUM, rounding=ROUND_HALF_UP)
+                    except InvalidOperation:  # defense-in-depth; binder-unreachable (see above)
+                        gaps.append("es-kernel:magnitude-out-of-range")
+                        return [], gaps
                 plain_metric = METRIC_TYPE_ES_PARAMETRIC
             # The magnitude gate runs on the value ACTUALLY STORED. k_c > z_c at every confidence,
             # so an ES can breach the envelope where its VaR did not — the band is wide, not a
@@ -832,7 +843,15 @@ def run_var(
             if abs(estimate.sigma) >= _MAX_RESULT_ABS or abs(plain_value) >= _MAX_RESULT_ABS:
                 # Column-legal-but-extreme inputs can produce sigma beyond Numeric(28,6): a
                 # committed FAILED run with evidence, never a PG overflow 500 (2026-07 review).
-                gaps.append(f"magnitude-out-of-range:sigma:{estimate.sigma:E}")
+                # Name the value that ACTUALLY breached (ES-1 review): an ES trips this gate at a
+                # sigma the VaR passes (k_c > z_c), so reporting sigma alone showed a validator an
+                # in-envelope number next to an unexplained refusal — on a governed-number platform
+                # the FAILED run IS the deliverable, and its recorded reason has to be true.
+                breach = "sigma" if abs(estimate.sigma) >= _MAX_RESULT_ABS else plain_metric
+                breached_value = (
+                    estimate.sigma if abs(estimate.sigma) >= _MAX_RESULT_ABS else plain_value
+                )
+                gaps.append(f"magnitude-out-of-range:{breach}:{breached_value:E}")
                 return [], gaps
             row = VarResult(
                 tenant_id=str(acting_tenant),
@@ -911,7 +930,17 @@ def run_var(
             # at all three boundaries, 2026-07 review). Do NOT move this inside the prec-50
             # localcontext: a prec-50 abs() reopens the window (quantize then mints exactly the
             # bound → a PG NumericValueOutOfRange 500 instead of this governed FAILED run).
-            gaps.append(f"magnitude-out-of-range:sigma-total:{residual.sigma_total:E}")
+            # Name the value that ACTUALLY breached (ES-1 review) — with k_c > z_c an ES-total can
+            # trip where its VaR-total would not, and "sigma-total: <in-range value>" would send a
+            # validator hunting a gate bug instead of reading the real cause.
+            if abs(residual.sigma_total) >= _MAX_RESULT_ABS:
+                breach, breached_value = "sigma-total", residual.sigma_total
+            elif abs(residual.residual_variance) >= _MAX_RESIDUAL_VARIANCE_ABS:
+                breach, breached_value = "residual-variance", residual.residual_variance
+            else:
+                breach = METRIC_TYPE_ES_PARAMETRIC if es_multiplier else "var-total"
+                breached_value = raw_var_value
+            gaps.append(f"magnitude-out-of-range:{breach}:{breached_value:E}")
             return [], gaps
 
         with localcontext() as ctx:

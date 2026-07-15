@@ -583,8 +583,10 @@ def test_es_run_dispatches_through_the_unchanged_runs_endpoint(ctx) -> None:  # 
     assert len(rows) == 1
     assert rows[0]["metric_type"] == "ES_PARAMETRIC"
     assert rows[0]["confidence_level"] == "0.9750"
-    # The ES row surfaces its (unused-by-the-arithmetic) z_score and its sigma; estimate_age_days
-    # and residual_variance are None off the total family — BT-2's API assertion, paid here.
+    # The ES row surfaces its (unused-by-the-arithmetic) z_score and its sigma; residual_variance
+    # and estimate_age_days are None off the total family — by construction, so this pins the
+    # plain-ES shape only. BT-2's API assertion proper lives in test_var_total_endpoint.py's
+    # roundtrip, where the age is POPULATED and the assertion can actually fail.
     assert rows[0]["z_score"] is not None and rows[0]["sigma"] is not None
     assert rows[0]["residual_variance"] is None and rows[0]["estimate_age_days"] is None
     # ES > VaR over the same book, through the API.
