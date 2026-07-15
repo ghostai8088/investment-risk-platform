@@ -1,10 +1,42 @@
 # Current State
 
+> ## ⚠️ CURRENT TRUTH (2026-07-15) — read this block; everything below it is HISTORY
+>
+> **HEAD `a9a00eb`** = merge of **PR #36** (VW-1 implementation `726373f` + CI fix `93ab215`) / **CI
+> green**. **Migration head `0039_model_validation`.** `make check` **1407** passed.
+>
+> **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
+> amendment log — it is kept current per slice and WINS wherever the sections below disagree). The
+> latest decision record is `vw_1_decision_record.md` (CLOSED).
+>
+> **Where we are:** **Wave 5** (ratified 2026-07-14 at the Wave-4 close, fork A "the numbers govern
+> themselves"): **RD-3 ✅ → VW-1 ✅ → BT-2 → ES-1**, then the Wave-5 close review.
+> - **RD-3** (PR #34 `29bc5a2`) — hygiene: verify-path drift-not-500, guard/parse adoption, the
+>   dirty-schema double-run now a standing local-validation capability. NO migration.
+> - **VW-1** (PR #36 `a9a00eb`) — **the SR 11-7 model-validation workflow**: ENT-037
+>   `model_validation` REALIZED (migration `0039`); a latest-outcome **REJECTED refuses new governed
+>   runs** at the shared `assert_model_version_of` seam; UNVALIDATED keeps running (the documented
+>   SR 26-2 exception posture); `model.validate` R-07 mint (2L-only, SOD-03); `MODEL.VALIDATE`
+>   activated; CTRL-022 → Operational; REQ-MDG-003 → In-Progress. Human-only v1 (BR-15/MG-07).
+> - **NEXT = BT-2** (total-series backtest over `VAR_PARAMETRIC_TOTAL`; the σ_e estimate-staleness
+>   gate rides here per VW-1's ratified fork A).
+>
+> **Counts (2026-07-15):** 13 governed numbers / 12 run families / 14 registered model codes + the
+> model-less exposure rollup. Delivery runs under the **2026-07-14 EXTENDED autonomy grant** (Claude
+> self-drives plan→impl→review→commit→push; the USER signs Tier-3 decisions). **Practical note: the
+> PR-create step is currently done by the USER** — Claude's REST PR-create call is blocked by the
+> auto-mode safety classifier on this repo (push works fine); Claude pushes the branch and hands over
+> the compare link.
+>
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
-> history. Read this first, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence) + `pa_0_decision_record.md` (the latest record), `next_actions.md`, and `claude_operating_instructions.md`. **As of HEAD
-> `ad3d3fe` (merge of PR #8 = `c9d41a7`, PA-0 private-asset foundations, ENT-019 + migration 0034, Wave-2 slice 4) / CI green; refreshed 2026-07-11.** Values that
-> drift are flagged; re-verify the ones in "Re-check at session start" before acting. *(`project_state.yaml`
-> is RETIRED — see its stub; the recovery set is `CLAUDE.md` → this file → `phase_status.md` → `next_actions.md`.)*
+> history. Read this block, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence),
+> then `claude_operating_instructions.md`. Re-verify HEAD/CI before acting. *(`project_state.yaml` is
+> RETIRED — see its stub; the recovery set is `CLAUDE.md` → this file → the roadmap.)*
+>
+> **⚠️ EVERYTHING BELOW THIS BANNER was last deep-refreshed at the PA-0 era (HEAD `ad3d3fe`,
+> 2026-07-11) and UNDERSTATES the current state** — it stops before PA-1/PA-2/PA-3/PA-4, the Wave-4
+> close, RD-3 and VW-1. Retained as history (the per-slice detail is accurate for the slices it
+> covers). Where it disagrees with the roadmap or this banner, **they win**.
 
 ## Repository
 - **Project:** full-scope enterprise investment-risk platform (monorepo). NOT an MVP/POC — see `build_plan.md`.
