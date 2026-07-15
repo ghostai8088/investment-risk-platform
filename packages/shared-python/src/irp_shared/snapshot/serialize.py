@@ -470,12 +470,22 @@ def var_result_content(row: Any) -> dict[str, Any]:
     the P3-3 EXPOSURE true-append-only pin flavor: no valid axis, no ``record_version``;
     ``system_from`` the append time; byte-identical on re-verify). The BT-1-era immutable column
     set is pinned so the backtest binder reconstructs each forecast (``metric_type``/
-    ``confidence_level``/``horizon_days``/``window_end``/``var_value``) exactly. The PA-4
-    ``residual_variance`` column is DELIBERATELY excluded: adding a key would change the
-    recomputed bytes of every ALREADY-PINNED var_result component and make ``verify_snapshot``
-    report false drift on historical BT-1 snapshots (and the backtest binder refuses
-    ``VAR_PARAMETRIC_TOTAL`` rows in v1 anyway — no consumer reads it from a pin). Scales:
-    ``var_value``/``sigma`` 6 (the base-currency money scale); ``confidence_level`` 4;
+    ``confidence_level``/``horizon_days``/``window_end``/``var_value``) exactly.
+
+    **TWO columns are DELIBERATELY excluded** — PA-4's ``residual_variance`` and BT-2's
+    ``estimate_age_days``. The reason is false drift, and it is sufficient on its own: adding a key
+    would change the recomputed bytes of every ALREADY-PINNED var_result component and make
+    ``verify_snapshot`` report drift on historical BT-1 snapshots that never moved. Test-pinned by
+    ``test_var_result_pin_key_set_is_frozen``.
+
+    *(Wave-5-close correction: this note also used to argue "and the backtest binder refuses
+    VAR_PARAMETRIC_TOTAL rows in v1 anyway — no consumer reads it from a pin". **BT-2 admitted
+    VAR_PARAMETRIC_TOTAL to METRIC_TYPES, so that clause is now FALSE** and has been struck. The
+    exclusion stands on the false-drift reason alone. Recorded rather than quietly deleted: BT-2's
+    own headline fold was a citation that had stopped saying what the text needed — this is the
+    same class, self-inflicted, in the shipped code BT-2 changed.)*
+
+    Scales: ``var_value``/``sigma`` 6 (the base-currency money scale); ``confidence_level`` 4;
     ``z_score`` 12."""
     return {
         "id": _norm_guid(row.id),

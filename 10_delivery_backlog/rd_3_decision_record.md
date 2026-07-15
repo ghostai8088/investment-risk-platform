@@ -1,6 +1,9 @@
 # RD-3 Decision Record — verify-path hardening + guard/parse adoption sweep (Wave-5 slice 1)
 
-> **Status: RATIFIED 2026-07-14** (OQ-RD-3-1…5 all approved as recommended). The Wave-5 early hygiene slice ratified at
+> **Status: CLOSED 2026-07-14** — planning `39533c8` via **PR #33** = `df6afd6`; impl `d751fde` via **PR #34** =
+> `29bc5a2`, CI green; NO migration. *(Stamped at the Wave-5 close: the roadmap row was stamped at the VW-1
+> closeout but this record was missed — the recurring missing-closure-stamp failure.)*
+> **RATIFIED 2026-07-14** (OQ-RD-3-1…5 all approved as recommended). The Wave-5 early hygiene slice ratified at
 > the Wave-4 close (OQ-W4C-3): the three TIPPED register items + the PG seed-collision test-infra
 > ride-along. NO migration, NO governed number, NO new permission/audit code. The RD-1/RD-2
 > precedent form: census-verified scope, byte-preserving where behavior is not the defect, every
@@ -134,16 +137,17 @@ check`/`downgrade base`/`upgrade head` all clean. `make check` (1370+ new tests)
 Findings and dispositions:
 
 1. **HIGH (finder 1 + finder 2, independently converged) — the OD-A except-tuple was scoped to
-   the whole `_reresolve_content` dispatch (19 branches), not just the 4 that parse
+   the whole `_reresolve_content` dispatch (**18** branches — the record said 19; corrected at the Wave-5
+   close, the shipped code comment was always right), not just the 4 that parse
    `captured_content`.** As first implemented, `KeyError/TypeError/ValueError/ArithmeticError`
    wrapped the ENTIRE re-resolution call, so a future live-data serialization bug in any of the
-   other 15 branches (e.g. an `_norm_decimal` `InvalidOperation`/`ArithmeticError` on a
+   other **14** branches (e.g. an `_norm_decimal` `InvalidOperation`/`ArithmeticError` on a
    corrupted-but-real row, a `TypeError` from a bad sort key) would be silently reported as
    "drift" instead of crashing loudly in dev/CI — precisely the failure mode OD-A was written to
    eliminate for malformed PINS, relocated onto live data instead. **FIXED**: introduced a scoped
    `MalformedPinError` + two helpers (`_parsed_pin`, `_pinned_row_ids`) that BENCHMARK_RETURN /
    FACTOR_RETURN / BENCHMARK / SCENARIO now route through; `verify_snapshot`'s except-tuple now
-   catches only `MalformedPinError`, not the four raw builtin types. The other 15 branches raise
+   catches only `MalformedPinError`, not the four raw builtin types. The other **14** branches raise
    loudly again on any non-`*NotVisible`/`*SnapshotError` failure, exactly as before this slice.
 2. **HIGH (finder 3) — OD-B's message-normalization claim was untested.** `test_proxy_mapping.py`
    was unmodified even though Part 3 step 2 promised "the existing... tests keep passing with the
@@ -242,5 +246,7 @@ test gap (item 4) and the `benchmark_relative_service.py:292` latent NaN-detonat
 during the OD-C census (item 5) — both carried to the deferral register at the next wave-adjacent
 review.
 
-**RD-3 CLOSED** pending PR merge + CI green (tracked at implementation; commit hash recorded in
+**RD-3 CLOSED 2026-07-14** — planning `39533c8` via **PR #33** = `df6afd6`; impl `d751fde` via **PR #34** =
+`29bc5a2`, CI green; NO migration. Stamped at the Wave-5 close (the roadmap row was stamped at the VW-1
+closeout; the record itself was missed — the recurring failure).
 delivery-roadmap-state memory at close).

@@ -2,15 +2,20 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-15) — read this block; everything below it is HISTORY
 >
-> **HEAD `a9a00eb`** = merge of **PR #36** (VW-1 implementation `726373f` + CI fix `93ab215`) / **CI
-> green**. **Migration head `0039_model_validation`.** `make check` **1407** passed.
+> **HEAD `2abc1b1`** = merge of **PR #41** (ES-1 impl `a0723ac` + review folds `17d48bc`) / **CI
+> green**. **Migration head `0040_var_estimate_age`** (40 revisions — ES-1 needed NO migration).
+> `make check` **1448** passed / full local-PG **1741** passed (fresh schema AND dirty double-run).
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it is kept current per slice and WINS wherever the sections below disagree). The
-> latest decision record is `vw_1_decision_record.md` (CLOSED).
+> latest decision record is `es_1_decision_record.md` (CLOSED).
 >
-> **Where we are:** **Wave 5** (ratified 2026-07-14 at the Wave-4 close, fork A "the numbers govern
-> themselves"): **RD-3 ✅ → VW-1 ✅ → BT-2 → ES-1**, then the Wave-5 close review.
+> **Where we are:** **WAVE 5 IS CODE-COMPLETE** — all four ratified slices shipped CI-green
+> (ratified 2026-07-14 at the Wave-4 close, fork A "the numbers govern themselves"):
+> **RD-3 ✅ → VW-1 ✅ → BT-2 ✅ → ES-1 ✅**. **NEXT = the Wave-5 close review** (the mandatory Part-4
+> rule-2 wave re-baseline: honest audit of what shipped vs what was ratified, deferral-register
+> reconciliation, outward benchmark + destination check, then **Wave 6 ratified by the USER** —
+> multi-family factor capture is the teed headline).
 > - **RD-3** (PR #34 `29bc5a2`) — hygiene: verify-path drift-not-500, guard/parse adoption, the
 >   dirty-schema double-run now a standing local-validation capability. NO migration.
 > - **VW-1** (PR #36 `a9a00eb`) — **the SR 11-7 model-validation workflow**: ENT-037
@@ -18,15 +23,29 @@
 >   runs** at the shared `assert_model_version_of` seam; UNVALIDATED keeps running (the documented
 >   SR 26-2 exception posture); `model.validate` R-07 mint (2L-only, SOD-03); `MODEL.VALIDATE`
 >   activated; CTRL-022 → Operational; REQ-MDG-003 → In-Progress. Human-only v1 (BR-15/MG-07).
-> - **NEXT = BT-2** (total-series backtest over `VAR_PARAMETRIC_TOTAL`; the σ_e estimate-staleness
->   gate rides here per VW-1's ratified fork A).
+> - **BT-2** (PR #39 `4035f10`) — **total-series backtest** (`VAR_PARAMETRIC_TOTAL` admitted; the
+>   PA-4 exclusion discharged) + the **σ_e estimate-age gate** (DECLARED `max_estimate_age_days` on
+>   a new total **v2**; v1 grandfathered ungated; migration `0040`'s `estimate_age_days` echo). The
+>   honest work was the DOCTRINE: a daily read on an appraisal-marked book is biased two ways by
+>   construction, so the unconditional Kupiec/Basel verdict is NOT valid evidence in EITHER
+>   direction. **The estimate-staleness item is ~~CLOSED~~ — an OVERCLAIM corrected at the Wave-5 close** (1 of 3 clauses paid: the age echo. The promotion path has no age check; every non-total family binds the same weight ungated; nothing expires a `proxy_mapping`). RE-OPENED as "estimate staleness — residual", TIPPED.
+> - **ES-1** (PR #41 `2abc1b1`) — **the 14th governed number: parametric Expected Shortfall**,
+>   `ES_c = k_c·σ` over BOTH σ_p and PA-4's σ_total (`risk.var.parametric_es` +
+>   `..._es_total` v1, two new codes through the SAME binder). **NO migration** — the reserved
+>   `ES_PARAMETRIC` value, the grain and every column already existed. `k_c` = a REGISTERED 12dp
+>   constant, identity-checked at bind; **no runtime normal function of any kind**. **NO ES
+>   backtest** — a ratified omission on FRTB precedent + parametric redundancy, explicitly NOT
+>   non-elicitability. Confidence vocabulary widened to `{0.95, 0.975, 0.99}` on the ONE SHARED
+>   `VAR_Z_SCORES` (OQ-4 sub-fork (i) — so 97.5% is now registrable on the HS/total families too:
+>   a disclosed, accepted cost).
 >
-> **Counts (2026-07-15):** 13 governed numbers / 12 run families / 14 registered model codes + the
-> model-less exposure rollup. Delivery runs under the **2026-07-14 EXTENDED autonomy grant** (Claude
-> self-drives plan→impl→review→commit→push; the USER signs Tier-3 decisions). **Practical note: the
-> PR-create step is currently done by the USER** — Claude's REST PR-create call is blocked by the
-> auto-mode safety classifier on this repo (push works fine); Claude pushes the branch and hands over
-> the compare link.
+> **Counts (2026-07-15):** **14 governed numbers** / 12 run families / **16 registered model codes**
+> + the model-less exposure rollup. Delivery runs under the **2026-07-14 EXTENDED autonomy grant**
+> (Claude self-drives plan→impl→review→commit→push; the USER signs Tier-3 decisions).
+> **Practical note: the PR create+merge steps are currently done by the USER** — Claude's REST
+> PR-create call is blocked by the auto-mode safety classifier on this repo (push works fine), and
+> at ES-1 the classifier also blocked Claude's REST *merge* of its own PR. Claude pushes the branch
+> and hands over the compare link; the USER creates and merges.
 >
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this block, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence),

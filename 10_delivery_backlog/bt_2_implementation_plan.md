@@ -74,7 +74,7 @@ a test asserting the serializer's key set is unchanged.
   `var_backtesting_v1.md`'s Known-limitations line (inside the same amendment pass), and a
   cross-note in `bt_1_decision_record.md` (dated, additive — no rewriting of ratified history).
 - Register accounting: REQ-MKT-001 total-series clause discharged; PA-4 Part-6 deferral 1
-  discharged; the estimate-staleness register item CLOSED (VW-1 governance half + BT-2 mechanical
+  discharged; the estimate-staleness register item ~~CLOSED~~ (an OVERCLAIM — corrected at the Wave-5 close; see the record's Part 6. VW-1 governance half + BT-2 mechanical
   half) — recorded in this record's Part 6 + the roadmap row at closeout.
 
 ## Step 5 — Tests (Step-8-of-BT-1 form; fixture realism per the standing rule)
