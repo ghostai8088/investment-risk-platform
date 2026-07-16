@@ -39,6 +39,7 @@
 6. **The campaign's evidence chain is honest but short** — a real BT-1/BT-2 backtest over a seeded book with a short forecast series (Kupiec emits for N ≥ 1; the Basel zone applies only at (0.99, 250) and is correctly absent). The dossier text states the series length; nothing pretends to 250 days.
 7. **FOURTEEN bootstrap limitation constants still carry the stale "until the P7 validation workflow" text** (11 risk + 3 perf; the two ES families already carry ES-1's corrected wording — verifier-counted, correcting the draft's "16"). All 14 are updated so registrations carry the corrected text. *(The "existing stamped rows are IA-immutable" clause is vacuous TODAY — live PG holds zero model rows — and becomes real only for tenants seeded before this slice; recorded for precision.)*
 8. **Out of scope**, each recorded with its home: data-level independence / per-version developer stamps (MG-04 — deferred); the remediation/finding-closure lifecycle (SR 26-2 §VI — MG-2 candidate); FE surfaces for validation/tier (the FE drift trio rides FL-1; a validation UI is unplanned); Tier-1 H-02 human approval gating + `MODEL.APPROVE` activation (rides the approval workflow, not tiering); automated monitoring sweeps of `next_review_due` (nothing schedules anything platform-wide yet — the Wave-5 close's gap #2).
+9. **The cadence ceiling is write-time ONLY — a tier TIGHTENING does not shorten an already-filed grant** (impl-review adversarial finding, added here). Assign TIER_3 → file at +1095 → re-assign TIER_1, and the existing grant keeps its 1095-day due date, past the TIER_1 365-day ceiling the OD-D thesis anchors on. Every step is a trusted, audited 2L act, so it is detectable, not silent — and it grants no *new* capability (the 2L could just re-file). But the coupling the EGIM/annual thesis rests on is not automatic. Recorded, and named for the **MG-2 reassessment candidate** (SS1/23 P1.3(e)'s reassess-at-validation, which would re-clamp on re-tier). No same-slice code change (re-clamping prior grants at re-tier is unratified scope).
 
 ## Part 4 — Open decisions (OQ-MG-1-1…7) — pending ratification
 
@@ -164,4 +165,52 @@ the service kwarg.
 
 ### Part 6.2 — The three re-run finders (adversarial / doctrine / campaign-content)
 
-*(pending the Opus re-run + fold)*
+The three finders that exhausted the Fable budget mid-run were **re-run on Opus 4.8**. **All three
+returned ZERO HIGH and ZERO MEDIUM.** The machinery was attacked hard and held; the doctrine surface
+and the 16 live records were verified clean. Five LOW findings, all folded.
+
+**Adversarial (Opus) — no HIGH/MEDIUM; everything attacked held, 1 LOW folded.** Confirmed by
+executed probes: the 4-family var loop CANNOT swallow the governance errors (`ExpiredModelExceptionError`/
+`RejectedModelVersionError` are direct `Exception` subclasses, not `WrongModelVersionError` — the correct
+error propagates out of the loop for the 4th family too); the single remaining exception guard fully
+subsumes the un-reject case (guard 2 was correctly removed); the junk-tier ceiling lookup is
+KeyError-SAFE (the `in MODEL_TIER_REVIEW_MAX_DAYS` membership check falls back to the TIER_1 bound —
+self-verified too); the expiry boundary is strict `<` (== today binds); overdue non-EXCEPTION stays
+display-only; RLS + append-only hold on live PG (cross-tenant reads see zero; UPDATE/DELETE blocked);
+the 12-endpoint mapping was E2E-confirmed through **three endpoints the unit tests do not use**
+(covariance, factor-exposure, benchmark-relative — each 422, zero orphan). **LOW folded — re-tiering
+UP does not shorten an already-filed grant** (the ceiling is write-time only): a model re-assigned
+TIER_3→TIER_1 keeps a 1095-day grant past the TIER_1 365-day ceiling. Every step is a trusted, audited
+2L act (detectable, not silent), but the coupling the slice's EGIM/annual thesis rests on was
+undisclosed — see the added Part 3 item 9.
+
+**Doctrine (Opus) — no HIGH/MEDIUM; the pre-ratification pass's 5 MEDIUMs did NOT survive into shipped
+text.** Every folded correction is present and correct in the code, the policy doc, AND the 16 live
+records (all 16 carry the person-level non-independence disclosure + the effective-challenge tension;
+`audit/service.py` git-diff empty; MG-15…19 collision-free; the backtest-APPROVED dossier correctly
+frames its limitations as method properties not remediable conditions; 730/1095 labeled HOUSE POLICY at
+every occurrence; "temporary" attributed to SS1/23, the §V elements to SR 26-2). **3 LOW:** (1) FOLDED —
+the 14 swept limitation constants said "a REJECTED latest outcome refuses every new bind" but MG-1 added
+the expired-exception branch at the SAME seam; all 15 occurrences now read "a REJECTED latest outcome
+(or an EXPIRED use-before-validation exception, MG-1) refuses…"; (2) DEFERRED with a note — one literal
+"P7 validation workflow" survives at `SCENARIO_LIMITATIONS` (`risk/bootstrap.py`), but it is about
+scenario-definition maker-checker, a genuinely UNSHIPPED capability, so "P7" remains correct there; (3)
+DEFERRED — `models.py` cites both SR 11-7 (VW-1-era sibling docstrings) and SR 26-2 (the MG-1 cadence
+comment); a global rename across VW-1's ratified surface is out of MG-1 scope, recorded not done.
+
+**Campaign-content (Opus) — no HIGH/MEDIUM; the live demo tenant is honest and coherent, 1 LOW folded.**
+Verified against the actual stored records: all **27 findings** exact-match a REGISTERED `model_limitation`
+row (0 invented); every CALCULATION_RUN evidence row resolves COMPLETED + in-tenant + right-family (BT-1
+on plain-VaR, BT-2 on total-v2, distinguished by `var_metric_type` — no cross-wiring); the arithmetic
+reconciles to the 6dp quantize convention (z·σ, k·σ, and the total decomposition; residual_variance > 0
+on all 8 total rows); all 16 tiers re-derive exactly from the dossier ratings; the FL-1 token discipline
+is exact (5 flagship AWC conditions, 0 elsewhere); the N=8 backtest has a sane 1/8 exception rate on the
+designed drawdown day. **LOW FOLDED — the 8-point forecast series is constant by fixture construction**
+(the demo factor-return cycle repeats within the covariance/HS window), which the dossiers described as
+a "series" without disclosing the constancy; a `_CONSTANT_SERIES_NOTE` was appended to the three flagship
+scope_notes (the backtest is a real, coherent test of a constant forecast against a varying
+realized-return series — the market-realistic path is FL-1/MF-1 territory).
+
+### Part 6.3 — Post-fold validation
+
+*(the battery re-run + the demo re-seed land here at close)*

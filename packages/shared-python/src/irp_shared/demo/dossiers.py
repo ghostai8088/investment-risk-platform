@@ -204,6 +204,19 @@ _CURRENCY_CONDITION = (
     "condition closes at the MF-1 TRIGGERED re-validation."
 )
 
+#: A fixture-honesty disclosure appended to every flagship scope_note that describes a forecast
+#: SERIES (MG-1 impl-review, campaign-content finder): the demo's factor-return cycles repeat
+#: within the covariance/HS windows, so the 8 daily forecasts are IDENTICAL — the series is
+#: constant by fixture construction. It is a real, coherent backtest (a constant forecast against
+#: a varying realized-return series), NOT an evolving volatility path; the point of this demo is
+#: the governance workflow, and the market-realistic path is FL-1/MF-1 territory.
+_CONSTANT_SERIES_NOTE = (
+    " NOTE (fixture): the 8 daily forecasts are IDENTICAL — the demo factor-return cycle repeats "
+    "within the covariance/HS window, so the series is constant by construction (a real backtest "
+    "of a constant forecast against a varying realized-return series, not an evolving vol path; "
+    "the multi-family realistic path is FL-1/MF-1)."
+)
+
 
 @dataclass(frozen=True)
 class FlagshipDossier:
@@ -227,7 +240,7 @@ FLAGSHIP_DOSSIERS: dict[str, FlagshipDossier] = {
             "emitted at N=8, the Basel zone correctly absent off its (0.99, 250) domain — the "
             "series length is stated, nothing pretends to 250 days). Conceptual soundness rests "
             "on the registered assumptions; the registered limitations are re-attached as "
-            "findings, not repeated as prose."
+            "findings, not repeated as prose." + _CONSTANT_SERIES_NOTE
         ),
         conditions=(
             _CURRENCY_CONDITION
@@ -248,7 +261,7 @@ FLAGSHIP_DOSSIERS: dict[str, FlagshipDossier] = {
             "series over the same governed exposure substrate as the parametric family "
             "(evidence = this model's OWN runs). The window-adequacy floor (N=21 at 0.95) is "
             "noted as GOVERNED — a declared-identity statistical minimum, not a sufficiency "
-            "guarantee."
+            "guarantee." + _CONSTANT_SERIES_NOTE
         ),
         conditions=(
             _CURRENCY_CONDITION
@@ -270,7 +283,7 @@ FLAGSHIP_DOSSIERS: dict[str, FlagshipDossier] = {
             "promoted PA-3 estimate (real appraisal marks -> desmoothing -> OLS -> promotion), "
             "and a REAL BT-2 backtest over the total series (N=8 one-day pairs; series length "
             "stated). The staleness gate was exercised live: every window_end sat within the "
-            "declared 400-day bound of the estimate's span end."
+            "declared 400-day bound of the estimate's span end." + _CONSTANT_SERIES_NOTE
         ),
         conditions=(
             _CURRENCY_CONDITION

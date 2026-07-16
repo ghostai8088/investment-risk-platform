@@ -144,7 +144,8 @@ PORTFOLIO_RETURN_LIMITATIONS: tuple[str, ...] = (
     "(sqrt/^T scaling is a later declared transform); no sub-portfolio / instrument-level "
     "attribution.",
     "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
-    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation "
+    "exception, MG-1) refuses every new bind at the shared seam.",
 )
 
 
@@ -229,7 +230,8 @@ BENCHMARK_RELATIVE_LIMITATIONS: tuple[str, ...] = (
     "ARITHMETIC active returns (geometric excess deferred); UNANNUALIZED; single benchmark per "
     "run; no active share; no relative VaR; no attribution; LOG return_type reserved. "
     "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
-    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation "
+    "exception, MG-1) refuses every new bind at the shared seam.",
 )
 
 
@@ -315,7 +317,8 @@ DESMOOTHED_RETURN_LIMITATIONS: tuple[str, ...] = (
     "Money-weighted return / IRR / capital-call handling deferred (the OD-PA-1-I re-recorded "
     "PA-3 item).",
     "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
-    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation "
+    "exception, MG-1) refuses every new bind at the shared seam.",
 )
 
 
