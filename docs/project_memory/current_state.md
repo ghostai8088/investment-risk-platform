@@ -3,7 +3,7 @@
 > ## ⚠️ CURRENT TRUTH (2026-07-16) — read this block; everything below it is HISTORY
 >
 > **HEAD `96b766c`** = merge of **PR #50** (MF-1: multi-family factor exposure end-to-end + the
-> TRIGGERED re-validation) / CI green. **Migration head `0040_var_estimate_age`** (40 revisions —
+> TRIGGERED re-validation) / **CI #323 green** (5/5 required checks). **Migration head `0040_var_estimate_age`** (40 revisions —
 > MF-1 needed NO migration). `make check` **1490** passed / full local-PG **1794** passed (fresh,
 > 0 skipped) / downgrade smoke clean over the extended tenant.
 >
