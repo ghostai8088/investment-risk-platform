@@ -34,6 +34,13 @@
 
 **Still OPEN, triggers NOT fired** (verified by counting consumers, not by reading records): BT-1 deferral A / P3-8 return-shape dedup (still exactly 2 consumers); P3-7 deferral B covariance-pin adjudicator (still exactly 2 — ES-1 *reused* rather than copied); VW-1's Part-3 residuals; BT-2's look-ahead and v1-grandfather (both by design, both test-pinned).
 
+> **PAID at FL-1 (2026-07-16):** the **FE drift trio** named in Part 6's ride-along list — (1) the
+> dead-end PROXY_WEIGHT_ESTIMATE listing row (the FE family + columns + explicit reverse-map/URL
+> tests), (2) the missing `residual_variance`/`estimate_age_days`/`model_version_id` VaR columns,
+> (3) the ES `z×σ ≠ var_value` display (per-row metric_type-aware echo annotation — the census
+> killed the header-label and fake-multiplier-column shapes) — **and the estimate-seam integration
+> test** (the α=1 public-marks chain: marks → desmooth(identity) → OLS → promote, betas byte-equal).
+
 **⚠️ The headline register correction — "the estimate-staleness item is CLOSED" was an OVERCLAIM.** Code-verified: the minted item had **three** clauses and Wave 5 paid **one**.
 
 - ✅ *records the estimate age at total-VaR time* — **PAID** (`0040` + the echo).

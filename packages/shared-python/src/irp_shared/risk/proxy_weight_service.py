@@ -52,7 +52,7 @@ from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_t
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.db.mixins import utcnow
 from irp_shared.marketdata.models import (
-    FACTOR_FAMILY_CURRENCY,
+    LOADING_FACTOR_FAMILIES,
     MAPPING_METHOD_REGRESSION,
     ProxyMapping,
 )
@@ -263,10 +263,10 @@ def _adjudicate_pins(
         if fid in seen_factor_ids:
             raise ProxyWeightInputError(f"duplicate candidate factor {fid} — refused")
         seen_factor_ids.add(fid)
-        if str(f["factor_family"]) != FACTOR_FAMILY_CURRENCY:
+        if str(f["factor_family"]) not in LOADING_FACTOR_FAMILIES:
             raise ProxyWeightInputError(
                 f"candidate factor {f['factor_code']!r} is family {f['factor_family']!r} — "
-                f"v1 supports {FACTOR_FAMILY_CURRENCY} only; refused"
+                f"FL-1 admits {LOADING_FACTOR_FAMILIES} (OTHER/unknown stay refused); refused"
             )
         if fid not in returns_by_factor:
             raise ProxyWeightInputError(

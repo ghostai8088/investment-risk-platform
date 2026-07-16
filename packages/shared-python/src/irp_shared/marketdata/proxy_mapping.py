@@ -52,7 +52,7 @@ from irp_shared.dq.service import register_dq_rule, run_quality_check
 from irp_shared.lineage.models import EDGE_KIND_ORIGIN, DataSource
 from irp_shared.lineage.service import record_lineage, register_data_source
 from irp_shared.marketdata.models import (
-    FACTOR_FAMILY_CURRENCY,
+    LOADING_FACTOR_FAMILIES,
     MAPPING_METHOD_MANUAL,
     MAPPING_METHOD_REGRESSION,
     PROXY_MAPPING_METHODS,
@@ -353,10 +353,11 @@ def _resolve_factor_id(session: Session, factor_id: str, *, acting_tenant: str) 
         raise ProxyMappingValueError(
             f"factor {factor_id} is not visible in the acting tenant — refused"
         )
-    if row.factor_family != FACTOR_FAMILY_CURRENCY:
+    if row.factor_family not in LOADING_FACTOR_FAMILIES:
         raise ProxyMappingValueError(
-            f"factor {factor_id} family {row.factor_family!r} is not CURRENCY — outside PA-0 v1 "
-            f"scope (a style/sector/rate proxy family is a v2 extension); refused"
+            f"factor {factor_id} family {row.factor_family!r} is not an admitted loading family "
+            f"(FL-1 widened PA-0's CURRENCY-only gate to {LOADING_FACTOR_FAMILIES}; OTHER/unknown "
+            f"stay refused); refused"
         )
     return str(row.id)
 

@@ -2,8 +2,9 @@
 
 ``run_factor_exposure`` produces ``factor_exposure_result`` rows ONLY when bound to a
 ``dataset_snapshot`` (``FACTOR_EXPOSURE_INPUT``) + a complete ``calculation_run`` + a **REGISTERED
-``model_version`` of ONE OF THE TWO factor-exposure model families** (AD-014 / FW-RUN / TR-15 /
-CTRL-003) — the ONE binder DISPATCHES on the bound model's code (PA-2, OD-PA-2-A):
+``model_version`` of ONE OF THE THREE factor-exposure model families** (AD-014 / FW-RUN / TR-15 /
+CTRL-003) — the ONE binder DISPATCHES on the bound model's code via the ``_EXPOSURE_FAMILIES``
+registry map (PA-2, OD-PA-2-A; the registry-map form is FL-1, OD-FL-1-D):
 
 - **``risk.factor_exposure.allocation`` v1 (P3-3):** the deterministic indicator-loading
   allocation (``irp_shared.risk.factor_kernel``): CURRENCY family, matched on the atom's captured
@@ -14,9 +15,18 @@ CTRL-003) — the ONE binder DISPATCHES on the bound model's code (PA-2, OD-PA-2
   ``quantize_HALF_UP(weight × atom, 6)`` per proxy factor (``loading`` = the captured weight,
   signed; an explicit ZERO weight is a captured "no loading on this leg" — no row, never the
   indicator fallback); every other atom follows the allocation-v1 rule. Adds
-  ``COMPONENT_KIND_PROXY_MAPPING`` pins + the ``...+proxy-rows`` binding predicate (checked BOTH
-  ways: the proxy model refuses a plain snapshot AND the allocation model refuses a proxy one).
+  ``COMPONENT_KIND_PROXY_MAPPING`` pins + the ``...+proxy-rows`` binding predicate.
   The partial-proxy residual stays unmodeled; the sum-to-total identity holds per-UNPROXIED-atom.
+- **``risk.factor_exposure.loadings`` v1 (FL-1):** the proxy projection GENERALIZED — fractional
+  signed multi-factor loadings over the WIDENED admitted families (``LOADING_FACTOR_FAMILIES``;
+  OTHER/unknown refused), the loading rows sourced from the same widened ENT-019 ``proxy_mapping``.
+  Same ``weight × atom`` arithmetic, but with the COVERAGE GATE: every pinned atom MUST carry >= 1
+  loading row (an unloaded atom refuses the run closed — NO indicator fallback, no silent zero).
+  Adds the ``...+loading-rows`` binding predicate. The projection replaces the partition identity
+  (Σ exposure ≠ Σ atoms in general; the loaded-atom residual is honestly unmodeled).
+
+The three predicates give a 3×3 refusal symmetry: each family requires EXACTLY its own predicate
+and refuses the other two (a wrong bind would silently discard rows or degrade the rule).
 
 Reproducibility (the AD-014 invariant): the compute reads **ONLY the snapshot's pinned captured
 content** — it makes **NO** live exposure/factor/proxy read, so a later factor-definition amend,
@@ -62,9 +72,11 @@ from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.exposure.service import resolve_run as resolve_exposure_run
-from irp_shared.marketdata.models import FACTOR_FAMILY_CURRENCY
+from irp_shared.marketdata.models import FACTOR_FAMILY_CURRENCY, LOADING_FACTOR_FAMILIES
+from irp_shared.model.models import ModelVersion
 from irp_shared.model.service import WrongModelVersionError
 from irp_shared.risk.bootstrap import (
+    FACTOR_EXPOSURE_LOADINGS_MODEL_CODE,
     FACTOR_EXPOSURE_MODEL_CODE,
     FACTOR_EXPOSURE_PROXY_MODEL_CODE,
     assert_model_version_of,
@@ -83,6 +95,8 @@ from irp_shared.snapshot import (
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
     COMPONENT_KIND_PROXY_MAPPING,
+    FACTOR_EXPOSURE_BINDING_PREDICATE,
+    FACTOR_EXPOSURE_LOADINGS_BINDING_PREDICATE,
     FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     SnapshotActor,
@@ -92,8 +106,60 @@ from irp_shared.snapshot import (
 )
 
 #: The v1 supported mapping families (OD-P3-3-C; anything else is a pre-create refusal — enforced
-#: on the PINNED factor content for both entry paths).
+#: on the PINNED factor content for both entry paths). The allocation + proxy families stay
+#: CURRENCY-only (the indicator kernel structurally requires a currency partition); the LOADINGS
+#: family (FL-1) admits the wider ``LOADING_FACTOR_FAMILIES`` — a per-family gate, OD-FL-1-E.
 SUPPORTED_FACTOR_FAMILIES = (FACTOR_FAMILY_CURRENCY,)
+
+
+@dataclass(frozen=True)
+class _ExposureFamily:
+    """Which of the THREE factor-exposure model codes a run bound, decomposed onto the axes the
+    binder branches on (FL-1, OD-FL-1-D — the ES-1 ``_resolve_var_family`` registry-map precedent;
+    a three-arm try/except is past the chain's readability bar).
+
+    ``pins_rows``         = the snapshot pins ``COMPONENT_KIND_PROXY_MAPPING`` rows (proxy +
+                            loadings; the allocation family pins none).
+    ``coverage_required`` = every pinned atom MUST carry >= 1 loading row — an unloaded atom
+                            REFUSES the run closed, no indicator fallback (loadings only; the proxy
+                            family falls back to the indicator rule for unproxied atoms).
+    ``predicate``         = the REQUIRED binding predicate (the 3x3 symmetry: each family requires
+                            exactly its own predicate and refuses the other two).
+    ``factor_families``   = the admitted factor families for the pinned factor content.
+    """
+
+    code: str
+    pins_rows: bool
+    coverage_required: bool
+    predicate: str
+    factor_families: tuple[str, ...]
+
+
+#: The three families, in DISPATCH order. Order matters only for cost (each miss is a failed
+#: assert), not correctness — the codes are mutually exclusive, so at most one matches a version.
+_EXPOSURE_FAMILIES: tuple[_ExposureFamily, ...] = (
+    _ExposureFamily(
+        code=FACTOR_EXPOSURE_MODEL_CODE,
+        pins_rows=False,
+        coverage_required=False,
+        predicate=FACTOR_EXPOSURE_BINDING_PREDICATE,
+        factor_families=SUPPORTED_FACTOR_FAMILIES,
+    ),
+    _ExposureFamily(
+        code=FACTOR_EXPOSURE_PROXY_MODEL_CODE,
+        pins_rows=True,
+        coverage_required=False,
+        predicate=FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE,
+        factor_families=SUPPORTED_FACTOR_FAMILIES,
+    ),
+    _ExposureFamily(
+        code=FACTOR_EXPOSURE_LOADINGS_MODEL_CODE,
+        pins_rows=True,
+        coverage_required=True,
+        predicate=FACTOR_EXPOSURE_LOADINGS_BINDING_PREDICATE,
+        factor_families=LOADING_FACTOR_FAMILIES,
+    ),
+)
 #: Per-tenant governed completeness DQ rule (resolve-or-register; the sensitivity pattern).
 _COMPLETENESS_RULE_CODE = "risk.factor_exposure.completeness"
 #: How many unmapped-atom identifiers the FAILED ``failure_reason`` names (evidence, bounded).
@@ -192,11 +258,47 @@ def _parse_pins(comps: list[Any]) -> tuple[list[AtomPin], list[FactorPin], list[
     return atoms, factors, proxies
 
 
-def _adjudicate_pins(atoms: list[AtomPin], factors: list[FactorPin]) -> dict[str, FactorPin]:
+def _resolve_exposure_family(
+    session: Session, model_version_id: str, *, acting_tenant: str
+) -> tuple[ModelVersion, _ExposureFamily]:
+    """Inventory-before-use + model identity (CTRL-003 / BR-3), dispatching on the bound model's
+    code across the three factor-exposure families (PA-2's OD-PA-2-A dispatch, extended by FL-1 to
+    the registry map — the ES-1 ``_resolve_var_family`` shape).
+
+    An UNREGISTERED version raises :class:`UnregisteredModelError` from the first assert (not a
+    family question); a version of NONE of the three families raises the FIRST
+    :class:`WrongModelVersionError` — the one naming the ALLOCATION code (the canonical
+    first-registered family, the one a caller passing an unrelated version most likely meant; NB
+    this changed the message vs the pre-PA-2 two-arm form, which surfaced the proxy-code error —
+    same exception class, a clearer message)."""
+    first_error: WrongModelVersionError | None = None
+    for family in _EXPOSURE_FAMILIES:
+        try:
+            version = assert_model_version_of(
+                session,
+                str(model_version_id),
+                tenant_id=acting_tenant,
+                expected_model_code=family.code,
+            )
+        except WrongModelVersionError as exc:
+            if first_error is None:  # the ALLOCATION-code miss — the pre-PA-2 message, preserved
+                first_error = exc
+            continue
+        return version, family
+    assert first_error is not None  # the loop is non-empty, so a full miss always set it
+    raise first_error
+
+
+def _adjudicate_pins(
+    atoms: list[AtomPin], factors: list[FactorPin], family: _ExposureFamily
+) -> dict[str, FactorPin]:
     """PRE-CREATE adjudication of the pinned input (both entry paths; the 2026-07 review
-    hardening): ≥1 atom, ≥1 factor, every factor family v1-supported, and a well-formed partition
-    (the kernel is the single rule source — NULL scope / duplicate ``currency_code`` refuse).
-    Raises :class:`FactorExposureInputError`; returns the allocation index."""
+    hardening): ≥1 atom, ≥1 factor, every factor family admitted for THIS model family, and — for
+    the indicator-using families (allocation/proxy) — a well-formed currency partition (the kernel
+    is the single rule source; NULL scope / duplicate ``currency_code`` refuse). The LOADINGS
+    family matches factors by id, not by a currency partition, so it does NOT build the index (a
+    non-CURRENCY factor legitimately has no ``currency_code``). Raises
+    :class:`FactorExposureInputError`; returns the allocation index (empty for loadings)."""
     if not atoms:
         raise FactorExposureInputError(
             "the snapshot pins no exposure atoms (COMPONENT_KIND_EXPOSURE) — not a "
@@ -207,6 +309,20 @@ def _adjudicate_pins(atoms: list[AtomPin], factors: list[FactorPin]) -> dict[str
             "the snapshot pins no factor definitions (COMPONENT_KIND_FACTOR) — not a "
             "factor-exposure input"
         )
+    # A DUPLICATE (portfolio, instrument) atom pin would double-write the 4-tuple result grain (an
+    # IntegrityError mid-run — the same threat the proxy-pin duplicate gate closes, FL-1 review
+    # fold). Impossible on the governed build path (exposure atoms are unique per (run, portfolio,
+    # instrument, base_currency) + the uniform-base gate below), but a hand-minted snapshot is
+    # inside the declared trust boundary; refuse pre-create for all three families.
+    seen_atoms: set[tuple[str, str]] = set()
+    for a in atoms:
+        key = (str(a.portfolio_id), str(a.instrument_id))
+        if key in seen_atoms:
+            raise FactorExposureInputError(
+                f"duplicate exposure atom for (portfolio {a.portfolio_id}, instrument "
+                f"{a.instrument_id}) — refused (it would double-write the result grain)"
+            )
+        seen_atoms.add(key)
     base_currencies = {a.base_currency for a in atoms}
     if len(base_currencies) != 1:
         # P3-C1 (OD-H): base is run-uniform by construction on the governed path, but a
@@ -224,11 +340,14 @@ def _adjudicate_pins(atoms: list[AtomPin], factors: list[FactorPin]) -> dict[str
             "the pinned atoms' base_currency is not a 3-letter code — refused"
         )
     for pin in factors:
-        if pin.factor_family not in SUPPORTED_FACTOR_FAMILIES:
+        if pin.factor_family not in family.factor_families:
             raise FactorExposureInputError(
-                f"factor {pin.factor_code!r} family {pin.factor_family!r} is not supported "
-                f"in v1 (supported: {SUPPORTED_FACTOR_FAMILIES})"
+                f"factor {pin.factor_code!r} family {pin.factor_family!r} is not admitted for the "
+                f"{family.code} family (admitted: {family.factor_families})"
             )
+    if family.coverage_required:
+        # The loadings family projects by factor id (no currency partition) — skip the index.
+        return {}
     try:
         return build_factor_index(factors)
     except FactorKernelError as exc:
@@ -286,6 +405,35 @@ def _adjudicate_proxies(
     return by_instrument
 
 
+def _assert_full_coverage(
+    atoms: list[AtomPin], proxies_by_instrument: dict[str, list[ProxyPin]]
+) -> None:
+    """FL-1 (OD-FL-1-D) — the LOADINGS-family coverage gate: every pinned atom MUST carry >= 1
+    loading row. An UNLOADED atom refuses the run CLOSED — no indicator fallback (the loadings
+    family has none, unlike the proxy family) and no silent zero (a silently-dropped atom would
+    UNDER-COUNT the downstream VaR). A captured zero-weight row IS coverage (a declared "this atom
+    projects to nothing" — its exposure is the honest residual); only the total ABSENCE of rows is
+    the refusal."""
+    unloaded = sorted(
+        {
+            str(a.instrument_id)
+            for a in atoms
+            if not proxies_by_instrument.get(str(a.instrument_id).lower())
+        }
+    )
+    if unloaded:
+        shown = "; ".join(unloaded[:_MAX_GAPS_IN_REASON])
+        more = (
+            f" (+{len(unloaded) - _MAX_GAPS_IN_REASON} more)"
+            if len(unloaded) > _MAX_GAPS_IN_REASON
+            else ""
+        )
+        raise FactorExposureInputError(
+            f"the loadings family requires every atom to carry >= 1 loading row — these "
+            f"instruments have none: {shown}{more} (an unloaded atom is refused, never dropped)"
+        )
+
+
 def _build_rows(
     atoms: list[AtomPin],
     index: dict[str, FactorPin],
@@ -327,7 +475,7 @@ def _build_rows(
                     raw = pin.weight * atom.exposure_amount
                 if abs(raw) >= _MAX_RESULT_ABS:
                     gaps.append(
-                        f"magnitude-out-of-range:proxy:{atom.instrument_id}:{pin.factor_id}"
+                        f"magnitude-out-of-range:loading:{atom.instrument_id}:{pin.factor_id}"
                     )
                     return [], gaps
                 rows.append(
@@ -408,28 +556,15 @@ def run_factor_exposure(
             "(exposure_run_id/factor_ids), not both"
         )
     # Inventory-before-use + model identity (CTRL-003 / BR-3): the version must be REGISTERED and
-    # belong to the FACTOR-EXPOSURE model (a sensitivity/other-family version is refused — the
-    # 2026-07 review hardening).
-    # PA-2 (OD-PA-2-A): the ONE binder serves BOTH registered factor-exposure model families —
-    # dispatch on the bound model's code (allocation-v1 indicator vs proxy projection). An
-    # unregistered version raises from the FIRST assert (UnregisteredModelError); a version of
-    # NEITHER family raises WrongModelVersionError from the second.
-    try:
-        assert_model_version_of(
-            session,
-            str(model_version_id),
-            tenant_id=acting_tenant,
-            expected_model_code=FACTOR_EXPOSURE_MODEL_CODE,
-        )
-        is_proxy = False
-    except WrongModelVersionError:
-        assert_model_version_of(
-            session,
-            str(model_version_id),
-            tenant_id=acting_tenant,
-            expected_model_code=FACTOR_EXPOSURE_PROXY_MODEL_CODE,
-        )
-        is_proxy = True
+    # belong to ONE of the THREE factor-exposure model families (PA-2's OD-PA-2-A dispatch on the
+    # bound model's code, extended by FL-1 to the registry map — allocation indicator / proxy
+    # projection / loadings projection). An unregistered version raises from the FIRST assert
+    # (UnregisteredModelError); a version of NONE of the three raises WrongModelVersionError.
+    _version, family = _resolve_exposure_family(
+        session, str(model_version_id), acting_tenant=acting_tenant
+    )
+    is_proxy = family.code == FACTOR_EXPOSURE_PROXY_MODEL_CODE
+    is_loadings = family.coverage_required
 
     # --- Bind the atoms+factors snapshot (cross-tenant/unknown/ill-formed ⇒ pre-create refusal) --
     if snapshot_id is not None:
@@ -439,26 +574,15 @@ def run_factor_exposure(
                 f"snapshot {snapshot_id} purpose {snapshot.purpose!r} "
                 f"!= {PURPOSE_FACTOR_EXPOSURE_INPUT}"
             )
-        if not is_proxy and snapshot.binding_predicate_version == (
-            FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE
-        ):
-            # The MIRROR of the gate below (review fold): the allocation model over a
-            # proxy-predicate snapshot would COMPLETE while silently discarding the pinned proxy
-            # rows — two materially different governed numbers from ONE snapshot; refuse.
-            raise FactorExposureInputError(
-                f"snapshot {snapshot_id} pins proxy rows "
-                f"({FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE!r}) — bind the proxy model_version, "
-                f"not the allocation one"
-            )
-        if is_proxy and snapshot.binding_predicate_version != (
-            FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE
-        ):
-            # OD-PA-2-C: a plain allocation-v1 snapshot pins NO proxy rows — running the proxy
-            # model over it would silently degrade to the indicator rule; refuse instead.
+        if snapshot.binding_predicate_version != family.predicate:
+            # The 3x3 symmetry (PA-2's OD-PA-2-C both-ways refusal generalized by FL-1): each
+            # family requires EXACTLY its own predicate. Binding the wrong family over a snapshot
+            # would either silently discard the pinned rows (allocation over a proxy/loading
+            # snapshot) or degrade to a different rule (proxy/loadings over a plain one) — two
+            # materially different governed numbers from ONE snapshot; refuse.
             raise FactorExposureInputError(
                 f"snapshot {snapshot_id} predicate {snapshot.binding_predicate_version!r} does "
-                f"not pin proxy rows — build the snapshot under the proxy model "
-                f"({FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE!r})"
+                f"not match the bound {family.code} model (requires {family.predicate!r})"
             )
     else:
         if not exposure_run_id or not factor_ids:
@@ -482,6 +606,7 @@ def run_factor_exposure(
             exposure_run_id=str(exposure_run_id),
             factor_ids=[str(fid) for fid in factor_ids],
             include_proxy_rows=is_proxy,
+            loadings_family=is_loadings,
         )
 
     # --- Adjudicate the PINNED content pre-create (uniform for both paths; kernel-rule-sourced):
@@ -491,8 +616,27 @@ def run_factor_exposure(
         atoms, factors, proxies = _parse_pins(
             list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
         )
-        index = _adjudicate_pins(atoms, factors)
-        proxies_by_instrument = _adjudicate_proxies(proxies, factors, atoms) if is_proxy else {}
+        index = _adjudicate_pins(atoms, factors, family)
+        # CONTENT-based family fence (FL-1 review fold): the 3x3 predicate gate keys on the
+        # binding-predicate STRING, but a hand-minted snapshot (inside the declared trust
+        # boundary) could pin proxy/loading rows under the ALLOCATION predicate — the allocation
+        # binder would then COMPLETE while silently discarding those rows (a different governed
+        # number from the same content). The allocation family pins NO rows, so any pinned
+        # PROXY_MAPPING content under it is ill-formed; refuse on the CONTENT, not just the string.
+        if not family.pins_rows and proxies:
+            raise FactorExposureInputError(
+                f"snapshot pins {len(proxies)} proxy/loading row(s) but the bound {family.code} "
+                f"family consumes none — they would be silently discarded; bind the proxy or "
+                f"loadings model instead"
+            )
+        # Proxy AND loadings both adjudicate the pinned rows (the same trust boundary); the
+        # loadings family ADDITIONALLY requires full coverage — every atom carries >= 1 loading
+        # row (no indicator fallback; OD-FL-1-D).
+        proxies_by_instrument = (
+            _adjudicate_proxies(proxies, factors, atoms) if family.pins_rows else {}
+        )
+        if family.coverage_required:
+            _assert_full_coverage(atoms, proxies_by_instrument)
         factor_by_id = {f.id.lower(): f for f in factors}
     except FactorExposureInputError:
         raise

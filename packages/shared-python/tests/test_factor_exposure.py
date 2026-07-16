@@ -687,6 +687,7 @@ def _mint_fe_snapshot(session: Session, tenant: str, atoms: list[dict], factors:
     from irp_shared.snapshot import (
         COMPONENT_KIND_EXPOSURE,
         COMPONENT_KIND_FACTOR,
+        FACTOR_EXPOSURE_BINDING_PREDICATE,
         PURPOSE_FACTOR_EXPOSURE_INPUT,
         SnapshotActor,
     )
@@ -713,7 +714,10 @@ def _mint_fe_snapshot(session: Session, tenant: str, atoms: list[dict], factors:
         as_of_valid_at=VALID_AT,
         as_of_known_at=VALID_AT,
         as_of_valuation_date=VD,
-        binding_predicate_version="test:hand-minted",
+        # Stamp the ALLOCATION predicate so the adjudication-gate probes reach adjudication under
+        # the allocation _model() (FL-1's 3×3 predicate gate now front-runs a mismatched predicate;
+        # this vehicle tests the CONTENT gates, not the predicate gate).
+        binding_predicate_version=FACTOR_EXPOSURE_BINDING_PREDICATE,
     )
     session.flush()
     return header
@@ -1076,7 +1080,10 @@ def test_wrong_flavor_snapshot_refused_pre_create(session: Session) -> None:
     )
     mv = _model(session, tenant)
     session.flush()
-    with pytest.raises(FactorExposureInputError, match="pins no exposure atoms"):
+    # A generic build_snapshot stamps the DEFAULT predicate — FL-1's 3×3 predicate gate now
+    # front-runs the atom gate and refuses it as a non-factor-exposure snapshot. Still a pre-create
+    # refusal with ZERO run/rows (the test's core invariant — never a COMPLETED zero-row run).
+    with pytest.raises(FactorExposureInputError, match="does not match the bound"):
         run_factor_exposure(
             session,
             acting_tenant=tenant,
@@ -1088,11 +1095,25 @@ def test_wrong_flavor_snapshot_refused_pre_create(session: Session) -> None:
         )
     assert _count_runs(session, tenant) == 0
     assert _count_results(session, tenant) == 0
+    # The atom gate itself still bites on a right-predicate snapshot that pins zero atoms.
+    empty = _mint_fe_snapshot(session, tenant, [], [_fac()])
+    with pytest.raises(FactorExposureInputError, match="pins no exposure atoms"):
+        run_factor_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=ACTOR,
+            code_version="risk-v1",
+            environment_id="ci",
+            model_version_id=mv,
+            snapshot_id=empty.id,
+        )
 
 
 def test_non_currency_factor_refused_on_consume_path(session: Session) -> None:
     # Review finding: the family gate must hold on the consume-existing path too — a pinned
-    # STYLE factor with a currency_code scope must refuse pre-create, never COMPLETE.
+    # STYLE factor must refuse pre-create for the ALLOCATION family, never COMPLETE. FL-1 keeps
+    # allocation CURRENCY-only (the indicator kernel needs a currency partition); STYLE is admitted
+    # only through the loadings family, so it still refuses here (new message: "is not admitted").
     from irp_shared.snapshot import SnapshotActor, build_factor_exposure_snapshot
 
     tenant = str(uuid.uuid4())
@@ -1117,7 +1138,7 @@ def test_non_currency_factor_refused_on_consume_path(session: Session) -> None:
     )
     mv = _model(session, tenant)
     session.flush()
-    with pytest.raises(FactorExposureInputError, match="not supported"):
+    with pytest.raises(FactorExposureInputError, match="is not admitted"):
         run_factor_exposure(
             session,
             acting_tenant=tenant,

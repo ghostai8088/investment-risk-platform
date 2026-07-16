@@ -75,8 +75,67 @@ Checked and CLEAR (recorded so they are not re-litigated): the probe moves + inv
 
 ## Part 5.5 — Implementation deviations from the ratified plan
 
-*(recorded during the build)*
+1. **ONE shared `LOADING_FACTOR_FAMILIES` constant, not the plan's two** (`PROXY_FACTOR_FAMILIES` +
+   a per-family-widened `SUPPORTED_FACTOR_FAMILIES`). All three relaxed gates read the single
+   9-family constant; `SUPPORTED_FACTOR_FAMILIES` stays `(CURRENCY,)` serving allocation+proxy via
+   the registry map. STRICTLY STRONGER than the ratified shape — OD-E's identical-contents
+   requirement is structurally satisfied (one constant cannot diverge), so the plan's "assert equal
+   contents in a test" is moot.
+2. **The allocation consume-path family probe KEPT its STYLE refusal** (message re-pinned to "is
+   not admitted") rather than moving to `OTHER` as Step 2 prescribed — because the allocation
+   family stays CURRENCY-only, STYLE still legitimately pins its gate. The two CAPTURE-gate probes
+   (proxy_mapping, proxy_weight) did move STYLE/MARKET→OTHER as planned, and a NEW loadings-binder
+   `OTHER` probe was added.
+3. **The 3×3 predicate gate is an exact-match TIGHTENING that changed the allocation/proxy
+   ACCEPTANCE surface for hand-minted snapshots** (the ES-1 "byte-untouched" class): a snapshot with
+   a non-matching predicate string previously reached content adjudication and now refuses at the
+   predicate gate. COMPLETED-run outputs are byte-identical (the invariance regressions hold); only
+   the refusal REASON/timing for mismatched-predicate hand-mints changed. The hand-mint test
+   vehicles (`_mint_fe_snapshot`, `test_p3c1_hardening`) were re-pointed to stamp the allocation
+   predicate so they still reach the content gates they test.
+4. **Two review-fold HARDENINGS added beyond the plan** (both fail-closed, both test-pinned): a
+   CONTENT-based fence so the allocation family refuses a snapshot pinning proxy/loading rows
+   regardless of the predicate string (closes a silent-discard hole the predicate-string gate
+   missed — adversarial F2); and a duplicate-`(portfolio, instrument)` atom gate in `_adjudicate_pins`
+   (a governed 422 instead of a raw IntegrityError mid-run — adversarial F1; benefits all three
+   families).
+5. **The registry-map full-miss error names the ALLOCATION code**, not the proxy code the pre-PA-2
+   two-arm form surfaced (same `WrongModelVersionError` class, clearer message; comment corrected).
 
 ## Part 6 — Review dispositions + closure
 
-*(written at fold/close per the house pattern)*
+**The 4-finder review (all on Fable, the MG-1 budget restriction lifted 2026-07-16). No shipped
+math defect; the through-VaR and α=1 numbers independently re-derived byte-exact.**
+
+- **Numeric (no HIGH, 3 LOW):** every number re-derived — the projection golden, the through-VaR
+  invariance (450.495329, hand + numpy, NON-VACUOUS), the α=1 identity chain (OLS betas confirmed to
+  12dp via numpy lstsq), TD-1 realism PASS. The prec-50 multiply re-proven load-bearing. LOWs
+  (shared-code half-ulp pedantry; the anti-correlated fixture; no loadings-specific envelope test)
+  → the last is now PAID (`test_loadings_magnitude_breach_is_committed_failed_not_raised`).
+- **Adversarial (0 HIGH; 3 MEDIUM folded, 2 LOW):** F1 duplicate-atom gate + F2 content-fence
+  (above, both hardened + test-pinned); **F3 mixed-family-instrument** → the proxy family
+  fail-closes (no wrong number) over an instrument carrying non-CURRENCY loading rows — recorded as
+  a limitation in the referent (the loadings family is the multi-family path). F4 (the first_error
+  message) → comment corrected. All core attacks HELD: 3×3 symmetry, coverage-gate case-folding,
+  allow-list OTHER refusal, no double-count into VaR, the MG-1 expired-exception seam, the builder
+  mutual-exclusion.
+- **Doctrine (2 HIGH folded, 2 MEDIUM, 3 LOW):** **F1** the PA-3 referent
+  (`proxy_weight_regression_v1.md`) was never amended and asserted private-only/CURRENCY-only scope
+  the diff had already widened → FOLDED (the dated FL-1 section: public-instrument use, α=1
+  disclosure, price-return betas, widened families, unconstrained-OLS-vs-RBSA). **F3** RTM
+  REQ-PRV-005 still said multi-family "remains open" → FOLDED (multi-family realized note). F2 the
+  new referent's "three moved probes" (only two moved) + F4 the constant-name deviation → the
+  referent sentence corrected + recorded in Part 5.5. LOWs: the Sharpe-cite unconstrained-OLS
+  clarification, the Table-2 "derived bounds" qualifier, the taxonomy-doc table location → folded.
+  Everything else CLEAR (the FRTB surface at all three homes, doc-code byte-alignment, the misnomer
+  at all three homes, the desmoothing + scenario notes, the wave-5 PAID stamp).
+- **Scope/tests (2 HIGH folded, 4 MEDIUM, 3 LOW):** F1 (PA-3 referent, = doctrine F1) + **F2** the
+  missing loadings registrar 409 + endpoint tests → FOLDED (unit conflict test + the endpoint
+  register/idempotent/409 test). F3 loadings-over-plain (the 6th 3×3 arm), F4 unpinned-factor for
+  loadings, F5 committed-FAILED for loadings + the `magnitude:proxy`→`:loading` label, F7 the
+  binder-OTHER probe → all FOLDED as new test arms. F6 (Part 5.5 empty) → written above. F8
+  REQ-PRV-005 (= doctrine F3), F9 the RunsList family test → folded.
+
+**Validation at close:** `make check` + full local-PG (fresh AND dirty) + `alembic check` (no drift)
++ downgrade smoke + the FE gate (vitest/lint/tsc/prettier/build) + CI-watch-to-green. NO migration
+(head `0040`). The OQ-W5C-5 closure-stamp checklist applies (stamped at the closeout).
