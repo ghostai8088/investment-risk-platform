@@ -24,14 +24,15 @@ enforces ``n >= max(declared, k + 2)``.
 Failure model (the established governed-run shape):
 - **Pre-create refusal (422, its own ``ProxyWeightInputError``)** — missing prerequisite, ambiguous
   input, wrong-purpose/cross-tenant snapshot, malformed pinned content, too few periods, a
-  non-CURRENCY candidate factor, a per-period factor-coverage gap, a mixed subject/currency series,
+  candidate factor outside the admitted families (FL-1 widened the CURRENCY-only v1 gate to
+  ``LOADING_FACTOR_FAMILIES``), a per-period factor-coverage gap, a mixed subject/currency series,
   a SINGULAR/collinear design, or a CONSTANT target (the kernel's structural refusals). NO run.
 - **Post-create FAILED (magnitude gate)** — a committed FAILED run + ZERO rows + a naming
   ``failure_reason`` when a raw coefficient/std-error clears the ``Numeric(20,12)`` envelope.
 
 Reuses ``risk.run``/``risk.view`` (no mint) + ``CALC.RUN_*`` (``RISK.PROXY_WEIGHT_ESTIMATE_CREATE``
 reserved-not-emitted). One-way imports: ``risk -> {snapshot, calc, model, marketdata,
-portfolio.guards, reference.guards}`` (``marketdata`` for the CURRENCY-family constant + the
+portfolio.guards, reference.guards}`` (``marketdata`` for the admitted-family constant + the
 ``promote_proxy_weight_estimate`` capture — the run-TYPE gate ``marketdata`` itself cannot see).
 """
 
@@ -200,9 +201,11 @@ def _adjudicate_pins(
     min_observations: int,
 ) -> _ParsedInput:
     """Adjudicate the pinned content pre-create (OD-PA-3-B/C/D, fail-closed, no imputation): one
-    subject/currency target series; CURRENCY-only candidate factors paired 1:1 with a return window;
-    ``n >= max(min_observations, k + 2)``; every appraisal period covered by every candidate factor
-    (compounded). Raises :class:`ProxyWeightInputError` on any ill-formed input."""
+    subject/currency target series; admitted-family candidate factors (the FL-1
+    ``LOADING_FACTOR_FAMILIES`` widening of PA-3's CURRENCY-only v1) paired 1:1 with a return
+    window; ``n >= max(min_observations, k + 2)``; every appraisal period covered by every
+    candidate factor (compounded). Raises :class:`ProxyWeightInputError` on any ill-formed
+    input."""
     if not desmoothed_raw:
         raise ProxyWeightInputError("no pinned desmoothed-period rows — refused")
 

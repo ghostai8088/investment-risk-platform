@@ -301,6 +301,14 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_campaign_pg.py -q
+      # ORDERING IS LOAD-BEARING (mf_1_decision_record.md Part 3 item 12): the extension runs
+      # AFTER the campaign suite — the campaign's pins (16 codes, exactly-5 AWCs) are false on
+      # an extended tenant — and BEFORE the downgrade smoke.
+      - name: Demo multi-family extension end-state test (Postgres, MF-1 / OD-MF-1-A..D)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_multifamily_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

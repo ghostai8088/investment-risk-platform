@@ -366,3 +366,215 @@ FLAGSHIP_DOSSIERS: dict[str, FlagshipDossier] = {
         ),
     ),
 }
+
+
+# =====================================================================================
+# The MF-1 dossier section (mf_1_decision_record.md OD-MF-1-D, ratified via OQ-MF-1-3).
+# The extension runner (``multifamily.py``) only TRANSCRIBES this section — the user's OQ-3
+# ratification IS the human validation judgment (the MG-1 precedent). NO text below contains
+# the token 'FL-1' (the OQ-MF-1-6 grep discipline: post-extension, a tenant-wide conditions
+# grep finds that token in exactly the 5 HISTORICAL flagship AWC rows).
+# =====================================================================================
+
+#: The MF-1 records' independence disclosure — the MG-1 constant with ONLY the final clause
+#: re-pointed at the ratification these records actually rest on (the doctrine finder's HIGH:
+#: an MF-1 record citing OQ-MG-1-6 would misstate its own judgment's provenance; the MG-1
+#: constant stays byte-untouched for the campaign's filed rows).
+MF1_NON_INDEPENDENCE_DISCLOSURE = NON_INDEPENDENCE_DISCLOSURE.replace(
+    "the user's OQ-MG-1-6 ratification of the dossier map this record transcribes",
+    "the user's OQ-MF-1-3 ratification of the MF-1 dossier section "
+    "(mf_1_decision_record.md) this record transcribes",
+)
+assert MF1_NON_INDEPENDENCE_DISCLOSURE != NON_INDEPENDENCE_DISCLOSURE  # the replace must bite
+
+#: The loadings family's ratified dual ratings (OD-MF-1-B; MEDIUM x MEDIUM => TIER_2 — the
+#: covariance precedent: substrate materiality through consumers).
+MF1_LOADINGS_TIER = TierDossier(
+    "MEDIUM",
+    "MEDIUM",
+    "The multi-family exposure substrate: it shapes the x-vector its VaR/ES consumers read "
+    "(MEDIUM materiality through its consumers, the covariance precedent); a fractional signed "
+    "projection over promoted REGRESSION loadings — arithmetic is multiply-and-quantize, the "
+    "estimation risk lives in the upstream regression model (MEDIUM complexity).",
+)
+
+#: The closure statement prepended (as a finding) to every TRIGGERED record — the frozen-wording
+#: disclosure rides with it because the re-cited registered-limitation texts are immutable.
+MF1_CLOSURE_FINDING = (
+    "CLOSED (this record): the CURRENCY-only factor-universe condition recorded at the INITIAL "
+    "validation is closed by the multi-family remediation (MF-1) — the demo tenant's factor "
+    "universe now includes governed MARKET/RATES/CREDIT_SPREAD factors with REGRESSION-estimated "
+    "loadings, and the cited run is this model's own COMPLETED multi-family evidence over the "
+    "multi-asset sleeve. FROZEN-WORDING NOTE: the re-cited registered-limitation texts below "
+    "predate the multi-family widening — read 'CURRENCY-family' as 'the bound factor set'. "
+    "Closure is by supersession (latest-outcome-wins); the historical condition text remains "
+    "visible, append-only."
+)
+
+#: The frequency-conversion honesty note the total/ES-total TRIGGERED records carry: the
+#: demo-mg1 declared appraisal_days=91 is calibrated to the legacy quarterly-appraisal leg;
+#: the sleeve's estimates are DAILY-period, so the converted daily residual is understated on
+#: this evidence run — capability evidence, not residual calibration.
+_MF1_FREQ_NOTE = (
+    " FREQUENCY-CONVERSION NOTE (this record's evidence): the declared appraisal_days=91 "
+    "residual conversion is calibrated to the quarterly-appraisal leg; applied to the "
+    "multi-asset sleeve's daily-period estimates it understates the daily residual — the cited "
+    "run evidences multi-family capability, not residual calibration."
+)
+
+#: The five TRIGGERED re-validations (OD-MF-1-D): conditions FRESHLY DRAFTED per model — the
+#: verifier pass killed the mechanical "verbatim minus the CURRENCY clause" derivation (the
+#: still-true specific-risk clause is fused into the removed sentence; three riders were
+#: cross-referential). Every blob restates the surviving substance standalone.
+MF1_TRIGGERED_DOSSIERS: dict[str, FlagshipDossier] = {
+    "risk.var.parametric": FlagshipDossier(
+        outcome="APPROVED_WITH_CONDITIONS",
+        scope_note=(
+            "TRIGGERED re-validation of the flagship parametric VaR (0.99, 1-day) — the "
+            "multi-family remediation (MF-1): the cited evidence run consumes a loadings-family "
+            "factor-exposure run over the multi-asset sleeve (MARKET/RATES/CREDIT_SPREAD "
+            "factors, REGRESSION-estimated fractional loadings) through the SAME governed "
+            "binder and covariance substrate. The CURRENCY-only condition closes; the surviving "
+            "posture is restated in the conditions."
+        ),
+        conditions=(
+            "CONDITION (specific/idiosyncratic risk = 0): the plain parametric family carries "
+            "NO residual variance term — idiosyncratic risk remains invisible to this number "
+            "regardless of factor universe (the total family pays a diagonal residual for "
+            "REGRESSION-cited instruments; this family does not). The joint-normality and "
+            "1-day-only-horizon posture recorded at the INITIAL validation continues to apply "
+            "unchanged."
+        ),
+        finding_keys=(
+            "SPECIFIC/IDIOSYNCRATIC RISK = 0",
+            "Joint normality of factor returns",
+            "1-day horizon only",
+        ),
+    ),
+    "risk.var.historical": FlagshipDossier(
+        outcome="APPROVED_WITH_CONDITIONS",
+        scope_note=(
+            "TRIGGERED re-validation of the flagship historical-simulation VaR (0.95, 1-day, "
+            "window=21) — the multi-family remediation (MF-1): the cited evidence run samples "
+            "the 21-day multi-family factor-return window over the sleeve's loadings-family "
+            "exposure. The CURRENCY-only condition closes; the surviving posture is restated "
+            "in the conditions."
+        ),
+        conditions=(
+            "CONDITION (specific/idiosyncratic risk = 0): the historical-simulation family "
+            "samples FACTOR returns only — idiosyncratic risk remains invisible to this number "
+            "regardless of factor universe. The window-adequacy floor remains noted as "
+            "governed: N=21 at 0.95 is the declared identity's statistical minimum (k >= 2), "
+            "not a sufficiency guarantee."
+        ),
+        finding_keys=(
+            "SPECIFIC/IDIOSYNCRATIC RISK = 0",
+            "worst scenario IN the window",
+            "Equal weighting reacts SLOWLY",
+        ),
+    ),
+    "risk.var.parametric_total": FlagshipDossier(
+        outcome="APPROVED_WITH_CONDITIONS",
+        scope_note=(
+            "TRIGGERED re-validation of the flagship TOTAL parametric VaR v2 (0.99, 1-day, "
+            "appraisal_days=91, max_estimate_age_days=400) — the multi-family remediation "
+            "(MF-1): the cited evidence run pays a REAL diagonal residual for all three sleeve "
+            "instruments (each REGRESSION-promoted from its own single estimate run; estimate "
+            "ages fresh, the staleness gate passed live). The CURRENCY-only condition closes; "
+            "the surviving posture is restated in the conditions."
+        ),
+        conditions=(
+            "CONDITION (partial idiosyncratic coverage): the residual leg pays a DIAGONAL "
+            "idiosyncratic variance for REGRESSION-cited instruments ONLY — non-proxied and "
+            "MANUAL-method atoms carry zero idiosyncratic variance, and cross-residual "
+            "correlation = 0 by construction. The BT-2 SMOOTHING-DOCTRINE READ RULE stands: on "
+            "an appraisal-marked book the unconditional Kupiec/Basel verdict over a 1-day total "
+            "series is NOT valid adequacy evidence in either direction (exceptions suppressed "
+            "between marks, clustered on mark dates); the dated per-pair EXCEPTION_INDICATOR "
+            "rows are the honest evidence surface. The v1 UNGATED GRANDFATHER remains noted: a "
+            "pre-BT-2 registration binds without the staleness declaration; its sunset lever is "
+            "a VW-1 REJECT on the v1 model_version." + _MF1_FREQ_NOTE
+        ),
+        finding_keys=(
+            "DIAGONAL residuals only",
+            "hostage to the PA-3 estimate quality",
+            "ZERO idiosyncratic risk",
+        ),
+    ),
+    "risk.var.parametric_es": FlagshipDossier(
+        outcome="APPROVED_WITH_CONDITIONS",
+        scope_note=(
+            "TRIGGERED re-validation of the flagship parametric Expected Shortfall (0.975, "
+            "1-day) — the multi-family remediation (MF-1): the cited evidence run applies the "
+            "registered multiplier to the multi-family sigma (a sigma-multiple is exactly as "
+            "honest as its sigma). The CURRENCY-only condition closes; the surviving posture is "
+            "restated in the conditions."
+        ),
+        conditions=(
+            "CONDITION (specific/idiosyncratic risk = 0): ES_c = k_c * sigma_p is a fixed "
+            "multiple of the plain parametric sigma — that sigma carries no residual variance "
+            "term, so idiosyncratic risk remains invisible to this number regardless of factor "
+            "universe. The non-reconciling-row limitation stands: an ES row reproduces through "
+            "its bound model_version's declared es_multiplier, never from the row alone."
+        ),
+        finding_keys=(
+            "it inherits",
+            "does NOT reconcile against its own columns",
+        ),
+    ),
+    "risk.var.parametric_es_total": FlagshipDossier(
+        outcome="APPROVED_WITH_CONDITIONS",
+        scope_note=(
+            "TRIGGERED re-validation of the flagship TOTAL parametric Expected Shortfall "
+            "(0.975, 1-day, appraisal_days=91, max_estimate_age_days=400) — the multi-family "
+            "remediation (MF-1): the cited evidence run applies the registered multiplier to "
+            "the TOTAL multi-family sigma, consuming the same three REAL promoted sleeve "
+            "estimates as the total-VaR evidence run. The CURRENCY-only condition closes; the "
+            "surviving posture is restated in the conditions."
+        ),
+        conditions=(
+            "CONDITION (partial idiosyncratic coverage + the read rule): the ES multiplier over "
+            "the TOTAL sigma inherits the total family's posture standalone — diagonal "
+            "residuals for REGRESSION-cited instruments only (non-proxied and MANUAL-method "
+            "atoms carry zero idiosyncratic variance), and the BT-2 smoothing-doctrine read "
+            "rule on appraisal-marked books (a sigma-multiple is exactly as honest as its "
+            "sigma). The ES row reproduces through its bound model_version's declared "
+            "es_multiplier (the non-reconciling-row limitation), never from the row alone."
+            + _MF1_FREQ_NOTE
+        ),
+        finding_keys=(
+            "The residual leg is PA-4's verbatim",
+            "BT-2's smoothing doctrine carries over UNCHANGED",
+            "does NOT reconcile against its own columns",
+        ),
+    ),
+}
+
+#: The loadings model's own INITIAL (AWC) — real evidence from its first campaign (OD-MF-1-D:
+#: the dossier-table ratification is the INITIAL-vs-EXCEPTION criterion, the MG-1 precedent).
+MF1_LOADINGS_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the loadings factor-exposure family over the multi-asset sleeve "
+        "(MF-1): fractional signed multi-factor loadings, REGRESSION-estimated by the k=3 "
+        "Sharpe-1992 regression (each instrument on the full MARKET/RATES/CREDIT_SPREAD "
+        "palette via the alpha=1 desmoothing detour, the analyst promoting the structural "
+        "coefficients only) — evidence = this model's OWN loadings exposure run plus the "
+        "through-VaR consumer run. DISCLOSED: the total-family residual leg consumes "
+        "MV*Sum(w_f) as an instrument's market value (the per-factor exposure rows summed), so "
+        "an instrument's residual scaling follows its loading sum — first material at "
+        "multi-factor scale under unconstrained OLS (Sum(w) != 1)."
+    ),
+    conditions=(
+        "CONDITION (projection residual + estimation quality): the loadings family is a "
+        "PROJECTION, not a partition — the loaded-atom residual (1 - Sum_f loading) is honestly "
+        "unmodeled and Sum(exposure) != Sum(atoms) in general; the promoted loadings are "
+        "price-return betas from short single-name regressions (the standard errors and R^2 "
+        "stay first-class on the estimate rows and MUST be read with any consumer of this "
+        "number); the total-family residual leg's MV*Sum(w_f) scaling is disclosed in scope."
+    ),
+    finding_keys=(
+        "The loaded-atom residual",
+        "Price-return betas",
+    ),
+)

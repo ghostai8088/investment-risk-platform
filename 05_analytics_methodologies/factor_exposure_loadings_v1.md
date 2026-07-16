@@ -131,7 +131,11 @@ PA-2). Covariance consumes factor returns, not exposure rows (not a consumer).
 - Price-return betas (no dividend capture) + short-window single-name regression noise — the
   standard errors and R² stay first-class; any loadings-family validation must cite them.
 - The demo tenant stays CURRENCY-only through FL-1 (the MG-1 flagship AWC premise holds until MF-1
-  closes it with the TRIGGERED re-validation).
+  closes it with the TRIGGERED re-validation). **Dated amendment (MF-1, 2026-07-16): CLOSED** —
+  the demo tenant now holds a multi-asset sleeve (MARKET/RATES/CREDIT_SPREAD factors,
+  REGRESSION-estimated loadings via this family), and the MG-1 flagship AWC conditions were
+  superseded by the MF-1 TRIGGERED re-validations (`mf_1_decision_record.md` OD-MF-1-D; seeded by
+  `scripts/run_demo_multifamily.py`). The historical condition text remains visible, append-only.
 - `validation_status` UNVALIDATED (non-enforcing until a 2L validator records an outcome, VW-1).
 - **Mixed-family instruments and the PA-2 proxy family (FL-1 review):** because the capture gate
   now admits non-CURRENCY loading rows, an instrument can carry BOTH CURRENCY proxy rows and (say)

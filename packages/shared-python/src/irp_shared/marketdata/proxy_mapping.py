@@ -339,10 +339,10 @@ def _resolve_instrument_id(session: Session, instrument_id: str, *, acting_tenan
 
 def _resolve_factor_id(session: Session, factor_id: str, *, acting_tenant: str) -> str:
     """Re-resolve the public factor under the acting tenant BEFORE its id is stamped into the
-    NOT-NULL FK (the P3-5 cross-tenant-FK guard); and enforce the v1 CURRENCY-family scope
-    (OD-PA-0-H) fail-closed — a non-CURRENCY factor is out of v1 (a style/sector/rate proxy family
-    is a recorded v2 extension), so it is refused at capture, not silently accepted (review fold:
-    the doc-stated scope is now an enforced gate). Models-only import."""
+    NOT-NULL FK (the P3-5 cross-tenant-FK guard); and enforce the admitted-family scope
+    fail-closed — PA-0's v1 CURRENCY-only gate (OD-PA-0-H) was WIDENED at FL-1 to
+    ``LOADING_FACTOR_FAMILIES`` (OD-FL-1-C/E), with OTHER/unknown still refused at capture, never
+    silently accepted. Models-only import."""
     row = session.execute(
         select(Factor.id, Factor.factor_family).where(
             Factor.id == str(factor_id),
