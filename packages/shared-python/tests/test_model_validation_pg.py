@@ -384,6 +384,13 @@ def test_expired_exception_gate_blocks_run_binding_on_pg(app_url: str) -> None:
             ),
         )
         session.commit()
+    finally:
+        session.close()
+    # The bind assert runs in a FRESH session — set_tenant_context is transaction-local (clears at
+    # commit), so re-establishing it here is what makes the re-granted row visible under RLS.
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
         assert (
             assert_model_version_of(
                 session, version_id, tenant_id=tenant, expected_model_code="risk.var.parametric"
