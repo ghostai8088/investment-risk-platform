@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **DRAFT — OQ-MF-1-1…6 pending user ratification.** |
+| **Status** | **RATIFIED — OQ-MF-1-1…6 ALL APPROVED 2026-07-16 (user: "All approved"; planning merged via PR #49 = `0951784`).** Implementation proceeds per `mf_1_implementation_plan.md`. |
 | **Grounding** | Drafted 2026-07-16 on `main` = `cba6104` (FL-1 closed via PR #47 = `778891c`, CI #314). Census-verified (3 agents, all claims file:line or executed). **The chain has NO hard blocker — every stage is family-agnostic or already FL-1-widened**: covariance carries ZERO `factor_family`/currency references (`covariance_service.py` grep-verified; gates are DAILY factors `:324-328`, SIMPLE/DAILY pins `:183-191`, ≥ window common dates `snapshot/service.py:891-897` — no imputation); all six VaR-side files (`var_service.py`, `var_hs_service.py`, both kernels, `var_total_kernel.py`, `es_kernel.py`) carry ZERO family references, and the VaR binder wants any tenant-visible COMPLETED `FACTOR_EXPOSURE` run — no model-code whitelist (`var_service.py:703-708`, `:784-788`); `capture_factor_return` has NO family gate (`marketdata/factor.py:535-593`) and a factor's `currency_code` is OPTIONAL (`:395`, `:411-412`). The FL-1 substrate is live and test-proven end-to-end: the α=1 public-marks→OLS→promote chain (`test_factor_exposure_loadings.py:768+`), the through-VaR invariance (`:605-641`). **Six bite-points, all designable-around:** (1) the loadings COVERAGE GATE refuses any unloaded atom (`factor_service.py:411-434` — every instrument in the multi-family book needs a promoted head row BEFORE the loadings run); (2) the demo campaign is REFUSE-NOT-SKIP (`campaign.py:998-1002`) with a set-equality lock on exactly the 16 dossier codes (`:577-580`, loadings NOT among them) — MF-1 cannot re-run it and must extend ADDITIVELY; (3) the demo desmoothing version declares **α=0.4** (`campaign.py:234`), and α is model identity (OD-PA-1-E) ⇒ MF-1 registers a distinct α=1 version (the FL-1 test's exact shape, `test_factor_exposure_loadings.py:826-828`); (4) multi-family factors must be DAILY with SIMPLE daily returns spanning the declared windows (the covariance/HS discipline); (5) **the mixed-family-instrument conflict** (`factor_exposure_loadings_v1.md:136-142`): an instrument carrying BOTH currency proxy rows and non-CURRENCY loadings makes the PA-2 proxy family unrunnable — the existing private-asset chain instruments must NOT gain multi-family loadings; (6) scenario + active-risk REFUSE loadings runs (probe-pinned, `test_factor_exposure_loadings.py:644-746`) — evidence must not route through them. **The validation half:** there is NO mechanical condition-closure concept — closure is purely latest-outcome-wins at the recency read (`validation.py:379-397`; `model/service.py:556-570` reacts only to latest-REJECTED and latest-expired-EXCEPTION); conditions are ONE `String(2000)` text blob per record (`model/models.py:260`) whose flagship instances BUNDLE the CURRENCY-only clause with surviving posture riders; the AWC⇔conditions coupling is symmetric (`validation.py:163-174` — APPROVED forbids conditions), approving outcomes REQUIRE `next_review_due` (`:175-185`) under the write-time TIER_1 365-day ceiling (`:284-304`; all five flagships are TIER_1), the actor must be human (`:243-247` enforces `actor_type == "user"` ONLY — the `model.validate` permission is API-layer wiring; on the direct-service path the extension uses, the permission claim rests on the seeded 2L principal's role, `campaign.py:239`, the campaign's own recorded pattern), and every cited evidence run is re-resolved tenant-visible + COMPLETED pre-FK-stamp (`:209-227`). The TRIGGERED type has NO type-specific guard (`validation.py` — only EXCEPTION does). The 5 flagship AWCs sit on the campaign versions (`code_version="demo-mg1"`, `campaign.py:142`) of `risk.var.parametric/.historical/.parametric_total/.parametric_es/.parametric_es_total` with the shared condition core (`dossiers.py:199-205`) — the ONLY 5 validation rows containing the token 'FL-1' (test-pinned both directions, `test_demo_campaign_pg.py:182-204`). **The version grain is load-bearing**: the TRIGGERED records must target those exact `model_version_id`s or the AWCs stay operative. No exception expires anywhere near MF-1 (7 × ~2028-07, 3 × ~2029-07). **NO migration** — every table in the chain exists (heads: factor 0023 → validation 0039; alembic head `0040`). FL-1 debris for hygiene folds: two stale CURRENCY-only docstrings (`proxy_mapping.py:342-345`, `proxy_weight_service.py:202-203`) and the `_BINDING_PREDICATES` import-time length assert omits the loadings predicate (`snapshot/service.py:2666-2684`; the constant is 46 < 50 chars — latent, not live). |
 | **Mandate** | Roadmap Part 2.9 slice 3, sized **M/L**: *"The headline payload on FL-1's substrate: a real equity/credit book through capture → loadings → exposure v2 → covariance → VaR/ES, with the PA-3 regression finally running on the Sharpe-1992 factor set its own citations name. Unlocks four blocked candidates … + the residual-shrinkage/EWMA + desmoothing-v2 ride-alongs teed since Wave 4. Ends with the TRIGGERED re-validation closing MG-1's CURRENCY-only condition — the full lifecycle demonstrated."* **The scope census (rule: read the recorded text, don't gloss it) resolves the row's two ambiguities:** (1) the four named candidates (FRTB liquidity horizons, partial ES by risk class, non-CURRENCY scenario shocks, the risk-class taxonomy) are recorded as UNLOCKED by multi-family, not delivered by it (`wave_5_close_review.md:111`: *"a hard prerequisite for four other candidates"*; the MAR33.12 constants are *"reference constants only, prose not code"*, `factor_exposure_loadings_v1.md:66-70`); (2) the residual-shrinkage/EWMA + desmoothing-v2 ride-alongs carry a genuine textual claim to ride (*"riding when it lands"*, `wave_4_close_review.md:157-158`) but are S/M candidates, not mandate clauses — adjudicated at OD-E, and they are NOT the covariance v2s, which Part 3 keeps explicitly wave-unassigned (`delivery_roadmap.md:165`). "§2.2's risk-class taxonomy" is the Wave-5 close's gloss — §2.2 itself states the SOTA bar, not a taxonomy; the taxonomy the platform adopted under that bar is FL-1's MAR33.14 five-class vocabulary, and the destination cite is thesis §2.1's sequencing consequence (*"the public-market factor/covariance/VaR machinery being built now IS the substrate"*). **"Real equity/credit book" means a genuine multi-family book SHAPE on synthetic/seeded data** — the user's 2026-07-15 scope note (roadmap Part 2.9 preamble) keeps real data and vendor feeds out of this wave. The only hard "Ends with" clause is the TRIGGERED re-validation. |
 
@@ -49,6 +49,96 @@
 - **OQ-MF-1-4 — OD-E: the ride-alongs do NOT ride** — re-teed to the Wave-6 close with the materiality cap recorded as LIFTED; the residual-vs-covariance shrinkage disambiguation recorded. *Recommend APPROVE — the alternative (fold one or both S/M methodology slices in) trades the slice's governance headline for under-benchmarked math or an L/XL slice. If you want one anyway, the residual-EWMA leg is the smaller; say so and Part 1 OD-E is re-cut before implementation.*
 - **OQ-MF-1-5 — OD-F: the scope fence** (no migration / no new permission / no new code or canonical id / scenario + active-risk untouched / real data out) **+ the three hygiene folds** (two stale docstrings, the predicate-assert completeness gap). *Recommend APPROVE.*
 - **OQ-MF-1-6 — the closure test discipline**: the pinned surface is the CONDITIONS column (mirroring the shipped `test_demo_campaign_pg.py:182-204` pin): post-extension, a tenant-wide conditions grep finds 'FL-1' in exactly the 5 historical AWC rows, the LATEST validation per flagship version is token-free, and every NEW record avoids the token everywhere; the base-campaign tests keep passing on a FRESH-SCHEMA base-only tenant, with the extension's CI step pinned AFTER the campaign step (Part 3 item 12 records the two retired campaign-suite capabilities). *Recommend APPROVE — this is the mechanical meaning of "the condition closes" and the only spec any record states.*
+
+## Part 5.5 — Implementation deviations from the ratified plan
+
+1. **The desmoothing registrar gained an optional `version_label` parameter** (default
+   `DESMOOTHED_RETURN_VERSION_LABEL` — every existing caller byte-unchanged). The plan assumed the
+   α=1 version registers like the FL-1 test's — but that test ran in a FRESH tenant; the demo
+   tenant already holds the α=0.4 version under the fixed `v1` label, and the registrar's identity
+   discipline (correctly) refuses a same-label different-(code_version, alpha) twin with "mint a
+   new version_label instead". The fix follows the registrar's own prescription: the α=1 version
+   registers as **`v1-alpha1`**, and the label mint stays INSIDE the family registrar (using the
+   generic registration path would have been the squatted-twin pattern the registrars exist to
+   prevent). Shared-code, backwards-compatible, discovered by the PG suite on first execution.
+2. **The `_BINDING_PREDICATES` completeness fold found TWO missing constants, not one**: the
+   loadings predicate (the census's find) AND `PROXY_WEIGHT_BINDING_PREDICATE` (PA-3-era debris
+   the census missed — 45 chars, latent). Both added to the import-time length assert.
+3. **Three small plan-text drifts, logged not hidden** (the scope finder): (a) the plan's
+   "deterministic ids via `demo_id` + `mf1:` prefixes" clause was DROPPED — the campaign itself
+   uses `demo_id` only for the tenant id, and re-seedability after a schema reset needs no fixed
+   entity ids; (b) instrument codes shipped as `MF-EQ-A/MF-EQ-B/MF-CR-A` (the plan wrote
+   `MF1-…`); (c) the factor-return span shipped as 51 calendar days (the plan's "~40") —
+   over-covering every declared window, direction-safe.
+4. **The PG prereq probe was replaced by unit-tier coverage** (the scope finder's MED-2): CI's
+   own load-bearing ordering (campaign seeds before this suite) makes a PG prereq probe
+   self-skip in every automated environment, so both refusal guards are covered in
+   `test_demo_multifamily.py` (SQLite — the guards fire before any PG-specific work, and
+   `set_tenant_context` is a no-op off PostgreSQL).
+5. **The idiosyncratic cycles were shrunk 10× after the numeric finder REFUTED the "near-zero
+   unloaded betas" claim at the original amplitude** (eps-projection bias `(X'X)⁻¹X'ε` put
+   unloaded betas at ±0.24 and doubled one structural coefficient; bias scales linearly in eps,
+   so |ε| ≤ 5e-5 puts every recovered beta within ~0.03 of its structural value). The promoted
+   values always flowed self-consistently — the defect was characterization, fixed at the
+   generator, not the prose.
+6. **The MF-1 records carry their OWN independence-disclosure variant** (the doctrine finder's
+   HIGH): the reused MG-1 constant attributed the human ratification to OQ-MG-1-6; the MF-1
+   variant re-points the final clause at OQ-MF-1-3 (the MG-1 constant stays byte-untouched — the
+   campaign's filed rows cite it correctly). The frequency-conversion note was also de-duplicated
+   (conditions-only; it had been rendered twice per total/ES-total record).
+
+## Part 6 — Review dispositions (the 4-finder pass — run 2026-07-16, ALL Fable; findings + dispositions, not verdict tallies)
+
+**Adversarial** (executed probes: 131 filed-text surfaces token-grepped; concurrency, column-length,
+identity and guard probes on SQLite): **ZERO HIGH.** Confirmed: the grep discipline (zero 'FL-1' in
+every filed text); all 16 finding keys fail-loud-unique; the loadings registration is the FIRST
+write so any partial commit trips the footprint probe; concurrent double-runs cannot double-file
+(registrar savepoints + the portfolio/instrument unique constraints); zero `session.commit()` in
+the touched service chain (the single-commit claim EXECUTED-verified); the version grain
+mis-filing is impossible via `_resolve_base_version`; every record text fits its column (max
+1632/2000). Folded: the fail-open TIER_1 default in the α=1 exception filing → refuse-on-drift
+(the module's only silent default, killed); labelled refusals replace raw `MultipleResultsFound`
+in both resolvers; a non-empty `version_label` guard + the per-label-identity docstring note in
+the registrar; the version-grain pin added to the grep-flip test; the context-contract docstring
+(the detach-replaces-caller-listener trap, inherited from the campaign shape — documented, not
+re-engineered); the standalone-fresh + downgrade-smoke edge recorded in the suite docstring.
+Accepted/recorded: the loadings model DESCRIPTION carries 'FL-1' into the tenant's `model` row
+(`bootstrap.py` registrar constant — OUTSIDE the pinned conditions surface, behavioral to edit;
+the Part 3 item 11 adjudication applies; disclosed here so a future tenant-wide grep does not
+read it as a leak).
+
+**Numeric** (independent re-implementation + numpy): the mark generator **byte-identical** (all 36
+marks); the spot golden's value flow CONFIRMED exact (the stored atom `qty × 6dp-mark ×
+identity-FX` is idempotent under the 6dp quantize, so the test's expectation is arithmetically
+identical to the service computation); the covariance is PSD/non-singular (eigenvalues 3.2e-7 …
+1.5e-5, cond 45) and window-start-invariant; VaR σ ≈ 0.15% of book, HS VaR nonzero with clean
+tie handling; TD-1 realism confirmed. **One MED REFUTED-and-fixed: the original idiosyncratic
+cycles biased the OLS** (unloaded betas to ±0.24; one structural coefficient doubled — the bias
+is exactly `(X'X)⁻¹X'ε`, amplified by corr(MKT,RATES) = −0.81 over 10 observations) → the cycles
+shrunk 10× (bias scales linearly; recovery now within ~0.03 everywhere), Part 5.5 item 5. Noted:
+the shipped kernel fits WITH an intercept (the record's OD-C never claimed otherwise).
+
+**Doctrine**: all five condition texts match the ratified OD-D shape with no surviving substance
+dropped; no claim false against code (the diagonal-residual, REGRESSION-only-pin, and
+zero-cross-correlation claims all code-verified); the frequency-conversion note factually right
+(√(91·252/365) ≈ 7.9× understatement on daily-period estimates); the date arithmetic
+off-by-one-safe; the referent amendment house-legal (the BT-2/FL-1 dated-amendment precedents).
+**One HIGH FOLDED: the reused MG-1 independence disclosure misattributed the ratification**
+(OQ-MG-1-6) behind every MF-1 record → the `MF1_NON_INDEPENDENCE_DISCLOSURE` variant re-points
+the final clause at OQ-MF-1-3 (the MG-1 constant byte-untouched). LOWs folded: the
+frequency-note de-duplication (conditions-only). Accepted/recorded: `EXCEPTION_CONDITIONS`
+reused verbatim reads MG-1-era in its JUSTIFICATION clause (historically true; the fresh
+version-grain justification lives in the record's own scope_summary); the MG-1 module
+docstring's "greps for 'FL-1'" imprecision (a frozen file's comment; the runner resolves by
+version, the TEST greps).
+
+**Scope fence**: **all 14 clauses PASS** (campaign byte-untouched; dossiers purely additive; the
+registrar diff exactly the optional parameter with all 15 existing call sites byte-equivalent;
+no migration/permission/EVT/FE/API change; no stray files). MEDs folded: the loadings-snapshot
+predicate pin added to the chain test; the dead PG prereq probe replaced by unit-tier SQLite
+coverage of BOTH guards (Part 5.5 item 4); the three plan-text drifts logged (Part 5.5 item 3).
+LOW folded: the duplication-not-import comment on the campaign helpers (byte-frozen fence +
+extension-typed errors — zero behavioral divergence, diff-verified).
 
 ## Part 5 — Implementation readiness gate
 

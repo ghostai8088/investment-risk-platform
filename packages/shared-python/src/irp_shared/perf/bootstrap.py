@@ -347,14 +347,18 @@ def register_desmoothed_return_model(
     actor_id: str,
     code_version: str,
     alpha: str | Decimal = "0.4",
+    version_label: str = DESMOOTHED_RETURN_VERSION_LABEL,
     actor_type: str = "user",
 ) -> ModelVersion:
     """Register (idempotently) the desmoothed-return ``model`` + a ``model_version`` for this
     ``(code_version, alpha)`` identity (PA-1, OD-PA-1-E — the BT-1 declared-parameter precedent).
     ``alpha`` must be a strict decimal fraction in ``(0, 1]`` (up to 12dp; alpha=1 is the
     no-smoothing boundary); re-registering the same label with ANY different declaration raises
-    :class:`ModelVersionConflictError` (mint a new label); a same-label twin minted via the
-    GENERIC registration (status != REGISTERED) raises :class:`WrongModelVersionError`."""
+    :class:`ModelVersionConflictError` — minting the new label is done HERE via ``version_label``
+    (MF-1: a tenant holding the alpha=0.4 ``v1`` registers its alpha=1 sibling under a distinct
+    label; the identity discipline stays inside the family registrar, never the generic path); a
+    same-label twin minted via the GENERIC registration (status != REGISTERED) raises
+    :class:`WrongModelVersionError`."""
     # STRICT parse — never coerce (the P3-5 lesson: refuse, don't round).
     text = str(alpha).strip()
     if not _DESMOOTHING_ALPHA_PATTERN.fullmatch(text) or not 0 < Decimal(text) <= 1:
@@ -362,7 +366,11 @@ def register_desmoothed_return_model(
             f"alpha {alpha!r} must be a strict decimal fraction in (0, 1] (up to 12dp) — "
             f"estimated OFFLINE and DECLARED, never a runtime regression (OD-PA-1-E)"
         )
+    if not str(version_label).strip():
+        raise ValueError("version_label must be non-empty (MF-1: the label IS the identity key)")
     alpha_key = f"{Decimal(text).normalize():f}"
+    # NOTE: distinct labels MAY declare the same (code_version, alpha) — each version is an
+    # independent, fully-declared registration; the conflict discipline is per-label (MF-1).
 
     # Both legs resolve-or-register (race-safe savepoint; MD-H1 OD-D). The version identity
     # includes the declared alpha — a same-label re-register differing on code_version or alpha is
@@ -384,11 +392,11 @@ def register_desmoothed_return_model(
     version = resolve_or_register_version(
         session,
         model=model,
-        version_label=DESMOOTHED_RETURN_VERSION_LABEL,
+        version_label=str(version_label),
         register=lambda: register_model_version(
             session,
             model=model,
-            version_label=DESMOOTHED_RETURN_VERSION_LABEL,
+            version_label=str(version_label),
             actor_id=actor_id,
             methodology_ref=DESMOOTHED_RETURN_METHODOLOGY_REF,
             code_version=str(code_version),
@@ -409,7 +417,7 @@ def register_desmoothed_return_model(
     if version.code_version != str(code_version) or f"{declared.normalize():f}" != alpha_key:
         raise ModelVersionConflictError(
             DESMOOTHED_RETURN_MODEL_CODE,
-            DESMOOTHED_RETURN_VERSION_LABEL,
+            str(version_label),
             f"{code_version} (alpha={alpha_key})",
         )
     return version
