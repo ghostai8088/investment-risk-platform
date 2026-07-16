@@ -271,4 +271,90 @@ describe("RunDetail", () => {
     renderDetail("vars", "22222222-2222-2222-2222-222222222222");
     expect(await screen.findByText(/Run not found/)).toBeTruthy();
   });
+
+  it("annotates the ES row's z_score as an echo (FL-1 — z×σ is NOT the ES arithmetic)", async () => {
+    stubDetail(
+      detail({
+        rows: [
+          {
+            id: "row-es",
+            metric_type: "ES_PARAMETRIC",
+            base_currency: "USD",
+            confidence_level: "0.9900",
+            horizon_days: 1,
+            z_score: "2.326347874041",
+            sigma: "1000.000000",
+            var_value: "2665.214030",
+            n_factors: 2,
+            n_observations: 4,
+            model_version_id: "m",
+          },
+        ],
+      }),
+    );
+    renderDetail("vars", "22222222-2222-2222-2222-222222222222");
+    // The ES row's z cell renders annotated — the three adjacent columns can no longer invite
+    // the wrong z×σ arithmetic (the multiplier k_c lives on the model version, not the row).
+    expect(
+      await screen.findByText("2.326347874041 (echo — not the ES multiplier; see model version)"),
+    ).toBeTruthy();
+    expect(screen.getByText("2665.214030")).toBeTruthy();
+  });
+
+  it("keeps a plain VAR row's z_score UNANNOTATED (the fix is metric_type-aware, not a header)", async () => {
+    stubDetail(
+      detail({
+        rows: [
+          {
+            id: "row-var",
+            metric_type: "VAR_PARAMETRIC",
+            base_currency: "USD",
+            confidence_level: "0.9900",
+            horizon_days: 1,
+            z_score: "2.326347874041",
+            sigma: "1000.000000",
+            var_value: "2326.347874",
+            n_factors: 2,
+            n_observations: 4,
+            model_version_id: "m",
+          },
+        ],
+      }),
+    );
+    renderDetail("vars", "22222222-2222-2222-2222-222222222222");
+    expect(await screen.findByText("2.326347874041")).toBeTruthy();
+    expect(screen.queryByText(/echo — not the ES multiplier/)).toBeNull();
+  });
+
+  it("renders a proxy-weight-estimate row (FL-1 — the family the listing showed but the FE could not render)", async () => {
+    const mock = stubDetail(
+      detail({
+        run_type: "PROXY_WEIGHT_ESTIMATE",
+        rows: [
+          {
+            id: "row-w",
+            metric_type: "WEIGHT",
+            factor_id: "f-1",
+            metric_value: "0.612345678901",
+            std_error: "0.045678901234",
+            n_observations: null,
+            n_regressors: null,
+            residual_stdev: null,
+            min_observations: 4,
+            series_currency: "USD",
+            source_desmoothed_run_id: "d-1",
+            portfolio_id: "p-1",
+            instrument_id: "i-1",
+          },
+        ],
+      }),
+    );
+    renderDetail("proxy-weight-estimates", "22222222-2222-2222-2222-222222222222");
+    expect(await screen.findByText("0.612345678901")).toBeTruthy();
+    expect(screen.getByText("0.045678901234")).toBeTruthy();
+    expect(screen.getByText("WEIGHT")).toBeTruthy();
+    expect(String(mock.mock.calls[0]?.[0])).toBe(
+      "/risk/proxy-weight-estimates/runs/22222222-2222-2222-2222-222222222222",
+    );
+  });
 });

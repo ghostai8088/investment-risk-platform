@@ -74,6 +74,11 @@ export const FAMILIES = {
     label: "Desmoothed returns",
     permissionFamily: "perf",
   },
+  "proxy-weight-estimates": {
+    runType: "PROXY_WEIGHT_ESTIMATE",
+    label: "Proxy-weight estimates",
+    permissionFamily: "risk",
+  },
 } as const;
 
 export type Family = keyof typeof FAMILIES;
@@ -90,6 +95,7 @@ export const RUN_TYPE_TO_FAMILY: Record<string, Family> = {
   VAR_BACKTEST: "var-backtests",
   SCENARIO: "scenarios",
   DESMOOTHED_RETURN: "desmoothed-returns",
+  PROXY_WEIGHT_ESTIMATE: "proxy-weight-estimates",
 };
 
 /** The run-detail fetch URL for a family: exposure and the perf families have their own endpoint
@@ -151,8 +157,11 @@ export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]
     { key: "z_score", label: "z" },
     { key: "sigma", label: "Sigma" },
     { key: "var_value", label: "VaR" },
+    { key: "residual_variance", label: "Residual var" },
+    { key: "estimate_age_days", label: "Est. age (d)" },
     { key: "n_factors", label: "Factors" },
     { key: "n_observations", label: "N" },
+    { key: "model_version_id", label: "Model version" },
   ],
   "active-risk": [
     { key: "metric_type", label: "Metric" },
@@ -236,5 +245,15 @@ export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]
     { key: "n_factors_shocked", label: "Shocked" },
     { key: "n_shocks_unmatched", label: "Unmatched" },
     { key: "base_currency", label: "Base ccy" },
+  ],
+  "proxy-weight-estimates": [
+    { key: "metric_type", label: "Metric" },
+    { key: "instrument_id", label: "Instrument" },
+    { key: "factor_id", label: "Factor" },
+    { key: "metric_value", label: "Value" },
+    { key: "std_error", label: "Std error" },
+    { key: "n_observations", label: "N" },
+    { key: "residual_stdev", label: "Residual stdev" },
+    { key: "series_currency", label: "Series ccy" },
   ],
 };

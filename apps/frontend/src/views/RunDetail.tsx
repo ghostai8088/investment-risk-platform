@@ -14,6 +14,19 @@ function cell(value: string | number | null | undefined): string {
   return typeof value === "number" ? String(value) : value;
 }
 
+/** FL-1 (the ES honesty fix, OD-FL-1-F): on an ES row the backend ECHOES the quantile z — it is
+ * NOT the ES arithmetic (the multiplier k_c lives on the bound model_version), so `z × σ ≠ value`
+ * for ES rows and three adjacent columns would otherwise invite exactly that wrong arithmetic.
+ * Per-row metric_type-aware rendering annotates the echo; every other cell renders verbatim.
+ * (Surfacing es_multiplier on the row DTO is the recorded backend v2 — not smuggled in here.) */
+function resultCell(row: Record<string, string | number | null>, key: string): string {
+  const value = cell(row[key]);
+  if (key === "z_score" && row.metric_type === "ES_PARAMETRIC" && value !== "—") {
+    return `${value} (echo — not the ES multiplier; see model version)`;
+  }
+  return value;
+}
+
 const PROVENANCE_FIELDS: { key: keyof RunDetailBase; label: string }[] = [
   { key: "run_id", label: "Run id" },
   { key: "run_type", label: "Run type" },
@@ -129,7 +142,7 @@ export function RunDetail({ session }: { session: DevSession }): ReactElement {
                   <tr key={typeof row.id === "string" ? row.id : i}>
                     {FAMILY_ROW_COLUMNS[validFamily].map((c) => (
                       <td key={c.key} className="mono">
-                        {cell(row[c.key])}
+                        {resultCell(row, c.key)}
                       </td>
                     ))}
                   </tr>

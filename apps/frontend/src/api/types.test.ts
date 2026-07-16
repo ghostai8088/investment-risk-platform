@@ -167,3 +167,52 @@ describe("desmoothed-returns (PA-1) family wiring", () => {
     ]);
   });
 });
+
+describe("proxy-weight-estimates (FL-1) family wiring", () => {
+  it("registers the risk family keyed to PROXY_WEIGHT_ESTIMATE, REUSING the risk permission family", () => {
+    expect(FAMILIES["proxy-weight-estimates"]).toEqual({
+      runType: "PROXY_WEIGHT_ESTIMATE",
+      label: "Proxy-weight estimates",
+      permissionFamily: "risk",
+    });
+    // NOT forced by the exhaustiveness net (the verifier-pass correction) — pinned explicitly.
+    expect(RUN_TYPE_TO_FAMILY.PROXY_WEIGHT_ESTIMATE).toBe("proxy-weight-estimates");
+  });
+
+  it("uses the shared /risk/{family}/runs/{id} detail URL (the default fallthrough is correct — verified, no special case added)", () => {
+    expect(runDetailUrl("proxy-weight-estimates", "abc-123")).toBe(
+      "/risk/proxy-weight-estimates/runs/abc-123",
+    );
+  });
+
+  it("surfaces the estimate columns (the heterogeneous WEIGHT/INTERCEPT/ESTIMATION_SUMMARY rows share them)", () => {
+    const keys = FAMILY_ROW_COLUMNS["proxy-weight-estimates"].map((c) => c.key);
+    expect(keys).toEqual([
+      "metric_type",
+      "instrument_id",
+      "factor_id",
+      "metric_value",
+      "std_error",
+      "n_observations",
+      "residual_stdev",
+      "series_currency",
+    ]);
+  });
+});
+
+describe("vars columns (FL-1 ride-along): the PA-4/BT-2 fields surface", () => {
+  it("renders residual_variance, estimate_age_days and model_version_id in the vars table", () => {
+    const keys = FAMILY_ROW_COLUMNS.vars.map((c) => c.key);
+    expect(keys).toContain("residual_variance");
+    expect(keys).toContain("estimate_age_days");
+    expect(keys).toContain("model_version_id");
+  });
+});
+
+describe("every RUN_TYPE_TO_FAMILY entry round-trips (FL-1 — the reverse map is NOT forced by the net)", () => {
+  it("maps each family's runType back to itself", () => {
+    for (const [family, def] of Object.entries(FAMILIES)) {
+      expect(RUN_TYPE_TO_FAMILY[def.runType]).toBe(family);
+    }
+  });
+});
