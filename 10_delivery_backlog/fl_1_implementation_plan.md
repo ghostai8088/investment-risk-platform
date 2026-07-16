@@ -5,7 +5,8 @@
 > PA-3 (the OLS estimate→promote loop being repointed), ES-1 (`_resolve_var_family` = the dispatch
 > registry-map precedent; the probe-move pattern; the invariance regressions). **NO migration**;
 > NO new permission/EVT/ENT; `audit/service.py` FROZEN; **the demo tenant untouched**; the
-> OQ-W5C-5 closure checklist at close. Finder agents pinned to Opus (the MG-1 budget lesson).
+> OQ-W5C-5 closure checklist at close. Finder agents on Fable (the MG-1 Opus-budget restriction
+> was lifted 2026-07-16 — usage reset; Opus stays the fallback if exhaustion recurs mid-run).
 
 ## Step 0 — Branch + pre-checks
 
@@ -168,7 +169,7 @@ Full battery (`make check` + FE suite + local-PG fresh AND dirty double-run + `a
 the no-`0041` guard + downgrade smoke + the TD-1 realism sweep over every new fixture). **CI-PG
 disposition (explicit — the recurring-miss class): the loadings PG leg rides the EXISTING
 `test_factor_exposure_pg.py` ci.yml step; any NEW `*_pg.py` file gets its own ci.yml
-migration-job step.** → **4-finder review, finders on Opus** (adversarial: the
+migration-job step.** → **4-finder review, finders on Fable** (adversarial: the
 3×3 predicate gates + the allow-lists + can a loadings row double-count into VaR; numeric: the
 projection goldens + the α=1 identity; doctrine: the FRTB/RBSA/alias citation surface; scope +
 tests) → fold → push → PR → CI green → merge → **the OQ-W5C-5 closure checklist** → MF-1 planning.
