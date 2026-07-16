@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **DRAFT — pending OQ-MG-1-1…7 ratification.** Implementation gated separately behind `mg_1_implementation_plan.md`. |
+| **Status** | **RATIFIED 2026-07-15 — OQ-MG-1-1…7 all APPROVED by the user** ("PR merged and closed. Approved. Proceed."; planning merged via **PR #43** = `91c39fa`). The user's OQ-6 approval constitutes the human validator sign-off on the Step-5.5 dossier map (OD-G). Implementation per `mg_1_implementation_plan.md`. |
 | **Grounding** | Drafted 2026-07-15 on `mg-1-planning` (`main` = `cf6e3b6` + the Wave-6 ratification). Census-verified (3 agents, all claims file:line or executed): `model.tier` is a `String(20)` nullable column on the **EV-mutable `model` head** (`models.py:96`; "gates nothing"), **with NO write path after registration anywhere** — no service verb, no API PATCH, and none of the 16 family bootstraps passes it, so every lazily-registered head is `tier=NULL` and can never change today. The head's mutability is **test-pinned** (`test_model_head_is_mutable_at_db` asserts a raw `UPDATE model SET tier` succeeds) ⇒ *the "immutable head forces a new assignment table" argument is DEAD*. **Zero CHECK constraints exist on any model table** (live-PG verified; the repo's only `create_check_constraint` is 0028's on `var_result`) — the validation vocabularies are service-layer frozensets by design ⇒ **vocab extensions need NO migration**. `next_review_due` lives only on `model_validation` rows; `overdue` is computed at ONE read site and **consumed nowhere** (an overdue model binds and runs — re-verified). The bind seam `assert_model_version_of` **already SELECTs the Model head** for the code check ⇒ a tier/exception read there costs zero new queries and **zero new PG-fixture grants**; a new error class must be mapped at every run endpoint or it 500s (the VW-1 HIGH — 13 call sites / 12 binder files). No reserved permission fits tier assignment; **no `MODEL.UPDATE` audit code exists** and `MODEL.APPROVE` is explicitly earmarked for the Tier-1 H-02 approval step (not assignment). Live PG: `model`/`model_version`/`model_validation` all **0 rows** — no durable tenant holds a COMPLETED run of any type, so **the campaign's evidence chain must be created before any validation can cite it** (the evidence guard re-resolves tenant-visible + COMPLETED; run_type is dossier discipline, not code). `build_synthetic_dataset` is **capture-only by contract (AD-017)** with a whole-seed no-op sentinel and an AST determinism fence, and the calc layer has no injectable id/now seam ⇒ *hosting the campaign inside the synthetic seed is DISQUALIFIED three ways*. `validated_by` is free-form; the API path requires a real seeded `app_user` + tenant-local role wiring (SYSTEM-tenant role templates are RLS-invisible; no onboarding clone exists — the endpoint-test pattern is the only working one). |
 | **Mandate** | Roadmap Part 2.9 slice 1 (ratified 2026-07-15 at the Wave-5 close, OQ-W5C-6 = fork **A "governance-first"**), sized **S/M — restated honestly at verification as `S` mechanics / `M` campaign surface** (the runner is the largest artifact: 16 registrations, per-flagship evidence chains incl. the full private-asset estimate leg, 16 assignments, 16 filings — ≥ VW-1's behavioral surface): materiality assignment + the FIRST validation campaign + OD-033 cadence + the F3 exception fix; ride-alongs = the RD-3 NaN bug + the estimate-seam integration test. Wave-5 close context: **16/16 model codes sit UNVALIDATED** — "the numbers govern themselves" overstated the delivered state, and this slice is the honest completion. **This OQ set is itself the ratification OD-032 has demanded since P7 planning** (*"Ratify tiering thresholds (materiality/regulatory criteria) with H-02/H-01"*) — approving OQ-1/OQ-3 closes **both** OD-032 and OD-033. |
 
@@ -39,6 +39,7 @@
 6. **The campaign's evidence chain is honest but short** — a real BT-1/BT-2 backtest over a seeded book with a short forecast series (Kupiec emits for N ≥ 1; the Basel zone applies only at (0.99, 250) and is correctly absent). The dossier text states the series length; nothing pretends to 250 days.
 7. **FOURTEEN bootstrap limitation constants still carry the stale "until the P7 validation workflow" text** (11 risk + 3 perf; the two ES families already carry ES-1's corrected wording — verifier-counted, correcting the draft's "16"). All 14 are updated so registrations carry the corrected text. *(The "existing stamped rows are IA-immutable" clause is vacuous TODAY — live PG holds zero model rows — and becomes real only for tenants seeded before this slice; recorded for precision.)*
 8. **Out of scope**, each recorded with its home: data-level independence / per-version developer stamps (MG-04 — deferred); the remediation/finding-closure lifecycle (SR 26-2 §VI — MG-2 candidate); FE surfaces for validation/tier (the FE drift trio rides FL-1; a validation UI is unplanned); Tier-1 H-02 human approval gating + `MODEL.APPROVE` activation (rides the approval workflow, not tiering); automated monitoring sweeps of `next_review_due` (nothing schedules anything platform-wide yet — the Wave-5 close's gap #2).
+9. **The cadence ceiling is write-time ONLY — a tier TIGHTENING does not shorten an already-filed grant** (impl-review adversarial finding, added here). Assign TIER_3 → file at +1095 → re-assign TIER_1, and the existing grant keeps its 1095-day due date, past the TIER_1 365-day ceiling the OD-D thesis anchors on. Every step is a trusted, audited 2L act, so it is detectable, not silent — and it grants no *new* capability (the 2L could just re-file). But the coupling the EGIM/annual thesis rests on is not automatic. Recorded, and named for the **MG-2 reassessment candidate** (SS1/23 P1.3(e)'s reassess-at-validation, which would re-clamp on re-tier). No same-slice code change (re-clamping prior grants at re-tier is unratified scope).
 
 ## Part 4 — Open decisions (OQ-MG-1-1…7) — pending ratification
 
@@ -91,8 +92,134 @@ membership, and the off-vocab probe is `"WHENEVER"`).
 
 ## Part 5.5 — Implementation deviations from the ratified plan
 
-*(recorded during the build)*
+1. **The no-op semantics required reading the audit trail** (Step 2): "identical ratings ⇒ no-op"
+   cannot be decided from the head alone (only the derived tier is stored there), so
+   `assign_model_tier` compares against the LAST `MODEL.TIER_ASSIGN` event's payload — which is,
+   by the ratified sub-fork (i), the ratings' system of record. A rating flip that PRESERVES the
+   tier emits a fresh event with NO `record_version` bump (the tier moved nowhere); swallowing it
+   would have silently lost a governance judgment. Test-pinned both ways.
+2. **`register_model`'s `tier` kwarg removed at the SERVICE layer too** (the plan named the API
+   field + kwarg; the service parameter went with it), and the AC-11 registry test was rewritten
+   to the new write path (register untiered → 2L verb → binds) — its intent (no accidental
+   tier/validation gate at registration) is unchanged. The `test_model_validation.py` shared
+   fixture date moved 2027-06-01 → 2026-12-01: the cadence ceiling anchors to the record's OWN
+   (injectable) timestamp, and the suite injects `now` as early as 2026-01-01 — two edits beyond
+   the one the plan disclosed, same class.
+3. **The campaign's HS series uses the consume-existing path** (`build_var_hs_snapshot` with a
+   backdated `as_of_valid_at` per window_end): the build-in-request path pins at "now", so the
+   builder's valid-at cut is the only lever that places 8 consecutive HS window_ends.
+4. **A downgrade-smoke wrinkle, found and fixed at the build**: the campaign is the first PG
+   suite wiring `RolePermission` onto the migration-seeded permission catalog, and
+   `alembic downgrade base` then failed at 0002's `DELETE FROM permission` (FK violation). The
+   PG test's teardown deletes the demo tenant's `role_permission` rows only (EV plumbing; the
+   models/tiers/validations/runs persist; the CLI-seeded living tenant is unaffected).
+5. **The exception-conditions text deliberately avoids the literal "FL-1" token** so MF-1's
+   TRIGGERED-re-validation grep finds exactly the 5 flagship AWC conditions (test-pinned in both
+   directions).
+6. **The campaign beat its own ratified fallback**: the total-v2 evidence series achieved the
+   full N=8 (the record permitted a shorter honest series); every dossier states its N.
 
 ## Part 6 — Review dispositions + closure
 
-*(written at fold/close per the house pattern)*
+### Part 6.1 — The 4-finder implementation review
+
+Run as a parallel 4-finder review (adversarial / doctrine / campaign-content / scope-fence). **The
+scope-fence finder completed and its findings are ALL FOLDED (below); the other three exhausted the
+Fable usage budget mid-run and were re-run on Opus** — their dispositions land in Part 6.2. The
+scope finder confirmed the whole fence CLEAN by inspection: NO migration (head still `0040`, no ORM
+column change), NO new permission, exactly ONE audit-code mint (`MODEL.TIER_ASSIGN`),
+`audit/service.py` untouched (empty `git diff`), no shipped number moved, the two import-fence edits
+sound (nothing imports `irp_shared.demo`), and the 1L tier write closed at BOTH the API field and
+the service kwarg.
+
+**Folded (scope finder), all applied:**
+
+- **MEDIUM — the campaign PG test's teardown could strip the LIVING demo tenant's role wiring.** The
+  `DELETE FROM role_permission` ran on tenant match even in the tolerated already-seeded (dirty)
+  mode — so running the suite locally, where the CLI-seeded living tenant exists, would break its
+  1L/2L wiring, contradicting the fixture's own docstring. FOLDED: a `seeded_by_this_run` flag —
+  the teardown fires ONLY when this run did the seeding (CI, fresh schema); the dirty-mode run
+  leaves the living tenant untouched.
+- **MEDIUM — the seam gate's expired-EXCEPTION branch had no PG/RLS coverage** (only VW-1's REJECTED
+  leg existed; the plan promised "PG legs for the seam gate under RLS"). FOLDED:
+  `test_expired_exception_gate_blocks_run_binding_on_pg` — an expired exception refuses under RLS,
+  a fresh re-grant clears it.
+- **LOW — the ratified second exception guard ("never-after-REJECTED") is provably UNREACHABLE**
+  (a REJECTED row IS a non-EXCEPTION row, so guard 1 always fires first). Rather than keep
+  untestable code in a governance gate, **guard 2 was REMOVED as dead code** and guard 1's message
+  broadened to name both cases ("validated or rejected … never excepted"); the un-reject test now
+  asserts guard 1 covers it. *(A deviation from OD-E's "two guards" text — safe, behaviour
+  identical, recorded.)*
+- **LOW — the tier no-op silently dropped a fresh rationale.** A re-affirmation with identical
+  ratings but NEW rationale emitted nothing, though the rationale is part of the payload that is the
+  ratings' only durable home. FOLDED: the no-op now requires identical ratings **and** rationale;
+  a re-affirmation with new reasoning emits (test-pinned).
+- **LOW — TIER_2's 731-day refusal boundary was untested** (only equality exercised, implicitly).
+  FOLDED: `test_cadence_ceiling_tier2_boundary`.
+- **Clean-code:** `MODEL_TIERS` was defined-but-unused → now consumed by a load-time invariant
+  guard (`MODEL_TIER_REVIEW_MAX_DAYS` keys == `MODEL_TIERS`, so a future tier can't escape the
+  ceiling); `COMPLEXITY_RATINGS`/`MATERIALITY_RATINGS` de-duplicated onto a shared `_RATING_SCALE`;
+  three populated-but-never-read campaign dataclass fields (`_Book.acme_id`/`eurx_id`,
+  `_Chains.boundary_run_ids`) removed; the `derive_model_tier` docstring gloss corrected (complexity
+  escalates ONLY the LOW-materiality row).
+
+### Part 6.2 — The three re-run finders (adversarial / doctrine / campaign-content)
+
+The three finders that exhausted the Fable budget mid-run were **re-run on Opus 4.8**. **All three
+returned ZERO HIGH and ZERO MEDIUM.** The machinery was attacked hard and held; the doctrine surface
+and the 16 live records were verified clean. Five LOW findings, all folded.
+
+**Adversarial (Opus) — no HIGH/MEDIUM; everything attacked held, 1 LOW folded.** Confirmed by
+executed probes: the 4-family var loop CANNOT swallow the governance errors (`ExpiredModelExceptionError`/
+`RejectedModelVersionError` are direct `Exception` subclasses, not `WrongModelVersionError` — the correct
+error propagates out of the loop for the 4th family too); the single remaining exception guard fully
+subsumes the un-reject case (guard 2 was correctly removed); the junk-tier ceiling lookup is
+KeyError-SAFE (the `in MODEL_TIER_REVIEW_MAX_DAYS` membership check falls back to the TIER_1 bound —
+self-verified too); the expiry boundary is strict `<` (== today binds); overdue non-EXCEPTION stays
+display-only; RLS + append-only hold on live PG (cross-tenant reads see zero; UPDATE/DELETE blocked);
+the 12-endpoint mapping was E2E-confirmed through **three endpoints the unit tests do not use**
+(covariance, factor-exposure, benchmark-relative — each 422, zero orphan). **LOW folded — re-tiering
+UP does not shorten an already-filed grant** (the ceiling is write-time only): a model re-assigned
+TIER_3→TIER_1 keeps a 1095-day grant past the TIER_1 365-day ceiling. Every step is a trusted, audited
+2L act (detectable, not silent), but the coupling the slice's EGIM/annual thesis rests on was
+undisclosed — see the added Part 3 item 9.
+
+**Doctrine (Opus) — no HIGH/MEDIUM; the pre-ratification pass's 5 MEDIUMs did NOT survive into shipped
+text.** Every folded correction is present and correct in the code, the policy doc, AND the 16 live
+records (all 16 carry the person-level non-independence disclosure + the effective-challenge tension;
+`audit/service.py` git-diff empty; MG-15…19 collision-free; the backtest-APPROVED dossier correctly
+frames its limitations as method properties not remediable conditions; 730/1095 labeled HOUSE POLICY at
+every occurrence; "temporary" attributed to SS1/23, the §V elements to SR 26-2). **3 LOW:** (1) FOLDED —
+the 14 swept limitation constants said "a REJECTED latest outcome refuses every new bind" but MG-1 added
+the expired-exception branch at the SAME seam; all 15 occurrences now read "a REJECTED latest outcome
+(or an EXPIRED use-before-validation exception, MG-1) refuses…"; (2) DEFERRED with a note — one literal
+"P7 validation workflow" survives at `SCENARIO_LIMITATIONS` (`risk/bootstrap.py`), but it is about
+scenario-definition maker-checker, a genuinely UNSHIPPED capability, so "P7" remains correct there; (3)
+DEFERRED — `models.py` cites both SR 11-7 (VW-1-era sibling docstrings) and SR 26-2 (the MG-1 cadence
+comment); a global rename across VW-1's ratified surface is out of MG-1 scope, recorded not done.
+
+**Campaign-content (Opus) — no HIGH/MEDIUM; the live demo tenant is honest and coherent, 1 LOW folded.**
+Verified against the actual stored records: all **27 findings** exact-match a REGISTERED `model_limitation`
+row (0 invented); every CALCULATION_RUN evidence row resolves COMPLETED + in-tenant + right-family (BT-1
+on plain-VaR, BT-2 on total-v2, distinguished by `var_metric_type` — no cross-wiring); the arithmetic
+reconciles to the 6dp quantize convention (z·σ, k·σ, and the total decomposition; residual_variance > 0
+on all 8 total rows); all 16 tiers re-derive exactly from the dossier ratings; the FL-1 token discipline
+is exact (5 flagship AWC conditions, 0 elsewhere); the N=8 backtest has a sane 1/8 exception rate on the
+designed drawdown day. **LOW FOLDED — the 8-point forecast series is constant by fixture construction**
+(the demo factor-return cycle repeats within the covariance/HS window), which the dossiers described as
+a "series" without disclosing the constancy; a `_CONSTANT_SERIES_NOTE` was appended to the three flagship
+scope_notes (the backtest is a real, coherent test of a constant forecast against a varying
+realized-return series — the market-realistic path is FL-1/MF-1 territory).
+
+### Part 6.3 — Post-fold validation
+
+`ruff format`/`ruff check` clean; `mypy` clean (178 source files); **`make check` 1471 passed / 301
+skipped**; **full local-PG 1772 passed, ZERO failures — on a fresh schema AND on a dirty-schema
+double-run**; `alembic check` no drift; **`alembic heads` still `0040_var_estimate_age` (the
+no-migration claim, re-verified)**; `downgrade base` → `upgrade head` clean. *(One PG failure
+surfaced and was fixed: my own expired-exception PG test discharged its bind assert after a
+`commit()`, which clears the transaction-local tenant context and hid the row under RLS — a
+test-harness bug in the fold, not a code defect; the branch under test is unchanged.)* **The living
+demo tenant was re-seeded** via the CLI on the fresh schema so its 16 records carry the folded
+dossier text (the 3 series-bearing flagship dossiers now disclose the constant-series fixture note);
+end state re-verified: 16 models / 16 tiered / 6 INITIAL + 10 EXCEPTION.

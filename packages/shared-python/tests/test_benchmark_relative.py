@@ -635,6 +635,134 @@ def test_extreme_evidence_echo_is_failed_run(
     assert result.failure_reason and "magnitude" in result.failure_reason
 
 
+# ------------------------------------------------------- the RD-3 NaN fix (MG-1 OD-H ride-along)
+
+
+def _mint_br_snapshot_from(db: Session, source_snapshot_id: str, *, bench_value: str | None = None):  # noqa: ANN202
+    """Re-mint a ``BENCHMARK_RELATIVE_INPUT`` snapshot copying a REAL governed snapshot's pinned
+    content, optionally overwriting the FIRST benchmark row's ``return_value`` — the adjudication-
+    gate probe vehicle (the ``test_var_hs`` ``_mint_hs_snapshot`` precedent). The capture layer
+    refuses non-finite values at write (``_validate_return_value``), so a NaN/Infinity bench row
+    can only ever arrive via a hand-minted pin; every provenance id stays REAL so nothing but the
+    mutated value refuses."""
+    import json
+    from types import SimpleNamespace
+
+    from irp_shared.snapshot import (
+        COMPONENT_KIND_BENCHMARK_RETURN,
+        SnapshotActor,
+        list_components,
+    )
+    from irp_shared.snapshot.service import _append_spec, _persist_snapshot
+
+    specs: list = []
+    for comp in list_components(db, snapshot_id=source_snapshot_id, acting_tenant=TENANT):
+        content = json.loads(comp.captured_content)
+        if comp.component_kind == COMPONENT_KIND_BENCHMARK_RETURN:
+            if bench_value is not None:
+                content["rows"][0]["return_value"] = bench_value
+            anchor_id, target = content["benchmark_id"], "benchmark"
+        else:
+            anchor_id, target = content["id"], "portfolio_return_result"
+        anchor = SimpleNamespace(id=anchor_id, valid_from=None, system_from=T0, record_version=None)
+        _append_spec(specs, comp.component_kind, target, anchor, content)
+    header = _persist_snapshot(
+        db,
+        acting_tenant=TENANT,
+        actor=SnapshotActor(actor_id="s"),
+        specs=specs,
+        label="",
+        purpose=PURPOSE_BENCHMARK_RELATIVE_INPUT,
+        as_of_valid_at=KNOWN_AT,
+        as_of_known_at=KNOWN_AT,
+        as_of_valuation_date=D1,
+        binding_predicate_version="test:hand-minted",
+    )
+    db.flush()
+    return header
+
+
+def _real_br_snapshot(db: Session) -> tuple[str, str]:
+    """A REAL governed BENCHMARK_RELATIVE_INPUT snapshot (one sub-period, r_p=3% vs r_b=2.5%).
+    Returns (snapshot_id, model_version_id)."""
+    from irp_shared.snapshot import SnapshotActor, build_benchmark_relative_snapshot
+
+    run_id, _ = _return_run(db, [(D0, "1000000"), (D1, "1030000")])
+    bm = _benchmark(db)
+    _bench_return(db, bm, D1, "0.025")
+    snap = build_benchmark_relative_snapshot(
+        db,
+        acting_tenant=TENANT,
+        actor=SnapshotActor(actor_id="s"),
+        portfolio_return_run_id=run_id,
+        benchmark_id=bm.id,
+        return_basis=RETURN_BASIS_TOTAL,
+    )
+    return str(snap.id), _model(db)
+
+
+def _consume(db: Session, snapshot_id: str, mv: str):  # noqa: ANN202
+    return run_benchmark_relative(
+        db,
+        acting_tenant=TENANT,
+        actor=ACTOR,
+        code_version="br-v1",
+        environment_id="ci",
+        model_version_id=mv,
+        snapshot_id=snapshot_id,
+    )
+
+
+def _assert_refused_no_run(db: Session, snapshot_id: str, mv: str, match: str) -> None:
+    from run_assertions import assert_no_running_orphan
+
+    with pytest.raises(BenchmarkRelativeInputError, match=match):
+        _consume(db, snapshot_id, mv)
+    assert_no_running_orphan(db, run_type=RUN_TYPE_BENCHMARK_RELATIVE)
+    created = db.execute(
+        select(func.count())
+        .select_from(CalculationRun)
+        .where(CalculationRun.run_type == RUN_TYPE_BENCHMARK_RELATIVE)
+    ).scalar()
+    assert created == 0  # pre-create refusal: ZERO run rows, not a FAILED run
+
+
+def test_bench_side_nan_refused_pre_create_no_orphan(session: Session) -> None:
+    """MG-1 OD-H ride-along (the RD-3 NaN fix): a hand-minted bench-row ``"NaN"`` is a PRE-CREATE
+    ``BenchmarkRelativeInputError`` (422) with NO run row and NO RUNNING orphan. Before the bench
+    side adopted ``parse_strict_decimal``, the raw ``Decimal()`` parsed NaN QUIETLY at adjudication
+    and it detonated at the magnitude gate (a Decimal-NaN comparison raises InvalidOperation)
+    outside every try — a raw 500 + a RUNNING orphan (the BT-1 orphan class). NaN was the ONLY
+    orphaning input: unparseable garbage was ALREADY a pre-create 422 (InvalidOperation is an
+    ArithmeticError, caught by the adjudication wrapper) — verifier-executed, MG-1 census."""
+    snap_id, mv = _real_br_snapshot(session)
+    minted = _mint_br_snapshot_from(session, snap_id, bench_value="NaN")
+    _assert_refused_no_run(session, str(minted.id), mv, "not a finite number")
+
+
+@pytest.mark.parametrize("value", ["Infinity", "-Infinity"])
+def test_bench_side_infinity_refused_pre_create(session: Session, value: str) -> None:
+    """The stated ±Infinity class change (MG-1 OD-H, ratified): a bench-row ±Inf previously parsed
+    quietly and produced a CORRECT post-create FAILED run at the magnitude gate; with the guarded
+    parse it MOVES to a pre-create 422, matching the portfolio side's behavior for the same
+    input. A deliberate, recorded change to a working path — not a bug fix."""
+    snap_id, mv = _real_br_snapshot(session)
+    minted = _mint_br_snapshot_from(session, snap_id, bench_value=value)
+    _assert_refused_no_run(session, str(minted.id), mv, "not a finite number")
+
+
+def test_hand_minted_control_still_computes(session: Session) -> None:
+    """Control for the two refusal probes above: the SAME mint vehicle with UNMUTATED pinned
+    content passes adjudication and COMPLETES — what refuses is the non-finite value, never the
+    hand-mint itself."""
+    snap_id, mv = _real_br_snapshot(session)
+    minted = _mint_br_snapshot_from(session, snap_id)  # no mutation
+    result = _consume(session, str(minted.id), mv)
+    assert result.status == RunStatus.COMPLETED.value
+    active = next(r for r in result.rows if r.metric_type == METRIC_TYPE_ACTIVE_RETURN)
+    assert active.metric_value == Decimal("0.005000000000")  # 0.03 - 0.025
+
+
 # --------------------------------------------------------------------------- governance guards
 
 

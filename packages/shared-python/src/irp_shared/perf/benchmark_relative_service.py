@@ -299,8 +299,19 @@ def _adjudicate_pins(
         raise BenchmarkRelativeInputError(
             "the pinned benchmark rows are not uniform SIMPLE/return_basis — refused"
         )
+    # Guarded parse, identical to the portfolio side above: a raw Decimal() here let NaN through
+    # to the magnitude gate OUTSIDE every try (500 + RUNNING orphan — the RD-3 class). Unparseable
+    # garbage was already a pre-create 422 (InvalidOperation is an ArithmeticError, caught at
+    # adjudication); ±Infinity moves from a post-create FAILED run to a pre-create 422 (the ratified
+    # class change, MG-1 OD-H).
     dated_bench = [
-        (date.fromisoformat(r["return_date"]), Decimal(r["return_value"])) for r in bench_rows
+        (
+            date.fromisoformat(r["return_date"]),
+            parse_strict_decimal(
+                r["return_value"], error=BenchmarkRelativeInputError, field="return_value"
+            ),
+        )
+        for r in bench_rows
     ]
 
     # Bucket the benchmark rows into the sub-period windows; each sub-period needs >= 1 row.

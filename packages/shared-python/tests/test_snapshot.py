@@ -895,7 +895,8 @@ def test_nothing_imports_snapshot() -> None:
     central ``models.py`` aggregator (every model) and the run consumers ``exposure`` (P2-3) +
     ``risk`` (P3-1) + ``perf`` (PM-1 — builds the RETURN_INPUT snapshot + reads its pinned
     components) — which read the bound snapshot's pinned components + build the curve snapshot
-    (the AD-014 single-bind)."""
+    (the AD-014 single-bind) — and ``demo`` (MG-1: the campaign runner orchestrates the real
+    consume-existing paths from ABOVE every domain, like the apps layer; nothing imports it)."""
     root = pathlib.Path(snapshot_service.__file__).parents[1]
     for path in root.rglob("*.py"):
         if (
@@ -903,6 +904,7 @@ def test_nothing_imports_snapshot() -> None:
             or "exposure" in path.parts
             or "risk" in path.parts
             or "perf" in path.parts
+            or "demo" in path.parts
             or path.name == "models.py"
         ):
             continue

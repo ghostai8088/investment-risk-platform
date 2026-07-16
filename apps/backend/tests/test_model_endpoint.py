@@ -318,3 +318,75 @@ def test_list_validations_and_detail_latest_block(
     assert latest is not None
     assert latest["outcome"] == "APPROVED"
     assert latest["overdue"] is True  # next_review_due 2020-01-01 < today
+
+
+# ---------- MG-1 (OD-MG-1-B/C): the tier endpoint + the closed 1L register-time write ----------
+
+_TIER_BODY = {
+    "materiality_rating": "HIGH",
+    "complexity_rating": "MEDIUM",
+    "rationale": "flagship market-risk exposure",
+}
+
+
+def test_assign_tier_roundtrip_and_derivation(client_and_principal) -> None:  # noqa: ANN001
+    client, principal, db = client_and_principal
+    created = client.post("/models", json=_BODY, headers=_headers(principal)).json()
+    resp = client.post(
+        f"/models/{created['id']}/tier", json=_TIER_BODY, headers=_headers(principal)
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["tier"] == "TIER_1"  # derived server-side; a caller can never post a tier
+    detail = client.get(f"/models/{created['id']}", headers=_headers(principal)).json()
+    assert detail["tier"] == "TIER_1"
+
+
+def test_assign_tier_requires_the_2l_permission(client_and_principal) -> None:  # noqa: ANN001
+    # OD-MG-1-C: tier assignment rides model.validate. A register-only (1L) principal is refused —
+    # the SOD fact the whole OD exists for: the author must not set his own scrutiny level.
+    client, principal, db = client_and_principal
+    created = client.post("/models", json=_BODY, headers=_headers(principal)).json()
+    author = AppUser(tenant_id=principal.tenant_id, display_name="1L author")
+    role_1l = Role(tenant_id=principal.tenant_id, code="r1l", name="register-only")
+    db.add_all([author, role_1l])
+    db.flush()
+    perm_id = db.execute(
+        select(Permission.id).where(Permission.code == "model.inventory.register")
+    ).scalar_one()
+    db.add(RolePermission(role_id=role_1l.id, permission_id=perm_id))
+    db.add(UserRole(tenant_id=principal.tenant_id, user_id=author.id, role_id=role_1l.id))
+    db.commit()
+    resp = client.post(
+        f"/models/{created['id']}/tier",
+        json=_TIER_BODY,
+        headers={"X-User-Id": author.id, "X-Tenant-Id": principal.tenant_id},
+    )
+    assert resp.status_code == 403
+    resp = client.post(
+        f"/models/{created['id']}/tier",
+        json=_TIER_BODY,
+        headers={"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": principal.tenant_id},
+    )
+    assert resp.status_code == 403  # no roles at all
+
+
+def test_assign_tier_refusals_422_and_404(client_and_principal) -> None:  # noqa: ANN001
+    client, principal, _db = client_and_principal
+    created = client.post("/models", json=_BODY, headers=_headers(principal)).json()
+    bad = {**_TIER_BODY, "materiality_rating": "SEVERE"}
+    resp = client.post(f"/models/{created['id']}/tier", json=bad, headers=_headers(principal))
+    assert resp.status_code == 422
+    resp = client.post(f"/models/{uuid.uuid4()}/tier", json=_TIER_BODY, headers=_headers(principal))
+    assert resp.status_code == 404
+
+
+def test_register_body_tier_is_ignored_and_not_stamped(client_and_principal) -> None:  # noqa: ANN001
+    # The ratified API shape (OD-MG-1-B, a planning-verifier fold): a stray `tier` key in the
+    # register body is IGNORED-AND-NOT-STAMPED — the 1L cannot set tier, by any route. The head
+    # registers untiered (the TIER_1 fail-safe bound applies until the 2L assigns).
+    client, principal, _db = client_and_principal
+    body = {**_BODY, "code": "M-TIER-SMUGGLE", "tier": "TIER_3"}
+    created = client.post("/models", json=body, headers=_headers(principal)).json()
+    detail = client.get(f"/models/{created['id']}", headers=_headers(principal)).json()
+    assert detail["tier"] is None

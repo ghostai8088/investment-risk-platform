@@ -24,9 +24,13 @@ from irp_shared.model.models import (
 )
 from irp_shared.model.service import (
     MODEL_REGISTER_EVENT,
+    MODEL_TIER_ASSIGN_EVENT,
     MODEL_VERSION_EVENT,
+    ModelNotVisible,
+    ModelTierValueError,
     UnregisteredModelError,
     assert_registered_model_version,
+    assign_model_tier,
     register_model,
     register_model_version,
 )
@@ -311,10 +315,152 @@ def test_br3_gate_is_tenant_scoped(session: Session) -> None:
 
 def test_ac11_tier1_unvalidated_model_registers_and_binds(session: Session) -> None:
     # AC-11: a Tier-1, UNVALIDATED model registers and a version binds with NO approval/validation
-    # gate — proving tier/validation enforcement is NOT (accidentally) implemented in P1A-2.
+    # gate — proving tier/validation enforcement is NOT (accidentally) implemented at registration.
+    # MG-1 edit (disclosed in the plan): register_model no longer accepts `tier` — the head
+    # registers untiered and the tier arrives via the 2L verb; the binding assertion is unchanged.
     tenant = _tenant()
-    model = _model(session, tenant, code="TIER1", tier="Tier 1")
-    assert model.tier == "Tier 1"
+    model = _model(session, tenant, code="TIER1")
+    assert model.tier is None  # every head registers UNTIERED (the TIER_1 fail-safe bound applies)
     assert model.validation_status == "UNVALIDATED"
+    assign_model_tier(
+        session,
+        acting_tenant=tenant,
+        model_id=model.id,
+        materiality_rating="HIGH",
+        complexity_rating="MEDIUM",
+        rationale="AC-11 fixture: flagship-equivalent exposure",
+        actor_id="validator-2l",
+    )
+    assert model.tier == "TIER_1"
     version = register_model_version(session, model=model, version_label="1.0.0", actor_id="dev")
     assert assert_registered_model_version(session, version.id).id == version.id
+
+
+# ---------- MG-1 (OD-MG-1-A/B/C): the tier matrix + the 2L assignment verb ----------
+
+
+def test_derive_model_tier_all_nine_cells() -> None:
+    from irp_shared.model.models import derive_model_tier
+
+    # The ratified house matrix (OD-MG-1-A — HOUSE POLICY): TIER_1 = HIGH materiality; TIER_2 =
+    # MEDIUM materiality, or LOW materiality escalated by HIGH complexity; TIER_3 = the rest.
+    expected = {
+        ("HIGH", "HIGH"): "TIER_1",
+        ("HIGH", "MEDIUM"): "TIER_1",
+        ("HIGH", "LOW"): "TIER_1",
+        ("MEDIUM", "HIGH"): "TIER_2",
+        ("MEDIUM", "MEDIUM"): "TIER_2",
+        ("MEDIUM", "LOW"): "TIER_2",
+        ("LOW", "HIGH"): "TIER_2",
+        ("LOW", "MEDIUM"): "TIER_3",
+        ("LOW", "LOW"): "TIER_3",
+    }
+    for (m, c), tier in expected.items():
+        assert derive_model_tier(m, c) == tier, (m, c)
+
+
+def test_assign_model_tier_bumps_head_and_carries_the_ratings_in_the_event(
+    session: Session,
+) -> None:
+    # The MODEL.TIER_ASSIGN payload is the RATINGS' ONLY durable home (OQ-MG-1-1 sub-fork (i):
+    # no new columns, no migration) — so the payload-shape assertion is load-bearing, not
+    # cosmetic (an MG-1 planning-verifier fold).
+    tenant = _tenant()
+    model = _model(session, tenant, code="TA1")
+    rv_before = model.record_version
+    assign_model_tier(
+        session,
+        acting_tenant=tenant,
+        model_id=model.id,
+        materiality_rating="MEDIUM",
+        complexity_rating="LOW",
+        rationale="moderate exposure; single consumer",
+        actor_id="validator-2l",
+    )
+    assert model.tier == "TIER_2"
+    assert model.record_version == rv_before + 1
+    event = session.execute(
+        select(AuditEvent).where(
+            AuditEvent.event_type == MODEL_TIER_ASSIGN_EVENT,
+            AuditEvent.entity_id == model.id,
+        )
+    ).scalar_one()
+    assert event.before_value == {"tier": None}
+    assert event.after_value == {
+        "tier": "TIER_2",
+        "materiality_rating": "MEDIUM",
+        "complexity_rating": "LOW",
+        "rationale": "moderate exposure; single consumer",
+    }
+
+
+def test_assign_model_tier_no_op_vs_rating_change_preserving_tier(session: Session) -> None:
+    # The no-op is an IDENTICAL re-assignment — same ratings AND same rationale. Two things must
+    # still emit: (a) a rating flip preserving the derived tier (MEDIUM×LOW -> LOW×HIGH, both
+    # TIER_2), and (b) a re-affirmation carrying a NEW rationale — because the payload is the
+    # ratings+rationale's only durable home, so swallowing either loses a governance judgment
+    # (both caught at the impl review).
+    tenant = _tenant()
+    model = _model(session, tenant, code="TA2")
+    kw = dict(acting_tenant=tenant, model_id=model.id, actor_id="validator-2l")
+
+    def _events() -> int:
+        return session.execute(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(
+                AuditEvent.event_type == MODEL_TIER_ASSIGN_EVENT,
+                AuditEvent.entity_id == model.id,
+            )
+        ).scalar_one()
+
+    assign_model_tier(
+        session, materiality_rating="MEDIUM", complexity_rating="LOW", rationale="r1", **kw
+    )
+    rv_after_first = model.record_version
+    # identical ratings AND identical rationale ⇒ NO-OP: no bump, no second event
+    assign_model_tier(
+        session, materiality_rating="MEDIUM", complexity_rating="LOW", rationale="r1", **kw
+    )
+    assert model.record_version == rv_after_first
+    assert _events() == 1
+    # identical ratings, NEW rationale ⇒ emits (the re-affirmation is a governance judgment)
+    assign_model_tier(
+        session,
+        materiality_rating="MEDIUM",
+        complexity_rating="LOW",
+        rationale="r1-reaffirmed",
+        **kw,
+    )
+    assert model.record_version == rv_after_first  # tier moved nowhere
+    assert _events() == 2
+    # changed ratings, SAME derived tier ⇒ emits; record_version still not bumped
+    assign_model_tier(
+        session, materiality_rating="LOW", complexity_rating="HIGH", rationale="re-rated", **kw
+    )
+    assert model.tier == "TIER_2" and model.record_version == rv_after_first
+    assert _events() == 3
+
+
+def test_assign_model_tier_refusals(session: Session) -> None:
+    tenant = _tenant()
+    model = _model(session, tenant, code="TA3")
+    good = dict(
+        acting_tenant=tenant,
+        model_id=model.id,
+        materiality_rating="HIGH",
+        complexity_rating="LOW",
+        rationale="x",
+        actor_id="v",
+    )
+    with pytest.raises(ModelTierValueError, match="materiality_rating"):
+        assign_model_tier(session, **{**good, "materiality_rating": "SEVERE"})
+    with pytest.raises(ModelTierValueError, match="complexity_rating"):
+        assign_model_tier(session, **{**good, "complexity_rating": "TIER_1"})
+    with pytest.raises(ModelTierValueError, match="rationale"):
+        assign_model_tier(session, **{**good, "rationale": "   "})
+    with pytest.raises(ModelTierValueError, match="human"):
+        assign_model_tier(session, **good, actor_type="agent")
+    with pytest.raises(ModelNotVisible):  # cross-tenant / unknown head fails closed
+        assign_model_tier(session, **{**good, "model_id": str(uuid.uuid4())})
+    assert model.tier is None  # nothing stamped by any refusal

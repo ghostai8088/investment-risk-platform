@@ -31,6 +31,7 @@ from irp_backend.deps import get_tenant_session, map_refusal, require_permission
 from irp_shared.entitlement.service import Principal
 from irp_shared.marketdata import BenchmarkNotVisible, FxRateNotFound
 from irp_shared.model.service import (
+    ExpiredModelExceptionError,
     ModelVersionConflictError,
     RejectedModelVersionError,
     UnregisteredModelError,
@@ -107,6 +108,11 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     RejectedModelVersionError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "model_version latest validation outcome is REJECTED — new runs refused (VW-1 / CTRL-022)",
+    ),
+    ExpiredModelExceptionError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "model_version use-before-validation EXCEPTION has expired — new runs refused until a "
+        "fresh exception is granted or a validation is recorded (MG-1 / CTRL-022)",
     ),
     ModelVersionConflictError: (
         status.HTTP_409_CONFLICT,
@@ -377,6 +383,7 @@ def create_portfolio_return_run(
         PortfolioReturnInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -602,6 +609,7 @@ def create_benchmark_relative_run(
         BenchmarkRelativeInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -833,6 +841,7 @@ def create_desmoothed_return_run(
         DesmoothingInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,

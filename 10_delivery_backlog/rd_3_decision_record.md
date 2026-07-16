@@ -133,6 +133,8 @@ real regressions.
 check`/`downgrade base`/`upgrade head` all clean. `make check` (1370+ new tests) and full local-PG
 (schema-reset run green; **dirty-schema double-run green** — the OD-D regression proof) both pass.
 
+> **PAID at MG-1 (2026-07-15, dated note):** the deferred NaN detonation was fixed as an MG-1 ride-along — `parse_strict_decimal` adopted at the bench-side parse, mutation-tested regression suite added. Precision correction carried from the Wave-5 close: only `NaN` orphaned (garbage was already a pre-create 422); ±Infinity moved from a correct post-create FAILED run to a pre-create 422 (the ratified, stated class change).
+
 **Review: 4 finders (proportionate form), one explicitly adversarial on OD-A per OQ-RD-3-5.**
 Findings and dispositions:
 

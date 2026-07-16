@@ -36,7 +36,11 @@ from irp_shared.entitlement.service import Principal
 from irp_shared.exposure.service import ExposureRunNotVisible
 from irp_shared.marketdata.benchmark import BenchmarkNotVisible
 from irp_shared.marketdata.factor import FactorNotVisible
-from irp_shared.model.service import RejectedModelVersionError, UnregisteredModelError
+from irp_shared.model.service import (
+    ExpiredModelExceptionError,
+    RejectedModelVersionError,
+    UnregisteredModelError,
+)
 from irp_shared.risk import (
     ActiveRiskActor,
     ActiveRiskInputError,
@@ -203,6 +207,11 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     RejectedModelVersionError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "model_version latest validation outcome is REJECTED — new runs refused (VW-1 / CTRL-022)",
+    ),
+    ExpiredModelExceptionError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "model_version use-before-validation EXCEPTION has expired — new runs refused until a "
+        "fresh exception is granted or a validation is recorded (MG-1 / CTRL-022)",
     ),
     ModelVersionConflictError: (
         status.HTTP_409_CONFLICT,
@@ -518,6 +527,7 @@ def create_sensitivity_run(
         SensitivityInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -760,6 +770,7 @@ def create_factor_exposure_run(
         FactorExposureInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -990,6 +1001,7 @@ def create_covariance_run(
         CovarianceInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -1417,6 +1429,7 @@ def create_var_run(
         VarInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -1592,6 +1605,7 @@ def create_var_historical_run(
         HsVarInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -1764,6 +1778,7 @@ def create_active_risk_run(
         ActiveRiskInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -2002,6 +2017,7 @@ def create_var_backtest_run(
         VarBacktestInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -2517,6 +2533,7 @@ def create_scenario_run(
         ScenarioInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,
@@ -2717,6 +2734,7 @@ def create_proxy_weight_run(
         ProxyWeightInputError,
         UnregisteredModelError,
         RejectedModelVersionError,
+        ExpiredModelExceptionError,
         WrongModelVersionError,
         SnapshotPurposeError,
         SnapshotNotFound,

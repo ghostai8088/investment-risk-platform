@@ -225,7 +225,7 @@ entitlement/lineage/model-gov/control/phase/dependency are in the [RTM](requirem
 | REQ | Title | CAP | Business purpose | Functional | Data | Calc | Test | Acceptance | Status |
 |---|---|---|---|---|---|---|---|---|---|
 | REQ-MDG-001 | Model inventory & versioning | 12.1/12.2 | Single register of models | Register every model/version + assumptions/limitations | `model` (EV), `model_version` (IA), `model_assumption`/`model_limitation` (IA) | — | Inventory-binding test | No calc runs without an inventory entry (BR-3) | In-Progress (P1A-2 skeleton) |
-| REQ-MDG-002 | Tiering | 12.3 | Proportionate governance | Assign Tier 1/2/3 by criteria | model metadata | — | Tiering test | Each model has a tier; Tier-1 gated to human approval | Draft |
+| REQ-MDG-002 | Tiering | 12.3 | Proportionate governance | Assign Tier 1/2/3 by criteria | model metadata | — | Tiering test | Each model has a tier; Tier-1 gated to human approval | In-Progress (MG-1, 2026-07-15: dual ratings + derived tier via the 2L `assign_model_tier` + `MODEL.TIER_ASSIGN`; the Tier-1 H-02 human-approval gate stays open) |
 | REQ-MDG-003 | Validation workflow & effective challenge | 12.4/12.5 | Independent assurance | Developer≠validator workflow; approval status | `model_validation` (IA) | — | Independence (SOD-03) test | Author cannot validate; Tier-1 needs H-02 approval (BR-15) | Draft |
 
 ### CAP-13 Data Quality & Reconciliation (DQR)

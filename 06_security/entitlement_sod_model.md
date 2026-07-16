@@ -109,6 +109,14 @@ wired them (IMPLEMENTED).**
 
 | model_validation (ENT-037) | `model.validate` | **MINTED IN VW-1 (2026-07-14; OD-VW-1-E; `entitlement/bootstrap.py`).** ONE new code — the first `model.*` mint since P0.5. `model.validate` is the **2L independent-validation write** (record an SR 11-7 validation on a `model_version`). Granted to **`risk_manager_2l` (ROLE-MV)** + `platform_admin` ONLY. **Deliberately WITHHELD from `risk_analyst_1l`** — the SOLE `model.inventory.register` holder (this is SOD-03 author≠validator, enforced at the ROLE level: no non-admin role holds both register and validate) — **and from `data_steward`** (holds no `model.*` code; a maker-tier role must not gain a 2L assurance verb). **Reads REUSE `model.inventory.view`** (a validation record is inventory metadata; the P3-8 no-new-view-code precedent). Deny-by-default (ENT-P-01); a parity test (`test_model_validate_grants_as_ratified`) pins the holder set AND asserts the no-role-holds-both-register-and-validate SoD invariant. |
 
+**MG-1 note (2026-07-15) — tier assignment rides `model.validate` (the 2L verb); NO new permission, NO SoD row change:**
+the new `assign_model_tier` service verb + `POST /models/{model_id}/tier` are gated on the existing **`model.validate`**
+(2L) — **HOUSE POLICY per OD-MG-1-C**, motivated by the SOD fact that the 1L author must not set the materiality that
+scales scrutiny of his own model (SS1/23 P1.3(e) anchors only the independent-reassessment-at-validation hook, not
+validator ownership). No new `PERM-*` is minted and the SOD matrix (§6) is unchanged — SOD-03 already covers the pair.
+**The 1L register-time tier write is CLOSED at the API** (`RegisterModelIn.tier` removed; a `tier` key in the register
+body is ignored-and-not-stamped), so ALL tier writes flow through the audited 2L verb (`MODEL.TIER_ASSIGN`).
+
 **ABAC anchor-not-enforce (P1C-1, AD-017):** the portfolio hierarchy is the **portfolio-scope ANCHOR**. A future
 `SCOPE-PORTFOLIO` grant (P6+) will reference `portfolio.id` with **subtree** semantics (OQ-014 closed = subtree: a grant on
 a node reaches its descendants). P1C-1 provides the bounded **descendant** traversal so subtree membership is **computable**,

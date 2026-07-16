@@ -24,7 +24,7 @@ Guards (all pre-write, fail-closed → 422):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -38,10 +38,14 @@ from irp_shared.model.models import (
     EVIDENCE_TYPE_DOCUMENT,
     EVIDENCE_TYPES,
     FINDING_SEVERITIES,
+    MODEL_TIER_1,
+    MODEL_TIER_REVIEW_MAX_DAYS,
     VALIDATION_OUTCOME_APPROVED_WITH_CONDITIONS,
     VALIDATION_OUTCOME_REJECTED,
     VALIDATION_OUTCOMES,
+    VALIDATION_TYPE_EXCEPTION,
     VALIDATION_TYPES,
+    Model,
     ModelValidation,
     ModelValidationEvidence,
     ModelValidationFinding,
@@ -246,6 +250,58 @@ def record_validation(
     version = _resolve_registered_version(
         session, request.model_version_id, acting_tenant=acting_tenant
     )
+    # --- MG-1 OD-E: the EXCEPTION type's substitution guard ---
+    # An EXCEPTION (the per-model, TIME-BOXED use-before-validation grant: SR 26-2 §V supplies the
+    # elements — limitations attention, stakeholder notice, controls; SS1/23 P5.3(a)(i) supplies
+    # "temporary" and §2.13 the grant semantics) may exist ONLY where NO real validation does — so
+    # it can neither substitute for a revalidation NOR un-reject: a REJECTED row is itself a
+    # non-EXCEPTION row, so the single "no prior non-EXCEPTION row" guard subsumes the un-reject
+    # case entirely. (OD-E ratified a separate second guard for the un-reject case; the impl review
+    # proved it unreachable — guard 1 always fires first — so it was removed as dead code and the
+    # removal recorded in Part 5.5.) Renewal by a FRESH exception is the intended re-grant path
+    # (unbounded — the recorded MG-1 limitation). Version-grain, like the REJECTED gate itself.
+    if request.validation_type == VALIDATION_TYPE_EXCEPTION:
+        if request.outcome != VALIDATION_OUTCOME_APPROVED_WITH_CONDITIONS:
+            raise ModelValidationValueError(
+                "an EXCEPTION must be APPROVED_WITH_CONDITIONS — the conditions ARE the SR 26-2 §V "
+                "controls (limits on use / closer monitoring) + the justification — refused"
+            )
+        prior_real = session.execute(
+            select(ModelValidation.id)
+            .where(
+                ModelValidation.tenant_id == str(acting_tenant),
+                ModelValidation.model_version_id == version.id,
+                ModelValidation.validation_type != VALIDATION_TYPE_EXCEPTION,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        if prior_real is not None:
+            raise ModelValidationValueError(
+                "a use-before-validation EXCEPTION cannot be filed for a version that has been "
+                "validated or rejected — a validated model revalidates (PERIODIC/TRIGGERED) and a "
+                "rejected one is remediated + re-validated, never excepted — refused"
+            )
+    # --- MG-1 OD-D: the tier-bounded cadence ceiling (CLOSES OD-032/OD-033) ---
+    # An approving outcome's next_review_due must sit within the model's tier bound; an UNTIERED
+    # model gets the TIER_1 bound (VW-1's ratified fail-safe, continued). This costs ONE head
+    # SELECT — record_validation's guard path resolves only the version (the MG-1 planning
+    # verifier killed the drafted "zero new queries" claim; that fact is true only at the BIND
+    # seam, which already reads the head).
+    if request.next_review_due is not None:
+        head = session.execute(
+            select(Model).where(Model.id == version.model_id, Model.tenant_id == str(acting_tenant))
+        ).scalar_one_or_none()
+        tier = head.tier if head is not None and head.tier in MODEL_TIER_REVIEW_MAX_DAYS else None
+        max_days = MODEL_TIER_REVIEW_MAX_DAYS[tier or MODEL_TIER_1]
+        today = (now or utcnow()).date()
+        bound = today + timedelta(days=max_days)
+        tier_label = tier if tier else f"{MODEL_TIER_1} (untiered fail-safe)"
+        if request.next_review_due > bound:
+            raise ModelValidationValueError(
+                f"next_review_due {request.next_review_due.isoformat()} exceeds the {tier_label} "
+                f"review ceiling of {max_days} days ({bound.isoformat()}) — OD-MG-1-D; declare a "
+                f"date within the bound — refused"
+            )
     # Re-resolve every cited run BEFORE any write (nothing is stamped until all evidence is proven).
     resolved_runs: dict[int, str] = {}
     for idx, ev in enumerate(request.evidence):

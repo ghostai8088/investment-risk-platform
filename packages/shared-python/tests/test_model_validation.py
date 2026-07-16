@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -53,7 +53,10 @@ from irp_shared.models import Base
 
 _MODEL_CODE = "risk.var.parametric"
 _T0 = datetime(2026, 6, 1, tzinfo=UTC)
-_DUE = date(2027, 6, 1)
+# MG-1 (OD-MG-1-D): next_review_due must sit within the tier ceiling of the record's OWN
+# timestamp (untiered => the TIER_1 365-day fail-safe). The suite injects `now` as early as
+# 2026-01-01, so the shared fixture date must be <= 2026-12-31.
+_DUE = date(2026, 12, 1)
 
 
 @pytest.fixture
@@ -569,3 +572,308 @@ def test_validation_tables_are_append_only(session: Session) -> None:
         with pytest.raises(AppendOnlyViolation):
             session.flush()
         session.rollback()
+
+
+# ---------- MG-1 (OD-MG-1-D): the tier-bounded cadence ceiling ----------
+
+
+def _tiered_version(session: Session, tenant: str, *, materiality: str, code: str) -> ModelVersion:
+    from irp_shared.model.service import assign_model_tier
+
+    version = _registered_version(session, tenant, code=code)
+    assign_model_tier(
+        session,
+        acting_tenant=tenant,
+        model_id=version.model_id,
+        materiality_rating=materiality,
+        complexity_rating="MEDIUM",
+        rationale="cadence fixture",
+        actor_id="validator-2l",
+    )
+    return version
+
+
+def test_cadence_ceiling_tier1_boundary(session: Session) -> None:
+    # due == now+365 PASSES; +366 refuses (the ceiling is a <= bound on the record's OWN clock).
+    tenant = str(uuid.uuid4())
+    v = _tiered_version(session, tenant, materiality="HIGH", code="risk.cad.t1")
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    ok = record_validation(
+        session,
+        acting_tenant=tenant,
+        actor=_actor(),
+        request=_request(v.id, next_review_due=now.date() + timedelta(days=365)),
+        now=now,
+    )
+    assert ok.next_review_due == date(2027, 7, 1)
+    v2 = _tiered_version(session, tenant, materiality="HIGH", code="risk.cad.t1b")
+    with pytest.raises(ModelValidationValueError, match="TIER_1 review ceiling"):
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=_actor(),
+            request=_request(v2.id, next_review_due=now.date() + timedelta(days=366)),
+            now=now,
+        )
+
+
+def test_cadence_ceiling_tier2_boundary(session: Session) -> None:
+    # 730 passes, 731 refuses (the middle-tier boundary the campaign only exercises at equality).
+    tenant = str(uuid.uuid4())
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    v = _tiered_version(session, tenant, materiality="MEDIUM", code="risk.cad.t2")
+    ok = record_validation(
+        session,
+        acting_tenant=tenant,
+        actor=_actor(),
+        request=_request(v.id, next_review_due=now.date() + timedelta(days=730)),
+        now=now,
+    )
+    assert ok.next_review_due == now.date() + timedelta(days=730)
+    v2 = _tiered_version(session, tenant, materiality="MEDIUM", code="risk.cad.t2b")
+    with pytest.raises(ModelValidationValueError, match="TIER_2 review ceiling"):
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=_actor(),
+            request=_request(v2.id, next_review_due=now.date() + timedelta(days=731)),
+            now=now,
+        )
+
+
+def test_cadence_ceiling_untiered_gets_tier1_bound_and_tier3_gets_1095(session: Session) -> None:
+    # The fail-safe (VW-1's ratified posture, continued): an UNTIERED model is bounded like
+    # TIER_1. A TIER_3 model may declare out to 1095 days.
+    tenant = str(uuid.uuid4())
+    untiered = _registered_version(session, tenant, code="risk.cad.none")
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    with pytest.raises(ModelValidationValueError, match="untiered fail-safe"):
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=_actor(),
+            request=_request(untiered.id, next_review_due=now.date() + timedelta(days=366)),
+            now=now,
+        )
+    t3 = _tiered_version(session, tenant, materiality="LOW", code="risk.cad.t3")
+    ok = record_validation(
+        session,
+        acting_tenant=tenant,
+        actor=_actor(),
+        request=_request(t3.id, next_review_due=now.date() + timedelta(days=1095)),
+        now=now,
+    )
+    assert ok.next_review_due == now.date() + timedelta(days=1095)
+    t3b = _tiered_version(session, tenant, materiality="LOW", code="risk.cad.t3b")
+    with pytest.raises(ModelValidationValueError, match="TIER_3 review ceiling"):
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=_actor(),
+            request=_request(t3b.id, next_review_due=now.date() + timedelta(days=1096)),
+            now=now,
+        )
+
+
+# ---------- MG-1 (OD-MG-1-E): the EXCEPTION type's shape + substitution guards ----------
+
+
+def test_exception_must_be_awc_with_expiry(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    v = _registered_version(session, tenant, code="risk.exc.shape")
+    with pytest.raises(ModelValidationValueError, match="EXCEPTION must be APPROVED_WITH_COND"):
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=_actor(),
+            request=_request(v.id, validation_type="EXCEPTION", outcome="APPROVED"),
+        )
+    # The compliant shape: AWC + conditions + expiry (the existing blur rules supply the
+    # required-ness of both — OD-E's "for free" claim, pinned).
+    record = record_validation(
+        session,
+        acting_tenant=tenant,
+        actor=_actor(),
+        request=_request(
+            v.id,
+            validation_type="EXCEPTION",
+            outcome="APPROVED_WITH_CONDITIONS",
+            conditions="POC sequencing (urgent-need analogue); controls: registered limitations "
+            "+ backtest monitoring. Person-level independence disclosure applies.",
+        ),
+    )
+    assert record.validation_type == "EXCEPTION" and record.next_review_due == _DUE
+
+
+def test_exception_cannot_substitute_for_validation_or_unreject(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    # (1) prior REAL validation ⇒ EXCEPTION refused (a validated model revalidates, never excepts)
+    v = _registered_version(session, tenant, code="risk.exc.sub")
+    record_validation(session, acting_tenant=tenant, actor=_actor(), request=_request(v.id))
+    with pytest.raises(ModelValidationValueError, match="cannot be filed for a version that has"):
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=_actor(),
+            request=_request(
+                v.id,
+                validation_type="EXCEPTION",
+                outcome="APPROVED_WITH_CONDITIONS",
+                conditions="x",
+            ),
+        )
+    # (2) latest-REJECTED ⇒ EXCEPTION refused by the SAME single guard (a REJECTED row is a
+    # non-EXCEPTION row — the impl review proved the separate un-reject guard unreachable, so it
+    # was removed; the un-reject protection is the "no prior non-EXCEPTION row" guard, verified
+    # here to cover the REJECTED case too).
+    v2 = _registered_version(session, tenant, code="risk.exc.rej")
+    record_validation(
+        session,
+        acting_tenant=tenant,
+        actor=_actor(),
+        request=_request(v2.id, outcome="REJECTED", next_review_due=None),
+    )
+    with pytest.raises(ModelValidationValueError, match="validated or rejected"):
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=_actor(),
+            request=_request(
+                v2.id,
+                validation_type="EXCEPTION",
+                outcome="APPROVED_WITH_CONDITIONS",
+                conditions="x",
+            ),
+        )
+
+
+def test_exception_renewal_is_the_permitted_regrant_path(session: Session) -> None:
+    # The DISCLOSED semantics (OD-E, a planning-verifier fold): a fresh EXCEPTION after an
+    # earlier one is ALLOWED — the audited re-grant ceremony; the count is unbounded (recorded
+    # limitation; the bound is the named MG-2 candidate).
+    tenant = str(uuid.uuid4())
+    v = _registered_version(session, tenant, code="risk.exc.renew")
+    for i in range(2):
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=_actor(),
+            request=_request(
+                v.id,
+                validation_type="EXCEPTION",
+                outcome="APPROVED_WITH_CONDITIONS",
+                conditions=f"grant {i}",
+            ),
+        )
+    assert len(list_validations(session, v.id, acting_tenant=tenant)) == 2
+
+
+# ---------- MG-1 (OD-MG-1-F): the seam teeth — an EXPIRED exception refuses new binds ----------
+
+
+def test_expired_exception_refuses_bind_and_discharges(session: Session) -> None:
+    from irp_shared.model.service import ExpiredModelExceptionError, assert_model_version_of
+
+    tenant = str(uuid.uuid4())
+    v = _registered_version(session, tenant, code="risk.exc.teeth")
+    # An exception granted in the past whose expiry has passed (the injectable `now` makes the
+    # backdated grant cadence-compliant at ITS OWN clock — expiry now+180 <= now+365).
+    past = datetime(2025, 1, 1, tzinfo=UTC)
+    record_validation(
+        session,
+        acting_tenant=tenant,
+        actor=_actor(),
+        request=_request(
+            v.id,
+            validation_type="EXCEPTION",
+            outcome="APPROVED_WITH_CONDITIONS",
+            conditions="grant 0",
+            next_review_due=past.date() + timedelta(days=180),  # expired 2025-06-30
+        ),
+        now=past,
+    )
+    with pytest.raises(ExpiredModelExceptionError):
+        assert_model_version_of(
+            session, v.id, tenant_id=tenant, expected_model_code="risk.exc.teeth"
+        )
+    # Discharge path 1 (the refusal message's own advice): a FRESH exception ⇒ binds again.
+    record_validation(
+        session,
+        acting_tenant=tenant,
+        actor=_actor(),
+        request=_request(
+            v.id,
+            validation_type="EXCEPTION",
+            outcome="APPROVED_WITH_CONDITIONS",
+            conditions="re-grant",
+            next_review_due=_DUE,
+        ),
+    )
+    assert (
+        assert_model_version_of(
+            session, v.id, tenant_id=tenant, expected_model_code="risk.exc.teeth"
+        ).id
+        == v.id
+    )
+    # Discharge path 2: a REAL validation on a separately-expired version ⇒ binds again.
+    v2 = _registered_version(session, tenant, code="risk.exc.teeth2")
+    record_validation(
+        session,
+        acting_tenant=tenant,
+        actor=_actor(),
+        request=_request(
+            v2.id,
+            validation_type="EXCEPTION",
+            outcome="APPROVED_WITH_CONDITIONS",
+            conditions="grant",
+            next_review_due=past.date() + timedelta(days=180),
+        ),
+        now=past,
+    )
+    with pytest.raises(ExpiredModelExceptionError):
+        assert_model_version_of(
+            session, v2.id, tenant_id=tenant, expected_model_code="risk.exc.teeth2"
+        )
+    record_validation(
+        session, acting_tenant=tenant, actor=_actor(), request=_request(v2.id)
+    )  # INITIAL APPROVED — wait: guard 1 refuses EXCEPTION after a real validation, not the
+    # reverse; a real validation AFTER exceptions is the intended graduation.
+    assert (
+        assert_model_version_of(
+            session, v2.id, tenant_id=tenant, expected_model_code="risk.exc.teeth2"
+        ).id
+        == v2.id
+    )
+
+
+def test_unexpired_exception_and_no_rows_both_bind(session: Session) -> None:
+    # The corpus-safety invariant (OD-MG-1-F): versions with NO validation rows keep binding —
+    # the disclosed SR 26-2 default; filing an exception is what ARMS its own expiry.
+    from irp_shared.model.service import assert_model_version_of
+
+    tenant = str(uuid.uuid4())
+    bare = _registered_version(session, tenant, code="risk.exc.bare")
+    assert (
+        assert_model_version_of(
+            session, bare.id, tenant_id=tenant, expected_model_code="risk.exc.bare"
+        ).id
+        == bare.id
+    )
+    granted = _registered_version(session, tenant, code="risk.exc.live")
+    record_validation(
+        session,
+        acting_tenant=tenant,
+        actor=_actor(),
+        request=_request(
+            granted.id,
+            validation_type="EXCEPTION",
+            outcome="APPROVED_WITH_CONDITIONS",
+            conditions="grant",
+        ),
+    )
+    assert (
+        assert_model_version_of(
+            session, granted.id, tenant_id=tenant, expected_model_code="risk.exc.live"
+        ).id
+        == granted.id
+    )

@@ -312,3 +312,39 @@ def test_no_mutating_verbs(ctx) -> None:  # noqa: ANN001
     for verb in ("put", "patch", "delete"):
         resp = getattr(client, verb)("/perf/portfolio-returns/runs", headers=_h(p))
         assert resp.status_code == 405
+
+
+def test_expired_exception_run_is_422_not_500(ctx) -> None:  # noqa: ANN001
+    """MG-1 OD-F end-to-end through a REAL PERF run endpoint (the perf half of the 'one risk +
+    one perf' proof): an EXPIRED use-before-validation EXCEPTION refuses a new run with a
+    governed 422 (ExpiredModelExceptionError mapped in perf.py), not a raw 500."""
+    from datetime import UTC, datetime, timedelta
+
+    from irp_shared.model.validation import (
+        ModelValidationActor,
+        RecordValidationRequest,
+        record_validation,
+    )
+
+    client, p, db, r0, r1 = ctx
+    mv = _register(client, p)
+    past = datetime(2025, 1, 1, tzinfo=UTC)
+    record_validation(
+        db,
+        acting_tenant=p.tenant_id,
+        actor=ModelValidationActor(actor_id="validator-2l"),
+        request=RecordValidationRequest(
+            model_version_id=mv,
+            validation_type="EXCEPTION",
+            outcome="APPROVED_WITH_CONDITIONS",
+            scope_summary="Use-before-validation grant (POC sequencing).",
+            conditions="Controls: registered limitations + monitoring.",
+            next_review_due=past.date() + timedelta(days=180),
+        ),
+        now=past,
+    )
+    db.commit()
+    resp = client.post("/perf/portfolio-returns/runs", json=_run_body(mv, r0, r1), headers=_h(p))
+    assert resp.status_code == 422, resp.text
+    assert "EXCEPTION has expired" in resp.json()["detail"]
+    assert _count_runs(db, p.tenant_id) == 0
