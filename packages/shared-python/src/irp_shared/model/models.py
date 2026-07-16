@@ -42,12 +42,26 @@ from irp_shared.temporal import TemporalClass
 VALIDATION_STATUS_UNVALIDATED = "UNVALIDATED"
 
 # --- VW-1 (ENT-037) validation-record controlled vocabularies (strings, no enum / no CHECK) ---
-#: Why the validation was performed (SR 11-7 §V frequency/triggers; SS1/23 P4.5).
+#: Why the validation was performed (SR 26-2 §V frequency/triggers; SS1/23 P4.5). MG-1 adds
+#: EXCEPTION: the per-model, TIME-BOXED use-before-validation grant (SR 26-2 §V supplies the
+#: elements — limitations attention, stakeholder notice, controls; SS1/23 P5.3(a)(i) supplies
+#: "temporary" and §2.13 the grant semantics: an act of the 2L control function). An EXCEPTION
+#: row must be APPROVED_WITH_CONDITIONS (the conditions ARE the controls) with next_review_due =
+#: the EXPIRY, may only exist where NO non-EXCEPTION validation does (it can never substitute for
+#: a revalidation), and can never follow a latest-REJECTED (it cannot un-reject). Renewal by a
+#: fresh EXCEPTION is the intended re-grant path — each an audited 2L act; the renewal count is
+#: deliberately unbounded (recorded MG-1 limitation; a bound is the named MG-2 candidate).
 VALIDATION_TYPE_INITIAL = "INITIAL"
 VALIDATION_TYPE_PERIODIC = "PERIODIC"
 VALIDATION_TYPE_TRIGGERED = "TRIGGERED"
+VALIDATION_TYPE_EXCEPTION = "EXCEPTION"
 VALIDATION_TYPES = frozenset(
-    {VALIDATION_TYPE_INITIAL, VALIDATION_TYPE_PERIODIC, VALIDATION_TYPE_TRIGGERED}
+    {
+        VALIDATION_TYPE_INITIAL,
+        VALIDATION_TYPE_PERIODIC,
+        VALIDATION_TYPE_TRIGGERED,
+        VALIDATION_TYPE_EXCEPTION,
+    }
 )
 #: The validator's verdict (OSFI E-23 / SR 11-7 p.10/15 restriction-or-reject vocabulary).
 VALIDATION_OUTCOME_APPROVED = "APPROVED"
@@ -71,6 +85,55 @@ FINDING_SEVERITIES = frozenset(
 EVIDENCE_TYPE_CALCULATION_RUN = "CALCULATION_RUN"
 EVIDENCE_TYPE_DOCUMENT = "DOCUMENT"
 EVIDENCE_TYPES = frozenset({EVIDENCE_TYPE_CALCULATION_RUN, EVIDENCE_TYPE_DOCUMENT})
+
+# --- MG-1 (OD-MG-1-A/D) model-tier controlled vocabularies + the cadence policy ---
+#: The DUAL ratings behind a tier — deliberately TWO axes because the two texts define two
+#: different things (the MG-1 doctrine census): SR 26-2 materiality = model EXPOSURE + PURPOSE
+#: ONLY ("Model purpose, together with model exposure, determines model materiality" — complexity
+#: belongs to INHERENT RISK, a separate axis); SS1/23 P1.3(a)'s tier = "a risk-based materiality
+#: and complexity rating". Recording both and DERIVING the tier is the only shape both texts
+#: cover verbatim. Strings, service-guarded, deliberately NO DB CHECK (the MG-01 genericity
+#: posture — see the module note above).
+MATERIALITY_HIGH = "HIGH"
+MATERIALITY_MEDIUM = "MEDIUM"
+MATERIALITY_LOW = "LOW"
+MATERIALITY_RATINGS = frozenset({MATERIALITY_HIGH, MATERIALITY_MEDIUM, MATERIALITY_LOW})
+COMPLEXITY_RATINGS = frozenset({MATERIALITY_HIGH, MATERIALITY_MEDIUM, MATERIALITY_LOW})
+
+MODEL_TIER_1 = "TIER_1"
+MODEL_TIER_2 = "TIER_2"
+MODEL_TIER_3 = "TIER_3"
+MODEL_TIERS = frozenset({MODEL_TIER_1, MODEL_TIER_2, MODEL_TIER_3})
+
+#: The tier→max-review-interval policy (calendar days), enforced as a CEILING on an approving
+#: validation's next_review_due (OD-MG-1-D; CLOSES OD-032/OD-033). HONEST SOURCING — the MG-1
+#: census's decisive negative fact is that NO citable source anywhere prescribes a multi-year
+#: tier cadence (SR 26-2 deleted SR 11-7's "at least annually" WITHOUT replacement; SS1/23 and
+#: OSFI E-23 give no numbers): TIER_1 = 365 is anchored on ECB EGIM market-risk §4.2 ¶90
+#: ("at least annually", the model class our flagship belongs to — adopted voluntarily; we are
+#: outside EGIM's scope like all these texts) + SS1/23 P4.5(b) ("frequency ... consistent with
+#: the model tier"); TIER_2/TIER_3 = 730/1095 are HOUSE POLICY, stated as such everywhere they
+#: appear. An UNTIERED model gets the TIER_1 bound — the direct continuation of VW-1's ratified
+#: fail-safe ("while NO model carries a tier, every model is potentially Tier-1").
+MODEL_TIER_REVIEW_MAX_DAYS: dict[str, int] = {
+    MODEL_TIER_1: 365,
+    MODEL_TIER_2: 730,
+    MODEL_TIER_3: 1095,
+}
+
+
+def derive_model_tier(materiality_rating: str, complexity_rating: str) -> str:
+    """The ratified MG-1 house matrix (OD-MG-1-A — HOUSE POLICY, not externally sourced):
+    TIER_1 = HIGH materiality; TIER_2 = MEDIUM materiality, or LOW materiality with HIGH
+    complexity (complexity can escalate one step, never de-escalate); TIER_3 = the rest.
+    Ratings must be pre-validated against the vocabularies by the caller (the service verb)."""
+    if materiality_rating == MATERIALITY_HIGH:
+        return MODEL_TIER_1
+    if materiality_rating == MATERIALITY_MEDIUM:
+        return MODEL_TIER_2
+    if complexity_rating == MATERIALITY_HIGH:
+        return MODEL_TIER_2
+    return MODEL_TIER_3
 
 
 class Model(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):

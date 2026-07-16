@@ -75,6 +75,11 @@
   `after_value`, the MODEL.VERSION grain precedent). `.APPROVE`/`.RESTRICT`/`.RETIRE` stay
   reserved (v1 has no separate approval step: the validation record with outcome IS the
   Tier-2/3-grade act; the Tier-1 H-02 approval layer rides tiering, Part 3).
+  - **MG-1 note (2026-07-15, additive):** tiering SHIPPED (OD-MG-1-A/B) — tiers now EXIST, so
+    this OD's original justification ("while NO model carries a tier, every model is potentially
+    Tier-1") is RESTATED, not relaxed: **Tier-1 models exist and validation remains human-only
+    pending the H-02 approval workflow** (BR-15/MG-07). The human-only guard itself is UNCHANGED
+    — do not relax it.
 - **OD-VW-1-G — API surface (no FE in v1)**:
   `POST /models/{model_id}/versions/{version_id}/validations` gated `model.validate`;
   `GET .../validations` gated `model.inventory.view`; `GET /models/{model_id}` detail grows a
@@ -120,6 +125,13 @@ current supervisory statement.
   organizational structure". ADOPTED: the v1 UNVALIDATED-keeps-running posture is this
   exception path, documented; role-level (not org-level) independence is the cited basis for
   OD-E's permission-split SoD.
+  - **MG-1 note (2026-07-15, additive):** the Wave-5 close's **F3** finding — this citation's
+    blanket UNVALIDATED-keeps-running posture stretched SR 26-2's *per-model* exception into a
+    tenant-wide default — is **FIXED at MG-1**: the exception path is now per-model + TIME-BOXED
+    (`validation_type="EXCEPTION"`, AWC-only, expiry on `next_review_due`; an EXPIRED exception
+    refuses new binds — OD-MG-1-E/F). The blanket text above is SUPERSEDED: outside the demo
+    tenant the blanket default survives only as a DISCLOSED, proportionality-anchored POC
+    posture (MG-1 record Part 3 item 2; policy doc §5A).
 - **PRA SS1/23** (Bank of England, 2023; in force 2024), "Model risk management principles for
   banks" — P1.3 tiering drives revalidation cadence, tier reassessed at each validation; P4.5
   periodic revalidation decides whether "previous validation findings remain valid, should be

@@ -21,7 +21,13 @@ from sqlalchemy.orm import Session
 from irp_backend.deps import get_tenant_session, require_permission
 from irp_shared.entitlement.service import Principal
 from irp_shared.model.models import Model, ModelAssumption, ModelLimitation, ModelVersion
-from irp_shared.model.service import register_model, register_model_version
+from irp_shared.model.service import (
+    ModelNotVisible,
+    ModelTierValueError,
+    assign_model_tier,
+    register_model,
+    register_model_version,
+)
 from irp_shared.model.validation import (
     ModelValidationActor,
     ModelValidationValueError,
@@ -49,7 +55,10 @@ class RegisterModelIn(BaseModel):
     description: str | None = None
     owner: str | None = None
     developer: str | None = None
-    tier: str | None = None  # recorded as metadata; gates nothing (non-enforcing, P7)
+    # MG-1 (OD-MG-1-B): `tier` was REMOVED from this body — the 1L author must not set the
+    # materiality that scales scrutiny of his own model. A stray `tier` key in a request is
+    # IGNORED-AND-NOT-STAMPED (the ratified shape, test-pinned); all tier writes flow through the
+    # 2L POST /models/{id}/tier verb.
     version_label: str
     methodology_ref: str | None = None
     code_version: str | None = None
@@ -122,7 +131,6 @@ def create_model(
         description=body.description,
         owner=body.owner,
         developer=body.developer,
-        tier=body.tier,
         correlation_id=cid,
     )
     version = register_model_version(
@@ -296,6 +304,61 @@ def _resolve_visible_version(
     if version is None or version.model_id != model.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="model_version not found")
     return version
+
+
+class AssignTierIn(BaseModel):
+    # The DUAL ratings (OD-MG-1-A): materiality per SR 26-2 (exposure + purpose), complexity per
+    # SS1/23 P1.3(c). The tier is DERIVED server-side by the ratified house matrix — a caller
+    # cannot post a tier directly.
+    materiality_rating: str
+    complexity_rating: str
+    rationale: str
+
+
+class AssignTierOut(BaseModel):
+    id: str
+    code: str
+    tier: str
+    materiality_rating: str
+    complexity_rating: str
+
+
+@router.post("/{model_id}/tier", response_model=AssignTierOut)
+def assign_tier(
+    model_id: uuid.UUID,
+    body: AssignTierIn,
+    principal: Principal = Depends(_require_validate),
+    db: Session = Depends(get_tenant_session),
+) -> AssignTierOut:
+    """Assign/re-assign the model's tier from the dual ratings (MG-1, OD-MG-1-B/C). A 2L act —
+    gated on `model.validate` (HOUSE POLICY per OD-MG-1-C; the 1L register-time write is closed).
+    Emits MODEL.TIER_ASSIGN with the ratings + rationale in the payload (their durable home)."""
+    try:
+        model = assign_model_tier(
+            db,
+            acting_tenant=principal.tenant_id,
+            model_id=str(model_id),
+            materiality_rating=body.materiality_rating,
+            complexity_rating=body.complexity_rating,
+            rationale=body.rationale,
+            actor_id=principal.user_id,
+        )
+    except ModelTierValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except ModelNotVisible as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="model not found"
+        ) from exc
+    db.commit()
+    return AssignTierOut(
+        id=model.id,
+        code=model.code,
+        tier=model.tier or "",
+        materiality_rating=body.materiality_rating,
+        complexity_rating=body.complexity_rating,
+    )
 
 
 @router.post(

@@ -15,13 +15,14 @@ workflow is implemented — governance fields are non-enforcing placeholders.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from irp_shared.audit.actions import ACTION_CREATE
+from irp_shared.audit.actions import ACTION_CREATE, ACTION_UPDATE
 from irp_shared.audit.service import record_event
 from irp_shared.model.models import (
     Model,
@@ -33,6 +34,9 @@ from irp_shared.model.models import (
 #: Existing audit taxonomy codes (audit_event_taxonomy.md, MODEL category, EVT-050…).
 MODEL_REGISTER_EVENT = "MODEL.REGISTER"
 MODEL_VERSION_EVENT = "MODEL.VERSION"
+#: MG-1 (OD-MG-1-C): MINTED via the ratified MG-1 record + the taxonomy row — the tier-assignment
+#: governance act. Caller-side string; audit/service.py untouched (FROZEN).
+MODEL_TIER_ASSIGN_EVENT = "MODEL.TIER_ASSIGN"
 
 
 class UnregisteredModelError(Exception):
@@ -53,6 +57,138 @@ class ModelNotVisible(Exception):
         self.parent_id = str(parent_id)
 
 
+class ModelTierValueError(Exception):
+    """A pre-write refusal from :func:`assign_model_tier` (bad rating vocab, empty rationale,
+    non-human actor). Fail-closed, maps to 422."""
+
+
+def assign_model_tier(
+    session: Session,
+    *,
+    acting_tenant: str,
+    model_id: str,
+    materiality_rating: str,
+    complexity_rating: str,
+    rationale: str,
+    actor_id: str,
+    actor_type: str = "user",
+    correlation_id: str | None = None,
+) -> Model:
+    """Assign (or re-assign) a model head's tier from the DUAL ratings (MG-1, OD-MG-1-A/B/C).
+
+    A 2L governance act (the API gates on ``model.validate`` — HOUSE POLICY per OD-MG-1-C,
+    motivated by the SOD fact that the 1L author must not set the materiality that scales the
+    scrutiny of his own model; SS1/23 P1.3(e) anchors only the reassessed-at-validation hook).
+    The EV-head-update shape is the ``update_portfolio`` precedent: allowed-field update +
+    ``record_version`` bump + a before/after audit event. The RATINGS live in the
+    ``MODEL.TIER_ASSIGN`` payload — their only durable home (OQ-MG-1-1 sub-fork (i): NO new
+    columns, NO migration); the head stores only the DERIVED tier. Re-assigning identical
+    ratings (⇒ the same derived tier with the same recorded rationale basis) is a NO-OP: no
+    bump, no event — the EV-update convention.
+    """
+    from irp_shared.model.models import (
+        COMPLEXITY_RATINGS,
+        MATERIALITY_RATINGS,
+        derive_model_tier,
+    )
+
+    if actor_type != "user":
+        # BR-15/MG-07 mirror: tier scales human scrutiny; only a human sets it (the
+        # record_validation guard's twin, same fail-safe rationale).
+        raise ModelTierValueError(
+            "tier assignment is a human governance act (BR-15/MG-07) — actor_type must be 'user'"
+        )
+    if materiality_rating not in MATERIALITY_RATINGS:
+        raise ModelTierValueError(
+            f"materiality_rating {materiality_rating!r} not in {sorted(MATERIALITY_RATINGS)}"
+        )
+    if complexity_rating not in COMPLEXITY_RATINGS:
+        raise ModelTierValueError(
+            f"complexity_rating {complexity_rating!r} not in {sorted(COMPLEXITY_RATINGS)}"
+        )
+    if not rationale or not rationale.strip():
+        # An unexplained materiality judgment is not a judgment (OD-MG-1-B).
+        raise ModelTierValueError("rationale is required — an unexplained tier is not a judgment")
+
+    model = session.execute(
+        select(Model).where(Model.id == str(model_id), Model.tenant_id == str(acting_tenant))
+    ).scalar_one_or_none()
+    if model is None:
+        raise ModelNotVisible("model", str(model_id))
+
+    new_tier = derive_model_tier(materiality_rating, complexity_rating)
+    # The ratified no-op is IDENTICAL RATINGS, not merely an identical derived tier — a rating
+    # flip that happens to preserve the tier (e.g. MEDIUM×LOW → LOW×HIGH, both TIER_2) MUST still
+    # emit, because the MODEL.TIER_ASSIGN payload is the ratings' ONLY durable home (OQ-MG-1-1
+    # sub-fork (i)). The last assignment's ratings therefore come from the hash-chained trail —
+    # which is, by that same ratified design, their system of record.
+    from irp_shared.audit.models import AuditEvent
+
+    last = session.execute(
+        select(AuditEvent.after_value)
+        .where(
+            AuditEvent.tenant_id == str(acting_tenant),
+            AuditEvent.event_type == MODEL_TIER_ASSIGN_EVENT,
+            AuditEvent.entity_id == str(model.id),
+        )
+        .order_by(AuditEvent.event_time.desc(), AuditEvent.sequence_no.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if (
+        last is not None
+        and last.get("materiality_rating") == materiality_rating
+        and last.get("complexity_rating") == complexity_rating
+        and model.tier == new_tier
+    ):
+        return model  # the ratified no-op: identical ratings ⇒ no bump, no event
+
+    before_tier = model.tier
+    if model.tier != new_tier:
+        model.tier = new_tier
+        model.record_version = int(model.record_version) + 1
+    session.flush()
+
+    record_event(
+        session,
+        event_type=MODEL_TIER_ASSIGN_EVENT,
+        tenant_id=str(acting_tenant),
+        actor_type=actor_type,
+        actor_id=actor_id,
+        source_module="model",
+        entity_type="model",
+        entity_id=model.id,
+        action=ACTION_UPDATE,
+        before_value={"tier": before_tier},
+        after_value={
+            "tier": new_tier,
+            "materiality_rating": materiality_rating,
+            "complexity_rating": complexity_rating,
+            "rationale": rationale.strip(),
+        },
+        correlation_id=correlation_id,
+        data_classification="DC-1",
+    )
+    return model
+
+
+class ExpiredModelExceptionError(Exception):
+    """The version's LATEST validation record is a use-before-validation EXCEPTION whose expiry
+    (``next_review_due``) has passed (MG-1, OD-MG-1-F; SS1/23 P5.3(a)(i): exceptions are
+    TEMPORARY). New governed runs refuse — fail-closed pre-create, maps to 422. The discharge
+    paths the message names: a FRESH exception (a new, audited 2L re-grant) or a real validation.
+    Versions with NO validation rows at all keep binding (the disclosed SR 26-2 default posture —
+    filing an exception is what arms its own expiry)."""
+
+    def __init__(self, model_version_id: str, expired_on: str) -> None:
+        super().__init__(
+            f"model_version {model_version_id} use-before-validation EXCEPTION expired "
+            f"{expired_on} — new runs refused until a fresh exception is granted or a validation "
+            f"is recorded (MG-1/CTRL-022)"
+        )
+        self.model_version_id = str(model_version_id)
+        self.expired_on = expired_on
+
+
 def register_model(
     session: Session,
     *,
@@ -64,7 +200,6 @@ def register_model(
     description: str | None = None,
     owner: str | None = None,
     developer: str | None = None,
-    tier: str | None = None,
     actor_type: str = "user",
     agent_model: str | None = None,
     agent_model_version: str | None = None,
@@ -73,8 +208,11 @@ def register_model(
 ) -> Model:
     """Create a ``model`` inventory head and audit it (``MODEL.REGISTER``), same transaction.
 
-    ``tier``/``owner``/``developer`` are recorded as metadata but gate nothing. An AI-agent
-    registrant passes ``actor_type='agent'`` + ``agent_model*`` so authorship is logged (MG-08).
+    ``owner``/``developer`` are recorded as metadata but gate nothing. ``tier`` is NOT accepted
+    here (MG-1, OD-MG-1-B): the 1L author must not set the materiality that scales the scrutiny
+    of his own model — every head registers untiered (the TIER_1 fail-safe bound applies) and
+    tier is assigned only via the 2L :func:`assign_model_tier`. An AI-agent registrant passes
+    ``actor_type='agent'`` + ``agent_model*`` so authorship is logged (MG-08).
     """
     model = Model(
         tenant_id=str(tenant_id),
@@ -86,7 +224,6 @@ def register_model(
         record_version=1,
         owner=owner,
         developer=developer,
-        tier=tier,
     )
     session.add(model)
     session.flush()
@@ -106,7 +243,6 @@ def register_model(
             "name": name,
             "model_type": model_type,
             "owner": owner,
-            "tier": tier,
             "validation_status": model.validation_status,
         },
         correlation_id=correlation_id,
@@ -408,12 +544,27 @@ def assert_model_version_of(
     # not import service.py — but this keeps the gate's VW-1 dependency local to the one call).
     # UNVALIDATED (no record) and every non-REJECTED outcome bind normally — the documented SR 26-2
     # use-before-validation posture.
-    from irp_shared.model.models import VALIDATION_OUTCOME_REJECTED
+    from irp_shared.model.models import (
+        VALIDATION_OUTCOME_REJECTED,
+        VALIDATION_TYPE_EXCEPTION,
+    )
     from irp_shared.model.validation import latest_validation
 
     latest = latest_validation(session, str(version.id), acting_tenant=str(tenant_id))
     if latest is not None and latest.outcome == VALIDATION_OUTCOME_REJECTED:
         raise RejectedModelVersionError(str(model_version_id))
+    # MG-1 OD-F (the narrow teeth): the LATEST record being an EXPIRED use-before-validation
+    # EXCEPTION refuses new binds. Filing an exception is what ARMS its own expiry — versions with
+    # NO rows keep binding (the disclosed SR 26-2 default; the whole pre-MG-1 test corpus depends
+    # on it), and validated models are governed by the revalidation cycle (overdue PERIODIC stays
+    # display-only this slice — the recorded OD-F asymmetry, MG-2 candidate).
+    if (
+        latest is not None
+        and latest.validation_type == VALIDATION_TYPE_EXCEPTION
+        and latest.next_review_due is not None
+        and latest.next_review_due < datetime.now(UTC).date()
+    ):
+        raise ExpiredModelExceptionError(str(model_version_id), latest.next_review_due.isoformat())
     return version
 
 

@@ -596,3 +596,41 @@ def test_es_run_dispatches_through_the_unchanged_runs_endpoint(ctx) -> None:  # 
     )
     assert var_resp.status_code == 201
     assert Decimal(rows[0]["var_value"]) > Decimal(var_resp.json()["rows"][0]["var_value"])
+
+
+def test_expired_exception_run_is_422_not_500(ctx) -> None:  # noqa: ANN001
+    """MG-1 OD-F end-to-end through a REAL risk run endpoint (the VW-1 'one risk + one perf'
+    proof shape): a version whose LATEST validation record is an EXPIRED use-before-validation
+    EXCEPTION refuses a new run with a governed 422 (ExpiredModelExceptionError mapped in
+    risk.py's _ERROR_MAP + except tuples), NOT a raw 500."""
+    from datetime import UTC, datetime, timedelta
+
+    from irp_shared.model.validation import (
+        ModelValidationActor,
+        RecordValidationRequest,
+        record_validation,
+    )
+
+    client, p, db, fx_run, cov_run = ctx
+    mv = _register(client, p)
+    past = datetime(2025, 1, 1, tzinfo=UTC)
+    record_validation(
+        db,
+        acting_tenant=p.tenant_id,
+        actor=ModelValidationActor(actor_id="validator-2l"),
+        request=RecordValidationRequest(
+            model_version_id=mv,
+            validation_type="EXCEPTION",
+            outcome="APPROVED_WITH_CONDITIONS",
+            scope_summary="Use-before-validation grant (POC sequencing).",
+            conditions="Controls: registered limitations + backtest monitoring.",
+            next_review_due=past.date() + timedelta(days=180),  # expired long ago
+        ),
+        now=past,
+    )
+    db.commit()
+    before = _count_var_runs(db, p.tenant_id)
+    resp = client.post("/risk/vars/runs", json=_run_body(mv, fx_run, cov_run), headers=_h(p))
+    assert resp.status_code == 422, resp.text
+    assert "EXCEPTION has expired" in resp.json()["detail"]
+    assert _count_var_runs(db, p.tenant_id) == before

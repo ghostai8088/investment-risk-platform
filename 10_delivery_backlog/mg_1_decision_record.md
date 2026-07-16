@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **DRAFT — pending OQ-MG-1-1…7 ratification.** Implementation gated separately behind `mg_1_implementation_plan.md`. |
+| **Status** | **RATIFIED 2026-07-15 — OQ-MG-1-1…7 all APPROVED by the user** ("PR merged and closed. Approved. Proceed."; planning merged via **PR #43** = `91c39fa`). The user's OQ-6 approval constitutes the human validator sign-off on the Step-5.5 dossier map (OD-G). Implementation per `mg_1_implementation_plan.md`. |
 | **Grounding** | Drafted 2026-07-15 on `mg-1-planning` (`main` = `cf6e3b6` + the Wave-6 ratification). Census-verified (3 agents, all claims file:line or executed): `model.tier` is a `String(20)` nullable column on the **EV-mutable `model` head** (`models.py:96`; "gates nothing"), **with NO write path after registration anywhere** — no service verb, no API PATCH, and none of the 16 family bootstraps passes it, so every lazily-registered head is `tier=NULL` and can never change today. The head's mutability is **test-pinned** (`test_model_head_is_mutable_at_db` asserts a raw `UPDATE model SET tier` succeeds) ⇒ *the "immutable head forces a new assignment table" argument is DEAD*. **Zero CHECK constraints exist on any model table** (live-PG verified; the repo's only `create_check_constraint` is 0028's on `var_result`) — the validation vocabularies are service-layer frozensets by design ⇒ **vocab extensions need NO migration**. `next_review_due` lives only on `model_validation` rows; `overdue` is computed at ONE read site and **consumed nowhere** (an overdue model binds and runs — re-verified). The bind seam `assert_model_version_of` **already SELECTs the Model head** for the code check ⇒ a tier/exception read there costs zero new queries and **zero new PG-fixture grants**; a new error class must be mapped at every run endpoint or it 500s (the VW-1 HIGH — 13 call sites / 12 binder files). No reserved permission fits tier assignment; **no `MODEL.UPDATE` audit code exists** and `MODEL.APPROVE` is explicitly earmarked for the Tier-1 H-02 approval step (not assignment). Live PG: `model`/`model_version`/`model_validation` all **0 rows** — no durable tenant holds a COMPLETED run of any type, so **the campaign's evidence chain must be created before any validation can cite it** (the evidence guard re-resolves tenant-visible + COMPLETED; run_type is dossier discipline, not code). `build_synthetic_dataset` is **capture-only by contract (AD-017)** with a whole-seed no-op sentinel and an AST determinism fence, and the calc layer has no injectable id/now seam ⇒ *hosting the campaign inside the synthetic seed is DISQUALIFIED three ways*. `validated_by` is free-form; the API path requires a real seeded `app_user` + tenant-local role wiring (SYSTEM-tenant role templates are RLS-invisible; no onboarding clone exists — the endpoint-test pattern is the only working one). |
 | **Mandate** | Roadmap Part 2.9 slice 1 (ratified 2026-07-15 at the Wave-5 close, OQ-W5C-6 = fork **A "governance-first"**), sized **S/M — restated honestly at verification as `S` mechanics / `M` campaign surface** (the runner is the largest artifact: 16 registrations, per-flagship evidence chains incl. the full private-asset estimate leg, 16 assignments, 16 filings — ≥ VW-1's behavioral surface): materiality assignment + the FIRST validation campaign + OD-033 cadence + the F3 exception fix; ride-alongs = the RD-3 NaN bug + the estimate-seam integration test. Wave-5 close context: **16/16 model codes sit UNVALIDATED** — "the numbers govern themselves" overstated the delivered state, and this slice is the honest completion. **This OQ set is itself the ratification OD-032 has demanded since P7 planning** (*"Ratify tiering thresholds (materiality/regulatory criteria) with H-02/H-01"*) — approving OQ-1/OQ-3 closes **both** OD-032 and OD-033. |
 
@@ -91,7 +91,32 @@ membership, and the off-vocab probe is `"WHENEVER"`).
 
 ## Part 5.5 — Implementation deviations from the ratified plan
 
-*(recorded during the build)*
+1. **The no-op semantics required reading the audit trail** (Step 2): "identical ratings ⇒ no-op"
+   cannot be decided from the head alone (only the derived tier is stored there), so
+   `assign_model_tier` compares against the LAST `MODEL.TIER_ASSIGN` event's payload — which is,
+   by the ratified sub-fork (i), the ratings' system of record. A rating flip that PRESERVES the
+   tier emits a fresh event with NO `record_version` bump (the tier moved nowhere); swallowing it
+   would have silently lost a governance judgment. Test-pinned both ways.
+2. **`register_model`'s `tier` kwarg removed at the SERVICE layer too** (the plan named the API
+   field + kwarg; the service parameter went with it), and the AC-11 registry test was rewritten
+   to the new write path (register untiered → 2L verb → binds) — its intent (no accidental
+   tier/validation gate at registration) is unchanged. The `test_model_validation.py` shared
+   fixture date moved 2027-06-01 → 2026-12-01: the cadence ceiling anchors to the record's OWN
+   (injectable) timestamp, and the suite injects `now` as early as 2026-01-01 — two edits beyond
+   the one the plan disclosed, same class.
+3. **The campaign's HS series uses the consume-existing path** (`build_var_hs_snapshot` with a
+   backdated `as_of_valid_at` per window_end): the build-in-request path pins at "now", so the
+   builder's valid-at cut is the only lever that places 8 consecutive HS window_ends.
+4. **A downgrade-smoke wrinkle, found and fixed at the build**: the campaign is the first PG
+   suite wiring `RolePermission` onto the migration-seeded permission catalog, and
+   `alembic downgrade base` then failed at 0002's `DELETE FROM permission` (FK violation). The
+   PG test's teardown deletes the demo tenant's `role_permission` rows only (EV plumbing; the
+   models/tiers/validations/runs persist; the CLI-seeded living tenant is unaffected).
+5. **The exception-conditions text deliberately avoids the literal "FL-1" token** so MF-1's
+   TRIGGERED-re-validation grep finds exactly the 5 flagship AWC conditions (test-pinned in both
+   directions).
+6. **The campaign beat its own ratified fallback**: the total-v2 evidence series achieved the
+   full N=8 (the record permitted a shorter honest series); every dossier states its N.
 
 ## Part 6 — Review dispositions + closure
 

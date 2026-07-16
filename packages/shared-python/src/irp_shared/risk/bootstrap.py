@@ -73,7 +73,8 @@ SENSITIVITY_LIMITATIONS: tuple[str, ...] = (
     "instrument DV01 needs captured cash-flow terms + interpolation + discounting; deferred).",
     "PAR_RATE nodes are not supported (par->zero bootstrapping is curve construction; deferred).",
     "No interpolation between nodes; no convexity / cross-gamma / second-order terms.",
-    "validation_status UNVALIDATED — recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED — recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 #: The per-tenant inventory identity of the factor-exposure allocation model (P3-3, OD-P3-3-G).
@@ -112,7 +113,8 @@ FACTOR_EXPOSURE_LIMITATIONS: tuple[str, ...] = (
     "currency would misallocate (the instrument-denomination dimension is deferred).",
     "Factor returns are NOT consumed (their first consumer is P3-4 covariance / regression v2).",
     "No residual/UNMAPPED bucket — an unmapped atom fails the whole run closed.",
-    "validation_status UNVALIDATED — recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED — recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 
@@ -276,7 +278,8 @@ FACTOR_EXPOSURE_PROXY_LIMITATIONS: tuple[str, ...] = (
     "partial proxy would silently redistribute the unmodeled residual (fail-closed gate at "
     "run_active_risk; a proxy-aware denominator is the recorded v2). VaR/HS-VaR/scenario "
     "consume absolute exposures and are unaffected.",
-    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 
@@ -373,7 +376,8 @@ COVARIANCE_LIMITATIONS: tuple[str, ...] = (
     "declared model_version. The sample estimator is rank-deficient for F >= N (use F < N).",
     "No correlation-matrix output (statistic_type CORRELATION reserved); no annualization.",
     "No missing-data imputation: a factor lacking a return on a window date fails the run closed.",
-    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 
@@ -562,7 +566,8 @@ VAR_LIMITATIONS: tuple[str, ...] = (
     "ES (closed-form seam) and Monte-Carlo remain later, separately declared versions/families.",
     "Inherits the sample-covariance estimation error (equal weights, no shrinkage; rank-deficient "
     "for F >= N).",
-    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 #: Strict decimal-fraction pattern for the declared confidence (e.g. '0.9500').
@@ -743,7 +748,8 @@ VAR_HS_LIMITATIONS: tuple[str, ...] = (
     "ES (the FRTB-preferred tail measure) is a recorded seam for this family too; backtesting "
     "(Kupiec/traffic-light) is a recorded later slice and Monte-Carlo remains gated on a seeded "
     "simulator (the OD-VHS-G register).",
-    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 
@@ -963,7 +969,8 @@ ACTIVE_RISK_LIMITATIONS: tuple[str, ...] = (
     "would misattribute currency risk).",
     "Relative VaR (the CESR/10-788 sibling), active-share, and benchmark-relative sensitivities "
     "are recorded seams, not built here. Inherits the sample-covariance estimation error.",
-    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 
@@ -1102,7 +1109,8 @@ VAR_BACKTEST_LIMITATIONS: tuple[str, ...] = (
     "trading-day calendar validation is the same deferred data-quality slice P3-8 recorded.",
     "One backtest run = ONE VaR method (uniform metric_type); cross-method comparison is two runs "
     "side by side - no joint test.",
-    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 
@@ -1242,7 +1250,8 @@ SCENARIO_LIMITATIONS: tuple[str, ...] = (
     "scenario_type is a PROVENANCE LABEL, not an attestation — REGULATORY does not imply approval; "
     "maker-checker on definitions is the P7 validation workflow.",
     "Inherits the captured-holdings-book limitation from the consumed exposure run.",
-    "validation_status UNVALIDATED — recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED — recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 
@@ -1336,7 +1345,8 @@ PROXY_WEIGHT_LIMITATIONS: tuple[str, ...] = (
     "Unconstrained OLS can produce weights an analyst should reject - which is WHY promotion is "
     "human-mediated. Constrained (Sharpe 1992) and summed-lag (Dimson 1979 / Asness-Krail-Liew "
     "2001) variants are recorded v2s.",
-    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 
@@ -1490,7 +1500,8 @@ VAR_TOTAL_LIMITATIONS: tuple[str, ...] = (
     "1-day horizon only; historical-simulation + ES total analogues are recorded v2s.",
     "No FX conversion - a proxied instrument's estimate series_currency must equal the book's "
     "base_currency; a mismatch refuses rather than converting.",
-    "validation_status UNVALIDATED - recorded, non-enforcing until the P7 validation workflow.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
 )
 
 
