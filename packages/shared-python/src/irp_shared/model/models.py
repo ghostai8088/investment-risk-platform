@@ -94,11 +94,14 @@ EVIDENCE_TYPES = frozenset({EVIDENCE_TYPE_CALCULATION_RUN, EVIDENCE_TYPE_DOCUMEN
 #: and complexity rating". Recording both and DERIVING the tier is the only shape both texts
 #: cover verbatim. Strings, service-guarded, deliberately NO DB CHECK (the MG-01 genericity
 #: posture — see the module note above).
+#: Both rating axes share the ordinal HIGH/MEDIUM/LOW scale (COMPLEXITY_RATINGS is the same set,
+#: named separately so the two are guarded independently at the service boundary).
+_RATING_SCALE = frozenset({"HIGH", "MEDIUM", "LOW"})
 MATERIALITY_HIGH = "HIGH"
 MATERIALITY_MEDIUM = "MEDIUM"
 MATERIALITY_LOW = "LOW"
-MATERIALITY_RATINGS = frozenset({MATERIALITY_HIGH, MATERIALITY_MEDIUM, MATERIALITY_LOW})
-COMPLEXITY_RATINGS = frozenset({MATERIALITY_HIGH, MATERIALITY_MEDIUM, MATERIALITY_LOW})
+MATERIALITY_RATINGS = _RATING_SCALE
+COMPLEXITY_RATINGS = _RATING_SCALE
 
 MODEL_TIER_1 = "TIER_1"
 MODEL_TIER_2 = "TIER_2"
@@ -120,13 +123,18 @@ MODEL_TIER_REVIEW_MAX_DAYS: dict[str, int] = {
     MODEL_TIER_2: 730,
     MODEL_TIER_3: 1095,
 }
+#: Every tier has a cadence ceiling and vice versa — a load-time guard so a future tier or a
+#: renamed key cannot silently escape the OD-MG-1-D ceiling (which fails safe to the TIER_1 bound).
+assert frozenset(MODEL_TIER_REVIEW_MAX_DAYS) == MODEL_TIERS
 
 
 def derive_model_tier(materiality_rating: str, complexity_rating: str) -> str:
     """The ratified MG-1 house matrix (OD-MG-1-A — HOUSE POLICY, not externally sourced):
-    TIER_1 = HIGH materiality; TIER_2 = MEDIUM materiality, or LOW materiality with HIGH
-    complexity (complexity can escalate one step, never de-escalate); TIER_3 = the rest.
-    Ratings must be pre-validated against the vocabularies by the caller (the service verb)."""
+    TIER_1 = HIGH materiality (any complexity); TIER_2 = MEDIUM materiality (any complexity), OR
+    LOW materiality escalated by HIGH complexity; TIER_3 = LOW materiality with MEDIUM/LOW
+    complexity. Complexity escalates ONLY the LOW-materiality row (LOW+HIGH → TIER_2); it never
+    moves a HIGH or MEDIUM materiality. Ratings must be pre-validated against the vocabularies by
+    the caller (the service verb)."""
     if materiality_rating == MATERIALITY_HIGH:
         return MODEL_TIER_1
     if materiality_rating == MATERIALITY_MEDIUM:

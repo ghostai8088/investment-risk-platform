@@ -120,4 +120,48 @@ membership, and the off-vocab probe is `"WHENEVER"`).
 
 ## Part 6 — Review dispositions + closure
 
-*(written at fold/close per the house pattern)*
+### Part 6.1 — The 4-finder implementation review
+
+Run as a parallel 4-finder review (adversarial / doctrine / campaign-content / scope-fence). **The
+scope-fence finder completed and its findings are ALL FOLDED (below); the other three exhausted the
+Fable usage budget mid-run and were re-run on Opus** — their dispositions land in Part 6.2. The
+scope finder confirmed the whole fence CLEAN by inspection: NO migration (head still `0040`, no ORM
+column change), NO new permission, exactly ONE audit-code mint (`MODEL.TIER_ASSIGN`),
+`audit/service.py` untouched (empty `git diff`), no shipped number moved, the two import-fence edits
+sound (nothing imports `irp_shared.demo`), and the 1L tier write closed at BOTH the API field and
+the service kwarg.
+
+**Folded (scope finder), all applied:**
+
+- **MEDIUM — the campaign PG test's teardown could strip the LIVING demo tenant's role wiring.** The
+  `DELETE FROM role_permission` ran on tenant match even in the tolerated already-seeded (dirty)
+  mode — so running the suite locally, where the CLI-seeded living tenant exists, would break its
+  1L/2L wiring, contradicting the fixture's own docstring. FOLDED: a `seeded_by_this_run` flag —
+  the teardown fires ONLY when this run did the seeding (CI, fresh schema); the dirty-mode run
+  leaves the living tenant untouched.
+- **MEDIUM — the seam gate's expired-EXCEPTION branch had no PG/RLS coverage** (only VW-1's REJECTED
+  leg existed; the plan promised "PG legs for the seam gate under RLS"). FOLDED:
+  `test_expired_exception_gate_blocks_run_binding_on_pg` — an expired exception refuses under RLS,
+  a fresh re-grant clears it.
+- **LOW — the ratified second exception guard ("never-after-REJECTED") is provably UNREACHABLE**
+  (a REJECTED row IS a non-EXCEPTION row, so guard 1 always fires first). Rather than keep
+  untestable code in a governance gate, **guard 2 was REMOVED as dead code** and guard 1's message
+  broadened to name both cases ("validated or rejected … never excepted"); the un-reject test now
+  asserts guard 1 covers it. *(A deviation from OD-E's "two guards" text — safe, behaviour
+  identical, recorded.)*
+- **LOW — the tier no-op silently dropped a fresh rationale.** A re-affirmation with identical
+  ratings but NEW rationale emitted nothing, though the rationale is part of the payload that is the
+  ratings' only durable home. FOLDED: the no-op now requires identical ratings **and** rationale;
+  a re-affirmation with new reasoning emits (test-pinned).
+- **LOW — TIER_2's 731-day refusal boundary was untested** (only equality exercised, implicitly).
+  FOLDED: `test_cadence_ceiling_tier2_boundary`.
+- **Clean-code:** `MODEL_TIERS` was defined-but-unused → now consumed by a load-time invariant
+  guard (`MODEL_TIER_REVIEW_MAX_DAYS` keys == `MODEL_TIERS`, so a future tier can't escape the
+  ceiling); `COMPLEXITY_RATINGS`/`MATERIALITY_RATINGS` de-duplicated onto a shared `_RATING_SCALE`;
+  three populated-but-never-read campaign dataclass fields (`_Book.acme_id`/`eurx_id`,
+  `_Chains.boundary_run_ids`) removed; the `derive_model_tier` docstring gloss corrected (complexity
+  escalates ONLY the LOW-materiality row).
+
+### Part 6.2 — The three re-run finders (adversarial / doctrine / campaign-content)
+
+*(pending the Opus re-run + fold)*

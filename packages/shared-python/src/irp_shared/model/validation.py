@@ -250,14 +250,16 @@ def record_validation(
     version = _resolve_registered_version(
         session, request.model_version_id, acting_tenant=acting_tenant
     )
-    # --- MG-1 OD-E: the EXCEPTION type's two fail-closed substitution guards ---
+    # --- MG-1 OD-E: the EXCEPTION type's substitution guard ---
     # An EXCEPTION (the per-model, TIME-BOXED use-before-validation grant: SR 26-2 §V supplies the
     # elements — limitations attention, stakeholder notice, controls; SS1/23 P5.3(a)(i) supplies
-    # "temporary" and §2.13 the grant semantics) may exist ONLY where no real validation does, and
-    # can never follow a latest-REJECTED. Guard 2 is belt-and-braces (implied by guard 1 + the
-    # AWC-only shape — no EXCEPTION row can itself be REJECTED); recorded as redundant, not
-    # load-bearing. Renewal by a FRESH exception is the intended re-grant path (unbounded —
-    # the recorded MG-1 limitation). Both guards are VERSION-grain, like the REJECTED gate itself.
+    # "temporary" and §2.13 the grant semantics) may exist ONLY where NO real validation does — so
+    # it can neither substitute for a revalidation NOR un-reject: a REJECTED row is itself a
+    # non-EXCEPTION row, so the single "no prior non-EXCEPTION row" guard subsumes the un-reject
+    # case entirely. (OD-E ratified a separate second guard for the un-reject case; the impl review
+    # proved it unreachable — guard 1 always fires first — so it was removed as dead code and the
+    # removal recorded in Part 5.5.) Renewal by a FRESH exception is the intended re-grant path
+    # (unbounded — the recorded MG-1 limitation). Version-grain, like the REJECTED gate itself.
     if request.validation_type == VALIDATION_TYPE_EXCEPTION:
         if request.outcome != VALIDATION_OUTCOME_APPROVED_WITH_CONDITIONS:
             raise ModelValidationValueError(
@@ -276,14 +278,8 @@ def record_validation(
         if prior_real is not None:
             raise ModelValidationValueError(
                 "a use-before-validation EXCEPTION cannot be filed for a version that has been "
-                "validated — a validated model revalidates (PERIODIC/TRIGGERED), never excepts — "
-                "refused"
-            )
-        latest = latest_validation(session, str(version.id), acting_tenant=str(acting_tenant))
-        if latest is not None and latest.outcome == VALIDATION_OUTCOME_REJECTED:
-            raise ModelValidationValueError(
-                "an EXCEPTION cannot follow a REJECTED validation — it cannot un-reject; "
-                "remediate and re-validate — refused"
+                "validated or rejected — a validated model revalidates (PERIODIC/TRIGGERED) and a "
+                "rejected one is remediated + re-validated, never excepted — refused"
             )
     # --- MG-1 OD-D: the tier-bounded cadence ceiling (CLOSES OD-032/OD-033) ---
     # An approving outcome's next_review_due must sit within the model's tier bound; an UNTIERED

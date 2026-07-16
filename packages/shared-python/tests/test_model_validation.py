@@ -617,6 +617,30 @@ def test_cadence_ceiling_tier1_boundary(session: Session) -> None:
         )
 
 
+def test_cadence_ceiling_tier2_boundary(session: Session) -> None:
+    # 730 passes, 731 refuses (the middle-tier boundary the campaign only exercises at equality).
+    tenant = str(uuid.uuid4())
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    v = _tiered_version(session, tenant, materiality="MEDIUM", code="risk.cad.t2")
+    ok = record_validation(
+        session,
+        acting_tenant=tenant,
+        actor=_actor(),
+        request=_request(v.id, next_review_due=now.date() + timedelta(days=730)),
+        now=now,
+    )
+    assert ok.next_review_due == now.date() + timedelta(days=730)
+    v2 = _tiered_version(session, tenant, materiality="MEDIUM", code="risk.cad.t2b")
+    with pytest.raises(ModelValidationValueError, match="TIER_2 review ceiling"):
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=_actor(),
+            request=_request(v2.id, next_review_due=now.date() + timedelta(days=731)),
+            now=now,
+        )
+
+
 def test_cadence_ceiling_untiered_gets_tier1_bound_and_tier3_gets_1095(session: Session) -> None:
     # The fail-safe (VW-1's ratified posture, continued): an UNTIERED model is bounded like
     # TIER_1. A TIER_3 model may declare out to 1095 days.
@@ -698,8 +722,10 @@ def test_exception_cannot_substitute_for_validation_or_unreject(session: Session
                 conditions="x",
             ),
         )
-    # (2) latest-REJECTED ⇒ EXCEPTION refused (belt-and-braces: implied by guard 1 + the AWC
-    # shape, recorded as redundant-not-load-bearing in OD-E; pinned anyway)
+    # (2) latest-REJECTED ⇒ EXCEPTION refused by the SAME single guard (a REJECTED row is a
+    # non-EXCEPTION row — the impl review proved the separate un-reject guard unreachable, so it
+    # was removed; the un-reject protection is the "no prior non-EXCEPTION row" guard, verified
+    # here to cover the REJECTED case too).
     v2 = _registered_version(session, tenant, code="risk.exc.rej")
     record_validation(
         session,
@@ -707,7 +733,7 @@ def test_exception_cannot_substitute_for_validation_or_unreject(session: Session
         actor=_actor(),
         request=_request(v2.id, outcome="REJECTED", next_review_due=None),
     )
-    with pytest.raises(ModelValidationValueError, match="cannot be filed for a version that has"):
+    with pytest.raises(ModelValidationValueError, match="validated or rejected"):
         record_validation(
             session,
             acting_tenant=tenant,

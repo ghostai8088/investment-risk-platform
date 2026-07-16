@@ -117,11 +117,13 @@ def assign_model_tier(
         raise ModelNotVisible("model", str(model_id))
 
     new_tier = derive_model_tier(materiality_rating, complexity_rating)
-    # The ratified no-op is IDENTICAL RATINGS, not merely an identical derived tier — a rating
-    # flip that happens to preserve the tier (e.g. MEDIUM×LOW → LOW×HIGH, both TIER_2) MUST still
-    # emit, because the MODEL.TIER_ASSIGN payload is the ratings' ONLY durable home (OQ-MG-1-1
-    # sub-fork (i)). The last assignment's ratings therefore come from the hash-chained trail —
-    # which is, by that same ratified design, their system of record.
+    # The no-op is an IDENTICAL re-assignment — same ratings AND same rationale — not merely an
+    # identical derived tier: a rating flip that preserves the tier (e.g. MEDIUM×LOW → LOW×HIGH,
+    # both TIER_2) MUST still emit, and so must a re-affirmation carrying NEW rationale (the impl
+    # review's catch — the rationale is part of the MODEL.TIER_ASSIGN payload, which is the
+    # ratings' ONLY durable home per OQ-MG-1-1 sub-fork (i); silently dropping a fresh rationale
+    # loses a governance judgment). The last assignment's ratings+rationale come from the
+    # hash-chained trail — which is, by that same ratified design, their system of record.
     from irp_shared.audit.models import AuditEvent
 
     last = session.execute(
@@ -138,9 +140,10 @@ def assign_model_tier(
         last is not None
         and last.get("materiality_rating") == materiality_rating
         and last.get("complexity_rating") == complexity_rating
+        and last.get("rationale") == rationale.strip()
         and model.tier == new_tier
     ):
-        return model  # the ratified no-op: identical ratings ⇒ no bump, no event
+        return model  # the no-op: identical ratings + rationale ⇒ no bump, no event
 
     before_tier = model.tier
     if model.tier != new_tier:

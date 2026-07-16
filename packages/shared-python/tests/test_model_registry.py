@@ -395,39 +395,51 @@ def test_assign_model_tier_bumps_head_and_carries_the_ratings_in_the_event(
 
 
 def test_assign_model_tier_no_op_vs_rating_change_preserving_tier(session: Session) -> None:
-    # The ratified no-op is IDENTICAL RATINGS. A rating flip that PRESERVES the derived tier
-    # (MEDIUM×LOW -> LOW×HIGH, both TIER_2) must still emit — the payload is the ratings' only
-    # home, so swallowing it would silently lose a governance judgment (caught at self-review).
+    # The no-op is an IDENTICAL re-assignment — same ratings AND same rationale. Two things must
+    # still emit: (a) a rating flip preserving the derived tier (MEDIUM×LOW -> LOW×HIGH, both
+    # TIER_2), and (b) a re-affirmation carrying a NEW rationale — because the payload is the
+    # ratings+rationale's only durable home, so swallowing either loses a governance judgment
+    # (both caught at the impl review).
     tenant = _tenant()
     model = _model(session, tenant, code="TA2")
     kw = dict(acting_tenant=tenant, model_id=model.id, actor_id="validator-2l")
+
+    def _events() -> int:
+        return session.execute(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(
+                AuditEvent.event_type == MODEL_TIER_ASSIGN_EVENT,
+                AuditEvent.entity_id == model.id,
+            )
+        ).scalar_one()
+
     assign_model_tier(
         session, materiality_rating="MEDIUM", complexity_rating="LOW", rationale="r1", **kw
     )
     rv_after_first = model.record_version
-    # identical ratings ⇒ NO-OP: no bump, no second event
+    # identical ratings AND identical rationale ⇒ NO-OP: no bump, no second event
     assign_model_tier(
-        session, materiality_rating="MEDIUM", complexity_rating="LOW", rationale="r1-again", **kw
+        session, materiality_rating="MEDIUM", complexity_rating="LOW", rationale="r1", **kw
     )
     assert model.record_version == rv_after_first
-    count = session.execute(
-        select(func.count())
-        .select_from(AuditEvent)
-        .where(AuditEvent.event_type == MODEL_TIER_ASSIGN_EVENT, AuditEvent.entity_id == model.id)
-    ).scalar_one()
-    assert count == 1
-    # changed ratings, SAME derived tier ⇒ event emitted, record_version NOT bumped (tier moved
-    # nowhere), and the new payload carries the new ratings
+    assert _events() == 1
+    # identical ratings, NEW rationale ⇒ emits (the re-affirmation is a governance judgment)
+    assign_model_tier(
+        session,
+        materiality_rating="MEDIUM",
+        complexity_rating="LOW",
+        rationale="r1-reaffirmed",
+        **kw,
+    )
+    assert model.record_version == rv_after_first  # tier moved nowhere
+    assert _events() == 2
+    # changed ratings, SAME derived tier ⇒ emits; record_version still not bumped
     assign_model_tier(
         session, materiality_rating="LOW", complexity_rating="HIGH", rationale="re-rated", **kw
     )
     assert model.tier == "TIER_2" and model.record_version == rv_after_first
-    count = session.execute(
-        select(func.count())
-        .select_from(AuditEvent)
-        .where(AuditEvent.event_type == MODEL_TIER_ASSIGN_EVENT, AuditEvent.entity_id == model.id)
-    ).scalar_one()
-    assert count == 2
+    assert _events() == 3
 
 
 def test_assign_model_tier_refusals(session: Session) -> None:

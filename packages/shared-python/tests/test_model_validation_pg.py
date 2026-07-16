@@ -318,3 +318,78 @@ def test_rejected_gate_blocks_run_binding_on_pg(app_url: str) -> None:
     finally:
         session.close()
         engine.dispose()
+
+
+def test_expired_exception_gate_blocks_run_binding_on_pg(app_url: str) -> None:
+    """MG-1 OD-F end to end on real PG under RLS (the seam-gate leg the plan promised): an EXPIRED
+    use-before-validation EXCEPTION makes assert_model_version_of raise ExpiredModelExceptionError;
+    a fresh (unexpired) EXCEPTION clears it. The expired-EXCEPTION branch reads the same
+    model+model_validation rows the REJECTED leg already proves granted, but the branch itself had
+    no PG coverage until here."""
+    from datetime import UTC, datetime, timedelta
+
+    from irp_shared.model.service import ExpiredModelExceptionError, assert_model_version_of
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    version_id = _seed_registered_version(factory, tenant)
+    past = datetime(2025, 1, 1, tzinfo=UTC)
+    # File a backdated EXCEPTION whose expiry is already in the past (cadence-compliant at its own
+    # injected clock: past+180 <= past+365).
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=ModelValidationActor(actor_id="v2l"),
+            request=RecordValidationRequest(
+                model_version_id=version_id,
+                validation_type="EXCEPTION",
+                outcome="APPROVED_WITH_CONDITIONS",
+                scope_summary="Use-before-validation grant (POC).",
+                conditions="Controls: registered limitations + monitoring.",
+                next_review_due=past.date() + timedelta(days=180),
+            ),
+            now=past,
+        )
+        session.commit()
+    finally:
+        session.close()
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        with pytest.raises(ExpiredModelExceptionError):
+            assert_model_version_of(
+                session, version_id, tenant_id=tenant, expected_model_code="risk.var.parametric"
+            )
+    finally:
+        session.close()
+    # A fresh EXCEPTION re-grant clears the block (the discharge path the message advertises).
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        record_validation(
+            session,
+            acting_tenant=tenant,
+            actor=ModelValidationActor(actor_id="v2l"),
+            request=RecordValidationRequest(
+                model_version_id=version_id,
+                validation_type="EXCEPTION",
+                outcome="APPROVED_WITH_CONDITIONS",
+                scope_summary="Re-grant.",
+                conditions="Controls: registered limitations + monitoring.",
+                next_review_due=date.fromisoformat(_DUE),
+            ),
+        )
+        session.commit()
+        assert (
+            assert_model_version_of(
+                session, version_id, tenant_id=tenant, expected_model_code="risk.var.parametric"
+            ).id
+            == version_id
+        )
+    finally:
+        session.close()
+        engine.dispose()

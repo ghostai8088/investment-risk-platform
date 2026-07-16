@@ -288,8 +288,6 @@ class CampaignSummary:
 @dataclass(frozen=True)
 class _Book:
     portfolio_id: str
-    acme_id: str
-    eurx_id: str
     pe_id: str
     fx_usd_factor_id: str
     fx_eur_factor_id: str
@@ -297,7 +295,6 @@ class _Book:
 
 @dataclass(frozen=True)
 class _Chains:
-    boundary_run_ids: tuple[str, ...]
     factor_exposure_run_id: str
     covariance_run_ids: tuple[str, ...]
     var_run_ids: tuple[str, ...]
@@ -479,8 +476,6 @@ def _seed_book(session: Session, actor_id: str) -> _Book:
     session.flush()
     return _Book(
         portfolio_id=pf,
-        acme_id=ids["EQ-ACME-US"],
-        eurx_id=ids["EQ-EURX-DE"],
         pe_id=ids["PE-HARBOR-IV"],
         fx_usd_factor_id=factor_ids["FX_USD"],
         fx_eur_factor_id=factor_ids["FX_EUR"],
@@ -797,7 +792,6 @@ def _build_chains(
     es_total_run = _es_run("risk.var.parametric_es_total", "ES-total run")
 
     return _Chains(
-        boundary_run_ids=tuple(boundary_runs),
         factor_exposure_run_id=fx_run,
         covariance_run_ids=tuple(cov_runs),
         var_run_ids=tuple(var_runs),

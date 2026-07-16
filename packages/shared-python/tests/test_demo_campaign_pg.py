@@ -60,10 +60,12 @@ def factory():  # noqa: ANN201
     engine = make_engine(URL, poolclass=NullPool)
     session_factory = make_session_factory(engine)
     session = session_factory()
+    seeded_by_this_run = False
     try:
         try:
             run_demo_campaign(session)
             session.commit()
+            seeded_by_this_run = True
         except DemoCampaignAlreadySeededError:
             session.rollback()  # dirty double-run: the end state already exists; assert it
     finally:
@@ -73,8 +75,16 @@ def factory():  # noqa: ANN201
     # not the governed end state — models/tiers/validations/runs all stay). The campaign is the
     # FIRST PG suite to wire RolePermission onto the migration-seeded permission catalog, and
     # CI's final `alembic downgrade base` smoke deletes that catalog — rows still referencing it
-    # would fail the 0002 downgrade with an FK violation. The CLI-seeded living demo tenant is
-    # unaffected (only this test cleans up after itself).
+    # would fail the 0002 downgrade with an FK violation.
+    #
+    # CLEAN UP ONLY WHAT THIS RUN SEEDED (the MG-1-review fold): when the demo tenant was ALREADY
+    # seeded (the CLI-created living tenant, or an earlier double-run), those role_permission rows
+    # are not ours to delete — stripping them would break the living tenant's 1L/2L wiring for the
+    # next endpoint-driven act. In CI the schema is fresh so this run always seeds; only the local
+    # dirty double-run hits the skip.
+    if not seeded_by_this_run:
+        engine.dispose()
+        return
     cleanup = session_factory()
     try:
         persistent_tenant_context(cleanup, DEMO_TENANT_ID)
