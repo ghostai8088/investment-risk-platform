@@ -228,6 +228,22 @@ describe("RunsList", () => {
     expect(screen.getByText("dddddddd-0000-0000-0000-000000000002")).toBeTruthy();
   });
 
+  it("offers the FL-1 proxy-weight-estimates family as a risk-source filter", async () => {
+    const mock = stubItems([]);
+    renderList();
+    await screen.findByText(/No runs yet/);
+    // The dropdown is derived from FAMILIES, so the new family is selectable and stays on the
+    // shared /risk/runs source with its run_type filter (a risk-permission family).
+    fireEvent.change(screen.getByLabelText(/Run type/), {
+      target: { value: "PROXY_WEIGHT_ESTIMATE" },
+    });
+    await waitFor(() => {
+      const last = String(mock.mock.calls[mock.mock.calls.length - 1]?.[0]);
+      expect(last.startsWith("/risk/runs?")).toBe(true);
+      expect(last).toContain("run_type=PROXY_WEIGHT_ESTIMATE");
+    });
+  });
+
   it("renders the empty and error states", async () => {
     stubItems([]);
     renderList();

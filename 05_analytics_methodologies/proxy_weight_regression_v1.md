@@ -79,6 +79,27 @@ field, so an API-level REGRESSION supersede always refuses); a CORRECTION can ne
 (v1 recorded limitation — re-promote instead). PA-2's proxy factor-exposure runs then consume the
 promoted rows unchanged.
 
+## FL-1 (2026-07-16): repointed at PUBLIC instruments for factor loadings
+
+FL-1 reuses this OLS machinery UNCHANGED to estimate the factor loadings of PUBLIC instruments
+(the `risk.factor_exposure.loadings` family; see `factor_exposure_loadings_v1.md`). The estimate →
+promote loop, the per-coefficient std errors, the R², and the pinned-provenance chain all carry
+over verbatim. Three disclosures for the public-instrument use:
+
+- **The α = 1 return source.** A public instrument's raw marks have no smoothing to invert, so they
+  ride the SHIPPED desmoothing path at **α = 1** — the Geltner identity (`r_true = r_observed`
+  exactly; see `desmoothing_geltner_v1.md`'s FL-1 applicability note). The `DESMOOTHED_RETURN` run
+  exists to satisfy this referent's pinned-provenance chain, NOT to transform; a dedicated
+  raw-return pin kind is the recorded cleaner v2.
+- **Price-return betas.** The platform captures valuation marks, not dividends, so the estimated
+  betas are PRICE-return betas — they understate total-return covariation for high-yield
+  instruments (a recorded limitation; the std errors stay first-class).
+- **Widened candidate families.** The candidate-factor gate widened from CURRENCY-only to
+  `LOADING_FACTOR_FAMILIES` (the FRTB five broad classes + the Barra families; OTHER/unknown still
+  refused) so a public instrument can load on MARKET/RATES/CREDIT_SPREAD/COMMODITY factors. The
+  unconstrained-OLS-vs-classic-RBSA divergence below is unchanged; single-name RBSA over a short
+  window still yields noisy betas.
+
 ## Known limitations
 
 - Estimates regress a MODEL OUTPUT (the desmoothed series) — desmoothing model risk (the declared α)

@@ -9,8 +9,11 @@ precedent, extended to a registry map). This referent is self-declared immutable
 ## Purpose & applicability
 
 An instrument's exposure to a factor system is expressed as a set of **loadings** — signed
-sensitivities (betas), one per factor, not necessarily summing to one (Sharpe (1992), *J. Portfolio
-Management* 18(2), the returns-based style analysis frame — the platform's cited lineage at PA-3).
+sensitivities (betas), one per factor, not necessarily summing to one. The estimation lineage is
+returns-based style analysis (Sharpe (1992), *J. Portfolio Management* 18(2) — the platform's cited
+frame at PA-3); note FL-1 uses **UNCONSTRAINED OLS**, NOT Sharpe's classic constrained form
+(Σw = 1, w ≥ 0) — the divergence PA-3's referent records and this family carries forward (loadings
+are signed and unbounded, which is why the projection is not a partition).
 Where the allocation family PARTITIONS a book by currency and the proxy family projects a
 private-asset book onto CURRENCY factors, the loadings family projects ANY instrument onto the
 widened admitted family set (`LOADING_FACTOR_FAMILIES` — the FRTB five broad classes + the Barra
@@ -50,7 +53,7 @@ pinned factor list (no silent dropping). See `numerical_quant_standards.md`.
 
 ## The factor-family ↔ FRTB mapping (OD-FL-1-A; reference for MF-1's later use)
 
-| `factor_family` | FRTB broad risk class (BCBS d457 MAR33.14) | MAR33.12 Table-2 liquidity-horizon floors (days) |
+| `factor_family` | FRTB broad risk class (BCBS d457 MAR33.14) | MAR33.12 Table-2 floors — per-class bounds derived from the per-subcategory values (days) |
 |---|---|---|
 | `CURRENCY` (≡ alias) | Foreign-exchange risk | 10–40 |
 | `MARKET` (≡ alias, by declaration) | Equity risk | 10–60 |
@@ -92,7 +95,10 @@ errors and R² stay first-class on the estimate rows.
 - The fractional multi-factor projection golden (hand-derived: a 50000 atom, loadings
   {MARKET 0.8, STYLE −0.2} → {40000, −10000}, Σ = 30000 ≠ 50000 — the projection, one signed leg).
 - The family widening (a MARKET/STYLE loading is admitted where the allocation/proxy families
-  refuse it); the three moved probe tests (STYLE/MARKET now admitted → the OTHER catch-all refused).
+  refuse it); the two moved capture-gate probe tests (STYLE/MARKET now admitted → the OTHER
+  catch-all refused) plus the loadings-binder OTHER probe. (The third historical probe — the
+  allocation consume-path family gate — deliberately KEEPS its STYLE refusal, since the allocation
+  family stays CURRENCY-only; only its message was re-pinned.)
 - The COVERAGE GATE: an unloaded atom refuses the run closed; a captured zero loading IS coverage.
 - **The through-VaR invariance:** a loadings run over CURRENCY factors at weights {0.6, 0.3} yields
   a VaR BYTE-IDENTICAL to the PROXY run over the same weights — VaR consumes loadings rows unchanged
@@ -127,3 +133,10 @@ PA-2). Covariance consumes factor returns, not exposure rows (not a consumer).
 - The demo tenant stays CURRENCY-only through FL-1 (the MG-1 flagship AWC premise holds until MF-1
   closes it with the TRIGGERED re-validation).
 - `validation_status` UNVALIDATED (non-enforcing until a 2L validator records an outcome, VW-1).
+- **Mixed-family instruments and the PA-2 proxy family (FL-1 review):** because the capture gate
+  now admits non-CURRENCY loading rows, an instrument can carry BOTH CURRENCY proxy rows and (say)
+  RATES loading rows. The shipped PA-2 proxy family pins ALL current-head rows of an atom's
+  instrument and refuses any non-CURRENCY factor, so a proxy run over a book containing such an
+  instrument fail-closes (no wrong number, but the proxy family becomes unrunnable for that
+  instrument). The loadings family is the go-forward multi-family path; keeping an instrument's
+  loadings single-family-per-consumer, or a proxy-family relaxation, is the recorded follow-on.

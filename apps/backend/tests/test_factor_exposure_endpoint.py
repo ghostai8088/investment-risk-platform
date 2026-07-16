@@ -406,3 +406,22 @@ def test_proxy_model_registration_and_dispatched_run(ctx) -> None:  # noqa: ANN0
     body = run.json()
     assert body["status"] == "COMPLETED" and body["run_type"] == "FACTOR_EXPOSURE"
     assert all(r["loading"] == "1.000000000000" for r in body["rows"])  # indicator degradation
+
+
+def test_loadings_model_registration_idempotent_and_conflict(ctx) -> None:  # noqa: ANN001
+    # FL-1: the loadings model registers via its OWN route (POST /risk/models/
+    # factor-exposure-loadings); idempotent on the same code_version, 409 on a same-label twin.
+    client, p, db, _exp_run, _fac = ctx
+    resp = client.post(
+        "/risk/models/factor-exposure-loadings", json={"code_version": "fl1-v1"}, headers=_h(p)
+    )
+    assert resp.status_code == 201, resp.text
+    mv = resp.json()["model_version_id"]
+    again = client.post(
+        "/risk/models/factor-exposure-loadings", json={"code_version": "fl1-v1"}, headers=_h(p)
+    )
+    assert again.status_code == 201 and again.json()["model_version_id"] == mv  # idempotent
+    conflict = client.post(
+        "/risk/models/factor-exposure-loadings", json={"code_version": "fl1-v2"}, headers=_h(p)
+    )
+    assert conflict.status_code == 409  # same label, different code_version

@@ -381,6 +381,195 @@ def test_proxy_and_allocation_over_loadings_snapshot_refused(session: Session) -
             )
 
 
+def test_loadings_over_plain_allocation_snapshot_refused(session: Session) -> None:
+    # The SIXTH 3×3 arm (review fold): the loadings model over a PLAIN allocation-predicate
+    # snapshot refuses (it pins no loading rows — the loadings run would have nothing to project).
+    t = str(uuid.uuid4())
+    _currencies(session, "USD")
+    fid_usd = _ccy_factor(session, t, "FX_USD", "USD")
+    exp_run, _insts = _book(session, t, [("I-EQ", "100", "500.00")])
+    from irp_shared.snapshot import (
+        FACTOR_EXPOSURE_BINDING_PREDICATE,
+        build_factor_exposure_snapshot,
+    )
+    from irp_shared.snapshot.service import SnapshotActor as _SA
+
+    snap = build_factor_exposure_snapshot(
+        session,
+        acting_tenant=t,
+        actor=_SA(actor_id="s", actor_type="user"),
+        exposure_run_id=exp_run,
+        factor_ids=[fid_usd],
+    )
+    assert snap.binding_predicate_version == FACTOR_EXPOSURE_BINDING_PREDICATE
+    mv = register_factor_exposure_loadings_model(
+        session, tenant_id=t, actor_id="a", code_version="fl1-v1"
+    )
+    session.flush()
+    with pytest.raises(FactorExposureInputError, match="does not match the bound"):
+        run_factor_exposure(
+            session,
+            acting_tenant=t,
+            actor=ACT,
+            code_version="fl1-v1",
+            environment_id="ci",
+            model_version_id=mv.id,
+            snapshot_id=snap.id,
+        )
+
+
+def test_loadings_registrar_conflict_on_same_label_twin(session: Session) -> None:
+    # Review fold: a same-label (v1) register with a DIFFERENT code_version is a conflict refusal
+    # (the register/run-consistency seam — no silent second identity for the loadings model).
+    from irp_shared.risk import ModelVersionConflictError
+
+    t = str(uuid.uuid4())
+    register_factor_exposure_loadings_model(
+        session, tenant_id=t, actor_id="a", code_version="fl1-v1"
+    )
+    session.flush()
+    with pytest.raises(ModelVersionConflictError):
+        register_factor_exposure_loadings_model(
+            session, tenant_id=t, actor_id="a", code_version="fl1-v2"
+        )
+
+
+def test_loadings_unpinned_factor_refused(session: Session) -> None:
+    # Review fold (V2): the PA-2 unpinned-factor guard pinned for the LOADINGS family — a loading
+    # row whose factor is NOT in the run's factor_ids refuses closed (no silent dropping).
+    t = str(uuid.uuid4())
+    exp_run, fid_mkt, fid_sty, _eq = _seed_equity(session, t)  # loadings on MKT + STY
+    mv = register_factor_exposure_loadings_model(
+        session, tenant_id=t, actor_id="a", code_version="fl1-v1"
+    )
+    session.flush()
+    # Pin only MKT in factor_ids; the STY loading row is then unpinned → refuse.
+    with pytest.raises(FactorExposureInputError, match="not in the pinned factor list"):
+        run_factor_exposure(
+            session,
+            acting_tenant=t,
+            actor=ACT,
+            code_version="fl1-v1",
+            environment_id="ci",
+            model_version_id=mv.id,
+            exposure_run_id=exp_run,
+            factor_ids=[fid_mkt],
+        )
+
+
+def test_loadings_binder_refuses_other_family_factor(session: Session) -> None:
+    # Review fold: the loadings binder's factor gate refuses OTHER (the catch-all stays refused
+    # after the widening — the ES-1 probe-move endpoint).
+    t = str(uuid.uuid4())
+    fid_mkt = _factor(session, t, "MKT_BROAD", "MARKET")
+    fid_other = _factor(session, t, "MYSTERY", "OTHER")
+    exp_run, insts = _book(session, t, [("I-EQ", "100", "500.00")])
+    _loading(session, t, insts["I-EQ"], fid_mkt, "0.8")
+    mv = register_factor_exposure_loadings_model(
+        session, tenant_id=t, actor_id="a", code_version="fl1-v1"
+    )
+    session.flush()
+    with pytest.raises(FactorExposureInputError, match="is not admitted"):
+        run_factor_exposure(
+            session,
+            acting_tenant=t,
+            actor=ACT,
+            code_version="fl1-v1",
+            environment_id="ci",
+            model_version_id=mv.id,
+            exposure_run_id=exp_run,
+            factor_ids=[fid_mkt, fid_other],
+        )
+
+
+def test_loadings_magnitude_breach_is_committed_failed_not_raised(session: Session) -> None:
+    # Review fold: an out-of-envelope loading × atom is a committed FAILED run (durable evidence),
+    # NOT a raw 500 — the loadings family on the shared _build_rows gate.
+    t = str(uuid.uuid4())
+    fid_mkt = _factor(session, t, "MKT_BROAD", "MARKET")
+    # atom = 100 × 1E19 = 1E21 mark → 1.0 × 1E21 breaches the 1E21 envelope.
+    exp_run, insts = _book(session, t, [("I-EQ", "100", "10000000000000000000")])
+    _loading(session, t, insts["I-EQ"], fid_mkt, "1.0")
+    result = _run_loadings(session, t, exp_run, [fid_mkt])
+    assert result.status == RunStatus.FAILED.value
+    assert result.rows == [] and result.failure_reason
+    assert "magnitude-out-of-range:loading" in result.failure_reason
+
+
+def test_allocation_refuses_handminted_loading_rows_on_content(session: Session) -> None:
+    # Review fold (adversarial F2 — the silent-discard hole): a hand-minted snapshot pinning
+    # loading rows under the ALLOCATION predicate is refused on the CONTENT (not just the predicate
+    # string), so the allocation binder can never COMPLETE while silently discarding the rows.
+    import json
+    from types import SimpleNamespace
+
+    from irp_shared.snapshot import (
+        COMPONENT_KIND_PROXY_MAPPING,
+        FACTOR_EXPOSURE_BINDING_PREDICATE,
+        PURPOSE_FACTOR_EXPOSURE_INPUT,
+        build_factor_exposure_snapshot,
+        list_components,
+    )
+    from irp_shared.snapshot.service import SnapshotActor as _SA
+    from irp_shared.snapshot.service import _append_spec, _persist_snapshot
+
+    t = str(uuid.uuid4())
+    _currencies(session, "USD")
+    fid_usd = _ccy_factor(session, t, "FX_USD", "USD")
+    exp_run, insts = _book(session, t, [("I-EQ", "100", "500.00")])
+    _loading(session, t, insts["I-EQ"], fid_usd, "0.5")
+    # Build a real rows-bearing (loadings) snapshot, then RE-MINT its components under the
+    # ALLOCATION predicate (the snapshot header is append-only immutable, so we forge a fresh one —
+    # exactly the hand-mint threat model: attacker-chosen predicate over rows-bearing content).
+    good = build_factor_exposure_snapshot(
+        session,
+        acting_tenant=t,
+        actor=_SA(actor_id="s", actor_type="user"),
+        exposure_run_id=exp_run,
+        factor_ids=[fid_usd],
+        loadings_family=True,
+    )
+    comps = list_components(session, snapshot_id=good.id, acting_tenant=t)
+    assert any(c.component_kind == COMPONENT_KIND_PROXY_MAPPING for c in comps)
+    specs: list = []
+    for c in comps:
+        content = json.loads(c.captured_content)
+        anchor = SimpleNamespace(
+            id=content.get("id", str(uuid.uuid4())),
+            valid_from=None,
+            system_from=T0,
+            record_version=None,
+        )
+        _append_spec(specs, c.component_kind, c.target_entity_type, anchor, content)
+    forged = _persist_snapshot(
+        session,
+        acting_tenant=t,
+        actor=_SA(actor_id="s", actor_type="user"),
+        specs=specs,
+        label="",
+        purpose=PURPOSE_FACTOR_EXPOSURE_INPUT,
+        as_of_valid_at=VALID_AT,
+        as_of_known_at=VALID_AT,
+        as_of_valuation_date=VD,
+        binding_predicate_version=FACTOR_EXPOSURE_BINDING_PREDICATE,  # the forgery
+    )
+    session.flush()
+    alloc_mv = register_factor_exposure_model(
+        session, tenant_id=t, actor_id="a", code_version="p33-v1"
+    )
+    session.flush()
+    with pytest.raises(FactorExposureInputError, match="would be silently discarded"):
+        run_factor_exposure(
+            session,
+            acting_tenant=t,
+            actor=ACT,
+            code_version="p33-v1",
+            environment_id="ci",
+            model_version_id=alloc_mv.id,
+            snapshot_id=forged.id,
+        )
+
+
 def _var_over(session: Session, t: str, fids: list[str], fx_run_id: str) -> Decimal:
     cov_mv = register_covariance_model(
         session, tenant_id=t, actor_id="a", code_version="risk-v1", window_observations=4

@@ -267,9 +267,10 @@ def _resolve_exposure_family(
 
     An UNREGISTERED version raises :class:`UnregisteredModelError` from the first assert (not a
     family question); a version of NONE of the three families raises the FIRST
-    :class:`WrongModelVersionError` — the one naming the ALLOCATION code, which preserves the
-    pre-PA-2 message for the pre-PA-2 failure and is the family a caller passing an unrelated
-    version most likely meant."""
+    :class:`WrongModelVersionError` — the one naming the ALLOCATION code (the canonical
+    first-registered family, the one a caller passing an unrelated version most likely meant; NB
+    this changed the message vs the pre-PA-2 two-arm form, which surfaced the proxy-code error —
+    same exception class, a clearer message)."""
     first_error: WrongModelVersionError | None = None
     for family in _EXPOSURE_FAMILIES:
         try:
@@ -308,6 +309,20 @@ def _adjudicate_pins(
             "the snapshot pins no factor definitions (COMPONENT_KIND_FACTOR) — not a "
             "factor-exposure input"
         )
+    # A DUPLICATE (portfolio, instrument) atom pin would double-write the 4-tuple result grain (an
+    # IntegrityError mid-run — the same threat the proxy-pin duplicate gate closes, FL-1 review
+    # fold). Impossible on the governed build path (exposure atoms are unique per (run, portfolio,
+    # instrument, base_currency) + the uniform-base gate below), but a hand-minted snapshot is
+    # inside the declared trust boundary; refuse pre-create for all three families.
+    seen_atoms: set[tuple[str, str]] = set()
+    for a in atoms:
+        key = (str(a.portfolio_id), str(a.instrument_id))
+        if key in seen_atoms:
+            raise FactorExposureInputError(
+                f"duplicate exposure atom for (portfolio {a.portfolio_id}, instrument "
+                f"{a.instrument_id}) — refused (it would double-write the result grain)"
+            )
+        seen_atoms.add(key)
     base_currencies = {a.base_currency for a in atoms}
     if len(base_currencies) != 1:
         # P3-C1 (OD-H): base is run-uniform by construction on the governed path, but a
@@ -460,7 +475,7 @@ def _build_rows(
                     raw = pin.weight * atom.exposure_amount
                 if abs(raw) >= _MAX_RESULT_ABS:
                     gaps.append(
-                        f"magnitude-out-of-range:proxy:{atom.instrument_id}:{pin.factor_id}"
+                        f"magnitude-out-of-range:loading:{atom.instrument_id}:{pin.factor_id}"
                     )
                     return [], gaps
                 rows.append(
@@ -602,6 +617,18 @@ def run_factor_exposure(
             list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
         )
         index = _adjudicate_pins(atoms, factors, family)
+        # CONTENT-based family fence (FL-1 review fold): the 3x3 predicate gate keys on the
+        # binding-predicate STRING, but a hand-minted snapshot (inside the declared trust
+        # boundary) could pin proxy/loading rows under the ALLOCATION predicate — the allocation
+        # binder would then COMPLETE while silently discarding those rows (a different governed
+        # number from the same content). The allocation family pins NO rows, so any pinned
+        # PROXY_MAPPING content under it is ill-formed; refuse on the CONTENT, not just the string.
+        if not family.pins_rows and proxies:
+            raise FactorExposureInputError(
+                f"snapshot pins {len(proxies)} proxy/loading row(s) but the bound {family.code} "
+                f"family consumes none — they would be silently discarded; bind the proxy or "
+                f"loadings model instead"
+            )
         # Proxy AND loadings both adjudicate the pinned rows (the same trust boundary); the
         # loadings family ADDITIONALLY requires full coverage — every atom carries >= 1 loading
         # row (no indicator fallback; OD-FL-1-D).
