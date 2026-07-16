@@ -1,43 +1,45 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-15) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-16) — read this block; everything below it is HISTORY
 >
-> **HEAD `46ce296`** = merge of **PR #44** (MG-1: model materiality + the first validation
-> campaign) / **CI green**. **Migration head `0040_var_estimate_age`** (40 revisions — MG-1 needed
-> NO migration). `make check` **1471** passed / full local-PG **1772** passed (fresh AND dirty
-> double-run).
+> **HEAD `778891c`** = merge of **PR #47** (FL-1: the loadings substrate + the fractional exposure
+> family) / **CI #314 green**. **Migration head `0040_var_estimate_age`** (40 revisions — FL-1
+> needed NO migration). `make check` **1488** passed / full local-PG **1784** passed (fresh) / FE
+> **64** vitest + lint + tsc + prettier + build.
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `mg_1_decision_record.md` (**CLOSED**).
+> `fl_1_decision_record.md` (**CLOSED**).
 >
-> **Where we are: Wave 6 slice 1 (MG-1) is CLOSED** — the governance-first opener shipped:
-> **tiering is real** (dual ratings → derived Tier 1/2/3, audited 2L verb, MODEL.TIER_ASSIGN
-> minted, the 1L register-time tier write closed), **OD-032 + OD-033 CLOSED** (tier-bounded cadence
-> ceilings {365/730/1095}; TIER_1 anchored EGIM ¶90, the rest HOUSE POLICY; untiered ⇒ TIER_1
-> fail-safe), **the F3 exception regime shipped WITH teeth** (an EXPIRED use-before-validation
-> exception refuses new binds at the shared seam, 422 at all 12 run endpoints; overdue revalidation
-> stays display-only — recorded asymmetry, MG-2 candidate), and **the empty table is empty no
-> more**: the living demo tenant (`8c3193a6-…`, seeded by `scripts/run_demo_campaign.py`) holds
-> **16 models / 16 tiered / 6 INITIAL validations + 10 time-boxed EXCEPTIONs / 49 COMPLETED
-> evidence runs** — real BT-1/BT-2 backtests, the full private-asset chain, all findings drawn from
-> registered limitations. The 5 flagship AWC conditions carry the CURRENCY-only condition **whose
-> remediation IS FL-1/MF-1** (the MF-1 TRIGGERED re-validation closes it — grep conditions for
-> 'FL-1').
+> **Where we are: Wave 6 slice 2 (FL-1) is CLOSED** — the corrected multi-family prerequisite
+> shipped: **the THIRD factor-exposure family** `risk.factor_exposure.loadings` (the proxy
+> projection GENERALIZED — fractional signed multi-factor loadings) through the SAME
+> `run_factor_exposure` binder via the `_EXPOSURE_FAMILIES` registry map; the **3×3 predicate
+> symmetry** (each family requires exactly its predicate, all nine arms probe-pinned); **the
+> coverage gate** (an unloaded pinned atom refuses the run CLOSED — no silent VaR under-count; a
+> captured ZERO loading IS coverage); the **FRTB vocab** (RATES/CREDIT_SPREAD/COMMODITY minted,
+> CURRENCY≡FX + MARKET≡equity aliased — names-as-vocabulary, zero capital semantics;
+> `LOADING_FACTOR_FAMILIES` allow-list); 3 of 5 CURRENCY gates relaxed (scenario's TWO stay
+> closed — the MF-1 two-gate inventory); ENT-019 WIDENED to public instruments
+> (`private_instrument_id` = the recorded pin-serializer-key misnomer; ENT-058 = the paper v2);
+> the loadings source = PA-3's OLS via the **α=1 desmoothing identity detour**; the
+> **through-VaR invariance golden** (loadings ≡ proxy over the same CURRENCY weights, byte-exact);
+> the **FE drift trio PAID** (proxy-weight-estimates family; residual_variance/estimate_age_days/
+> model_version_id columns; the ES `z×σ ≠ var_value` cell now an annotated echo). 4-finder review
+> (all Fable): **zero shipped math defects**. Allocation + proxy families byte-untouched
+> (invariance regressions); the demo tenant stayed CURRENCY-only by design (the MF-1 premise).
 >
-> **NEXT = FL-1 planning** (Part 2.9 slice 2): the factor-loading substrate + the fractional,
-> non-partitioning exposure kernel v2 — the CORRECTED multi-family prerequisite (the old "capture
-> slice" tee was factually wrong; capture is already family-generic) + the zero-migration
-> `factor_family` vocab extension to FRTB's risk classes + the FE drift trio ride-along (incl. the
-> ES `z×σ ≠ var_value` display — the only place a governed number shows arithmetic that does not
-> check out). FL-1 has a REAL internal design fork to census: vendor-beta capture vs PA-3's
-> regression machinery pointed at public instruments. Then MF-1 (multi-family end-to-end, ending
-> with the TRIGGERED re-validation). The pre-ratification verifier pass is standing process.
+> **NEXT = MF-1 planning** (Part 2.9 slice 3, the LAST Wave-6 slice): multi-family factor exposure
+> end-to-end — a real equity/credit book through capture → loadings → exposure v2 → covariance →
+> VaR/ES on FL-1's substrate, ending with the **TRIGGERED re-validation** that closes MG-1's
+> CURRENCY-only condition (grep the 5 flagship AWC conditions for 'FL-1'). Unlocks the four blocked
+> candidates (FRTB liquidity horizons, partial ES by class, non-CURRENCY scenario shocks, the §2.2
+> taxonomy). Then the Wave-6 close review. The pre-ratification verifier pass is standing process.
 >
-> **Counts (2026-07-16):** 14 governed numbers / 16 registered model codes / **16 tiered, 6
-> validated, 10 excepted** in the demo tenant. Delivery runs under the 2026-07-14 EXTENDED autonomy
-> grant (the USER signs Tier-3 decisions; the USER creates AND merges PRs — the auto-mode
-> classifier blocks Claude's REST create + merge on this repo).
+> **Counts (2026-07-16):** 14 governed numbers / **17 registered model codes** (the loadings
+> family joined the 16) / 16 tiered, 6 validated, 10 excepted in the demo tenant. Delivery runs
+> under the 2026-07-14 EXTENDED autonomy grant (the USER signs Tier-3 decisions; the USER creates
+> AND merges PRs — the auto-mode classifier blocks Claude's REST create + merge on this repo).
 >
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this block, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence),
