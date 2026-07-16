@@ -213,4 +213,13 @@ realized-return series — the market-realistic path is FL-1/MF-1 territory).
 
 ### Part 6.3 — Post-fold validation
 
-*(the battery re-run + the demo re-seed land here at close)*
+`ruff format`/`ruff check` clean; `mypy` clean (178 source files); **`make check` 1471 passed / 301
+skipped**; **full local-PG 1772 passed, ZERO failures — on a fresh schema AND on a dirty-schema
+double-run**; `alembic check` no drift; **`alembic heads` still `0040_var_estimate_age` (the
+no-migration claim, re-verified)**; `downgrade base` → `upgrade head` clean. *(One PG failure
+surfaced and was fixed: my own expired-exception PG test discharged its bind assert after a
+`commit()`, which clears the transaction-local tenant context and hid the row under RLS — a
+test-harness bug in the fold, not a code defect; the branch under test is unchanged.)* **The living
+demo tenant was re-seeded** via the CLI on the fresh schema so its 16 records carry the folded
+dossier text (the 3 series-bearing flagship dossiers now disclose the constant-series fixture note);
+end state re-verified: 16 models / 16 tiered / 6 INITIAL + 10 EXCEPTION.
