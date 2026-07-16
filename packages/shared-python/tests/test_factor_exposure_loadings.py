@@ -27,6 +27,7 @@ from sqlalchemy.pool import StaticPool
 
 from irp_shared.calc.models import RunStatus
 from irp_shared.db.session import make_engine, make_session_factory
+from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.exposure import ExposureActor, run_exposure
 from irp_shared.marketdata import (
     FactorActor,
@@ -40,7 +41,6 @@ from irp_shared.models import Base
 from irp_shared.portfolio import PortfolioActor, create_portfolio
 from irp_shared.position import create_position
 from irp_shared.position.service import PositionActor
-from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.reference.instrument import create_instrument
 from irp_shared.reference.models import Currency
 from irp_shared.reference.service import ReferenceActor
