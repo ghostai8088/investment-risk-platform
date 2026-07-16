@@ -611,3 +611,112 @@ def test_proxy_pins_and_run_under_rls(app_url: str) -> None:
     finally:
         session.close()
         engine.dispose()
+
+
+def test_loadings_pins_and_run_under_rls(app_url: str) -> None:
+    """FL-1: the LOADINGS model's snapshot pins the widened ENT-019 rows (a MARKET-family factor —
+    the widened gates exercised live on PG) and the dispatched run COMPLETES as the constrained
+    irp_app role under FORCE RLS; verify_snapshot proves the pinned content re-resolves
+    tenant-scoped. Rides this EXISTING PG suite/ci.yml step by design (the record's stated CI-PG
+    disposition — no new *_pg.py file)."""
+    from irp_shared.risk import register_factor_exposure_loadings_model
+    from irp_shared.snapshot import verify_snapshot
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        session.add(_currency(tenant, "USD"))
+        session.flush()
+        pf = create_portfolio(
+            session,
+            tenant_id=tenant,
+            code=f"EQ-{uuid.uuid4().hex[:6]}",
+            name="public equity book",
+            node_type="ACCOUNT",
+            actor=PortfolioActor(actor_id="s"),
+        ).id
+        inst = create_instrument(
+            session,
+            tenant_id=tenant,
+            code=f"I-EQ-{uuid.uuid4().hex[:6]}",
+            name="PubCo",
+            asset_class="EQUITY",
+            actor=ReferenceActor(actor_id="s"),
+        ).id
+        create_position(
+            session,
+            portfolio_id=pf,
+            instrument_id=inst,
+            acting_tenant=tenant,
+            actor=PositionActor(actor_id="s"),
+            quantity=Decimal("100"),
+            valid_from=_T0,
+        )
+        create_valuation(
+            session,
+            portfolio_id=pf,
+            instrument_id=inst,
+            valuation_date=_VD,
+            acting_tenant=tenant,
+            actor=ValuationActor(actor_id="s"),
+            mark_value=Decimal("500.00"),
+            currency_code="USD",
+            valid_from=_T0,
+        )
+        exp = run_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=ExposureActor(actor_id="a"),
+            code_version="v1",
+            environment_id="ci",
+            portfolio_id=pf,
+            as_of_valid_at=_VALID_AT,
+            as_of_known_at=_KNOWN_AT,
+            base_currency="USD",
+        )
+        fac = capture_factor(
+            session,
+            factor_code=f"MKT_BROAD_{uuid.uuid4().hex[:6]}",
+            factor_source="VENDOR_F",
+            factor_family="MARKET",  # the FL-1 widened family, live on PG
+            acting_tenant=tenant,
+            actor=FactorActor(actor_id="s"),
+            valid_from=_T0,
+        ).id
+        capture_proxy_mapping(
+            session,
+            private_instrument_id=inst,  # the recorded misnomer: a PUBLIC instrument's loading
+            factor_id=fac,
+            weight=Decimal("0.8"),
+            acting_tenant=tenant,
+            actor=ProxyMappingActor(actor_id="s"),
+            valid_from=_T0,
+        )
+        mv = register_factor_exposure_loadings_model(
+            session, tenant_id=tenant, actor_id="a", code_version="fl1-v1"
+        )
+        session.flush()
+        result = run_factor_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=_ACT,
+            code_version="fl1-v1",
+            environment_id="ci",
+            model_version_id=mv.id,
+            exposure_run_id=exp.run.run_id,
+            factor_ids=[fac],
+        )
+        assert result.status == "COMPLETED" and len(result.rows) == 1
+        assert result.rows[0].loading == Decimal("0.8")
+        assert result.rows[0].factor_family == "MARKET"
+        assert result.rows[0].exposure_amount == Decimal("40000.000000")  # 0.8 * 50000
+        assert verify_snapshot(
+            session, snapshot_id=result.run.input_snapshot_id, acting_tenant=tenant
+        ).ok
+        session.commit()
+    finally:
+        session.close()
+        engine.dispose()

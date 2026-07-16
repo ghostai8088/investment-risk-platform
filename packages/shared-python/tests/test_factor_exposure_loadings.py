@@ -499,3 +499,237 @@ def test_active_risk_refuses_a_loadings_run(session: Session) -> None:
             benchmark_id=str(uuid.uuid4()),
             benchmark_effective_date=_date(2026, 6, 1),
         )
+
+
+def test_scenario_run_binder_refuses_non_currency_loadings_run(session: Session) -> None:
+    # THE FIFTH GATE (the verifier pass's census HIGH — scenario_service.py's run-binder
+    # exposure-family gate, distinct from scenario.py's shock-capture gate): a scenario run over a
+    # loadings run whose pinned exposure rows carry a non-CURRENCY family REFUSES pre-create.
+    # Previously this gate had NO probe of its own; FL-1 pins it with a REAL loadings run.
+    from irp_shared.risk import (
+        ScenarioActor,
+        capture_scenario_shock,
+        create_scenario_definition,
+        register_scenario_model,
+        run_scenario,
+    )
+    from irp_shared.risk.scenario_service import ScenarioInputError
+
+    t = str(uuid.uuid4())
+    _currencies(session, "USD")
+    exp_run, fid_mkt, fid_sty, _eq = _seed_equity(session, t)  # MARKET + STYLE loadings
+    load_run = _run_loadings(session, t, exp_run, [fid_mkt, fid_sty])
+    assert load_run.status == RunStatus.COMPLETED.value
+
+    s_act = ScenarioActor(actor_id="a")
+    fid_usd = _ccy_factor(session, t, "FX_USD", "USD")
+    d = create_scenario_definition(
+        session,
+        code="CRASH",
+        name="Crash",
+        scenario_type="HISTORICAL",
+        acting_tenant=t,
+        actor=s_act,
+    )
+    session.flush()
+    capture_scenario_shock(
+        session,
+        scenario_definition_id=d.id,
+        factor_id=fid_usd,
+        shock_value=Decimal("-0.10"),
+        acting_tenant=t,
+        actor=s_act,
+        valid_from=T0,
+    )
+    session.flush()
+    mv = register_scenario_model(session, tenant_id=t, actor_id="a", code_version="s-v1")
+    session.flush()
+    with pytest.raises(ScenarioInputError, match="is not CURRENCY"):
+        run_scenario(
+            session,
+            acting_tenant=t,
+            actor=s_act,
+            code_version="s-v1",
+            environment_id="ci",
+            model_version_id=mv.id,
+            factor_exposure_run_id=load_run.run.run_id,
+            scenario_definition_id=d.id,
+        )
+
+
+# --- Step 3: the α=1 estimation chain — public marks → desmooth(identity) → OLS → promote -------
+
+# TD-1-realistic daily equity marks: 9 marks ⇒ 8 observed returns ⇒ 7 desmoothed periods (the α=1
+# run consumes its seed observation) — the OLS floor max(min_obs=4, k+2=4) admits k=2.
+_EQ_MARK_DATES = tuple(date(2026, 5, d) for d in (18, 19, 20, 21, 22, 25, 26, 27, 28))
+_EQ_MARK_VALUES = (
+    "500.00",
+    "505.00",
+    "502.48",
+    "507.50",
+    "512.58",
+    "510.02",
+    "515.12",
+    "512.54",
+    "517.67",
+)
+_EQ_WINDOW = (date(2026, 5, 17), date(2026, 5, 29))
+
+
+def test_alpha_one_chain_public_marks_to_promoted_loadings(session: Session) -> None:
+    """The OD-FL-1-B end-to-end: a PUBLIC equity's raw marks ride the SHIPPED desmoothing service
+    at α=1 (the Geltner identity — metric_value == observed_return per period, asserted), feed
+    PA-3's OLS over the WIDENED candidate families (MARKET + RATES — one newly-minted FRTB
+    family), and the estimated betas PROMOTE into the widened ENT-019 as REGRESSION-method loading
+    rows, byte-equal to the estimate rows."""
+    from sqlalchemy import select
+
+    from irp_shared.marketdata.models import ProxyMapping
+    from irp_shared.perf import (
+        DesmoothedReturnActor,
+        register_desmoothed_return_model,
+        run_desmoothed_return,
+    )
+    from irp_shared.perf.models import METRIC_TYPE_DESMOOTHED_PERIOD, DesmoothedReturnResult
+    from irp_shared.risk import (
+        METRIC_TYPE_WEIGHT,
+        ProxyWeightEstimateActor,
+        list_proxy_weight_results,
+        promote_proxy_weight_estimate,
+        register_proxy_weight_regression_model,
+        run_proxy_weight_estimate,
+    )
+
+    t = str(uuid.uuid4())
+    _currencies(session, "USD")
+
+    # 1. The public equity's daily marks (a plain valuation series — no private asset_class).
+    pf = create_portfolio(
+        session,
+        tenant_id=t,
+        code=f"EQ-{uuid.uuid4().hex[:6]}",
+        name="public equity book",
+        node_type="ACCOUNT",
+        actor=PortfolioActor(actor_id="s"),
+    ).id
+    inst = create_instrument(
+        session,
+        tenant_id=t,
+        code=f"PUBCO-{uuid.uuid4().hex[:6]}",
+        name="PubCo",
+        asset_class="EQUITY",
+        actor=ReferenceActor(actor_id="s"),
+    ).id
+    for d, v in zip(_EQ_MARK_DATES, _EQ_MARK_VALUES, strict=True):
+        create_valuation(
+            session,
+            portfolio_id=pf,
+            instrument_id=inst,
+            valuation_date=d,
+            acting_tenant=t,
+            actor=ValuationActor(actor_id="s"),
+            mark_value=Decimal(v),
+            currency_code="USD",
+        )
+    session.flush()
+
+    # 2. Desmooth at α=1 — a FREE declared identity parameter with domain (0, 1]; no vocab work.
+    dm_model = register_desmoothed_return_model(
+        session, tenant_id=t, actor_id="s", code_version="v1", alpha="1"
+    )
+    dm = run_desmoothed_return(
+        session,
+        acting_tenant=t,
+        actor=DesmoothedReturnActor(actor_id="a"),
+        code_version="v1",
+        environment_id="ci",
+        model_version_id=str(dm_model.id),
+        portfolio_id=pf,
+        instrument_id=inst,
+        window_start=_EQ_WINDOW[0],
+        window_end=_EQ_WINDOW[1],
+    )
+    assert dm.status == "COMPLETED"
+    periods = (
+        session.execute(
+            select(DesmoothedReturnResult)
+            .where(
+                DesmoothedReturnResult.calculation_run_id == str(dm.run.run_id),
+                DesmoothedReturnResult.metric_type == METRIC_TYPE_DESMOOTHED_PERIOD,
+            )
+            .order_by(DesmoothedReturnResult.period_end)
+        )
+        .scalars()
+        .all()
+    )
+    assert len(periods) == 7  # 9 marks ⇒ 8 observed ⇒ 7 desmoothed (the seed is consumed)
+    for p in periods:  # the α=1 IDENTITY, asserted per period
+        assert p.metric_value == p.observed_return
+
+    # 3. The OLS candidates: MARKET + RATES (a newly-minted FRTB family) — the widened :266 gate.
+    f_mkt = _factor(session, t, "MKT_BROAD", "MARKET")
+    f_rates = _factor(session, t, "RATES_L1", "RATES")
+    period_ends = [p.period_end for p in periods]
+    mkt_vals = ["0.010", "-0.005", "0.010", "0.010", "-0.005", "0.010", "-0.005"]
+    rates_vals = ["-0.002", "0.004", "0.001", "-0.003", "0.002", "0.000", "0.003"]
+    for fid, vals in ((f_mkt, mkt_vals), (f_rates, rates_vals)):
+        factor = resolve_factor(session, fid, acting_tenant=t)
+        for d, v in zip(period_ends, vals, strict=True):
+            capture_factor_return(
+                session,
+                factor,
+                return_date=d,
+                return_value=Decimal(v),
+                acting_tenant=t,
+                actor=FactorActor(actor_id="s"),
+                valid_from=T0,
+            )
+    session.flush()
+
+    pw_model = register_proxy_weight_regression_model(
+        session, tenant_id=t, actor_id="s", code_version="v1", min_observations=4
+    )
+    est = run_proxy_weight_estimate(
+        session,
+        acting_tenant=t,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="ci",
+        model_version_id=str(pw_model.id),
+        desmoothed_run_id=str(dm.run.run_id),
+        factor_ids=[f_mkt, f_rates],
+    )
+    assert est.status == "COMPLETED"
+    weights = {
+        r.factor_id: r.metric_value
+        for r in list_proxy_weight_results(session, str(est.run.run_id), acting_tenant=t)
+        if r.metric_type == METRIC_TYPE_WEIGHT
+    }
+    assert set(weights) == {f_mkt, f_rates}
+
+    # 4. Promote both betas into the widened ENT-019 (the :356 gate now admits MARKET/RATES).
+    for fid in (f_mkt, f_rates):
+        promoted = promote_proxy_weight_estimate(
+            session,
+            private_instrument_id=inst,
+            factor_id=fid,
+            weight=weights[fid],
+            acting_tenant=t,
+            actor=ProxyMappingActor(actor_id="analyst"),
+            source_calculation_run_id=str(est.run.run_id),
+        )
+        assert promoted.mapping_method == "REGRESSION"
+    session.flush()
+    rows = (
+        session.execute(
+            select(ProxyMapping).where(
+                ProxyMapping.tenant_id == t,
+                ProxyMapping.private_instrument_id == inst,
+                ProxyMapping.valid_to.is_(None),
+                ProxyMapping.system_to.is_(None),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {r.factor_id: r.weight for r in rows} == weights  # byte-equal to the estimate rows
