@@ -2,56 +2,42 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-15) — read this block; everything below it is HISTORY
 >
-> **HEAD `cf6e3b6`** = merge of **PR #42** (ES-1 closeout + the Wave-5 close review) / CI green.
-> **Migration head `0040_var_estimate_age`** (40 revisions). `make check` **1448** passed / full
-> local-PG **1741** passed (fresh schema AND dirty double-run).
+> **HEAD `46ce296`** = merge of **PR #44** (MG-1: model materiality + the first validation
+> campaign) / **CI green**. **Migration head `0040_var_estimate_age`** (40 revisions — MG-1 needed
+> NO migration). `make check` **1471** passed / full local-PG **1772** passed (fresh AND dirty
+> double-run).
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `wave_5_close_review.md` (**RATIFIED** — OQ-W5C-1…6).
+> `mg_1_decision_record.md` (**CLOSED**).
 >
-> **Where we are: WAVE 5 IS CLOSED** (all four slices SHIPPED-AS-RATIFIED, zero shipped-code defects
-> found by the 4-auditor close audit) and **WAVE 6 IS RATIFIED (Part 2.9, fork A "governance-first"):
-> MG-1 (model materiality + the FIRST validation campaign — 16/16 models sit UNVALIDATED) → FL-1
-> (factor-loading substrate + fractional exposure kernel v2 — the CORRECTED multi-family prerequisite;
-> the old "capture slice" tee was factually wrong) → MF-1 (multi-family end-to-end)**. NEXT = MG-1
-> planning (census → record+plan → **pre-ratification verifier pass, the ES-1 lesson** → user OQs).
-> Scope note (user, 2026-07-15): enterprise target; real-data demos come AFTER the build — no vendor
-> adapters ride Wave 6. Standing process since this close: the **OQ-W5C-5 closure-stamp checklist**.
-> Re-opened at the close: **"estimate staleness — residual"** (TIPPED — the promotion path has no age
-> check; non-total families bind ungated; nothing expires a proxy_mapping). The RD-3 NaN bug + the
-> estimate-seam test ride MG-1; the FE drift trio (incl. the ES `z×σ ≠ var_value` display) rides FL-1.
+> **Where we are: Wave 6 slice 1 (MG-1) is CLOSED** — the governance-first opener shipped:
+> **tiering is real** (dual ratings → derived Tier 1/2/3, audited 2L verb, MODEL.TIER_ASSIGN
+> minted, the 1L register-time tier write closed), **OD-032 + OD-033 CLOSED** (tier-bounded cadence
+> ceilings {365/730/1095}; TIER_1 anchored EGIM ¶90, the rest HOUSE POLICY; untiered ⇒ TIER_1
+> fail-safe), **the F3 exception regime shipped WITH teeth** (an EXPIRED use-before-validation
+> exception refuses new binds at the shared seam, 422 at all 12 run endpoints; overdue revalidation
+> stays display-only — recorded asymmetry, MG-2 candidate), and **the empty table is empty no
+> more**: the living demo tenant (`8c3193a6-…`, seeded by `scripts/run_demo_campaign.py`) holds
+> **16 models / 16 tiered / 6 INITIAL validations + 10 time-boxed EXCEPTIONs / 49 COMPLETED
+> evidence runs** — real BT-1/BT-2 backtests, the full private-asset chain, all findings drawn from
+> registered limitations. The 5 flagship AWC conditions carry the CURRENCY-only condition **whose
+> remediation IS FL-1/MF-1** (the MF-1 TRIGGERED re-validation closes it — grep conditions for
+> 'FL-1').
 >
-> - **RD-3** (PR #34 `29bc5a2`) — hygiene: verify-path drift-not-500, guard/parse adoption, the
->   dirty-schema double-run now a standing local-validation capability. NO migration.
-> - **VW-1** (PR #36 `a9a00eb`) — **the SR 11-7 model-validation workflow**: ENT-037
->   `model_validation` REALIZED (migration `0039`); a latest-outcome **REJECTED refuses new governed
->   runs** at the shared `assert_model_version_of` seam; UNVALIDATED keeps running (the documented
->   SR 26-2 exception posture); `model.validate` R-07 mint (2L-only, SOD-03); `MODEL.VALIDATE`
->   activated; CTRL-022 → Operational; REQ-MDG-003 → In-Progress. Human-only v1 (BR-15/MG-07).
-> - **BT-2** (PR #39 `4035f10`) — **total-series backtest** (`VAR_PARAMETRIC_TOTAL` admitted; the
->   PA-4 exclusion discharged) + the **σ_e estimate-age gate** (DECLARED `max_estimate_age_days` on
->   a new total **v2**; v1 grandfathered ungated; migration `0040`'s `estimate_age_days` echo). The
->   honest work was the DOCTRINE: a daily read on an appraisal-marked book is biased two ways by
->   construction, so the unconditional Kupiec/Basel verdict is NOT valid evidence in EITHER
->   direction. **The estimate-staleness item is ~~CLOSED~~ — an OVERCLAIM corrected at the Wave-5 close** (1 of 3 clauses paid: the age echo. The promotion path has no age check; every non-total family binds the same weight ungated; nothing expires a `proxy_mapping`). RE-OPENED as "estimate staleness — residual", TIPPED.
-> - **ES-1** (PR #41 `2abc1b1`) — **the 14th governed number: parametric Expected Shortfall**,
->   `ES_c = k_c·σ` over BOTH σ_p and PA-4's σ_total (`risk.var.parametric_es` +
->   `..._es_total` v1, two new codes through the SAME binder). **NO migration** — the reserved
->   `ES_PARAMETRIC` value, the grain and every column already existed. `k_c` = a REGISTERED 12dp
->   constant, identity-checked at bind; **no runtime normal function of any kind**. **NO ES
->   backtest** — a ratified omission on FRTB precedent + parametric redundancy, explicitly NOT
->   non-elicitability. Confidence vocabulary widened to `{0.95, 0.975, 0.99}` on the ONE SHARED
->   `VAR_Z_SCORES` (OQ-4 sub-fork (i) — so 97.5% is now registrable on the HS/total families too:
->   a disclosed, accepted cost).
+> **NEXT = FL-1 planning** (Part 2.9 slice 2): the factor-loading substrate + the fractional,
+> non-partitioning exposure kernel v2 — the CORRECTED multi-family prerequisite (the old "capture
+> slice" tee was factually wrong; capture is already family-generic) + the zero-migration
+> `factor_family` vocab extension to FRTB's risk classes + the FE drift trio ride-along (incl. the
+> ES `z×σ ≠ var_value` display — the only place a governed number shows arithmetic that does not
+> check out). FL-1 has a REAL internal design fork to census: vendor-beta capture vs PA-3's
+> regression machinery pointed at public instruments. Then MF-1 (multi-family end-to-end, ending
+> with the TRIGGERED re-validation). The pre-ratification verifier pass is standing process.
 >
-> **Counts (2026-07-15):** **14 governed numbers** / 12 run families / **16 registered model codes**
-> + the model-less exposure rollup. Delivery runs under the **2026-07-14 EXTENDED autonomy grant**
-> (Claude self-drives plan→impl→review→commit→push; the USER signs Tier-3 decisions).
-> **Practical note: the PR create+merge steps are currently done by the USER** — Claude's REST
-> PR-create call is blocked by the auto-mode safety classifier on this repo (push works fine), and
-> at ES-1 the classifier also blocked Claude's REST *merge* of its own PR. Claude pushes the branch
-> and hands over the compare link; the USER creates and merges.
+> **Counts (2026-07-16):** 14 governed numbers / 16 registered model codes / **16 tiered, 6
+> validated, 10 excepted** in the demo tenant. Delivery runs under the 2026-07-14 EXTENDED autonomy
+> grant (the USER signs Tier-3 decisions; the USER creates AND merges PRs — the auto-mode
+> classifier blocks Claude's REST create + merge on this repo).
 >
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this block, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence),
