@@ -2,20 +2,26 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-15) — read this block; everything below it is HISTORY
 >
-> **HEAD `2abc1b1`** = merge of **PR #41** (ES-1 impl `a0723ac` + review folds `17d48bc`) / **CI
-> green**. **Migration head `0040_var_estimate_age`** (40 revisions — ES-1 needed NO migration).
-> `make check` **1448** passed / full local-PG **1741** passed (fresh schema AND dirty double-run).
+> **HEAD `cf6e3b6`** = merge of **PR #42** (ES-1 closeout + the Wave-5 close review) / CI green.
+> **Migration head `0040_var_estimate_age`** (40 revisions). `make check` **1448** passed / full
+> local-PG **1741** passed (fresh schema AND dirty double-run).
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
-> amendment log — it is kept current per slice and WINS wherever the sections below disagree). The
-> latest decision record is `es_1_decision_record.md` (CLOSED).
+> amendment log — it WINS wherever the sections below disagree). The latest decision record is
+> `wave_5_close_review.md` (**RATIFIED** — OQ-W5C-1…6).
 >
-> **Where we are:** **WAVE 5 IS CODE-COMPLETE** — all four ratified slices shipped CI-green
-> (ratified 2026-07-14 at the Wave-4 close, fork A "the numbers govern themselves"):
-> **RD-3 ✅ → VW-1 ✅ → BT-2 ✅ → ES-1 ✅**. **NEXT = the Wave-5 close review** (the mandatory Part-4
-> rule-2 wave re-baseline: honest audit of what shipped vs what was ratified, deferral-register
-> reconciliation, outward benchmark + destination check, then **Wave 6 ratified by the USER** —
-> multi-family factor capture is the teed headline).
+> **Where we are: WAVE 5 IS CLOSED** (all four slices SHIPPED-AS-RATIFIED, zero shipped-code defects
+> found by the 4-auditor close audit) and **WAVE 6 IS RATIFIED (Part 2.9, fork A "governance-first"):
+> MG-1 (model materiality + the FIRST validation campaign — 16/16 models sit UNVALIDATED) → FL-1
+> (factor-loading substrate + fractional exposure kernel v2 — the CORRECTED multi-family prerequisite;
+> the old "capture slice" tee was factually wrong) → MF-1 (multi-family end-to-end)**. NEXT = MG-1
+> planning (census → record+plan → **pre-ratification verifier pass, the ES-1 lesson** → user OQs).
+> Scope note (user, 2026-07-15): enterprise target; real-data demos come AFTER the build — no vendor
+> adapters ride Wave 6. Standing process since this close: the **OQ-W5C-5 closure-stamp checklist**.
+> Re-opened at the close: **"estimate staleness — residual"** (TIPPED — the promotion path has no age
+> check; non-total families bind ungated; nothing expires a proxy_mapping). The RD-3 NaN bug + the
+> estimate-seam test ride MG-1; the FE drift trio (incl. the ES `z×σ ≠ var_value` display) rides FL-1.
+>
 > - **RD-3** (PR #34 `29bc5a2`) — hygiene: verify-path drift-not-500, guard/parse adoption, the
 >   dirty-schema double-run now a standing local-validation capability. NO migration.
 > - **VW-1** (PR #36 `a9a00eb`) — **the SR 11-7 model-validation workflow**: ENT-037
