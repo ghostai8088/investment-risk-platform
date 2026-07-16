@@ -48,6 +48,24 @@ ZERO loading IS coverage (a declared "this atom projects to nothing"; it emits n
 value is the honest residual). The carried PA-2 guard: every loading factor must be in the run's
 pinned factor list (no silent dropping). See `numerical_quant_standards.md`.
 
+## The factor-family ↔ FRTB mapping (OD-FL-1-A; reference for MF-1's later use)
+
+| `factor_family` | FRTB broad risk class (BCBS d457 MAR33.14) | MAR33.12 Table-2 liquidity-horizon floors (days) |
+|---|---|---|
+| `CURRENCY` (≡ alias) | Foreign-exchange risk | 10–40 |
+| `MARKET` (≡ alias, by declaration) | Equity risk | 10–60 |
+| `RATES` (FL-1 mint) | Interest-rate risk | 10–60 |
+| `CREDIT_SPREAD` (FL-1 mint) | Credit-spread risk | 20–120 |
+| `COMMODITY` (FL-1 mint) | Commodity risk | 20–120 |
+
+The Barra cross-sectional families (STYLE/INDUSTRY/COUNTRY/MACRO) are orthogonal to FRTB's
+instrument-sensitivity classes and serve the RBSA estimation side; `OTHER` stays the refused
+catch-all. The names are VOCABULARY — no liquidity-horizon or partial-ES capital arithmetic is
+implemented or claimed (MAR33.15's ρ = 0.5 constrained/unconstrained relative weight and the
+Table-2 floors are carried here as reference constants only, prose not code). The standardised
+approach (MAR21) uses SEVEN classes (CSR split three ways) — deliberately NOT adopted; the five
+broad IMA classes are the vocabulary.
+
 ## Projection, not partition
 
 The loadings family is a PROJECTION: `Σ exposure = Σ_atoms(atom · Σ_f β_f) ≠ Σ atoms` in general.

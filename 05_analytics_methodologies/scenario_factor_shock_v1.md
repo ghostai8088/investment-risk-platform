@@ -78,6 +78,11 @@ RESERVED-not-emitted (the standing EVT-220 pattern). `audit/service.py` FROZEN.
   window/compounding conventions); **v3** = worst-case / plausibility-constrained scenario search
   (Studer 1997; Breuer, Jandačka, Rheinberger & Summer 2009). Also out of v1: reverse stress testing,
   ES integration, multi-period / propagated scenarios, and non-CURRENCY factor families.
+  **FL-1 (2026-07-16) deliberately did NOT relax the CURRENCY-only posture** even as the other
+  family gates widened: scenario has TWO gates — the shock-capture gate (`scenario.py`) AND the
+  run-binder exposure-family gate (`scenario_service.py`, now probe-pinned) — and BOTH stay closed;
+  per-FRTB-class shock semantics are methodology work (the MF-1-or-later candidate), and any
+  future relaxation must flip BOTH gates together (recorded in `fl_1_decision_record.md` OD-E).
 - `scenario_type=REGULATORY` is a label, not an approval — maker-checker on definitions is the P7
   validation workflow. Inherits the captured-holdings-book limitation from the exposure run.
 - `validation_status` UNVALIDATED (non-enforcing until P7).
