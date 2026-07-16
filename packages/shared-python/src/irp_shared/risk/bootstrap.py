@@ -341,6 +341,112 @@ def register_factor_exposure_proxy_model(
     return version
 
 
+# --- FL-1: the third factor-exposure family — fractional multi-factor loadings (OD-FL-1-D) -------
+FACTOR_EXPOSURE_LOADINGS_MODEL_CODE = "risk.factor_exposure.loadings"
+FACTOR_EXPOSURE_LOADINGS_MODEL_NAME = (
+    "Factor-exposure loadings projection (fractional, non-partitioning; the multi-family substrate)"
+)
+FACTOR_EXPOSURE_LOADINGS_VERSION_LABEL = "v1"
+FACTOR_EXPOSURE_LOADINGS_METHODOLOGY_REF = (
+    "05_analytics_methodologies/factor_exposure_loadings_v1.md"
+)
+
+#: The declared methodology choices (mirrored into model_assumption rows; OD-FL-1-D).
+FACTOR_EXPOSURE_LOADINGS_ASSUMPTIONS: tuple[str, ...] = (
+    "Fractional multi-factor projection: each pinned atom carries >= 1 (instrument, factor, "
+    "loading) row from the widened proxy_mapping (ENT-019); exposure_amount = quantize_HALF_UP("
+    "loading * atom.exposure_amount, 6) per (instrument, factor), signed. Multiple factors per "
+    "instrument; the loading is fractional and signed (a regression beta, not a partition weight).",
+    "The loadings are a PROJECTION, not a partition: Sum(exposure) = Sum_atoms(atom * Sum_f "
+    "loading) != Sum(atoms) in general. The generalization of the proxy projection to the full "
+    "admitted-family set (LOADING_FACTOR_FAMILIES; OTHER/unknown refused).",
+    "The coverage gate (OD-FL-1-D): a pinned atom with ZERO loading rows REFUSES the run closed - "
+    "no indicator fallback (unlike the proxy family), no silent zero (a dropped atom would "
+    "under-count downstream VaR). Every pinned loading factor MUST be in the run's pinned factor "
+    "list (the PA-2 unpinned-factor guard, carried).",
+    "Loadings source: the widened ENT-019 proxy_mapping (originally private-asset-only; "
+    "private_instrument_id is a recorded misnomer for public rows - it is a pin-serializer key, "
+    "renaming it would false-drift every historical pin). REGRESSION-estimated betas from the "
+    "PA-3 desmoothed (alpha=1 identity for public marks) return series flow through the SAME "
+    "promote step; vendor-supplied betas are the recorded v2.",
+)
+
+#: The recorded scope-outs (mirrored into model_limitation rows; decision record Part 3).
+FACTOR_EXPOSURE_LOADINGS_LIMITATIONS: tuple[str, ...] = (
+    "The loaded-atom residual (1 - Sum_f loading) is honestly UNMODELED - Sum(exposure) != "
+    "Sum(atoms) in general; REQ-MKT-003's epsilon=0 acceptance holds for the allocation family "
+    "only (unchanged since PA-2). An UNLOADED atom is refused, not imputed.",
+    "Price-return betas (no dividend capture) + short-window single-name regression noise - the "
+    "standard errors and R^2 stay first-class on the estimate rows; any loadings-family "
+    "validation must cite them.",
+    "ACTIVE RISK does not consume the loadings family (its allocation-only model-code whitelist "
+    "refuses it automatically) - a loadings-aware active-risk denominator is the recorded v2, "
+    "open since PA-2. SCENARIO refuses a non-CURRENCY loadings run at its run-binder gate "
+    "(scenario_service.py; shock semantics per FRTB class are methodology work, not a gate flip).",
+    "The FRTB family names (RATES/CREDIT_SPREAD/COMMODITY + the CURRENCY=FX, MARKET=equity "
+    "aliases) are VOCABULARY - they classify factors and confer NO FRTB capital-calculation "
+    "semantics (liquidity horizons, partial-ES aggregation).",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation exception, "
+    "MG-1) refuses every new bind at the shared seam.",
+)
+
+
+def register_factor_exposure_loadings_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the LOADINGS factor-exposure ``model`` + a ``model_version`` for this
+    ``code_version`` (FL-1, OD-FL-1-D — the ``register_factor_exposure_proxy_model`` shape). The
+    returned ``model_version.id`` is what a loadings factor-exposure run binds; the SHARED
+    ``run_factor_exposure`` binder dispatches on the bound model's code via the registry map."""
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=FACTOR_EXPOSURE_LOADINGS_MODEL_CODE,
+        name=FACTOR_EXPOSURE_LOADINGS_MODEL_NAME,
+        model_type=FACTOR_EXPOSURE_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Fractional multi-factor loadings projection: pinned (instrument, factor, loading) "
+            "rows from the widened proxy_mapping (ENT-019) project each atom onto the admitted "
+            "factor families; the multi-family substrate (FL-1, ENT-028 family). The proxy "
+            "projection generalized - fractional, signed, non-partitioning."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=FACTOR_EXPOSURE_LOADINGS_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=FACTOR_EXPOSURE_LOADINGS_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=FACTOR_EXPOSURE_LOADINGS_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=FACTOR_EXPOSURE_LOADINGS_ASSUMPTIONS,
+            limitations=FACTOR_EXPOSURE_LOADINGS_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    if version.code_version != str(code_version):
+        raise ModelVersionConflictError(
+            FACTOR_EXPOSURE_LOADINGS_MODEL_CODE,
+            FACTOR_EXPOSURE_LOADINGS_VERSION_LABEL,
+            str(code_version),
+        )
+    return version
+
+
 #: The per-tenant inventory identity of the covariance estimation model (P3-4, OD-P3-4-A/G).
 COVARIANCE_MODEL_CODE = "risk.covariance.sample"
 COVARIANCE_MODEL_NAME = "Sample factor covariance (equal-weighted, unbiased N-1)"

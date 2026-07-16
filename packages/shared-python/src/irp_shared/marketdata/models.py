@@ -124,12 +124,26 @@ CURVE_VALUE_TYPES = (
 SIGNED_VALUE_TYPES = (VALUE_TYPE_ZERO_RATE, VALUE_TYPE_PAR_RATE, VALUE_TYPE_SPREAD)
 
 #: Controlled-vocab ``factor_family`` values for P3-2 (app-side allow-list; OTHER is the catch-all).
+#: FL-1 (OD-FL-1-A) adds the three FRTB broad risk classes that had no existing family — RATES,
+#: CREDIT_SPREAD, COMMODITY (BCBS d457 MAR33.14, verbatim: "interest rate risk, equity risk,
+#: foreign exchange risk, commodity risk and credit spread risk"). The two overlaps are ALIASED,
+#: not duplicated: CURRENCY ≡ the FRTB FX class, and MARKET ≡ the FRTB equity class (by declaration
+#: — revisited only if a genuine cross-asset "market" factor ever arrives). Minting canonical
+#: FX/EQUITY alongside the incumbents would create two labels per concept for zero capability. The
+#: Barra-style cross-sectional families (STYLE/INDUSTRY/COUNTRY/MACRO) are orthogonal to FRTB's
+#: instrument-sensitivity classes and serve the RBSA estimation side — left as-is. NB: adopting the
+#: FRTB *names* classifies factors; it confers NO FRTB *capital* semantics (liquidity horizons,
+#: partial-ES aggregation). MAR21's standardised approach uses SEVEN classes (CSR split three ways)
+#: — deliberately NOT adopted here; the five broad IMA classes are the vocabulary.
 FACTOR_FAMILY_STYLE = "STYLE"
 FACTOR_FAMILY_INDUSTRY = "INDUSTRY"
 FACTOR_FAMILY_COUNTRY = "COUNTRY"
 FACTOR_FAMILY_MACRO = "MACRO"
-FACTOR_FAMILY_MARKET = "MARKET"
-FACTOR_FAMILY_CURRENCY = "CURRENCY"
+FACTOR_FAMILY_MARKET = "MARKET"  # ≡ the FRTB equity class (alias, by declaration)
+FACTOR_FAMILY_CURRENCY = "CURRENCY"  # ≡ the FRTB FX class (alias, by declaration)
+FACTOR_FAMILY_RATES = "RATES"  # FRTB interest-rate risk (FL-1)
+FACTOR_FAMILY_CREDIT_SPREAD = "CREDIT_SPREAD"  # FRTB credit-spread risk (FL-1)
+FACTOR_FAMILY_COMMODITY = "COMMODITY"  # FRTB commodity risk (FL-1)
 FACTOR_FAMILY_OTHER = "OTHER"
 FACTOR_FAMILIES = (
     FACTOR_FAMILY_STYLE,
@@ -138,7 +152,25 @@ FACTOR_FAMILIES = (
     FACTOR_FAMILY_MACRO,
     FACTOR_FAMILY_MARKET,
     FACTOR_FAMILY_CURRENCY,
+    FACTOR_FAMILY_RATES,
+    FACTOR_FAMILY_CREDIT_SPREAD,
+    FACTOR_FAMILY_COMMODITY,
     FACTOR_FAMILY_OTHER,
+)
+#: The FL-1 loadings-family allow-list (OD-FL-1-E): the families a fractional factor-loading may
+#: reference — every family EXCEPT the OTHER catch-all (unknown/OTHER stays fail-closed). Shared
+#: verbatim by the three relaxed gates (proxy_mapping capture, proxy-weight candidates, the exposure
+#: loadings binder) — a contents divergence between them would be a silent capability gap.
+LOADING_FACTOR_FAMILIES = (
+    FACTOR_FAMILY_CURRENCY,
+    FACTOR_FAMILY_MARKET,
+    FACTOR_FAMILY_RATES,
+    FACTOR_FAMILY_CREDIT_SPREAD,
+    FACTOR_FAMILY_COMMODITY,
+    FACTOR_FAMILY_STYLE,
+    FACTOR_FAMILY_INDUSTRY,
+    FACTOR_FAMILY_COUNTRY,
+    FACTOR_FAMILY_MACRO,
 )
 #: Controlled-vocab factor-return ``return_type`` (SIMPLE arithmetic v1; LOG reserved — not minted).
 RETURN_TYPE_SIMPLE = "SIMPLE"
@@ -578,8 +610,9 @@ class Factor(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, 
     - **``factor_source``:** the vendor label (e.g. ``"MSCI_BARRA"``); a NOT-NULL key component
       (multi-vendor coexistence — the ``benchmark_source`` precedent).
     - **``factor_family``:** a controlled-vocab family
-      (STYLE/INDUSTRY/COUNTRY/MACRO/MARKET/CURRENCY/OTHER); ``factor_type`` is an optional captured
-      subtype label.
+      (STYLE/INDUSTRY/COUNTRY/MACRO/MARKET/CURRENCY/RATES/CREDIT_SPREAD/COMMODITY/OTHER; the last
+      three + the CURRENCY≡FX, MARKET≡equity aliases map to FRTB's five broad risk classes — FL-1);
+      ``factor_type`` is an optional captured subtype label.
     - **``currency_code``/``region``/``asset_class``:** optional captured scope (currency validated
       via the hybrid-aware ``resolve_currency`` when present). NO conversion.
     - **``frequency``:** the return frequency (``DAILY`` v1); a NOT-NULL controlled-vocab attribute.

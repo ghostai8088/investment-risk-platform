@@ -623,6 +623,11 @@ FACTOR_EXPOSURE_BINDING_PREDICATE = "v1:exposure-run-atoms+factor-list"
 #: The PA-2 proxy-model selection rule (OD-PA-2-C): atoms + factors + the CURRENT-HEAD proxy rows
 #: of every pinned atom's instrument. The proxy binder REQUIRES this predicate.
 FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE = "v1:exposure-run-atoms+factor-list+proxy-rows"
+#: FL-1 (OD-FL-1-D): the loadings-family selection rule — the SAME pinned content as the proxy
+#: predicate (atoms + factors + the widened ENT-019 loading rows), but a DISTINCT predicate string
+#: so the three families refuse each other's snapshots (the 3×3 symmetry). The loadings binder
+#: REQUIRES this predicate; the allocation and proxy binders refuse it.
+FACTOR_EXPOSURE_LOADINGS_BINDING_PREDICATE = "v1:exposure-run-atoms+factor-list+loading-rows"
 
 
 def build_factor_exposure_snapshot(
@@ -633,6 +638,7 @@ def build_factor_exposure_snapshot(
     exposure_run_id: str,
     factor_ids: list[str],
     include_proxy_rows: bool = False,
+    loadings_family: bool = False,
 ) -> DatasetSnapshot:
     """Build one immutable ``FACTOR_EXPOSURE_INPUT`` snapshot (P3-3, OD-P3-3-I) pinning:
 
@@ -655,9 +661,20 @@ def build_factor_exposure_snapshot(
     one ``COMPONENT_KIND_PROXY_MAPPING`` per CURRENT-HEAD ``proxy_mapping`` row of every
     pinned atom's instrument (the per-row FR flavor; TR-09), and stamps the
     ``...+proxy-rows`` binding predicate — LOAD-BEARING: the run binder gates on it in BOTH
-    directions (OD-PA-2-C), so never flip this flag independently of the bound model."""
+    directions (OD-PA-2-C), so never flip this flag independently of the bound model.
+
+    **FL-1 (``loadings_family=True`` — the loadings model's build path):** pins the SAME
+    ``COMPONENT_KIND_PROXY_MAPPING`` rows (the widened ENT-019 IS the loadings source — the pin
+    serializer is untouched; ``private_instrument_id`` stays the key) but stamps the DISTINCT
+    ``...+loading-rows`` predicate so the three families refuse each other's snapshots (the 3×3
+    symmetry). Mutually exclusive with ``include_proxy_rows``."""
     now = utcnow()
 
+    if include_proxy_rows and loadings_family:
+        raise FactorExposureSnapshotError(
+            "include_proxy_rows and loadings_family are mutually exclusive (one bound model per "
+            "snapshot)"
+        )
     if not factor_ids:
         raise FactorExposureSnapshotError("no factor ids to pin — an empty factor set is refused")
     atoms = _list_exposure_atoms(session, exposure_run_id, acting_tenant=acting_tenant)
@@ -679,11 +696,13 @@ def build_factor_exposure_snapshot(
         seen_factors.add(factor.id)
         _append_spec(specs, COMPONENT_KIND_FACTOR, "factor", factor, factor_content(factor))
 
-    if include_proxy_rows:
-        # PA-2 (OD-PA-2-C): pin the CURRENT-HEAD proxy_mapping rows of every pinned atom's
-        # instrument (the per-row FR flavor — a later weight supersede is invisible, TR-09). An
-        # instrument WITHOUT proxy rows is fine (the indicator path); zero rows overall is fine
-        # too (the binder then behaves as allocation-v1 over the whole book).
+    if include_proxy_rows or loadings_family:
+        # PA-2 (OD-PA-2-C) / FL-1 (OD-FL-1-D): pin the CURRENT-HEAD proxy_mapping rows of every
+        # pinned atom's instrument (the per-row FR flavor — a later weight supersede is invisible,
+        # TR-09). For the PROXY family an instrument WITHOUT rows follows the indicator path and
+        # zero rows overall degrades to allocation-v1; for the LOADINGS family an unloaded atom is
+        # a fail-closed refusal at the binder's coverage gate (OD-FL-1-D), NOT decided here — this
+        # builder pins, it does not adjudicate.
         from irp_shared.marketdata.models import ProxyMapping  # models-only (no cycle)
 
         instrument_ids = sorted({str(a.instrument_id) for a in atoms})
@@ -721,7 +740,9 @@ def build_factor_exposure_snapshot(
         as_of_known_at=now,
         as_of_valuation_date=now.date(),
         binding_predicate_version=(
-            FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE
+            FACTOR_EXPOSURE_LOADINGS_BINDING_PREDICATE
+            if loadings_family
+            else FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE
             if include_proxy_rows
             else FACTOR_EXPOSURE_BINDING_PREDICATE
         ),

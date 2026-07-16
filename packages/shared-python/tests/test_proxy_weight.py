@@ -382,11 +382,13 @@ def test_refusals_leave_no_running_orphan(session: Session) -> None:
         _estimate(session, tenant, run_id, [fx_usd, fx_eur, fx_gbp], model_version_id=model_id)
     assert_no_running_orphan(session)
 
-    # A non-CURRENCY candidate factor is refused.
-    market = _factor(session, tenant, "MKT_EQ", family="MARKET")
-    _factor_returns(session, tenant, market, ["0.01", "0.02", "0.03", "0.01", "0.02"])
-    with pytest.raises(ProxyWeightInputError, match="CURRENCY only"):
-        _estimate(session, tenant, run_id, [fx_usd, market], model_version_id=model_id)
+    # An UNADMITTED candidate factor family is refused. FL-1 widened the candidate gate to the
+    # LOADING_FACTOR_FAMILIES allow-list (MARKET is now admitted), so the probe MOVES to OTHER —
+    # the catch-all that stays refused (the ES-1 probe-move pattern).
+    other = _factor(session, tenant, "OTHER_F", family="OTHER")
+    _factor_returns(session, tenant, other, ["0.01", "0.02", "0.03", "0.01", "0.02"])
+    with pytest.raises(ProxyWeightInputError, match="OTHER/unknown stay refused"):
+        _estimate(session, tenant, run_id, [fx_usd, other], model_version_id=model_id)
     assert_no_running_orphan(session)
 
 

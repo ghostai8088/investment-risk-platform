@@ -359,17 +359,18 @@ def test_finiteness_guard_rejects_naninf(session: Session) -> None:
             )
 
 
-def test_non_currency_factor_refused(session: Session) -> None:
-    """v1 CURRENCY-family scope (OD-PA-0-H) is ENFORCED fail-closed: a proxy onto a non-CURRENCY
-    factor (a style/sector/rate family, a recorded v2 extension) is refused at capture (review
-    fold — the doc-stated scope is now an enforced gate, symmetric with the finiteness guard)."""
+def test_unadmitted_factor_family_refused(session: Session) -> None:
+    """The family gate stays fail-closed: a proxy onto an UNADMITTED family is refused at capture.
+    FL-1 widened PA-0's CURRENCY-only gate to the LOADING_FACTOR_FAMILIES allow-list (STYLE is now
+    admitted), so the refusal probe MOVES to ``OTHER`` — the catch-all that stays refused (the
+    ES-1 probe-move pattern; unknown/OTHER never admitted)."""
     tenant = str(uuid.uuid4())
     inst, _, _ = _book(session, tenant)
     style = capture_factor(
         session,
         factor_code=f"MOMENTUM-{uuid.uuid4().hex[:6]}",
         factor_source="VENDOR_F",
-        factor_family="STYLE",  # NOT CURRENCY
+        factor_family="OTHER",  # the catch-all — still refused after the FL-1 widening
         currency_code="USD",
         acting_tenant=tenant,
         actor=FactorActor(actor_id="s"),

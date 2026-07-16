@@ -116,6 +116,7 @@ from irp_shared.risk import (
     reconstruct_scenario_shock_as_of,
     register_active_risk_model,
     register_covariance_model,
+    register_factor_exposure_loadings_model,
     register_factor_exposure_model,
     register_factor_exposure_proxy_model,
     register_historical_var_model,
@@ -720,6 +721,42 @@ def register_factor_exposure_proxy(
     ``POST /risk/factor-exposures/runs`` (the binder dispatches on the bound model)."""
     try:
         version = register_factor_exposure_proxy_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+        )
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/models/factor-exposure-loadings",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_factor_exposure_loadings(
+    body: SensitivityModelIn,  # the identical one-field payload — reused, not duplicated
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed LOADINGS factor-exposure model + a model_version for
+    this ``code_version`` (FL-1, OD-FL-1-D) — the run endpoint is the SHARED
+    ``POST /risk/factor-exposures/runs`` (the binder dispatches on the bound model)."""
+    try:
+        version = register_factor_exposure_loadings_model(
             db,
             tenant_id=principal.tenant_id,
             actor_id=principal.user_id,

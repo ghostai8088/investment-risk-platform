@@ -403,7 +403,11 @@ def test_both_modes_refused_all_five_binders(session: Session) -> None:
 
 
 def test_mixed_base_atoms_refused_pre_create(session: Session) -> None:
-    from irp_shared.snapshot import COMPONENT_KIND_EXPOSURE, COMPONENT_KIND_FACTOR
+    from irp_shared.snapshot import (
+        COMPONENT_KIND_EXPOSURE,
+        COMPONENT_KIND_FACTOR,
+        FACTOR_EXPOSURE_BINDING_PREDICATE,
+    )
     from irp_shared.snapshot.models import PURPOSE_FACTOR_EXPOSURE_INPUT
     from irp_shared.snapshot.service import _append_spec, _persist_snapshot
 
@@ -447,7 +451,9 @@ def test_mixed_base_atoms_refused_pre_create(session: Session) -> None:
         as_of_valid_at=T0,
         as_of_known_at=T0,
         as_of_valuation_date=T0.date(),
-        binding_predicate_version="test:hand-minted",
+        # The allocation predicate so the CONTENT gate (mixed-base) is reached — FL-1's 3×3
+        # predicate gate now front-runs a mismatched predicate.
+        binding_predicate_version=FACTOR_EXPOSURE_BINDING_PREDICATE,
     )
     session.flush()
     with pytest.raises(FactorExposureInputError, match="mixed base currencies"):
