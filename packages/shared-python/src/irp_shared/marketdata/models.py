@@ -842,9 +842,14 @@ class ProxyMapping(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, Timestam
 
     - **``private_instrument_id``:** NOT-NULL FK to the ``instrument`` head (tenant-filtered;
       a private asset is an ORDINARY instrument with a documented private ``asset_class`` convention
-      — OD-PA-0-B, no new schema).
-    - **``factor_id``:** NOT-NULL FK to the public ``factor`` definition (CURRENCY-family in v1 —
-      OD-PA-0-H; resolved tenant-filtered).
+      — OD-PA-0-B, no new schema). **WIDENED AT FL-1: this table is now an instrument→factor
+      loading mapping for PUBLIC instruments too** — the column name is a RECORDED MISNOMER for
+      public rows; it keeps its name because it is a pin-serializer key (``snapshot/serialize.py``)
+      and renaming it would false-drift every historical PROXY_MAPPING pin (the 0038 landmine
+      class). ENT-058 ``instrument_factor_loading`` is the reserved clean-schema v2.
+    - **``factor_id``:** NOT-NULL FK to the public ``factor`` definition (CURRENCY-family at PA-0;
+      **FL-1 widened the capture gate to ``LOADING_FACTOR_FAMILIES``** — the FRTB + Barra families,
+      OTHER/unknown still refused; resolved tenant-filtered).
     - **``weight``:** the signed factor loading, a canonical DECIMAL ``Numeric(20, 12)`` (the
       ``factor_return``/``curve`` scale; a loading, NOT currency); inert (NEVER computed). A
       service-side finiteness guard rejects NaN/±Inf.

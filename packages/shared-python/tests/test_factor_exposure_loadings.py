@@ -32,21 +32,31 @@ from irp_shared.marketdata import (
     FactorActor,
     ProxyMappingActor,
     capture_factor,
+    capture_factor_return,
     capture_proxy_mapping,
+    resolve_factor,
 )
 from irp_shared.models import Base
 from irp_shared.portfolio import PortfolioActor, create_portfolio
 from irp_shared.position import create_position
 from irp_shared.position.service import PositionActor
+from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.reference.instrument import create_instrument
+from irp_shared.reference.models import Currency
 from irp_shared.reference.service import ReferenceActor
 from irp_shared.risk import (
+    CovarianceActor,
     FactorExposureActor,
     FactorExposureInputError,
+    VarActor,
+    register_covariance_model,
     register_factor_exposure_loadings_model,
     register_factor_exposure_model,
     register_factor_exposure_proxy_model,
+    register_var_model,
+    run_covariance,
     run_factor_exposure,
+    run_var,
 )
 from irp_shared.snapshot import (
     FACTOR_EXPOSURE_LOADINGS_BINDING_PREDICATE,
@@ -59,7 +69,51 @@ T0 = datetime(2026, 1, 1, tzinfo=UTC)
 VALID_AT = datetime(2026, 6, 1, tzinfo=UTC)
 KNOWN_AT = datetime(2030, 1, 1, tzinfo=UTC)
 VD = date(2026, 6, 1)
+D = (date(2026, 5, 26), date(2026, 5, 27), date(2026, 5, 28), date(2026, 5, 29))
 ACT = FactorExposureActor(actor_id="analyst")
+
+
+def _currencies(db: Session, *codes: str) -> None:
+    from sqlalchemy import select
+
+    for code in codes:
+        if (
+            db.execute(
+                select(Currency).where(
+                    Currency.tenant_id == SYSTEM_TENANT_ID, Currency.code == code
+                )
+            ).scalar_one_or_none()
+            is None
+        ):
+            db.add(Currency(tenant_id=SYSTEM_TENANT_ID, code=code, name=code, valid_from=T0))
+    db.flush()
+
+
+def _ccy_factor(db: Session, tenant: str, code: str, ccy: str) -> str:
+    """A CURRENCY factor with a 4-day return series (for covariance/VaR downstream)."""
+    fid = capture_factor(
+        db,
+        factor_code=code,
+        factor_source="VENDOR_F",
+        factor_family="CURRENCY",
+        currency_code=ccy,
+        acting_tenant=tenant,
+        actor=FactorActor(actor_id="s"),
+        valid_from=T0,
+    ).id
+    factor = resolve_factor(db, fid, acting_tenant=tenant)
+    values = ["0.01", "0.02", "0.03", "0.04"] if ccy == "USD" else ["0.04", "0.03", "0.02", "0.01"]
+    for d, v in zip(D, values, strict=True):
+        capture_factor_return(
+            db,
+            factor,
+            return_date=d,
+            return_value=Decimal(v),
+            acting_tenant=tenant,
+            actor=FactorActor(actor_id="s"),
+            valid_from=T0,
+        )
+    return fid
 
 
 @pytest.fixture
@@ -325,3 +379,123 @@ def test_proxy_and_allocation_over_loadings_snapshot_refused(session: Session) -
                 model_version_id=mv.id,
                 snapshot_id=snap.id,
             )
+
+
+def _var_over(session: Session, t: str, fids: list[str], fx_run_id: str) -> Decimal:
+    cov_mv = register_covariance_model(
+        session, tenant_id=t, actor_id="a", code_version="risk-v1", window_observations=4
+    )
+    cov = run_covariance(
+        session,
+        acting_tenant=t,
+        actor=CovarianceActor(actor_id="a"),
+        code_version="risk-v1",
+        environment_id="ci",
+        model_version_id=cov_mv.id,
+        factor_ids=fids,
+        as_of_valid_at=VALID_AT,
+    )
+    assert cov.status == RunStatus.COMPLETED.value
+    var_mv = register_var_model(
+        session, tenant_id=t, actor_id="a", code_version="risk-v1", confidence_level="0.99"
+    )
+    var = run_var(
+        session,
+        acting_tenant=t,
+        actor=VarActor(actor_id="a"),
+        code_version="risk-v1",
+        environment_id="ci",
+        model_version_id=var_mv.id,
+        exposure_run_id=fx_run_id,
+        covariance_run_id=cov.run.run_id,
+    )
+    assert var.status == RunStatus.COMPLETED.value
+    return next(r.var_value for r in var.rows if r.metric_type == "VAR_PARAMETRIC")
+
+
+def test_loadings_run_through_var_equals_proxy_equivalent(session: Session) -> None:
+    # The verifier-fold M1 (the OD-D per-consumer claim, test-proven): VaR CONSUMES the loadings
+    # rows exactly as it consumes proxy rows — a loadings run over CURRENCY factors with weights
+    # {0.6, 0.3} yields the SAME VaR as the PROXY run over the same weights (byte-identical), so a
+    # fractional loadings row cannot silently drop or double-count into VaR.
+    t = str(uuid.uuid4())
+    _currencies(session, "USD", "EUR")
+    fid_usd = _ccy_factor(session, t, "FX_USD", "USD")
+    fid_eur = _ccy_factor(session, t, "FX_EUR", "EUR")
+    exp_run, insts = _book(session, t, [("I-EQ", "100", "500.00")])
+    eq = insts["I-EQ"]
+    _loading(session, t, eq, fid_usd, "0.6")
+    _loading(session, t, eq, fid_eur, "0.3")
+
+    load_run = _run_loadings(session, t, exp_run, [fid_usd, fid_eur])
+    assert load_run.status == RunStatus.COMPLETED.value
+    # Same fixture, PROXY model (CURRENCY factors are admitted for proxy too).
+    proxy_mv = register_factor_exposure_proxy_model(
+        session, tenant_id=t, actor_id="a", code_version="pa2-v1"
+    )
+    session.flush()
+    proxy_run = run_factor_exposure(
+        session,
+        acting_tenant=t,
+        actor=ACT,
+        code_version="pa2-v1",
+        environment_id="ci",
+        model_version_id=proxy_mv.id,
+        exposure_run_id=exp_run,
+        factor_ids=[fid_usd, fid_eur],
+    )
+    assert proxy_run.status == RunStatus.COMPLETED.value
+
+    load_var = _var_over(session, t, [fid_usd, fid_eur], load_run.run.run_id)
+    proxy_var = _var_over(session, t, [fid_usd, fid_eur], proxy_run.run.run_id)
+    assert load_var == proxy_var  # byte-identical — VaR consumes loadings rows unchanged
+    assert load_var > 0
+
+
+def test_active_risk_refuses_a_loadings_run(session: Session) -> None:
+    # OD-D: active-risk's allocation-only model-code whitelist refuses a loadings run automatically
+    # (the loadings-aware denominator stays the recorded v2, open since PA-2).
+    from datetime import date as _date
+
+    from irp_shared.risk import ActiveRiskActor, register_active_risk_model, run_active_risk
+    from irp_shared.risk.active_risk_service import ActiveRiskInputError
+
+    t = str(uuid.uuid4())
+    _currencies(session, "USD", "EUR")
+    fid_usd = _ccy_factor(session, t, "FX_USD", "USD")
+    fid_eur = _ccy_factor(session, t, "FX_EUR", "EUR")
+    exp_run, insts = _book(session, t, [("I-EQ", "100", "500.00")])
+    _loading(session, t, insts["I-EQ"], fid_usd, "0.6")
+    _loading(session, t, insts["I-EQ"], fid_eur, "0.3")
+    load_run = _run_loadings(session, t, exp_run, [fid_usd, fid_eur])
+    assert load_run.status == RunStatus.COMPLETED.value
+
+    cov_mv = register_covariance_model(
+        session, tenant_id=t, actor_id="a", code_version="risk-v1", window_observations=4
+    )
+    cov = run_covariance(
+        session,
+        acting_tenant=t,
+        actor=CovarianceActor(actor_id="a"),
+        code_version="risk-v1",
+        environment_id="ci",
+        model_version_id=cov_mv.id,
+        factor_ids=[fid_usd, fid_eur],
+        as_of_valid_at=VALID_AT,
+    )
+    ar_mv = register_active_risk_model(session, tenant_id=t, actor_id="a", code_version="risk-v1")
+    session.flush()
+    # The loadings exposure run is refused by active-risk's partitioning-only whitelist.
+    with pytest.raises(ActiveRiskInputError, match="allocation"):
+        run_active_risk(
+            session,
+            acting_tenant=t,
+            actor=ActiveRiskActor(actor_id="a"),
+            code_version="risk-v1",
+            environment_id="ci",
+            model_version_id=ar_mv.id,
+            exposure_run_id=load_run.run.run_id,
+            covariance_run_id=cov.run.run_id,
+            benchmark_id=str(uuid.uuid4()),
+            benchmark_effective_date=_date(2026, 6, 1),
+        )

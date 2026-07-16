@@ -14,6 +14,15 @@ practice; the Geltner filter is the most widely cited baseline. v1 applies to th
 series of ONE `(portfolio, instrument)` pair (the PA-0 convention: a private asset's appraised
 NAV/unit mark IS a `valuation` row under a documented private `asset_class`).
 
+> **FL-1 applicability note (2026-07-16):** FL-1's factor-loading estimation (the
+> `risk.factor_exposure.loadings` family) routes a PUBLIC instrument's raw marks through this
+> service at **α = 1** — the identity boundary (`r_true = r_observed` exactly; property-tested).
+> The run exists to satisfy PA-3's pinned-provenance chain, NOT to desmooth (a public instrument's
+> observed returns need no unsmoothing). The "appraisal-based / private-asset" scope above describes
+> the α < 1 unsmoothing use; the α = 1 identity pass-through is a deliberate, disclosed reuse of the
+> shipped path (a dedicated raw-return pin kind is the recorded cleaner v2). See
+> `factor_exposure_loadings_v1.md`.
+
 ## Inputs & data policy
 
 - **Marks** — the CURRENT-HEAD `valuation` rows of the (portfolio, instrument) pair with
