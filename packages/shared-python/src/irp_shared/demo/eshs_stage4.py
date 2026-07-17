@@ -2,8 +2,11 @@
 
 EXTENDS the living demo tenant a FOURTH time (campaign + multifamily + stage 3 stay
 byte-untouched): registers ``risk.var.historical_es`` v1 (21/0.95 — the flagship HS twin's
-declaration, so n·a = 1.05 and the FRACTIONAL Prop-4.1 boundary weight is live in the flagship
-demo), runs the empirical ES bound to the SAME pinned snapshot as the campaign's LATEST flagship
+declaration, so n·a = 1.05 and the FRACTIONAL Prop-4.1 boundary weight is APPLIED in the
+flagship demo; the seeded window's worst two scenarios happen to TIE, so the pair lands on the
+recorded tied-tail equality case — ES = VaR exactly, disclosed in the dossier; the weight's
+numeric effect is exercised by the kernel suite's untied fixtures), runs the empirical ES bound
+to the SAME pinned snapshot as the campaign's LATEST flagship
 historical-VaR forecast (the coherent (VaR, ES) pair over one scenario set — the BT-3
 shared-``input_snapshot_id`` pairing design input, demonstrated in the living tenant), then
 tier-assigns the new head (ES_HS_TIER: HIGH/MEDIUM ⇒ TIER_1 under the MG-1 matrix — the 2L verb

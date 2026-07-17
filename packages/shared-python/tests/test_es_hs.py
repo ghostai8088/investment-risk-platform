@@ -97,10 +97,12 @@ def test_es_kernel_integer_na_zero_boundary_weight() -> None:
 
 
 def test_es_kernel_es_geq_var_raw_grid_and_tied_equality() -> None:
-    """ES >= VaR at RAW precision across a deterministic fixture grid — the raw side re-derived
-    in-test (the kernel returns quantized; HALF_UP quantize is monotone so the quantized
-    ordering inherits). One LABELED tied-boundary fixture exercises raw EQUALITY (the worst
-    m+1 P&Ls equal — the planning verifier's executed counterexample class)."""
+    """ES >= VaR asserted at BOTH precisions across a deterministic fixture grid: the
+    QUANTIZED kernel outputs, AND the RAW (unquantized, prec-50) values re-derived in-test
+    from the fixture — the ratified OD-A independent guard (a sub-quantum raw inversion
+    cannot hide behind monotone quantize). One LABELED tied-boundary fixture exercises raw
+    EQUALITY (the worst m+1 P&Ls equal — the planning verifier's executed counterexample
+    class)."""
     exposures = {"f1": Decimal("1000")}
     # Deterministic pseudo-random-ish grid: three window shapes x three tail shapes.
     grids: list[tuple[int, str, list[str]]] = []
@@ -114,9 +116,22 @@ def test_es_kernel_es_geq_var_raw_grid_and_tied_equality() -> None:
         var = compute_historical_var(exposures, series, confidence=Decimal(conf))
         es = compute_historical_es(exposures, series, confidence=Decimal(conf))
         assert es.es_value >= var.var_value, (n, conf, values[:3])
-        # Raw re-derivation: the hand reference IS the raw side (single quantize at the end).
         pnls = [Decimal("1000") * Decimal(v) for v in values]
         assert es.es_value == _hand_es(pnls, n, conf), (n, conf)
+        # The RAW comparison (the ratified OD-A obligation — the review's DOC-2 fold): BOTH
+        # sides UNQUANTIZED at prec 50, re-derived from the fixture, independent of the
+        # kernel's quantize step.
+        with localcontext() as ctx:
+            ctx.prec = 50
+            a = Decimal(1) - Decimal(conf)
+            n_a = Decimal(n) * a
+            m = int(n_a.to_integral_value(rounding="ROUND_FLOOR"))
+            w = n_a - m
+            ordered = sorted(pnls)
+            raw_es = -((sum(ordered[:m], Decimal(0)) + w * ordered[m]) / n_a)
+            k = m if w == 0 else m + 1  # k = ceil(n·a)
+            raw_var = -ordered[k - 1]
+            assert raw_es >= raw_var, (n, conf)
     # The labeled tied fixture at the floor: raw equality ES == VaR (no quantize involved).
     tied = ["-0.5", "-0.5"] + [f"0.00{i % 9 + 1}" for i in range(19)]
     series = _series(tied)
@@ -356,3 +371,93 @@ def test_es_hs_magnitude_gate_commits_failed_run(session: Session) -> None:  # n
 
 def test_es_hs_model_code_constant() -> None:
     assert ES_HS_MODEL_CODE == "risk.var.historical_es"
+
+
+def test_es_hs_generic_mint_declared_parse_and_twin_refusals(session: Session) -> None:  # noqa: F811
+    """The review's ADV-1 fold: the generic registration path can stamp ANY assumptions —
+    every malformed/inadequate ES-HS declaration must refuse at BIND (WrongModelVersionError),
+    incl. the floor bypass (0.9750 needs >=41), the quantile-for-estimator swap, and the
+    absent/wrong/duplicated estimator convention. Plus the registrar's non-REGISTERED
+    same-label twin refusal (the P3-C1 contract)."""
+    from irp_shared.model.service import register_model, register_model_version
+    from irp_shared.risk.bootstrap import ES_HS_MODEL_CODE as CODE
+
+    tenant = str(uuid.uuid4())
+    model = register_model(
+        session, tenant_id=tenant, code=CODE, name="eshs", model_type="VAR", actor_id="a"
+    )
+    good = [
+        "confidence_level=0.9500",
+        "horizon_days=1",
+        "window_observations=21",
+        "estimator_convention=TAIL_MEAN_ACERBI_TASCHE_P41",
+    ]
+    cases = {
+        "missing-estimator": good[:3],
+        "wrong-estimator": good[:3] + ["estimator_convention=SIMPLE_TAIL_AVERAGE"],
+        "quantile-for-estimator": good[:3] + ["quantile_convention=LOWER_ORDER_STATISTIC"],
+        "dup-estimator": good + ["estimator_convention=TAIL_MEAN_ACERBI_TASCHE_P41"],
+        "floor-bypass-0975-40": [
+            "confidence_level=0.9750",
+            "horizon_days=1",
+            "window_observations=40",  # the 0.9750 floor is 41
+            "estimator_convention=TAIL_MEAN_ACERBI_TASCHE_P41",
+        ],
+        "window-zero": [
+            "confidence_level=0.9500",
+            "horizon_days=1",
+            "window_observations=0",
+            "estimator_convention=TAIL_MEAN_ACERBI_TASCHE_P41",
+        ],
+        "wrong-horizon": [
+            "confidence_level=0.9500",
+            "horizon_days=250",
+            "window_observations=21",
+            "estimator_convention=TAIL_MEAN_ACERBI_TASCHE_P41",
+        ],
+        "short-form-confidence": [
+            "confidence_level=0.95",
+            "horizon_days=1",
+            "window_observations=21",
+            "estimator_convention=TAIL_MEAN_ACERBI_TASCHE_P41",
+        ],
+    }
+    for label, assumptions in cases.items():
+        version = register_model_version(
+            session,
+            model=model,
+            version_label=f"gen-{label}",
+            actor_id="a",
+            methodology_ref="x",
+            code_version="v1",
+            status="REGISTERED",
+            assumptions=tuple(assumptions),
+            limitations=(),
+        )
+        with pytest.raises(WrongModelVersionError):
+            _hs_run(session, tenant, version.id, exposure_run_id=str(uuid.uuid4()))
+    # The squatted non-REGISTERED same-label twin refuses at the registrar.
+    t2 = str(uuid.uuid4())
+    model2 = register_model(
+        session, tenant_id=t2, code=CODE, name="eshs", model_type="VAR", actor_id="a"
+    )
+    register_model_version(
+        session,
+        model=model2,
+        version_label="v1",
+        actor_id="a",
+        methodology_ref="x",
+        code_version="v1",
+        status=None,
+        assumptions=(),
+        limitations=(),
+    )
+    with pytest.raises(WrongModelVersionError):
+        register_historical_var_es_model(
+            session,
+            tenant_id=t2,
+            actor_id="a",
+            code_version="v1",
+            confidence_level="0.95",
+            window_observations=21,
+        )

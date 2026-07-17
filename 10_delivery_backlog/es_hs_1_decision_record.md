@@ -63,6 +63,63 @@
 - **OQ-ES-HS-1-6 — OD-E: constants + docs** (the new fence-compliant dossier sets with the tail-mass honesty row; the ONE key-free `VAR_HS_LIMITATIONS[4]` reword fixing BOTH stale clauses; the dated `var_parametric_es_v1.md` amendment; the new referent carrying the verified-via-reproduction citation disposition PLAINLY). *Recommend APPROVE.*
 - **OQ-ES-HS-1-7 — OD-G: the scope fence** (ONE migration; no permission/ENT/audit mints; pin serializer + METRIC_TYPES + plain-HS behavior + FE all byte-untouched/preserved; the 4-finder review composition as tabled). *Recommend APPROVE.*
 
+## Part 5.5 — Implementation deviations from the ratified plan
+
+1. **Stage 4 consumes the flagship HS run's EXISTING snapshot rather than building a fresh
+   one** (the ratified OD-F text said "builds a fresh `VAR_HS_INPUT` snapshot"; the shipped
+   `eshs_stage4.py` binds `snapshot_id=hs_row.input_snapshot_id`). DELIBERATE: the
+   consume-existing shape demonstrates the OD-D BT-3 shared-`input_snapshot_id` pairing LIVE
+   in the living tenant (the design input the tee records), and the dossier scope truthfully
+   describes what shipped; the build path is exercised by the unit/PG suites. Adjudicated
+   here, not silently (the review's DOC-1).
+2. **The seeded demo window's worst two scenarios TIE, so the flagship (VaR, ES) pair is
+   EXACTLY EQUAL** (113.239146 both) — the fractional boundary weight is APPLIED but
+   numerically invisible in the demo pair; the tied-tail equality is itself the recorded
+   equality case, now DISCLOSED in the stage-4 docstring + the dossier scope note (the
+   review's NUM-2). The weight's numeric effect is pinned by the kernel suite's untied
+   fixtures (490.476190 ≠ the 400 TCE).
+3. **The "understates at every fractional n·a" TCE claim was softened to the WEAK form at
+   all three new sites** (never exceeds; strictly below at every fractional n·a with an
+   UNTIED (m+1)-boundary; equal at fully-tied tails) — the review's executed algebra (426
+   equality hits in 2,400 fuzz cases, all tied/m=0; the demo tenant itself is a live
+   counterexample to the strict form). The SAME imprecision survives verbatim in ES-1's
+   shipped texts (`es_kernel.py:32`, the `VAR_ES_MULTIPLIERS` comment) — recorded as a
+   NAMED text-touch candidate for the next slice that re-registers those constants, not
+   edited here (out of the ratified scope fence).
+4. **The DQ rule_code is SHARED across the two HS families** (`risk.var_hs.completeness` —
+   the binder's scaffold parameter, method-agnostic envelope sanity). The plan did not pin a
+   per-family rule; recorded as the shipped choice.
+5. Recorded-not-changed residuals (the review): the prec-50 accumulation is exact only while
+   single-scenario partial sums stay below ~1E32 (true for any portfolio with < ~140
+   near-envelope-max factors — the declared-regime posture, precedented); the registrar-leg
+   endpoint reuses the pre-existing `model.inventory.register` permission alongside
+   `risk.run`/`risk.view` (the fence's enumeration was short one member; NO mint — the
+   review's FEN-1).
+
+## Part 6 — Implementation review dispositions (the ratified 4-finder composition)
+
+**8 findings: 0 HIGH, 3 MEDIUM, 5 LOW — ALL folded or recorded above; ZERO shipped math
+defects.** The numeric finder re-derived every golden byte-exact in independent
+exact-rational (Fraction) arithmetic and fuzzed the kernel against an independent reference
+over 2,400+ windows (all vocabulary confidences, both n·a shapes, tied tails, all-gains,
+near-envelope magnitudes, n to 5,000): ZERO value deviations, ZERO ES<VaR violations raw or
+quantized; the living tenant's stage-4 ES recomputed independently from its own pinned
+snapshot content is byte-equal to the stored row. The adversarial finder executed 11
+generic-mint/twin attacks (all refused fail-closed), ran the REAL 0041 downgrade()+upgrade()
+in a rollback-wrapped transaction against live PG (exactly the ES rows deleted; the
+constraint restored byte-identical), and confirmed the refusal precedence matches ES-1's.
+The scope-fence finder executed every OD-G clause: the fence holds intact.
+
+| F | Finding | Disposition |
+|---|---|---|
+| F1 | MEDIUM (adversarial): the ES-HS family shipped without the generic-mint BIND-refusal test the plain-HS family carries (the behavior is correct — all 11 executed attacks refuse — but a future parse edit could silently open the floor/estimator surface with the battery green) | FOLDED: `test_es_hs_generic_mint_declared_parse_and_twin_refusals` added (8 malformed-declaration bind refusals + the squatted-twin registrar refusal) |
+| F2 | MEDIUM (doctrine): the ratified RAW-precision ES≥VaR assertion did not ship — the grid test compared only quantized outputs and its docstring overclaimed | FOLDED: the raw comparison added to the grid loop (both sides unquantized at prec-50, re-derived from the fixture independent of the kernel's quantize); docstring corrected |
+| F3 | MEDIUM (doctrine): the stage-4 snapshot deviation was unrecorded | FOLDED: Part 5.5 item 1 |
+| F4 | LOW ×2 (numeric+doctrine convergence): the strict TCE-understatement claim is false at fully-tied tails (the demo tenant is a live counterexample) | FOLDED: all three new sites softened to the weak form (Part 5.5 item 3); the ES-1 carried imprecision NAMED, not touched |
+| F5 | LOW (numeric): the flagship demo pair ties exactly (ES = VaR) — the fractional weight numerically invisible there | FOLDED: disclosed in the stage-4 docstring + dossier scope note (Part 5.5 item 2) |
+| F6 | LOW (numeric): a pathological prec-50 last-digit flip exists beyond ~1E32 single-scenario partial sums — the declared-regime posture, precedented | RECORDED (Part 5.5 item 5), no change |
+| F7 | LOW (fence): the permission-reuse enumeration was short `model.inventory.register` | RECORDED (Part 5.5 item 5); the NO-mint invariant holds |
+
 ## Part 5 — Implementation readiness gate
 
 Implementation follows `es_hs_1_implementation_plan.md` on ratification. Merge preconditions: the 4-finder review folded; `make check`; full local-PG fresh incl. the four demo suites in CI order + the two new 0041 PG tests; `alembic check` clean with the ONE new revision; downgrade smoke (now exercising the destructive delete against stage-4 rows); CI green. Closure per the OQ-W5C-5 checklist incl. grep-for-"pending".

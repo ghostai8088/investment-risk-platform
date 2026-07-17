@@ -1056,8 +1056,9 @@ ES_HS_ASSUMPTIONS_BASE: tuple[str, ...] = (
     "The Acerbi-Tasche Prop 4.1 discrete alpha-tail-mean: with a = 1-c, m = floor(n*a), "
     "w = n*a - m over the ascending-sorted scenario P&Ls, ES = -(SUM_(i<=m) pnl_(i) + "
     "w*pnl_(m+1)) / (n*a) - the exact empirical integral, NEVER the mean of the worst "
-    "ceil(n*a) losses (that quantity is the TCE the ES-1 convention forbids; it understates "
-    "ES at every fractional n*a).",
+    "ceil(n*a) losses (that quantity is the TCE the ES-1 convention forbids; it never "
+    "exceeds the true ES and STRICTLY understates it at every fractional n*a with an "
+    "untied (m+1)-boundary - equality exactly at fully-tied tails).",
     "The SAME scenario substrate as the historical-simulation VaR: plain EQUAL-WEIGHT "
     "scenarios from the linear factor model dV_t = SUM_i x_i * r_(t,i) over the "
     "FACTOR_EXPOSURE run's per-factor totals; the pinned input is byte-identical to the "

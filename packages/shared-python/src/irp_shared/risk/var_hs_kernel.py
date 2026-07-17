@@ -133,8 +133,10 @@ def compute_historical_es(
         ES = -( SUM_{i<=m} pnl_(i) + w · pnl_(m+1) ) / (n·a)
 
     over the ascending-sorted scenario P&Ls (pnl_(1) the worst). NEVER the mean of the worst
-    ⌈n·a⌉ — that quantity is the TCE forbidden at ES-1 (it understates ES at every fractional
-    n·a). ``pnl_(m+1)`` is always in range (a < 1 ⇒ m ≤ n·a < n); its coefficient is exactly
+    ⌈n·a⌉ — that quantity is the TCE forbidden at ES-1 (it never exceeds the true ES;
+    STRICTLY understated at every fractional n·a with an UNTIED (m+1)-boundary, equal
+    exactly at fully-tied tails — the review's executed algebra). ``pnl_(m+1)`` is always
+    in range (a < 1 ⇒ m ≤ n·a < n); its coefficient is exactly
     zero when n·a is integer. The strict adequacy floor (n·(1-c) > 1) is IDENTITY, enforced at
     registration and bind like the VaR leg's — the kernel mirrors ``compute_historical_var``'s
     defense-in-depth stance (refuses only c outside (0,1) / k < 1 standalone)."""

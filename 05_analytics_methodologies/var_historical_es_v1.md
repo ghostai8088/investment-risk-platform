@@ -27,7 +27,8 @@ With the window's scenario P&Ls sorted ascending (`pnl_(1)` the worst), `a = 1�
 — **Acerbi-Tasche Prop. 4.1**: the floor count plus the FRACTIONAL boundary weight, the exact
 discrete α-tail-mean integral. **NEVER the mean of the worst ⌈n·a⌉ losses** — that quantity is
 the TCE the ES-1 convention forbids (not coherent for discontinuous distributions) and it
-UNDERSTATES ES at every fractional n·a (order 10%, up to ~14% depending on the tail shape, at
+WEAKLY understates ES — never exceeding it, strictly below at every fractional n·a with an
+untied (m+1)-boundary, equal exactly at fully-tied tails (order 10%, up to ~14% depending on the tail shape, at
 n=41 — the platform's own adequacy floor at c=0.975; the divergence direction is uniform, the
 magnitude fixture-dependent). The estimator convention is REGISTRATION-DECLARED
 (`estimator_convention='TAIL_MEAN_ACERBI_TASCHE_P41'`): an interpolated, simple-average, or
