@@ -7,10 +7,9 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
 1. `docs/project_memory/claude_operating_instructions.md` — the cadence, review pattern, verification &
    objectivity standing rules, commit discipline, engineering conventions, prohibited behavior.
 2. `docs/project_memory/current_state.md` — the entry-point snapshot (re-verify HEAD/CI at session start).
-3. `docs/project_memory/phase_status.md` — the per-phase ledger.
-4. `docs/project_memory/next_actions.md` — the next gated step + exact prompts.
-5. `10_delivery_backlog/delivery_roadmap.md` — the operative rolling-wave slice sequence (the next slice comes
+3. `10_delivery_backlog/delivery_roadmap.md` — the operative rolling-wave slice sequence (the next slice comes
    from here by default; re-sequencing follows its Part 4 rules) — plus the latest decision record it points at.
+   *(`phase_status.md` and `next_actions.md` were RETIRED to pointer stubs at the Wave-6 close, OQ-W6C-4.)*
 
 ## Hard invariants (non-negotiable)
 - **Delivery autonomy (granted 2026-07-12; EXTENDED 2026-07-14): Claude self-drives the full

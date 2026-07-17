@@ -11,7 +11,18 @@
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
 > `mf_1_decision_record.md` (**CLOSED**).
 >
-> **Where we are: Wave 6 is functionally COMPLETE** (MG-1 → FL-1 → MF-1 all CLOSED). MF-1
+> **WAVE 6 IS CLOSED AND THE CLOSE IS RATIFIED** (2026-07-17: `wave_6_close_review.md` OQ-W6C-1…6
+> via PR #52 = `9d561bf` — the first full-ultracode close audit; ZERO shipped-code defects for the
+> second consecutive close; the living tenant re-seeded durable, 17 models / 23 validation records
+> / 63 runs live). **WAVE 7 IS RATIFIED (roadmap Part 2.10, fork A "deepen the mathematics"):
+> HG-1 → ES-HS-1 → RS-1 → DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the
+> presumptive Wave-8 headline. **NEXT = HG-1 planning** (the hygiene opener: the re-opened
+> estimate-staleness residual's promotion-path age check + the expire-a-mapping Tier-3 question;
+> the FL-1 registrar-constant debris with the finding-key compatibility constraint; the
+> private-on-multi-family demo ride-along — a NEW private instrument, the mixed-family fence
+> holds). `phase_status.md`/`next_actions.md` are now pointer stubs (OQ-W6C-4).
+>
+> **Wave-6 history: Wave 6 was functionally complete 2026-07-16** (MG-1 → FL-1 → MF-1 all CLOSED). MF-1
 > demonstrated **the full governance lifecycle**: the living demo tenant went multi-family — an
 > additive extension (`scripts/run_demo_multifamily.py`; refuse-not-skip; the base campaign
 > byte-untouched) seeded the multi-asset sleeve (2 equities + 1 credit, 3 FRTB-family factors),
@@ -26,13 +37,10 @@
 > suite's tolerate-living-tenant mode + the dirty-schema double-run (fresh-schema-only from MF-1
 > on; the extension CI step is ordering-pinned after the campaign step).
 >
-> **NEXT = the Wave-6 close review** (the mandatory Part-4 rule-2 re-baseline): the honest audit
-> of MG-1/FL-1/MF-1, the deferral-register reconciliation, the outward benchmark review, and the
-> Wave-7 ratification — with the OD-E ride-along re-tee on its agenda (residual-shrinkage/EWMA +
-> desmoothing-v2s, materiality cap LIFTED at MF-1) and **ES-HS-1** the named Wave-7 headline
-> candidate. The four MF-1-unlocked candidates (FRTB liquidity horizons, partial ES by class,
-> non-CURRENCY scenario shocks — BOTH gates + methodology, the §2.2 taxonomy) are now unblocked
-> for sequencing. The pre-ratification verifier pass is standing process.
+> *(The close review this paragraph used to tee is DONE and RATIFIED — see the banner above; the
+> OD-E re-tee was discharged by sequencing RS-1/DS-2 into Wave 7, and the four MF-1-unlocked
+> candidates stay sequence-able with SC-2 the named pull-forward.)* The pre-ratification verifier
+> pass is standing process.
 >
 > **Counts (2026-07-16):** 14 governed numbers / 17 registered model codes / 17 tiered, 7
 > validated (6 INITIAL + the loadings INITIAL; 5 flagships re-validated TRIGGERED), 11 excepted

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **DRAFT — OQ-W6C-1…6 pending user ratification.** |
+| **Status** | **RATIFIED — OQ-W6C-1…6 ALL APPROVED 2026-07-17 (user: "Approve all"; merged as DRAFT via PR #52 = `9d561bf`, ratified immediately after — the Wave-5 close's exact pattern).** WAVE 6 IS CLOSED. **Wave 7 = fork A: HG-1 → ES-HS-1 → RS-1 → DS-2** (roadmap Part 2.10), with the two ratified riders (SC-2 the named pull-forward; commitment/capital-call the presumptive Wave-8 headline). |
 | **Grounding** | Audited 2026-07-16/17 at `main` = `3eea70f` (merge of PR #51); all six Wave-6 anchors confirmed ancestors of HEAD via `git merge-base --is-ancestor` (MG-1 plan `91c39fa`/impl `46ce296` CI 5/5; FL-1 plan `ec01053` CI #303/impl `778891c` CI #314; MF-1 plan `0951784`/impl `96b766c` CI #323); main-tip CI re-queried live: 5/5 success. Migration head `0040` (NO Wave-6 migration — three consecutive zero-migration slices). Recorded battery: `make check` 1490; full local-PG fresh **1794/0/0** (scope note: the PG battery covers `packages/shared-python/tests` + `apps/backend/tests`; `apps/worker` remains the idle scaffold with its own trivial suite in `make check`). **Method**: a six-domain audit fan-out (per-slice MG-1/FL-1/MF-1, deferral register, closure stamps + status decay, executed counts), every finding adversarially verified by two independent refuters before counting (majority kills); two judgment passes (outward benchmark; destination/re-baseline) with each load-bearing claim separately attacked (16/16 survived); a completeness critic whose gaps were dispositioned below. 78 agents; every verdict file:line-cited or executed. |
 
 ## Part 1 — Did Wave 6 ship what was ratified?
