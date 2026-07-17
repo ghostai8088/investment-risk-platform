@@ -1,26 +1,35 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-16) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-17) — read this block; everything below it is HISTORY
 >
-> **HEAD `96b766c`** = merge of **PR #50** (MF-1: multi-family factor exposure end-to-end + the
-> TRIGGERED re-validation) / **CI #323 green** (5/5 required checks). **Migration head `0040_var_estimate_age`** (40 revisions —
-> MF-1 needed NO migration). `make check` **1490** passed / full local-PG **1794** passed (fresh,
-> 0 skipped) / downgrade smoke clean over the extended tenant.
+> **HEAD `8260ea6`** = merge of **PR #55** (HG-1: the Wave-7 hygiene opener — the promotion-path age
+> gate + the FL-1 constants sweep + stage 3 of the living tenant) / **CI green (5/5 required
+> checks)**. **Migration head `0040_var_estimate_age`** (40 revisions — HG-1 needed NO migration).
+> `make check` ~1490 passed / full local-PG **1810/0/0** passed (fresh, incl. the three demo suites
+> in CI order) / downgrade smoke clean.
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `mf_1_decision_record.md` (**CLOSED**).
+> `hg_1_decision_record.md` (**CLOSED**).
 >
-> **WAVE 6 IS CLOSED AND THE CLOSE IS RATIFIED** (2026-07-17: `wave_6_close_review.md` OQ-W6C-1…6
-> via PR #52 = `9d561bf` — the first full-ultracode close audit; ZERO shipped-code defects for the
-> second consecutive close; the living tenant re-seeded durable, 17 models / 23 validation records
-> / 63 runs live). **WAVE 7 IS RATIFIED (roadmap Part 2.10, fork A "deepen the mathematics"):
-> HG-1 → ES-HS-1 → RS-1 → DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the
-> presumptive Wave-8 headline. **NEXT = HG-1 planning** (the hygiene opener: the re-opened
-> estimate-staleness residual's promotion-path age check + the expire-a-mapping Tier-3 question;
-> the FL-1 registrar-constant debris with the finding-key compatibility constraint; the
-> private-on-multi-family demo ride-along — a NEW private instrument, the mixed-family fence
-> holds). `phase_status.md`/`next_actions.md` are now pointer stubs (OQ-W6C-4).
+> **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
+> DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the presumptive Wave-8
+> headline. **HG-1 (slice 1) is DONE** — planning PR #54 = `4c8829f`, impl PR #55 = `8260ea6`, CI
+> green; the re-opened estimate-staleness residual paid as an OPT-IN promote-day age gate
+> (`ProxyWeightStaleEstimateError`; `promotion_age_days` always-measured + audited; three
+> unmeasurable shapes fail closed under a bound), expire-a-mapping DEFERRED, the 11-row FL-1
+> constants sweep (finding keys verbatim), and stage 3 of the living tenant (`PC-BRIDGEWATER-II`
+> runs the genuinely-private α=0.4 chain on multi-family factors); 4-finder review, zero HIGH.
+> **NEXT = ES-HS-1 planning** (the Wave-7 headline: ES over historical simulation — needs the ONE
+> `0041` migration widening the `0028` `ck_var_result_parametric_not_null` CHECK; fetch
+> Acerbi-Szekely 2014 to paragraph FIRST; the α-tail-mean estimator pinned at ES-1 inherits; the
+> in-slice fork = ship the Acerbi-Szekely ES backtest here or tee as BT-3 with TIPPED
+> Christoffersen). **WAVE 6 remains CLOSED AND RATIFIED** (2026-07-17: `wave_6_close_review.md`
+> OQ-W6C-1…6 via PR #52 = `9d561bf` — the first full-ultracode close audit; ZERO shipped-code
+> defects for the second consecutive close; the living tenant is 17 registered model codes / 23
+> validation records / 63 runs from the Wave-6 close, plus the HG-1 stage-3 private chain
+> (`PC-BRIDGEWATER-II` is a NEW instrument, NOT a new model code — the α=0.4 `demo-mg1` version is
+> reused). `phase_status.md`/`next_actions.md` are pointer stubs (OQ-W6C-4).
 >
 > **Wave-6 history: Wave 6 was functionally complete 2026-07-16** (MG-1 → FL-1 → MF-1 all CLOSED). MF-1
 > demonstrated **the full governance lifecycle**: the living demo tenant went multi-family — an
