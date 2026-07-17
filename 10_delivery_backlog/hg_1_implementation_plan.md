@@ -1,0 +1,118 @@
+# HG-1 Implementation Plan — the Wave-7 hygiene opener
+
+> Executes `hg_1_decision_record.md` (OD-HG-1-A…D) on ratification of OQ-HG-1-1…6. Branch `hg-1-impl`.
+> **NO migration** (head stays `0040`); NO permission/EVT/model-code; the ONE API change = the additive
+> optional promote-body field; `audit/service.py` FROZEN.
+
+## Step 0 — Fences (verify before writing code)
+
+- `alembic heads` = `0040`; re-verify at the end (`alembic check`, no new revision).
+- Byte-untouched: `demo/campaign.py`, `demo/multifamily.py` (stage 3 is a NEW module), both scenario gates,
+  the active-risk whitelist, the legacy-instrument tuple, `audit/service.py`.
+- The 'FL-1' token appears in NO new text (constants, dossier amendments, demo records).
+
+## Step 1 — The promote age check (OD-A; `risk/proxy_weight_service.py` + the marketdata API)
+
+1. In `promote_proxy_weight_estimate`: after the run resolve, compute the age with THREE unmeasurable
+   shapes (the BT-2 symmetry): `run.input_snapshot_id` NULL ⇒ `None`; `resolve_snapshot` raising
+   `SnapshotNotFound` (a DANGLING id — the column is a bare non-FK GUID) ⇒ `None` when ungated;
+   a header whose `purpose != PURPOSE_PROXY_WEIGHT_INPUT` ⇒ `None` when ungated; measurable ⇒
+   `(utcnow().date() - header.as_of_valuation_date).days`.
+2. New keyword-only `max_promotion_age_days: int | None = None` (service-side `< 1` ⇒
+   `ProxyWeightInputError` — the declaration-seam symmetry): present + age exceeds (strict `>`) ⇒
+   **`ProxyWeightStaleEstimateError`** (a NEW class) naming both numbers in the service message,
+   pre-write; present + age UNMEASURABLE (any of the three shapes) ⇒ the same class, fail CLOSED with a
+   naming refusal. Absent ⇒ never refuses AND never raises on the three shapes (status quo — the
+   snapshotless promote `test_var_total.py:352-372`-minted / `:875-882`-exercised stays green).
+3. The audit payload: `capture_proxy_mapping` + `supersede_proxy_mapping` each gain an optional
+   defaulted `promotion_age_days: int | None = None` parameter (there is NO existing payload path — the
+   payloads are closed row-derived `_summary` dicts); the key is merged into the NEW-version CREATE
+   event's `after_value` ONLY when the promote path supplies it — the key is OMITTED (never
+   None-stamped) on MANUAL capture/supersede writes; `audit/service.py` untouched; no test pins those
+   payload dicts (grep-verified by the pass). The key is deliberately `promotion_age_days`, NOT
+   `estimate_age_days` (BT-2's persisted column of that name has a DIFFERENT anchor).
+4. `ProxyWeightPromoteIn` (api/marketdata.py) gains optional `max_promotion_age_days: int | None`
+   (ge=1); threaded to the service; **`ProxyWeightStaleEstimateError` gets its own EXACT-TYPE entry in
+   `_PROXY_MAPPING_WRITE_ERRORS` with an age-specific 422 detail** — the dispatcher discards
+   `str(exc)` and substitutes the mapped fixed detail, and its exact-type lookup 500s on unmapped
+   subclasses (the verifier pass's HIGH; the current `ProxyWeightInputError` detail would be FALSE for
+   a staleness refusal).
+
+## Step 2 — The constants sweep (OD-C; `risk/bootstrap.py` + docs)
+
+- Apply the record's embedded OD-C numbering: rewrite C1–C7 (framing clauses only — each resident
+  finding key VERBATIM: `"SPECIFIC/IDIOSYNCRATIC RISK = 0"` ×2 (C1/C2), `"it inherits"` (C6),
+  `"ZERO idiosyncratic risk"` (C7); C6 is spliced into ES_TOTAL — check it under BOTH searched sets),
+  P1/P2 parentheticals, S1 scenario phrasing (gate claim untouched), O1 optional (taken). Assumptions
+  rows: text-in-place ONLY, row count/order frozen (the positional `[:3]` splice at :2086). KEEP-list
+  untouched. The conformance test (Step 4) makes the key + 'FL-1' rules executable.
+- `demo/dossiers.py`: amend `MF1_CLOSURE_FINDING`'s frozen-wording note to cover both surfaces (pre-sweep
+  rows say "CURRENCY-family"; post-sweep registrations carry the corrected framing).
+- Docs: dated HG-1 amendments at the NINE enumerated live methodology-doc lines (the OD-C list —
+  incl. `var_parametric_total_v2.md:154`, C7's live mirror; preserve
+  `"SPECIFIC/IDIOSYNCRATIC RISK = 0"` in `var_parametric_v1.md` — test-pinned) + one superseded-doc
+  banner note on `var_parametric_total_v1.md` + the `proxy_weight_service.py:246` comment.
+
+## Step 3 — Stage 3 of the living tenant (OD-D; NEW `demo/hg1_private.py` + `scripts/run_demo_hg1.py`)
+
+1. Guards: campaign present (model rows) AND extension present (loadings code + sleeve + the 3 MF factor
+   codes + the α=0.4/estimate `demo-mg1` versions, resolve-or-refuse) AND own footprint absent
+   (`PC-BRIDGEWATER-II` not in `instrument`); the instrument is the FIRST write; single-commit
+   (CLI shim = the campaign shape); `code_version="demo-hg1"`.
+2. The book: `PC-BRIDGEWATER-II` (private credit fund LP interest, asset_class `PRIVATE_CREDIT`) joins
+   `DEMO-MULTIASSET`; **8 quarterly appraisal marks 2024-06-30…2026-03-31 (START-extended — the V2
+   redesign)** GENERATED by pre-smoothing a declared true-return structure over the quarterly factor
+   paths (`r_obs = α·r_true + (1−α)·r_obs_prev`, α=0.4, NO idiosyncratic term, TD-1-plausible levels;
+   the structure ≈ {RATES 0.5, CREDIT_SPREAD 0.7}; the three quarterly paths verified NON-COLLINEAR
+   over the 6 period-ends) + a carry mark ON 2026-06-19 (OUTSIDE the desmoothing window; validity base
+   = the campaign `_T0` pattern — every row valid before the boundary read); the **18-row quarterly
+   mint** (one SIMPLE return per desmoothed-period-end per MF factor — period ends = marks 3…8 =
+   2024-12-31…2026-03-31, every date ≤ 2026-03-31 hence invisible to all daily windows; values = the
+   declared quarterly paths the generator consumed). Desmoothing window = (2024-06-01, 2026-04-30]
+   (the campaign's exact shape — excludes the carry mark). Estimate age at bind = 2026-06-19 −
+   2026-03-31 = 80d ≤ 400.
+3. The chain: α=0.4 `demo-mg1` desmooth over the quarterly window → k=3 OLS (all 3 MF factors) → promote
+   RATES + CREDIT_SPREAD (one estimate run; NO bound passed) → exposure (4 atoms, base USD) → the
+   loadings-family run → a fresh covariance (same window/as-of) → the five flagship runs bound to the
+   `demo-mg1` versions. Assert every run COMPLETED. NO validation record (OQ-5).
+4. `demo/__init__.py` exports; summary dataclass echoing ids/counts.
+
+## Step 4 — Tests
+
+- **Gate tests** (`test_proxy_weight.py` additions, SQLite): ungated promote unchanged (existing tests
+  prove it — run them) INCLUDING the three unmeasurable shapes staying silent ungated; bound-pass;
+  bound-exceeded refusing via `ProxyWeightStaleEstimateError` (both numbers in the service message; the
+  endpoint test pins the mapped age-specific 422 detail); each unmeasurable shape + bound fails closed
+  (reuse `_mint_empty_completed_estimate_run` for NULL; a dangling id; a wrong-purpose header); the
+  bound `< 1` service refusal; audit payload carries `promotion_age_days` (int case; key ABSENT on
+  MANUAL writes); controlled dates ONLY — freeze the promote-day by monkeypatching
+  `proxy_weight_service.utcnow` (the `valid_from` seam is NOT the anchor — the ratified rejection),
+  else compute expected bounds from real `utcnow` with generous margins.
+- **Endpoint test**: the additive body field round-trips; absent field = old behavior.
+- **Constants**: the two re-seeding PG suites are the key-resolution proof (fail-loud in CI); add one
+  SQLite conformance test working per SEARCHED SET (dossier code → its registered row set; C6 checked
+  under BOTH the ES and ES_TOTAL sets): each of the four key-carrying rows retains its resident key
+  exactly once in its set(s), no set gains a duplicate key-substring, and `'FL-1' not in` any edited
+  constant.
+- **Stage-3 PG suite** (`test_demo_hg1_pg.py`, owner-engine, after the multifamily suite in CI +
+  ci.yml step before the downgrade smoke; the role_permission/downgrade KNOWN-EDGE note carried in the
+  docstring): prereq refusals (unit-tier SQLite where the guards fire pre-PG — the MF-1 pattern);
+  double-run refuse; chain COMPLETED (run counts by `demo-hg1`); the recovery assertion (promoted
+  RATES/CREDIT_SPREAD within |β̂−β| ≤ 0.05 of the structure); the mixed-family fence still holds
+  (legacy tuple untouched; the NEW instrument carries ONLY non-CURRENCY heads); the MF-1 suite passes
+  unmodified on the stage-3-extended tenant (its pins filter by code_version/tuples — verified); the
+  CAMPAIGN suite keeps its recorded fresh-schema-only status and runs first in CI order.
+- Re-seed practice (OQ-W6C-3): the battery ends by re-seeding all THREE stages locally.
+
+## Step 5 — Docs + closeout
+
+- Record Part 5.5 deviations as they arise; Part 6 dispositions post-review.
+- Closeout per the OQ-W5C-5 checklist **incl. grep-for-"pending"**; roadmap Part 2.10 row + amendment log;
+  current_state banner; memory. Next = **ES-HS-1 planning** (fetch Acerbi-Szekely to paragraph FIRST).
+
+## Battery (merge preconditions)
+
+`make check`; full local-PG fresh incl. campaign → multifamily → hg1 in CI order; `alembic check` (no new
+revision); downgrade smoke; CI green incl. the new step. 4-finder review folded before merge
+(adversarial: the gate + runner guards; numeric: the pre-smoothed generator + OLS recovery + age
+arithmetic; doctrine: reworded texts vs keys + the dossier-note amendment; scope-fence).
