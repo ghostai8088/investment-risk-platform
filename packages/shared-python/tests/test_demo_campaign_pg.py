@@ -47,7 +47,9 @@ from irp_shared.model.service import MODEL_TIER_ASSIGN_EVENT
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
-#: The ratified 16-code end state (grep '_MODEL_CODE =' over risk/perf bootstrap).
+#: The ratified 16-code BASE-CAMPAIGN end state. (The '_MODEL_CODE =' grep over risk/perf
+#: bootstrap yields 17 since FL-1 minted the loadings code — the 17th is registered by the MF-1
+#: EXTENSION, not this campaign; TIER_DOSSIERS stays the authoritative 16-code set.)
 _ALL_CODES = frozenset(TIER_DOSSIERS)
 _EXCEPTION_CODES = _ALL_CODES - frozenset(FLAGSHIP_CODES)
 
