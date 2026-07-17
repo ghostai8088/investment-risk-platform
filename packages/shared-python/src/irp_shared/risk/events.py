@@ -102,6 +102,13 @@ METRIC_TYPE_ES_PARAMETRIC = "ES_PARAMETRIC"
 #: PA-4 (OD-PA-4-B): total parametric VaR = factor + idiosyncratic residual variance, on the SAME
 #: var_result grain (a NEW registered model dispatched through the parametric binder).
 METRIC_TYPE_VAR_PARAMETRIC_TOTAL = "VAR_PARAMETRIC_TOTAL"
+#: ES-HS-1 (OD-ES-HS-1-A): the EMPIRICAL Expected Shortfall over the historical-simulation
+#: scenario P&L distribution — the Acerbi-Tasche Prop 4.1 α-tail-mean (floor count + fractional
+#: boundary weight, ÷ n·a), NEVER the mean of the worst ⌈n·a⌉ (that is the forbidden TCE). The
+#: row's var_value holds the ES with the exact VAR_HISTORICAL NULL shape (0041 widened the 0028
+#: CHECK for it). NOT in METRIC_TYPES: the Acerbi-Szekely backtest is the named BT-3 candidate
+#: (pairing via shared input_snapshot_id) — the binder refuses this value DELIBERATELY.
+METRIC_TYPE_ES_HISTORICAL = "ES_HISTORICAL"
 #: The BACKTESTABLE subset of the var_result vocabulary — NOT the full vocabulary. PA-4 excluded
 #: ``VAR_PARAMETRIC_TOTAL`` as a recorded v1 scope-out; **BT-2 (2026-07-15, OD-BT-2-A) is the
 #: ratified slice that admits it** — with the honest-pairing DOCTRINE attached, not as a constant

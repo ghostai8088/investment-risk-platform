@@ -290,3 +290,98 @@ def test_both_modes_and_entitlement_and_methods(ctx) -> None:
             getattr(client, method)("/risk/vars-historical/runs", headers=headers).status_code
             == 405
         )
+
+
+# ---------- ES-HS-1: the empirical ES family through the SAME endpoints ----------
+
+
+def _register_es(client: TestClient, headers: dict[str, str], window: int = 21) -> str:
+    resp = client.post(
+        "/risk/models/var-historical-es",
+        json={"code_version": "v1", "confidence_level": "0.95", "window_observations": window},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["model_version_id"]
+
+
+def test_es_hs_register_floor_and_conflict(ctx) -> None:
+    client, headers, _db, _fx = ctx
+    mv = _register_es(client, headers)
+    # Idempotent re-register.
+    assert _register_es(client, headers) == mv
+    # Below the shared adequacy floor -> 422; same-label different declaration -> 409.
+    resp = client.post(
+        "/risk/models/var-historical-es",
+        json={"code_version": "v1", "confidence_level": "0.95", "window_observations": 20},
+        headers=headers,
+    )
+    assert resp.status_code == 422
+    resp = client.post(
+        "/risk/models/var-historical-es",
+        json={"code_version": "v1", "confidence_level": "0.95", "window_observations": 40},
+        headers=headers,
+    )
+    assert resp.status_code == 409
+
+
+def test_es_hs_run_and_read_round_trip(ctx) -> None:
+    """The ES-HS run enters through the EXISTING run endpoint (the binder dispatches on the
+    bound model — OD-ES-HS-1-B) and reads back through the EXISTING GET family: metric_type
+    ES_HISTORICAL, the hand reference 220/1.05 = 209.523810, the NULL trio honest."""
+    client, headers, _db, fx_run = ctx
+    mv = _register_es(client, headers)
+    resp = client.post(
+        "/risk/vars-historical/runs",
+        json={
+            "code_version": "v1",
+            "environment_id": "ci",
+            "model_version_id": mv,
+            "exposure_run_id": fx_run,
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["status"] == "COMPLETED"
+    (row,) = body["rows"]
+    assert row["metric_type"] == "ES_HISTORICAL"
+    assert row["var_value"] == "209.523810"  # (210 + 0.05*200)/1.05 — the Prop 4.1 hand ref
+    assert row["z_score"] is None and row["sigma"] is None
+    assert row["covariance_run_id"] is None
+    assert row["confidence_level"] == "0.9500"
+    assert (row["n_factors"], row["n_observations"]) == (2, 21)
+
+    read = client.get(f"/risk/vars/runs/{body['run_id']}", headers=headers)
+    assert read.status_code == 200
+    assert read.json()["rows"][0]["var_value"] == "209.523810"
+    row_read = client.get(f"/risk/vars/{row['id']}", headers=headers)
+    assert row_read.status_code == 200
+    assert row_read.json()["sigma"] is None
+
+    listed = client.get("/risk/runs", params={"run_type": "VAR"}, headers=headers)
+    assert body["run_id"] in {i["run_id"] for i in listed.json()["items"]}
+
+
+def test_es_hs_wrong_family_version_is_422(ctx) -> None:
+    """A parametric model_version through the HS run endpoint refuses 422 with the PLAIN-HS
+    code's message (the _resolve_hs_family first-error contract), never a 500."""
+    client, headers, _db, fx_run = ctx
+    resp = client.post(
+        "/risk/models/var",
+        json={"code_version": "v1", "confidence_level": "0.95"},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    pmv = resp.json()["model_version_id"]
+    resp = client.post(
+        "/risk/vars-historical/runs",
+        json={
+            "code_version": "v1",
+            "environment_id": "ci",
+            "model_version_id": pmv,
+            "exposure_run_id": fx_run,
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 422

@@ -580,3 +580,50 @@ MF1_LOADINGS_INITIAL = FlagshipDossier(
         "Price-return betas",
     ),
 )
+
+
+# --- ES-HS-1 stage 4: the empirical historical-ES code's dossiers (OD-ES-HS-1-F) ---
+# SEPARATE constants (the MF1_LOADINGS_TIER shape) — NEVER added to TIER_DOSSIERS or
+# FLAGSHIP_DOSSIERS: the campaign PG suite derives its exactly-16 pin from TIER_DOSSIERS itself
+# and the flagship map feeds the campaign's own filing loop (the planning verifier's catch).
+
+#: HIGH materiality / MEDIUM complexity — the parametric-ES twin's rating shape; derives
+#: TIER_1 under the ratified MG-1 matrix (HIGH materiality alone), so the INITIAL's
+#: next_review_due carries the strictest 365-day ceiling (stated at ratification, OQ-ES-HS-1-5).
+ES_HS_TIER = TierDossier(
+    "HIGH",
+    "MEDIUM",
+    "Flagship tail-severity number on the flagship book and purpose (HIGH materiality); the "
+    "historical-simulation family's mechanics plus an EMPIRICAL tail mean - no estimation "
+    "chain, no registered constant, arithmetic fully reproducible from the pinned scenario "
+    "set (MEDIUM complexity).",
+)
+
+ES_HS_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the flagship historical-simulation ES (0.95, 1-day, window=21) "
+        "bound to the SAME pinned snapshot as the flagship historical-VaR run - the coherent "
+        "(VaR, ES) pair over ONE scenario set (evidence = this model's OWN run; n*a = 1.05, "
+        "the FRACTIONAL Acerbi-Tasche boundary weight applied at the adequacy floor; the "
+        "seeded window's worst two scenarios TIE, so ES equals its VaR sibling exactly - the "
+        "recorded tied-tail equality case, disclosed rather than smoothed away). "
+        "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant under the "
+        "ES-HS-1 ratification (OQ-ES-HS-1-5); the ratified dossier table is the human "
+        "validation judgment, the filing is its transcription."
+    ),
+    conditions=(
+        "CONDITION (tail resolution at the floor): at window=21/0.95 the effective tail mass "
+        "is 1.05 scenario-equivalents - most of the estimate's weight sits on the single "
+        "worst scenario; a materially larger window is the remediation lever for tail "
+        "resolution and MUST be weighed before this number carries incremental capital or "
+        "limit decisions. CONDITION (factor substrate): specific/idiosyncratic risk = 0 "
+        "outside the registered factor universe - the tail mean inherits the substrate's "
+        "blindness identically to its VaR sibling."
+    ),
+    finding_keys=(
+        "effective tail mass",
+        "worst scenario IN the window",
+        "DELIBERATELY not backtestable v1",
+    ),
+)

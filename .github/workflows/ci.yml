@@ -236,6 +236,15 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_var_hs_pg.py -q
+      # ES-HS-1: the 0041 CHECK legs are PG-ONLY (the constraint is migration-only and
+      # ORM-invisible — the SQLite battery is blind to it); the downgrade-body test restores
+      # the WIDENED state before returning (the stage-4 demo step later in THIS job seeds
+      # real ES_HISTORICAL rows against it).
+      - name: Historical-ES CHECK + non-superuser downgrade-path tests (Postgres, ES-HS-1 / OD-ES-HS-1-A..C)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_es_hs_pg.py -q
       - name: Active-risk symmetric-RLS + append-only tests (Postgres, ENT-027 / OD-P3-7-* / BR-17/BR-18)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
@@ -316,6 +325,19 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_hg1_pg.py -q
+      # Stage 4 (ES-HS-1) runs AFTER stage 3 and BEFORE the downgrade smoke — the ONLY
+      # pin-safe slot (the campaign pins 16 codes set-equal, the multifamily suite pins 17;
+      # this stage registers the 18th). The ordering discipline ALSO has a FILENAME leg:
+      # local full-PG runs collect alphabetically, so the stage-4 suites are named
+      # test_demo_stage4_eshs* ('s' > 'h'/'m') — an earlier-sorting name breaks the
+      # multifamily 17-pin in a single-invocation local battery. The downgrade smoke below
+      # then exercises 0041's destructive ES_HISTORICAL delete against THIS stage's rows on
+      # every CI run.
+      - name: Demo stage-4 empirical-ES test (Postgres, ES-HS-1 / OD-ES-HS-1-F)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage4_eshs_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

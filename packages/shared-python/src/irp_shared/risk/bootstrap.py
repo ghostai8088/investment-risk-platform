@@ -862,9 +862,10 @@ VAR_HS_LIMITATIONS: tuple[str, ...] = (
     "pinned window are invisible (window-as-declared-identity; the OD-VHS-E adequacy floor is "
     "a statistical minimum, not a sufficiency guarantee).",
     "1-day horizon only; overlapping/multi-day windows and sqrt(h) scaling are recorded seams.",
-    "ES (the FRTB-preferred tail measure) is a recorded seam for this family too; backtesting "
-    "(Kupiec/traffic-light) is a recorded later slice and Monte-Carlo remains gated on a seeded "
-    "simulator (the OD-VHS-G register).",
+    "ES (the FRTB-preferred tail measure) is REALIZED as the sibling risk.var.historical_es "
+    "family (ES-HS-1) - the empirical tail mean over this family's own scenario distribution; "
+    "Kupiec/traffic-light backtesting of THIS family is LIVE (BT-1 admits VAR_HISTORICAL); "
+    "Monte-Carlo remains gated on a seeded simulator (the OD-VHS-G register).",
     "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
     "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation "
     "exception, MG-1) refuses every new bind at the shared seam.",
@@ -1029,6 +1030,203 @@ def register_historical_var_model(
         raise ModelVersionConflictError(
             VAR_HS_MODEL_CODE,
             VAR_HS_VERSION_LABEL,
+            f"{code_version} (confidence_level={confidence_key}, horizon_days="
+            f"{horizon_days}, window_observations={n})",
+        )
+    return version
+
+
+# --- ES-HS-1: the empirical historical-simulation ES model family (OD-ES-HS-1-B) ---
+
+ES_HS_MODEL_CODE = "risk.var.historical_es"
+ES_HS_MODEL_NAME = "Historical-simulation Expected Shortfall (empirical tail mean, 1-day)"
+ES_HS_MODEL_TYPE = "VAR"
+ES_HS_VERSION_LABEL = "v1"
+ES_HS_METHODOLOGY_REF = "05_analytics_methodologies/var_historical_es_v1.md"
+
+#: The v1 estimator convention - REGISTRATION-DECLARED (OD-ES-HS-1-B, the quantile_convention
+#: precedent): the Acerbi-Tasche Prop 4.1 discrete alpha-tail-mean (floor count + FRACTIONAL
+#: boundary weight, / n*a). A different estimator (interpolated, simple-average/TCE,
+#: kernel-smoothed) is a NEW declared version, never silent drift. There is NO registered
+#: constant in this family (no es_multiplier, no z) - the tail mean is empirical.
+ESTIMATOR_ASSUMPTION_PREFIX = "estimator_convention="
+ES_HS_ESTIMATOR_CONVENTION = "TAIL_MEAN_ACERBI_TASCHE_P41"
+
+ES_HS_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "The Acerbi-Tasche Prop 4.1 discrete alpha-tail-mean: with a = 1-c, m = floor(n*a), "
+    "w = n*a - m over the ascending-sorted scenario P&Ls, ES = -(SUM_(i<=m) pnl_(i) + "
+    "w*pnl_(m+1)) / (n*a) - the exact empirical integral, NEVER the mean of the worst "
+    "ceil(n*a) losses (that quantity is the TCE the ES-1 convention forbids; it never "
+    "exceeds the true ES and STRICTLY understates it at every fractional n*a with an "
+    "untied (m+1)-boundary - equality exactly at fully-tied tails).",
+    "The SAME scenario substrate as the historical-simulation VaR: plain EQUAL-WEIGHT "
+    "scenarios from the linear factor model dV_t = SUM_i x_i * r_(t,i) over the "
+    "FACTOR_EXPOSURE run's per-factor totals; the pinned input is byte-identical to the "
+    "sibling VaR family's (one snapshot can feed both).",
+    "The scenario P&L distribution is the EMPIRICAL one - no distributional assumption; "
+    "ES >= VaR holds at raw precision on the same window by construction (equality at tied "
+    "tail scenarios); the value may be negative when the whole tail is gains - reported "
+    "honestly, never clamped.",
+    "es_value (carried in var_value, discriminated by metric_type) is quantized HALF_UP to 6 "
+    "decimal places ONCE; the number is FULLY reproducible from the pinned snapshot content "
+    "plus the declared parameters alone - no registered constant participates (contrast: the "
+    "parametric ES reproduces only THROUGH its registered multiplier).",
+)
+
+ES_HS_LIMITATIONS: tuple[str, ...] = (
+    "SPECIFIC/IDIOSYNCRATIC RISK = 0: x spans registered factors only, whichever exposure "
+    "family produced it - the tail mean inherits the factor substrate's blindness identically "
+    "to every sibling number.",
+    "At the adequacy floor most of the estimate's WEIGHT sits on the single worst scenario "
+    "(21/0.95: n*a = 1.05 - about 95% of the weight on pnl_(1)); the effective tail mass is "
+    "n*(1-c) scenario-equivalents, the floor is a statistical MINIMUM, and window size is the "
+    "lever that buys tail resolution.",
+    "The estimate cannot exceed the worst scenario IN the window - the tail mean lives "
+    "ENTIRELY in the window's extreme tail, so regime changes outside the pinned window are "
+    "invisible with sharper teeth than the VaR leg (window-as-declared-identity).",
+    "Equal weighting reacts SLOWLY to volatility shifts - inherited from the scenario "
+    "substrate; filtered/time-weighted variants are recorded v2 versions of the SIBLING VaR "
+    "family and would flow through here via the shared substrate, each a new declared "
+    "version.",
+    "DELIBERATELY not backtestable v1: the Kupiec/Basel exception count is a quantile test, "
+    "statistically meaningless over a tail-mean series; the genuine Acerbi-Szekely ES "
+    "backtest is the named BT-3 candidate (pair the ES-HS run with its sibling VaR-HS run by "
+    "shared input_snapshot_id) - the backtest binder refuses this metric with the recorded "
+    "scope-out, never an unknown-vocabulary miss.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation "
+    "exception, MG-1) refuses every new bind at the shared seam.",
+)
+
+
+@dataclass(frozen=True)
+class EsHsParameters:
+    """The version's declared ES-HS parameters, parsed from its ``model_assumption`` rows."""
+
+    confidence_level: Decimal
+    horizon_days: int
+    window_observations: int
+    estimator_convention: str
+
+
+def declared_es_hs_parameters(session: Session, version: ModelVersion) -> EsHsParameters:
+    """Parse the declared confidence/horizon/window/estimator-convention (the OD-ES-HS-1-B
+    identity: exactly ONE strictly-well-formed declaration of EACH). Malformed/absent/
+    ambiguous -> the fail-closed :class:`WrongModelVersionError` (the generic endpoint can
+    mint anything). The strict window floor is IDENTITY here exactly as on the VaR leg (the
+    same n*(1-c) > 1 bound - m >= 1 keeps the fractional-weight estimator out of its
+    degenerate single-scenario shape)."""
+    texts = load_assumption_texts(session, version)
+    confidence_text = sole_declared(texts, CONFIDENCE_ASSUMPTION_PREFIX)
+    horizon_text = sole_declared(texts, HORIZON_ASSUMPTION_PREFIX)
+    window_text = sole_declared(texts, WINDOW_ASSUMPTION_PREFIX)
+    estimator_text = sole_declared(texts, ESTIMATOR_ASSUMPTION_PREFIX)
+    if (
+        confidence_text is None
+        or horizon_text is None
+        or window_text is None
+        or estimator_text is None
+        or not _CONFIDENCE_PATTERN.fullmatch(confidence_text)
+        or confidence_text not in VAR_Z_SCORES  # the shared v1 confidence vocabulary
+        or horizon_text != str(VAR_HORIZON_DAYS)
+        or _DIGITS_PATTERN.fullmatch(window_text) is None
+        or estimator_text != ES_HS_ESTIMATOR_CONVENTION
+        or int(window_text) < _hs_window_floor(confidence_text)
+    ):
+        raise WrongModelVersionError(str(version.id), ES_HS_MODEL_CODE)
+    return EsHsParameters(
+        confidence_level=Decimal(confidence_text),
+        horizon_days=int(horizon_text),
+        window_observations=int(window_text),
+        estimator_convention=estimator_text,
+    )
+
+
+def register_historical_var_es_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    confidence_level: str | Decimal,
+    window_observations: int,
+    horizon_days: int = VAR_HORIZON_DAYS,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the historical-simulation ES model family (ES-HS-1, OD-B):
+    identity = (code_version, confidence_level, horizon_days, window_observations,
+    estimator_convention). Same-label different-declaration ->
+    :class:`ModelVersionConflictError`; a non-REGISTERED same-label twin ->
+    :class:`WrongModelVersionError` (the P3-C1 contract). The window floor is the VaR leg's
+    strict bound (n*(1-c) > 1), shared arithmetic, registrar-and-bind enforced."""
+    text = str(confidence_level).strip()
+    if not _CONFIDENCE_PATTERN.fullmatch(text) or len(text) > 6:
+        raise ValueError(
+            f"confidence_level {confidence_level!r} is not in the v1 vocabulary "
+            f"{sorted(VAR_Z_SCORES)} (a new level is a new declared registration)"
+        )
+    confidence_key = f"{Decimal(text).quantize(Decimal('0.0001')):f}"
+    if confidence_key not in VAR_Z_SCORES:
+        raise ValueError(
+            f"confidence_level {confidence_level} is not in the v1 vocabulary "
+            f"{sorted(VAR_Z_SCORES)} (a new level is a new declared registration)"
+        )
+    if int(horizon_days) != VAR_HORIZON_DAYS:
+        raise ValueError(
+            f"horizon_days must be {VAR_HORIZON_DAYS} in v1 (sqrt(h) scaling is a recorded seam)"
+        )
+    n = int(window_observations)
+    _assert_hs_window_adequate(n, confidence_key)
+
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=ES_HS_MODEL_CODE,
+        name=ES_HS_MODEL_NAME,
+        model_type=ES_HS_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Empirical historical-simulation Expected Shortfall (the Acerbi-Tasche Prop 4.1 "
+            "alpha-tail-mean) over governed factor exposures x pinned captured factor-return "
+            "windows - the same scenario substrate as risk.var.historical (ES-HS-1, ENT-027)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=ES_HS_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=ES_HS_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=ES_HS_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *ES_HS_ASSUMPTIONS_BASE,
+                f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
+                f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
+                f"{WINDOW_ASSUMPTION_PREFIX}{n}",
+                f"{ESTIMATOR_ASSUMPTION_PREFIX}{ES_HS_ESTIMATOR_CONVENTION}",
+            ),
+            limitations=ES_HS_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_es_hs_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or f"{declared.confidence_level:f}" != confidence_key
+        or declared.horizon_days != int(horizon_days)
+        or declared.window_observations != n
+    ):
+        raise ModelVersionConflictError(
+            ES_HS_MODEL_CODE,
+            ES_HS_VERSION_LABEL,
             f"{code_version} (confidence_level={confidence_key}, horizon_days="
             f"{horizon_days}, window_observations={n})",
         )

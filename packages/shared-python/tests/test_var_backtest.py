@@ -945,7 +945,7 @@ def test_migration_head_is_var_backtest() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0040_var_estimate_age"
+    assert script.get_current_head() == "0041_es_historical"  # ES-HS-1 widened the 0028 CHECK
     assert script.get_revision("0033_var_backtest").down_revision == "0032_benchmark_relative"
 
 
@@ -1153,3 +1153,19 @@ def test_es_refusal_names_the_ratified_scope_out_not_an_unknown_vocabulary() -> 
     var[0]["metric_type"] = var[1]["metric_type"] = "VAR_MONTECARLO"
     with pytest.raises(VarBacktestInputError, match="unknown"):  # a genuinely unknown value still
         _adjudicate_pins(portfolio, var)  # gets the unknown-vocabulary message
+
+
+def test_es_historical_refusal_names_the_bt3_tee_not_an_unknown_vocabulary() -> None:
+    """ES-HS-1 (OD-ES-HS-1-D): ``ES_HISTORICAL`` is KNOWN and deliberately excluded — Kupiec
+    over a tail-mean series is statistically meaningless; the genuine Acerbi-Szekely backtest is
+    the named BT-3 candidate (pairing by shared input_snapshot_id). The refusal names the tee
+    and points at the sibling VaR-HS run, never the unknown-vocabulary miss."""
+    from irp_shared.risk.var_backtest_service import _adjudicate_pins
+
+    portfolio, var = _valid_pins()
+    var[0]["metric_type"] = var[1]["metric_type"] = "ES_HISTORICAL"
+    with pytest.raises(VarBacktestInputError, match="DELIBERATELY not backtestable") as exc:
+        _adjudicate_pins(portfolio, var)
+    assert "unknown" not in str(exc.value)
+    assert "BT-3" in str(exc.value)
+    assert "input_snapshot_id" in str(exc.value)

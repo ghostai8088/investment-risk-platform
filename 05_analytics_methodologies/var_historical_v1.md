@@ -78,3 +78,11 @@ permissions REUSED; `RISK.VAR_CREATE` reserved-not-emitted; `audit/service.py` F
 **Dated amendment (HG-1, 2026-07-17):** any allocation-v1/CURRENCY-family attribution above
 predates FL-1 — x spans registered factors of WHICHEVER exposure family produced it; the
 specific-risk = 0 posture is family-neutral. Registrar constants corrected at HG-1.
+
+**Dated amendment (ES-HS-1, 2026-07-17):** the ES seam recorded above is REALIZED — the sibling
+`risk.var.historical_es` family (see `var_historical_es_v1.md`) computes the Acerbi-Tasche
+Prop-4.1 empirical tail mean over THIS family's scenario substrate (byte-identical pinned input;
+one snapshot can feed both — the coherent (VaR, ES) pair). Kupiec/traffic-light backtesting of
+this family has been LIVE since BT-1; the registrar constant's stale "recorded later slice"
+clause was corrected at ES-HS-1 for new registrations (existing tenants keep old texts —
+immutable rows).

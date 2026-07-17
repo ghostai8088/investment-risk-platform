@@ -236,9 +236,11 @@ class VarResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     )
     # Controlled vocab (plain String): 'VAR_PARAMETRIC' (P3-5), 'VAR_HISTORICAL' (VAR-HS-1),
     # 'VAR_PARAMETRIC_TOTAL' (PA-4), 'ES_PARAMETRIC' (ES-1 — REALIZED 2026-07-15, no longer
-    # reserved: BOTH ES families emit it, and for those rows var_value holds an ES, not a VaR).
-    # NOTE a PG-only CHECK (0028, ORM-invisible) forces z_score+sigma+covariance_run_id
-    # non-NULL on every row EXCEPT 'VAR_HISTORICAL' — see ck_var_result_parametric_not_null.
+    # reserved: BOTH ES families emit it, and for those rows var_value holds an ES, not a VaR),
+    # 'ES_HISTORICAL' (ES-HS-1 — the empirical tail mean; var_value holds the ES).
+    # NOTE a PG-only CHECK (0028, widened 0041, ORM-invisible) forces z_score+sigma+
+    # covariance_run_id non-NULL on every row EXCEPT 'VAR_HISTORICAL' and 'ES_HISTORICAL' —
+    # see ck_var_result_parametric_not_null.
     metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     confidence_level: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
