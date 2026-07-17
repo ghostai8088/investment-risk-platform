@@ -210,3 +210,7 @@ expire a promoted `proxy_mapping` — a stale promotion whose estimate is re-run
 UNGATED pre-BT-2 `v1` registrations remain bindable (the recorded grandfather; VW-1's REJECTED verdict is the stand-down
 lever). A future version must carry forward the cross-family limitations recorded by the 2026-07-06 retrospective audit
 rule; **this `v2` referent is immutable**.
+
+**Dated amendment (HG-1, 2026-07-17):** the allocation-v1/CURRENCY-family attributions above
+predate FL-1 — unproxied and MANUAL-method instruments carry zero idiosyncratic variance under
+ANY bound exposure family. Registrar constants corrected at HG-1.

@@ -303,3 +303,33 @@ def test_promote_endpoint(ctx) -> None:  # noqa: ANN001
         headers=_h(p),
     )
     assert bad.status_code == 422, bad.text
+    # HG-1 (OD-HG-1-A): the additive opt-in bound round-trips. This estimate run has a REAL
+    # snapshot whose span end is the fixture's desmoothed window — a generous bound passes...
+    ok = client.post(
+        "/marketdata/proxy-mappings/promote-estimate",
+        json={
+            "private_instrument_id": inst,
+            "factor_id": _fx_eur,
+            "weight": "0.3",
+            "source_calculation_run_id": est_run,
+            "max_promotion_age_days": 100000,
+        },
+        headers=_h(p),
+    )
+    assert ok.status_code == 201, ok.text
+    # ... a bound of 1 day refuses with the AGE-SPECIFIC 422 detail (the distinct exact-type
+    # map entry — never the false "cited run is not visible" detail).
+    stale = client.post(
+        "/marketdata/proxy-mappings/promote-estimate",
+        json={
+            "private_instrument_id": inst,
+            "factor_id": fx_usd,
+            "weight": "0.5",
+            "source_calculation_run_id": est_run,
+            "max_promotion_age_days": 1,
+        },
+        headers=_h(p),
+    )
+    assert stale.status_code == 422, stale.text
+    assert "max_promotion_age_days" in stale.json()["detail"]
+    assert "not a visible COMPLETED" not in stale.json()["detail"]

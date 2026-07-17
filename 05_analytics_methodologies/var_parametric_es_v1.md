@@ -205,3 +205,7 @@ multi-horizon `√h`; a runtime quantile function; residual shrinkage/EWMA and c
 per-period trading-day counts on the total leg. ONE confidence level per registered version (the
 declared-parameter identity). **This `v1` referent is immutable**; a future version carries forward
 the cross-family limitations per the 2026-07-06 retrospective-audit rule.
+
+**Dated amendment (HG-1, 2026-07-17):** "CURRENCY-family factors only" in the inherited-limitations
+list predates FL-1 — ES inherits the registered-factor universe of the BOUND
+exposure family, whichever it is. Registrar constants corrected at HG-1.

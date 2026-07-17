@@ -108,8 +108,9 @@ FACTOR_EXPOSURE_LIMITATIONS: tuple[str, ...] = (
     "Allocation exposures only — NOT vendor-supplied betas (no factor-loading input is captured) "
     "and NOT regression-estimated loadings (need adjusted-price return history + estimation; "
     "both deferred as named prerequisites).",
-    "CURRENCY family only in v1; ASSET_CLASS/INDUSTRY/COUNTRY/STYLE/MACRO/MARKET dimensions "
-    "deferred (need an instrument pin or captured loadings).",
+    "CURRENCY family only in v1 (the allocation model's own deliberate scope); multi-family "
+    "dimensions ship via the loadings family (captured/promoted loadings), not this "
+    "model.",
     "mark_currency approximates denomination currency; an instrument marked in a non-native "
     "currency would misallocate (the instrument-denomination dimension is deferred).",
     "Factor returns are NOT consumed (their first consumer is P3-4 covariance / regression v2).",
@@ -270,7 +271,9 @@ FACTOR_EXPOSURE_PROXY_LIMITATIONS: tuple[str, ...] = (
     "Captured MANUAL-judgment weights only - regression-estimated weights from the PA-1 "
     "desmoothed return series are the recorded v2 (the moment the desmoothed number becomes an "
     "input).",
-    "CURRENCY-family proxy factors only (the platform-wide v1 scope; PA-0 OD-H).",
+    "CURRENCY-family proxy factors only (this model's own deliberate gate; PA-0 OD-H - the "
+    "platform-wide claim ended at the multi-family widening: the loadings family admits "
+    "the widened set).",
     "The unallocated residual of a partial proxy is unmodeled - a residual/idiosyncratic "
     "variance term is a v2 candidate alongside the regression weights.",
     "Proxied rows break the contributions-sum-to-total identity BY DESIGN (sum = sum(w) * atom); "
@@ -648,8 +651,9 @@ VAR_HORIZON_DAYS = 1
 VAR_ASSUMPTIONS_BASE: tuple[str, ...] = (
     "Zero-mean delta-normal parametric VaR under the linear factor model dV = SUM_i(x_i * r_i): "
     "sigma_p = sqrt(x' * Sigma * x); VaR_alpha = z_alpha * sigma_p (1-day; no sqrt(h) scaling).",
-    "Inputs: the per-factor CURRENCY-exposure totals of ONE COMPLETED factor-exposure run (base "
-    "currency, signed) x the sample covariance matrix of ONE COMPLETED covariance run "
+    "Inputs: the per-factor exposure totals of ONE COMPLETED factor-exposure run of ANY "
+    "registered family (base currency, signed) x the sample covariance matrix of ONE "
+    "COMPLETED covariance run "
     "(SIMPLE/DAILY, unannualized); every exposure factor MUST be covered by the covariance "
     "factor set - a gap fails closed (NO zero-variance imputation).",
     "z_alpha is a REGISTERED constant from an enumerated confidence vocabulary - no runtime "
@@ -663,9 +667,10 @@ VAR_ASSUMPTIONS_BASE: tuple[str, ...] = (
 
 #: The recorded scope-outs (mirrored into model_limitation rows; OD-P3-5-M).
 VAR_LIMITATIONS: tuple[str, ...] = (
-    "SPECIFIC/IDIOSYNCRATIC RISK = 0: the linear CURRENCY-family indicator-loading factor model "
-    "carries NO residual variance term - portfolio risk outside the factor covariance is "
-    "invisible to this number (the allocation-v1 limitation propagates).",
+    "SPECIFIC/IDIOSYNCRATIC RISK = 0: the linear factor model carries NO residual variance "
+    "term regardless of the bound exposure family (allocation, proxy, or multi-family loadings "
+    "- HG-1 corrected the pre-widening CURRENCY-only framing) - portfolio risk outside the factor "
+    "covariance is invisible to this number.",
     "Joint normality of factor returns assumed - tail risk is understated for fat-tailed "
     "returns; the empirical-distribution alternative SHIPS as the separately declared family "
     "risk.var.historical v1 (VAR-HS-1).",
@@ -847,8 +852,9 @@ VAR_HS_ASSUMPTIONS_BASE: tuple[str, ...] = (
 )
 
 VAR_HS_LIMITATIONS: tuple[str, ...] = (
-    "SPECIFIC/IDIOSYNCRATIC RISK = 0: x spans registered factors only (the allocation-v1 "
-    "limitation propagates - identical to the parametric method).",
+    "SPECIFIC/IDIOSYNCRATIC RISK = 0: x spans registered factors only, whichever exposure "
+    "family produced it (HG-1 corrected the pre-widening attribution) - identical to the "
+    "parametric method.",
     "Equal weighting reacts SLOWLY to volatility shifts; filtered (FHS) and time-weighted "
     "(BRW) variants outperform in the cited literature and are recorded v2 model versions "
     "requiring a declared volatility model (decision record Part 2.1).",
@@ -1350,8 +1356,9 @@ SCENARIO_ASSUMPTIONS: tuple[str, ...] = (
     "echoed, 0 included); the TOTAL row carries n_factors_exposed / n_factors_shocked / "
     "n_shocks_unmatched. A shock naming a factor with no exposure produces no row (counted in "
     "n_shocks_unmatched).",
-    "CURRENCY factor family only (v1 platform scope; enforced at the shock binder). RETURN shock "
-    "type only. Computed in Decimal; base currency = the exposure run's base.",
+    "CURRENCY factor family only (this model's own v1 scope, enforced at the shock binder; "
+    "per-class shock semantics for the wider families are recorded methodology work). RETURN "
+    "shock type only. Computed in Decimal; base currency = the exposure run's base.",
 )
 
 SCENARIO_LIMITATIONS: tuple[str, ...] = (
@@ -1455,8 +1462,10 @@ PROXY_WEIGHT_LIMITATIONS: tuple[str, ...] = (
     "Appraisal series are SHORT (quarterly marks => wide standard errors, reported per coefficient "
     "and never hidden); the estimate regresses a MODEL OUTPUT (the desmoothed series), so "
     "desmoothing model risk (the declared alpha) propagates into the weights.",
-    "CURRENCY-family candidate factors only (the PA-2 factor-universe boundary); a non-CURRENCY "
-    "candidate fails the run closed. Single-currency series only (no FX translation).",
+    "Candidate factors span the admitted loading families (the multi-family widening relaxed "
+    "PA-2's CURRENCY-only boundary; OTHER/unknown families still fail the run closed). "
+    "Single-currency series only "
+    "(no FX translation).",
     "Unconstrained OLS can produce weights an analyst should reject - which is WHY promotion is "
     "human-mediated. Constrained (Sharpe 1992) and summed-lag (Dimson 1979 / Asness-Krail-Liew "
     "2001) variants are recorded v2s.",
@@ -1592,8 +1601,9 @@ VAR_TOTAL_ASSUMPTIONS_BASE: tuple[str, ...] = (
     "instruments are proxied + the citation) x the cited PROXY_WEIGHT_ESTIMATE run's "
     "ESTIMATION_SUMMARY row (residual_stdev). MV_i = the instrument's total pinned factor exposure "
     "(the projected market exposure the factor model sees - consistent with the factor leg). "
-    "Indicator (non-proxied) and MANUAL-method instruments carry ZERO idiosyncratic variance (no "
-    "estimation evidence - the P3-3 limitation stands for them, restated).",
+    "Unproxied and MANUAL-method instruments carry ZERO idiosyncratic variance whichever "
+    "exposure family binds (no estimation evidence - the P3-3 limitation stands for them, "
+    "restated).",
     "Frequency conversion (DECLARED): sigma_e,daily = sigma_e,period / sqrt(d_t), "
     "d_t = appraisal_days * (252/365); appraisal_days is a DECLARED model-identity parameter (the "
     "appraisal cadence, e.g. 91 for quarterly) - the ESTIMATION_SUMMARY carries no span, so the "
@@ -1610,8 +1620,9 @@ VAR_TOTAL_LIMITATIONS: tuple[str, ...] = (
     "cross-correlation; residual shrinkage (Barra Bayesian) + EWMA weighting (Axioma) are v2s.",
     "The residual is hostage to the PA-3 estimate quality (short appraisal series => noisy "
     "sigma_e; the estimate's per-coefficient std errors stay visible on the pinned estimate).",
-    "Non-proxied and MANUAL-method instruments carry ZERO idiosyncratic risk (the allocation-v1 "
-    "specific-risk=0 limitation propagates for them).",
+    "Non-proxied and MANUAL-method instruments carry ZERO idiosyncratic risk under ANY bound "
+    "exposure family (the specific-risk=0 posture propagates for them; HG-1 corrected the "
+    "allocation-v1 attribution).",
     "Flat 252/365 trading-day ratio over the MEAN period (calendar-aware per-period counts a v2); "
     "1-day horizon only; historical-simulation + ES total analogues are recorded v2s.",
     "No FX conversion - a proxied instrument's estimate series_currency must equal the book's "
@@ -1821,8 +1832,9 @@ ES_ASSUMPTIONS_BASE: tuple[str, ...] = (
     "not the forward PDF phi. The tail arithmetic lives in the registered constant, under model "
     "governance, not in code. The declared es_multiplier is identity-checked against the "
     "registered table at bind.",
-    "Inputs: IDENTICAL to the plain parametric VaR family (the per-factor CURRENCY-exposure totals "
-    "of ONE COMPLETED factor-exposure run x the sample covariance of ONE COMPLETED covariance run) "
+    "Inputs: IDENTICAL to the plain parametric VaR family (the per-factor exposure totals of "
+    "ONE COMPLETED factor-exposure run of ANY registered family x the sample covariance of "
+    "ONE COMPLETED covariance run) "
     "- ES multiplies the SAME sigma_p through the SAME adjudication, snapshot bind and provenance "
     "re-resolution. Every input limitation of that family applies verbatim.",
     "Computed in Decimal at 50-digit context precision; ES quantizes HALF_UP to 6 decimal places "
@@ -1835,7 +1847,8 @@ ES_LIMITATIONS: tuple[str, ...] = (
     "ES here is a fixed multiple of the SAME sigma_p as the parametric VaR family, so it inherits "
     "EVERY limitation of that number verbatim: SPECIFIC/IDIOSYNCRATIC RISK = 0 (the plain leg; the "
     "total ES family adds it), joint normality of factor returns, 1-day horizon only (no sqrt(h) "
-    "scaling), CURRENCY-family factors only, and the sample-covariance estimation error.",
+    "scaling), the registered-factor universe of the bound exposure family, and the "
+    "sample-covariance estimation error.",
     "ES's practical content here is TAIL SEVERITY (VaR is a cut-off and says nothing about "
     "magnitude beyond it) plus ROBUSTNESS: ES's coherence is UNCONDITIONAL (Acerbi-Tasche 2002 "
     "Prop. 3.1, any distribution), whereas this platform's parametric VaR is coherent only "

@@ -309,6 +309,13 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_multifamily_pg.py -q
+      # Stage 3 (HG-1) runs AFTER the extension suite (the same shared-DB ordering constraint)
+      # and BEFORE the downgrade smoke.
+      - name: Demo stage-3 private-on-multi-family test (Postgres, HG-1 / OD-HG-1-D)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_hg1_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

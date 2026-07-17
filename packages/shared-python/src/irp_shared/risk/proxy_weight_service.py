@@ -81,6 +81,7 @@ from irp_shared.snapshot import (
     COMPONENT_KIND_FACTOR_RETURN,
     PURPOSE_PROXY_WEIGHT_INPUT,
     SnapshotActor,
+    SnapshotNotFound,
     build_proxy_weight_snapshot,
     list_components,
     resolve_snapshot,
@@ -100,6 +101,16 @@ _CTX_PRECISION = 50
 class ProxyWeightInputError(Exception):
     """A missing/invalid prerequisite detected BEFORE the run is created — pre-create refusal (no
     run, no result, no run-audit). Its OWN class. Maps to 422."""
+
+
+class ProxyWeightStaleEstimateError(Exception):
+    """HG-1 (OD-HG-1-A): a BOUNDED promote refused — the cited estimate's regression data is
+    older than the caller's ``max_promotion_age_days`` on the promote-day, OR the age is
+    UNMEASURABLE (no / dangling / wrong-purpose input snapshot) while a bound is present (the
+    BT-2 gated-implies-closed shape: a tight policy cannot be defeated by citing a snapshotless
+    run). A DISTINCT class, not a subclass: the marketdata write-error dispatcher is an
+    exact-type lookup with fixed details, and the ``ProxyWeightInputError`` detail would be
+    FALSE for a staleness refusal."""
 
 
 class ProxyWeightEstimateResultNotVisible(Exception):
@@ -243,7 +254,8 @@ def _adjudicate_pins(
         raise ProxyWeightInputError("the pinned target spans multiple desmoothed runs — refused")
     periods.sort(key=lambda p: p.period_start)
 
-    # --- The candidate factors (CURRENCY-only; paired with a return window; ordered by id). ---
+    # --- The candidate factors (the admitted loading families since FL-1; paired with a return
+    # window; ordered by id). ---
     if not factor_raw:
         raise ProxyWeightInputError("no candidate factors pinned — refused")
     returns_by_factor: dict[str, list[tuple[date, Decimal]]] = {}
@@ -546,6 +558,7 @@ def promote_proxy_weight_estimate(
     actor: ProxyMappingActor,
     source_calculation_run_id: str,
     valid_from: datetime | None = None,
+    max_promotion_age_days: int | None = None,
 ) -> ProxyMapping:
     """Promote a REVIEWED estimate into a live captured proxy weight (OD-PA-3-E, the deliberate
     analyst-mediated second step). Resolves the cited run to a tenant-visible COMPLETED
@@ -564,6 +577,44 @@ def promote_proxy_weight_estimate(
         label="proxy-weight estimate",
         error=ProxyWeightInputError,
     )
+
+    # --- HG-1 (OD-HG-1-A): the promotion-path age. ALWAYS measured (the audit leg); refused
+    # ONLY under a caller bound (opt-in policy — promotion has no pinned economic as-of, so a
+    # mandatory default would rot every fixed-date fixture against the wall clock). Age anchor =
+    # the promote-day vs the estimate's regression SPAN END (the snapshot header's
+    # as_of_valuation_date — the BT-2 data-age semantics with the promote-day as the "new" side).
+    # THREE unmeasurable shapes, the BT-2 symmetry: ungated => age None (status quo, never
+    # raises); bounded => fail CLOSED. ---
+    if max_promotion_age_days is not None and max_promotion_age_days < 1:
+        raise ProxyWeightInputError(
+            f"max_promotion_age_days must be >= 1 (got {max_promotion_age_days}) — refused"
+        )
+    promotion_age_days: int | None = None
+    snapshot_id = getattr(run, "input_snapshot_id", None)
+    if snapshot_id is not None:
+        try:
+            header = resolve_snapshot(session, str(snapshot_id), acting_tenant=acting_tenant)
+        except SnapshotNotFound:
+            header = None  # a dangling id — the column is a bare non-FK GUID
+        if header is not None and header.purpose == PURPOSE_PROXY_WEIGHT_INPUT:
+            span_end = header.as_of_valuation_date
+            if span_end is not None:
+                promotion_age_days = (utcnow().date() - span_end).days
+    if max_promotion_age_days is not None:
+        if promotion_age_days is None:
+            raise ProxyWeightStaleEstimateError(
+                "a promotion age bound was supplied but the cited run's estimate age is "
+                "UNMEASURABLE (missing, dangling, or wrong-purpose input snapshot) — refused "
+                "closed (a bounded promote requires a measurable regression span end)"
+            )
+        if promotion_age_days > max_promotion_age_days:
+            raise ProxyWeightStaleEstimateError(
+                f"the cited estimate's regression data is {promotion_age_days} day(s) old on "
+                f"the promote-day — over the supplied max_promotion_age_days="
+                f"{max_promotion_age_days}; refused (re-estimate on fresher marks, or raise "
+                f"the bound deliberately)"
+            )
+
     try:
         return supersede_proxy_mapping(
             session,
@@ -575,6 +626,7 @@ def promote_proxy_weight_estimate(
             effective_at=(valid_from if valid_from is not None else utcnow()),
             mapping_method=MAPPING_METHOD_REGRESSION,
             source_calculation_run_id=str(run.run_id),
+            promotion_age_days=promotion_age_days,
         )
     except NoCurrentProxyMapping:
         return capture_proxy_mapping(
@@ -587,4 +639,5 @@ def promote_proxy_weight_estimate(
             mapping_method=MAPPING_METHOD_REGRESSION,
             source_calculation_run_id=str(run.run_id),
             valid_from=valid_from,
+            promotion_age_days=promotion_age_days,
         )

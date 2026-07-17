@@ -17,7 +17,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -128,7 +128,11 @@ from irp_shared.marketdata.proxy_mapping import (
 )
 from irp_shared.reference.instrument import InstrumentNotVisible
 from irp_shared.reference.service import CurrencyNotVisible
-from irp_shared.risk import ProxyWeightInputError, promote_proxy_weight_estimate
+from irp_shared.risk import (
+    ProxyWeightInputError,
+    ProxyWeightStaleEstimateError,
+    promote_proxy_weight_estimate,
+)
 
 router = APIRouter(prefix="/fx", tags=["marketdata"])
 price_router = APIRouter(prefix="/prices", tags=["marketdata"])
@@ -2274,6 +2278,11 @@ _PROXY_MAPPING_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "cited run is not a visible COMPLETED proxy-weight-estimate run",
     ),
+    ProxyWeightStaleEstimateError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "the cited estimate's data is older than the supplied max_promotion_age_days "
+        "(or its age is unmeasurable under a bound) — promotion refused",
+    ),
     NoCurrentProxyMapping: (
         status.HTTP_409_CONFLICT,
         "no current proxy mapping to supersede/correct",
@@ -2325,6 +2334,8 @@ class ProxyWeightPromoteIn(BaseModel):
     factor_id: str
     weight: Decimal  # the analyst's chosen coefficient to promote (NOT auto-read from the run)
     source_calculation_run_id: str  # the reviewed proxy-weight-estimate run this weight came from
+    # HG-1 (OD-HG-1-A): opt-in staleness policy — absent = ungated (the recorded status quo).
+    max_promotion_age_days: int | None = Field(default=None, ge=1)
 
 
 @proxy_mapping_router.post(
@@ -2349,8 +2360,15 @@ def promote_proxy_weight_estimate_endpoint(
             acting_tenant=principal.tenant_id,
             actor=_proxy_mapping_actor(principal),
             source_calculation_run_id=body.source_calculation_run_id,
+            max_promotion_age_days=body.max_promotion_age_days,
         )
-    except (ProxyWeightInputError, ProxyMappingValueError, DataQualityError, IntegrityError) as exc:
+    except (
+        ProxyWeightInputError,
+        ProxyWeightStaleEstimateError,
+        ProxyMappingValueError,
+        DataQualityError,
+        IntegrityError,
+    ) as exc:
         _raise_proxy_mapping_write(db, exc)
     out = _proxy_mapping_out(row)
     db.commit()

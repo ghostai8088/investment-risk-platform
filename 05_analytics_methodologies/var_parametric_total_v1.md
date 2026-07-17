@@ -1,5 +1,9 @@
 # Methodology — Total Parametric VaR (factor + idiosyncratic residual, 1-day) v1
 
+> **SUPERSEDED (HG-1 note, 2026-07-17):** this v1 referent is superseded by
+> `var_parametric_total_v2.md` (BT-2); its pre-widening family-scoped framing is
+> retained as history — see the dated note at the end of this file.
+
 > **Model:** `risk.var.parametric_total` · **Version:** `v1` · **Referent:** `model_version.methodology_ref` points here.
 > **Status:** REGISTERED; `validation_status = UNVALIDATED` (recorded, **non-enforcing until P7**). This doc IS the methodology referent the governed `model_version` binds (PA-4, ENT-027, OD-PA-4-B/C/D).
 
@@ -171,3 +175,7 @@ day counts, ES/historical-simulation total analogues, backtesting of the total s
 runtime quantile function are **out of scope for v1** and arrive as separately declared model
 versions/families. A future `v2` referent must carry forward the cross-family limitations
 recorded by the 2026-07-06 retrospective audit rule; this `v1` referent is immutable.
+
+**Superseded-doc note (HG-1, 2026-07-17):** this v1 referent is SUPERSEDED by
+`var_parametric_total_v2.md` (BT-2); its pre-FL-1 family-scoped framing is retained as history
+and corrected only in the v2 doc + the registrar constants.

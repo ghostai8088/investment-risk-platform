@@ -10,6 +10,13 @@ from irp_shared.demo.campaign import (
     demo_id,
     run_demo_campaign,
 )
+from irp_shared.demo.hg1_private import (
+    DemoHg1AlreadySeededError,
+    DemoHg1Error,
+    DemoHg1PrereqError,
+    Hg1PrivateSummary,
+    run_demo_hg1_private,
+)
 from irp_shared.demo.multifamily import (
     DemoMultifamilyAlreadySeededError,
     DemoMultifamilyError,
@@ -23,6 +30,11 @@ __all__ = [
     "CampaignSummary",
     "DemoCampaignAlreadySeededError",
     "DemoCampaignError",
+    "DemoHg1AlreadySeededError",
+    "DemoHg1Error",
+    "DemoHg1PrereqError",
+    "Hg1PrivateSummary",
+    "run_demo_hg1_private",
     "DemoMultifamilyAlreadySeededError",
     "DemoMultifamilyError",
     "DemoMultifamilyPrereqError",
