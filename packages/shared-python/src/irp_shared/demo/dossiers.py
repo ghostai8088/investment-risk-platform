@@ -406,7 +406,9 @@ MF1_CLOSURE_FINDING = (
     "universe now includes governed MARKET/RATES/CREDIT_SPREAD factors with REGRESSION-estimated "
     "loadings, and the cited run is this model's own COMPLETED multi-family evidence over the "
     "multi-asset sleeve. FROZEN-WORDING NOTE: the re-cited registered-limitation texts below "
-    "predate the multi-family widening — read 'CURRENCY-family' as 'the bound factor set'. "
+    "predate the multi-family widening where filed before the HG-1 constants correction "
+    "(rows registered after it carry the corrected family-neutral framing) — read any "
+    "family-scoped framing as 'the bound factor set'. "
     "Closure is by supersession (latest-outcome-wins); the historical condition text remains "
     "visible, append-only."
 )

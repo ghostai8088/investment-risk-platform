@@ -119,3 +119,10 @@ component/marginal VaR, backtesting (P7-adjacent), a specific-risk term, and a r
 function are **out of scope for v1** and arrive as separately declared model versions/families.
 A future `v2` referent must carry forward the cross-family limitations recorded by the
 2026-07-06 retrospective audit rule; this `v1` referent is immutable.
+
+**Dated amendment (HG-1, 2026-07-17):** the family-scoped framing above ("CURRENCY-exposure
+totals", "the linear CURRENCY-family indicator-loading factor model", the allocation-v1
+attribution) predates FL-1's multi-family widening — the binder accepts ANY registered
+factor-exposure family, and SPECIFIC/IDIOSYNCRATIC RISK = 0 holds regardless of family. The
+registrar constants were corrected at HG-1; rows registered earlier keep the old wording
+(immutable), read per this note.

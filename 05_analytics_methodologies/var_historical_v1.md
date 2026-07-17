@@ -74,3 +74,7 @@ Snapshot-only compute (`VAR_HS_INPUT`); run-bound + REGISTERED-model-bound (CTRL
 append-only results; per-row ORIGIN + snapshot DEPENDS_ON lineage; pre-create refusal vs
 post-create FAILED (the P3-5 failure model, incl. the result-magnitude gate); `risk.*`
 permissions REUSED; `RISK.VAR_CREATE` reserved-not-emitted; `audit/service.py` FROZEN.
+
+**Dated amendment (HG-1, 2026-07-17):** any allocation-v1/CURRENCY-family attribution above
+predates FL-1 — x spans registered factors of WHICHEVER exposure family produced it; the
+specific-risk = 0 posture is family-neutral. Registrar constants corrected at HG-1.

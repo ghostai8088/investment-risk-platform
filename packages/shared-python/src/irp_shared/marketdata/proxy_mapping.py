@@ -394,6 +394,7 @@ def capture_proxy_mapping(
     valid_from: datetime | None = None,
     entity_id: str | None = None,
     now: datetime | None = None,
+    promotion_age_days: int | None = None,
 ) -> ProxyMapping:
     """Capture the first open proxy weight for a (private_instrument, factor) as ONE governed unit
     (FR row + MANUAL_PROXY ORIGIN edge + ``MARKET.PROXY_MAPPING_CREATE`` + the DQ gate). The
@@ -437,7 +438,14 @@ def capture_proxy_mapping(
         entity_id=row.id,
         event_type=MARKET_PROXY_MAPPING_CREATE_EVENT,
         action=ACTION_CREATE,
-        after_value=_summary(row),
+        # HG-1 (OD-HG-1-A): a PROMOTED weight's audit record permanently carries how old its
+        # regression data was on the promote-day; the key is OMITTED (never None-stamped) on
+        # MANUAL writes and on unmeasurable promotes.
+        after_value=(
+            {**_summary(row), "promotion_age_days": promotion_age_days}
+            if promotion_age_days is not None
+            else _summary(row)
+        ),
         actor=actor,
         now=now,
     )
@@ -457,6 +465,7 @@ def supersede_proxy_mapping(
     source_calculation_run_id: str | None = None,
     entity_id: str | None = None,
     now: datetime | None = None,
+    promotion_age_days: int | None = None,
 ) -> ProxyMapping:
     """Effective-dated (valid-time) re-capture for the SAME key: close the head's ``valid_to``
     (``MARKET.PROXY_MAPPING_UPDATE``), then insert a new version (``MARKET.PROXY_MAPPING_CREATE`` +
@@ -524,7 +533,11 @@ def supersede_proxy_mapping(
         entity_id=new.id,
         event_type=MARKET_PROXY_MAPPING_CREATE_EVENT,
         action=ACTION_CREATE,
-        after_value=_summary(new),
+        after_value=(  # HG-1: see the capture-path comment — promoted-write provenance only
+            {**_summary(new), "promotion_age_days": promotion_age_days}
+            if promotion_age_days is not None
+            else _summary(new)
+        ),
         actor=actor,
         now=now,
     )

@@ -119,3 +119,9 @@ over verbatim. Three disclosures for the public-instrument use:
 - Asness, C., Krail, R. & Liew, J. (2001), "Do Hedge Funds Hedge?," *JPM* 27(3) — summed-lag betas on
   smoothed series.
 - Getmansky, M., Lo, A. & Makarov, I. (2004) — the smoothed-returns process (PA-0/PA-1 shared cite).
+
+**Dated amendment (HG-1, 2026-07-17):** the CURRENCY-only candidate-factor statements above
+predate FL-1's widening to the admitted loading families (this doc's own FL-1 section records
+the widening; the pre-FL-1 sentences stand as history). ALSO NEW AT HG-1: the promotion path
+now always measures and audits `promotion_age_days` (promote-day − regression span end) and
+refuses under an opt-in `max_promotion_age_days` bound — unmeasurable-with-bound fails closed.
