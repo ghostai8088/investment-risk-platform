@@ -153,9 +153,9 @@ if the wave underruns. Delivery runs under the full-autonomy grant; the USER sig
 
 ## Part 3 — Beyond Wave 1 (coarse; themes from the RTM map, NOT sequenced yet)
 
-- **VaR completions (on demand):** ES (closed-form seam already recorded); √h multi-horizon; component/marginal
-  VaR; backtesting (also a prerequisite for the P7-theme model-validation workflow); Monte-Carlo (GATED: needs a
-  seeded simulator + revaluation engine, QS-18).
+- **VaR completions (on demand):** √h multi-horizon; component/marginal VaR; Monte-Carlo (GATED: needs a
+  seeded simulator + revaluation engine, QS-18). *(Rewritten at the Wave-6 close: ES SHIPPED at ES-1 and
+  backtesting at BT-1/BT-2 — ES-over-HS is the named Wave-7 headline candidate, not a theme item.)*
 - **Credit & counterparty risk** (RTM-P3 theme) · **Private assets + liquidity** (RTM-P4) · **Limits, breach
   workflow + SoD enforcement** (RTM-P6) · **Full model governance / validation workflow + DQ reconciliation**
   (RTM-P7) · **Reporting & dashboards** (RTM-P8) · **Real SSO/OIDC + admin + vendor adapters** (RTM-P9 — the dev
@@ -163,9 +163,11 @@ if the wave underruns. Delivery runs under the full-autonomy grant; the USER sig
 - **Frontend growth:** incremental read-only surfaces ride along where they're nearly free (the FE-1 view already
   absorbs new run families automatically); dashboards/reporting stay an RTM-P8 theme, not drive-by additions.
 - Standing deferrals with NO assigned wave (each needs its own trigger): covariance v2s (shrinkage/EWMA/
-  correlation/annualization); vendor-beta/regression factor exposures (needs a loadings capture slice); computed
+  correlation/annualization); vendor-beta loadings CAPTURE (the FL-1-recorded v2 — the REGRESSION leg SHIPPED
+  at FL-1/MF-1; rewritten at the Wave-6 close); computed
   factor returns (needs adjusted prices); vol surface capture (ENT-022); PAR_RATE/interpolation/instrument-level
-  sensitivity attribution; WORM/anchored audit hardening; gitleaks (OD-049); branch protection (OD-050).
+  sensitivity attribution; WORM/anchored audit hardening; gitleaks (OD-049). *(Branch protection
+  OD-050 removed from this list at the Wave-6 close — PAID 2026-07-10, stamped at the Wave-1 close row.)*
 
 ## Part 4 — Re-sequencing rules (what makes this a plan, not a straitjacket)
 
