@@ -119,6 +119,7 @@ from irp_shared.risk import (
     register_factor_exposure_loadings_model,
     register_factor_exposure_model,
     register_factor_exposure_proxy_model,
+    register_historical_var_es_model,
     register_historical_var_model,
     register_proxy_weight_regression_model,
     register_scenario_model,
@@ -1544,7 +1545,9 @@ class HsVarModelIn(BaseModel):
 class HsVarRunIn(BaseModel):
     code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
     environment_id: str  # the run environment (FW-RUN §5 item 7; required)
-    model_version_id: uuid.UUID  # a REGISTERED historical-VaR model_version (CTRL-003)
+    # A REGISTERED model_version of EITHER historical family (CTRL-003): the binder dispatches
+    # risk.var.historical -> VAR_HISTORICAL / risk.var.historical_es -> ES_HISTORICAL (ES-HS-1).
+    model_version_id: uuid.UUID
     exposure_run_id: uuid.UUID | None = None  # build-in-request
     snapshot_id: uuid.UUID | None = None  # consume-existing alternative
 
@@ -1615,18 +1618,71 @@ def register_var_historical(
     return out
 
 
+@router.post(
+    "/models/var-historical-es",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_var_historical_es(
+    body: HsVarModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed historical-simulation ES model + a model_version
+    for this (code_version, confidence_level, horizon_days, window_observations,
+    estimator_convention) identity (ES-HS-1, OD-B — the estimator convention is
+    REGISTRAR-STAMPED, never caller-suppliable). Same-label different-declaration = 409; an
+    out-of-vocabulary confidence, non-v1 horizon, or a window below the shared adequacy
+    floor = 422. The shared registration envelope."""
+    try:
+        version = register_historical_var_es_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            confidence_level=body.confidence_level,
+            window_observations=body.window_observations,
+            horizon_days=body.horizon_days,
+        )
+    except ValueError:  # vocabulary / horizon / adequacy-floor refusals
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "confidence_level/horizon_days/window_observations outside the v1 declared "
+                "vocabulary or below the adequacy floor"
+            ),
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
 @router.post("/vars-historical/runs", response_model=VarRunOut, status_code=status.HTTP_201_CREATED)
 def create_var_historical_run(
     body: HsVarRunIn,
     principal: Principal = Depends(_require_run),
     db: Session = Depends(get_tenant_session),
 ) -> VarRunOut:
-    """Run a governed historical-simulation VaR calculation (VAR-HS-1). A pre-create refusal
-    raises + rolls back (no run, 422/404/409); a post-create FAILED run is committed
-    (``status='FAILED'``, zero rows — the magnitude gate). The run + row read back through the
-    EXISTING ``GET /risk/vars/runs/{run_id}`` / ``GET /risk/vars/{var_id}`` (same run family +
-    result table; ``metric_type='VAR_HISTORICAL'``, ``z_score``/``sigma``/``covariance_run_id``
-    honestly null)."""
+    """Run a governed historical-simulation calculation — EITHER family, dispatched on the
+    bound model (VAR-HS-1: ``risk.var.historical`` ⇒ ``metric_type='VAR_HISTORICAL'``;
+    ES-HS-1: ``risk.var.historical_es`` ⇒ ``metric_type='ES_HISTORICAL'``, the empirical
+    tail mean). A pre-create refusal raises + rolls back (no run, 422/404/409); a post-create
+    FAILED run is committed (``status='FAILED'``, zero rows — the magnitude gate). The run +
+    row read back through the EXISTING ``GET /risk/vars/runs/{run_id}`` /
+    ``GET /risk/vars/{var_id}`` (same run family + result table;
+    ``z_score``/``sigma``/``covariance_run_id`` honestly null for both metrics)."""
     try:
         result = run_var_historical(
             db,

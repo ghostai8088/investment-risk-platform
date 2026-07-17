@@ -209,3 +209,10 @@ the cross-family limitations per the 2026-07-06 retrospective-audit rule.
 **Dated amendment (HG-1, 2026-07-17):** "CURRENCY-family factors only" in the inherited-limitations
 list predates FL-1 — ES inherits the registered-factor universe of the BOUND
 exposure family, whichever it is. Registrar constants corrected at HG-1.
+
+**Dated amendment (ES-HS-1, 2026-07-17):** the "ES over historical simulation" reservation in
+the out-of-scope list above is DISCHARGED — `risk.var.historical_es` v1 ships the Acerbi-Tasche
+Prop-4.1 empirical tail mean (see `var_historical_es_v1.md`), inheriting the tail-mean estimator
+exactly as mandated, and the `ES_HISTORICAL` row's CHECK violation recorded above was paid by
+migration `0041` (the migration this leg needed and ES-1 did not). Monte-Carlo ES remains out of
+scope.

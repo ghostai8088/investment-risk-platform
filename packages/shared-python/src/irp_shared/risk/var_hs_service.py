@@ -1,15 +1,22 @@
-"""Historical-simulation VaR binder (VAR-HS-1, ENT-027 — plain equal-weight v1, the fifth
-governed risk number).
+"""Historical-simulation binder (VAR-HS-1 + ES-HS-1, ENT-027): the TWO empirical families.
 
-``run_var_historical`` produces the ONE ``var_result`` summary row
-(``metric_type='VAR_HISTORICAL'``) ONLY when bound to a ``dataset_snapshot`` (``VAR_HS_INPUT``,
-pinning EVERY result row of the consumed FACTOR_EXPOSURE run + the aligned per-factor
-FACTOR_RETURN windows) + a complete ``calculation_run`` + a **REGISTERED ``model_version`` OF THE
-HISTORICAL-SIMULATION MODEL whose DECLARED confidence/horizon/window/quantile-convention fixed
-the parameters** (AD-014 / FW-RUN / TR-15 / CTRL-003 / OD-VHS-B — the ``run_var`` exemplar
-mirrored step-for-step). The number is the lower empirical order statistic of the scenario P&L
-distribution (``irp_shared.risk.var_hs_kernel``): ``pnl_t = x' r_t``,
-``VaR = -(k-th smallest pnl)``, ``k = ceil(N (1-c))`` — NO distributional assumption.
+``run_var_historical`` produces the ONE ``var_result`` summary row ONLY when bound to a
+``dataset_snapshot`` (``VAR_HS_INPUT``, pinning EVERY result row of the consumed
+FACTOR_EXPOSURE run + the aligned per-factor FACTOR_RETURN windows) + a complete
+``calculation_run`` + a **REGISTERED ``model_version`` of ONE of the TWO historical-simulation
+families** (AD-014 / FW-RUN / TR-15 / CTRL-003 / OD-VHS-B / OD-ES-HS-1-B — the ``run_var``
+exemplar mirrored step-for-step; the family dispatch is the ES-1 registry-map shape):
+
+- ``risk.var.historical`` (declared confidence/horizon/window/quantile-convention) ⇒ the lower
+  empirical order statistic, ``metric_type='VAR_HISTORICAL'``: ``VaR = -(k-th smallest pnl)``,
+  ``k = ceil(N (1-c))``.
+- ``risk.var.historical_es`` (declared confidence/horizon/window/estimator-convention) ⇒ the
+  Acerbi-Tasche Prop 4.1 empirical α-tail-mean, ``metric_type='ES_HISTORICAL'``:
+  ``ES = -(Σ_{i<=m} pnl_(i) + w·pnl_(m+1)) / (N·a)``.
+
+Both over ``pnl_t = x' r_t`` — NO distributional assumption; the pinned input is IDENTICAL for
+the two families (the purpose-only snapshot symmetry is SAFE for exactly that reason — the
+adjudicated OD-ES-HS-1-B reuse, unlike the plain/total predicate split).
 
 Reproducibility (the AD-014 invariant): the compute reads **ONLY the snapshot's pinned
 ``COMPONENT_KIND_FACTOR_EXPOSURE``/``COMPONENT_KIND_FACTOR_RETURN`` captured content** — no live
@@ -43,20 +50,26 @@ from sqlalchemy.orm import Session
 from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.scaffold import execute_governed_run
+from irp_shared.model.models import ModelVersion
 from irp_shared.risk.bootstrap import (
+    ES_HS_MODEL_CODE,
     VAR_HS_MODEL_CODE,
+    EsHsParameters,
     HsVarParameters,
+    WrongModelVersionError,
     assert_model_version_of,
+    declared_es_hs_parameters,
     declared_hs_var_parameters,
 )
 from irp_shared.risk.events import (
+    METRIC_TYPE_ES_HISTORICAL,
     METRIC_TYPE_VAR_HISTORICAL,
     RUN_TYPE_VAR,
     VarActor,
 )
 from irp_shared.risk.factor_service import resolve_factor_exposure_run
 from irp_shared.risk.models import VarResult
-from irp_shared.risk.var_hs_kernel import compute_historical_var
+from irp_shared.risk.var_hs_kernel import compute_historical_es, compute_historical_var
 from irp_shared.snapshot import (
     COMPONENT_KIND_FACTOR_EXPOSURE,
     COMPONENT_KIND_FACTOR_RETURN,
@@ -94,6 +107,48 @@ class HsVarRunResult:
     status: str
     rows: list[VarResult] = field(default_factory=list)
     failure_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class _HsFamily:
+    """Which of the TWO historical-simulation model codes this run bound (ES-HS-1, OD-B —
+    the ES-1 ``_VarFamily`` registry-map shape; a try/except chain is the wrong shape)."""
+
+    code: str
+    es: bool
+
+
+#: The two empirical families, in DISPATCH order (cost only — the codes are mutually exclusive).
+_HS_FAMILIES: tuple[_HsFamily, ...] = (
+    _HsFamily(code=VAR_HS_MODEL_CODE, es=False),
+    _HsFamily(code=ES_HS_MODEL_CODE, es=True),
+)
+
+
+def _resolve_hs_family(
+    session: Session, model_version_id: str, *, acting_tenant: str
+) -> tuple[ModelVersion, _HsFamily]:
+    """Inventory-before-use + model identity (CTRL-003 / BR-3) across the two historical
+    families. An UNREGISTERED version raises from the first assert (not a family question); a
+    version of NEITHER family raises the FIRST :class:`WrongModelVersionError` — the one naming
+    the PLAIN HS code, preserving the pre-ES-HS-1 message for the pre-ES-HS-1 failure (the
+    ``_resolve_var_family`` contract, mirrored)."""
+    first_error: WrongModelVersionError | None = None
+    for family in _HS_FAMILIES:
+        try:
+            version = assert_model_version_of(
+                session,
+                str(model_version_id),
+                tenant_id=acting_tenant,
+                expected_model_code=family.code,
+            )
+        except WrongModelVersionError as exc:
+            if first_error is None:  # the PLAIN-HS-code miss — the pre-ES-HS-1 message
+                first_error = exc
+            continue
+        return version, family
+    assert first_error is not None  # the loop is non-empty, so a full miss always set it
+    raise first_error
 
 
 @dataclass(frozen=True)
@@ -288,13 +343,14 @@ def run_var_historical(
             "ambiguous input — pass either snapshot_id or the build argument "
             "(exposure_run_id), not both"
         )
-    version = assert_model_version_of(
-        session,
-        str(model_version_id),
-        tenant_id=acting_tenant,
-        expected_model_code=VAR_HS_MODEL_CODE,
+    version, family = _resolve_hs_family(
+        session, str(model_version_id), acting_tenant=acting_tenant
     )
-    declared: HsVarParameters = declared_hs_var_parameters(session, version)
+    declared: HsVarParameters | EsHsParameters = (
+        declared_es_hs_parameters(session, version)
+        if family.es
+        else declared_hs_var_parameters(session, version)
+    )
 
     # --- Bind the snapshot (cross-tenant/unknown/ill-formed ⇒ pre-create refusal) ---
     if snapshot_id is not None:
@@ -350,14 +406,22 @@ def run_var_historical(
 
     # --- The shared governed-run lifecycle (P3-C1 scaffold) ---
     def _compute(run: CalculationRun) -> tuple[list[VarResult], list[str]]:
-        estimate = compute_historical_var(
-            parsed.exposures, parsed.returns_by_date, confidence=declared.confidence_level
-        )
+        if family.es:
+            # ES-HS-1 (OD-A): the Prop 4.1 empirical α-tail-mean over the SAME scenarios.
+            value = compute_historical_es(
+                parsed.exposures, parsed.returns_by_date, confidence=declared.confidence_level
+            ).es_value
+            metric_type = METRIC_TYPE_ES_HISTORICAL
+        else:
+            value = compute_historical_var(
+                parsed.exposures, parsed.returns_by_date, confidence=declared.confidence_level
+            ).var_value
+            metric_type = METRIC_TYPE_VAR_HISTORICAL
         gaps: list[str] = []
-        if abs(estimate.var_value) >= _MAX_RESULT_ABS:
+        if abs(value) >= _MAX_RESULT_ABS:
             # Column-legal-but-extreme inputs: a committed FAILED run with evidence, never a
             # PG NumericValueOutOfRange 500 (the P3-5 review lesson).
-            gaps.append(f"magnitude-out-of-range:var_value:{estimate.var_value:E}")
+            gaps.append(f"magnitude-out-of-range:var_value:{value:E}")
             return [], gaps
         row = VarResult(
             tenant_id=str(acting_tenant),
@@ -365,14 +429,14 @@ def run_var_historical(
             input_snapshot_id=snapshot.id,
             model_version_id=str(model_version_id),
             exposure_run_id=parsed.exposure_run_id,
-            covariance_run_id=None,  # NO covariance run exists for this method (0028)
-            metric_type=METRIC_TYPE_VAR_HISTORICAL,
+            covariance_run_id=None,  # NO covariance run exists for either method (0028/0041)
+            metric_type=metric_type,
             base_currency=parsed.base_currency,
             confidence_level=declared.confidence_level,
             horizon_days=declared.horizon_days,
-            z_score=None,  # no normal quantile — the method's point (0028)
-            sigma=None,  # no volatility estimate is produced (0028)
-            var_value=estimate.var_value,
+            z_score=None,  # no normal quantile — the methods' point (0028/0041)
+            sigma=None,  # no volatility estimate is produced (0028/0041)
+            var_value=value,  # the metric's number, discriminated by metric_type
             n_factors=parsed.n_factors,
             n_observations=parsed.n_observations,
             window_start=parsed.window_start,

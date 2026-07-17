@@ -10,6 +10,13 @@ from irp_shared.demo.campaign import (
     demo_id,
     run_demo_campaign,
 )
+from irp_shared.demo.eshs_stage4 import (
+    DemoEshsAlreadySeededError,
+    DemoEshsError,
+    DemoEshsPrereqError,
+    EshsStage4Summary,
+    run_demo_eshs_stage4,
+)
 from irp_shared.demo.hg1_private import (
     DemoHg1AlreadySeededError,
     DemoHg1Error,
@@ -30,6 +37,11 @@ __all__ = [
     "CampaignSummary",
     "DemoCampaignAlreadySeededError",
     "DemoCampaignError",
+    "DemoEshsAlreadySeededError",
+    "DemoEshsError",
+    "DemoEshsPrereqError",
+    "EshsStage4Summary",
+    "run_demo_eshs_stage4",
     "DemoHg1AlreadySeededError",
     "DemoHg1Error",
     "DemoHg1PrereqError",
