@@ -81,14 +81,40 @@ def _invert(matrix: list[list[Decimal]]) -> list[list[Decimal]]:
     return [row[m:] for row in aug]
 
 
-def estimate_ols(y: Sequence[Decimal], factor_columns: Sequence[Sequence[Decimal]]) -> OlsEstimate:
+def estimate_ols(
+    y: Sequence[Decimal],
+    factor_columns: Sequence[Sequence[Decimal]],
+    *,
+    decay_lambda: Decimal | None = None,
+) -> OlsEstimate:
     """Fit ``y`` on ``[1 | factor_columns]`` by OLS. ``factor_columns`` are the ``k`` candidate
-    factor regressors, each a length-``n`` series aligned 1:1 with ``y``. Returns raw prec-50
-    values. Raises a structural :class:`ProxyWeightKernelError` on too-few-observations, singular
-    design, or a constant target."""
+    factor regressors, each a length-``n`` series aligned 1:1 with ``y`` in TIME order (oldest
+    first). Returns raw prec-50 values. Raises a structural :class:`ProxyWeightKernelError` on
+    too-few-observations, singular design, or a constant target.
+
+    ``decay_lambda`` selects the RESIDUAL-VARIANCE convention only (RS-1, OD-RS-1-A — the Axioma/
+    RiskMetrics EWMA "stdev of specific returns"):
+
+    - ``None`` (the RAW v1 grandfather): the residual variance is the classical unbiased
+      ``s^2 = e'e/(n-(k+1))`` — byte-identical to pre-RS-1.
+    - ``0 < lambda < 1``: the residual variance is the exponentially-weighted mean of squared
+      residuals ``SUM_i w_i e_i^2``, ``w_i = (1-lambda) lambda^(n-1-i)/(1-lambda^n)`` (Sum w_i = 1;
+      most-recent residual, ``i = n-1``, carries the largest weight). NO ``n-k`` DOF correction
+      (the RiskMetrics biased normalization); the residual mean is taken as zero by convention.
+
+    The OLS ``beta``, ``std_errors``, and ``r_squared`` are UNAFFECTED by ``decay_lambda`` — the
+    classical ``s^2`` is retained for the coefficient standard errors (OLS inference is defined by
+    the OLS residual variance, never a decayed one; the vendor-standard separation, OD-RS-1-A).
+    Only ``residual_stdev`` (the specific-risk estimate that feeds total VaR) reflects the EWMA.
+    """
     n = len(y)
     k = len(factor_columns)
     m = k + 1  # regressors incl. the intercept
+    if decay_lambda is not None and not (Decimal(0) < decay_lambda < Decimal(1)):
+        raise ProxyWeightKernelError(
+            "decay-lambda-range",
+            f"decay_lambda must satisfy 0 < lambda < 1 (got {decay_lambda}); refused",
+        )
     for col in factor_columns:
         if len(col) != n:
             raise ProxyWeightKernelError(
@@ -126,8 +152,28 @@ def estimate_ols(y: Sequence[Decimal], factor_columns: Sequence[Sequence[Decimal
             )
 
         dof = n - m
+        # The CLASSICAL OLS residual variance — retained for the coefficient standard errors
+        # REGARDLESS of the residual-variance convention (OLS inference is defined by s^2, not a
+        # decayed variance; the RS-1 s2 decoupling — do NOT feed an EWMA variance into std_errors).
         s2 = ss_res / Decimal(dof)
-        residual_stdev = s2.sqrt()
+        # The residual-variance convention (RS-1, OD-RS-1-A) feeds ONLY residual_stdev.
+        if decay_lambda is None:
+            residual_var = s2  # RAW v1 grandfather — byte-identical to pre-RS-1.
+        else:
+            # EWMA: w_i = (1-lambda) lambda^(n-1-i)/(1-lambda^n), residuals oldest-first (i=0), so
+            # the most-recent residual (i=n-1) carries lambda^0 = 1 (the largest weight). The
+            # 1/(1-lambda^n) denominator normalizes Sum w_i = 1 exactly; no n-k correction.
+            one_minus_lambda = Decimal(1) - decay_lambda
+            denom = Decimal(1) - decay_lambda**n
+            weighted = sum(
+                (
+                    decay_lambda ** (n - 1 - i) * (residuals[i] * residuals[i])
+                    for i in range(n)
+                ),
+                Decimal(0),
+            )
+            residual_var = one_minus_lambda * weighted / denom
+        residual_stdev = residual_var.sqrt()
         r_squared = Decimal(1) - ss_res / ss_tot
         # se_j = sqrt(s^2 * [(X'X)^-1]_jj); a PD inverse has a positive diagonal (a near-singular
         # design is already refused above), so the guard only absorbs O(1e-50) quantization noise.
