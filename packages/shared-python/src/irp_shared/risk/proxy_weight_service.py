@@ -84,6 +84,7 @@ from irp_shared.snapshot import (
     COMPONENT_KIND_FACTOR,
     COMPONENT_KIND_FACTOR_RETURN,
     PURPOSE_PROXY_WEIGHT_INPUT,
+    PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
     SnapshotActor,
     SnapshotNotFound,
     build_proxy_weight_snapshot,
@@ -608,7 +609,14 @@ def promote_proxy_weight_estimate(
             header = resolve_snapshot(session, str(snapshot_id), acting_tenant=acting_tenant)
         except SnapshotNotFound:
             header = None  # a dangling id — the column is a bare non-FK GUID
-        if header is not None and header.purpose == PURPOSE_PROXY_WEIGHT_INPUT:
+        # RS-1: a RESIDUAL_SHRINKAGE_INPUT citation is age-measurable too — its builder stamps
+        # the STALEST cohort member's regression span end (the conservative age; the same
+        # admission the total-VaR gate makes, kept consistent so a bounded promote of a shrunk
+        # estimate measures rather than fail-closing on a measurable-in-principle citation).
+        if header is not None and header.purpose in (
+            PURPOSE_PROXY_WEIGHT_INPUT,
+            PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
+        ):
             span_end = header.as_of_valuation_date
             if span_end is not None:
                 promotion_age_days = (utcnow().date() - span_end).days

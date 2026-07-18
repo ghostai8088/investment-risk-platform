@@ -31,6 +31,13 @@ from irp_shared.demo.multifamily import (
     MultifamilyExtensionSummary,
     run_demo_multifamily_extension,
 )
+from irp_shared.demo.rs1_stage5 import (
+    DemoRs1AlreadySeededError,
+    DemoRs1Error,
+    DemoRs1PrereqError,
+    Rs1Stage5Summary,
+    run_demo_rs1_stage5,
+)
 
 __all__ = [
     "DEMO_TENANT_ID",
@@ -50,8 +57,13 @@ __all__ = [
     "DemoMultifamilyAlreadySeededError",
     "DemoMultifamilyError",
     "DemoMultifamilyPrereqError",
+    "DemoRs1AlreadySeededError",
+    "DemoRs1Error",
+    "DemoRs1PrereqError",
     "MultifamilyExtensionSummary",
+    "Rs1Stage5Summary",
     "demo_id",
     "run_demo_campaign",
     "run_demo_multifamily_extension",
+    "run_demo_rs1_stage5",
 ]
