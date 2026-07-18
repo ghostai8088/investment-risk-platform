@@ -627,3 +627,162 @@ ES_HS_INITIAL = FlagshipDossier(
         "DELIBERATELY not backtestable v1",
     ),
 )
+
+
+# --- RS-1 stage 5 (OD-RS-1-E): the residual-estimator remediation — the SECOND lifecycle turn.
+# TWO TRIGGERED re-validations close the raw-sample-sigma_e rider on the flagship TOTAL-family
+# AWCs (the "hostage to the PA-3 estimate quality" finding is SUPERSEDED by the closure finding;
+# the fresh conditions restate the surviving posture in fresh words — the MF-1
+# closure-by-supersession discipline at the version grain), plus the INITIAL AWC dossiers for the
+# two NEW estimator versions of risk.proxy_weight.regression (no new model CODE — the campaign/
+# multifamily/stage-4 code-count pins are untouched; the model keeps its campaign tier).
+
+#: The finding that CLOSES the raw-sample-sigma_e rider (filed on both new TRIGGERED records).
+RS1_CLOSURE_FINDING = (
+    "CLOSED (RS-1): the raw-sample-only residual-estimator posture is remediated - the "
+    "residual estimator now admits DECLARED conventions (EWMA_RISKMETRICS decay-weighting; "
+    "SHRINKAGE_CROSS_SECTIONAL_EB empirical-Bayes cross-sectional shrinkage with data-driven "
+    "per-instrument intensity), and the cited evidence run's residual leg consumes an "
+    "EB-SHRUNK estimate (MF-EQ-A, shrunk toward the 3-equity comparable cohort) and an EWMA "
+    "estimate (MF-EQ-B, declared lambda=0.94 on the sleeve's daily-period residuals) "
+    "alongside the raw estimates (MF-EQ-C and the corporate bond). Estimation-quality "
+    "dependence survives in kind but is "
+    "REMEDIABLE by convention choice; the raw-sample-only clause is closed."
+)
+
+RS1_TRIGGERED_DOSSIERS: dict[str, FlagshipDossier] = {
+    "risk.var.parametric_total": FlagshipDossier(
+        outcome="APPROVED_WITH_CONDITIONS",
+        scope_note=(
+            "TRIGGERED re-validation of the flagship TOTAL parametric VaR v2 (0.99, 1-day, "
+            "appraisal_days=91, max_estimate_age_days=400) — the residual-estimator "
+            "remediation (RS-1): the cited evidence run pays a REAL diagonal residual whose "
+            "estimates span all three declared conventions (EB-shrunk / EWMA / raw). The "
+            "raw-sample-only residual clause closes; the surviving posture is restated in the "
+            "conditions. "
+            "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant "
+            "under the RS-1 ratification (OQ-RS-1-5); the ratified dossier table is the "
+            "human validation judgment, the filing is its transcription."
+        ),
+        conditions=(
+            "CONDITION (partial idiosyncratic coverage): the residual leg pays a DIAGONAL "
+            "idiosyncratic variance for REGRESSION-cited instruments ONLY — non-proxied and "
+            "MANUAL-method atoms carry zero idiosyncratic variance, and cross-residual "
+            "correlation = 0 by construction. Residual-estimator conventions (RS-1) are "
+            "DECLARED model identity: EWMA and EB-shrinkage estimates flow through this "
+            "number when promoted; the estimator choice is the declaring analyst's and the "
+            "comparable-cohort rule applies to any shrinkage promotion. The BT-2 "
+            "SMOOTHING-DOCTRINE READ RULE stands unchanged: on an appraisal-marked book "
+            "the unconditional Kupiec/Basel verdict over a 1-day total series is NOT "
+            "valid adequacy evidence in either direction (exceptions suppressed between "
+            "marks, clustered on mark dates); the dated per-pair EXCEPTION_INDICATOR "
+            "rows are the honest evidence surface. The v1 UNGATED GRANDFATHER note "
+            "stands (sunset lever: a VW-1 REJECT on the v1 model_version). "
+            "FREQUENCY-CONVERSION CAVEAT (carried forward, unremediated): the declared "
+            "appraisal_days=91 residual conversion is calibrated to the "
+            "quarterly-appraisal leg; applied to the sleeve's daily-period estimates it "
+            "understates the daily residual - the cited run evidences the estimator "
+            "conventions, not residual calibration (calendar-aware per-period counts "
+            "remain the open remediation lever)."
+        ),
+        finding_keys=(
+            "DIAGONAL residuals only",
+            "ZERO idiosyncratic risk",
+        ),
+    ),
+    "risk.var.parametric_es_total": FlagshipDossier(
+        outcome="APPROVED_WITH_CONDITIONS",
+        scope_note=(
+            "TRIGGERED re-validation of the flagship TOTAL parametric Expected Shortfall "
+            "(0.975, 1-day, appraisal_days=91, max_estimate_age_days=400) — the "
+            "residual-estimator remediation (RS-1): the cited evidence run applies the "
+            "registered multiplier to a TOTAL sigma whose residual leg consumes EB-shrunk + "
+            "EWMA + raw estimates. The raw-sample-only residual clause closes; the surviving "
+            "posture is restated in the conditions. "
+            "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant "
+            "under the RS-1 ratification (OQ-RS-1-5); the ratified dossier table is the "
+            "human validation judgment, the filing is its transcription."
+        ),
+        conditions=(
+            "CONDITION (partial idiosyncratic coverage + the read rule): the ES multiplier "
+            "over the TOTAL sigma inherits the total family's posture standalone — diagonal "
+            "residuals for REGRESSION-cited instruments only, zero idiosyncratic variance "
+            "for non-proxied/MANUAL atoms, and the BT-2 smoothing-doctrine read rule on "
+            "appraisal-marked books (a sigma-multiple is exactly as honest as its sigma). "
+            "Residual-estimator conventions (RS-1) are DECLARED model identity and flow "
+            "through the sigma this multiple scales. The ES row reproduces through its bound "
+            "model_version's declared es_multiplier (the non-reconciling-row limitation), "
+            "never from the row alone. FREQUENCY-CONVERSION CAVEAT (carried forward, "
+            "unremediated): the appraisal_days=91 conversion applied to daily-period "
+            "sleeve estimates understates the daily residual - the cited run evidences "
+            "the estimator conventions, not residual calibration (calendar-aware "
+            "per-period counts remain the open remediation lever)."
+        ),
+        finding_keys=(
+            "The residual leg is PA-4's verbatim",
+            "BT-2's smoothing doctrine carries over UNCHANGED",
+        ),
+    ),
+}
+
+#: The EWMA version's INITIAL (AWC): a genuinely-new declared VERSION of an existing code — SOME
+#: record (the MF-1 loadings-INITIAL criterion applied at the version grain, per the ratified
+#: OD-RS-1-E); evidence = its own COMPLETED re-estimate run over MF-EQ-B.
+RS1_EWMA_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the EWMA_RISKMETRICS residual-estimator version (declared "
+        "decay_lambda=0.94, daily-period sleeve residuals at CALENDAR-daily mark spacing — "
+        "the RiskMetrics daily constant, fit on trading-day returns, applied at daily "
+        "spacing (the distinction disclosed, not elided): the cited evidence run "
+        "re-estimates MF-EQ-B with "
+        "loadings/std-errors/R^2 byte-identical to its raw estimate and ONLY the residual "
+        "stdev re-weighted (the s2 decoupling, verified in the kernel suite). "
+        "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant under the "
+        "RS-1 ratification (OQ-RS-1-1/5); the ratified dossier table is the human validation "
+        "judgment, the filing is its transcription."
+    ),
+    conditions=(
+        "CONDITION (frequency discipline): the declared lambda is calibrated per observation "
+        "frequency — 0.94 is the RiskMetrics DAILY constant and this version is honest only "
+        "on daily-period residual series; a quarterly-appraisal series requires its own "
+        "declared lambda (a new version), never this one. CONDITION (effective sample size): "
+        "the decayed estimate reacts faster on FEWER effective observations — window length "
+        "and lambda are the levers, and short-series noise at the tail end is disclosed, not "
+        "corrected."
+    ),
+    finding_keys=(
+        "EFFECTIVE SAMPLE SIZE",
+        "DECLARED lambda",
+    ),
+)
+
+#: The EB-shrinkage version's INITIAL (AWC): evidence = its own COMPLETED shrinkage run over the
+#: 3-equity comparable cohort (the bond EXCLUDED — the comparable-risk-group rule demonstrated).
+RS1_SHRINKAGE_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the SHRINKAGE_CROSS_SECTIONAL_EB residual-estimator version "
+        "(method-as-identity — NO declared numeric intensity; every per-instrument w_i is "
+        "computed from the pinned cohort and reproduces from the pin alone): the cited "
+        "evidence run shrinks MF-EQ-A toward the 3-equity comparable cohort's pool "
+        "(MF-EQ-A/B/C; the corporate bond deliberately EXCLUDED), carrying MF-EQ-A's "
+        "regression identity unchanged with only the residual stdev transformed. "
+        "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant under the "
+        "RS-1 ratification (OQ-RS-1-2/5); the ratified dossier table is the human validation "
+        "judgment, the filing is its transcription."
+    ),
+    conditions=(
+        "CONDITION (comparable cohort): the cross-sectional pool assumes a comparable-risk "
+        "group — the declaring analyst owns cohort membership, and cross-asset-class pooling "
+        "(a bond toward an equity pool) is a recorded mis-application. CONDITION "
+        "(identifiability floor): fewer than 3 comparable members refuses fail-closed (tau^2 "
+        "unidentifiable); the demo cohort sits AT the floor, so the fitted intensities are "
+        "genuine but minimally resolved — cohort growth is the resolution lever."
+    ),
+    finding_keys=(
+        "COMPARABLE-COHORT",
+        "MIN-COHORT fail-closed",
+        "GAUSSIAN sampling variance",
+    ),
+)

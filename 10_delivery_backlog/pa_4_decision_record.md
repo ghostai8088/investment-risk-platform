@@ -257,6 +257,16 @@ zero-proxied-instrument byte-invariance.**
    > `ES_c = k_c·σ_total`, reusing this slice's residual machinery and BT-2's staleness gate
    > verbatim, with NO migration. **Still open:** residual shrinkage/EWMA, calendar-aware
    > per-period trading-day counts, and the **HS** total analogue.
+   > **FURTHER DISCHARGED (dated note, additive) — RS-1 (2026-07-18):** the **residual-estimator
+   > v2s (OD-PA-4-E/G)** are REALIZED as two declared `risk.proxy_weight.regression` estimator
+   > conventions — `EWMA_RISKMETRICS` (Axioma/RiskMetrics decay-weighted specific-risk variance,
+   > declared λ; OD-RS-1-A) and `SHRINKAGE_CROSS_SECTIONAL_EB` (Barra USE4 empirical-Bayes
+   > cross-sectional shrinkage, data-driven per-instrument w_i, method-as-identity, N≥3 fail-closed;
+   > OD-RS-1-B) — NO migration; referent `05_analytics_methodologies/residual_estimation_v1.md`.
+   > The raw-sample-σ_e v1 limitation (§ lines 121-127) is thereby remediable (a total-VaR run may
+   > bind a shrunk/EWMA estimate). **Ledoit-Wolf VERIFIED and explicitly NOT used** (it leaves
+   > variances unshrunk — the wrong primary for residual shrinkage). **Still open:** calendar-aware
+   > per-period trading-day counts, and the **HS** total analogue.
 
 ### Part 6.4 — Post-fold validation
 

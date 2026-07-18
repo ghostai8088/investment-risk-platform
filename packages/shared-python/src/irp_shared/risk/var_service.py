@@ -92,6 +92,7 @@ from irp_shared.snapshot import (
     COMPONENT_KIND_PROXY_MAPPING,
     COMPONENT_KIND_PROXY_WEIGHT,
     PURPOSE_PROXY_WEIGHT_INPUT,
+    PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
     PURPOSE_VAR_INPUT,
     VAR_TOTAL_BINDING_PREDICATE,
     SnapshotActor,
@@ -454,6 +455,14 @@ def _adjudicate_total_proxies(
     return parsed
 
 
+#: The snapshot purposes whose ``as_of_valuation_date`` IS a regression span end (age-measurable
+#: for the staleness gate): the estimate's own input pin, and — RS-1 — a shrinkage cohort pin,
+#: whose builder stamps the STALEST member's span end (the conservative age by construction).
+_MEASURABLE_ESTIMATE_PURPOSES = frozenset(
+    {PURPOSE_PROXY_WEIGHT_INPUT, PURPOSE_RESIDUAL_SHRINKAGE_INPUT}
+)
+
+
 def _estimate_age_days(
     session: Session,
     proxy_weights: list[_ParsedProxyWeight],
@@ -520,14 +529,21 @@ def _estimate_age_days(
                     f"refused"
                 ) from None
             return None
-        if estimate_snapshot.purpose != PURPOSE_PROXY_WEIGHT_INPUT:
+        # RS-1 (OD-RS-1-B, a recorded Part-5.5 deviation from the byte-untouched fence): a
+        # RESIDUAL_SHRINKAGE_INPUT citation is ADMITTED to the measurement — its
+        # as_of_valuation_date is the STALEST cohort member's regression span end by builder
+        # construction, so the measured age is the CONSERVATIVE (oldest-input) age. Without this
+        # admission a shrunk estimate could never feed a GATED total run — the remediation would
+        # be unusable on the exact family whose raw-sample rider it closes.
+        if estimate_snapshot.purpose not in _MEASURABLE_ESTIMATE_PURPOSES:
             if gated:
                 raise VarInputError(
                     f"PROXY_WEIGHT pin for instrument {weight.instrument_id} cites snapshot "
                     f"{weight.estimate_snapshot_id} of purpose "
-                    f"{estimate_snapshot.purpose!r} != {PURPOSE_PROXY_WEIGHT_INPUT} — its "
-                    f"as_of_valuation_date is not a regression span end, so the declared "
-                    f"max_estimate_age_days policy cannot be evaluated; refused"
+                    f"{estimate_snapshot.purpose!r} not in "
+                    f"{sorted(_MEASURABLE_ESTIMATE_PURPOSES)} — its as_of_valuation_date is "
+                    f"not a regression span end, so the declared max_estimate_age_days policy "
+                    f"cannot be evaluated; refused"
                 )
             return None
         age = (window_end - estimate_snapshot.as_of_valuation_date).days

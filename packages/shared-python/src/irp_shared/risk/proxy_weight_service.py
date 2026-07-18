@@ -63,10 +63,14 @@ from irp_shared.marketdata.proxy_mapping import (
     capture_proxy_mapping,
     supersede_proxy_mapping,
 )
-from irp_shared.model.service import assert_model_version_of
+from irp_shared.model.service import WrongModelVersionError, assert_model_version_of
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.reference.guards import assert_instrument_in_tenant
-from irp_shared.risk.bootstrap import PROXY_WEIGHT_MODEL_CODE, declared_min_observations
+from irp_shared.risk.bootstrap import (
+    PROXY_WEIGHT_MODEL_CODE,
+    PROXY_WEIGHT_REGRESSION_CONVENTIONS,
+    declared_proxy_weight_parameters,
+)
 from irp_shared.risk.events import RUN_TYPE_PROXY_WEIGHT_ESTIMATE, ProxyWeightEstimateActor
 from irp_shared.risk.models import (
     METRIC_TYPE_ESTIMATION_SUMMARY,
@@ -80,6 +84,7 @@ from irp_shared.snapshot import (
     COMPONENT_KIND_FACTOR,
     COMPONENT_KIND_FACTOR_RETURN,
     PURPOSE_PROXY_WEIGHT_INPUT,
+    PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
     SnapshotActor,
     SnapshotNotFound,
     build_proxy_weight_snapshot,
@@ -382,7 +387,15 @@ def run_proxy_weight_estimate(
         tenant_id=acting_tenant,
         expected_model_code=PROXY_WEIGHT_MODEL_CODE,
     )
-    min_observations = declared_min_observations(session, version)
+    # RS-1 (OD-RS-1-C): parse the declared estimator identity. RAW (grandfather) + EWMA are the OLS
+    # regression conventions run here; a SHRINKAGE_CROSS_SECTIONAL_EB version is a transform run via
+    # run_residual_shrinkage — a fail-closed WrongModelVersionError (the registry-map dispatch).
+    params = declared_proxy_weight_parameters(session, version)
+    if params.estimator_convention not in PROXY_WEIGHT_REGRESSION_CONVENTIONS:
+        raise WrongModelVersionError(str(version.id), PROXY_WEIGHT_MODEL_CODE)
+    assert params.min_observations is not None  # invariant for the regression conventions
+    min_observations = params.min_observations
+    decay_lambda = params.decay_lambda
 
     # --- Bind the snapshot (cross-tenant/unknown/ill-formed => pre-create refusal) ---
     if snapshot_id is not None:
@@ -433,7 +446,7 @@ def run_proxy_weight_estimate(
     # (OD-PA-3-C/D) — the magnitude gate below is the only post-RUNNING (committed-FAILED) outcome.
     y, columns = _build_design(parsed)
     try:
-        fit = estimate_ols(y, columns)
+        fit = estimate_ols(y, columns, decay_lambda=decay_lambda)
     except ProxyWeightKernelError as exc:
         raise ProxyWeightInputError(f"regression refused ({exc.reason}): {exc}") from exc
 
@@ -596,7 +609,14 @@ def promote_proxy_weight_estimate(
             header = resolve_snapshot(session, str(snapshot_id), acting_tenant=acting_tenant)
         except SnapshotNotFound:
             header = None  # a dangling id — the column is a bare non-FK GUID
-        if header is not None and header.purpose == PURPOSE_PROXY_WEIGHT_INPUT:
+        # RS-1: a RESIDUAL_SHRINKAGE_INPUT citation is age-measurable too — its builder stamps
+        # the STALEST cohort member's regression span end (the conservative age; the same
+        # admission the total-VaR gate makes, kept consistent so a bounded promote of a shrunk
+        # estimate measures rather than fail-closing on a measurable-in-principle citation).
+        if header is not None and header.purpose in (
+            PURPOSE_PROXY_WEIGHT_INPUT,
+            PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
+        ):
             span_end = header.as_of_valuation_date
             if span_end is not None:
                 promotion_age_days = (utcnow().date() - span_end).days

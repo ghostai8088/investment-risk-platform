@@ -338,6 +338,15 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage4_eshs_pg.py -q
+      # Stage 5 (RS-1) runs AFTER stage 4 and BEFORE the downgrade smoke. It mints NO new
+      # model code (two estimator VERSIONS of risk.proxy_weight.regression), so the 16/17/18
+      # code-count pins above all hold; the filename leg ('stage5' > 'stage4' alpha-sort)
+      # keeps a single-invocation local battery ordered the same way.
+      - name: Demo stage-5 residual-estimator test (Postgres, RS-1 / OD-RS-1-E)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage5_rs1_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

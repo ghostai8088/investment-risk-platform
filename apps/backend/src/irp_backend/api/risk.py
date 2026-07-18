@@ -69,6 +69,8 @@ from irp_shared.risk import (
     ProxyWeightEstimateRunNotVisible,
     ProxyWeightEstimateRunResult,
     ProxyWeightInputError,
+    ResidualShrinkageInputError,
+    ResidualShrinkageRunResult,
     RiskRunQueryError,
     ScenarioActor,
     ScenarioDefinition,
@@ -121,7 +123,9 @@ from irp_shared.risk import (
     register_factor_exposure_proxy_model,
     register_historical_var_es_model,
     register_historical_var_model,
+    register_proxy_weight_ewma_model,
     register_proxy_weight_regression_model,
+    register_proxy_weight_shrinkage_eb_model,
     register_scenario_model,
     register_sensitivity_model,
     register_var_backtest_model,
@@ -148,6 +152,7 @@ from irp_shared.risk import (
     run_covariance,
     run_factor_exposure,
     run_proxy_weight_estimate,
+    run_residual_shrinkage,
     run_scenario,
     run_sensitivities,
     run_var,
@@ -165,6 +170,7 @@ from irp_shared.snapshot import (
     EmptySnapshotError,
     FactorExposureSnapshotError,
     ProxyWeightSnapshotError,
+    ResidualShrinkageSnapshotError,
     ScenarioSnapshotError,
     SnapshotNotFound,
     SnapshotPurposeError,
@@ -276,6 +282,14 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     ProxyWeightEstimateRunNotVisible: (
         status.HTTP_404_NOT_FOUND,
         "proxy-weight-estimate run not found",
+    ),
+    ResidualShrinkageInputError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid residual-shrinkage run input",
+    ),
+    ResidualShrinkageSnapshotError: (
+        status.HTTP_409_CONFLICT,
+        "residual-shrinkage snapshot input failed closed",
     ),
     CovarianceRunNotVisible: (status.HTTP_404_NOT_FOUND, "covariance run not found"),
     BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
@@ -2869,3 +2883,170 @@ def get_proxy_weight_run(
         failure_reason=run.failure_reason,
         rows=[_pw_row_out(r) for r in rows],
     )
+
+
+# ---------- RS-1: residual-estimator conventions (EWMA + empirical-Bayes shrinkage) ----------
+
+
+class ProxyWeightEwmaModelIn(BaseModel):
+    code_version: str
+    decay_lambda: str  # the declared EWMA decay in (0, 1), e.g. "0.94" (0.<1..6 digits>)
+    min_observations: int  # the declared regression observation floor (>= 3)
+    version_label: str | None = None  # optional; defaults to the family's v2-ewma label
+
+
+class ProxyWeightShrinkageEbModelIn(BaseModel):
+    code_version: str
+    version_label: str | None = None  # optional; defaults to the family's v2-shrinkage-eb label
+
+
+class ResidualShrinkageRunIn(BaseModel):
+    code_version: str  # required (FW-RUN/TR-15)
+    environment_id: str  # required
+    model_version_id: uuid.UUID  # a REGISTERED SHRINKAGE_CROSS_SECTIONAL_EB model_version
+    target_estimate_run_id: uuid.UUID  # the cohort member this run shrinks (its raw estimate run)
+    cohort_estimate_run_ids: list[uuid.UUID] | None = None  # build-in-request (>= 3 comparable)
+    snapshot_id: uuid.UUID | None = None  # consume-existing alternative
+
+
+@router.post(
+    "/models/proxy-weight-ewma",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_proxy_weight_ewma_model_endpoint(
+    body: ProxyWeightEwmaModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) an EWMA residual-variance version of the proxy-weight family (RS-1,
+    OD-RS-1-A). The estimator convention + decay_lambda are REGISTRAR-STAMPED; a same-label
+    re-register with a different declaration is a governed 409. Runs via the existing
+    ``POST /risk/proxy-weight-estimates/runs`` (dispatch is on the bound version)."""
+    try:
+        version = register_proxy_weight_ewma_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            decay_lambda=body.decay_lambda,
+            min_observations=body.min_observations,
+            **({} if body.version_label is None else {"version_label": body.version_label}),
+        )
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    except ValueError as exc:  # bad decay_lambda / min_observations < 3
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/models/proxy-weight-shrinkage-eb",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_proxy_weight_shrinkage_eb_model_endpoint(
+    body: ProxyWeightShrinkageEbModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) an empirical-Bayes shrinkage version of the proxy-weight family
+    (RS-1, OD-RS-1-B). Method-as-identity: the convention is REGISTRAR-STAMPED, NO numeric intensity
+    (the per-instrument w_i are computed + pin-reproduced). Runs via
+    ``POST /risk/residual-shrinkage/runs``."""
+    try:
+        version = register_proxy_weight_shrinkage_eb_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            **({} if body.version_label is None else {"version_label": body.version_label}),
+        )
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/residual-shrinkage/runs",
+    response_model=ProxyWeightRunOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_residual_shrinkage_run(
+    body: ResidualShrinkageRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> ProxyWeightRunOut:
+    """Run a governed empirical-Bayes residual shrinkage for one target instrument (RS-1,
+    OD-RS-1-B). Pins the whole comparable cohort's raw estimates, recomputes every w_i from the pin,
+    and persists ONE shrunk ESTIMATION_SUMMARY carrying the target's regression identity (promotes
+    like a raw estimate). A pre-create refusal raises + rolls back (no run)."""
+    try:
+        result: ResidualShrinkageRunResult = run_residual_shrinkage(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_pw_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            target_estimate_run_id=str(body.target_estimate_run_id),
+            cohort_estimate_run_ids=(
+                None
+                if body.cohort_estimate_run_ids is None
+                else [str(r) for r in body.cohort_estimate_run_ids]
+            ),
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        ResidualShrinkageInputError,
+        UnregisteredModelError,
+        RejectedModelVersionError,
+        ExpiredModelExceptionError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        ResidualShrinkageSnapshotError,
+    ) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    run = result.run
+    response = ProxyWeightRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_pw_row_out(r) for r in result.rows],
+    )
+    db.commit()
+    return response
