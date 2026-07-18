@@ -1788,6 +1788,8 @@ _DECAY_LAMBDA_PATTERN = re.compile(r"0\.[0-9]{1,6}")
 
 PROXY_WEIGHT_EWMA_VERSION_LABEL = "v2-ewma"
 PROXY_WEIGHT_SHRINKAGE_EB_VERSION_LABEL = "v2-shrinkage-eb"
+#: The RS-1 residual-estimator methodology referent (both new conventions share it).
+PROXY_WEIGHT_RESIDUAL_METHODOLOGY_REF = "05_analytics_methodologies/residual_estimation_v1.md"
 
 #: OD-RS-1-A dossier — the EWMA convention's declared methodology (min_observations appended at
 #: registration, exactly as the raw family).
@@ -1970,7 +1972,7 @@ def register_proxy_weight_ewma_model(
             model=model,
             version_label=version_label,
             actor_id=actor_id,
-            methodology_ref=PROXY_WEIGHT_METHODOLOGY_REF,
+            methodology_ref=PROXY_WEIGHT_RESIDUAL_METHODOLOGY_REF,
             code_version=str(code_version),
             status="REGISTERED",
             assumptions=(
@@ -2035,7 +2037,7 @@ def register_proxy_weight_shrinkage_eb_model(
             model=model,
             version_label=version_label,
             actor_id=actor_id,
-            methodology_ref=PROXY_WEIGHT_METHODOLOGY_REF,
+            methodology_ref=PROXY_WEIGHT_RESIDUAL_METHODOLOGY_REF,
             code_version=str(code_version),
             status="REGISTERED",
             assumptions=(
@@ -2125,7 +2127,9 @@ VAR_TOTAL_ASSUMPTIONS_BASE: tuple[str, ...] = (
 #: Total-family recorded scope-outs.
 VAR_TOTAL_LIMITATIONS: tuple[str, ...] = (
     "DIAGONAL residuals only (Sharpe 1963; Barra/Axioma vendor-standard) - no residual "
-    "cross-correlation; residual shrinkage (Barra Bayesian) + EWMA weighting (Axioma) are v2s.",
+    "cross-correlation; residual shrinkage (Barra USE4 empirical-Bayes) + EWMA weighting (Axioma/"
+    "RiskMetrics) are REALIZED as declared risk.proxy_weight.regression estimator conventions "
+    "(RS-1) - a total-VaR run over a shrunk/EWMA estimate binds one of those versions.",
     "The residual is hostage to the PA-3 estimate quality (short appraisal series => noisy "
     "sigma_e; the estimate's per-coefficient std errors stay visible on the pinned estimate).",
     "Non-proxied and MANUAL-method instruments carry ZERO idiosyncratic risk under ANY bound "
@@ -2399,8 +2403,10 @@ ES_TOTAL_LIMITATIONS: tuple[str, ...] = (
     *ES_LIMITATIONS,
     "The residual leg is PA-4's verbatim: DIAGONAL residuals only (Sharpe 1963), hostage to the "
     "PA-3 estimate quality, ZERO idiosyncratic risk for non-proxied/MANUAL instruments, a flat "
-    "252/365 trading-day ratio over the mean period, and no FX conversion. Residual shrinkage + "
-    "EWMA weighting + calendar-aware per-period trading-day counts remain recorded v2s.",
+    "252/365 trading-day ratio over the mean period, and no FX conversion. Residual shrinkage "
+    "(Barra USE4) + EWMA weighting (Axioma) are now REALIZED as declared "
+    "risk.proxy_weight.regression estimator conventions (RS-1); calendar-aware per-period "
+    "trading-day counts remain a recorded v2.",
     "BT-2's smoothing doctrine carries over UNCHANGED - a sigma-multiple is exactly as honest as "
     "its sigma. On an appraisal-marked book the 1-day total sigma is biased two ways by "
     "construction (P&L suppressed between marks, clustered on mark dates), so the total ES "
