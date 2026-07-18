@@ -79,6 +79,9 @@ PURPOSE_DESMOOTHING_INPUT = "DESMOOTHING_INPUT"
 #: PA-3: pins a consumed DESMOOTHED_RETURN run's per-period rows + the candidate factors' return
 #: windows — the OLS proxy-weight estimation input.
 PURPOSE_PROXY_WEIGHT_INPUT = "PROXY_WEIGHT_INPUT"
+#: RS-1 (OD-RS-1-B): pins a COHORT of promoted proxy-weight estimate runs' ESTIMATION_SUMMARY rows
+#: (each member's residual_stdev + residual df) — the empirical-Bayes shrinkage input.
+PURPOSE_RESIDUAL_SHRINKAGE_INPUT = "RESIDUAL_SHRINKAGE_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (

@@ -101,6 +101,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_PROXY_WEIGHT_INPUT,
+    PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
     PURPOSE_RETURN_INPUT,
     PURPOSE_SCENARIO_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
@@ -2121,6 +2122,95 @@ def build_proxy_weight_snapshot(
     return header_row
 
 
+#: RS-1 (OD-RS-1-B): the residual-shrinkage binding/selection rule — a cohort of promoted proxy-
+#: weight estimate runs' ESTIMATION_SUMMARY rows (each residual_stdev + its residual df). Length-
+#: guarded (see the ``_BINDING_PREDICATES`` module-end assert) against varchar(50).
+RESIDUAL_SHRINKAGE_BINDING_PREDICATE = "v1:cohort-residual-variances+dof"
+
+
+class ResidualShrinkageSnapshotError(Exception):
+    """Raised when a residual-shrinkage-input snapshot cannot be built (a cohort member run is
+    missing/non-COMPLETED — no visible ESTIMATION_SUMMARY — or a run is cited twice) — raised BEFORE
+    any write; never mints immutable governance garbage. Maps to 409 (the
+    ``ProxyWeightSnapshotError`` precedent)."""
+
+
+def build_residual_shrinkage_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    cohort_estimate_run_ids: list[str],
+) -> DatasetSnapshot:
+    """Build one immutable ``RESIDUAL_SHRINKAGE_INPUT`` snapshot (RS-1, OD-RS-1-B) pinning, per
+    cohort member, the ONE ``ESTIMATION_SUMMARY`` row of a promoted proxy-weight estimate run
+    (``COMPONENT_KIND_PROXY_WEIGHT`` — the SAME ``proxy_weight_estimate_content`` flavor total-VaR
+    already pins, which carries ``residual_stdev`` + ``n_observations`` + ``n_regressors`` +
+    ``instrument_id``), so the empirical-Bayes fit is reproducible from the snapshot ALONE (the
+    binder recomputes every w_i from this captured content — never a live estimate read; a later
+    re-estimate cannot move a historical shrinkage, TR-09).
+
+    Fails closed BEFORE any write (``ResidualShrinkageSnapshotError``) on an empty/duplicate cohort
+    or a member run with no visible ``ESTIMATION_SUMMARY`` (missing / non-COMPLETED). The
+    comparable-risk-group precondition and the N >= 3 identifiability floor are the RISK binder's
+    pre-create gate — this builder pins a well-formed cohort of whatever size it is handed.
+    Models-only reads;
+    imports NO ``risk``-SERVICE symbol (the ``build_var_total_snapshot`` precedent)."""
+    from irp_shared.risk.models import METRIC_TYPE_ESTIMATION_SUMMARY, ProxyWeightEstimateResult
+
+    now = utcnow()
+    distinct = list(dict.fromkeys(str(r).lower() for r in cohort_estimate_run_ids))
+    if len(distinct) != len(cohort_estimate_run_ids):
+        raise ResidualShrinkageSnapshotError(
+            "duplicate cohort estimate run(s) — an ambiguous cohort is refused"
+        )
+    if not distinct:
+        raise ResidualShrinkageSnapshotError("at least one cohort estimate run is required")
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    member_as_ofs: list[date] = []
+    for run_id in distinct:
+        summary = session.execute(
+            select(ProxyWeightEstimateResult).where(
+                ProxyWeightEstimateResult.tenant_id == str(acting_tenant),
+                ProxyWeightEstimateResult.calculation_run_id == run_id,
+                ProxyWeightEstimateResult.metric_type == METRIC_TYPE_ESTIMATION_SUMMARY,
+            )
+        ).scalar_one_or_none()
+        if summary is None:
+            raise ResidualShrinkageSnapshotError(
+                f"cohort estimate run {run_id} has no visible ESTIMATION_SUMMARY row "
+                f"(missing/non-COMPLETED cited run) — refused"
+            )
+        # The shrinkage is as-of its STALEST input (HG-1 honesty: the shrunk estimate is only as
+        # fresh as the oldest cohort member's regression span end — never falsely "fresh as now").
+        member_input = session.get(DatasetSnapshot, str(summary.input_snapshot_id))
+        if member_input is not None and member_input.as_of_valuation_date is not None:
+            member_as_ofs.append(member_input.as_of_valuation_date)
+        _append_spec(
+            specs,
+            COMPONENT_KIND_PROXY_WEIGHT,
+            "proxy_weight_estimate_result",
+            summary,
+            proxy_weight_estimate_content(summary),
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
+        as_of_valid_at=now,
+        as_of_known_at=now,
+        as_of_valuation_date=(min(member_as_ofs) if member_as_ofs else now.date()),
+        binding_predicate_version=RESIDUAL_SHRINKAGE_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 class VarTotalSnapshotError(VarSnapshotError):
     """Raised when a total-parametric-VaR-input snapshot cannot be built (a proxied instrument's
     OPEN REGRESSION mapping(s) cite a missing/non-COMPLETED/ambiguous/wrong-instrument estimation
@@ -2679,6 +2769,7 @@ _BINDING_PREDICATES = (
     SCENARIO_BINDING_PREDICATE,
     DESMOOTHING_BINDING_PREDICATE,
     VAR_TOTAL_BINDING_PREDICATE,
+    RESIDUAL_SHRINKAGE_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "

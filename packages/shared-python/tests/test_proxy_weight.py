@@ -116,9 +116,12 @@ def _currency(db: Session, code: str) -> None:
         db.flush()
 
 
-def _desmoothed_run(db: Session, tenant: str) -> tuple[str, str, str]:
+def _desmoothed_run(
+    db: Session, tenant: str, mark_values: tuple[str, ...] = MARK_VALUES
+) -> tuple[str, str, str]:
     """Seed a PE instrument + quarterly marks and run desmoothing. Returns
-    (desmoothed_run_id, portfolio_id, instrument_id)."""
+    (desmoothed_run_id, portfolio_id, instrument_id). ``mark_values`` varies the instrument so a
+    shrinkage cohort has heterogeneous residuals."""
     _currency(db, "USD")
     pf = create_portfolio(
         db,
@@ -136,7 +139,7 @@ def _desmoothed_run(db: Session, tenant: str) -> tuple[str, str, str]:
         asset_class="PRIVATE_EQUITY",
         actor=ReferenceActor(actor_id="s"),
     ).id
-    for d, v in zip(MARK_DATES, MARK_VALUES, strict=True):
+    for d, v in zip(MARK_DATES, mark_values, strict=True):
         create_valuation(
             db,
             portfolio_id=pf,
@@ -852,3 +855,120 @@ def test_estimate_run_rejects_eb_shrinkage_version(session: Session) -> None:
             desmoothed_run_id=run_id,
             factor_ids=[fx],
         )
+
+
+def _raw_estimate(db: Session, tenant: str, marks: tuple[str, ...]) -> str:
+    """A full raw OLS estimate for one instrument (its own desmoothed run + the shared 2 factors).
+    Returns the estimate run_id."""
+    run_id, _pf, _inst = _desmoothed_run(db, tenant, marks)
+    fx_usd = _factor(db, tenant, f"FX_USD_{uuid.uuid4().hex[:4]}")
+    fx_eur = _factor(db, tenant, f"FX_EUR_{uuid.uuid4().hex[:4]}")
+    _factor_returns(db, tenant, fx_usd, _USD_RETS)
+    _factor_returns(db, tenant, fx_eur, _EUR_RETS)
+    out = run_proxy_weight_estimate(
+        db,
+        acting_tenant=tenant,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=_proxy_model(db, tenant),
+        desmoothed_run_id=run_id,
+        factor_ids=[fx_usd, fx_eur],
+    )
+    assert out.status == "COMPLETED"
+    return str(out.run.run_id)
+
+
+def _cohort(db: Session, tenant: str, n: int) -> list[str]:
+    # Distinct mark paths => heterogeneous residual variances across the cohort.
+    paths = [
+        ("100.00", "103.00", "104.50", "108.00", "106.00", "111.00"),
+        ("100.00", "101.00", "103.00", "102.00", "105.00", "104.00"),
+        ("100.00", "106.00", "103.00", "110.00", "104.00", "113.00"),
+        ("100.00", "100.50", "101.20", "101.80", "102.10", "103.00"),
+    ]
+    return [_raw_estimate(db, tenant, paths[i]) for i in range(n)]
+
+
+def _eb_version(db: Session, tenant: str) -> str:
+    return str(
+        register_proxy_weight_shrinkage_eb_model(
+            db, tenant_id=tenant, actor_id="s", code_version="v1"
+        ).id
+    )
+
+
+def test_residual_shrinkage_matches_kernel_over_cohort(session: Session) -> None:
+    """A per-instrument EB shrinkage run persists ONE ESTIMATION_SUMMARY whose residual_stdev is the
+    kernel's shrunk value for the target over the pinned cohort; the target's regression identity
+    (R^2 / df / instrument) is carried unchanged from its raw estimate."""
+    from irp_shared.risk import run_residual_shrinkage
+    from irp_shared.risk.residual_shrinkage_kernel import (
+        ShrinkageMemberInput,
+        shrink_residual_variances,
+    )
+
+    tenant = str(uuid.uuid4())
+    cohort = _cohort(session, tenant, 3)
+    target = cohort[0]
+    eb = _eb_version(session, tenant)
+
+    out = run_residual_shrinkage(
+        session,
+        acting_tenant=tenant,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=eb,
+        target_estimate_run_id=target,
+        cohort_estimate_run_ids=cohort,
+    )
+    assert out.status == "COMPLETED"
+    assert len(out.rows) == 1
+    row = out.rows[0]
+    assert row.metric_type == METRIC_TYPE_ESTIMATION_SUMMARY
+
+    # Re-derive: the kernel over the cohort's PERSISTED raw summaries, in cohort order.
+    raw_summaries = [
+        next(
+            r
+            for r in list_proxy_weight_results(session, rid, acting_tenant=tenant)
+            if r.metric_type == METRIC_TYPE_ESTIMATION_SUMMARY
+        )
+        for rid in cohort
+    ]
+    est = shrink_residual_variances(
+        [
+            ShrinkageMemberInput(s.residual_stdev, s.n_observations, s.n_regressors)
+            for s in raw_summaries
+        ]
+    )
+    expected = est.members[0].shrunk_residual_stdev.quantize(_RQ)
+    assert row.residual_stdev == expected
+    # identity carried from the target's raw estimate; only residual transformed.
+    target_raw = raw_summaries[0]
+    assert row.instrument_id == target_raw.instrument_id
+    assert row.metric_value == target_raw.metric_value  # R^2 unchanged
+    assert row.n_observations == target_raw.n_observations
+    assert row.n_regressors == target_raw.n_regressors
+    assert row.residual_stdev != target_raw.residual_stdev  # the one thing that shrank
+
+
+def test_residual_shrinkage_below_min_cohort_refused(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    cohort = _cohort(session, tenant, 2)  # < MIN_COHORT_SIZE
+    eb = _eb_version(session, tenant)
+    from irp_shared.risk import ResidualShrinkageInputError, run_residual_shrinkage
+
+    with pytest.raises(ResidualShrinkageInputError):
+        run_residual_shrinkage(
+            session,
+            acting_tenant=tenant,
+            actor=ProxyWeightEstimateActor(actor_id="a"),
+            code_version="v1",
+            environment_id="test",
+            model_version_id=eb,
+            target_estimate_run_id=cohort[0],
+            cohort_estimate_run_ids=cohort,
+        )
+    assert_no_running_orphan(session)

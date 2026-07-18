@@ -208,6 +208,11 @@ from irp_shared.risk.queries import (
     RiskRunQueryError,
     list_risk_runs,
 )
+from irp_shared.risk.residual_shrinkage_service import (
+    ResidualShrinkageInputError,
+    ResidualShrinkageRunResult,
+    run_residual_shrinkage,
+)
 from irp_shared.risk.scenario import (
     NoCurrentScenarioShock,
     ScenarioActor,
@@ -330,6 +335,9 @@ __all__ = [
     "resolve_proxy_weight_run",
     "promote_proxy_weight_estimate",
     "run_proxy_weight_estimate",
+    "run_residual_shrinkage",
+    "ResidualShrinkageRunResult",
+    "ResidualShrinkageInputError",
     "METRIC_TYPE_ESTIMATION_SUMMARY",
     "METRIC_TYPE_INTERCEPT",
     "METRIC_TYPE_WEIGHT",
