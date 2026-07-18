@@ -800,9 +800,7 @@ def test_ewma_estimate_reweights_residual_only(session: Session) -> None:
         factor_ids=[fx_usd, fx_eur],
     )
     raw_out = run_proxy_weight_estimate(session, model_version_id=raw_model, **common)
-    ewma_out = run_proxy_weight_estimate(
-        session, model_version_id=str(ewma_version.id), **common
-    )
+    ewma_out = run_proxy_weight_estimate(session, model_version_id=str(ewma_version.id), **common)
     assert raw_out.status == "COMPLETED" and ewma_out.status == "COMPLETED"
     raw_rows = list_proxy_weight_results(session, str(raw_out.run.run_id), acting_tenant=tenant)
     ewma_rows = list_proxy_weight_results(session, str(ewma_out.run.run_id), acting_tenant=tenant)
@@ -813,6 +811,7 @@ def test_ewma_estimate_reweights_residual_only(session: Session) -> None:
     raw_sum, ewma_sum = _summary(raw_rows), _summary(ewma_rows)
     # loadings + inference + R^2 byte-identical; only residual_stdev diverges.
     assert raw_sum.metric_value == ewma_sum.metric_value  # R^2
+
     def _loadings(rows: list) -> dict:
         return {
             (r.metric_type, r.factor_id): (r.metric_value, r.std_error)

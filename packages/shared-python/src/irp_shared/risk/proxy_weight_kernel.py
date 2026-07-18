@@ -166,10 +166,7 @@ def estimate_ols(
             one_minus_lambda = Decimal(1) - decay_lambda
             denom = Decimal(1) - decay_lambda**n
             weighted = sum(
-                (
-                    decay_lambda ** (n - 1 - i) * (residuals[i] * residuals[i])
-                    for i in range(n)
-                ),
+                (decay_lambda ** (n - 1 - i) * (residuals[i] * residuals[i]) for i in range(n)),
                 Decimal(0),
             )
             residual_var = one_minus_lambda * weighted / denom
