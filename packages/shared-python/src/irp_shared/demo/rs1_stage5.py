@@ -106,8 +106,9 @@ _MF_CODE_VERSION = "demo-mf1"  # the multifamily registrations (the alpha=1 + lo
 _REPORT_REF = "10_delivery_backlog/rs_1_decision_record.md"
 _T0 = datetime(2024, 6, 1, tzinfo=UTC)
 
-#: The declared EWMA decay — the RiskMetrics DAILY constant, applied AT its native frequency
-#: (the sleeve residuals are daily-period; a quarterly series would need its OWN declared lambda).
+#: The declared EWMA decay — the RiskMetrics DAILY constant (fit on trading-day returns) applied
+#: at the sleeve's CALENDAR-daily mark spacing (the distinction disclosed in the INITIAL, not
+#: elided); a quarterly-appraisal series would need its OWN declared lambda.
 _DECAY_LAMBDA = "0.94"
 
 # --- The third equity (OD-RS-1-E): the SAME deterministic mark process as MF-1 (duplicated, not

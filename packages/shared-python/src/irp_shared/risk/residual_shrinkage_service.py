@@ -143,6 +143,15 @@ def _parse_cohort(comps: list[Any]) -> list[_Member]:
         )
     if not members:
         raise ResidualShrinkageInputError("no pinned cohort ESTIMATION_SUMMARY rows — refused")
+    # The cross-sectional units are INSTRUMENTS, not runs (the adversarial review's catch): two
+    # estimate runs of the SAME instrument would double-count its s^2 in the pool and defeat the
+    # N>=3 floor's distinct-unit rationale — refused, never silently deduped.
+    instruments = [m.instrument_id for m in members]
+    if len(set(instruments)) != len(instruments):
+        raise ResidualShrinkageInputError(
+            "the pinned cohort contains multiple estimate runs for the same instrument — the "
+            "cross-sectional pool requires DISTINCT instruments; refused"
+        )
     return members
 
 

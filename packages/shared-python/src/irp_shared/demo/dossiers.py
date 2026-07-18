@@ -645,7 +645,8 @@ RS1_CLOSURE_FINDING = (
     "per-instrument intensity), and the cited evidence run's residual leg consumes an "
     "EB-SHRUNK estimate (MF-EQ-A, shrunk toward the 3-equity comparable cohort) and an EWMA "
     "estimate (MF-EQ-B, declared lambda=0.94 on the sleeve's daily-period residuals) "
-    "alongside the bond's raw estimate. Estimation-quality dependence survives in kind but is "
+    "alongside the raw estimates (MF-EQ-C and the corporate bond). Estimation-quality "
+    "dependence survives in kind but is "
     "REMEDIABLE by convention choice; the raw-sample-only clause is closed."
 )
 
@@ -658,7 +659,10 @@ RS1_TRIGGERED_DOSSIERS: dict[str, FlagshipDossier] = {
             "remediation (RS-1): the cited evidence run pays a REAL diagonal residual whose "
             "estimates span all three declared conventions (EB-shrunk / EWMA / raw). The "
             "raw-sample-only residual clause closes; the surviving posture is restated in the "
-            "conditions."
+            "conditions. "
+            "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant "
+            "under the RS-1 ratification (OQ-RS-1-5); the ratified dossier table is the "
+            "human validation judgment, the filing is its transcription."
         ),
         conditions=(
             "CONDITION (partial idiosyncratic coverage): the residual leg pays a DIAGONAL "
@@ -668,8 +672,18 @@ RS1_TRIGGERED_DOSSIERS: dict[str, FlagshipDossier] = {
             "DECLARED model identity: EWMA and EB-shrinkage estimates flow through this "
             "number when promoted; the estimator choice is the declaring analyst's and the "
             "comparable-cohort rule applies to any shrinkage promotion. The BT-2 "
-            "SMOOTHING-DOCTRINE READ RULE stands unchanged, as does the v1 UNGATED "
-            "GRANDFATHER note (sunset lever: a VW-1 REJECT on the v1 model_version)."
+            "SMOOTHING-DOCTRINE READ RULE stands unchanged: on an appraisal-marked book "
+            "the unconditional Kupiec/Basel verdict over a 1-day total series is NOT "
+            "valid adequacy evidence in either direction (exceptions suppressed between "
+            "marks, clustered on mark dates); the dated per-pair EXCEPTION_INDICATOR "
+            "rows are the honest evidence surface. The v1 UNGATED GRANDFATHER note "
+            "stands (sunset lever: a VW-1 REJECT on the v1 model_version). "
+            "FREQUENCY-CONVERSION CAVEAT (carried forward, unremediated): the declared "
+            "appraisal_days=91 residual conversion is calibrated to the "
+            "quarterly-appraisal leg; applied to the sleeve's daily-period estimates it "
+            "understates the daily residual - the cited run evidences the estimator "
+            "conventions, not residual calibration (calendar-aware per-period counts "
+            "remain the open remediation lever)."
         ),
         finding_keys=(
             "DIAGONAL residuals only",
@@ -684,7 +698,10 @@ RS1_TRIGGERED_DOSSIERS: dict[str, FlagshipDossier] = {
             "residual-estimator remediation (RS-1): the cited evidence run applies the "
             "registered multiplier to a TOTAL sigma whose residual leg consumes EB-shrunk + "
             "EWMA + raw estimates. The raw-sample-only residual clause closes; the surviving "
-            "posture is restated in the conditions."
+            "posture is restated in the conditions. "
+            "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant "
+            "under the RS-1 ratification (OQ-RS-1-5); the ratified dossier table is the "
+            "human validation judgment, the filing is its transcription."
         ),
         conditions=(
             "CONDITION (partial idiosyncratic coverage + the read rule): the ES multiplier "
@@ -695,7 +712,11 @@ RS1_TRIGGERED_DOSSIERS: dict[str, FlagshipDossier] = {
             "Residual-estimator conventions (RS-1) are DECLARED model identity and flow "
             "through the sigma this multiple scales. The ES row reproduces through its bound "
             "model_version's declared es_multiplier (the non-reconciling-row limitation), "
-            "never from the row alone."
+            "never from the row alone. FREQUENCY-CONVERSION CAVEAT (carried forward, "
+            "unremediated): the appraisal_days=91 conversion applied to daily-period "
+            "sleeve estimates understates the daily residual - the cited run evidences "
+            "the estimator conventions, not residual calibration (calendar-aware "
+            "per-period counts remain the open remediation lever)."
         ),
         finding_keys=(
             "The residual leg is PA-4's verbatim",
@@ -711,8 +732,10 @@ RS1_EWMA_INITIAL = FlagshipDossier(
     outcome="APPROVED_WITH_CONDITIONS",
     scope_note=(
         "INITIAL validation of the EWMA_RISKMETRICS residual-estimator version (declared "
-        "decay_lambda=0.94, daily-period sleeve residuals — the RiskMetrics daily constant "
-        "applied AT its native frequency): the cited evidence run re-estimates MF-EQ-B with "
+        "decay_lambda=0.94, daily-period sleeve residuals at CALENDAR-daily mark spacing — "
+        "the RiskMetrics daily constant, fit on trading-day returns, applied at daily "
+        "spacing (the distinction disclosed, not elided): the cited evidence run "
+        "re-estimates MF-EQ-B with "
         "loadings/std-errors/R^2 byte-identical to its raw estimate and ONLY the residual "
         "stdev re-weighted (the s2 decoupling, verified in the kernel suite). "
         "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant under the "

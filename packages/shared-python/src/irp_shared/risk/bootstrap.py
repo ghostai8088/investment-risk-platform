@@ -1859,8 +1859,14 @@ PROXY_WEIGHT_SHRINKAGE_EB_LIMITATIONS: tuple[str, ...] = (
     "COMPARABLE-COHORT rule: the cross-sectional pool assumes a comparable-risk group - pooling "
     "across asset classes (a bond shrunk toward an equity pool) is a mis-application the declaring "
     "analyst owns; the kernel pools whatever cohort it is handed.",
-    "MIN-COHORT fail-closed: fewer than 3 comparable members leaves tau^2 unidentifiable (the "
-    "James-Stein dimension) - the run REFUSES rather than substituting an arbitrary intensity.",
+    "MIN-COHORT fail-closed: fewer than 3 DISTINCT comparable instruments refuses - the declared "
+    "prudence/identifiability floor (the method-of-moments tau^2 rests on N-1 df of "
+    "cross-sectional dispersion, a single df at N=2 being unusable; Stein's p>=3 dimension is "
+    "the motivating ANALOGY, not a transferred guarantee) - never an arbitrary intensity.",
+    "SHRINKAGE MAY REORDER same-side variances: the intensity grows with s^4, so two members on "
+    "the SAME side of the pool can cross after shrinkage (inherent to heterogeneous-intensity "
+    "empirical Bayes; every shrunk value stays within its own raw-to-pool interval) - the "
+    "cross-member RANKING of shrunk specific risks is not order-preserving.",
     "The GAUSSIAN sampling variance v_i = 2 s_i^4/(n_i-k_i) assumes approximately-normal residuals "
     "- "
     "heavy tails understate v_i and under-shrink; the plug-in s_i^4 adds noise on short series.",
@@ -1891,18 +1897,33 @@ class ProxyWeightParameters:
 def declared_proxy_weight_parameters(
     session: Session, version: ModelVersion
 ) -> ProxyWeightParameters:
-    """Parse the version's declared proxy-weight estimator identity (RS-1, OD-RS-1-C). Absent
-    ``estimator_convention`` => the implicit ``RAW`` v1 (the grandfather); a present convention must
-    be one of the three recognized literals with its required companions well-formed. Malformed/
-    ambiguous/unknown -> the fail-closed :class:`WrongModelVersionError` (the generic endpoint can
-    mint anything)."""
+    """Parse the version's declared proxy-weight estimator identity (RS-1, OD-RS-1-C). ABSENT
+    ``estimator_convention`` (zero rows) => the implicit ``RAW`` v1 (the grandfather); a present
+    convention must be SOLE and one of the three recognized literals with its required companions
+    well-formed and NO inapplicable stray literal. AMBIGUOUS (>1 convention row — the adversarial
+    review's catch: ambiguity must never collapse into the grandfather), malformed, or unknown ->
+    the fail-closed :class:`WrongModelVersionError` (the generic endpoint can mint anything)."""
     texts = load_assumption_texts(session, version)
-    convention = sole_declared(texts, ESTIMATOR_ASSUMPTION_PREFIX)
+    convention_rows = [t for t in texts if t.startswith(ESTIMATOR_ASSUMPTION_PREFIX)]
 
     def _fail() -> WrongModelVersionError:
         return WrongModelVersionError(str(version.id), PROXY_WEIGHT_MODEL_CODE)
 
-    if convention is None or convention == PROXY_WEIGHT_RAW_CONVENTION:
+    if len(convention_rows) > 1:
+        # AMBIGUOUS is refused, never grandfathered — only a genuinely ABSENT declaration is RAW.
+        raise _fail()
+    has_lambda = any(t.startswith(DECAY_LAMBDA_ASSUMPTION_PREFIX) for t in texts)
+    if not convention_rows:
+        if has_lambda:  # a stray decay_lambda on an implicit-RAW version is a lying identity
+            raise _fail()
+        min_obs = require_declared(
+            texts, MIN_OBSERVATIONS_ASSUMPTION_PREFIX, pattern=_DIGITS_PATTERN, on_invalid=_fail
+        )
+        return ProxyWeightParameters(PROXY_WEIGHT_RAW_CONVENTION, int(min_obs), None)
+    convention = convention_rows[0][len(ESTIMATOR_ASSUMPTION_PREFIX) :]
+    if convention == PROXY_WEIGHT_RAW_CONVENTION:
+        if has_lambda:
+            raise _fail()
         min_obs = require_declared(
             texts, MIN_OBSERVATIONS_ASSUMPTION_PREFIX, pattern=_DIGITS_PATTERN, on_invalid=_fail
         )
@@ -1919,6 +1940,9 @@ def declared_proxy_weight_parameters(
             raise _fail()
         return ProxyWeightParameters(PROXY_WEIGHT_EWMA_CONVENTION, int(min_obs), lam)
     if convention == PROXY_WEIGHT_SHRINKAGE_EB_CONVENTION:
+        # Method-as-identity: a stray numeric literal on an EB version is a lying identity.
+        if has_lambda or any(t.startswith(MIN_OBSERVATIONS_ASSUMPTION_PREFIX) for t in texts):
+            raise _fail()
         return ProxyWeightParameters(PROXY_WEIGHT_SHRINKAGE_EB_CONVENTION, None, None)
     raise _fail()
 
@@ -2129,7 +2153,8 @@ VAR_TOTAL_LIMITATIONS: tuple[str, ...] = (
     "DIAGONAL residuals only (Sharpe 1963; Barra/Axioma vendor-standard) - no residual "
     "cross-correlation; residual shrinkage (Barra USE4 empirical-Bayes) + EWMA weighting (Axioma/"
     "RiskMetrics) are REALIZED as declared risk.proxy_weight.regression estimator conventions "
-    "(RS-1) - a total-VaR run over a shrunk/EWMA estimate binds one of those versions.",
+    "(RS-1) - a total-VaR run consumes such an estimate through its promoted citation (the "
+    "estimator version is bound by the cited ESTIMATE run, never by the total run itself).",
     "The residual is hostage to the PA-3 estimate quality (short appraisal series => noisy "
     "sigma_e; the estimate's per-coefficient std errors stay visible on the pinned estimate).",
     "Non-proxied and MANUAL-method instruments carry ZERO idiosyncratic risk under ANY bound "

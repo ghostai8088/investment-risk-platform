@@ -20,10 +20,12 @@ COMPUTED and, given the pinned per-member ``(s_i^2, n_i, k_i)``, fully reproduci
 identity; the fit is the declared method, OD-RS-1-B).
 
 Fail-closed (a structural :class:`ResidualShrinkageKernelError`, the binder maps it to a pre-create
-refusal) on: a cohort of fewer than :data:`MIN_COHORT_SIZE` comparable members (``tau^2`` is not
-identifiable below the James-Stein admissibility dimension — a singleton/pair is the degenerate
-case); a non-positive residual df ``n_i - k_i`` (no measurable sampling variance); or a negative
-input variance. The comparable-risk-group precondition (do not pool across asset classes) is the
+refusal) on: a cohort of fewer than :data:`MIN_COHORT_SIZE` comparable members — the DECLARED
+prudence/identifiability floor (the method-of-moments ``tau^2`` rests on ``N-1`` df of
+cross-sectional dispersion; a single df at N=2 is unusable; Stein's p>=3 dimension is the
+motivating ANALOGY, not a transferred guarantee — the doctrine-review softening); a non-positive
+residual df ``n_i - k_i`` (no measurable sampling variance); or a negative input variance.
+The comparable-risk-group precondition (do not pool across asset classes) is the
 declaring caller's responsibility — the kernel pools whatever cohort it is handed.
 
 Computed in ``Decimal`` at 50-digit context; the result carries RAW (un-quantized) values — the
@@ -38,9 +40,10 @@ from decimal import Decimal, localcontext
 
 _CTX_PRECISION = 50
 
-#: The minimum comparable-cohort size for an identifiable empirical-Bayes prior dispersion — the
-#: James-Stein admissibility dimension (the variance-reduction guarantee holds for N >= 3). Below
-#: it the run fails closed rather than substituting an arbitrary intensity (OD-RS-1-B).
+#: The minimum comparable-cohort size — the DECLARED prudence/identifiability floor: the
+#: method-of-moments tau^2 rests on N-1 df of cross-sectional dispersion (a single df at N=2 is
+#: unusable; Stein's p>=3 dimension is the motivating analogy, not a transferred guarantee).
+#: Below it the run fails closed rather than substituting an arbitrary intensity (OD-RS-1-B).
 MIN_COHORT_SIZE = 3
 
 
@@ -96,7 +99,8 @@ def shrink_residual_variances(
         raise ResidualShrinkageKernelError(
             "cohort-too-small",
             f"{n_members} comparable member(s) for empirical-Bayes shrinkage — need >= "
-            f"{MIN_COHORT_SIZE} (tau^2 is not identifiable below the James-Stein dimension); "
+            f"{MIN_COHORT_SIZE} (the declared prudence/identifiability floor - tau^2 rests on "
+            f"N-1 df of cross-sectional dispersion); "
             f"refused",
         )
 

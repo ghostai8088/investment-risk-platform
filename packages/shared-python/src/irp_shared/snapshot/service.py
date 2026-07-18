@@ -2184,9 +2184,23 @@ def build_residual_shrinkage_snapshot(
             )
         # The shrinkage is as-of its STALEST input (HG-1 honesty: the shrunk estimate is only as
         # fresh as the oldest cohort member's regression span end — never falsely "fresh as now").
+        # A member without a resolvable span end fails CLOSED (the HG-1 unmeasurable-shapes
+        # doctrine — an unmeasurable member must never default the pin to age-0); a member that is
+        # ITSELF a shrinkage output is refused (no shrink-of-shrunk chains — the pool is a
+        # cross-section of RAW/EWMA regression estimates, adversarial-review fold).
         member_input = session.get(DatasetSnapshot, str(summary.input_snapshot_id))
-        if member_input is not None and member_input.as_of_valuation_date is not None:
-            member_as_ofs.append(member_input.as_of_valuation_date)
+        if member_input is None or member_input.as_of_valuation_date is None:
+            raise ResidualShrinkageSnapshotError(
+                f"cohort estimate run {run_id} cites input snapshot "
+                f"{summary.input_snapshot_id} with no resolvable regression span end — the "
+                f"shrinkage pin's as-of would be unmeasurable; refused"
+            )
+        if member_input.purpose == PURPOSE_RESIDUAL_SHRINKAGE_INPUT:
+            raise ResidualShrinkageSnapshotError(
+                f"cohort estimate run {run_id} is itself a residual-shrinkage output — "
+                f"shrink-of-shrunk chains are refused (pool RAW/EWMA estimates only)"
+            )
+        member_as_ofs.append(member_input.as_of_valuation_date)
         _append_spec(
             specs,
             COMPONENT_KIND_PROXY_WEIGHT,
@@ -2204,7 +2218,7 @@ def build_residual_shrinkage_snapshot(
         purpose=PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
         as_of_valid_at=now,
         as_of_known_at=now,
-        as_of_valuation_date=(min(member_as_ofs) if member_as_ofs else now.date()),
+        as_of_valuation_date=min(member_as_ofs),  # every member measurable (refused above)
         binding_predicate_version=RESIDUAL_SHRINKAGE_BINDING_PREDICATE,
     )
     record_snapshot_create(session, header=header_row, actor=actor)

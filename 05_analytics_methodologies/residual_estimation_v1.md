@@ -36,7 +36,9 @@ RiskMetrics' 0.94-daily/0.97-monthly are NOT transferable to appraisal-PERIOD ma
 ## Shrinkage (`SHRINKAGE_CROSS_SECTIONAL_EB`), pinned
 
 A TRANSFORM over a comparable COHORT of promoted raw estimates (it runs no OLS). Per member `i`
-with raw variance `s_i²` estimated on `n_i − k_i` residual df:
+with raw variance `s_i²` estimated on `n_i − k_i` residual df (NOTE the convention shift: here
+`k_i` counts ALL regressors INCLUDING the intercept — the stored `n_regressors` — so `n_i − k_i`
+equals the RAW divisor `n−(k+1)` above, where `k` counted slopes only):
 
     pool         σ_pool²  = (1/N) Σ_j s_j²                    (equal-weighted cross-section)
     sampling var v_i      = 2 s_i⁴ / (n_i − k_i)              (Gaussian var-of-a-variance)
@@ -49,8 +51,13 @@ The intensity is heterogeneous (Efron-Morris / James-Stein empirical Bayes): a n
 series estimate (larger `v_i`) shrinks MORE; a widely-dispersed cohort (larger `τ²`) shrinks LESS.
 **Method-as-identity**: the declared identity is the METHOD; there is NO declared `w` — every `w_i`
 is COMPUTED and fully reproducible from the pinned per-member `(s_i², residual df)` alone (the fit
-is not minted as a separate governed number). **Fail-closed** below `N = 3` comparable members
-(τ² is not identifiable under the James-Stein dimension) — never an arbitrary intensity.
+is not minted as a separate governed number). **Fail-closed** below `N = 3` DISTINCT comparable
+instruments — the declared prudence/identifiability floor: the method-of-moments τ² rests on N−1
+df of cross-sectional dispersion (a single df at N=2 is unusable; undefined at N=1), and Stein's
+p≥3 dimension is the motivating ANALOGY, not a transferred guarantee — never an arbitrary
+intensity. Cohort members must be DISTINCT instruments (two runs of one instrument would
+double-count its s² in the pool — refused), and shrink-of-shrunk chains are refused (the pool is
+a cross-section of RAW/EWMA regression estimates).
 
 ## Declared identity
 
@@ -65,7 +72,9 @@ declaration is a governed 409.
 
 The convention changes ONLY `residual_stdev` on the `ESTIMATION_SUMMARY` row. The total-VaR/ES-total
 residual leg consumes σ_e byte-unchanged (it only √t-descales and squares-sums-sqrts), so no
-downstream math is altered — a total-VaR run over a shrunk/EWMA estimate binds one of these versions.
+downstream math is altered — a total-VaR run consumes such an estimate through its promoted citation (the estimator version
+is bound by the CITED estimate/shrinkage run, never by the total run itself; the total run's own
+binding is its `risk.var.parametric_total` version).
 
 ## External benchmarks (roadmap Part 4 rule 6 — sources checked 2026-07-17)
 
@@ -79,8 +88,9 @@ downstream math is altered — a total-VaR run over a shrunk/EWMA estimate binds
 - **Barra USE4** — MSCI, *The Barra US Equity Model (USE4) Methodology Notes* (Aug 2011). Bayesian
   shrinkage of specific risk toward the (cap-weighted) cross-sectional mean specific volatility, with
   a data-driven intensity. VERIFIED (target + concept + data-driven intensity). RS-1 is USE4-faithful
-  on the intensity; the equal-weighted pool (vs cap-weighted) and the Gaussian `v_i = 2s⁴/(n−k)`
-  approximation are disclosed simplifications, each a recorded v2.
+  on the intensity; the equal-weighted pool (vs cap-weighted) is a disclosed simplification and
+  a recorded v2; the Gaussian `v_i = 2s⁴/(n−k)` approximation is a disclosed LIMITATION (heavy
+  tails under-shrink), not a v2.
 - **Ledoit-Wolf (2004, JPM 30(4):110–119)** is EXPLICITLY NOT the primary for this leg: its
   constant-correlation estimator leaves the DIAGONAL VARIANCES UNSHRUNK (`f_ii = s_ii`) — it shrinks
   correlations, not variances — so it is the wrong citation for a residual-variance shrinkage
@@ -94,6 +104,12 @@ the comparable-cohort rule (cross-asset-class pooling is a misuse), the N≥3 fa
 Gaussian sampling-variance approximation, the equal-weighted-pool simplification. All conventions
 inherit the family's standing rows (estimates are model output, promotion is human-mediated,
 `validation_status` UNVALIDATED until a 2L outcome).
+
+A property disclosure (numeric-review fold): EB shrinkage is NOT order-preserving — the intensity
+grows with s⁴, so two members on the SAME side of the pool can swap ranks after shrinkage (each
+shrunk value still lies within its own raw-to-pool interval; USE4-family estimators share this
+property). Cross-member rankings of shrunk specific risks must not be read as rankings of raw
+specific risks.
 
 ## Reproducibility & governance
 

@@ -22,7 +22,7 @@
 
 **RiskMetrics EWMA — VERIFIED 2026-07-17.** J.P. Morgan/Reuters, *RiskMetrics — Technical Document*, 4th ed. (December 1996), §5 (exponential moving average / decay-factor selection). The EWMA variance recursion **σ²_t = λ·σ²_{t−1} + (1−λ)·r²_{t−1}** with the mean assumed zero; the decay factor **λ = 0.94 (daily) / 0.97 (monthly)** chosen by minimizing the RMSE of the variance forecast at the target horizon. Primary-document identity confirmed from the PDF metadata ("RiskMetrics Technical Document — Fourth Edition 1996, December"); the recursion + λ values cross-confirmed across multiple independent secondary sources. **Grade:** formula + λ values + selection method VERIFIED; the exact §/equation/table numbers to be pinned against the primary text at implementation (the LZW-compressed PDF did not text-extract for a character-exact §-number quote — disclosed, not laundered). **Axioma** (the pa_4-cited vendor benchmark, `pa_4_decision_record.md:59-65`) states specific risk as "the EWMA stdev of daily specific returns" — the Axioma shape RS-1's EWMA mirrors (equal-weighted v1 = the un-decayed limit λ→1⁻).
 
-**Barra USE4 shrinkage — VERIFIED 2026-07-17.** MSCI, *The Barra US Equity Model (USE4) Methodology Notes* (August 2011). Bayesian shrinkage of specific risk **toward the (cap-weighted) cross-sectional mean specific volatility**, with a data-driven (empirical-Bayes) shrinkage intensity; after shrinkage the specific-risk bias statistics flatten. **Grade:** target + concept + direction VERIFIED; RS-1 ships the EQUAL-weighted target and a DECLARED (fixed) intensity — both disclosed as transparent simplifications of USE4's cap-weighted target + data-driven intensity, each a named declared v2. This is the pa_4-recorded "MSCI Barra … per-security specific risk … Bayesian shrinkage (size-decile means)" benchmark (`pa_4_decision_record.md:59-65`).
+**Barra USE4 shrinkage — VERIFIED 2026-07-17.** MSCI, *The Barra US Equity Model (USE4) Methodology Notes* (August 2011). Bayesian shrinkage of specific risk **toward the (cap-weighted) cross-sectional mean specific volatility**, with a data-driven (empirical-Bayes) shrinkage intensity; after shrinkage the specific-risk bias statistics flatten. **Grade:** target + concept + direction VERIFIED; RS-1 ships the EQUAL-weighted target and a DECLARED (fixed) intensity — both disclosed as transparent simplifications of USE4's cap-weighted target + data-driven intensity, each a named declared v2. *[DATED CORRECTION 2026-07-18 (the doctrine finder's catch — this sentence predates the in-session fitting-posture ratification and was left stale):* the ratified and SHIPPED posture is the **DATA-DRIVEN** empirical-Bayes intensity (Part 4's resolved sub-decision; OD-B) — USE4-faithful on the intensity; only the EQUAL-WEIGHTED pool remains a disclosed simplification (a named v2), and the Gaussian sampling-variance approximation is a disclosed LIMITATION, not a v2.]* This is the pa_4-recorded "MSCI Barra … per-security specific risk … Bayesian shrinkage (size-decile means)" benchmark (`pa_4_decision_record.md:59-65`).
 
 **Ledoit-Wolf 2004 — VERIFIED and EXPLICITLY NOT USED for RS-1.** Ledoit, O., & Wolf, M., "Honey, I Shrunk the Sample Covariance Matrix," *Journal of Portfolio Management* 30(4):110–119, 2004. The δF + (1−δ)S constant-correlation estimator shrinks CORRELATIONS while leaving the DIAGONAL VARIANCES UNSHRUNK (`f_ii = s_ii`, δ* = κ/T, κ = (π̂−ρ̂)/γ̂). **Therefore L-W is the WRONG primary for a residual-VARIANCE shrinkage** — a citation trap the RS-1 mandate flagged ("citations UNVERIFIED") and the census confirmed the codebase already avoids (`bootstrap.py:487` reserves L-W for COVARIANCE shrinkage, a distinct wave-unassigned deferral). Recorded here so the referent NEVER cites L-W for the specific-variance leg.
 
@@ -74,7 +74,57 @@ CONFIRMED by the pass and worth noting: the `residual_stdev` column absorbs both
 - **Scope-fence** — OD-G clause-by-clause (no migration; no mints; OLS/downstream/serializer/FE byte-checks; the demo additivity).
 
 ## Part 5.5 — Implementation deviations from the ratified plan
-*(populated at implementation)*
 
-## Part 6 — Implementation review dispositions
-*(populated after the 4-finder review)*
+1. **The age-gate purpose widening (the pair)** — OD-G said the total-VaR residual leg consumes σ_e
+   UNCHANGED; implementing OD-E surfaced that the gated `risk.var.parametric_total` v2
+   (`max_estimate_age_days=400` on the demo flagship) REFUSES any citation whose snapshot purpose
+   is not `PROXY_WEIGHT_INPUT` — so a shrinkage-cited estimate could never feed the GATED flagship,
+   making the remediation unusable on the exact family whose rider it closes. DELIBERATE deviation:
+   `var_service._estimate_age_days` gained `_MEASURABLE_ESTIMATE_PURPOSES = {PROXY_WEIGHT_INPUT,
+   RESIDUAL_SHRINKAGE_INPUT}` (a `!=` → `not in` swap + the constant + the message reword — nothing
+   else), and the HG-1 promote gate got the SAME two-purpose admission for consistency. SOUND
+   because the shrinkage builder stamps `as_of_valuation_date` = the STALEST cohort member's
+   regression span end (the conservative age by construction — adversarial-finder verified: a fresh
+   cohort cannot hide a stale member, and the target must itself be a member). Scope-fence finder
+   verified the edit is exactly this narrow.
+2. **The per-instrument shrinkage grain** — ratified in-session (not a silent deviation): each
+   shrinkage run targets ONE instrument, pins the whole cohort, emits ONE shrunk
+   `ESTIMATION_SUMMARY`; promotion + the total-VaR builder stay byte-unchanged.
+3. **Error-class naming** — OD-B's prose named `ResidualShrinkageCohortError`; the shipped classes
+   are `ResidualShrinkageInputError` (422 — carries the cohort<3 kernel-structural refusal) and
+   `ResidualShrinkageSnapshotError` (409). Behavior identical; the name folded into the house
+   pre-create/snapshot error family instead.
+4. **The referent is shared** — both new versions cite ONE `residual_estimation_v1.md`
+   (`PROXY_WEIGHT_RESIDUAL_METHODOLOGY_REF`) rather than per-convention referents; plus routine
+   additive re-exports in `risk/__init__.py` + `snapshot/__init__.py` (scope-fence-verified
+   additive-only).
+
+## Part 6 — Implementation review dispositions (the ratified 4-finder composition; ran 2026-07-18)
+
+**Composition:** adversarial + numeric (exact-rational, executed) + doctrine + scope-fence, all four
+over the full `rs-1-planning..HEAD` diff. **Totals: 2 HIGH, 5 MEDIUM, 7 LOW, 1 property caveat —
+ALL folded (zero deferred); ZERO numeric defects; ZERO scope-fence violations.**
+
+| # | Finder | Sev | Finding | Disposition |
+|---|---|---|---|---|
+| A1 | adversarial | HIGH | An AMBIGUOUS (>1) `estimator_convention` collapsed into the RAW grandfather via `sole_declared`'s absent/ambiguous conflation — a generically-minted double-declaration ran RAW while its dossier displayed EWMA (the exact OD-C "ambiguous ⇒ fail-closed" contract violation) | FOLDED: `declared_proxy_weight_parameters` now counts convention rows — 0 ⇒ RAW grandfather, >1 ⇒ `WrongModelVersionError`; + tests |
+| A2 | adversarial | MEDIUM | Cohort distinctness enforced at the RUN grain, not INSTRUMENT — N≥3 satisfiable with <3 distinct instruments (re-estimation is the steady state; the pool double-counts); shrunk rows themselves admissible as members (shrink-of-shrunk) | FOLDED: `_parse_cohort` refuses duplicate-instrument cohorts; the builder refuses members that are themselves shrinkage outputs; + tests |
+| A3 | adversarial | MEDIUM | The gate-widening comment cited "a recorded Part-5.5 deviation" before Part 5.5 existed — a false provenance claim under the immutable-record discipline | FOLDED: Part 5.5 item 1 above records it |
+| A4 | adversarial | LOW | Recognized-but-inapplicable stray literals silently ignored (a `decay_lambda` on an implicit-RAW/EB version displays an identity the compute never uses) | FOLDED: the gate refuses stray `decay_lambda`/`min_observations` per branch; + tests |
+| A5 | adversarial | LOW | The cohort builder's as-of fallback failed OPEN (unresolvable member as-of silently skipped; empty ⇒ today) — unreachable today (NOT-NULL columns) but inverted vs the HG-1 fail-closed doctrine on the exact anchor the widened gates read | FOLDED: the builder refuses a member without a resolvable span end |
+| N1 | numeric | — | ZERO defects: 400+ exact-rational fuzz cases (worst err 5E-29), λ→1⁻ ⇒ /n biased mean proven symbolically, RAW byte-identity, τ² floor exact-iff, convex-blend bounds, prec-50 shielding, quantize half-ulp bound tight | — (executed evidence in the review record) |
+| N2 | numeric | caveat | EB shrinkage is NOT order-preserving (w grows with s⁴ — same-side pairs can swap ranks; inherent to heterogeneous-intensity EB, USE4 shares it) | FOLDED: disclosed in the referent + a new EB limitation row |
+| D1 | doctrine | HIGH | The MF-1 frequency-conversion disclosure (appraisal_days=91 on daily-period estimates understates the daily residual) vanished from the operative record — closure-by-supersession flipped it to historical with NO remediation | FOLDED: the caveat restated in BOTH fresh TRIGGERED condition blobs (carried forward, unremediated; calendar-aware counts named as the open lever) |
+| D2 | doctrine | MEDIUM | "James-Stein dimension" over-claim for the N≥3 floor (τ² is MoM-defined from N=2; Stein's p≥3 is a Gaussian-mean admissibility theorem — an analogy, not a transferred guarantee) | FOLDED: softened at every site (kernel docstring/constant/error, limitation row, referent) to the honest df-poverty/prudence ground with Stein as analogy |
+| D3 | doctrine | MEDIUM | "a total-VaR run … binds one of those versions" misstated the binding grain (the estimator version is bound by the CITED run, never the total run) | FOLDED: reworded in the VAR_TOTAL row + the referent |
+| D4 | doctrine | MEDIUM | The two TRIGGERED filings carried no non-independence disclosure (the INITIALs did; MF-1 appended one to every record) | FOLDED: the disclosure appended to both TRIGGERED scope notes |
+| D5 | doctrine | LOW | The referent minted a phantom "recorded v2" for the Gaussian approximation (a disclosed limitation, not a v2) | FOLDED |
+| D6 | doctrine | LOW | Part 2's Barra sentence pre-dated the fitting-posture ratification (claimed a declared fixed intensity) + a df-notation shift unstated in the referent | FOLDED: dated correction in Part 2; the convention-shift note added at the formula site |
+| D7 | doctrine | LOW | "applied AT its native frequency" glossed calendar-daily as RiskMetrics trading-day | FOLDED: exact wording (calendar-daily spacing vs trading-day fit, disclosed) at both sites |
+| D8 | doctrine | LOW | The closure finding under-enumerated the raw members (MF-EQ-C is also raw) | FOLDED |
+| D9 | doctrine | LOW | The fresh VaR-total condition compressed the BT-2 read rule to its name (the cross-referential-rider thinning MF-1's verifier killed) | FOLDED: the substance restored (suppressed/clustered + the EXCEPTION_INDICATOR surface) |
+| S1 | scope-fence | — | All 11 OD-G clauses PASS; zero violations; `audit/service.py`/serializer/METRIC_TYPES/`var_total_kernel`/FE byte-untouched; the 3 deleted bootstrap lines are the OD-F-ratified rewords with the calendar clause preserved | — (the deviation list transcribed into Part 5.5) |
+
+**Post-fold verification:** the full battery re-ran green after the folds (`make check` + the
+five demo PG suites in CI order on a fresh schema + `alembic check` + the downgrade smoke — the
+fold-pass numbers recorded in the closeout).

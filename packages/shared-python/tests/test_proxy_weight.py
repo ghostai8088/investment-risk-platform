@@ -971,3 +971,132 @@ def test_residual_shrinkage_below_min_cohort_refused(session: Session) -> None:
             cohort_estimate_run_ids=cohort,
         )
     assert_no_running_orphan(session)
+
+
+# --- RS-1 review folds: the ambiguity/stray-literal gate (A1/A4) + cohort distinctness (A2) ---
+
+
+def _mint_pw_version(db: Session, tenant: str, assumptions: list[str]):  # noqa: ANN202
+    """Mint a proxy-weight version through the GENERIC path (arbitrary assumption rows — the
+    P3-4 threat the parse-gate exists for)."""
+    from irp_shared.model.service import register_model_version, resolve_or_register_model
+
+    model = resolve_or_register_model(
+        db,
+        tenant_id=tenant,
+        code="risk.proxy_weight.regression",
+        name="pw",
+        model_type="PROXY_WEIGHT",
+        actor_id="s",
+        description="generic mint (test)",
+    )
+    return register_model_version(
+        db,
+        model=model,
+        version_label=f"vX-{uuid.uuid4().hex[:6]}",
+        actor_id="s",
+        methodology_ref="05_analytics_methodologies/residual_estimation_v1.md",
+        code_version="v1",
+        status="REGISTERED",
+        assumptions=tuple(assumptions),
+        limitations=(),
+    )
+
+
+@pytest.mark.parametrize(
+    "assumptions",
+    [
+        # AMBIGUOUS: duplicated convention rows must NEVER collapse into the RAW grandfather.
+        [
+            "min_observations=6",
+            "estimator_convention=EWMA_RISKMETRICS",
+            "estimator_convention=EWMA_RISKMETRICS",
+            "decay_lambda=0.94",
+        ],
+        # AMBIGUOUS: two DIFFERENT conventions.
+        [
+            "min_observations=6",
+            "estimator_convention=EWMA_RISKMETRICS",
+            "estimator_convention=SHRINKAGE_CROSS_SECTIONAL_EB",
+            "decay_lambda=0.94",
+        ],
+        # STRAY literal on an implicit-RAW version (a lying displayed identity).
+        ["min_observations=6", "decay_lambda=0.94"],
+        # STRAY literals on an EB version (method-as-identity carries NO numerics).
+        [
+            "estimator_convention=SHRINKAGE_CROSS_SECTIONAL_EB",
+            "min_observations=6",
+        ],
+        [
+            "estimator_convention=SHRINKAGE_CROSS_SECTIONAL_EB",
+            "decay_lambda=0.94",
+        ],
+        # Unknown convention literal.
+        ["min_observations=6", "estimator_convention=KERNEL_SMOOTHED"],
+    ],
+)
+def test_gate_refuses_ambiguous_and_stray_declarations(
+    session: Session, assumptions: list[str]
+) -> None:
+    tenant = str(uuid.uuid4())
+    version = _mint_pw_version(session, tenant, assumptions)
+    with pytest.raises(WrongModelVersionError):
+        declared_proxy_weight_parameters(session, version)
+
+
+def test_gate_still_grandfathers_a_clean_absent_convention(session: Session) -> None:
+    """The grandfather survives the ambiguity fix: zero convention rows + no stray literal
+    parses as implicit RAW."""
+    tenant = str(uuid.uuid4())
+    version = _mint_pw_version(session, tenant, ["min_observations=6"])
+    params = declared_proxy_weight_parameters(session, version)
+    assert params.estimator_convention == "RAW"
+    assert params.min_observations == 6 and params.decay_lambda is None
+
+
+def test_shrinkage_refuses_duplicate_instrument_cohort(session: Session) -> None:
+    """A2: the cross-sectional units are INSTRUMENTS — two estimate runs of the same instrument
+    in one cohort are refused, never silently pooled (the N>=3 floor cannot be satisfied by
+    re-estimates of one name)."""
+    from irp_shared.risk import ResidualShrinkageInputError, run_residual_shrinkage
+
+    tenant = str(uuid.uuid4())
+    # Two instruments; instrument X estimated TWICE (the steady-state re-estimation shape).
+    x_run_1 = _raw_estimate(
+        session, tenant, ("100.00", "103.00", "104.50", "108.00", "106.00", "111.00")
+    )
+    y_run = _raw_estimate(
+        session, tenant, ("100.00", "101.00", "103.00", "102.00", "105.00", "104.00")
+    )
+    # Re-estimate X: a second run over X's existing desmoothed series via its own snapshot chain.
+    from irp_shared.risk.models import ProxyWeightEstimateResult as _R
+
+    x_summary = session.execute(
+        select(_R).where(
+            _R.calculation_run_id == x_run_1,
+            _R.metric_type == METRIC_TYPE_ESTIMATION_SUMMARY,
+        )
+    ).scalar_one()
+    x_run_2 = run_proxy_weight_estimate(
+        session,
+        acting_tenant=tenant,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=str(x_summary.model_version_id),
+        snapshot_id=str(x_summary.input_snapshot_id),
+    )
+    assert x_run_2.status == "COMPLETED"
+    eb = _eb_version(session, tenant)
+    with pytest.raises(ResidualShrinkageInputError):
+        run_residual_shrinkage(
+            session,
+            acting_tenant=tenant,
+            actor=ProxyWeightEstimateActor(actor_id="a"),
+            code_version="v1",
+            environment_id="test",
+            model_version_id=eb,
+            target_estimate_run_id=y_run,
+            cohort_estimate_run_ids=[x_run_1, str(x_run_2.run.run_id), y_run],
+        )
+    assert_no_running_orphan(session)
