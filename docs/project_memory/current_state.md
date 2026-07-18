@@ -2,34 +2,36 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-17) — read this block; everything below it is HISTORY
 >
-> **HEAD `8260ea6`** = merge of **PR #55** (HG-1: the Wave-7 hygiene opener — the promotion-path age
-> gate + the FL-1 constants sweep + stage 3 of the living tenant) / **CI green (5/5 required
-> checks)**. **Migration head `0040_var_estimate_age`** (40 revisions — HG-1 needed NO migration).
-> `make check` ~1490 passed / full local-PG **1810/0/0** passed (fresh, incl. the three demo suites
-> in CI order) / downgrade smoke clean.
+> **HEAD `dc2a494`** = merge of **PR #58** (ES-HS-1: ES over historical simulation — the empirical
+> Acerbi-Tasche tail mean, the 15th governed number) / **CI green (5/5 required checks — incl. the
+> new ES-HS PG suites + the destructive downgrade smoke)**. **Migration head
+> `0041_es_historical`** (41 revisions — ES-HS-1's ONE migration widened the 0028 CHECK). `make
+> check` **1524** passed / full local-PG fresh green (the CI-order downgrade smoke now exercises
+> 0041's destructive ES_HISTORICAL delete every run) / `alembic check` clean.
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `hg_1_decision_record.md` (**CLOSED**).
+> `es_hs_1_decision_record.md` (**CLOSED**).
 >
 > **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
 > DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the presumptive Wave-8
-> headline. **HG-1 (slice 1) is DONE** — planning PR #54 = `4c8829f`, impl PR #55 = `8260ea6`, CI
-> green; the re-opened estimate-staleness residual paid as an OPT-IN promote-day age gate
-> (`ProxyWeightStaleEstimateError`; `promotion_age_days` always-measured + audited; three
-> unmeasurable shapes fail closed under a bound), expire-a-mapping DEFERRED, the 11-row FL-1
-> constants sweep (finding keys verbatim), and stage 3 of the living tenant (`PC-BRIDGEWATER-II`
-> runs the genuinely-private α=0.4 chain on multi-family factors); 4-finder review, zero HIGH.
-> **NEXT = ES-HS-1 planning** (the Wave-7 headline: ES over historical simulation — needs the ONE
-> `0041` migration widening the `0028` `ck_var_result_parametric_not_null` CHECK; fetch
-> Acerbi-Szekely 2014 to paragraph FIRST; the α-tail-mean estimator pinned at ES-1 inherits; the
-> in-slice fork = ship the Acerbi-Szekely ES backtest here or tee as BT-3 with TIPPED
-> Christoffersen). **WAVE 6 remains CLOSED AND RATIFIED** (2026-07-17: `wave_6_close_review.md`
-> OQ-W6C-1…6 via PR #52 = `9d561bf` — the first full-ultracode close audit; ZERO shipped-code
-> defects for the second consecutive close; the living tenant is 17 registered model codes / 23
-> validation records / 63 runs from the Wave-6 close, plus the HG-1 stage-3 private chain
-> (`PC-BRIDGEWATER-II` is a NEW instrument, NOT a new model code — the α=0.4 `demo-mg1` version is
-> reused). `phase_status.md`/`next_actions.md` are pointer stubs (OQ-W6C-4).
+> headline. **HG-1 (slice 1) DONE** (impl PR #55 = `8260ea6`). **ES-HS-1 (slice 2, the headline)
+> DONE** — planning PR #57 = `7568c49`, impl PR #58 = `dc2a494`, CI green: the **15th governed
+> number** and the platform's FIRST empirical tail measure — the Acerbi-Tasche Prop-4.1 α-tail-mean
+> (floor count + fractional boundary weight, NEVER the TCE) over the shipped HS scenario
+> distribution; `metric_type='ES_HISTORICAL'`, the `risk.var.historical_es` v1 family through the
+> HS binder's registry-map dispatch; the ONE migration `0041` widening the 0028 CHECK (destructive
+> RLS-safe downgrade proven under a non-superuser owner-member role); the Acerbi-Szekely backtest
+> TEED as BT-3 (Christoffersen finally homed; pairing via shared `input_snapshot_id`; AS 2014
+> verified-via-reproduction — the primary is gated); demo stage 4 = the 18th code (TIER_1, an
+> INITIAL AWC dossier, the flagship ES bound to the flagship HS VaR's snapshot). 4-finder review,
+> zero HIGH, zero shipped math defects. **NEXT = RS-1 planning** (slice 3: residual shrinkage/EWMA
+> — the PA-4 OD-E/OD-G v2s; fetch Ledoit-Wolf/RiskMetrics to paragraph FIRST). **WAVE 6 remains
+> CLOSED AND RATIFIED** (2026-07-17: `wave_6_close_review.md` OQ-W6C-1…6 via PR #52 = `9d561bf`).
+> The living tenant is now **18 registered model codes** (17 from Wave 6 + HG-1's `PC-BRIDGEWATER-II`
+> instrument on reused versions; ES-HS-1's stage-4 `risk.var.historical_es` is the 18th CODE) / 24
+> validation records (23 + the ES-HS INITIAL) / 64+ runs. `phase_status.md`/`next_actions.md` are
+> pointer stubs (OQ-W6C-4).
 >
 > **Wave-6 history: Wave 6 was functionally complete 2026-07-16** (MG-1 → FL-1 → MF-1 all CLOSED). MF-1
 > demonstrated **the full governance lifecycle**: the living demo tenant went multi-family — an
@@ -51,11 +53,12 @@
 > candidates stay sequence-able with SC-2 the named pull-forward.)* The pre-ratification verifier
 > pass is standing process.
 >
-> **Counts (2026-07-16):** 14 governed numbers / 17 registered model codes / 17 tiered, 7
-> validated (6 INITIAL + the loadings INITIAL; 5 flagships re-validated TRIGGERED), 11 excepted
-> in the demo tenant. Delivery runs under the 2026-07-14 EXTENDED autonomy grant (the USER signs
-> Tier-3 decisions; the USER creates AND merges PRs — the auto-mode classifier blocks Claude's
-> REST create + merge on this repo).
+> **Counts (2026-07-17, post-ES-HS-1):** **15 governed numbers** (ES-HS-1 = the 15th, the
+> empirical historical-simulation ES) / **18 registered model codes** in the demo tenant (17 from
+> the Wave-6 close + ES-HS-1's stage-4 `risk.var.historical_es`) / 18 tiered, 8 validated (the
+> Wave-6 seven + the ES-HS INITIAL), 11 excepted. Delivery runs under the 2026-07-14 EXTENDED
+> autonomy grant (the USER signs Tier-3 decisions; the USER creates AND merges PRs — the auto-mode
+> classifier blocks Claude's REST create + merge on this repo).
 >
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this block, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence),
