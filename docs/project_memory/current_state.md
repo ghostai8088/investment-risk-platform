@@ -1,17 +1,18 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-17) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-18) — read this block; everything below it is HISTORY
 >
-> **HEAD `dc2a494`** = merge of **PR #58** (ES-HS-1: ES over historical simulation — the empirical
-> Acerbi-Tasche tail mean, the 15th governed number) / **CI green (5/5 required checks — incl. the
-> new ES-HS PG suites + the destructive downgrade smoke)**. **Migration head
-> `0041_es_historical`** (41 revisions — ES-HS-1's ONE migration widened the 0028 CHECK). `make
-> check` **1524** passed / full local-PG fresh green (the CI-order downgrade smoke now exercises
-> 0041's destructive ES_HISTORICAL delete every run) / `alembic check` clean.
+> **HEAD `9c15658`** = merge of **PR #61** (RS-1: residual shrinkage + EWMA — two declared
+> estimator conventions on `risk.proxy_weight.regression`; NO new governed number, NO migration) /
+> **CI green**. **Migration head `0041_es_historical`** (UNCHANGED — RS-1 needs no migration; both
+> shrunk/EWMA σ_e land in the existing `residual_stdev` column). `make check` **1554** passed / full
+> local-PG fresh green (all five demo PG suites in CI order; the stage-5 step slots after stage 4) /
+> `alembic check` clean / downgrade-base + re-upgrade smoke clean over the stage-5-extended tenant.
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `es_hs_1_decision_record.md` (**CLOSED**).
+> `rs_1_decision_record.md` (**CLOSED** — Part 6 carries the 4-finder dispositions: 2 HIGH + 5 MED +
+> 7 LOW all folded, zero numeric defects, zero scope-fence violations).
 >
 > **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
 > DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the presumptive Wave-8
@@ -25,13 +26,24 @@
 > TEED as BT-3 (Christoffersen finally homed; pairing via shared `input_snapshot_id`; AS 2014
 > verified-via-reproduction — the primary is gated); demo stage 4 = the 18th code (TIER_1, an
 > INITIAL AWC dossier, the flagship ES bound to the flagship HS VaR's snapshot). 4-finder review,
-> zero HIGH, zero shipped math defects. **NEXT = RS-1 planning** (slice 3: residual shrinkage/EWMA
-> — the PA-4 OD-E/OD-G v2s; fetch Ledoit-Wolf/RiskMetrics to paragraph FIRST). **WAVE 6 remains
+> zero HIGH, zero shipped math defects. **RS-1 (slice 3) DONE** — impl PR #61 = `9c15658` (planning
+> PR #60): the PA-4 **OD-E/OD-G residual-estimator v2s REALIZED** as two declared conventions on
+> `risk.proxy_weight.regression` — `EWMA_RISKMETRICS` (Axioma/RiskMetrics decay-weighted specific
+> variance, declared λ; the s2 decoupling keeps OLS std-errors classical; raw v1 grandfathered) and
+> `SHRINKAGE_CROSS_SECTIONAL_EB` (Barra USE4 empirical-Bayes cross-sectional shrinkage, data-driven
+> per-instrument w_i, method-as-identity, N≥3-distinct-instrument fail-closed) — NO new governed
+> number/code/migration; Ledoit-Wolf verified-and-explicitly-NOT-used (it leaves variances
+> unshrunk). Demo **stage 5** = the SECOND lifecycle turn: the sleeve grown to 3 equities, MF-EQ-B
+> EWMA-re-estimated + MF-EQ-A EB-shrunk (bond excluded, asserted-raw), fresh gated flagship
+> total-VaR/ES-total evidence, **2 TRIGGERED re-validations closing the raw-sample-σ_e rider** (the
+> `hostage to the PA-3 estimate quality` finding flipped to historical, both directions test-pinned)
+> + 2 INITIAL AWC dossiers for the new versions. **NEXT = DS-2 planning** (slice 4, the LAST Wave-7
+> slice: desmoothing v2 — fetch the Geltner/GLM/Okunev-White primaries FIRST). **WAVE 6 remains
 > CLOSED AND RATIFIED** (2026-07-17: `wave_6_close_review.md` OQ-W6C-1…6 via PR #52 = `9d561bf`).
-> The living tenant is now **18 registered model codes** (17 from Wave 6 + HG-1's `PC-BRIDGEWATER-II`
-> instrument on reused versions; ES-HS-1's stage-4 `risk.var.historical_es` is the 18th CODE) / 24
-> validation records (23 + the ES-HS INITIAL) / 64+ runs. `phase_status.md`/`next_actions.md` are
-> pointer stubs (OQ-W6C-4).
+> The living tenant is now **18 registered model codes** (UNCHANGED — RS-1 added two estimator
+> VERSIONS of an existing code, not a new code) + the two new proxy-weight versions / **28
+> validation records** (24 + RS-1's 2 TRIGGERED + 2 INITIAL) / the stage-5 evidence chain added ~9
+> runs. `phase_status.md`/`next_actions.md` are pointer stubs (OQ-W6C-4).
 >
 > **Wave-6 history: Wave 6 was functionally complete 2026-07-16** (MG-1 → FL-1 → MF-1 all CLOSED). MF-1
 > demonstrated **the full governance lifecycle**: the living demo tenant went multi-family — an
@@ -53,12 +65,14 @@
 > candidates stay sequence-able with SC-2 the named pull-forward.)* The pre-ratification verifier
 > pass is standing process.
 >
-> **Counts (2026-07-17, post-ES-HS-1):** **15 governed numbers** (ES-HS-1 = the 15th, the
-> empirical historical-simulation ES) / **18 registered model codes** in the demo tenant (17 from
-> the Wave-6 close + ES-HS-1's stage-4 `risk.var.historical_es`) / 18 tiered, 8 validated (the
-> Wave-6 seven + the ES-HS INITIAL), 11 excepted. Delivery runs under the 2026-07-14 EXTENDED
-> autonomy grant (the USER signs Tier-3 decisions; the USER creates AND merges PRs — the auto-mode
-> classifier blocks Claude's REST create + merge on this repo).
+> **Counts (2026-07-18, post-RS-1):** **15 governed numbers** (UNCHANGED — RS-1 mints none; it adds
+> declared ESTIMATOR CONVENTIONS to the residual estimate, an INPUT to the total-VaR family, not a
+> governed output) / **18 registered model codes** in the demo tenant (UNCHANGED — RS-1's two new
+> conventions are VERSIONS of the existing `risk.proxy_weight.regression` code) + those two new
+> proxy-weight versions / 18 tiered, 10 validated (the Wave-6 seven + the ES-HS INITIAL + RS-1's two
+> new-version INITIALs), 11 excepted, 28 validation records total. Delivery runs under the
+> 2026-07-14 EXTENDED autonomy grant (the USER signs Tier-3 decisions; the USER creates AND merges
+> PRs — the auto-mode classifier blocks Claude's REST create + merge on this repo).
 >
 > **Purpose.** Entry-point snapshot so a fresh Claude Code session can recover context without chat
 > history. Read this block, then `10_delivery_backlog/delivery_roadmap.md` (the operative sequence),
