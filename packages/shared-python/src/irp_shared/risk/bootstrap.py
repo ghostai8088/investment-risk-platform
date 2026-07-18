@@ -1751,6 +1751,316 @@ def register_proxy_weight_regression_model(
     return version
 
 
+# --- RS-1: residual-estimator conventions on the proxy-weight family (OD-RS-1-A/B/C) ---
+#
+# Both are new declared VERSIONS of the SAME risk.proxy_weight.regression code (the estimate is an
+# INPUT to total VaR, not a governed output — the version label carries the estimator). The raw v1
+# is
+# GRANDFATHERED: an ABSENT estimator_convention means the implicit RAW (the DELIBERATE inverse of
+# the
+# es_hs required-literal template — declared_proxy_weight_parameters below).
+# ESTIMATOR_ASSUMPTION_PREFIX
+# is the shared "estimator_convention=" prefix declared in the ES-HS-1 block above.
+
+#: The implicit v1 convention (never stamped on a raw version — absent => this).
+PROXY_WEIGHT_RAW_CONVENTION = "RAW"
+#: RS-1 OD-RS-1-A: the Axioma/RiskMetrics EWMA residual-variance convention (a regression version —
+#: it still runs OLS; only the residual variance is decayed). Carries a declared decay_lambda.
+PROXY_WEIGHT_EWMA_CONVENTION = "EWMA_RISKMETRICS"
+# : RS-1 OD-RS-1-B: the empirical-Bayes cross-sectional shrinkage convention (a TRANSFORM version —
+# it
+#: runs no OLS; run_residual_shrinkage blends a cohort of raw estimates). Method-as-identity: NO
+#: declared numeric intensity (the per-instrument w_i are computed + pin-reproduced).
+PROXY_WEIGHT_SHRINKAGE_EB_CONVENTION = "SHRINKAGE_CROSS_SECTIONAL_EB"
+
+#: The conventions the OLS ESTIMATE run accepts (run_proxy_weight_estimate); the shrinkage TRANSFORM
+# : run (run_residual_shrinkage) accepts the EB convention. A version bound to the wrong operation
+# is a
+#: fail-closed WrongModelVersionError (the registry-map dispatch, OD-RS-1-C).
+PROXY_WEIGHT_REGRESSION_CONVENTIONS = frozenset(
+    {PROXY_WEIGHT_RAW_CONVENTION, PROXY_WEIGHT_EWMA_CONVENTION}
+)
+
+DECAY_LAMBDA_ASSUMPTION_PREFIX = "decay_lambda="
+#: 0.<1..6 digits> — the EWMA decay in (0, 1); the confidence/alpha decimal-literal shape. The gate
+#: additionally parses to Decimal and enforces 0 < lambda < 1 (excludes 0.000000).
+_DECAY_LAMBDA_PATTERN = re.compile(r"0\.[0-9]{1,6}")
+
+PROXY_WEIGHT_EWMA_VERSION_LABEL = "v2-ewma"
+PROXY_WEIGHT_SHRINKAGE_EB_VERSION_LABEL = "v2-shrinkage-eb"
+
+#: OD-RS-1-A dossier — the EWMA convention's declared methodology (min_observations appended at
+#: registration, exactly as the raw family).
+PROXY_WEIGHT_EWMA_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "The idiosyncratic residual variance is an EXPONENTIALLY-WEIGHTED mean of squared OLS "
+    "residuals: "
+    "sigma_e^2 = SUM_i w_i e_i^2, w_i = (1-lambda) lambda^(n-1-i)/(1-lambda^n) over the residual "
+    "series oldest-first, so the MOST RECENT appraisal period carries the largest weight (the "
+    "Axioma EWMA of specific returns; RiskMetrics Technical Document 4th ed).",
+    "The OLS factor loadings, their standard errors, and R^2 are UNCHANGED from the raw v1 - the "
+    "EWMA "
+    "convention re-weights ONLY the specific-risk variance (the classical residual variance is "
+    "retained for the coefficient inference; the s2 decoupling).",
+    "NO n-k degrees-of-freedom correction: the EWMA normalizes by SUM w_i = 1 (the RiskMetrics "
+    "biased "
+    "form); the effective sample size is 1/SUM w_i^2 (< n) and the residual mean is taken as zero.",
+    "decay_lambda is a DECLARED model-identity parameter (0 < lambda < 1) stamped at registration "
+    "and "
+    "enforced at bind - RiskMetrics' 0.94-daily/0.97-monthly are NOT transferable to "
+    "appraisal-period "
+    "marks, so a different lambda is a new declared version; the RMSE-fitted lambda is a recorded "
+    "v2.",
+)
+
+#: OD-RS-1-A dossier limitations (EWMA-specific + the raw family's standing rows).
+PROXY_WEIGHT_EWMA_LIMITATIONS: tuple[str, ...] = (
+    "EFFECTIVE SAMPLE SIZE 1/SUM w_i^2 < n: EWMA reacts faster to a specific-risk shift but on "
+    "FEWER "
+    "effective observations - on the SHORT appraisal series the decayed estimate is noisier at the "
+    "tail end; window length and lambda are the levers.",
+    "The DECLARED lambda is a fixed model-identity constant, NOT fit from data (the RMSE-fitted "
+    "lambda "
+    "is a recorded v2 - on a ~12-mark per-period residual series a fitted lambda is unstable).",
+    "Estimates are MODEL OUTPUT, snapshot/run/model-bound - NEVER auto-written into proxy_mapping; "
+    "promotion is a deliberate second capture step citing the estimation run (OD-PA-3-E).",
+    "Candidate factors span the admitted loading families; single-currency series only (no FX "
+    "translation); unconstrained OLS can produce weights an analyst should reject (WHY promotion "
+    "is "
+    "human-mediated).",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome "
+    "(VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation exception, MG-1) "
+    "refuses "
+    "every new bind at the shared seam.",
+)
+
+#: OD-RS-1-B dossier — the empirical-Bayes shrinkage convention's declared methodology.
+PROXY_WEIGHT_SHRINKAGE_EB_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Empirical-Bayes cross-sectional shrinkage of each member's raw specific variance s_i^2 toward "
+    "the cohort pool sigma_pool^2 = mean(s_j^2): s_i^2(shrunk) = w_i sigma_pool^2 + (1-w_i) s_i^2 "
+    "(the Efron-Morris method-of-moments; the Barra USE4 specific-risk shrinkage family - NOT "
+    "Ledoit-Wolf, which shrinks correlations and leaves variances unshrunk).",
+    "The per-instrument intensity is DATA-DRIVEN, not declared: w_i = v_i/(v_i+tau^2), v_i = "
+    "2 s_i^4/(n_i-k_i) the Gaussian sampling variance of a variance estimate, tau^2 = max(0, "
+    "S2_cross - v_bar) the method-of-moments prior dispersion - a noisier/shorter-series estimate "
+    "shrinks MORE, a widely-dispersed cohort shrinks LESS (heterogeneous by construction).",
+    "Method-as-identity: the declared identity is the METHOD, carrying NO numeric intensity; every "
+    "w_i is COMPUTED and fully reproducible from the pinned per-member (s_i^2, residual df) alone "
+    "- "
+    "the fit is not minted as a separate governed number.",
+    "A TRANSFORM over promoted raw estimates (it runs no OLS); the shrunk residual stdev feeds the "
+    "same total-VaR residual leg as the raw estimate, byte-unchanged downstream.",
+)
+
+#: OD-RS-1-B dossier limitations.
+PROXY_WEIGHT_SHRINKAGE_EB_LIMITATIONS: tuple[str, ...] = (
+    "COMPARABLE-COHORT rule: the cross-sectional pool assumes a comparable-risk group - pooling "
+    "across asset classes (a bond shrunk toward an equity pool) is a mis-application the declaring "
+    "analyst owns; the kernel pools whatever cohort it is handed.",
+    "MIN-COHORT fail-closed: fewer than 3 comparable members leaves tau^2 unidentifiable (the "
+    "James-Stein dimension) - the run REFUSES rather than substituting an arbitrary intensity.",
+    "The GAUSSIAN sampling variance v_i = 2 s_i^4/(n_i-k_i) assumes approximately-normal residuals "
+    "- "
+    "heavy tails understate v_i and under-shrink; the plug-in s_i^4 adds noise on short series.",
+    "The EQUAL-WEIGHTED pool is a simplification of USE4's cap-weighted target (a recorded v2); "
+    "the "
+    "shrinkage target is the cross-sectional MEAN specific variance, not a structural model.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome "
+    "(VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation exception, MG-1) "
+    "refuses "
+    "every new bind at the shared seam.",
+)
+
+
+@dataclass(frozen=True)
+class ProxyWeightParameters:
+    """The version's declared proxy-weight estimator identity (RS-1, OD-RS-1-C).
+    ``estimator_convention`` is OPTIONAL with a RAW default (the grandfather — absent => RAW, the
+    deliberate inverse of the es_hs required-literal template). ``min_observations`` is present for
+    the RAW/EWMA regression conventions and ``None`` for the EB shrinkage transform;
+    ``decay_lambda`` is present only for EWMA."""
+
+    estimator_convention: str
+    min_observations: int | None
+    decay_lambda: Decimal | None
+
+
+def declared_proxy_weight_parameters(
+    session: Session, version: ModelVersion
+) -> ProxyWeightParameters:
+    """Parse the version's declared proxy-weight estimator identity (RS-1, OD-RS-1-C). Absent
+    ``estimator_convention`` => the implicit ``RAW`` v1 (the grandfather); a present convention must
+    be one of the three recognized literals with its required companions well-formed. Malformed/
+    ambiguous/unknown -> the fail-closed :class:`WrongModelVersionError` (the generic endpoint can
+    mint anything)."""
+    texts = load_assumption_texts(session, version)
+    convention = sole_declared(texts, ESTIMATOR_ASSUMPTION_PREFIX)
+
+    def _fail() -> WrongModelVersionError:
+        return WrongModelVersionError(str(version.id), PROXY_WEIGHT_MODEL_CODE)
+
+    if convention is None or convention == PROXY_WEIGHT_RAW_CONVENTION:
+        min_obs = require_declared(
+            texts, MIN_OBSERVATIONS_ASSUMPTION_PREFIX, pattern=_DIGITS_PATTERN, on_invalid=_fail
+        )
+        return ProxyWeightParameters(PROXY_WEIGHT_RAW_CONVENTION, int(min_obs), None)
+    if convention == PROXY_WEIGHT_EWMA_CONVENTION:
+        min_obs = require_declared(
+            texts, MIN_OBSERVATIONS_ASSUMPTION_PREFIX, pattern=_DIGITS_PATTERN, on_invalid=_fail
+        )
+        lam_text = require_declared(
+            texts, DECAY_LAMBDA_ASSUMPTION_PREFIX, pattern=_DECAY_LAMBDA_PATTERN, on_invalid=_fail
+        )
+        lam = Decimal(lam_text)
+        if not (Decimal(0) < lam < Decimal(1)):
+            raise _fail()
+        return ProxyWeightParameters(PROXY_WEIGHT_EWMA_CONVENTION, int(min_obs), lam)
+    if convention == PROXY_WEIGHT_SHRINKAGE_EB_CONVENTION:
+        return ProxyWeightParameters(PROXY_WEIGHT_SHRINKAGE_EB_CONVENTION, None, None)
+    raise _fail()
+
+
+def register_proxy_weight_ewma_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    decay_lambda: str | Decimal,
+    min_observations: int,
+    version_label: str = PROXY_WEIGHT_EWMA_VERSION_LABEL,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) an EWMA residual-variance version of the proxy-weight family (RS-1,
+    OD-RS-1-A). Identity = (code_version, min_observations, estimator_convention=EWMA_RISKMETRICS,
+    decay_lambda). The convention + lambda are REGISTRAR-STAMPED (not caller-suppliable from the
+    generic endpoint); a same-label re-register with a different declaration raises
+    :class:`ModelVersionConflictError`."""
+    lam_text = str(decay_lambda).strip()
+    if not _DECAY_LAMBDA_PATTERN.fullmatch(lam_text) or not (
+        Decimal(0) < Decimal(lam_text) < Decimal(1)
+    ):
+        raise ValueError(
+            f"decay_lambda {decay_lambda!r} must be 0.<1..6 digits> with 0 < lambda < 1"
+        )
+    if min_observations < 3:
+        raise ValueError(
+            "min_observations must be >= 3 (intercept + >= 1 slope + >= 1 residual df)"
+        )
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=PROXY_WEIGHT_MODEL_CODE,
+        name=PROXY_WEIGHT_MODEL_NAME,
+        model_type=PROXY_WEIGHT_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "OLS regression of a private instrument's desmoothed appraisal return series on "
+            "candidate public factor returns (PA-3, ENT-057)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=version_label,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=version_label,
+            actor_id=actor_id,
+            methodology_ref=PROXY_WEIGHT_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *PROXY_WEIGHT_EWMA_ASSUMPTIONS_BASE,
+                f"{MIN_OBSERVATIONS_ASSUMPTION_PREFIX}{int(min_observations)}",
+                f"{ESTIMATOR_ASSUMPTION_PREFIX}{PROXY_WEIGHT_EWMA_CONVENTION}",
+                f"{DECAY_LAMBDA_ASSUMPTION_PREFIX}{lam_text}",
+            ),
+            limitations=PROXY_WEIGHT_EWMA_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_proxy_weight_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or declared.estimator_convention != PROXY_WEIGHT_EWMA_CONVENTION
+        or declared.min_observations != int(min_observations)
+        or declared.decay_lambda != Decimal(lam_text)
+    ):
+        raise ModelVersionConflictError(
+            PROXY_WEIGHT_MODEL_CODE,
+            version_label,
+            f"{code_version} (min_observations={min_observations}, decay_lambda={lam_text})",
+        )
+    return version
+
+
+def register_proxy_weight_shrinkage_eb_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    version_label: str = PROXY_WEIGHT_SHRINKAGE_EB_VERSION_LABEL,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) an empirical-Bayes shrinkage version of the proxy-weight family
+    (RS-1, OD-RS-1-B). Identity = (code_version, estimator_convention=SHRINKAGE_CROSS_SECTIONAL_EB)
+    — method-as-identity, NO numeric intensity. A same-label re-register with a different
+    declaration raises :class:`ModelVersionConflictError`."""
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=PROXY_WEIGHT_MODEL_CODE,
+        name=PROXY_WEIGHT_MODEL_NAME,
+        model_type=PROXY_WEIGHT_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "OLS regression of a private instrument's desmoothed appraisal return series on "
+            "candidate public factor returns (PA-3, ENT-057)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=version_label,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=version_label,
+            actor_id=actor_id,
+            methodology_ref=PROXY_WEIGHT_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *PROXY_WEIGHT_SHRINKAGE_EB_ASSUMPTIONS_BASE,
+                f"{ESTIMATOR_ASSUMPTION_PREFIX}{PROXY_WEIGHT_SHRINKAGE_EB_CONVENTION}",
+            ),
+            limitations=PROXY_WEIGHT_SHRINKAGE_EB_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_proxy_weight_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or declared.estimator_convention != PROXY_WEIGHT_SHRINKAGE_EB_CONVENTION
+    ):
+        raise ModelVersionConflictError(
+            PROXY_WEIGHT_MODEL_CODE,
+            version_label,
+            f"{code_version} (estimator_convention={PROXY_WEIGHT_SHRINKAGE_EB_CONVENTION})",
+        )
+    return version
+
+
 # --- PA-4: total parametric VaR = factor + idiosyncratic residual variance (OD-PA-4-B) ---
 
 #: The per-tenant inventory identity of the total-parametric-VaR model (PA-4). A DIFFERENT model

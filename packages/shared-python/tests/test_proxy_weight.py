@@ -54,13 +54,19 @@ from irp_shared.risk import (
     METRIC_TYPE_ESTIMATION_SUMMARY,
     METRIC_TYPE_INTERCEPT,
     METRIC_TYPE_WEIGHT,
+    PROXY_WEIGHT_EWMA_CONVENTION,
+    PROXY_WEIGHT_SHRINKAGE_EB_CONVENTION,
     ProxyWeightEstimateActor,
     ProxyWeightInputError,
     ProxyWeightKernelError,
+    WrongModelVersionError,
+    declared_proxy_weight_parameters,
     estimate_ols,
     list_proxy_weight_results,
     promote_proxy_weight_estimate,
+    register_proxy_weight_ewma_model,
     register_proxy_weight_regression_model,
+    register_proxy_weight_shrinkage_eb_model,
     run_proxy_weight_estimate,
 )
 from irp_shared.snapshot import verify_snapshot
@@ -724,4 +730,125 @@ def test_repromotion_supersedes_with_citation(session: Session) -> None:
             acting_tenant=tenant,
             actor=act,
             source_calculation_run_id=run_id,  # the DESMOOTHED_RETURN run
+        )
+
+
+# --- RS-1: the EWMA + empirical-Bayes shrinkage estimator conventions ----------------------------
+
+_USD_RETS = ["0.01", "0.02", "-0.01", "0.03", "0.00"]
+_EUR_RETS = ["0.02", "-0.01", "0.01", "0.00", "0.02"]
+
+
+def _extract_yx(session: Session, run_id: str, fx_usd: str, fx_eur: str) -> tuple[list, list]:
+    """Extract the (y, X) the estimate service saw — the desmoothed periods + per-period factor
+    returns (one return per period_end), candidate order = factor_id ascending."""
+    from irp_shared.perf.models import METRIC_TYPE_DESMOOTHED_PERIOD, DesmoothedReturnResult
+
+    periods = list(
+        session.execute(
+            select(DesmoothedReturnResult)
+            .where(
+                DesmoothedReturnResult.calculation_run_id == run_id,
+                DesmoothedReturnResult.metric_type == METRIC_TYPE_DESMOOTHED_PERIOD,
+            )
+            .order_by(DesmoothedReturnResult.period_start)
+        )
+        .scalars()
+        .all()
+    )
+    y = [p.metric_value for p in periods]
+    ends = [p.period_end for p in periods]
+    usd = {d: Decimal(v) for d, v in zip(MARK_DATES[1:], _USD_RETS, strict=False)}
+    eur = {d: Decimal(v) for d, v in zip(MARK_DATES[1:], _EUR_RETS, strict=False)}
+    cols_by_fid = {fx_usd.lower(): [usd[e] for e in ends], fx_eur.lower(): [eur[e] for e in ends]}
+    ordered = sorted(cols_by_fid)
+    return y, [cols_by_fid[f] for f in ordered]
+
+
+def test_ewma_estimate_reweights_residual_only(session: Session) -> None:
+    """An EWMA version re-derives residual_stdev via the EWMA convention while the loadings + std
+    errors + R^2 stay byte-identical to the raw run (the s2 decoupling at the persistence layer)."""
+    tenant = str(uuid.uuid4())
+    run_id, pf, inst = _desmoothed_run(session, tenant)
+    fx_usd = _factor(session, tenant, "FX_USD")
+    fx_eur = _factor(session, tenant, "FX_EUR")
+    _factor_returns(session, tenant, fx_usd, _USD_RETS)
+    _factor_returns(session, tenant, fx_eur, _EUR_RETS)
+    raw_model = _proxy_model(session, tenant)
+    ewma_version = register_proxy_weight_ewma_model(
+        session,
+        tenant_id=tenant,
+        actor_id="s",
+        code_version="v1",
+        decay_lambda="0.9",
+        min_observations=4,
+    )
+    params = declared_proxy_weight_parameters(session, ewma_version)
+    assert params.estimator_convention == PROXY_WEIGHT_EWMA_CONVENTION
+    assert params.decay_lambda == Decimal("0.9")
+    assert params.min_observations == 4
+
+    common = dict(
+        acting_tenant=tenant,
+        actor=ProxyWeightEstimateActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        desmoothed_run_id=run_id,
+        factor_ids=[fx_usd, fx_eur],
+    )
+    raw_out = run_proxy_weight_estimate(session, model_version_id=raw_model, **common)
+    ewma_out = run_proxy_weight_estimate(
+        session, model_version_id=str(ewma_version.id), **common
+    )
+    assert raw_out.status == "COMPLETED" and ewma_out.status == "COMPLETED"
+    raw_rows = list_proxy_weight_results(session, str(raw_out.run.run_id), acting_tenant=tenant)
+    ewma_rows = list_proxy_weight_results(session, str(ewma_out.run.run_id), acting_tenant=tenant)
+
+    def _summary(rows: list) -> object:
+        return next(r for r in rows if r.metric_type == METRIC_TYPE_ESTIMATION_SUMMARY)
+
+    raw_sum, ewma_sum = _summary(raw_rows), _summary(ewma_rows)
+    # loadings + inference + R^2 byte-identical; only residual_stdev diverges.
+    assert raw_sum.metric_value == ewma_sum.metric_value  # R^2
+    def _loadings(rows: list) -> dict:
+        return {
+            (r.metric_type, r.factor_id): (r.metric_value, r.std_error)
+            for r in rows
+            if r.metric_type != METRIC_TYPE_ESTIMATION_SUMMARY
+        }
+
+    assert _loadings(raw_rows) == _loadings(ewma_rows)
+    assert raw_sum.residual_stdev != ewma_sum.residual_stdev
+
+    # correctness: both match the kernel re-derivation on the extracted (y, X).
+    y, x = _extract_yx(session, run_id, fx_usd, fx_eur)
+    assert raw_sum.residual_stdev == estimate_ols(y, x).residual_stdev.quantize(_RQ)
+    assert ewma_sum.residual_stdev == estimate_ols(
+        y, x, decay_lambda=Decimal("0.9")
+    ).residual_stdev.quantize(_RQ)
+
+
+def test_estimate_run_rejects_eb_shrinkage_version(session: Session) -> None:
+    """A SHRINKAGE_CROSS_SECTIONAL_EB version is a transform, not an OLS estimate — the estimate run
+    fails closed with WrongModelVersionError (the registry-map dispatch)."""
+    tenant = str(uuid.uuid4())
+    run_id, pf, inst = _desmoothed_run(session, tenant)
+    fx = _factor(session, tenant, "FX_USD")
+    _factor_returns(session, tenant, fx, _USD_RETS)
+    eb_version = register_proxy_weight_shrinkage_eb_model(
+        session, tenant_id=tenant, actor_id="s", code_version="v1"
+    )
+    params = declared_proxy_weight_parameters(session, eb_version)
+    assert params.estimator_convention == PROXY_WEIGHT_SHRINKAGE_EB_CONVENTION
+    assert params.min_observations is None and params.decay_lambda is None
+    with pytest.raises(WrongModelVersionError):
+        run_proxy_weight_estimate(
+            session,
+            acting_tenant=tenant,
+            actor=ProxyWeightEstimateActor(actor_id="a"),
+            code_version="v1",
+            environment_id="test",
+            model_version_id=str(eb_version.id),
+            desmoothed_run_id=run_id,
+            factor_ids=[fx],
         )
