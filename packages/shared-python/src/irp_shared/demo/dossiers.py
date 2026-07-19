@@ -786,3 +786,75 @@ RS1_SHRINKAGE_INITIAL = FlagshipDossier(
         "GAUSSIAN sampling variance",
     ),
 )
+
+
+# --- DS-2 stage 6 (OD-DS-2-E): the estimator-convention INITIALs. NO new model CODE (two
+# VERSIONS of perf.return.desmoothed_geltner — the count pins hold; the model keeps its campaign
+# tier) and NO TRIGGERED re-validation (census-proved: no existing validation condition names the
+# declared-alpha rider — the desmoothing versions carry EXCEPTION-form records without closure
+# tokens, so there is nothing to close by supersession; forcing one would be the false ceremony
+# HG-1's OQ-5 bars — recorded honestly, the deliberate contrast with the MF-1/RS-1 flywheel).
+
+#: The AR1_ESTIMATED version's INITIAL (AWC): the ESTIMATION demonstrated with its honest
+#: uncertainty — deliberately NOT a recovery claim (the DS-2 planning verifier's R1 reframe: at
+#: n=15 the small-sample upward bias of alpha-hat is ~0.7x the band; a "recovery" claim would
+#: ride on seed luck).
+DS2_AR1_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the AR1_ESTIMATED desmoothing version (declared min_periods=8, "
+        "band_convention=BARTLETT_WHITE_NOISE): the cited evidence run estimates alpha IN-RUN "
+        "on the PE-HARBORVIEW-IX series - 16 quarterly marks GENERATED at a KNOWN true alpha "
+        "of 0.4, so the record shows estimation WITH its honest uncertainty: the persisted "
+        "band (~0.26 at n=15) and the disclosed small-sample UPWARD bias of alpha-hat mean "
+        "the estimate is EXPECTED to land above the true alpha at this series length - "
+        "deliberately NOT a recovery claim. The platform demonstrates its own estimator's "
+        "finite-sample weakness on appraisal-length series - the stated-honestly thesis. "
+        "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant under the "
+        "DS-2 ratification (OQ-DS-2-1/5); the ratified dossier table is the human validation "
+        "judgment, the filing is its transcription."
+    ),
+    conditions=(
+        "CONDITION (short-series estimation): alpha-hat on appraisal-length series carries a "
+        "wide band AND a systematic upward bias - both persisted/disclosed, neither corrected; "
+        "series length is the remediation lever, and any capital or limit decision consuming a "
+        "desmoothed series from this version MUST weigh the band. CONDITION (structure): the "
+        "single-lag AR(1) form is still imposed - estimating alpha does not fix structural "
+        "mis-specification; the OKUNEV_WHITE_ITERATIVE sibling addresses higher-order "
+        "structure."
+    ),
+    finding_keys=(
+        "SAMPLING ERROR",
+        "SMALL-SAMPLE UPWARD BIAS",
+        "CONSERVATIVE BAND",
+    ),
+)
+
+#: The OKUNEV_WHITE_ITERATIVE version's INITIAL (AWC).
+DS2_OW_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the OKUNEV_WHITE_ITERATIVE desmoothing version (declared "
+        "ow_max_order=2): the cited evidence run whitens the same PE-HARBORVIEW-IX series "
+        "through two deterministic lag-i passes (the per-pass coefficient the '-' root of the "
+        "settled quadratic; rows carry alpha NULL - the convention has no single alpha; the "
+        "coefficients reproduce from the pinned marks alone). "
+        "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant under the "
+        "DS-2 ratification (OQ-DS-2-2/5); the ratified dossier table is the human validation "
+        "judgment, the filing is its transcription."
+    ),
+    conditions=(
+        "CONDITION (transcription grade): the per-pass formula is verified by first-principles "
+        "derivation plus a vendor reproduction - the SSRN primary is GATED; re-verify against "
+        "the primary or a second independent source BEFORE any extension of this convention. "
+        "CONDITION (fixed sequence + shortening): one pass per order ascending (a later pass "
+        "slightly perturbs earlier orders - the repeat-until-tolerance variant is a recorded "
+        "v2), and each order-i pass drops its first i values - short appraisal series bound "
+        "the usable order."
+    ),
+    finding_keys=(
+        "FIXED PASS SEQUENCE",
+        "VENDOR-NORMALIZED TRANSCRIPTION",
+        "SERIES SHORTENING",
+    ),
+)

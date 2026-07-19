@@ -254,12 +254,18 @@ class DesmoothedReturnResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMi
     observed_return: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
     begin_mark: Mapped[Decimal | None] = mapped_column(PreciseDecimal(28, 6), nullable=True)
     end_mark: Mapped[Decimal | None] = mapped_column(PreciseDecimal(28, 6), nullable=True)
-    # The DECLARED speed-of-adjustment (the model identity), echoed on EVERY row as evidence.
-    alpha: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    # The alpha the run USED, echoed on EVERY row as evidence: the DECLARED identity value (v1),
+    # or the IN-RUN estimate alpha-hat (AR1_ESTIMATED, DS-2) — NULL on OKUNEV_WHITE_ITERATIVE
+    # rows, which have no single alpha (migration 0042 relaxed the column; a stuffed placeholder
+    # would be dishonest provenance — the 0028 rationale).
+    alpha: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
     mark_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     # Summary evidence (NULL on per-period rows) — the honest-uncertainty pair (OD-PA-1-C).
     observed_stdev: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
     n_periods: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # DS-2 (OD-DS-2-A): the AR1_ESTIMATED Bartlett band, SUMMARY row only (DB-guarded by the
+    # 0042 CHECK; EXCLUDED from the pin serializer — the 0038/0040 false-drift landmine).
+    alpha_stderr: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
 
 
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:

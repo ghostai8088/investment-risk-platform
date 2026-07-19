@@ -20,6 +20,7 @@ were promoted to ``model.service`` at PM-1 for exactly this).
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -306,11 +307,15 @@ DESMOOTHED_RETURN_ASSUMPTIONS_BASE: tuple[str, ...] = (
 
 #: The recorded scope-outs (mirrored into model_limitation rows; decision record Part 3).
 DESMOOTHED_RETURN_LIMITATIONS: tuple[str, ...] = (
-    "SINGLE-LAG AR(1) ONLY: residual higher-order autocorrelation survives one Geltner pass; the "
-    "Getmansky-Lo-Makarov MA(q) profile and the Okunev-White iterative filter are the recorded "
-    "v2s.",
-    "alpha is DECLARED, not estimated in-run - an offline mis-estimated alpha propagates directly "
-    "into every desmoothed value; the desmoothed series is a MODEL OUTPUT, not an observation.",
+    "SINGLE-LAG AR(1) ONLY on this version: residual higher-order autocorrelation survives one "
+    "Geltner pass; the Okunev-White iterative filter is REALIZED as a declared estimator "
+    "convention (DS-2); the Getmansky-Lo-Makarov MA(q) profile remains the recorded v2 - its "
+    "MLE requires constrained numerical optimization, a determinism obstacle this runtime has "
+    "not admitted.",
+    "alpha is DECLARED on this version - the AR1_ESTIMATED convention (DS-2) estimates it "
+    "in-run with a persisted Bartlett band; an offline mis-estimated alpha still propagates "
+    "directly into every desmoothed value here, and the desmoothed series is a MODEL OUTPUT, "
+    "not an observation.",
     "IRREGULAR APPRAISAL SPACING is accepted and recorded: the AR(1) coefficient applies per "
     "observation step; a calendar-regularity gate is a recorded v2.",
     "Single-currency mark series only (no FX translation); simple returns (no log-return leg).",
@@ -419,5 +424,353 @@ def register_desmoothed_return_model(
             DESMOOTHED_RETURN_MODEL_CODE,
             str(version_label),
             f"{code_version} (alpha={alpha_key})",
+        )
+    return version
+
+
+# --- DS-2 (OD-DS-2-C): the desmoothing estimator conventions — the RS-1 gate pattern adapted.
+#
+# Both new estimators are declared VERSIONS of the SAME perf.return.desmoothed_geltner code (no new
+# model code). The shipped declared-alpha identity is GRANDFATHERED: an ABSENT estimator_convention
+# means the implicit DECLARED convention (every existing version parses exactly as before).
+# AMBIGUITY (>1 convention row) and STRAY inapplicable literals are refused fail-closed — the RS-1
+# adversarial-HIGH lesson folded from birth.
+
+#: The implicit v1 convention (never stamped on a declared-alpha version — absent => this).
+DESMOOTHING_DECLARED_CONVENTION = "DECLARED"
+#: OD-DS-2-A: alpha-hat = 1 - rho-hat_1 computed IN-RUN from the pinned marks (+ the band).
+DESMOOTHING_AR1_ESTIMATED_CONVENTION = "AR1_ESTIMATED"
+#: OD-DS-2-B: the Okunev-White iterative higher-order filter (declared max order; alpha = NULL).
+DESMOOTHING_OKUNEV_WHITE_CONVENTION = "OKUNEV_WHITE_ITERATIVE"
+
+#: The same literal prefix the risk families use ("estimator_convention=") — defined locally (perf
+#: imports NO risk symbol; the peer-package split).
+DESMOOTHING_ESTIMATOR_ASSUMPTION_PREFIX = "estimator_convention="
+DESMOOTHING_MIN_PERIODS_ASSUMPTION_PREFIX = "min_periods="
+DESMOOTHING_BAND_ASSUMPTION_PREFIX = "band_convention="
+DESMOOTHING_OW_ORDER_ASSUMPTION_PREFIX = "ow_max_order="
+
+#: The declared band convention literal (OD-DS-2-A): the band is registrar-stamped IDENTITY so a
+#: future exact-AR1 band is a NEW version, never silent drift.
+DESMOOTHING_BARTLETT_BAND = "BARTLETT_WHITE_NOISE"
+#: The structural floor under any declared min_periods (rho-hat_1 on fewer points is noise).
+DESMOOTHING_MIN_PERIODS_FLOOR = 6
+#: The declared OW max order domain (small-int gate; each order adds a pass + drops i values).
+_DESMOOTHING_OW_ORDER_PATTERN = re.compile(r"[1-4]")
+# No leading zeros: "007" and "7" must not alias one identity (the strict-alpha no-coercion
+# discipline; the adversarial-review A2 fold).
+_DESMOOTHING_MIN_PERIODS_PATTERN = re.compile(r"[1-9][0-9]{0,2}")
+
+DESMOOTHING_AR1_ESTIMATED_VERSION_LABEL = "v2-ar1-estimated"
+#: The DS-2 residual-estimation referent (both new conventions cite it).
+DESMOOTHING_ESTIMATED_METHODOLOGY_REF = "05_analytics_methodologies/desmoothing_estimated_v1.md"
+DESMOOTHING_OKUNEV_WHITE_VERSION_LABEL = "v2-okunev-white"
+
+#: OD-DS-2-A dossier — the estimated convention's declared methodology.
+DESMOOTHING_AR1_ESTIMATED_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "The Geltner AR(1) inversion with alpha ESTIMATED IN-RUN from the pinned observed series: "
+    "alpha-hat = 1 - rho-hat_1, where rho-hat_1 is the lag-1 sample autocorrelation under the "
+    "T-denominator (Box-Jenkins) convention - the PA-1-recorded offline procedure brought "
+    "in-run, deterministic closed form (no optimizer), fully reproducible from the pinned marks "
+    "alone.",
+    "FAIL-CLOSED, never a silent clamp: rho-hat_1 <= 0 (no positive smoothing signal) refuses "
+    "pre-create - the declared-alpha version remains available; alpha-hat lands in (0,1) by "
+    "construction otherwise.",
+    "The persisted alpha column carries the COMPUTED alpha-hat (the echo = what the run used); "
+    "the DESMOOTHING_SUMMARY row additionally persists alpha_stderr under the declared "
+    "band_convention=BARTLETT_WHITE_NOISE (SE(rho-hat_1) ~ 1/sqrt(n); SE(alpha-hat) equals it "
+    "by the delta method).",
+    "A declared min_periods floor gates the estimation (structural floor 6 observed returns) - "
+    "an estimate on fewer points is refused, not disclaimed.",
+)
+
+#: OD-DS-2-A/OD-F dossier limitations (the verifier-corrected honesty set).
+DESMOOTHING_AR1_ESTIMATED_LIMITATIONS: tuple[str, ...] = (
+    "SAMPLING ERROR on appraisal-length series: SE(rho-hat_1) ~ 1/sqrt(n) is large at typical "
+    "private-asset lengths (~0.26 at n=15) - the band is persisted and wide; series length is "
+    "the lever.",
+    "SMALL-SAMPLE UPWARD BIAS: rho-hat_1 is biased DOWNWARD ~ -(1+4*phi)/n (Kendall 1954; "
+    "Marriott-Pope 1954), so alpha-hat is biased UPWARD on short series (executed MC: E[alpha-"
+    "hat] ~ 0.58 at n=15 when the true alpha is 0.40) - disclosed, never corrected in-run; a "
+    "bias-corrected estimator is a recorded v2.",
+    "CONSERVATIVE BAND: the declared BARTLETT_WHITE_NOISE band 1/sqrt(n) OVERSTATES SE(rho-"
+    "hat_1) under AR(1) at lag 1 (the exact-AR1 band sqrt((1-phi^2)/n) is narrower - a recorded "
+    "v2); the band is an identification convention, never an exact confidence interval.",
+    "STRUCTURE STILL ASSUMED: estimating alpha does not fix structural mis-specification - the "
+    "single-lag AR(1) form is still imposed; the Okunev-White higher-order filter (this slice) "
+    "and the Getmansky-Lo-Makarov MA(q) profile (a recorded v2 - its MLE requires constrained "
+    "numerical optimization, a determinism obstacle this runtime has not admitted) address "
+    "structure.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation "
+    "exception, MG-1) refuses every new bind at the shared seam.",
+)
+
+#: OD-DS-2-B dossier — the Okunev-White convention's declared methodology.
+DESMOOTHING_OKUNEV_WHITE_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "The Okunev-White iterative higher-order filter (SSRN 460641; Loudon-Okunev-White JFI 2006): "
+    "ONE deterministic pass per order i = 1..ow_max_order, ascending; pass i measures rho_i and "
+    "rho_2i on the CURRENT series (the T-denominator convention) and applies the lag-i filter "
+    "r*_t = (r_t - c_i*r_{t-i})/(1 - c_i) with c_i the '-' root of rho_i*c^2 - (1+rho_2i)*c + "
+    "rho_i = 0 (the sole admissible |c| <= 1 root - Vieta reciprocal roots; settled by "
+    "derivation and executed proof at planning).",
+    "Deterministic closed form (no optimizer); the c_i coefficients are NOT persisted - fully "
+    "reproducible from the pinned marks + the declared identity.",
+    "The filtered rows carry alpha NULL (the convention has no single alpha); the summary "
+    "row persists the stdev pair as v1 with alpha_stderr NULL.",
+    "rho_i < 0 is admissible and DELIBERATE (whitening is the objective, both signs); the "
+    "Geltner single pass is the m=1 special case under EXACT AR(1) structure only (on sample "
+    "data OW m=1 differs from AR1_ESTIMATED - never asserted equivalent).",
+)
+
+#: OD-DS-2-B/OD-F dossier limitations.
+DESMOOTHING_OKUNEV_WHITE_LIMITATIONS: tuple[str, ...] = (
+    "FIXED PASS SEQUENCE: one pass per order, ascending - a later pass slightly perturbs "
+    "earlier orders' autocorrelations; the repeat-until-tolerance variant is a recorded v2 "
+    "(deliberately not shipped: a tolerance loop is not deterministic-by-declaration).",
+    "VENDOR-NORMALIZED TRANSCRIPTION: the per-pass formula is verified by first-principles "
+    "derivation plus a technical vendor reproduction; the SSRN primary is GATED - re-verify "
+    "against the primary or a second independent source before any extension.",
+    "SERIES SHORTENING: each order-i pass drops its first i filtered values (cumulative loss "
+    "m(m+1)/2); the structural floor requires n >= m(m+1)/2 + 2 and each pass's length > 2i "
+    "(else rho_2i would be an empty-sum artifact; at the per-pass minimum length 2i+1 it "
+    "rests on a SINGLE product - measured, admissible, maximally noisy) - short appraisal "
+    "series bound the usable order.",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation "
+    "exception, MG-1) refuses every new bind at the shared seam.",
+)
+
+
+@dataclass(frozen=True)
+class DesmoothingParameters:
+    """The version's declared desmoothing estimator identity (DS-2, OD-DS-2-C).
+    ``estimator_convention`` is OPTIONAL with a DECLARED default (the grandfather — absent =>
+    DECLARED, exactly the shipped parse). ``alpha`` is present for DECLARED only; ``min_periods``
+    + ``band_convention`` for AR1_ESTIMATED only; ``ow_max_order`` for OKUNEV_WHITE only."""
+
+    estimator_convention: str
+    alpha: Decimal | None
+    min_periods: int | None
+    band_convention: str | None
+    ow_max_order: int | None
+
+
+def declared_desmoothing_parameters(
+    session: Session, version: ModelVersion
+) -> DesmoothingParameters:
+    """Parse the version's declared desmoothing estimator identity (DS-2, OD-DS-2-C). ABSENT
+    ``estimator_convention`` (zero rows) => the implicit DECLARED grandfather (requires the
+    ``alpha=`` literal, exactly the shipped behavior; an EXPLICIT ``DECLARED`` row is
+    accepted and behaviorally identical — no registrar stamps one, adversarial A5). AMBIGUOUS
+    (>1 convention row) is refused — never collapsed into the grandfather (the RS-1
+    adversarial-HIGH lesson); a present
+    convention must be a recognized literal with its companions well-formed and NO inapplicable
+    stray literal (a stray ``alpha=`` on an estimated/OW version is a lying identity). Malformed
+    -> the fail-closed :class:`WrongModelVersionError`."""
+    texts = load_assumption_texts(session, version)
+    convention_rows = [t for t in texts if t.startswith(DESMOOTHING_ESTIMATOR_ASSUMPTION_PREFIX)]
+
+    def _fail() -> WrongModelVersionError:
+        return WrongModelVersionError(str(version.id), DESMOOTHED_RETURN_MODEL_CODE)
+
+    if len(convention_rows) > 1:
+        raise _fail()  # ambiguity is refused, never grandfathered
+
+    has_alpha = any(t.startswith(DESMOOTHING_ALPHA_ASSUMPTION_PREFIX) for t in texts)
+    has_min_periods = any(t.startswith(DESMOOTHING_MIN_PERIODS_ASSUMPTION_PREFIX) for t in texts)
+    has_band = any(t.startswith(DESMOOTHING_BAND_ASSUMPTION_PREFIX) for t in texts)
+    has_ow = any(t.startswith(DESMOOTHING_OW_ORDER_ASSUMPTION_PREFIX) for t in texts)
+
+    convention = (
+        convention_rows[0][len(DESMOOTHING_ESTIMATOR_ASSUMPTION_PREFIX) :]
+        if convention_rows
+        else DESMOOTHING_DECLARED_CONVENTION
+    )
+
+    if convention == DESMOOTHING_DECLARED_CONVENTION:
+        if has_min_periods or has_band or has_ow:  # stray literals = a lying identity
+            raise _fail()
+        alpha = declared_desmoothing_alpha(session, version)
+        return DesmoothingParameters(DESMOOTHING_DECLARED_CONVENTION, alpha, None, None, None)
+    if convention == DESMOOTHING_AR1_ESTIMATED_CONVENTION:
+        if has_alpha or has_ow:
+            raise _fail()
+        min_periods_text = require_declared(
+            texts,
+            DESMOOTHING_MIN_PERIODS_ASSUMPTION_PREFIX,
+            pattern=_DESMOOTHING_MIN_PERIODS_PATTERN,
+            on_invalid=_fail,
+        )
+        min_periods = int(min_periods_text)
+        if min_periods < DESMOOTHING_MIN_PERIODS_FLOOR:
+            raise _fail()
+        band = require_declared(
+            texts,
+            DESMOOTHING_BAND_ASSUMPTION_PREFIX,
+            pattern=re.compile(re.escape(DESMOOTHING_BARTLETT_BAND)),
+            on_invalid=_fail,
+        )
+        return DesmoothingParameters(
+            DESMOOTHING_AR1_ESTIMATED_CONVENTION, None, min_periods, band, None
+        )
+    if convention == DESMOOTHING_OKUNEV_WHITE_CONVENTION:
+        if has_alpha or has_min_periods or has_band:
+            raise _fail()
+        ow_text = require_declared(
+            texts,
+            DESMOOTHING_OW_ORDER_ASSUMPTION_PREFIX,
+            pattern=_DESMOOTHING_OW_ORDER_PATTERN,
+            on_invalid=_fail,
+        )
+        return DesmoothingParameters(
+            DESMOOTHING_OKUNEV_WHITE_CONVENTION, None, None, None, int(ow_text)
+        )
+    raise _fail()
+
+
+def register_desmoothed_return_estimated_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    min_periods: int = 8,
+    version_label: str = DESMOOTHING_AR1_ESTIMATED_VERSION_LABEL,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) an AR1_ESTIMATED desmoothing version (DS-2, OD-DS-2-A). Identity =
+    (code_version, estimator_convention=AR1_ESTIMATED, min_periods, band_convention) — the
+    convention + companions are REGISTRAR-STAMPED, never caller-suppliable from the generic path;
+    a same-label re-register with a different declaration raises
+    :class:`ModelVersionConflictError`."""
+    if int(min_periods) < DESMOOTHING_MIN_PERIODS_FLOOR:
+        raise ValueError(
+            f"min_periods must be >= {DESMOOTHING_MIN_PERIODS_FLOOR} (rho-hat_1 on fewer "
+            f"observed returns is noise); got {min_periods}"
+        )
+    if not str(version_label).strip():
+        raise ValueError("version_label must be non-empty")
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=DESMOOTHED_RETURN_MODEL_CODE,
+        name=DESMOOTHED_RETURN_MODEL_NAME,
+        model_type=DESMOOTHED_RETURN_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Geltner AR(1) unsmoothing of a captured private-asset appraisal mark series into a "
+            "governed desmoothed return series with the honest-uncertainty stdev pair (PA-1, "
+            "ENT-056)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=str(version_label),
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=str(version_label),
+            actor_id=actor_id,
+            methodology_ref=DESMOOTHING_ESTIMATED_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *DESMOOTHING_AR1_ESTIMATED_ASSUMPTIONS_BASE,
+                f"{DESMOOTHING_ESTIMATOR_ASSUMPTION_PREFIX}"
+                f"{DESMOOTHING_AR1_ESTIMATED_CONVENTION}",
+                f"{DESMOOTHING_MIN_PERIODS_ASSUMPTION_PREFIX}{int(min_periods)}",
+                f"{DESMOOTHING_BAND_ASSUMPTION_PREFIX}{DESMOOTHING_BARTLETT_BAND}",
+            ),
+            limitations=DESMOOTHING_AR1_ESTIMATED_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_desmoothing_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or declared.estimator_convention != DESMOOTHING_AR1_ESTIMATED_CONVENTION
+        or declared.min_periods != int(min_periods)
+    ):
+        raise ModelVersionConflictError(
+            DESMOOTHED_RETURN_MODEL_CODE,
+            str(version_label),
+            f"{code_version} (estimator_convention={DESMOOTHING_AR1_ESTIMATED_CONVENTION}, "
+            f"min_periods={min_periods})",
+        )
+    return version
+
+
+def register_desmoothed_return_okunev_white_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    ow_max_order: int = 2,
+    version_label: str = DESMOOTHING_OKUNEV_WHITE_VERSION_LABEL,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) an OKUNEV_WHITE_ITERATIVE desmoothing version (DS-2, OD-DS-2-B).
+    Identity = (code_version, estimator_convention=OKUNEV_WHITE_ITERATIVE, ow_max_order); the
+    convention + order are REGISTRAR-STAMPED; a same-label re-register with a different
+    declaration raises :class:`ModelVersionConflictError`."""
+    if not 1 <= int(ow_max_order) <= 4:
+        raise ValueError(f"ow_max_order must be in 1..4; got {ow_max_order}")
+    if not str(version_label).strip():
+        raise ValueError("version_label must be non-empty")
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=DESMOOTHED_RETURN_MODEL_CODE,
+        name=DESMOOTHED_RETURN_MODEL_NAME,
+        model_type=DESMOOTHED_RETURN_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Geltner AR(1) unsmoothing of a captured private-asset appraisal mark series into a "
+            "governed desmoothed return series with the honest-uncertainty stdev pair (PA-1, "
+            "ENT-056)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=str(version_label),
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=str(version_label),
+            actor_id=actor_id,
+            methodology_ref=DESMOOTHING_ESTIMATED_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *DESMOOTHING_OKUNEV_WHITE_ASSUMPTIONS_BASE,
+                f"{DESMOOTHING_ESTIMATOR_ASSUMPTION_PREFIX}"
+                f"{DESMOOTHING_OKUNEV_WHITE_CONVENTION}",
+                f"{DESMOOTHING_OW_ORDER_ASSUMPTION_PREFIX}{int(ow_max_order)}",
+            ),
+            limitations=DESMOOTHING_OKUNEV_WHITE_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_desmoothing_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or declared.estimator_convention != DESMOOTHING_OKUNEV_WHITE_CONVENTION
+        or declared.ow_max_order != int(ow_max_order)
+    ):
+        raise ModelVersionConflictError(
+            DESMOOTHED_RETURN_MODEL_CODE,
+            str(version_label),
+            f"{code_version} (estimator_convention={DESMOOTHING_OKUNEV_WHITE_CONVENTION}, "
+            f"ow_max_order={ow_max_order})",
         )
     return version

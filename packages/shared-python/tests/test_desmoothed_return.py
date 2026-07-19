@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import pathlib
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -502,5 +502,177 @@ def test_migration_head_is_desmoothed_return() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0041_es_historical"  # ES-HS-1
+    assert script.get_current_head() == "0042_desmoothing_estimated_alpha"  # DS-2
     assert script.get_revision("0036_desmoothed_return").down_revision == "0035_scenario"
+    assert (
+        script.get_revision("0042_desmoothing_estimated_alpha").down_revision
+        == "0041_es_historical"
+    )
+
+
+# --- DS-2 (OD-DS-2-A/B/C): the estimator-convention runs end-to-end -----------------------------
+
+_DS2_DATES = tuple(date(2023, 3, 31) + timedelta(days=91 * i) for i in range(12))
+
+
+def _smoothed_mark_values(phi: str = "0.6", start: str = "100.00") -> tuple[str, ...]:
+    """A deterministic AR(1)-shaped quarterly mark path (fixture-searched at planning: sample
+    rho_1 ≈ 0.29 > 0 AND the OW m=2 discriminants positive — admissible for BOTH conventions;
+    an AR(1) shape keeps rho_2 ≈ rho_1², which is always OW-admissible, unlike a flat-rho_2
+    cycle where (1+rho_2)² < 4·rho_1²)."""
+    eps_cycle = ("0.0045", "-0.0043", "0.0082", "-0.0096", "-0.0083", "-0.0072", "0.0067")
+    marks = [Decimal(start)]
+    prev = Decimal("0.02")
+    for i in range(len(_DS2_DATES) - 1):
+        obs = Decimal(phi) * prev + Decimal(eps_cycle[i % len(eps_cycle)])
+        prev = obs
+        marks.append((marks[-1] * (Decimal(1) + obs)).quantize(Decimal("0.000001")))
+    return tuple(str(m) for m in marks)
+
+
+def _register_and_run(  # noqa: ANN202
+    db: Session, tenant: str, pf: str, inst: str, version_id: str
+):
+    from irp_shared.perf import run_desmoothed_return
+
+    return run_desmoothed_return(
+        db,
+        acting_tenant=tenant,
+        actor=DesmoothedReturnActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=version_id,
+        portfolio_id=pf,
+        instrument_id=inst,
+        window_start=_DS2_DATES[0] - timedelta(days=1),
+        window_end=_DS2_DATES[-1] + timedelta(days=1),
+    )
+
+
+def test_ar1_estimated_run_echoes_alpha_hat_and_band(session: Session) -> None:
+    from irp_shared.perf import register_desmoothed_return_estimated_model
+    from irp_shared.perf.desmoothing_kernel import estimate_ar1_alpha, observed_returns
+
+    tenant = str(uuid.uuid4())
+    values = _smoothed_mark_values()
+    pf, inst = _seed_marks(session, tenant, values=values, dates=_DS2_DATES)
+    version = register_desmoothed_return_estimated_model(
+        session, tenant_id=tenant, actor_id="s", code_version="v1", min_periods=8
+    )
+    out = _register_and_run(session, tenant, pf, inst, str(version.id))
+    assert out.status == "COMPLETED"
+
+    # Independent recomputation: alpha-hat + the band from the same marks.
+    est = estimate_ar1_alpha(observed_returns([Decimal(v) for v in values]))
+    alpha_hat = est.alpha_hat.quantize(Decimal("1E-12"))
+    stderr = est.stderr.quantize(Decimal("1E-12"))
+    periods = [r for r in out.rows if r.metric_type == "DESMOOTHED_PERIOD"]
+    summary = next(r for r in out.rows if r.metric_type == "DESMOOTHING_SUMMARY")
+    assert len(periods) == len(values) - 2
+    assert all(r.alpha == alpha_hat for r in periods)
+    assert summary.alpha == alpha_hat
+    assert summary.alpha_stderr == stderr
+    assert all(r.alpha_stderr is None for r in periods)  # the summary-only invariant
+
+
+def test_ar1_estimated_floor_refusal(session: Session) -> None:
+    from irp_shared.perf import register_desmoothed_return_estimated_model
+    from irp_shared.perf.desmoothing_service import DesmoothingInputError
+
+    tenant = str(uuid.uuid4())
+    values = _smoothed_mark_values()[:6]  # 5 observed < the declared floor 8
+    pf, inst = _seed_marks(session, tenant, values=values, dates=_DS2_DATES[:6])
+    version = register_desmoothed_return_estimated_model(
+        session, tenant_id=tenant, actor_id="s", code_version="v1", min_periods=8
+    )
+    with pytest.raises(DesmoothingInputError, match="min_periods floor"):
+        run_desmoothed_return(
+            session,
+            acting_tenant=tenant,
+            actor=DesmoothedReturnActor(actor_id="a"),
+            code_version="v1",
+            environment_id="test",
+            model_version_id=str(version.id),
+            portfolio_id=pf,
+            instrument_id=inst,
+            window_start=_DS2_DATES[0] - timedelta(days=1),
+            window_end=_DS2_DATES[5] + timedelta(days=1),
+        )
+
+
+def test_ar1_estimated_refuses_negative_autocorrelation(session: Session) -> None:
+    from irp_shared.perf import register_desmoothed_return_estimated_model
+    from irp_shared.perf.desmoothing_service import DesmoothingInputError
+
+    tenant = str(uuid.uuid4())
+    # Alternating up/down marks => strongly negative rho_1.
+    vals = []
+    m = Decimal("100")
+    for i in range(12):
+        vals.append(str(m))
+        m = (m * (Decimal("1.05") if i % 2 == 0 else Decimal("0.955"))).quantize(
+            Decimal("0.000001")
+        )
+    pf, inst = _seed_marks(session, tenant, values=tuple(vals), dates=_DS2_DATES)
+    version = register_desmoothed_return_estimated_model(
+        session, tenant_id=tenant, actor_id="s", code_version="v1", min_periods=8
+    )
+    with pytest.raises(DesmoothingInputError, match="alpha estimation refused"):
+        _register_and_run(session, tenant, pf, inst, str(version.id))
+
+
+def test_okunev_white_run_null_alpha_and_alignment(session: Session) -> None:
+    from irp_shared.perf import register_desmoothed_return_okunev_white_model
+    from irp_shared.perf.benchmark_relative_kernel import sample_stdev
+    from irp_shared.perf.desmoothing_kernel import desmooth_okunev_white, observed_returns
+
+    tenant = str(uuid.uuid4())
+    values = _smoothed_mark_values()
+    pf, inst = _seed_marks(session, tenant, values=values, dates=_DS2_DATES)
+    version = register_desmoothed_return_okunev_white_model(
+        session, tenant_id=tenant, actor_id="s", code_version="v1", ow_max_order=2
+    )
+    out = _register_and_run(session, tenant, pf, inst, str(version.id))
+    assert out.status == "COMPLETED"
+
+    observed = observed_returns([Decimal(v) for v in values])
+    ow = desmooth_okunev_white(observed, 2)
+    offset = 3  # m(m+1)/2 at m=2
+    periods = [r for r in out.rows if r.metric_type == "DESMOOTHED_PERIOD"]
+    summary = next(r for r in out.rows if r.metric_type == "DESMOOTHING_SUMMARY")
+    assert len(periods) == len(observed) - offset == len(ow.series)
+    assert all(r.alpha is None for r in periods) and summary.alpha is None
+    assert summary.alpha_stderr is None
+    assert summary.n_periods == len(ow.series)
+    for k, row in enumerate(sorted(periods, key=lambda r: r.period_start)):
+        j = k + offset
+        assert row.metric_value == ow.series[k]
+        assert (row.period_start, row.period_end) == (_DS2_DATES[j], _DS2_DATES[j + 1])
+        assert row.observed_return == observed[j]
+    assert summary.metric_value == sample_stdev(list(ow.series))
+    assert summary.observed_stdev == sample_stdev(observed[offset:])
+
+
+def test_okunev_white_floor_refusal(session: Session) -> None:
+    from irp_shared.perf import register_desmoothed_return_okunev_white_model
+    from irp_shared.perf.desmoothing_service import DesmoothingInputError
+
+    tenant = str(uuid.uuid4())
+    values = _smoothed_mark_values()[:5]  # 4 observed < m(m+1)/2+2 = 5 at m=2
+    pf, inst = _seed_marks(session, tenant, values=values, dates=_DS2_DATES[:5])
+    version = register_desmoothed_return_okunev_white_model(
+        session, tenant_id=tenant, actor_id="s", code_version="v1", ow_max_order=2
+    )
+    with pytest.raises(DesmoothingInputError, match="okunev-white transform refused"):
+        run_desmoothed_return(
+            session,
+            acting_tenant=tenant,
+            actor=DesmoothedReturnActor(actor_id="a"),
+            code_version="v1",
+            environment_id="test",
+            model_version_id=str(version.id),
+            portfolio_id=pf,
+            instrument_id=inst,
+            window_start=_DS2_DATES[0] - timedelta(days=1),
+            window_end=_DS2_DATES[4] + timedelta(days=1),
+        )

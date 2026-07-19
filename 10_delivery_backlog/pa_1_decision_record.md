@@ -63,6 +63,16 @@
 2. **α is DECLARED, not estimated in-run** — an offline mis-estimated α propagates directly into
    the desmoothed series (first-class limitation; the estimation procedure is recorded in the
    methodology doc).
+   > **PARTIALLY DISCHARGED (dated note, additive — ratified history is not rewritten). DS-2
+   > (2026-07-19):** items 1 and 2's v2 register is partially REALIZED as declared estimator
+   > conventions on this family — **`AR1_ESTIMATED`** (α̂ = 1 − ρ̂₁ in-run + a persisted Bartlett
+   > band; the conservative-band direction and the small-sample upward bias of α̂ registered as
+   > first-class limitations) and **`OKUNEV_WHITE_ITERATIVE`** (the deterministic higher-order
+   > filter; the per-pass formula settled by derivation + executed proof — the SSRN primary
+   > remains gated). Referent: `05_analytics_methodologies/desmoothing_estimated_v1.md`;
+   > migration `0042`. **Still open:** the GLM MA(q) profile — extraction-verified to equation
+   > numbers at DS-2 planning but its MLE requires constrained numerical optimization, a
+   > determinism obstacle this runtime has not admitted (the named v2's own prerequisite).
 3. **Irregular appraisal spacing accepted** (OD-H) — the AR(1) step is per-observation; a
    calendar-regularity gate is v2.
 4. **No FX translation** — single-currency mark series only.

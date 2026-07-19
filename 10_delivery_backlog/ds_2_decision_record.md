@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **RATIFIED 2026-07-18 (OQ-DS-2-1…7, user: "Approve all") — implementation underway.** Drafted 2026-07-18 on `main` = `f7f8e61` (post-RS-1 closeout; head migration `0041_es_historical`). Scope ratified in-session: **estimated-α + Okunev-White ship in-slice; GLM MA(k) stays the named v2** with its determinism obstacle recorded (the recommended fork, user-approved). Sized **M**. Not yet code-reviewed. |
+| **Status** | **IMPLEMENTED + 4-FINDER-REVIEWED 2026-07-19 — awaiting the impl PR merge (branch `ds-2-impl`; closeout stamps follow).** Ratified 2026-07-18 (OQ-DS-2-1…7, user: "Approve all"); drafted 2026-07-18 on `main` = `f7f8e61` (post-RS-1 closeout; head migration `0041_es_historical`). Scope ratified in-session: **estimated-α + Okunev-White ship in-slice; GLM MA(k) stays the named v2** with its determinism obstacle recorded (the recommended fork, user-approved). Implementation: 7 commits + the fold commit `b8141d6`; migration head → `0042_desmoothing_estimated_alpha`. 4-finder review (Part 6): **ZERO HIGH, ZERO MEDIUM** — adversarial 2 LOW + 4 INFO, numeric 0 defects + 3 caveats, doctrine 0/0 + 2 LOW, scope-fence 9/9 PASS; all folds landed. **NO new governed number / model code / permission / ENT** (two declared estimator CONVENTIONS as versions of `perf.return.desmoothed_geltner` — the RS-1 shape). Sized **M**. |
 | **Grounding** | Census (one thorough Explore pass, file:line-grounded) + the primary-source fetch DISCHARGED FIRST (the roadmap fetch-at-planning MUST — the ledger's "record-cited at PA-1, never extraction-verified" flag). The declared-α Geltner family (PA-1, ENT-056, `perf.return.desmoothed_geltner`): kernel `desmoothing_kernel.py` (`desmooth_geltner` :60-75, `r_t = (r_a,t − (1−α)·r_a,t−1)/α`, domain `0<α≤1` :65, α=1 identity boundary :14-15; `observed_returns` :44-57 from marks, ≥2 marks, strictly positive; prec-50 + 12dp HALF_UP). Binder `desmoothing_service.py`: `run_desmoothed_return` :220-423, `PURPOSE_DESMOOTHING_INPUT` pins `COMPONENT_KIND_VALUATION` marks, `_MIN_MARKS = 4` (:85, OD-PA-1-H), declared-α parse-back `declared_desmoothing_alpha` (`perf/bootstrap.py:325-340`, `alpha=` prefix :282, pattern :286, domain re-check :338). Rows: n−2 `DESMOOTHED_PERIOD` + ONE `DESMOOTHING_SUMMARY` (`metric_value`=desmoothed stdev, `observed_stdev`, `n_periods`); **`alpha` is a NOT-NULL scalar echo on every row; NO stderr/CI column exists** (the band needs a column). Registrar `register_desmoothed_return_model` :343-423 (caller-suppliable `version_label` — the MF-1 `v1-alpha1` precedent; per-label conflict discipline :414-422). **The declared-α rider verbatim** (`bootstrap.py:312-313`): "alpha is DECLARED, not estimated in-run - an offline mis-estimated alpha propagates directly into every desmoothed value"; the single-lag rider :309-311 names GLM MA(q) + Okunev-White as the recorded v2s; the referent's v2 register `desmoothing_geltner_v1.md:93-100` ("an α confidence band is a v2 candidate"). **Downstream:** PA-3 is the SOLE governed consumer of `DESMOOTHED_PERIOD` rows and reads ONLY metric_type/period grain/`metric_value` (`proxy_weight_service.py:151-155/:340`); `alpha` is pinned as provenance (`serialize.py:460`) but never read into the OLS — **an estimated-α/OW output series flows through PA-3 byte-unchanged**. **No closable validation condition exists for the declared-α rider** (unlike FL-1's `_CURRENCY_CONDITION` closure hook): the desmoothing versions carry use-before-validation EXCEPTIONs (campaign α=0.4 `v1`; MF-1 α=1 `v1-alpha1`), not AWCs-with-conditions — so there is NO TRIGGERED re-validation to file (the HG-1 OQ-5 false-ceremony bar; the lifecycle-turn pattern does NOT apply here, honestly recorded). The gate pattern to mirror is RS-1's `declared_proxy_weight_parameters` (`risk/bootstrap.py:1897-1947`): optional-with-default convention, **ambiguity refused** (>1 row never collapses into the grandfather), stray-literal refusal; perf uses the shared `model.assumptions` helpers directly. Demo series: campaign 7 marks→5 periods; HG-1 8→6; MF-1 12→10 — **5-11 periods ⇒ SE(ρ̂₁) ≈ 1/√n ≈ 0.30-0.45**, so the α̂ band on existing series is honestly enormous (a feature for the thesis, disclosed; the stage-6 demo seeds a LONGER series). **NO new permission/ENT/model code/governed number** (two new declared VERSIONS of the existing family — the RS-1 shape verbatim); `audit/service.py` FROZEN. |
 | **Mandate** | Roadmap Part 2.10 slice 4 (`delivery_roadmap.md:166`), sized S/M in the ledger, confirmed **M** by the ratified two-estimator scope + the migration. "GLM MA(q) / Okunev-White: the platform starts ESTIMATING the smoothing it corrects (the 1991→2003/4 fidelity gap named at the close); remediates the declared-α rider; the α confidence band rides. Fetch GLM 2004 + OW 2003 to paragraph at planning." Both fetches DISCHARGED (Part 2). The LAST Wave-7 slice — the wave close review follows. |
 
@@ -65,7 +65,72 @@ The adversarial verifier pass (executed, seeded scripts — not read-only) ran B
 Adversarial (gate/edges/downgrade/grandfather) · numeric (exact-rational: ρ̂₁, α̂, the band, the OW quadratic + per-pass zeroing property, fuzz over series shapes; the stage-6 recovery re-derivation) · doctrine (citation grades incl. the vendor-normalized OW disclosure; the rewords' surviving clauses; the no-TRIGGERED honesty) · scope-fence (clause-by-clause).
 
 ## Part 5.5 — Implementation deviations from the ratified plan
-*(populated at implementation)*
 
-## Part 6 — Implementation review dispositions
-*(populated after the 4-finder review)*
+1. **The read-surface delta, enumerated exactly (OD-D iii executed + the band echo)** — the
+   shipped `DesmoothedReturnRowOut` changes are precisely two: `alpha` → `str | None` with the
+   None-guard every sibling nullable column already has (the verifier's R3 third site — an OW
+   read no longer 500s), and a NEW `alpha_stderr: str | None` echo (summary row only). Both were
+   adjudicated in OD-G at planning ("recorded, not silent"); transcribed here so the read-schema
+   accounting is closed. The two new registrar endpoints
+   (`POST /perf/models/desmoothed-return-estimated` / `…-okunev-white`) carry request-body
+   defaults `min_periods=8` / `ow_max_order=2` with caller-suppliable `version_label` (the house
+   shape); runs ride the EXISTING run endpoint unchanged — dispatch is on the bound version.
+2. **The ORM nullability relaxation is ORM-declared, deliberately** — `models.py`
+   `DesmoothedReturnResult.alpha` → `nullable=True` + the `alpha_stderr` column, so SQLite
+   `create_all` and the PG migration agree (OD-D anticipated this: nullability IS ORM-visible —
+   the recorded PG-only/ORM-blind asymmetry does not arise). The `alpha` column comment was
+   rewritten to the three-convention semantics (declared / in-run α̂ / NULL on OW — a stuffed
+   placeholder would be dishonest provenance, the 0028 rationale).
+3. **The migration-head re-pin maintenance class (18 + 1 files)** — not enumerated in the
+   ratified plan (RS-1, the template slice, carried no migration): 17 suites' deliberate
+   head-pin asserts + the var_total chain test moved `0041_es_historical` →
+   `0042_desmoothing_estimated_alpha`, and the synthetic-slice next-number tripwire advanced
+   `0042*` → `0043*` (DS-2 owns 0042, recorded in its ownership comment). Mechanical, scripted,
+   the recurring migration-slice class (first named at ES-HS-1's 17-pin sweep).
+4. **The OD-F rewords shipped as line REPLACEMENTS** — the two deleted `perf/bootstrap.py`
+   limitation lines are the OD-F-ratified rewords of the single-lag row (OW now REALIZED; the
+   GLM MA(q) clause PRESERVED with its determinism note) and the declared-α row (declared →
+   convention-of-three with the propagation clause surviving). Transcribed for the scope-fence
+   finder's deleted-lines accounting (S row below) — nothing else was removed.
+5. **A MISSING CI step caught at the pre-push battery (the P3-7 missing-PG-step class)** — the
+   new `test_desmoothing_estimation_pg.py` suite (the 0042 summary-only CHECK under the
+   constrained role + the non-superuser owner-via-membership downgrade-body test) existed and
+   passed locally but had NO `ci.yml` step — OD-D's "ordered before the demo-seed steps in the
+   shared CI DB" was unimplemented, and the 4-finder review did not flag it (the scope-fence
+   lens checks the diff against OD-G, not CI coverage of new suites — a known limitation of the
+   composition, recorded). Step added beside its family suite (`test_desmoothed_return_pg`),
+   before the demo-seed steps, the 0041-precedent placement.
+6. **The stage-6 fixture is SEARCHED and tripwired** — OD-E specified 16 quarterly marks at
+   α_true=0.4; the shipped deterministic draw was fixture-searched so BOTH conventions are
+   admissible (ρ̂₁ = 0.5038 ⇒ α̂ = 0.4962; OW m=2 discriminants positive — a flat-ρ̂₂ cycle
+   would refuse, the planning fixture-search lesson) and the demo asserts the frozen α̂ so
+   fixture drift refuses loudly instead of silently re-deriving.
+
+## Part 6 — Implementation review dispositions (the ratified 4-finder composition; ran 2026-07-19)
+
+**Composition:** adversarial + numeric (exact-rational, executed) + doctrine + scope-fence, all
+four over the full `ds-2-planning..HEAD` diff. **Totals: ZERO HIGH, ZERO MEDIUM — adversarial
+2 LOW + 4 INFO, numeric 0 defects + 3 property caveats, doctrine 0/0 + 2 LOW notes, scope-fence
+9/9 PASS. All folds landed in `b8141d6` (no behavior change to the shipped kernels; the A1/A2/A4
+code folds are estimator-path-only hardening + dead-code removal).**
+
+| # | Finder | Sev | Finding | Disposition |
+|---|---|---|---|---|
+| A1 | adversarial | LOW | Estimator-path extreme-mark ORDERING: whether an out-of-envelope mark series 422'd pre-create or committed-FAILED depended on the series' autocorrelation (estimation ran before the magnitude gates) — a nondeterministic-looking contract on the NEW paths | FOLDED: the estimator paths refuse an out-of-envelope mark PRE-CREATE, uniformly; the DECLARED path keeps its shipped committed-FAILED shape (byte-preserved); the cross-convention difference DISCLOSED in-code and here; + test |
+| A2 | adversarial | LOW | `_DESMOOTHING_MIN_PERIODS_PATTERN` (`[0-9]{1,3}`) admitted leading zeros — `min_periods=007` and `=7` would alias one identity (the strict no-coercion discipline violated at the declaration surface) | FOLDED: pattern → `[1-9][0-9]{0,2}`; + a gate test pinning the refusal |
+| A3 | adversarial | INFO | The α̂∈(0,1) defensive assert's comment was half-right: it claimed only the α̂→0 side unreachable (~1e6 observations) — the α̂→1 side (ρ̂₁ < 5e-13 quantizing to 1.000…) is constructible at ANY n | FOLDED: comment corrected to both boundaries; the refusal is the honest fail-closed shape either way |
+| A4 | adversarial | INFO | The OW persistence branch re-computed `observed_returns` inside a provably-dead `ArithmeticError` handler (the same pure function had already succeeded pre-create on the same adjudicated marks — the MG-1 dead-guard class) | FOLDED: `ow_observed` captured pre-create alongside `ow_series`; the dead recompute + handler REMOVED; + test |
+| A5 | adversarial | INFO | An EXPLICIT `DECLARED` convention row is accepted and behaviorally identical to absence, but no registrar stamps one — undocumented | FOLDED: gate docstring notes it (accepted, identical, never stamped) |
+| A6 | adversarial | INFO | The 0042 downgrade's side effects were implied, not stated: AR1_ESTIMATED summary rows SURVIVE (alpha non-null) but lose their band with the dropped column; deleted OW rows leave COMPLETED `calculation_run` heads with zero result rows | FOLDED: disclosed explicitly in the migration docstring (both the 0028 destructive-precedent shape) |
+| N1 | numeric | caveat | ZERO defects at max rigor (the ρ̂₁=1 guard PROVED dead via eigenvalue analysis; the c_i≥1 guard belt-and-braces vs data but arithmetically live; every frozen demo number reproduced from pins; the E[α̂]≈0.58 planning MC confirmed at 0.5763). Caveat: at disc = 0 with ρ_i < 0 the OW quadratic's reciprocal DOUBLE root c = −1 arrives — admissible and harmless (denominator 2), but "sole admissible root" is exact only for STRICTLY positive discriminant | FOLDED: kernel docstring + referent phrased to strict positivity with the boundary case named |
+| N2 | numeric | caveat | At the per-pass minimum length (2i+1) the ρ̂_2i numerator rests on a SINGLE product — measured and admissible, but maximally noisy | FOLDED: the OW series-shortening limitation row now says so |
+| N3 | numeric | caveat | The referent's E[α̂] ≈ 0.58 small-n bias figure is CONDITIONAL on acceptance (ρ̂₁ > 0; ~5% of such draws refuse) — unstated conditioning | FOLDED: the conditioning stated at the figure |
+| D1 | doctrine | LOW | The geltner referent's dated amendment called `alpha_stderr` "the band" without the Bartlett caveat the other sites carry | FOLDED: "(an identification convention, not an exact confidence interval)" parenthetical added |
+| D2 | doctrine | LOW | Second LOW note; the finder's verdict otherwise fully clean — citations consistent at every site, zero residual "understates" (the R1 direction flip complete), estimation-not-recovery pinned in the demo claims, all amendments additive | ACCEPTED — an observation, no repo change (the single doctrine fold is D1) |
+| S | scope-fence | — | 9/9 OD-G clauses PASS, zero violations: DECLARED path byte-preserved (goldens re-run), PA-3 byte-untouched, the pin serializer changed by exactly the ONE adjudicated None-tolerance line, `audit/service.py` FROZEN, FE zero changes, prior demo stages byte-untouched; the deleted-lines + read-surface accounting transcribed into Part 5.5 (items 1 and 4) | — |
+
+**Post-fold verification:** `make lint` clean (the `perf/bootstrap.py:565` E501 reflowed);
+`make check` **1588** green + secret scan + docs check; the full battery re-ran green after the
+folds (fresh-schema local PG: all six demo suites in CI order + `alembic check` + the
+downgrade-base/re-upgrade smoke over the stage-6-extended tenant) — the fold-pass numbers
+recorded at closeout.

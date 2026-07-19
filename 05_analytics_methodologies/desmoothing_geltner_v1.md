@@ -98,6 +98,14 @@ re-register with a different α is a governed 409). Run family `DESMOOTHED_RETUR
   2006).
 - **α mis-specification propagates one-for-one** — the honest-uncertainty summary quantifies the
   volatility change, not the α estimation error itself (an α confidence band is a v2 candidate).
+
+> **DATED AMENDMENT (DS-2, 2026-07-19 — additive; this referent describes the DECLARED v1 and is
+> not rewritten):** the α-confidence-band v2 candidate above is DISCHARGED — the `AR1_ESTIMATED`
+> convention estimates α in-run and persists the band (`alpha_stderr`, migration `0042`; an
+> identification convention, not an exact confidence interval); the
+> Okunev-White iterative filter is REALIZED as the `OKUNEV_WHITE_ITERATIVE` convention. The GLM
+> MA(q) v2 remains open (its MLE needs a numerical optimizer — the recorded determinism
+> obstacle). See `desmoothing_estimated_v1.md`.
 - Irregular appraisal spacing accepted (calendar-regularity gate = v2); single currency (no FX);
   simple returns (no log leg); money-weighted/IRR + capital calls live in the recorded PA-3 item.
 - The desmoothed series is not yet consumed downstream — projecting it through `proxy_mapping`
