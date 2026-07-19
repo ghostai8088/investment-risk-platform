@@ -365,3 +365,55 @@ def test_registrars_stamp_and_reparse(db) -> None:  # noqa: ANN001
         register_desmoothed_return_okunev_white_model(
             db, tenant_id=tenant, actor_id="s", code_version="v1", ow_max_order=3
         )
+
+
+# --- The pin serializer (OD-DS-2-D): None-tolerance + the frozen key set ------------------------
+
+
+def _fake_row(alpha):  # noqa: ANN001, ANN202
+    from datetime import UTC, date, datetime
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id="11111111-1111-1111-1111-111111111111",
+        tenant_id="22222222-2222-2222-2222-222222222222",
+        calculation_run_id="33333333-3333-3333-3333-333333333333",
+        input_snapshot_id="44444444-4444-4444-4444-444444444444",
+        model_version_id="55555555-5555-5555-5555-555555555555",
+        portfolio_id="66666666-6666-6666-6666-666666666666",
+        instrument_id="77777777-7777-7777-7777-777777777777",
+        metric_type="DESMOOTHED_PERIOD",
+        period_start=date(2026, 3, 31),
+        period_end=date(2026, 6, 30),
+        metric_value=Decimal("0.0325"),
+        observed_return=Decimal("0.025"),
+        begin_mark=Decimal("102.00"),
+        end_mark=Decimal("104.55"),
+        alpha=alpha,
+        mark_currency="USD",
+        observed_stdev=None,
+        n_periods=None,
+        alpha_stderr=Decimal("0.1"),  # MUST NOT appear in the pin (the false-drift landmine)
+        system_from=datetime(2026, 7, 1, tzinfo=UTC),
+    )
+
+
+def test_pin_serializer_key_set_frozen_and_alpha_none_tolerant() -> None:
+    """The desmoothed pin: alpha_stderr NEVER a key (adding one falsifies every historical pin —
+    the 0038/0040 lesson); the alpha VALUE is None-tolerant (OW rows pin null); a non-null alpha
+    pins byte-identically to the pre-DS-2 form."""
+    from irp_shared.snapshot.serialize import desmoothed_return_content
+
+    frozen_keys = {
+        "id", "tenant_id", "calculation_run_id", "input_snapshot_id", "model_version_id",
+        "portfolio_id", "instrument_id", "metric_type", "period_start", "period_end",
+        "metric_value", "observed_return", "begin_mark", "end_mark", "alpha", "mark_currency",
+        "observed_stdev", "n_periods", "system_from",
+    }  # fmt: skip
+    declared = desmoothed_return_content(_fake_row(Decimal("0.400000000000")))
+    assert set(declared) == frozen_keys  # alpha_stderr EXCLUDED, no key added/removed
+    assert declared["alpha"] == "0.400000000000"  # byte-identical to the pre-DS-2 form
+
+    ow = desmoothed_return_content(_fake_row(None))
+    assert set(ow) == frozen_keys
+    assert ow["alpha"] is None  # the OW null pin

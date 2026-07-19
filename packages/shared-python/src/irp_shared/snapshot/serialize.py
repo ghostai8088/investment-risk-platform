@@ -437,7 +437,13 @@ def desmoothed_return_content(row: Any) -> dict[str, Any]:
     no ``record_version``; ``system_from`` the append time; byte-identical on re-verify). The FULL
     immutable column set is pinned so the proxy-weight binder reconstructs the regression target
     (``metric_type``/``period_start``/``period_end``/``metric_value``) exactly. Nullable echo
-    columns pin as null (the summary row's per-period echoes; a per-period row's summary echoes)."""
+    columns pin as null (the summary row's per-period echoes; a per-period row's summary echoes).
+
+    DS-2 (OD-DS-2-D): ``alpha`` is None-TOLERANT — an OKUNEV_WHITE row pins ``alpha: null`` (the
+    0028 None-tolerance precedent; every pre-DS-2 row has a non-null alpha, so existing pins are
+    byte-identical, drift-tested both directions). ``alpha_stderr`` is deliberately EXCLUDED —
+    adding a pin key falsifies every historical pin (the 0038/0040 false-drift landmine,
+    test-pinned); the band is read-surface evidence, not regression-target content."""
 
     def _opt_dec(value: Any, scale: int) -> str | None:
         return _norm_decimal(value, scale) if value is not None else None
@@ -457,7 +463,7 @@ def desmoothed_return_content(row: Any) -> dict[str, Any]:
         "observed_return": _opt_dec(row.observed_return, _SCALE_CURVE_POINT),
         "begin_mark": _opt_dec(row.begin_mark, _SCALE_MONEY),
         "end_mark": _opt_dec(row.end_mark, _SCALE_MONEY),
-        "alpha": _norm_decimal(row.alpha, _SCALE_CURVE_POINT),
+        "alpha": _opt_dec(row.alpha, _SCALE_CURVE_POINT),  # None-tolerant (OW rows; DS-2)
         "mark_currency": row.mark_currency,
         "observed_stdev": _opt_dec(row.observed_stdev, _SCALE_CURVE_POINT),
         "n_periods": row.n_periods,

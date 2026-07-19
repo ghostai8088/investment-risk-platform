@@ -703,10 +703,14 @@ class DesmoothedReturnRowOut(BaseModel):
     observed_return: str | None  # None on the summary row
     begin_mark: str | None
     end_mark: str | None
-    alpha: str  # the declared model identity, echoed on every row
+    # The alpha the run USED (declared, or the in-run AR1_ESTIMATED alpha-hat); None on
+    # OKUNEV_WHITE rows, which have no single alpha (DS-2 — the verifier's R3 third
+    # None-tolerance site: an un-guarded format here 500'd on an OW read).
+    alpha: str | None
     mark_currency: str
     observed_stdev: str | None  # summary only — the honest-uncertainty pair
     n_periods: int | None
+    alpha_stderr: str | None  # the AR1_ESTIMATED Bartlett band (summary row only; DS-2)
     portfolio_id: str
     instrument_id: str
     model_version_id: str
@@ -740,10 +744,11 @@ def _dr_row_out(row: DesmoothedReturnResult) -> DesmoothedReturnRowOut:
         observed_return=(None if row.observed_return is None else f"{row.observed_return:f}"),
         begin_mark=(None if row.begin_mark is None else f"{row.begin_mark:f}"),
         end_mark=(None if row.end_mark is None else f"{row.end_mark:f}"),
-        alpha=f"{row.alpha:f}",
+        alpha=(None if row.alpha is None else f"{row.alpha:f}"),
         mark_currency=row.mark_currency,
         observed_stdev=(None if row.observed_stdev is None else f"{row.observed_stdev:f}"),
         n_periods=row.n_periods,
+        alpha_stderr=(None if row.alpha_stderr is None else f"{row.alpha_stderr:f}"),
         portfolio_id=row.portfolio_id,
         instrument_id=row.instrument_id,
         model_version_id=row.model_version_id,
