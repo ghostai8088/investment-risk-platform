@@ -347,6 +347,15 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage5_rs1_pg.py -q
+      # Stage 6 (DS-2) runs AFTER stage 5 and BEFORE the downgrade smoke. It mints NO new model
+      # code (two desmoothing estimator VERSIONS), so every count pin above holds; the downgrade
+      # smoke below then exercises 0042's destructive NULL-alpha delete against THIS stage's
+      # Okunev-White rows on every run (the 0041 coupling precedent).
+      - name: Demo stage-6 desmoothing-estimator test (Postgres, DS-2 / OD-DS-2-E)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage6_ds2_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
