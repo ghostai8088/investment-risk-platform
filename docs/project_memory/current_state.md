@@ -1,13 +1,15 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-18) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-19) — read this block; everything below it is HISTORY
 >
-> **HEAD `9c15658`** = merge of **PR #61** (RS-1: residual shrinkage + EWMA — two declared
-> estimator conventions on `risk.proxy_weight.regression`; NO new governed number, NO migration) /
-> **CI green**. **Migration head `0041_es_historical`** (UNCHANGED — RS-1 needs no migration; both
-> shrunk/EWMA σ_e land in the existing `residual_stdev` column). `make check` **1554** passed / full
-> local-PG fresh green (all five demo PG suites in CI order; the stage-5 step slots after stage 4) /
-> `alembic check` clean / downgrade-base + re-upgrade smoke clean over the stage-5-extended tenant.
+> **HEAD `5120baa`** = merge of **PR #64** (DS-2: estimated-α + Okunev-White desmoothing — two
+> declared estimator conventions on `perf.return.desmoothed_geltner`; NO new governed number) /
+> **CI green**. **Migration head `0042_desmoothing_estimated_alpha`** (alpha → nullable +
+> `alpha_stderr` + the summary-only CHECK; destructive RLS-safe downgrade proven under a
+> non-superuser owner-member role). `make check` **1588** passed / fresh-schema local PG green
+> (the 0042 estimation suite + ALL SIX demo PG suites in CI order; the stage-6 step slots after
+> stage 5, before the downgrade smoke) / `alembic check` clean / downgrade-base + re-upgrade
+> smoke clean over the stage-6-extended tenant.
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
@@ -37,8 +39,23 @@
 > EWMA-re-estimated + MF-EQ-A EB-shrunk (bond excluded, asserted-raw), fresh gated flagship
 > total-VaR/ES-total evidence, **2 TRIGGERED re-validations closing the raw-sample-σ_e rider** (the
 > `hostage to the PA-3 estimate quality` finding flipped to historical, both directions test-pinned)
-> + 2 INITIAL AWC dossiers for the new versions. **NEXT = DS-2 planning** (slice 4, the LAST Wave-7
-> slice: desmoothing v2 — fetch the Geltner/GLM/Okunev-White primaries FIRST). **WAVE 6 remains
+> + 2 INITIAL AWC dossiers for the new versions. **DS-2 (slice 4, the LAST) DONE** — planning
+> PR #63 = `0f199aa`, impl **PR #64 = `5120baa`** (CI green; migration **`0042`**): the
+> declared-α rider REMEDIATED via two declared estimator conventions on
+> `perf.return.desmoothed_geltner` — **`AR1_ESTIMATED`** (α̂ = 1−ρ̂₁ in-run; the CONSERVATIVE
+> Bartlett band persisted as `alpha_stderr`; the Kendall/Marriott-Pope small-n UPWARD bias of α̂
+> a registered limitation) + **`OKUNEV_WHITE_ITERATIVE`** (deterministic lag-i passes, the
+> derivation-settled '−' root, the length-vs-order floor; alpha NULL on OW rows) — GLM MA(k)
+> stays the named v2 (extraction-verified to equation numbers; the MLE-optimizer determinism
+> obstacle recorded). Demo **stage 6** = `PE-HARBORVIEW-IX` (16 marks at known α_true = 0.4),
+> the three-way declared/estimated/OW comparison, 2 INITIAL AWCs claiming
+> **estimation-with-honest-uncertainty, NOT recovery**; **NO TRIGGERED re-validation, recorded
+> honestly** (census-proved: no closable condition names the rider — deliberate contrast with
+> the MF-1/RS-1 flywheel). 4-finder review ZERO HIGH/MEDIUM; + the missing-CI-step catch at the
+> pre-push battery (the 0042 PG suite had no ci.yml step — the P3-7 class, fixed + recorded).
+> **The ratified Wave-7 sequence is FULLY DELIVERED. NEXT = the WAVE-7 CLOSE REVIEW** (the
+> mandatory Part-4 rule-2 re-baseline; riders at the close: SC-2 the named pull-forward,
+> commitment/capital-call the presumptive Wave-8 headline). **WAVE 6 remains
 > CLOSED AND RATIFIED** (2026-07-17: `wave_6_close_review.md` OQ-W6C-1…6 via PR #52 = `9d561bf`).
 > The living tenant is now **18 registered model codes** (UNCHANGED — RS-1 added two estimator
 > VERSIONS of an existing code, not a new code) + the two new proxy-weight versions / **28
@@ -65,12 +82,12 @@
 > candidates stay sequence-able with SC-2 the named pull-forward.)* The pre-ratification verifier
 > pass is standing process.
 >
-> **Counts (2026-07-18, post-RS-1):** **15 governed numbers** (UNCHANGED — RS-1 mints none; it adds
-> declared ESTIMATOR CONVENTIONS to the residual estimate, an INPUT to the total-VaR family, not a
-> governed output) / **18 registered model codes** in the demo tenant (UNCHANGED — RS-1's two new
-> conventions are VERSIONS of the existing `risk.proxy_weight.regression` code) + those two new
-> proxy-weight versions / 18 tiered, 10 validated (the Wave-6 seven + the ES-HS INITIAL + RS-1's two
-> new-version INITIALs), 11 excepted, 28 validation records total. Delivery runs under the
+> **Counts (2026-07-19, post-DS-2):** **15 governed numbers** (UNCHANGED — neither RS-1 nor DS-2
+> mints one; both add declared ESTIMATOR CONVENTIONS as versions of existing families) / **18
+> registered model codes** in the demo tenant (UNCHANGED — the four new conventions are VERSIONS:
+> RS-1's two on `risk.proxy_weight.regression`, DS-2's two on `perf.return.desmoothed_geltner`)
+> / 18 tiered, 12 validated (the Wave-6 seven + the ES-HS INITIAL + RS-1's two + DS-2's two
+> new-version INITIALs), 11 excepted, 30 validation records total. Delivery runs under the
 > 2026-07-14 EXTENDED autonomy grant (the USER signs Tier-3 decisions; the USER creates AND merges
 > PRs — the auto-mode classifier blocks Claude's REST create + merge on this repo).
 >
