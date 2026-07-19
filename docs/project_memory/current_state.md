@@ -2,9 +2,10 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-19) — read this block; everything below it is HISTORY
 >
-> **HEAD `5120baa`** = merge of **PR #64** (DS-2: estimated-α + Okunev-White desmoothing — two
-> declared estimator conventions on `perf.return.desmoothed_geltner`; NO new governed number) /
-> **CI green**. **Migration head `0042_desmoothing_estimated_alpha`** (alpha → nullable +
+> **HEAD `cc251b2`** = merge of **PR #66** (the Wave-7 close review + the 14-fix close batch;
+> after the DS-2 closeout **PR #65** = `b4433fc` and the DS-2 impl **PR #64** = `5120baa`, CI
+> green run #381 — DS-2: estimated-α + Okunev-White desmoothing, two declared estimator
+> conventions on `perf.return.desmoothed_geltner`, NO new governed number). **Migration head `0042_desmoothing_estimated_alpha`** (alpha → nullable +
 > `alpha_stderr` + the summary-only CHECK; destructive RLS-safe downgrade proven under a
 > non-superuser owner-member role). `make check` **1588** passed / fresh-schema local PG green
 > (the 0042 estimation suite + ALL SIX demo PG suites in CI order; the stage-6 step slots after
@@ -54,9 +55,19 @@
 > honestly** (census-proved: no closable condition names the rider — deliberate contrast with
 > the MF-1/RS-1 flywheel). 4-finder review ZERO HIGH/MEDIUM; + the missing-CI-step catch at the
 > pre-push battery (the 0042 PG suite had no ci.yml step — the P3-7 class, fixed + recorded).
-> **The ratified Wave-7 sequence is FULLY DELIVERED. NEXT = the WAVE-7 CLOSE REVIEW** (the
-> mandatory Part-4 rule-2 re-baseline; riders at the close: SC-2 the named pull-forward,
-> commitment/capital-call the presumptive Wave-8 headline). **WAVE 6 remains
+> **WAVE 7 IS CLOSED AND RATIFIED** (2026-07-19: `wave_7_close_review.md` OQ-W7C-1…6 "Approve
+> all", merged as DRAFT via **PR #66** = `cc251b2`, ratified immediately after — the second
+> full-ultracode close: 71 agents, all four slices SHIPPED-AS-RATIFIED, **ZERO shipped-code
+> defects, the THIRD consecutive clean close**; 14 hygiene fixes applied at the close; the one
+> code-behavior finding — the stage-4 flagship-pair uuid4 tie-break — ASSIGNED to BT-3).
+> **WAVE 8 IS RATIFIED (roadmap Part 2.11, OQ-W7C-6 fork A "fund the third leg"): BT-3 (the
+> Acerbi-Szekely ES backtest) → CC-1 (captured commitments/calls/distributions, ENT-015/016) →
+> CC-2 (the Takahashi-Alexander pacing projection — the HEADLINE, the 16th-governed-number
+> candidate)**, riders: BT-3's Z1/threshold re-verification MUST; CC-2's Tier-3 forks named at
+> planning + the TA-fetch fallback; SC-2 the named pull-forward (its Wave-7 condition expired
+> unspent); the stage-7 demo obligation; the slot-zero opener option. **NEXT = BT-3 planning**
+> (fetch-first: the AS 2014 Z1 transcription + the −0.70/−1.8 thresholds re-verified +
+> Christoffersen 1998 to paragraph — the ratified planning MUSTs). **WAVE 6 remains
 > CLOSED AND RATIFIED** (2026-07-17: `wave_6_close_review.md` OQ-W6C-1…6 via PR #52 = `9d561bf`).
 > The living tenant is now **18 registered model codes** (UNCHANGED — RS-1 and DS-2 added
 > estimator-convention VERSIONS of existing codes, not new codes) + the four new convention
