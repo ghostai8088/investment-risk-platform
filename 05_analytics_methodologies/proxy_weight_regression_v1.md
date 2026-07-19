@@ -125,3 +125,11 @@ predate FL-1's widening to the admitted loading families (this doc's own FL-1 se
 the widening; the pre-FL-1 sentences stand as history). ALSO NEW AT HG-1: the promotion path
 now always measures and audits `promotion_age_days` (promote-day − regression span end) and
 refuses under an opt-in `max_promotion_age_days` bound — unmeasurable-with-bound fails closed.
+
+**Dated amendment (RS-1, stamped at the Wave-7 close 2026-07-19):** the residual stdev this
+family reports is no longer raw-sample-only — RS-1 added two declared estimator conventions as
+registered VERSIONS of this code (`EWMA_RISKMETRICS`, declared λ, with the s2 decoupling keeping
+the OLS coefficient std-errors classical; `SHRINKAGE_CROSS_SECTIONAL_EB`, Barra-USE4
+empirical-Bayes over a pinned `RESIDUAL_SHRINKAGE_INPUT` cohort). See
+`residual_estimation_v1.md`; the raw v1 stays grandfathered via absent-convention. The
+raw-sample-σ_e rider on the flagship AWCs was closed by RS-1's two TRIGGERED re-validations.
