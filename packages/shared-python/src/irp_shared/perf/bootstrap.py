@@ -457,7 +457,9 @@ DESMOOTHING_BARTLETT_BAND = "BARTLETT_WHITE_NOISE"
 DESMOOTHING_MIN_PERIODS_FLOOR = 6
 #: The declared OW max order domain (small-int gate; each order adds a pass + drops i values).
 _DESMOOTHING_OW_ORDER_PATTERN = re.compile(r"[1-4]")
-_DESMOOTHING_MIN_PERIODS_PATTERN = re.compile(r"[0-9]{1,3}")
+# No leading zeros: "007" and "7" must not alias one identity (the strict-alpha no-coercion
+# discipline; the adversarial-review A2 fold).
+_DESMOOTHING_MIN_PERIODS_PATTERN = re.compile(r"[1-9][0-9]{0,2}")
 
 DESMOOTHING_AR1_ESTIMATED_VERSION_LABEL = "v2-ar1-estimated"
 #: The DS-2 residual-estimation referent (both new conventions cite it).
@@ -531,8 +533,9 @@ DESMOOTHING_OKUNEV_WHITE_LIMITATIONS: tuple[str, ...] = (
     "against the primary or a second independent source before any extension.",
     "SERIES SHORTENING: each order-i pass drops its first i filtered values (cumulative loss "
     "m(m+1)/2); the structural floor requires n >= m(m+1)/2 + 2 and each pass's length > 2i "
-    "(else rho_2i would be an empty-sum artifact) - short appraisal series bound the usable "
-    "order.",
+    "(else rho_2i would be an empty-sum artifact; at the per-pass minimum length 2i+1 it "
+    "rests on a SINGLE product - measured, admissible, maximally noisy) - short appraisal "
+    "series bound the usable order.",
     "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
     "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation "
     "exception, MG-1) refuses every new bind at the shared seam.",
@@ -558,8 +561,10 @@ def declared_desmoothing_parameters(
 ) -> DesmoothingParameters:
     """Parse the version's declared desmoothing estimator identity (DS-2, OD-DS-2-C). ABSENT
     ``estimator_convention`` (zero rows) => the implicit DECLARED grandfather (requires the
-    ``alpha=`` literal, exactly the shipped behavior). AMBIGUOUS (>1 convention row) is refused
-    — never collapsed into the grandfather (the RS-1 adversarial-HIGH lesson); a present
+    ``alpha=`` literal, exactly the shipped behavior; an EXPLICIT ``DECLARED`` row is
+    accepted and behaviorally identical — no registrar stamps one, adversarial A5). AMBIGUOUS
+    (>1 convention row) is refused — never collapsed into the grandfather (the RS-1
+    adversarial-HIGH lesson); a present
     convention must be a recognized literal with its companions well-formed and NO inapplicable
     stray literal (a stray ``alpha=`` on an estimated/OW version is a lying identity). Malformed
     -> the fail-closed :class:`WrongModelVersionError`."""

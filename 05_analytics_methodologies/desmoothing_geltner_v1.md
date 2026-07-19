@@ -101,7 +101,8 @@ re-register with a different α is a governed 409). Run family `DESMOOTHED_RETUR
 
 > **DATED AMENDMENT (DS-2, 2026-07-19 — additive; this referent describes the DECLARED v1 and is
 > not rewritten):** the α-confidence-band v2 candidate above is DISCHARGED — the `AR1_ESTIMATED`
-> convention estimates α in-run and persists the band (`alpha_stderr`, migration `0042`); the
+> convention estimates α in-run and persists the band (`alpha_stderr`, migration `0042`; an
+> identification convention, not an exact confidence interval); the
 > Okunev-White iterative filter is REALIZED as the `OKUNEV_WHITE_ITERATIVE` convention. The GLM
 > MA(q) v2 remains open (its MLE needs a numerical optimizer — the recorded determinism
 > obstacle). See `desmoothing_estimated_v1.md`.

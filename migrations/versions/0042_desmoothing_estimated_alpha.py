@@ -13,6 +13,11 @@ semantically).
 a key falsifies historical pins); the EXISTING ``alpha`` pin key is None-tolerant for OW rows only
 (the 0028 None-tolerance precedent; existing pins byte-identical).
 
+Downgrade side effects, explicit (adversarial A6): AR1_ESTIMATED summary rows SURVIVE (alpha
+non-null) but lose their Bartlett band with the dropped column; deleted OW rows leave their
+COMPLETED ``calculation_run`` heads with zero result rows — both the 0028 destructive-precedent
+shape, disclosed not implied.
+
 No new audit code, permission, or entity. ``audit/service.py`` FROZEN.
 
 Revision ID: 0042_desmoothing_estimated_alpha

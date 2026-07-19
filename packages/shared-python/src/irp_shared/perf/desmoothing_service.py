@@ -49,6 +49,7 @@ from irp_shared.perf.benchmark_relative_kernel import sample_stdev
 from irp_shared.perf.bootstrap import (
     DESMOOTHED_RETURN_MODEL_CODE,
     DESMOOTHING_AR1_ESTIMATED_CONVENTION,
+    DESMOOTHING_DECLARED_CONVENTION,
     DESMOOTHING_MIN_PERIODS_FLOOR,
     DESMOOTHING_OKUNEV_WHITE_CONVENTION,
     declared_desmoothing_parameters,
@@ -339,7 +340,20 @@ def run_desmoothed_return(
     # here and reusing inside _compute cannot diverge. ---
     alpha_stderr: Decimal | None = None
     ow_series: tuple[Decimal, ...] | None = None
+    ow_observed: list[Decimal] | None = None
     ow_offset = 0
+    if params.estimator_convention != DESMOOTHING_DECLARED_CONVENTION:
+        # The estimator paths refuse an out-of-envelope mark PRE-CREATE, uniformly (the
+        # adversarial-review A1 fold): without this, whether an extreme-mark series 422'd or
+        # committed-FAILED depended on the series' autocorrelation — a nondeterministic-looking
+        # contract. The DECLARED path keeps its shipped committed-FAILED shape (byte-preserved);
+        # the cross-convention difference is DISCLOSED here and in the decision record.
+        for m in parsed.marks:
+            if m.mark_value >= _MAX_MARK_ABS:
+                raise DesmoothingInputError(
+                    f"mark {m.valuation_date} is outside the estimation envelope "
+                    f"(>= {_MAX_MARK_ABS:E}); refused"
+                )
     if params.estimator_convention == DESMOOTHING_AR1_ESTIMATED_CONVENTION:
         assert params.min_periods is not None  # gate invariant (parse-back enforced)
         n_observed = len(parsed.marks) - 1
@@ -358,7 +372,9 @@ def run_desmoothed_return(
                 f"alpha estimation detonated on the pinned marks ({type(exc).__name__}); refused"
             ) from exc
         alpha = estimated.alpha_hat.quantize(_RETURN_QUANTUM)
-        if not Decimal(0) < alpha < Decimal(1):  # defensive: unreachable below ~1e6 observations
+        if not Decimal(0) < alpha < Decimal(1):  # defensive BOTH boundaries: alpha->0 needs ~1e6
+            # observations; alpha->1 (rho1 < 5e-13 quantizing to 1.000...) is constructible at
+            # any n — either way the refusal is the honest fail-closed shape (adversarial A3)
             raise DesmoothingInputError(f"estimated alpha {alpha} outside (0, 1); refused")
         alpha_stderr = estimated.stderr.quantize(_RETURN_QUANTUM)
     elif params.estimator_convention == DESMOOTHING_OKUNEV_WHITE_CONVENTION:
@@ -375,6 +391,7 @@ def run_desmoothed_return(
                 f"({type(exc).__name__}); refused"
             ) from exc
         ow_series = ow.series
+        ow_observed = observed_returns([m.mark_value for m in parsed.marks])
         ow_offset = params.ow_max_order * (params.ow_max_order + 1) // 2
 
     # --- The shared governed-run lifecycle (P3-C1 scaffold; behavior-preserving) ---
@@ -393,11 +410,11 @@ def run_desmoothed_return(
         # ALIGNED tail (like-for-like). The transform ran PRE-create; only the magnitude gates +
         # persistence happen here. ---
         if ow_series is not None:
-            try:
-                observed = observed_returns([m.mark_value for m in marks])
-            except ArithmeticError as exc:
-                gaps.append(f"numeric-envelope:{type(exc).__name__}")
-                return [], gaps
+            # The observed series was computed PRE-create on the same adjudicated marks (a
+            # deterministic pure function that already succeeded) — reusing it removes the
+            # provably-dead recompute + ArithmeticError handler (MG-1; adversarial A4).
+            assert ow_observed is not None  # captured with ow_series
+            observed = ow_observed
             ow_rows: list[DesmoothedReturnResult] = []
             for k, value in enumerate(ow_series):
                 j = k + ow_offset

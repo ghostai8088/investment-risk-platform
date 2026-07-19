@@ -417,3 +417,24 @@ def test_pin_serializer_key_set_frozen_and_alpha_none_tolerant() -> None:
     ow = desmoothed_return_content(_fake_row(None))
     assert set(ow) == frozen_keys
     assert ow["alpha"] is None  # the OW null pin
+
+
+def test_gate_refuses_leading_zero_min_periods(db) -> None:  # noqa: ANN001
+    """A2 fold: '007' and '7' must not alias one identity — the leading-zero declaration is
+    refused by the tightened pattern (the strict-alpha no-coercion discipline)."""
+    import uuid as _uuid
+
+    from irp_shared.model.service import WrongModelVersionError
+    from irp_shared.perf import declared_desmoothing_parameters
+
+    version = _mint_desmoothing_version(
+        db,
+        str(_uuid.uuid4()),
+        [
+            "estimator_convention=AR1_ESTIMATED",
+            "min_periods=007",
+            "band_convention=BARTLETT_WHITE_NOISE",
+        ],
+    )
+    with pytest.raises(WrongModelVersionError):
+        declared_desmoothing_parameters(db, version)

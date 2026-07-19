@@ -29,8 +29,9 @@ DB-guarded summary-only). Two honesty facts, both registered (executed at planni
 **CONSERVATIVE** — it OVERSTATES SE(ρ̂₁) under AR(1) at lag 1 (the narrower exact-AR1 band
 √((1−φ²)/n) is a named v2); and ρ̂₁ carries a **small-sample DOWNWARD bias** ≈ −(1+4φ)/n
 (Kendall 1954; Marriott-Pope 1954), so **α̂ is biased UPWARD on short appraisal series**
-(executed MC: E[α̂] ≈ 0.58 at n = 15 when the true α is 0.40) — disclosed, never corrected
-in-run; a bias-corrected estimator is a named v2.
+(executed MC: E[α̂] ≈ 0.58 at n = 15 when the true α is 0.40 — conditional on acceptance,
+ρ̂₁ > 0; ~5% of such draws refuse) — disclosed, never corrected in-run; a bias-corrected
+estimator is a named v2.
 
 ## OKUNEV_WHITE_ITERATIVE, pinned
 
@@ -40,8 +41,9 @@ pass i measures ρ_i and ρ_2i on the CURRENT series and applies the **lag-i** f
     r*_t = (r_t − c_i·r_{t−i}) / (1 − c_i)
 
 with c_i the '−' root of `ρ_i·c² − (1+ρ_2i)·c + ρ_i = 0` — the sole admissible |c| ≤ 1 root
-(Vieta: the roots are reciprocals; settled by first-principles derivation AND executed proof at
-planning — a lag-i filter zeroes the lag-i autocorrelation, a lag-1 filter with the same
+for a strictly positive discriminant (Vieta reciprocal roots; at disc = 0 with ρ_i < 0 the
+double root c = −1 arrives, admissible and harmless; settled by first-principles derivation AND
+executed proof at planning — a lag-i filter zeroes the lag-i autocorrelation, a lag-1 filter with the same
 coefficient does not). Fail-closed: a negative discriminant (PSD-reachable); **c_i ≥ 1** (not
 equality-only — the ulp-above-one evasion); the structural length-vs-order floor
 (n ≥ m(m+1)/2 + 2, each pass's length > 2i — else ρ̂_2i would be an empty-sum artifact).

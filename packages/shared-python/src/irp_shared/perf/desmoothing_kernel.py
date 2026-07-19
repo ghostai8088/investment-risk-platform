@@ -172,7 +172,9 @@ def desmooth_okunev_white(observed: Sequence[Decimal], max_order: int) -> Okunev
 
     with ``c_i`` the '−' root of ``ρ_i·c² − (1+ρ_2i)·c + ρ_i = 0`` — the verifier-proved SOLE
     admissible root (Vieta: the roots are reciprocals, so exactly one has |c| ≤ 1 whenever the
-    discriminant is positive, BOTH signs of ρ_i; ρ_i < 0 is deliberate WHITENING, no sign flip
+    discriminant is STRICTLY positive, BOTH signs of ρ_i — at disc = 0 with ρ_i < 0 the
+    reciprocal DOUBLE root c = −1 arrives, admissible and harmless (denominator 2; the numeric
+    review's boundary note); ρ_i < 0 is deliberate WHITENING, no sign flip
     since 1 − c_i > 1 there). Each pass drops its first ``i`` values (the recursion seed —
     cumulative loss Σi = m(m+1)/2). Fail-closed: the structural length-vs-order floor
     (``n ≥ m(m+1)/2 + 2`` so TWO values survive for the (n−1) summary stdev; each pass's current
