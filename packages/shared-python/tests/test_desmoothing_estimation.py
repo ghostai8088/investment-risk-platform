@@ -204,3 +204,164 @@ def test_ow_identity_pass_when_rho_is_zero() -> None:
     got = desmooth_okunev_white([_d(x) for x in xs_f], 1)
     assert got.coefficients == (Decimal(0),)
     assert len(got.series) == len(xs_f) - 1
+
+
+# --- The convention gate (OD-DS-2-C): ambiguity + stray-literal refusals (the RS-1 battery) ----
+
+
+@pytest.fixture
+def db():  # noqa: ANN201
+    from sqlalchemy.pool import StaticPool
+
+    from irp_shared.db.session import make_engine, make_session_factory
+    from irp_shared.models import Base
+
+    engine = make_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session = make_session_factory(engine)()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def _mint_desmoothing_version(db, tenant: str, assumptions: list[str]):  # noqa: ANN001, ANN202
+    """Mint a desmoothing version through the GENERIC path (arbitrary assumption rows — the
+    P3-4 threat the parse-gate exists for)."""
+    import uuid as _uuid
+
+    from irp_shared.model.service import register_model_version, resolve_or_register_model
+
+    model = resolve_or_register_model(
+        db,
+        tenant_id=tenant,
+        code="perf.return.desmoothed_geltner",
+        name="dm",
+        model_type="DESMOOTHED_RETURN",
+        actor_id="s",
+        description="generic mint (test)",
+    )
+    return register_model_version(
+        db,
+        model=model,
+        version_label=f"vX-{_uuid.uuid4().hex[:6]}",
+        actor_id="s",
+        methodology_ref="05_analytics_methodologies/desmoothing_estimated_v1.md",
+        code_version="v1",
+        status="REGISTERED",
+        assumptions=tuple(assumptions),
+        limitations=(),
+    )
+
+
+@pytest.mark.parametrize(
+    "assumptions",
+    [
+        # AMBIGUOUS: duplicated convention rows never collapse into the DECLARED grandfather.
+        ["alpha=0.4", "estimator_convention=AR1_ESTIMATED", "estimator_convention=AR1_ESTIMATED"],
+        ["estimator_convention=AR1_ESTIMATED", "estimator_convention=OKUNEV_WHITE_ITERATIVE"],
+        # STRAY literals on the implicit-DECLARED grandfather (a lying displayed identity).
+        ["alpha=0.4", "min_periods=8"],
+        ["alpha=0.4", "ow_max_order=2"],
+        ["alpha=0.4", "band_convention=BARTLETT_WHITE_NOISE"],
+        # AR1_ESTIMATED with a stray alpha / missing companions / sub-floor min_periods.
+        [
+            "estimator_convention=AR1_ESTIMATED",
+            "alpha=0.4",
+            "min_periods=8",
+            "band_convention=BARTLETT_WHITE_NOISE",
+        ],
+        ["estimator_convention=AR1_ESTIMATED", "min_periods=8"],  # no band
+        ["estimator_convention=AR1_ESTIMATED", "band_convention=BARTLETT_WHITE_NOISE"],  # no floor
+        [
+            "estimator_convention=AR1_ESTIMATED",
+            "min_periods=5",
+            "band_convention=BARTLETT_WHITE_NOISE",
+        ],  # below the structural floor 6
+        # OW with a stray alpha / min_periods / band, or an out-of-domain order.
+        ["estimator_convention=OKUNEV_WHITE_ITERATIVE", "ow_max_order=2", "alpha=0.4"],
+        ["estimator_convention=OKUNEV_WHITE_ITERATIVE", "ow_max_order=2", "min_periods=8"],
+        ["estimator_convention=OKUNEV_WHITE_ITERATIVE", "ow_max_order=5"],
+        ["estimator_convention=OKUNEV_WHITE_ITERATIVE"],  # no order
+        # Unknown convention literal.
+        ["alpha=0.4", "estimator_convention=GLM_MA_K"],
+    ],
+)
+def test_gate_refuses_ambiguous_stray_and_malformed(db, assumptions) -> None:  # noqa: ANN001
+    import uuid as _uuid
+
+    from irp_shared.model.service import WrongModelVersionError
+    from irp_shared.perf import declared_desmoothing_parameters
+
+    version = _mint_desmoothing_version(db, str(_uuid.uuid4()), assumptions)
+    with pytest.raises(WrongModelVersionError):
+        declared_desmoothing_parameters(db, version)
+
+
+def test_gate_grandfathers_the_shipped_declared_identity(db) -> None:  # noqa: ANN001
+    """Zero convention rows + a clean alpha => the implicit DECLARED grandfather, byte-preserving
+    the shipped parse; the REAL registrar's output parses identically."""
+    import uuid as _uuid
+
+    from irp_shared.perf import (
+        declared_desmoothing_parameters,
+        register_desmoothed_return_model,
+    )
+
+    tenant = str(_uuid.uuid4())
+    minted = _mint_desmoothing_version(db, tenant, ["alpha=0.4"])
+    params = declared_desmoothing_parameters(db, minted)
+    assert params.estimator_convention == "DECLARED"
+    assert params.alpha == Decimal("0.4")
+    assert (params.min_periods, params.band_convention, params.ow_max_order) == (None, None, None)
+
+    real = register_desmoothed_return_model(
+        db, tenant_id=tenant, actor_id="s", code_version="v1", alpha="0.4"
+    )
+    real_params = declared_desmoothing_parameters(db, real)
+    assert real_params.estimator_convention == "DECLARED"
+    assert real_params.alpha == Decimal("0.4")
+
+
+def test_registrars_stamp_and_reparse(db) -> None:  # noqa: ANN001
+    import uuid as _uuid
+
+    from irp_shared.perf import (
+        declared_desmoothing_parameters,
+        register_desmoothed_return_estimated_model,
+        register_desmoothed_return_okunev_white_model,
+    )
+
+    tenant = str(_uuid.uuid4())
+    est = register_desmoothed_return_estimated_model(
+        db, tenant_id=tenant, actor_id="s", code_version="v1", min_periods=8
+    )
+    p = declared_desmoothing_parameters(db, est)
+    assert p.estimator_convention == "AR1_ESTIMATED"
+    assert p.min_periods == 8 and p.band_convention == "BARTLETT_WHITE_NOISE"
+    assert p.alpha is None and p.ow_max_order is None
+
+    ow = register_desmoothed_return_okunev_white_model(
+        db, tenant_id=tenant, actor_id="s", code_version="v1", ow_max_order=2
+    )
+    q = declared_desmoothing_parameters(db, ow)
+    assert q.estimator_convention == "OKUNEV_WHITE_ITERATIVE"
+    assert q.ow_max_order == 2
+    assert q.alpha is None and q.min_periods is None and q.band_convention is None
+
+    # same-label different-declaration => the governed 409
+    from irp_shared.model.service import ModelVersionConflictError
+
+    with pytest.raises(ModelVersionConflictError):
+        register_desmoothed_return_estimated_model(
+            db, tenant_id=tenant, actor_id="s", code_version="v1", min_periods=10
+        )
+    with pytest.raises(ModelVersionConflictError):
+        register_desmoothed_return_okunev_white_model(
+            db, tenant_id=tenant, actor_id="s", code_version="v1", ow_max_order=3
+        )
