@@ -34,7 +34,8 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
 
 ## Environment quick facts
 - The git repo is THIS directory (on this machine it sits nested under
-  `~/Projects/investment_risk_platform/`); branch `main`; origin is SSH.
+  `~/Projects/investment_risk_platform/`); branch `main`; **origin is HTTPS** (flipped from SSH
+  2026-07-09 — SSH port 22 is BLOCKED on this network; plain `git push` works via the keychain PAT).
 - `gh` is NOT installed — query CI via the public GitHub REST API.
 - Local PG validation uses the single reused container `irp_pg_local` (`postgres:16`); see the standing rule in
   the operating instructions. Reset the schema between full pytest runs against the same DB.

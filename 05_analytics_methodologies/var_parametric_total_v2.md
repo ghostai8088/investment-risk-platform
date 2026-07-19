@@ -214,3 +214,13 @@ rule; **this `v2` referent is immutable**.
 **Dated amendment (HG-1, 2026-07-17):** the allocation-v1/CURRENCY-family attributions above
 predate FL-1 — unproxied and MANUAL-method instruments carry zero idiosyncratic variance under
 ANY bound exposure family. Registrar constants corrected at HG-1.
+
+**Dated amendment (RS-1, stamped at the Wave-7 close 2026-07-19):** the "shrinkage (Barra
+Bayesian) + EWMA weighting (Axioma) are v2s" statements above are SUPERSEDED for the residual
+leg — RS-1 realized `EWMA_RISKMETRICS` and `SHRINKAGE_CROSS_SECTIONAL_EB` as declared estimator
+conventions on `risk.proxy_weight.regression` (see `residual_estimation_v1.md`): the cited σ_e
+this method consumes may now be EWMA-weighted or EB-shrunk, unchanged in how it enters the
+diagonal residual term; residual CROSS-correlation remains open. The registrar's limitation
+constant for NEW registrations was reworded at RS-1; the "Mirrored content-identically" claim
+above holds for the rows registered at BT-2 and stands as history for them — new registrations
+carry the RS-1 wording.

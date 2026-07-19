@@ -13,8 +13,9 @@
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `rs_1_decision_record.md` (**CLOSED** — Part 6 carries the 4-finder dispositions: 2 HIGH + 5 MED +
-> 7 LOW all folded, zero numeric defects, zero scope-fence violations).
+> `ds_2_decision_record.md` (**CLOSED 2026-07-19** — Part 6 carries the 4-finder dispositions:
+> ZERO HIGH/MEDIUM; adversarial 2 LOW + 4 INFO, numeric 0 defects + 3 caveats, doctrine 2 LOW,
+> scope-fence 9/9; + the missing-CI-step catch in Part 5.5).
 >
 > **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
 > DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the presumptive Wave-8
@@ -57,10 +58,12 @@
 > mandatory Part-4 rule-2 re-baseline; riders at the close: SC-2 the named pull-forward,
 > commitment/capital-call the presumptive Wave-8 headline). **WAVE 6 remains
 > CLOSED AND RATIFIED** (2026-07-17: `wave_6_close_review.md` OQ-W6C-1…6 via PR #52 = `9d561bf`).
-> The living tenant is now **18 registered model codes** (UNCHANGED — RS-1 added two estimator
-> VERSIONS of an existing code, not a new code) + the two new proxy-weight versions / **28
-> validation records** (24 + RS-1's 2 TRIGGERED + 2 INITIAL) / the stage-5 evidence chain added ~9
-> runs. `phase_status.md`/`next_actions.md` are pointer stubs (OQ-W6C-4).
+> The living tenant is now **18 registered model codes** (UNCHANGED — RS-1 and DS-2 added
+> estimator-convention VERSIONS of existing codes, not new codes) + the four new convention
+> versions (RS-1's two proxy-weight + DS-2's two desmoothing) / **30 validation records**
+> (26 + RS-1's 2 TRIGGERED + 2 INITIAL + DS-2's 2 INITIAL — 11 EXCEPTION + 12 INITIAL +
+> 7 TRIGGERED by type, DB-verified) / stages 5 and 6 added the fresh evidence chains (87
+> COMPLETED runs total). `phase_status.md`/`next_actions.md` are pointer stubs (OQ-W6C-4).
 >
 > **Wave-6 history: Wave 6 was functionally complete 2026-07-16** (MG-1 → FL-1 → MF-1 all CLOSED). MF-1
 > demonstrated **the full governance lifecycle**: the living demo tenant went multi-family — an
