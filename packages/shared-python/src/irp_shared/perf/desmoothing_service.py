@@ -48,9 +48,18 @@ from irp_shared.model.service import assert_model_version_of
 from irp_shared.perf.benchmark_relative_kernel import sample_stdev
 from irp_shared.perf.bootstrap import (
     DESMOOTHED_RETURN_MODEL_CODE,
-    declared_desmoothing_alpha,
+    DESMOOTHING_AR1_ESTIMATED_CONVENTION,
+    DESMOOTHING_MIN_PERIODS_FLOOR,
+    DESMOOTHING_OKUNEV_WHITE_CONVENTION,
+    declared_desmoothing_parameters,
 )
-from irp_shared.perf.desmoothing_kernel import desmooth_geltner, observed_returns
+from irp_shared.perf.desmoothing_kernel import (
+    DesmoothingKernelError,
+    desmooth_geltner,
+    desmooth_okunev_white,
+    estimate_ar1_alpha,
+    observed_returns,
+)
 from irp_shared.perf.events import RUN_TYPE_DESMOOTHED_RETURN, DesmoothedReturnActor
 from irp_shared.perf.models import (
     METRIC_TYPE_DESMOOTHED_PERIOD,
@@ -250,17 +259,24 @@ def run_desmoothed_return(
             "ambiguous input — pass either snapshot_id or the build arguments "
             "(portfolio_id/instrument_id/window_start/window_end), not both"
         )
-    # Inventory-before-use + model identity (CTRL-003 / OD-PA-1-E) + the declared-alpha parse-back.
+    # Inventory-before-use + model identity (CTRL-003 / OD-PA-1-E) + the estimator-convention
+    # parse-back (DS-2 OD-DS-2-C: an ABSENT convention is the DECLARED grandfather — the shipped
+    # alpha= parse byte-preserved; ambiguity + stray literals fail closed).
     version = assert_model_version_of(
         session,
         str(model_version_id),
         tenant_id=acting_tenant,
         expected_model_code=DESMOOTHED_RETURN_MODEL_CODE,
     )
-    # Quantize the declared alpha to the column scale ONCE so the row echo is byte-identical
-    # between the create response and every later read (review fold: the unquantized Decimal
-    # serialized '0.4' pre-flush but '0.400000000000' after the DB round-trip).
-    alpha = declared_desmoothing_alpha(session, version).quantize(_RETURN_QUANTUM)
+    params = declared_desmoothing_parameters(session, version)
+    # Quantize the alpha the run will USE to the column scale ONCE so the row echo is
+    # byte-identical between the create response and every later read (review fold: the
+    # unquantized Decimal serialized '0.4' pre-flush but '0.400000000000' after the round-trip).
+    # DECLARED: the declared alpha (exactly the shipped path). AR1_ESTIMATED: alpha-hat is
+    # computed + quantized identically below. OKUNEV_WHITE: no single alpha (rows carry NULL).
+    alpha: Decimal | None = (
+        params.alpha.quantize(_RETURN_QUANTUM) if params.alpha is not None else None
+    )
 
     # --- Bind the snapshot (cross-tenant/unknown/ill-formed => pre-create refusal) ---
     if snapshot_id is not None:
@@ -317,6 +333,50 @@ def run_desmoothed_return(
         session, parsed.instrument_id, acting_tenant=acting_tenant, error=DesmoothingInputError
     )
 
+    # --- DS-2 (OD-DS-2-A/B): the estimator conventions compute PRE-CREATE — every structural/
+    # estimation refusal is a 422 with ZERO run (the fail-closed shape); the DECLARED path below
+    # is byte-untouched. Deterministic closed forms over the ADJUDICATED pins, so precomputing
+    # here and reusing inside _compute cannot diverge. ---
+    alpha_stderr: Decimal | None = None
+    ow_series: tuple[Decimal, ...] | None = None
+    ow_offset = 0
+    if params.estimator_convention == DESMOOTHING_AR1_ESTIMATED_CONVENTION:
+        assert params.min_periods is not None  # gate invariant (parse-back enforced)
+        n_observed = len(parsed.marks) - 1
+        floor = max(params.min_periods, DESMOOTHING_MIN_PERIODS_FLOOR)
+        if n_observed < floor:
+            raise DesmoothingInputError(
+                f"{n_observed} observed returns — below the declared min_periods floor {floor} "
+                f"(rho-hat_1 on fewer points is noise, refused not disclaimed)"
+            )
+        try:
+            estimated = estimate_ar1_alpha(observed_returns([m.mark_value for m in parsed.marks]))
+        except DesmoothingKernelError as exc:
+            raise DesmoothingInputError(f"alpha estimation refused: {exc}") from exc
+        except ArithmeticError as exc:
+            raise DesmoothingInputError(
+                f"alpha estimation detonated on the pinned marks ({type(exc).__name__}); refused"
+            ) from exc
+        alpha = estimated.alpha_hat.quantize(_RETURN_QUANTUM)
+        if not Decimal(0) < alpha < Decimal(1):  # defensive: unreachable below ~1e6 observations
+            raise DesmoothingInputError(f"estimated alpha {alpha} outside (0, 1); refused")
+        alpha_stderr = estimated.stderr.quantize(_RETURN_QUANTUM)
+    elif params.estimator_convention == DESMOOTHING_OKUNEV_WHITE_CONVENTION:
+        assert params.ow_max_order is not None  # gate invariant
+        try:
+            ow = desmooth_okunev_white(
+                observed_returns([m.mark_value for m in parsed.marks]), params.ow_max_order
+            )
+        except DesmoothingKernelError as exc:
+            raise DesmoothingInputError(f"okunev-white transform refused: {exc}") from exc
+        except ArithmeticError as exc:
+            raise DesmoothingInputError(
+                f"okunev-white transform detonated on the pinned marks "
+                f"({type(exc).__name__}); refused"
+            ) from exc
+        ow_series = ow.series
+        ow_offset = params.ow_max_order * (params.ow_max_order + 1) // 2
+
     # --- The shared governed-run lifecycle (P3-C1 scaffold; behavior-preserving) ---
     def _compute(run: CalculationRun) -> tuple[list[DesmoothedReturnResult], list[str]]:
         gaps: list[str] = []
@@ -328,6 +388,77 @@ def run_desmoothed_return(
             if m.mark_value >= _MAX_MARK_ABS:
                 gaps.append(f"magnitude-out-of-range:mark:{m.valuation_date}")
                 return [], gaps
+        # --- DS-2 OKUNEV_WHITE rows (OD-DS-2-B): series[k] is the transformed observed[k+offset]
+        # — its OWN period; alpha NULL (no single alpha exists); summary stdev pair over the
+        # ALIGNED tail (like-for-like). The transform ran PRE-create; only the magnitude gates +
+        # persistence happen here. ---
+        if ow_series is not None:
+            try:
+                observed = observed_returns([m.mark_value for m in marks])
+            except ArithmeticError as exc:
+                gaps.append(f"numeric-envelope:{type(exc).__name__}")
+                return [], gaps
+            ow_rows: list[DesmoothedReturnResult] = []
+            for k, value in enumerate(ow_series):
+                j = k + ow_offset
+                r_obs = observed[j]
+                if any(abs(v) >= _MAX_RESULT_ABS for v in (value, r_obs)):
+                    gaps.append(f"magnitude-out-of-range:period:{marks[j + 1].valuation_date}")
+                    return [], gaps
+                ow_rows.append(
+                    DesmoothedReturnResult(
+                        tenant_id=str(acting_tenant),
+                        calculation_run_id=run.run_id,
+                        input_snapshot_id=snapshot.id,
+                        model_version_id=str(model_version_id),
+                        portfolio_id=parsed.portfolio_id,
+                        instrument_id=parsed.instrument_id,
+                        metric_type=METRIC_TYPE_DESMOOTHED_PERIOD,
+                        period_start=marks[j].valuation_date,
+                        period_end=marks[j + 1].valuation_date,
+                        metric_value=value,
+                        observed_return=r_obs,
+                        begin_mark=marks[j].mark_value,
+                        end_mark=marks[j + 1].mark_value,
+                        alpha=None,
+                        mark_currency=parsed.mark_currency,
+                    )
+                )
+            try:
+                ow_stdev = sample_stdev(list(ow_series))
+                ow_obs_stdev = sample_stdev(observed[ow_offset:])
+            except ArithmeticError as exc:
+                gaps.append(f"numeric-envelope:{type(exc).__name__}")
+                return [], gaps
+            if any(abs(v) >= _MAX_RESULT_ABS for v in (ow_stdev, ow_obs_stdev)):
+                gaps.append("magnitude-out-of-range:summary-stdev")
+                return [], gaps
+            ow_rows.append(
+                DesmoothedReturnResult(
+                    tenant_id=str(acting_tenant),
+                    calculation_run_id=run.run_id,
+                    input_snapshot_id=snapshot.id,
+                    model_version_id=str(model_version_id),
+                    portfolio_id=parsed.portfolio_id,
+                    instrument_id=parsed.instrument_id,
+                    metric_type=METRIC_TYPE_DESMOOTHING_SUMMARY,
+                    period_start=marks[ow_offset].valuation_date,
+                    period_end=marks[-1].valuation_date,
+                    metric_value=ow_stdev,
+                    observed_return=None,
+                    begin_mark=None,
+                    end_mark=None,
+                    alpha=None,
+                    mark_currency=parsed.mark_currency,
+                    observed_stdev=ow_obs_stdev,
+                    n_periods=len(ow_series),
+                )
+            )
+            return ow_rows, gaps
+        # --- DECLARED + AR1_ESTIMATED: the shipped Geltner path (alpha is non-None here — the
+        # DECLARED value or the pre-create alpha-hat; DS-2 changes NOTHING below except the
+        # summary row's alpha_stderr echo). ---
+        assert alpha is not None  # convention invariant: only OW carries a None alpha
         # An extreme pin/alpha combination can push the inversion past the 50-digit Decimal
         # context, where quantize raises InvalidOperation — convert ANY arithmetic detonation to
         # the contracted committed-FAILED outcome (review fold: the P3-6 quantize-detonation
@@ -394,6 +525,7 @@ def run_desmoothed_return(
                 mark_currency=parsed.mark_currency,
                 observed_stdev=obs_stdev,
                 n_periods=len(desmoothed),
+                alpha_stderr=alpha_stderr,  # the AR1_ESTIMATED band (None on DECLARED — 0042)
             )
         )
         return rows, gaps
