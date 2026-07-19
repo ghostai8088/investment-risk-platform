@@ -307,11 +307,15 @@ DESMOOTHED_RETURN_ASSUMPTIONS_BASE: tuple[str, ...] = (
 
 #: The recorded scope-outs (mirrored into model_limitation rows; decision record Part 3).
 DESMOOTHED_RETURN_LIMITATIONS: tuple[str, ...] = (
-    "SINGLE-LAG AR(1) ONLY: residual higher-order autocorrelation survives one Geltner pass; the "
-    "Getmansky-Lo-Makarov MA(q) profile and the Okunev-White iterative filter are the recorded "
-    "v2s.",
-    "alpha is DECLARED, not estimated in-run - an offline mis-estimated alpha propagates directly "
-    "into every desmoothed value; the desmoothed series is a MODEL OUTPUT, not an observation.",
+    "SINGLE-LAG AR(1) ONLY on this version: residual higher-order autocorrelation survives one "
+    "Geltner pass; the Okunev-White iterative filter is REALIZED as a declared estimator "
+    "convention (DS-2); the Getmansky-Lo-Makarov MA(q) profile remains the recorded v2 - its "
+    "MLE requires constrained numerical optimization, a determinism obstacle this runtime has "
+    "not admitted.",
+    "alpha is DECLARED on this version - the AR1_ESTIMATED convention (DS-2) estimates it "
+    "in-run with a persisted Bartlett band; an offline mis-estimated alpha still propagates "
+    "directly into every desmoothed value here, and the desmoothed series is a MODEL OUTPUT, "
+    "not an observation.",
     "IRREGULAR APPRAISAL SPACING is accepted and recorded: the AR(1) coefficient applies per "
     "observation step; a calendar-regularity gate is a recorded v2.",
     "Single-currency mark series only (no FX translation); simple returns (no log-return leg).",

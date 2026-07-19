@@ -63,7 +63,9 @@ from irp_shared.perf import (
     list_perf_runs,
     list_portfolio_returns,
     register_benchmark_relative_model,
+    register_desmoothed_return_estimated_model,
     register_desmoothed_return_model,
+    register_desmoothed_return_okunev_white_model,
     register_portfolio_return_model,
     resolve_benchmark_relative,
     resolve_benchmark_relative_run,
@@ -798,6 +800,106 @@ def register_desmoothed_return(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="alpha must be a strict decimal fraction in (0, 1]",
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = PortfolioReturnModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+class DesmoothedEstimatedModelIn(BaseModel):
+    code_version: str
+    min_periods: int = 8  # the declared estimation floor (structural >= 6)
+    version_label: str | None = None  # defaults to the family's v2-ar1-estimated label
+
+
+class DesmoothedOkunevWhiteModelIn(BaseModel):
+    code_version: str
+    ow_max_order: int = 2  # the declared max filter order (1..4)
+    version_label: str | None = None  # defaults to the family's v2-okunev-white label
+
+
+@router.post(
+    "/models/desmoothed-return-estimated",
+    response_model=PortfolioReturnModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_desmoothed_return_estimated(
+    body: DesmoothedEstimatedModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> PortfolioReturnModelOut:
+    """Register (idempotently) an AR1_ESTIMATED desmoothing version (DS-2, OD-DS-2-A): alpha is
+    ESTIMATED IN-RUN (alpha-hat = 1 - rho-hat_1 + the Bartlett band); the convention +
+    min_periods + band_convention are REGISTRAR-STAMPED. Same-label different-declaration is a
+    governed 409. Runs via the existing ``POST /perf/desmoothed-returns/runs``."""
+    try:
+        version = register_desmoothed_return_estimated_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            min_periods=body.min_periods,
+            **({} if body.version_label is None else {"version_label": body.version_label}),
+        )
+    except ValueError as exc:  # sub-floor min_periods / empty label
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = PortfolioReturnModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/models/desmoothed-return-okunev-white",
+    response_model=PortfolioReturnModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_desmoothed_return_okunev_white(
+    body: DesmoothedOkunevWhiteModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> PortfolioReturnModelOut:
+    """Register (idempotently) an OKUNEV_WHITE_ITERATIVE desmoothing version (DS-2, OD-DS-2-B):
+    the deterministic higher-order filter; the convention + ow_max_order are REGISTRAR-STAMPED;
+    its rows carry alpha NULL. Same-label different-declaration is a governed 409. Runs via the
+    existing ``POST /perf/desmoothed-returns/runs``."""
+    try:
+        version = register_desmoothed_return_okunev_white_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            ow_max_order=body.ow_max_order,
+            **({} if body.version_label is None else {"version_label": body.version_label}),
+        )
+    except ValueError as exc:  # out-of-domain order / empty label
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from None
     except (ModelVersionConflictError, WrongModelVersionError) as exc:
         db.rollback()
