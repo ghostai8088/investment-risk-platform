@@ -160,8 +160,12 @@ def _findings_from_registry(
 
 
 def _latest_flagship_hs_row(session: Session) -> VarResult:
-    """The campaign's LATEST flagship historical-VaR forecast row (deterministic: max
-    window_end, then run id) — its pinned snapshot is the one this stage's ES run binds."""
+    """The campaign's LATEST flagship historical-VaR forecast row — its pinned snapshot is
+    the one this stage's ES run binds. Deterministic AND seed-stable (BT-3, the OQ-W7C-2
+    fold): max window_end, then the IA row's ``system_from`` write instant (a client-side
+    per-row timestamp — two same-window_end rows written seconds apart order by real time,
+    never by uuid draw), with the run id ONLY as the final total-order leg (reachable only
+    on an identical-microsecond tie, absent in practice)."""
     rows = (
         session.execute(
             select(VarResult)
@@ -173,7 +177,11 @@ def _latest_flagship_hs_row(session: Session) -> VarResult:
                 Model.code == VAR_HS_MODEL_CODE,
                 ModelVersion.code_version == _BASE_CODE_VERSION,
             )
-            .order_by(VarResult.window_end.desc(), VarResult.calculation_run_id.desc())
+            .order_by(
+                VarResult.window_end.desc(),
+                VarResult.system_from.desc(),
+                VarResult.calculation_run_id.desc(),
+            )
         )
         .scalars()
         .all()

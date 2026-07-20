@@ -73,7 +73,12 @@ from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_t
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
-from irp_shared.risk.bootstrap import VAR_BACKTEST_MODEL_CODE, declared_var_backtest_alpha
+from irp_shared.risk.bootstrap import (
+    VAR_BACKTEST_CHRISTOFFERSEN_CONVENTION,
+    VAR_BACKTEST_MODEL_CODE,
+    declared_var_backtest_alpha,
+    declared_var_backtest_independence,
+)
 from irp_shared.risk.events import (
     METRIC_TYPE_BASEL_ZONE,
     METRIC_TYPE_ES_HISTORICAL,
@@ -81,6 +86,8 @@ from irp_shared.risk.events import (
     METRIC_TYPE_EXCEPTION_COUNT,
     METRIC_TYPE_EXCEPTION_INDICATOR,
     METRIC_TYPE_KUPIEC_LR,
+    METRIC_TYPE_LR_CC,
+    METRIC_TYPE_LR_IND,
     METRIC_TYPES,
     RUN_TYPE_VAR,
     RUN_TYPE_VAR_BACKTEST,
@@ -90,9 +97,13 @@ from irp_shared.risk.models import VarBacktestResult
 from irp_shared.risk.var_backtest_kernel import (
     VarBacktestKernelError,
     basel_zone,
+    christoffersen_lr_cc,
+    christoffersen_lr_ind,
     exception_indicator,
     kupiec_decision,
     kupiec_lr,
+    lr_cc_decision,
+    markov_counts,
 )
 from irp_shared.snapshot import (
     COMPONENT_KIND_PORTFOLIO_RETURN,
@@ -202,23 +213,33 @@ def _parse_pins(comps: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, 
     return return_raw, var_raw
 
 
-def _adjudicate_pins(
-    return_raw: list[dict[str, Any]], var_raw: list[dict[str, Any]]
-) -> _ParsedInput:
-    """PRE-CREATE adjudication of the FULL pinned input (both entry paths): a single-run/portfolio/
-    base return side with CONTIGUOUS ordered DIETZ sub-periods + exactly one TWR_LINKED row + the
-    MV-CHAIN check; a uniform single-method VaR side; the ALL-OR-NOTHING forecast/period alignment.
-    Raises :class:`VarBacktestInputError` on any ill-formed input."""
+@dataclass(frozen=True)
+class ReturnSide:
+    """The adjudicated realized leg (shared by BT-1 and the BT-3 ES binder): the ordered
+    sub-period map ``{period_start: (period_end, realized flow-adjusted P&L)}`` + the
+    run-uniform descriptors."""
+
+    periods: dict[date, tuple[date, Decimal]]
+    portfolio_id: str
+    base_currency: str
+    portfolio_return_run_id: str
+
+
+def adjudicate_return_side(
+    return_raw: list[dict[str, Any]], *, error: type[Exception] = VarBacktestInputError
+) -> ReturnSide:
+    """PRE-CREATE adjudication of the pinned REALIZED leg (extracted at BT-3 for the ES binder;
+    behavior-preserving — the BT-1 suite is the golden): a single-run/portfolio/base return side
+    with CONTIGUOUS ordered DIETZ sub-periods + exactly one TWR_LINKED row + the MV-CHAIN check.
+    ``error`` is the caller's refusal class (BT-1's ``VarBacktestInputError`` by default)."""
     if not return_raw:
-        raise VarBacktestInputError(
-            "the snapshot pins no PORTFOLIO_RETURN rows — not a var-backtest input"
-        )
+        raise error("the snapshot pins no PORTFOLIO_RETURN rows — not a var-backtest input")
     dietz = [r for r in return_raw if r["metric_type"] == _DIETZ_PERIOD]
     linked = [r for r in return_raw if r["metric_type"] == _TWR_LINKED]
     if not dietz:
-        raise VarBacktestInputError("the pinned return run has no DIETZ_PERIOD sub-periods")
+        raise error("the pinned return run has no DIETZ_PERIOD sub-periods")
     if len(linked) != 1:
-        raise VarBacktestInputError(
+        raise error(
             f"the pinned return run must carry exactly one TWR_LINKED row (got {len(linked)})"
         )
 
@@ -226,20 +247,14 @@ def _adjudicate_pins(
     portfolio_ids = {str(r["portfolio_id"]) for r in return_raw}
     base_currencies = {r["base_currency"] for r in return_raw}
     if len(run_ids) != 1:
-        raise VarBacktestInputError("the pinned return rows span multiple runs — refused")
+        raise error("the pinned return rows span multiple runs — refused")
     if len(portfolio_ids) != 1:
-        raise VarBacktestInputError(
-            f"the pinned return rows span {len(portfolio_ids)} portfolios — refused"
-        )
+        raise error(f"the pinned return rows span {len(portfolio_ids)} portfolios — refused")
     if len(base_currencies) != 1:
-        raise VarBacktestInputError(
-            f"the pinned return rows carry mixed base currencies {sorted(base_currencies)}"
-        )
+        raise error(f"the pinned return rows carry mixed base currencies {sorted(base_currencies)}")
     base_currency = next(iter(base_currencies))
     if not isinstance(base_currency, str) or len(base_currency) != 3:
-        raise VarBacktestInputError(
-            "the pinned return base_currency is not a 3-letter code — refused"
-        )
+        raise error("the pinned return base_currency is not a 3-letter code — refused")
 
     # Ordered, CONTIGUOUS sub-periods (the P3-8 fold precedent) + the MV-CHAIN integrity check:
     # begin_mv_{i+1} must EQUAL end_mv_i (the same boundary valuation appears on both sides in a
@@ -255,20 +270,39 @@ def _adjudicate_pins(
         end_mv = Decimal(r["end_mv"])
         flow = Decimal(r["net_external_flow"])
         if end <= start:
-            raise VarBacktestInputError(f"sub-period {start}..{end} is non-positive — refused")
+            raise error(f"sub-period {start}..{end} is non-positive — refused")
         if prev_end is not None and start != prev_end:
-            raise VarBacktestInputError(
+            raise error(
                 f"the pinned DIETZ sub-periods are not contiguous (a gap or overlap at "
                 f"{prev_end}..{start}) — refused"
             )
         if prev_end_mv is not None and begin_mv != prev_end_mv:
-            raise VarBacktestInputError(
+            raise error(
                 f"MV chain broken at {start}: begin_mv {begin_mv} != prior end_mv {prev_end_mv} "
                 f"— malformed input; refused"
             )
         periods[start] = (end, end_mv - begin_mv - flow)  # realized flow-adjusted P&L
         prev_end = end
         prev_end_mv = end_mv
+    return ReturnSide(
+        periods=periods,
+        portfolio_id=next(iter(portfolio_ids)),
+        base_currency=base_currency,
+        portfolio_return_run_id=next(iter(run_ids)),
+    )
+
+
+def _adjudicate_pins(
+    return_raw: list[dict[str, Any]], var_raw: list[dict[str, Any]]
+) -> _ParsedInput:
+    """PRE-CREATE adjudication of the FULL pinned input (both entry paths): the shared realized
+    leg (:func:`adjudicate_return_side`) + a uniform single-method VaR side + the ALL-OR-NOTHING
+    forecast/period alignment. Raises :class:`VarBacktestInputError` on any ill-formed input."""
+    side = adjudicate_return_side(return_raw)
+    periods = side.periods
+    portfolio_ids = {side.portfolio_id}
+    base_currency = side.base_currency
+    run_ids = {side.portfolio_return_run_id}
 
     # --- VaR side: >= 1 row, ONE method, uniform confidence/horizon/currency, unique as-ofs. ---
     if not var_raw:
@@ -293,6 +327,9 @@ def _adjudicate_pins(
                 f"run instead; refused"
             )
         if var_metric_type == METRIC_TYPE_ES_HISTORICAL:
+            # DATED (BT-3, 2026-07-19 — the ratified OD-C comment): the AS backtest SHIPS at
+            # ``risk.es_backtest`` (run_es_backtest); this branch's refusal correctly survives
+            # forever — the Kupiec quantile test stays meaningless over a tail-mean series.
             raise VarBacktestInputError(
                 f"metric_type {var_metric_type!r} is DELIBERATELY not backtestable HERE "
                 f"(ES-HS-1, OD-ES-HS-1-D: the Kupiec/Basel exception count is a QUANTILE test "
@@ -461,6 +498,9 @@ def run_var_backtest(
         expected_model_code=VAR_BACKTEST_MODEL_CODE,
     )
     alpha = declared_var_backtest_alpha(session, version)
+    # BT-3 (OD-BT-3-E): the v2 convention — ABSENT => the v1 Kupiec-only identity (byte-
+    # preserved); the parse is the COUNTING tri-state (ambiguity refuses, never grandfathers).
+    independence = declared_var_backtest_independence(session, version)
 
     # --- Bind the snapshot (cross-tenant/unknown/ill-formed => pre-create refusal) ---
     if snapshot_id is not None:
@@ -656,6 +696,56 @@ def run_var_backtest(
                         zone=basel_zone(exceptions),
                     )
                 )
+            # BT-3 (OD-BT-3-E): the Christoffersen Markov leg — v2 versions only. The
+            # chronological exception series comes from the SAME sorted pairs the POF counted.
+            # A DEGENERATE table (or a single pair — no transition exists) emits NEITHER row:
+            # the EXCEPTION_COUNT row makes the absence legible; never coerced to 0.
+            if independence == VAR_BACKTEST_CHRISTOFFERSEN_CONVENTION and n >= 2:
+                indicators = [
+                    exception_indicator(p.realized_pnl, p.var_value) for p in parsed.pairs
+                ]
+                lr_ind_raw = christoffersen_lr_ind(markov_counts(indicators))
+                if lr_ind_raw is not None:
+                    lr_ind = lr_ind_raw.quantize(_MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+                    lr_cc = christoffersen_lr_cc(lr, lr_ind).quantize(
+                        _MONEY_QUANTUM, rounding=ROUND_HALF_UP
+                    )  # composed from the STORED 6dp legs — the row reproduces its own decision
+                    if _out_of_range(lr_ind, lr_cc):
+                        # Name the actual offender (adversarial LOW-2 fold): the DQ evidence
+                        # must cite the row and value that breached the envelope.
+                        offender, value = (
+                            (METRIC_TYPE_LR_IND, lr_ind)
+                            if abs(lr_ind) >= _MAX_RESULT_ABS
+                            else (METRIC_TYPE_LR_CC, lr_cc)
+                        )
+                        gaps.append(f"magnitude-out-of-range:{offender}:{value:E}")
+                        return [], gaps
+                    rows.append(
+                        _mk(
+                            METRIC_TYPE_LR_IND,
+                            lr_ind,
+                            first.period_start,
+                            last.period_end,
+                            realized_pnl=None,
+                            var_value=None,
+                            n_pairs=n,
+                            n_exceptions=exceptions,
+                            test_decision=kupiec_decision(lr_ind, alpha),  # chi-square(1)
+                        )
+                    )
+                    rows.append(
+                        _mk(
+                            METRIC_TYPE_LR_CC,
+                            lr_cc,
+                            first.period_start,
+                            last.period_end,
+                            realized_pnl=None,
+                            var_value=None,
+                            n_pairs=n,
+                            n_exceptions=exceptions,
+                            test_decision=lr_cc_decision(lr_cc, alpha),  # chi-square(2)
+                        )
+                    )
         except VarBacktestKernelError as exc:
             # Defense-in-depth: adjudication makes the structural cases unreachable; a kernel
             # refusal here is a committed FAILED run + DQ evidence, never a raw 500.

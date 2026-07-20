@@ -63,6 +63,14 @@ RUN_TYPE_VAR_BACKTEST = "VAR_BACKTEST"
 #: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in BT-1.
 RISK_VAR_BACKTEST_CREATE_EVENT_RESERVED = "RISK.VAR_BACKTEST_CREATE"
 
+#: BT-3 (OD-BT-3-C/D): the ES-backtesting run family — the Acerbi-Szekely Z statistics over
+#: sibling (VaR-HS, ES-HS) forecast pairs sharing input_snapshot_id, against realized
+#: flow-adjusted P&L (PM-1). DISTINCT from every metric (GS2). Reuses ``risk.run``/``risk.view``
+#: (no mint) + ``CALC.RUN_*`` (no new audit code).
+RUN_TYPE_ES_BACKTEST = "ES_BACKTEST"
+#: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in BT-3.
+RISK_ES_BACKTEST_CREATE_EVENT_RESERVED = "RISK.ES_BACKTEST_CREATE"
+
 #: The ``calculation_run.run_type`` discriminator for a proxy-weight-estimation run (PA-3). Reuses
 #: ``risk.run``/``risk.view`` (no mint) + ``CALC.RUN_*`` (no new audit code).
 RUN_TYPE_PROXY_WEIGHT_ESTIMATE = "PROXY_WEIGHT_ESTIMATE"
@@ -155,6 +163,28 @@ VAR_BACKTEST_METRIC_TYPES = (
     METRIC_TYPE_BASEL_ZONE,
 )
 
+#: BT-3 (OD-BT-3-E): the Christoffersen Markov-leg metric types, emitted ONLY by a
+#: ``risk.var_backtest`` version declaring ``independence=CHRISTOFFERSEN_MARKOV`` (the v2
+#: convention; v1 rows byte-preserved). A DEGENERATE 2x2 (no transition leaving a state) emits
+#: NEITHER row — the exception-count row makes the absence legible; never coerced to 0.
+METRIC_TYPE_LR_IND = "LR_IND"
+METRIC_TYPE_LR_CC = "LR_CC"
+
+#: BT-3 (OD-BT-3-A/B): the ES-backtest metric types (ENT-055 grain, the BT-2 zero-schema
+#: precedent for the metric_type vocabulary; ``es_value`` is the ONE 0043 column). ``AS_Z1``
+#: is emitted ONLY when the series has >= 1 exception (UNDEFINED at zero — no row, never 0);
+#: the ``AS_Z2`` row carries the domain-gated verdict ONLY at (confidence 0.9750, n_pairs 250).
+METRIC_TYPE_ES_EXCEPTION_INDICATOR = "ES_EXCEPTION_INDICATOR"
+METRIC_TYPE_ES_PAIR_COUNT = "ES_PAIR_COUNT"
+METRIC_TYPE_AS_Z2 = "AS_Z2"
+METRIC_TYPE_AS_Z1 = "AS_Z1"
+ES_BACKTEST_METRIC_TYPES = (
+    METRIC_TYPE_ES_EXCEPTION_INDICATOR,
+    METRIC_TYPE_ES_PAIR_COUNT,
+    METRIC_TYPE_AS_Z2,
+    METRIC_TYPE_AS_Z1,
+)
+
 #: P3-6 scenario metric types: one SCENARIO_PNL per exposed factor + one SCENARIO_PNL_TOTAL
 #: (factor_id NULL) carrying the coverage counts. DISTINCT from the run_type (SCENARIO).
 METRIC_TYPE_SCENARIO_PNL = "SCENARIO_PNL"
@@ -205,6 +235,14 @@ class ActiveRiskActor:
 @dataclass(frozen=True)
 class VarBacktestActor:
     """The principal initiating a VaR-backtesting run (mirrors :class:`VarActor`)."""
+
+    actor_id: str
+    actor_type: str = "user"
+
+
+@dataclass(frozen=True)
+class EsBacktestActor:
+    """The principal initiating an ES-backtesting run (BT-3; mirrors :class:`VarBacktestActor`)."""
 
     actor_id: str
     actor_type: str = "user"

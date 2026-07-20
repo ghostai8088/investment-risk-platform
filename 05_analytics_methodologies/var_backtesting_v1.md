@@ -162,3 +162,13 @@ total-series admit; no Basel multiplier arithmetic; no p-values); small-N asympt
 total-series read-validity limitation + read rule (the scope amendment above) — registered on new
 registrations; existing immutable `model_version` rows cannot be appended to, so for those tenants
 the doctrine reaches only via this referent and a VW-1 validation finding.
+
+**Dated amendment (BT-3, 2026-07-19):** the two "named BT-3 candidate" clauses above are
+DISCHARGED — **the Christoffersen (1998) Markov independence/conditional-coverage leg SHIPPED**
+as the `v2-christoffersen` version of this model (declared `independence=CHRISTOFFERSEN_MARKOV`;
+LR_IND χ²(1) + LR_CC = LR_UC + LR_IND χ²(2) against fixed registered criticals; degenerate-table
+honesty; the shipped v1 parses byte-identically via the absent-convention grandfather), and
+**the genuine Acerbi-Szekely ES backtest SHIPPED at `risk.es_backtest`** (see
+`es_backtest_v1.md` — sibling pairing by shared `input_snapshot_id`; the domain-gated Z2
+verdict). **Appraisal-frequency pairing remains the open named candidate** (it still needs
+multi-day-horizon VaR — the recorded √h seam), not silently absent.

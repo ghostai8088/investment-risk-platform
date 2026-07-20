@@ -389,6 +389,11 @@ class VarBacktestResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     # Per-pair evidence (NULL for summary rows where a single pair is not defined).
     realized_pnl: Mapped[Decimal | None] = mapped_column(PreciseDecimal(28, 6), nullable=True)
     var_value: Mapped[Decimal | None] = mapped_column(PreciseDecimal(28, 6), nullable=True)
+    # BT-3 (migration 0043): the ES-forecast echo on ES_EXCEPTION_INDICATOR rows — the evidence
+    # surface must carry what was tested against (NULL on every BT-1/BT-2 row class; no snapshot
+    # serializer pins ENT-055 rows, so there is no pin-key landmine — the exclusion is
+    # structural, test-pinned).
+    es_value: Mapped[Decimal | None] = mapped_column(PreciseDecimal(28, 6), nullable=True)
     n_pairs: Mapped[int] = mapped_column(Integer, nullable=False)
     n_exceptions: Mapped[int] = mapped_column(Integer, nullable=False)
     # The uniform forecast parameters, echoed on every row.
