@@ -39,6 +39,7 @@ from irp_shared.model.models import (
     ModelValidationFinding,
     ModelVersion,
 )
+from irp_shared.pacing.models import PacingProjectionResult
 from irp_shared.perf.models import (
     BenchmarkRelativeResult,
     DesmoothedReturnResult,
@@ -120,6 +121,7 @@ __all__ = [
     "Commitment",
     "CapitalCall",
     "Distribution",
+    "PacingProjectionResult",
     "Transaction",
     "Position",
     "Valuation",
