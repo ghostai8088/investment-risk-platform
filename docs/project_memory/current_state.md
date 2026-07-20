@@ -26,15 +26,13 @@
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `cc_1_decision_record.md` (**CLOSED 2026-07-20** — Part 6 carries the 4-finder dispositions:
-> **ZERO HIGH — 8 MED + ~10 LOW ALL folded**; headliners: the post-quantize (20,6) amount
-> envelope; the honest no-close-out-op wording; the read rule at every promised surface;
-> scope-fence 12/12). **NEXT = CC-2 planning** (the SEVENTEENTH-governed-number HEADLINE —
-> the Takahashi-Alexander pacing projection; **fetch TA (JPM 28(2):90–100) to
-> paragraph/equation level FIRST, the ratified MUST**, with the declared-parameter fallback
-> rider; Tier-3 forks: ENT-059 + family/permission; the projection half of the commitment
-> walk lands on the stage-8 seeded commitment). The UI/read-surface candidate Wave 9
-> (`ui_read_surface_assessment.md`) is weighed at the Wave-8 close.
+> `cc_2_decision_record.md` (**CLOSED 2026-07-20** — Part 6/the review carries the 4-finder
+> dispositions: **ZERO surviving HIGH** — the FAILED-magnitude-gate cluster (envelope `1e26`→`1E21`
+> below the column cap + a kernel runaway ceiling) + 3 LOW ALL folded). **NEXT = the WAVE-8 CLOSE
+> REVIEW** — all three Wave-8 slices (BT-3 → CC-1 → CC-2) are DONE; the rule-2 re-baseline weighs
+> the candidate Wave-9 sequence API-1 → FE-2 → SSO-1 → FE-3 (`ui_read_surface_assessment.md`) and
+> dispositions the carried register. *(Everything from the "WAVE 7 IS UNDERWAY" line down is prior
+> HISTORY, superseded by this block — the counts/next-pointers below are as-of their own date.)*
 >
 > **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
 > DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the presumptive Wave-8
