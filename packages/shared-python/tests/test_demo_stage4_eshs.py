@@ -55,9 +55,7 @@ def test_latest_flagship_hs_row_tie_break_is_time_ordered_not_uuid(session) -> N
     from irp_shared.risk.bootstrap import VAR_HS_MODEL_CODE
     from irp_shared.risk.models import VarResult
 
-    model = Model(
-        tenant_id=DEMO_TENANT_ID, code=VAR_HS_MODEL_CODE, name="hs", model_type="RISK"
-    )
+    model = Model(tenant_id=DEMO_TENANT_ID, code=VAR_HS_MODEL_CODE, name="hs", model_type="RISK")
     session.add(model)
     session.flush()
     version = ModelVersion(
