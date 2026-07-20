@@ -109,17 +109,25 @@ from irp_shared.risk import (
     capture_scenario_shock,
     correct_scenario_shock,
     create_scenario_definition,
+    latest_es_backtest,
+    latest_factor_exposure,
+    latest_proxy_weight_result,
+    latest_var_backtest,
     list_active_risks,
     list_covariances,
     list_es_backtests,
+    list_es_backtests_by_entity,
     list_factor_exposures,
+    list_factor_exposures_by_entity,
     list_proxy_weight_results,
+    list_proxy_weight_results_by_entity,
     list_risk_runs,
     list_scenario_definitions,
     list_scenario_results,
     list_scenario_shocks,
     list_sensitivities,
     list_var_backtests,
+    list_var_backtests_by_entity,
     list_vars,
     reconstruct_scenario_shock_as_of,
     register_active_risk_model,
@@ -641,6 +649,7 @@ class FactorExposureRunIn(BaseModel):
 
 class FactorExposureRowOut(BaseModel):
     id: str
+    calculation_run_id: str  # API-1: discriminates runs in an entity/time read
     portfolio_id: str
     instrument_id: str
     factor_id: str
@@ -669,6 +678,7 @@ class FactorExposureRunOut(BaseModel):
 def _fx_row_out(row: FactorExposureResult) -> FactorExposureRowOut:
     return FactorExposureRowOut(
         id=row.id,
+        calculation_run_id=row.calculation_run_id,
         portfolio_id=row.portfolio_id,
         instrument_id=row.instrument_id,
         factor_id=row.factor_id,
@@ -884,6 +894,46 @@ def get_factor_exposure_run(
         failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
         rows=[_fx_row_out(r) for r in rows],
     )
+
+
+@router.get("/factor-exposures", response_model=list[FactorExposureRowOut])
+def list_factor_exposures_by_entity_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    instrument_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[FactorExposureRowOut]:
+    """API-1 entity/time read: rows across COMPLETED runs filtered by entity + an optional
+    ``as_of`` run cutoff (silent-empty on a foreign id). Each row carries ``calculation_run_id`` —
+    cross-run aggregation is a CONSUMER ERROR."""
+    rows = list_factor_exposures_by_entity(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        instrument_id=(str(instrument_id) if instrument_id is not None else None),
+        as_of=as_of,
+    )
+    return [_fx_row_out(r) for r in rows]
+
+
+@router.get("/factor-exposures/latest", response_model=list[FactorExposureRowOut])
+def latest_factor_exposures_endpoint(
+    portfolio_id: uuid.UUID,
+    instrument_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[FactorExposureRowOut]:
+    """API-1 latest-resolver: the newest COMPLETED run's rows for the entity (empty when none)."""
+    rows = latest_factor_exposure(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        instrument_id=(str(instrument_id) if instrument_id is not None else None),
+        as_of=as_of,
+    )
+    return [_fx_row_out(r) for r in rows]
 
 
 @router.get("/factor-exposures/{factor_exposure_id}", response_model=FactorExposureRowOut)
@@ -1991,6 +2041,7 @@ class VarBacktestRunIn(BaseModel):
 
 class VarBacktestRowOut(BaseModel):
     id: str
+    calculation_run_id: str  # API-1: discriminates runs in an entity/time read
     metric_type: str  # EXCEPTION_INDICATOR | EXCEPTION_COUNT | KUPIEC_LR | BASEL_ZONE
     var_metric_type: str  # WHICH VaR method was backtested (VAR_PARAMETRIC | VAR_HISTORICAL)
     period_start: date
@@ -2025,6 +2076,7 @@ class VarBacktestRunOut(BaseModel):
 def _var_backtest_row_out(row: VarBacktestResult) -> VarBacktestRowOut:
     return VarBacktestRowOut(
         id=row.id,
+        calculation_run_id=row.calculation_run_id,
         metric_type=row.metric_type,
         var_metric_type=row.var_metric_type,
         period_start=row.period_start,
@@ -2186,6 +2238,42 @@ def get_var_backtest_run(
     )
 
 
+@router.get("/var-backtests", response_model=list[VarBacktestRowOut])
+def list_var_backtests_by_entity_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[VarBacktestRowOut]:
+    """API-1 entity/time read: rows across COMPLETED runs filtered by entity + an optional
+    ``as_of`` run cutoff (silent-empty on a foreign id). Each row carries ``calculation_run_id`` —
+    cross-run aggregation is a CONSUMER ERROR."""
+    rows = list_var_backtests_by_entity(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        as_of=as_of,
+    )
+    return [_var_backtest_row_out(r) for r in rows]
+
+
+@router.get("/var-backtests/latest", response_model=list[VarBacktestRowOut])
+def latest_var_backtests_endpoint(
+    portfolio_id: uuid.UUID,
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[VarBacktestRowOut]:
+    """API-1 latest-resolver: the newest COMPLETED run's rows for the entity (empty when none)."""
+    rows = latest_var_backtest(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        as_of=as_of,
+    )
+    return [_var_backtest_row_out(r) for r in rows]
+
+
 @router.get("/var-backtests/{result_id}", response_model=VarBacktestRowOut)
 def get_var_backtest(
     result_id: uuid.UUID,
@@ -2234,6 +2322,7 @@ class EsBacktestRunIn(BaseModel):
 
 class EsBacktestRowOut(BaseModel):
     id: str
+    calculation_run_id: str  # API-1: discriminates runs in an entity/time read
     metric_type: str  # ES_EXCEPTION_INDICATOR | ES_PAIR_COUNT | AS_Z2 | AS_Z1
     var_metric_type: str  # always ES_HISTORICAL (the paired family)
     period_start: date
@@ -2271,6 +2360,7 @@ class EsBacktestRunOut(BaseModel):
 def _es_backtest_row_out(row: VarBacktestResult) -> EsBacktestRowOut:
     return EsBacktestRowOut(
         id=row.id,
+        calculation_run_id=row.calculation_run_id,
         metric_type=row.metric_type,
         var_metric_type=row.var_metric_type,
         period_start=row.period_start,
@@ -2481,6 +2571,42 @@ def get_es_backtest_run(
         failure_reason=run.failure_reason,
         rows=[_es_backtest_row_out(r) for r in rows],
     )
+
+
+@router.get("/es-backtests", response_model=list[EsBacktestRowOut])
+def list_es_backtests_by_entity_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[EsBacktestRowOut]:
+    """API-1 entity/time read: rows across COMPLETED runs filtered by entity + an optional
+    ``as_of`` run cutoff (silent-empty on a foreign id). Each row carries ``calculation_run_id`` —
+    cross-run aggregation is a CONSUMER ERROR."""
+    rows = list_es_backtests_by_entity(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        as_of=as_of,
+    )
+    return [_es_backtest_row_out(r) for r in rows]
+
+
+@router.get("/es-backtests/latest", response_model=list[EsBacktestRowOut])
+def latest_es_backtests_endpoint(
+    portfolio_id: uuid.UUID,
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[EsBacktestRowOut]:
+    """API-1 latest-resolver: the newest COMPLETED run's rows for the entity (empty when none)."""
+    rows = latest_es_backtest(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        as_of=as_of,
+    )
+    return [_es_backtest_row_out(r) for r in rows]
 
 
 @router.get("/es-backtests/{result_id}", response_model=EsBacktestRowOut)
@@ -3018,6 +3144,7 @@ class ProxyWeightRunIn(BaseModel):
 
 class ProxyWeightRowOut(BaseModel):
     id: str
+    calculation_run_id: str  # API-1: discriminates runs in an entity/time read
     metric_type: str  # WEIGHT | INTERCEPT | ESTIMATION_SUMMARY
     factor_id: str | None  # set on WEIGHT rows; null on INTERCEPT/ESTIMATION_SUMMARY
     metric_value: str  # coefficient (WEIGHT/INTERCEPT) | R^2 (ESTIMATION_SUMMARY)
@@ -3048,6 +3175,7 @@ class ProxyWeightRunOut(BaseModel):
 def _pw_row_out(row: ProxyWeightEstimateResult) -> ProxyWeightRowOut:
     return ProxyWeightRowOut(
         id=row.id,
+        calculation_run_id=row.calculation_run_id,
         metric_type=row.metric_type,
         factor_id=row.factor_id,
         metric_value=str(row.metric_value),
@@ -3166,6 +3294,46 @@ def create_proxy_weight_run(
     response = _pw_run_out(result)
     db.commit()
     return response
+
+
+@router.get("/proxy-weight-estimates", response_model=list[ProxyWeightRowOut])
+def list_proxy_weight_estimates_by_entity_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    instrument_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[ProxyWeightRowOut]:
+    """API-1 entity/time read: rows across COMPLETED runs filtered by entity + an optional
+    ``as_of`` run cutoff (silent-empty on a foreign id). Each row carries ``calculation_run_id`` —
+    cross-run aggregation is a CONSUMER ERROR."""
+    rows = list_proxy_weight_results_by_entity(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        instrument_id=(str(instrument_id) if instrument_id is not None else None),
+        as_of=as_of,
+    )
+    return [_pw_row_out(r) for r in rows]
+
+
+@router.get("/proxy-weight-estimates/latest", response_model=list[ProxyWeightRowOut])
+def latest_proxy_weight_estimates_endpoint(
+    portfolio_id: uuid.UUID,
+    instrument_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[ProxyWeightRowOut]:
+    """API-1 latest-resolver: the newest COMPLETED run's rows for the entity (empty when none)."""
+    rows = latest_proxy_weight_result(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        instrument_id=(str(instrument_id) if instrument_id is not None else None),
+        as_of=as_of,
+    )
+    return [_pw_row_out(r) for r in rows]
 
 
 @router.get("/proxy-weight-estimates/runs/{run_id}", response_model=ProxyWeightRunOut)

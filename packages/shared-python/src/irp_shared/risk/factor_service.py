@@ -69,6 +69,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.exposure.service import resolve_run as resolve_exposure_run
@@ -718,6 +719,52 @@ def list_factor_exposures(
         )
         .scalars()
         .all()
+    )
+
+
+def list_factor_exposures_by_entity(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    instrument_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[FactorExposureResult]:
+    """API-1 entity/time read (Class A): factor-exposure rows across COMPLETED runs for a
+    (portfolio, instrument). A run's rows SPAN the portfolio SUBTREE, so the ``portfolio_id`` filter
+    row-filters to the queried book's own rows (never a sibling's). Silent-empty on a foreign id;
+    ``as_of=None`` = now."""
+    return list_governed_results(
+        session,
+        FactorExposureResult,
+        acting_tenant=acting_tenant,
+        filters=(
+            (FactorExposureResult.portfolio_id, portfolio_id),
+            (FactorExposureResult.instrument_id, instrument_id),
+        ),
+        as_of=as_of,
+        order_by=FactorExposureResult.factor_id,
+    )
+
+
+def latest_factor_exposure(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    instrument_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None)
+) -> list[FactorExposureResult]:
+    """API-1 latest-resolver (Class A): the newest COMPLETED run's rows for the portfolio (the run
+    may be rooted at an ancestor — the returned rows are the portfolio's own; empty when none)."""
+    return latest_run_rows(
+        list_factor_exposures_by_entity(
+            session,
+            acting_tenant=acting_tenant,
+            portfolio_id=portfolio_id,
+            instrument_id=instrument_id,
+            as_of=as_of,
+        )
     )
 
 

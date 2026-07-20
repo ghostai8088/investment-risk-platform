@@ -191,3 +191,23 @@ def test_no_mutating_verbs(ctx) -> None:  # noqa: ANN001
     for url in (f"/risk/es-backtests/{uuid.uuid4()}", f"/risk/es-backtests/runs/{uuid.uuid4()}"):
         for method in ("put", "patch", "delete"):
             assert getattr(client, method)(url, headers=_h(p)).status_code == 405
+
+
+def test_api1_risk_entity_reads_smoke(ctx) -> None:  # noqa: ANN001
+    """API-1 (Class A/risk): the entity/time + latest endpoints resolve, silent-empty on a tenant
+    with no runs, require entity args on /latest, and deny-by-default. The full-data path is the
+    same shared calc/reads helper the pacing golden + perf test already prove; this pins the risk
+    router wiring (routes exist, /latest not shadowed by /{result_id}, gating)."""
+    client, p, db = ctx
+    pf = str(uuid.uuid4())
+    for fam in ("var-backtests", "es-backtests", "factor-exposures", "proxy-weight-estimates"):
+        lst = client.get(f"/risk/{fam}", params={"portfolio_id": pf}, headers=_h(p))
+        assert lst.status_code == 200 and lst.json() == [], fam  # silent-empty
+        latest = client.get(f"/risk/{fam}/latest", params={"portfolio_id": pf}, headers=_h(p))
+        assert latest.status_code == 200 and latest.json() == [], fam  # /latest resolves, empty
+        # /latest requires portfolio_id.
+        assert client.get(f"/risk/{fam}/latest", headers=_h(p)).status_code == 422, fam
+    # Deny-by-default: a stranger (no risk.view) is 403 on the entity read.
+    stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": p.tenant_id}
+    denied = client.get("/risk/var-backtests", params={"portfolio_id": pf}, headers=stranger)
+    assert denied.status_code == 403

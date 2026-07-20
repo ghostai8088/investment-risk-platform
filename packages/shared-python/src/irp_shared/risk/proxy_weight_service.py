@@ -49,6 +49,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.db.mixins import utcnow
@@ -544,6 +545,51 @@ def list_proxy_weight_results(
         )
         .scalars()
         .all()
+    )
+
+
+def list_proxy_weight_results_by_entity(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    instrument_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[ProxyWeightEstimateResult]:
+    """API-1 entity/time read (Class A): ``proxy_weight_estimate_result`` rows across COMPLETED runs
+    for a (portfolio, instrument). Silent-empty on a foreign id; ``as_of=None`` = now."""
+    return list_governed_results(
+        session,
+        ProxyWeightEstimateResult,
+        acting_tenant=acting_tenant,
+        filters=(
+            (ProxyWeightEstimateResult.portfolio_id, portfolio_id),
+            (ProxyWeightEstimateResult.instrument_id, instrument_id),
+        ),
+        as_of=as_of,
+        order_by=ProxyWeightEstimateResult.metric_type,
+    )
+
+
+def latest_proxy_weight_result(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    instrument_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None)
+) -> list[ProxyWeightEstimateResult]:
+    """API-1 latest-resolver (Class A): the newest COMPLETED proxy-weight-estimate run's rows for
+    the portfolio (optionally pinned to an instrument) — the WEIGHT + INTERCEPT + SUMMARY set (empty
+    when none)."""
+    return latest_run_rows(
+        list_proxy_weight_results_by_entity(
+            session,
+            acting_tenant=acting_tenant,
+            portfolio_id=portfolio_id,
+            instrument_id=instrument_id,
+            as_of=as_of,
+        )
     )
 
 
