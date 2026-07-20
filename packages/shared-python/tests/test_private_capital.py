@@ -10,11 +10,14 @@ behavior added at steps 4-5.
 
 from __future__ import annotations
 
+import pathlib
 import uuid
 from datetime import date
 from decimal import Decimal
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.models import AppendOnlyViolation
@@ -107,6 +110,15 @@ def test_partial_unique_indexes_declared() -> None:
         ix = _index(model, name)
         assert ix.unique
         assert [c.name for c in ix.columns] == ["reverses_id"]
+
+
+def test_migration_head_and_chain() -> None:
+    root = pathlib.Path(__file__).resolve().parents[3]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "migrations"))
+    script = ScriptDirectory.from_config(cfg)
+    assert script.get_current_head() == "0044_private_capital"  # CC-1
+    assert script.get_revision("0044_private_capital").down_revision == "0043_es_backtest"
 
 
 # --- the ORM append-only guards (the DB trigger halves live in the PG suite) ---
