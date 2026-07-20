@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pathlib
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -177,3 +177,264 @@ def test_distribution_orm_guard_blocks_update(session: Session) -> None:
     with pytest.raises(AppendOnlyViolation):
         session.flush()
     session.rollback()
+
+
+# --- step 4: the commitment service (five-op FR set; chain rules; rails) ---
+
+from sqlalchemy import func, select  # noqa: E402
+
+from irp_shared.audit.models import AuditEvent  # noqa: E402
+from irp_shared.audit.service import verify_chain  # noqa: E402
+from irp_shared.db.mixins import utcnow  # noqa: E402
+from irp_shared.lineage.service import assert_has_lineage  # noqa: E402
+from irp_shared.portfolio import PortfolioActor, create_portfolio  # noqa: E402
+from irp_shared.private_capital.commitment_service import (  # noqa: E402
+    CommitmentActor,
+    CommitmentValueError,
+    NoCurrentCommitment,
+    capture_commitment,
+    correct_commitment,
+    current_commitment,
+    list_commitments,
+    reconstruct_commitment_as_of,
+    supersede_commitment,
+)
+from irp_shared.reference.instrument import create_instrument  # noqa: E402
+from irp_shared.reference.service import ReferenceActor  # noqa: E402
+
+_ACT = CommitmentActor(actor_id="steward")
+
+
+def _tenant() -> str:
+    return str(uuid.uuid4())
+
+
+def _seed_pf_fund(session: Session, tenant: str, suffix: str = "") -> tuple[str, str]:
+    pf = create_portfolio(
+        session,
+        tenant_id=tenant,
+        code=f"PF{suffix}",
+        name="pf",
+        node_type="ACCOUNT",
+        actor=PortfolioActor(actor_id="steward"),
+    )
+    fund = create_instrument(
+        session,
+        tenant_id=tenant,
+        code=f"FUND{suffix}",
+        name="Fund",
+        asset_class="PRIVATE_EQUITY",
+        actor=ReferenceActor(actor_id="steward"),
+    )
+    return pf.id, fund.id
+
+
+def _capture(session: Session, tenant: str, pf: str, fund: str, **kw):  # noqa: ANN003, ANN202
+    base = dict(
+        committed_amount=Decimal("25000000.000000"),
+        currency_code="USD",
+        commitment_date=date(2026, 1, 15),
+    )
+    base.update(kw)
+    return capture_commitment(
+        session,
+        portfolio_id=pf,
+        instrument_id=fund,
+        acting_tenant=tenant,
+        actor=_ACT,
+        **base,
+    )
+
+
+def _event_count(session: Session, event_type: str) -> int:
+    return session.execute(
+        select(func.count()).select_from(AuditEvent).where(AuditEvent.event_type == event_type)
+    ).scalar_one()
+
+
+def test_capture_rails(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    row = _capture(session, tenant, pf, fund)
+    assert row.record_version == 1 and row.valid_to is None and row.system_to is None
+    assert_has_lineage(session, "commitment", row.id, tenant_id=tenant)
+    assert _event_count(session, "PRIVATE.COMMITMENT_CREATE") == 1
+    assert verify_chain(session, tenant).ok is True
+
+
+def test_capture_validators(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    for bad_amount in (Decimal("0"), Decimal("-1"), Decimal("NaN"), Decimal("Infinity")):
+        with pytest.raises(CommitmentValueError):
+            _capture(session, tenant, pf, fund, committed_amount=bad_amount)
+    for bad_ccy in ("usd", "US", "USDX", "U1D"):
+        with pytest.raises(CommitmentValueError):
+            _capture(session, tenant, pf, fund, currency_code=bad_ccy)
+
+
+def test_capture_cross_tenant_targets_fail_closed(session: Session) -> None:
+    a, b = _tenant(), _tenant()
+    a_pf, a_fund = _seed_pf_fund(session, a, "A")
+    b_pf, b_fund = _seed_pf_fund(session, b, "B")
+    with pytest.raises(CommitmentValueError):
+        _capture(session, a, b_pf, a_fund)
+    with pytest.raises(CommitmentValueError):
+        _capture(session, a, a_pf, b_fund)
+
+
+def test_supersede_close_first_and_chain(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    v1 = _capture(session, tenant, pf, fund)
+    eff = v1.valid_from + timedelta(days=30)
+    v2 = supersede_commitment(
+        session,
+        portfolio_id=pf,
+        instrument_id=fund,
+        committed_amount=Decimal("35000000.000000"),
+        currency_code="USD",
+        commitment_date=date(2026, 1, 15),
+        acting_tenant=tenant,
+        actor=_ACT,
+        effective_at=eff,
+    )
+    assert v1.valid_to == eff and v2.supersedes_id == v1.id and v2.record_version == 2
+    assert (
+        current_commitment(session, acting_tenant=tenant, portfolio_id=pf, instrument_id=fund).id
+        == v2.id
+    )
+    # Supersede below Σ-calls is permitted by design (no economics here) — and the
+    # window-coherence guard refuses an inverting effective_at.
+    with pytest.raises(CommitmentValueError):
+        supersede_commitment(
+            session,
+            portfolio_id=pf,
+            instrument_id=fund,
+            committed_amount=Decimal("1.000000"),
+            currency_code="USD",
+            commitment_date=date(2026, 1, 15),
+            acting_tenant=tenant,
+            actor=_ACT,
+            effective_at=v1.valid_from,  # <= the new head's valid_from -> refused
+        )
+
+
+def test_currency_chain_immutable_on_supersede(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    v1 = _capture(session, tenant, pf, fund)
+    with pytest.raises(CommitmentValueError, match="chain-immutable"):
+        supersede_commitment(
+            session,
+            portfolio_id=pf,
+            instrument_id=fund,
+            committed_amount=Decimal("30000000.000000"),
+            currency_code="EUR",
+            commitment_date=date(2026, 1, 15),
+            acting_tenant=tenant,
+            actor=_ACT,
+            effective_at=v1.valid_from + timedelta(days=1),
+        )
+
+
+def test_correct_symmetric_payload_and_action(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    v1 = _capture(session, tenant, pf, fund)
+    corrected = correct_commitment(
+        session,
+        portfolio_id=pf,
+        instrument_id=fund,
+        committed_amount=Decimal("26000000.000000"),
+        restatement_reason="typo in the signed amount",
+        acting_tenant=tenant,
+        actor=_ACT,
+    )
+    assert corrected.valid_from == v1.valid_from  # same valid window
+    assert corrected.currency_code == v1.currency_code  # no re-denomination path exists
+    ev = session.execute(
+        select(AuditEvent).where(AuditEvent.event_type == "PRIVATE.COMMITMENT_CORRECTION")
+    ).scalar_one()
+    # The two PA-0 review-fold lessons, pinned: action="correct" + symmetric old->new.
+    assert ev.action == "correct"
+    assert ev.before_value["committed_amount"] == "25000000.000000"
+    assert ev.after_value["committed_amount"] == "26000000.000000"
+    with pytest.raises(CommitmentValueError):
+        correct_commitment(
+            session,
+            portfolio_id=pf,
+            instrument_id=fund,
+            committed_amount=Decimal("1.000000"),
+            restatement_reason="",
+            acting_tenant=tenant,
+            actor=_ACT,
+        )
+
+
+def test_no_current_head_refused(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    with pytest.raises(NoCurrentCommitment):
+        supersede_commitment(
+            session,
+            portfolio_id=pf,
+            instrument_id=fund,
+            committed_amount=Decimal("1.000000"),
+            currency_code="USD",
+            commitment_date=date(2026, 1, 15),
+            acting_tenant=tenant,
+            actor=_ACT,
+            effective_at=utcnow(),
+        )
+
+
+def test_reconstruct_both_axes(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    v1 = _capture(session, tenant, pf, fund)
+    correct_commitment(
+        session,
+        portfolio_id=pf,
+        instrument_id=fund,
+        committed_amount=Decimal("26000000.000000"),
+        restatement_reason="restated",
+        acting_tenant=tenant,
+        actor=_ACT,
+    )
+    # As known BEFORE the correction: the original value; after: the corrected one.
+    old = reconstruct_commitment_as_of(
+        session,
+        portfolio_id=pf,
+        instrument_id=fund,
+        valid_at=v1.valid_from + timedelta(seconds=1),
+        known_at=v1.system_from + timedelta(microseconds=1),
+        acting_tenant=tenant,
+    )
+    assert old is not None and old.committed_amount == Decimal("25000000.000000")
+    new = reconstruct_commitment_as_of(
+        session,
+        portfolio_id=pf,
+        instrument_id=fund,
+        valid_at=v1.valid_from + timedelta(seconds=1),
+        known_at=utcnow(),
+        acting_tenant=tenant,
+    )
+    assert new is not None and new.committed_amount == Decimal("26000000.000000")
+
+
+def test_list_filters_rule7(session: Session) -> None:
+    tenant = _tenant()
+    pf1, fund1 = _seed_pf_fund(session, tenant, "1")
+    pf2, fund2 = _seed_pf_fund(session, tenant, "2")
+    _capture(session, tenant, pf1, fund1)
+    _capture(session, tenant, pf1, fund2)
+    _capture(session, tenant, pf2, fund2)
+    assert len(list_commitments(session, acting_tenant=tenant)) == 3
+    assert len(list_commitments(session, acting_tenant=tenant, portfolio_id=pf1)) == 2
+    assert len(list_commitments(session, acting_tenant=tenant, instrument_id=fund2)) == 2
+    assert (
+        len(list_commitments(session, acting_tenant=tenant, portfolio_id=pf2, instrument_id=fund2))
+        == 1
+    )
+    assert list_commitments(session, acting_tenant=_tenant()) == []
