@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
@@ -51,6 +51,8 @@ from irp_shared.dq.service import register_dq_rule, run_quality_check
 from irp_shared.lineage.models import EDGE_KIND_ORIGIN
 from irp_shared.lineage.service import record_lineage
 from irp_shared.private_capital.commitment_service import (
+    AMOUNT_QUANTUM,
+    MAX_AMOUNT,
     NoCurrentCommitment,
     current_commitment,
     ensure_manual_source,
@@ -71,8 +73,7 @@ from irp_shared.private_capital.models import (
     Distribution,
 )
 
-#: Audit action for a reversal append (a distinct verb at the event_type grain; the
-#: row-level action stays "create" — the reversal IS a created row).
+#: Per-tenant governed DQ rule codes (resolve-or-register; the proxy_mapping pattern).
 _REQUIRED_RULE_CODES = {
     ENTITY_CAPITAL_CALL: "capital_call.required_fields",
     ENTITY_DISTRIBUTION: "distribution.required_fields",
@@ -106,12 +107,25 @@ class CapitalFlowNotVisible(Exception):
 
 
 def _validate_amount(amount: Decimal) -> None:
-    """Ordinary captures are strictly positive finite (reversal rows are minted internally
-    as exact negations — never caller-supplied)."""
+    """Ordinary captures are strictly positive finite INSIDE the (20,6) envelope, judged
+    at the canonical quantum (the review fold — the persisted value is the HALF_UP
+    quantization, so validation must see it: a sub-quantum input would mint a PERMANENT
+    zero-amount immutable row; an oversized one would 500 at bind). Reversal rows are
+    minted internally as exact negations — never caller-supplied."""
     if not isinstance(amount, Decimal) or not amount.is_finite():
         raise CapitalFlowValueError(f"amount must be a finite Decimal (got {amount!r})")
-    if amount <= 0:
-        raise CapitalFlowValueError(f"amount must be strictly positive (got {amount})")
+    try:
+        quantized = amount.quantize(AMOUNT_QUANTUM)
+    except InvalidOperation:
+        raise CapitalFlowValueError(
+            f"amount {amount} does not fit the (20,6) envelope — refused"
+        ) from None
+    if quantized <= 0:
+        raise CapitalFlowValueError(
+            f"amount must be strictly positive at the 6dp canonical scale (got {amount})"
+        )
+    if quantized > MAX_AMOUNT:
+        raise CapitalFlowValueError(f"amount {amount} exceeds the (20,6) maximum — refused")
 
 
 def _require_current_commitment(
@@ -278,8 +292,10 @@ def capture_capital_call(
     """Capture one capital-call event as ONE governed unit (IA row + MANUAL ORIGIN edge +
     ``PRIVATE.CAPITAL_CALL_CREATE`` + the DQ gate). A CURRENT commitment for the
     (portfolio, instrument) pair must exist; the event currency must equal its
-    chain-immutable currency; ``call_type`` is vocab-validated; the amount is captured
-    verbatim (strictly positive)."""
+    chain-immutable currency; ``call_type`` is vocab-validated; the amount is captured at
+    the canonical 6dp scale (HALF_UP at bind — AD-011; strictly positive at that scale).
+    ``event_date`` ordering vs the commitment/other events is deliberately NOT adjudicated
+    (inert business date — the capture layer does not adjudicate economics, OD-CC-1-E)."""
     _validate_amount(amount)
     if call_type not in CALL_TYPES:
         raise CapitalFlowValueError(f"call_type {call_type!r} not in {CALL_TYPES}")
@@ -458,7 +474,10 @@ def _validate_reversal_target(
             f"(recapture the correct event instead); refused"
         )
     existing = session.execute(
-        select(model.id).where(model.reverses_id == str(target.id))
+        select(model.id).where(
+            model.reverses_id == str(target.id),
+            model.tenant_id == target.tenant_id,  # predicated (the one-unpredicated-query fold)
+        )
     ).scalar_one_or_none()
     if existing is not None:
         raise CapitalFlowValueError(

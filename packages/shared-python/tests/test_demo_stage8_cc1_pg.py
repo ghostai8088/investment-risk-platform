@@ -1,8 +1,9 @@
 """CC-1 stage-8 PG tier: the seeded end state — the commitment lifecycle LIVE (the negation
 reversal Σ self-correction; the recallable flag as data; the provenance version echo), and
 the CAPTURE-ONLY honesty: the campaign count pins (19 codes / 34 validation records / 95
-COMPLETED runs) DID NOT MOVE, and the perf/backtest evidence chains are row-count-unchanged
-(the OD-CC-1-D read rule mechanically visible). Runs AFTER the stage-7 step and BEFORE the
+COMPLETED runs) DID NOT MOVE — the runs pin IS the perf/backtest evidence (any new
+computation would mint a COMPLETED run) — and NO transaction row cites the stage-8 fund
+(the OD-CC-1-D no-auto-bridge rule mechanically visible). Runs AFTER the stage-7 step and BEFORE the
 downgrade smoke in CI (the smoke then exercises 0044's destructive downgrade against THIS
 stage's captured rows every run)."""
 
@@ -134,6 +135,20 @@ def test_commitment_lifecycle_end_state(db: Session) -> None:
     assert len(dists) == 2
     assert sum(d.amount for d in dists) == Decimal("1800000.000000")
     assert sum(1 for d in dists if d.is_recallable) == 1
+
+
+def test_read_rule_no_auto_bridge(db: Session) -> None:
+    """OD-CC-1-D mechanically visible: capturing calls/distributions posted NO transaction
+    (the external-flow chain the perf/backtest engines read is untouched by this stage)."""
+    from sqlalchemy import text
+
+    n = db.execute(
+        text(
+            "SELECT count(*) FROM transaction WHERE instrument_id IN "
+            "(SELECT id FROM instrument WHERE code = 'PE-MERIDIAN-X')"
+        )
+    ).scalar_one()
+    assert n == 0
 
 
 def test_audit_events_present(db: Session) -> None:

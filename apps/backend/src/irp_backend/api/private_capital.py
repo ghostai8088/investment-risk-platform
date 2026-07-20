@@ -85,7 +85,15 @@ class CommitmentIn(BaseModel):
     valid_from: datetime | None = None
 
 
-class CommitmentSupersedeIn(CommitmentIn):
+class CommitmentSupersedeIn(BaseModel):
+    # Deliberately NOT inheriting CommitmentIn: its optional valid_from would be advertised
+    # in the OpenAPI schema as a silent no-op here — the supersede window start IS
+    # effective_at (the adversarial-review fold).
+    portfolio_id: uuid.UUID
+    instrument_id: uuid.UUID
+    committed_amount: Decimal
+    currency_code: str
+    commitment_date: date
     effective_at: datetime
 
 
@@ -426,7 +434,10 @@ def capture_capital_call_endpoint(
     db: Session = Depends(get_tenant_session),
 ) -> CapitalCallOut:
     """Record one capital-call event (requires a CURRENT commitment for the pair; the event
-    currency must equal the commitment's). Append-only — there is no edit/delete."""
+    currency must equal the commitment's). Append-only — there is no edit/delete.
+    THE READ RULE (OD-CC-1-D): this event does NOT feed
+    TWR/Dietz or backtest realized P&L; a cash movement in a return-modeled book must be
+    separately posted as a transaction — nothing auto-bridges."""
     try:
         row = capture_capital_call(
             db,
@@ -456,7 +467,10 @@ def reverse_capital_call_endpoint(
     db: Session = Depends(get_tenant_session),
 ) -> CapitalCallOut:
     """Append the FULL reversal of a capital call (amount = the exact negation; emits
-    PRIVATE.CAPITAL_CALL_REVERSE). A reversal cannot be reversed; one reversal per event."""
+    PRIVATE.CAPITAL_CALL_REVERSE). A reversal cannot be reversed; one reversal per event.
+    THE READ RULE (OD-CC-1-D): this event does NOT feed
+    TWR/Dietz or backtest realized P&L; a cash movement in a return-modeled book must be
+    separately posted as a transaction — nothing auto-bridges."""
     try:
         row = reverse_capital_call(
             db,
@@ -480,7 +494,10 @@ def list_capital_calls_endpoint(
     db: Session = Depends(get_tenant_session),
 ) -> CapitalCallListOut:
     """Capital-call events (reversal rows included — Σ(amount) is self-correcting),
-    optionally filtered by portfolio and/or instrument (rule 7)."""
+    optionally filtered by portfolio and/or instrument (rule 7).
+    THE READ RULE (OD-CC-1-D): this event does NOT feed
+    TWR/Dietz or backtest realized P&L; a cash movement in a return-modeled book must be
+    separately posted as a transaction — nothing auto-bridges."""
     rows = list_capital_calls(
         db,
         acting_tenant=principal.tenant_id,
@@ -500,7 +517,10 @@ def capture_distribution_endpoint(
     db: Session = Depends(get_tenant_session),
 ) -> DistributionOut:
     """Record one distribution event (``is_recallable`` is captured as data; its unfunded
-    interpretation is the CC-2 projection's, not this capture's)."""
+    interpretation is the CC-2 projection's, not this capture's).
+    THE READ RULE (OD-CC-1-D): this event does NOT feed
+    TWR/Dietz or backtest realized P&L; a cash movement in a return-modeled book must be
+    separately posted as a transaction — nothing auto-bridges."""
     try:
         row = capture_distribution(
             db,
@@ -530,7 +550,10 @@ def reverse_distribution_endpoint(
     principal: Principal = Depends(_require_record),
     db: Session = Depends(get_tenant_session),
 ) -> DistributionOut:
-    """Append the FULL reversal of a distribution (incl. the ``is_recallable`` echo)."""
+    """Append the FULL reversal of a distribution (incl. the ``is_recallable`` echo).
+    THE READ RULE (OD-CC-1-D): this event does NOT feed
+    TWR/Dietz or backtest realized P&L; a cash movement in a return-modeled book must be
+    separately posted as a transaction — nothing auto-bridges."""
     try:
         row = reverse_distribution(
             db,
@@ -553,7 +576,10 @@ def list_distributions_endpoint(
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> DistributionListOut:
-    """Distribution events, optionally filtered by portfolio and/or instrument (rule 7)."""
+    """Distribution events, optionally filtered by portfolio and/or instrument (rule 7).
+    THE READ RULE (OD-CC-1-D): this event does NOT feed
+    TWR/Dietz or backtest realized P&L; a cash movement in a return-modeled book must be
+    separately posted as a transaction — nothing auto-bridges."""
     rows = list_distributions(
         db,
         acting_tenant=principal.tenant_id,

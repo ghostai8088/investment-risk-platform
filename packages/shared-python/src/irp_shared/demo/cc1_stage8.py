@@ -18,8 +18,9 @@ there is no model version to validate). The sequence:
 4. Record **two distributions** — an INCOME and a RETURN_OF_CAPITAL flagged
    ``is_recallable`` (captured as DATA; the unfunded interpretation is CC-2's).
 
-THE READ RULE lives here too: none of these events touch the perf/backtest chains (the
-flagship TWR/backtest series are byte-unchanged by this stage — asserted in the suites).
+THE READ RULE lives here too: none of these events touch the perf/backtest chains — the
+mechanical evidence is the 95-COMPLETED-runs pin (any perf/backtest computation would mint
+a run) plus the zero-transactions assertion on the stage-8 fund (nothing auto-bridged).
 
 Idempotency is REFUSE-NOT-SKIP on this stage's OWN footprint (any commitment row in the
 demo tenant, probed FIRST). Requires the campaign (principals + the flagship book). The

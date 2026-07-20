@@ -12,10 +12,12 @@ version). Invariants (the proxy_mapping protocol verbatim): ONE ``now = utcnow()
 op; CLOSE-FIRST ordering on a re-version; a prior version's CONTENT is never mutated
 (TR-08); fail-closed validators BEFORE any write (strictly-positive finite
 ``committed_amount``; 3-letter ``currency_code`` shape; BOTH FK targets re-resolved
-tenant-filtered — the P3-5 cross-tenant-FK guard); **``currency_code`` is
-CHAIN-IMMUTABLE** — supersede and correct REFUSE a currency differing from the prior
-version's (the immutable ENT-016 event rows validate against it; a re-denominated
-commitment is a recorded v1 limitation: close out and re-capture). A supersede may set
+tenant-filtered — the P3-5 cross-tenant-FK guard); **``currency_code`` is CHAIN-IMMUTABLE** —
+supersede REFUSES a differing currency; the correct path is structurally parameterless
+(no re-denomination path exists). The immutable ENT-016 event rows validate against the
+chain currency; a re-denominated commitment is a recorded v1 limitation — NO close-out op
+ships in v1, so a chain, once captured, has a permanent currency (the chain-terminate op
+is the recorded v2 candidate). A supersede may set
 ``committed_amount`` below the sum of captured calls — the capture layer does not
 adjudicate economics (funded/unfunded arithmetic is CC-2's, OD-CC-1-E).
 
@@ -32,7 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
@@ -87,14 +89,6 @@ class CommitmentValueError(Exception):
     maps to 422)."""
 
 
-class CommitmentNotVisible(Exception):
-    """Raised when a ``commitment`` id is not visible in the acting tenant scope."""
-
-    def __init__(self, commitment_id: str) -> None:
-        super().__init__(f"commitment {commitment_id} is not visible in the current tenant context")
-        self.commitment_id = str(commitment_id)
-
-
 class NoCurrentCommitment(Exception):
     """Raised when an op needs the (portfolio, instrument) pair's open current head and none
     exists."""
@@ -108,15 +102,36 @@ class NoCurrentCommitment(Exception):
         self.instrument_id = str(instrument_id)
 
 
+#: The canonical (20,6) amount envelope (the review fold — validate POST-quantize, the
+#: parse_strict_decimal quantum lesson): a sub-quantum input would otherwise mint a
+#: PERMANENT zero-amount row past the strictly-positive check, and a finite-but-oversized
+#: one would detonate at bind as an unmapped 500 instead of a fail-closed 422.
+AMOUNT_QUANTUM = Decimal("0.000001")
+MAX_AMOUNT = Decimal("99999999999999.999999")  # the (20,6) ceiling
+
+
 def _validate_amount(committed_amount: Decimal) -> None:
-    """Strictly-positive finite Decimal — rejects NaN/±Inf/zero/negative BEFORE any write."""
+    """Strictly-positive finite Decimal INSIDE the (20,6) envelope, judged at the
+    canonical quantum — rejects NaN/±Inf/zero/negative/sub-quantum/oversized BEFORE any
+    write (the persisted value is the HALF_UP quantization; validation must see it)."""
     if not isinstance(committed_amount, Decimal) or not committed_amount.is_finite():
         raise CommitmentValueError(
             f"committed_amount must be a finite Decimal (got {committed_amount!r})"
         )
-    if committed_amount <= 0:
+    try:
+        quantized = committed_amount.quantize(AMOUNT_QUANTUM)
+    except InvalidOperation:
         raise CommitmentValueError(
-            f"committed_amount must be strictly positive (got {committed_amount})"
+            f"committed_amount {committed_amount} does not fit the (20,6) envelope — refused"
+        ) from None
+    if quantized <= 0:
+        raise CommitmentValueError(
+            f"committed_amount must be strictly positive at the 6dp canonical scale "
+            f"(got {committed_amount})"
+        )
+    if quantized > MAX_AMOUNT:
+        raise CommitmentValueError(
+            f"committed_amount {committed_amount} exceeds the (20,6) maximum — refused"
         )
 
 
@@ -138,8 +153,8 @@ def _assert_chain_currency(prior: Commitment, currency_code: str) -> None:
     if currency_code != prior.currency_code:
         raise CommitmentValueError(
             f"currency_code is chain-immutable on a commitment (current {prior.currency_code!r}, "
-            f"got {currency_code!r}) — a re-denominated commitment is out of scope in v1; "
-            f"close out and re-capture; refused"
+            f"got {currency_code!r}) — a re-denominated commitment is out of scope in v1 "
+            f"(no close-out op ships; a chain-terminate op is the recorded v2 candidate); refused"
         )
 
 
@@ -284,19 +299,6 @@ def _summary(row: Commitment) -> dict[str, Any]:
 # --- resolution ---
 
 
-def resolve_commitment(session: Session, commitment_id: str, *, acting_tenant: str) -> Commitment:
-    """Resolve a ``commitment`` version by id with an EXPLICIT tenant predicate (fail-closed)."""
-    row = session.execute(
-        select(Commitment).where(
-            Commitment.id == str(commitment_id),
-            Commitment.tenant_id == str(acting_tenant),
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        raise CommitmentNotVisible(str(commitment_id))
-    return row
-
-
 def current_commitment(
     session: Session, *, acting_tenant: str, portfolio_id: str, instrument_id: str
 ) -> Commitment | None:
@@ -333,8 +335,9 @@ def capture_commitment(
     """Capture the first open commitment for a (portfolio, fund-instrument) pair as ONE
     governed unit (FR row + MANUAL ORIGIN edge + ``PRIVATE.COMMITMENT_CREATE`` + the DQ
     gate). Validators + BOTH FK re-resolutions run BEFORE any write; the amount is captured
-    verbatim (NEVER computed). NO asset_class gate (genericity — MG-01; the private-asset
-    intent is the documented convention, not a schema constraint)."""
+    at the canonical 6dp scale (HALF_UP at bind — AD-011; NEVER computed). NO asset_class
+    gate (genericity — MG-01; the private-asset intent is the documented convention, not a
+    schema constraint)."""
     _validate_amount(committed_amount)
     _validate_currency(currency_code)
     assert_portfolio_in_tenant(

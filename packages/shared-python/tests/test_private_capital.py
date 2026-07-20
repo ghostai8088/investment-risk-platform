@@ -271,6 +271,14 @@ def test_capture_validators(session: Session) -> None:
     for bad_ccy in ("usd", "US", "USDX", "U1D"):
         with pytest.raises(CommitmentValueError):
             _capture(session, tenant, pf, fund, currency_code=bad_ccy)
+    # The post-quantize envelope (the numeric-finder fold): a sub-quantum amount would
+    # quantize to a PERMANENT zero row past a raw >0 check; an oversized finite one would
+    # detonate at bind as an unmapped 500. Both refuse fail-closed now.
+    for bad_amount in (Decimal("0.0000004"), Decimal("1E+25"), Decimal("1E+15")):
+        with pytest.raises(CommitmentValueError):
+            _capture(session, tenant, pf, fund, committed_amount=bad_amount)
+    # One micro-unit and the (20,6) ceiling both remain capturable.
+    _capture(session, tenant, pf, fund, committed_amount=Decimal("0.000001"))
 
 
 def test_capture_cross_tenant_targets_fail_closed(session: Session) -> None:
@@ -300,6 +308,10 @@ def test_supersede_close_first_and_chain(session: Session) -> None:
         effective_at=eff,
     )
     assert v1.valid_to == eff and v2.supersedes_id == v1.id and v2.record_version == 2
+    # The per-op event grain pinned (the taxonomy row's claim): supersede = UPDATE close-out
+    # + CREATE, so counts are now CREATE=2 (capture + the new version) and UPDATE=1.
+    assert _event_count(session, "PRIVATE.COMMITMENT_CREATE") == 2
+    assert _event_count(session, "PRIVATE.COMMITMENT_UPDATE") == 1
     assert (
         current_commitment(session, acting_tenant=tenant, portfolio_id=pf, instrument_id=fund).id
         == v2.id
@@ -353,6 +365,9 @@ def test_correct_symmetric_payload_and_action(session: Session) -> None:
     )
     assert corrected.valid_from == v1.valid_from  # same valid window
     assert corrected.currency_code == v1.currency_code  # no re-denomination path exists
+    # The per-op grain pinned: correct = UPDATE close-out + CORRECTION.
+    assert _event_count(session, "PRIVATE.COMMITMENT_UPDATE") == 1
+    assert _event_count(session, "PRIVATE.COMMITMENT_CORRECTION") == 1
     ev = session.execute(
         select(AuditEvent).where(AuditEvent.event_type == "PRIVATE.COMMITMENT_CORRECTION")
     ).scalar_one()
@@ -535,6 +550,9 @@ def test_event_validators(session: Session) -> None:
         _call(session, tenant, pf, fund, amount=Decimal("-5"))
     with pytest.raises(CapitalFlowValueError):
         _call(session, tenant, pf, fund, amount=Decimal("NaN"))
+    for bad in (Decimal("0.0000004"), Decimal("1E+25")):  # the post-quantize envelope fold
+        with pytest.raises(CapitalFlowValueError):
+            _call(session, tenant, pf, fund, amount=bad)
     with pytest.raises(CapitalFlowValueError):
         _call(session, tenant, pf, fund, currency_code="EUR")  # commitment is USD
     with pytest.raises(CapitalFlowValueError):
