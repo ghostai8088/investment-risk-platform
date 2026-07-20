@@ -90,7 +90,6 @@ from irp_shared.snapshot import CurveSelector
 
 _CODE_VERSION = "demo-api1"
 _ENVIRONMENT_ID = "demo"
-_ACTOR_ID = "Andrew Cox"
 
 _SENSITIVITY_CODE = "risk.sensitivity.analytic"
 _ACTIVE_RISK_CODE = "risk.active_risk.parametric"

@@ -21,7 +21,13 @@ from irp_shared.audit.models import AuditEvent
 
 def _iso(dt: datetime) -> str:
     """Canonicalize a bound to the writer's ``event_time`` form so a string ``>=``/``<=`` compares
-    chronologically against the stored column (same format = lexicographic order is time order)."""
+    chronologically against the stored column (same format = lexicographic order is time order).
+    Mirrors the FROZEN writer's ``_iso`` naive-guard EXACTLY (``audit/service.py``): a tz-naive
+    bound is treated as ALREADY UTC — NOT as local time. Without this, an offset-less ISO bound
+    (which FastAPI parses to a naive ``datetime``) would be shifted by the server's local UTC offset
+    before comparison, silently narrowing/widening the ``since``/``until`` window off-UTC."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(UTC).isoformat()
 
 

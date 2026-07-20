@@ -173,6 +173,33 @@ def test_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     assert get_one.json()["exposure_type"] == "MARKET_VALUE"
 
 
+def test_api1_exposure_entity_reads(ctx) -> None:  # noqa: ANN001
+    """API-1 (Class A/exposure): the entity + /latest reads return the run's exposure rows for the
+    portfolio (each pinned with calculation_run_id), are silent-empty on a foreign id, require
+    portfolio_id on /latest (not shadowed by /{exposure_id}), and deny-by-default."""
+    client, p, _db, pf = ctx
+    run_id = client.post("/exposure/runs", json=_run_body(pf), headers=_h(p)).json()["run_id"]
+    rows = client.get("/exposure", params={"portfolio_id": pf}, headers=_h(p))
+    assert rows.status_code == 200
+    data = rows.json()
+    assert len(data) == 2 and all(r["portfolio_id"] == pf for r in data)
+    assert {r["calculation_run_id"] for r in data} == {run_id}
+    # Silent-empty on a foreign portfolio.
+    assert (
+        client.get("/exposure", params={"portfolio_id": str(uuid.uuid4())}, headers=_h(p)).json()
+        == []
+    )
+    # /latest resolves (route not shadowed by /{exposure_id}) + requires portfolio_id.
+    latest = client.get("/exposure/latest", params={"portfolio_id": pf}, headers=_h(p))
+    assert latest.status_code == 200
+    assert {r["calculation_run_id"] for r in latest.json()} == {run_id}
+    assert client.get("/exposure/latest", headers=_h(p)).status_code == 422
+    # Deny-by-default: no exposure.view.
+    assert (
+        client.get("/exposure", params={"portfolio_id": pf}, headers=_no_perm(p)).status_code == 403
+    )
+
+
 def test_deny_by_default_no_side_effect(ctx) -> None:  # noqa: ANN001
     client, p, db, pf = ctx
     before = db.execute(select(func.count()).select_from(CalculationRun)).scalar_one()

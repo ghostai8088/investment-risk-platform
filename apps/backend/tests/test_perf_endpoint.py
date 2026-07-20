@@ -382,3 +382,46 @@ def test_api1_entity_reads_portfolio_returns(ctx) -> None:  # noqa: ANN001
     assert {r["calculation_run_id"] for r in latest.json()} == {run_id}
     # /latest requires portfolio_id.
     assert client.get("/perf/portfolio-returns/latest", headers=_h(p)).status_code == 422
+
+
+def test_api1_entity_reads_benchmark_relative_and_desmoothed_smoke(ctx) -> None:  # noqa: ANN001
+    """API-1 (Class A/perf): the entity + /latest reads for benchmark-relative + desmoothed-returns
+    resolve, are silent-empty on a tenant with no runs, require portfolio_id on /latest, and deny-
+    by-default. The full-data path is the same shared calc/reads helper the portfolio-returns test +
+    the CC-2 pacing golden already prove; this pins the router wiring (routes exist, /latest not
+    shadowed by /{result_id}, gating)."""
+    client, p, db, *_ = ctx
+    pf = str(uuid.uuid4())
+    inst = str(uuid.uuid4())
+    # benchmark-relative: entity + /latest keyed by portfolio_id (benchmark_id optional).
+    assert (
+        client.get("/perf/benchmark-relative", params={"portfolio_id": pf}, headers=_h(p)).json()
+        == []
+    )
+    br_latest = client.get(
+        "/perf/benchmark-relative/latest", params={"portfolio_id": pf}, headers=_h(p)
+    )
+    assert br_latest.status_code == 200 and br_latest.json() == []  # /latest resolves, empty
+    assert client.get("/perf/benchmark-relative/latest", headers=_h(p)).status_code == 422
+    # desmoothed-returns: entity + /latest keyed by (portfolio_id, instrument_id).
+    assert (
+        client.get("/perf/desmoothed-returns", params={"portfolio_id": pf}, headers=_h(p)).json()
+        == []
+    )
+    ds_latest = client.get(
+        "/perf/desmoothed-returns/latest",
+        params={"portfolio_id": pf, "instrument_id": inst},
+        headers=_h(p),
+    )
+    assert ds_latest.status_code == 200 and ds_latest.json() == []
+    # /latest requires BOTH keys — portfolio_id alone is a 422.
+    assert (
+        client.get(
+            "/perf/desmoothed-returns/latest", params={"portfolio_id": pf}, headers=_h(p)
+        ).status_code
+        == 422
+    )
+    # Deny-by-default: a stranger (no perf.view) is 403 on the entity read.
+    stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": p.tenant_id}
+    denied = client.get("/perf/benchmark-relative", params={"portfolio_id": pf}, headers=stranger)
+    assert denied.status_code == 403

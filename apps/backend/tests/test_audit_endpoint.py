@@ -153,6 +153,21 @@ def test_audit_read_isolation_filters_window_and_shape(ctx) -> None:  # noqa: AN
     assert len(page) == 1 and page[0]["event_time"] == "2026-07-10T00:00:00+00:00"
 
 
+def test_audit_since_until_naive_bound_is_treated_as_utc() -> None:
+    """A tz-naive ``since``/``until`` bound (what FastAPI parses from an offset-less ISO string) is
+    canonicalized as ALREADY UTC — matching the FROZEN writer's ``_iso`` — NOT shifted by the host's
+    local offset. Without the guard a compliance window would silently drop events on a non-UTC
+    server. Unit-level so the host TZ is irrelevant to the proof."""
+    from datetime import UTC, datetime
+
+    from irp_shared.audit.queries import _iso
+
+    assert _iso(datetime(2026, 7, 20, 12, 0, 0)) == _iso(
+        datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
+    )
+    assert _iso(datetime(2026, 7, 20, 12, 0, 0)) == "2026-07-20T12:00:00+00:00"
+
+
 def test_audit_read_gating_and_limit_bounds(ctx) -> None:  # noqa: ANN001
     client, p, db = ctx
     _ev(db, p.tenant_id, seq=1, event_time="2026-07-01T00:00:00+00:00")
