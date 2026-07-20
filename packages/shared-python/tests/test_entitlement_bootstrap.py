@@ -301,3 +301,27 @@ def test_ids_deterministic_and_unique() -> None:
         assert len(ids) == len(set(ids))
     assert not (set(perm_ids) & set(role_ids))
     assert not (set(rp_ids) & set(perm_ids))
+
+
+def test_commitment_permissions_grants_as_ratified() -> None:
+    # CC-1 (OD-CC-1-B, ratified 2026-07-20): the THREE-code private-capital mint — `.edit` the FR
+    # maker (commitment capture/supersede/correct), `.record` the IA maker (call/distribution
+    # capture incl. reversals), `.view` reads all three tables. Both maker holder sets are
+    # IDENTICAL (data_steward + platform_admin) and auditor_3l is excluded from all three
+    # (captured-input read scope — the marketdata/valuation precedent). Both directions pinned.
+    for code in ("commitment.view", "commitment.edit", "commitment.record"):
+        assert code in ALL_CODES
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    assert _holders("commitment.view") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "risk_manager_2l",
+        "platform_admin",
+    }
+    assert _holders("commitment.edit") == {"data_steward", "platform_admin"}
+    assert _holders("commitment.record") == {"data_steward", "platform_admin"}
+    for code in ("commitment.view", "commitment.edit", "commitment.record"):
+        assert "auditor_3l" not in _holders(code)

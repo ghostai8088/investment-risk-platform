@@ -22,8 +22,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from irp_backend.api.write_errors import raise_mapped_write
 from irp_backend.deps import get_tenant_session, require_permission
-from irp_shared.db.integrity import is_unique_violation
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
 from irp_shared.marketdata import (
@@ -217,21 +217,10 @@ def _out(row: FxRate) -> FxRateOut:
     )
 
 
-def _raise_mapped_write(
-    db: Session, exc: Exception, errors: dict[type[Exception], tuple[int, str]]
-) -> None:
-    """The ONE governed-write error dispatcher (all 7 family `_raise_*_write` fns delegate here).
-
-    Rolls the whole unit back (CTRL-032), then maps the exception to its family (status, detail).
-    An ``IntegrityError`` maps to the 409 duplicate detail ONLY when it is a real unique-constraint
-    collision (MD-H1 review fold): any OTHER integrity failure inside the governed unit — FK /
-    NOT NULL / RLS ``WITH CHECK`` — is RE-RAISED (fail-loud 500), never mislabeled "already exists".
-    """
-    db.rollback()  # whole-unit rollback (CTRL-032) before mapping
-    if isinstance(exc, IntegrityError) and not is_unique_violation(exc):
-        raise exc  # NOT the duplicate class — a real data-integrity bug must stay a loud 500
-    code, detail = errors[type(exc)]
-    raise HTTPException(status_code=code, detail=detail) from None
+# The ONE governed-write error dispatcher (all 7 family `_raise_*_write` fns delegate here) —
+# HOISTED to the shared `api/write_errors.py` at CC-1 (the sanctioned mechanical redirect;
+# behavior byte-identical — these endpoint suites are the golden).
+_raise_mapped_write = raise_mapped_write
 
 
 #: Governed-write error → (status, detail). Fail-closed; rolls back before mapping.

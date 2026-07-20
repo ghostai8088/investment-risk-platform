@@ -502,7 +502,7 @@ def test_migration_head_is_desmoothed_return() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0043_es_backtest"  # BT-3
+    assert script.get_current_head() == "0044_private_capital"  # CC-1
     assert script.get_revision("0036_desmoothed_return").down_revision == "0035_scenario"
     assert (
         script.get_revision("0042_desmoothing_estimated_alpha").down_revision

@@ -481,7 +481,7 @@ def test_migration_head_and_chain() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0043_es_backtest"  # BT-3
+    assert script.get_current_head() == "0044_private_capital"  # CC-1
     assert script.get_revision("0028_var_historical").down_revision == "0027_run_failure_reason"
     assert script.get_revision("0027_run_failure_reason").down_revision == "0026_var"
 

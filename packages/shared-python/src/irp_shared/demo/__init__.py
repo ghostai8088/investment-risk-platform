@@ -16,6 +16,13 @@ from irp_shared.demo.campaign import (
     demo_id,
     run_demo_campaign,
 )
+from irp_shared.demo.cc1_stage8 import (
+    Cc1Stage8Summary,
+    DemoCc1AlreadySeededError,
+    DemoCc1Error,
+    DemoCc1PrereqError,
+    run_demo_cc1_stage8,
+)
 from irp_shared.demo.ds2_stage6 import (
     DemoDs2AlreadySeededError,
     DemoDs2Error,
@@ -68,7 +75,12 @@ __all__ = [
     "Bt3Stage7Summary",
     "DemoBt3AlreadySeededError",
     "DemoBt3PrereqError",
+    "Cc1Stage8Summary",
+    "DemoCc1AlreadySeededError",
+    "DemoCc1Error",
+    "DemoCc1PrereqError",
     "run_demo_bt3_stage7",
+    "run_demo_cc1_stage8",
     "run_demo_ds2_stage6",
     "run_demo_eshs_stage4",
     "DemoHg1AlreadySeededError",
