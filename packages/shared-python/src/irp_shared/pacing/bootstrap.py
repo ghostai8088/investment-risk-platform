@@ -79,8 +79,11 @@ def _canonical_rc_schedule(rates: list[str]) -> str:
 def _canonical_decimal(value: Decimal) -> str:
     """Canonicalize a signed decimal parameter (bow/growth) to a stable fixed-point string —
     trailing zeros removed so ``2`` and ``2.0`` mint one identity; the ``:f`` spec always yields
-    plain fixed-point (never E-notation), so an integer normalizes to e.g. ``2`` not ``2E+0``."""
-    return f"{value.normalize():f}"
+    plain fixed-point (never E-notation), so an integer normalizes to e.g. ``2`` not ``2E+0``.
+    Negative zero is folded to ``0`` (``Decimal('-0') == Decimal('0')`` is a value-identical growth,
+    so a ``-0`` declaration must NOT mint a distinct version identity nor a spurious 409)."""
+    canonical = value if value != 0 else Decimal(0)
+    return f"{canonical.normalize():f}"
 
 
 @dataclass(frozen=True)
@@ -142,6 +145,32 @@ def declared_pacing_parameters(session: Session, version: ModelVersion) -> Pacin
 def _probe_anchor(fund_life: int) -> PacingAnchor:
     # current_age = fund_life -> zero periods, so the probe validates the params WITHOUT projecting.
     return PacingAnchor(current_age=fund_life, unfunded=Decimal("0"), nav=Decimal("0"))
+
+
+def _assert_bindable(req: PacingParamsRequest) -> None:
+    """Reject at REGISTRATION anything the binder's parse-back would later refuse. The kernel
+    validates DOMAIN (ranges), but the parse-back (``declared_pacing_parameters``) ALSO caps
+    MAGNITUDE/precision via the regexes (fund_life <= 9999; bow/growth integer part <= 4 digits, <=
+    12 dp). Without this a version registers (201) yet every bind raises WrongModelVersionError:
+    permanently unbindable. Checked against the SAME canonical forms the assumption rows persist,
+    so register and bind agree."""
+    checks = (
+        (str(int(req.fund_life)), _INT_PATTERN, "fund_life"),
+        (_canonical_decimal(req.bow), _SIGNED_DECIMAL, "bow"),
+        (_canonical_decimal(req.growth), _SIGNED_DECIMAL, "growth"),
+        (_canonical_rate(str(req.yield_floor)), _YIELD_PATTERN, "yield_floor"),
+        (
+            _canonical_rc_schedule([str(r) for r in req.rc_schedule]),
+            _RC_SCHEDULE_PATTERN,
+            "rc_schedule",
+        ),
+    )
+    for text, pattern, name in checks:
+        if pattern.fullmatch(text) is None:
+            raise ValueError(
+                f"{name} value {text!r} is outside the bindable range — the strict parse-back "
+                f"would refuse it, so registration refuses it too (register and bind must agree)"
+            )
 
 
 #: The declared model assumptions (the FIVE parameters + the TA form + the recursion statement).
@@ -239,6 +268,8 @@ def register_pacing_projection_model(
         project_commitment(kernel_params, _probe_anchor(req.fund_life))
     except PacingKernelError as exc:
         raise ValueError(f"invalid pacing parameters: {exc}") from exc
+    # Magnitude/precision symmetry: refuse now what the strict parse-back would refuse at bind.
+    _assert_bindable(req)
 
     model = resolve_or_register_model(
         session,

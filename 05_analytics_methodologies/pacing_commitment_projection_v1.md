@@ -81,8 +81,11 @@ round-at-the-end; the quantum is part of the number's identity). The one transce
 exponent is deterministic at a fixed context precision (it is a correctly-rounded contextual
 operation, NOT a float `math.pow`), so the projection is bit-reproducible across platforms given the
 pinned parameters. NO float touches the recursion. A projected value beyond the reproducible
-magnitude envelope (`abs(v) > 1e26` — a declared growth/bow can compound NAV past any sane book) is
-a **post-create FAILED** run (a committed FAILED run, zero rows, a naming reason).
+magnitude envelope (`abs(v) > 1E21` — a declared growth/bow can compound NAV past any sane book) is
+a **post-create FAILED** run (a committed FAILED run, zero rows, a naming reason). The envelope sits
+strictly below the `PreciseDecimal(28,6)` column capacity (`< 1e22`) so an oversized value FAILs
+rather than overflowing the column on insert; a separate kernel ceiling above the envelope stops
+runaway geometric compounding before it can exceed the Decimal compute precision.
 
 ## Shape
 

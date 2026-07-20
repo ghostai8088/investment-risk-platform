@@ -161,6 +161,29 @@ def test_register_rejects_out_of_domain(session: Session) -> None:
             _register(session, tenant, **bad)
 
 
+def test_register_refuses_unbindable_magnitude(session: Session) -> None:
+    """Register/bind symmetry: values the strict parse-back would reject (fund_life > 9999; a
+    bow/growth integer part > 4 digits; > 12 dp) are refused AT REGISTRATION — never a version that
+    registers 201 yet can never bind."""
+    for bad in (
+        dict(fund_life=10000),  # _INT_PATTERN caps at 9999
+        dict(bow=Decimal("12345")),  # _SIGNED_DECIMAL integer part <= 4 digits
+        dict(growth=Decimal("0.1234567890123")),  # > 12 dp
+    ):
+        with pytest.raises(ValueError):
+            _register(session, tenant=str(uuid.uuid4()), **bad)
+
+
+def test_register_negative_zero_growth_is_one_identity(session: Session) -> None:
+    """A ``-0`` growth is value-identical to ``0`` and MUST NOT mint a distinct version identity
+    (nor trip a spurious same-label conflict) — the canonicalization folds the sign of zero."""
+    tenant = str(uuid.uuid4())
+    a = _register(session, tenant, growth=Decimal("0"))
+    session.flush()
+    b = _register(session, tenant, growth=Decimal("-0"))  # same label, code_version
+    assert a.id == b.id  # resolve-or-register, not a 409
+
+
 def test_parse_back_fails_closed_on_missing_form_marker(session: Session) -> None:
     # A version minted WITHOUT the functional_form marker (e.g. via the generic endpoint) must
     # fail closed at parse-back, not silently project.

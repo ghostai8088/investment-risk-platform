@@ -272,6 +272,32 @@ def test_past_fund_life_refused(session: Session) -> None:
         _run(session, tenant, pf, fund, mv, snap)
 
 
+def test_runaway_growth_fails_the_run_not_crashes(session: Session) -> None:
+    """A well-formed but extreme declared growth compounds NAV past the reproducible envelope: the
+    run is a COMMITTED FAILED run (durable refusal evidence, zero rows) — NEVER an uncaught 500
+    from a Decimal context overflow or a PG numeric-field overflow (the envelope sits below the
+    Numeric(28,6) column capacity; the kernel's ceiling stops the geometric blow-up)."""
+    tenant = str(uuid.uuid4())
+    pf, fund = _seed_pair(session, tenant)
+    _stage8_commitment(session, tenant, pf, fund)
+    _mark(session, tenant, pf, fund, "11200000.000000", date(2025, 6, 30))
+    mv = _register(session, tenant, growth=Decimal("9999"))  # 5000%+/period → runaway NAV
+    session.flush()
+    snap = build_pacing_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=SnapshotActor(actor_id="s"),
+        portfolio_id=pf,
+        instrument_id=fund,
+    )
+    result = _run(session, tenant, pf, fund, mv, snap)
+    assert result.status == "FAILED"
+    assert result.rows == []
+    assert result.failure_reason is not None and "envelope" in result.failure_reason
+    # ZERO rows persisted on the FAILED run (the gate fired before any insert).
+    assert list_pacing_rows(session, run_id=result.run.run_id, acting_tenant=tenant) == []
+
+
 def test_wrong_purpose_snapshot_refused(session: Session) -> None:
     tenant = str(uuid.uuid4())
     pf, fund = _seed_pair(session, tenant)

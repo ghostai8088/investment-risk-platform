@@ -43,6 +43,17 @@ from decimal import ROUND_HALF_UP, Decimal, localcontext
 _MONEY_QUANTUM = Decimal(1).scaleb(-6)
 #: Compute precision for the recursion + the power (the risk/perf kernel precedent).
 _COMPUTE_PREC = 50
+#: Runaway-compounding SAFETY cap. A declared growth/bow can compound NAV geometrically without
+#: bound; unbounded, the ``quantize`` to 6dp would eventually exceed ``_COMPUTE_PREC`` digits and
+#: raise ``decimal.InvalidOperation`` INSIDE the loop — before the BINDER's post-create magnitude
+#: gate (which is FAR below this, ``1E21`` < the ``Numeric(28,6)`` column capacity) could turn the
+#: over-envelope periods into a committed FAILED run. So once any projected magnitude crosses this
+#: cap (well above the binder envelope, well below the ``prec``-overflow point — one more per-period
+#: (1+G) step, G <= 9999, stays < ``1E44``), the projection STOPS: the offending period is included
+#: (so the binder gate sees it and FAILs the run) and the geometric blow-up cannot reach the context
+#: limit. A run that would legitimately COMPLETE (every value under the binder envelope) never
+#: reaches this cap, so early-stop never truncates a healthy projection.
+_MAGNITUDE_CEILING = Decimal("1E30")
 
 
 class PacingKernelError(ValueError):
@@ -92,9 +103,11 @@ class PacingPeriod:
     unfunded_end: Decimal
 
 
-def _anniversary(vintage: dt_date, years: int) -> dt_date:
+def nth_anniversary(vintage: dt_date, years: int) -> dt_date:
     """The ``years``-th anniversary of ``vintage``, clamping a Feb-29 vintage to Feb-28 in a
-    non-leap target year (the deterministic leap-day convention)."""
+    non-leap target year (the deterministic leap-day convention). The SINGLE source of the leap-day
+    rule — the binder derives ``current_age`` against THIS same clamp so the age boundary and the
+    projected windows never disagree on a Feb-29 vintage."""
     try:
         return vintage.replace(year=vintage.year + years)
     except ValueError:  # Feb 29 -> non-leap year
@@ -104,7 +117,7 @@ def _anniversary(vintage: dt_date, years: int) -> dt_date:
 def anniversary_window(vintage: dt_date, age: int) -> tuple[dt_date, dt_date]:
     """The half-open anniversary window ``[vintage + (age-1) yr, vintage + age yr)`` for fund age
     ``t = age`` — the persisted ``period_start``/``period_end`` of an age-t projection row."""
-    return (_anniversary(vintage, age - 1), _anniversary(vintage, age))
+    return (nth_anniversary(vintage, age - 1), nth_anniversary(vintage, age))
 
 
 def _rc_for_age(rc_schedule: Sequence[Decimal], age: int) -> Decimal:
@@ -156,6 +169,16 @@ def project_commitment(params: PacingParams, anchor: PacingAnchor) -> tuple[Paci
                     unfunded_end=unfunded,
                 )
             )
+            # Runaway-compounding safety stop (see ``_MAGNITUDE_CEILING``): once any value crosses
+            # the cap the over-envelope period is already recorded, so the binder's magnitude gate
+            # will FAIL the run — stop before the blow-up can overflow the Decimal context.
+            if (
+                call.copy_abs() > _MAGNITUDE_CEILING
+                or dist.copy_abs() > _MAGNITUDE_CEILING
+                or nav.copy_abs() > _MAGNITUDE_CEILING
+                or unfunded.copy_abs() > _MAGNITUDE_CEILING
+            ):
+                break
     return tuple(rows)
 
 

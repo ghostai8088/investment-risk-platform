@@ -242,3 +242,42 @@ def test_frozen_result_shape() -> None:
     assert isinstance(row, PacingPeriod)
     with pytest.raises((AttributeError, Exception)):
         row.projected_call = Decimal("1")  # frozen
+
+
+def test_runaway_growth_does_not_overflow_the_context() -> None:
+    """A well-formed but extreme declared growth compounds NAV geometrically; the kernel must NOT
+    raise decimal.InvalidOperation (the runaway-compounding safety cap). It stops early with an
+    over-envelope value present, which the BINDER's magnitude gate then turns into a FAILED run."""
+    from irp_shared.pacing.pacing_kernel import _MAGNITUDE_CEILING
+
+    # growth=9999 (5000%+/yr), L=30, a funded anchor near the Numeric(28,6) column ceiling.
+    rows = project_commitment(
+        _params(
+            rc_schedule=(Decimal("0.25"),),
+            fund_life=30,
+            bow=Decimal("2"),
+            growth=Decimal("9999"),
+            yield_floor=Decimal("0"),
+        ),
+        PacingAnchor(
+            current_age=0, unfunded=Decimal("1000000"), nav=Decimal("9999999999999999.999999")
+        ),
+    )
+    # It stopped early (did NOT run all 30 periods to a context overflow) and the last value is
+    # past the ceiling — the binder gate (far below the ceiling) will FAIL such a run.
+    assert len(rows) < 30
+    assert any(v.copy_abs() > _MAGNITUDE_CEILING for v in (rows[-1].projected_nav,))
+
+
+def test_complete_annual_periods_feb29_clamp_consistency() -> None:
+    """A Feb-29 vintage viewed on the Feb-28 clamped anniversary counts as that age (not one less)
+    — the binder's age boundary uses the SAME clamp as the projected windows."""
+    from irp_shared.pacing.service import _complete_annual_periods
+
+    v = date(2020, 2, 29)
+    assert _complete_annual_periods(v, date(2023, 2, 28)) == 3  # the clamped 3rd anniversary
+    assert _complete_annual_periods(v, date(2023, 2, 27)) == 2  # one day before → age 2
+    assert _complete_annual_periods(v, date(2024, 2, 29)) == 4  # a real leap anniversary
+    # A non-Feb-29 vintage is unaffected.
+    assert _complete_annual_periods(date(2020, 6, 30), date(2023, 6, 29)) == 2
+    assert _complete_annual_periods(date(2020, 6, 30), date(2023, 6, 30)) == 3

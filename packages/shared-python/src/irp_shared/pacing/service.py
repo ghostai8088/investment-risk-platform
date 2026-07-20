@@ -37,6 +37,7 @@ from irp_shared.pacing.pacing_kernel import (
     PacingAnchor,
     PacingKernelError,
     anniversary_window,
+    nth_anniversary,
     project_commitment,
 )
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
@@ -110,9 +111,13 @@ def _content(comp) -> dict:  # noqa: ANN001
 
 def _complete_annual_periods(vintage: date, as_of: date) -> int:
     """Complete ANNUAL periods (anniversaries) elapsed from ``vintage`` to ``as_of`` — the
-    deterministic current age (a wall-clock age would break pin-reproducibility)."""
+    deterministic current age (a wall-clock age would break pin-reproducibility). Counts against the
+    SAME leap-day clamp the kernel uses for the projected windows (``nth_anniversary``): for a
+    Feb-29 vintage the Nth anniversary falls on Feb-28 in a non-leap year, so an as-of ON that
+    clamped date counts as age N — a raw ``(month, day)`` tuple compare would under-count it by one
+    and re-project an already-elapsed period."""
     years = as_of.year - vintage.year
-    if (as_of.month, as_of.day) < (vintage.month, vintage.day):
+    if as_of < nth_anniversary(vintage, years):
         years -= 1
     return years
 
@@ -210,7 +215,12 @@ def _adjudicate_anchor(session: Session, snapshot, *, acting_tenant: str) -> _An
 
 #: The magnitude envelope: a projected value beyond this is the post-create FAILED gate (a declared
 #: parameter set can compound NAV past any sane book — a committed FAILED run + a named reason).
-_MAX_ABS = Decimal("1e26")
+#: MUST stay STRICTLY BELOW the ``pacing_projection_result`` money-column capacity — Precise-
+#: Decimal(28,6) holds < 1e22 (22 integer digits), so a value in [1e22, 1e26) would pass a looser
+#: gate and then raise a PG ``numeric field overflow`` on insert (invisible on the SQLite engine).
+#: ``1E21`` matches the var/es-backtest ``_MAX_RESULT_ABS`` precedent for the same column shape; the
+#: kernel's own ``_MAGNITUDE_CEILING`` sits ABOVE this to guarantee the gate sees the bad period.
+_MAX_ABS = Decimal("1E21")
 
 
 def run_pacing_projection(
