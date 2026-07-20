@@ -82,3 +82,111 @@ def test_migration_head_and_chain() -> None:
     script = ScriptDirectory.from_config(cfg)
     assert script.get_current_head() == "0045_pacing_projection"  # CC-2
     assert script.get_revision("0045_pacing_projection").down_revision == "0044_private_capital"
+
+
+# --- step 5: the registrar + declared-param parse-back ---
+
+from irp_shared.model.service import ModelVersionConflictError, WrongModelVersionError  # noqa: E402
+from irp_shared.pacing.bootstrap import (  # noqa: E402
+    PACING_MODEL_CODE,
+    declared_pacing_parameters,
+    register_pacing_projection_model,
+)
+
+
+def _register(session: Session, tenant: str, **kw):  # noqa: ANN003, ANN202
+    base = dict(
+        rc_schedule=[Decimal("0.25"), Decimal("0.333"), Decimal("0.5")],
+        fund_life=12,
+        bow=Decimal("2.5"),
+        growth=Decimal("0.13"),
+        yield_floor=Decimal("0"),
+    )
+    base.update(kw)
+    return register_pacing_projection_model(
+        session, tenant_id=tenant, actor_id="a", code_version="cc2-v1", **base
+    )
+
+
+def test_register_and_parse_back_roundtrip(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    mv = _register(session, tenant)
+    session.flush()
+    assert mv.status == "REGISTERED"
+    params = declared_pacing_parameters(session, mv)
+    assert params.rc_schedule == (Decimal("0.250000"), Decimal("0.333000"), Decimal("0.500000"))
+    assert params.fund_life == 12
+    assert params.bow == Decimal("2.5")
+    assert params.growth == Decimal("0.13")
+    assert params.yield_floor == Decimal("0.000000")
+
+
+def test_register_is_idempotent(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    a = _register(session, tenant)
+    session.flush()
+    b = _register(session, tenant)
+    assert a.id == b.id  # resolve-or-register
+
+
+def test_register_conflict_on_changed_declaration(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    _register(session, tenant)
+    session.flush()
+    # Same label + code_version but a DIFFERENT bow -> the assumption set differs -> conflict.
+    with pytest.raises(ModelVersionConflictError):
+        _register(session, tenant, bow=Decimal("3.0"))
+
+
+def test_register_canonicalizes_rate_identity(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    a = _register(session, tenant, rc_schedule=[Decimal("0.25"), Decimal("0.5")])
+    session.flush()
+    # 0.250 vs 0.25 must NOT mint a distinct identity (same canonical 6dp form).
+    b = _register(session, tenant, rc_schedule=[Decimal("0.250"), Decimal("0.500")])
+    assert a.id == b.id
+
+
+def test_register_rejects_out_of_domain(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    for bad in (
+        dict(bow=Decimal("0")),
+        dict(growth=Decimal("-1")),
+        dict(yield_floor=Decimal("1.5")),
+        dict(rc_schedule=[Decimal("1.5")]),
+        dict(fund_life=0),
+        dict(rc_schedule=[Decimal("0.1")] * 13, fund_life=12),  # length > L
+    ):
+        with pytest.raises(ValueError):
+            _register(session, tenant, **bad)
+
+
+def test_parse_back_fails_closed_on_missing_form_marker(session: Session) -> None:
+    # A version minted WITHOUT the functional_form marker (e.g. via the generic endpoint) must
+    # fail closed at parse-back, not silently project.
+    from irp_shared.model.service import register_model_version, resolve_or_register_model
+
+    tenant = str(uuid.uuid4())
+    model = resolve_or_register_model(
+        session,
+        tenant_id=tenant,
+        code=PACING_MODEL_CODE,
+        name="x",
+        model_type="PACING_PROJECTION",
+        actor_id="a",
+        description="d",
+    )
+    mv = register_model_version(
+        session,
+        model=model,
+        version_label="rogue",
+        actor_id="a",
+        methodology_ref="m",
+        code_version="x",
+        status="REGISTERED",
+        assumptions=("rc_schedule=0.5", "fund_life=4", "bow=2", "growth=0", "yield_floor=0"),
+        limitations=("l",),
+    )
+    session.flush()
+    with pytest.raises(WrongModelVersionError):
+        declared_pacing_parameters(session, mv)
