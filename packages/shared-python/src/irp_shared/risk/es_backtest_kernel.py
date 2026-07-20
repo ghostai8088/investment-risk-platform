@@ -5,8 +5,8 @@ NO DB, NO I/O — the AS (2014) outcomes-analysis statistics over aligned per-da
 
     exception       I_t = 1  iff  X_t + VaR_t < 0            (STRICT — the shipped BT-1 indicator)
     Z-bar-2         (1/(T·a)) · Σ_t X_t·I_t/ES_t  +  1       (unconditional; a = 1 − confidence)
-    Z-bar-1         (1/N_T)  · Σ_t X_t·I_t/ES_t  +  1        (conditional; N_T = Σ I_t; UNDEFINED
-                                                              at N_T = 0 — returned as None, never 0)
+    Z-bar-1         (1/N_T)  · Σ_t X_t·I_t/ES_t  +  1        (conditional; N_T = Σ I_t;
+                                                   UNDEFINED at N_T = 0 — returned as None, never 0)
     verdict         REJECT iff Z-bar-2 < Z2_CRITICAL[significance]   (one-sided LEFT tail; fixed
                                                               registered constants — NO simulation)
 
