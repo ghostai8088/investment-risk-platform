@@ -657,11 +657,14 @@ def resolve_es_backtest_run(session: Session, run_id: str, *, acting_tenant: str
 def resolve_es_backtest(
     session: Session, result_id: str, *, acting_tenant: str
 ) -> VarBacktestResult:
-    """Resolve one ES-backtest ``var_backtest_result`` row by id (EXPLICIT tenant predicate)."""
+    """Resolve one ES-backtest ``var_backtest_result`` row by id (EXPLICIT tenant predicate +
+    the ES-family filter — a BT-1 Kupiec row is NOT resolvable through this surface; the
+    adversarial LOW-3 fold)."""
     row = session.execute(
         select(VarBacktestResult).where(
             VarBacktestResult.id == str(result_id),
             VarBacktestResult.tenant_id == str(acting_tenant),
+            VarBacktestResult.var_metric_type == METRIC_TYPE_ES_HISTORICAL,
         )
     ).scalar_one_or_none()
     if row is None:

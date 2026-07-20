@@ -643,3 +643,37 @@ def test_es_backtest_registrar_refusals(session) -> None:
         register_es_backtest_model(
             session, tenant_id=tenant, actor_id="a", code_version="c1", significance="0.10"
         )
+
+
+def test_es_backtest_methodology_doc_exists_and_has_required_sections() -> None:
+    """The referent-existence guard every governed family carries (the adversarial LOW-4
+    fold), pinned to THIS referent's own section set."""
+    import pathlib
+
+    from irp_shared.risk.bootstrap import ES_BACKTEST_METHODOLOGY_REF
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    doc = root / ES_BACKTEST_METHODOLOGY_REF
+    assert doc.is_file()
+    text = doc.read_text(encoding="utf-8")
+    for section in (
+        "The statistics, pinned",
+        "The verdict and its DOMAIN (the read rule)",
+        "The Christoffersen leg",
+        "External benchmarks and citation grades",
+        "Known limitations",
+        "Precision notes",
+    ):
+        assert section in text, f"missing referent section: {section}"
+
+
+def test_no_snapshot_serializer_pins_ent055_rows() -> None:
+    """The structural pin-exclusion claim, MECHANICALLY pinned (the doctrine F2 fold): the
+    snapshot serialize module must carry NO var_backtest content function — es_value can
+    never enter a pin surface that does not exist."""
+    import inspect
+
+    from irp_shared.snapshot import serialize
+
+    source = inspect.getsource(serialize)
+    assert "var_backtest" not in source

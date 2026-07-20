@@ -1745,7 +1745,8 @@ ES_BACKTEST_LIMITATIONS: tuple[str, ...] = (
     "DOMAIN-BOUND VERDICT: the registered Z2 criticals (-0.70 at 5%, -1.8 at 0.01%) are "
     "Acerbi-Szekely's simulated left-tail quantiles at tail a = 0.025 (confidence 0.9750), "
     "T = 250 pairs, near-normal tails - they are alpha-, T-, AND df-DEPENDENT (executed at "
-    "planning: ~-1.56 at a=0.005/T=250; ~-3.68 at a=0.025/T=10; -0.82/-4.4 at Student-t3). "
+    "planning: ~-1.56 at a=0.005/T=250 and ~-3.68 at a=0.025/T=10; Lund Table 1: "
+    "-0.82/-4.4 at Student-t3). "
     "Off-domain pairings get Z evidence rows and NO verdict; a per-(alpha, T) critical table "
     "is a named v2 under a governed offline derivation record (the TR-09 determinism bar).",
     "ONE-SIDED: the AS statistics flag UNDERSTATEMENT only - over-conservatism is invisible "

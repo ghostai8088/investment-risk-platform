@@ -2304,6 +2304,11 @@ def register_es_backtest(
     ``(code_version, significance)`` identity (BT-3, OD-BT-3-B/D — the verdict domain
     (0.9750, 250) is REGISTRAR-STAMPED, never caller-suppliable; an off-vocabulary significance
     is a 422; a same-label different-declaration is a 409)."""
+    if body.version_label is not None and not body.version_label.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="version_label must be a non-empty string",
+        )
     try:
         version = register_es_backtest_model(
             db,
@@ -2349,6 +2354,11 @@ def register_var_backtest_christoffersen(
     ``independence=CHRISTOFFERSEN_MARKOV`` is REGISTRAR-STAMPED; the shipped v1 stays
     byte-preserved via the absent-convention grandfather). Runs ride the EXISTING
     ``POST /risk/var-backtests/runs``."""
+    if body.version_label is not None and not body.version_label.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="version_label must be a non-empty string",
+        )
     try:
         version = register_var_backtest_christoffersen_model(
             db,

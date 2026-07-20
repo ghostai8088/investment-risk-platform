@@ -327,6 +327,9 @@ def _adjudicate_pins(
                 f"run instead; refused"
             )
         if var_metric_type == METRIC_TYPE_ES_HISTORICAL:
+            # DATED (BT-3, 2026-07-19 — the ratified OD-C comment): the AS backtest SHIPS at
+            # ``risk.es_backtest`` (run_es_backtest); this branch's refusal correctly survives
+            # forever — the Kupiec quantile test stays meaningless over a tail-mean series.
             raise VarBacktestInputError(
                 f"metric_type {var_metric_type!r} is DELIBERATELY not backtestable HERE "
                 f"(ES-HS-1, OD-ES-HS-1-D: the Kupiec/Basel exception count is a QUANTILE test "
@@ -708,7 +711,14 @@ def run_var_backtest(
                         _MONEY_QUANTUM, rounding=ROUND_HALF_UP
                     )  # composed from the STORED 6dp legs — the row reproduces its own decision
                     if _out_of_range(lr_ind, lr_cc):
-                        gaps.append(f"magnitude-out-of-range:{METRIC_TYPE_LR_IND}:{lr_ind:E}")
+                        # Name the actual offender (adversarial LOW-2 fold): the DQ evidence
+                        # must cite the row and value that breached the envelope.
+                        offender, value = (
+                            (METRIC_TYPE_LR_IND, lr_ind)
+                            if abs(lr_ind) >= _MAX_RESULT_ABS
+                            else (METRIC_TYPE_LR_CC, lr_cc)
+                        )
+                        gaps.append(f"magnitude-out-of-range:{offender}:{value:E}")
                         return [], gaps
                     rows.append(
                         _mk(

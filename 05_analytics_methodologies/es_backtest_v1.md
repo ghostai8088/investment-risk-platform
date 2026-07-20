@@ -30,9 +30,9 @@ REJECT iff the STORED 6dp Z2 < the registered left-tail critical for the declare
     Z2_CRITICAL = { 0.05: −0.70,  0.0001: −1.8 }
 
 **These criticals are valid ONLY at (paired confidence 0.9750, n_pairs = 250, near-normal
-tails)** — they are α-, T-, AND df-DEPENDENT (executed at planning: ≈ −1.56 at a=0.005/T=250;
-≈ −3.68 at a=0.025/T=10; −0.82/−4.4 at Student-t3; and the demo's own T=3 series produced
-Z2 = −127.09). The verdict is therefore emitted ONLY inside that domain (the Basel-zone
+tails)** — they are α-, T-, AND df-DEPENDENT (executed at planning: ≈ −1.56 at a=0.005/T=250
+and ≈ −3.68 at a=0.025/T=10; Lund Table 1: −0.82/−4.4 at Student-t3; and the demo's own T=3
+series produced Z2 = −127.09). The verdict is therefore emitted ONLY inside that domain (the Basel-zone
 domain-gate precedent); off-domain runs persist the Z evidence rows + `ES_PAIR_COUNT` and NO
 verdict — **the read rule: an absent verdict is a recorded fact, mechanically derivable from
 the persisted `ES_PAIR_COUNT` row + the version's registrar-stamped domain
@@ -94,3 +94,17 @@ Mirrored content-identically into `model_limitation` rows — see `ES_BACKTEST_L
 (`risk/bootstrap.py`): the domain-bound verdict; one-sidedness; Z1-evidence-only; the
 captured-holdings P&L bias + ACTUAL-P&L-only carries (BT-1); one paired family per run with
 per-leg model-version uniformity; small-T honesty; the FRTB posture; validation_status.
+
+## Precision notes (the numeric review's property caveats — conventions, not defects)
+
+The statistics quantize HALF_UP to 12dp in-kernel, then to the Numeric(28,6) storage scale in
+the binder, and **every decision is taken on the STORED 6dp value** (the BT-1 convention — the
+persisted row always reproduces its own decision). Consequences, stated: (i) the 12dp→6dp
+pipeline can store a different 6dp value than direct rounding of the exact statistic inside a
+~1e-12 band around 6dp half-points (reachable only via repeating-decimal X/ES ratios — the
+governed inputs are 6dp money values); (ii) a true Z2 up to 5e-7 below −0.70 stores as
+−0.700000 and FAILS TO REJECT (the conservative direction only); (iii) LR_CC composes from the
+STORED 6dp legs (documented at the code site) and can differ from direct 6dp of the exact sum
+by ≤ 1e-6 at a decision knife-edge; (iv) the 6dp criticals are themselves HALF_UP roundings of
+the exact values (5.9914645…, 9.2103404…) — a half-ulp conservative bias at the exact-critical
+edge. The demo's stage-7 numbers coincide on every path (byte-re-derived at review).

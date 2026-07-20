@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **RATIFIED 2026-07-19 (OQ-BT-3-1…7, user: "Approve all") — implementation underway.** Drafted 2026-07-19 on `main` = `0208071` (post-Wave-7-close ratification; head migration `0042_desmoothing_estimated_alpha`). The pre-ratification verifier pass RAN (three verifiers, executed checks): **1 HIGH + 6 MED + 6 LOW, ALL FOLDED** — the ratified shape changed materially (the T-domain verdict gate; the stage-7 demo reframed to domain-gate honesty; the threshold route accounting repaired; the ES-leg battery + uniformity gate; the FE relabel; Part 5 carries the full disposition). Sized **S/M** (roadmap Part 2.11 row 1). Not yet implemented or code-reviewed. |
+| **Status** | **IMPLEMENTED + 4-FINDER-REVIEWED 2026-07-19 — awaiting the impl PR merge (branch `bt-3-impl`; closeout stamps follow).** Ratified 2026-07-19 (OQ-BT-3-1…7, user: "Approve all"). Review: **ZERO HIGH** — adversarial 0 MED + 4 LOW, numeric 0 defects + 4 caveats, doctrine 1 MED + 3 LOW (the t3-attribution catch, folded pre-merge), scope-fence 11/11 + 1 omission folded; ALL folds landed (Part 6); stage 7 LIVE (Z2 = −127.09 verdict-withheld; the LR_CC joint-power lesson). Drafted 2026-07-19 on `main` = `0208071` (post-Wave-7-close ratification; head migration `0042_desmoothing_estimated_alpha`). The pre-ratification verifier pass RAN (three verifiers, executed checks): **1 HIGH + 6 MED + 6 LOW, ALL FOLDED** — the ratified shape changed materially (the T-domain verdict gate; the stage-7 demo reframed to domain-gate honesty; the threshold route accounting repaired; the ES-leg battery + uniformity gate; the FE relabel; Part 5 carries the full disposition). Sized **S/M** (roadmap Part 2.11 row 1). |
 | **Grounding** | Census (one thorough Explore pass, file:line-grounded) + the ratified fetch-first MUSTs DISCHARGED (Part 2). The existing backtest machinery: `run_var_backtest` (`risk/var_backtest_service.py:424-688`) — build/consume paths, pre-create prerequisite gate; the all-or-nothing alignment gate (`:329-362`: each VaR forecast pairs with EXACTLY the DIETZ sub-period where `window_end == period_start` and `period_end == as_of + horizon_days`; unpaired ⇒ refused; duplicate `window_end` refused `:323-327` so pairing is injective); the MV-chain integrity check (`:245-271`; realized P&L = `end_mv − begin_mv − net_external_flow`, flow-adjusted, `:269`); the cross-portfolio identity gate (`:392-421`). **The DELIBERATE ES_HISTORICAL refusal branch naming this slice** (`:295-303`, verbatim: "the genuine Acerbi-Szekely ES backtest is the named BT-3 candidate — pairing the ES-HS run with its sibling VaR-HS run by shared input_snapshot_id"). The kernel (`var_backtest_kernel.py`): `exception_indicator` (`:53-56`, `e=1 iff −P&L > VaR`, STRICT ⇔ `X + VaR < 0`), `kupiec_lr` (Decimal-50, 12dp), `CHI2_1DF_CRITICALS = {0.05: 3.841459, 0.01: 6.634897}` (`:33-36` — registered-constant precedent: "Extending the set is a NEW model version"). ENT-055 `var_backtest_result` (`risk/models.py:335-401`): IA append-only, grain `(calculation_run_id, metric_type, period_start)`, **`metric_type` String(30) UNCONSTRAINED** (code-side vocab comment only — the BT-2 zero-schema precedent for admitting new metric types), `var_metric_type` echo, nullable `realized_pnl`/`var_value` per-pair echoes, **NO ES-forecast echo column** (the one candidate migration, OD-D). Model identity: `risk.var_backtest` (`bootstrap.py:1351-1531`, declared `alpha=` ∈ {0.05, 0.01}); the Christoffersen tee lives in its limitation rows (`:1401-1404`, `:1420-1422`). **The pairing substrate is LIVE**: ES-HS reuses `PURPOSE_VAR_HS_INPUT` + the builder byte-unchanged (one snapshot feeds both families, `bootstrap.py:1062-1065`); stage 4 binds the flagship ES to the flagship HS VaR's snapshot (`demo/eshs_stage4.py:231`) — and carries **the Wave-7-close-assigned tie-break defect** (`_latest_flagship_hs_row` `:162-186`, `ORDER BY window_end DESC, calculation_run_id DESC` at `:176` — a uuid4 tie-break; OQ-W7C-2 assigned the seed-stable fix HERE). One ES-HS run emits ONE ES row at ONE as-of (`eshs_stage4.py:238`) ⇒ a T-day paired series needs T sibling pairs, each sharing its `input_snapshot_id`. **Premise corrections from census**: the BT-2 estimate-age gates are `var_service.py` (the forecast leg `:466-563`), NOT the backtest leg; the head is `0042`. Validation surface: `risk.var_backtest`'s INITIAL takes real BT-1/BT-2 runs as evidence (`demo/campaign.py:883,:911-913`); **the ES-HS INITIAL carries NO backtest-shaped condition** (its two conditions are tail-resolution + factor-substrate, `dossiers.py:615-623`) — the no-closable-condition honesty question recurs (OD-F). House conventions: registry-map dispatch (never try/except chains); `declared_*` gates via `sole_declared`; exact-type API error maps; CI demo-stage order (stage 7 seats after stage 6, before the downgrade smoke); demo filename alpha-sort; 21 migration-head pins re-pin if a migration ships; `make check` 1588. **NO new permission** (`risk.run`/`risk.view` reused — the BT-1 shape); `audit/service.py` FROZEN. |
 | **Mandate** | Roadmap Part 2.11 slice 1 (ratified 2026-07-19, OQ-W7C-6 fork A): "Closes the 15th governed number's exemption from the platform's own outcomes analysis." The ratified planning MUSTs: re-verify the AS 2014 Z1 transcription (two routes + the settling identity) + the −0.70/−1.8 threshold VALUES at the three-route constant bar (M-P attribution + Lund Table 1 + this pass's executed seeded MC — the route accounting in Part 2, repaired per the verifier's BT3-V-4) — **DISCHARGED, Part 2**; Christoffersen 1998 to paragraph — **DISCHARGED, Part 2**; the ESHS-1 tie-break fix folds here BY NAME (OQ-W7C-2). Migration planning-determined (the roadmap row's own words) — resolved at OD-D. |
 
@@ -72,7 +72,71 @@ The pass ran BEFORE ratification with EXECUTED checks (seeded MC, exact-Fraction
 Adversarial (pairing/gates/N=0/degenerate-table/downgrade/grandfather) · numeric (exact-rational Z̄1/Z̄2 + LR re-derivations against independent implementations; the stage-7 series re-derived from pins; fuzz) · doctrine (citation grades incl. α-dependence scope; rewords' surviving clauses; no-TRIGGERED honesty; verdict narrowness) · scope-fence (clause-by-clause).
 
 ## Part 5.5 — Implementation deviations from the ratified plan
-*(populated at implementation)*
 
-## Part 6 — Implementation review dispositions
-*(populated after the 4-finder review)*
+1. **The OD-D pin-serializer clause resolved as NO-CHANGE-NEEDED** — no snapshot serializer
+   pins ENT-055 rows at all (rows are terminal outputs, never components), so the ratified
+   "`es_value` EXCLUDED from the pin serializer" is STRUCTURAL rather than an edit; now
+   MECHANICALLY pinned (`test_no_snapshot_serializer_pins_ent055_rows` — the doctrine F2 fold
+   replaced a hand-wave "test-pinned" claim with the test).
+2. **`adjudicate_return_side` extraction design** — a public `ReturnSide` dataclass + a
+   caller-suppliable `error` refusal class (the ES binder raises `EsBacktestInputError`
+   through the shared code); refusal messages byte-identical; the unmodified BT-1 suite
+   (45/45) is the golden.
+3. **The stage-7 resolvers** — `_campaign_return_run` re-reads the (return-run, portfolio)
+   pair from persisted BT-1 rows; `_flagship_exposure_run` walks the flagship HS rows with a
+   PORTFOLIO CROSS-CHECK (the multifamily sleeve binds the same demo-mg1 versions on a
+   different portfolio — caught live at first run); the stage helpers are DUPLICATED per the
+   MF-1 no-shared-demo-machinery adjudication; `DemoBt3AlreadySeededError` split from the
+   prereq class (the cumulative-fixture tolerated-refusal shape).
+4. **Colon-sharpened finding keys** (`"DOMAIN-BOUND VERDICT:"`) — the live key-collision catch
+   (limitation row 7 cross-references the row-1 phrase; the fail-loud match needs exactly one
+   hit).
+5. **Two registrar POST endpoints** (`/models/es-backtest`, `/models/var-backtest-
+   christoffersen`) with optional `version_label` passthroughs — beyond the literally-named
+   GET pair; the existing HS registrar ENDPOINTS deliberately did NOT gain the passthrough
+   (the demo registers the 0.9750 versions via the service registrars).
+6. **The tee reword restructured the whole row** rather than appending the record's example
+   sentence — the BT3-V-2 invariant (key substring unique + conformance-tested) holds.
+7. **Doc-discharge surfaces beyond OD-F's list**: backbone REQ-MKT-005, RTM REQ-MKT-001/005,
+   the ENT-055 catalog amendment; **the roadmap CC-2 16th→17th correction landed at
+   implementation** (OD-D scheduled it for the closeout — early, content per the record).
+8. **The head-pin population is 18 files, not the census's 21** (fact 9 corrected; all 18
+   moved, zero stale pins — grep-verified at review).
+9. **`scripts/run_demo_bt3.py`** — the house-pattern CLI sibling, not named in the record.
+10. **The OD-C dated comment on the Kupiec refusal branch was initially OMITTED** — caught by
+    the scope-fence finder, folded at review (the refusal MESSAGE stays byte-preserved as
+    ratified; its anachronistic "named BT-3 candidate" prose is a recorded future-touch
+    candidate, per the doctrine observation).
+
+## Part 6 — Implementation review dispositions (the ratified 4-finder composition; ran 2026-07-19)
+
+**Composition:** adversarial (live probes incl. 15 custom attack scripts) + numeric (exact-
+rational, executed — full 2×2 enumeration, 1,400+ fuzz series, the stage-7 numbers re-derived
+from pins byte-equal) + doctrine (every citation checked against the SAVED source texts + live
+PG census) + scope-fence (clause-by-clause, 11/11), all four over `bt-3-planning..HEAD`.
+**Totals: ZERO HIGH — adversarial 0 MED + 4 LOW + 2 notes; numeric 0 defects + 4 property
+caveats; doctrine 1 MED + 1 LOW/MED + 2 LOW + 1 ratified-as-is observation; scope-fence 11/11
+PASS + 1 enumerated-item omission. ALL FOLDED except the two named next-touch deferrals (D-F4).**
+
+| # | Finder | Sev | Finding | Disposition |
+|---|---|---|---|---|
+| S1 | scope-fence | MED-LOW | The ratified OD-C dated comment ("the AS backtest ships at `risk.es_backtest`") was never added to the Kupiec refusal branch | FOLDED: the dated comment shipped; the message itself stays byte-preserved as ratified |
+| A1 | adversarial | LOW | A blank `version_label` on the two new registrar endpoints returned the WRONG fixed 422 detail (the vocabulary text) — fail-closed, right status, wrong prose | FOLDED: explicit non-blank guard with the honest detail at both endpoints |
+| A2 | adversarial | LOW | The v2 magnitude-gate gap string always named LR_IND even when LR_CC was the offender — a committed FAILED run's evidence could cite the wrong row | FOLDED: the offender + value named |
+| A3 | adversarial | LOW | `GET /es-backtests/{result_id}` resolved ANY ENT-055 row (a Kupiec row rendered through the ES schema); tenant-safe, surface-mislabeling only | FOLDED: the ES-family filter added to `resolve_es_backtest` (BT-1's symmetric pre-existing shape left untouched — out of fence, named) |
+| A4 | adversarial | LOW | No referent-existence guard for `es_backtest_v1.md` (every other family pins one) | FOLDED: the section-pinned existence test added |
+| A5 | adversarial | note | A single VAR-type run carrying BOTH leg rows would self-pair — structurally unreachable (no shipped binder emits it; the pairing would be coherent) | RECORDED (this row), no change |
+| A6 | adversarial | note | Stage-7 cosmetics (a string literal vs the constant; the future two-pair resolver message) — the resolver REFUSES rather than mispicks in the future case | RECORDED, no change |
+| N1 | numeric | — | ZERO defects at max rigor: full 2×2 enumeration (2,304 numeric + 96 degenerate, 0 mismatches), 1,400-series kernel fuzz vs exact-Fraction, the E[Z]=0 identities exact, the stage-7 stored numbers BYTE-RE-DERIVED from pins (VaR=ES=377.226000 structural via the ×4 tied worst scenario; the 05-22 breach margin 9.61× VaR — not fragile), the knife-edge constructed through the real pipeline | — (executed evidence in the review record) |
+| N2 | numeric | caveat ×4 | The stored-value decision conventions: the ~1e-12 double-rounding band; 6dp verdict granularity (conservative direction); LR_CC from stored legs; 6dp-rounded criticals | FOLDED: the referent's "Precision notes" section states all four |
+| D1 | doctrine | MED | The Student-t3 pair (−0.82/−4.4) presented as "executed at planning" at THREE sites (referent, kernel docstring, the registered limitation row — live in the seeded row): it is Lund Table 1's figure, never executed (the V1 source-attribution class, caught pre-merge) | FOLDED at all three sites ("Lund Table 1:" attribution); the seeded row re-registers from the corrected constant on every fresh seed |
+| D2 | doctrine | LOW/MED | The "test-pinned" pin-exclusion claim had no test behind it (structurally true, mechanically unpinned) | FOLDED: the structural test (Part 5.5 item 1) |
+| D3 | doctrine | LOW | The RTM's trailing BT-2 sentence lacked the dated-discharge parenthetical its backbone twin received | FOLDED: parenthetical copied |
+| D-F4 | doctrine | LOW | Cross-slice stale "(a BT-3 candidate)" survivals OUTSIDE the ratified fence: the `events.py` comments; **the ES-1 parametric-ES registered limitation row** (`bootstrap.py` — fresh registrations still emit the forward reference); `var_parametric_es_v1.md:164` | DEFERRED, named: next-touch on the ES-parametric family — the registered-row reword needs its OWN finding-key fence check (the ES-1 dossier keys must survive), recorded for the Wave-8 close register |
+| D5 | doctrine | obs | The Kupiec refusal MESSAGE's "named BT-3 candidate" prose is now anachronistic user-facing text — byte-preservation was RATIFIED (OD-C) | RECORDED: a future ratified touch, not a fold |
+
+**Post-fold verification:** `make lint` clean; `make check` + the full fresh-schema local-PG
+battery re-run green after the folds (the numbers recorded below); the doctrine finder's
+confirmations cover the citation lattice, the tee-reword invariant, the NO-TRIGGERED census
+(34 records, zero TRIGGERED on the BT-3 versions), and the count consistency (19th code /
+SIXTEENTH governed number / CC-2 SEVENTEENTH) across every surface.

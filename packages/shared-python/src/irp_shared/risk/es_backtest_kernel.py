@@ -23,8 +23,9 @@ UNDERSTATEMENT. ONE-SIDED by construction: over-conservatism is invisible to the
 
 The verdict criticals are DOMAIN-BOUND: −0.70 (5%) / −1.8 (0.01%) are AS's simulated left-tail
 quantiles at **tail a = 0.025 (confidence 0.9750), T = 250 pairs, near-normal tails** — they are
-α-, T-, AND df-dependent (executed at planning: ≈ −1.56 at a=0.005/T=250; ≈ −3.68 at
-a=0.025/T=10; −0.82/−4.4 at Student-t3). The BINDER enforces the (0.9750, 250) domain gate
+α-, T-, AND df-dependent (executed at planning: ≈ −1.56 at a=0.005/T=250 and ≈ −3.68 at
+a=0.025/T=10; Lund Table 1: −0.82/−4.4 at Student-t3). The BINDER enforces the (0.9750, 250)
+domain gate
 (the Basel-zone precedent); this kernel is the pure arithmetic. Extending the critical set is a
 NEW model version, never silent.
 
