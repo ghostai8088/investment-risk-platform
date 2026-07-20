@@ -216,7 +216,9 @@ export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]
     { key: "metric_value", label: "Value" },
     { key: "realized_pnl", label: "Realized P&L" },
     { key: "var_value", label: "VaR" },
-    { key: "test_decision", label: "Kupiec" },
+    // BT-3: family-neutral — the column now also renders Christoffersen LR_IND/LR_CC
+    // decisions on v2 rows (the Wave-7-close FE-relabel fold).
+    { key: "test_decision", label: "Test decision" },
     { key: "basel_zone", label: "Basel zone" },
     { key: "n_pairs", label: "Pairs" },
     { key: "n_exceptions", label: "Exceptions" },

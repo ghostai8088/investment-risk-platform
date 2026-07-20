@@ -126,6 +126,16 @@ from irp_shared.risk.covariance_service import (
     resolve_covariance_run,
     run_covariance,
 )
+from irp_shared.risk.es_backtest_service import (
+    EsBacktestInputError,
+    EsBacktestNotVisible,
+    EsBacktestRunNotVisible,
+    EsBacktestRunResult,
+    list_es_backtests,
+    resolve_es_backtest,
+    resolve_es_backtest_run,
+    run_es_backtest,
+)
 from irp_shared.risk.es_kernel import EsKernelError, compute_parametric_es
 from irp_shared.risk.events import (
     ACTIVE_RISK_METRIC_TYPES,
@@ -164,6 +174,7 @@ from irp_shared.risk.events import (
     VAR_BACKTEST_METRIC_TYPES,
     ActiveRiskActor,
     CovarianceActor,
+    EsBacktestActor,
     FactorExposureActor,
     ProxyWeightEstimateActor,
     SensitivityActor,
@@ -555,6 +566,7 @@ __all__ = [
     "METRIC_TYPE_KUPIEC_LR",
     "RUN_TYPE_VAR_BACKTEST",
     "VAR_BACKTEST_METRIC_TYPES",
+    "EsBacktestActor",
     "VarBacktestActor",
     "VarBacktestResult",
     "CHI2_1DF_CRITICALS",
@@ -563,6 +575,10 @@ __all__ = [
     "exception_indicator",
     "kupiec_decision",
     "kupiec_lr",
+    "EsBacktestInputError",
+    "EsBacktestNotVisible",
+    "EsBacktestRunNotVisible",
+    "EsBacktestRunResult",
     "VarBacktestInputError",
     "VarBacktestNotVisible",
     "VarBacktestRunNotVisible",
@@ -570,5 +586,9 @@ __all__ = [
     "list_var_backtests",
     "resolve_var_backtest",
     "resolve_var_backtest_run",
+    "list_es_backtests",
+    "resolve_es_backtest",
+    "resolve_es_backtest_run",
+    "run_es_backtest",
     "run_var_backtest",
 ]

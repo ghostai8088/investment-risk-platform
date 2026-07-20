@@ -54,6 +54,11 @@ from irp_shared.risk import (
     CovarianceResult,
     CovarianceRunNotVisible,
     CovarianceRunResult,
+    EsBacktestActor,
+    EsBacktestInputError,
+    EsBacktestNotVisible,
+    EsBacktestRunNotVisible,
+    EsBacktestRunResult,
     FactorExposureActor,
     FactorExposureInputError,
     FactorExposureNotVisible,
@@ -106,6 +111,7 @@ from irp_shared.risk import (
     create_scenario_definition,
     list_active_risks,
     list_covariances,
+    list_es_backtests,
     list_factor_exposures,
     list_proxy_weight_results,
     list_risk_runs,
@@ -118,6 +124,7 @@ from irp_shared.risk import (
     reconstruct_scenario_shock_as_of,
     register_active_risk_model,
     register_covariance_model,
+    register_es_backtest_model,
     register_factor_exposure_loadings_model,
     register_factor_exposure_model,
     register_factor_exposure_proxy_model,
@@ -128,6 +135,7 @@ from irp_shared.risk import (
     register_proxy_weight_shrinkage_eb_model,
     register_scenario_model,
     register_sensitivity_model,
+    register_var_backtest_christoffersen_model,
     register_var_backtest_model,
     register_var_model,
     register_var_parametric_es_model,
@@ -137,6 +145,8 @@ from irp_shared.risk import (
     resolve_active_risk_run,
     resolve_covariance,
     resolve_covariance_run,
+    resolve_es_backtest,
+    resolve_es_backtest_run,
     resolve_factor_exposure,
     resolve_factor_exposure_run,
     resolve_proxy_weight_run,
@@ -150,6 +160,7 @@ from irp_shared.risk import (
     resolve_var_run,
     run_active_risk,
     run_covariance,
+    run_es_backtest,
     run_factor_exposure,
     run_proxy_weight_estimate,
     run_residual_shrinkage,
@@ -255,6 +266,10 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     VarBacktestInputError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "invalid var-backtest run input",
+    ),
+    EsBacktestInputError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid es-backtest run input",
     ),
     VarBacktestSnapshotError: (
         status.HTTP_409_CONFLICT,
@@ -2185,6 +2200,293 @@ def get_var_backtest(
             status_code=status.HTTP_404_NOT_FOUND, detail="var-backtest result not found"
         ) from None
     return _var_backtest_row_out(row)
+
+
+# ---------- BT-3: ES backtesting (ENT-055 extension; REUSES risk.run/risk.view) ----------
+
+
+def _es_backtest_actor(principal: Principal) -> EsBacktestActor:
+    return EsBacktestActor(actor_id=principal.user_id)
+
+
+class EsBacktestModelIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    significance: str = "0.05"  # the DECLARED Z2 verdict significance (OD-BT-3-B; {0.05, 0.0001})
+    version_label: str | None = None  # defaults to the family's v1 label
+
+
+class VarBacktestChristoffersenModelIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    alpha: str = "0.05"  # the DECLARED Kupiec/LR significance ({0.05, 0.01})
+    version_label: str | None = None  # defaults to v2-christoffersen
+
+
+class EsBacktestRunIn(BaseModel):
+    code_version: str  # the deterministic anchor (FW-RUN/TR-15; required)
+    environment_id: str  # the run environment (FW-RUN §5 item 7; required)
+    model_version_id: uuid.UUID  # a REGISTERED risk.es_backtest version (CTRL-003; required)
+    # build-in-request (all three) XOR consume-existing (snapshot_id).
+    portfolio_return_run_id: uuid.UUID | None = None
+    var_run_ids: list[uuid.UUID] | None = None
+    es_run_ids: list[uuid.UUID] | None = None
+    snapshot_id: uuid.UUID | None = None
+
+
+class EsBacktestRowOut(BaseModel):
+    id: str
+    metric_type: str  # ES_EXCEPTION_INDICATOR | ES_PAIR_COUNT | AS_Z2 | AS_Z1
+    var_metric_type: str  # always ES_HISTORICAL (the paired family)
+    period_start: date
+    period_end: date
+    metric_value: str  # 0/1, the pair count, or a Z statistic (fixed-point, never scientific)
+    realized_pnl: str | None  # per-pair money evidence (None for summary rows)
+    var_value: str | None  # the VaR sibling's forecast (per-pair rows)
+    es_value: str | None  # the ES forecast tested against (per-pair rows; migration 0043)
+    n_pairs: int
+    n_exceptions: int
+    confidence_level: str
+    horizon_days: int
+    # REJECT / FAIL_TO_REJECT — AS_Z2 row ONLY, and ONLY inside the registered verdict domain
+    # (confidence 0.9750 AND n_pairs 250); None elsewhere — the absence is derivable from the
+    # persisted ES_PAIR_COUNT row + the version's stamped domain (OD-BT-3-B).
+    test_decision: str | None
+    base_currency: str
+    portfolio_return_run_id: str
+    model_version_id: str
+
+
+class EsBacktestRunOut(BaseModel):
+    run_id: str
+    status: str
+    run_type: str
+    input_snapshot_id: str | None
+    model_version_id: str | None
+    code_version: str | None
+    environment_id: str | None
+    initiated_by: str
+    failure_reason: str | None
+    rows: list[EsBacktestRowOut]
+
+
+def _es_backtest_row_out(row: VarBacktestResult) -> EsBacktestRowOut:
+    return EsBacktestRowOut(
+        id=row.id,
+        metric_type=row.metric_type,
+        var_metric_type=row.var_metric_type,
+        period_start=row.period_start,
+        period_end=row.period_end,
+        metric_value=f"{row.metric_value:f}",
+        realized_pnl=None if row.realized_pnl is None else f"{row.realized_pnl:f}",
+        var_value=None if row.var_value is None else f"{row.var_value:f}",
+        es_value=None if row.es_value is None else f"{row.es_value:f}",
+        n_pairs=row.n_pairs,
+        n_exceptions=row.n_exceptions,
+        confidence_level=f"{row.confidence_level:f}",
+        horizon_days=row.horizon_days,
+        test_decision=row.test_decision,
+        base_currency=row.base_currency,
+        portfolio_return_run_id=row.portfolio_return_run_id,
+        model_version_id=row.model_version_id,
+    )
+
+
+@router.post(
+    "/models/es-backtest",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_es_backtest(
+    body: EsBacktestModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the governed AS ES-backtest model + a model_version for this
+    ``(code_version, significance)`` identity (BT-3, OD-BT-3-B/D — the verdict domain
+    (0.9750, 250) is REGISTRAR-STAMPED, never caller-suppliable; an off-vocabulary significance
+    is a 422; a same-label different-declaration is a 409)."""
+    try:
+        version = register_es_backtest_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            significance=body.significance,
+            **({} if body.version_label is None else {"version_label": body.version_label}),
+        )
+    except ValueError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="significance is not in the declared v1 vocabulary {0.05, 0.0001}",
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/models/var-backtest-christoffersen",
+    response_model=SensitivityModelOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_var_backtest_christoffersen(
+    body: VarBacktestChristoffersenModelIn,
+    principal: Principal = Depends(_require_register),
+    db: Session = Depends(get_tenant_session),
+) -> SensitivityModelOut:
+    """Register (idempotently) the Christoffersen v2 of ``risk.var_backtest`` (BT-3, OD-BT-3-E:
+    ``independence=CHRISTOFFERSEN_MARKOV`` is REGISTRAR-STAMPED; the shipped v1 stays
+    byte-preserved via the absent-convention grandfather). Runs ride the EXISTING
+    ``POST /risk/var-backtests/runs``."""
+    try:
+        version = register_var_backtest_christoffersen_model(
+            db,
+            tenant_id=principal.tenant_id,
+            actor_id=principal.user_id,
+            code_version=body.code_version,
+            alpha=body.alpha,
+            **({} if body.version_label is None else {"version_label": body.version_label}),
+        )
+    except ValueError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="alpha is not in the declared v1 vocabulary {0.05, 0.01}",
+        ) from None
+    except (ModelVersionConflictError, WrongModelVersionError) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+    out = SensitivityModelOut(
+        model_version_id=version.id,
+        model_id=version.model_id,
+        version_label=version.version_label,
+        methodology_ref=version.methodology_ref,
+        code_version=version.code_version,
+        status=version.status,
+    )
+    db.commit()
+    return out
+
+
+@router.post(
+    "/es-backtests/runs",
+    response_model=EsBacktestRunOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_es_backtest_run(
+    body: EsBacktestRunIn,
+    principal: Principal = Depends(_require_run),
+    db: Session = Depends(get_tenant_session),
+) -> EsBacktestRunOut:
+    """Run a governed AS ES backtest (BT-3). A pre-create refusal raises + rolls back (no run —
+    incl. a sibling snapshot/confidence mismatch, a non-bijective pairing, a stray metric_type,
+    a per-leg model-version mix, ES <= 0, or any BT-1-class alignment failure; 422/404/409); a
+    post-create FAILED run is committed (the magnitude gate)."""
+    try:
+        result = run_es_backtest(
+            db,
+            acting_tenant=principal.tenant_id,
+            actor=_es_backtest_actor(principal),
+            code_version=body.code_version,
+            environment_id=body.environment_id,
+            model_version_id=str(body.model_version_id),
+            portfolio_return_run_id=(
+                None if body.portfolio_return_run_id is None else str(body.portfolio_return_run_id)
+            ),
+            var_run_ids=(None if body.var_run_ids is None else [str(r) for r in body.var_run_ids]),
+            es_run_ids=(None if body.es_run_ids is None else [str(r) for r in body.es_run_ids]),
+            snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+        )
+    except (
+        EsBacktestInputError,
+        UnregisteredModelError,
+        RejectedModelVersionError,
+        ExpiredModelExceptionError,
+        WrongModelVersionError,
+        SnapshotPurposeError,
+        SnapshotNotFound,
+        VarBacktestSnapshotError,
+    ) as exc:
+        db.rollback()
+        code, detail = _map_error(exc)
+        raise HTTPException(status_code=code, detail=detail) from None
+
+    response = _es_backtest_run_out_from_result(result)
+    db.commit()
+    return response
+
+
+def _es_backtest_run_out_from_result(result: EsBacktestRunResult) -> EsBacktestRunOut:
+    run = result.run
+    return EsBacktestRunOut(
+        run_id=run.run_id,
+        status=result.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=result.failure_reason,
+        rows=[_es_backtest_row_out(r) for r in result.rows],
+    )
+
+
+@router.get("/es-backtests/runs/{run_id}", response_model=EsBacktestRunOut)
+def get_es_backtest_run(
+    run_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> EsBacktestRunOut:
+    """Read an es-backtest run + its result rows (tenant-scoped; read-only). A committed FAILED
+    run (zero rows) is surfaced with ``status='FAILED'``, NOT a 404."""
+    try:
+        run = resolve_es_backtest_run(db, str(run_id), acting_tenant=principal.tenant_id)
+    except EsBacktestRunNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="es-backtest run not found"
+        ) from None
+    rows = list_es_backtests(db, run_id=str(run_id), acting_tenant=principal.tenant_id)
+    return EsBacktestRunOut(
+        run_id=run.run_id,
+        status=run.status,
+        run_type=run.run_type,
+        input_snapshot_id=run.input_snapshot_id,
+        model_version_id=run.model_version_id,
+        code_version=run.code_version,
+        environment_id=run.environment_id,
+        initiated_by=run.initiated_by,
+        failure_reason=run.failure_reason,
+        rows=[_es_backtest_row_out(r) for r in rows],
+    )
+
+
+@router.get("/es-backtests/{result_id}", response_model=EsBacktestRowOut)
+def get_es_backtest(
+    result_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> EsBacktestRowOut:
+    """Read a single ES-backtest ``var_backtest_result`` row (tenant-scoped; read-only)."""
+    try:
+        row = resolve_es_backtest(db, str(result_id), acting_tenant=principal.tenant_id)
+    except EsBacktestNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="es-backtest result not found"
+        ) from None
+    return _es_backtest_row_out(row)
 
 
 # ---------- P3-6: stress/scenario (ENT-029/030 — the tenth governed number) ----------

@@ -117,6 +117,11 @@ describe("var-backtests (BT-1) family wiring", () => {
     expect(runDetailUrl("var-backtests", "abc-123")).toBe("/risk/var-backtests/runs/abc-123");
   });
 
+  it("labels test_decision family-neutrally (BT-3: the column also renders LR_IND/LR_CC)", () => {
+    const col = FAMILY_ROW_COLUMNS["var-backtests"].find((c) => c.key === "test_decision");
+    expect(col?.label).toBe("Test decision");
+  });
+
   it("surfaces the backtest columns", () => {
     const keys = FAMILY_ROW_COLUMNS["var-backtests"].map((c) => c.key);
     expect(keys).toEqual([
