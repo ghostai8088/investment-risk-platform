@@ -251,9 +251,7 @@ def adjudicate_return_side(
     if len(portfolio_ids) != 1:
         raise error(f"the pinned return rows span {len(portfolio_ids)} portfolios — refused")
     if len(base_currencies) != 1:
-        raise error(
-            f"the pinned return rows carry mixed base currencies {sorted(base_currencies)}"
-        )
+        raise error(f"the pinned return rows carry mixed base currencies {sorted(base_currencies)}")
     base_currency = next(iter(base_currencies))
     if not isinstance(base_currency, str) or len(base_currency) != 3:
         raise error("the pinned return base_currency is not a 3-letter code — refused")
