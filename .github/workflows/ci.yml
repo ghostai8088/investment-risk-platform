@@ -379,6 +379,15 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage7_bt3_pg.py -q
+      # Stage 8 (CC-1) runs AFTER stage 7 and BEFORE the downgrade smoke — CAPTURE-ONLY
+      # (no code/record/run mints: the suite asserts the 19/34/95 pins DID NOT MOVE); the
+      # smoke below then exercises 0044's destructive table drops against THIS stage's
+      # captured commitment/call/distribution rows on every run.
+      - name: Demo stage-8 private-capital capture test (Postgres, CC-1 / OD-CC-1-H)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage8_cc1_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
