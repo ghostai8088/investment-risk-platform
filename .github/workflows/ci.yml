@@ -319,6 +319,11 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_private_capital_pg.py -q
+      - name: Pacing-projection symmetric-RLS + append-only tests (Postgres, ENT-059 / CC-2 / BR-17/BR-18)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_pacing_pg.py -q
       - name: Demo-campaign end-state test (Postgres, MG-1 / OD-MG-1-G)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

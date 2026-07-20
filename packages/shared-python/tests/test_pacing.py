@@ -68,3 +68,17 @@ def test_orm_guard_blocks_update_and_delete(session: Session) -> None:
     with pytest.raises(AppendOnlyViolation):
         session.flush()
     session.rollback()
+
+
+def test_migration_head_and_chain() -> None:
+    import pathlib
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "migrations"))
+    script = ScriptDirectory.from_config(cfg)
+    assert script.get_current_head() == "0045_pacing_projection"  # CC-2
+    assert script.get_revision("0045_pacing_projection").down_revision == "0044_private_capital"
