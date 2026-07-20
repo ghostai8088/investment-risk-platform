@@ -438,3 +438,191 @@ def test_list_filters_rule7(session: Session) -> None:
         == 1
     )
     assert list_commitments(session, acting_tenant=_tenant()) == []
+
+
+# --- step 5: the capital-flow services (capture; negation reversal; fences; lists) ---
+
+from irp_shared.private_capital.capital_flow_service import (  # noqa: E402
+    CapitalFlowActor,
+    CapitalFlowNotVisible,
+    CapitalFlowValueError,
+    capture_capital_call,
+    capture_distribution,
+    list_capital_calls,
+    list_distributions,
+    reverse_capital_call,
+    reverse_distribution,
+)
+
+_FLOW_ACT = CapitalFlowActor(actor_id="steward")
+
+
+def _call(session: Session, tenant: str, pf: str, fund: str, **kw):  # noqa: ANN003, ANN202
+    base = dict(
+        event_date=date(2026, 2, 10),
+        amount=Decimal("5000000.000000"),
+        currency_code="USD",
+        call_type="DRAWDOWN",
+    )
+    base.update(kw)
+    return capture_capital_call(
+        session,
+        portfolio_id=pf,
+        instrument_id=fund,
+        acting_tenant=tenant,
+        actor=_FLOW_ACT,
+        **base,
+    )
+
+
+def _dist(session: Session, tenant: str, pf: str, fund: str, **kw):  # noqa: ANN003, ANN202
+    base = dict(
+        event_date=date(2026, 5, 20),
+        amount=Decimal("1500000.000000"),
+        currency_code="USD",
+        distribution_type="RETURN_OF_CAPITAL",
+    )
+    base.update(kw)
+    return capture_distribution(
+        session,
+        portfolio_id=pf,
+        instrument_id=fund,
+        acting_tenant=tenant,
+        actor=_FLOW_ACT,
+        **base,
+    )
+
+
+def test_call_requires_current_commitment(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    with pytest.raises(NoCurrentCommitment):
+        _call(session, tenant, pf, fund)
+
+
+def test_call_capture_rails_and_provenance(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    v1 = _capture(session, tenant, pf, fund)
+    row = _call(session, tenant, pf, fund)
+    assert row.commitment_version_id == v1.id  # provenance echo = the version current NOW
+    assert row.reverses_id is None
+    assert_has_lineage(session, "capital_call", row.id, tenant_id=tenant)
+    assert _event_count(session, "PRIVATE.CAPITAL_CALL_CREATE") == 1
+    assert verify_chain(session, tenant).ok is True
+    # After a supersede, a new event echoes the NEW version id — the pair identity is the key.
+    v2 = supersede_commitment(
+        session,
+        portfolio_id=pf,
+        instrument_id=fund,
+        committed_amount=Decimal("30000000.000000"),
+        currency_code="USD",
+        commitment_date=date(2026, 1, 15),
+        acting_tenant=tenant,
+        actor=_ACT,
+        effective_at=v1.valid_from + timedelta(days=5),
+    )
+    row2 = _call(session, tenant, pf, fund, event_date=date(2026, 3, 10))
+    assert row2.commitment_version_id == v2.id
+    assert row2.portfolio_id == row.portfolio_id and row2.instrument_id == row.instrument_id
+
+
+def test_event_validators(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    _capture(session, tenant, pf, fund)
+    with pytest.raises(CapitalFlowValueError):
+        _call(session, tenant, pf, fund, amount=Decimal("-5"))
+    with pytest.raises(CapitalFlowValueError):
+        _call(session, tenant, pf, fund, amount=Decimal("NaN"))
+    with pytest.raises(CapitalFlowValueError):
+        _call(session, tenant, pf, fund, currency_code="EUR")  # commitment is USD
+    with pytest.raises(CapitalFlowValueError):
+        _call(session, tenant, pf, fund, call_type="BOGUS")
+    with pytest.raises(CapitalFlowValueError):
+        _dist(session, tenant, pf, fund, distribution_type="BOGUS")
+
+
+def test_reversal_negation_sum_self_corrects(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    _capture(session, tenant, pf, fund)
+    wrong = _call(session, tenant, pf, fund, amount=Decimal("9000000.000000"))
+    rev = reverse_capital_call(
+        session,
+        capital_call_id=wrong.id,
+        acting_tenant=tenant,
+        actor=_FLOW_ACT,
+        reason="mis-captured amount",
+    )
+    right = _call(session, tenant, pf, fund, amount=Decimal("5000000.000000"))
+    # The negation convention: byte-equal echo except the sign; Σ self-corrects.
+    assert rev.amount == Decimal("-9000000.000000")
+    assert rev.call_type == wrong.call_type and rev.event_date == wrong.event_date
+    assert rev.currency_code == wrong.currency_code and rev.reverses_id == wrong.id
+    rows = list_capital_calls(session, acting_tenant=tenant, portfolio_id=pf, instrument_id=fund)
+    assert sum(r.amount for r in rows) == Decimal("5000000.000000")
+    assert _event_count(session, "PRIVATE.CAPITAL_CALL_REVERSE") == 1
+    assert right.reverses_id is None
+
+
+def test_reversal_fences(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    _capture(session, tenant, pf, fund)
+    call = _call(session, tenant, pf, fund)
+    rev = reverse_capital_call(
+        session, capital_call_id=call.id, acting_tenant=tenant, actor=_FLOW_ACT, reason="e"
+    )
+    with pytest.raises(CapitalFlowValueError, match="already reversed"):
+        reverse_capital_call(
+            session, capital_call_id=call.id, acting_tenant=tenant, actor=_FLOW_ACT, reason="e"
+        )
+    with pytest.raises(CapitalFlowValueError, match="cannot be reversed"):
+        reverse_capital_call(
+            session, capital_call_id=rev.id, acting_tenant=tenant, actor=_FLOW_ACT, reason="e"
+        )
+    with pytest.raises(CapitalFlowValueError):
+        reverse_capital_call(
+            session, capital_call_id=call.id, acting_tenant=tenant, actor=_FLOW_ACT, reason=""
+        )
+    with pytest.raises(CapitalFlowNotVisible):
+        reverse_capital_call(
+            session,
+            capital_call_id=call.id,
+            acting_tenant=_tenant(),  # foreign tenant
+            actor=_FLOW_ACT,
+            reason="e",
+        )
+
+
+def test_distribution_recallable_and_reversal_echo(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant)
+    _capture(session, tenant, pf, fund)
+    d = _dist(session, tenant, pf, fund, is_recallable=True)
+    assert d.is_recallable is True
+    rev = reverse_distribution(
+        session, distribution_id=d.id, acting_tenant=tenant, actor=_FLOW_ACT, reason="err"
+    )
+    assert rev.amount == -d.amount and rev.is_recallable is True
+    assert rev.distribution_type == d.distribution_type
+    assert _event_count(session, "PRIVATE.DISTRIBUTION_REVERSE") == 1
+    assert verify_chain(session, tenant).ok is True
+
+
+def test_event_list_filters_rule7(session: Session) -> None:
+    tenant = _tenant()
+    pf1, fund1 = _seed_pf_fund(session, tenant, "1")
+    pf2, fund2 = _seed_pf_fund(session, tenant, "2")
+    _capture(session, tenant, pf1, fund1)
+    _capture(session, tenant, pf2, fund2)
+    _call(session, tenant, pf1, fund1)
+    _call(session, tenant, pf1, fund1, event_date=date(2026, 3, 10))
+    _call(session, tenant, pf2, fund2)
+    _dist(session, tenant, pf1, fund1)
+    assert len(list_capital_calls(session, acting_tenant=tenant)) == 3
+    assert len(list_capital_calls(session, acting_tenant=tenant, portfolio_id=pf1)) == 2
+    assert len(list_capital_calls(session, acting_tenant=tenant, instrument_id=fund2)) == 1
+    assert len(list_distributions(session, acting_tenant=tenant, portfolio_id=pf1)) == 1
+    assert list_capital_calls(session, acting_tenant=_tenant()) == []
