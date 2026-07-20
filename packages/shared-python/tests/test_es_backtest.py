@@ -294,7 +294,9 @@ def _leg_row(
         "confidence_level": "0.9750",
         "horizon_days": 1,
         "base_currency": "USD",
-        "calculation_run_id": f"bbbbbbb{'1' if mt == 'VAR_HISTORICAL' else '2'}-0000-0000-0000-0000000000{day}",
+        "calculation_run_id": (
+            f"bbbbbbb{'1' if mt == 'VAR_HISTORICAL' else '2'}-0000-0000-0000-0000000000{day}"
+        ),
         "exposure_run_id": "eeeeeeee-0000-0000-0000-000000000001",
         "input_snapshot_id": f"{snap}{day[-1]}",
         "model_version_id": f"{mv}{'1' if mt == 'VAR_HISTORICAL' else '2'}",
@@ -387,7 +389,7 @@ def test_adjudicate_es_refusals(mutate: str) -> None:
 # ------------------------------------------------------- hand-minted end-to-end (SQLite session)
 
 
-def _mint_es_substrate(session, n_pairs: int, *, breach_at: set[int] = frozenset()) -> tuple:
+def _mint_es_substrate(session, n_pairs: int, *, breach_at: frozenset[int] = frozenset()) -> tuple:
     """Hand-mint the minimal DB substrate for run_es_backtest's BUILD path: a COMPLETED
     PORTFOLIO_RETURN run with n_pairs contiguous daily DIETZ rows + TWR_LINKED, one COMPLETED
     VAR-type run per leg carrying per-as-of VAR_HISTORICAL / ES_HISTORICAL rows (siblings share
@@ -548,7 +550,7 @@ def test_es_backtest_end_to_end_off_domain_no_verdict(session) -> None:
         es_run_ids=es_runs,
     )
     assert result.status == "COMPLETED"
-    rows = {}
+    rows: dict[str, list] = {}
     for r in result.rows:
         rows.setdefault(r.metric_type, []).append(r)
     assert len(rows["ES_EXCEPTION_INDICATOR"]) == 3
