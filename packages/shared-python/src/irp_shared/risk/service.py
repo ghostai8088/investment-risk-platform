@@ -49,6 +49,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.models import (
@@ -301,6 +302,35 @@ def list_sensitivities(
         )
         .scalars()
         .all()
+    )
+
+
+def latest_sensitivities(
+    session: Session,
+    *,
+    acting_tenant: str,
+    curve_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[SensitivityResult]:
+    """API-1 latest-resolver (Class B): the newest COMPLETED sensitivity run's rows, optionally
+    row-filtered to a ``curve_id`` (a run may span several curves; the filter narrows to the
+    queried curve's own rows within that run; absent = the whole run). Stable
+    ``(curve_id, value_type, tenor_days, sensitivity_type)`` order; empty when none.
+    ``as_of=None`` = now."""
+    return latest_run_rows(
+        list_governed_results(
+            session,
+            SensitivityResult,
+            acting_tenant=acting_tenant,
+            filters=((SensitivityResult.curve_id, curve_id),),
+            as_of=as_of,
+            order_by=(
+                SensitivityResult.curve_id,
+                SensitivityResult.value_type,
+                SensitivityResult.tenor_days,
+                SensitivityResult.sensitivity_type,
+            ),
+        )
     )
 
 

@@ -236,6 +236,14 @@ def test_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     # the read round-trip surfaces the same rows.
     read = client.get(f"/risk/proxy-weight-estimates/runs/{body['run_id']}", headers=_h(p))
     assert read.status_code == 200 and len(read.json()["rows"]) == 4
+    # API-1 by-id PARITY read: the single result row round-trips (run-pinned); unknown id 404s.
+    one_id = body["rows"][0]["id"]
+    one = client.get(f"/risk/proxy-weight-estimates/{one_id}", headers=_h(p))
+    assert one.status_code == 200 and one.json()["id"] == one_id
+    assert one.json()["calculation_run_id"] == body["run_id"]
+    assert (
+        client.get(f"/risk/proxy-weight-estimates/{uuid.uuid4()}", headers=_h(p)).status_code == 404
+    )
 
 
 def test_view_only_cannot_run(ctx) -> None:  # noqa: ANN001

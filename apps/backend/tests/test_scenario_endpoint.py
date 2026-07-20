@@ -287,6 +287,49 @@ def test_full_lifecycle_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     assert any(item["run_id"] == body["run_id"] for item in listing.json()["items"])
 
 
+def test_api1_scenario_latest_and_by_id_read(ctx) -> None:  # noqa: ANN001
+    """API-1 (Class B): ``GET /risk/scenario-results/latest`` returns the newest COMPLETED scenario
+    run's rows (each pinned with ``calculation_run_id``), optionally filtered to a
+    ``scenario_definition_id``; the literal ``/latest`` is NOT shadowed by ``/{result_id}``. The
+    by-id parity read returns the single row; a foreign definition is silent-empty."""
+    client, p, db, fx_run, fid_usd, fid_eur = ctx
+    mv = _register(client, p)
+    def_id = _make_definition(client, p)
+    _capture(client, p, def_id, fid_usd, "-0.10")
+    _capture(client, p, def_id, fid_eur, "0.05")
+    body = client.post(
+        "/risk/scenario-runs", json=_run_body(mv, fx_run, def_id), headers=_h(p)
+    ).json()
+    run_id = body["run_id"]
+    latest = client.get("/risk/scenario-results/latest", headers=_h(p))
+    assert latest.status_code == 200
+    rows = latest.json()
+    assert len(rows) == 3 and all(r["calculation_run_id"] == run_id for r in rows)
+    # scenario_definition_id filter: this definition returns its rows; a foreign id is silent-empty.
+    assert (
+        len(
+            client.get(
+                "/risk/scenario-results/latest",
+                params={"scenario_definition_id": def_id},
+                headers=_h(p),
+            ).json()
+        )
+        == 3
+    )
+    assert (
+        client.get(
+            "/risk/scenario-results/latest",
+            params={"scenario_definition_id": str(uuid.uuid4())},
+            headers=_h(p),
+        ).json()
+        == []
+    )
+    # by-id parity read: the single row round-trips; unknown id 404s.
+    one = client.get(f"/risk/scenario-results/{rows[0]['id']}", headers=_h(p))
+    assert one.status_code == 200 and one.json()["id"] == rows[0]["id"]
+    assert client.get(f"/risk/scenario-results/{uuid.uuid4()}", headers=_h(p)).status_code == 404
+
+
 def test_definition_vocabulary_and_duplicate_code(ctx) -> None:  # noqa: ANN001
     client, p, db, fx_run, fid_usd, fid_eur = ctx
     _make_definition(client, p, code="DUP")

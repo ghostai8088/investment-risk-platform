@@ -50,7 +50,9 @@ def list_governed_results(
     the joined ``CalculationRun.run_type`` — REQUIRED to disambiguate families that SHARE a result
     table (es-backtest + var-backtest share ``var_backtest_result``, distinguished by run_type).
     ``as_of`` is a run ``system_from`` cutoff (None = now). ``order_by`` is the intra-run grain
-    column (ASC, after the run ordering). COMPLETED runs only.
+    column — a single column OR an iterable of columns (all applied ASC after the run ordering, so
+    a composite grain like covariance ``(factor_id_1, factor_id_2)`` presents canonically).
+    COMPLETED runs only.
     """
     stmt = (
         select(model)
@@ -67,10 +69,11 @@ def list_governed_results(
             stmt = stmt.where(column == str(value))
     if as_of is not None:
         stmt = stmt.where(CalculationRun.system_from <= as_of)
+    grain = order_by if isinstance(order_by, list | tuple) else (order_by,)
     stmt = stmt.order_by(
         CalculationRun.system_from.desc(),
         CalculationRun.run_id.desc(),
-        order_by.asc(),
+        *(column.asc() for column in grain),
     )
     return list(session.execute(stmt).scalars().all())
 

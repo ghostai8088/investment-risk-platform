@@ -607,6 +607,23 @@ def resolve_proxy_weight_run(
     )
 
 
+def resolve_proxy_weight_result(
+    session: Session, result_id: str, *, acting_tenant: str
+) -> ProxyWeightEstimateResult:
+    """Resolve one ``proxy_weight_estimate_result`` row by id with an EXPLICIT tenant predicate (the
+    house by-id read, closing the API-1 asymmetry; raises
+    :class:`ProxyWeightEstimateResultNotVisible` on a hidden/unknown id)."""
+    row = session.execute(
+        select(ProxyWeightEstimateResult).where(
+            ProxyWeightEstimateResult.id == str(result_id),
+            ProxyWeightEstimateResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ProxyWeightEstimateResultNotVisible(str(result_id))
+    return row
+
+
 def promote_proxy_weight_estimate(
     session: Session,
     *,

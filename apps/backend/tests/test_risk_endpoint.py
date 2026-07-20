@@ -159,6 +159,55 @@ def test_register_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     assert get_one.json()["model_version_id"] == mv
 
 
+def test_api1_sensitivities_latest_and_by_id_parity(ctx) -> None:  # noqa: ANN001
+    """API-1 (Class B): ``GET /risk/sensitivities/latest`` returns the newest COMPLETED run's rows
+    (each pinned with ``calculation_run_id``), optionally row-filtered to a ``curve_id``; the
+    literal ``/latest`` is NOT shadowed by ``/{sensitivity_id}``. Also proves the two API-1 by-id
+    PARITY reads (``/risk/scenario-results/{id}`` + ``/risk/proxy-weight-estimates/{id}``) exist and
+    404 on an unknown id (never a 500); ``/scenario-results/latest`` resolves silent-empty here."""
+    client, p, _db = ctx
+    # Empty BEFORE any run — the literal /latest route resolves to [] (not a UUID-parse 422).
+    assert client.get("/risk/sensitivities/latest", headers=_h(p)).json() == []
+    mv = _register(client, p)
+    body = client.post("/risk/sensitivities/runs", json=_run_body(mv), headers=_h(p)).json()
+    run_id = body["run_id"]
+    latest = client.get("/risk/sensitivities/latest", headers=_h(p))
+    assert latest.status_code == 200
+    rows = latest.json()
+    assert len(rows) == 2 and all(r["calculation_run_id"] == run_id for r in rows)
+    # curve_id row-filter: the run's own curve returns its rows; a foreign curve is silent-empty.
+    curve_id = rows[0]["curve_id"]
+    assert (
+        len(
+            client.get(
+                "/risk/sensitivities/latest", params={"curve_id": curve_id}, headers=_h(p)
+            ).json()
+        )
+        == 2
+    )
+    assert (
+        client.get(
+            "/risk/sensitivities/latest", params={"curve_id": str(uuid.uuid4())}, headers=_h(p)
+        ).json()
+        == []
+    )
+    # The two by-id PARITY reads: 404 on an unknown id (route exists; never a 500).
+    assert client.get(f"/risk/scenario-results/{uuid.uuid4()}", headers=_h(p)).status_code == 404
+    assert (
+        client.get(f"/risk/proxy-weight-estimates/{uuid.uuid4()}", headers=_h(p)).status_code == 404
+    )
+    # /scenario-results/latest resolves silent-empty (no scenario run in this fixture).
+    sc = client.get("/risk/scenario-results/latest", headers=_h(p))
+    assert sc.status_code == 200 and sc.json() == []
+    # Deny-by-default across the new reads.
+    stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": p.tenant_id}
+    assert client.get("/risk/sensitivities/latest", headers=stranger).status_code == 403
+    assert (
+        client.get(f"/risk/proxy-weight-estimates/{uuid.uuid4()}", headers=stranger).status_code
+        == 403
+    )
+
+
 def test_deny_by_default_no_side_effect(ctx) -> None:  # noqa: ANN001
     client, p, db = ctx
     mv = _register(client, p)
