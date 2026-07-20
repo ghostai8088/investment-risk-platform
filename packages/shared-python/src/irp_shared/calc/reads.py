@@ -38,6 +38,7 @@ def list_governed_results(
     *,
     acting_tenant: str,
     filters: Iterable[tuple[Any, object | None]] = (),
+    run_type: str | None = None,
     as_of: datetime | None = None,
     order_by: Any,
 ) -> list[Any]:
@@ -45,9 +46,11 @@ def list_governed_results(
 
     ``model`` MUST carry ``calculation_run_id`` + ``tenant_id`` (the run-bound trio — every governed
     result does). ``filters`` are ``(column, value)`` pairs applied str-coerced ONLY when ``value``
-    is not None (an absent filter widens; a foreign id yields silent-empty). ``as_of`` is a run
-    ``system_from`` cutoff (None = now). ``order_by`` is the intra-run grain column (ASC, after the
-    run ordering). COMPLETED runs only.
+    is not None (an absent filter widens; a foreign id yields silent-empty). ``run_type`` filters
+    the joined ``CalculationRun.run_type`` — REQUIRED to disambiguate families that SHARE a result
+    table (es-backtest + var-backtest share ``var_backtest_result``, distinguished by run_type).
+    ``as_of`` is a run ``system_from`` cutoff (None = now). ``order_by`` is the intra-run grain
+    column (ASC, after the run ordering). COMPLETED runs only.
     """
     stmt = (
         select(model)
@@ -57,6 +60,8 @@ def list_governed_results(
             CalculationRun.status == RunStatus.COMPLETED.value,
         )
     )
+    if run_type is not None:
+        stmt = stmt.where(CalculationRun.run_type == run_type)
     for column, value in filters:
         if value is not None:
             stmt = stmt.where(column == str(value))

@@ -348,3 +348,37 @@ def test_expired_exception_run_is_422_not_500(ctx) -> None:  # noqa: ANN001
     assert resp.status_code == 422, resp.text
     assert "EXCEPTION has expired" in resp.json()["detail"]
     assert _count_runs(db, p.tenant_id) == 0
+
+
+def test_api1_entity_reads_portfolio_returns(ctx) -> None:  # noqa: ANN001
+    """API-1 (Class A): the entity/time read + latest-resolver over portfolio_return_result — the
+    pacing template replicated. Confirms the entity filter, the new calculation_run_id
+    discriminator, silent-empty on a foreign id, the /latest route (not shadowed by /{result_id}),
+    and its portfolio_id requirement."""
+    client, p, db, r0, r1 = ctx
+    mv = _register(client, p)
+    body = client.post(
+        "/perf/portfolio-returns/runs", json=_run_body(mv, r0, r1), headers=_h(p)
+    ).json()
+    run_id = body["run_id"]
+    pf = body["rows"][0]["portfolio_id"]
+    assert body["rows"][0]["calculation_run_id"] == run_id  # the additive API-1 discriminator
+
+    lst = client.get("/perf/portfolio-returns", params={"portfolio_id": pf}, headers=_h(p))
+    assert lst.status_code == 200
+    rows = lst.json()
+    assert rows and all(r["portfolio_id"] == pf for r in rows)
+    assert {r["calculation_run_id"] for r in rows} == {run_id}
+
+    empty = client.get(
+        "/perf/portfolio-returns", params={"portfolio_id": str(uuid.uuid4())}, headers=_h(p)
+    )
+    assert empty.status_code == 200 and empty.json() == []
+
+    latest = client.get(
+        "/perf/portfolio-returns/latest", params={"portfolio_id": pf}, headers=_h(p)
+    )
+    assert latest.status_code == 200  # /latest resolves (route ordering correct)
+    assert {r["calculation_run_id"] for r in latest.json()} == {run_id}
+    # /latest requires portfolio_id.
+    assert client.get("/perf/portfolio-returns/latest", headers=_h(p)).status_code == 422

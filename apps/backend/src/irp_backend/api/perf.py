@@ -58,10 +58,16 @@ from irp_shared.perf import (
     PortfolioReturnResult,
     PortfolioReturnRunNotVisible,
     PortfolioReturnRunResult,
+    latest_benchmark_relative,
+    latest_desmoothed_result,
+    latest_portfolio_return,
     list_benchmark_relatives,
+    list_benchmark_relatives_by_entity,
     list_desmoothed_results,
+    list_desmoothed_results_by_entity,
     list_perf_runs,
     list_portfolio_returns,
+    list_portfolio_returns_by_entity,
     register_benchmark_relative_model,
     register_desmoothed_return_estimated_model,
     register_desmoothed_return_model,
@@ -254,6 +260,7 @@ class PortfolioReturnRunIn(BaseModel):
 
 class PortfolioReturnRowOut(BaseModel):
     id: str
+    calculation_run_id: str  # API-1: discriminates runs in an entity/time read
     portfolio_id: str
     metric_type: str  # DIETZ_PERIOD (per sub-period) | TWR_LINKED (summary)
     period_start: date
@@ -284,6 +291,7 @@ class PortfolioReturnRunOut(BaseModel):
 def _row_out(row: PortfolioReturnResult) -> PortfolioReturnRowOut:
     return PortfolioReturnRowOut(
         id=row.id,
+        calculation_run_id=row.calculation_run_id,
         portfolio_id=row.portfolio_id,
         metric_type=row.metric_type,
         period_start=row.period_start,
@@ -433,6 +441,40 @@ def get_portfolio_return_run(
     )
 
 
+@router.get("/portfolio-returns", response_model=list[PortfolioReturnRowOut])
+def list_portfolio_returns_by_entity_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[PortfolioReturnRowOut]:
+    """API-1 entity/time read: portfolio-return rows across COMPLETED runs, filtered by
+    ``portfolio_id`` and/or an ``as_of`` run cutoff (the pacing template; silent-empty on a foreign
+    id). Each row carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR."""
+    rows = list_portfolio_returns_by_entity(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        as_of=as_of,
+    )
+    return [_row_out(r) for r in rows]
+
+
+@router.get("/portfolio-returns/latest", response_model=list[PortfolioReturnRowOut])
+def latest_portfolio_return_endpoint(
+    portfolio_id: uuid.UUID,
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[PortfolioReturnRowOut]:
+    """API-1 latest-resolver: the newest COMPLETED portfolio-return run's rows for the portfolio
+    (empty list when none), as of an optional run cutoff."""
+    rows = latest_portfolio_return(
+        db, acting_tenant=principal.tenant_id, portfolio_id=str(portfolio_id), as_of=as_of
+    )
+    return [_row_out(r) for r in rows]
+
+
 @router.get("/portfolio-returns/{result_id}", response_model=PortfolioReturnRowOut)
 def get_portfolio_return(
     result_id: uuid.UUID,
@@ -473,6 +515,7 @@ class BenchmarkRelativeRunIn(BaseModel):
 
 class BenchmarkRelativeRowOut(BaseModel):
     id: str
+    calculation_run_id: str  # API-1: discriminates runs in an entity/time read
     metric_type: str  # ACTIVE_RETURN | TRACKING_DIFFERENCE | TRACKING_ERROR | INFORMATION_RATIO
     period_start: date
     period_end: date
@@ -504,6 +547,7 @@ class BenchmarkRelativeRunOut(BaseModel):
 def _br_row_out(row: BenchmarkRelativeResult) -> BenchmarkRelativeRowOut:
     return BenchmarkRelativeRowOut(
         id=row.id,
+        calculation_run_id=row.calculation_run_id,
         metric_type=row.metric_type,
         period_start=row.period_start,
         period_end=row.period_end,
@@ -660,6 +704,47 @@ def get_benchmark_relative_run(
     )
 
 
+@router.get("/benchmark-relative", response_model=list[BenchmarkRelativeRowOut])
+def list_benchmark_relatives_by_entity_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    benchmark_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[BenchmarkRelativeRowOut]:
+    """API-1 entity/time read: benchmark-relative rows across COMPLETED runs, filtered by
+    ``portfolio_id``/``benchmark_id`` and/or an ``as_of`` run cutoff (silent-empty on a foreign
+    id). Each row carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR."""
+    rows = list_benchmark_relatives_by_entity(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        benchmark_id=(str(benchmark_id) if benchmark_id is not None else None),
+        as_of=as_of,
+    )
+    return [_br_row_out(r) for r in rows]
+
+
+@router.get("/benchmark-relative/latest", response_model=list[BenchmarkRelativeRowOut])
+def latest_benchmark_relative_endpoint(
+    portfolio_id: uuid.UUID,
+    benchmark_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[BenchmarkRelativeRowOut]:
+    """API-1 latest-resolver: the newest COMPLETED benchmark-relative run's rows for the portfolio
+    (optionally pinned to a benchmark; empty when none)."""
+    rows = latest_benchmark_relative(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        benchmark_id=(str(benchmark_id) if benchmark_id is not None else None),
+        as_of=as_of,
+    )
+    return [_br_row_out(r) for r in rows]
+
+
 @router.get("/benchmark-relative/{result_id}", response_model=BenchmarkRelativeRowOut)
 def get_benchmark_relative(
     result_id: uuid.UUID,
@@ -698,6 +783,7 @@ class DesmoothedReturnRunIn(BaseModel):
 
 class DesmoothedReturnRowOut(BaseModel):
     id: str
+    calculation_run_id: str  # API-1: discriminates runs in an entity/time read
     metric_type: str  # DESMOOTHED_PERIOD | DESMOOTHING_SUMMARY
     period_start: date
     period_end: date
@@ -738,6 +824,7 @@ def _dr_actor(principal: Principal) -> DesmoothedReturnActor:
 def _dr_row_out(row: DesmoothedReturnResult) -> DesmoothedReturnRowOut:
     return DesmoothedReturnRowOut(
         id=row.id,
+        calculation_run_id=row.calculation_run_id,
         metric_type=row.metric_type,
         period_start=row.period_start,
         period_end=row.period_end,
@@ -994,6 +1081,47 @@ def get_desmoothed_return_run(
         failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
         rows=[_dr_row_out(r) for r in rows],
     )
+
+
+@router.get("/desmoothed-returns", response_model=list[DesmoothedReturnRowOut])
+def list_desmoothed_results_by_entity_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    instrument_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[DesmoothedReturnRowOut]:
+    """API-1 entity/time read: desmoothed-return rows across COMPLETED runs, filtered by
+    ``portfolio_id``/``instrument_id`` and/or an ``as_of`` run cutoff (silent-empty on a foreign
+    id). Each row carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR."""
+    rows = list_desmoothed_results_by_entity(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        instrument_id=(str(instrument_id) if instrument_id is not None else None),
+        as_of=as_of,
+    )
+    return [_dr_row_out(r) for r in rows]
+
+
+@router.get("/desmoothed-returns/latest", response_model=list[DesmoothedReturnRowOut])
+def latest_desmoothed_result_endpoint(
+    portfolio_id: uuid.UUID,
+    instrument_id: uuid.UUID,
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[DesmoothedReturnRowOut]:
+    """API-1 latest-resolver: the newest COMPLETED desmoothing run's rows for the (portfolio,
+    instrument) series (empty when none)."""
+    rows = latest_desmoothed_result(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        instrument_id=str(instrument_id),
+        as_of=as_of,
+    )
+    return [_dr_row_out(r) for r in rows]
 
 
 @router.get("/desmoothed-returns/{result_id}", response_model=DesmoothedReturnRowOut)
