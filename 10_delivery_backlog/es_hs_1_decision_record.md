@@ -139,3 +139,15 @@ A 4-lens adversarial verifier workflow ran over this draft BEFORE the OQ gate wa
 | V7 | LOWs (all folded): the run-endpoint/module docstrings ship false contracts if byte-untouched ("no functional change" wording + docstring updates added); refusal-PRECEDENCE unpinned across the kernel refactor (precedence test added); the ~14% TCE magnitude is fixture-dependent (graded "order 10%, up to ~14%"); the ≈95% weight-vs-value conflation; the raw-assertion re-derivation mechanics; the dossier key row indices [0]/[2]/[3]→[0]/[1]/[2] (two verifiers independently); the "earns its place" quote re-pointed to `events.py:122-123`; the M-P sign-inconsistency disclosure added; the stage-4 TierDossier as a SEPARATE constant (never in `TIER_DOSSIERS`); the stage-4 module's own `_findings_from_registry` copy | ALL FOLDED |
 
 Verdict: ratifiable after the folds above (all applied in this text before the OQ gate was briefed). What the pass failed to break, on the record: the Z2 transcription, the dispatch/registrar/migration mechanics, the double-block on paired series, the pin-safety analysis (as corrected), the FE-zero-changes claim, and the OD-D tee's consistency with the ratified fork wording.
+
+---
+
+> **DATED NOTE (BT-3, 2026-07-19 — the OQ-W7C-2 fold; additive, this record is CLOSED history):**
+> the stage-4 demo value recorded above ("113.239146 both") was SELECTION-DEPENDENT under the
+> shipped uuid4 tie-break in `_latest_flagship_hs_row` (two flagship rows share the max
+> `window_end`; `ORDER BY calculation_run_id DESC` picked whichever uuid drew larger — the
+> Wave-7 close's ESHS-1 finding). Fixed at BT-3 step 1: the tie-break is now the IA
+> `system_from` write instant (seed-stable, time-ordered; uuid only as the final total-order
+> leg), under which the selector deterministically returns the LATER-written HG-1 stage-3 row —
+> the recorded 113.239146 pair. The ES=VaR tied-tail equality disclosure was and remains
+> seed-stable; a regression test pins the time-ordered selection.
