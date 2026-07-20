@@ -1,6 +1,9 @@
 # Wave-8 Close Review — "fund the third leg" (private capital + the projection)
 
-**Status: DRAFT for ratification (OQ-W8C-1…6).** The mandatory rolling-wave close (roadmap Part 4
+**Status: RATIFIED by the user 2026-07-20 ("Approve all" — OQ-W8C-1…6 all approved: the close
+verdict; the register dispositions; Wave 9 = API-1 → FE-2 → SSO-1 → FE-3 with the 5-code
+demo-completeness rider on API-1; FE-3's IA deferred to FE-3 planning as a Tier-3 USER decision).**
+The mandatory rolling-wave close (roadmap Part 4
 rule 2) after Wave 8 shipped its ratified sequence **BT-3 → CC-1 → CC-2**. Method: three
 cross-cutting close auditors over the wave diff (`cc251b2..06b40b1`) — a cross-slice integration
 sweep, a doc/register-coherence pass, and a completeness-critic + Wave-9-readiness assessment — on
