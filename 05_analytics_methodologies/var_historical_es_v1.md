@@ -126,3 +126,14 @@ recorded destructive-downgrade precedent, extended by ratification), with the ap
 trigger and FORCE RLS transactionally disabled around the delete; the RLS-safe path is proven
 under a NON-superuser owner-member role in the PG suite (closing the recorded
 superuser-only-smoke gap for this delete).
+
+**Dated amendment (BT-3, 2026-07-19):** the "no backtest leg" section above and its
+re-verification debt are DISCHARGED — the Acerbi-Szekely ES backtest SHIPPED at
+`risk.es_backtest` (BT-3; see `es_backtest_v1.md`): the Z1 transcription re-verified via an
+independent academic reproduction + the settling null-expectation identity (the vendor
+render's '+1' corruption reproduced and disclosed a second time); the −0.70/−1.8 threshold
+VALUES registered at the three-route bar (M-P attribution + Lund Table 1 + an executed seeded
+MC at exactly (a=0.025, T=250)) — and SHARPENED: the criticals are α-, T-, and df-dependent,
+so the verdict is DOMAIN-GATED to (0.9750, 250) with off-domain runs persisting evidence rows
+and no verdict. The tee's limitation row is reworded for NEW registrations (the key substring
+preserved); this version's own registered rows are immutable history.
