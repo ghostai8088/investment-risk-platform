@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
@@ -400,30 +401,19 @@ def list_pacing_projections(
     ``calculation_run_id`` + ``model_version_id``; total ordering (run ``system_from`` DESC, run_id
     DESC, ``period_index`` ASC). Cross-run aggregation is a CONSUMER ERROR (a pair may hold several
     runs, e.g. successive versions). Silent-empty on an unknown/foreign id (the positions/valuations
-    entity-filter precedent). ``as_of=None`` means now."""
-    stmt = (
-        select(PacingProjectionResult)
-        .join(
-            CalculationRun,
-            CalculationRun.run_id == PacingProjectionResult.calculation_run_id,
-        )
-        .where(
-            PacingProjectionResult.tenant_id == str(acting_tenant),
-            CalculationRun.status == "COMPLETED",
-        )
+    entity-filter precedent). ``as_of=None`` means now. (Delegates to the shared ``calc/reads.py``
+    helper API-1 factored FROM this very read — behavior-identical, this suite the golden.)"""
+    return list_governed_results(
+        session,
+        PacingProjectionResult,
+        acting_tenant=acting_tenant,
+        filters=(
+            (PacingProjectionResult.portfolio_id, portfolio_id),
+            (PacingProjectionResult.instrument_id, instrument_id),
+        ),
+        as_of=as_of,
+        order_by=PacingProjectionResult.period_index,
     )
-    if portfolio_id is not None:
-        stmt = stmt.where(PacingProjectionResult.portfolio_id == str(portfolio_id))
-    if instrument_id is not None:
-        stmt = stmt.where(PacingProjectionResult.instrument_id == str(instrument_id))
-    if as_of is not None:
-        stmt = stmt.where(CalculationRun.system_from <= as_of)
-    stmt = stmt.order_by(
-        CalculationRun.system_from.desc(),
-        CalculationRun.run_id.desc(),
-        PacingProjectionResult.period_index.asc(),
-    )
-    return list(session.execute(stmt).scalars().all())
 
 
 def latest_pacing_projection(
@@ -437,15 +427,14 @@ def latest_pacing_projection(
     """The platform's FIRST latest-resolver (OD-CC-2-F): the newest COMPLETED projection run for the
     pair (across ALL model versions — "current" = the latest run), as of an optional run cutoff, as
     its period rows ordered by ``period_index``. Empty when none. The ``as_of``-aware read IS the
-    latest-resolver — ``as_of=None`` means now (ONE code path via ``list_pacing_projections``)."""
-    rows = list_pacing_projections(
-        session,
-        acting_tenant=acting_tenant,
-        portfolio_id=portfolio_id,
-        instrument_id=instrument_id,
-        as_of=as_of,
+    latest-resolver — ``as_of=None`` means now (ONE code path via ``list_pacing_projections`` +
+    the shared ``latest_run_rows``)."""
+    return latest_run_rows(
+        list_pacing_projections(
+            session,
+            acting_tenant=acting_tenant,
+            portfolio_id=portfolio_id,
+            instrument_id=instrument_id,
+            as_of=as_of,
+        )
     )
-    if not rows:
-        return []
-    latest_run_id = rows[0].calculation_run_id  # rows are run-DESC ordered; the first is newest
-    return [r for r in rows if r.calculation_run_id == latest_run_id]
