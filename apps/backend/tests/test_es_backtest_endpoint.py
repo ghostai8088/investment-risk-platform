@@ -160,9 +160,7 @@ def test_run_refusals_and_error_map_wiring(ctx) -> None:  # noqa: ANN001
     )
     assert resp2.status_code in (404, 422)
     # Unknown run/result reads => 404, never a 500.
-    assert (
-        client.get(f"/risk/es-backtests/runs/{uuid.uuid4()}", headers=_h(p)).status_code == 404
-    )
+    assert client.get(f"/risk/es-backtests/runs/{uuid.uuid4()}", headers=_h(p)).status_code == 404
     assert client.get(f"/risk/es-backtests/{uuid.uuid4()}", headers=_h(p)).status_code == 404
 
 
