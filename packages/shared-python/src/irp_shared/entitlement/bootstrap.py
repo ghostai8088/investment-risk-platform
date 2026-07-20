@@ -130,6 +130,17 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("commitment.view", "View commitments, capital calls and distributions"),
     ("commitment.edit", "Capture/supersede/correct commitments (FR maker)"),
     ("commitment.record", "Record capital calls and distributions (IA maker, incl. reversals)"),
+    # CC-2 pacing (ENT-059 pacing_projection_result, the SEVENTEENTH governed number) —
+    # a governed R-07 mint (OD-CC-2-E, ratified 2026-07-20). BOTH codes NEW — a commitment-pacing
+    # PROJECTION is neither a risk nor a performance number, and the capture verbs `commitment.*`
+    # gate the captured INPUT surface (auditor_3l EXCLUDED); a governed OUTPUT read must INCLUDE
+    # auditor_3l — so reusing `commitment.view` would break one rule or the other. The PM-1
+    # "own domain, own pair" precedent applies verbatim. `pacing.run` is the run-the-governed
+    # compute verb (a projection is *run*; mirrors risk.run/perf.run); `pacing.view` reads results.
+    # `auditor_3l` is INCLUDED in `pacing.view` (a governed OUTPUT is 3L-oversight scope — the
+    # perf.view precedent). Maker/read sets mirror the perf family.
+    ("pacing.run", "Run governed commitment-pacing projections"),
+    ("pacing.view", "View commitment-pacing projection results"),
 ]
 
 #: All permission codes, in catalog order.
@@ -215,6 +226,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "commitment.view",
         "commitment.edit",
         "commitment.record",
+        # CC-2 pacing: steward is a maker — holds run + view (the perf/risk precedent).
+        "pacing.run",
+        "pacing.view",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -252,6 +266,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "perf.view",
         # CC-1 private capital: read-tier view-only (both maker verbs are maker/admin-only).
         "commitment.view",
+        # CC-2 pacing: the 1L analyst RUNS projections (maker) + views the results.
+        "pacing.run",
+        "pacing.view",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -292,6 +309,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "perf.view",
         # CC-1 private capital: 2L view-only (both maker verbs are maker/admin-only).
         "commitment.view",
+        # CC-2 pacing: 2L view-only (pacing.run is maker/admin-only).
+        "pacing.view",
         "model.inventory.view",
         # VW-1: the 2L independent validator (ROLE-MV) is the ONLY non-admin holder of
         # model.validate — SOD-03 (author ≠ validator): risk_analyst_1l holds register, not this.
@@ -317,6 +336,10 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # PM-1 perf: the 3L auditor VIEWS governed performance outputs (the risk.view precedent —
         # OD-PM-1-A; governed performance results are 3L-oversight scope).
         "perf.view",
+        # CC-2 pacing: the 3L auditor VIEWS governed pacing-projection outputs (the perf.view
+        # precedent — OD-CC-2-E; a governed OUTPUT is 3L-oversight scope, UNLIKE the captured-input
+        # commitment.* verbs the auditor is excluded from).
+        "pacing.view",
     ],
 }
 
