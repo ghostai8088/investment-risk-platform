@@ -325,3 +325,29 @@ def test_commitment_permissions_grants_as_ratified() -> None:
     assert _holders("commitment.record") == {"data_steward", "platform_admin"}
     for code in ("commitment.view", "commitment.edit", "commitment.record"):
         assert "auditor_3l" not in _holders(code)
+
+
+def test_pacing_permissions_grants_as_ratified() -> None:
+    # CC-2 (OD-CC-2-E, ratified 2026-07-20): the pacing R-07 mint — `pacing.run` the maker (a
+    # projection is *run*), `pacing.view` the read. A governed OUTPUT read INCLUDES auditor_3l
+    # (the perf.view precedent), UNLIKE the captured-input `commitment.*` verbs. Maker/read sets
+    # mirror the perf family. Both directions pinned.
+    for code in ("pacing.run", "pacing.view"):
+        assert code in ALL_CODES
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    assert _holders("pacing.run") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "platform_admin",
+    }
+    assert _holders("pacing.view") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "risk_manager_2l",
+        "auditor_3l",
+        "platform_admin",
+    }
+    assert "auditor_3l" not in _holders("pacing.run")

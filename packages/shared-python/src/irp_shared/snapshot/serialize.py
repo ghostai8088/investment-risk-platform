@@ -551,6 +551,72 @@ def proxy_weight_estimate_content(row: Any) -> dict[str, Any]:
     }
 
 
+def commitment_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``commitment`` (ENT-015, FR) current-head version (CC-2
+    COMMITMENT component — the FR pin flavor, the ``valuation``/``proxy_mapping`` shape: EXCLUDES
+    the mutable close-out markers ``valid_to``/``system_to``/``created_at``/``updated_at``; INCLUDES
+    ``restatement_reason``/``supersedes_id``/``record_version``). A later supersede/correct is
+    invisible to the pin (TR-09). ``committed_amount`` at the 6dp money scale; ``commitment_date``
+    the vintage anchor the pacing binder projects from."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "committed_amount": _norm_decimal(row.committed_amount, _SCALE_MONEY),
+        "currency_code": row.currency_code,
+        "commitment_date": row.commitment_date.isoformat(),
+        "restatement_reason": row.restatement_reason,
+        "supersedes_id": (None if row.supersedes_id is None else _norm_guid(row.supersedes_id)),
+        "valid_from": _norm_datetime(row.valid_from),
+        "system_from": _norm_datetime(row.system_from),
+        "record_version": row.record_version,
+    }
+
+
+def capital_call_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``capital_call`` (ENT-016, IA) row (CC-2 CAPITAL_CALL
+    component — the ``transaction`` true-append-only pin flavor: no valid axis, no
+    ``record_version``; ``system_from`` the append time; byte-identical on re-verify). ONE component
+    per event row (reversals INCLUDED — the negation Σ self-corrects; the pacing binder sums all
+    rows). ``amount`` at the 6dp money scale (SIGNED: negative on a reversal row)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "commitment_version_id": _norm_guid(row.commitment_version_id),
+        "event_date": row.event_date.isoformat(),
+        "amount": _norm_decimal(row.amount, _SCALE_MONEY),
+        "currency_code": row.currency_code,
+        "call_type": row.call_type,
+        "external_ref": row.external_ref,
+        "reverses_id": (None if row.reverses_id is None else _norm_guid(row.reverses_id)),
+        "system_from": _norm_datetime(row.system_from),
+    }
+
+
+def distribution_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``distribution`` (ENT-016, IA) row (CC-2 DISTRIBUTION
+    component — the ``capital_call`` true-append-only pin flavor + the ``is_recallable`` flag the
+    pacing binder reads to restore unfunded). ``amount`` at the 6dp money scale (SIGNED)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "portfolio_id": _norm_guid(row.portfolio_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "commitment_version_id": _norm_guid(row.commitment_version_id),
+        "event_date": row.event_date.isoformat(),
+        "amount": _norm_decimal(row.amount, _SCALE_MONEY),
+        "currency_code": row.currency_code,
+        "distribution_type": row.distribution_type,
+        "is_recallable": bool(row.is_recallable),
+        "external_ref": row.external_ref,
+        "reverses_id": (None if row.reverses_id is None else _norm_guid(row.reverses_id)),
+        "system_from": _norm_datetime(row.system_from),
+    }
+
+
 def benchmark_return_series_content(benchmark: Any, rows: list[Any]) -> dict[str, Any]:
     """The captured content of one benchmark's pinned RETURN WINDOW (P3-8 BENCHMARK_RETURN component
     — the ``factor_return_series_content`` header+rows shape over ``benchmark_return`` FR rows).

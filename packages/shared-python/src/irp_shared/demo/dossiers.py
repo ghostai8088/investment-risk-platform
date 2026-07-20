@@ -955,3 +955,63 @@ BT3_ESHS_C975_INITIAL = FlagshipDossier(
     ),
     finding_keys=("DELIBERATELY not backtestable v1",),
 )
+
+
+# --- CC-2 stage 9 (the pacing-projection slice): the 20th code's dossiers — SEPARATE module
+# constants, NEVER added to TIER_DOSSIERS/FLAGSHIP_DOSSIERS (the campaign 16-pin is a CONSTANT;
+# the ES_HS_TIER/BT3_ES_BACKTEST_TIER shape). ---
+
+#: MEDIUM materiality / MEDIUM complexity => TIER_2 (the MF1_LOADINGS precedent: a planning number
+#: that gates no capital and prices no book, moving liquidity/pacing decisions through its
+#: consumers; a deterministic multi-period recursion over five declared parameters + the anchor
+#: adjudication, no estimation chain and no minted constant).
+CC2_PACING_TIER = TierDossier(
+    "MEDIUM",
+    "MEDIUM",
+    "The commitment-pacing projection: a forward liquidity/pacing planning number that gates no "
+    "capital and prices no book (MEDIUM materiality — it informs commitment-pacing and unfunded "
+    "planning through its consumers); a deterministic closed-form Takahashi-Alexander recursion "
+    "over five DECLARED parameters plus the mid-life anchor adjudication (paid-in, recallable "
+    "restoration, the pinned NAV mark) — no estimation chain, no minted constant (MEDIUM "
+    "complexity).",
+)
+
+#: The pacing model's INITIAL (AWC): a NEW governed code — SOME record (the MG-1/BT-3 new-code
+#: criterion); evidence = its OWN COMPLETED projection run over the stage-8 PE-MERIDIAN-X
+#: commitment. Finding keys are uniquely-matching substrings of the REGISTERED PACING_LIMITATIONS.
+CC2_PACING_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the commitment-pacing projection v1 (pacing.commitment_projection, "
+        "the SEVENTEENTH governed number; declared rc_schedule=0.25,0.333,0.5 / fund_life=12 / "
+        "bow=2.5 / growth=0.13 / yield_floor=0 — PE-shaped choices, NOT Takahashi-Alexander's "
+        "un-routed paper examples; only the FUNCTIONAL FORM is TA's, no constant minted): the "
+        "cited evidence run projects the stage-8 PE-MERIDIAN-X commitment (25M committed, 10M net "
+        "called, 1.2M recallable restoring unfunded to 16.2M) forward from its mid-life anchor "
+        "(NAV seeded from the captured 11.2M valuation mark; the FUTURE-ONLY window from the "
+        "pin-derived age). VALIDATION HONESTY: this is a projection under DECLARED assumptions, "
+        "NOT a forecast of realized cashflows — the declared parameters propagate one-for-one "
+        "into every projected value. NON-INDEPENDENCE DISCLOSURE: drafted and filed by the "
+        "delivery assistant under the CC-2 ratification (OQ-CC-2-7); the ratified dossier table is "
+        "the human validation judgment, the filing is its transcription."
+    ),
+    conditions=(
+        "CONDITION (declared-assumption sensitivity): the five parameters ARE the model — a "
+        "mis-declared growth or bow biases the entire projected series, and the single "
+        "deterministic path carries no scenario band; any liquidity or commitment-pacing decision "
+        "consuming this series MUST weigh the declared assumptions, and the stochastic enhancement "
+        "is the named v2. CONDITION (mid-life re-anchoring is OUR extension): for an "
+        "already-called commitment the projection seeds unfunded/NAV from REALIZED actuals and "
+        "projects only "
+        "future ages — the from-inception recursion is source-attested, the re-anchoring is a "
+        "documented CC-2 adaptation. CONDITION (scope): ANNUAL periodicity and PER-(portfolio, "
+        "instrument) pair in v1; the portfolio-level unfunded rollup (the REQ-PRV-001 'aggregated' "
+        "clause) and quarterly periodicity are named v2 levers, and a same-currency pinned NAV "
+        "mark is REQUIRED for a funded book (no fabricated anchor)."
+    ),
+    finding_keys=(
+        "SINGLE deterministic path",
+        "MID-LIFE RE-ANCHORING",
+        "NAV ANCHOR:",
+    ),
+)

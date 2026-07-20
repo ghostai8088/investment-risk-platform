@@ -78,9 +78,12 @@ from irp_shared.snapshot.events import SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
     COMPONENT_KIND_BENCHMARK,
     COMPONENT_KIND_BENCHMARK_RETURN,
+    COMPONENT_KIND_CAPITAL_CALL,
+    COMPONENT_KIND_COMMITMENT,
     COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_CURVE,
     COMPONENT_KIND_DESMOOTHED_RETURN,
+    COMPONENT_KIND_DISTRIBUTION,
     COMPONENT_KIND_EXPOSURE,
     COMPONENT_KIND_FACTOR,
     COMPONENT_KIND_FACTOR_EXPOSURE,
@@ -100,6 +103,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
+    PURPOSE_PACING_INPUT,
     PURPOSE_PROXY_WEIGHT_INPUT,
     PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
     PURPOSE_RETURN_INPUT,
@@ -115,10 +119,13 @@ from irp_shared.snapshot.models import (
 from irp_shared.snapshot.serialize import (
     benchmark_membership_content,
     benchmark_return_series_content,
+    capital_call_content,
+    commitment_content,
     content_hash,
     covariance_content,
     curve_content,
     desmoothed_return_content,
+    distribution_content,
     exposure_content,
     factor_content,
     factor_exposure_content,
@@ -1968,6 +1975,179 @@ def build_desmoothing_snapshot(
     return header_row
 
 
+class PacingSnapshotError(Exception):
+    """A PACING_INPUT snapshot cannot be built (no CURRENT commitment for the (portfolio,
+    instrument) pair; a hidden/cross-tenant portfolio or instrument) — raised BEFORE any write;
+    never mints immutable governance garbage. Maps to 409/404."""
+
+
+#: The pacing binding rule (OD-CC-2-D): ONE (portfolio, instrument) commitment current head + ALL
+#: its capital_call/distribution event rows + the latest current-head valuation mark (if any).
+PACING_BINDING_PREDICATE = "v1:commitment-head+all-events+latest-mark"
+
+
+def _resolve_commitment_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``commitment`` FR row by id with an EXPLICIT tenant predicate (models-only
+    import — the ``private_capital`` SERVICE is deliberately not imported; the pin re-resolves the
+    exact version row, byte-stable under a later supersede/correct — TR-09)."""
+    from irp_shared.private_capital.models import Commitment  # models-only (no cycle / fence-safe)
+
+    row = session.execute(
+        select(Commitment).where(
+            Commitment.id == str(row_id), Commitment.tenant_id == str(acting_tenant)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise PacingSnapshotError(f"commitment {row_id} is not visible")
+    return row
+
+
+def _resolve_capital_call_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    from irp_shared.private_capital.models import CapitalCall  # models-only (no cycle)
+
+    row = session.execute(
+        select(CapitalCall).where(
+            CapitalCall.id == str(row_id), CapitalCall.tenant_id == str(acting_tenant)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise PacingSnapshotError(f"capital_call {row_id} is not visible")
+    return row
+
+
+def _resolve_distribution_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    from irp_shared.private_capital.models import Distribution  # models-only (no cycle)
+
+    row = session.execute(
+        select(Distribution).where(
+            Distribution.id == str(row_id), Distribution.tenant_id == str(acting_tenant)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise PacingSnapshotError(f"distribution {row_id} is not visible")
+    return row
+
+
+def build_pacing_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    portfolio_id: str,
+    instrument_id: str,
+) -> DatasetSnapshot:
+    """Build one immutable ``PACING_INPUT`` snapshot (CC-2, OD-CC-2-D) for ONE (portfolio,
+    instrument) pair, pinning: the CURRENT-HEAD ``commitment`` (COMMITMENT, the FR pin flavor); ALL
+    ``capital_call`` + ``distribution`` event rows for the pair (CAPITAL_CALL/DISTRIBUTION, the IA
+    true-append-only flavor — reversals INCLUDED, the Σ self-corrects); and the LATEST current-head
+    ``valuation`` mark for the PAIR (max ``valuation_date``, both-axes-open — the NAV anchor) if one
+    exists. Stamps ``as_of_valuation_date`` = the latest mark's date, else the snapshot build date
+    — the DETERMINISTIC age anchor the pacing binder projects from (a wall-clock age would break
+    pin-reproducibility). So a pacing run reproduces from the snapshot alone (a later
+    supersede/correct/new-event cannot move a historical run, TR-09; AD-014 pinned-content-only
+    reads). Fails closed BEFORE any write on a hidden pair or NO current commitment. Imports NO
+    ``pacing`` SERVICE symbol (models-only reads of ``private_capital``/``valuation``)."""
+    from irp_shared.private_capital.models import (  # models-only (no cycle / fence-safe)
+        CapitalCall,
+        Commitment,
+        Distribution,
+    )
+    from irp_shared.reference.guards import assert_instrument_in_tenant
+    from irp_shared.valuation.models import Valuation
+
+    resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
+    assert_instrument_in_tenant(
+        session, str(instrument_id), acting_tenant=acting_tenant, error=PacingSnapshotError
+    )
+
+    commitment = session.execute(
+        select(Commitment).where(
+            Commitment.tenant_id == str(acting_tenant),
+            Commitment.portfolio_id == str(portfolio_id),
+            Commitment.instrument_id == str(instrument_id),
+            Commitment.valid_to.is_(None),
+            Commitment.system_to.is_(None),
+        )
+    ).scalar_one_or_none()
+    if commitment is None:
+        raise PacingSnapshotError(
+            f"no current commitment for portfolio {portfolio_id} to instrument {instrument_id} "
+            f"— capture one first"
+        )
+
+    calls = list(
+        session.execute(
+            select(CapitalCall)
+            .where(
+                CapitalCall.tenant_id == str(acting_tenant),
+                CapitalCall.portfolio_id == str(portfolio_id),
+                CapitalCall.instrument_id == str(instrument_id),
+            )
+            .order_by(CapitalCall.event_date, CapitalCall.system_from)
+        )
+        .scalars()
+        .all()
+    )
+    dists = list(
+        session.execute(
+            select(Distribution)
+            .where(
+                Distribution.tenant_id == str(acting_tenant),
+                Distribution.portfolio_id == str(portfolio_id),
+                Distribution.instrument_id == str(instrument_id),
+            )
+            .order_by(Distribution.event_date, Distribution.system_from)
+        )
+        .scalars()
+        .all()
+    )
+    mark = session.execute(
+        select(Valuation)
+        .where(
+            Valuation.tenant_id == str(acting_tenant),
+            Valuation.portfolio_id == str(portfolio_id),
+            Valuation.instrument_id == str(instrument_id),
+            Valuation.valid_to.is_(None),
+            Valuation.system_to.is_(None),
+        )
+        .order_by(Valuation.valuation_date.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    now = utcnow()
+    valid_at = known = now
+    as_of_valuation = mark.valuation_date if mark is not None else now.date()
+    specs: list[tuple[str, str, Any, str, str]] = []
+    _append_spec(
+        specs, COMPONENT_KIND_COMMITMENT, "commitment", commitment, commitment_content(commitment)
+    )
+    for call in calls:
+        _append_spec(
+            specs, COMPONENT_KIND_CAPITAL_CALL, "capital_call", call, capital_call_content(call)
+        )
+    for dist in dists:
+        _append_spec(
+            specs, COMPONENT_KIND_DISTRIBUTION, "distribution", dist, distribution_content(dist)
+        )
+    if mark is not None:
+        _append_spec(specs, COMPONENT_KIND_VALUATION, "valuation", mark, valuation_content(mark))
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_PACING_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=as_of_valuation,
+        binding_predicate_version=PACING_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 class ProxyWeightSnapshotError(Exception):
     """A PROXY_WEIGHT_INPUT snapshot cannot be built (an empty desmoothed run, no candidate factor,
     a candidate factor with no returns in the appraisal span) — raised BEFORE any write; never
@@ -2584,6 +2764,23 @@ def _reresolve_content(
         return proxy_mapping_content(
             _resolve_proxy_mapping_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
         )
+    if comp.component_kind == COMPONENT_KIND_COMMITMENT:
+        # Re-read the commitment FR version by surrogate id (tenant-predicated) — byte-stable under
+        # a later supersede/correct (the pinned version's immutable content, TR-09); a gone/
+        # cross-tenant row reports as drift.
+        return commitment_content(
+            _resolve_commitment_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
+    if comp.component_kind == COMPONENT_KIND_CAPITAL_CALL:
+        # Re-read the capital_call IA row by id (tenant-predicated) — true append-only, byte-
+        # identical on re-verify unless tampered (the transaction/var_result precedent).
+        return capital_call_content(
+            _resolve_capital_call_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
+    if comp.component_kind == COMPONENT_KIND_DISTRIBUTION:
+        return distribution_content(
+            _resolve_distribution_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
     if comp.component_kind == COMPONENT_KIND_PROXY_WEIGHT:
         # Re-read the proxy_weight_estimate_result IA row by id (tenant-predicated) — true
         # append-only, so re-verification is byte-identical unless tampered (the ``var_result``
@@ -2644,6 +2841,7 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             BenchmarkNotVisible,
             ScenarioSnapshotError,
             ProxyWeightSnapshotError,
+            PacingSnapshotError,
             # RD-3 OD-A: the BENCHMARK_RETURN/FACTOR_RETURN/BENCHMARK/SCENARIO branches parse
             # ``captured_content`` via ``_parsed_pin``/``_pinned_row_ids``, which raise ONLY this
             # class on a truncated/tampered/non-object/missing-key pin — never a bare

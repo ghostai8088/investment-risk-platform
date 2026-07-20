@@ -628,6 +628,6 @@ def test_migration_head_is_0020_curves() -> None:
     script = ScriptDirectory(str(root / "migrations"))
     # P3-1 advanced the head to 0022_sensitivity; curve keeps its chain position (0020_curves,
     # down_revision 0019_price_point) and stays reachable in the revision walk.
-    assert script.get_current_head() == "0044_private_capital"  # CC-1
+    assert script.get_current_head() == "0045_pacing_projection"  # CC-2
     assert script.get_revision("0020_curves").down_revision == "0019_price_point"
     assert "0020_curves" in {r.revision for r in script.walk_revisions()}

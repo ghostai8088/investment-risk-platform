@@ -21,6 +21,7 @@ from irp_backend.api.marketdata import price_router as marketdata_price_router
 from irp_backend.api.marketdata import proxy_mapping_router as marketdata_proxy_mapping_router
 from irp_backend.api.marketdata import router as marketdata_router
 from irp_backend.api.models import router as models_router
+from irp_backend.api.pacing import router as pacing_router
 from irp_backend.api.perf import router as perf_router
 from irp_backend.api.portfolios import router as portfolios_router
 from irp_backend.api.positions import router as positions_router
@@ -63,3 +64,4 @@ app.include_router(marketdata_proxy_mapping_router)
 app.include_router(exposure_router)
 app.include_router(risk_router)
 app.include_router(perf_router)
+app.include_router(pacing_router)

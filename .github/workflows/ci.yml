@@ -319,6 +319,11 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_private_capital_pg.py -q
+      - name: Pacing-projection symmetric-RLS + append-only tests (Postgres, ENT-059 / CC-2 / BR-17/BR-18)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_pacing_pg.py -q
       - name: Demo-campaign end-state test (Postgres, MG-1 / OD-MG-1-G)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
@@ -388,6 +393,17 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage8_cc1_pg.py -q
+      # Stage 9 (CC-2) runs AFTER stage 8 and BEFORE the downgrade smoke — the GOVERNED
+      # projection over the stage-8 substrate: it mints ONE new model code
+      # (pacing.commitment_projection), ONE INITIAL record, and ONE COMPLETED run, so the
+      # suite asserts the counts MOVED to 20/35/96 (the deliberate contrast with stage 8's
+      # capture-only pins); the smoke below then exercises 0045's destructive projection-table
+      # drop against THIS stage's rows on every run.
+      - name: Demo stage-9 pacing-projection test (Postgres, CC-2 / OD-CC-2-G)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9_cc2_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

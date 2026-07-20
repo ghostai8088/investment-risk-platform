@@ -82,6 +82,12 @@ PURPOSE_PROXY_WEIGHT_INPUT = "PROXY_WEIGHT_INPUT"
 #: RS-1 (OD-RS-1-B): pins a COHORT of promoted proxy-weight estimate runs' ESTIMATION_SUMMARY rows
 #: (each member's residual_stdev + residual df) — the empirical-Bayes shrinkage input.
 PURPOSE_RESIDUAL_SHRINKAGE_INPUT = "RESIDUAL_SHRINKAGE_INPUT"
+#: CC-2 (OD-CC-2-D): pins ONE (portfolio, instrument) commitment's current head + ALL its
+#: capital_call/distribution event rows + the latest current-head valuation mark — the
+#: commitment-pacing projection input. Its dedicated builder sets it; membership in the enforced
+#: allow-list below is deliberate (NOT the PROXY_WEIGHT/RESIDUAL_SHRINKAGE tuple-bypass — the
+#: CC-2-census-flagged inconsistency is not repeated).
+PURPOSE_PACING_INPUT = "PACING_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -97,6 +103,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_VAR_BACKTEST_INPUT,
     PURPOSE_SCENARIO_INPUT,
     PURPOSE_DESMOOTHING_INPUT,
+    PURPOSE_PACING_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -179,6 +186,18 @@ COMPONENT_KIND_DESMOOTHED_RETURN = "DESMOOTHED_RETURN"
 #: is the DECLARED ``appraisal_days`` model parameter, OD-PA-4-D as refined. The cited estimate
 #: run's immutable output — TR-09). ``target_entity_type='proxy_weight_estimate_result'``.
 COMPONENT_KIND_PROXY_WEIGHT = "PROXY_WEIGHT"
+#: CC-2 (OD-CC-2-D): a pinned ``commitment`` (ENT-015, FR) current-head row — the FR pin flavor
+#: (excludes the mutable close-out markers valid_to/system_to/created/updated; includes
+#: restatement_reason/supersedes_id/record_version — the proxy_mapping/valuation precedent). A
+#: later supersede/correct is invisible to the pin (TR-09). ``target_entity_type='commitment'``.
+COMPONENT_KIND_COMMITMENT = "COMMITMENT"
+#: CC-2 (OD-CC-2-D): a pinned ``capital_call`` (ENT-016, IA) row — the true-append-only pin flavor
+#: (full immutable column set incl. reverses_id; drift impossible by construction). ONE component
+#: per event row (reversals included — the Σ self-corrects). ``target_entity_type='capital_call'``.
+COMPONENT_KIND_CAPITAL_CALL = "CAPITAL_CALL"
+#: CC-2 (OD-CC-2-D): a pinned ``distribution`` (ENT-016, IA) row — the true-append-only pin flavor
+#: (full immutable set incl. reverses_id + is_recallable). ``target_entity_type='distribution'``.
+COMPONENT_KIND_DISTRIBUTION = "DISTRIBUTION"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -199,6 +218,9 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PROXY_MAPPING,
     COMPONENT_KIND_DESMOOTHED_RETURN,
     COMPONENT_KIND_PROXY_WEIGHT,
+    COMPONENT_KIND_COMMITMENT,
+    COMPONENT_KIND_CAPITAL_CALL,
+    COMPONENT_KIND_DISTRIBUTION,
 )
 
 
