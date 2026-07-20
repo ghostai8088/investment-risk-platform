@@ -46,6 +46,7 @@ from irp_shared.perf.models import (
 )
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.position.models import Position
+from irp_shared.private_capital.models import CapitalCall, Commitment, Distribution
 from irp_shared.reference.models import (
     Calendar,
     CalendarHoliday,
@@ -116,6 +117,9 @@ __all__ = [
     "IdentifierXref",
     "CorporateAction",
     "Portfolio",
+    "Commitment",
+    "CapitalCall",
+    "Distribution",
     "Transaction",
     "Position",
     "Valuation",
