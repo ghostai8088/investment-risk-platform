@@ -365,6 +365,15 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage6_ds2_pg.py -q
+      # Stage 7 (BT-3) runs AFTER stage 6 and BEFORE the downgrade smoke. It mints ONE new
+      # model code (risk.es_backtest — the 19-code end state its own suite pins; every
+      # earlier count pin holds at its sequence point); the smoke below then exercises 0043's
+      # es_value column drop against THIS stage's ES-backtest rows on every run.
+      - name: Demo stage-7 ES-backtest test (Postgres, BT-3 / OD-BT-3-F)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage7_bt3_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

@@ -858,3 +858,100 @@ DS2_OW_INITIAL = FlagshipDossier(
         "SERIES SHORTENING",
     ),
 )
+
+
+# --- BT-3 stage 7 (the ES-backtest slice): the 19th code's tier dossier — a SEPARATE module
+# constant, NEVER added to TIER_DOSSIERS (three suites pin len(TIER_DOSSIERS) == 16 as a
+# CONSTANT; the ES_HS_TIER/MF1_LOADINGS_TIER shape). ---
+
+BT3_ES_BACKTEST_TIER = TierDossier(
+    "MEDIUM",
+    "MEDIUM",
+    "Outcomes-analysis machinery for the empirical ES: it gates no capital and prices no book "
+    "(MEDIUM materiality — its purpose is evidence about the ES-HS model), with one-sided "
+    "Z statistics and a domain-gated verdict (MEDIUM complexity — the criticals' "
+    "(alpha, T, df) scope is the honest subtlety).",
+)
+
+#: The four BT-3 INITIAL dossiers (the RS-1 new-version-INITIAL precedent applied UNIFORMLY —
+#: the Wave-7 close verifier's fold: every new version files, none selectively skipped).
+BT3_ES_BACKTEST_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the AS ES-backtest v1 (declared significance=0.05; verdict "
+        "domain (0.9750, 250) registrar-stamped): the cited evidence run scores the stage-7 "
+        "3-pair sibling series — the Z evidence rows persist and the verdict is CORRECTLY "
+        "ABSENT off the n_pairs=250 domain (the domain-gate honesty, demonstrated live rather "
+        "than a spuriously-thresholded verdict; the suite proves the verdict leg at the full "
+        "(0.9750, 250) domain on deterministic fixtures). NON-INDEPENDENCE DISCLOSURE: drafted "
+        "and filed by the delivery assistant under the BT-3 ratification (OQ-BT-3-1/6); the "
+        "ratified dossier table is the human validation judgment, the filing its transcription."
+    ),
+    conditions=(
+        "CONDITION (domain discipline): the -0.70/-1.8 criticals are valid ONLY at (paired "
+        "confidence 0.9750, n_pairs 250, near-normal tails) — any new (alpha, T) cell requires "
+        "a governed offline derivation record and a NEW version, never a runtime simulation. "
+        "CONDITION (one-sidedness): the Z tests cannot flag over-conservatism — the two-sided "
+        "Kupiec POF remains the coverage complement, read together."
+    ),
+    finding_keys=("DOMAIN-BOUND VERDICT:", "ONE-SIDED:"),
+)
+
+BT3_VB_V2_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the risk.var_backtest v2-christoffersen version (declared "
+        "alpha=0.05 + independence=CHRISTOFFERSEN_MARKOV): the cited evidence run emits "
+        "LR_IND/LR_CC over the stage-7 exception series beside the byte-preserved v1 rows "
+        "(the exception at the designed 2026-05-22 drawdown makes the 2x2 non-degenerate; "
+        "at n=3 NEITHER component alone rejects while the joint LR_CC does — the "
+        "composition's added power, demonstrated live). NON-INDEPENDENCE DISCLOSURE: "
+        "drafted and filed by the "
+        "delivery assistant under the BT-3 ratification (OQ-BT-3-5); the ratified dossier "
+        "table is the human validation judgment, the filing its transcription."
+    ),
+    conditions=(
+        "CONDITION (lag scope): the Markov test scores FIRST-ORDER dependence only — "
+        "longer-lag clustering is invisible to it; the Christoffersen-Pelletier duration "
+        "variant is the named extension, a new version if adopted."
+    ),
+    finding_keys=("MARKOV SCOPE",),
+)
+
+BT3_VARHS_C975_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the risk.var.historical v1-c975 version (0.9750, 41-observation "
+        "window — the externally-anchored ES confidence's VaR sibling, MAR33.3; registered for "
+        "the BT-3 sibling pairing): the cited evidence run is one of the stage-7 forecast "
+        "series over the flagship book's pinned factor-return windows. NON-INDEPENDENCE "
+        "DISCLOSURE: drafted and filed by the delivery assistant under the BT-3 ratification; "
+        "the ratified dossier table is the human validation judgment, the filing its "
+        "transcription."
+    ),
+    conditions=(
+        "CONDITION (window honesty): 41 observations is the 0.9750 adequacy floor's "
+        "neighborhood — the tail rests on one to two order statistics; window length is the "
+        "lever and a production window is materially longer."
+    ),
+    finding_keys=("Equal weighting reacts SLOWLY",),
+)
+
+BT3_ESHS_C975_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the risk.var.historical_es v1-c975 version (0.9750, "
+        "41-observation window — the FRTB-anchored ES confidence, MAR33.3; registered for the "
+        "BT-3 sibling pairing): the cited evidence run computes the Prop-4.1 tail mean on the "
+        "SAME pinned snapshot as its VaR sibling (the shared-snapshot pairing live). "
+        "NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant under the "
+        "BT-3 ratification; the ratified dossier table is the human validation judgment, the "
+        "filing its transcription."
+    ),
+    conditions=(
+        "CONDITION (tail resolution): at n=41/0.9750 the tail mean rests on n*a = 1.025 "
+        "scenarios — effectively the worst scenario plus a sliver; the estimate is honest but "
+        "coarse, and window length is the lever."
+    ),
+    finding_keys=("DELIBERATELY not backtestable v1",),
+)

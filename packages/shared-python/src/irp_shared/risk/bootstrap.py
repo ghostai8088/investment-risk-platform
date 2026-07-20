@@ -949,6 +949,7 @@ def register_historical_var_model(
     confidence_level: str | Decimal,
     window_observations: int,
     horizon_days: int = VAR_HORIZON_DAYS,
+    version_label: str = VAR_HS_VERSION_LABEL,
     actor_type: str = "user",
 ) -> ModelVersion:
     """Register (idempotently) the historical-simulation VaR model family (VAR-HS-1, OD-VHS-B):
@@ -956,7 +957,12 @@ def register_historical_var_model(
     quantile_convention). Same-label different-declaration -> :class:`ModelVersionConflictError`;
     a non-REGISTERED same-label twin -> :class:`WrongModelVersionError` (the P3-C1 contract).
     The window floor (OD-VHS-E): N >= ceil(1/(1-c)) - below it the order statistic is the
-    sample minimum and the estimate is statistically meaningless."""
+    sample minimum and the estimate is statistically meaningless. ``version_label`` is
+    caller-suppliable (BT-3 — the MF-1 ``v1-alpha1``/HG-1 house precedent; default unchanged,
+    every pre-BT-3 call site byte-equivalent) so a second declared confidence registers as a
+    SIBLING version instead of a same-label 409."""
+    if not version_label or not str(version_label).strip():
+        raise ValueError("version_label must be a non-empty string")
     text = str(confidence_level).strip()
     if not _CONFIDENCE_PATTERN.fullmatch(text) or len(text) > 6:
         raise ValueError(
@@ -996,11 +1002,11 @@ def register_historical_var_model(
     version = resolve_or_register_version(
         session,
         model=model,
-        version_label=VAR_HS_VERSION_LABEL,
+        version_label=str(version_label),
         register=lambda: register_model_version(
             session,
             model=model,
-            version_label=VAR_HS_VERSION_LABEL,
+            version_label=str(version_label),
             actor_id=actor_id,
             methodology_ref=VAR_HS_METHODOLOGY_REF,
             code_version=str(code_version),
@@ -1029,7 +1035,7 @@ def register_historical_var_model(
     ):
         raise ModelVersionConflictError(
             VAR_HS_MODEL_CODE,
-            VAR_HS_VERSION_LABEL,
+            str(version_label),
             f"{code_version} (confidence_level={confidence_key}, horizon_days="
             f"{horizon_days}, window_observations={n})",
         )
@@ -1154,6 +1160,7 @@ def register_historical_var_es_model(
     confidence_level: str | Decimal,
     window_observations: int,
     horizon_days: int = VAR_HORIZON_DAYS,
+    version_label: str = ES_HS_VERSION_LABEL,
     actor_type: str = "user",
 ) -> ModelVersion:
     """Register (idempotently) the historical-simulation ES model family (ES-HS-1, OD-B):
@@ -1162,6 +1169,8 @@ def register_historical_var_es_model(
     :class:`ModelVersionConflictError`; a non-REGISTERED same-label twin ->
     :class:`WrongModelVersionError` (the P3-C1 contract). The window floor is the VaR leg's
     strict bound (n*(1-c) > 1), shared arithmetic, registrar-and-bind enforced."""
+    if not version_label or not str(version_label).strip():
+        raise ValueError("version_label must be a non-empty string")
     text = str(confidence_level).strip()
     if not _CONFIDENCE_PATTERN.fullmatch(text) or len(text) > 6:
         raise ValueError(
@@ -1198,11 +1207,11 @@ def register_historical_var_es_model(
     version = resolve_or_register_version(
         session,
         model=model,
-        version_label=ES_HS_VERSION_LABEL,
+        version_label=str(version_label),
         register=lambda: register_model_version(
             session,
             model=model,
-            version_label=ES_HS_VERSION_LABEL,
+            version_label=str(version_label),
             actor_id=actor_id,
             methodology_ref=ES_HS_METHODOLOGY_REF,
             code_version=str(code_version),
@@ -1229,7 +1238,7 @@ def register_historical_var_es_model(
     ):
         raise ModelVersionConflictError(
             ES_HS_MODEL_CODE,
-            ES_HS_VERSION_LABEL,
+            str(version_label),
             f"{code_version} (confidence_level={confidence_key}, horizon_days="
             f"{horizon_days}, window_observations={n})",
         )

@@ -2,6 +2,12 @@
 over the REAL service layer against the reserved DEMO tenant — distinct from (and never importing)
 the synthetic seed."""
 
+from irp_shared.demo.bt3_stage7 import (
+    Bt3Stage7Summary,
+    DemoBt3AlreadySeededError,
+    DemoBt3PrereqError,
+    run_demo_bt3_stage7,
+)
 from irp_shared.demo.campaign import (
     DEMO_TENANT_ID,
     CampaignSummary,
@@ -59,6 +65,10 @@ __all__ = [
     "DemoEshsError",
     "DemoEshsPrereqError",
     "EshsStage4Summary",
+    "Bt3Stage7Summary",
+    "DemoBt3AlreadySeededError",
+    "DemoBt3PrereqError",
+    "run_demo_bt3_stage7",
     "run_demo_ds2_stage6",
     "run_demo_eshs_stage4",
     "DemoHg1AlreadySeededError",
