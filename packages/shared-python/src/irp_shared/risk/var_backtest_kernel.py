@@ -21,6 +21,8 @@ enforces that domain; this kernel is the pure table.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 #: LR quantum: HALF_UP to 12dp (the faithful statistic; storage scale is the binder's concern).
@@ -110,3 +112,118 @@ def basel_zone(n_exceptions: int) -> str:
     if n_exceptions <= 9:
         return ZONE_YELLOW
     return ZONE_RED
+
+
+# --- Christoffersen (1998) Markov independence leg (BT-3, OD-BT-3-E — the v2 convention) ---
+
+#: Fixed chi-square(2) critical values for LR_cc (the joint conditional-coverage statistic,
+#: df = 2). Textbook constants at the three-route bar: the closed form for chi-square(2) is
+#: quantile(1-α) = −2·ln(α) exactly (CDF = 1 − e^(−x/2)) — −2·ln(0.05) = 5.991465…,
+#: −2·ln(0.01) = 9.210340… (verified closed-form at planning). Extending the set is a NEW
+#: model version, never silent.
+CHI2_2DF_CRITICALS: dict[Decimal, Decimal] = {
+    Decimal("0.05"): Decimal("5.991465"),
+    Decimal("0.01"): Decimal("9.210340"),
+}
+
+
+@dataclass(frozen=True)
+class MarkovCounts:
+    """The 2x2 adjacent-day transition counts of an exception series: ``n_ij`` = the number of
+    t >= 2 with ``I_{t-1} = i`` and ``I_t = j`` (transitions FROM i TO j — pinned explicitly:
+    the written reproduction's prose swaps the index order against its own transition-matrix
+    convention, a disclosed source wobble; the likelihood structure below is the arbiter and
+    the review re-derives it from the 2x2 MLEs)."""
+
+    n00: int
+    n01: int
+    n10: int
+    n11: int
+
+    @property
+    def from_zero(self) -> int:
+        return self.n00 + self.n01
+
+    @property
+    def from_one(self) -> int:
+        return self.n10 + self.n11
+
+    @property
+    def total(self) -> int:
+        return self.n00 + self.n01 + self.n10 + self.n11
+
+
+def markov_counts(indicators: Sequence[int]) -> MarkovCounts:
+    """Count the 2x2 adjacent-pair transitions of a 0/1 exception series (chronological order).
+    Raises :class:`VarBacktestKernelError` on fewer than 2 observations or a non-0/1 value."""
+    if len(indicators) < 2:
+        raise VarBacktestKernelError(
+            f"the Markov test needs >= 2 chronological observations (got {len(indicators)})"
+        )
+    counts = {(0, 0): 0, (0, 1): 0, (1, 0): 0, (1, 1): 0}
+    for prev, curr in zip(indicators, indicators[1:], strict=False):
+        if prev not in (0, 1) or curr not in (0, 1):
+            raise VarBacktestKernelError("exception indicators must be 0 or 1")
+        counts[(prev, curr)] += 1
+    return MarkovCounts(
+        n00=counts[(0, 0)], n01=counts[(0, 1)], n10=counts[(1, 0)], n11=counts[(1, 1)]
+    )
+
+
+def christoffersen_lr_ind(counts: MarkovCounts) -> Decimal | None:
+    """The Christoffersen (1998) Markov INDEPENDENCE likelihood-ratio statistic over the 2x2
+    transition counts; asymptotically chi-square(1). Alternative: first-order Markov with
+    ``pi01 = n01/(n00+n01)``, ``pi11 = n11/(n10+n11)``; null: one common violation probability
+    ``pi2 = (n01+n11)/total``. ``LR_ind = 2·[ln L(alt) − ln L(null)]`` — the NONNEGATIVE
+    orientation (the written reproduction renders the ratio inverted against its own
+    likelihoods, a second disclosed source wobble; the MLE dominance ``L(alt) >= L(null)``
+    fixes the sign). Vanishing terms drop analytically (the ``0^0 = 1`` convention).
+
+    Returns ``None`` — the statistic is UNDEFINED, never 0 — on a DEGENERATE table: no
+    transition leaves state 1 (``n10 + n11 = 0``: pi11 has no observations, e.g. a zero- or
+    single-trailing-exception series) or none leaves state 0 (``n00 + n01 = 0``)."""
+    if counts.from_one == 0 or counts.from_zero == 0:
+        return None
+    with localcontext() as ctx:
+        ctx.prec = _COMPUTE_PREC
+        total = Decimal(counts.total)
+        hits = Decimal(counts.n01 + counts.n11)
+        pi2 = hits / total
+        log_alt = Decimal(0)
+        for x, row_total in (
+            (counts.n01, counts.from_zero),
+            (counts.n11, counts.from_one),
+        ):
+            x_d, row_d = Decimal(x), Decimal(row_total)
+            if x > 0:
+                log_alt += x_d * (x_d / row_d).ln()
+            if x < row_total:
+                log_alt += (row_d - x_d) * (Decimal(1) - x_d / row_d).ln()
+        log_null = Decimal(0)
+        if hits > 0:
+            log_null += hits * pi2.ln()
+        if hits < total:
+            log_null += (total - hits) * (Decimal(1) - pi2).ln()
+        lr = Decimal(2) * (log_alt - log_null)
+        return lr.quantize(_LR_QUANTUM, rounding=ROUND_HALF_UP)
+
+
+def christoffersen_lr_cc(lr_uc: Decimal, lr_ind: Decimal) -> Decimal:
+    """The joint conditional-coverage statistic ``LR_cc = LR_uc + LR_ind`` (the standard
+    decomposition; asymptotically chi-square(2)). The applied convention — LR_uc over the full
+    N pairs, LR_ind over the N−1 transitions — is stated in the referent, not hidden."""
+    return (lr_uc + lr_ind).quantize(_LR_QUANTUM, rounding=ROUND_HALF_UP)
+
+
+def lr_cc_decision(lr_cc: Decimal, alpha: Decimal) -> str:
+    """``REJECT`` iff ``lr_cc`` exceeds the FIXED chi-square(2) critical for the declared
+    ``alpha`` (:data:`CHI2_2DF_CRITICALS`); else ``FAIL_TO_REJECT``. (The LR_ind decision
+    reuses :func:`kupiec_decision` — same df=1 critical table.) Raises on an alpha outside
+    the declared set."""
+    critical = CHI2_2DF_CRITICALS.get(alpha)
+    if critical is None:
+        raise VarBacktestKernelError(
+            f"alpha {alpha} is not in the declared chi-square(2) critical set "
+            f"{sorted(str(a) for a in CHI2_2DF_CRITICALS)}"
+        )
+    return DECISION_REJECT if lr_cc > critical else DECISION_FAIL_TO_REJECT
