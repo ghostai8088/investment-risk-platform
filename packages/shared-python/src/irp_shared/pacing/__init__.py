@@ -31,6 +31,18 @@ from irp_shared.pacing.pacing_kernel import (
     anniversary_window,
     project_commitment,
 )
+from irp_shared.pacing.service import (
+    PacingInputError,
+    PacingNotVisible,
+    PacingRunNotVisible,
+    PacingRunResult,
+    latest_pacing_projection,
+    list_pacing_projections,
+    list_pacing_rows,
+    resolve_pacing_row,
+    resolve_pacing_run,
+    run_pacing_projection,
+)
 
 __all__ = [
     "PACING_MODEL_CODE",
@@ -38,13 +50,23 @@ __all__ = [
     "PACING_VERSION_LABEL",
     "PacingActor",
     "PacingAnchor",
+    "PacingInputError",
     "PacingKernelError",
+    "PacingNotVisible",
     "PacingParams",
     "PacingPeriod",
     "PacingProjectionResult",
+    "PacingRunNotVisible",
+    "PacingRunResult",
     "RUN_TYPE_PACING_PROJECTION",
     "anniversary_window",
     "declared_pacing_parameters",
+    "latest_pacing_projection",
+    "list_pacing_projections",
+    "list_pacing_rows",
     "project_commitment",
     "register_pacing_projection_model",
+    "resolve_pacing_row",
+    "resolve_pacing_run",
+    "run_pacing_projection",
 ]
