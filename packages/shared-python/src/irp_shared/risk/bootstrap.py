@@ -1088,11 +1088,14 @@ ES_HS_LIMITATIONS: tuple[str, ...] = (
     "substrate; filtered/time-weighted variants are recorded v2 versions of the SIBLING VaR "
     "family and would flow through here via the shared substrate, each a new declared "
     "version.",
-    "DELIBERATELY not backtestable v1: the Kupiec/Basel exception count is a quantile test, "
-    "statistically meaningless over a tail-mean series; the genuine Acerbi-Szekely ES "
-    "backtest is the named BT-3 candidate (pair the ES-HS run with its sibling VaR-HS run by "
-    "shared input_snapshot_id) - the backtest binder refuses this metric with the recorded "
-    "scope-out, never an unknown-vocabulary miss.",
+    # BT-3 reword (NEW registrations only; the fresh-seed key-match re-runs against this
+    # constant, so the "DELIBERATELY not backtestable v1" key substring is PRESERVED — the
+    # planning verifier's BT3-V-2 invariant; a conformance test pins it).
+    "DELIBERATELY not backtestable v1 by Kupiec/Basel: the exception count is a quantile test, "
+    "statistically meaningless over a tail-mean series - the Kupiec binder refuses this metric "
+    "with the recorded scope-out, never an unknown-vocabulary miss. The genuine Acerbi-Szekely "
+    "ES backtest SHIPS at risk.es_backtest (BT-3): pair the ES-HS run with its sibling VaR-HS "
+    "run by shared input_snapshot_id.",
     "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
     "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation "
     "exception, MG-1) refuses every new bind at the shared seam.",
@@ -1527,6 +1530,369 @@ def register_var_backtest_model(
             VAR_BACKTEST_MODEL_CODE,
             VAR_BACKTEST_VERSION_LABEL,
             f"{code_version} (alpha={alpha_key})",
+        )
+    return version
+
+
+# --- BT-3: the Christoffersen v2 convention on risk.var_backtest (OD-BT-3-E) ---
+
+#: The declared independence-leg convention (BT-3): ABSENT => the v1 Kupiec-only identity (the
+#: grandfather — every shipped v1 parses byte-identically); present => the Markov leg. The parse
+#: is the COUNTING tri-state (0 / 1 / >1), NEVER bare ``sole_declared`` — its absent/ambiguous
+#: conflation would silently fail an ambiguous v2 OPEN to v1 behavior (the RS-1 A1 / DS-2 trap,
+#: named at the shipped documentation site).
+INDEPENDENCE_ASSUMPTION_PREFIX = "independence="
+VAR_BACKTEST_CHRISTOFFERSEN_CONVENTION = "CHRISTOFFERSEN_MARKOV"
+VAR_BACKTEST_V2_VERSION_LABEL = "v2-christoffersen"
+
+#: The v2 assumption rows APPENDED to the base + alpha (the Markov leg's declared methodology).
+VAR_BACKTEST_V2_ASSUMPTIONS_EXTRA: tuple[str, ...] = (
+    "Christoffersen (1998) Markov independence leg: the exception series' adjacent-day 2x2 "
+    "transition counts n_ij (FROM i TO j); LR_IND = 2[ln L(first-order Markov MLE) - ln L(one "
+    "common violation probability)], asymptotically chi-square(1), decided against the SAME "
+    "fixed df=1 criticals as the POF; LR_CC = LR_UC + LR_IND (the standard decomposition; "
+    "LR_UC over the full N pairs, LR_IND over the N-1 transitions - the applied convention, "
+    "stated), chi-square(2), decided against fixed df=2 criticals (-2 ln(alpha), closed form).",
+    "DEGENERATE-TABLE HONESTY: a series with no transition leaving state 1 (zero exceptions, or "
+    "a single trailing exception) or none leaving state 0 has NO defined LR_IND - no row is "
+    "emitted and no LR_CC composes (the exception-count row makes the absence legible); never "
+    "coerced to 0.",
+)
+
+#: The v2 limitation rows — the v1 set with the two Christoffersen-candidate clauses DISCHARGED
+#: (rows 3 and 5 of the v1 constant go FALSE on a version that emits LR_IND/LR_CC — the planning
+#: verifier's enumeration) + the Markov-scope rows. NEW registrations only; the shipped v1
+#: constant stays byte-identical.
+VAR_BACKTEST_V2_LIMITATIONS: tuple[str, ...] = (
+    VAR_BACKTEST_LIMITATIONS[0],  # captured-holdings P&L bias — carries verbatim
+    VAR_BACKTEST_LIMITATIONS[1],  # ACTUAL P&L only — carries verbatim
+    "Kupiec POF + the Christoffersen (1998) Markov independence/conditional-coverage leg "
+    "(SHIPPED at this version, BT-3); no Basel multiplier arithmetic (the zone is the recorded "
+    "output), no p-values (critical-value decisions at the declared alpha).",
+    VAR_BACKTEST_LIMITATIONS[3],  # the BT-2 total-series read validity doctrine — carries
+    "READ RULE (BT-2): on a book with appraisal-marked positions the unconditional KUPIEC_LR / "
+    "BASEL_ZONE verdict is NOT valid evidence of adequacy in EITHER direction (a clean record "
+    "proves nothing; an excess count is confounded by mark-date clustering). Validity degrades "
+    "with the private-leg share - a liquid-dominated book with a small proxied sleeve keeps a "
+    "near-valid read. The DATED per-pair EXCEPTION_INDICATOR rows are the honest evidence "
+    "surface: mark-date clustering is visible in them - and the Christoffersen leg SHIPPED at "
+    "this version scores exactly that clustering (LR_IND). Appraisal-frequency pairing (needs "
+    "multi-day-horizon VaR) remains the named open candidate, not silently absent.",
+    "MARKOV SCOPE: the independence leg tests FIRST-ORDER dependence only (yesterday's "
+    "exception) - longer-lag dependence is invisible to it (Campbell 2005 notes the class); "
+    "the Christoffersen-Pelletier (2004) duration test is the named variant, out of scope.",
+    VAR_BACKTEST_LIMITATIONS[5],  # small-N honesty — carries verbatim
+    VAR_BACKTEST_LIMITATIONS[6],  # calendar-day horizon — carries verbatim
+    VAR_BACKTEST_LIMITATIONS[7],  # one method per run — carries verbatim
+    VAR_BACKTEST_LIMITATIONS[8],  # validation_status — carries verbatim
+)
+
+
+def declared_var_backtest_independence(session: Session, version: ModelVersion) -> str | None:
+    """Parse the version's declared independence-leg convention (BT-3, OD-BT-3-E). ZERO
+    ``independence=`` rows => ``None`` (the v1 Kupiec-only grandfather, byte-preserved); MORE
+    THAN ONE => fail-closed :class:`WrongModelVersionError` (ambiguity never collapses into the
+    grandfather); exactly one must be the recognized Markov literal."""
+    texts = load_assumption_texts(session, version)
+    rows = [t for t in texts if t.startswith(INDEPENDENCE_ASSUMPTION_PREFIX)]
+    if not rows:
+        return None
+    if len(rows) > 1:
+        raise WrongModelVersionError(str(version.id), VAR_BACKTEST_MODEL_CODE)
+    convention = rows[0][len(INDEPENDENCE_ASSUMPTION_PREFIX) :]
+    if convention != VAR_BACKTEST_CHRISTOFFERSEN_CONVENTION:
+        raise WrongModelVersionError(str(version.id), VAR_BACKTEST_MODEL_CODE)
+    return convention
+
+
+def register_var_backtest_christoffersen_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    alpha: str | Decimal = "0.05",
+    version_label: str = VAR_BACKTEST_V2_VERSION_LABEL,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the Christoffersen v2 of ``risk.var_backtest`` (BT-3, OD-BT-3-E):
+    the SAME model code, a NEW version whose registrar-stamped identity adds
+    ``independence=CHRISTOFFERSEN_MARKOV`` to the declared Kupiec alpha. The v1 registrar and
+    every shipped v1 stay byte-preserved (the absent-convention grandfather). Same-label
+    different-declaration => :class:`ModelVersionConflictError`; a squatted non-REGISTERED twin
+    => :class:`WrongModelVersionError`."""
+    from irp_shared.risk.var_backtest_kernel import CHI2_1DF_CRITICALS
+
+    if not version_label or not str(version_label).strip():
+        raise ValueError("version_label must be a non-empty string")
+    text = str(alpha).strip()
+    if not _ALPHA_PATTERN.fullmatch(text) or Decimal(text) not in CHI2_1DF_CRITICALS:
+        raise ValueError(
+            f"alpha {alpha!r} is not in the v1 critical-value vocabulary "
+            f"{sorted(str(a) for a in CHI2_1DF_CRITICALS)} (a new level is a new declared "
+            f"registration, never a runtime quantile)"
+        )
+    alpha_key = f"{Decimal(text).normalize():f}"
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=VAR_BACKTEST_MODEL_CODE,
+        name=VAR_BACKTEST_MODEL_NAME,
+        model_type=VAR_BACKTEST_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "VaR backtesting - exception counting, the Kupiec POF coverage test, and the "
+            "Basel traffic-light zone over realized flow-adjusted P&L vs the pinned VaR "
+            "forecasts of one method (BT-1, ENT-055)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=str(version_label),
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=str(version_label),
+            actor_id=actor_id,
+            methodology_ref=VAR_BACKTEST_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *VAR_BACKTEST_ASSUMPTIONS_BASE,
+                *VAR_BACKTEST_V2_ASSUMPTIONS_EXTRA,
+                f"{ALPHA_ASSUMPTION_PREFIX}{alpha_key}",
+                f"{INDEPENDENCE_ASSUMPTION_PREFIX}{VAR_BACKTEST_CHRISTOFFERSEN_CONVENTION}",
+            ),
+            limitations=VAR_BACKTEST_V2_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_var_backtest_alpha(session, version)
+    convention = declared_var_backtest_independence(session, version)
+    if (
+        version.code_version != str(code_version)
+        or f"{declared.normalize():f}" != alpha_key
+        or convention != VAR_BACKTEST_CHRISTOFFERSEN_CONVENTION
+    ):
+        raise ModelVersionConflictError(
+            VAR_BACKTEST_MODEL_CODE,
+            str(version_label),
+            f"{code_version} (alpha={alpha_key}, independence="
+            f"{VAR_BACKTEST_CHRISTOFFERSEN_CONVENTION})",
+        )
+    return version
+
+
+# --- BT-3: the Acerbi-Szekely ES-backtest model family (OD-BT-3-A/B/D) ---
+
+ES_BACKTEST_MODEL_CODE = "risk.es_backtest"
+ES_BACKTEST_MODEL_NAME = "ES backtesting (Acerbi-Szekely Z statistics, v1)"
+ES_BACKTEST_MODEL_TYPE = "ES_BACKTEST"
+ES_BACKTEST_VERSION_LABEL = "v1"
+ES_BACKTEST_METHODOLOGY_REF = "05_analytics_methodologies/es_backtest_v1.md"
+
+#: The declared verdict significance (OD-BT-3-B: part of the version identity; the vocabulary is
+#: EXACTLY the fixed Z2 critical set — extending it, or any other (alpha, T) cell, is a NEW
+#: declared registration under a governed derivation record, never a runtime simulation).
+SIGNIFICANCE_ASSUMPTION_PREFIX = "significance="
+_SIGNIFICANCE_PATTERN = re.compile(r"0\.[0-9]{1,4}")
+
+#: The registrar-stamped verdict DOMAIN (OD-BT-3-B, the adversarial verifier's HIGH): the AS
+#: criticals are alpha-, T-, AND df-dependent — valid only at (paired confidence 0.9750,
+#: n_pairs 250, near-normal tails). Stamped as identity so drift = a new version.
+VERDICT_CONFIDENCE_ASSUMPTION_PREFIX = "verdict_confidence="
+VERDICT_PAIRS_ASSUMPTION_PREFIX = "verdict_pairs="
+ES_BACKTEST_VERDICT_CONFIDENCE = Decimal("0.9750")
+ES_BACKTEST_VERDICT_PAIRS = 250
+
+ES_BACKTEST_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Acerbi-Szekely (2014) ES outcomes analysis over an aligned paired series (X_t, VaR_t, "
+    "ES_t): I_t = 1 iff X_t + VaR_t < 0 (STRICT - the shipped BT-1 exception convention); "
+    "Z2 = (1/(T*a)) * SUM X_t*I_t/ES_t + 1 (unconditional, a = 1 - the paired family's declared "
+    "confidence); Z1 = (1/N_T) * SUM X_t*I_t/ES_t + 1 (conditional; UNDEFINED at N_T = 0 - no "
+    "row, never 0). The '+1' sits OUTSIDE the sum (settled by the null-expectation identity "
+    "E[X | X < -VaR] = -ES; three-route verified at planning).",
+    "Pairing: sibling (VaR-HS, ES-HS) runs resolved per as-of by IDENTICAL input_snapshot_id "
+    "and the SAME declared confidence; the VaR leg supplies VaR_t and the as-of (window_end), "
+    "the ES leg ES_t; realized P&L_t = end_mv - begin_mv - net_external_flow per DIETZ "
+    "sub-period of ONE COMPLETED portfolio-return run, aligned by the BT-1 all-or-nothing "
+    "calendar-day convention (ANY unpaired forecast refuses the whole run).",
+    "Verdict (one-sided LEFT tail): REJECT iff Z2 < the FIXED registered critical for the "
+    "declared significance - EMITTED ONLY inside the criticals' derivation domain (paired "
+    "confidence 0.9750 AND n_pairs = 250; the Basel-zone domain-gate precedent); off-domain "
+    "runs persist the Z evidence rows + ES_PAIR_COUNT and NO verdict (the absence is "
+    "mechanically derivable from the persisted rows). NO simulation at runtime, ever.",
+    "Computed in Decimal at 50-digit context; the Z statistics quantize_HALF_UP internally to "
+    "12 decimal places, then quantize_HALF_UP to the Numeric(28,6) result scale - the "
+    "REJECT/FAIL_TO_REJECT decision is taken on that STORED 6dp value against the registered "
+    "critical, so the persisted row always reproduces its own decision.",
+)
+
+ES_BACKTEST_LIMITATIONS: tuple[str, ...] = (
+    "DOMAIN-BOUND VERDICT: the registered Z2 criticals (-0.70 at 5%, -1.8 at 0.01%) are "
+    "Acerbi-Szekely's simulated left-tail quantiles at tail a = 0.025 (confidence 0.9750), "
+    "T = 250 pairs, near-normal tails - they are alpha-, T-, AND df-DEPENDENT (executed at "
+    "planning: ~-1.56 at a=0.005/T=250; ~-3.68 at a=0.025/T=10; -0.82/-4.4 at Student-t3). "
+    "Off-domain pairings get Z evidence rows and NO verdict; a per-(alpha, T) critical table "
+    "is a named v2 under a governed offline derivation record (the TR-09 determinism bar).",
+    "ONE-SIDED: the AS statistics flag UNDERSTATEMENT only - over-conservatism is invisible "
+    "to them (the deliberate break with the two-sided Kupiec POF, which remains the coverage "
+    "test). A zero-breach full-domain series is itself evidence of over-conservatism this "
+    "test cannot score; Z1 is additionally UNDEFINED there (no row, never 0).",
+    "Z1 IS EVIDENCE, NEVER A VERDICT: the Test-1 critical values are distribution-UNSTABLE "
+    "(the recorded AS weakness) - Z1 rows persist for the reader; only Z2 carries the "
+    "domain-gated decision.",
+    "CAPTURED-HOLDINGS P&L BIAS (the PM-1 first-class limitation, carried verbatim from BT-1): "
+    "uncaptured income understates realized losses' offsets and realized P&L alike - a "
+    "backtest over a leaky book is ANTI-CONSERVATIVE. Mitigation stays operational (capture "
+    "the cash), never imputation.",
+    "ACTUAL (flow-adjusted) P&L only - the Basel hypothetical/clean-P&L leg needs "
+    "static-portfolio repricing the platform does not yet have; DEFERRED and recorded.",
+    "One backtest run = ONE paired (VaR-HS, ES-HS) family at ONE declared confidence, "
+    "model-version-UNIFORM across pairs on BOTH legs (a series mixing code_versions of one "
+    "declared identity refuses); cross-method comparison is two runs side by side.",
+    "Small-T honesty: the Z statistics are emitted for any T >= 1 with ES_PAIR_COUNT recorded "
+    "on the summary surface so a reader can weigh them; the verdict refuses to exist "
+    "off-domain (see DOMAIN-BOUND VERDICT).",
+    "FRTB posture (the honest framing): desk backtesting under FRTB remains VaR-based while "
+    "97.5% ES is the capital measure - this test trails the ACADEMIC frontier (AS 2014; "
+    "Kratz-Lok-McNeil), not a Basel floor; 0.9750 is the externally-anchored verdict "
+    "confidence (MAR33.3).",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation "
+    "exception, MG-1) refuses every new bind at the shared seam.",
+)
+
+
+@dataclass(frozen=True)
+class EsBacktestParameters:
+    """The parsed ES-backtest declared identity (OD-BT-3-B/D)."""
+
+    significance: Decimal
+    verdict_confidence: Decimal
+    verdict_pairs: int
+
+
+def declared_es_backtest_parameters(
+    session: Session, version: ModelVersion
+) -> EsBacktestParameters:
+    """Parse the version's declared ES-backtest identity: EXACTLY ONE well-formed
+    ``significance=`` inside the fixed Z2 critical set, plus the registrar-stamped verdict
+    domain (``verdict_confidence=0.9750``, ``verdict_pairs=250``) verbatim. Anything malformed,
+    absent, ambiguous, off-vocabulary, or off-domain is NOT this identity — fail-closed
+    :class:`WrongModelVersionError` (the generic endpoint can mint anything)."""
+    from irp_shared.risk.es_backtest_kernel import Z2_CRITICALS
+
+    texts = load_assumption_texts(session, version)
+
+    def _fail() -> WrongModelVersionError:
+        return WrongModelVersionError(str(version.id), ES_BACKTEST_MODEL_CODE)
+
+    raw = require_declared(
+        texts, SIGNIFICANCE_ASSUMPTION_PREFIX, pattern=_SIGNIFICANCE_PATTERN, on_invalid=_fail
+    )
+    significance = Decimal(raw)
+    if significance not in Z2_CRITICALS:
+        raise _fail()
+    conf_raw = require_declared(
+        texts, VERDICT_CONFIDENCE_ASSUMPTION_PREFIX, pattern=_SIGNIFICANCE_PATTERN, on_invalid=_fail
+    )
+    if Decimal(conf_raw) != ES_BACKTEST_VERDICT_CONFIDENCE:
+        raise _fail()
+    pairs_raw = require_declared(
+        texts,
+        VERDICT_PAIRS_ASSUMPTION_PREFIX,
+        pattern=re.compile(r"[1-9][0-9]{0,3}"),
+        on_invalid=_fail,
+    )
+    if int(pairs_raw) != ES_BACKTEST_VERDICT_PAIRS:
+        raise _fail()
+    return EsBacktestParameters(
+        significance=significance,
+        verdict_confidence=ES_BACKTEST_VERDICT_CONFIDENCE,
+        verdict_pairs=ES_BACKTEST_VERDICT_PAIRS,
+    )
+
+
+def register_es_backtest_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    significance: str | Decimal = "0.05",
+    version_label: str = ES_BACKTEST_VERSION_LABEL,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the AS ES-backtest ``model`` + a ``model_version`` for this
+    ``(code_version, significance)`` identity (BT-3, OD-BT-3-B/D — the SIXTEENTH governed
+    number's model). The verdict domain (0.9750, 250) is REGISTRAR-STAMPED, never
+    caller-suppliable; the significance vocabulary is the fixed Z2 critical set {0.05, 0.0001}.
+    Same-label different-declaration => :class:`ModelVersionConflictError`; a squatted
+    non-REGISTERED twin => :class:`WrongModelVersionError`."""
+    from irp_shared.risk.es_backtest_kernel import Z2_CRITICALS
+
+    if not version_label or not str(version_label).strip():
+        raise ValueError("version_label must be a non-empty string")
+    text = str(significance).strip()
+    if not _SIGNIFICANCE_PATTERN.fullmatch(text) or Decimal(text) not in Z2_CRITICALS:
+        raise ValueError(
+            f"significance {significance!r} is not in the v1 critical-value vocabulary "
+            f"{sorted(str(s) for s in Z2_CRITICALS)} (a new cell is a new declared "
+            f"registration under a governed derivation record, never a runtime simulation)"
+        )
+    significance_key = f"{Decimal(text).normalize():f}"
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=ES_BACKTEST_MODEL_CODE,
+        name=ES_BACKTEST_MODEL_NAME,
+        model_type=ES_BACKTEST_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "ES backtesting - the Acerbi-Szekely Z1/Z2 statistics over sibling "
+            "(VaR-HS, ES-HS) forecast pairs sharing input_snapshot_id, against realized "
+            "flow-adjusted P&L; domain-gated Z2 verdict (BT-3, ENT-055)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=str(version_label),
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=str(version_label),
+            actor_id=actor_id,
+            methodology_ref=ES_BACKTEST_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *ES_BACKTEST_ASSUMPTIONS_BASE,
+                f"{SIGNIFICANCE_ASSUMPTION_PREFIX}{significance_key}",
+                f"{VERDICT_CONFIDENCE_ASSUMPTION_PREFIX}0.9750",
+                f"{VERDICT_PAIRS_ASSUMPTION_PREFIX}250",
+            ),
+            limitations=ES_BACKTEST_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_es_backtest_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or f"{declared.significance.normalize():f}" != significance_key
+    ):
+        raise ModelVersionConflictError(
+            ES_BACKTEST_MODEL_CODE,
+            str(version_label),
+            f"{code_version} (significance={significance_key})",
         )
     return version
 
