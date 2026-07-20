@@ -1,22 +1,32 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-19) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-20) — read this block; everything below it is HISTORY
 >
-> **HEAD `109d11d`** = merge of **PR #69** (BT-3: the Acerbi-Szekely ES backtest — **the
-> SIXTEENTH governed number `risk.es_backtest`** + the Christoffersen `risk.var_backtest` v2;
-> planning **PR #68** = `b493c78`), **CI green run #399**. **Migration head `0043_es_backtest`**
-> (additive nullable `es_value` echo on ENT-055; the downgrade-honesty docstring). `make check`
-> **1627** passed / fresh-schema local PG **1960 passed / 0 failed / 0 errors** (all SEVEN demo
-> PG suites in CI order; the stage-7 step slots after stage 6, before the downgrade smoke) /
-> `alembic check` clean / downgrade-base + re-upgrade smoke clean; the living tenant re-seeded
-> seven-stage after the battery.
+> **HEAD `1cdc95b`** = merge of **PR #74** (CC-1: captured commitments / capital calls /
+> distributions — **ENT-015/016 REALIZED as captured inputs; NO governed number** (the counts
+> stay 16 numbers / 19 codes / 34 records / 95 runs); planning **PR #71** + the rule-7
+> amendment **PR #73**), **CI green run #420**. **Migration head `0044_private_capital`**
+> (three tables: `commitment` FR on the stable (portfolio, instrument) identity with the
+> CHAIN-IMMUTABLE currency; `capital_call`/`distribution` truly-immutable IA under P0001
+> triggers with the negation FULL-reversal correction; symmetric FORCE RLS). The
+> `commitment.edit`/`.record`/`.view` three-code R-07 mint; the `PRIVATE.*`/EVT-240 audit
+> decade ACTIVATED; **roadmap Part-4 rule 7 applied from birth** (entity-filtered list reads).
+> `make check` **1660** passed / fresh-schema local PG **2005 passed / 0 failed / 0 errors**
+> (all EIGHT demo PG suites in CI order; the stage-8 step slots after stage 7, before the
+> downgrade smoke) / `alembic check` drift-clean / downgrade-base + re-upgrade smoke clean;
+> the living tenant seeded eight-stage by the battery (the stage-8 capture walk live).
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `bt_3_decision_record.md` (**CLOSED 2026-07-19** — Part 6 carries the 4-finder dispositions:
-> ZERO HIGH; adversarial 0 MED + 4 LOW, numeric 0 defects + 4 precision caveats, doctrine
-> 1 MED + 3 LOW folded pre-merge, scope-fence 11/11; the 2 named D-F4 next-touch deferrals
-> → the Wave-8 close register).
+> `cc_1_decision_record.md` (**CLOSED 2026-07-20** — Part 6 carries the 4-finder dispositions:
+> **ZERO HIGH — 8 MED + ~10 LOW ALL folded**; headliners: the post-quantize (20,6) amount
+> envelope; the honest no-close-out-op wording; the read rule at every promised surface;
+> scope-fence 12/12). **NEXT = CC-2 planning** (the SEVENTEENTH-governed-number HEADLINE —
+> the Takahashi-Alexander pacing projection; **fetch TA (JPM 28(2):90–100) to
+> paragraph/equation level FIRST, the ratified MUST**, with the declared-parameter fallback
+> rider; Tier-3 forks: ENT-059 + family/permission; the projection half of the commitment
+> walk lands on the stage-8 seeded commitment). The UI/read-surface candidate Wave 9
+> (`ui_read_surface_assessment.md`) is weighed at the Wave-8 close.
 >
 > **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
 > DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the presumptive Wave-8
@@ -79,15 +89,21 @@
 > the DOMAIN-GATE HONESTY demo (Z2 = −127.09 verdict-WITHHELD; the LR_CC joint-power lesson
 > live at n=3), 4 INITIAL AWCs, NO TRIGGERED census-proved, the 19th registered code.
 > 4-finder review ZERO HIGH; 2 named D-F4 next-touch deferrals → the Wave-8 close register.
-> **NEXT = CC-1 planning** (captured commitments/calls/distributions — ENT-015 FR-bitemporal +
-> ENT-016 IA, REQ-PRV-001/002, capture-first per the PA-0 shape; Tier-3 forks at planning:
-> commitment grain fund-vs-instrument + permission reuse-vs-mint). **WAVE 6 remains
+> **CC-1 (slice 2) DONE** — planning PR #71 + the rule-7 amendment PR #73, impl **PR #74 =
+> `1cdc95b`** (CI green run #420; migration **`0044`**): ENT-015/016 REALIZED as captured
+> inputs on the stable (portfolio, instrument) identity (chain-immutable currency; the
+> negation FULL-reversal correction; the provenance-only version echo); the three-code
+> `commitment.*` mint; EVT-240 ACTIVATED; REQ-PRV-001/002 → In-Progress (the computed +
+> liquidity clauses OPEN → CC-2); demo stage 8 = the capture half of the commitment walk
+> (counts pinned UNCHANGED — capture-only honesty); 4-finder ZERO HIGH, all 8 MED folded.
+> **NEXT = CC-2 planning** (the SEVENTEENTH-number HEADLINE: Takahashi-Alexander pacing —
+> fetch TA to paragraph FIRST, the ratified MUST; ENT-059 + family/permission Tier-3 forks;
+> the projection half lands on the stage-8 seeded commitment). **WAVE 6 remains
 > CLOSED AND RATIFIED** (2026-07-17: `wave_6_close_review.md` OQ-W6C-1…6 via PR #52 = `9d561bf`).
-> The living tenant is now **19 registered model codes** (stage 7 registered `risk.es_backtest`
-> — the 19th) / **34 validation records** (30 + BT-3's 4 INITIAL AWCs — 11 EXCEPTION +
-> 16 INITIAL + 7 TRIGGERED by type, DB-verified) / stage 7 added the paired-backtest evidence
-> chain (**95 COMPLETED runs** total). `phase_status.md`/`next_actions.md` are pointer stubs
-> (OQ-W6C-4).
+> The living tenant is **19 registered model codes / 34 validation records (11 EXCEPTION +
+> 16 INITIAL + 7 TRIGGERED) / 95 COMPLETED runs — UNCHANGED by CC-1 (capture-only)** + the
+> stage-8 captured lifecycle (1 commitment / 5 call rows incl. the reversal / 2
+> distributions). `phase_status.md`/`next_actions.md` are pointer stubs (OQ-W6C-4).
 >
 > **Wave-6 history: Wave 6 was functionally complete 2026-07-16** (MG-1 → FL-1 → MF-1 all CLOSED). MF-1
 > demonstrated **the full governance lifecycle**: the living demo tenant went multi-family — an
@@ -109,12 +125,13 @@
 > candidates stay sequence-able with SC-2 the named pull-forward.)* The pre-ratification verifier
 > pass is standing process.
 >
-> **Counts (2026-07-19, post-BT-3):** **16 governed numbers** (`risk.es_backtest` = the
-> SIXTEENTH — the BT-1 mint precedent, OD-BT-3-D; CC-2's candidate is the SEVENTEENTH) / **19
-> registered model codes** in the demo tenant (stage 7 registered the ES-backtest family) /
-> 19 tiered, 16 validated (the Wave-6 seven + the ES-HS INITIAL + RS-1's two + DS-2's two +
-> BT-3's four new INITIALs), 11 excepted, 34 validation records total (11 EXCEPTION +
-> 16 INITIAL + 7 TRIGGERED, DB-verified) / **95 COMPLETED runs**. Delivery runs under the
+> **Counts (2026-07-20, post-CC-1 — UNCHANGED by design, the capture-only honesty):** **16
+> governed numbers** (`risk.es_backtest` = the SIXTEENTH; CC-2's candidate is the
+> SEVENTEENTH; CC-1 deliberately mints NONE) / **19 registered model codes** in the demo
+> tenant / 19 tiered, 16 validated (the Wave-6 seven + the ES-HS INITIAL + RS-1's two +
+> DS-2's two + BT-3's four new INITIALs), 11 excepted, 34 validation records total
+> (11 EXCEPTION + 16 INITIAL + 7 TRIGGERED, DB-verified) / **95 COMPLETED runs** — plus the
+> NEW captured private-capital substrate (3 tables; the stage-8 lifecycle live). Delivery runs under the
 > 2026-07-14 EXTENDED autonomy grant (the USER signs Tier-3 decisions; the USER creates AND merges
 > PRs — the auto-mode classifier blocks Claude's REST create + merge on this repo).
 >
