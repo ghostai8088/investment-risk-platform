@@ -534,7 +534,7 @@ def test_es_backtest_end_to_end_off_domain_no_verdict(session) -> None:
     from irp_shared.risk.es_backtest_service import run_es_backtest
     from irp_shared.risk.events import EsBacktestActor
 
-    tenant, ret_run, var_runs, es_runs = _mint_es_substrate(session, 3, breach_at={1})
+    tenant, ret_run, var_runs, es_runs = _mint_es_substrate(session, 3, breach_at=frozenset({1}))
     mv = register_es_backtest_model(
         session, tenant_id=tenant, actor_id="a", code_version="bt3-v1"
     ).id
