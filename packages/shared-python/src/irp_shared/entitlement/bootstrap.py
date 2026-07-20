@@ -118,6 +118,18 @@ PERMISSIONS: list[tuple[str, str]] = [
     # auditor_3l excluded from both (vendor-license isolation is by tenant-scoped RLS, not a role).
     ("marketdata.view", "View market data (FX rates, prices, curves)"),
     ("marketdata.ingest", "Capture/correct governed market data (FX rates, prices, curves)"),
+    # CC-1 private capital (ENT-015 commitment FR + ENT-016 capital_call/distribution IA) —
+    # a governed R-07 mint (OD-CC-1-B, ratified 2026-07-20). THREE codes because the family spans
+    # BOTH temporal classes and the verb shape is doctrine: `.edit` is the FR maker (a commitment
+    # is captured/superseded/corrected — the position/valuation precedent), `.record` is the IA
+    # maker (a call/distribution is recorded, never edited — the transaction precedent; reversals
+    # are themselves appended records). ONE `.view` reads all three tables. Both makers are
+    # maker/admin-only (data_steward + platform_admin — identical holder sets, so the third code
+    # adds no SoD surface); auditor_3l is EXCLUDED from all three (captured-INPUT read scope — the
+    # marketdata/valuation precedent; governed OUTPUTS are where the 3L auditor reads).
+    ("commitment.view", "View commitments, capital calls and distributions"),
+    ("commitment.edit", "Capture/supersede/correct commitments (FR maker)"),
+    ("commitment.record", "Record capital calls and distributions (IA maker, incl. reversals)"),
 ]
 
 #: All permission codes, in catalog order.
@@ -197,6 +209,12 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # PM-1 perf: steward is a maker — holds run + view (the risk precedent).
         "perf.run",
         "perf.view",
+        # CC-1 private capital: steward is the maker on BOTH temporal classes — holds edit
+        # (FR commitment ops) + record (IA call/distribution capture) + view (reads its own
+        # writes). Both maker verbs are maker/admin-only; auditor_3l excluded from all three.
+        "commitment.view",
+        "commitment.edit",
+        "commitment.record",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -232,6 +250,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # PM-1 perf: the 1L analyst RUNS portfolio returns (maker) + views the results.
         "perf.run",
         "perf.view",
+        # CC-1 private capital: read-tier view-only (both maker verbs are maker/admin-only).
+        "commitment.view",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -270,6 +290,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "risk.view",
         # PM-1 perf: 2L view-only (perf.run is maker/admin-only).
         "perf.view",
+        # CC-1 private capital: 2L view-only (both maker verbs are maker/admin-only).
+        "commitment.view",
         "model.inventory.view",
         # VW-1: the 2L independent validator (ROLE-MV) is the ONLY non-admin holder of
         # model.validate — SOD-03 (author ≠ validator): risk_analyst_1l holds register, not this.
