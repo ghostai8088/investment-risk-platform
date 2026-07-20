@@ -2,19 +2,27 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-20) — read this block; everything below it is HISTORY
 >
-> **HEAD `1cdc95b`** = merge of **PR #74** (CC-1: captured commitments / capital calls /
-> distributions — **ENT-015/016 REALIZED as captured inputs; NO governed number** (the counts
-> stay 16 numbers / 19 codes / 34 records / 95 runs); planning **PR #71** + the rule-7
-> amendment **PR #73**), **CI green run #420**. **Migration head `0044_private_capital`**
-> (three tables: `commitment` FR on the stable (portfolio, instrument) identity with the
-> CHAIN-IMMUTABLE currency; `capital_call`/`distribution` truly-immutable IA under P0001
-> triggers with the negation FULL-reversal correction; symmetric FORCE RLS). The
-> `commitment.edit`/`.record`/`.view` three-code R-07 mint; the `PRIVATE.*`/EVT-240 audit
-> decade ACTIVATED; **roadmap Part-4 rule 7 applied from birth** (entity-filtered list reads).
-> `make check` **1660** passed / fresh-schema local PG **2005 passed / 0 failed / 0 errors**
-> (all EIGHT demo PG suites in CI order; the stage-8 step slots after stage 7, before the
-> downgrade smoke) / `alembic check` drift-clean / downgrade-base + re-upgrade smoke clean;
-> the living tenant seeded eight-stage by the battery (the stage-8 capture walk live).
+> **HEAD `1eaa703`** = merge of **PR #77** (CC-2: the governed commitment-pacing projection —
+> **`pacing.commitment_projection` = the SEVENTEENTH governed number**, ENT-059 REALIZED; the
+> counts MOVE to **17 numbers / 20 codes / 35 records / 96 runs**), **CI green run #432**.
+> **Migration head `0044_private_capital` → `0045_pacing_projection`** (the IA true-append-only
+> `pacing_projection_result` — the run/snapshot/model-bound NOT-NULL FK trio + portfolio/instrument
+> provenance; grain (calculation_run_id, period_index); four `PreciseDecimal(28,6)` money cols +
+> `currency_code`; symmetric FORCE RLS + the P0001 trigger). The deterministic **Takahashi-Alexander
+> recursion** (JPM 28(2):90–100; **verified-via-reproduction** — the primary is gated) over the CC-1
+> captured substrate; the FIVE declared parameters ARE the version identity, **NO TA constant
+> minted** (only the `functional_form=TAKAHASHI_ALEXANDER` marker). FUTURE-ONLY from a pin-derived
+> deterministic age; QUANTIZE-THEN-ROLL 6dp. The NEW **`pacing.run`/`pacing.view` R-07 mint** (a
+> governed-output `.view` — INCLUDES `auditor_3l`, the decisive contrast with CC-1's captured-input
+> `commitment.view`); `PACING.PROJECTION_CREATE`/EVT-250 RESERVED-not-minted (`CALC.RUN_*` reused).
+> **Rule 7 all three legs IN-SLICE + the platform's FIRST latest-resolver**. Demo **stage 9** = the
+> projection half of the commitment walk (the counts MOVE — the governed contrast with stage 8's
+> capture-only pins). 4-finder review: **ZERO surviving HIGH** — the FAILED-magnitude-gate cluster
+> (envelope `1e26`→`1E21` below the `Numeric(28,6)` column cap + a kernel runaway ceiling so extreme
+> declared growth FAILs the run instead of a 500) + 3 LOW (`-0` identity, register/bind symmetry,
+> Feb-29 clamp) ALL folded with tests. `make check` **1716** passed / fresh-schema local PG green
+> (all NINE demo PG suites in CI order; the stage-9 step after stage 8, before the downgrade smoke)
+> / `0045` downgrade clean; the living tenant seeded nine-stage (the projection walk live).
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
