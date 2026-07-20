@@ -24,6 +24,7 @@ from irp_backend.api.models import router as models_router
 from irp_backend.api.perf import router as perf_router
 from irp_backend.api.portfolios import router as portfolios_router
 from irp_backend.api.positions import router as positions_router
+from irp_backend.api.private_capital import router as private_capital_router
 from irp_backend.api.reference import router as reference_router
 from irp_backend.api.reference_corporate_actions import (
     router as reference_corporate_actions_router,
@@ -50,6 +51,7 @@ app.include_router(portfolios_router)
 app.include_router(transactions_router)
 app.include_router(positions_router)
 app.include_router(valuations_router)
+app.include_router(private_capital_router)
 app.include_router(holdings_router)
 app.include_router(snapshots_router)
 app.include_router(marketdata_router)
