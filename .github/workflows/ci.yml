@@ -404,6 +404,18 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9_cc2_pg.py -q
+      # Stage 10 (API-1) runs AFTER stage 9 and BEFORE the downgrade smoke — RUNS-ONLY: it EXECUTES
+      # the five registered-but-never-run codes (sensitivity / active-risk / scenario /
+      # benchmark-relative / proxy factor-exposure) so the API-1 reads render non-empty. It mints NO
+      # new model code and files NO validation record, so the 20-code / 35-record pins hold; only
+      # the COMPLETED-run count moves (96 → 101). The suite filename is ``stage9z`` (NOT ``stage10``,
+      # which sorts before ``stage2``/``stage4``) so a single-invocation local battery collates it
+      # LAST — the same alpha-sort discipline as the stage-4 ``eshs`` filename.
+      - name: Demo stage-10 API-1 reads test (Postgres, API-1 / OQ-W7C-5)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9z_api1_reads_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
