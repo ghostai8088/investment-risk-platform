@@ -161,7 +161,7 @@ VaR and MAR32.18 backtests desk VaR at 97.5th *and* 99th; the ES number is used 
 is **never itself backtested anywhere in the standard** — and **(ii) parametric redundancy**: under
 this leg's own normality ES is a fixed multiple of the σ the VaR leg already backtests, so an ES
 backtest here is the VaR backtest with a rescaled threshold, adding no information. A genuine ES
-backtest becomes meaningful when a non-elliptical **ES-over-HS** leg exists (a BT-3 candidate).
+backtest becomes meaningful when a non-elliptical **ES-over-HS** leg exists — SHIPPED at ES-HS-1 (`risk.var.historical_es`) and backtested at BT-3 (`risk.es_backtest`, the Acerbi-Szekely Z1/Z2).
 
 ## Shape: a new model code through the same binder (OD-ES-1-C/D)
 
