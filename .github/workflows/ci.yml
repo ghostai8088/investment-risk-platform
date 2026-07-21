@@ -21,6 +21,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
           pip install -e packages/shared-python -e apps/backend -e apps/worker
+      # API-1b (OQ-W9C-4): the first Python-runtime dependency-advisory gate — parity with the npm
+      # production audit, added when pyjwt/cryptography became the identity-verification surface. Hard
+      # fail-on-any; --ignore-vuln PYSEC-2026-1845 is a DEV-ONLY pytest advisory whose fix is a risky
+      # 8->9 major bump, disclosed + deferred to its own hygiene slice (never in the shipped tree).
+      - name: Python dependency audit
+        run: pip-audit -r requirements-dev.txt --ignore-vuln PYSEC-2026-1845
       - name: Ruff format check
         run: ruff format --check .
       - name: Ruff lint
