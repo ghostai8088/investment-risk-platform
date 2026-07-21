@@ -23,8 +23,10 @@ _OUT = Path(__file__).resolve().parent.parent / "apps" / "frontend" / "openapi.j
 def main() -> None:
     schema = app.openapi()
     _OUT.write_text(json.dumps(schema, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {_OUT} ({len(schema.get('paths', {}))} paths, "
-          f"{len(schema.get('components', {}).get('schemas', {}))} schemas)")
+    print(
+        f"wrote {_OUT} ({len(schema.get('paths', {}))} paths, "
+        f"{len(schema.get('components', {}).get('schemas', {}))} schemas)"
+    )
 
 
 if __name__ == "__main__":
