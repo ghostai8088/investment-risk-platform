@@ -2,59 +2,63 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-21) — read this block; everything below it is HISTORY
 >
-> **HEAD `a0f31b5`** = merge of **PR #88** (FE-3: the product UI, the governance-narrative walk —
-> Wave 9 slice 4, the LAST slice; **NO migration**; counts UNCHANGED 17/20/35/101), **CI green run #475**. **WAVE 9 IS FUNCTIONALLY COMPLETE + CLOSED + RATIFIED** (API-1 → FE-2 → SSO-1 →
-> FE-3, all four slices DONE; `wave_9_close_review.md` RATIFIED 2026-07-21, OQ-W9C-1/2/4/5 "Approve
-> all" + OQ-W9C-3 fork A — the **FIFTH consecutive zero-shipped-defect close**, on `wave-9-close`
-> awaiting USER merge). **NEXT = WAVE 10 (Part 2.13): API-1b → FE-3b → a §2.1 private/public-unification
-> headline.**
+> **HEAD `f1e830f`** = merge of **PR #92** (API-1b: the flagship VaR/active-risk entity reads —
+> Wave 10 slice 1; migration `0046_run_scope_portfolio`; counts UNCHANGED 17/20/35/101), **CI green
+> run #488**. Pays the ONE read API-1 deferred — "latest VaR / active-risk for portfolio P" — at the
+> **write** boundary (API-1's verifier had refuted read-only resolution). **NEXT = FE-3b planning**
+> (the SPA OIDC/PKCE browser login), **then the §2.1 private/public-unification headline** (Wave 10,
+> Part 2.13, ratified at the Wave-9 close).
 >
-> FE-3 replaces the generic run browser as the FE's primary surface with a six-step **governance-
-> narrative walk** over the living demo book (`DEMO-GLOBAL`): Capture → Exposures → Numbers →
-> Backtest → Validation → Limitations (OD-FE-3-A, the IA ratified at planning as OQ-FE-3-1 — the
-> Tier-3 USER decision deferred from the Wave-8 close, OQ-W8C-5). The differentiator is
-> `GovernedValue` (OD-FE-3-C): every number renders with its trust context inline — value verbatim +
-> run/model provenance + a `snapshotVerified` ✓/✗ mark that is **structurally unfakeable** (only shown
-> when a real `snapshotId` is present, never hardcoded) + the model's validation badge and disclosed
-> limitations. VaR is shown **honestly** as the seeded run series across all books, with the
-> API-1b entity-read gap stated inline — no synthetic "latest for this portfolio." Every pane degrades
-> gracefully on a 403 to a calm "you need permission X" note (OD-FE-3-E) rather than an error page,
-> proven live against a demo `auditor_3l` viewer principal seeded with exactly the walk's read
-> permissions (OD-FE-3-H, a Step-0 finding folded pre-review). The GET-only `apiGet` fence and the
-> FE-2 generated-type binding are KEPT and extended, not rearchitected.
+> **ONE additive nullable `calculation_run.scope_portfolio_id`** column (the `environment_id`/
+> `failure_reason` precedent — no RLS/grant/trigger change) threaded through the SINGLE
+> `create_run`/`execute_governed_run` choke point and stamped by all FIVE binders: `run_exposure`
+> from its direct `portfolio_id` arg (the subtree ROOT); `run_factor_exposure`/`run_var`/
+> `run_var_historical`/`run_active_risk` COPYING it forward from their resolved upstream run — proven
+> to hold in BOTH the build and snapshot-consume input paths, the write-boundary crux API-1's
+> read-boundary could not resolve. The Class-C reads (`list_var_results`/`latest_var_for_portfolio`,
+> `list_active_risk_results`/`latest_active_risk_for_portfolio`) resolve via the EXISTING
+> `calc/reads.py` helper (zero helper change — a `scope_portfolio_id == P` equality filter);
+> `active_risk`'s native `benchmark_id` filter also lands. **OQ-API-1b-1 = A "honest-NULL"**: a
+> snapshot-consume-rooted chain (exposure OR factor) stays NULL and is disclosed-unresolvable — the
+> fully build-in-request chain (demo/UI/default-API) always stamps a real root; no data back-fill.
+> Both ratified Wave-10 CI riders landed here: a **`pip-audit` gate** (audits the INSTALLED
+> ENVIRONMENT — review-corrected from `-r requirements-dev.txt`, which missed the `python-multipart`
+> runtime dep) and a **closure-discipline docs-check** (filename-keyed, row-anchored; fails on a
+> DONE-in-roadmap record still reading "DRAFT for ratification" — teeth for the 5th-consecutive
+> missing-stamp class, unit-tested to actually FIRE).
 >
-> 4-finder review: **ZERO HIGH.** Both existential invariants proven independently: (a) the
-> decimal-strings-verbatim contract holds on every new screen (zero `Number()`/arithmetic on a
-> governed value; the EXHAUSTIVE `OnlyCountsAreNumbers` guard extended to `PositionOut`/`ValuationOut`
-> — FE-3 is the first slice to render captured-input decimals); (b) no fabricated verification/verdict
-> —the fake-"✓ reproduces" mark, the fake ES backtest verdict, and the fake "latest VaR" are each
-> structurally prevented, not just avoided by convention. Folded: **2 MED** (RunDetail's "back to
-> runs" link still pointed at `/`, which FE-3 moved from the run list to the walk overview — fixed to
-> `/runs`; `useModelValidations` took the FIRST validated model version instead of the LATEST, so a
-> re-versioned + re-validated model — the exact governance lifecycle the Validation step narrates —
-> would have shown the stale outcome) + **6 LOW** (the decimal-guard extension above; a WCAG 2.4.7
-> visible-focus fix on the skip-link; non-unique-key→index-key fix on limitation lists; three honesty
-> wording fixes — a step blurb naming the wrong governed family, the VaR series note clarified as
-> "across all books," a stale placeholder doc comment). Battery: `make fe-check` green (97 tests +
-> build); `make check` (Python) green; `make gen-api-check` clean (FE-only, zero backend drift);
-> `package.json` byte-identical (no new runtime dep, holding OD-FE-1-F). **One post-review fix before
-> merge**: the fold commit's re-wrapped object literals/JSX across 9 files hadn't been re-run through
-> Prettier, so CI's `format:check` step went red — a pure-reflow fix (`3275741`), zero semantic change,
-> all gates re-verified green.
+> Pre-ratification verifier pass RAN: the copy-forward crux + TR-09 hash-neutrality + migration
+> neutrality + read non-shadowing all HELD; 2 COMPLICATED findings folded pre-implementation (a
+> second snapshot-consume NULL-origin at the exposure tier, not just factor; the closure-check's
+> mechanic, needed to dodge a demonstrated false-positive trap — "API-1b" appears as prose inside two
+> other slices' `✅ DONE` rows). **4-finder review: ZERO HIGH.** Write-path: the copy-forward proven
+> correct across all 5 binders + both paths, immutable-after-creation, TR-09-neutral, complete (no
+> unstamped run creator). Doctrine/security: all 6 hard invariants held; the cross-tenant probe
+> confirmed `scope_portfolio_id` is NOT a security boundary (RLS + an explicit tenant filter
+> double-bind it — a foreign `portfolio_id` is silent-empty, no existence oracle). Read-correctness:
+> filters/run_type/latest-run-selection correct; `/latest` declared before `/{id}`, zero shadowing;
+> OpenAPI regen deterministic. CI-riders+honesty: found and fixed a REAL gate hole (the pip-audit
+> target above). Folded **5 MED + 1 LOW**: the pip-audit target fix; the closure-check's own
+> failure-path teeth were untested (added a test proving the rule FIRES); the closure-check's
+> guarantee was over-claimed in its own comment (rescoped to the go-forward cadence); the record's
+> "`/latest` 404" wording was a mis-cite (the shipped list-shaped `/latest` correctly returns `[]`,
+> matching the covariance/sensitivity/factor-exposure/var-backtest siblings); the copy-forward
+> endpoint tests strengthened from non-null to VALUE-equality against the upstream stamp. Disclosed:
+> the one `pip-audit` allowlist entry is `PYSEC-2026-1845` (dev-only pytest, fix is a risky major
+> bump) — `pyjwt`/`cryptography` (the identity surface) audit CLEAN, NOT ignored; `pydantic-settings`
+> bumped 2.14.1→2.14.2 clearing a real advisory the gate surfaced. Battery: `make check` green;
+> `make fe-check` green (97+build); `make gen-api-check` clean; full-PG affected-family battery
+> green; `0046` downgrade/upgrade smoke + `alembic check` clean.
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
-> amendment log — it WINS wherever the sections below disagree). The latest close review is
-> `wave_9_close_review.md` (**RATIFIED 2026-07-21**); the latest slice record is `fe_3_decision_record.md`
-> (**CLOSED**). **NEXT = WAVE 10 planning (Part 2.13, ratified sequence): API-1b** (the flagship
-> VaR/active-risk entity read + the one additive `calculation_run.scope_portfolio_id` column) **→ FE-3b**
-> (the SPA OIDC/PKCE browser login replacing the `dev_header` demo session) **→ a §2.1 private/public-
-> unification headline** (the differentiator's endgame; name minted at planning). **Wave-10 riders that
-> MUST land (OQ-W9C-4/5): a Python `pip-audit` CI gate + a closure-discipline CI docs-check** (fail on an
-> un-stamped "DRAFT for ratification" record — teeth for the 5th-consecutive missing-stamp class) — both
-> ride API-1b's CI diff. Standing carries: the BT-3 D-F4 reword (a dedicated ES/var-backtest touch); the
-> FE-2 `@redocly` dev-tree advisory (dev-only, no action); the FE-3 `auditor_3l` demo-viewer
-> (demo-scoped). *(Everything from the "WAVE 7 IS UNDERWAY" line down is prior HISTORY, superseded by
-> this block — the counts/next-pointers below are as-of their own date.)*
+> amendment log — it WINS wherever the sections below disagree). The latest decision record is
+> `api_1b_decision_record.md` (**CLOSED 2026-07-21**). Prior wave: **WAVE 9 FUNCTIONALLY COMPLETE +
+> CLOSED + RATIFIED 2026-07-21** (API-1 → FE-2 → SSO-1 → FE-3, all four slices DONE;
+> `wave_9_close_review.md` RATIFIED, the FIFTH consecutive zero-shipped-defect close). Standing
+> carries: the BT-3 D-F4 reword (a dedicated ES/var-backtest touch); the FE-2 `@redocly` dev-tree
+> advisory (dev-only, no action); the FE-3 `auditor_3l` demo-viewer (demo-scoped). *(Everything from
+> the "WAVE 7 IS UNDERWAY" line down is prior HISTORY, superseded by this block — the counts/
+> next-pointers below are as-of their own date.)*
 >
 > **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
 > DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the presumptive Wave-8

@@ -15,6 +15,7 @@ from check_docs import (  # noqa: E402
     _closure_stamp_errors,
     _done_slice_ids,
     _is_unstamped_shipped,
+    _status_lines,
 )
 
 
@@ -51,6 +52,23 @@ def test_teeth_fire_on_a_shipped_but_draft_record() -> None:
     assert _is_unstamped_shipped("API-1B", draft, done) is False
     # DONE + no Status cell at all (a pre-cadence record) → no false-fire.
     assert _is_unstamped_shipped("API-1", [], done) is False
+
+
+def test_status_lines_ignore_prose_describing_a_status_line() -> None:
+    """Real false-positive this check hit on itself (API-1b's own record): Part 3 quotes the rule
+    verbatim — "`| **Status** |` cell contains 'DRAFT for ratification'" — which is prose ABOUT the
+    rule, not an actual Status table row. Only a line STARTING WITH the table-row pattern counts."""
+    text = (
+        "# some record\n\n"
+        "| **Status** | **CLOSED** foo |\n\n"
+        "## Part 3\n"
+        '  `| **Status** |` cell contains "DRAFT for ratification" AND its filename-slice maps '
+        "`done=True`. This\n"
+    )
+    lines = _status_lines(text)
+    assert len(lines) == 1  # only the real table row, not the Part-3 prose quoting it
+    assert "CLOSED" in lines[0]
+    assert _is_unstamped_shipped("API-1", lines, {"API-1"}) is False
 
 
 def test_real_tree_has_no_unstamped_shipped_record() -> None:

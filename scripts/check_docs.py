@@ -47,6 +47,13 @@ def _done_slice_ids(roadmap_text: str) -> set[str]:
     return done
 
 
+def _status_lines(record_text: str) -> list[str]:
+    """The record's actual Status table row(s) — the line must START WITH the table-row pattern, not
+    merely CONTAIN it, so prose that quotes/describes a Status line (as this very record's own OD-
+    API-1b-E does) is not mistaken for one."""
+    return [ln for ln in record_text.splitlines() if ln.strip().startswith("| **Status** |")]
+
+
 def _is_unstamped_shipped(slice_id: str, status_lines: list[str], done: set[str]) -> bool:
     """The rule's TEETH (pure, unit-tested): a record is an unstamped-shipped miss iff its slice is
     DONE in the roadmap AND its Status cell still reads "DRAFT for ratification"."""
@@ -61,9 +68,7 @@ def _closure_stamp_errors() -> list[str]:
     errors: list[str] = []
     for record in sorted((ROOT / BACKLOG_DIR).glob("*_decision_record.md")):
         slice_id = record.name.removesuffix("_decision_record.md").replace("_", "-").upper()
-        status_lines = [
-            ln for ln in record.read_text(encoding="utf-8").splitlines() if "| **Status** |" in ln
-        ]
+        status_lines = _status_lines(record.read_text(encoding="utf-8"))
         if _is_unstamped_shipped(slice_id, status_lines, done):
             errors.append(
                 f"{record.name}: slice {slice_id} is DONE in the roadmap but its Status cell still "
