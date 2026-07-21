@@ -13,6 +13,8 @@ dependencies = [
   "pydantic-settings>=2.5",
   "python-multipart>=0.0.9",  # multipart form parsing for POST /ingest/upload (REQ-INT-001)
   "uvicorn>=0.30",
+  "pyjwt>=2.9",  # SSO-1: OIDC resource-server JWT verification (AD-007)
+  "cryptography>=43",  # SSO-1: RS256 signature verification (PyJWT backend)
 ]
 
 [tool.hatch.build.targets.wheel]
