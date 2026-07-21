@@ -22,6 +22,7 @@ def create_run(
     assumption_set_id: str | None = None,
     code_version: str | None = None,
     environment_id: str | None = None,
+    scope_portfolio_id: str | None = None,
 ) -> CalculationRun:
     run = CalculationRun(
         tenant_id=str(tenant_id),
@@ -34,6 +35,10 @@ def create_run(
         assumption_set_id=assumption_set_id,
         code_version=code_version,
         environment_id=environment_id,
+        # API-1b (OD-API-1b-B): the ROOT portfolio, stamped at creation. None (the default) keeps
+        # every current caller byte-identical until a binder opts in; a snapshot-consume-rooted run
+        # legitimately stays None (honestly unresolvable, OD-API-1b-D).
+        scope_portfolio_id=(None if scope_portfolio_id is None else str(scope_portfolio_id)),
     )
     session.add(run)
     session.flush()
