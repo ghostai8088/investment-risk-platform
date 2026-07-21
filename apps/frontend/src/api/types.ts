@@ -104,8 +104,31 @@ export function runDetailUrl(family: Family, runId: string): string {
 
 export const RUN_STATUSES = ["CREATED", "RUNNING", "COMPLETED", "FAILED"] as const;
 
-/** Per-family result-table columns (keys of the row DTOs, rendered verbatim). */
-export const FAMILY_ROW_COLUMNS: Record<Family, { key: string; label: string }[]> = {
+/** Family slug → its generated per-family `*RowOut` type. Hand-authored (the FE knowledge of which
+ * family maps to which DTO), but drift-guarded: a renamed/removed backend RowOut is a `tsc` error on
+ * the `Schemas[...]` lookup, and a family added to FAMILIES without an entry here errors below. */
+type FamilyRowOut = {
+  sensitivities: Schemas["SensitivityRowOut"];
+  "factor-exposures": Schemas["FactorExposureRowOut"];
+  covariances: Schemas["CovarianceRowOut"];
+  vars: Schemas["VarRowOut"];
+  "active-risk": Schemas["ActiveRiskRowOut"];
+  exposure: Schemas["ExposureRowOut"];
+  "portfolio-returns": Schemas["PortfolioReturnRowOut"];
+  "benchmark-relative": Schemas["BenchmarkRelativeRowOut"];
+  "var-backtests": Schemas["VarBacktestRowOut"];
+  scenarios: Schemas["ScenarioRowOut"];
+  "desmoothed-returns": Schemas["DesmoothedReturnRowOut"];
+  "proxy-weight-estimates": Schemas["ProxyWeightRowOut"];
+};
+
+/** A display column whose `key` MUST be a field on family F's generated row DTO. This is the FE-2
+ * FL-1 kill: a drifted or misspelled column key (the "two missing VaR columns" class) is now a
+ * COMPILE error, not a silent blank cell. Labels/ordering stay FE-authored presentation. */
+type FamilyColumn<F extends Family> = { key: keyof FamilyRowOut[F] & string; label: string };
+
+/** Per-family result-table columns (keys BOUND to the generated row DTOs, rendered verbatim). */
+export const FAMILY_ROW_COLUMNS: { [F in Family]: FamilyColumn<F>[] } = {
   sensitivities: [
     { key: "curve_type", label: "Curve type" },
     { key: "currency_code", label: "Currency" },
