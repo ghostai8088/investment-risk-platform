@@ -1,38 +1,38 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-20) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-21) — read this block; everything below it is HISTORY
 >
-> **HEAD `1eaa703`** = merge of **PR #77** (CC-2: the governed commitment-pacing projection —
-> **`pacing.commitment_projection` = the SEVENTEENTH governed number**, ENT-059 REALIZED; the
-> counts MOVE to **17 numbers / 20 codes / 35 records / 96 runs**), **CI green run #432**.
-> **Migration head `0044_private_capital` → `0045_pacing_projection`** (the IA true-append-only
-> `pacing_projection_result` — the run/snapshot/model-bound NOT-NULL FK trio + portfolio/instrument
-> provenance; grain (calculation_run_id, period_index); four `PreciseDecimal(28,6)` money cols +
-> `currency_code`; symmetric FORCE RLS + the P0001 trigger). The deterministic **Takahashi-Alexander
-> recursion** (JPM 28(2):90–100; **verified-via-reproduction** — the primary is gated) over the CC-1
-> captured substrate; the FIVE declared parameters ARE the version identity, **NO TA constant
-> minted** (only the `functional_form=TAKAHASHI_ALEXANDER` marker). FUTURE-ONLY from a pin-derived
-> deterministic age; QUANTIZE-THEN-ROLL 6dp. The NEW **`pacing.run`/`pacing.view` R-07 mint** (a
-> governed-output `.view` — INCLUDES `auditor_3l`, the decisive contrast with CC-1's captured-input
-> `commitment.view`); `PACING.PROJECTION_CREATE`/EVT-250 RESERVED-not-minted (`CALC.RUN_*` reused).
-> **Rule 7 all three legs IN-SLICE + the platform's FIRST latest-resolver**. Demo **stage 9** = the
-> projection half of the commitment walk (the counts MOVE — the governed contrast with stage 8's
-> capture-only pins). 4-finder review: **ZERO surviving HIGH** — the FAILED-magnitude-gate cluster
-> (envelope `1e26`→`1E21` below the `Numeric(28,6)` column cap + a kernel runaway ceiling so extreme
-> declared growth FAILs the run instead of a 500) + 3 LOW (`-0` identity, register/bind symmetry,
-> Feb-29 clamp) ALL folded with tests. `make check` **1716** passed / fresh-schema local PG green
-> (all NINE demo PG suites in CI order; the stage-9 step after stage 8, before the downgrade smoke)
-> / `0045` downgrade clean; the living tenant seeded nine-stage (the projection walk live).
+> **HEAD `ae588a5`** = merge of **PR #82** (API-1: the governed read surface + the F2 governance
+> reads — Wave 9 slice 1; **PURE read-only, NO migration, NO new permission mint**; the counts stay
+> **17 numbers / 20 codes / 35 records**, runs MOVE **96 → 101** via the demo-stage-10 rider), **CI
+> green run #449**. Back-filled entity/time-centric reads across the **8 entity-native families**
+> (Class A) + **Class-B whole-run/curve latest-run resolvers** (covariance/scenario/sensitivity) + 2
+> by-id parity GETs, all through the shared `calc/reads.py` helper (factoring CC-2's
+> `list_pacing_projections`/`latest_pacing_projection` — now the house template for seventeen
+> families). The **F2 governance reads**: validation findings/evidence detail, `tier`+
+> `validation_status` on the inventory list, a snapshot listing, and the **audit-trail read** — a NEW
+> `audit/queries.py` (the FROZEN `audit/service.py` NEVER imported) + `api/audit.py`, gated the
+> RATIFIED `lineage.view` reuse (no new R-07 mint), metadata-only (no `before_value`/`after_value`/
+> `justification` leak). **Demo stage 10** (RUNS-ONLY, pays OQ-W8C-4/OQ-W7C-5) executes the five
+> registered-but-never-run codes (sensitivity/active-risk/scenario/benchmark-relative/proxy-exposure)
+> so the new reads render non-empty; the `stage9z` filename collates LAST in a shared-DB local
+> battery (the CC-2-recorded stage10 zero-pad hazard). **The flagship VaR/active-risk entity read is
+> DEFERRED to API-1b** (OD-API-1-H — the pre-ratification verifier REFUTED read-only feasibility;
+> needs one additive `calculation_run.scope_portfolio_id` column). 4-finder review: **ZERO HIGH from
+> any lens** — doctrine/security CLEAN (all 6 hard invariants independently verified); one MED (the
+> audit `_iso` reader's naive-datetime handling, caught by two finders, folded with a regression
+> test) + one MED (3 new HTTP reads shipped untested, closed) + one LOW (a dead constant) ALL folded.
+> `make check` **1736** passed / fresh-schema full-PG battery green (all TEN demo PG suites in CI
+> order) / downgrade-base smoke clean with the stage-10 rows present; the living tenant seeded
+> ten-stage (all 20 codes now have at least one COMPLETED run).
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `cc_2_decision_record.md` (**CLOSED 2026-07-20** — Part 6/the review carries the 4-finder
-> dispositions: **ZERO surviving HIGH** — the FAILED-magnitude-gate cluster (envelope `1e26`→`1E21`
-> below the column cap + a kernel runaway ceiling) + 3 LOW ALL folded). **NEXT = the WAVE-8 CLOSE
-> REVIEW** — all three Wave-8 slices (BT-3 → CC-1 → CC-2) are DONE; the rule-2 re-baseline weighs
-> the candidate Wave-9 sequence API-1 → FE-2 → SSO-1 → FE-3 (`ui_read_surface_assessment.md`) and
-> dispositions the carried register. *(Everything from the "WAVE 7 IS UNDERWAY" line down is prior
-> HISTORY, superseded by this block — the counts/next-pointers below are as-of their own date.)*
+> `api_1_decision_record.md` (**CLOSED 2026-07-21**). **NEXT = FE-2 planning** (OpenAPI-generated FE
+> types — the hard precondition is verifying PreciseDecimal serializes as OpenAPI `string`, not
+> `number`, before committing to codegen), Wave 9 slice 2 per the ratified sequence. *(Everything
+> from the "WAVE 7 IS UNDERWAY" line down is prior HISTORY, superseded by this block — the
+> counts/next-pointers below are as-of their own date.)*
 >
 > **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
 > DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the presumptive Wave-8
