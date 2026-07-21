@@ -50,7 +50,7 @@ export function App(): ReactElement {
           {/* The governance walk is the front door; the run browser stays reachable at /runs. */}
           <Route index element={<WalkOverview />} />
           <Route path="walk" element={<WalkOverview />} />
-          <Route path="walk/:step" element={<WalkStep />} />
+          <Route path="walk/:step" element={<WalkStep session={session} />} />
           <Route path="runs" element={<RunsList session={session} />} />
           <Route path="runs/:family/:runId" element={<RunDetail session={session} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

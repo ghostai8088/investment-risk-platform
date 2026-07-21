@@ -531,6 +531,17 @@ main.shell-content {
   color: #5a6070;
 }
 
+.muted {
+  color: #5a6070;
+  max-width: 56rem;
+}
+
+.prov-line {
+  font-size: 0.82rem;
+  color: #5a6070;
+  margin: 0.25rem 0 0.6rem;
+}
+
 /* A 403 is a calm, first-class "you lack this permission" note, not a red failure. */
 .state.denied {
   color: #5a6070;

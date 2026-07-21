@@ -77,7 +77,11 @@ describe("App", () => {
 
   it("routes a walk step and shows its heading + the walk nav", () => {
     withSession();
-    vi.stubGlobal("fetch", vi.fn());
+    // The step resolves the demo book first; a clean empty portfolios list keeps the chrome tidy.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve([]) }),
+    );
     renderApp("/walk/capture");
     expect(screen.getByRole("heading", { name: /1 · Capture/ })).toBeTruthy();
     // The shell nav lists the walk steps and the run browser.

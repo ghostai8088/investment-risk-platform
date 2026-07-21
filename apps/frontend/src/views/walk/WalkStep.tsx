@@ -1,17 +1,23 @@
 import type { ReactElement } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 
+import { Pane } from "../../components/Pane";
+import type { DevSession } from "../../session";
 import { WALK_STEPS, walkStep } from "../../walk/steps";
+import { useDemoPortfolio } from "../../walk/useDemoPortfolio";
+import type { DemoPortfolio } from "../../walk/useDemoPortfolio";
+import { CaptureStep } from "./CaptureStep";
+import { ExposuresStep } from "./ExposuresStep";
 
 /**
- * A single walk step (FE-3, OD-FE-3-A). Renders the step chrome — a progress stepper and
- * prev/next navigation — around the step body. The bodies (capture / exposures / numbers /
- * backtest / validation / limitations) are filled in by later FE-3 steps; here they are
- * placeholders so the shell and routing are testable first (the session prop arrives with the
- * data steps).
+ * A single walk step (FE-3, OD-FE-3-A). Renders the step chrome — a progress stepper and prev/next
+ * navigation — around the step body, resolving the demo book once for the data steps. Capture and
+ * Exposures are live; numbers / backtest / validation / limitations are placeholders until FE-3
+ * steps 4–5.
  */
-export function WalkStep(): ReactElement {
+export function WalkStep({ session }: { session: DevSession }): ReactElement {
   const { step: slug } = useParams();
+  const demo = useDemoPortfolio(session);
   const step = walkStep(slug);
   if (!step) return <Navigate to="/walk" replace />;
 
@@ -21,7 +27,7 @@ export function WalkStep(): ReactElement {
 
   return (
     <section className="walk-step" aria-labelledby="walk-step-heading">
-      <ol className="stepper" aria-label={`Step ${index + 1} of ${WALK_STEPS.length}`}>
+      <ol className="stepper" aria-label={`Step ${String(index + 1)} of ${String(WALK_STEPS.length)}`}>
         {WALK_STEPS.map((s, i) => (
           <li
             key={s.slug}
@@ -39,7 +45,7 @@ export function WalkStep(): ReactElement {
       <h2 id="walk-step-heading">{step.label}</h2>
       <p className="lede">{step.blurb}</p>
 
-      <StepBody slug={step.slug} />
+      <StepBody slug={step.slug} session={session} demo={demo} />
 
       <nav className="step-nav" aria-label="Walk navigation">
         {prev ? (
@@ -63,8 +69,34 @@ export function WalkStep(): ReactElement {
   );
 }
 
-/** The per-step content. Placeholders until FE-3 steps 3–5 fill each in. */
-function StepBody({ slug }: { slug: string }): ReactElement {
+/** Dispatch to the live step or a placeholder. The book-scoped steps render inside a Pane over the
+ * portfolio resolution so a missing `portfolio.view` grant degrades gracefully (OD-E). */
+function StepBody({
+  slug,
+  session,
+  demo,
+}: {
+  slug: string;
+  session: DevSession;
+  demo: DemoPortfolio;
+}): ReactElement {
+  if (slug === "capture" || slug === "exposures") {
+    return (
+      <Pane state={demo.state} requires="portfolio.view">
+        {() =>
+          demo.portfolio ? (
+            slug === "capture" ? (
+              <CaptureStep session={session} portfolioId={demo.portfolio.id} />
+            ) : (
+              <ExposuresStep session={session} portfolioId={demo.portfolio.id} />
+            )
+          ) : (
+            <p className="state">The demo book “DEMO-GLOBAL” was not found for this tenant.</p>
+          )
+        }
+      </Pane>
+    );
+  }
   return (
     <p className="placeholder" data-step={slug}>
       This step is being built. It will read {slug} for the demo book directly from the governed
