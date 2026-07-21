@@ -18,10 +18,14 @@ export type RiskRunSummary = Schemas["RiskRunSummaryOut"];
 
 export type RiskRunList = Schemas["RiskRunListOut"];
 
-/** The shared run envelope common to EVERY `*RunOut` (all families carry the identical header;
- * derived from a representative generated type — a rename/removal of it is a `tsc` error). The
- * `rows` shape is kept permissive so RunDetail renders any family's rows verbatim; the per-family
- * row FIELD KEYS are the drift-guarded part, bound in FAMILY_ROW_COLUMNS below. */
+/** The run envelope RunDetail reads — derived from a representative generated `*RunOut` (a
+ * rename/removal of it is a `tsc` error). It is a near-superset, NOT byte-identical across families:
+ * `ExposureRunOut` alone omits `model_version_id` (present on the other 12), so this type is
+ * slightly wider than an exposure run's actual header — harmless, since RunDetail renders an absent
+ * field the same as `null` ("—"). The `rows` shape is kept permissive so RunDetail renders any
+ * family's rows verbatim; the per-family row FIELD KEYS are the drift-guarded part (bound in
+ * FAMILY_ROW_COLUMNS below), and a decimal never reaching the DOM as a number is guarded exhaustively
+ * in `decimal-contract.ts`. */
 export type RunDetailBase = Omit<Schemas["SensitivityRunOut"], "rows"> & {
   rows: Record<string, string | number | null>[];
 };
