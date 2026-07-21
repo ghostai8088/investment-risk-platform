@@ -2,35 +2,35 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-21) — read this block; everything below it is HISTORY
 >
-> **HEAD `ae588a5`** = merge of **PR #82** (API-1: the governed read surface + the F2 governance
-> reads — Wave 9 slice 1; **PURE read-only, NO migration, NO new permission mint**; the counts stay
-> **17 numbers / 20 codes / 35 records**, runs MOVE **96 → 101** via the demo-stage-10 rider), **CI
-> green run #449**. Back-filled entity/time-centric reads across the **8 entity-native families**
-> (Class A) + **Class-B whole-run/curve latest-run resolvers** (covariance/scenario/sensitivity) + 2
-> by-id parity GETs, all through the shared `calc/reads.py` helper (factoring CC-2's
-> `list_pacing_projections`/`latest_pacing_projection` — now the house template for seventeen
-> families). The **F2 governance reads**: validation findings/evidence detail, `tier`+
-> `validation_status` on the inventory list, a snapshot listing, and the **audit-trail read** — a NEW
-> `audit/queries.py` (the FROZEN `audit/service.py` NEVER imported) + `api/audit.py`, gated the
-> RATIFIED `lineage.view` reuse (no new R-07 mint), metadata-only (no `before_value`/`after_value`/
-> `justification` leak). **Demo stage 10** (RUNS-ONLY, pays OQ-W8C-4/OQ-W7C-5) executes the five
-> registered-but-never-run codes (sensitivity/active-risk/scenario/benchmark-relative/proxy-exposure)
-> so the new reads render non-empty; the `stage9z` filename collates LAST in a shared-DB local
-> battery (the CC-2-recorded stage10 zero-pad hazard). **The flagship VaR/active-risk entity read is
-> DEFERRED to API-1b** (OD-API-1-H — the pre-ratification verifier REFUTED read-only feasibility;
-> needs one additive `calculation_run.scope_portfolio_id` column). 4-finder review: **ZERO HIGH from
-> any lens** — doctrine/security CLEAN (all 6 hard invariants independently verified); one MED (the
-> audit `_iso` reader's naive-datetime handling, caught by two finders, folded with a regression
-> test) + one MED (3 new HTTP reads shipped untested, closed) + one LOW (a dead constant) ALL folded.
-> `make check` **1736** passed / fresh-schema full-PG battery green (all TEN demo PG suites in CI
-> order) / downgrade-base smoke clean with the stage-10 rows present; the living tenant seeded
-> ten-stage (all 20 codes now have at least one COMPLETED run).
+> **HEAD `2ce9e4a`** = merge of **PR #84** (FE-2: OpenAPI-generated FE types — Wave 9 slice 2; **NO
+> migration, NO backend logic change, NO new runtime dependency**; counts UNCHANGED), **CI green run
+> #456** (incl. the NEW "API type drift" job). The hard precondition CONFIRMED FIRST: every governed
+> response decimal already serializes `string` (zero `*RowOut` fields are `number`; only the
+> unconsumed `*In` request bodies carry `number|string`) — so codegen introduces ZERO `Number()`-
+> corruption risk on the read path. `openapi-typescript` (types-only) generates from a deterministic
+> `scripts/dump_openapi.py` dump; `openapi.json` + `api-types.d.ts` COMMITTED with a dedicated
+> Python+Node CI drift-check (regenerate + `git diff --exit-code` — backend↔FE drift now turns CI
+> RED). `FAMILY_ROW_COLUMNS` bound to the generated `*RowOut` types — **the FL-1 hand-mirror drift
+> kill, PROVEN** (a bogus column key fails `tsc`). The GET-only hand-written client KEPT (no
+> `openapi-fetch` — the read-only fence preserved). OD-FE-1-G superseded-in-part (dated; the
+> strings-verbatim + GET-only clauses explicitly PRESERVED, not retired). 4-finder review: **1 HIGH
+> folded** — the adversarial finder proved the first-pass decimal guard sampled only 8 of ~43
+> governed decimal fields, so a `VarRowOut.sigma`-class regression (`string`→`number`) would compile
+> clean and silently reach the DOM (the FL-1 corruption class, reopened); fixed with an EXHAUSTIVE
+> compile-time guard (`OnlyCountsAreNumbers` — the ONLY `number` fields permitted anywhere across all
+> 14 `*RowOut` are curated integer counts), proven to bite on the exact regression. Also folded: 1 MED
+> (the `openapi-typescript`→`@redocly/openapi-core` dev-tree advisory disclosed — 3 HIGH, dev-only,
+> CI production audit stays 0, flagged for the close register) + 2 LOW doc corrections. The
+> determinism risk (CI's Python 3.12 vs local regeneration) was DISCHARGED by reproduction (pinned
+> pydantic/fastapi + sorted-key dump + `npm ci` → byte-identical, verified on a fresh 3.12 venv).
+> `make fe-check` green (typecheck/lint/format/65 tests/build); `make gen-api-check` no drift; bundle
+> byte-identical pre/post.
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `api_1_decision_record.md` (**CLOSED 2026-07-21**). **NEXT = FE-2 planning** (OpenAPI-generated FE
-> types — the hard precondition is verifying PreciseDecimal serializes as OpenAPI `string`, not
-> `number`, before committing to codegen), Wave 9 slice 2 per the ratified sequence. *(Everything
+> `fe_2_decision_record.md` (**CLOSED 2026-07-21**). **NEXT = SSO-1 planning** (real identity / OIDC,
+> AD-007 — the hard gate before any non-developer sees the product; enforcement behind the dev shim
+> is already real, so this is a bounded swap), Wave 9 slice 3 per the ratified sequence. *(Everything
 > from the "WAVE 7 IS UNDERWAY" line down is prior HISTORY, superseded by this block — the
 > counts/next-pointers below are as-of their own date.)*
 >
