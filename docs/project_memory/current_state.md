@@ -3,8 +3,7 @@
 > ## ⚠️ CURRENT TRUTH (2026-07-21) — read this block; everything below it is HISTORY
 >
 > **HEAD `a0f31b5`** = merge of **PR #88** (FE-3: the product UI, the governance-narrative walk —
-> Wave 9 slice 4, the LAST slice; **NO migration**; counts UNCHANGED 17/20/35/101), **CI green run
-> #29852439513**. **WAVE 9 IS NOW FUNCTIONALLY COMPLETE** (API-1 → FE-2 → SSO-1 → FE-3, all four
+> Wave 9 slice 4, the LAST slice; **NO migration**; counts UNCHANGED 17/20/35/101), **CI green run #475**. **WAVE 9 IS NOW FUNCTIONALLY COMPLETE** (API-1 → FE-2 → SSO-1 → FE-3, all four
 > slices DONE); the mandatory Wave-9 close review is the only thing left before Wave 10.
 >
 > FE-3 replaces the generic run browser as the FE's primary surface with a six-step **governance-
