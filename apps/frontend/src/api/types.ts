@@ -1,41 +1,30 @@
 /**
- * Hand-written mirrors of the backend risk DTOs (FE-1, OD-FE-1-G — no codegen; the surface is
- * five endpoints). Decimal-valued fields are `string` ON PURPOSE and must stay strings all the
- * way to the DOM: the backend serializes exact fixed-point decimals, and one `Number()` here
- * would silently destroy the platform's PreciseDecimal contract at the last step (OQ-FE-1-7).
+ * API DTO types + the view-config registry (FE-2, supersedes OD-FE-1-G's hand-written mirrors —
+ * OpenAPI codegen now pays rent: 12 families / 24+ endpoints). The DTO types below ALIAS the
+ * generated `src/api/generated/api-types.d.ts` (regenerated from the backend's own `/openapi.json`;
+ * a CI drift-check fails on any un-regenerated backend change), and FAMILY_ROW_COLUMNS' keys are
+ * BOUND to the generated per-family `*RowOut` types so the FL-1 drift class is a `tsc` error.
+ *
+ * Decimal-valued fields are `string` ON PURPOSE and must stay strings all the way to the DOM: the
+ * backend serializes exact fixed-point decimals (verified — every governed `*RowOut` decimal
+ * generates to TS `string`), and one `Number()` here would silently destroy the platform's
+ * PreciseDecimal contract at the last step (OQ-FE-1-7 — preserved through FE-2).
  */
+import type { components } from "./generated/api-types";
 
-export interface RiskRunSummary {
-  run_id: string;
-  run_type: string;
-  status: string;
-  created_at: string;
-  completed_at: string | null;
-  initiated_by: string;
-  input_snapshot_id: string | null;
-  model_version_id: string | null;
-  code_version: string | null;
-  environment_id: string | null;
-  failure_reason: string | null;
-}
+type Schemas = components["schemas"];
 
-export interface RiskRunList {
-  items: RiskRunSummary[];
-}
+export type RiskRunSummary = Schemas["RiskRunSummaryOut"];
 
-/** The shared run envelope of all four per-family `GET /risk/{family}/runs/{run_id}`. */
-export interface RunDetailBase {
-  run_id: string;
-  status: string;
-  run_type: string;
-  input_snapshot_id: string | null;
-  model_version_id: string | null;
-  code_version: string | null;
-  environment_id: string | null;
-  initiated_by: string;
-  failure_reason: string | null;
+export type RiskRunList = Schemas["RiskRunListOut"];
+
+/** The shared run envelope common to EVERY `*RunOut` (all families carry the identical header;
+ * derived from a representative generated type — a rename/removal of it is a `tsc` error). The
+ * `rows` shape is kept permissive so RunDetail renders any family's rows verbatim; the per-family
+ * row FIELD KEYS are the drift-guarded part, bound in FAMILY_ROW_COLUMNS below. */
+export type RunDetailBase = Omit<Schemas["SensitivityRunOut"], "rows"> & {
   rows: Record<string, string | number | null>[];
-}
+};
 
 /** The run families and their API path segments (the run detail route carries the family so a
  * deep link needs exactly ONE fetch — OD-FE-1-B). The four RISK families are gated ``risk.view``
