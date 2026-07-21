@@ -3,9 +3,11 @@
 > ## ⚠️ CURRENT TRUTH (2026-07-21) — read this block; everything below it is HISTORY
 >
 > **HEAD `a0f31b5`** = merge of **PR #88** (FE-3: the product UI, the governance-narrative walk —
-> Wave 9 slice 4, the LAST slice; **NO migration**; counts UNCHANGED 17/20/35/101), **CI green run
-> #29852439513**. **WAVE 9 IS NOW FUNCTIONALLY COMPLETE** (API-1 → FE-2 → SSO-1 → FE-3, all four
-> slices DONE); the mandatory Wave-9 close review is the only thing left before Wave 10.
+> Wave 9 slice 4, the LAST slice; **NO migration**; counts UNCHANGED 17/20/35/101), **CI green run #475**. **WAVE 9 IS FUNCTIONALLY COMPLETE + CLOSED + RATIFIED** (API-1 → FE-2 → SSO-1 →
+> FE-3, all four slices DONE; `wave_9_close_review.md` RATIFIED 2026-07-21, OQ-W9C-1/2/4/5 "Approve
+> all" + OQ-W9C-3 fork A — the **FIFTH consecutive zero-shipped-defect close**, on `wave-9-close`
+> awaiting USER merge). **NEXT = WAVE 10 (Part 2.13): API-1b → FE-3b → a §2.1 private/public-unification
+> headline.**
 >
 > FE-3 replaces the generic run browser as the FE's primary surface with a six-step **governance-
 > narrative walk** over the living demo book (`DEMO-GLOBAL`): Capture → Exposures → Numbers →
@@ -41,14 +43,18 @@
 > all gates re-verified green.
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
-> amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `fe_3_decision_record.md` (**CLOSED 2026-07-21**). **NEXT = the Wave-9 close review** (roadmap Part
-> 2.12 rule-2 mandatory close; carry-ins already flagged: the FE-2 dev-tree `@redocly` advisory, the
-> SSO-1 `pyjwt`/`cryptography` advisory surface with no `pip-audit` CI gate, the BT-3 D-F4 reword, and
-> the new FE-3 auditor_3l-template read-gap noted below). Then Wave 10 sequencing (candidates: API-1b
-> the flagship VaR/active-risk entity reads; FE-3b SPA OIDC/PKCE login replacing the demo dev-header
-> session for a real end-user login flow). *(Everything from the "WAVE 7 IS UNDERWAY" line down is
-> prior HISTORY, superseded by this block — the counts/next-pointers below are as-of their own date.)*
+> amendment log — it WINS wherever the sections below disagree). The latest close review is
+> `wave_9_close_review.md` (**RATIFIED 2026-07-21**); the latest slice record is `fe_3_decision_record.md`
+> (**CLOSED**). **NEXT = WAVE 10 planning (Part 2.13, ratified sequence): API-1b** (the flagship
+> VaR/active-risk entity read + the one additive `calculation_run.scope_portfolio_id` column) **→ FE-3b**
+> (the SPA OIDC/PKCE browser login replacing the `dev_header` demo session) **→ a §2.1 private/public-
+> unification headline** (the differentiator's endgame; name minted at planning). **Wave-10 riders that
+> MUST land (OQ-W9C-4/5): a Python `pip-audit` CI gate + a closure-discipline CI docs-check** (fail on an
+> un-stamped "DRAFT for ratification" record — teeth for the 5th-consecutive missing-stamp class) — both
+> ride API-1b's CI diff. Standing carries: the BT-3 D-F4 reword (a dedicated ES/var-backtest touch); the
+> FE-2 `@redocly` dev-tree advisory (dev-only, no action); the FE-3 `auditor_3l` demo-viewer
+> (demo-scoped). *(Everything from the "WAVE 7 IS UNDERWAY" line down is prior HISTORY, superseded by
+> this block — the counts/next-pointers below are as-of their own date.)*
 >
 > **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
 > DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the presumptive Wave-8
