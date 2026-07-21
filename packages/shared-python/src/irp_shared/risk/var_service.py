@@ -49,6 +49,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.calc.parse import parse_strict_decimal
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.models import MAPPING_METHOD_REGRESSION
@@ -1065,3 +1066,54 @@ def resolve_var(session: Session, var_id: str, *, acting_tenant: str) -> VarResu
     if row is None:
         raise VarNotVisible(str(var_id))
     return row
+
+
+def list_var_results(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    metric_type: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[VarResult]:
+    """API-1b (Class C, OD-API-1b-C): governed VaR rows for a portfolio, resolved via the run's
+    ROOT ``scope_portfolio_id`` — ``var_result`` carries no ``portfolio_id`` (the scope lives on the
+    run, stamped at creation, since a VaR run is subtree-scoped). All VaR flavors share
+    ``run_type=VAR`` (``metric_type`` distinguishes parametric/total/HS/ES); an optional
+    ``metric_type`` narrows to one flavor. Silent-empty on an unknown/foreign/NULL-scope portfolio
+    (a snapshot-consume-rooted or pre-0046 run is honestly unresolvable, OD-API-1b-D).
+    ``as_of=None`` = now."""
+    return list_governed_results(
+        session,
+        VarResult,
+        acting_tenant=acting_tenant,
+        filters=(
+            (CalculationRun.scope_portfolio_id, portfolio_id),
+            (VarResult.metric_type, metric_type),
+        ),
+        run_type=RUN_TYPE_VAR,
+        as_of=as_of,
+        order_by=VarResult.metric_type,
+    )
+
+
+def latest_var_for_portfolio(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    metric_type: str | None = None,
+    as_of=None,  # noqa: ANN001
+) -> list[VarResult]:
+    """API-1b latest-resolver: the newest COMPLETED VaR run scoped to the portfolio (its metric
+    row(s), or the one ``metric_type``). Empty when the portfolio has no scoped COMPLETED run — the
+    flagship 'latest VaR for portfolio P' read the UI/agent most wants."""
+    return latest_run_rows(
+        list_var_results(
+            session,
+            acting_tenant=acting_tenant,
+            portfolio_id=portfolio_id,
+            metric_type=metric_type,
+            as_of=as_of,
+        )
+    )
