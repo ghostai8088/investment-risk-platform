@@ -1,0 +1,73 @@
+# FE-2 Decision Record — OpenAPI-generated FE types (Wave-9 slice 2)
+
+| | |
+|---|---|
+| **Status** | **RATIFIED 2026-07-21 (OQ-FE-2-1/2/3, user answers).** Wave-9 slice 2 (roadmap Part 2.12), following API-1 (DONE 2026-07-21). The three forks decided as recommended: **(1)** `openapi-typescript` types-only + KEEP the GET-only `apiGet` wrapper (no `openapi-fetch`/orval — preserve the read-only fence); **(2)** COMMIT `openapi.json` + `api-types.d.ts` with a dedicated Python+Node CI drift-check; **(3)** ACCEPT the request `number \| string` decimal union in v1 (the FE writes none), naming the backend `*In` string-only tightening as the FE-write follow-up. OQ-FE-2-4 (bind row-field keys to the generated `*RowOut` types — the FL-1 kill) and OQ-FE-2-5 (the OD-E scope fence: no new screens/endpoint-wiring) stand as recommended. **The hard precondition RAN** (roadmap FE-2 caveat) and shaped OD-FE-2-C: on the **response** path (everything the read-only FE consumes) every governed decimal already serializes as `string` — the OD-FE-1-G / OQ-FE-1-7 strings-verbatim contract holds through codegen with NO override; only the **request** `*In` bodies carry the Pydantic-default `number \| string` union, unconsumed by the FE. The pre-ratification verifier pass RAN (folded: the run_type/status fields are free strings not enums → OD-D binds the row types not a run_type union; the drift-check needs a dedicated Python+Node CI job). **Implementation follows.** |
+| **Premise** | Read-surface assessment F3 (`ui_read_surface_assessment.md:23-25`): the FE types are hand-written mirrors under OD-FE-1-G's now-expired "the surface is five endpoints" rationale (`fe_1_decision_record.md:23`; the stale line is still stamped in `types.ts:2`/`client.ts:2`). The surface is now **12 registered families across a four-structure hand-synced registry** guarded only by `types.test.ts`, and the drift has bitten three times — the **FL-1 "FE drift trio"** (`delivery_roadmap.md:146`): a dead-end family registration, two missing VaR columns, and the ES `z×σ ≠ var_value` display — "the only place a governed number presents arithmetic that does not check out" was the UI, on a platform whose pitch is verifiability (thesis §2.3). FastAPI already serves `/openapi.json` (`main.py:42`, defaults untouched). FE-2 generates the DTO types from that contract and BINDS the view-config to them, so the whole drift class becomes a compile error. **The invariant to preserve: governed decimals are strings all the way to the DOM, never `parseFloat`/`Number()` (OD-FE-1-G / OQ-FE-1-7).** |
+
+## Part 1 — Grounding (the precondition result + the surface census, file:line)
+
+### 1.1 The decimal precondition (RAN 2026-07-21 against `app.openapi()`, all 218 component schemas)
+
+| Path | Field kind | OpenAPI shape | `openapi-typescript` emits | Verdict |
+|---|---|---|---|---|
+| **Response** (`*Out`/`*RowOut` — what the FE displays) | every governed decimal (`pnl`, `covariance_value`, `var_value`, `metric_value`, `std_error`, …) | pure `{"type": "string"}` (the DTOs declare them `str`; the platform serializes via `f"{x:f}"`) | `string` | **SAFE — 0 response decimals are `number`** |
+| **Request** (`*In` — capture bodies) | 50 `Decimal` input fields (`mark_value`, `committed_amount`, `quantity`, `rate`, `weight`, `shock_value`, pacing `bow`/`growth`/`yield_floor`, …) | `{"anyOf": [{"type":"number"}, {"type":"string","pattern": "…"}]}` (Pydantic-v2 `Decimal` default) | `number \| string` | **Unconsumed** by the read-only FE; see OD-FE-2-C |
+
+Integer fields (`n_observations`, `sequence_no`, `tenor_days`) legitimately generate to `number` — they are counts, not governed decimals. **No response DTO leaks a `number` decimal** (exhaustive scan). This is the finding the roadmap caveat demanded, and it is a PASS for the read path.
+
+### 1.2 The FE surface (`apps/frontend/src/`)
+
+- **Client** `api/client.ts` (55 lines): a single generic `apiGet<T>(path, session)` (`:35-55`) injecting the two dev headers + mapping status→`ApiError`; **GET-only by construction — "deliberately exposes no way to make a non-GET request" (`:1-5`)**. It references NO hand-written types (the `<T>` is supplied by callers). The read-only fence lives HERE.
+- **Type/registry file** `api/types.ts` (261 lines), the drift surface, three kinds mixed:
+  - **DTO type mirrors (generable):** `RiskRunSummary` (`:8-20`) ↔ `RiskRunSummaryOut` (`risk.py:342`); `RiskRunList` (`:22-24`) ↔ `RiskRunListOut`; `RunDetailBase` (`:27-38`) — a **lossy generic envelope** `rows: Record<string, string|number|null>[]` collapsing all 15 per-family `*RunOut` classes.
+  - **View-config, keys schema-derivable (the FL-1 site):** `FAMILY_ROW_COLUMNS` (`:119-261`, 143 lines, ~110 `{key,label}` pairs) — the per-family row-DTO field keys; `RUN_TYPE_TO_FAMILY` (`:86-99`).
+  - **Pure FE knowledge (not generable):** `FAMILIES.{label,permissionFamily}` (`:45-82`), `runDetailUrl` route special-cases (`:104-114`).
+- **Views** (the only consumers): `RunsList.tsx` (hits `/risk|/exposure|/perf /runs`), `RunDetail.tsx` (the 6 `runDetailUrl` shapes). **The ~24 API-1 read endpoints are NOT wired into the FE** — that is FE-3.
+- **Decimal contract in force:** `RunDetail.tsx` `cell()` (`:12-15`) renders verbatim (`String(value)`, never `Number()`); the FL-1 ES fix `resultCell()` (`:17-28`) annotates the z-echo. Grep finds **zero** `Number(`/`parseFloat`/`toFixed` call sites in `apps/frontend/src`; the anti-`Number()` regression tests (`RunDetail.test.tsx`) assert strings like `"0.00012345000000000000"` survive.
+- **Tooling:** no `openapi-typescript`/`openapi-fetch`/`orval` anywhere (confirmed); no schema-dump script exists. Vite 8 / vitest 4 / TS 5.5 / Node 24 CI (TC-1). CI "Frontend (TypeScript)" job = `npm ci` → audit → shared-ts test → lint → typecheck → format:check → test → build (`ci.yml:33-56`); `make fe-check` mirrors it.
+
+## Part 2 — Design decisions
+
+### OD-FE-2-A — The codegen doctrine: `openapi-typescript`, committed artifacts, CI drift-check
+Adopt **`openapi-typescript`** (types-only, zero runtime; maps `{type:string}`→`string`, so response decimals are correct with no override). The pipeline is three committed, reviewable artifacts:
+`FastAPI app → scripts/dump_openapi.py (app.openapi(), offline, deterministic sort_keys) → openapi.json (committed) → openapi-typescript → src/api/generated/api-types.d.ts (committed)`.
+A **CI drift-check** regenerates both and `git diff --exit-code` — a backend DTO change not reflected in the committed schema/types turns **red**. This makes the contract a reviewable file AND kills the drift class mechanically (the FL-1 pattern becomes impossible to merge). Generate the WHOLE schema (all endpoints), so es-backtest + the 24 API-1 reads are typed for free — "absorbs the es-backtest registry gap" (`ui_read_surface_assessment.md:44`).
+
+### OD-FE-2-B — Client posture: KEEP the GET-only hand-written wrapper
+Retain `apiGet<T>` and retype its call sites against the generated `paths`/`components`. **Do NOT adopt `openapi-fetch`/orval** — they add all-HTTP-verb capability the FE **deliberately forbids** (`client.ts:1-5`) and pull a runtime dependency a read-only viewer does not need. FE-2 improves type-safety WITHOUT weakening the no-write fence. (A typed-path helper may narrow `apiGet`'s `path` argument to known GET paths — a strengthening, still no runtime dep.)
+
+### OD-FE-2-C — Decimals: read path already safe; the write union is documented, not fixed here
+The response contract (OD-FE-1-G / OQ-FE-1-7) holds through codegen automatically (§1.1). The request `*In` decimals generate to `number | string`; the read-only FE consumes none of them, so the generated request types are present-but-unused. **v1 accepts the union, documented at the generated-file header + a note in the FE-write follow-up.** Tightening the ~50 backend `*In` `Decimal` fields to a string-only annotated type (so the schema is unambiguous both directions) is offered as OQ-FE-2-3 — it is a BACKEND write-path change (a capture-endpoint touch) and would break any test/caller that POSTs a numeric decimal, so it is NOT a default for a read-focused FE slice.
+
+### OD-FE-2-D — Bind the view-config to the generated types (the actual FL-1 kill)
+Generating types alone would NOT have caught the drift trio — the drift was between the hand-written *view-config* and the DTOs. **The primary binding: type `FAMILY_ROW_COLUMNS`' column `key`s as `keyof <generated per-family *RowOut>`** (the 14 named `*RowOut` components exist — verifier-confirmed), and require every `FAMILIES` entry to map to a `*RowOut` — so a column naming a nonexistent field (the FL-1 "two missing VaR columns") or a dead-end family registration (the FL-1 "missing proxy-weight GET") is a **`tsc` error**. **Verifier correction (MED, folded):** `run_type` and `status` serialize as FREE strings, not Pydantic enums, so there is NO generated `run_type` union to bind — `RUN_TYPE_TO_FAMILY` stays hand-authored (a stable 12-entry map of governance-identifier strings; it was never a drift-trio member). The row-key binding + family-completeness cover BOTH type-drift members of the FL-1 trio (the third, the ES `z×σ` display, is a render-logic fix already shipped — orthogonal to types). Labels, column ordering, `permissionFamily`, and route special-cases stay hand-authored (FE presentation/routing knowledge absent from the schema); the *schema-derived* half (row-field keys + family coverage) is now compiler-enforced.
+
+### OD-FE-2-E — Scope fence
+FE-2 = the codegen pipeline (OD-A) + the generated types + replacing `RunDetailBase`'s lossy envelope with precise per-family row types + binding the 4 view structures (OD-D) + retyping the 2 existing views + the OD-FE-1-G dated supersession (OD-F). **NO new screens, NO wiring the API-1 reads into the UI (FE-3), NO backend change (unless OQ-FE-2-3 ratifies the `*In` tighten), NO permission/identity change.** The run-id read views + the read-only client fence stay byte-behavior-identical.
+
+### OD-FE-2-F — OD-FE-1-G supersession (dated)
+Stamp OD-FE-1-G superseded-in-part at FE-2: "codegen deferred *until the surface grows* — it has (12 families, 24+ endpoints); FE-2 adopts `openapi-typescript`." **The strings-verbatim clause of OD-FE-1-G is PRESERVED, not superseded** — it is the invariant FE-2 mechanizes (a test asserts a governed response field's generated type is `string`).
+
+## Part 3 — Open decisions (OQ-FE-2-1…5)
+
+- **OQ-FE-2-1 — Codegen tool + client posture — recommend `openapi-typescript` (types-only) + KEEP the GET-only `apiGet` wrapper** (OD-A/B). The alternative (`openapi-fetch`/orval) buys an all-verb runtime client the read-only FE forbids — rejected on the fence doctrine.
+- **OQ-FE-2-2 — Generated-artifact policy — recommend COMMIT `openapi.json` + `api-types.d.ts` with a CI drift-check** (OD-A). The alternative (build-time, uncommitted) hides the contract from review and can't turn drift red in a PR diff. Tradeoff: committed generated files add review noise — mitigated because the diff IS the point (it shows exactly what the backend changed).
+- **OQ-FE-2-3 — Write-path decimals — recommend ACCEPT the `number \| string` input union in v1** (OD-C), naming the string-only `*In` tightening as the FE-write-flow (FE-3+) follow-up. The alternative (tighten the ~50 backend `*In` fields now) is a write-path backend change out of a read-slice's fence and risks breaking numeric-POST callers. **This is the one genuine backend-touching fork — USER call.**
+- **OQ-FE-2-4 — View-config binding depth — recommend BIND (OD-D)** so the FL-1 drift class is a `tsc` failure. The alternative (types only, config unbound) leaves the exact gap FE-2 exists to close.
+- **OQ-FE-2-5 — Scope — recommend the OD-E fence**: generate + retype + bind + supersede, NO new screens/endpoint-wiring (FE-3 owns the IA). Confirm FE-2 stays S/M and does not drift into building product UI.
+
+## Part 4 — Verification & fence
+
+- **Drift-check CI job** (new, DEDICATED — verifier finding: the dump needs Python (`app.openapi()`) AND Node (openapi-typescript), but the "Frontend (TypeScript)" job is Node-only): a small `setup-python`+`setup-node` job regenerates `openapi.json` + `api-types.d.ts` and `git diff --exit-code`; red on any un-regenerated backend DTO change. A `make gen-api-check` mirrors it.
+- **The contract, mechanized:** a test asserting a representative governed response field (e.g. a `*RowOut` decimal) generates to TS `string`, never `number` — the OQ-FE-1-7 invariant as an executable guard (extends the existing anti-`Number()` `RunDetail.test.tsx` suite).
+- **`make fe-check` green** (lint/typecheck/test/build) + the CI Frontend job; `types.test.ts` exhaustiveness guard preserved or replaced by the stronger `tsc` binding.
+- **No backend battery impact** (unless OQ-FE-2-3): `make check` unchanged; if OQ-FE-2-3 ratifies, the `*In` tighten gets its own backend tests + `make check`.
+- **Determinism:** `dump_openapi.py` writes with stable key ordering so the committed schema diff is minimal and review-legible.
+
+## Part 5 — Risks
+- **`openapi-typescript` × Node 24 / Vite 8 compat** — verify the tool version at step 1 (a spike); pin it; it is types-only so the blast radius is the generated file, not the bundle.
+- **Generated-file review noise** — accepted (OQ-FE-2-2); the diff is the audit trail.
+- **Schema-dump nondeterminism** — mitigated by sorted-key output + the drift-check catching any wobble.
+- **The `number | string` write union misleading a future FE-write author** — mitigated by OD-C's header note + the named tighten; the read-only fence means no FE code constructs these in v1.
+- **`openapi-typescript` naming of anonymous/`anyOf` schemas** — the per-family row types must be nameable/derivable; if the envelope shapes don't factor cleanly, step 2 falls back to referencing `components["schemas"]["<Family>RowOut"]` directly (they exist as named components — confirmed, 218 named schemas).
