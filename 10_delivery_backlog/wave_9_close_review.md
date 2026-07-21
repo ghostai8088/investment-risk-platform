@@ -1,6 +1,10 @@
 # Wave-9 Close Review — the read-surface + front-end + identity wave
 
-**Status: DRAFT for ratification (OQ-W9C-1…5).** The mandatory rolling-wave close (roadmap Part 4
+**Status: RATIFIED by the user 2026-07-21.** OQ-W9C-1/2/4/5 = "Approve all" (the zero-defect close
+verdict; the register dispositions; the Python `pip-audit` CI gate landing in Wave 10 riding a slice;
+the closure-discipline CI docs-check teeth). **OQ-W9C-3 = fork A "finish the surface first":** Wave 10
+= **API-1b → FE-3b → a §2.1 private/public-unification headline** (Part 2.13). The mandatory
+rolling-wave close (roadmap Part 4
 rule 2) after Wave 9 shipped its ratified sequence **API-1 → FE-2 → SSO-1 → FE-3** (OQ-W8C-3). This
 was the wave that made the platform's differentiator *legible*: a governed read surface (F1), the
 governance story readable over GETs (F2), OpenAPI-generated FE types (F3), a real identity boundary
@@ -51,8 +55,8 @@ pre-ratification verifier pass + 4-finder review + closure stamps:
   new `authorization` header stamped.
 - **FE-3** (slice 4, the last) — the product UI (PR #88 = `a0f31b5`, CI #475; NO migration). The
   generic run browser replaced by a six-step governance-narrative walk over `DEMO-GLOBAL`;
-  `GovernedValue` makes provenance + a structurally-unfakeable verification mark + validation status
-  + disclosed limitations first-class on every number. ZERO HIGH; 2 MED + 6 LOW folded.
+  `GovernedValue` makes provenance, a structurally-unfakeable verification mark, validation status,
+  and disclosed limitations first-class on every number. ZERO HIGH; 2 MED + 6 LOW folded.
 
 **The close audit (four auditors, wave diff `d47cf66..9d210e4`):**
 
