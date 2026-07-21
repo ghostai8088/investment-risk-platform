@@ -22,6 +22,7 @@ verification); normal request paths never use it.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 from functools import lru_cache
 
@@ -66,6 +67,12 @@ def get_principal(
       ``app_env == "local"`` (enforced fail-closed at startup by ``validate_auth_config``).
     """
     if settings.auth_mode == "dev_header":
+        # Defense in depth: the startup guard already forbids dev_header outside local, but never
+        # trust the unverified shim in a non-local process even if it somehow booted (DR-P1A0-3).
+        if settings.app_env != "local":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
+            )
         return _principal_from_headers(x_user_id, x_tenant_id)
     return _principal_from_token(authorization, db)
 
@@ -85,6 +92,12 @@ def _principal_from_token(authorization: str | None, db: Session) -> Principal:
     ``app_user.id`` — the value ``has_permission`` joins on — NOT the raw ``sub``. Every failure
     returns an opaque 401 (no user-enumeration signal). The lookup runs after arming the claimed
     tenant's RLS context, so ``app_user`` (a FORCE-RLS table) is visible for exactly that tenant.
+
+    The tenant claim is **canonicalized** (``str(uuid.UUID(...))``) before it arms the RLS GUC: the
+    ``tenant_isolation`` policy compares ``tenant_id::text`` (which PostgreSQL renders as
+    lowercase-hyphenated) against ``current_setting('app.current_tenant')``, so a valid-but-non-
+    canonical UUID claim (uppercase, or braces/urn form) would be RLS-hidden — a false-deny of a
+    legitimate user — without normalization. A non-UUID claim raises ``ValueError`` → opaque 401.
     """
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
@@ -95,21 +108,32 @@ def _principal_from_token(authorization: str | None, db: Session) -> Principal:
     if scheme.lower() != "bearer" or not token.strip():
         raise unauthorized
     try:
-        claims = get_verifier().verify(token.strip())
+        verifier = get_verifier()
+    except (OSError, TokenError) as exc:  # JWKS/discovery unreachable — fail closed, never open
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="authentication temporarily unavailable",
+        ) from exc
+    try:
+        claims = verifier.verify(token.strip())
     except TokenError as exc:
         raise unauthorized from exc
+    try:
+        tenant = str(uuid.UUID(claims.tenant))  # canonicalize so RLS's tenant_id::text matches
+    except ValueError as exc:
+        raise unauthorized from exc
 
-    set_tenant_context(db, claims.tenant)
+    set_tenant_context(db, tenant)
     user = db.execute(
         select(AppUser).where(
-            AppUser.tenant_id == claims.tenant,
+            AppUser.tenant_id == tenant,
             AppUser.external_subject == claims.subject,
             AppUser.is_active.is_(True),
         )
     ).scalar_one_or_none()
     if user is None:
         raise unauthorized
-    return Principal(user_id=user.id, tenant_id=user.tenant_id)
+    return Principal(user_id=user.id, tenant_id=tenant)
 
 
 def get_tenant_session(

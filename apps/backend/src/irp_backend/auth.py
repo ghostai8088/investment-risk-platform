@@ -31,6 +31,9 @@ import jwt
 from irp_backend.config import Settings, settings
 
 _DISCOVERY_TIMEOUT_SECONDS = 5
+# Clock-skew tolerance for exp/nbf/iat (seconds) — small, so short-lived tokens (AD-007) are not
+# rejected on a few seconds of drift between the IdP and this server.
+_CLOCK_SKEW_LEEWAY_SECONDS = 60
 
 
 class TokenError(Exception):
@@ -97,6 +100,7 @@ class TokenVerifier:
             decode_kwargs["audience"] = self._audience
             required.append("aud")
 
+        decode_kwargs["leeway"] = _CLOCK_SKEW_LEEWAY_SECONDS
         try:
             claims: dict[str, Any] = jwt.decode(token, key, **decode_kwargs)
         except jwt.InvalidTokenError as exc:  # base of expiry/iss/aud/sig/missing-claim/alg errors
@@ -115,7 +119,9 @@ class TokenVerifier:
             return
         acr = claims.get("acr")
         amr = claims.get("amr")
-        amr_values = set(amr) if isinstance(amr, list) else set()
+        # Keep only hashable str elements — a pathological amr (e.g. a nested list) must not crash
+        # the verifier to a 500; it simply asserts no recognized MFA value → deny.
+        amr_values = {a for a in amr if isinstance(a, str)} if isinstance(amr, list) else set()
         if acr not in self._acr_values and not (amr_values & set(self._acr_values)):
             raise TokenError("token does not assert a required MFA acr/amr value")
 

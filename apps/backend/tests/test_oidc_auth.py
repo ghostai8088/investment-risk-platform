@@ -186,7 +186,22 @@ def test_wrong_audience_is_401(harness: OidcHarness) -> None:
 
 
 def test_expired_token_is_401(harness: OidcHarness) -> None:
-    token = _token(harness.priv, tenant=harness.tenant_id, exp_delta=-10)
+    token = _token(harness.priv, tenant=harness.tenant_id, exp_delta=-3600)  # beyond leeway
+    assert harness.client.get("/_test/guarded", headers=_auth(token)).status_code == 401
+
+
+def test_uppercase_tenant_claim_resolves(harness: OidcHarness) -> None:
+    # A valid-but-non-canonical (uppercase) tenant UUID must still resolve — get_principal
+    # canonicalizes it (str(uuid.UUID(...))) so it matches the stored/canonical tenant_id.
+    token = _token(harness.priv, sub=harness.subject, tenant=harness.tenant_id.upper())
+    resp = harness.client.get("/_test/guarded", headers=_auth(token))
+    assert resp.status_code == 200
+    assert resp.json() == {"user_id": harness.user_id}
+
+
+def test_malformed_tenant_claim_is_401_not_500(harness: OidcHarness) -> None:
+    # A non-UUID tenant claim is a clean 401 (ValueError on canonicalization), never a 500.
+    token = _token(harness.priv, sub=harness.subject, tenant="not-a-uuid")
     assert harness.client.get("/_test/guarded", headers=_auth(token)).status_code == 401
 
 

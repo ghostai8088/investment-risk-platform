@@ -55,7 +55,10 @@ def validate_auth_config(s: Settings) -> None:
 
     - ``dev_header`` is permitted **only** when ``app_env == "local"`` — the unverified header shim
       must never be reachable in a deployed environment (the cutover's teeth).
-    - ``oidc`` requires an issuer to validate against.
+    - ``oidc`` requires an issuer AND an audience (audience restriction stops a token minted for a
+      different resource server of the same issuer from authenticating here — confused-deputy).
+    - ``oidc`` with ``oidc_require_mfa`` requires ``oidc_acr_values`` — so an MFA-tightening
+      deployment fails fast at boot, not with a 500 on the first request.
     """
     if s.auth_mode == "dev_header" and s.app_env != "local":
         raise RuntimeError(
@@ -67,6 +70,16 @@ def validate_auth_config(s: Settings) -> None:
         raise RuntimeError(
             "auth_mode='oidc' requires OIDC_ISSUER to be configured (the token issuer to verify "
             "against). Set OIDC_ISSUER, or use auth_mode='dev_header' for local development."
+        )
+    if s.auth_mode == "oidc" and not s.oidc_audience:
+        raise RuntimeError(
+            "auth_mode='oidc' requires OIDC_AUDIENCE — the resource-server audience the token must "
+            "be scoped to. Without it, any signed token from the issuer (e.g. one minted for a "
+            "different client of the same realm) would be accepted (confused-deputy)."
+        )
+    if s.auth_mode == "oidc" and s.oidc_require_mfa and not s.oidc_acr_values:
+        raise RuntimeError(
+            "oidc_require_mfa=True requires OIDC_ACR_VALUES (the acr/amr values that count as MFA)."
         )
 
 

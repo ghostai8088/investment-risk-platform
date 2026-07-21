@@ -132,7 +132,14 @@ def test_wrong_audience_is_rejected() -> None:
 def test_expired_token_is_rejected() -> None:
     priv, pub = _keypair()
     with pytest.raises(TokenError):
-        _verifier(pub).verify(_token(priv, exp_delta=-10))
+        _verifier(pub).verify(_token(priv, exp_delta=-3600))  # well beyond the clock-skew leeway
+
+
+def test_recently_expired_within_leeway_is_accepted() -> None:
+    # A few seconds of clock drift must not reject a short-lived token (OD-A leeway).
+    priv, pub = _keypair()
+    claims = _verifier(pub).verify(_token(priv, exp_delta=-5))
+    assert claims.subject == "subject-1"
 
 
 def test_missing_subject_is_rejected() -> None:
@@ -165,3 +172,83 @@ def test_require_mfa_without_acr_values_is_a_config_error() -> None:
     _, pub = _keypair()
     with pytest.raises(RuntimeError, match="acr_values"):
         _verifier(pub, require_mfa=True, acr_values=None)
+
+
+def test_mfa_asserted_via_amr_passes() -> None:
+    priv, pub = _keypair()
+    v = _verifier(pub, require_mfa=True, acr_values=["mfa"])
+    claims = v.verify(_token(priv, extra={"amr": ["pwd", "mfa"]}))
+    assert claims.subject == "subject-1"
+
+
+def test_amr_without_a_required_value_is_rejected() -> None:
+    priv, pub = _keypair()
+    v = _verifier(pub, require_mfa=True, acr_values=["mfa"])
+    with pytest.raises(TokenError):
+        v.verify(_token(priv, extra={"amr": ["pwd"]}))
+
+
+def test_amr_non_list_is_rejected() -> None:
+    priv, pub = _keypair()
+    v = _verifier(pub, require_mfa=True, acr_values=["mfa"])
+    with pytest.raises(TokenError):
+        v.verify(_token(priv, extra={"amr": "mfa"}))  # a string, not a list → no MFA value
+
+
+def test_pathological_nested_amr_denies_not_crashes() -> None:
+    # A nested-list amr must NOT crash the verifier to a 500 (unhashable) — it simply denies.
+    priv, pub = _keypair()
+    v = _verifier(pub, require_mfa=True, acr_values=["mfa"])
+    with pytest.raises(TokenError):
+        v.verify(_token(priv, extra={"amr": [["mfa"]]}))
+
+
+def test_build_verifier_requires_issuer() -> None:
+    from irp_backend.auth import build_verifier
+    from irp_backend.config import Settings
+
+    with pytest.raises(RuntimeError, match="oidc_issuer"):
+        build_verifier(Settings(auth_mode="oidc", oidc_issuer=None, oidc_audience="a"))
+
+
+def test_discovery_without_jwks_uri_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    import irp_backend.auth as auth_mod
+
+    class _Resp:
+        def __enter__(self) -> _Resp:
+            return self
+
+        def __exit__(self, *_: object) -> bool:
+            return False
+
+        def read(self) -> bytes:
+            return b'{"issuer": "https://issuer.example"}'  # no jwks_uri key
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_a, **_k: _Resp())
+    with pytest.raises(TokenError, match="jwks_uri"):
+        auth_mod._discover_jwks_uri("https://issuer.example")
+
+
+def test_discovery_returns_jwks_uri_and_strips_slash(monkeypatch: pytest.MonkeyPatch) -> None:
+    import irp_backend.auth as auth_mod
+
+    class _Resp:
+        def __enter__(self) -> _Resp:
+            return self
+
+        def __exit__(self, *_: object) -> bool:
+            return False
+
+        def read(self) -> bytes:
+            return b'{"jwks_uri": "https://issuer.example/jwks"}'
+
+    captured: dict[str, str] = {}
+
+    def _fake_urlopen(url: str, *_a: object, **_k: object) -> _Resp:
+        captured["url"] = url
+        return _Resp()
+
+    monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
+    # Trailing slash on the issuer must not double up in the discovery URL.
+    assert auth_mod._discover_jwks_uri("https://issuer.example/") == "https://issuer.example/jwks"
+    assert captured["url"] == "https://issuer.example/.well-known/openid-configuration"

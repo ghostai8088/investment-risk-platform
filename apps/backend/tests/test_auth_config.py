@@ -25,11 +25,45 @@ def test_dev_header_rejected_outside_local() -> None:
 
 def test_oidc_requires_issuer() -> None:
     with pytest.raises(RuntimeError, match="OIDC_ISSUER"):
-        validate_auth_config(Settings(auth_mode="oidc", app_env="local", oidc_issuer=None))
+        validate_auth_config(
+            Settings(auth_mode="oidc", app_env="local", oidc_issuer=None, oidc_audience="a")
+        )
 
 
-def test_oidc_with_issuer_ok() -> None:
+def test_oidc_requires_audience() -> None:
+    # Audience restriction is mandatory in oidc mode (confused-deputy defence).
+    with pytest.raises(RuntimeError, match="OIDC_AUDIENCE"):
+        validate_auth_config(
+            Settings(
+                auth_mode="oidc",
+                app_env="local",
+                oidc_issuer="https://issuer.example",
+                oidc_audience=None,
+            )
+        )
+
+
+def test_oidc_require_mfa_needs_acr_values() -> None:
+    with pytest.raises(RuntimeError, match="OIDC_ACR_VALUES"):
+        validate_auth_config(
+            Settings(
+                auth_mode="oidc",
+                app_env="local",
+                oidc_issuer="https://issuer.example",
+                oidc_audience="irp-backend",
+                oidc_require_mfa=True,
+                oidc_acr_values=None,
+            )
+        )
+
+
+def test_oidc_fully_configured_ok() -> None:
     # A properly configured OIDC deployment passes even when app_env is non-local.
     validate_auth_config(
-        Settings(auth_mode="oidc", app_env="production", oidc_issuer="https://issuer.example")
+        Settings(
+            auth_mode="oidc",
+            app_env="production",
+            oidc_issuer="https://issuer.example",
+            oidc_audience="irp-backend",
+        )
     )
