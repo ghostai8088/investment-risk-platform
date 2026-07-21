@@ -331,11 +331,15 @@ def test_api1b_active_risk_entity_read_copy_forward(ctx) -> None:  # noqa: ANN00
     run_id = resp.json()["run_id"]
     row_id = resp.json()["rows"][0]["id"]
 
-    # (1) copy-forward: the run carries a NON-NULL scope stamped from the upstream exposure run.
+    # (1) copy-forward VALUE: the active-risk run's scope equals its upstream FACTOR_EXPOSURE run's
+    # scope (not merely non-null) — the root propagated by VALUE exposure→factor→active-risk.
     scope = db.execute(
         select(CalculationRun.scope_portfolio_id).where(CalculationRun.run_id == run_id)
     ).scalar_one()
-    assert scope is not None  # the root propagated exposure→factor→active-risk
+    fx_scope = db.execute(
+        select(CalculationRun.scope_portfolio_id).where(CalculationRun.run_id == fx_run)
+    ).scalar_one()
+    assert fx_scope is not None and scope == fx_scope
 
     # (2) the flagship latest-for-P read resolves via scope_portfolio_id.
     latest = client.get("/risk/active-risk/latest", params={"portfolio_id": scope}, headers=_h(p))

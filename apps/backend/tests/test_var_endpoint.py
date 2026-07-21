@@ -321,11 +321,15 @@ def test_api1b_var_entity_read_copy_forward(ctx) -> None:  # noqa: ANN001
     run_id = resp.json()["run_id"]
     row = resp.json()["rows"][0]
 
-    # copy-forward: the run carries a NON-NULL scope stamped from the upstream exposure run.
+    # copy-forward VALUE: the VaR run's scope equals its upstream FACTOR_EXPOSURE run's scope (not
+    # merely non-null) — proving the root propagated by VALUE exposure→factor→var.
     scope = db.execute(
         select(CalculationRun.scope_portfolio_id).where(CalculationRun.run_id == run_id)
     ).scalar_one()
-    assert scope is not None
+    fx_scope = db.execute(
+        select(CalculationRun.scope_portfolio_id).where(CalculationRun.run_id == fx_run)
+    ).scalar_one()
+    assert fx_scope is not None and scope == fx_scope
 
     # the flagship latest-for-P read (+ the /latest route is NOT shadowed by /{var_id}).
     latest = client.get("/risk/vars/latest", params={"portfolio_id": scope}, headers=_h(p))

@@ -87,8 +87,11 @@ Two new read pairs in the risk family's `service.py`, each via the existing `lis
 - **VaR:** `list_var_results(portfolio_id, metric_type?, as_of?)` filtering
   `CalculationRun.scope_portfolio_id == P` (+ optional `metric_type`), `run_type=RUN_TYPE_VAR`;
   `latest_var_for_portfolio(...)` = the newest COMPLETED VAR run scoped to P. Silent-empty on an
-  unknown/foreign/NULL-scope id; `/latest` 404 when P has no COMPLETED scoped run (the pacing
-  precedent).
+  unknown/foreign/NULL-scope id. **`/latest` returns `[]` (200) on no scoped run — NOT 404**
+  (review-corrected: the shipped endpoints are **list-shaped** `list[VarRowOut]`, matching the
+  covariance / sensitivity / factor-exposure / var-backtest `/latest` siblings which all return `[]`;
+  the "404 the pacing precedent" wording was a MIS-CITE — pacing's `/latest` returns a **single**
+  `PacingRunOut`, so it must 404-on-empty, whereas a list resolver returns the empty list).
 - **Active-risk:** `list_active_risk_results(portfolio_id, benchmark_id?, as_of?)` filtering
   `scope_portfolio_id == P` (+ the native `benchmark_id` filter), `run_type=RUN_TYPE_ACTIVE_RISK`;
   `latest_active_risk_for_portfolio(...)`.
@@ -108,9 +111,12 @@ persistent/living tenant carries legacy NULLs, and re-seeding stamps them.
 
 ### OD-API-1b-E — The two ratified CI riders (OQ-W9C-4/5)
 - **`pip-audit` gate** (OQ-W9C-4): a hard CI step mirroring `npm audit --omit=dev` (`ci.yml:44`),
-  added to the `backend` job after the dep install (`ci.yml:23`), scanning `requirements-dev.txt` (the
-  only requirements file; the runtime pins live there — `pyjwt==2.13.0`, `cryptography==49.0.0`).
-  Strictness + any disclosed-advisory allowlist = OQ-API-1b-4.
+  added to the `backend` job AFTER the editable installs. **It audits the INSTALLED ENVIRONMENT (bare
+  `pip-audit`), NOT `-r requirements-dev.txt`** (review finding A1 corrected the initial `-r` target):
+  a package's runtime pins declared only in its `pyproject.toml` — e.g. `python-multipart` (the
+  `/ingest/upload` form-parse surface) — are NOT in `requirements-dev.txt` and would slip a `-r` audit;
+  auditing the installed env covers everything actually shipped (the three first-party editable
+  packages skip cleanly, not on PyPI). Strictness + any disclosed-advisory allowlist = OQ-API-1b-4.
 - **Closure-discipline docs-check** (OQ-W9C-5): teeth for the 5th-consecutive missing-stamp class.
   **A naive grep is wrong, and a naive roadmap cross-reference is ALSO wrong** — the verifier (CLAIM 6)
   proved "API-1b" appears as *prose* inside 2 `✅ **DONE**` roadmap rows (the API-1 and FE-3 rows), so
@@ -214,3 +220,47 @@ claims. Verdicts:
 **Net: the crux and every correctness claim held under attack; the two COMPLICATED findings were
 precision fixes to this record's wording and the CI-check spec — no change to the column, the stamp,
 or the reads.** The decision record is ready for the ratification gate.
+
+## Part 6 — 4-finder adversarial review (RAN 2026-07-21) — ZERO HIGH; folds applied
+
+Four cross-cutting finders over the impl diff (`origin/main..HEAD`), each Opus, on top of the
+pre-ratification verifier pass: (1) write-path correctness, (2) doctrine/security, (3) read
+correctness + route shadowing, (4) CI riders + test quality + record honesty. **ZERO HIGH from any
+lens.** The crux held: the scope-stamp copy-forward is correct across all five binders and both input
+paths, immutable-after-creation, TR-09-neutral (`scope_portfolio_id` appears in no serializer/hash —
+grep-verified), and complete (no unstamped run creator). All six hard invariants re-verified; the
+"scope is not a security boundary" cross-tenant probe confirmed the reads are double-bound (RLS + the
+explicit tenant filter) so a foreign portfolio_id is silent-empty with no existence oracle.
+
+**Folds applied (this review):**
+- **A1 (MED, real) — the `pip-audit` gate scanned the wrong target.** `-r requirements-dev.txt` misses
+  runtime pins declared only in a package's `pyproject.toml` (`python-multipart`, the `/ingest/upload`
+  surface, CVE history) — a shipped runtime dep slipping the gate. Fixed to audit the **installed
+  environment** (bare `pip-audit`, after the editable installs); verified clean (the 3 first-party
+  editable packages skip cleanly). OD-API-1b-E reworded.
+- **B2 (MED) — the closure-check's teeth were untested.** Extracted a pure `_is_unstamped_shipped`
+  predicate and added a failure-path test proving it FIRES on a DONE-in-roadmap + `DRAFT`-status
+  record (and does not fire on CLOSED / not-done / no-Status). Without it an inverted implementation
+  would have passed the happy-path + trap tests (the ES-1 "mutation-test the assertion" lesson).
+- **B1 (MED, honesty) — the closure-check's guarantee was over-claimed.** Its comment now scopes it to
+  the go-forward cadence (roadmap rows leading `**SLICE — …** ✅ **DONE**`); pre-cadence rows without
+  that shape or without a Status cell are out of scope, not silently guaranteed.
+- **C1 (MED, = verifier CLAIM-3 sibling / finder-3 H1) — the `/latest` 404 wording was a mis-cite.**
+  The shipped list-shaped `/latest` returns `[]` (matching the covariance/sensitivity/factor-exposure/
+  var-backtest latest siblings); the code is right, OD-API-1b-C reworded (pacing's 404 is for a
+  single-object resolver).
+- **C3 (LOW) — copy-forward VALUE strengthened.** The endpoint tests now assert the result run's
+  `scope_portfolio_id` EQUALS its upstream factor-exposure run's scope (not merely non-null), pinning
+  the multi-hop propagation by value.
+- **Advisory disclosure (finder-2 LOW-1):** the one accepted `pip-audit` allowlist entry is
+  **PYSEC-2026-1845** — a DEV-ONLY `pytest==8.3.3` advisory (fix = a risky 8→9 major bump), deferred to
+  its own hygiene slice; `pyjwt`/`cryptography` (the identity surface) audit CLEAN and are NOT ignored.
+  `pydantic-settings` was bumped 2.14.1→2.14.2 to clear GHSA-4xgf-cpjx-pc3j (a real runtime fix the
+  gate surfaced).
+- **Carried (LOW, disclosed, no code change):** the collection reads (`/vars`, `/active-risk`) with no
+  `portfolio_id` widen to the whole tenant unpaginated (the pre-existing Class-A/B list behavior); a
+  living-tenant "missing from latest-for-P" can mean a legacy-NULL scope (OD-API-1b-D), not "no run".
+
+**Gates after folds:** `make check` (Python) + `make fe-check` (97) + `make gen-api-check` (drift-clean)
++ full-PG affected families + `0046` downgrade/upgrade smoke + `pip-audit` (env, clean) +
+`check_docs.py` (clean, teeth-tested) all green. Counts UNCHANGED (17/20/35/101).

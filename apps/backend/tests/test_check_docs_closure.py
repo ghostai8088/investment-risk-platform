@@ -11,7 +11,11 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
-from check_docs import _closure_stamp_errors, _done_slice_ids  # noqa: E402
+from check_docs import (  # noqa: E402
+    _closure_stamp_errors,
+    _done_slice_ids,
+    _is_unstamped_shipped,
+)
 
 
 def test_done_slice_ids_are_row_anchored_not_prose() -> None:
@@ -31,6 +35,22 @@ def test_done_slice_ids_are_row_anchored_not_prose() -> None:
     assert "API-1B" not in done
     # A row without the DONE marker is not counted (an in-flight planning DRAFT is legitimate).
     assert "FE-3B" not in done
+
+
+def test_teeth_fire_on_a_shipped_but_draft_record() -> None:
+    """The rule's TEETH (review finding B2): fail iff DONE ∧ DRAFT. Without this, an inverted or
+    never-emitting implementation would still pass the happy-path + trap tests."""
+    done = {"API-1"}
+    draft = ["| **Status** | **DRAFT for ratification (OQ-API-1-1…8)** foo |"]
+    closed = ["| **Status** | **CLOSED 2026-07-21 — DONE (PR #82 / CI #449)** foo |"]
+    # DONE in the roadmap + still DRAFT → the miss fires (the exact API-1 stamp miss).
+    assert _is_unstamped_shipped("API-1", draft, done) is True
+    # DONE + stamped CLOSED → no miss.
+    assert _is_unstamped_shipped("API-1", closed, done) is False
+    # NOT-done (in-flight planning) + DRAFT → legitimate, no miss.
+    assert _is_unstamped_shipped("API-1B", draft, done) is False
+    # DONE + no Status cell at all (a pre-cadence record) → no false-fire.
+    assert _is_unstamped_shipped("API-1", [], done) is False
 
 
 def test_real_tree_has_no_unstamped_shipped_record() -> None:
