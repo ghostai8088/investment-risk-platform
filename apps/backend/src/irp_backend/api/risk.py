@@ -110,6 +110,7 @@ from irp_shared.risk import (
     capture_scenario_shock,
     correct_scenario_shock,
     create_scenario_definition,
+    latest_active_risk_for_portfolio,
     latest_covariances,
     latest_es_backtest,
     latest_factor_exposure,
@@ -117,6 +118,8 @@ from irp_shared.risk import (
     latest_scenario_results,
     latest_sensitivities,
     latest_var_backtest,
+    latest_var_for_portfolio,
+    list_active_risk_results,
     list_active_risks,
     list_covariances,
     list_es_backtests,
@@ -132,6 +135,7 @@ from irp_shared.risk import (
     list_sensitivities,
     list_var_backtests,
     list_var_backtests_by_entity,
+    list_var_results,
     list_vars,
     reconstruct_scenario_shock_as_of,
     register_active_risk_model,
@@ -1638,6 +1642,50 @@ def get_var_run(
     )
 
 
+@router.get("/vars", response_model=list[VarRowOut])
+def list_vars_by_entity_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    metric_type: str | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[VarRowOut]:
+    """API-1b entity read (Class C): governed VaR rows resolved via the run's ROOT
+    ``scope_portfolio_id`` (``var_result`` carries no portfolio) + an optional ``metric_type``
+    (parametric/total/HS/ES) and ``as_of`` run cutoff. Silent-empty on a foreign/NULL-scope id.
+    Each row carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR."""
+    rows = list_var_results(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        metric_type=metric_type,
+        as_of=as_of,
+    )
+    return [_var_row_out(r) for r in rows]
+
+
+@router.get("/vars/latest", response_model=list[VarRowOut])
+def latest_var_endpoint(
+    portfolio_id: uuid.UUID,
+    metric_type: str | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[VarRowOut]:
+    """API-1b latest-resolver: the newest COMPLETED VaR run scoped to the portfolio (its metric
+    row(s), or the one ``metric_type``) — the flagship 'latest VaR for portfolio P' read. Empty
+    when the portfolio has no scoped COMPLETED run (a snapshot-consume-rooted or pre-0046 run is
+    honestly unresolvable)."""
+    rows = latest_var_for_portfolio(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        metric_type=metric_type,
+        as_of=as_of,
+    )
+    return [_var_row_out(r) for r in rows]
+
+
 @router.get("/vars/{var_id}", response_model=VarRowOut)
 def get_var(
     var_id: uuid.UUID,
@@ -2042,6 +2090,47 @@ def get_active_risk_run(
         failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C1)
         rows=[_active_risk_row_out(r) for r in rows],
     )
+
+
+@router.get("/active-risk", response_model=list[ActiveRiskRowOut])
+def list_active_risk_by_entity_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    benchmark_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[ActiveRiskRowOut]:
+    """API-1b entity read (Class C): governed active-risk rows resolved via the run's ROOT
+    ``scope_portfolio_id`` + an optional native ``benchmark_id`` and ``as_of`` run cutoff.
+    Silent-empty on a foreign/NULL-scope id. Each row carries ``calculation_run_id``."""
+    rows = list_active_risk_results(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        benchmark_id=(str(benchmark_id) if benchmark_id is not None else None),
+        as_of=as_of,
+    )
+    return [_active_risk_row_out(r) for r in rows]
+
+
+@router.get("/active-risk/latest", response_model=list[ActiveRiskRowOut])
+def latest_active_risk_endpoint(
+    portfolio_id: uuid.UUID,
+    benchmark_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[ActiveRiskRowOut]:
+    """API-1b latest-resolver: the newest COMPLETED active-risk run scoped to the portfolio (its
+    metric row(s), optionally for one ``benchmark_id``). Empty when none."""
+    rows = latest_active_risk_for_portfolio(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        benchmark_id=(str(benchmark_id) if benchmark_id is not None else None),
+        as_of=as_of,
+    )
+    return [_active_risk_row_out(r) for r in rows]
 
 
 @router.get("/active-risk/{active_risk_id}", response_model=ActiveRiskRowOut)

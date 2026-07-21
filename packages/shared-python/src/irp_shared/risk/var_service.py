@@ -1072,7 +1072,7 @@ def list_var_results(
     session: Session,
     *,
     acting_tenant: str,
-    portfolio_id: str,
+    portfolio_id: str | None = None,
     metric_type: str | None = None,
     as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
 ) -> list[VarResult]:

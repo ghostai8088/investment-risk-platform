@@ -28988,6 +28988,273 @@
         ]
       }
     },
+    "/risk/active-risk": {
+      "get": {
+        "description": "API-1b entity read (Class C): governed active-risk rows resolved via the run's ROOT\n``scope_portfolio_id`` + an optional native ``benchmark_id`` and ``as_of`` run cutoff.\nSilent-empty on a foreign/NULL-scope id. Each row carries ``calculation_run_id``.",
+        "operationId": "list_active_risk_by_entity_endpoint_risk_active_risk_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portfolio Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "benchmark_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Benchmark Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActiveRiskRowOut"
+                  },
+                  "title": "Response List Active Risk By Entity Endpoint Risk Active Risk Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Active Risk By Entity Endpoint",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
+    "/risk/active-risk/latest": {
+      "get": {
+        "description": "API-1b latest-resolver: the newest COMPLETED active-risk run scoped to the portfolio (its\nmetric row(s), optionally for one ``benchmark_id``). Empty when none.",
+        "operationId": "latest_active_risk_endpoint_risk_active_risk_latest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Portfolio Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "benchmark_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Benchmark Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActiveRiskRowOut"
+                  },
+                  "title": "Response Latest Active Risk Endpoint Risk Active Risk Latest Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Latest Active Risk Endpoint",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
     "/risk/active-risk/runs": {
       "post": {
         "description": "Run a governed ex-ante active-risk (tracking-error) calculation. A pre-create refusal raises\n+ rolls back (no run \u2014 incl. an uncovered exposure factor, a NULL/unmappable constituent\ncurrency, or a non-positive benchmark weight sum, 422); a post-create FAILED run is committed\n(``status='FAILED'``, zero rows \u2014 the OD-P3-5-G non-PSD radicand gate + a magnitude gate).",
@@ -35313,6 +35580,142 @@
         ]
       }
     },
+    "/risk/vars": {
+      "get": {
+        "description": "API-1b entity read (Class C): governed VaR rows resolved via the run's ROOT\n``scope_portfolio_id`` (``var_result`` carries no portfolio) + an optional ``metric_type``\n(parametric/total/HS/ES) and ``as_of`` run cutoff. Silent-empty on a foreign/NULL-scope id.\nEach row carries ``calculation_run_id`` \u2014 cross-run aggregation is a CONSUMER ERROR.",
+        "operationId": "list_vars_by_entity_endpoint_risk_vars_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portfolio Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VarRowOut"
+                  },
+                  "title": "Response List Vars By Entity Endpoint Risk Vars Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Vars By Entity Endpoint",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
     "/risk/vars-historical/runs": {
       "post": {
         "description": "Run a governed historical-simulation calculation \u2014 EITHER family, dispatched on the\nbound model (VAR-HS-1: ``risk.var.historical`` \u21d2 ``metric_type='VAR_HISTORICAL'``;\nES-HS-1: ``risk.var.historical_es`` \u21d2 ``metric_type='ES_HISTORICAL'``, the empirical\ntail mean). A pre-create refusal raises + rolls back (no run, 422/404/409); a post-create\nFAILED run is committed (``status='FAILED'``, zero rows \u2014 the magnitude gate). The run +\nrow read back through the EXISTING ``GET /risk/vars/runs/{run_id}`` /\n``GET /risk/vars/{var_id}`` (same run family + result table;\n``z_score``/``sigma``/``covariance_run_id`` honestly null for both metrics).",
@@ -35400,6 +35803,135 @@
           }
         },
         "summary": "Create Var Historical Run",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
+    "/risk/vars/latest": {
+      "get": {
+        "description": "API-1b latest-resolver: the newest COMPLETED VaR run scoped to the portfolio (its metric\nrow(s), or the one ``metric_type``) \u2014 the flagship 'latest VaR for portfolio P' read. Empty\nwhen the portfolio has no scoped COMPLETED run (a snapshot-consume-rooted or pre-0046 run is\nhonestly unresolvable).",
+        "operationId": "latest_var_endpoint_risk_vars_latest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Portfolio Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VarRowOut"
+                  },
+                  "title": "Response Latest Var Endpoint Risk Vars Latest Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Latest Var Endpoint",
         "tags": [
           "risk"
         ]
