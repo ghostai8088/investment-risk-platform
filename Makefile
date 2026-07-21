@@ -1,4 +1,4 @@
-.PHONY: help setup lint format typecheck test secret-scan docs-check check fe-setup fe-check
+.PHONY: help setup lint format typecheck test secret-scan docs-check check fe-setup fe-check gen-api gen-api-check
 
 PY := .venv/bin/python
 PIP := .venv/bin/pip
@@ -54,3 +54,12 @@ fe-check: fe-setup
 	npm run -w apps/frontend typecheck
 	npm run -w apps/frontend test
 	npm run -w apps/frontend build
+
+# FE-2 / OD-FE-2-A: regenerate the committed OpenAPI schema + the generated TS types and fail on any
+# diff (the local mirror of the CI "API type drift" job). Run after any backend DTO change.
+gen-api:
+	python scripts/dump_openapi.py
+	npm run -w apps/frontend gen:types
+
+gen-api-check: gen-api
+	git diff --exit-code apps/frontend/openapi.json apps/frontend/src/api/generated
