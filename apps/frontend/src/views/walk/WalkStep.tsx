@@ -6,9 +6,12 @@ import type { DevSession } from "../../session";
 import { WALK_STEPS, walkStep } from "../../walk/steps";
 import { useDemoPortfolio } from "../../walk/useDemoPortfolio";
 import type { DemoPortfolio } from "../../walk/useDemoPortfolio";
+import { BacktestStep } from "./BacktestStep";
 import { CaptureStep } from "./CaptureStep";
 import { ExposuresStep } from "./ExposuresStep";
+import { LimitationsStep } from "./LimitationsStep";
 import { NumbersStep } from "./NumbersStep";
+import { ValidationStep } from "./ValidationStep";
 
 /**
  * A single walk step (FE-3, OD-FE-3-A). Renders the step chrome — a progress stepper and prev/next
@@ -81,7 +84,8 @@ function StepBody({
   session: DevSession;
   demo: DemoPortfolio;
 }): ReactElement {
-  if (slug === "capture" || slug === "exposures" || slug === "numbers") {
+  // Book-scoped steps read by portfolio_id, so they resolve the demo book first.
+  if (slug === "capture" || slug === "exposures" || slug === "numbers" || slug === "backtest") {
     return (
       <Pane state={demo.state} requires="portfolio.view">
         {() => {
@@ -91,16 +95,13 @@ function StepBody({
           const pid = demo.portfolio.id;
           if (slug === "capture") return <CaptureStep session={session} portfolioId={pid} />;
           if (slug === "exposures") return <ExposuresStep session={session} portfolioId={pid} />;
-          return <NumbersStep session={session} portfolioId={pid} />;
+          if (slug === "numbers") return <NumbersStep session={session} portfolioId={pid} />;
+          return <BacktestStep session={session} portfolioId={pid} />;
         }}
       </Pane>
     );
   }
-  return (
-    <p className="placeholder" data-step={slug}>
-      This step is being built. It will read {slug} for the demo book directly from the governed
-      API, with each governed number carrying its provenance, validation status, and disclosed
-      limitations.
-    </p>
-  );
+  // Model-scoped steps (no portfolio needed).
+  if (slug === "validation") return <ValidationStep session={session} />;
+  return <LimitationsStep session={session} />;
 }

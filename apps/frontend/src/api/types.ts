@@ -41,6 +41,10 @@ export type FactorExposureRow = Schemas["FactorExposureRowOut"];
 export type ExposureRow = Schemas["ExposureRowOut"];
 export type PortfolioReturnRow = Schemas["PortfolioReturnRowOut"];
 export type CovarianceRow = Schemas["CovarianceRowOut"];
+export type VarBacktestRow = Schemas["VarBacktestRowOut"];
+export type EsBacktestRow = Schemas["EsBacktestRowOut"];
+export type ValidationSummary = Schemas["ValidationSummaryOut"];
+export type ValidationDetail = Schemas["ValidationDetailOut"];
 
 /** The run families and their API path segments (the run detail route carries the family so a
  * deep link needs exactly ONE fetch — OD-FE-1-B). The four RISK families are gated ``risk.view``
