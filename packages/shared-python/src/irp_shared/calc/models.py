@@ -58,6 +58,11 @@ class CalculationRun(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Bas
     # a
     # free run-environment label, NOT a security boundary).
     environment_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # API-1b (OD-API-1b-A, migration 0046, the environment_id precedent): the ROOT portfolio a run
+    # was scoped to — stamped at creation, never mutated. A WITHIN-TENANT scope label, NOT a
+    # security boundary (tenant isolation stays the RLS tenant_id policy). NULL = root not recorded
+    # (a snapshot-consume-rooted or pre-0046 run) → unresolvable by the Class-C entity reads.
+    scope_portfolio_id: Mapped[str | None] = mapped_column(GUID, nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False

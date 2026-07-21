@@ -460,6 +460,9 @@ def run_var_historical(
         result_entity_type="var_result",
         compute=_compute,
         format_reason=lambda gate, gaps: f"{gate} — {'; '.join(gaps)}",  # the P3-5 family format
+        # API-1b (OD-API-1b-B): the ROOT copies forward from the pinned factor-exposure run
+        # (re-resolved above in BOTH paths).
+        scope_portfolio_id=pinned_exposure_run.scope_portfolio_id,
     )
     return HsVarRunResult(
         run=outcome.run,

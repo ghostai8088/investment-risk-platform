@@ -2513,6 +2513,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/risk/active-risk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Active Risk By Entity Endpoint
+         * @description API-1b entity read (Class C): governed active-risk rows resolved via the run's ROOT
+         *     ``scope_portfolio_id`` + an optional native ``benchmark_id`` and ``as_of`` run cutoff.
+         *     Silent-empty on a foreign/NULL-scope id. Each row carries ``calculation_run_id``.
+         */
+        get: operations["list_active_risk_by_entity_endpoint_risk_active_risk_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/risk/active-risk/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest Active Risk Endpoint
+         * @description API-1b latest-resolver: the newest COMPLETED active-risk run scoped to the portfolio (its
+         *     metric row(s), optionally for one ``benchmark_id``). Empty when none.
+         */
+        get: operations["latest_active_risk_endpoint_risk_active_risk_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/risk/active-risk/runs": {
         parameters: {
             query?: never;
@@ -3880,6 +3923,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/risk/vars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Vars By Entity Endpoint
+         * @description API-1b entity read (Class C): governed VaR rows resolved via the run's ROOT
+         *     ``scope_portfolio_id`` (``var_result`` carries no portfolio) + an optional ``metric_type``
+         *     (parametric/total/HS/ES) and ``as_of`` run cutoff. Silent-empty on a foreign/NULL-scope id.
+         *     Each row carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR.
+         */
+        get: operations["list_vars_by_entity_endpoint_risk_vars_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/risk/vars-historical/runs": {
         parameters: {
             query?: never;
@@ -3901,6 +3967,29 @@ export interface paths {
          *     ``z_score``/``sigma``/``covariance_run_id`` honestly null for both metrics).
          */
         post: operations["create_var_historical_run_risk_vars_historical_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/risk/vars/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest Var Endpoint
+         * @description API-1b latest-resolver: the newest COMPLETED VaR run scoped to the portfolio (its metric
+         *     row(s), or the one ``metric_type``) — the flagship 'latest VaR for portfolio P' read. Empty
+         *     when the portfolio has no scoped COMPLETED run (a snapshot-consume-rooted or pre-0046 run is
+         *     honestly unresolvable).
+         */
+        get: operations["latest_var_endpoint_risk_vars_latest_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -14011,6 +14100,80 @@ export interface operations {
             };
         };
     };
+    list_active_risk_by_entity_endpoint_risk_active_risk_get: {
+        parameters: {
+            query?: {
+                portfolio_id?: string | null;
+                benchmark_id?: string | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActiveRiskRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_active_risk_endpoint_risk_active_risk_latest_get: {
+        parameters: {
+            query: {
+                portfolio_id: string;
+                benchmark_id?: string | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActiveRiskRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_active_risk_run_risk_active_risk_runs_post: {
         parameters: {
             query?: never;
@@ -16344,6 +16507,43 @@ export interface operations {
             };
         };
     };
+    list_vars_by_entity_endpoint_risk_vars_get: {
+        parameters: {
+            query?: {
+                portfolio_id?: string | null;
+                metric_type?: string | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VarRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_var_historical_run_risk_vars_historical_runs_post: {
         parameters: {
             query?: never;
@@ -16368,6 +16568,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VarRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_var_endpoint_risk_vars_latest_get: {
+        parameters: {
+            query: {
+                portfolio_id: string;
+                metric_type?: string | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VarRowOut"][];
                 };
             };
             /** @description Validation Error */

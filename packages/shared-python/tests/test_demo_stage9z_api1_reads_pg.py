@@ -46,10 +46,12 @@ from irp_shared.model.models import Model, ModelValidation
 from irp_shared.perf import latest_benchmark_relative
 from irp_shared.portfolio import Portfolio
 from irp_shared.risk import (
+    latest_active_risk_for_portfolio,
     latest_covariances,
     latest_factor_exposure,
     latest_scenario_results,
     latest_sensitivities,
+    latest_var_for_portfolio,
 )
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
@@ -163,3 +165,31 @@ def test_stage10_api1_reads_render_nonempty(db: Session) -> None:
         len(latest_benchmark_relative(db, acting_tenant=DEMO_TENANT_ID, portfolio_id=demo_global))
         > 0
     )
+
+
+def test_stage10_api1b_flagship_var_active_risk_reads(db: Session) -> None:
+    """API-1b (Class C): the flagship 'latest VaR / active-risk for portfolio P' reads. var_result /
+    active_risk_result carry no portfolio_id, so the read resolves via the run's stamped
+    ``scope_portfolio_id`` — which ALSO proves the demo's build-in-request runs got a non-NULL root
+    stamped on a fresh re-seed (the copy-forward chain, end-to-end on real demo data)."""
+
+    def _scoped_root(run_type: str) -> str:
+        return db.execute(
+            select(CalculationRun.scope_portfolio_id)
+            .where(
+                CalculationRun.tenant_id == DEMO_TENANT_ID,
+                CalculationRun.run_type == run_type,
+                CalculationRun.status == "COMPLETED",
+                CalculationRun.scope_portfolio_id.isnot(None),
+            )
+            .limit(1)
+        ).scalar_one()  # raises if NO stamped run of this type — a meaningful stamp-coverage check
+
+    var_root = _scoped_root("VAR")
+    var_rows = latest_var_for_portfolio(db, acting_tenant=DEMO_TENANT_ID, portfolio_id=var_root)
+    assert len(var_rows) > 0
+    ar_root = _scoped_root("ACTIVE_RISK")
+    ar_rows = latest_active_risk_for_portfolio(
+        db, acting_tenant=DEMO_TENANT_ID, portfolio_id=ar_root
+    )
+    assert len(ar_rows) > 0

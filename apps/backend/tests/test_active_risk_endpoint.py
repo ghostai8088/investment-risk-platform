@@ -317,6 +317,59 @@ def test_register_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     assert row_read.json()["te_value"] == row["te_value"]
 
 
+def test_api1b_active_risk_entity_read_copy_forward(ctx) -> None:  # noqa: ANN001
+    """API-1b (Class C): the active-risk run copies its ROOT ``scope_portfolio_id`` forward from the
+    exposure→factor chain (proving the write-boundary stamp end-to-end), and the flagship
+    'latest active-risk for portfolio P' read resolves via that column — the read ``var_result``/
+    ``active_risk_result`` cannot do row-natively (no portfolio_id)."""
+    client, p, db, fx_run, cov_run, bm_id = ctx
+    mv = _register(client, p)
+    resp = client.post(
+        "/risk/active-risk/runs", json=_run_body(mv, fx_run, cov_run, bm_id), headers=_h(p)
+    )
+    assert resp.status_code == 201, resp.text
+    run_id = resp.json()["run_id"]
+    row_id = resp.json()["rows"][0]["id"]
+
+    # (1) copy-forward VALUE: the active-risk run's scope equals its upstream FACTOR_EXPOSURE run's
+    # scope (not merely non-null) — the root propagated by VALUE exposure→factor→active-risk.
+    scope = db.execute(
+        select(CalculationRun.scope_portfolio_id).where(CalculationRun.run_id == run_id)
+    ).scalar_one()
+    fx_scope = db.execute(
+        select(CalculationRun.scope_portfolio_id).where(CalculationRun.run_id == fx_run)
+    ).scalar_one()
+    assert fx_scope is not None and scope == fx_scope
+
+    # (2) the flagship latest-for-P read resolves via scope_portfolio_id.
+    latest = client.get("/risk/active-risk/latest", params={"portfolio_id": scope}, headers=_h(p))
+    assert latest.status_code == 200
+    assert [r["id"] for r in latest.json()] == [row_id]
+
+    # (3) /latest is NOT shadowed by /{active_risk_id} — it returns a LIST, and a foreign portfolio
+    # is silent-empty (not a 404 for a stray id).
+    foreign = client.get(
+        "/risk/active-risk/latest", params={"portfolio_id": str(uuid.uuid4())}, headers=_h(p)
+    )
+    assert foreign.status_code == 200 and foreign.json() == []
+
+    # (4) the entity list read + the native benchmark_id filter both resolve.
+    listed = client.get("/risk/active-risk", params={"portfolio_id": scope}, headers=_h(p))
+    assert listed.status_code == 200 and [r["id"] for r in listed.json()] == [row_id]
+    by_bm = client.get(
+        "/risk/active-risk",
+        params={"portfolio_id": scope, "benchmark_id": bm_id},
+        headers=_h(p),
+    )
+    assert [r["id"] for r in by_bm.json()] == [row_id]
+    other_bm = client.get(
+        "/risk/active-risk",
+        params={"portfolio_id": scope, "benchmark_id": str(uuid.uuid4())},
+        headers=_h(p),
+    )
+    assert other_bm.json() == []
+
+
 def test_register_idempotent_and_conflict(ctx) -> None:  # noqa: ANN001
     client, p, db, fx_run, cov_run, bm_id = ctx
     mv = _register(client, p)

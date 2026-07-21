@@ -61,6 +61,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.benchmark import resolve_benchmark
@@ -664,6 +665,9 @@ def run_active_risk(
         result_entity_type="active_risk_result",
         compute=_compute,
         format_reason=lambda gate, gaps: f"{gate} — {'; '.join(gaps)}",
+        # API-1b (OD-API-1b-B): the ROOT copies forward from the pinned factor-exposure run
+        # (re-resolved above in BOTH paths).
+        scope_portfolio_id=pinned_exposure_run.scope_portfolio_id,
     )
     return ActiveRiskRunResult(
         run=outcome.run,
@@ -718,3 +722,51 @@ def resolve_active_risk(
     if row is None:
         raise ActiveRiskNotVisible(str(active_risk_id))
     return row
+
+
+def list_active_risk_results(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    benchmark_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[ActiveRiskResult]:
+    """API-1b (Class C, OD-API-1b-C): governed active-risk rows for a portfolio, resolved via the
+    run's ROOT ``scope_portfolio_id`` — ``active_risk_result`` carries no ``portfolio_id`` (the
+    scope lives on the subtree-scoped run). ``benchmark_id`` (a native NOT-NULL column) optionally
+    narrows to one benchmark. Silent-empty on an unknown/foreign/NULL-scope portfolio.
+    ``as_of=None`` = now."""
+    return list_governed_results(
+        session,
+        ActiveRiskResult,
+        acting_tenant=acting_tenant,
+        filters=(
+            (CalculationRun.scope_portfolio_id, portfolio_id),
+            (ActiveRiskResult.benchmark_id, benchmark_id),
+        ),
+        run_type=RUN_TYPE_ACTIVE_RISK,
+        as_of=as_of,
+        order_by=ActiveRiskResult.metric_type,
+    )
+
+
+def latest_active_risk_for_portfolio(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    benchmark_id: str | None = None,
+    as_of=None,  # noqa: ANN001
+) -> list[ActiveRiskResult]:
+    """API-1b latest-resolver: the newest COMPLETED active-risk run scoped to the portfolio (its
+    metric row(s), optionally for one ``benchmark_id``). Empty when none."""
+    return latest_run_rows(
+        list_active_risk_results(
+            session,
+            acting_tenant=acting_tenant,
+            portfolio_id=portfolio_id,
+            benchmark_id=benchmark_id,
+            as_of=as_of,
+        )
+    )

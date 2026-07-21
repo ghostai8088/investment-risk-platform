@@ -307,6 +307,9 @@ def run_exposure(
         result_entity_type="exposure_aggregate",
         compute=_compute,
         format_reason=lambda gate, gaps: str(gate),  # verbatim pre-P3-C2 exposure format
+        # API-1b (OD-API-1b-B): the ROOT is the build-path portfolio_id (the subtree this run
+        # aggregates). The snapshot-consume path did NOT take a root → NULL (honest, OD-API-1b-D).
+        scope_portfolio_id=(None if snapshot_id is not None else portfolio_id),
     )
     return ExposureRunResult(
         run=outcome.run,

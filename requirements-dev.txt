@@ -8,9 +8,10 @@ httpx==0.28.1
 fastapi==0.137.1
 uvicorn==0.49.0
 pydantic==2.13.4
-pydantic-settings==2.14.1
+pydantic-settings==2.14.2  # API-1b: bumped 2.14.1->2.14.2 to clear GHSA-4xgf-cpjx-pc3j (pip-audit)
 sqlalchemy==2.0.51
 alembic==1.18.4
 pyjwt==2.13.0  # SSO-1: OIDC resource-server JWT verification (AD-007)
 cryptography==49.0.0  # SSO-1: RS256 signature verification (PyJWT backend)
 numpy==2.5.1  # TEST-ONLY (dual-path verification, OD-P3-4-N); never an irp_shared runtime dep
+pip-audit==2.10.1  # API-1b (OQ-W9C-4): the Python dependency-advisory CI gate (parity with npm audit)

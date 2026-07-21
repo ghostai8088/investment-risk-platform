@@ -310,6 +310,50 @@ def test_register_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     assert row_read.json()["var_value"] == row["var_value"]
 
 
+def test_api1b_var_entity_read_copy_forward(ctx) -> None:  # noqa: ANN001
+    """API-1b (Class C): the VaR run copies its ROOT ``scope_portfolio_id`` forward from the
+    exposure→factor chain, and the flagship 'latest VaR for portfolio P' read resolves via that
+    column — ``var_result`` has no portfolio_id of its own."""
+    client, p, db, fx_run, cov_run = ctx
+    mv = _register(client, p)
+    resp = client.post("/risk/vars/runs", json=_run_body(mv, fx_run, cov_run), headers=_h(p))
+    assert resp.status_code == 201, resp.text
+    run_id = resp.json()["run_id"]
+    row = resp.json()["rows"][0]
+
+    # copy-forward VALUE: the VaR run's scope equals its upstream FACTOR_EXPOSURE run's scope (not
+    # merely non-null) — proving the root propagated by VALUE exposure→factor→var.
+    scope = db.execute(
+        select(CalculationRun.scope_portfolio_id).where(CalculationRun.run_id == run_id)
+    ).scalar_one()
+    fx_scope = db.execute(
+        select(CalculationRun.scope_portfolio_id).where(CalculationRun.run_id == fx_run)
+    ).scalar_one()
+    assert fx_scope is not None and scope == fx_scope
+
+    # the flagship latest-for-P read (+ the /latest route is NOT shadowed by /{var_id}).
+    latest = client.get("/risk/vars/latest", params={"portfolio_id": scope}, headers=_h(p))
+    assert latest.status_code == 200 and [r["id"] for r in latest.json()] == [row["id"]]
+    foreign = client.get(
+        "/risk/vars/latest", params={"portfolio_id": str(uuid.uuid4())}, headers=_h(p)
+    )
+    assert foreign.status_code == 200 and foreign.json() == []
+
+    # the entity list + the optional metric_type filter.
+    listed = client.get("/risk/vars", params={"portfolio_id": scope}, headers=_h(p))
+    assert [r["id"] for r in listed.json()] == [row["id"]]
+    by_mt = client.get(
+        "/risk/vars",
+        params={"portfolio_id": scope, "metric_type": row["metric_type"]},
+        headers=_h(p),
+    )
+    assert [r["id"] for r in by_mt.json()] == [row["id"]]
+    wrong_mt = client.get(
+        "/risk/vars", params={"portfolio_id": scope, "metric_type": "VAR_HISTORICAL"}, headers=_h(p)
+    )
+    assert wrong_mt.json() == []
+
+
 def test_register_conflicts_and_vocabulary_floor(ctx) -> None:  # noqa: ANN001
     client, p, db, fx_run, cov_run = ctx
     mv = _register(client, p, confidence="0.95")

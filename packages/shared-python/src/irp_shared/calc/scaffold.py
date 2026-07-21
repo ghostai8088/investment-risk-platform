@@ -72,6 +72,7 @@ def execute_governed_run(
     result_entity_type: str,
     compute: Callable[[CalculationRun], tuple[list[Any], list[str]]],
     format_reason: Callable[[Exception, list[str]], str],
+    scope_portfolio_id: str | None = None,
 ) -> GovernedRunOutcome:
     """Run the governed lifecycle tail. ``compute(run)`` returns ``(rows, gaps)`` over the
     caller's pre-adjudicated pinned content — rows are UNWRITTEN model instances; a non-empty
@@ -90,6 +91,7 @@ def execute_governed_run(
         model_version_id=model_version_id,
         code_version=code_version,
         environment_id=environment_id,
+        scope_portfolio_id=scope_portfolio_id,  # API-1b (OD-API-1b-B): the binder passes the root
     )
     update_run_status(session, run, RunStatus.RUNNING, actor_id=actor_id)
 
