@@ -45,9 +45,9 @@ Keycloak UUID, set `external_subject` to that UUID.
 # 1. Start Keycloak (opt-in profile; imports the realm on first boot).
 docker compose --profile oidc up keycloak
 
-# 2. Set a password for the demo user (credentials are NOT baked into the export — BR-10):
-#    admin console → realm "irp-local" → Users → demo-validator → Credentials → Set password
-#    (or use kcadm.sh). Admin login: KEYCLOAK_ADMIN_USER / KEYCLOAK_ADMIN_PASSWORD (default admin/admin).
+# 2. The three demo users (demo-validator / demo-registrar / demo-auditor) ship with the local-only
+#    placeholder password "demo" (FE-3b — a clearly-fake dev credential, the admin/admin precedent,
+#    BR-10; never a real secret). Change it in the admin console if you like.
 
 # 3. Point the backend at the realm (in .env):
 #    AUTH_MODE=oidc
@@ -57,11 +57,34 @@ docker compose --profile oidc up keycloak
 # 4. Obtain an access token (direct-access grant is enabled for the demo client):
 curl -s http://localhost:8080/realms/irp-local/protocol/openid-connect/token \
   -d grant_type=password -d client_id=irp-frontend \
-  -d username=demo-validator -d password=<the-password-you-set> | python -c 'import sys,json;print(json.load(sys.stdin)["access_token"])'
+  -d username=demo-auditor -d password=demo | python -c 'import sys,json;print(json.load(sys.stdin)["access_token"])'
 
 # 5. Call the API with it:
 curl -H "Authorization: Bearer <token>" http://localhost:8000/<endpoint>
 ```
 
-The SPA login (auth-code + PKCE against the `irp-frontend` client) lands with **FE-3**; SSO-1 is
-the backend resource-server half only.
+## The full SPA login demo (FE-3b) — `docker compose --profile oidc up`
+
+FE-3b ships the browser auth-code + PKCE login. The one non-obvious piece is a **Keycloak-in-Docker
+issuer-consistency** gotcha: the browser reaches Keycloak at `localhost:8080`, so the token's `iss`
+is `http://localhost:8080/realms/irp-local` — and the backend's `OIDC_ISSUER` must be that exact
+string. But the backend runs *inside* the compose network, where `localhost:8080` is the backend
+container, not Keycloak — so JWKS *auto-discovery* to the issuer host fails and every login 503s.
+
+**Fix (already wired in `.env.example`):** keep `OIDC_ISSUER=localhost` (to match the token) and set
+`OIDC_JWKS_URI=http://keycloak:8080/realms/irp-local/protocol/openid-connect/certs` — the keys are
+fetched via the compose *service* name, and the certs endpoint embeds no issuer, so the cross-host
+fetch is sound.
+
+```bash
+# 1. In .env, uncomment the FE-3b block (AUTH_MODE=oidc + the OIDC_* incl. OIDC_JWKS_URI + the VITE_*
+#    front-end vars — VITE_* are inlined at the frontend image BUILD, so a rebuild is required).
+# 2. Build + run the whole stack (the oidc profile adds Keycloak; the rest always start):
+docker compose --profile oidc up --build
+# 3. Open http://localhost:5173 → "Sign in" → Keycloak → log in as demo-auditor / demo →
+#    the governance walk renders (demo-auditor holds exactly the walk's read permissions).
+```
+
+The `irp-frontend` client is a **public** client (PKCE S256, no secret); the token carries `sub`
+(=username=the app_user's `external_subject`), the `tenant_id` claim (=`DEMO_TENANT_ID`), and the
+`irp-backend` audience — everything `_principal_from_token` needs.
