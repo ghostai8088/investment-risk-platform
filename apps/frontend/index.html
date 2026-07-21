@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- FE-3b (review LOW): never send a Referer — belt-and-suspenders so the OIDC `?code` on the
+         /callback URL cannot leak to any (future) cross-origin subresource before it is stripped. -->
+    <meta name="referrer" content="no-referrer" />
     <title>Investment Risk Platform</title>
   </head>
   <body>

@@ -18,6 +18,11 @@ const STATE_KEY = "irp.pkce.state";
 
 /** Kick the auth-code + PKCE flow: stash the verifier+state, redirect to the IdP's authorize endpoint. */
 export async function beginLogin(): Promise<void> {
+  // Web Crypto (PKCE) requires a secure context (https or localhost). Fail with a clear message
+  // rather than an opaque TypeError if this SPA is ever served over plain HTTP (review LOW).
+  if (window.isSecureContext === false) {
+    throw new Error("OIDC login requires a secure context (https:// or http://localhost)");
+  }
   const { issuer, clientId, redirectUri } = oidcConfig();
   const verifier = randomCodeVerifier();
   const state = randomState();
@@ -105,9 +110,11 @@ export async function completeLogin(search: URLSearchParams): Promise<OidcSessio
 export function logout(): void {
   clearSession();
   const { issuer, clientId, redirectUri } = oidcConfig();
+  // Trailing slash so the URI matches the realm's registered `.../*` post-logout pattern (review
+  // MED: a bare origin does not match `http://localhost:5173/*` and Keycloak rejects the redirect).
   const params = new URLSearchParams({
     client_id: clientId,
-    post_logout_redirect_uri: new URL(redirectUri).origin,
+    post_logout_redirect_uri: `${new URL(redirectUri).origin}/`,
   });
   window.location.assign(`${issuer}/protocol/openid-connect/logout?${params.toString()}`);
 }

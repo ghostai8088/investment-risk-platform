@@ -21,5 +21,8 @@ ENV VITE_AUTH_MODE=$VITE_AUTH_MODE \
 RUN npm ci && npm run -w apps/frontend build
 
 FROM nginx:1.27-alpine AS serve
+# FE-3b (review HIGH-1 + MED-1): SPA history fallback (so /callback boots the app, not a 404) +
+# the backend read-proxy. Without this the OIDC redirect 404s and the demo login cannot complete.
+COPY infra/docker/frontend-nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/apps/frontend/dist /usr/share/nginx/html
 EXPOSE 80
