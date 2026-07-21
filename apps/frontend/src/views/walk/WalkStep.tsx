@@ -30,7 +30,10 @@ export function WalkStep({ session }: { session: DevSession }): ReactElement {
 
   return (
     <section className="walk-step" aria-labelledby="walk-step-heading">
-      <ol className="stepper" aria-label={`Step ${String(index + 1)} of ${String(WALK_STEPS.length)}`}>
+      <ol
+        className="stepper"
+        aria-label={`Step ${String(index + 1)} of ${String(WALK_STEPS.length)}`}
+      >
         {WALK_STEPS.map((s, i) => (
           <li
             key={s.slug}
@@ -89,7 +92,9 @@ function StepBody({
       <Pane state={demo.state} requires="portfolio.view">
         {() => {
           if (!demo.portfolio) {
-            return <p className="state">The demo book “DEMO-GLOBAL” was not found for this tenant.</p>;
+            return (
+              <p className="state">The demo book “DEMO-GLOBAL” was not found for this tenant.</p>
+            );
           }
           const pid = demo.portfolio.id;
           if (slug === "capture") return <CaptureStep session={session} portfolioId={pid} />;

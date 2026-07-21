@@ -14,7 +14,11 @@ function mockRoutes(routes: Record<string, { status?: number; body: unknown }>):
       const key = keys.find((k) => url.startsWith(k));
       const r = key ? routes[key] : undefined;
       const status = r?.status ?? (r ? 200 : 404);
-      return Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(r ? r.body : {}) });
+      return Promise.resolve({
+        ok: status < 400,
+        status,
+        json: () => Promise.resolve(r ? r.body : {}),
+      });
     }),
   );
 }
@@ -35,7 +39,9 @@ describe("LimitationsStep", () => {
           versions: [
             {
               id: "mv1",
-              limitations: ["CURRENCY-ONLY factor set: cannot see the equity drawdown on 2026-05-22."],
+              limitations: [
+                "CURRENCY-ONLY factor set: cannot see the equity drawdown on 2026-05-22.",
+              ],
               latest_validation: null,
             },
           ],

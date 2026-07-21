@@ -99,10 +99,11 @@ export function NumbersStep({
         {(list) => (
           <>
             <p className="muted">
-              VaR has no “latest for portfolio P” resolver yet — that lands with <strong>API-1b</strong>{" "}
-              (it needs a run-to-portfolio scope column). Below is the seeded <em>series</em> of VaR
-              runs <strong>across all books — not filtered to this one</strong>; open one for its
-              value and full provenance.
+              VaR has no “latest for portfolio P” resolver yet — that lands with{" "}
+              <strong>API-1b</strong> (it needs a run-to-portfolio scope column). Below is the
+              seeded <em>series</em> of VaR runs{" "}
+              <strong>across all books — not filtered to this one</strong>; open one for its value
+              and full provenance.
             </p>
             {list.items.length === 0 ? (
               <p className="state">No VaR runs.</p>
@@ -161,7 +162,9 @@ function Governance({
   if (!entry) return null;
   return (
     <div className="gv-governance">
-      <ValidationBadge info={{ tier: entry.tier, outcome: entry.outcome, overdue: entry.overdue }} />
+      <ValidationBadge
+        info={{ tier: entry.tier, outcome: entry.outcome, overdue: entry.overdue }}
+      />
       {entry.limitations.length > 0 ? (
         <details className="limitations">
           <summary>

@@ -51,7 +51,11 @@ const MODEL_DETAIL = {
     {
       id: "mv1",
       limitations: ["CAPTURED-HOLDINGS BOOK: uncaptured cash income understates the return."],
-      latest_validation: { outcome: "APPROVED_WITH_CONDITIONS", validation_type: "EXCEPTION", overdue: false },
+      latest_validation: {
+        outcome: "APPROVED_WITH_CONDITIONS",
+        validation_type: "EXCEPTION",
+        overdue: false,
+      },
     },
   ],
 };

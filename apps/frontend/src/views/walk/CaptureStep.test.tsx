@@ -29,10 +29,21 @@ describe("CaptureStep", () => {
   it("renders positions and valuation marks with decimals VERBATIM", async () => {
     mockRoutes({
       "/positions": [
-        { id: "p1", instrument_id: "aaaaaaaa-1111-2222-3333-444444444444", quantity: "400.00000000", valid_from: "2024-06-01T00:00:00Z" },
+        {
+          id: "p1",
+          instrument_id: "aaaaaaaa-1111-2222-3333-444444444444",
+          quantity: "400.00000000",
+          valid_from: "2024-06-01T00:00:00Z",
+        },
       ],
       "/valuations": [
-        { id: "v1", instrument_id: "bbbbbbbb-1111-2222-3333-444444444444", valuation_date: "2024-09-30", mark_value: "1000.000000", currency_code: "USD" },
+        {
+          id: "v1",
+          instrument_id: "bbbbbbbb-1111-2222-3333-444444444444",
+          valuation_date: "2024-09-30",
+          mark_value: "1000.000000",
+          currency_code: "USD",
+        },
       ],
     });
     render(<CaptureStep session={SESSION} portfolioId="pf-1" />);

@@ -30,7 +30,11 @@ export function CaptureStep({
       </p>
 
       <h3>Positions</h3>
-      <Pane state={positions} requires="position.view" empty={<p className="state">No positions.</p>}>
+      <Pane
+        state={positions}
+        requires="position.view"
+        empty={<p className="state">No positions.</p>}
+      >
         {(rows) => (
           <table>
             <thead>

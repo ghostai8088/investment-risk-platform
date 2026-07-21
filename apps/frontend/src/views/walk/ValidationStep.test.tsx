@@ -14,7 +14,11 @@ function mockRoutes(routes: Record<string, { status?: number; body: unknown }>):
       const key = keys.find((k) => url.startsWith(k));
       const r = key ? routes[key] : undefined;
       const status = r?.status ?? (r ? 200 : 404);
-      return Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(r ? r.body : {}) });
+      return Promise.resolve({
+        ok: status < 400,
+        status,
+        json: () => Promise.resolve(r ? r.body : {}),
+      });
     }),
   );
 }
@@ -35,10 +39,20 @@ describe("ValidationStep", () => {
           scope_summary: "Initial review of the TWR model.",
           conditions: "Capture the cash ledger.",
           findings: [
-            { id: "f1", severity: "LOW", finding_text: "Uncaptured cash income understates return.", authored_by: "Andrew Cox" },
+            {
+              id: "f1",
+              severity: "LOW",
+              finding_text: "Uncaptured cash income understates return.",
+              authored_by: "Andrew Cox",
+            },
           ],
           evidence: [
-            { id: "e1", evidence_type: "DOCUMENT", run_id: null, reference: "mg_1_decision_record.md" },
+            {
+              id: "e1",
+              evidence_type: "DOCUMENT",
+              run_id: null,
+              reference: "mg_1_decision_record.md",
+            },
           ],
         },
       },
@@ -48,7 +62,13 @@ describe("ValidationStep", () => {
           id: "m1",
           code: "perf.return.twr",
           tier: "TIER_1",
-          versions: [{ id: "mv1", version_label: "v1", latest_validation: { outcome: "APPROVED_WITH_CONDITIONS" } }],
+          versions: [
+            {
+              id: "mv1",
+              version_label: "v1",
+              latest_validation: { outcome: "APPROVED_WITH_CONDITIONS" },
+            },
+          ],
         },
       },
       "/models": { body: [{ id: "m1" }] },

@@ -14,7 +14,11 @@ function mockRoutes(routes: Record<string, { status?: number; body: unknown }>):
       const key = keys.find((k) => url.startsWith(k));
       const r = key ? routes[key] : undefined;
       const status = r?.status ?? (r ? 200 : 404);
-      return Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(r ? r.body : {}) });
+      return Promise.resolve({
+        ok: status < 400,
+        status,
+        json: () => Promise.resolve(r ? r.body : {}),
+      });
     }),
   );
 }

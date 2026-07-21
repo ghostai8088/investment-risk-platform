@@ -19,7 +19,10 @@ describe("Pane", () => {
 
   it("degrades a 403 to a calm requires-permission note (never a screen failure)", () => {
     render(
-      <Pane state={state({ error: new ApiError("forbidden", "403") })} requires="model.inventory.view">
+      <Pane
+        state={state({ error: new ApiError("forbidden", "403") })}
+        requires="model.inventory.view"
+      >
         {() => <span>secret</span>}
       </Pane>,
     );
