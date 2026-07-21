@@ -65,7 +65,7 @@ export function RunDetail({ session }: { session: DevSession }): ReactElement {
     return (
       <section>
         <p className="state error">Unknown run family in the URL.</p>
-        <Link to="/">Back to runs</Link>
+        <Link to="/runs">Back to runs</Link>
       </section>
     );
   }
@@ -73,7 +73,7 @@ export function RunDetail({ session }: { session: DevSession }): ReactElement {
   return (
     <section>
       <p>
-        <Link to="/">← All runs</Link>
+        <Link to="/runs">← All runs</Link>
       </p>
       <h2>
         {FAMILIES[validFamily].label} run <span className="mono">{runId}</span>

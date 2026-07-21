@@ -47,8 +47,8 @@ export function LimitationsStep({ session }: { session: DevSession }): ReactElem
               {g.tier ? <span className="badge tier">{g.tier.replace(/_/g, " ")}</span> : null}
             </h3>
             <ul className="limitations-list">
-              {g.limitations.map((l) => (
-                <li key={l}>{l}</li>
+              {g.limitations.map((l, i) => (
+                <li key={i}>{l}</li>
               ))}
             </ul>
           </div>

@@ -19,7 +19,7 @@ export const WALK_STEPS: readonly WalkStep[] = [
   {
     slug: "numbers",
     label: "3 · Governed numbers",
-    blurb: "VaR, ES, covariance — each traceable to its inputs.",
+    blurb: "Portfolio return, covariance, VaR — each traceable to its inputs.",
   },
   {
     slug: "backtest",

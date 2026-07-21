@@ -15,9 +15,8 @@ import { ValidationStep } from "./ValidationStep";
 
 /**
  * A single walk step (FE-3, OD-FE-3-A). Renders the step chrome — a progress stepper and prev/next
- * navigation — around the step body, resolving the demo book once for the data steps. Capture and
- * Exposures are live; numbers / backtest / validation / limitations are placeholders until FE-3
- * steps 4–5.
+ * navigation — around the step body, resolving the demo book once for the book-scoped steps. All
+ * six step bodies (capture / exposures / numbers / backtest / validation / limitations) are live.
  */
 export function WalkStep({ session }: { session: DevSession }): ReactElement {
   const { step: slug } = useParams();

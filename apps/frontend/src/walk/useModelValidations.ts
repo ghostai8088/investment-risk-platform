@@ -34,8 +34,8 @@ export interface ModelValidations {
 
 /**
  * Assemble the demo's validation records WITH their findings + evidence (the F2 governance reads
- * that were write-only before API-1): `/models` → each `/models/{id}` → for each version that has a
- * validation, `/validations` (summary, for the id) → the validation `detail` (findings + evidence).
+ * that were write-only before API-1): `/models` → each `/models/{id}` → the LATEST validated version
+ * → its `/validations` (summary, for the id) → the validation `detail` (findings + evidence).
  * Gated `model.inventory.view`; a 403 degrades the whole step to a calm note.
  */
 export function useModelValidations(session: DevSession): ModelValidations {
@@ -51,7 +51,11 @@ export function useModelValidations(session: DevSession): ModelValidations {
           models.map((m) => apiGet<ModelDetail>(`/models/${encodeURIComponent(m.id)}`, session)),
         );
         const targets = details.flatMap((d) => {
-          const v = d.versions.find((ver) => ver.latest_validation !== null);
+          // `/models/{id}` orders versions ASCENDING by version_label, so the LAST validated one is
+          // the most-recent version's validation — show that, not the oldest (a re-versioned,
+          // re-validated model is exactly the governance lifecycle this step narrates).
+          const validated = d.versions.filter((ver) => ver.latest_validation !== null);
+          const v = validated.length > 0 ? validated[validated.length - 1] : undefined;
           return v ? [{ d, v }] : [];
         });
         const cards = await Promise.all(

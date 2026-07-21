@@ -101,7 +101,8 @@ export function NumbersStep({
             <p className="muted">
               VaR has no “latest for portfolio P” resolver yet — that lands with <strong>API-1b</strong>{" "}
               (it needs a run-to-portfolio scope column). Below is the seeded <em>series</em> of VaR
-              runs; open one for its value and full provenance.
+              runs <strong>across all books — not filtered to this one</strong>; open one for its
+              value and full provenance.
             </p>
             {list.items.length === 0 ? (
               <p className="state">No VaR runs.</p>
@@ -168,8 +169,8 @@ function Governance({
             {entry.limitations.length === 1 ? "" : "s"}
           </summary>
           <ul>
-            {entry.limitations.map((l) => (
-              <li key={l}>{l}</li>
+            {entry.limitations.map((l, i) => (
+              <li key={i}>{l}</li>
             ))}
           </ul>
         </details>
