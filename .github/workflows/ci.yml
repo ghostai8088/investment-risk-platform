@@ -29,8 +29,12 @@ jobs:
       # slip the gate (review finding A1). The three first-party editable packages skip cleanly (not
       # on PyPI). --ignore-vuln PYSEC-2026-1845 is a DEV-ONLY pytest advisory whose fix is a risky
       # 8->9 major bump, disclosed + deferred to its own hygiene slice (never in the shipped tree).
+      # RETRY (FE-3b hardening): pip-audit fetches the OSV/PyPI advisory DB live, so a transient
+      # service blip fails the whole job on an unchanged tree (bit run #492 — a docs-only commit red
+      # while the same audit passed clean 13 min later). One retry after a 60s pause absorbs the
+      # blip; a REAL advisory still fails both attempts, so the gate keeps its teeth.
       - name: Python dependency audit
-        run: pip-audit --ignore-vuln PYSEC-2026-1845
+        run: pip-audit --ignore-vuln PYSEC-2026-1845 || (echo "pip-audit failed — retrying once in 60s (transient advisory-service check)" && sleep 60 && pip-audit --ignore-vuln PYSEC-2026-1845)
       - name: Ruff format check
         run: ruff format --check .
       - name: Ruff lint
