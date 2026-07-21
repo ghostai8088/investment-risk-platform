@@ -18,6 +18,9 @@ export function AppShell({
 }): ReactElement {
   return (
     <div className="shell">
+      <a className="skip-link" href="#walk-main">
+        Skip to main content
+      </a>
       <header className="app-header">
         <div className="app-title">
           <h1>Investment Risk Platform</h1>
@@ -59,7 +62,7 @@ export function AppShell({
           </NavLink>
         </nav>
 
-        <main className="shell-content">
+        <main id="walk-main" className="shell-content" tabIndex={-1}>
           <Outlet />
         </main>
       </div>

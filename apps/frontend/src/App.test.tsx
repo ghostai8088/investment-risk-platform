@@ -75,6 +75,19 @@ describe("App", () => {
     expect(screen.getByText(BANNER)).toBeTruthy();
   });
 
+  it("provides a keyboard skip-link and marks the active nav step (WCAG)", () => {
+    withSession();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve([]) }),
+    );
+    renderApp("/walk/exposures");
+    const skip = screen.getByRole("link", { name: /Skip to main content/ });
+    expect(skip.getAttribute("href")).toBe("#walk-main");
+    const active = screen.getByRole("link", { current: "page" });
+    expect(active.textContent).toMatch(/Exposures/);
+  });
+
   it("routes a walk step and shows its heading + the walk nav", () => {
     withSession();
     // The step resolves the demo book first; a clean empty portfolios list keeps the chrome tidy.

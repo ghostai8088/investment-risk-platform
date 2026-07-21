@@ -204,6 +204,28 @@ tbody tr.clickable:hover {
   min-height: calc(100vh - 2rem);
 }
 
+/* WCAG 2.4.1: a keyboard skip-link, visually hidden until focused. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+}
+
+.skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+  z-index: 20;
+  background: #fff;
+  color: #22305e;
+  padding: 0.4rem 0.8rem;
+  border: 2px solid #33417a;
+  border-radius: 4px;
+}
+
+main.shell-content:focus {
+  outline: none;
+}
+
 .shell .app-header {
   padding: 0.9rem 2rem;
   border-bottom: 1px solid #dcdfe6;
