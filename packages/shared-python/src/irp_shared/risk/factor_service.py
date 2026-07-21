@@ -568,6 +568,10 @@ def run_factor_exposure(
     is_loadings = family.coverage_required
 
     # --- Bind the atoms+factors snapshot (cross-tenant/unknown/ill-formed ⇒ pre-create refusal) --
+    # API-1b (OD-API-1b-B): the ROOT copies forward from the consumed EXPOSURE_AGGREGATE run (build
+    # path). The snapshot-consume path resolves no upstream run and FactorExposureResult carries no
+    # exposure_run_id → NULL (the disclosed honest-NULL origin, OD-API-1b-D / OQ-API-1b-1).
+    run_scope_portfolio_id: str | None = None
     if snapshot_id is not None:
         snapshot = resolve_snapshot(session, snapshot_id, acting_tenant=acting_tenant)
         if snapshot.purpose != PURPOSE_FACTOR_EXPOSURE_INPUT:
@@ -600,6 +604,7 @@ def run_factor_exposure(
             raise FactorExposureInputError(
                 f"exposure run {exposure_run_id} status {exposure_run.status!r} != COMPLETED"
             )
+        run_scope_portfolio_id = exposure_run.scope_portfolio_id  # API-1b: copy the root forward
         snapshot = build_factor_exposure_snapshot(
             session,
             acting_tenant=acting_tenant,
@@ -691,6 +696,7 @@ def run_factor_exposure(
         result_entity_type="factor_exposure_result",
         compute=_compute,
         format_reason=_format_reason,
+        scope_portfolio_id=run_scope_portfolio_id,  # API-1b (OD-API-1b-B)
     )
     return FactorExposureRunResult(
         run=outcome.run,

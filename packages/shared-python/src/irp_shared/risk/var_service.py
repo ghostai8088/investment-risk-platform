@@ -1012,6 +1012,10 @@ def run_var(
         result_entity_type="var_result",
         compute=_compute,
         format_reason=lambda gate, gaps: f"{gate} — {'; '.join(gaps)}",  # verbatim P3-5 format
+        # API-1b (OD-API-1b-B): the ROOT copies forward from the pinned factor-exposure run
+        # (re-resolved above in BOTH paths); NULL propagates faithfully if that run was
+        # snapshot-consume-rooted (OD-API-1b-D).
+        scope_portfolio_id=pinned_exposure_run.scope_portfolio_id,
     )
     return VarRunResult(
         run=outcome.run,

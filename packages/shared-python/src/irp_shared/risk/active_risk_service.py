@@ -664,6 +664,9 @@ def run_active_risk(
         result_entity_type="active_risk_result",
         compute=_compute,
         format_reason=lambda gate, gaps: f"{gate} — {'; '.join(gaps)}",
+        # API-1b (OD-API-1b-B): the ROOT copies forward from the pinned factor-exposure run
+        # (re-resolved above in BOTH paths).
+        scope_portfolio_id=pinned_exposure_run.scope_portfolio_id,
     )
     return ActiveRiskRunResult(
         run=outcome.run,

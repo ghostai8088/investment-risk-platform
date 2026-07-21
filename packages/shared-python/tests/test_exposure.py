@@ -205,6 +205,22 @@ def test_signed_market_value_and_self_audit(session: Session) -> None:
         )
 
 
+def test_api1b_scope_portfolio_stamped_on_build(session: Session) -> None:
+    """API-1b (OD-API-1b-B): the build path stamps ``scope_portfolio_id`` = the ROOT portfolio_id
+    (the subtree this exposure run aggregates), so the downstream factor/var/active-risk chain can
+    copy it forward and the Class-C 'latest for P' reads resolve. The full copy-forward chain +
+    snapshot-consume NULL are proven end-to-end in the risk endpoint + demo-stage9z PG tests."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    pf = _pf(session, tenant)
+    _holding(session, tenant, pf, "I0", "100", "12.50", "USD")
+    session.flush()
+
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.COMPLETED.value
+    assert result.run.scope_portfolio_id == pf  # the root is recorded, not NULL
+
+
 def test_no_portfolio_total_rows(session: Session) -> None:
     tenant = str(uuid.uuid4())
     _ccy(session, "USD")
@@ -726,7 +742,7 @@ def test_migration_head_after_curves() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0045_pacing_projection"  # CC-2
+    assert script.get_current_head() == "0046_run_scope_portfolio"  # API-1b
     assert script.get_revision("0020_curves").down_revision == "0019_price_point"
     assert "0018_exposure_aggregate" in {r.revision for r in script.walk_revisions()}
 
