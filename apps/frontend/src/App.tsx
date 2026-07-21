@@ -6,14 +6,14 @@ import { AppShell } from "./components/AppShell";
 import { DevBanner } from "./components/DevBanner";
 import { SessionForm } from "./components/SessionForm";
 import { clearSession, loadSession, saveSession } from "./session";
-import type { DevSession } from "./session";
+import type { Session } from "./session";
 import { RunDetail } from "./views/RunDetail";
 import { RunsList } from "./views/RunsList";
 import { WalkOverview } from "./views/walk/WalkOverview";
 import { WalkStep } from "./views/walk/WalkStep";
 
 export function App(): ReactElement {
-  const [session, setSession] = useState<DevSession | null>(() => loadSession());
+  const [session, setSession] = useState<Session | null>(() => loadSession());
 
   if (!session) {
     return (

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError, apiGet } from "../api/client";
-import type { DevSession } from "../session";
+import type { Session } from "../session";
 
 /** Minimal shapes of the governance reads this index consumes (orchestration over the stable
  * /models + /models/{id} surface; the row DTOs bound elsewhere carry the FE-2 drift guard). */
@@ -50,7 +50,7 @@ export interface ModelIndex {
  * inventory is small; the detail reads run in parallel). Gated `model.inventory.view` — a 403 here
  * degrades the validation/limitations sub-panes only, never the governed numbers themselves.
  */
-export function useModelIndex(session: DevSession): ModelIndex {
+export function useModelIndex(session: Session): ModelIndex {
   const [state, setState] = useState<ModelIndex>({
     entries: new Map(),
     loading: true,

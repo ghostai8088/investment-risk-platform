@@ -4,7 +4,7 @@ import { shortId, verbatim } from "../../api/format";
 import type { ExposureRow, FactorExposureRow } from "../../api/types";
 import { useApiGet } from "../../api/useApiGet";
 import { Pane } from "../../components/Pane";
-import type { DevSession } from "../../session";
+import type { Session } from "../../session";
 
 /**
  * Walk step 2 — Exposures (FE-3, OD-FE-3-A). What the book is exposed to: the governed factor
@@ -15,7 +15,7 @@ export function ExposuresStep({
   session,
   portfolioId,
 }: {
-  session: DevSession;
+  session: Session;
   portfolioId: string;
 }): ReactElement {
   const pf = encodeURIComponent(portfolioId);

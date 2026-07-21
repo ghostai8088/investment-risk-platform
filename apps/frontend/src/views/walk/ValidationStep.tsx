@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 
 import { shortId, verbatim } from "../../api/format";
 import { ValidationBadge } from "../../components/ValidationBadge";
-import type { DevSession } from "../../session";
+import type { Session } from "../../session";
 import { useModelValidations } from "../../walk/useModelValidations";
 import type { ValidationCard } from "../../walk/useModelValidations";
 
@@ -11,7 +11,7 @@ import type { ValidationCard } from "../../walk/useModelValidations";
  * numbers, with the findings and evidence made visible — the F2 governance reads that were
  * write-only before API-1. Degrades to a calm note without `model.inventory.view`.
  */
-export function ValidationStep({ session }: { session: DevSession }): ReactElement {
+export function ValidationStep({ session }: { session: Session }): ReactElement {
   const v = useModelValidations(session);
 
   if (v.loading) return <p className="state">Loading validations…</p>;

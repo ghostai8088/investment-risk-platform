@@ -1,8 +1,14 @@
 import type { ReactElement } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
-import type { DevSession } from "../session";
+import type { Session } from "../session";
 import { DEMO_PORTFOLIO_CODE, WALK_STEPS } from "../walk/steps";
+
+/** The identity label in the header chrome: the dev shim shows `userId @ tenantId`; a verified
+ * OIDC session shows the decoded `sub` (never the raw token). */
+function sessionLabel(session: Session): string {
+  return session.kind === "oidc" ? session.subject : `${session.userId} @ ${session.tenantId}`;
+}
 
 /**
  * The application shell (FE-3, OD-FE-3-B): a header + a left nav listing the six-step governance
@@ -13,7 +19,7 @@ export function AppShell({
   session,
   onEndSession,
 }: {
-  session: DevSession;
+  session: Session;
   onEndSession: () => void;
 }): ReactElement {
   return (
@@ -30,10 +36,10 @@ export function AppShell({
         </div>
         <div className="session-info">
           <span className="mono" aria-label="active session">
-            {session.userId} @ {session.tenantId}
+            {sessionLabel(session)}
           </span>
           <button type="button" onClick={onEndSession}>
-            End session
+            {session.kind === "oidc" ? "Sign out" : "End session"}
           </button>
         </div>
       </header>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { ApiError, apiGet } from "../api/client";
 import type { ValidationDetail, ValidationSummary } from "../api/types";
-import type { DevSession } from "../session";
+import type { Session } from "../session";
 
 interface ModelSummary {
   id: string;
@@ -38,7 +38,7 @@ export interface ModelValidations {
  * → its `/validations` (summary, for the id) → the validation `detail` (findings + evidence).
  * Gated `model.inventory.view`; a 403 degrades the whole step to a calm note.
  */
-export function useModelValidations(session: DevSession): ModelValidations {
+export function useModelValidations(session: Session): ModelValidations {
   const [state, setState] = useState<ModelValidations>({ cards: [], loading: true, error: null });
 
   useEffect(() => {

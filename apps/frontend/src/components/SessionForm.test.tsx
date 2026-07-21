@@ -16,7 +16,7 @@ describe("SessionForm", () => {
     render(<SessionForm onStart={onStart} />);
     fill("  u-1  ", "t-1");
     fireEvent.click(screen.getByText("Start dev session"));
-    expect(onStart).toHaveBeenCalledWith({ userId: "u-1", tenantId: "t-1" });
+    expect(onStart).toHaveBeenCalledWith({ kind: "dev" as const, userId: "u-1", tenantId: "t-1" });
   });
 
   it("refuses non-ASCII ids with an explanation instead of a doomed session", () => {

@@ -1,24 +1,25 @@
 import { useState } from "react";
 import type { ReactElement } from "react";
 
-import { isValidSessionId } from "../session";
+import { isValidHeaderValue } from "../session";
 import type { DevSession } from "../session";
 
-/** The dev-session form (OD-FE-1-D): plain ids, no password field, "session" vocabulary. */
+/** The dev-session form (OD-FE-1-D): plain ids, no password field, "session" vocabulary. Produces
+ * only a `DevSession` — the real OIDC login is the "Sign in" button in oidc mode (FE-3b). */
 export function SessionForm({ onStart }: { onStart: (session: DevSession) => void }): ReactElement {
   const [userId, setUserId] = useState("");
   const [tenantId, setTenantId] = useState("");
   const trimmedUser = userId.trim();
   const trimmedTenant = tenantId.trim();
   const filled = trimmedUser !== "" && trimmedTenant !== "";
-  const ready = isValidSessionId(trimmedUser) && isValidSessionId(trimmedTenant);
+  const ready = isValidHeaderValue(trimmedUser) && isValidHeaderValue(trimmedTenant);
 
   return (
     <form
       className="session-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (ready) onStart({ userId: trimmedUser, tenantId: trimmedTenant });
+        if (ready) onStart({ kind: "dev", userId: trimmedUser, tenantId: trimmedTenant });
       }}
     >
       <h2>Start a dev session</h2>

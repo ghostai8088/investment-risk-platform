@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LimitationsStep } from "./LimitationsStep";
 import type { DevSession } from "../../session";
 
-const SESSION: DevSession = { userId: "u", tenantId: "t" };
+const SESSION: DevSession = { kind: "dev" as const, userId: "u", tenantId: "t" };
 
 function mockRoutes(routes: Record<string, { status?: number; body: unknown }>): void {
   const keys = Object.keys(routes).sort((a, b) => b.length - a.length);

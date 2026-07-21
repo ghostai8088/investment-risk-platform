@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 
-import type { DevSession } from "../../session";
+import type { Session } from "../../session";
 import { useModelIndex } from "../../walk/useModelIndex";
 
 /**
@@ -8,7 +8,7 @@ import { useModelIndex } from "../../walk/useModelIndex";
  * declared, not discovered. The honesty about the edges of every number (e.g. the currency-only
  * factor model cannot see the equity drawdown captured on 2026-05-22). Reuses the model index.
  */
-export function LimitationsStep({ session }: { session: DevSession }): ReactElement {
+export function LimitationsStep({ session }: { session: Session }): ReactElement {
   const m = useModelIndex(session);
 
   if (m.loading) return <p className="state">Loading limitations…</p>;
