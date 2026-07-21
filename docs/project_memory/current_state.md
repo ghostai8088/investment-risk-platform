@@ -2,36 +2,47 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-21) — read this block; everything below it is HISTORY
 >
-> **HEAD `2ce9e4a`** = merge of **PR #84** (FE-2: OpenAPI-generated FE types — Wave 9 slice 2; **NO
-> migration, NO backend logic change, NO new runtime dependency**; counts UNCHANGED), **CI green run
-> #456** (incl. the NEW "API type drift" job). The hard precondition CONFIRMED FIRST: every governed
-> response decimal already serializes `string` (zero `*RowOut` fields are `number`; only the
-> unconsumed `*In` request bodies carry `number|string`) — so codegen introduces ZERO `Number()`-
-> corruption risk on the read path. `openapi-typescript` (types-only) generates from a deterministic
-> `scripts/dump_openapi.py` dump; `openapi.json` + `api-types.d.ts` COMMITTED with a dedicated
-> Python+Node CI drift-check (regenerate + `git diff --exit-code` — backend↔FE drift now turns CI
-> RED). `FAMILY_ROW_COLUMNS` bound to the generated `*RowOut` types — **the FL-1 hand-mirror drift
-> kill, PROVEN** (a bogus column key fails `tsc`). The GET-only hand-written client KEPT (no
-> `openapi-fetch` — the read-only fence preserved). OD-FE-1-G superseded-in-part (dated; the
-> strings-verbatim + GET-only clauses explicitly PRESERVED, not retired). 4-finder review: **1 HIGH
-> folded** — the adversarial finder proved the first-pass decimal guard sampled only 8 of ~43
-> governed decimal fields, so a `VarRowOut.sigma`-class regression (`string`→`number`) would compile
-> clean and silently reach the DOM (the FL-1 corruption class, reopened); fixed with an EXHAUSTIVE
-> compile-time guard (`OnlyCountsAreNumbers` — the ONLY `number` fields permitted anywhere across all
-> 14 `*RowOut` are curated integer counts), proven to bite on the exact regression. Also folded: 1 MED
-> (the `openapi-typescript`→`@redocly/openapi-core` dev-tree advisory disclosed — 3 HIGH, dev-only,
-> CI production audit stays 0, flagged for the close register) + 2 LOW doc corrections. The
-> determinism risk (CI's Python 3.12 vs local regeneration) was DISCHARGED by reproduction (pinned
-> pydantic/fastapi + sorted-key dump + `npm ci` → byte-identical, verified on a fresh 3.12 venv).
-> `make fe-check` green (typecheck/lint/format/65 tests/build); `make gen-api-check` no drift; bundle
-> byte-identical pre/post.
+> **HEAD `422c164`** = merge of **PR #86** (SSO-1: real identity / OIDC, AD-007 — Wave 9 slice 3;
+> **NO migration**; counts UNCHANGED 17/20/35/101), **CI green run #466**. The dev-placeholder
+> `X-User-Id`/`X-Tenant-Id` header shim is replaced by a real **OAuth2 resource server**:
+> `get_principal` verifies an `Authorization: Bearer` JWT against the issuer JWKS (PyJWT; RS256-only
+> allow-list — `alg=none`/HS-confusion rejected; `iss`/`aud`/`exp`/`nbf`+required claims; `leeway=60s`;
+> optional `acr`/`amr` MFA assertion) and resolves the verified `sub`→`app_user.external_subject`
+> within the verified tenant claim to `Principal(user_id=app_user.id, ...)` — NOT the raw `sub`, since
+> `has_permission` joins on `app_user.id`. `dev_header` survives as an explicit **local-only**
+> fallback (fail-closed startup guard in the FastAPI lifespan + a per-request backstop). Enforcement
+> behind the shim (`require_permission`, FORCE RLS) is UNCHANGED — a bounded identity-swap, exactly as
+> scoped. **Closes OD-048** (local-dev OIDC provider = Keycloak, `infra/keycloak/`, profile-gated
+> compose, NOT a CI dependency — CI verifies with locally-signed RS256 test keys).
+>
+> 4-finder review: **2 HIGH folded.** (1) **RLS false-deny** — the `tenant_isolation` policy compares
+> `tenant_id::text` (PostgreSQL renders a uuid lowercase-hyphenated) against the RAW
+> `app.current_tenant` GUC, so a valid-but-non-canonical UUID tenant claim (uppercase, no-hyphens) was
+> RLS-hidden, silently locking out a legitimate user; fixed by canonicalizing
+> `str(uuid.UUID(claims.tenant))` before the GUC bind, proven by a NEW PG-tier regression run under a
+> constrained non-superuser/non-BYPASSRLS role (SQLite cannot catch this class — RLS is a no-op there).
+> **`_principal_from_token` is the first caller ever to feed `set_tenant_context` a raw
+> externally-controlled string** — every prior caller sourced the tenant from a DB round-trip, always
+> already canonical. (2) **CI drift** — the new `authorization` header dependency is stamped by FastAPI
+> into every operation's OpenAPI schema (231 param blocks), staling the committed `openapi.json` + FE
+> types and turning FE-2's own "API type drift" job red; regenerated and committed, `make
+> gen-api-check` clean and deterministic. Also folded: 4 MED (require `OIDC_AUDIENCE` in oidc mode — an
+> unset audience was a confused-deputy gap; a pathological nested `amr` claim crashed the MFA check to
+> 500 instead of denying; `oidc_require_mfa` without `oidc_acr_values` booted clean then 500'd every
+> request; zero Postgres-tier RLS coverage on the oidc path before the fix above) + several LOW (a
+> `dev_header` per-request `app_env` backstop; the advertised clock-skew leeway was actually zero — now
+> a real 60s; a JWKS/discovery outage returned 500 — now an honest 503; new tests for the lifespan
+> wiring, `build_verifier`/discovery, `amr` acceptance, and the demo `external_subject` seed). Battery:
+> `make check` **1778 passed**; full-PG demo battery green (demo tenant holds at 101 runs,
+> `external_subject` seeded — a column set, no count change); `make fe-check` green (65 tests+build)
+> after the OpenAPI regen; `make gen-api-check` clean.
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `fe_2_decision_record.md` (**CLOSED 2026-07-21**). **NEXT = SSO-1 planning** (real identity / OIDC,
-> AD-007 — the hard gate before any non-developer sees the product; enforcement behind the dev shim
-> is already real, so this is a bounded swap), Wave 9 slice 3 per the ratified sequence. *(Everything
-> from the "WAVE 7 IS UNDERWAY" line down is prior HISTORY, superseded by this block — the
+> `sso_1_decision_record.md` (**CLOSED 2026-07-21**). **NEXT = FE-3 planning** (the product UI; its
+> information architecture is a deferred Tier-3 USER decision, OQ-W8C-5), Wave 9 slice 4 per the
+> ratified sequence — the last slice, may close Wave 9 or open Wave 10 on appetite. *(Everything from
+> the "WAVE 7 IS UNDERWAY" line down is prior HISTORY, superseded by this block — the
 > counts/next-pointers below are as-of their own date.)*
 >
 > **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
