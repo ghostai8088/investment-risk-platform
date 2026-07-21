@@ -191,3 +191,220 @@ tbody tr.clickable:hover {
   align-items: center;
   gap: 0.75rem;
 }
+
+/* --- FE-3 shell + governance walk (OD-FE-3-B/G) --- */
+
+.session-gate {
+  max-width: 26rem;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 2rem);
+}
+
+.shell .app-header {
+  padding: 0.9rem 2rem;
+  border-bottom: 1px solid #dcdfe6;
+  background: #fff;
+}
+
+.app-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.book-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #33417a;
+  background: #e8ecfa;
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+}
+
+.shell-body {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+}
+
+.walk-nav {
+  flex: 0 0 15rem;
+  border-right: 1px solid #dcdfe6;
+  padding: 1rem 0.75rem;
+  background: #f4f5f8;
+}
+
+.nav-heading {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6a7080;
+  margin: 1rem 0.5rem 0.35rem;
+}
+
+.nav-heading:first-child {
+  margin-top: 0;
+}
+
+.nav-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-link {
+  display: block;
+  padding: 0.4rem 0.6rem;
+  border-radius: 5px;
+  color: #22305e;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.nav-link:hover {
+  background: #e6eaf5;
+}
+
+.nav-link.active {
+  background: #33417a;
+  color: #fff;
+  font-weight: 600;
+}
+
+.nav-link:focus-visible,
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid #f0a500;
+  outline-offset: 1px;
+}
+
+/* Override the default centered `main` for the shell's content column. */
+main.shell-content {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 1.5rem 2rem 3rem;
+}
+
+.lede {
+  max-width: 56rem;
+  color: #33384a;
+  line-height: 1.5;
+}
+
+.walk-cards {
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+
+.walk-card a {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #d3d7e0;
+  border-radius: 8px;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  height: 100%;
+}
+
+.walk-card a:hover {
+  border-color: #33417a;
+  box-shadow: 0 1px 4px rgba(51, 65, 122, 0.15);
+}
+
+.walk-card-label {
+  font-weight: 700;
+  color: #22305e;
+}
+
+.walk-card-blurb {
+  font-size: 0.88rem;
+  color: #555b6b;
+}
+
+.stepper {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+}
+
+.stepper-dot a {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  text-decoration: none;
+  color: #4a5068;
+  font-size: 0.82rem;
+}
+
+.stepper-dot a:hover {
+  background: #eef0f6;
+}
+
+.stepper-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  background: #d7dbe6;
+  color: #22305e;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.stepper-dot.current a {
+  color: #22305e;
+  font-weight: 700;
+}
+
+.stepper-dot.current .stepper-num {
+  background: #33417a;
+  color: #fff;
+}
+
+.step-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e5ec;
+}
+
+.step-nav a {
+  color: #33417a;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.step-nav a:hover {
+  text-decoration: underline;
+}
+
+.placeholder {
+  color: #555b6b;
+  background: #f4f5f8;
+  border: 1px dashed #c7ccd8;
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  max-width: 56rem;
+}
