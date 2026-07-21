@@ -2,48 +2,53 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-21) — read this block; everything below it is HISTORY
 >
-> **HEAD `422c164`** = merge of **PR #86** (SSO-1: real identity / OIDC, AD-007 — Wave 9 slice 3;
-> **NO migration**; counts UNCHANGED 17/20/35/101), **CI green run #466**. The dev-placeholder
-> `X-User-Id`/`X-Tenant-Id` header shim is replaced by a real **OAuth2 resource server**:
-> `get_principal` verifies an `Authorization: Bearer` JWT against the issuer JWKS (PyJWT; RS256-only
-> allow-list — `alg=none`/HS-confusion rejected; `iss`/`aud`/`exp`/`nbf`+required claims; `leeway=60s`;
-> optional `acr`/`amr` MFA assertion) and resolves the verified `sub`→`app_user.external_subject`
-> within the verified tenant claim to `Principal(user_id=app_user.id, ...)` — NOT the raw `sub`, since
-> `has_permission` joins on `app_user.id`. `dev_header` survives as an explicit **local-only**
-> fallback (fail-closed startup guard in the FastAPI lifespan + a per-request backstop). Enforcement
-> behind the shim (`require_permission`, FORCE RLS) is UNCHANGED — a bounded identity-swap, exactly as
-> scoped. **Closes OD-048** (local-dev OIDC provider = Keycloak, `infra/keycloak/`, profile-gated
-> compose, NOT a CI dependency — CI verifies with locally-signed RS256 test keys).
+> **HEAD `a0f31b5`** = merge of **PR #88** (FE-3: the product UI, the governance-narrative walk —
+> Wave 9 slice 4, the LAST slice; **NO migration**; counts UNCHANGED 17/20/35/101), **CI green run
+> #29852439513**. **WAVE 9 IS NOW FUNCTIONALLY COMPLETE** (API-1 → FE-2 → SSO-1 → FE-3, all four
+> slices DONE); the mandatory Wave-9 close review is the only thing left before Wave 10.
 >
-> 4-finder review: **2 HIGH folded.** (1) **RLS false-deny** — the `tenant_isolation` policy compares
-> `tenant_id::text` (PostgreSQL renders a uuid lowercase-hyphenated) against the RAW
-> `app.current_tenant` GUC, so a valid-but-non-canonical UUID tenant claim (uppercase, no-hyphens) was
-> RLS-hidden, silently locking out a legitimate user; fixed by canonicalizing
-> `str(uuid.UUID(claims.tenant))` before the GUC bind, proven by a NEW PG-tier regression run under a
-> constrained non-superuser/non-BYPASSRLS role (SQLite cannot catch this class — RLS is a no-op there).
-> **`_principal_from_token` is the first caller ever to feed `set_tenant_context` a raw
-> externally-controlled string** — every prior caller sourced the tenant from a DB round-trip, always
-> already canonical. (2) **CI drift** — the new `authorization` header dependency is stamped by FastAPI
-> into every operation's OpenAPI schema (231 param blocks), staling the committed `openapi.json` + FE
-> types and turning FE-2's own "API type drift" job red; regenerated and committed, `make
-> gen-api-check` clean and deterministic. Also folded: 4 MED (require `OIDC_AUDIENCE` in oidc mode — an
-> unset audience was a confused-deputy gap; a pathological nested `amr` claim crashed the MFA check to
-> 500 instead of denying; `oidc_require_mfa` without `oidc_acr_values` booted clean then 500'd every
-> request; zero Postgres-tier RLS coverage on the oidc path before the fix above) + several LOW (a
-> `dev_header` per-request `app_env` backstop; the advertised clock-skew leeway was actually zero — now
-> a real 60s; a JWKS/discovery outage returned 500 — now an honest 503; new tests for the lifespan
-> wiring, `build_verifier`/discovery, `amr` acceptance, and the demo `external_subject` seed). Battery:
-> `make check` **1778 passed**; full-PG demo battery green (demo tenant holds at 101 runs,
-> `external_subject` seeded — a column set, no count change); `make fe-check` green (65 tests+build)
-> after the OpenAPI regen; `make gen-api-check` clean.
+> FE-3 replaces the generic run browser as the FE's primary surface with a six-step **governance-
+> narrative walk** over the living demo book (`DEMO-GLOBAL`): Capture → Exposures → Numbers →
+> Backtest → Validation → Limitations (OD-FE-3-A, the IA ratified at planning as OQ-FE-3-1 — the
+> Tier-3 USER decision deferred from the Wave-8 close, OQ-W8C-5). The differentiator is
+> `GovernedValue` (OD-FE-3-C): every number renders with its trust context inline — value verbatim +
+> run/model provenance + a `snapshotVerified` ✓/✗ mark that is **structurally unfakeable** (only shown
+> when a real `snapshotId` is present, never hardcoded) + the model's validation badge and disclosed
+> limitations. VaR is shown **honestly** as the seeded run series across all books, with the
+> API-1b entity-read gap stated inline — no synthetic "latest for this portfolio." Every pane degrades
+> gracefully on a 403 to a calm "you need permission X" note (OD-FE-3-E) rather than an error page,
+> proven live against a demo `auditor_3l` viewer principal seeded with exactly the walk's read
+> permissions (OD-FE-3-H, a Step-0 finding folded pre-review). The GET-only `apiGet` fence and the
+> FE-2 generated-type binding are KEPT and extended, not rearchitected.
+>
+> 4-finder review: **ZERO HIGH.** Both existential invariants proven independently: (a) the
+> decimal-strings-verbatim contract holds on every new screen (zero `Number()`/arithmetic on a
+> governed value; the EXHAUSTIVE `OnlyCountsAreNumbers` guard extended to `PositionOut`/`ValuationOut`
+> — FE-3 is the first slice to render captured-input decimals); (b) no fabricated verification/verdict
+> —the fake-"✓ reproduces" mark, the fake ES backtest verdict, and the fake "latest VaR" are each
+> structurally prevented, not just avoided by convention. Folded: **2 MED** (RunDetail's "back to
+> runs" link still pointed at `/`, which FE-3 moved from the run list to the walk overview — fixed to
+> `/runs`; `useModelValidations` took the FIRST validated model version instead of the LATEST, so a
+> re-versioned + re-validated model — the exact governance lifecycle the Validation step narrates —
+> would have shown the stale outcome) + **6 LOW** (the decimal-guard extension above; a WCAG 2.4.7
+> visible-focus fix on the skip-link; non-unique-key→index-key fix on limitation lists; three honesty
+> wording fixes — a step blurb naming the wrong governed family, the VaR series note clarified as
+> "across all books," a stale placeholder doc comment). Battery: `make fe-check` green (97 tests +
+> build); `make check` (Python) green; `make gen-api-check` clean (FE-only, zero backend drift);
+> `package.json` byte-identical (no new runtime dep, holding OD-FE-1-F). **One post-review fix before
+> merge**: the fold commit's re-wrapped object literals/JSX across 9 files hadn't been re-run through
+> Prettier, so CI's `format:check` step went red — a pure-reflow fix (`3275741`), zero semantic change,
+> all gates re-verified green.
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `sso_1_decision_record.md` (**CLOSED 2026-07-21**). **NEXT = FE-3 planning** (the product UI; its
-> information architecture is a deferred Tier-3 USER decision, OQ-W8C-5), Wave 9 slice 4 per the
-> ratified sequence — the last slice, may close Wave 9 or open Wave 10 on appetite. *(Everything from
-> the "WAVE 7 IS UNDERWAY" line down is prior HISTORY, superseded by this block — the
-> counts/next-pointers below are as-of their own date.)*
+> `fe_3_decision_record.md` (**CLOSED 2026-07-21**). **NEXT = the Wave-9 close review** (roadmap Part
+> 2.12 rule-2 mandatory close; carry-ins already flagged: the FE-2 dev-tree `@redocly` advisory, the
+> SSO-1 `pyjwt`/`cryptography` advisory surface with no `pip-audit` CI gate, the BT-3 D-F4 reword, and
+> the new FE-3 auditor_3l-template read-gap noted below). Then Wave 10 sequencing (candidates: API-1b
+> the flagship VaR/active-risk entity reads; FE-3b SPA OIDC/PKCE login replacing the demo dev-header
+> session for a real end-user login flow). *(Everything from the "WAVE 7 IS UNDERWAY" line down is
+> prior HISTORY, superseded by this block — the counts/next-pointers below are as-of their own date.)*
 >
 > **WAVE 7 IS UNDERWAY (roadmap Part 2.10, fork A "deepen the mathematics"): HG-1 → ES-HS-1 → RS-1 →
 > DS-2**, riders: SC-2 the named pull-forward, commitment/capital-call the presumptive Wave-8
