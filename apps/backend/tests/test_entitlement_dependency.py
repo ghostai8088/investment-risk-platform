@@ -1,4 +1,9 @@
-"""End-to-end test of the entitlement FastAPI dependency (allow / 401 / 403)."""
+"""End-to-end test of the entitlement FastAPI dependency (allow / 401 / 403).
+
+This exercises the **dev_header** auth mode (the ``X-User-Id`` / ``X-Tenant-Id`` shim), pinned by
+the shared autouse fixture in ``conftest.py``. The **oidc**-mode counterpart — verified Bearer
+tokens with the same allow / 401 / 403 outcomes — is ``test_oidc_auth.py`` (SSO-1).
+"""
 
 from __future__ import annotations
 
