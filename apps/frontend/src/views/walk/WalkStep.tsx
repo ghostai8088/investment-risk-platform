@@ -8,6 +8,7 @@ import { useDemoPortfolio } from "../../walk/useDemoPortfolio";
 import type { DemoPortfolio } from "../../walk/useDemoPortfolio";
 import { CaptureStep } from "./CaptureStep";
 import { ExposuresStep } from "./ExposuresStep";
+import { NumbersStep } from "./NumbersStep";
 
 /**
  * A single walk step (FE-3, OD-FE-3-A). Renders the step chrome — a progress stepper and prev/next
@@ -80,20 +81,18 @@ function StepBody({
   session: DevSession;
   demo: DemoPortfolio;
 }): ReactElement {
-  if (slug === "capture" || slug === "exposures") {
+  if (slug === "capture" || slug === "exposures" || slug === "numbers") {
     return (
       <Pane state={demo.state} requires="portfolio.view">
-        {() =>
-          demo.portfolio ? (
-            slug === "capture" ? (
-              <CaptureStep session={session} portfolioId={demo.portfolio.id} />
-            ) : (
-              <ExposuresStep session={session} portfolioId={demo.portfolio.id} />
-            )
-          ) : (
-            <p className="state">The demo book “DEMO-GLOBAL” was not found for this tenant.</p>
-          )
-        }
+        {() => {
+          if (!demo.portfolio) {
+            return <p className="state">The demo book “DEMO-GLOBAL” was not found for this tenant.</p>;
+          }
+          const pid = demo.portfolio.id;
+          if (slug === "capture") return <CaptureStep session={session} portfolioId={pid} />;
+          if (slug === "exposures") return <ExposuresStep session={session} portfolioId={pid} />;
+          return <NumbersStep session={session} portfolioId={pid} />;
+        }}
       </Pane>
     );
   }

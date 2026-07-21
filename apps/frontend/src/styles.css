@@ -542,6 +542,40 @@ main.shell-content {
   margin: 0.25rem 0 0.6rem;
 }
 
+.gv-governance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed #e2e5ec;
+}
+
+.gv-gov-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: #6a7080;
+}
+
+.limitations summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #8a5a12;
+}
+
+.limitations ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.limitations li {
+  font-size: 0.85rem;
+  color: #43485a;
+  line-height: 1.45;
+  margin-bottom: 0.4rem;
+}
+
 /* A 403 is a calm, first-class "you lack this permission" note, not a red failure. */
 .state.denied {
   color: #5a6070;
