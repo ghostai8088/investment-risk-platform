@@ -42,6 +42,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
@@ -588,6 +589,51 @@ def list_desmoothed_results(
         )
         .scalars()
         .all()
+    )
+
+
+def list_desmoothed_results_by_entity(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    instrument_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[DesmoothedReturnResult]:
+    """API-1 entity/time read (OD-API-1-B, Class A): ``desmoothed_return_result`` rows across
+    COMPLETED runs for a (portfolio, instrument), optionally as of a run cutoff. Silent-empty on a
+    foreign id; ``as_of=None`` = now."""
+    return list_governed_results(
+        session,
+        DesmoothedReturnResult,
+        acting_tenant=acting_tenant,
+        filters=(
+            (DesmoothedReturnResult.portfolio_id, portfolio_id),
+            (DesmoothedReturnResult.instrument_id, instrument_id),
+        ),
+        as_of=as_of,
+        order_by=DesmoothedReturnResult.period_start,
+    )
+
+
+def latest_desmoothed_result(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    instrument_id: str,
+    as_of=None,  # noqa: ANN001  (datetime | None)
+) -> list[DesmoothedReturnResult]:
+    """API-1 latest-resolver (Class A): the newest COMPLETED desmoothing run's rows for the
+    (portfolio, instrument) series (empty when none)."""
+    return latest_run_rows(
+        list_desmoothed_results_by_entity(
+            session,
+            acting_tenant=acting_tenant,
+            portfolio_id=portfolio_id,
+            instrument_id=instrument_id,
+            as_of=as_of,
+        )
     )
 
 

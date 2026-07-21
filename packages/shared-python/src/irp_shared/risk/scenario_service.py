@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
@@ -445,6 +446,45 @@ def list_scenario_results(
         .scalars()
         .all()
     )
+
+
+def latest_scenario_results(
+    session: Session,
+    *,
+    acting_tenant: str,
+    scenario_definition_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[ScenarioResult]:
+    """API-1 latest-resolver (Class B): the newest COMPLETED scenario run's rows, optionally pinned
+    to a ``scenario_definition_id`` (a run computes ONE definition, so the filter selects runs of
+    that scenario; absent = the latest scenario run of ANY definition). Per-factor rows then the
+    TOTAL; empty when none. ``as_of=None`` = now."""
+    return latest_run_rows(
+        list_governed_results(
+            session,
+            ScenarioResult,
+            acting_tenant=acting_tenant,
+            filters=((ScenarioResult.scenario_definition_id, scenario_definition_id),),
+            as_of=as_of,
+            order_by=(ScenarioResult.metric_type, ScenarioResult.factor_id),
+        )
+    )
+
+
+def resolve_scenario_result(
+    session: Session, scenario_result_id: str, *, acting_tenant: str
+) -> ScenarioResult:
+    """Resolve one ``scenario_result`` row by id with an EXPLICIT tenant predicate (the house
+    by-id read; raises :class:`ScenarioResultNotVisible` on a hidden/unknown id)."""
+    row = session.execute(
+        select(ScenarioResult).where(
+            ScenarioResult.id == str(scenario_result_id),
+            ScenarioResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ScenarioResultNotVisible(str(scenario_result_id))
+    return row
 
 
 def resolve_scenario_run(session: Session, run_id: str, *, acting_tenant: str) -> CalculationRun:

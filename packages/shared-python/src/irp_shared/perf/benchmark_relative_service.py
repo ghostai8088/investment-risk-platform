@@ -57,6 +57,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata import BenchmarkNotVisible, resolve_benchmark
@@ -626,6 +627,51 @@ def list_benchmark_relatives(
         )
         .scalars()
         .all()
+    )
+
+
+def list_benchmark_relatives_by_entity(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    benchmark_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[BenchmarkRelativeResult]:
+    """API-1 entity/time read (OD-API-1-B, Class A): ``benchmark_relative_result`` rows across
+    COMPLETED runs for a (portfolio, benchmark), optionally as of a run cutoff. Silent-empty on a
+    foreign id; ``as_of=None`` = now."""
+    return list_governed_results(
+        session,
+        BenchmarkRelativeResult,
+        acting_tenant=acting_tenant,
+        filters=(
+            (BenchmarkRelativeResult.portfolio_id, portfolio_id),
+            (BenchmarkRelativeResult.benchmark_id, benchmark_id),
+        ),
+        as_of=as_of,
+        order_by=BenchmarkRelativeResult.period_start,
+    )
+
+
+def latest_benchmark_relative(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    benchmark_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None)
+) -> list[BenchmarkRelativeResult]:
+    """API-1 latest-resolver (Class A): the newest COMPLETED benchmark-relative run's rows for the
+    portfolio (optionally pinned to a benchmark; empty when none)."""
+    return latest_run_rows(
+        list_benchmark_relatives_by_entity(
+            session,
+            acting_tenant=acting_tenant,
+            portfolio_id=portfolio_id,
+            benchmark_id=benchmark_id,
+            as_of=as_of,
+        )
     )
 
 

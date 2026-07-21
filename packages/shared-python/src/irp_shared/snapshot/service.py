@@ -2598,6 +2598,27 @@ def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) 
     return header
 
 
+def list_snapshots(
+    session: Session,
+    *,
+    acting_tenant: str,
+    purpose: str | None = None,
+    as_of_valuation_date: date | None = None,
+) -> list[DatasetSnapshot]:
+    """API-1 F2 listing: ``dataset_snapshot`` headers under the acting tenant, optionally filtered
+    by ``purpose`` and/or ``as_of_valuation_date`` (silent-empty on no match). Newest-first
+    (``system_from`` DESC, id DESC). RLS-scoped; NO components (use :func:`list_components` or the
+    by-id read for the heavy body). There is no portfolio/scope column on the snapshot header (the
+    API-1b run-scope gap), so no portfolio filter is offered."""
+    stmt = select(DatasetSnapshot).where(DatasetSnapshot.tenant_id == str(acting_tenant))
+    if purpose is not None:
+        stmt = stmt.where(DatasetSnapshot.purpose == str(purpose))
+    if as_of_valuation_date is not None:
+        stmt = stmt.where(DatasetSnapshot.as_of_valuation_date == as_of_valuation_date)
+    stmt = stmt.order_by(DatasetSnapshot.system_from.desc(), DatasetSnapshot.id.desc())
+    return list(session.execute(stmt).scalars().all())
+
+
 def list_components(
     session: Session, *, snapshot_id: str, acting_tenant: str
 ) -> list[DatasetSnapshotComponent]:

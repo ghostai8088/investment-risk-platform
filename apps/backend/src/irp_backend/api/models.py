@@ -35,8 +35,11 @@ from irp_shared.model.validation import (
     ValidationEvidenceInput,
     ValidationFindingInput,
     latest_validation,
+    list_evidence,
+    list_findings,
     list_validations,
     record_validation,
+    resolve_validation,
 )
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -79,6 +82,8 @@ class ModelSummary(BaseModel):
     name: str
     model_type: str
     is_active: bool
+    tier: str | None  # the governed model tier (MG-1) — surfaced on the inventory list (API-1 F2)
+    validation_status: str | None  # the operative validation posture (placeholder until VW-1 fills)
 
 
 class LatestValidationOut(BaseModel):
@@ -158,7 +163,13 @@ def list_models(
     rows = db.execute(select(Model).order_by(Model.code)).scalars().all()
     return [
         ModelSummary(
-            id=m.id, code=m.code, name=m.name, model_type=m.model_type, is_active=m.is_active
+            id=m.id,
+            code=m.code,
+            name=m.name,
+            model_type=m.model_type,
+            is_active=m.is_active,
+            tier=m.tier,
+            validation_status=m.validation_status,
         )
         for m in rows
     ]
@@ -290,6 +301,28 @@ class ValidationSummaryOut(BaseModel):
     next_review_due: date | None
     validated_by: str
     validated_at: str
+
+
+class ValidationFindingOut(BaseModel):
+    id: str
+    finding_text: str
+    severity: str | None
+    authored_by: str | None
+
+
+class ValidationEvidenceOut(BaseModel):
+    id: str
+    evidence_type: str
+    run_id: str | None
+    reference: str | None
+
+
+class ValidationDetailOut(ValidationSummaryOut):
+    """The per-validation detail (API-1 F2): the lean summary fields PLUS the heavy sub-objects
+    (``findings`` + ``evidence``) that the summary list deliberately omits."""
+
+    findings: list[ValidationFindingOut]
+    evidence: list[ValidationEvidenceOut]
 
 
 def _resolve_visible_version(
@@ -442,3 +475,55 @@ def list_version_validations(
         )
         for r in rows
     ]
+
+
+@router.get(
+    "/{model_id}/validations/{validation_id}",
+    response_model=ValidationDetailOut,
+)
+def get_validation_detail(
+    model_id: uuid.UUID,
+    validation_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> ValidationDetailOut:
+    """The per-validation detail read (API-1 F2): the summary fields + its findings + evidence.
+    404-indistinguishable if the validation is hidden/unknown OR does not belong to a version of
+    the URL's model (no cross-model / existence-oracle leak)."""
+    record = resolve_validation(db, str(validation_id), acting_tenant=principal.tenant_id)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="validation not found")
+    version = db.get(ModelVersion, record.model_version_id)
+    if version is None or version.model_id != str(model_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="validation not found")
+    findings = list_findings(db, record.id, acting_tenant=principal.tenant_id)
+    evidence = list_evidence(db, record.id, acting_tenant=principal.tenant_id)
+    return ValidationDetailOut(
+        id=record.id,
+        outcome=record.outcome,
+        validation_type=record.validation_type,
+        scope_summary=record.scope_summary,
+        conditions=record.conditions,
+        report_ref=record.report_ref,
+        next_review_due=record.next_review_due,
+        validated_by=record.validated_by,
+        validated_at=record.system_from.isoformat(),
+        findings=[
+            ValidationFindingOut(
+                id=f.id,
+                finding_text=f.finding_text,
+                severity=f.severity,
+                authored_by=f.authored_by,
+            )
+            for f in findings
+        ],
+        evidence=[
+            ValidationEvidenceOut(
+                id=e.id,
+                evidence_type=e.evidence_type,
+                run_id=e.run_id,
+                reference=e.reference,
+            )
+            for e in evidence
+        ],
+    )

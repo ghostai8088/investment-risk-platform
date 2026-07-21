@@ -320,6 +320,85 @@ def test_list_validations_and_detail_latest_block(
     assert latest["overdue"] is True  # next_review_due 2020-01-01 < today
 
 
+_VALIDATION_BODY_WITH_EVIDENCE = {
+    **_VALIDATION_BODY,
+    "evidence": [{"evidence_type": "DOCUMENT", "reference": "report-2026-Q2.pdf"}],
+}
+
+
+def test_api1_validation_detail_read(
+    client_and_principal: tuple[TestClient, Principal, Session],
+) -> None:
+    """API-1 F2: ``GET /models/{model_id}/validations/{validation_id}`` returns the summary fields
+    PLUS the heavy findings + evidence sub-objects. Cross-model / unknown ids are 404
+    (indistinguishable — no existence-oracle leak)."""
+    client, principal, db = client_and_principal
+    model_id, version_id = _seed_registered_version(db, principal.tenant_id)
+    client.post(
+        f"/models/{model_id}/versions/{version_id}/validations",
+        json=_VALIDATION_BODY_WITH_EVIDENCE,
+        headers=_headers(principal),
+    )
+    listed = client.get(
+        f"/models/{model_id}/versions/{version_id}/validations", headers=_headers(principal)
+    ).json()
+    validation_id = listed[0]["id"]
+    detail = client.get(
+        f"/models/{model_id}/validations/{validation_id}", headers=_headers(principal)
+    )
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["outcome"] == "APPROVED"
+    assert len(body["findings"]) == 1
+    assert body["findings"][0]["finding_text"] == "minor documentation gap"
+    assert body["findings"][0]["severity"] == "LOW"
+    assert len(body["evidence"]) == 1
+    assert body["evidence"][0]["evidence_type"] == "DOCUMENT"
+    assert body["evidence"][0]["reference"] == "report-2026-Q2.pdf"
+    # Unknown validation id → 404.
+    assert (
+        client.get(
+            f"/models/{model_id}/validations/{uuid.uuid4()}", headers=_headers(principal)
+        ).status_code
+        == 404
+    )
+    # A real validation id under the WRONG model → 404 (indistinguishable).
+    other = Model(
+        tenant_id=principal.tenant_id, code="other.model.detail", name="m", model_type="VAR"
+    )
+    db.add(other)
+    db.commit()
+    assert (
+        client.get(
+            f"/models/{other.id}/validations/{validation_id}", headers=_headers(principal)
+        ).status_code
+        == 404
+    )
+    # Deny-by-default: no model.inventory.view → 403.
+    stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": principal.tenant_id}
+    assert (
+        client.get(f"/models/{model_id}/validations/{validation_id}", headers=stranger).status_code
+        == 403
+    )
+
+
+def test_api1_model_summary_carries_tier_and_status(
+    client_and_principal: tuple[TestClient, Principal, Session],
+) -> None:
+    """API-1 F2: the inventory list DTO now surfaces ``tier`` + ``validation_status`` (a maker can
+    see the governance posture without opening each detail). A freshly-registered model is untiered
+    (``tier`` None) until the 2L assigns."""
+    client, principal, _ = client_and_principal
+    created = client.post("/models", json=_BODY, headers=_headers(principal)).json()
+    summary = next(
+        m
+        for m in client.get("/models", headers=_headers(principal)).json()
+        if m["id"] == created["id"]
+    )
+    assert "tier" in summary and summary["tier"] is None
+    assert "validation_status" in summary  # present (the default posture)
+
+
 # ---------- MG-1 (OD-MG-1-B/C): the tier endpoint + the closed 1L register-time write ----------
 
 _TIER_BODY = {

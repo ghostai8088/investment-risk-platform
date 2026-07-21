@@ -45,6 +45,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.exposure.events import RUN_TYPE_EXPOSURE_AGGREGATE, ExposureActor
@@ -328,6 +329,53 @@ def list_exposure(session: Session, *, run_id: str, acting_tenant: str) -> list[
         )
         .scalars()
         .all()
+    )
+
+
+def list_exposure_by_entity(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    instrument_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[ExposureAggregate]:
+    """API-1 entity/time read (Class A): ``exposure_aggregate`` rows across COMPLETED runs for a
+    (portfolio, instrument). A run's rows SPAN the portfolio SUBTREE, so the ``portfolio_id`` filter
+    row-filters to the queried book's own rows. Silent-empty on a foreign id; ``as_of=None`` =
+    now."""
+    return list_governed_results(
+        session,
+        ExposureAggregate,
+        acting_tenant=acting_tenant,
+        filters=(
+            (ExposureAggregate.portfolio_id, portfolio_id),
+            (ExposureAggregate.instrument_id, instrument_id),
+        ),
+        as_of=as_of,
+        order_by=ExposureAggregate.instrument_id,
+    )
+
+
+def latest_exposure(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    instrument_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None)
+) -> list[ExposureAggregate]:
+    """API-1 latest-resolver (Class A): the newest COMPLETED exposure run's rows for the portfolio
+    (the run may be rooted at an ancestor — rows returned are the portfolio's own; empty when
+    none)."""
+    return latest_run_rows(
+        list_exposure_by_entity(
+            session,
+            acting_tenant=acting_tenant,
+            portfolio_id=portfolio_id,
+            instrument_id=instrument_id,
+            as_of=as_of,
+        )
     )
 
 

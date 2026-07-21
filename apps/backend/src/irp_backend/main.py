@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from irp_backend.api.audit import router as audit_router
 from irp_backend.api.dq import router as dq_router
 from irp_backend.api.exposure import router as exposure_router
 from irp_backend.api.holdings import router as holdings_router
@@ -41,6 +42,7 @@ from irp_backend.api.valuations import router as valuations_router
 app = FastAPI(title="Investment Risk Platform API (scaffold)")
 app.include_router(system_router)
 app.include_router(lineage_router)
+app.include_router(audit_router)
 app.include_router(models_router)
 app.include_router(dq_router)
 app.include_router(ingest_router)

@@ -415,6 +415,20 @@ def list_validations(
     )
 
 
+def resolve_validation(
+    session: Session, validation_id: str, *, acting_tenant: str
+) -> ModelValidation | None:
+    """Resolve one ``model_validation`` record by id under the acting tenant (the API-1 detail read;
+    ``None`` when hidden/unknown — the caller renders a 404). The model-linkage check (that the
+    record belongs to the URL's model) is the endpoint's, via the record's ``model_version_id``."""
+    return session.execute(
+        select(ModelValidation).where(
+            ModelValidation.id == str(validation_id),
+            ModelValidation.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+
+
 def list_findings(
     session: Session, validation_id: str, *, acting_tenant: str
 ) -> list[ModelValidationFinding]:

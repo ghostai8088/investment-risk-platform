@@ -47,6 +47,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
@@ -639,6 +640,43 @@ def list_es_backtests(
         )
         .scalars()
         .all()
+    )
+
+
+def list_es_backtests_by_entity(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[VarBacktestResult]:
+    """API-1 entity/time read (Class A): ES-backtest rows across COMPLETED **ES_BACKTEST** runs for
+    a portfolio (the ``run_type`` filter keeps var-backtest out of the shared table). Silent-empty
+    on a foreign id; ``as_of=None`` = now."""
+    return list_governed_results(
+        session,
+        VarBacktestResult,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_ES_BACKTEST,
+        filters=((VarBacktestResult.portfolio_id, portfolio_id),),
+        as_of=as_of,
+        order_by=VarBacktestResult.period_start,
+    )
+
+
+def latest_es_backtest(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    as_of=None,  # noqa: ANN001  (datetime | None)
+) -> list[VarBacktestResult]:
+    """API-1 latest-resolver (Class A): the newest COMPLETED ES_BACKTEST run's rows for the
+    portfolio (empty when none)."""
+    return latest_run_rows(
+        list_es_backtests_by_entity(
+            session, acting_tenant=acting_tenant, portfolio_id=portfolio_id, as_of=as_of
+        )
     )
 
 

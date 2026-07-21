@@ -65,6 +65,13 @@ from irp_shared.demo.rs1_stage5 import (
     Rs1Stage5Summary,
     run_demo_rs1_stage5,
 )
+from irp_shared.demo.stage10_api1 import (
+    DemoStage10AlreadySeededError,
+    DemoStage10Error,
+    DemoStage10PrereqError,
+    Stage10Api1Summary,
+    run_demo_stage10_api1,
+)
 
 __all__ = [
     "DEMO_TENANT_ID",
@@ -112,4 +119,9 @@ __all__ = [
     "run_demo_campaign",
     "run_demo_multifamily_extension",
     "run_demo_rs1_stage5",
+    "DemoStage10AlreadySeededError",
+    "DemoStage10Error",
+    "DemoStage10PrereqError",
+    "Stage10Api1Summary",
+    "run_demo_stage10_api1",
 ]

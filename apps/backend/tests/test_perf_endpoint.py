@@ -348,3 +348,80 @@ def test_expired_exception_run_is_422_not_500(ctx) -> None:  # noqa: ANN001
     assert resp.status_code == 422, resp.text
     assert "EXCEPTION has expired" in resp.json()["detail"]
     assert _count_runs(db, p.tenant_id) == 0
+
+
+def test_api1_entity_reads_portfolio_returns(ctx) -> None:  # noqa: ANN001
+    """API-1 (Class A): the entity/time read + latest-resolver over portfolio_return_result — the
+    pacing template replicated. Confirms the entity filter, the new calculation_run_id
+    discriminator, silent-empty on a foreign id, the /latest route (not shadowed by /{result_id}),
+    and its portfolio_id requirement."""
+    client, p, db, r0, r1 = ctx
+    mv = _register(client, p)
+    body = client.post(
+        "/perf/portfolio-returns/runs", json=_run_body(mv, r0, r1), headers=_h(p)
+    ).json()
+    run_id = body["run_id"]
+    pf = body["rows"][0]["portfolio_id"]
+    assert body["rows"][0]["calculation_run_id"] == run_id  # the additive API-1 discriminator
+
+    lst = client.get("/perf/portfolio-returns", params={"portfolio_id": pf}, headers=_h(p))
+    assert lst.status_code == 200
+    rows = lst.json()
+    assert rows and all(r["portfolio_id"] == pf for r in rows)
+    assert {r["calculation_run_id"] for r in rows} == {run_id}
+
+    empty = client.get(
+        "/perf/portfolio-returns", params={"portfolio_id": str(uuid.uuid4())}, headers=_h(p)
+    )
+    assert empty.status_code == 200 and empty.json() == []
+
+    latest = client.get(
+        "/perf/portfolio-returns/latest", params={"portfolio_id": pf}, headers=_h(p)
+    )
+    assert latest.status_code == 200  # /latest resolves (route ordering correct)
+    assert {r["calculation_run_id"] for r in latest.json()} == {run_id}
+    # /latest requires portfolio_id.
+    assert client.get("/perf/portfolio-returns/latest", headers=_h(p)).status_code == 422
+
+
+def test_api1_entity_reads_benchmark_relative_and_desmoothed_smoke(ctx) -> None:  # noqa: ANN001
+    """API-1 (Class A/perf): the entity + /latest reads for benchmark-relative + desmoothed-returns
+    resolve, are silent-empty on a tenant with no runs, require portfolio_id on /latest, and deny-
+    by-default. The full-data path is the same shared calc/reads helper the portfolio-returns test +
+    the CC-2 pacing golden already prove; this pins the router wiring (routes exist, /latest not
+    shadowed by /{result_id}, gating)."""
+    client, p, db, *_ = ctx
+    pf = str(uuid.uuid4())
+    inst = str(uuid.uuid4())
+    # benchmark-relative: entity + /latest keyed by portfolio_id (benchmark_id optional).
+    assert (
+        client.get("/perf/benchmark-relative", params={"portfolio_id": pf}, headers=_h(p)).json()
+        == []
+    )
+    br_latest = client.get(
+        "/perf/benchmark-relative/latest", params={"portfolio_id": pf}, headers=_h(p)
+    )
+    assert br_latest.status_code == 200 and br_latest.json() == []  # /latest resolves, empty
+    assert client.get("/perf/benchmark-relative/latest", headers=_h(p)).status_code == 422
+    # desmoothed-returns: entity + /latest keyed by (portfolio_id, instrument_id).
+    assert (
+        client.get("/perf/desmoothed-returns", params={"portfolio_id": pf}, headers=_h(p)).json()
+        == []
+    )
+    ds_latest = client.get(
+        "/perf/desmoothed-returns/latest",
+        params={"portfolio_id": pf, "instrument_id": inst},
+        headers=_h(p),
+    )
+    assert ds_latest.status_code == 200 and ds_latest.json() == []
+    # /latest requires BOTH keys — portfolio_id alone is a 422.
+    assert (
+        client.get(
+            "/perf/desmoothed-returns/latest", params={"portfolio_id": pf}, headers=_h(p)
+        ).status_code
+        == 422
+    )
+    # Deny-by-default: a stranger (no perf.view) is 403 on the entity read.
+    stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": p.tenant_id}
+    denied = client.get("/perf/benchmark-relative", params={"portfolio_id": pf}, headers=stranger)
+    assert denied.status_code == 403

@@ -196,6 +196,33 @@ def test_create_snapshot_201_stamps_tenant_and_audits(
     )
 
 
+def test_api1_snapshot_listing(ctx: tuple[TestClient, Principal, Session]) -> None:
+    """API-1 F2: ``GET /snapshots`` lists the tenant's snapshot HEADERS (newest-first), filterable
+    by ``purpose`` + ``as_of_valuation_date``; a non-matching filter is silent-empty; gated
+    ``snapshot.view``."""
+    client, principal, db = ctx
+    pf_id = _seed_complete(db, principal.tenant_id)
+    created = _create(client, principal, pf_id).json()["snapshot"]["id"]
+    # Unfiltered list surfaces the created header.
+    listed = client.get("/snapshots", headers=_headers(principal))
+    assert listed.status_code == 200
+    assert any(h["id"] == created for h in listed.json())
+    # Matching purpose filter keeps it; a non-matching purpose is silent-empty.
+    assert any(
+        h["id"] == created
+        for h in client.get(
+            "/snapshots", params={"purpose": "TEST"}, headers=_headers(principal)
+        ).json()
+    )
+    assert (
+        client.get("/snapshots", params={"purpose": "NONESUCH"}, headers=_headers(principal)).json()
+        == []
+    )
+    # Deny-by-default: no snapshot.view → 403.
+    stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": principal.tenant_id}
+    assert client.get("/snapshots", headers=stranger).status_code == 403
+
+
 def test_create_without_create_perm_403_no_write(
     ctx: tuple[TestClient, Principal, Session],
 ) -> None:

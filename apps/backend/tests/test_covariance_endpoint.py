@@ -176,6 +176,37 @@ def test_register_run_and_read_roundtrip(ctx) -> None:  # noqa: ANN001
     assert row_read.json()["covariance_value"] == row["covariance_value"]
 
 
+def test_api1_covariance_latest_read(ctx) -> None:  # noqa: ANN001
+    """API-1 (Class B): ``GET /risk/covariances/latest`` returns the newest COMPLETED run's FULL
+    matrix — canonical pair order, each row carrying ``calculation_run_id`` (the run pin) — and the
+    literal ``/latest`` is NOT shadowed by the ``/{covariance_id}`` by-id route. A second run makes
+    ``/latest`` follow the newer run. Empty (not 404) before any run; stranger denied."""
+    client, p, db, f_a, f_b = ctx
+    # Empty BEFORE any run — silent-empty list, and the literal /latest route resolves (no 422).
+    pre = client.get("/risk/covariances/latest", headers=_h(p))
+    assert pre.status_code == 200 and pre.json() == []
+    mv = _register(client, p)
+    r1 = client.post("/risk/covariances/runs", json=_run_body(mv, [f_a, f_b]), headers=_h(p))
+    run1 = r1.json()["run_id"]
+    latest = client.get("/risk/covariances/latest", headers=_h(p))
+    assert latest.status_code == 200
+    rows = latest.json()
+    assert len(rows) == 3  # the full 2-factor matrix (F·(F+1)/2)
+    assert all(row["calculation_run_id"] == run1 for row in rows)
+    assert [(row["factor_id_1"], row["factor_id_2"]) for row in rows] == sorted(
+        (row["factor_id_1"], row["factor_id_2"]) for row in rows
+    )  # canonical pair order
+    # A second COMPLETED run: /latest follows the NEWER run (the latest-resolver contract).
+    r2 = client.post("/risk/covariances/runs", json=_run_body(mv, [f_a, f_b]), headers=_h(p))
+    run2 = r2.json()["run_id"]
+    assert run2 != run1
+    latest2 = client.get("/risk/covariances/latest", headers=_h(p))
+    assert {row["calculation_run_id"] for row in latest2.json()} == {run2}
+    # Deny-by-default: a stranger (no risk.view) is 403.
+    stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": p.tenant_id}
+    assert client.get("/risk/covariances/latest", headers=stranger).status_code == 403
+
+
 def test_register_conflicts_and_floor(ctx) -> None:  # noqa: ANN001
     client, p, db, f_a, f_b = ctx
     mv = _register(client, p, window=4)

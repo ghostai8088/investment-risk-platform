@@ -40,7 +40,9 @@ from irp_shared.exposure import (
     ExposureRunNotVisible,
     ExposureRunQueryError,
     ExposureRunResult,
+    latest_exposure,
     list_exposure,
+    list_exposure_by_entity,
     list_exposure_runs,
     resolve_exposure,
     resolve_run,
@@ -107,6 +109,7 @@ class ExposureRunIn(BaseModel):
 
 class ExposureRowOut(BaseModel):
     id: str
+    calculation_run_id: str  # API-1: discriminates runs in an entity/time read
     portfolio_id: str
     instrument_id: str
     base_currency: str
@@ -134,6 +137,7 @@ class ExposureRunOut(BaseModel):
 def _row_out(row: ExposureAggregate) -> ExposureRowOut:
     return ExposureRowOut(
         id=row.id,
+        calculation_run_id=row.calculation_run_id,
         portfolio_id=row.portfolio_id,
         instrument_id=row.instrument_id,
         base_currency=row.base_currency,
@@ -274,6 +278,48 @@ def get_exposure_run(
         failure_reason=run.failure_reason,  # persisted at the FAILED transition (P3-C2 scaffold)
         rows=[_row_out(r) for r in rows],
     )
+
+
+@router.get("", response_model=list[ExposureRowOut])
+def list_exposure_by_entity_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    instrument_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[ExposureRowOut]:
+    """API-1 entity/time read: exposure-aggregate rows across COMPLETED runs filtered by
+    ``portfolio_id``/``instrument_id`` + an optional ``as_of`` run cutoff (a run spans the portfolio
+    SUBTREE, so the filter row-filters to the queried book; silent-empty on a foreign id). Each row
+    carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR."""
+    rows = list_exposure_by_entity(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        instrument_id=(str(instrument_id) if instrument_id is not None else None),
+        as_of=as_of,
+    )
+    return [_row_out(r) for r in rows]
+
+
+@router.get("/latest", response_model=list[ExposureRowOut])
+def latest_exposure_endpoint(
+    portfolio_id: uuid.UUID,
+    instrument_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[ExposureRowOut]:
+    """API-1 latest-resolver: the newest COMPLETED exposure run's rows for the portfolio (empty
+    when none)."""
+    rows = latest_exposure(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        instrument_id=(str(instrument_id) if instrument_id is not None else None),
+        as_of=as_of,
+    )
+    return [_row_out(r) for r in rows]
 
 
 @router.get("/{exposure_id}", response_model=ExposureRowOut)

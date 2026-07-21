@@ -48,6 +48,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.factor import resolve_factor
@@ -408,6 +409,27 @@ def list_covariances(
         )
         .scalars()
         .all()
+    )
+
+
+def latest_covariances(
+    session: Session,
+    *,
+    acting_tenant: str,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[CovarianceResult]:
+    """API-1 latest-resolver (Class B): the newest COMPLETED covariance run's FULL matrix (empty
+    when none). A covariance run IS the matrix identity — there is no entity sub-filter; the whole
+    matrix is the readable unit. Rows present in canonical pair order ``(factor_id_1,
+    factor_id_2)``. ``as_of=None`` = now."""
+    return latest_run_rows(
+        list_governed_results(
+            session,
+            CovarianceResult,
+            acting_tenant=acting_tenant,
+            as_of=as_of,
+            order_by=(CovarianceResult.factor_id_1, CovarianceResult.factor_id_2),
+        )
     )
 
 

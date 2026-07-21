@@ -66,6 +66,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_completed_run_of_type, resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata import DEFAULT_BASE, compose_effective_rate
@@ -651,6 +652,44 @@ def list_portfolio_returns(
         )
         .scalars()
         .all()
+    )
+
+
+def list_portfolio_returns_by_entity(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+) -> list[PortfolioReturnResult]:
+    """API-1 entity/time read (OD-API-1-B, Class A): ``portfolio_return_result`` rows across
+    COMPLETED runs for a portfolio, optionally as of a run cutoff. Flat rows carrying
+    ``calculation_run_id``; total ordering (run ``system_from`` DESC, run_id DESC, ``period_start``
+    ASC). Silent-empty on a foreign id; ``as_of=None`` = now (the pacing template via
+    ``calc/reads``)."""
+    return list_governed_results(
+        session,
+        PortfolioReturnResult,
+        acting_tenant=acting_tenant,
+        filters=((PortfolioReturnResult.portfolio_id, portfolio_id),),
+        as_of=as_of,
+        order_by=PortfolioReturnResult.period_start,
+    )
+
+
+def latest_portfolio_return(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    as_of=None,  # noqa: ANN001  (datetime | None)
+) -> list[PortfolioReturnResult]:
+    """API-1 latest-resolver (Class A): the newest COMPLETED portfolio-return run's rows for the
+    portfolio (across all model versions; empty when none)."""
+    return latest_run_rows(
+        list_portfolio_returns_by_entity(
+            session, acting_tenant=acting_tenant, portfolio_id=portfolio_id, as_of=as_of
+        )
     )
 
 

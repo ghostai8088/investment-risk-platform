@@ -32,6 +32,7 @@ from irp_shared.snapshot import (
     SnapshotPurposeError,
     build_snapshot,
     list_components,
+    list_snapshots,
     resolve_snapshot,
     verify_snapshot,
 )
@@ -182,6 +183,25 @@ def create_snapshot(
     )
     db.commit()
     return response
+
+
+@router.get("", response_model=list[SnapshotHeaderOut])
+def list_snapshots_endpoint(
+    purpose: str | None = None,
+    as_of_valuation_date: date | None = None,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[SnapshotHeaderOut]:
+    """API-1 F2 listing: snapshot HEADERS under the caller's tenant, optionally filtered by
+    ``purpose`` and/or ``as_of_valuation_date`` (silent-empty on no match; newest-first). Headers
+    only — the components + verify stay on the by-id reads. RLS-scoped."""
+    rows = list_snapshots(
+        db,
+        acting_tenant=principal.tenant_id,
+        purpose=purpose,
+        as_of_valuation_date=as_of_valuation_date,
+    )
+    return [_header_out(r) for r in rows]
 
 
 @router.get("/{snapshot_id}", response_model=SnapshotOut)
