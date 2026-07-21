@@ -6,12 +6,16 @@ import { App } from "./App";
 
 const BANNER = /DEV SESSION — identity is unverified/;
 
-function renderApp(): void {
+function renderApp(path = "/"): void {
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <App />
     </MemoryRouter>,
   );
+}
+
+function withSession(): void {
+  sessionStorage.setItem("irp.dev.session", JSON.stringify({ userId: "u-1", tenantId: "t-1" }));
 }
 
 beforeEach(() => {
@@ -30,12 +34,23 @@ describe("App", () => {
     renderApp();
     expect(screen.getByText(BANNER)).toBeTruthy();
     expect(screen.getByText(/Start a dev session/)).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Runs" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Runs (all calculations)" })).toBeNull();
     expect(mock).not.toHaveBeenCalled();
   });
 
-  it("keeps the DEV banner when a session exists (never dismissable)", async () => {
-    sessionStorage.setItem("irp.dev.session", JSON.stringify({ userId: "u-1", tenantId: "t-1" }));
+  it("lands on the governance walk (static) when a session exists — and still fetches NOTHING", () => {
+    withSession();
+    const mock = vi.fn();
+    vi.stubGlobal("fetch", mock);
+    renderApp("/");
+    expect(screen.getByText(BANNER)).toBeTruthy();
+    expect(screen.getByText(/How you can trust a governed number/)).toBeTruthy();
+    // The walk landing is static — the read-only client only fires when you enter a data step.
+    expect(mock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the DEV banner and shows the run browser at /runs", async () => {
+    withSession();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -44,19 +59,45 @@ describe("App", () => {
         json: () => Promise.resolve({ items: [] }),
       }),
     );
-    renderApp();
+    renderApp("/runs");
     expect(screen.getByText(BANNER)).toBeTruthy();
     expect(await screen.findByText(/No runs yet/)).toBeTruthy();
   });
 
-  it("renders the not-entitled state honestly on 403", async () => {
-    sessionStorage.setItem("irp.dev.session", JSON.stringify({ userId: "u-1", tenantId: "t-1" }));
+  it("renders the not-entitled state honestly on 403 (run browser)", async () => {
+    withSession();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, status: 403, json: () => Promise.resolve({}) }),
     );
-    renderApp();
+    renderApp("/runs");
     expect(await screen.findByText(/not entitled to view the selected runs/)).toBeTruthy();
     expect(screen.getByText(BANNER)).toBeTruthy();
+  });
+
+  it("provides a keyboard skip-link and marks the active nav step (WCAG)", () => {
+    withSession();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve([]) }),
+    );
+    renderApp("/walk/exposures");
+    const skip = screen.getByRole("link", { name: /Skip to main content/ });
+    expect(skip.getAttribute("href")).toBe("#walk-main");
+    const active = screen.getByRole("link", { current: "page" });
+    expect(active.textContent).toMatch(/Exposures/);
+  });
+
+  it("routes a walk step and shows its heading + the walk nav", () => {
+    withSession();
+    // The step resolves the demo book first; a clean empty portfolios list keeps the chrome tidy.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve([]) }),
+    );
+    renderApp("/walk/capture");
+    expect(screen.getByRole("heading", { name: /1 · Capture/ })).toBeTruthy();
+    // The shell nav lists the walk steps and the run browser.
+    expect(screen.getByRole("navigation", { name: "Governance walk" })).toBeTruthy();
   });
 });

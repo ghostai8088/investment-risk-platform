@@ -238,6 +238,24 @@ _MIN_OLS_OBSERVATIONS = 4
 #: verb + the inventory read ONLY (SOD-03 at role level); the 1L registrar holds the maker verbs.
 _VALIDATOR_PERMS = ("model.validate", "model.inventory.view")
 _REGISTRAR_PERMS = ("model.inventory.register", "risk.run", "risk.view", "perf.run", "perf.view")
+#: The 3L auditor is a READ-ONLY viewer persona (completing the 1L/2L/3L SoD trio) — it holds the
+#: full read set the FE-3 governance walk traverses (capture → exposures → numbers → backtest →
+#: validation → limitations, plus the provenance snapshot/lineage). Reuses existing *.view codes
+#: only — mints NO permission, NO governed code, NO migration. This is the principal a non-developer
+#: walks the demo AS; the registrar/validator keep their maker/checker split for WRITE duties.
+_AUDITOR_PERMS = (
+    "position.view",
+    "valuation.view",
+    "portfolio.view",
+    "risk.view",
+    "exposure.view",
+    "perf.view",
+    "model.inventory.view",
+    "snapshot.view",
+    "lineage.view",
+    "pacing.view",
+    "commitment.view",
+)
 
 
 class DemoCampaignError(RuntimeError):
@@ -350,16 +368,29 @@ def _seed_principals(session: Session) -> tuple[str, str]:
         display_name="MG-1 demo registrar (Claude, scribe)",
         external_subject="demo-registrar",
     )
+    # The read-only 3L auditor — the persona a non-developer walks the FE-3 demo AS (SSO subject
+    # "demo-auditor"). Holds the full walk read set; no maker/checker verbs.
+    auditor = AppUser(
+        tenant_id=DEMO_TENANT_ID,
+        display_name="Demo auditor (3L, read-only)",
+        external_subject="demo-auditor",
+    )
     role_2l = Role(tenant_id=DEMO_TENANT_ID, code="risk_manager_2l", name="Risk manager (2L)")
     role_1l = Role(tenant_id=DEMO_TENANT_ID, code="risk_analyst_1l", name="Risk analyst (1L)")
-    session.add_all([validator, registrar, role_2l, role_1l])
+    role_3l = Role(tenant_id=DEMO_TENANT_ID, code="auditor_3l", name="Auditor (3L, read-only)")
+    session.add_all([validator, registrar, auditor, role_2l, role_1l, role_3l])
     session.flush()
-    for role, codes in ((role_2l, _VALIDATOR_PERMS), (role_1l, _REGISTRAR_PERMS)):
+    for role, codes in (
+        (role_2l, _VALIDATOR_PERMS),
+        (role_1l, _REGISTRAR_PERMS),
+        (role_3l, _AUDITOR_PERMS),
+    ):
         for code in codes:
             perm = _resolve_permission(session, code)
             session.add(RolePermission(role_id=role.id, permission_id=perm.id))
     session.add(UserRole(tenant_id=DEMO_TENANT_ID, user_id=validator.id, role_id=role_2l.id))
     session.add(UserRole(tenant_id=DEMO_TENANT_ID, user_id=registrar.id, role_id=role_1l.id))
+    session.add(UserRole(tenant_id=DEMO_TENANT_ID, user_id=auditor.id, role_id=role_3l.id))
     session.flush()
     return registrar.id, validator.id
 

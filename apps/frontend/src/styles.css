@@ -191,3 +191,508 @@ tbody tr.clickable:hover {
   align-items: center;
   gap: 0.75rem;
 }
+
+/* --- FE-3 shell + governance walk (OD-FE-3-B/G) --- */
+
+.session-gate {
+  max-width: 26rem;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 2rem);
+}
+
+/* WCAG 2.4.1: a keyboard skip-link, visually hidden until focused. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+}
+
+.skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+  z-index: 20;
+  background: #fff;
+  color: #22305e;
+  padding: 0.4rem 0.8rem;
+  border: 2px solid #33417a;
+  border-radius: 4px;
+}
+
+/* The skip-link lands focus here — keep it VISIBLE (WCAG 2.4.7): a subtle inset ring so a keyboard
+   user sees where focus went, without a heavy outline around the whole content column. */
+main.shell-content:focus-visible {
+  outline: 3px solid #f0a500;
+  outline-offset: -3px;
+}
+
+.shell .app-header {
+  padding: 0.9rem 2rem;
+  border-bottom: 1px solid #dcdfe6;
+  background: #fff;
+}
+
+.app-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.book-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #33417a;
+  background: #e8ecfa;
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+}
+
+.shell-body {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+}
+
+.walk-nav {
+  flex: 0 0 15rem;
+  border-right: 1px solid #dcdfe6;
+  padding: 1rem 0.75rem;
+  background: #f4f5f8;
+}
+
+.nav-heading {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6a7080;
+  margin: 1rem 0.5rem 0.35rem;
+}
+
+.nav-heading:first-child {
+  margin-top: 0;
+}
+
+.nav-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-link {
+  display: block;
+  padding: 0.4rem 0.6rem;
+  border-radius: 5px;
+  color: #22305e;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.nav-link:hover {
+  background: #e6eaf5;
+}
+
+.nav-link.active {
+  background: #33417a;
+  color: #fff;
+  font-weight: 600;
+}
+
+.nav-link:focus-visible,
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid #f0a500;
+  outline-offset: 1px;
+}
+
+/* Override the default centered `main` for the shell's content column. */
+main.shell-content {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 1.5rem 2rem 3rem;
+}
+
+.lede {
+  max-width: 56rem;
+  color: #33384a;
+  line-height: 1.5;
+}
+
+.walk-cards {
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+
+.walk-card a {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #d3d7e0;
+  border-radius: 8px;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  height: 100%;
+}
+
+.walk-card a:hover {
+  border-color: #33417a;
+  box-shadow: 0 1px 4px rgba(51, 65, 122, 0.15);
+}
+
+.walk-card-label {
+  font-weight: 700;
+  color: #22305e;
+}
+
+.walk-card-blurb {
+  font-size: 0.88rem;
+  color: #555b6b;
+}
+
+.stepper {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+}
+
+.stepper-dot a {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  text-decoration: none;
+  color: #4a5068;
+  font-size: 0.82rem;
+}
+
+.stepper-dot a:hover {
+  background: #eef0f6;
+}
+
+.stepper-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  background: #d7dbe6;
+  color: #22305e;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.stepper-dot.current a {
+  color: #22305e;
+  font-weight: 700;
+}
+
+.stepper-dot.current .stepper-num {
+  background: #33417a;
+  color: #fff;
+}
+
+.step-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e5ec;
+}
+
+.step-nav a {
+  color: #33417a;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.step-nav a:hover {
+  text-decoration: underline;
+}
+
+.placeholder {
+  color: #555b6b;
+  background: #f4f5f8;
+  border: 1px dashed #c7ccd8;
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  max-width: 56rem;
+}
+
+/* --- FE-3 GovernedValue + validation + degradation (OD-FE-3-C/E) --- */
+
+.governed-value {
+  border: 1px solid #d7dbe6;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin: 0.6rem 0;
+  background: #fff;
+  max-width: 56rem;
+}
+
+.gv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.gv-label {
+  font-weight: 700;
+  color: #22305e;
+}
+
+.gv-number {
+  font-size: 1.05rem;
+  color: #101425;
+  word-break: break-all;
+}
+
+.provenance-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  margin: 0.6rem 0 0;
+  padding-top: 0.55rem;
+  border-top: 1px dashed #e2e5ec;
+}
+
+.prov-item {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.prov-item dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6a7080;
+}
+
+.prov-item dd {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.verify.ok {
+  color: #1e6b3a;
+  font-weight: 700;
+}
+
+.verify.bad {
+  color: #8f1d1d;
+  font-weight: 700;
+}
+
+.gv-audit {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+
+.gv-audit a {
+  color: #33417a;
+}
+
+.validation-badge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  letter-spacing: 0.02em;
+}
+
+.badge.tier {
+  background: #e8ecfa;
+  color: #33417a;
+}
+
+.badge.outcome.ok {
+  background: #d9f2e0;
+  color: #1e6b3a;
+}
+
+.badge.outcome.warn {
+  background: #fbeecc;
+  color: #8a5a12;
+}
+
+.badge.outcome.bad,
+.badge.bad {
+  background: #fadcdc;
+  color: #8f1d1d;
+}
+
+.badge.outcome.info {
+  background: #e8e8f5;
+  color: #3a3a7a;
+}
+
+.badge.outcome.muted {
+  background: #e9ebf0;
+  color: #5a6070;
+}
+
+.muted {
+  color: #5a6070;
+  max-width: 56rem;
+}
+
+.prov-line {
+  font-size: 0.82rem;
+  color: #5a6070;
+  margin: 0.25rem 0 0.6rem;
+}
+
+.gv-governance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed #e2e5ec;
+}
+
+.gv-gov-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: #6a7080;
+}
+
+.limitations summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #8a5a12;
+}
+
+.limitations ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.limitations li {
+  font-size: 0.85rem;
+  color: #43485a;
+  line-height: 1.45;
+  margin-bottom: 0.4rem;
+}
+
+/* --- FE-3 backtest / validation / limitations (step 5) --- */
+
+.backtest-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  margin: 0.6rem 0 0;
+  padding-top: 0.55rem;
+  border-top: 1px dashed #e2e5ec;
+}
+
+.validation-card {
+  border: 1px solid #d7dbe6;
+  border-radius: 8px;
+  padding: 0.85rem 1.1rem;
+  margin: 0.75rem 0;
+  background: #fff;
+  max-width: 60rem;
+}
+
+.vc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.vc-head h3 {
+  margin: 0;
+}
+
+.validation-card h4 {
+  margin: 0.9rem 0 0.3rem;
+  font-size: 0.9rem;
+}
+
+.findings,
+.evidence,
+.limitations-list {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.findings li,
+.evidence li,
+.limitations-list li {
+  font-size: 0.88rem;
+  color: #35394a;
+  line-height: 1.5;
+  margin-bottom: 0.45rem;
+}
+
+.badge.muted {
+  background: #e9ebf0;
+  color: #5a6070;
+}
+
+.badge.sev-high,
+.badge.sev-critical {
+  background: #fadcdc;
+  color: #8f1d1d;
+}
+
+.badge.sev-medium {
+  background: #fbeecc;
+  color: #8a5a12;
+}
+
+.badge.sev-low {
+  background: #e3ecf7;
+  color: #2c5378;
+}
+
+.limitation-group {
+  margin: 0.5rem 0 1rem;
+}
+
+.limitation-group h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95rem;
+}
+
+/* A 403 is a calm, first-class "you lack this permission" note, not a red failure. */
+.state.denied {
+  color: #5a6070;
+  background: #f1f2f6;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  padding: 0.6rem 0.85rem;
+  font-style: normal;
+  max-width: 56rem;
+}

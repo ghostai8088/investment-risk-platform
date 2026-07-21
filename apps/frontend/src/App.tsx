@@ -2,54 +2,60 @@ import { useState } from "react";
 import type { ReactElement } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
+import { AppShell } from "./components/AppShell";
 import { DevBanner } from "./components/DevBanner";
 import { SessionForm } from "./components/SessionForm";
 import { clearSession, loadSession, saveSession } from "./session";
 import type { DevSession } from "./session";
 import { RunDetail } from "./views/RunDetail";
 import { RunsList } from "./views/RunsList";
+import { WalkOverview } from "./views/walk/WalkOverview";
+import { WalkStep } from "./views/walk/WalkStep";
 
 export function App(): ReactElement {
   const [session, setSession] = useState<DevSession | null>(() => loadSession());
 
-  return (
-    <>
-      <DevBanner />
-      <main>
-        <header className="app-header">
-          <h1>Investment Risk Platform — risk runs (read-only)</h1>
-          {session ? (
-            <div className="session-info">
-              <span className="mono">
-                {session.userId} @ {session.tenantId}
-              </span>
-              <button
-                onClick={() => {
-                  clearSession();
-                  setSession(null);
-                }}
-              >
-                End session
-              </button>
-            </div>
-          ) : null}
-        </header>
-
-        {session ? (
-          <Routes>
-            <Route path="/" element={<RunsList session={session} />} />
-            <Route path="/runs/:family/:runId" element={<RunDetail session={session} />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        ) : (
+  if (!session) {
+    return (
+      <>
+        <DevBanner />
+        <main className="session-gate">
+          <h1>Investment Risk Platform</h1>
           <SessionForm
             onStart={(s) => {
               saveSession(s);
               setSession(s);
             }}
           />
-        )}
-      </main>
+        </main>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <DevBanner />
+      <Routes>
+        <Route
+          element={
+            <AppShell
+              session={session}
+              onEndSession={() => {
+                clearSession();
+                setSession(null);
+              }}
+            />
+          }
+        >
+          {/* The governance walk is the front door; the run browser stays reachable at /runs. */}
+          <Route index element={<WalkOverview />} />
+          <Route path="walk" element={<WalkOverview />} />
+          <Route path="walk/:step" element={<WalkStep session={session} />} />
+          <Route path="runs" element={<RunsList session={session} />} />
+          <Route path="runs/:family/:runId" element={<RunDetail session={session} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
     </>
   );
 }

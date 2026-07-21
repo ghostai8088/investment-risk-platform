@@ -30,6 +30,22 @@ export type RunDetailBase = Omit<Schemas["SensitivityRunOut"], "rows"> & {
   rows: Record<string, string | number | null>[];
 };
 
+/** The FE-3 governance-walk read DTOs — aliased to the generated schemas (OD-FE-3-D), so a
+ * backend rename/removal is a `tsc` error and the CI drift-check stays honest. Decimal fields on
+ * these (`quantity`, `mark_value`, `loading`, `exposure_amount`, …) are `string` and stay strings
+ * to the DOM (rendered via `verbatim`). */
+export type PortfolioSummary = Schemas["PortfolioOut"];
+export type Position = Schemas["PositionOut"];
+export type Valuation = Schemas["ValuationOut"];
+export type FactorExposureRow = Schemas["FactorExposureRowOut"];
+export type ExposureRow = Schemas["ExposureRowOut"];
+export type PortfolioReturnRow = Schemas["PortfolioReturnRowOut"];
+export type CovarianceRow = Schemas["CovarianceRowOut"];
+export type VarBacktestRow = Schemas["VarBacktestRowOut"];
+export type EsBacktestRow = Schemas["EsBacktestRowOut"];
+export type ValidationSummary = Schemas["ValidationSummaryOut"];
+export type ValidationDetail = Schemas["ValidationDetailOut"];
+
 /** The run families and their API path segments (the run detail route carries the family so a
  * deep link needs exactly ONE fetch — OD-FE-1-B). The four RISK families are gated ``risk.view``
  * and listed by ``/risk/runs``; ``exposure`` (P3-C2 OD-C) is gated ``exposure.view`` and listed

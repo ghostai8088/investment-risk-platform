@@ -38,7 +38,9 @@ type CountKey =
   | "n_regressors"
   | "n_shocks_unmatched"
   | "period_index"
-  | "tenor_days";
+  | "tenor_days"
+  // A bitemporal row-version integer (FR-versioned captured-input DTOs), not a governed decimal.
+  | "record_version";
 
 /** Keys of `T` whose value can be a `number`. A governed decimal is `string`, so it never qualifies
  * — unless it regressed to `number` or `number | string`. (`-?` strips optionality so nullable
@@ -69,6 +71,11 @@ export type OnlyCountsAreNumbersOnEveryRowOut = [
   AssertTrue<OnlyCountsAreNumbers<Schemas["ProxyWeightRowOut"]>>,
   AssertTrue<OnlyCountsAreNumbers<Schemas["EsBacktestRowOut"]>>,
   AssertTrue<OnlyCountsAreNumbers<Schemas["PacingRowOut"]>>,
+  // FE-3 is the first slice to render captured-input decimals (quantity / cost_basis / mark_value)
+  // to the DOM, so those DTOs join the exhaustive guard (the FE-2 lesson: guard the moment a
+  // decimal could be wired, not a sampled subset).
+  AssertTrue<OnlyCountsAreNumbers<Schemas["PositionOut"]>>,
+  AssertTrue<OnlyCountsAreNumbers<Schemas["ValuationOut"]>>,
 ];
 
 /** Illustrative companion: a handful of named governed decimals asserted `string` outright — human
