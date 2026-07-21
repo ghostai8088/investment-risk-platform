@@ -8501,6 +8501,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8533,6 +8534,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8565,6 +8567,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8601,6 +8604,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -8635,6 +8639,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -8678,6 +8683,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -8712,6 +8718,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -8750,6 +8757,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -8788,6 +8796,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -8830,6 +8839,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -8864,6 +8874,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -8902,6 +8913,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -8940,6 +8952,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -8974,6 +8987,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -9018,6 +9032,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -9052,6 +9067,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -9090,6 +9106,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -9128,6 +9145,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 benchmark_id: string;
@@ -9169,6 +9187,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9201,6 +9220,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9237,6 +9257,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9276,6 +9297,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9308,6 +9330,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9349,6 +9372,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9381,6 +9405,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9417,6 +9442,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9462,6 +9488,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9494,6 +9521,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9538,6 +9566,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9570,6 +9599,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 curve_id: string;
@@ -9608,6 +9638,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 curve_id: string;
@@ -9649,6 +9680,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9681,6 +9713,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9717,6 +9750,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9753,6 +9787,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9785,6 +9820,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9817,6 +9853,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9853,6 +9890,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 rule_id: string;
@@ -9891,6 +9929,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9927,6 +9966,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9963,6 +10003,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9995,6 +10036,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10031,6 +10073,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -10065,6 +10108,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 exposure_id: string;
@@ -10099,6 +10143,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10131,6 +10176,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10169,6 +10215,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 factor_id: string;
@@ -10203,6 +10250,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 factor_id: string;
@@ -10246,6 +10294,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 factor_id: string;
@@ -10280,6 +10329,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 factor_id: string;
@@ -10318,6 +10368,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 factor_id: string;
@@ -10356,6 +10407,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 factor_id: string;
@@ -10402,6 +10454,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10434,6 +10487,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10477,6 +10531,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10517,6 +10572,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10549,6 +10605,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 fx_rate_id: string;
@@ -10587,6 +10644,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 fx_rate_id: string;
@@ -10647,6 +10705,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10679,6 +10738,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 batch_id: string;
@@ -10713,6 +10773,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10749,6 +10810,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 edge_id: string;
@@ -10783,6 +10845,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10815,6 +10878,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10851,6 +10915,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 model_id: string;
@@ -10885,6 +10950,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 model_id: string;
@@ -10923,6 +10989,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 model_id: string;
@@ -10958,6 +11025,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 model_id: string;
@@ -10993,6 +11061,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 model_id: string;
@@ -11032,6 +11101,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11072,6 +11142,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11108,6 +11179,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11140,6 +11212,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 result_id: string;
@@ -11174,6 +11247,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11210,6 +11284,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -11248,6 +11323,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11284,6 +11360,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11316,6 +11393,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11352,6 +11430,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -11386,6 +11465,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 result_id: string;
@@ -11424,6 +11504,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11460,6 +11541,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11492,6 +11574,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11528,6 +11611,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -11562,6 +11646,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 result_id: string;
@@ -11596,6 +11681,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11632,6 +11718,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11668,6 +11755,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11704,6 +11792,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11740,6 +11829,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11779,6 +11869,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11814,6 +11905,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11846,6 +11938,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11882,6 +11975,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -11916,6 +12010,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 result_id: string;
@@ -11955,6 +12050,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11990,6 +12086,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12022,6 +12119,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12058,6 +12156,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 portfolio_id: string;
@@ -12092,6 +12191,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 portfolio_id: string;
@@ -12138,6 +12238,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 portfolio_id: string;
@@ -12172,6 +12273,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 portfolio_id: string;
@@ -12209,6 +12311,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12241,6 +12344,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12282,6 +12386,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12314,6 +12419,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 position_id: string;
@@ -12348,6 +12454,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 position_id: string;
@@ -12386,6 +12493,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 position_id: string;
@@ -12433,6 +12541,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12465,6 +12574,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12509,6 +12619,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12541,6 +12652,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 price_id: string;
@@ -12579,6 +12691,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 price_id: string;
@@ -12619,6 +12732,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12651,6 +12765,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12692,6 +12807,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12724,6 +12840,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12760,6 +12877,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12796,6 +12914,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12832,6 +12951,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12864,6 +12984,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12900,6 +13021,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 calendar_id: string;
@@ -12936,6 +13058,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -12968,6 +13091,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13004,6 +13128,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 corporate_action_id: string;
@@ -13038,6 +13163,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 corporate_action_id: string;
@@ -13076,6 +13202,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13108,6 +13235,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13144,6 +13272,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 counterparty_id: string;
@@ -13178,6 +13307,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13210,6 +13340,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13246,6 +13377,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 currency_id: string;
@@ -13280,6 +13412,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13319,6 +13452,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13351,6 +13485,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13383,6 +13518,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13419,6 +13555,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 instrument_id: string;
@@ -13453,6 +13590,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 instrument_id: string;
@@ -13487,6 +13625,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 instrument_id: string;
@@ -13528,6 +13667,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 instrument_id: string;
@@ -13562,6 +13702,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13594,6 +13735,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13630,6 +13772,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 issuer_id: string;
@@ -13664,6 +13807,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13696,6 +13840,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13732,6 +13877,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 legal_entity_id: string;
@@ -13766,6 +13912,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13798,6 +13945,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13834,6 +13982,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 rating_scale_id: string;
@@ -13868,6 +14017,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13904,6 +14054,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -13938,6 +14089,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 active_risk_id: string;
@@ -13974,6 +14126,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14006,6 +14159,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14042,6 +14196,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -14076,6 +14231,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 covariance_id: string;
@@ -14113,6 +14269,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14148,6 +14305,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14180,6 +14338,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14216,6 +14375,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -14250,6 +14410,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 result_id: string;
@@ -14288,6 +14449,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14324,6 +14486,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14356,6 +14519,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14392,6 +14556,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -14426,6 +14591,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 factor_exposure_id: string;
@@ -14460,6 +14626,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14496,6 +14663,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14532,6 +14700,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14568,6 +14737,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14604,6 +14774,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14640,6 +14811,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14676,6 +14848,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14712,6 +14885,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14748,6 +14922,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14784,6 +14959,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14820,6 +14996,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14856,6 +15033,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14892,6 +15070,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14928,6 +15107,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14964,6 +15144,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15000,6 +15181,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15036,6 +15218,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15072,6 +15255,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15108,6 +15292,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15148,6 +15333,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15184,6 +15370,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15216,6 +15403,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15252,6 +15440,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -15286,6 +15475,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 result_id: string;
@@ -15320,6 +15510,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15361,6 +15552,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15396,6 +15588,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15428,6 +15621,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 result_id: string;
@@ -15462,6 +15656,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15498,6 +15693,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -15532,6 +15728,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15564,6 +15761,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15600,6 +15798,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 scenario_id: string;
@@ -15634,6 +15833,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 scenario_id: string;
@@ -15676,6 +15876,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 scenario_id: string;
@@ -15710,6 +15911,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 scenario_id: string;
@@ -15748,6 +15950,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 scenario_id: string;
@@ -15786,6 +15989,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 scenario_id: string;
@@ -15827,6 +16031,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15859,6 +16064,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15895,6 +16101,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -15929,6 +16136,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 sensitivity_id: string;
@@ -15966,6 +16174,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16001,6 +16210,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16033,6 +16243,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16069,6 +16280,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -16103,6 +16315,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 result_id: string;
@@ -16137,6 +16350,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16173,6 +16387,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16209,6 +16424,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 run_id: string;
@@ -16243,6 +16459,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 var_id: string;
@@ -16280,6 +16497,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16312,6 +16530,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16348,6 +16567,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 snapshot_id: string;
@@ -16382,6 +16602,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 snapshot_id: string;
@@ -16420,6 +16641,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16452,6 +16674,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16488,6 +16711,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 transaction_id: string;
@@ -16522,6 +16746,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 transaction_id: string;
@@ -16564,6 +16789,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16596,6 +16822,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16638,6 +16865,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -16670,6 +16898,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 valuation_id: string;
@@ -16704,6 +16933,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 valuation_id: string;
@@ -16742,6 +16972,7 @@ export interface operations {
             header?: {
                 "x-user-id"?: string | null;
                 "x-tenant-id"?: string | null;
+                authorization?: string | null;
             };
             path: {
                 valuation_id: string;
