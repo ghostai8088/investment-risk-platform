@@ -339,9 +339,16 @@ def _seed_principals(session: Session) -> tuple[str, str]:
     """The tenant-local role wiring (the endpoint-test pattern — the only working one): the 2L
     ``app_user`` NAMED FOR THE USER (the validator of record per OD-MG-1-G) + a 1L registrar for
     the register-side acts. Returns ``(registrar_user_id, validator_user_id)``."""
-    validator = AppUser(tenant_id=DEMO_TENANT_ID, display_name="Andrew Cox")
+    # external_subject binds the OIDC ``sub`` claim (SSO-1, AD-007) — stable values so a token from
+    # the documented local Keycloak realm (infra/keycloak/) resolves to these demo principals. A
+    # column set only: no new run, no count change.
+    validator = AppUser(
+        tenant_id=DEMO_TENANT_ID, display_name="Andrew Cox", external_subject="demo-validator"
+    )
     registrar = AppUser(
-        tenant_id=DEMO_TENANT_ID, display_name="MG-1 demo registrar (Claude, scribe)"
+        tenant_id=DEMO_TENANT_ID,
+        display_name="MG-1 demo registrar (Claude, scribe)",
+        external_subject="demo-registrar",
     )
     role_2l = Role(tenant_id=DEMO_TENANT_ID, code="risk_manager_2l", name="Risk manager (2L)")
     role_1l = Role(tenant_id=DEMO_TENANT_ID, code="risk_analyst_1l", name="Risk analyst (1L)")

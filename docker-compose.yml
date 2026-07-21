@@ -36,5 +36,22 @@ services:
     volumes:
       - irp_pgdata:/var/lib/postgresql/data
 
+  # Local-dev OIDC provider (SSO-1 / AD-007, closes OD-048). Opt-in only:
+  #   docker compose --profile oidc up keycloak
+  # Imports infra/keycloak/irp-local-realm.json (realm "irp-local"). NOT started by a plain
+  # `docker compose up`, and NOT a CI dependency (CI verifies tokens with locally-signed keys).
+  # Admin credentials are local-only dev placeholders (BR-10) — override via .env if desired.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    profiles: ["oidc"]
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+
 volumes:
   irp_pgdata:
