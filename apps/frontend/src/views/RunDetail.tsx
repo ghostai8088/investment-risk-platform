@@ -3,16 +3,10 @@ import type { ReactElement } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { ApiError, apiGet } from "../api/client";
+import { verbatim } from "../api/format";
 import { FAMILIES, FAMILY_ROW_COLUMNS, runDetailUrl } from "../api/types";
 import type { Family, RunDetailBase } from "../api/types";
 import type { DevSession } from "../session";
-
-/** Render a cell VERBATIM: values arrive as JSON strings/numbers and are never re-parsed —
- * a `Number()` here would corrupt the exact decimal strings (OQ-FE-1-7). */
-function cell(value: string | number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  return typeof value === "number" ? String(value) : value;
-}
 
 /** FL-1 (the ES honesty fix, OD-FL-1-F): on an ES row the backend ECHOES the quantile z — it is
  * NOT the ES arithmetic (the multiplier k_c lives on the bound model_version), so `z × σ ≠ value`
@@ -20,7 +14,7 @@ function cell(value: string | number | null | undefined): string {
  * Per-row metric_type-aware rendering annotates the echo; every other cell renders verbatim.
  * (Surfacing es_multiplier on the row DTO is the recorded backend v2 — not smuggled in here.) */
 function resultCell(row: Record<string, string | number | null>, key: string): string {
-  const value = cell(row[key]);
+  const value = verbatim(row[key]);
   if (key === "z_score" && row.metric_type === "ES_PARAMETRIC" && value !== "—") {
     return `${value} (echo — not the ES multiplier; see model version)`;
   }
@@ -117,7 +111,7 @@ export function RunDetail({ session }: { session: DevSession }): ReactElement {
               {PROVENANCE_FIELDS.map((f) => (
                 <tr key={f.key}>
                   <th>{f.label}</th>
-                  <td className="mono">{cell(run[f.key] as string | null)}</td>
+                  <td className="mono">{verbatim(run[f.key] as string | null)}</td>
                 </tr>
               ))}
             </tbody>

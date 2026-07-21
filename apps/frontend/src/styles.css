@@ -408,3 +408,136 @@ main.shell-content {
   padding: 1rem 1.25rem;
   max-width: 56rem;
 }
+
+/* --- FE-3 GovernedValue + validation + degradation (OD-FE-3-C/E) --- */
+
+.governed-value {
+  border: 1px solid #d7dbe6;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin: 0.6rem 0;
+  background: #fff;
+  max-width: 56rem;
+}
+
+.gv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.gv-label {
+  font-weight: 700;
+  color: #22305e;
+}
+
+.gv-number {
+  font-size: 1.05rem;
+  color: #101425;
+  word-break: break-all;
+}
+
+.provenance-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  margin: 0.6rem 0 0;
+  padding-top: 0.55rem;
+  border-top: 1px dashed #e2e5ec;
+}
+
+.prov-item {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.prov-item dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6a7080;
+}
+
+.prov-item dd {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.verify.ok {
+  color: #1e6b3a;
+  font-weight: 700;
+}
+
+.verify.bad {
+  color: #8f1d1d;
+  font-weight: 700;
+}
+
+.gv-audit {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+
+.gv-audit a {
+  color: #33417a;
+}
+
+.validation-badge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  letter-spacing: 0.02em;
+}
+
+.badge.tier {
+  background: #e8ecfa;
+  color: #33417a;
+}
+
+.badge.outcome.ok {
+  background: #d9f2e0;
+  color: #1e6b3a;
+}
+
+.badge.outcome.warn {
+  background: #fbeecc;
+  color: #8a5a12;
+}
+
+.badge.outcome.bad,
+.badge.bad {
+  background: #fadcdc;
+  color: #8f1d1d;
+}
+
+.badge.outcome.info {
+  background: #e8e8f5;
+  color: #3a3a7a;
+}
+
+.badge.outcome.muted {
+  background: #e9ebf0;
+  color: #5a6070;
+}
+
+/* A 403 is a calm, first-class "you lack this permission" note, not a red failure. */
+.state.denied {
+  color: #5a6070;
+  background: #f1f2f6;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  padding: 0.6rem 0.85rem;
+  font-style: normal;
+  max-width: 56rem;
+}
