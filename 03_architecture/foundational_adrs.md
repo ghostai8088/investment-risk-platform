@@ -79,6 +79,14 @@
 
 ### AD-007 — Authentication / SSO
 - **Status:** Accepted | **Date:** 2026-06-17 | **Approver:** H-03 CISO
+- **Realized (SSO-1, 2026-07-21):** the API is an **OAuth2 resource server** — it verifies an
+  `Authorization: Bearer` JWT against the issuer JWKS (signature, `iss`, `aud`, `exp`, RS256-only
+  allow-list) and resolves the `sub` claim to an active `app_user` in the token's tenant
+  (`apps/backend/src/irp_backend/auth.py`, `deps.py`). `auth_mode` defaults to `oidc` (fail-closed);
+  the legacy `dev_header` shim is permitted only when `app_env == "local"` (startup guard). MFA is
+  enforced IdP-side, with an optional `acr`/`amr` assertion check. **OD-048 CLOSED**: the local-dev
+  OIDC provider is **Keycloak** (`infra/keycloak/`). The SPA auth-code+PKCE login flow lands with
+  FE-3; SAML remains "supported" but unbuilt.
 - **Context:** Enterprise buyers require federated identity, MFA, and least privilege.
 - **Decision (accepted):** **OIDC as the primary protocol** (SAML supported) federating to the enterprise IdP; **MFA enforced**;
   short-lived signed tokens with rotation; service accounts and AI agents authenticated and scoped through the entitlement
@@ -158,7 +166,7 @@ AD-003 … AD-010 are ratified, closing prior OD-004 … OD-011. Residual, non-b
 |---|---|
 | OD-046 | Confirm dedicated columnar/time-series store trigger and target (behind AD-004 market-data interface). |
 | OD-047 | Confirm managed vs self-hosted Kubernetes and cloud provider(s) for first deployment (AD-010). |
-| OD-048 | Confirm local-dev OIDC provider choice (AD-007). |
+| OD-048 | ~~Confirm local-dev OIDC provider choice (AD-007).~~ **CLOSED (SSO-1, 2026-07-21): Keycloak** (`infra/keycloak/`). |
 
 ## Dependencies
 

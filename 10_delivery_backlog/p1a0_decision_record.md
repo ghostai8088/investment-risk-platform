@@ -77,7 +77,15 @@ explicit. This refines, and is covered by, **AD-007** (OIDC/SAML SSO + MFA); no 
 before any external user / client data. The entitlement `tenant_id` guard + RLS keep the unverified tenant from escalating across
 tenants in dev.
 
-**Status:** Accepted (scoping/security; no new ADR — see AD-007).
+**Cutover (SSO-1, 2026-07-21).** The production gate is now enforced in code: `auth_mode` defaults
+to `oidc` (verified Bearer JWT → `app_user` resolution), and the `X-User-Id`/`X-Tenant-Id` shim is
+permitted **only when `app_env == "local"`** — a fail-closed startup guard (`validate_auth_config`)
+raises otherwise, so the unverified shim **cannot** run in a deployed environment. The "P9" horizon
+in the original decision was pulled forward to Wave-9 (the UI-is-core premise made real identity the
+gate before any non-developer sees the product). Enforcement behind the shim (entitlement + FORCE
+RLS) was unchanged — SSO-1 only changed how the `Principal` is minted.
+
+**Status:** Accepted (scoping/security; no new ADR — see AD-007). **Production cutover realized at SSO-1.**
 
 ### DR-P1A0-4 — OQ-P1A-0-4 RLS-denied access logging → **Accepted (scoping)**
 **Decision.** **Defer** explicit `AUTH.DENIED` audit logging for database-level RLS denials. P1A-0 must **preserve an

@@ -1,4 +1,9 @@
-"""The app request path sets tenant context via get_tenant_session (AD-016)."""
+"""The app request path sets tenant context via get_tenant_session (AD-016).
+
+``get_tenant_session`` consumes an already-resolved ``Principal`` and is therefore
+identity-mode-agnostic (SSO-1): it behaves identically whether the principal came from the oidc
+verifier or the dev-header shim, so the auth_mode dispatcher does not change it.
+"""
 
 from __future__ import annotations
 

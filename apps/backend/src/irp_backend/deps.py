@@ -1,10 +1,12 @@
 """FastAPI dependencies wiring the foundation frameworks into the API.
 
 - ``get_db`` yields a SQLAlchemy session (configured from ``DATABASE_URL``).
-- ``get_principal`` resolves the caller. **DEV PLACEHOLDER**: it reads ``X-User-Id`` /
-  ``X-Tenant-Id`` headers. Real identity comes from OIDC/SSO (AD-007); this shim exists only
-  so the entitlement dependency is exercisable before SSO lands — the header tenant is
-  **unverified and not a security boundary** until SSO (DR-P1A0-3).
+- ``get_principal`` resolves the caller per ``settings.auth_mode`` (SSO-1, AD-007). In ``oidc``
+  mode (the default) it verifies the ``Authorization: Bearer`` JWT and resolves the ``sub`` claim
+  to an active ``app_user`` in the token's tenant. In ``dev_header`` mode it reads the unverified
+  ``X-User-Id`` / ``X-Tenant-Id`` shim — a **development-only** path, permitted only when
+  ``app_env == "local"`` (fail-closed at startup via ``validate_auth_config``); the header tenant
+  is **unverified and not a security boundary** in that mode (DR-P1A0-3).
 - ``get_tenant_session`` yields a session with ``app.current_tenant`` set for the principal's
   tenant (AD-016) so PostgreSQL RLS admits the principal's rows. **All entitled/data paths use
   this**, not ``get_db`` directly.
@@ -20,15 +22,19 @@ verification); normal request paths never use it.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 from functools import lru_cache
 
 from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from irp_backend.auth import TokenError, get_verifier
 from irp_backend.config import settings
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import set_tenant_context
+from irp_shared.entitlement.models import AppUser
 from irp_shared.entitlement.service import Principal, has_permission
 
 
@@ -48,12 +54,86 @@ def get_db() -> Iterator[Session]:
 
 
 def get_principal(
+    db: Session = Depends(get_db),
     x_user_id: str | None = Header(default=None),
     x_tenant_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ) -> Principal:
+    """Resolve the caller's identity per ``settings.auth_mode`` (SSO-1, AD-007).
+
+    - ``oidc`` (default): verify the ``Authorization: Bearer`` JWT and resolve its ``sub`` claim to
+      an active ``app_user`` in the token's tenant (see :func:`_principal_from_token`).
+    - ``dev_header``: the unverified ``X-User-Id`` / ``X-Tenant-Id`` shim — permitted only when
+      ``app_env == "local"`` (enforced fail-closed at startup by ``validate_auth_config``).
+    """
+    if settings.auth_mode == "dev_header":
+        # Defense in depth: the startup guard already forbids dev_header outside local, but never
+        # trust the unverified shim in a non-local process even if it somehow booted (DR-P1A0-3).
+        if settings.app_env != "local":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
+            )
+        return _principal_from_headers(x_user_id, x_tenant_id)
+    return _principal_from_token(authorization, db)
+
+
+def _principal_from_headers(x_user_id: str | None, x_tenant_id: str | None) -> Principal:
+    """The DEV shim: trust the caller's asserted identity headers (local only)."""
     if not x_user_id or not x_tenant_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing principal")
     return Principal(user_id=x_user_id, tenant_id=x_tenant_id)
+
+
+def _principal_from_token(authorization: str | None, db: Session) -> Principal:
+    """Verify a Bearer JWT and resolve ``(tenant_claim, sub)`` → an active ``app_user`` row.
+
+    The token's ``sub`` binds to ``app_user.external_subject``; the tenant claim is cross-checked by
+    the ``(tenant_id, external_subject)`` lookup (OD-SSO-1-C). ``Principal.user_id`` is the resolved
+    ``app_user.id`` — the value ``has_permission`` joins on — NOT the raw ``sub``. Every failure
+    returns an opaque 401 (no user-enumeration signal). The lookup runs after arming the claimed
+    tenant's RLS context, so ``app_user`` (a FORCE-RLS table) is visible for exactly that tenant.
+
+    The tenant claim is **canonicalized** (``str(uuid.UUID(...))``) before it arms the RLS GUC: the
+    ``tenant_isolation`` policy compares ``tenant_id::text`` (which PostgreSQL renders as
+    lowercase-hyphenated) against ``current_setting('app.current_tenant')``, so a valid-but-non-
+    canonical UUID claim (uppercase, or braces/urn form) would be RLS-hidden — a false-deny of a
+    legitimate user — without normalization. A non-UUID claim raises ``ValueError`` → opaque 401.
+    """
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
+    )
+    if not authorization:
+        raise unauthorized
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise unauthorized
+    try:
+        verifier = get_verifier()
+    except (OSError, TokenError) as exc:  # JWKS/discovery unreachable — fail closed, never open
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="authentication temporarily unavailable",
+        ) from exc
+    try:
+        claims = verifier.verify(token.strip())
+    except TokenError as exc:
+        raise unauthorized from exc
+    try:
+        tenant = str(uuid.UUID(claims.tenant))  # canonicalize so RLS's tenant_id::text matches
+    except ValueError as exc:
+        raise unauthorized from exc
+
+    set_tenant_context(db, tenant)
+    user = db.execute(
+        select(AppUser).where(
+            AppUser.tenant_id == tenant,
+            AppUser.external_subject == claims.subject,
+            AppUser.is_active.is_(True),
+        )
+    ).scalar_one_or_none()
+    if user is None:
+        raise unauthorized
+    return Principal(user_id=user.id, tenant_id=tenant)
 
 
 def get_tenant_session(

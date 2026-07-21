@@ -7,6 +7,10 @@ The system probes below carry no tenant-scoped or governed data and are exempt.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from irp_backend.api.audit import router as audit_router
@@ -38,8 +42,25 @@ from irp_backend.api.snapshots import router as snapshots_router
 from irp_backend.api.system import router as system_router
 from irp_backend.api.transactions import router as transactions_router
 from irp_backend.api.valuations import router as valuations_router
+from irp_backend.config import settings, validate_auth_config
 
-app = FastAPI(title="Investment Risk Platform API (scaffold)")
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Fail-closed identity guard at startup (SSO-1, AD-007). Runs on a real ``uvicorn`` boot;
+    plain-``TestClient`` tests do not trigger the lifespan, so it never fires there."""
+    validate_auth_config(settings)
+    if settings.auth_mode == "dev_header":
+        logger.warning(
+            "auth_mode=dev_header active — identity is the UNVERIFIED X-User-Id/X-Tenant-Id shim "
+            "(local development only). This is NOT a security boundary (DR-P1A0-3)."
+        )
+    yield
+
+
+app = FastAPI(title="Investment Risk Platform API (scaffold)", lifespan=lifespan)
 app.include_router(system_router)
 app.include_router(lineage_router)
 app.include_router(audit_router)
