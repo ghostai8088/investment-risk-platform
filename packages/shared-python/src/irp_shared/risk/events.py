@@ -77,6 +77,14 @@ RUN_TYPE_PROXY_WEIGHT_ESTIMATE = "PROXY_WEIGHT_ESTIMATE"
 #: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in PA-3.
 RISK_PROXY_WEIGHT_ESTIMATE_CREATE_EVENT_RESERVED = "RISK.PROXY_WEIGHT_ESTIMATE_CREATE"
 
+#: PPF-1 (OD-PPF-1-D): the pure-private factor-return run family — pools member instruments'
+#: desmoothed-minus-proxy residuals into ONE PRIVATE segment factor's appraisal-period return
+#: series (the 18th governed number, §2.1 arc slice 1). Reuses ``risk.run``/``risk.view`` (no mint)
+#: + ``CALC.RUN_*`` (no new audit — the RISK/EVT-220 governed-number precedent).
+RUN_TYPE_PURE_PRIVATE_FACTOR = "PURE_PRIVATE_FACTOR"
+#: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in PPF-1.
+RISK_PURE_PRIVATE_FACTOR_CREATE_EVENT_RESERVED = "RISK.PURE_PRIVATE_FACTOR_CREATE"
+
 #: P3-6 (OD-P3-6-E): the stress/scenario run family — deterministic linear factor-shock P&L over ONE
 #: factor-exposure run x a pinned scenario shock set. DISTINCT from its metric_types (SCENARIO_PNL /
 #: SCENARIO_PNL_TOTAL). Reuses ``risk.run``/``risk.view`` (no mint) + ``CALC.RUN_*`` (no new audit).
@@ -253,6 +261,14 @@ class EsBacktestActor:
 @dataclass(frozen=True)
 class ProxyWeightEstimateActor:
     """The principal initiating a proxy-weight-estimation run (PA-3; mirrors :class:`VarActor`)."""
+
+    actor_id: str
+    actor_type: str = "user"
+
+
+@dataclass(frozen=True)
+class PurePrivateFactorActor:
+    """The principal initiating a pure-private factor-return run (PPF-1; mirrors ``VarActor``)."""
 
     actor_id: str
     actor_type: str = "user"

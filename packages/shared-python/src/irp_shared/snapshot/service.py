@@ -2410,6 +2410,16 @@ def build_private_factor_return_snapshot(
         span_starts.append(min(r.period_start for r in period_rows))
         span_ends.append(max(r.period_end for r in period_rows))
 
+        # Pin the member's DESMOOTHED_PERIOD rows (the pure-private numerator series).
+        for row in period_rows:
+            _append_spec(
+                specs,
+                COMPONENT_KIND_DESMOOTHED_RETURN,
+                "desmoothed_return_result",
+                row,
+                desmoothed_return_content(row),
+            )
+
         # The membership row: a current-head MANUAL proxy_mapping onto the PRIVATE segment factor.
         membership = session.execute(
             select(ProxyMapping).where(

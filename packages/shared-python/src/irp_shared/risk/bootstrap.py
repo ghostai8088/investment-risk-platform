@@ -3059,3 +3059,183 @@ def declared_es_total_max_estimate_age_days(session: Session, version: ModelVers
     if declared is None:
         raise WrongModelVersionError(str(version.id), ES_TOTAL_MODEL_CODE)
     return declared
+
+
+# --- PPF-1: the pure-private factor-return model (the 18th governed number, §2.1 arc slice 1) -----
+
+PURE_PRIVATE_MODEL_CODE = "risk.factor_return.pure_private"
+PURE_PRIVATE_MODEL_NAME = "Pure-private segment factor returns (desmoothed minus proxy, pooled)"
+PURE_PRIVATE_MODEL_TYPE = "PURE_PRIVATE_FACTOR"
+PURE_PRIVATE_VERSION_LABEL = "v1"
+PURE_PRIVATE_METHODOLOGY_REF = "05_analytics_methodologies/pure_private_factor_v1.md"
+
+#: Declared model-identity prefixes (OD-PPF-1-D): the pooling + intercept conventions + the
+#: min-members floor. Exactly ONE well-formed declaration of EACH is the version identity.
+POOLING_ASSUMPTION_PREFIX = "pooling_convention="
+INTERCEPT_ASSUMPTION_PREFIX = "intercept_convention="
+MIN_MEMBERS_ASSUMPTION_PREFIX = "min_members="
+
+#: Pooling conventions (OQ-PPF-1-2). EQUAL_WEIGHT = the v1 (robust to stale private MVs; MSCI pools
+#: at segment grain). MV_WEIGHT = the recorded v2 (concentration-faithful).
+POOLING_EQUAL_WEIGHT = "EQUAL_WEIGHT"
+POOLING_MV_WEIGHT = "MV_WEIGHT"
+PURE_PRIVATE_POOLING_CONVENTIONS = frozenset({POOLING_EQUAL_WEIGHT})
+#: Intercept conventions (OQ-PPF-1-3). RETAIN_ALPHA = the v1 (the mean out-of-proxy return — the
+#: liquidity premium — stays IN the factor, per MSCI). MEAN_ZERO = the recorded v2 (risk-only).
+INTERCEPT_RETAIN_ALPHA = "RETAIN_ALPHA"
+INTERCEPT_MEAN_ZERO = "MEAN_ZERO"
+PURE_PRIVATE_INTERCEPT_CONVENTIONS = frozenset({INTERCEPT_RETAIN_ALPHA})
+
+#: A word-shaped convention literal (UPPER_SNAKE); the value vocabularies gate membership.
+_CONVENTION_PATTERN = re.compile(r"[A-Z_]{1,40}")
+
+PURE_PRIVATE_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "The pure-private return of a segment for one appraisal period is the EQUAL-WEIGHT mean, "
+    "across the segment's members, of each member's DESMOOTHED return MINUS its proxy-implied "
+    "return "
+    "pp_i,t = desmoothed_i,t - SUM_f w_i,f * R_f,t (the MSCI PE Factor Model 'pure private' leg; "
+    "Shepard 2014/2025). w_i,f = the member's current-head REGRESSION proxy blend; R_f,t = the "
+    "public factor's captured returns compounded over the half-open (period_start, period_end] "
+    "window (the shared PA-3 alignment convention).",
+    "RETAIN-alpha: the mean out-of-proxy return (the liquidity/illiquidity premium and private "
+    "market cycle) stays IN the factor realization - per MSCI it is a genuine source of risk AND "
+    "return; the MEAN_ZERO risk-only convention is a recorded v2.",
+    "TWO-STEP construction (desmooth, then subtract): Shepard (2014) shows single-step joint "
+    "Bayesian desmoothing-with-estimation is more robust - it is the recorded v3, disclosed not "
+    "hidden. NO thin-factor / shrinkage correction in v1 (also Bayesian v3).",
+    "IDENTICAL-INTERVAL pooling: members pool only on exactly-matching (period_start, period_end] "
+    "intervals; any grid mismatch fails the segment run closed as a named gap (cross-calendar "
+    "interpolation is a recorded v2). A single-member segment runs at min_members=1 with the "
+    "member count disclosed on every row - thin, never hidden.",
+    "Computed in Decimal at 50-digit context; quantize_HALF_UP to 12 decimal places (the "
+    "Numeric(20,12) return scale).",
+)
+
+PURE_PRIVATE_LIMITATIONS: tuple[str, ...] = (
+    "This is the pure-private factor RETURN series only (PPF-1). Its covariance block Omega_pp "
+    "(PPF-2) and the unified number sqrt(x'Sigma x + p'Omega_pp p + residual) (PPF-3) are the "
+    "later arc slices; until then the APPRAISAL-frequency segment factor is fail-closed OUT of the "
+    "DAILY covariance/VaR gates (no accidental appraisal-vs-daily mixing).",
+    "The pure-private return regresses MODEL OUTPUT (the desmoothed series + the promoted "
+    "REGRESSION blend), so desmoothing model risk (the declared alpha) and proxy-weight model risk "
+    "propagate into the factor - stacked, honestly disclosed.",
+    "A segment pools members with a current-head REGRESSION blend only; a member without a blend "
+    "is a named-gap refusal (never a silent skip). Single-currency members (the desmoothed series "
+    "carries one mark_currency).",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome refuses every new bind at the shared seam.",
+)
+
+
+@dataclass(frozen=True)
+class PurePrivateParameters:
+    """The declared identity of a pure-private factor version (OD-PPF-1-D)."""
+
+    pooling_convention: str
+    intercept_convention: str
+    min_members: int
+
+
+def declared_pure_private_parameters(
+    session: Session, version: ModelVersion
+) -> PurePrivateParameters:
+    """Parse the declared pooling/intercept conventions + min-members floor (exactly ONE
+    strictly-well-formed declaration of EACH; the value must be in the admitted v1 vocabulary).
+    Malformed/absent/ambiguous/out-of-vocab -> the fail-closed :class:`WrongModelVersionError`
+    (the generic endpoint can mint anything)."""
+    texts = load_assumption_texts(session, version)
+    pooling = sole_declared(texts, POOLING_ASSUMPTION_PREFIX)
+    intercept = sole_declared(texts, INTERCEPT_ASSUMPTION_PREFIX)
+    min_members = sole_declared(texts, MIN_MEMBERS_ASSUMPTION_PREFIX)
+    if (
+        pooling is None
+        or intercept is None
+        or min_members is None
+        or _CONVENTION_PATTERN.fullmatch(pooling) is None
+        or _CONVENTION_PATTERN.fullmatch(intercept) is None
+        or pooling not in PURE_PRIVATE_POOLING_CONVENTIONS
+        or intercept not in PURE_PRIVATE_INTERCEPT_CONVENTIONS
+        or _DIGITS_PATTERN.fullmatch(min_members) is None
+        or int(min_members) < 1
+    ):
+        raise WrongModelVersionError(str(version.id), PURE_PRIVATE_MODEL_CODE)
+    return PurePrivateParameters(
+        pooling_convention=pooling,
+        intercept_convention=intercept,
+        min_members=int(min_members),
+    )
+
+
+def register_pure_private_factor_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    min_members: int = 1,
+    pooling_convention: str = POOLING_EQUAL_WEIGHT,
+    intercept_convention: str = INTERCEPT_RETAIN_ALPHA,
+    version_label: str = PURE_PRIVATE_VERSION_LABEL,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the pure-private factor-return model + a version for this
+    ``(code_version, pooling, intercept, min_members)`` identity (PPF-1, OD-PPF-1-D — the
+    covariance-window precedent). A same-label re-register with a DIFFERENT declaration raises
+    :class:`ModelVersionConflictError` (mint a new label instead)."""
+    if min_members < 1:
+        raise ValueError("min_members must be >= 1")
+    if pooling_convention not in PURE_PRIVATE_POOLING_CONVENTIONS:
+        raise ValueError(f"pooling_convention must be in {PURE_PRIVATE_POOLING_CONVENTIONS}")
+    if intercept_convention not in PURE_PRIVATE_INTERCEPT_CONVENTIONS:
+        raise ValueError(f"intercept_convention must be in {PURE_PRIVATE_INTERCEPT_CONVENTIONS}")
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=PURE_PRIVATE_MODEL_CODE,
+        name=PURE_PRIVATE_MODEL_NAME,
+        model_type=PURE_PRIVATE_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Pooled pure-private segment factor returns: the equal-weight mean of members' "
+            "desmoothed-minus-proxy residuals (PPF-1, ENT-060; MSCI PE Factor Model)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=version_label,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=version_label,
+            actor_id=actor_id,
+            methodology_ref=PURE_PRIVATE_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *PURE_PRIVATE_ASSUMPTIONS_BASE,
+                f"{POOLING_ASSUMPTION_PREFIX}{pooling_convention}",
+                f"{INTERCEPT_ASSUMPTION_PREFIX}{intercept_convention}",
+                f"{MIN_MEMBERS_ASSUMPTION_PREFIX}{int(min_members)}",
+            ),
+            limitations=PURE_PRIVATE_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_pure_private_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or declared.pooling_convention != pooling_convention
+        or declared.intercept_convention != intercept_convention
+        or declared.min_members != int(min_members)
+    ):
+        raise ModelVersionConflictError(
+            PURE_PRIVATE_MODEL_CODE,
+            version_label,
+            f"{code_version} (pooling={pooling_convention}, intercept={intercept_convention}, "
+            f"min_members={min_members})",
+        )
+    return version
