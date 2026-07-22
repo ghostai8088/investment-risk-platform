@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { RiskRunSummary } from "../api/types";
 import { RunsList } from "./RunsList";
 
-const SESSION = { userId: "u-1", tenantId: "t-1" };
+const SESSION = { kind: "dev" as const, userId: "u-1", tenantId: "t-1" };
 const PAGE_SIZE = 50;
 
 function run(overrides: Partial<RiskRunSummary>): RiskRunSummary {

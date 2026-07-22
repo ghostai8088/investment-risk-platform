@@ -6,7 +6,7 @@ import { ApiError, apiGet } from "../api/client";
 import { verbatim } from "../api/format";
 import { FAMILIES, FAMILY_ROW_COLUMNS, runDetailUrl } from "../api/types";
 import type { Family, RunDetailBase } from "../api/types";
-import type { DevSession } from "../session";
+import type { Session } from "../session";
 
 /** FL-1 (the ES honesty fix, OD-FL-1-F): on an ES row the backend ECHOES the quantile z — it is
  * NOT the ES arithmetic (the multiplier k_c lives on the bound model_version), so `z × σ ≠ value`
@@ -31,7 +31,7 @@ const PROVENANCE_FIELDS: { key: keyof RunDetailBase; label: string }[] = [
   { key: "initiated_by", label: "Initiated by" },
 ];
 
-export function RunDetail({ session }: { session: DevSession }): ReactElement {
+export function RunDetail({ session }: { session: Session }): ReactElement {
   const { family, runId } = useParams<{ family: string; runId: string }>();
   const [run, setRun] = useState<RunDetailBase | null>(null);
   const [error, setError] = useState<ApiError | null>(null);

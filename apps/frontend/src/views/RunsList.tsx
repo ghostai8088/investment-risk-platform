@@ -5,7 +5,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ApiError, apiGet } from "../api/client";
 import { FAMILIES, RUN_STATUSES, RUN_TYPE_TO_FAMILY } from "../api/types";
 import type { RiskRunList, RiskRunSummary } from "../api/types";
-import type { DevSession } from "../session";
+import type { Session } from "../session";
 
 const PAGE_SIZE = 50;
 
@@ -31,7 +31,7 @@ function ErrorState({ error }: { error: ApiError }): ReactElement {
   return <p className="state error">Could not load runs: {error.message}</p>;
 }
 
-export function RunsList({ session }: { session: DevSession }): ReactElement {
+export function RunsList({ session }: { session: Session }): ReactElement {
   const navigate = useNavigate();
   const [runType, setRunType] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("");

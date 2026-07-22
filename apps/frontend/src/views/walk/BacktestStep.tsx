@@ -5,7 +5,7 @@ import type { EsBacktestRow, VarBacktestRow } from "../../api/types";
 import { useApiGet } from "../../api/useApiGet";
 import { GovernedValue } from "../../components/GovernedValue";
 import { Pane } from "../../components/Pane";
-import type { DevSession } from "../../session";
+import type { Session } from "../../session";
 
 type Fact = [string, string | number | null | undefined];
 
@@ -32,7 +32,7 @@ export function BacktestStep({
   session,
   portfolioId,
 }: {
-  session: DevSession;
+  session: Session;
   portfolioId: string;
 }): ReactElement {
   const pf = encodeURIComponent(portfolioId);

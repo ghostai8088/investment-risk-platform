@@ -4,7 +4,7 @@ import { shortId, verbatim } from "../../api/format";
 import type { Position, Valuation } from "../../api/types";
 import { useApiGet } from "../../api/useApiGet";
 import { Pane } from "../../components/Pane";
-import type { DevSession } from "../../session";
+import type { Session } from "../../session";
 
 /**
  * Walk step 1 — Capture (FE-3, OD-FE-3-A). The book's raw inputs: the captured positions and the
@@ -15,7 +15,7 @@ export function CaptureStep({
   session,
   portfolioId,
 }: {
-  session: DevSession;
+  session: Session;
   portfolioId: string;
 }): ReactElement {
   const pf = encodeURIComponent(portfolioId);

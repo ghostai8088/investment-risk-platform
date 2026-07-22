@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CaptureStep } from "./CaptureStep";
 import type { DevSession } from "../../session";
 
-const SESSION: DevSession = { userId: "u", tenantId: "t" };
+const SESSION: DevSession = { kind: "dev" as const, userId: "u", tenantId: "t" };
 
 function mockRoutes(routes: Record<string, unknown>, status = 200): void {
   vi.stubGlobal(

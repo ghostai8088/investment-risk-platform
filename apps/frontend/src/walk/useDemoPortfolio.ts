@@ -1,7 +1,7 @@
 import type { AsyncState } from "../api/useApiGet";
 import { useApiGet } from "../api/useApiGet";
 import type { PortfolioSummary } from "../api/types";
-import type { DevSession } from "../session";
+import type { Session } from "../session";
 import { DEMO_PORTFOLIO_CODE } from "./steps";
 
 export interface DemoPortfolio {
@@ -17,7 +17,7 @@ export interface DemoPortfolio {
  * stable). Steps chain their data reads on `portfolio?.id` (passing `null` to `useApiGet` until it
  * resolves).
  */
-export function useDemoPortfolio(session: DevSession): DemoPortfolio {
+export function useDemoPortfolio(session: Session): DemoPortfolio {
   const state = useApiGet<PortfolioSummary[]>("/portfolios", session);
   const portfolio = state.data?.find((p) => p.code === DEMO_PORTFOLIO_CODE) ?? null;
   return { portfolio, state };

@@ -44,7 +44,7 @@ Add a typed `ImportMetaEnv` (`vite-env.d.ts`) + `apps/frontend/.env.example` wit
 Add the `demo-auditor` realm user (+ `tenant_id` attr = `DEMO_TENANT_ID`) and BR-10-marked local password credentials on the demo users; wire the compose `backend` service's oidc-profile env (`AUTH_MODE=oidc`, `OIDC_ISSUER`, `OIDC_AUDIENCE=irp-backend`) + the issuer-consistency runbook. **Demo-end-to-end scope = OQ-FE-3b-3.**
 
 ### OD-FE-3b-H — Scope fence
-FE (the flow + the union session + the env convention + the login/callback views) + `infra/keycloak/` realm additions + `docker-compose.yml`/`.env.example` oidc-profile env + FE tests. **NO backend logic change** (the resource server is DONE — do not touch `deps.py`/`auth.py`/`config.py` behavior); NO migration; NO new governed number/code/permission/role/ENT; `audit/service.py` untouched; the GET-only fence + the decimal-strings contract stay byte-behavior-identical; the ~10 pass-through consumers untouched. **Out of scope (flag, related): the prod nginx image has no `/risk`→backend proxy** (a deployed FE would 404 on path-relative reads — predates FE-3b, affects the whole deployed FE, a future deploy slice). Counts UNCHANGED.
+FE (the flow + the union session + the env convention + the login/callback views) + `infra/keycloak/` realm additions + `docker-compose.yml`/`.env.example` oidc-profile env + the nginx SPA config + FE tests. **NO backend logic change** (the resource server is DONE — do not touch `deps.py`/`auth.py`/`config.py` behavior); NO migration; NO new governed number/code/permission/role/ENT; `audit/service.py` untouched; the GET-only fence + the decimal-strings contract stay byte-behavior-identical. The `DevSession → Session` widening is a **type-only** change across the **16** pass-through signatures (verifier CLAIM 3; the runtime pass-through is unchanged). **Review fold (finder HIGH-1 + MED-1): the deployed nginx image originally shipped NO SPA history-fallback (so the `/callback` OIDC redirect 404'd — the ratified demo login could not complete) and no backend read-proxy.** Both are now in `infra/docker/frontend-nginx.conf` (`try_files … /index.html` + a `proxy_pass` for the read prefixes) so `docker compose --profile oidc up` genuinely completes a login AND renders the walk — the earlier "out of scope, future deploy slice" note is superseded, because the ratified goal (OQ-FE-3b-3=A, a real login end-to-end) required it. Counts UNCHANGED.
 
 ## Part 3 — Open decisions (OQ-FE-3b-1…4) — ALL RATIFIED 2026-07-21 (OQ-1 = A hand-roll; OQ-2/3/4 = as recommended)
 
@@ -67,3 +67,47 @@ An adversarial verifier attacked the 5 load-bearing claims against the actual ba
 - **CLAIM 5 — DevBanner honesty + GET-only fence: HOLDS.** `DevBanner` renders unconditionally today (so the oidc-mode gating is a real, required honesty change); `client.ts` hard-codes `method:"GET"` and the `Authorization` header opens no non-GET path.
 
 **Net: the token-contract crux HELD; the 2 COMPLICATED findings were an env correction (the JWKS-URI split) and an honest footprint restatement — no redesign of the flow, the union, or the realm.** The record is ready for the ratification gate.
+
+## Part 6 — 4-finder adversarial review (RAN 2026-07-21) — 1 HIGH + 3 MED + LOWs, ALL folded
+
+Four cross-cutting finders over the impl diff (`origin/main..HEAD`): PKCE/CSRF security; the
+token→backend contract + realm wiring; the union/GET-fence/DevBanner-honesty; doctrine/scope/test-
+quality. Every material finding re-verified by the synthesizer before folding.
+
+**The security crux HELD (finder 1, zero HIGH/MED):** the hand-rolled PKCE is correct — the RFC 7636
+Appendix-B known-answer vector passes through the real Web Crypto `codeChallengeS256`; `state` is
+validated BEFORE the exchange; the `?code` is stripped synchronously and the callback loads no
+cross-origin subresource; the verifier+state are single-use (cleared on every path); the token is
+never trusted for authz (the backend verifies), never logged, never in a URL — only the
+`Authorization` header; the StrictMode ref-guard exchanges once. **The doctrine fences HELD (finder
+4):** zero backend-logic diff, `audit/service.py` byte-unchanged, `package.json` byte-identical (zero
+new runtime dep — OD-FE-1-F), no governed mint, BR-10 clean.
+
+**Folds applied (this review):**
+- **HIGH-1 (finder 2) — the ratified compose demo login could not complete.** The nginx frontend
+  image shipped NO SPA history-fallback, so Keycloak's redirect to `/callback` 404'd (stock nginx
+  looked for a file named `callback`) — the SPA never booted there and `completeLogin` never ran.
+  Fixed: `infra/docker/frontend-nginx.conf` with `try_files … /index.html`, COPY'd in the Dockerfile.
+- **MED-1 (finder 2) — even past login, the walk's reads 404** (no backend proxy on the nginx image).
+  Fixed: the same nginx conf proxies the 13 governed read prefixes to `backend:8000` (the Bearer
+  header passes through). So `docker compose --profile oidc up` now completes a login AND renders the
+  walk — the ratified OQ-FE-3b-3=A goal is genuinely met (OD-FE-3b-H updated).
+- **MED (finders 2+3) — the OIDC logout redirect-back could be rejected.** `logout()` sent a
+  bare-origin `post_logout_redirect_uri` that didn't match the realm's `/*` pattern. Fixed: send
+  `${origin}/` AND register `post.logout.redirect.uris=http://localhost:5173/*` on the realm client.
+- **MED (finder 4) — `beginLogin` (the redirect-assembly half) was untested**, so a silent PKCE
+  downgrade would slip. Added a test asserting the verifier+state are stashed and the authorize URL
+  carries `code_challenge_method=S256` + the matching state; plus a non-secure-context refusal test.
+- **LOW (finder 1) — hardening:** a `window.isSecureContext===false` guard in `beginLogin` (a clear
+  error instead of an opaque crash on a plain-HTTP deploy); a `<meta name="referrer" content="no-
+  referrer">` in `index.html` (belt-and-suspenders against a future cross-origin `?code` leak).
+- **LOW (finder 4) — honesty:** the stale OD-FE-3b-H "~10 pass-through consumers untouched" sentence
+  corrected to the true 16-file type-only widening.
+- **Carried (LOW, disclosed):** `directAccessGrantsEnabled:true` on the public `irp-frontend` client
+  leaves ROPC/password-grant open — pre-existing (SSO-1's realm), used by the README curl example,
+  accepted for the local demo; consider disabling post-demo. Mid-session token expiry is enforced at
+  load only (by design, re-auth-on-expiry; the backend fail-closes on an expired token regardless).
+
+**Gates after folds:** `make fe-check` green (typecheck/lint/format/tests + build); `make check`
+(Python) a no-op (NO backend change); `make gen-api-check` clean; `package.json` byte-identical
+(zero new runtime dep); `npm audit --omit=dev` 0. Counts UNCHANGED (17/20/35/101).

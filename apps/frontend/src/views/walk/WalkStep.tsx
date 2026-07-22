@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 
 import { Pane } from "../../components/Pane";
-import type { DevSession } from "../../session";
+import type { Session } from "../../session";
 import { WALK_STEPS, walkStep } from "../../walk/steps";
 import { useDemoPortfolio } from "../../walk/useDemoPortfolio";
 import type { DemoPortfolio } from "../../walk/useDemoPortfolio";
@@ -18,7 +18,7 @@ import { ValidationStep } from "./ValidationStep";
  * navigation — around the step body, resolving the demo book once for the book-scoped steps. All
  * six step bodies (capture / exposures / numbers / backtest / validation / limitations) are live.
  */
-export function WalkStep({ session }: { session: DevSession }): ReactElement {
+export function WalkStep({ session }: { session: Session }): ReactElement {
   const { step: slug } = useParams();
   const demo = useDemoPortfolio(session);
   const step = walkStep(slug);
@@ -83,7 +83,7 @@ function StepBody({
   demo,
 }: {
   slug: string;
-  session: DevSession;
+  session: Session;
   demo: DemoPortfolio;
 }): ReactElement {
   // Book-scoped steps read by portfolio_id, so they resolve the demo book first.

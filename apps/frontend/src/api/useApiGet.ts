@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError, apiGet } from "./client";
-import type { DevSession } from "../session";
+import type { Session } from "../session";
 
 export interface AsyncState<T> {
   data: T | null;
@@ -15,7 +15,7 @@ export interface AsyncState<T> {
  * intentionally HOLD — no request is made and the state is idle — e.g. until a dependency such as
  * the resolved portfolio id is available.
  */
-export function useApiGet<T>(path: string | null, session: DevSession | null): AsyncState<T> {
+export function useApiGet<T>(path: string | null, session: Session | null): AsyncState<T> {
   const [state, setState] = useState<AsyncState<T>>(() => ({
     data: null,
     error: null,

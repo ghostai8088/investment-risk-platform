@@ -15,7 +15,8 @@
       "redirectUris": ["http://localhost:5173/*"],
       "webOrigins": ["http://localhost:5173"],
       "attributes": {
-        "pkce.code.challenge.method": "S256"
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
       },
       "protocolMappers": [
         {
@@ -65,14 +66,26 @@
       "lastName": "Cox",
       "attributes": {
         "tenant_id": ["8c3193a6-1c9c-5353-bbe1-ab8716e986a9"]
-      }
+      },
+      "credentials": [{ "type": "password", "value": "demo", "temporary": false }]
     },
     {
       "username": "demo-registrar",
       "enabled": true,
       "attributes": {
         "tenant_id": ["8c3193a6-1c9c-5353-bbe1-ab8716e986a9"]
-      }
+      },
+      "credentials": [{ "type": "password", "value": "demo", "temporary": false }]
+    },
+    {
+      "username": "demo-auditor",
+      "enabled": true,
+      "firstName": "Demo",
+      "lastName": "Auditor",
+      "attributes": {
+        "tenant_id": ["8c3193a6-1c9c-5353-bbe1-ab8716e986a9"]
+      },
+      "credentials": [{ "type": "password", "value": "demo", "temporary": false }]
     }
   ]
 }

@@ -15,7 +15,10 @@ function renderApp(path = "/"): void {
 }
 
 function withSession(): void {
-  sessionStorage.setItem("irp.dev.session", JSON.stringify({ userId: "u-1", tenantId: "t-1" }));
+  sessionStorage.setItem(
+    "irp.session",
+    JSON.stringify({ kind: "dev" as const, userId: "u-1", tenantId: "t-1" }),
+  );
 }
 
 beforeEach(() => {

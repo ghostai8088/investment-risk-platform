@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { RunDetailBase } from "../api/types";
 import { RunDetail } from "./RunDetail";
 
-const SESSION = { userId: "u-1", tenantId: "t-1" };
+const SESSION = { kind: "dev" as const, userId: "u-1", tenantId: "t-1" };
 
 // A value float64 CANNOT represent: Number(...) would print "9007199254740993.12345679"
 // or similar. The screen must show it byte-for-byte (OQ-FE-1-7).

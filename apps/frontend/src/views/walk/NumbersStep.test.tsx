@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { NumbersStep } from "./NumbersStep";
 import type { DevSession } from "../../session";
 
-const SESSION: DevSession = { userId: "u", tenantId: "t" };
+const SESSION: DevSession = { kind: "dev" as const, userId: "u", tenantId: "t" };
 
 /** Mock fetch with LONGEST-prefix routing so `/models/m1` wins over `/models`. */
 function mockRoutes(routes: Record<string, { status?: number; body: unknown }>): void {

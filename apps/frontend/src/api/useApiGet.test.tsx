@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useApiGet } from "./useApiGet";
 import type { DevSession } from "../session";
 
-const SESSION: DevSession = { userId: "u", tenantId: "t" };
+const SESSION: DevSession = { kind: "dev" as const, userId: "u", tenantId: "t" };
 
 function Probe({ path }: { path: string | null }): React.ReactElement {
   const { data, error, loading } = useApiGet<{ v: string }>(path, SESSION);
