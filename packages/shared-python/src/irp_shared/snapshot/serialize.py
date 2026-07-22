@@ -471,6 +471,35 @@ def desmoothed_return_content(row: Any) -> dict[str, Any]:
     }
 
 
+def pure_private_return_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of a ``private_factor_return_result`` (ENT-060, IA) row (PPF-2
+    PURE_PRIVATE_RETURN component — the governed-row no-valid-axis pin flavor, mirroring
+    :func:`desmoothed_return_content`: no valid axis, no ``record_version``; ``system_from`` the
+    append time; byte-identical on re-verify). The FULL immutable column set is pinned so the
+    private-covariance binder reconstructs each segment's aligned series
+    (``segment_factor_id``/``metric_type``/``period_start``/``period_end``/``metric_value``)
+    exactly. ``metric_value`` at the 12dp column scale; ``period_count`` is None on PERIOD rows
+    (None-tolerant, the desmoothed alpha precedent)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "calculation_run_id": _norm_guid(row.calculation_run_id),
+        "input_snapshot_id": _norm_guid(row.input_snapshot_id),
+        "model_version_id": _norm_guid(row.model_version_id),
+        "segment_factor_id": _norm_guid(row.segment_factor_id),
+        "metric_type": row.metric_type,
+        "period_start": row.period_start.isoformat(),
+        "period_end": row.period_end.isoformat(),
+        "metric_value": _norm_decimal(row.metric_value, _SCALE_CURVE_POINT),
+        "member_count": row.member_count,
+        "period_count": row.period_count,  # None on PERIOD rows (None-tolerant)
+        "pooling_convention": row.pooling_convention,
+        "intercept_convention": row.intercept_convention,
+        "min_members": row.min_members,
+        "system_from": _norm_datetime(row.system_from),
+    }
+
+
 def var_result_content(row: Any) -> dict[str, Any]:
     """The immutable captured content of a ``var_result`` (ENT-027, IA) row (BT-1 VAR component —
     the P3-3 EXPOSURE true-append-only pin flavor: no valid axis, no ``record_version``;

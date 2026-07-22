@@ -39,6 +39,16 @@ RUN_TYPE_COVARIANCE = "COVARIANCE"
 #: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in P3-4 (OD-P3-4-L).
 RISK_COVARIANCE_CREATE_EVENT_RESERVED = "RISK.COVARIANCE_CREATE"
 
+#: PPF-2 (OD-PPF-2-A/B): the PRIVATE-covariance run family — the block Ω_pp over ≥2 PRIVATE segment
+#: factors' pure-private APPRAISAL return series (PPF-1), a fail-closed SIBLING of ``COVARIANCE``
+#: reusing the generic ``estimate_covariance`` kernel + the shared ``covariance_result`` table
+#: (frequency=APPRAISAL). The run_type is the sole table discriminator — the public reads filter it
+#: (step 1). The 19th governed number (§2.1 arc slice 2). Reuses ``risk.run``/``risk.view`` (no
+#: mint) + ``CALC.RUN_*`` (no new audit — the RISK/EVT-220 governed-number precedent).
+RUN_TYPE_COVARIANCE_PRIVATE = "COVARIANCE_PRIVATE"
+#: RESERVED audit code (the RISK / EVT-220 decade) — NOT emitted in PPF-2.
+RISK_COVARIANCE_PRIVATE_CREATE_EVENT_RESERVED = "RISK.COVARIANCE_PRIVATE_CREATE"
+
 #: The ``calculation_run.run_type`` discriminator for a VaR run (P3-5).
 RUN_TYPE_VAR = "VAR"
 
@@ -269,6 +279,14 @@ class ProxyWeightEstimateActor:
 @dataclass(frozen=True)
 class PurePrivateFactorActor:
     """The principal initiating a pure-private factor-return run (PPF-1; mirrors ``VarActor``)."""
+
+    actor_id: str
+    actor_type: str = "user"
+
+
+@dataclass(frozen=True)
+class PurePrivateCovarianceActor:
+    """The principal initiating a private-covariance (Ω_pp) run (PPF-2; mirrors covariance)."""
 
     actor_id: str
     actor_type: str = "user"

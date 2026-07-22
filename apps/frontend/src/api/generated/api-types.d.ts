@@ -2694,7 +2694,8 @@ export interface paths {
         };
         /**
          * Get Covariance
-         * @description Read a single ``covariance_result`` row (tenant-scoped; read-only).
+         * @description Read a single ``covariance_result`` row (tenant-scoped; read-only). The step-1 ``run_type``
+         *     filter keeps a private Ω_pp row (same table) OUT of this PUBLIC surface.
          */
         get: operations["get_covariance_risk_covariances__covariance_id__get"];
         put?: never;
@@ -3356,6 +3357,50 @@ export interface paths {
          *     envelope.
          */
         post: operations["register_var_parametric_total_risk_models_var_parametric_total_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/risk/private-covariances/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest Private Covariances Endpoint
+         * @description The newest COMPLETED private-covariance (Ω_pp) run's FULL matrix (empty when none). The
+         *     ``run_type=COVARIANCE_PRIVATE`` filter keeps the PUBLIC covariance out of this shared-table
+         *     read. A run IS the matrix identity — no entity sub-filter; rows in canonical pair order,
+         *     ``frequency`` = APPRAISAL. Each row carries ``calculation_run_id`` (TR-09).
+         */
+        get: operations["latest_private_covariances_endpoint_risk_private_covariances_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/risk/private-covariances/{covariance_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Private Covariance
+         * @description Read a single PRIVATE ``covariance_result`` row (tenant-scoped; read-only). The
+         *     ``run_type`` filter keeps a PUBLIC covariance row (same table) OUT of this private surface.
+         */
+        get: operations["get_private_covariance_risk_private_covariances__covariance_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -15573,6 +15618,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SensitivityModelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_private_covariances_endpoint_risk_private_covariances_latest_get: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CovarianceRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_private_covariance_risk_private_covariances__covariance_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                covariance_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CovarianceRowOut"];
                 };
             };
             /** @description Validation Error */

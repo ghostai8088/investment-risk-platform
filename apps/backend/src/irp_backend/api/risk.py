@@ -69,6 +69,7 @@ from irp_shared.risk import (
     HsVarRunResult,
     ModelVersionConflictError,
     NoCurrentScenarioShock,
+    PrivateCovarianceNotVisible,
     PrivateFactorReturnResult,
     ProxyWeightEstimateActor,
     ProxyWeightEstimateResult,
@@ -116,6 +117,7 @@ from irp_shared.risk import (
     latest_covariances,
     latest_es_backtest,
     latest_factor_exposure,
+    latest_private_covariances,
     latest_proxy_weight_result,
     latest_pure_private_factor_for_segment,
     latest_scenario_results,
@@ -169,6 +171,7 @@ from irp_shared.risk import (
     resolve_es_backtest_run,
     resolve_factor_exposure,
     resolve_factor_exposure_run,
+    resolve_private_covariance,
     resolve_proxy_weight_result,
     resolve_proxy_weight_run,
     resolve_pure_private_factor_result,
@@ -1228,12 +1231,45 @@ def get_covariance(
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> CovarianceRowOut:
-    """Read a single ``covariance_result`` row (tenant-scoped; read-only)."""
+    """Read a single ``covariance_result`` row (tenant-scoped; read-only). The step-1 ``run_type``
+    filter keeps a private Ω_pp row (same table) OUT of this PUBLIC surface."""
     try:
         row = resolve_covariance(db, str(covariance_id), acting_tenant=principal.tenant_id)
     except CovarianceNotVisible:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="covariance not found"
+        ) from None
+    return _cov_row_out(row)
+
+
+# ---------- PPF-2: private-factor covariance block Ω_pp (reuses CovarianceRowOut; APPRAISAL) ----
+@router.get("/private-covariances/latest", response_model=list[CovarianceRowOut])
+def latest_private_covariances_endpoint(
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[CovarianceRowOut]:
+    """The newest COMPLETED private-covariance (Ω_pp) run's FULL matrix (empty when none). The
+    ``run_type=COVARIANCE_PRIVATE`` filter keeps the PUBLIC covariance out of this shared-table
+    read. A run IS the matrix identity — no entity sub-filter; rows in canonical pair order,
+    ``frequency`` = APPRAISAL. Each row carries ``calculation_run_id`` (TR-09)."""
+    rows = latest_private_covariances(db, acting_tenant=principal.tenant_id, as_of=as_of)
+    return [_cov_row_out(r) for r in rows]
+
+
+@router.get("/private-covariances/{covariance_id}", response_model=CovarianceRowOut)
+def get_private_covariance(
+    covariance_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> CovarianceRowOut:
+    """Read a single PRIVATE ``covariance_result`` row (tenant-scoped; read-only). The
+    ``run_type`` filter keeps a PUBLIC covariance row (same table) OUT of this private surface."""
+    try:
+        row = resolve_private_covariance(db, str(covariance_id), acting_tenant=principal.tenant_id)
+    except PrivateCovarianceNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="private covariance not found"
         ) from None
     return _cov_row_out(row)
 

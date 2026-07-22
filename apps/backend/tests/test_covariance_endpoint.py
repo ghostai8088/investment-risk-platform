@@ -207,6 +207,30 @@ def test_api1_covariance_latest_read(ctx) -> None:  # noqa: ANN001
     assert client.get("/risk/covariances/latest", headers=stranger).status_code == 403
 
 
+def test_private_covariance_endpoints_isolated_from_public(ctx) -> None:  # noqa: ANN001
+    """PPF-2: the ``/risk/private-covariances`` reads share ``covariance_result`` with the public
+    surface but are run_type-filtered. A PUBLIC row never resolves through the PRIVATE by-id route
+    (and the public route is unaffected); ``/private-covariances/latest`` is empty (not 404) with no
+    private run; both private reads are ``risk.view``-gated."""
+    client, p, db, f_a, f_b = ctx
+    mv = _register(client, p)
+    run = client.post("/risk/covariances/runs", json=_run_body(mv, [f_a, f_b]), headers=_h(p))
+    pub_row_id = run.json()["rows"][0]["id"]
+    # No private run yet → latest is empty (routing + auth OK, NOT 404).
+    latest = client.get("/risk/private-covariances/latest", headers=_h(p))
+    assert latest.status_code == 200 and latest.json() == []
+    # A PUBLIC row is NOT resolvable through the PRIVATE by-id surface (the run_type filter) → 404
+    assert client.get(f"/risk/private-covariances/{pub_row_id}", headers=_h(p)).status_code == 404
+    # ... while the PUBLIC by-id surface still resolves it (step-1 filter didn't hide public).
+    assert client.get(f"/risk/covariances/{pub_row_id}", headers=_h(p)).status_code == 200
+    # Deny-by-default: a stranger (no risk.view) is 403 on BOTH private read surfaces.
+    stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": p.tenant_id}
+    assert client.get("/risk/private-covariances/latest", headers=stranger).status_code == 403
+    assert (
+        client.get(f"/risk/private-covariances/{pub_row_id}", headers=stranger).status_code == 403
+    )
+
+
 def test_register_conflicts_and_floor(ctx) -> None:  # noqa: ANN001
     client, p, db, f_a, f_b = ctx
     mv = _register(client, p, window=4)

@@ -39,6 +39,7 @@ from irp_shared.risk import (
     register_covariance_model,
     run_covariance,
 )
+from irp_shared.risk.covariance_service import latest_covariances, resolve_covariance
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
@@ -166,6 +167,31 @@ def test_tenant_isolation(app_url: str) -> None:
         set_tenant_context(session, t1)
         rows = session.execute(text("SELECT calculation_run_id FROM covariance_result")).fetchall()
         assert rows and all(str(r[0]) == run1 for r in rows)  # only t1's rows visible
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_public_reads_admit_public_run_after_run_type_filter(app_url: str) -> None:
+    """PPF-2 Step-1 regression: the ``RUN_TYPE_COVARIANCE`` filter added to ``latest_covariances`` +
+    ``resolve_covariance`` is behavior-identical for existing (all-public) data — the public run's
+    full matrix still resolves through both the latest-resolver and the by-id surface. The filter
+    is a fail-closed no-op until a private sibling row exists (proven in the private tests)."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    run_id = _seed_and_run(factory, tenant)
+
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        latest = latest_covariances(session, acting_tenant=tenant)
+        assert len(latest) == 3  # F·(F+1)/2 for F=2 — the full public matrix, unhidden
+        assert {r.calculation_run_id for r in latest} == {run_id}
+        # every latest row resolves by id through the public by-id surface (run_type admits it)
+        for row in latest:
+            got = resolve_covariance(session, str(row.id), acting_tenant=tenant)
+            assert got.id == row.id and got.covariance_value == row.covariance_value
     finally:
         session.close()
         engine.dispose()

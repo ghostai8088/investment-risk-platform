@@ -94,6 +94,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_PROXY_MAPPING,
     COMPONENT_KIND_PROXY_WEIGHT,
+    COMPONENT_KIND_PURE_PRIVATE_RETURN,
     COMPONENT_KIND_SCENARIO,
     COMPONENT_KIND_TRANSACTION,
     COMPONENT_KIND_VALUATION,
@@ -104,6 +105,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_PACING_INPUT,
+    PURPOSE_PRIVATE_COVARIANCE_INPUT,
     PURPOSE_PRIVATE_FACTOR_RETURN_INPUT,
     PURPOSE_PROXY_WEIGHT_INPUT,
     PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
@@ -138,6 +140,7 @@ from irp_shared.snapshot.serialize import (
     position_content,
     proxy_mapping_content,
     proxy_weight_estimate_content,
+    pure_private_return_content,
     scenario_shock_content,
     serialize_content,
     transaction_content,
@@ -2518,6 +2521,194 @@ def build_private_factor_return_snapshot(
     return header_row
 
 
+#: PPF-2 (OD-PPF-2-A): the private-covariance binding/selection rule — per PRIVATE segment, the
+#: PURE_PRIVATE_PERIOD series of its LATEST pure-private factor run, aligned to the common appraisal
+#: grid. Length-guarded (see the ``_BINDING_PREDICATES`` module-end assert) against varchar(50).
+PRIVATE_COVARIANCE_BINDING_PREDICATE = "v1:pure-private-appraisal-series"
+
+
+class PrivateCovarianceSnapshotError(Exception):
+    """Raised when a private-covariance-input snapshot cannot be built (fewer than two distinct
+    pure-private runs, a run with no per-period series, a run whose segment is non-PRIVATE or shared
+    with another run, or fewer than ``window_observations`` common appraisal periods across the
+    segments) — fail closed, BEFORE any write. Maps to 409."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"private covariance snapshot input failed closed: {detail}")
+        self.detail = detail
+
+
+def _list_pure_private_period_rows(
+    session: Session, run_id: str, *, acting_tenant: str
+) -> list[Any]:
+    """The per-period ``PURE_PRIVATE_PERIOD`` rows of a pure-private factor run (tenant-scoped,
+    ordered by ``period_start``; models-only import — no ``calc`` symbol, the snapshot fence). The
+    SUMMARY row is NOT pinned — only the per-period series is the covariance input. The run id is
+    passed explicitly (the caller resolves the segment's latest run — the ``proxy_weight``/PPF-1
+    run-bound-input precedent)."""
+    from irp_shared.risk.models import (  # models-only (no cycle / fence-safe)
+        METRIC_TYPE_PURE_PRIVATE_PERIOD,
+        PrivateFactorReturnResult,
+    )
+
+    return list(
+        session.execute(
+            select(PrivateFactorReturnResult)
+            .where(
+                PrivateFactorReturnResult.calculation_run_id == str(run_id),
+                PrivateFactorReturnResult.tenant_id == str(acting_tenant),
+                PrivateFactorReturnResult.metric_type == METRIC_TYPE_PURE_PRIVATE_PERIOD,
+            )
+            .order_by(PrivateFactorReturnResult.period_start)
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _resolve_pure_private_return_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``private_factor_return_result`` by id with an EXPLICIT tenant predicate
+    (models-only import — the ``risk`` SERVICE is deliberately not imported; used by
+    ``_reresolve_content`` for the ``verify_snapshot`` integrity re-read)."""
+    from irp_shared.risk.models import PrivateFactorReturnResult  # models-only (no cycle)
+
+    row = session.execute(
+        select(PrivateFactorReturnResult).where(
+            PrivateFactorReturnResult.id == str(row_id),
+            PrivateFactorReturnResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise PrivateCovarianceSnapshotError(
+            f"private_factor_return_result {row_id} is not visible"
+        )
+    return row
+
+
+def build_private_covariance_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    pure_private_run_ids: list[str],
+    window_observations: int,
+    as_of_valid_at: datetime | None = None,
+    as_of_known_at: datetime | None = None,
+) -> DatasetSnapshot:
+    """Build one immutable ``PRIVATE_COVARIANCE_INPUT`` snapshot (PPF-2, OD-PPF-2-A) pinning, per
+    consumed pure-private factor run (one PRIVATE segment each):
+
+    - one ``COMPONENT_KIND_FACTOR`` component (the segment EV definition pin), and
+    - one ``COMPONENT_KIND_PURE_PRIVATE_RETURN`` per common appraisal period — the segment's
+      aligned pure-private return over the ``window_observations`` most recent
+      ``(period_start, period_end]`` intervals COMMON to every selected segment (governed PPF-1
+      ``PURE_PRIVATE_PERIOD`` rows; ``target_entity_type='private_factor_return_result'``),
+
+    so an Ω_pp run is reproducible from the snapshot alone (the compute reads this captured
+    content — never a live pure-private/factor read; a later PPF-1 re-run is invisible to the pin,
+    TR-09). Each run is a run-bound input passed explicitly (the RISK binder resolves each segment's
+    latest run — the ``proxy_weight``/``build_var_snapshot`` run-id precedent). Alignment is
+    **fail-closed, no imputation/pairwise** (the OD-P3-0-L rule carried to appraisal periods): fewer
+    than ``window_observations`` common intervals raises :class:`PrivateCovarianceSnapshotError`
+    BEFORE any write, as do a duplicate/sub-two run list, a sub-two window, a run whose segment is
+    non-PRIVATE or shared with another run, and a run with no pure-private series. The declared
+    window is the RISK binder's pre-create gate — this builder pins a well-formed grid; it does not
+    read the model registry. Models-only reads; imports NO ``risk``-SERVICE / ``calc`` symbol (the
+    ``build_covariance_snapshot`` precedent). NO derived number is computed here."""
+    from irp_shared.marketdata.models import FACTOR_FAMILY_PRIVATE
+
+    now = utcnow()
+    valid_at = as_of_valid_at if as_of_valid_at is not None else now
+    known = as_of_known_at if as_of_known_at is not None else now  # FROZEN once (header == pin)
+
+    if window_observations < 2:
+        raise PrivateCovarianceSnapshotError(
+            f"window_observations must be >= 2 (got {window_observations})"
+        )
+    distinct_runs = list(dict.fromkeys(str(rid).lower() for rid in pure_private_run_ids))
+    if len(distinct_runs) != len(pure_private_run_ids):
+        raise PrivateCovarianceSnapshotError(
+            "duplicate pure-private run ids — an ambiguous series set is refused"
+        )
+    if len(distinct_runs) < 2:
+        raise PrivateCovarianceSnapshotError(
+            f"a private covariance snapshot needs >= 2 distinct pure-private runs "
+            f"(got {len(distinct_runs)})"
+        )
+
+    # Per run: its PURE_PRIVATE_PERIOD series; derive + PRIVATE-check the single segment it holds.
+    segment_by_run: dict[str, Any] = {}
+    by_interval: dict[str, dict[tuple[date, date], Any]] = {}
+    seen_segments: set[str] = set()
+    for run_id in distinct_runs:
+        period_rows = _list_pure_private_period_rows(session, run_id, acting_tenant=acting_tenant)
+        if not period_rows:
+            raise PrivateCovarianceSnapshotError(
+                f"pure-private run {run_id} has no per-period result rows to pin"
+            )
+        seg_ids = {str(r.segment_factor_id).lower() for r in period_rows}
+        if len(seg_ids) != 1:  # PPF-1 writes one segment per run — a mixed run is malformed
+            raise PrivateCovarianceSnapshotError(
+                f"pure-private run {run_id} spans multiple segments — refused"
+            )
+        seg_id = next(iter(seg_ids))
+        if seg_id in seen_segments:  # two runs for one segment collapses the matrix shape
+            raise PrivateCovarianceSnapshotError(
+                f"segment {seg_id} appears in more than one pure-private run — refused"
+            )
+        seen_segments.add(seg_id)
+        segment = resolve_factor(session, seg_id, acting_tenant=acting_tenant)
+        if segment.factor_family != FACTOR_FAMILY_PRIVATE:
+            raise PrivateCovarianceSnapshotError(
+                f"segment factor {segment.id} is family {segment.factor_family!r}, not "
+                f"{FACTOR_FAMILY_PRIVATE!r} — refused"
+            )
+        segment_by_run[run_id] = segment
+        by_interval[run_id] = {(row.period_start, row.period_end): row for row in period_rows}
+
+    # The N most recent COMMON intervals (set intersection; fail-closed on a short overlap).
+    common: set[tuple[date, date]] = set.intersection(
+        *(set(rows.keys()) for rows in by_interval.values())
+    )
+    if len(common) < window_observations:
+        raise PrivateCovarianceSnapshotError(
+            f"only {len(common)} common appraisal periods across {len(distinct_runs)} segments — "
+            f"the declared window needs {window_observations} (no imputation, OD-P3-0-L)"
+        )
+    # ordered by (period_start, period_end); take the N most-recent common intervals
+    window_intervals = sorted(common)[-window_observations:]
+
+    # Pin in canonical segment order (lowercase-GUID), so the manifest is run-order-independent.
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for run_id in sorted(distinct_runs, key=lambda r: str(segment_by_run[r].id).lower()):
+        seg = segment_by_run[run_id]
+        _append_spec(specs, COMPONENT_KIND_FACTOR, "factor", seg, factor_content(seg))
+        for interval in window_intervals:
+            row = by_interval[run_id][interval]
+            _append_spec(
+                specs,
+                COMPONENT_KIND_PURE_PRIVATE_RETURN,
+                "private_factor_return_result",
+                row,
+                pure_private_return_content(row),
+            )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_PRIVATE_COVARIANCE_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=window_intervals[-1][1],  # the latest common period_end
+        binding_predicate_version=PRIVATE_COVARIANCE_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 #: RS-1 (OD-RS-1-B): the residual-shrinkage binding/selection rule — a cohort of promoted proxy-
 #: weight estimate runs' ESTIMATION_SUMMARY rows (each residual_stdev + its residual df). Length-
 #: guarded (see the ``_BINDING_PREDICATES`` module-end assert) against varchar(50).
@@ -2939,6 +3130,12 @@ def _reresolve_content(
                 session, comp.target_entity_id, acting_tenant=acting_tenant
             )
         )
+    if comp.component_kind == COMPONENT_KIND_PURE_PRIVATE_RETURN:
+        return pure_private_return_content(
+            _resolve_pure_private_return_row(
+                session, comp.target_entity_id, acting_tenant=acting_tenant
+            )
+        )
     if comp.component_kind == COMPONENT_KIND_VAR:
         return var_result_content(
             _resolve_var_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
@@ -3071,6 +3268,7 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             FactorNotVisible,
             FactorExposureSnapshotError,
             CovarianceSnapshotError,
+            PrivateCovarianceSnapshotError,
             VarSnapshotError,
             ReturnSnapshotError,
             BenchmarkRelativeSnapshotError,
@@ -3220,6 +3418,7 @@ _BINDING_PREDICATES = (
     VAR_TOTAL_BINDING_PREDICATE,
     RESIDUAL_SHRINKAGE_BINDING_PREDICATE,
     PRIVATE_FACTOR_RETURN_BINDING_PREDICATE,
+    PRIVATE_COVARIANCE_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "
