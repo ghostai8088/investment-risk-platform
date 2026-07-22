@@ -9,7 +9,21 @@
 > but missing the MSCI Private Equity Factor Model's (Shepard 2014/2025) "pure private" leg —
 > systematic private risk a public proxy can't capture. Ratified **fork B** (deepen the math) over a
 > **3-slice arc**: PPF-1 (this) → PPF-2 (the private covariance block Ω_pp) → PPF-3 (the unified
-> number `√(x'Σx + p'Ω_pp·p + residual)`). **NEXT = PPF-2 planning.**
+> number `√(x'Σx + p'Ω_pp·p + residual)`).
+>
+> **PPF-2 IMPLEMENTED (on branch `ppf-2-private-covariance`, pending merge; planning merged via
+> PR #100):** the private covariance block **Ω_pp** — the **19th governed number**
+> `risk.covariance.private`, **arc slice 2 of 3**. A fail-closed SIBLING of `risk.covariance.sample`
+> that REUSES the generic `estimate_covariance` kernel UNCHANGED + the shared `covariance_result`
+> table (`frequency=APPRAISAL`, `run_type=COVARIANCE_PRIVATE`) — **NO migration, NO ENT**. Equal-weight
+> sample covariance of PPF-1's pure-private APPRAISAL series across ≥2 PRIVATE segments over their
+> common appraisal grid; block-diagonal-with-Σ disclosed as an APPROXIMATION (the promoted proxy
+> blend is a SUBSET of the OLS fit, so `pp` is only APPROXIMATELY orthogonal — the verifier fold).
+> Step 1 closed a **latent shared-table read bug**: the public `latest_covariances`/`resolve_covariance`
+> now filter `run_type` (behavior-identical for all pre-PPF-2 data), so a private matrix can never
+> leak into a public read — proven both directions. Demo stage 12 (`stage9zzz`) runs ONE Ω_pp over
+> the two seeded segments; counts **21/36/103 → 22/37/104** (1 code + 1 record + 1 run). **NEXT after
+> merge = PPF-3** (the unified number — owns the appraisal→daily conversion + the VaR-gate widening).
 >
 > **The construction:** per member per appraisal period, `pp_i,t = desmoothed_i,t − Σ_f w_i,f·R_f,t`
 > (the desmoothed return minus the proxy-implied return — the current-head REGRESSION blend, public

@@ -1075,3 +1075,59 @@ PPF1_PURE_PRIVATE_INITIAL = FlagshipDossier(
         "named-gap refusal",
     ),
 )
+
+#: PPF-2 (§2.1 arc slice 2): the private covariance block Omega_pp — the 19th governed number
+#: (risk.covariance.private). MEDIUM/MEDIUM, the same substrate tier as its pure-private input.
+PPF2_PRIVATE_COVARIANCE_TIER = TierDossier(
+    "MEDIUM",
+    "MEDIUM",
+    "The private covariance block Omega_pp: the equal-weight unbiased sample covariance of the "
+    "PPF-1 pure-private appraisal return series across PRIVATE segments (the generic covariance "
+    "kernel, reused unchanged). MEDIUM materiality — it is the private variance substrate of the "
+    "§2.1 unified public+private number (the PPF-3 consumer), gating no capital and pricing no "
+    "book today. MEDIUM complexity — a closed-form Gram-form estimator with NO new math and NO "
+    "minted constant, but it stacks on the pure-private return (a desmoothing + proxy-weight "
+    "output), so their model risk propagates in, and the block-diagonal treatment of Omega_pp "
+    "against the public covariance is a disclosed approximation.",
+)
+
+#: The private-covariance model's INITIAL (AWC): a NEW governed code — SOME record (the MG-1/CC-2
+#: new-code criterion); evidence = its OWN COMPLETED Omega_pp run over the two seeded segments.
+#: Finding keys are uniquely-matching substrings of the REGISTERED PRIVATE_COVARIANCE_LIMITATIONS.
+PPF2_PRIVATE_COVARIANCE_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the private covariance block Omega_pp v1 (risk.covariance.private, "
+        "the NINETEENTH governed number, §2.1 unification arc slice 2): the equal-weight unbiased "
+        "sample covariance of the PPF-1 pure-private APPRAISAL return series across >= 2 PRIVATE "
+        "segments, over their common appraisal-period grid. It REUSES the generic covariance "
+        "kernel UNCHANGED and the shared covariance_result table (frequency=APPRAISAL, "
+        "run_type=COVARIANCE_PRIVATE) — a fail-closed SIBLING of the public risk.covariance.sample "
+        "that never mixes with it (the public reads are run_type-filtered; proven both ways). "
+        "The cited evidence run estimates Omega_pp over the two seeded segments — PE-HARBOR-IV "
+        "(PRIVATE_EQUITY) and PC-BRIDGEWATER-II (PRIVATE_CREDIT) — on their common quarterly grid "
+        "(thin N, disclosed on every row via n_observations). VALIDATION HONESTY: this is the "
+        "private covariance BLOCK only; treating it as block-diagonal with the public Sigma is a "
+        "disclosed APPROXIMATION (the pure-private series retains a small dropped-factor public "
+        "component — NOT orthogonal-by-construction), and the appraisal->daily conversion + the "
+        "unified number are the PPF-3 arc slice. NON-INDEPENDENCE DISCLOSURE: drafted and "
+        "filed by the delivery assistant under the PPF-2 ratification (OQ-PPF-2); the ratified "
+        "dossier is the human validation judgment, the filing is its transcription."
+    ),
+    conditions=(
+        "CONDITION (block-diagonal approximation): Omega_pp enters the unified covariance as a "
+        "block-diagonal block with zero cross-covariance to the public Sigma — an APPROXIMATION, "
+        "not orthogonality; joint public+private estimation is the recorded v2, and PPF-3 must "
+        "carry the disclosure. CONDITION (thin window): appraisal periods are quarterly so N is "
+        "single-digit; the estimate is disclosed-thin (n_observations on every row), NOT "
+        "down-weighted — Vasicek/Ledoit-Wolf shrinkage is the recorded v2 remedy. CONDITION "
+        "(stacked model risk): the input pure-private series regresses model output (the "
+        "desmoothing alpha + the promoted proxy blend), so both propagate one-for-one into "
+        "Omega_pp."
+    ),
+    finding_keys=(
+        "Block-diagonal APPROXIMATION",
+        "no shrinkage (Vasicek/Ledoit-Wolf)",
+        "Thin window by nature",
+    ),
+)
