@@ -711,17 +711,32 @@ def build_factor_exposure_snapshot(
         # zero rows overall degrades to allocation-v1; for the LOADINGS family an unloaded atom is
         # a fail-closed refusal at the binder's coverage gate (OD-FL-1-D), NOT decided here — this
         # builder pins, it does not adjudicate.
-        from irp_shared.marketdata.models import ProxyMapping  # models-only (no cycle)
+        # models-only (no cycle)
+        from irp_shared.marketdata.models import (
+            LOADING_FACTOR_FAMILIES,
+            Factor,
+            ProxyMapping,
+        )
 
+        # PPF-1 guard 1 (OD-PPF-1-B): family-scope the pinned proxy rows to the PUBLIC loading
+        # families. A PPF-1 segment-membership row (a weight-1 MANUAL row onto a PRIVATE-family
+        # factor) must NEVER be pinned into a public factor-exposure snapshot — unguarded it would
+        # refuse every new PA-2/FL-1 run pre-create (the pinned PRIVATE factor is not in the
+        # caller's factor_ids, and the family gate closes the "include it" escape). Every EXISTING
+        # proxy/loading row's factor is already in LOADING_FACTOR_FAMILIES (the pre-PPF-1 capture
+        # gate admitted nothing else), so this filter is byte-identical for all existing data and
+        # excludes exactly the new PRIVATE rows.
         instrument_ids = sorted({str(a.instrument_id) for a in atoms})
         proxy_rows = (
             session.execute(
                 select(ProxyMapping)
+                .join(Factor, Factor.id == ProxyMapping.factor_id)
                 .where(
                     ProxyMapping.tenant_id == str(acting_tenant),
                     ProxyMapping.private_instrument_id.in_(instrument_ids),
                     ProxyMapping.valid_to.is_(None),
                     ProxyMapping.system_to.is_(None),
+                    Factor.factor_family.in_(LOADING_FACTOR_FAMILIES),
                 )
                 .order_by(ProxyMapping.private_instrument_id, ProxyMapping.factor_id)
             )

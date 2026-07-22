@@ -61,8 +61,10 @@ from irp_shared.lineage.models import EDGE_KIND_ORIGIN, DataSource
 from irp_shared.lineage.service import record_lineage, register_data_source
 from irp_shared.marketdata.models import (
     FACTOR_FAMILIES,
+    FACTOR_FAMILY_PRIVATE,
     FACTOR_FREQUENCIES,
     FACTOR_RETURN_TYPES,
+    FREQUENCY_APPRAISAL,
     FREQUENCY_DAILY,
     RETURN_TYPE_SIMPLE,
     Factor,
@@ -151,9 +153,24 @@ def _validate_factor_family(factor_family: str) -> None:
         raise FactorValueError(f"factor_family {factor_family!r} not in {FACTOR_FAMILIES}")
 
 
-def _validate_frequency(frequency: str) -> None:
+def _validate_frequency(frequency: str, factor_family: str) -> None:
+    """Vocab + the PPF-1 family↔frequency coupling (OD-PPF-1-A): APPRAISAL is the pure-private
+    cadence and is admitted ONLY on a PRIVATE-family factor; every other family stays DAILY-only.
+    A PRIVATE factor MUST be APPRAISAL (its realizations are appraisal-grain — a DAILY private
+    segment factor would be a lie and would let the DAILY covariance/VaR gates silently accept an
+    appraisal series). Fail-closed BOTH directions."""
     if frequency not in FACTOR_FREQUENCIES:
         raise FactorValueError(f"frequency {frequency!r} not in {FACTOR_FREQUENCIES}")
+    if frequency == FREQUENCY_APPRAISAL and factor_family != FACTOR_FAMILY_PRIVATE:
+        raise FactorValueError(
+            f"frequency {FREQUENCY_APPRAISAL!r} is admitted only on a {FACTOR_FAMILY_PRIVATE!r}"
+            f"-family factor (got family {factor_family!r}) — refused"
+        )
+    if factor_family == FACTOR_FAMILY_PRIVATE and frequency != FREQUENCY_APPRAISAL:
+        raise FactorValueError(
+            f"a {FACTOR_FAMILY_PRIVATE!r}-family factor must be {FREQUENCY_APPRAISAL!r}-frequency "
+            f"(got {frequency!r}) — refused"
+        )
 
 
 def _validate_return_type(return_type: str) -> None:
@@ -407,7 +424,7 @@ def capture_factor(
     captured
     definition — NOT computed. ``entity_id``/``now`` are the deterministic-injection seam."""
     _validate_factor_family(factor_family)
-    _validate_frequency(frequency)
+    _validate_frequency(frequency, factor_family)
     if currency_code is not None:
         resolve_currency(session, currency_code, acting_tenant=acting_tenant)
     now = now or utcnow()
@@ -469,8 +486,14 @@ def update_factor(
         return factor  # no-op: no version bump, no REFERENCE.UPDATE
     if "factor_family" in changes:
         _validate_factor_family(changes["factor_family"])
-    if "frequency" in changes:
-        _validate_frequency(changes["frequency"])
+    # The family↔frequency coupling must hold on the RESULTING row, so validate the effective pair
+    # whenever EITHER attribute changes (a family change can violate an unchanged frequency, and
+    # vice versa) — PPF-1 OD-PPF-1-A.
+    if "frequency" in changes or "factor_family" in changes:
+        _validate_frequency(
+            changes.get("frequency", factor.frequency),
+            changes.get("factor_family", factor.factor_family),
+        )
     if changes.get("currency_code") is not None:
         resolve_currency(session, changes["currency_code"], acting_tenant=acting_tenant)
     now = now or utcnow()
