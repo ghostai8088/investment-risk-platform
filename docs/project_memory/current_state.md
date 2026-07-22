@@ -1,39 +1,50 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-21) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-22) — read this block; everything below it is HISTORY
 >
-> **HEAD `2cbb68c`** = merge of **PR #95** (FE-3b: the SPA OIDC/PKCE browser login — Wave 10 slice 2;
-> NO migration; counts UNCHANGED 17/20/35/101), **CI green** (Backend/Frontend/migration/API-type-
-> drift/docs/secret-scan all success). Turns SSO-1's real OIDC resource server into something a
-> non-developer can actually reach: a hand-rolled browser auth-code + PKCE flow (Web Crypto, zero new
-> runtime dep — OD-FE-1-F held) against the Keycloak `irp-frontend` public client, sending
-> `Authorization: Bearer <token>` instead of the `dev_header` shim. **WAVE 10 SLICES 1+2 COMPLETE**
-> (API-1b + FE-3b, both DONE). **NEXT = the §2.1 private/public-unification headline** (Wave 10 slice
-> 3, Part 2.13, ratified at the Wave-9 close) — fetch/cite the unification approach first (Tier-3
-> methodology), then plan the governed number.
+> **HEAD `9d64b49`** = merge of **PR #98** (PPF-1: the pure-private factor return — Wave 10 slice 3,
+> §2.1 unification arc slice 1 of 3; migration `0047_private_factor_return`; the 18th governed
+> number, counts 20/35/101 → **21/36/103**), **CI green** (all 6 jobs). Opens the §2.1 headline: the
+> planning census found the unification embryo already shipped (`risk.var.parametric_total`, PA-4)
+> but missing the MSCI Private Equity Factor Model's (Shepard 2014/2025) "pure private" leg —
+> systematic private risk a public proxy can't capture. Ratified **fork B** (deepen the math) over a
+> **3-slice arc**: PPF-1 (this) → PPF-2 (the private covariance block Ω_pp) → PPF-3 (the unified
+> number `√(x'Σx + p'Ω_pp·p + residual)`). **NEXT = PPF-2 planning.**
 >
-> A discriminated-union `Session = DevSession | OidcSession` (`kind` discriminant) swaps the wire
-> bytes at the ONE `client.ts` choke point (`method:"GET"` stays hard-coded — the read-only fence is
-> the METHOD, not the header); `DevSession → Session` widened across 16 pass-through signatures
-> (type-only, mechanical). `/callback` lands ABOVE the session gate: validates `state` (CSRF) before
-> the exchange, strips `?code` from the URL synchronously, single-use verifier+state, StrictMode
-> ref-guard. `dev_header` mode is byte-unchanged; oidc mode hides `DevBanner` (a verified Bearer
-> session IS a security boundary) and routes logout through Keycloak's `end_session_endpoint`. Demo
-> end-to-end (OQ-FE-3b-3=A): the `demo-auditor` realm user + BR-10-marked local passwords + the
-> compose backend oidc-profile env, including the load-bearing
-> `OIDC_JWKS_URI=http://keycloak:8080/.../certs` issuer-consistency fix (a naive `ISSUER`/`AUDIENCE`-
-> only wiring 503s every login). **Pre-ratification verifier pass RAN**: the token-contract crux HELD;
-> 2 COMPLICATED findings folded pre-implementation (the JWKS-URI split; the true 16-file footprint) —
-> no redesign. **4-finder review folded 1 HIGH** (the deployed nginx image shipped NO SPA
-> history-fallback, so the ratified demo login 404'd on `/callback` — fixed via
-> `infra/docker/frontend-nginx.conf`, `try_files … /index.html` + a backend read-proxy) **+ 3 MED**
-> (the OIDC logout redirect-back mismatch; `beginLogin` was untested — a silent PKCE downgrade would
-> have slipped; a stale footprint estimate) **+ LOWs** (a non-secure-context guard; a `no-referrer`
-> meta tag). Security crux + doctrine fences HELD under independent re-verification. Gates: `make
-> fe-check` green (110 FE tests+build); `make check`/`make gen-api-check` no-op (NO backend logic
-> change); `package.json` byte-identical; `npm audit --omit=dev` 0. Carried (LOW, disclosed):
-> `directAccessGrantsEnabled:true` on the public client leaves ROPC open — pre-existing, accepted for
-> the local demo.
+> **The construction:** per member per appraisal period, `pp_i,t = desmoothed_i,t − Σ_f w_i,f·R_f,t`
+> (the desmoothed return minus the proxy-implied return — the current-head REGRESSION blend, public
+> factor returns compounded over the half-open `(period_start, period_end]` window via a shared
+> alignment helper extracted from PA-3), pooled EQUAL-WEIGHT across members sharing the identical
+> interval (RETAIN_ALPHA — the liquidity premium stays in the factor). A new `PRIVATE` factor family
+> + `APPRAISAL` frequency, fail-closed OUT of every DAILY covariance/VaR gate until PPF-2/3 mint the
+> conversion.
+>
+> **The pre-ratification verifier REFUTED the naive isolation premise** (an unguarded PRIVATE
+> segment-membership row — a weight-1 MANUAL `proxy_mapping` row — would refuse every new PA-2/FL-1
+> exposure run pre-create) and forced **three guards**: the exposure-snapshot-builder family filter;
+> splitting the capture-admission family set off `LOADING_FACTOR_FAMILIES` (deliberately overturning
+> a prior shared-verbatim invariant, FL-1/RBSA gates stay byte-identical); the PRIVATE⇒MANUAL capture
+> invariant (keeping total-VaR's REGRESSION-method pin filter safe). **4-finder review: ZERO HIGH**,
+> 1 MED + 2 LOW folded. **MED** — `update_factor` admitted `factor_family`/`frequency` as updatable,
+> so a public factor with an existing REGRESSION blend could be FLIPPED to PRIVATE/APPRAISAL in
+> place, retroactively bypassing the capture-time guards — fixed by FREEZING both as gate-admission
+> identity (byte-identical for all shipped usage). **LOW** — the magnitude gate's `1E8` envelope
+> equaled the `Numeric(20,12)` column cap (a raw value could pass the gate then quantize up into a
+> PG-only overflow, the CC-2 lesson) — fixed to gate the quantized values; a by-segment read ordered
+> on `metric_type` alone — fixed to `(metric_type, period_start)`.
+>
+> **Demo stage 11** pools both segments (PE-HARBOR-IV/PRIVATE_EQUITY→FX_USD;
+> PC-BRIDGEWATER-II/PRIVATE_CREDIT→MF_RATES_GOV+MF_CRSPD_IG) at min_members=1 with **ZERO new seeded
+> book data** — both already carried a COMPLETED desmoothing run + a promoted REGRESSION blend.
+> Gates: `make check` 1802 passed; `make fe-check` 110+build; `make gen-api-check` clean; the full
+> demo PG chain in CI order green; migration 0047 downgrade/upgrade smoke + `alembic check` clean;
+> the ENT-060 RLS/append-only PG test green.
+>
+> **Prior: HEAD `2cbb68c`** = merge of **PR #95** (FE-3b: the SPA OIDC/PKCE browser login — Wave 10
+> slice 2; NO migration; counts UNCHANGED 17/20/35/101), **CI green**. Turns SSO-1's real OIDC
+> resource server into something a non-developer can actually reach: a hand-rolled browser auth-code
+> + PKCE flow (Web Crypto, zero new runtime dep) against the Keycloak `irp-frontend` public client.
+> **WAVE 10 SLICES 1+2 COMPLETE** (API-1b + FE-3b, both DONE) — see below for the API-1b summary.
 >
 > **Prior: HEAD `f1e830f`** = merge of **PR #92** (API-1b: the flagship VaR/active-risk entity reads —
 > Wave 10 slice 1; migration `0046_run_scope_portfolio`; counts UNCHANGED 17/20/35/101), **CI green
@@ -83,8 +94,8 @@
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `fe_3b_decision_record.md` (**CLOSED 2026-07-21**); prior `api_1b_decision_record.md` (**CLOSED
-> 2026-07-21**). Prior wave: **WAVE 9 FUNCTIONALLY COMPLETE +
+> `ppf_1_decision_record.md` (**CLOSED 2026-07-22**); prior `fe_3b_decision_record.md` (**CLOSED
+> 2026-07-21**), `api_1b_decision_record.md` (**CLOSED 2026-07-21**). Prior wave: **WAVE 9 FUNCTIONALLY COMPLETE +
 > CLOSED + RATIFIED 2026-07-21** (API-1 → FE-2 → SSO-1 → FE-3, all four slices DONE;
 > `wave_9_close_review.md` RATIFIED, the FIFTH consecutive zero-shipped-defect close). Standing
 > carries: the BT-3 D-F4 reword (a dedicated ES/var-backtest touch); the FE-2 `@redocly` dev-tree
