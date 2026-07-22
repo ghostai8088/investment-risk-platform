@@ -2,57 +2,58 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-22) — read this block; everything below it is HISTORY
 >
-> **HEAD `9d64b49`** = merge of **PR #98** (PPF-1: the pure-private factor return — Wave 10 slice 3,
-> §2.1 unification arc slice 1 of 3; migration `0047_private_factor_return`; the 18th governed
-> number, counts 20/35/101 → **21/36/103**), **CI green** (all 6 jobs). Opens the §2.1 headline: the
-> planning census found the unification embryo already shipped (`risk.var.parametric_total`, PA-4)
-> but missing the MSCI Private Equity Factor Model's (Shepard 2014/2025) "pure private" leg —
-> systematic private risk a public proxy can't capture. Ratified **fork B** (deepen the math) over a
-> **3-slice arc**: PPF-1 (this) → PPF-2 (the private covariance block Ω_pp) → PPF-3 (the unified
-> number `√(x'Σx + p'Ω_pp·p + residual)`).
+> **HEAD `7aefd1c`** = merge of **PR #101** (PPF-2: the private covariance block Ω_pp — Wave 10
+> slice 3, §2.1 unification arc slice 2 of 3; **NO migration**; the 19th governed number,
+> `risk.covariance.private`, counts 21/36/103 → **22/37/104**), **CI green run #519** (all 6 jobs).
+> A fail-closed SIBLING of `risk.covariance.sample` over PPF-1's pure-private return series: REUSES
+> the generic `estimate_covariance` kernel **byte-for-byte** + the shared `covariance_result` table
+> (`frequency=APPRAISAL`, `run_type=COVARIANCE_PRIVATE`). Equal-weight sample covariance of PPF-1's
+> pure-private series across ≥2 PRIVATE segments over their common appraisal grid; block-diagonal
+> treatment of Ω_pp against the public Σ is disclosed as an **APPROXIMATION, not
+> orthogonal-by-construction** (the promoted proxy weights are a SUBSET of the OLS fit — the Part-5
+> verifier's forced honesty correction). **3-slice arc**: PPF-1 (return) → PPF-2 (this) → PPF-3 (the
+> unified number `√(x'Σx + p'Ω_pp·p + residual)`). **NEXT = PPF-3 planning.**
 >
-> **PPF-2 IMPLEMENTED (on branch `ppf-2-private-covariance`, pending merge; planning merged via
-> PR #100):** the private covariance block **Ω_pp** — the **19th governed number**
-> `risk.covariance.private`, **arc slice 2 of 3**. A fail-closed SIBLING of `risk.covariance.sample`
-> that REUSES the generic `estimate_covariance` kernel UNCHANGED + the shared `covariance_result`
-> table (`frequency=APPRAISAL`, `run_type=COVARIANCE_PRIVATE`) — **NO migration, NO ENT**. Equal-weight
-> sample covariance of PPF-1's pure-private APPRAISAL series across ≥2 PRIVATE segments over their
-> common appraisal grid; block-diagonal-with-Σ disclosed as an APPROXIMATION (the promoted proxy
-> blend is a SUBSET of the OLS fit, so `pp` is only APPROXIMATELY orthogonal — the verifier fold).
-> Step 1 closed a **latent shared-table read bug**: the public `latest_covariances`/`resolve_covariance`
-> now filter `run_type` (behavior-identical for all pre-PPF-2 data), so a private matrix can never
-> leak into a public read — proven both directions. Demo stage 12 (`stage9zzz`) runs ONE Ω_pp over
-> the two seeded segments; counts **21/36/103 → 22/37/104** (1 code + 1 record + 1 run). **NEXT after
-> merge = PPF-3** (the unified number — owns the appraisal→daily conversion + the VaR-gate widening).
+> **Isolation is the load-bearing property.** Step 1 closed a latent shared-table read bug BEFORE any
+> private row could exist: `latest_covariances`/`resolve_covariance` gained a `run_type` filter
+> (behavior-identical for all pre-PPF-2 data); the 4-finder fold extended it to the by-run-id
+> `list_covariances`/`list_private_covariances` too (self-defending, not merely caller-ordered). The
+> private binder mirrors this symmetrically; a private matrix can never leak into a public read, and
+> vice-versa — proven both directions. VaR/active-risk are doubly guarded (a `run_type`-gated
+> run-resolve PLUS a DAILY-frequency backstop). The APPRAISAL-aware adjudicator groups pinned
+> `PURE_PRIVATE_RETURN` components by segment, re-keys on `period_end` after asserting the FULL
+> interval vector identical, and asserts each paired factor pin is PRIVATE/APPRAISAL.
 >
-> **The construction:** per member per appraisal period, `pp_i,t = desmoothed_i,t − Σ_f w_i,f·R_f,t`
-> (the desmoothed return minus the proxy-implied return — the current-head REGRESSION blend, public
-> factor returns compounded over the half-open `(period_start, period_end]` window via a shared
-> alignment helper extracted from PA-3), pooled EQUAL-WEIGHT across members sharing the identical
-> interval (RETAIN_ALPHA — the liquidity premium stays in the factor). A new `PRIVATE` factor family
-> + `APPRAISAL` frequency, fail-closed OUT of every DAILY covariance/VaR gate until PPF-2/3 mint the
-> conversion.
+> **4-finder review: ZERO HIGH**, 2 MED + 4 LOW folded. **MED** — `verify_snapshot`'s except-tuple
+> omitted the new component kind's resolver exception, so a gone pinned pure-private row would 500
+> instead of report DRIFT — fixed + a drift-not-500 test; the methodology doc's validation section
+> claimed a hand-computed reference, the consume-existing path, and TR-09 invariance as tested when
+> the consume branch (`snapshot_id`) was GENUINELY untested (every suite call used build-in-request)
+> — fixed by reconciling the doc to inherited-vs-new legs AND adding the missing consume==build +
+> `verify_snapshot` round-trip tests (closing the reachable gap, not just the doc). **LOW** — the
+> by-run-id list reads hardened with the same `run_type` self-defense; the data-derived "no
+> statistical-adequacy floor beyond N≥2" property recorded as an explicit v1 scope-out; a doc miscount
+> fixed.
 >
-> **The pre-ratification verifier REFUTED the naive isolation premise** (an unguarded PRIVATE
-> segment-membership row — a weight-1 MANUAL `proxy_mapping` row — would refuse every new PA-2/FL-1
-> exposure run pre-create) and forced **three guards**: the exposure-snapshot-builder family filter;
-> splitting the capture-admission family set off `LOADING_FACTOR_FAMILIES` (deliberately overturning
-> a prior shared-verbatim invariant, FL-1/RBSA gates stay byte-identical); the PRIVATE⇒MANUAL capture
-> invariant (keeping total-VaR's REGRESSION-method pin filter safe). **4-finder review: ZERO HIGH**,
-> 1 MED + 2 LOW folded. **MED** — `update_factor` admitted `factor_family`/`frequency` as updatable,
-> so a public factor with an existing REGRESSION blend could be FLIPPED to PRIVATE/APPRAISAL in
-> place, retroactively bypassing the capture-time guards — fixed by FREEZING both as gate-admission
-> identity (byte-identical for all shipped usage). **LOW** — the magnitude gate's `1E8` envelope
-> equaled the `Numeric(20,12)` column cap (a raw value could pass the gate then quantize up into a
-> PG-only overflow, the CC-2 lesson) — fixed to gate the quantized values; a by-segment read ordered
-> on `metric_type` alone — fixed to `(metric_type, period_start)`.
+> **Demo stage 12** runs ONE Ω_pp over PPF-1's two seeded segments (PE-HARBOR-IV, PC-BRIDGEWATER-II)
+> with **ZERO new book data** — the declared window computed dynamically from the live common-interval
+> intersection (**N=5**, 2024-12-31→2026-03-31, matching the Part-5 verifier's prediction exactly);
+> files ONE INITIAL AWC (MEDIUM/MEDIUM). Rule-7 reads (`/risk/private-covariances[/latest,/{id}]`,
+> reusing `CovarianceRowOut`, zero new schema). Gates: `make check` 1826 passed; `make fe-check` green
+> (build); `make gen-api-check` clean; the full demo PG chain in CI order green (`stage9zzz` correctly
+> last); `test_covariance_pg.py` green (incl. the step-1 regression under the new join); `alembic
+> check` clean (genuinely NO migration); `pip-audit` clean.
 >
-> **Demo stage 11** pools both segments (PE-HARBOR-IV/PRIVATE_EQUITY→FX_USD;
-> PC-BRIDGEWATER-II/PRIVATE_CREDIT→MF_RATES_GOV+MF_CRSPD_IG) at min_members=1 with **ZERO new seeded
-> book data** — both already carried a COMPLETED desmoothing run + a promoted REGRESSION blend.
-> Gates: `make check` 1802 passed; `make fe-check` 110+build; `make gen-api-check` clean; the full
-> demo PG chain in CI order green; migration 0047 downgrade/upgrade smoke + `alembic check` clean;
-> the ENT-060 RLS/append-only PG test green.
+> **Prior: HEAD `9d64b49`** = merge of **PR #98** (PPF-1: the pure-private factor return — Wave 10
+> slice 3, §2.1 arc slice 1 of 3; migration `0047_private_factor_return`; the 18th governed number,
+> counts 20/35/101 → 21/36/103), **CI green** (all 6 jobs). The MSCI PE Factor Model "pure private"
+> leg: `pp_i,t = desmoothed_i,t − Σ_f w_i,f·R_f,t` (desmoothed minus the proxy-implied return),
+> pooled EQUAL-WEIGHT across members sharing the identical appraisal interval (RETAIN_ALPHA). A new
+> `PRIVATE` factor family + `APPRAISAL` frequency, fail-closed OUT of every DAILY covariance/VaR gate
+> until PPF-2/3 mint the conversion — three isolation guards forced by the pre-ratification verifier
+> (the exposure-builder family filter; the capture-admission split; PRIVATE⇒MANUAL). 4-finder review:
+> ZERO HIGH, 1 MED (the `update_factor` back door — froze `factor_family`/`frequency` as
+> gate-admission identity) + 2 LOW folded.
 >
 > **Prior: HEAD `2cbb68c`** = merge of **PR #95** (FE-3b: the SPA OIDC/PKCE browser login — Wave 10
 > slice 2; NO migration; counts UNCHANGED 17/20/35/101), **CI green**. Turns SSO-1's real OIDC
@@ -108,8 +109,9 @@
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `ppf_1_decision_record.md` (**CLOSED 2026-07-22**); prior `fe_3b_decision_record.md` (**CLOSED
-> 2026-07-21**), `api_1b_decision_record.md` (**CLOSED 2026-07-21**). Prior wave: **WAVE 9 FUNCTIONALLY COMPLETE +
+> `ppf_2_decision_record.md` (**CLOSED 2026-07-22**); prior `ppf_1_decision_record.md` (**CLOSED
+> 2026-07-22**), `fe_3b_decision_record.md` (**CLOSED 2026-07-21**), `api_1b_decision_record.md`
+> (**CLOSED 2026-07-21**). Prior wave: **WAVE 9 FUNCTIONALLY COMPLETE +
 > CLOSED + RATIFIED 2026-07-21** (API-1 → FE-2 → SSO-1 → FE-3, all four slices DONE;
 > `wave_9_close_review.md` RATIFIED, the FIFTH consecutive zero-shipped-defect close). Standing
 > carries: the BT-3 D-F4 reword (a dedicated ES/var-backtest touch); the FE-2 `@redocly` dev-tree

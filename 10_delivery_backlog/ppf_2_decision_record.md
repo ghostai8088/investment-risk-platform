@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **RATIFIED by the user 2026-07-22 (OQ-PPF-2-1…4, all as recommended: equal-weight sample covariance, thin-N disclosed; block-diagonal Ω_pp, approx-orthogonal disclosed; the frequency conversion lives in PPF-3; reuse `covariance_result` + the three run_type read-filters — NO migration).** The pre-ratification verifier pass RAN 2026-07-22 (Part 5: CLAIM 4 REFUTED "orthogonal-by-construction" → reworded as an approximation; CLAIM 2 COMPLICATED → three run_type read-filters named; CLAIMs 1/3/5 HOLD; no redesign). Implementation follows per `ppf_2_implementation_plan.md`. |
+| **Status** | **CLOSED 2026-07-22 — impl PR #101 (merge `7aefd1c`), CI green run #519 (all 6 jobs: Backend/Frontend/DB-migration/API-type-drift/docs/secret-scan). Ratified 2026-07-22 (OQ-PPF-2-1…4, all as recommended: equal-weight sample covariance, thin-N disclosed; block-diagonal Ω_pp, approx-orthogonal disclosed; the frequency conversion lives in PPF-3; reuse `covariance_result` + the three run_type read-filters — NO migration). Pre-ratification verifier pass RAN 2026-07-22 (Part 5: CLAIM 4 REFUTED "orthogonal-by-construction" → reworded as an approximation; CLAIM 2 COMPLICATED → three run_type read-filters named; CLAIMs 1/3/5 HOLD; no redesign). 4-finder adversarial review RAN 2026-07-22 (Part 6: ZERO HIGH, 2 MED + 4 LOW folded — `verify_snapshot`'s except-tuple hardened + the methodology doc's validation-legs claims reconciled to shipped tests). See the delivery roadmap's dated 2026-07-22 PPF-2 DONE log entry for the full closeout record.** |
 | **Premise** | PPF-1 (CLOSED 2026-07-22, the 18th governed number) shipped the pure-private factor **return series** — per PRIVATE segment factor, `private_factor_return_result` holds the pooled `PURE_PRIVATE_PERIOD` returns at **APPRAISAL** frequency. PPF-2 estimates the **covariance Ω_pp over those segment return series** — the systematic co-movement of pure-private risk across segments (the MSCI PE/Private-Credit Factor Model's pure-private factor covariance; Shepard 2014/2025). It is the second of the 3-slice arc: **PPF-1 (return) → PPF-2 (covariance Ω_pp) → PPF-3 (the unified number `√(x'Σx + p'Ω_pp·p + residual)`)**. |
 
 ## Part 1 — Grounding (file:line; the PPF-2 census 2026-07-22)
@@ -58,3 +58,83 @@ NEW: the `risk.covariance.private` family (binder/adjudicator/builder/registrar 
 - **CLAIM 5 — no-migration correctness: HOLDS.** No CHECK/enum on `frequency`/`statistic_type`/`run_type`; grain is per-run-unique; a new run_type string + a new model code need no schema change; `alembic check` stays clean.
 
 **Net: the design stands — a sibling family reusing the generic kernel + the shared result table. The one refutation (CLAIM 4) is an honesty correction that STRENGTHENS the recorded v2 case, not a redesign; CLAIM 2's leak is three named, provably-safe read-filters. The record is ready for the ratification gate.**
+
+## Part 6 — 4-finder adversarial review (RAN 2026-07-22) — 2 MED + 4 LOW, ALL folded; ZERO HIGH
+
+Four cross-cutting finders over the impl diff (`main...HEAD`, 7 commits): covariance correctness +
+numerical honesty; public/private isolation over the shared `covariance_result` table + governance
+doctrine; snapshot/pin reproducibility + read correctness + run-resolution plumbing; demo/count
+integrity + dossier honesty. Every material finding independently re-verified before folding.
+
+**The number is CORRECT (finder 1): ZERO HIGH/independently confirmed.** The finder ran the shipped
+`numpy.cov(ddof=1)` cross-check itself — it passes. Cross-segment `period_end` re-keying is safe
+(the adjudicator asserts the FULL `(period_start, period_end)` interval vector identical across
+segments before the kernel ever sees a bare `period_end`); `n_observations`/`window_start`/
+`window_end`/vocabulary fields are all honest; the "approximately orthogonal, disclosed" claim
+(CLAIM 4 above) is substantively accurate against the promoted-weights mechanism; the PSD/defensive
+gate is correctly wired through `execute_governed_run`.
+
+**Isolation HOLDS on every read + both downstream consumers (finder 2): ZERO HIGH/MED.** The
+step-1 `run_type` filters on `latest_covariances`/`resolve_covariance` are correct and complete;
+VaR/active-risk are DOUBLY guarded against consuming a private run (`resolve_covariance_run`'s
+`run_type` gate on both the build AND consume-existing paths, backstopped by the DAILY-frequency
+adjudication check even if the first gate were bypassed); the PRIVATE/APPRAISAL family guard in
+`_adjudicate_pins` is real (triple-checked: pin data, snapshot builder, and — after the fold below —
+self-defending reads); `RISK_RUN_TYPES` consistently excludes both private run families from the
+generic run browser; all frozen invariants (audit/service.py, no BYPASSRLS, no new
+audit/permission/role, no secrets) respected.
+
+**Snapshot/pin plumbing correct, ONE gap (finder 3):** the builder pins exactly what's needed and
+fails closed on every malformed-input class (window<2, duplicate/multi-segment/shared-segment runs,
+non-PRIVATE segment, short common-interval overlap); the snapshot fence holds (no `calc` import, no
+multiplication); run-resolution (latest-COMPLETED-per-segment, the ambiguous-input gate) is correct;
+the API surface + regenerated OpenAPI/FE types are drift-free. The one gap: `verify_snapshot`'s
+except-tuple omitted the new component kind's resolver exception (below).
+
+**Demo/counts/dossier CLEAN (finder 4): ZERO HIGH/MED.** The stage-12 runner fabricates nothing,
+seeds zero new book data, and computes its window (register-N and run-N are the SAME value by
+construction, both reads of the identical common-interval intersection in one transaction); counts
+move by exactly +1 code / +1 record / +1 COMPLETED run to 22/37/104 (PG-confirmed); `stage9zzz`
+correctly sorts last; every dossier finding key matches exactly one registered limitation; thin-N is
+disclosed everywhere, never hidden.
+
+**Folds applied (this review):**
+- **MED-1 (finder 3) — `verify_snapshot`'s except-tuple omitted `PrivateCovarianceSnapshotError`.**
+  Every other governed-row component kind's resolver exception is listed (mirroring
+  `CovarianceSnapshotError`, `ProxyWeightSnapshotError`, etc.); the new
+  `COMPONENT_KIND_PURE_PRIVATE_RETURN` branch's was the sole omission, so a gone pinned pure-private
+  row would raise an UNCAUGHT exception (a raw 500) instead of reporting `drifted=True` — breaking
+  the file's own documented invariant. **Fix:** added to the except-tuple; a new drift-not-500 test
+  proves it (deletes a pinned row via a Core statement, since SQLite carries no append-only trigger,
+  and asserts `verify_snapshot(...).ok is False`).
+- **MED-2 (finder 1) — the methodology doc's "Validation / reproduction tests" section overclaimed.**
+  It said "the five legs" and listed six; three of the six had NO shipped test (a hand-computed
+  2-segment reference; the consume-existing `snapshot_id` path — genuinely UNTESTED, all 5 prior
+  `run_private_covariance` calls in the suite used `segment_factor_ids`; TR-09 post-pin invariance).
+  **Fix:** reconciled the doc to claim only what ships (the kernel-level legs are correctly labeled
+  INHERITED unchanged from `covariance_sample_v1`, since PPF-2 reuses `estimate_covariance`
+  byte-for-byte) and added the two missing tests — a consume-existing==build-in-request
+  byte-equality assertion AND a `verify_snapshot(...).ok` round-trip — closing the reachable
+  untested branch, not just the doc.
+- **LOW-1 (finder 2) — the by-run-id `list_covariances`/`list_private_covariances` lacked a
+  `run_type` filter.** Not currently exploitable (both callers pre-validate via a `run_type`-gated
+  `resolve_*_run` before reaching the list read), but this is exactly the latent-shared-table-read
+  class the record's own CLAIM 2 fold warns about. **Fix:** added the `CalculationRun` join +
+  `run_type` predicate to BOTH — self-defending now, not merely caller-ordered; behavior-identical
+  for existing data.
+- **LOW-2 (finder 4) — no statistical-adequacy floor beyond `N≥2` in v1.** The declared window is
+  data-derived (the count of common appraisal periods that exist), so Ω_pp will register and
+  complete at whatever thin N the substrate carries, down to N=2. Already thoroughly disclosed
+  (`n_observations` on every row, the dossier condition, the registered limitation) — not concealed,
+  just unrecorded as an explicit scope-out. **Fix:** added the one-line "no adequacy floor beyond
+  N≥2 in v1" disclosure to the methodology's Known limitations, with the PPF-3 carry-forward note.
+- **LOW-3 (finder 1) — the methodology doc miscounted "five legs" as six items.** Fixed alongside
+  MED-2's reconciliation.
+
+**Gates after folds:** `make check` green (**1826 passed**); the affected-family full-PG battery
+re-run GREEN after the folds — `test_covariance_pg.py` (8, incl. the step-1 byte-identical read-filter
+regression under the new join) + the full demo PG chain in CI order (`stage9zzz` correctly last,
+counts 21/36/103 → **22/37/104**; the live demo segments share **N=5** common quarterly intervals,
+2024-12-31 → 2026-03-31 — matching CLAIM 3's Part-5 prediction exactly); `make fe-check` green
+(build); `make gen-api-check` clean; `alembic check` clean (**NO migration**, as designed);
+`pip-audit` clean. **Counts: 18→19 governed numbers; the demo tenant moves 21/36/103 → 22/37/104.**
