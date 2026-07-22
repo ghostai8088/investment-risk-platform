@@ -89,14 +89,19 @@ ENTITY_FACTOR = "factor"
 ENTITY_FACTOR_RETURN = "factor_return"
 SOURCE_MODULE = "marketdata"
 
-#: Attributes ``update_factor`` may change in place (NOT the identity key code/source).
+#: Attributes ``update_factor`` may change in place (NOT the identity key code/source). **PPF-1
+#: (review MED-1): ``factor_family`` and ``frequency`` are FROZEN — they are gate-admission
+#: identity, not mutable attributes.** An in-place family flip (e.g. a public MARKET/DAILY factor
+#: → PRIVATE/APPRAISAL) would strand its existing ``proxy_mapping`` rows on the wrong side of the
+#: capture-time isolation guards (a REGRESSION row onto a now-PRIVATE factor the total-VaR pin
+#: filter would still pick up; a previously-valid public exposure run the guard-1 family filter now
+#: refuses) — the retroactive back door around guards 1/3. Frozen here, so a family/frequency change
+#: means minting a NEW factor, never mutating an existing one.
 _UPDATABLE_FACTOR = (
-    "factor_family",
     "factor_type",
     "region",
     "currency_code",
     "asset_class",
-    "frequency",
     "factor_name",
     "description",
 )
@@ -481,19 +486,11 @@ def update_factor(
     is NOT updatable). ``factor`` must already be tenant-resolved (via ``resolve_factor``)."""
     unknown = set(changes) - set(_UPDATABLE_FACTOR)
     if unknown:
+        # PPF-1 (review MED-1): factor_family / frequency are frozen (gate-admission identity), so
+        # they land here as non-updatable — an in-place PRIVATE/APPRAISAL flip is refused.
         raise FactorValueError(f"non-updatable factor attributes: {sorted(unknown)}")
     if not changes:
         return factor  # no-op: no version bump, no REFERENCE.UPDATE
-    if "factor_family" in changes:
-        _validate_factor_family(changes["factor_family"])
-    # The family↔frequency coupling must hold on the RESULTING row, so validate the effective pair
-    # whenever EITHER attribute changes (a family change can violate an unchanged frequency, and
-    # vice versa) — PPF-1 OD-PPF-1-A.
-    if "frequency" in changes or "factor_family" in changes:
-        _validate_frequency(
-            changes.get("frequency", factor.frequency),
-            changes.get("factor_family", factor.factor_family),
-        )
     if changes.get("currency_code") is not None:
         resolve_currency(session, changes["currency_code"], acting_tenant=acting_tenant)
     now = now or utcnow()

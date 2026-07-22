@@ -390,8 +390,14 @@ def run_pure_private_factor_return(
 
     def _compute(run: CalculationRun) -> tuple[list[PrivateFactorReturnResult], list[str]]:
         gaps: list[str] = []
-        raw_values = [v for (_p, _e, v) in pooled] + [stdev]
-        if any(abs(v) >= _MAX_RESULT_ABS for v in raw_values):
+        # Gate the QUANTIZED values (review LOW-1 / the CC-2 lesson): a raw value in the last
+        # quantum below 1E8 would pass a raw gate but quantize UP to 1E8, overflowing the
+        # Numeric(20,12) column on PG (invisible at the SQLite tier). Gating post-quantize closes
+        # the boundary hole — the envelope is strictly the column capacity.
+        quantized = [v.quantize(_RESULT_QUANTUM) for (_p, _e, v) in pooled] + [
+            stdev.quantize(_RESULT_QUANTUM)
+        ]
+        if any(abs(v) >= _MAX_RESULT_ABS for v in quantized):
             gaps.append("magnitude-out-of-range:pooled-return-or-stdev")
             return [], gaps
 
@@ -506,7 +512,12 @@ def list_pure_private_factor_results_by_segment(
         filters=((PrivateFactorReturnResult.segment_factor_id, segment_factor_id),),
         run_type=RUN_TYPE_PURE_PRIVATE_FACTOR,
         as_of=as_of,
-        order_by=PrivateFactorReturnResult.metric_type,
+        # (metric_type, period_start) — the same intra-run grain as the by-run read (review LOW-2):
+        # period rows present in chronological order, not arbitrary DB order.
+        order_by=(
+            PrivateFactorReturnResult.metric_type,
+            PrivateFactorReturnResult.period_start,
+        ),
     )
 
 

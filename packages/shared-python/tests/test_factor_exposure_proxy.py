@@ -45,6 +45,7 @@ from irp_shared.marketdata import (
     capture_proxy_mapping,
     resolve_factor,
     supersede_proxy_mapping,
+    update_factor,
 )
 from irp_shared.models import Base
 from irp_shared.portfolio import PortfolioActor, create_portfolio
@@ -730,3 +731,24 @@ def test_ppf1_private_family_requires_appraisal_frequency(session: Session) -> N
             actor=FactorActor(actor_id="s"),
             valid_from=T0,
         )
+
+
+def test_ppf1_factor_family_and_frequency_are_frozen_no_flip(session: Session) -> None:
+    """Review MED-1: a public factor with existing proxy rows cannot be FLIPPED to PRIVATE (or a
+    public factor to APPRAISAL) in place via update_factor — factor_family/frequency are frozen
+    gate-admission identity, so the isolation guards can't be back-doored around."""
+    t = str(uuid.uuid4())
+    _currencies(session, "USD")
+    fid = _factor(session, t, "FX_USD", "USD")
+    f = resolve_factor(session, fid, acting_tenant=t)
+    with pytest.raises(FactorValueError, match="non-updatable"):
+        update_factor(
+            session, f, acting_tenant=t, actor=FactorActor(actor_id="s"), factor_family="PRIVATE"
+        )
+    with pytest.raises(FactorValueError, match="non-updatable"):
+        update_factor(
+            session, f, acting_tenant=t, actor=FactorActor(actor_id="s"), frequency="APPRAISAL"
+        )
+    # A benign attribute update still works (the freeze is surgical, not a full lock).
+    update_factor(session, f, acting_tenant=t, actor=FactorActor(actor_id="s"), region="US")
+    assert resolve_factor(session, fid, acting_tenant=t).region == "US"
