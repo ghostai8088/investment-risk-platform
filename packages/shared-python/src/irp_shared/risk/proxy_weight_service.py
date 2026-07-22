@@ -41,7 +41,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from decimal import Decimal, localcontext
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
@@ -79,6 +79,7 @@ from irp_shared.risk.models import (
     METRIC_TYPE_WEIGHT,
     ProxyWeightEstimateResult,
 )
+from irp_shared.risk.period_alignment import compound_over_window, compound_simple_returns
 from irp_shared.risk.proxy_weight_kernel import ProxyWeightKernelError, estimate_ols
 from irp_shared.snapshot import (
     COMPONENT_KIND_DESMOOTHED_RETURN,
@@ -100,8 +101,6 @@ _COMPLETENESS_RULE_CODE = "risk.proxy_weight.completeness"
 _MAX_RESULT_ABS = Decimal("1E8")
 #: Column quantum (quantize at assign so SQLite + PG persist byte-identical values).
 _RESULT_QUANTUM = Decimal("1E-12")
-#: Compute precision for per-period factor compounding (matches the kernel context).
-_CTX_PRECISION = 50
 
 
 class ProxyWeightInputError(Exception):
@@ -200,14 +199,10 @@ def _parse_pins(
 
 
 def _compound(returns: list[Decimal]) -> Decimal:
-    """Compound a period's SIMPLE returns: ``prod(1 + r) - 1`` (prec-50; the caller quantizes
-    nothing — the raw value feeds the kernel)."""
-    with localcontext() as ctx:
-        ctx.prec = _CTX_PRECISION
-        acc = Decimal(1)
-        for r in returns:
-            acc *= Decimal(1) + r
-        return acc - Decimal(1)
+    """Compound a period's SIMPLE returns: ``prod(1 + r) - 1``. Delegates to the shared alignment
+    helper (PPF-1 OD-PPF-1-C — one definition, shared with the pure-private factor construction);
+    ``COMPOUND_PRECISION`` (= the historical prec-50) keeps this byte-identical."""
+    return compound_simple_returns(returns)
 
 
 def _adjudicate_pins(
@@ -342,8 +337,8 @@ def _build_design(parsed: _ParsedInput) -> tuple[list[Decimal], list[list[Decima
     columns: list[list[Decimal]] = []
     for cand in parsed.candidates:
         column = [
-            _compound(
-                [value for (rdate, value) in cand.returns if p.period_start < rdate <= p.period_end]
+            compound_over_window(
+                cand.returns, period_start=p.period_start, period_end=p.period_end
             )
             for p in parsed.periods
         ]
