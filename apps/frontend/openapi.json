@@ -29907,7 +29907,7 @@
     },
     "/risk/covariances/{covariance_id}": {
       "get": {
-        "description": "Read a single ``covariance_result`` row (tenant-scoped; read-only).",
+        "description": "Read a single ``covariance_result`` row (tenant-scoped; read-only). The step-1 ``run_type``\nfilter keeps a private \u03a9_pp row (same table) OUT of this PUBLIC surface.",
         "operationId": "get_covariance_risk_covariances__covariance_id__get",
         "parameters": [
           {
@@ -32792,6 +32792,201 @@
           }
         },
         "summary": "Register Var Parametric Total",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
+    "/risk/private-covariances/latest": {
+      "get": {
+        "description": "The newest COMPLETED private-covariance (\u03a9_pp) run's FULL matrix (empty when none). The\n``run_type=COVARIANCE_PRIVATE`` filter keeps the PUBLIC covariance out of this shared-table\nread. A run IS the matrix identity \u2014 no entity sub-filter; rows in canonical pair order,\n``frequency`` = APPRAISAL. Each row carries ``calculation_run_id`` (TR-09).",
+        "operationId": "latest_private_covariances_endpoint_risk_private_covariances_latest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CovarianceRowOut"
+                  },
+                  "title": "Response Latest Private Covariances Endpoint Risk Private Covariances Latest Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Latest Private Covariances Endpoint",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
+    "/risk/private-covariances/{covariance_id}": {
+      "get": {
+        "description": "Read a single PRIVATE ``covariance_result`` row (tenant-scoped; read-only). The\n``run_type`` filter keeps a PUBLIC covariance row (same table) OUT of this private surface.",
+        "operationId": "get_private_covariance_risk_private_covariances__covariance_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "covariance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Covariance Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CovarianceRowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Private Covariance",
         "tags": [
           "risk"
         ]
