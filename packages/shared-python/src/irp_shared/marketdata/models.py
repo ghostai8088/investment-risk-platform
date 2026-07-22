@@ -144,6 +144,13 @@ FACTOR_FAMILY_CURRENCY = "CURRENCY"  # ≡ the FRTB FX class (alias, by declarat
 FACTOR_FAMILY_RATES = "RATES"  # FRTB interest-rate risk (FL-1)
 FACTOR_FAMILY_CREDIT_SPREAD = "CREDIT_SPREAD"  # FRTB credit-spread risk (FL-1)
 FACTOR_FAMILY_COMMODITY = "COMMODITY"  # FRTB commodity risk (FL-1)
+#: PPF-1 (OD-PPF-1-A): the pure-private systematic factor family — a strategy/region *segment*
+#: (e.g. ``US_BUYOUTS``) whose return is the component of member instruments' desmoothed returns
+#: NOT explained by their public proxy (the MSCI PE Factor Model's "pure private" leg; Shepard
+#: 2014/2025). Deliberately NOT a public-loading family: it is fail-closed OUT of every public
+#: exposure/VaR/covariance path in PPF-1 (isolation guards, OD-PPF-1-B) — its risk only enters the
+#: unified number in PPF-2/PPF-3, once the appraisal→daily conversion is minted.
+FACTOR_FAMILY_PRIVATE = "PRIVATE"
 FACTOR_FAMILY_OTHER = "OTHER"
 FACTOR_FAMILIES = (
     FACTOR_FAMILY_STYLE,
@@ -155,12 +162,17 @@ FACTOR_FAMILIES = (
     FACTOR_FAMILY_RATES,
     FACTOR_FAMILY_CREDIT_SPREAD,
     FACTOR_FAMILY_COMMODITY,
+    FACTOR_FAMILY_PRIVATE,
     FACTOR_FAMILY_OTHER,
 )
-#: The FL-1 loadings-family allow-list (OD-FL-1-E): the families a fractional factor-loading may
-#: reference — every family EXCEPT the OTHER catch-all (unknown/OTHER stays fail-closed). Shared
-#: verbatim by the three relaxed gates (proxy_mapping capture, proxy-weight candidates, the exposure
-#: loadings binder) — a contents divergence between them would be a silent capability gap.
+#: The FL-1 loadings-family allow-list (OD-FL-1-E): the families a *public-proxy* fractional
+#: factor-loading may reference — every public family EXCEPT the OTHER catch-all and the PRIVATE
+#: pure-private family (both fail-closed). Shared verbatim by the FL-1 loadings binder and the
+#: proxy-weight candidate gate — a contents divergence between THOSE TWO would be a silent
+#: capability gap. **PPF-1 (OD-PPF-1-B guard 2) DELIBERATELY split the third gate off this
+#: constant:** proxy_mapping *capture* now admits ``PROXY_MAPPING_CAPTURE_FAMILIES`` (this set +
+#: PRIVATE), so a segment-membership row can be captured WITHOUT widening the loadings/candidate
+#: gates (which must stay byte-identical — a PRIVATE row must never satisfy public-factor coverage).
 LOADING_FACTOR_FAMILIES = (
     FACTOR_FAMILY_CURRENCY,
     FACTOR_FAMILY_MARKET,
@@ -172,12 +184,26 @@ LOADING_FACTOR_FAMILIES = (
     FACTOR_FAMILY_COUNTRY,
     FACTOR_FAMILY_MACRO,
 )
+#: PPF-1 (OD-PPF-1-B guard 2): the ``proxy_mapping`` *capture-admission* family set — the public
+#: loading families PLUS the PRIVATE pure-private family (a segment membership is a captured
+#: weight-1 MANUAL row onto a PRIVATE-family segment factor). Strictly a superset of
+#: ``LOADING_FACTOR_FAMILIES``; used ONLY by the capture gate, never by the loadings/candidate
+#: binder gates (which stay on ``LOADING_FACTOR_FAMILIES``). This split is the deliberate,
+#: recorded overturn of the former three-way shared-verbatim invariant.
+PROXY_MAPPING_CAPTURE_FAMILIES = LOADING_FACTOR_FAMILIES + (FACTOR_FAMILY_PRIVATE,)
 #: Controlled-vocab factor-return ``return_type`` (SIMPLE arithmetic v1; LOG reserved — not minted).
 RETURN_TYPE_SIMPLE = "SIMPLE"
 FACTOR_RETURN_TYPES = (RETURN_TYPE_SIMPLE,)
-#: Controlled-vocab factor ``frequency`` (DAILY v1; WEEKLY/MONTHLY reserved — not minted).
+#: Controlled-vocab factor ``frequency``. DAILY = the public v1 (WEEKLY/MONTHLY reserved — not
+#: minted). PPF-1 (OD-PPF-1-A): APPRAISAL = the irregular, interval-disclosed cadence of a
+#: pure-private segment factor's realizations — admitted at registration ONLY for a PRIVATE-family
+#: factor (``factor.py:_validate_frequency``). Every DAILY-only gate (covariance, VaR) therefore
+#: keeps refusing an APPRAISAL factor until PPF-2/PPF-3 mint the declared appraisal→daily
+#: conversion — the intended fail-closed composition (no accidental mixing of appraisal-grain and
+#: daily-grain risk).
 FREQUENCY_DAILY = "DAILY"
-FACTOR_FREQUENCIES = (FREQUENCY_DAILY,)
+FREQUENCY_APPRAISAL = "APPRAISAL"
+FACTOR_FREQUENCIES = (FREQUENCY_DAILY, FREQUENCY_APPRAISAL)
 
 # --- benchmark time series (P2-7, ENT-052) — captured index levels + vendor-published returns ---
 #: ``benchmark_level.level_type`` / ``benchmark_return.return_basis`` — WHICH published index

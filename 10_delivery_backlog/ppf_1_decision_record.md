@@ -79,3 +79,50 @@ NEW: the `PRIVATE` factor family + `FREQUENCY_APPRAISAL` vocab mints, the captur
 - **CLAIM 5 — demo honesty: COMPLICATED → folded (OD-B/OD-F).** Census: exactly 2 qualified private instruments, one per segment (PC-BRIDGEWATER-II PRIVATE_CREDIT; PE-HARBOR-IV PRIVATE_EQUITY) — both run end-to-end at min_members=1 with ZERO new seeded book data; PE-HARBORVIEW-IX/PE-MERIDIAN-X lack blends, which explicit-captured membership handles honestly (no membership row = not a member; membership-without-blend = named-gap refusal). Any pooled (≥2) segment demo needs new seed data — deferred with the pooling machinery's first real consumer.
 
 **Net: the construction, the arc, and the demo all stand; the one refutation was the isolation premise, converted pre-implementation into three named, sharply-locatable guards — the exact class of catch this pass exists for.** The record is ready for the ratification gate.
+
+## Part 6 — 4-finder adversarial review (RAN 2026-07-22) — 1 MED + 2 LOW, ALL folded; ZERO HIGH
+
+Four cross-cutting finders over the impl diff (`main...HEAD`, 8 commits): econometric correctness;
+doctrine/security; family-isolation (the make-or-break); read-correctness + demo/count/CI integrity.
+Every material finding re-verified by the synthesizer before folding.
+
+**The three isolation guards HELD (finder 3): ZERO HIGH.** The exposure-builder family filter is
+byte-identical for all pre-PPF-1 data (proven by the exact-loadings regression test, not a row-count
+check); the capture-admission split leaves the FL-1 loadings gate + the RBSA candidate gate
+byte-identical on `LOADING_FACTOR_FAMILIES`; PRIVATE⇒MANUAL holds on capture/supersede/correct; the
+PRIVATE⇔APPRAISAL coupling keeps the segment factor fail-closed OUT of every DAILY covariance/VaR
+gate. **Doctrine/security CLEAN (finder 2):** `audit/service.py` byte-frozen + never imported; the
+reserved `RISK.PURE_PRIVATE_FACTOR_CREATE` audit code never emitted; migration 0047 symmetric FORCE
+RLS, no grants, no hybrid-set change; model-binding (AD-014/CTRL-003) held; BR-10 clean.
+**Econometrics + provenance HONEST (finder 1):** `pp = desmoothed − Σw·compound(R over
+(period_start, period_end])` correct (the PA-3 intercept is a NULL-`factor_id` row never promoted, so
+RETAIN_ALPHA genuinely keeps the mean out-of-proxy return in the factor); the shared-helper
+extraction byte-identical; no stealth zero-fill (the coverage gate fires before compounding). **Reads
++ demo + FE contract CLEAN (finder 4):** `/latest` before `/{id}`; the exhaustive decimal guard
+extended; the exact +1/+1/+2 count deltas (21/36/103); the `stage9zz` sort-safety and refuse-not-skip
+verified.
+
+**Folds applied (this review):**
+- **MED-1 (finder 3) — the `update_factor` back door around the isolation guards.** `_UPDATABLE_FACTOR`
+  admitted `factor_family` + `frequency`, so a public factor with an existing REGRESSION proxy blend
+  could be FLIPPED to PRIVATE/APPRAISAL in place — stranding a REGRESSION row on a now-PRIVATE factor
+  (the total-VaR pin filter would still see it) and refusing a previously-valid public exposure run
+  (the guard-1 family filter now drops it). Guard 3 is enforced at proxy_mapping capture, never
+  retroactively on the factor side. **Fix: `factor_family` + `frequency` are FROZEN** (gate-admission
+  identity, like code/source) — a flip is refused as non-updatable; a family/frequency change now
+  means minting a NEW factor. Every existing `update_factor` call only amends `description`/`region`,
+  so this is byte-identical for all shipped usage. Regression test added.
+- **LOW-1 (finder 1) — the magnitude gate boundary (the CC-2 lesson).** The `1E8` envelope EQUALS the
+  `Numeric(20,12)` column cap, so a raw value in the last quantum below `1E8` passed the gate then
+  quantized UP to `1E8`, a PG numeric overflow invisible at the SQLite tier. **Fix: gate the
+  QUANTIZED values** — the envelope is now strictly the column capacity (unreachable by real O(1)
+  returns; closed regardless).
+- **LOW-2 (finder 4) — the by-segment read ordering.** `list_pure_private_factor_results_by_segment`
+  ordered on `metric_type` alone, returning period rows in arbitrary DB order. **Fix: `(metric_type,
+  period_start)`** — the same intra-run grain as the by-run read.
+
+**Gates after folds:** `make check` green (**1802 passed** — ruff/format/mypy/pytest/secret-scan/docs);
+`make fe-check` green (110 tests + build); `make gen-api-check` clean; the full demo PG chain in CI
+order green (57 — proving stage9z asserts 20/35/101 before PPF-1 seeds, then stage9zz asserts
+21/36/103); migration 0047 downgrade/upgrade smoke + `alembic check` clean; the ENT-060 RLS/append-only
+PG test green. **Counts: 17→18 governed numbers; the demo tenant moves 20/35/101 → 21/36/103.**

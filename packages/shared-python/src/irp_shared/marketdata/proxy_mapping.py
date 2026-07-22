@@ -52,9 +52,10 @@ from irp_shared.dq.service import register_dq_rule, run_quality_check
 from irp_shared.lineage.models import EDGE_KIND_ORIGIN, DataSource
 from irp_shared.lineage.service import record_lineage, register_data_source
 from irp_shared.marketdata.models import (
-    LOADING_FACTOR_FAMILIES,
+    FACTOR_FAMILY_PRIVATE,
     MAPPING_METHOD_MANUAL,
     MAPPING_METHOD_REGRESSION,
+    PROXY_MAPPING_CAPTURE_FAMILIES,
     PROXY_MAPPING_METHODS,
     Factor,
     ProxyMapping,
@@ -337,12 +338,18 @@ def _resolve_instrument_id(session: Session, instrument_id: str, *, acting_tenan
     return str(instrument_id)
 
 
-def _resolve_factor_id(session: Session, factor_id: str, *, acting_tenant: str) -> str:
-    """Re-resolve the public factor under the acting tenant BEFORE its id is stamped into the
-    NOT-NULL FK (the P3-5 cross-tenant-FK guard); and enforce the admitted-family scope
-    fail-closed — PA-0's v1 CURRENCY-only gate (OD-PA-0-H) was WIDENED at FL-1 to
-    ``LOADING_FACTOR_FAMILIES`` (OD-FL-1-C/E), with OTHER/unknown still refused at capture, never
-    silently accepted. Models-only import."""
+def _resolve_factor_id(
+    session: Session, factor_id: str, *, mapping_method: str, acting_tenant: str
+) -> str:
+    """Re-resolve the public/segment factor under the acting tenant BEFORE its id is stamped into
+    the NOT-NULL FK (the P3-5 cross-tenant-FK guard); and enforce the admitted-family scope
+    fail-closed. PA-0's v1 CURRENCY-only gate (OD-PA-0-H) was WIDENED at FL-1 to the public loading
+    families (OD-FL-1-C/E), and again at PPF-1 to ``PROXY_MAPPING_CAPTURE_FAMILIES`` (= those +
+    PRIVATE), so a segment-membership row may be captured; OTHER/unknown stay refused. **PPF-1
+    guard 3 (OD-PPF-1-B): a PRIVATE-family row MUST be MANUAL** — a REGRESSION-method membership
+    would be pinned into the total-VaR path (which method-filters to REGRESSION) and demand
+    estimation evidence, so the convention is made an enforced invariant here. Models-only
+    import."""
     row = session.execute(
         select(Factor.id, Factor.factor_family).where(
             Factor.id == str(factor_id),
@@ -353,11 +360,16 @@ def _resolve_factor_id(session: Session, factor_id: str, *, acting_tenant: str) 
         raise ProxyMappingValueError(
             f"factor {factor_id} is not visible in the acting tenant — refused"
         )
-    if row.factor_family not in LOADING_FACTOR_FAMILIES:
+    if row.factor_family not in PROXY_MAPPING_CAPTURE_FAMILIES:
         raise ProxyMappingValueError(
-            f"factor {factor_id} family {row.factor_family!r} is not an admitted loading family "
-            f"(FL-1 widened PA-0's CURRENCY-only gate to {LOADING_FACTOR_FAMILIES}; OTHER/unknown "
-            f"stay refused); refused"
+            f"factor {factor_id} family {row.factor_family!r} is not an admitted capture family "
+            f"(PPF-1 widened the FL-1 loading families to {PROXY_MAPPING_CAPTURE_FAMILIES}; "
+            f"OTHER/unknown stay refused); refused"
+        )
+    if row.factor_family == FACTOR_FAMILY_PRIVATE and mapping_method != MAPPING_METHOD_MANUAL:
+        raise ProxyMappingValueError(
+            f"a {FACTOR_FAMILY_PRIVATE!r}-family segment membership must be MANUAL-method "
+            f"(got {mapping_method!r}) — refused"
         )
     return str(row.id)
 
@@ -411,7 +423,9 @@ def capture_proxy_mapping(
     resolved_instrument = _resolve_instrument_id(
         session, private_instrument_id, acting_tenant=acting_tenant
     )
-    resolved_factor = _resolve_factor_id(session, factor_id, acting_tenant=acting_tenant)
+    resolved_factor = _resolve_factor_id(
+        session, factor_id, mapping_method=mapping_method, acting_tenant=acting_tenant
+    )
     now = now or utcnow()
     row = ProxyMapping(
         tenant_id=str(acting_tenant),
@@ -479,6 +493,12 @@ def supersede_proxy_mapping(
     _validate_mapping_method(mapping_method)
     _validate_promotion(mapping_method, source_calculation_run_id)
     _validate_weight(weight)
+    # PPF-1 guard 3: re-assert the family-scope + PRIVATE⇒MANUAL invariant on the RESULTING head
+    # (a supersede could otherwise flip a PRIVATE membership to REGRESSION). Tenant re-resolve is
+    # redundant-but-harmless (the key already exists); the coherence check is the point.
+    _resolve_factor_id(
+        session, factor_id, mapping_method=mapping_method, acting_tenant=acting_tenant
+    )
     prior = _current_open(
         session,
         acting_tenant=acting_tenant,

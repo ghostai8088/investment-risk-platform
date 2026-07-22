@@ -1015,3 +1015,63 @@ CC2_PACING_INITIAL = FlagshipDossier(
         "NAV ANCHOR:",
     ),
 )
+
+
+# --- PPF-1 stage 11 (the pure-private factor-return slice): the 21st code's dossiers — SEPARATE
+# module constants, NEVER added to TIER_DOSSIERS/FLAGSHIP_DOSSIERS (the CC2_PACING shape). ---
+
+#: MEDIUM materiality / MEDIUM complexity => TIER_2 (the CC2_PACING precedent: a risk-input building
+#: block that gates no capital and prices no book today — its covariance block + the unified number
+#: are the PPF-2/PPF-3 consumers; a deterministic pool of desmoothed-minus-proxy residuals, no new
+#: estimation and no minted constant, but stacked on desmoothing + proxy-weight model risk).
+PPF1_PURE_PRIVATE_TIER = TierDossier(
+    "MEDIUM",
+    "MEDIUM",
+    "The pure-private factor return: a deterministic pool of members' desmoothed-minus-proxy "
+    "residuals (the MSCI PE Factor Model 'pure private' leg). MEDIUM materiality — it is the "
+    "return substrate of the §2.1 unified public+private number (its covariance block Omega_pp and "
+    "the unified VaR are the PPF-2/PPF-3 consumers), gating no capital and pricing no book today. "
+    "MEDIUM complexity — a closed-form subtraction + equal-weight pool with NO new estimation and "
+    "NO minted constant, but it stacks on the declared desmoothing alpha and the promoted "
+    "proxy-weight blend (both model outputs), so their model risk propagates in.",
+)
+
+#: The pure-private model's INITIAL (AWC): a NEW governed code — SOME record (the MG-1/CC-2 new-code
+#: criterion); evidence = its OWN COMPLETED pooling runs over the seeded PE-HARBOR-IV (PE)
+#: + PC-BRIDGEWATER-II (PRIVATE_CREDIT) segments. Finding keys are uniquely-matching substrings of
+#: the REGISTERED PURE_PRIVATE_LIMITATIONS.
+PPF1_PURE_PRIVATE_INITIAL = FlagshipDossier(
+    outcome="APPROVED_WITH_CONDITIONS",
+    scope_note=(
+        "INITIAL validation of the pure-private factor return v1 (risk.factor_return.pure_private, "
+        "the EIGHTEENTH governed number, §2.1 unification arc slice 1; declared "
+        "pooling=EQUAL_WEIGHT / intercept=RETAIN_ALPHA / min_members=1): the cited evidence runs "
+        "pool, per PRIVATE segment, its members' DESMOOTHED appraisal returns MINUS their "
+        "proxy-implied returns (the MSCI PE Factor Model pure-private leg; Shepard 2014/2025) into "
+        "one appraisal-period series. Two seeded single-member segments — PE-HARBOR-IV "
+        "(PRIVATE_EQUITY, blend onto FX_USD) and PC-BRIDGEWATER-II (PRIVATE_CREDIT, blend onto "
+        "MF_RATES_GOV + MF_CRSPD_IG) — run at min_members=1 with the member count disclosed on "
+        "every row (thin, never hidden). VALIDATION HONESTY: this is the pure-private RETURN "
+        "only; its covariance block and the unified number are the PPF-2/PPF-3 arc slices, and the "
+        "APPRAISAL-frequency segment factor is fail-closed OUT of the DAILY covariance/VaR gates "
+        "until they land. NON-INDEPENDENCE DISCLOSURE: drafted and filed by the delivery assistant "
+        "under the PPF-1 ratification (OQ-PPF-1); the ratified dossier is the human validation "
+        "judgment, the filing is its transcription."
+    ),
+    conditions=(
+        "CONDITION (stacked model risk): the pure-private return regresses MODEL OUTPUT (the "
+        "declared desmoothing alpha + the promoted proxy-weight blend), so any consumer MUST weigh "
+        "that both propagate one-for-one into the factor. CONDITION (two-step disclosure): this is "
+        "TWO-STEP (desmooth, then subtract) — Shepard (2014) shows single-step joint Bayesian "
+        "desmoothing-with-estimation is more robust, the recorded v3; no thin-factor / shrinkage "
+        "correction in v1. CONDITION (thin single-member segments): at min_members=1 the 'factor' "
+        "degenerates toward one instrument's residual — the member count is disclosed on every "
+        "row, and multi-member pooling (with identical-interval grids) is exercised the moment a "
+        "second qualified member is seeded."
+    ),
+    finding_keys=(
+        "covariance block Omega_pp",
+        "regresses MODEL OUTPUT",
+        "named-gap refusal",
+    ),
+)

@@ -3362,6 +3362,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/risk/private-factor-returns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Private Factor Returns Endpoint
+         * @description Rule-7 entity read: pure-private factor-return rows across COMPLETED runs for a segment
+         *     factor + an optional ``as_of`` run cutoff (silent-empty on a foreign/unknown segment). Each row
+         *     carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR.
+         */
+        get: operations["list_private_factor_returns_endpoint_risk_private_factor_returns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/risk/private-factor-returns/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest Private Factor Returns Endpoint
+         * @description Rule-7 latest-resolver: the newest COMPLETED run's rows for the segment factor (empty when
+         *     the segment has no COMPLETED run).
+         */
+        get: operations["latest_private_factor_returns_endpoint_risk_private_factor_returns_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/risk/private-factor-returns/{result_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Private Factor Return
+         * @description Read a single ``private_factor_return_result`` row by id (tenant-scoped; read-only).
+         */
+        get: operations["get_private_factor_return_risk_private_factor_returns__result_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/risk/proxy-weight-estimates": {
         parameters: {
             query?: never;
@@ -7367,6 +7430,43 @@ export interface components {
             code_version: string;
             /** Version Label */
             version_label?: string | null;
+        };
+        /** PurePrivateFactorRowOut */
+        PurePrivateFactorRowOut: {
+            /** Calculation Run Id */
+            calculation_run_id: string;
+            /** Id */
+            id: string;
+            /** Input Snapshot Id */
+            input_snapshot_id: string;
+            /** Intercept Convention */
+            intercept_convention: string;
+            /** Member Count */
+            member_count: number;
+            /** Metric Type */
+            metric_type: string;
+            /** Metric Value */
+            metric_value: string;
+            /** Min Members */
+            min_members: number;
+            /** Model Version Id */
+            model_version_id: string;
+            /** Period Count */
+            period_count: number | null;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /** Pooling Convention */
+            pooling_convention: string;
+            /** Segment Factor Id */
+            segment_factor_id: string;
         };
         /** RatingScaleDetailOut */
         RatingScaleDetailOut: {
@@ -15473,6 +15573,113 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SensitivityModelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_private_factor_returns_endpoint_risk_private_factor_returns_get: {
+        parameters: {
+            query?: {
+                segment_factor_id?: string | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurePrivateFactorRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_private_factor_returns_endpoint_risk_private_factor_returns_latest_get: {
+        parameters: {
+            query: {
+                segment_factor_id: string;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurePrivateFactorRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_private_factor_return_risk_private_factor_returns__result_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                result_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurePrivateFactorRowOut"];
                 };
             };
             /** @description Validation Error */

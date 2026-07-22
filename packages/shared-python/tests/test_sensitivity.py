@@ -721,7 +721,7 @@ def test_migration_head_is_sensitivity() -> None:
     cfg = Config(str(_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(_ROOT / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0046_run_scope_portfolio"  # API-1b
+    assert script.get_current_head() == "0047_private_factor_return"  # PPF-1
     assert script.get_revision("0022_sensitivity").down_revision == "0021_benchmark"
 
 

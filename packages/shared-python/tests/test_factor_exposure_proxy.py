@@ -35,14 +35,17 @@ from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.exposure import ExposureActor, run_exposure
 from irp_shared.marketdata import (
     FactorActor,
+    FactorValueError,
     FxRateActor,
     ProxyMappingActor,
+    ProxyMappingValueError,
     capture_factor,
     capture_factor_return,
     capture_fx_rate,
     capture_proxy_mapping,
     resolve_factor,
     supersede_proxy_mapping,
+    update_factor,
 )
 from irp_shared.models import Base
 from irp_shared.portfolio import PortfolioActor, create_portfolio
@@ -635,3 +638,117 @@ def test_active_risk_refuses_proxy_run(session: Session) -> None:
             benchmark_effective_date=VD,
         )
     assert_no_running_orphan(session, run_type="ACTIVE_RISK")
+
+
+# ------------------------------------------------------------ PPF-1 family-isolation guards (OD-B)
+
+
+def _private_segment_factor(db: Session, tenant: str, code: str = "PPF_PRIVATE_CREDIT") -> str:
+    """A PRIVATE-family pure-private segment factor (APPRAISAL frequency, per OD-PPF-1-A)."""
+    fid = capture_factor(
+        db,
+        factor_code=f"{code}-{uuid.uuid4().hex[:6]}",
+        factor_source="PPF",
+        factor_family="PRIVATE",
+        frequency="APPRAISAL",
+        acting_tenant=tenant,
+        actor=FactorActor(actor_id="s"),
+        valid_from=T0,
+    ).id
+    db.flush()
+    return fid
+
+
+def test_ppf1_private_membership_row_is_invisible_to_proxy_exposure(session: Session) -> None:
+    """CLAIM-2 make-or-break: adding a PRIVATE segment-membership row to the PE instrument must
+    leave the public proxy-exposure run BYTE-IDENTICAL (guard 1: the exposure snapshot builder
+    family-filters the pinned proxy rows, so the PRIVATE row is never pinned and never allocated —
+    unguarded it would refuse the run pre-create at _adjudicate_proxies)."""
+    t = str(uuid.uuid4())
+    exp_run, fid_usd, fid_eur, pe, insts = _seed_mixed(session, t)
+    # Attach a PRIVATE segment membership (weight-1 MANUAL) to the SAME proxied PE instrument.
+    seg = _private_segment_factor(session, t)
+    _proxy(session, t, pe, seg, "1")  # MANUAL by default — the membership row
+    # The public proxy exposure over ONLY the public factors runs and is unchanged.
+    result = _run_proxy(session, t, exp_run, [fid_usd, fid_eur])
+    assert result.status == RunStatus.COMPLETED.value
+    rows = {(r.instrument_id, r.factor_code): r for r in result.rows}
+    assert len(result.rows) == 3  # STILL 1 indicator + 2 proxied — the PRIVATE row is invisible
+    assert rows[(pe, "FX_USD")].loading == Decimal("0.6")
+    assert rows[(pe, "FX_USD")].exposure_amount == Decimal("30000.000000")
+    assert rows[(pe, "FX_EUR")].loading == Decimal("0.3")
+    assert rows[(pe, "FX_EUR")].exposure_amount == Decimal("15000.000000")
+    # No result row references the PRIVATE segment factor.
+    assert all(r.factor_id != seg for r in result.rows)
+
+
+def test_ppf1_private_membership_must_be_manual(session: Session) -> None:
+    """Guard 3: a PRIVATE-family membership captured as REGRESSION is refused (it would be pinned
+    into the total-VaR REGRESSION-method path and demand estimation evidence)."""
+    t = str(uuid.uuid4())
+    _currencies(session, "USD", "EUR")
+    _exp_run, _pf, insts = _book(session, t, [("I-PE", "100", "500.00", "USD")])
+    pe = insts["I-PE"]
+    seg = _private_segment_factor(session, t)
+    with pytest.raises(ProxyMappingValueError, match="must be MANUAL"):
+        capture_proxy_mapping(
+            session,
+            private_instrument_id=pe,
+            factor_id=seg,
+            weight=Decimal("1"),
+            acting_tenant=t,
+            actor=ProxyMappingActor(actor_id="s"),
+            mapping_method="REGRESSION",
+            source_calculation_run_id=str(uuid.uuid4()),
+            valid_from=T0,
+        )
+
+
+def test_ppf1_private_family_requires_appraisal_frequency(session: Session) -> None:
+    """OD-PPF-1-A: a PRIVATE factor MUST be APPRAISAL; a public family may NOT be APPRAISAL."""
+    t = str(uuid.uuid4())
+    _currencies(session, "USD")
+    with pytest.raises(FactorValueError, match="APPRAISAL"):
+        capture_factor(
+            session,
+            factor_code="BAD-PRIVATE-DAILY",
+            factor_source="PPF",
+            factor_family="PRIVATE",
+            frequency="DAILY",  # a PRIVATE factor cannot be DAILY
+            acting_tenant=t,
+            actor=FactorActor(actor_id="s"),
+            valid_from=T0,
+        )
+    with pytest.raises(FactorValueError, match="APPRAISAL"):
+        capture_factor(
+            session,
+            factor_code="BAD-CURRENCY-APPRAISAL",
+            factor_source="PPF",
+            factor_family="CURRENCY",
+            currency_code="USD",
+            frequency="APPRAISAL",  # a public factor cannot be APPRAISAL
+            acting_tenant=t,
+            actor=FactorActor(actor_id="s"),
+            valid_from=T0,
+        )
+
+
+def test_ppf1_factor_family_and_frequency_are_frozen_no_flip(session: Session) -> None:
+    """Review MED-1: a public factor with existing proxy rows cannot be FLIPPED to PRIVATE (or a
+    public factor to APPRAISAL) in place via update_factor — factor_family/frequency are frozen
+    gate-admission identity, so the isolation guards can't be back-doored around."""
+    t = str(uuid.uuid4())
+    _currencies(session, "USD")
+    fid = _factor(session, t, "FX_USD", "USD")
+    f = resolve_factor(session, fid, acting_tenant=t)
+    with pytest.raises(FactorValueError, match="non-updatable"):
+        update_factor(
+            session, f, acting_tenant=t, actor=FactorActor(actor_id="s"), factor_family="PRIVATE"
+        )
+    with pytest.raises(FactorValueError, match="non-updatable"):
+        update_factor(
+            session, f, acting_tenant=t, actor=FactorActor(actor_id="s"), frequency="APPRAISAL"
+        )
+    # A benign attribute update still works (the freeze is surgical, not a full lock).
+    update_factor(session, f, acting_tenant=t, actor=FactorActor(actor_id="s"), region="US")
+    assert resolve_factor(session, fid, acting_tenant=t).region == "US"

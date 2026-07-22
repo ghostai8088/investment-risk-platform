@@ -39,6 +39,10 @@ type CountKey =
   | "n_shocks_unmatched"
   | "period_index"
   | "tenor_days"
+  // PPF-1 (ENT-060): the pure-private factor-return counts + declared min-members floor.
+  | "member_count"
+  | "period_count"
+  | "min_members"
   // A bitemporal row-version integer (FR-versioned captured-input DTOs), not a governed decimal.
   | "record_version";
 
@@ -71,6 +75,7 @@ export type OnlyCountsAreNumbersOnEveryRowOut = [
   AssertTrue<OnlyCountsAreNumbers<Schemas["ProxyWeightRowOut"]>>,
   AssertTrue<OnlyCountsAreNumbers<Schemas["EsBacktestRowOut"]>>,
   AssertTrue<OnlyCountsAreNumbers<Schemas["PacingRowOut"]>>,
+  AssertTrue<OnlyCountsAreNumbers<Schemas["PurePrivateFactorRowOut"]>>,
   // FE-3 is the first slice to render captured-input decimals (quantity / cost_basis / mark_value)
   // to the DOM, so those DTOs join the exhaustive guard (the FE-2 lesson: guard the moment a
   // decimal could be wired, not a sampled subset).
@@ -89,4 +94,5 @@ export type GovernedDecimalIsString = [
   AssertString<Schemas["ProxyWeightRowOut"]["metric_value"]>,
   AssertString<NonNullable<Schemas["ScenarioRowOut"]["pnl"]>>,
   AssertString<Schemas["PortfolioReturnRowOut"]["return_value"]>,
+  AssertString<Schemas["PurePrivateFactorRowOut"]["metric_value"]>,
 ];
