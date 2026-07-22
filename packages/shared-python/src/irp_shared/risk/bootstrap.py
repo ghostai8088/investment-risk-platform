@@ -498,9 +498,13 @@ COVARIANCE_LIMITATIONS: tuple[str, ...] = (
 _DIGITS_PATTERN = re.compile(r"[0-9]+")
 
 
-def declared_window_observations(session: Session, version: ModelVersion) -> int:
+def declared_window_observations(
+    session: Session, version: ModelVersion, *, model_code: str = COVARIANCE_MODEL_CODE
+) -> int:
     """Parse the version's declared estimation window from its ``model_assumption`` rows (the
-    OD-P3-4-G identity: exactly ONE ``window_observations=N`` assumption must exist)."""
+    OD-P3-4-G identity: exactly ONE ``window_observations=N`` assumption must exist). ``model_code``
+    only names the refusal (PPF-2 reuses this parser for ``risk.covariance.private``, whose window
+    is the count of common appraisal periods)."""
     # Exactly one, strictly-decimal declaration — a version minted with a malformed/absent window
     # (reachable via the GENERIC model-registration endpoint under the same permission) is NOT a
     # covariance-model identity; refuse fail-closed (422), never a bare int() ValueError (500).
@@ -508,7 +512,7 @@ def declared_window_observations(session: Session, version: ModelVersion) -> int
         load_assumption_texts(session, version),
         WINDOW_ASSUMPTION_PREFIX,
         pattern=_DIGITS_PATTERN,
-        on_invalid=lambda: WrongModelVersionError(str(version.id), COVARIANCE_MODEL_CODE),
+        on_invalid=lambda: WrongModelVersionError(str(version.id), model_code),
     )
     return int(declared)
 
@@ -576,6 +580,127 @@ def register_covariance_model(
         raise ModelVersionConflictError(
             COVARIANCE_MODEL_CODE,
             COVARIANCE_VERSION_LABEL,
+            f"{code_version} (window_observations={window_observations})",
+        )
+    return version
+
+
+# ---------- PPF-2: the PRIVATE covariance block Ω_pp (19th governed number) ----------
+#: The private-covariance model identity — a SIBLING of ``risk.covariance.sample`` reusing the
+#: generic kernel over PPF-1's pure-private APPRAISAL return series (§2.1 arc slice 2, OD-PPF-2-A).
+PRIVATE_COVARIANCE_MODEL_CODE = "risk.covariance.private"
+PRIVATE_COVARIANCE_MODEL_NAME = (
+    "Private-factor covariance block Ω_pp (equal-weighted, unbiased N-1)"
+)
+PRIVATE_COVARIANCE_MODEL_TYPE = "COVARIANCE"
+PRIVATE_COVARIANCE_VERSION_LABEL = "v1"
+
+#: MANDATORY methodology pointer — the versioned doc under the existing methodology home.
+PRIVATE_COVARIANCE_METHODOLOGY_REF = "05_analytics_methodologies/covariance_private_v1.md"
+
+#: The declared methodology choices EXCLUDING the window (registration-supplied, appended per call —
+#: here the window is the count of COMMON appraisal periods across the ≥2 segments; OD-PPF-2-A/D).
+PRIVATE_COVARIANCE_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Equal-weighted UNBIASED sample covariance of PURE-PRIVATE segment returns: cov_ij = "
+    "SUM_t((p_i,t - mu_i)(p_j,t - mu_j)) / (N - 1); mu_i = SUM_t(p_i,t) / N. The SAME generic "
+    "kernel as risk.covariance.sample - this family differs only in its INPUT series/frequency.",
+    "Inputs: PPF-1 pure-private APPRAISAL return series (risk.covariance.private consumes governed "
+    "PURE_PRIVATE_PERIOD results, NOT captured factor returns); the window = the N most recent "
+    "appraisal periods on which EVERY selected PRIVATE segment has a pure-private return (set "
+    "intersection over (period_start, period_end]); fewer than N common periods fails closed — NO "
+    "imputation, NO pairwise deletion (pairwise breaks PSD).",
+    "Units: APPRAISAL-frequency, UNANNUALIZED covariance of SIMPLE pure-private returns. The "
+    "appraisal->daily frequency conversion is DEFERRED to PPF-3 (the unified number); Ω_pp is "
+    "stored native-APPRAISAL here (OD-PPF-2-E).",
+    "Computed in Decimal at 50-digit context precision; quantize_HALF_UP to the covariance_result "
+    "column scale (the reused table).",
+    "PSD by construction (Gram form) in exact arithmetic; numerically verified by the shared "
+    "eigenvalue property tests + the numpy.cov cross-check (test-only dependency).",
+)
+
+#: The recorded scope-outs (mirrored into model_limitation rows; OD-PPF-2-B/C, the verifier folds).
+PRIVATE_COVARIANCE_LIMITATIONS: tuple[str, ...] = (
+    "Block-diagonal APPROXIMATION (OD-PPF-2-B): Ω_pp is the pure-private block ONLY; the unified "
+    "covariance treats it as block-diagonal with the public Σ (zero cross-covariance). This is an "
+    "APPROXIMATION, not orthogonal-by-construction: PPF-1 subtracts the PROMOTED proxy blend (a "
+    "SUBSET of the OLS fit), so a pure-private series retains a dropped-factor public component "
+    "and has a small non-zero cross-covariance with Σ. Joint public+private estimation is the v2.",
+    "Equal weights only - no EWMA/decay; no shrinkage (Vasicek/Ledoit-Wolf). Each is a later, "
+    "separately declared model_version; the sample estimator is rank-deficient for K >= N.",
+    "Thin window by nature: appraisal periods are quarterly, so N is small (single-digit) - the "
+    "estimate is disclosed-thin, NOT down-weighted; shrinkage is the recorded v2 remedy.",
+    "Factor-level (segment) covariance only; APPRAISAL frequency, unannualized; no correlation "
+    "output (statistic_type CORRELATION reserved).",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation exception, "
+    "MG-1) refuses every new bind at the shared seam.",
+)
+
+
+def declared_private_window_observations(session: Session, version: ModelVersion) -> int:
+    """Parse the private-covariance version's declared window (the count of common appraisal
+    periods) — the ``declared_window_observations`` parser, naming the private model on refusal."""
+    return declared_window_observations(session, version, model_code=PRIVATE_COVARIANCE_MODEL_CODE)
+
+
+def register_private_covariance_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    window_observations: int,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the PRIVATE-covariance ``model`` + a ``model_version`` for this
+    ``(code_version, window_observations)`` pair (PPF-2, OD-PPF-2-A). Mirrors
+    :func:`register_covariance_model` exactly — a distinct model CODE (``risk.covariance.private``)
+    is the governance boundary; the window (common-appraisal-period count) is part of the version
+    identity, so a same-label re-register with a different ``code_version`` OR window is a governed
+    conflict, never an IntegrityError 500."""
+    if window_observations < 2:
+        raise ValueError("window_observations must be >= 2 (the N-1 sample denominator)")
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=PRIVATE_COVARIANCE_MODEL_CODE,
+        name=PRIVATE_COVARIANCE_MODEL_NAME,
+        model_type=PRIVATE_COVARIANCE_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Equal-weighted unbiased sample covariance of PPF-1 pure-private returns — the "
+            "private block Ω_pp (PPF-2, §2.1 arc slice 2)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=PRIVATE_COVARIANCE_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=PRIVATE_COVARIANCE_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=PRIVATE_COVARIANCE_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *PRIVATE_COVARIANCE_ASSUMPTIONS_BASE,
+                f"{WINDOW_ASSUMPTION_PREFIX}{int(window_observations)}",
+            ),
+            limitations=PRIVATE_COVARIANCE_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    if version.code_version != str(code_version) or declared_private_window_observations(
+        session, version
+    ) != int(window_observations):
+        raise ModelVersionConflictError(
+            PRIVATE_COVARIANCE_MODEL_CODE,
+            PRIVATE_COVARIANCE_VERSION_LABEL,
             f"{code_version} (window_observations={window_observations})",
         )
     return version

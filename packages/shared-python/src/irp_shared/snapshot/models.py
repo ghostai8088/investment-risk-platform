@@ -94,6 +94,12 @@ PURPOSE_PACING_INPUT = "PACING_INPUT"
 #: input. Its dedicated builder sets it; membership in the allow-list below is deliberate (the
 #: PACING precedent, NOT the PROXY_WEIGHT/RESIDUAL_SHRINKAGE tuple-bypass).
 PURPOSE_PRIVATE_FACTOR_RETURN_INPUT = "PRIVATE_FACTOR_RETURN_INPUT"
+#: PPF-2 (OD-PPF-2-A): the private-covariance (Ω_pp) input — pins, per PRIVATE segment factor, its
+#: definition (COMPONENT_KIND_FACTOR) + the PPF-1 pure-private APPRAISAL return series
+#: (COMPONENT_KIND_PURE_PRIVATE_RETURN) over the common ``(period_start, period_end]`` grid. Its
+#: dedicated builder sets it; membership in the allow-list below is deliberate (the PACING/PPF-1
+#: precedent, NOT the PROXY_WEIGHT/RESIDUAL_SHRINKAGE tuple-bypass).
+PURPOSE_PRIVATE_COVARIANCE_INPUT = "PRIVATE_COVARIANCE_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -111,6 +117,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_PACING_INPUT,
     PURPOSE_PRIVATE_FACTOR_RETURN_INPUT,
+    PURPOSE_PRIVATE_COVARIANCE_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -205,6 +212,12 @@ COMPONENT_KIND_CAPITAL_CALL = "CAPITAL_CALL"
 #: CC-2 (OD-CC-2-D): a pinned ``distribution`` (ENT-016, IA) row — the true-append-only pin flavor
 #: (full immutable set incl. reverses_id + is_recallable). ``target_entity_type='distribution'``.
 COMPONENT_KIND_DISTRIBUTION = "DISTRIBUTION"
+#: PPF-2 (OD-PPF-2-A): a pinned ``private_factor_return_result`` PURE_PRIVATE_PERIOD row — the
+#: governed-row no-valid-axis pin flavor (``segment_factor_id``/``metric_type``/``period_start``/
+#: ``period_end``/``metric_value``), the aligned pure-private APPRAISAL return the Ω_pp estimate
+#: consumes. ``target_entity_type='private_factor_return_result'`` (the desmoothed_return pin
+#: precedent — a run-bound governed result pinned as a downstream input).
+COMPONENT_KIND_PURE_PRIVATE_RETURN = "PURE_PRIVATE_RETURN"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -228,6 +241,7 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_COMMITMENT,
     COMPONENT_KIND_CAPITAL_CALL,
     COMPONENT_KIND_DISTRIBUTION,
+    COMPONENT_KIND_PURE_PRIVATE_RETURN,
 )
 
 
