@@ -337,9 +337,7 @@ def _build_design(parsed: _ParsedInput) -> tuple[list[Decimal], list[list[Decima
     columns: list[list[Decimal]] = []
     for cand in parsed.candidates:
         column = [
-            compound_over_window(
-                cand.returns, period_start=p.period_start, period_end=p.period_end
-            )
+            compound_over_window(cand.returns, period_start=p.period_start, period_end=p.period_end)
             for p in parsed.periods
         ]
         columns.append(column)

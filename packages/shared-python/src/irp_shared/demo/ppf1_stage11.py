@@ -137,20 +137,24 @@ def _resolve_member(session: Session, instrument_code: str) -> tuple[str, str]:
             f"instrument {instrument_code!r} is not seeded in the demo tenant — run the campaign + "
             f"HG-1 first"
         )
-    run_ids = session.execute(
-        select(DesmoothedReturnResult.calculation_run_id)
-        .join(
-            CalculationRun,
-            CalculationRun.run_id == DesmoothedReturnResult.calculation_run_id,
+    run_ids = (
+        session.execute(
+            select(DesmoothedReturnResult.calculation_run_id)
+            .join(
+                CalculationRun,
+                CalculationRun.run_id == DesmoothedReturnResult.calculation_run_id,
+            )
+            .where(
+                DesmoothedReturnResult.tenant_id == DEMO_TENANT_ID,
+                DesmoothedReturnResult.instrument_id == instrument.id,
+                CalculationRun.run_type == RUN_TYPE_DESMOOTHED_RETURN,
+                CalculationRun.status == "COMPLETED",
+            )
+            .distinct()
         )
-        .where(
-            DesmoothedReturnResult.tenant_id == DEMO_TENANT_ID,
-            DesmoothedReturnResult.instrument_id == instrument.id,
-            CalculationRun.run_type == RUN_TYPE_DESMOOTHED_RETURN,
-            CalculationRun.status == "COMPLETED",
-        )
-        .distinct()
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if len(run_ids) != 1:
         raise DemoPpf1PrereqError(
             f"member {instrument_code!r} has {len(run_ids)} COMPLETED desmoothing run(s) — need "
