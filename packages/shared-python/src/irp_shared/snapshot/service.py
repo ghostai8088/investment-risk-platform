@@ -3268,6 +3268,7 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             FactorNotVisible,
             FactorExposureSnapshotError,
             CovarianceSnapshotError,
+            PrivateCovarianceSnapshotError,
             VarSnapshotError,
             ReturnSnapshotError,
             BenchmarkRelativeSnapshotError,

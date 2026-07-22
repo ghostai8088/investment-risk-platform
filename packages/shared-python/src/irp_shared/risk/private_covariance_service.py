@@ -404,15 +404,18 @@ def run_private_covariance(
 def list_private_covariances(
     session: Session, *, run_id: str, acting_tenant: str
 ) -> list[CovarianceResult]:
-    """The Ω_pp matrix rows of a private-covariance run (tenant-scoped, canonical-pair order). The
-    run id identifies the run — no ``run_type`` filter needed here (a public run id yields the
-    public matrix; use :func:`resolve_private_covariance_run` to family-check an id)."""
+    """The Ω_pp matrix rows of a private-covariance run (tenant-scoped, canonical-pair order). A
+    ``run_type=RUN_TYPE_COVARIANCE_PRIVATE`` join filter makes this read SELF-DEFENDING over the
+    shared ``covariance_result`` table: a PUBLIC ``COVARIANCE`` run id returns EMPTY here rather
+    than leaking its public matrix (the mirror of the public ``list_covariances`` fold)."""
     return list(
         session.execute(
             select(CovarianceResult)
+            .join(CalculationRun, CalculationRun.run_id == CovarianceResult.calculation_run_id)
             .where(
                 CovarianceResult.calculation_run_id == str(run_id),
                 CovarianceResult.tenant_id == str(acting_tenant),
+                CalculationRun.run_type == RUN_TYPE_COVARIANCE_PRIVATE,
             )
             .order_by(CovarianceResult.factor_id_1, CovarianceResult.factor_id_2)
         )

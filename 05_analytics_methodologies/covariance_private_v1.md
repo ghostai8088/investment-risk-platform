@@ -103,27 +103,41 @@ Mirrored content-identically into `model_limitation` rows (plain-ASCII spellings
 - `validation_status = UNVALIDATED` — recorded, non-enforcing until the P7 validation workflow.
 
 ## Validation / reproduction tests
-The five legs of the dual-path verification standing rule:
-1. **Hand-computed exact references:** a 2-segment matrix over a small common-period window computed
-   by hand (ground truth independent of BOTH implementations) reproduced exactly at 20dp.
-2. **Independent-implementation cross-check:** `numpy.cov(…, ddof=1)` on the pure-private series
-   agrees within relative ε = 1e-9 (numpy is a TEST-ONLY dependency; `irp_shared` runtime imports NO
-   numpy — fence-tested).
-3. **Eigenvalue PSD property test:** `λ_min ≥ −1e-12·trace` on representative + fixed-seed random
-   matrices (the shared covariance property battery).
-4. **Exact re-run reproducibility:** the same snapshot re-run yields byte-identical `Ω` values; the
-   consume-existing path equals the build-in-request path.
-5. **Pin invariance (TR-09):** the result is invariant under a post-pin PPF-1 re-run (the
-   `PURE_PRIVATE_RETURN` pin captures the version consumed).
-6. **Public isolation (PPF-2):** a private-covariance run NEVER surfaces through the public
-   `latest_covariances` / by-id covariance reads (the `run_type` filter), and a public covariance
-   run NEVER surfaces through the private reads — proven both directions.
+The verification legs of the dual-path standing rule (PPF-2 REUSES the generic
+`estimate_covariance` kernel byte-for-byte, so the kernel-level legs are the *same shipped tests* as
+`covariance_sample_v1`, inherited unchanged — this family adds the input-path + isolation legs):
+1. **Hand-computed exact references (inherited):** the kernel's hand-computed 2-/3-series references
+   at 20dp live in `test_covariance.py` and bind unchanged (same `estimate_covariance`, same
+   quantum); this family does not re-derive them.
+2. **Independent-implementation cross-check (this family):** `numpy.cov(…, ddof=1)` on the two
+   pure-private series agrees within relative ε = 1e-9 — `test_omega_pp_matches_numpy_cov` (numpy is
+   a TEST-ONLY dependency; `irp_shared` runtime imports NO numpy — fence-tested).
+3. **Eigenvalue PSD property test (inherited):** `λ_min ≥ −1e-12·trace` on the shared covariance
+   property battery (`test_covariance.py`).
+4. **Exact re-run reproducibility + consume==build (this family):** the same segments re-run yield
+   byte-identical `Ω` (`test_omega_pp_is_reproducible`), AND the consume-existing (`snapshot_id`)
+   path equals build-in-request byte-for-byte
+   (`test_omega_pp_snapshot_verifies_and_consume_equals_build`).
+5. **Pin invariance / verify (TR-09, this family):** the pinned `PURE_PRIVATE_RETURN` +
+   `COMPONENT_KIND_FACTOR` components re-resolve byte-identically (`verify_snapshot(...).ok`); the
+   pins are IA append-only, so a post-pin PPF-1 re-run mints NEW rows and cannot move the pinned
+   ones — a gone/tampered pin reports as *drift*, never a raw 500
+   (`test_omega_pp_snapshot_verify_reports_drift_not_500`).
+6. **Public isolation (this family):** a private-covariance run NEVER surfaces through the public
+   `latest_covariances` / `list_covariances` / by-id covariance reads (the `run_type` filter), and a
+   public covariance run NEVER surfaces through the private reads — proven both directions.
 
 ## Known limitations
 This is the sample-estimator, block-diagonal floor of the private-covariance substrate. Joint
 public+private estimation, shrinkage, EWMA, correlation output, the appraisal→daily frequency
 conversion (PPF-3), annualization, and the unified VaR/ES consumer are **out of scope for v1** and
-are taken up by later slices under their own declared `model_version`s. The block-diagonal
+are taken up by later slices under their own declared `model_version`s. **No statistical-adequacy
+floor beyond `N ≥ 2` in v1:** the declared window is the count of common appraisal periods that
+actually exist (the "N most recent common periods" set-intersection semantics), so Ω_pp registers +
+completes at whatever thin `N` the substrate carries — down to `N = 2` (one degree of freedom) —
+and presents it as a governed number with `n_observations` disclosed on every row. This is a
+disclosed property (there is no HS-VaR-style `N ≥ 21/41` gate); shrinkage (v2) is the remedy for
+thin-window instability, and PPF-3 must carry the thin-`N` disclosure forward. The block-diagonal
 approximation and its disclosed-thin `N` are the two recorded v1 seams; the joint-estimation and
 shrinkage v2 referents must carry both forward (the carry-forward rule). This `v1` referent is
 immutable.

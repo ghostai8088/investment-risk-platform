@@ -328,6 +328,108 @@ def test_omega_pp_is_reproducible(session: Session) -> None:
     assert first == second
 
 
+# ---------- (1b) snapshot pin reproducibility: verify_snapshot + consume==build (AD-014/TR-09) ----
+def _latest_pp_run(session: Session, tenant: str, seg_id: str) -> str:
+    from irp_shared.risk import latest_pure_private_factor_for_segment
+
+    rows = latest_pure_private_factor_for_segment(
+        session, acting_tenant=tenant, segment_factor_id=seg_id
+    )
+    return str(rows[0].calculation_run_id)
+
+
+def test_omega_pp_snapshot_verifies_and_consume_equals_build(session: Session) -> None:
+    """The AD-014 reproducibility contract: a PRIVATE_COVARIANCE_INPUT snapshot re-resolves
+    byte-identically (verify_snapshot ok), and the consume-existing path (snapshot_id) yields the
+    IDENTICAL matrix as build-in-request (the covariance leg-4 twin — the previously untested
+    consume branch)."""
+    from irp_shared.snapshot import (
+        SnapshotActor,
+        build_private_covariance_snapshot,
+        verify_snapshot,
+    )
+
+    tenant = str(uuid.uuid4())
+    ppf = _ppf_model(session, tenant)
+    seg_a = _pure_private_segment(session, tenant, ppf, usd=_SEG_A_USD, eur=_SEG_A_EUR)
+    seg_b = _pure_private_segment(session, tenant, ppf, usd=_SEG_B_USD, eur=_SEG_B_EUR)
+    run_a, run_b = _latest_pp_run(session, tenant, seg_a), _latest_pp_run(session, tenant, seg_b)
+
+    snap = build_private_covariance_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=SnapshotActor(actor_id="a"),
+        pure_private_run_ids=[run_a, run_b],
+        window_observations=4,
+    )
+    session.flush()
+    # The pinned PURE_PRIVATE_RETURN + FACTOR components re-resolve byte-identically.
+    assert verify_snapshot(session, snapshot_id=str(snap.id), acting_tenant=tenant).ok
+
+    mv = _priv_cov_model(session, tenant, window=4)
+    consumed = run_private_covariance(
+        session,
+        acting_tenant=tenant,
+        actor=PurePrivateCovarianceActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=mv,
+        snapshot_id=str(snap.id),
+    )
+    assert consumed.status == "COMPLETED", consumed.failure_reason
+    built = run_private_covariance(
+        session,
+        acting_tenant=tenant,
+        actor=PurePrivateCovarianceActor(actor_id="a"),
+        code_version="v1",
+        environment_id="test",
+        model_version_id=mv,
+        segment_factor_ids=[seg_a, seg_b],
+    )
+    cmap = {(r.factor_id_1, r.factor_id_2): r.covariance_value for r in consumed.rows}
+    bmap = {(r.factor_id_1, r.factor_id_2): r.covariance_value for r in built.rows}
+    assert len(cmap) == 3 and cmap == bmap  # consume-existing == build-in-request, byte-identical
+
+
+def test_omega_pp_snapshot_verify_reports_drift_not_500(session: Session) -> None:
+    """A gone pinned pure-private row reports as DRIFT (ok False), NEVER an uncaught
+    PrivateCovarianceSnapshotError (a raw 500) — the review fold adding it to verify_snapshot's
+    except tuple. SQLite has no append-only trigger (PG-only), so a Core delete legitimately makes a
+    pinned target gone for this drift probe."""
+    from sqlalchemy import delete
+
+    from irp_shared.snapshot import (
+        SnapshotActor,
+        build_private_covariance_snapshot,
+        verify_snapshot,
+    )
+
+    tenant = str(uuid.uuid4())
+    ppf = _ppf_model(session, tenant)
+    seg_a = _pure_private_segment(session, tenant, ppf, usd=_SEG_A_USD, eur=_SEG_A_EUR)
+    seg_b = _pure_private_segment(session, tenant, ppf, usd=_SEG_B_USD, eur=_SEG_B_EUR)
+    run_a, run_b = _latest_pp_run(session, tenant, seg_a), _latest_pp_run(session, tenant, seg_b)
+    snap = build_private_covariance_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=SnapshotActor(actor_id="a"),
+        pure_private_run_ids=[run_a, run_b],
+        window_observations=4,
+    )
+    session.flush()
+    # Make one segment's pinned pure-private rows gone (a Core delete bypasses the ORM guard here).
+    from irp_shared.risk.models import PrivateFactorReturnResult
+
+    session.execute(
+        delete(PrivateFactorReturnResult).where(
+            PrivateFactorReturnResult.calculation_run_id == run_a
+        )
+    )
+    session.flush()
+    result = verify_snapshot(session, snapshot_id=str(snap.id), acting_tenant=tenant)
+    assert result.ok is False  # reported as drift, not a raw 500
+
+
 # ---------- (2) public/private isolation over the shared covariance_result table ----------
 def test_private_run_never_leaks_into_public_reads(session: Session) -> None:
     tenant = str(uuid.uuid4())

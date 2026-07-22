@@ -397,13 +397,19 @@ def run_covariance(
 def list_covariances(
     session: Session, *, run_id: str, acting_tenant: str
 ) -> list[CovarianceResult]:
-    """The covariance-matrix rows of a run (tenant-scoped, canonical-pair order)."""
+    """The PUBLIC covariance-matrix rows of a run (tenant-scoped, canonical-pair order). A
+    ``run_type=RUN_TYPE_COVARIANCE`` join filter makes this read SELF-DEFENDING now that
+    ``covariance_result`` is shared with the private sibling (PPF-2): a private
+    ``COVARIANCE_PRIVATE`` run id returns EMPTY here rather than leaking its Ω_pp matrix (the
+    shared-table contract, not merely caller-ordering). Behavior-identical for pre-PPF-2 data."""
     return list(
         session.execute(
             select(CovarianceResult)
+            .join(CalculationRun, CalculationRun.run_id == CovarianceResult.calculation_run_id)
             .where(
                 CovarianceResult.calculation_run_id == str(run_id),
                 CovarianceResult.tenant_id == str(acting_tenant),
+                CalculationRun.run_type == RUN_TYPE_COVARIANCE,
             )
             .order_by(CovarianceResult.factor_id_1, CovarianceResult.factor_id_2)
         )
