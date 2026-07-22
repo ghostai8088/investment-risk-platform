@@ -1488,7 +1488,7 @@ def test_migration_chain_0038(session: Session) -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0046_run_scope_portfolio"  # API-1b
+    assert script.get_current_head() == "0047_private_factor_return"  # PPF-1
     assert (
         script.get_revision("0038_var_residual_variance").down_revision
         == "0037_proxy_weight_estimate"

@@ -478,6 +478,84 @@ class ProxyWeightEstimateResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnl
     series_currency: Mapped[str] = mapped_column(String(3), nullable=False)
 
 
+#: ``private_factor_return_result.metric_type`` vocabulary (PPF-1, ENT-060).
+METRIC_TYPE_PURE_PRIVATE_PERIOD = "PURE_PRIVATE_PERIOD"  # one per pooled appraisal period
+METRIC_TYPE_PURE_PRIVATE_SUMMARY = "PURE_PRIVATE_SUMMARY"  # one per run (counts + pooled stdev)
+
+
+class PrivateFactorReturnResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One pooled pure-private return of a PRIVATE segment factor for one appraisal period (PPF-1,
+    **ENT-060**, IA true append-only — the EIGHTEENTH governed number, the FIRST slice of the §2.1
+    unification arc). The pure-private return is the component of member instruments' DESMOOTHED
+    appraisal returns NOT explained by their public proxy (the MSCI PE Factor Model's "pure
+    private" leg; Shepard 2014/2025): per member ``pp_i,t = desmoothed_i,t - Σ_f w_i,f·R_f,t``
+    (the proxy-implied return, factor returns compounded over ``(period_start, period_end]`` via the
+    shared alignment helper), pooled across members. Created once, never mutated; a re-run is a NEW
+    ``calculation_run``.
+
+    **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND**: NOT-NULL ``calculation_run_id`` +
+    ``input_snapshot_id`` (a ``PRIVATE_FACTOR_RETURN_INPUT`` snapshot pinning, per member, the
+    consumed ``DESMOOTHED_RETURN`` rows + the current-head REGRESSION proxy blend + the public
+    factor-return windows + the ``PROXY_MAPPING`` segment-membership rows) + a REGISTERED
+    ``model_version_id``. ``segment_factor_id`` is the PRIVATE segment this series belongs to —
+    deliberately NOT a hard FK (the EV ``factor`` head is supersedable; the pinned
+    ``COMPONENT_KIND_FACTOR`` is authoritative — the ``factor_exposure_result`` precedent). Grain =
+    ``(calculation_run_id, metric_type, period_start)``: ``PURE_PRIVATE_PERIOD`` rows DB-unique per
+    appraisal period; the ``PURE_PRIVATE_SUMMARY`` singleton (``metric_type`` differs) carries
+    ``period_start``/``period_end`` = the whole-series span (the ``benchmark_relative_result``
+    summary precedent). ONE segment per run (the desmoothing/pacing one-subject precedent)."""
+
+    __tablename__ = "private_factor_return_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        UniqueConstraint(
+            "calculation_run_id",
+            "metric_type",
+            "period_start",
+            name="uq_private_factor_return_result_run_grain",
+        ),
+    )
+
+    # FK constraints named explicitly (≤63 chars, matching migration 0047): the convention name
+    # would exceed PG's 63-char cap for this long table (the P3-8/proxy_weight lesson).
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID,
+        ForeignKey("calculation_run.run_id", name="fk_private_factor_return_result_calc_run"),
+        nullable=False,
+        index=True,
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID,
+        ForeignKey("dataset_snapshot.id", name="fk_private_factor_return_result_input_snapshot"),
+        nullable=False,
+        index=True,
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID,
+        ForeignKey("model_version.id", name="fk_private_factor_return_result_model_version"),
+        nullable=False,
+        index=True,
+    )
+    # The PRIVATE segment factor this pooled series belongs to (NOT a hard FK — the pinned
+    # COMPONENT_KIND_FACTOR is authoritative; the factor_exposure_result precedent).
+    segment_factor_id: Mapped[str] = mapped_column(GUID, nullable=False, index=True)
+    metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # PERIOD: the (period_start, period_end] appraisal window. SUMMARY: the whole-series span.
+    period_start: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    # PERIOD: the pooled pure-private return (a fraction). SUMMARY: the pooled-return sample stdev.
+    metric_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    # PERIOD: the number of members pooled for that period. SUMMARY: the distinct member count.
+    member_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # SUMMARY only: the number of pooled periods (NULL on PERIOD rows).
+    period_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Declared model identity echoed on EVERY row as reproducibility evidence (the proxy_weight
+    # min_observations precedent): the pooling + intercept conventions + the min-members floor.
+    pooling_convention: Mapped[str] = mapped_column(String(20), nullable=False)
+    intercept_convention: Mapped[str] = mapped_column(String(20), nullable=False)
+    min_members: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{type(target).__name__} is append-only (AUD-01); update/delete is forbidden"
@@ -500,3 +578,5 @@ event.listen(VarBacktestResult, "before_update", _block_mutation)
 event.listen(VarBacktestResult, "before_delete", _block_mutation)
 event.listen(ProxyWeightEstimateResult, "before_update", _block_mutation)
 event.listen(ProxyWeightEstimateResult, "before_delete", _block_mutation)
+event.listen(PrivateFactorReturnResult, "before_update", _block_mutation)
+event.listen(PrivateFactorReturnResult, "before_delete", _block_mutation)
