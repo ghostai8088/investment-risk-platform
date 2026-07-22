@@ -88,6 +88,12 @@ PURPOSE_RESIDUAL_SHRINKAGE_INPUT = "RESIDUAL_SHRINKAGE_INPUT"
 #: allow-list below is deliberate (NOT the PROXY_WEIGHT/RESIDUAL_SHRINKAGE tuple-bypass — the
 #: CC-2-census-flagged inconsistency is not repeated).
 PURPOSE_PACING_INPUT = "PACING_INPUT"
+#: PPF-1 (OD-PPF-1-C): pins, per segment member, the consumed DESMOOTHED_RETURN run's per-period
+#: rows + the member's current-head REGRESSION public proxy blend + the membership row (onto the
+#: PRIVATE segment factor) + each public factor's return window — the pure-private factor-return
+#: input. Its dedicated builder sets it; membership in the allow-list below is deliberate (the
+#: PACING precedent, NOT the PROXY_WEIGHT/RESIDUAL_SHRINKAGE tuple-bypass).
+PURPOSE_PRIVATE_FACTOR_RETURN_INPUT = "PRIVATE_FACTOR_RETURN_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -104,6 +110,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_SCENARIO_INPUT,
     PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_PACING_INPUT,
+    PURPOSE_PRIVATE_FACTOR_RETURN_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )

@@ -104,6 +104,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_PACING_INPUT,
+    PURPOSE_PRIVATE_FACTOR_RETURN_INPUT,
     PURPOSE_PROXY_WEIGHT_INPUT,
     PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
     PURPOSE_RETURN_INPUT,
@@ -2317,6 +2318,196 @@ def build_proxy_weight_snapshot(
     return header_row
 
 
+#: The pure-private-factor binding rule (OD-PPF-1-C): per member — the consumed DESMOOTHED_RETURN
+#: run's per-period rows + the member's current-head REGRESSION public proxy blend + the membership
+#: row (onto the PRIVATE segment) — plus each public factor's return window over the whole span.
+PRIVATE_FACTOR_RETURN_BINDING_PREDICATE = "v1:member-desmoothed+regression-blend+factor-span"
+
+
+class PrivateFactorReturnSnapshotError(Exception):
+    """Raised when a pure-private-factor-return-input snapshot cannot be built (a non-PRIVATE
+    segment factor, an empty/duplicate member set, a member desmoothed run with no per-period rows,
+    a member that is NOT a current-head member of the segment, a member with no current-head
+    REGRESSION public blend — the P3-7 named-gap rule — or a blend factor with no return in the
+    span) — raised BEFORE any write; never mints immutable governance garbage. Maps to 409."""
+
+
+def build_private_factor_return_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    segment_factor_id: str,
+    member_desmoothed_run_ids: list[str],
+    as_of_valid_at: datetime | None = None,
+    as_of_known_at: datetime | None = None,
+) -> DatasetSnapshot:
+    """Build one immutable ``PRIVATE_FACTOR_RETURN_INPUT`` snapshot (PPF-1, OD-PPF-1-C) pinning, so
+    a pooled pure-private factor return is reproducible from the snapshot ALONE (the binder reads
+    this captured content — never a live read; a later mark/return/weight supersede cannot move a
+    historical pooled return, TR-09):
+
+    - one ``COMPONENT_KIND_FACTOR`` for the PRIVATE segment factor (its EV definition), and
+    - per member (one consumed DESMOOTHED_RETURN run): its ``DESMOOTHED_PERIOD`` rows
+      (``COMPONENT_KIND_DESMOOTHED_RETURN`` — the pure-private numerator series); the member's
+      current-head ``MANUAL`` membership row onto the segment + its current-head ``REGRESSION``
+      public proxy blend (both ``COMPONENT_KIND_PROXY_MAPPING``); and
+    - per distinct blend factor: one ``COMPONENT_KIND_FACTOR`` + one
+      ``COMPONENT_KIND_FACTOR_RETURN`` over the whole appraisal span (the proxy-weight flavor).
+
+    Fails closed BEFORE any write (:class:`PrivateFactorReturnSnapshotError`): a non-PRIVATE
+    segment, empty/duplicate members, an empty desmoothed run, a member with NO current-head
+    membership row on the segment, a member with NO current-head REGRESSION blend (the P3-7
+    named-gap rule — a blend-less member cannot have its proxy-implied return subtracted), or a
+    blend factor with no return in the span. The min-members floor + identical-interval pooling
+    are the RISK binder's pre-create gates — this builder pins a well-formed superset. Models-only
+    reads; imports NO ``risk``-SERVICE symbol (the ``build_var_total_snapshot`` precedent)."""
+    from irp_shared.marketdata.models import (
+        FACTOR_FAMILY_PRIVATE,
+        MAPPING_METHOD_MANUAL,
+        MAPPING_METHOD_REGRESSION,
+        ProxyMapping,
+    )
+
+    now = utcnow()
+    valid_at = as_of_valid_at if as_of_valid_at is not None else now
+    known = as_of_known_at if as_of_known_at is not None else now  # FROZEN once (header == pin)
+
+    segment = resolve_factor(session, str(segment_factor_id), acting_tenant=acting_tenant)
+    if segment.factor_family != FACTOR_FAMILY_PRIVATE:
+        raise PrivateFactorReturnSnapshotError(
+            f"segment factor {segment_factor_id} is family {segment.factor_family!r}, not "
+            f"{FACTOR_FAMILY_PRIVATE!r} — refused"
+        )
+    distinct_runs = list(dict.fromkeys(str(r).lower() for r in member_desmoothed_run_ids))
+    if len(distinct_runs) != len(member_desmoothed_run_ids):
+        raise PrivateFactorReturnSnapshotError(
+            "duplicate member desmoothed run(s) — an ambiguous member set is refused"
+        )
+    if not distinct_runs:
+        raise PrivateFactorReturnSnapshotError("at least one member desmoothed run is required")
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    _append_spec(specs, COMPONENT_KIND_FACTOR, "factor", segment, factor_content(segment))
+
+    # Per member: pin the desmoothed series + the membership row + the REGRESSION public blend;
+    # accumulate the distinct public blend factors + the global appraisal span.
+    blend_factor_ids: set[str] = set()
+    span_starts: list[date] = []
+    span_ends: list[date] = []
+    for run_id in distinct_runs:
+        period_rows = _list_desmoothed_period_rows(session, run_id, acting_tenant=acting_tenant)
+        if not period_rows:
+            raise PrivateFactorReturnSnapshotError(
+                f"member desmoothed run {run_id} has no per-period result rows to pin"
+            )
+        instrument_ids = {str(r.instrument_id).lower() for r in period_rows}
+        if len(instrument_ids) != 1:
+            raise PrivateFactorReturnSnapshotError(
+                f"member desmoothed run {run_id} spans multiple instruments — refused"
+            )
+        instrument_id = next(iter(instrument_ids))
+        span_starts.append(min(r.period_start for r in period_rows))
+        span_ends.append(max(r.period_end for r in period_rows))
+
+        # The membership row: a current-head MANUAL proxy_mapping onto the PRIVATE segment factor.
+        membership = session.execute(
+            select(ProxyMapping).where(
+                ProxyMapping.tenant_id == str(acting_tenant),
+                ProxyMapping.private_instrument_id == instrument_id,
+                ProxyMapping.factor_id == str(segment.id),
+                ProxyMapping.mapping_method == MAPPING_METHOD_MANUAL,
+                ProxyMapping.valid_to.is_(None),
+                ProxyMapping.system_to.is_(None),
+            )
+        ).scalar_one_or_none()
+        if membership is None:
+            raise PrivateFactorReturnSnapshotError(
+                f"instrument {instrument_id} (member run {run_id}) is not a current-head member of "
+                f"segment {segment.id} — no open MANUAL membership row; refused"
+            )
+        _append_spec(
+            specs,
+            COMPONENT_KIND_PROXY_MAPPING,
+            "proxy_mapping",
+            membership,
+            proxy_mapping_content(membership),
+        )
+
+        # The member's current-head REGRESSION public blend (the var-total method filter).
+        blend_rows = (
+            session.execute(
+                select(ProxyMapping)
+                .where(
+                    ProxyMapping.tenant_id == str(acting_tenant),
+                    ProxyMapping.private_instrument_id == instrument_id,
+                    ProxyMapping.mapping_method == MAPPING_METHOD_REGRESSION,
+                    ProxyMapping.valid_to.is_(None),
+                    ProxyMapping.system_to.is_(None),
+                )
+                .order_by(ProxyMapping.factor_id)
+            )
+            .scalars()
+            .all()
+        )
+        if not blend_rows:
+            raise PrivateFactorReturnSnapshotError(
+                f"instrument {instrument_id} (member run {run_id}) has NO current-head REGRESSION "
+                f"proxy blend — the proxy-implied return cannot be subtracted (named gap); refused"
+            )
+        for row in blend_rows:
+            blend_factor_ids.add(str(row.factor_id).lower())
+            _append_spec(
+                specs,
+                COMPONENT_KIND_PROXY_MAPPING,
+                "proxy_mapping",
+                row,
+                proxy_mapping_content(row),
+            )
+
+    # The distinct public blend factors + their return windows over the whole appraisal span.
+    span_start = min(span_starts)
+    span_end = max(span_ends)
+    for fid in sorted(blend_factor_ids):
+        factor = resolve_factor(session, fid, acting_tenant=acting_tenant)
+        window = _factor_window_rows(
+            session,
+            acting_tenant=acting_tenant,
+            factor_id=factor.id,
+            valid_at=valid_at,
+            known_at=known,
+        )
+        span_rows = [window[d] for d in sorted(window) if span_start < d <= span_end]
+        if not span_rows:
+            raise PrivateFactorReturnSnapshotError(
+                f"blend factor {factor.id} has no returns in the appraisal span "
+                f"({span_start}..{span_end}] — refused"
+            )
+        _append_spec(specs, COMPONENT_KIND_FACTOR, "factor", factor, factor_content(factor))
+        _append_spec(
+            specs,
+            COMPONENT_KIND_FACTOR_RETURN,
+            "factor",
+            factor,
+            factor_return_series_content(factor, span_rows),
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_PRIVATE_FACTOR_RETURN_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=span_end,
+        binding_predicate_version=PRIVATE_FACTOR_RETURN_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 #: RS-1 (OD-RS-1-B): the residual-shrinkage binding/selection rule — a cohort of promoted proxy-
 #: weight estimate runs' ESTIMATION_SUMMARY rows (each residual_stdev + its residual df). Length-
 #: guarded (see the ``_BINDING_PREDICATES`` module-end assert) against varchar(50).
@@ -3018,6 +3209,7 @@ _BINDING_PREDICATES = (
     DESMOOTHING_BINDING_PREDICATE,
     VAR_TOTAL_BINDING_PREDICATE,
     RESIDUAL_SHRINKAGE_BINDING_PREDICATE,
+    PRIVATE_FACTOR_RETURN_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "
