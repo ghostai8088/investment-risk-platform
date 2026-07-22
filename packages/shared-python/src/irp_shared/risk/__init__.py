@@ -228,6 +228,17 @@ from irp_shared.risk.models import (
     VarBacktestResult,
     VarResult,
 )
+from irp_shared.risk.private_covariance_service import (
+    PrivateCovarianceInputError,
+    PrivateCovarianceNotVisible,
+    PrivateCovarianceRunNotVisible,
+    PrivateCovarianceRunResult,
+    latest_private_covariances,
+    list_private_covariances,
+    resolve_private_covariance,
+    resolve_private_covariance_run,
+    run_private_covariance,
+)
 from irp_shared.risk.private_factor_service import (
     PurePrivateFactorInputError,
     PurePrivateFactorResultNotVisible,
@@ -424,6 +435,15 @@ __all__ = [
     "PurePrivateCovarianceActor",
     "register_private_covariance_model",
     "declared_private_window_observations",
+    "PrivateCovarianceInputError",
+    "PrivateCovarianceNotVisible",
+    "PrivateCovarianceRunNotVisible",
+    "PrivateCovarianceRunResult",
+    "run_private_covariance",
+    "list_private_covariances",
+    "latest_private_covariances",
+    "resolve_private_covariance",
+    "resolve_private_covariance_run",
     "run_residual_shrinkage",
     "ResidualShrinkageRunResult",
     "ResidualShrinkageInputError",
