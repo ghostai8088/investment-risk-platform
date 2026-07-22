@@ -228,6 +228,7 @@ from irp_shared.risk.private_factor_service import (
     latest_pure_private_factor_for_segment,
     list_pure_private_factor_results,
     list_pure_private_factor_results_by_segment,
+    resolve_pure_private_factor_result,
     run_pure_private_factor_return,
 )
 from irp_shared.risk.proxy_weight_kernel import (
@@ -404,6 +405,7 @@ __all__ = [
     "list_pure_private_factor_results",
     "list_pure_private_factor_results_by_segment",
     "latest_pure_private_factor_for_segment",
+    "resolve_pure_private_factor_result",
     "METRIC_TYPE_PURE_PRIVATE_PERIOD",
     "METRIC_TYPE_PURE_PRIVATE_SUMMARY",
     "PrivateFactorReturnResult",

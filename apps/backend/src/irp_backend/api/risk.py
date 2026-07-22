@@ -69,12 +69,14 @@ from irp_shared.risk import (
     HsVarRunResult,
     ModelVersionConflictError,
     NoCurrentScenarioShock,
+    PrivateFactorReturnResult,
     ProxyWeightEstimateActor,
     ProxyWeightEstimateResult,
     ProxyWeightEstimateResultNotVisible,
     ProxyWeightEstimateRunNotVisible,
     ProxyWeightEstimateRunResult,
     ProxyWeightInputError,
+    PurePrivateFactorResultNotVisible,
     ResidualShrinkageInputError,
     ResidualShrinkageRunResult,
     RiskRunQueryError,
@@ -115,6 +117,7 @@ from irp_shared.risk import (
     latest_es_backtest,
     latest_factor_exposure,
     latest_proxy_weight_result,
+    latest_pure_private_factor_for_segment,
     latest_scenario_results,
     latest_sensitivities,
     latest_var_backtest,
@@ -128,6 +131,7 @@ from irp_shared.risk import (
     list_factor_exposures_by_entity,
     list_proxy_weight_results,
     list_proxy_weight_results_by_entity,
+    list_pure_private_factor_results_by_segment,
     list_risk_runs,
     list_scenario_definitions,
     list_scenario_results,
@@ -167,6 +171,7 @@ from irp_shared.risk import (
     resolve_factor_exposure_run,
     resolve_proxy_weight_result,
     resolve_proxy_weight_run,
+    resolve_pure_private_factor_result,
     resolve_run,
     resolve_scenario_definition,
     resolve_scenario_result,
@@ -325,6 +330,10 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
         "residual-shrinkage snapshot input failed closed",
     ),
     CovarianceRunNotVisible: (status.HTTP_404_NOT_FOUND, "covariance run not found"),
+    PurePrivateFactorResultNotVisible: (
+        status.HTTP_404_NOT_FOUND,
+        "pure-private factor result not found",
+    ),
     BenchmarkNotVisible: (status.HTTP_404_NOT_FOUND, "benchmark not found"),
     RiskRunQueryError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid run listing filter"),
 }
@@ -3719,3 +3728,101 @@ def create_residual_shrinkage_run(
     )
     db.commit()
     return response
+
+
+# ---------- PPF-1: the pure-private factor return (ENT-060, the 18th governed number) ----------
+#
+# Read-only surface (rule 7, in-slice): the run + model-registration paths are exercised only by
+# the governed demo stage (irp_shared.demo, no HTTP) — the same asymmetry as every prior
+# governed-number slice's demo path. list/latest/by-id mirror the API-1b VaR reads.
+
+
+class PurePrivateFactorRowOut(BaseModel):
+    id: str
+    metric_type: str
+    segment_factor_id: str
+    period_start: date
+    period_end: date
+    metric_value: str
+    member_count: int
+    period_count: int | None
+    pooling_convention: str
+    intercept_convention: str
+    min_members: int
+    calculation_run_id: str
+    input_snapshot_id: str
+    model_version_id: str
+
+
+def _ppf_row_out(row: PrivateFactorReturnResult) -> PurePrivateFactorRowOut:
+    return PurePrivateFactorRowOut(
+        id=row.id,
+        metric_type=row.metric_type,
+        segment_factor_id=row.segment_factor_id,
+        period_start=row.period_start,
+        period_end=row.period_end,
+        metric_value=f"{row.metric_value:f}",
+        member_count=row.member_count,
+        period_count=row.period_count,
+        pooling_convention=row.pooling_convention,
+        intercept_convention=row.intercept_convention,
+        min_members=row.min_members,
+        calculation_run_id=row.calculation_run_id,
+        input_snapshot_id=row.input_snapshot_id,
+        model_version_id=row.model_version_id,
+    )
+
+
+@router.get("/private-factor-returns", response_model=list[PurePrivateFactorRowOut])
+def list_private_factor_returns_endpoint(
+    segment_factor_id: uuid.UUID | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[PurePrivateFactorRowOut]:
+    """Rule-7 entity read: pure-private factor-return rows across COMPLETED runs for a segment
+    factor + an optional ``as_of`` run cutoff (silent-empty on a foreign/unknown segment). Each row
+    carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR."""
+    rows = list_pure_private_factor_results_by_segment(
+        db,
+        acting_tenant=principal.tenant_id,
+        segment_factor_id=(str(segment_factor_id) if segment_factor_id is not None else None),
+        as_of=as_of,
+    )
+    return [_ppf_row_out(r) for r in rows]
+
+
+@router.get("/private-factor-returns/latest", response_model=list[PurePrivateFactorRowOut])
+def latest_private_factor_returns_endpoint(
+    segment_factor_id: uuid.UUID,
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[PurePrivateFactorRowOut]:
+    """Rule-7 latest-resolver: the newest COMPLETED run's rows for the segment factor (empty when
+    the segment has no COMPLETED run)."""
+    rows = latest_pure_private_factor_for_segment(
+        db,
+        acting_tenant=principal.tenant_id,
+        segment_factor_id=str(segment_factor_id),
+        as_of=as_of,
+    )
+    return [_ppf_row_out(r) for r in rows]
+
+
+@router.get("/private-factor-returns/{result_id}", response_model=PurePrivateFactorRowOut)
+def get_private_factor_return(
+    result_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> PurePrivateFactorRowOut:
+    """Read a single ``private_factor_return_result`` row by id (tenant-scoped; read-only)."""
+    try:
+        row = resolve_pure_private_factor_result(
+            db, str(result_id), acting_tenant=principal.tenant_id
+        )
+    except PurePrivateFactorResultNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="pure-private factor result not found"
+        ) from None
+    return _ppf_row_out(row)

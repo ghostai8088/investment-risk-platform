@@ -456,6 +456,21 @@ def run_pure_private_factor_return(
     )
 
 
+def resolve_pure_private_factor_result(
+    session: Session, result_id: str, *, acting_tenant: str
+) -> PrivateFactorReturnResult:
+    """Resolve one ``private_factor_return_result`` row by id with an EXPLICIT tenant predicate."""
+    row = session.execute(
+        select(PrivateFactorReturnResult).where(
+            PrivateFactorReturnResult.id == str(result_id),
+            PrivateFactorReturnResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise PurePrivateFactorResultNotVisible(str(result_id))
+    return row
+
+
 def list_pure_private_factor_results(
     session: Session, run_id: str, *, acting_tenant: str
 ) -> list[PrivateFactorReturnResult]:

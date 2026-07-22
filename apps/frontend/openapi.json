@@ -9679,6 +9679,93 @@
         "title": "ProxyWeightShrinkageEbModelIn",
         "type": "object"
       },
+      "PurePrivateFactorRowOut": {
+        "properties": {
+          "calculation_run_id": {
+            "title": "Calculation Run Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_snapshot_id": {
+            "title": "Input Snapshot Id",
+            "type": "string"
+          },
+          "intercept_convention": {
+            "title": "Intercept Convention",
+            "type": "string"
+          },
+          "member_count": {
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "metric_type": {
+            "title": "Metric Type",
+            "type": "string"
+          },
+          "metric_value": {
+            "title": "Metric Value",
+            "type": "string"
+          },
+          "min_members": {
+            "title": "Min Members",
+            "type": "integer"
+          },
+          "model_version_id": {
+            "title": "Model Version Id",
+            "type": "string"
+          },
+          "period_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Count"
+          },
+          "period_end": {
+            "format": "date",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "pooling_convention": {
+            "title": "Pooling Convention",
+            "type": "string"
+          },
+          "segment_factor_id": {
+            "title": "Segment Factor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "metric_type",
+          "segment_factor_id",
+          "period_start",
+          "period_end",
+          "metric_value",
+          "member_count",
+          "period_count",
+          "pooling_convention",
+          "intercept_convention",
+          "min_members",
+          "calculation_run_id",
+          "input_snapshot_id",
+          "model_version_id"
+        ],
+        "title": "PurePrivateFactorRowOut",
+        "type": "object"
+      },
       "RatingScaleDetailOut": {
         "properties": {
           "agency": {
@@ -32705,6 +32792,331 @@
           }
         },
         "summary": "Register Var Parametric Total",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
+    "/risk/private-factor-returns": {
+      "get": {
+        "description": "Rule-7 entity read: pure-private factor-return rows across COMPLETED runs for a segment\nfactor + an optional ``as_of`` run cutoff (silent-empty on a foreign/unknown segment). Each row\ncarries ``calculation_run_id`` \u2014 cross-run aggregation is a CONSUMER ERROR.",
+        "operationId": "list_private_factor_returns_endpoint_risk_private_factor_returns_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "segment_factor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Segment Factor Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PurePrivateFactorRowOut"
+                  },
+                  "title": "Response List Private Factor Returns Endpoint Risk Private Factor Returns Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Private Factor Returns Endpoint",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
+    "/risk/private-factor-returns/latest": {
+      "get": {
+        "description": "Rule-7 latest-resolver: the newest COMPLETED run's rows for the segment factor (empty when\nthe segment has no COMPLETED run).",
+        "operationId": "latest_private_factor_returns_endpoint_risk_private_factor_returns_latest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "segment_factor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Segment Factor Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PurePrivateFactorRowOut"
+                  },
+                  "title": "Response Latest Private Factor Returns Endpoint Risk Private Factor Returns Latest Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Latest Private Factor Returns Endpoint",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
+    "/risk/private-factor-returns/{result_id}": {
+      "get": {
+        "description": "Read a single ``private_factor_return_result`` row by id (tenant-scoped; read-only).",
+        "operationId": "get_private_factor_return_risk_private_factor_returns__result_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "result_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Result Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurePrivateFactorRowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Private Factor Return",
         "tags": [
           "risk"
         ]
