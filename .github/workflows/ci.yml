@@ -464,6 +464,20 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9z_api1_reads_pg.py -q
+      # Stage 11 (PPF-1) runs AFTER stage 10 and BEFORE the downgrade smoke — the GOVERNED
+      # pure-private factor return over the ALREADY-SEEDED private substrate (zero new book data):
+      # it mints ONE new model code (risk.factor_return.pure_private, the 18th governed number),
+      # ONE INITIAL record, and TWO COMPLETED runs (one per single-member segment), so the suite
+      # asserts the counts MOVED to 21/36/103 (the CC-2 contrast with stage 10's runs-only). The
+      # filename is ``stage9zz`` (NOT ``stage11``, which sorts before ``stage2``/``stage4``) so a
+      # single-invocation local battery collates it LAST — the stage9z workaround extended one ``z``.
+      # The smoke below then exercises 0047's destructive private_factor_return_result drop against
+      # THIS stage's rows on every run.
+      - name: Demo stage-11 pure-private factor test (Postgres, PPF-1 / OD-PPF-1-F)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9zz_ppf1_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

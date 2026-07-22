@@ -58,6 +58,13 @@ from irp_shared.demo.multifamily import (
     MultifamilyExtensionSummary,
     run_demo_multifamily_extension,
 )
+from irp_shared.demo.ppf1_stage11 import (
+    DemoPpf1AlreadySeededError,
+    DemoPpf1Error,
+    DemoPpf1PrereqError,
+    Ppf1Stage11Summary,
+    run_demo_ppf1_stage11,
+)
 from irp_shared.demo.rs1_stage5 import (
     DemoRs1AlreadySeededError,
     DemoRs1Error,
@@ -124,4 +131,9 @@ __all__ = [
     "DemoStage10PrereqError",
     "Stage10Api1Summary",
     "run_demo_stage10_api1",
+    "DemoPpf1AlreadySeededError",
+    "DemoPpf1Error",
+    "DemoPpf1PrereqError",
+    "Ppf1Stage11Summary",
+    "run_demo_ppf1_stage11",
 ]
