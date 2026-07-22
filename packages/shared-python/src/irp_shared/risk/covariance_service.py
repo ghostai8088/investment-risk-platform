@@ -421,12 +421,18 @@ def latest_covariances(
     """API-1 latest-resolver (Class B): the newest COMPLETED covariance run's FULL matrix (empty
     when none). A covariance run IS the matrix identity — there is no entity sub-filter; the whole
     matrix is the readable unit. Rows present in canonical pair order ``(factor_id_1,
-    factor_id_2)``. ``as_of=None`` = now."""
+    factor_id_2)``. ``as_of=None`` = now.
+
+    The ``run_type=RUN_TYPE_COVARIANCE`` filter is LOAD-BEARING once the ``covariance_result`` table
+    is shared with the private-covariance sibling family (PPF-2): without it a private APPRAISAL
+    matrix could surface as "the latest public covariance" (the ``calc/reads.py`` shared-table
+    contract). Behavior-identical for pre-PPF-2 data (every existing row is a public run)."""
     return latest_run_rows(
         list_governed_results(
             session,
             CovarianceResult,
             acting_tenant=acting_tenant,
+            run_type=RUN_TYPE_COVARIANCE,
             as_of=as_of,
             order_by=(CovarianceResult.factor_id_1, CovarianceResult.factor_id_2),
         )
@@ -450,11 +456,18 @@ def resolve_covariance_run(session: Session, run_id: str, *, acting_tenant: str)
 def resolve_covariance(
     session: Session, covariance_id: str, *, acting_tenant: str
 ) -> CovarianceResult:
-    """Resolve one ``covariance_result`` row by id with an EXPLICIT tenant predicate."""
+    """Resolve one PUBLIC ``covariance_result`` row by id with an EXPLICIT tenant predicate + the
+    ``RUN_TYPE_COVARIANCE`` family filter (a join on the bound run). The run_type filter keeps a
+    private-covariance sibling row (PPF-2, same table) from resolving through the public by-id
+    surface — the ``calc/reads.py`` shared-table contract, mirroring ``resolve_es_backtest``'s
+    family discriminator. Behavior-identical for pre-PPF-2 data."""
     row = session.execute(
-        select(CovarianceResult).where(
+        select(CovarianceResult)
+        .join(CalculationRun, CalculationRun.run_id == CovarianceResult.calculation_run_id)
+        .where(
             CovarianceResult.id == str(covariance_id),
             CovarianceResult.tenant_id == str(acting_tenant),
+            CalculationRun.run_type == RUN_TYPE_COVARIANCE,
         )
     ).scalar_one_or_none()
     if row is None:
