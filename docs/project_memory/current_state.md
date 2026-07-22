@@ -2,12 +2,43 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-21) — read this block; everything below it is HISTORY
 >
-> **HEAD `f1e830f`** = merge of **PR #92** (API-1b: the flagship VaR/active-risk entity reads —
+> **HEAD `2cbb68c`** = merge of **PR #95** (FE-3b: the SPA OIDC/PKCE browser login — Wave 10 slice 2;
+> NO migration; counts UNCHANGED 17/20/35/101), **CI green** (Backend/Frontend/migration/API-type-
+> drift/docs/secret-scan all success). Turns SSO-1's real OIDC resource server into something a
+> non-developer can actually reach: a hand-rolled browser auth-code + PKCE flow (Web Crypto, zero new
+> runtime dep — OD-FE-1-F held) against the Keycloak `irp-frontend` public client, sending
+> `Authorization: Bearer <token>` instead of the `dev_header` shim. **WAVE 10 SLICES 1+2 COMPLETE**
+> (API-1b + FE-3b, both DONE). **NEXT = the §2.1 private/public-unification headline** (Wave 10 slice
+> 3, Part 2.13, ratified at the Wave-9 close) — fetch/cite the unification approach first (Tier-3
+> methodology), then plan the governed number.
+>
+> A discriminated-union `Session = DevSession | OidcSession` (`kind` discriminant) swaps the wire
+> bytes at the ONE `client.ts` choke point (`method:"GET"` stays hard-coded — the read-only fence is
+> the METHOD, not the header); `DevSession → Session` widened across 16 pass-through signatures
+> (type-only, mechanical). `/callback` lands ABOVE the session gate: validates `state` (CSRF) before
+> the exchange, strips `?code` from the URL synchronously, single-use verifier+state, StrictMode
+> ref-guard. `dev_header` mode is byte-unchanged; oidc mode hides `DevBanner` (a verified Bearer
+> session IS a security boundary) and routes logout through Keycloak's `end_session_endpoint`. Demo
+> end-to-end (OQ-FE-3b-3=A): the `demo-auditor` realm user + BR-10-marked local passwords + the
+> compose backend oidc-profile env, including the load-bearing
+> `OIDC_JWKS_URI=http://keycloak:8080/.../certs` issuer-consistency fix (a naive `ISSUER`/`AUDIENCE`-
+> only wiring 503s every login). **Pre-ratification verifier pass RAN**: the token-contract crux HELD;
+> 2 COMPLICATED findings folded pre-implementation (the JWKS-URI split; the true 16-file footprint) —
+> no redesign. **4-finder review folded 1 HIGH** (the deployed nginx image shipped NO SPA
+> history-fallback, so the ratified demo login 404'd on `/callback` — fixed via
+> `infra/docker/frontend-nginx.conf`, `try_files … /index.html` + a backend read-proxy) **+ 3 MED**
+> (the OIDC logout redirect-back mismatch; `beginLogin` was untested — a silent PKCE downgrade would
+> have slipped; a stale footprint estimate) **+ LOWs** (a non-secure-context guard; a `no-referrer`
+> meta tag). Security crux + doctrine fences HELD under independent re-verification. Gates: `make
+> fe-check` green (110 FE tests+build); `make check`/`make gen-api-check` no-op (NO backend logic
+> change); `package.json` byte-identical; `npm audit --omit=dev` 0. Carried (LOW, disclosed):
+> `directAccessGrantsEnabled:true` on the public client leaves ROPC open — pre-existing, accepted for
+> the local demo.
+>
+> **Prior: HEAD `f1e830f`** = merge of **PR #92** (API-1b: the flagship VaR/active-risk entity reads —
 > Wave 10 slice 1; migration `0046_run_scope_portfolio`; counts UNCHANGED 17/20/35/101), **CI green
 > run #488**. Pays the ONE read API-1 deferred — "latest VaR / active-risk for portfolio P" — at the
-> **write** boundary (API-1's verifier had refuted read-only resolution). **NEXT = FE-3b planning**
-> (the SPA OIDC/PKCE browser login), **then the §2.1 private/public-unification headline** (Wave 10,
-> Part 2.13, ratified at the Wave-9 close).
+> **write** boundary (API-1's verifier had refuted read-only resolution).
 >
 > **ONE additive nullable `calculation_run.scope_portfolio_id`** column (the `environment_id`/
 > `failure_reason` precedent — no RLS/grant/trigger change) threaded through the SINGLE
@@ -52,7 +83,8 @@
 >
 > **The OPERATIVE sequence doc is `10_delivery_backlog/delivery_roadmap.md`** (wave rows + the dated
 > amendment log — it WINS wherever the sections below disagree). The latest decision record is
-> `api_1b_decision_record.md` (**CLOSED 2026-07-21**). Prior wave: **WAVE 9 FUNCTIONALLY COMPLETE +
+> `fe_3b_decision_record.md` (**CLOSED 2026-07-21**); prior `api_1b_decision_record.md` (**CLOSED
+> 2026-07-21**). Prior wave: **WAVE 9 FUNCTIONALLY COMPLETE +
 > CLOSED + RATIFIED 2026-07-21** (API-1 → FE-2 → SSO-1 → FE-3, all four slices DONE;
 > `wave_9_close_review.md` RATIFIED, the FIFTH consecutive zero-shipped-defect close). Standing
 > carries: the BT-3 D-F4 reword (a dedicated ES/var-backtest touch); the FE-2 `@redocly` dev-tree
