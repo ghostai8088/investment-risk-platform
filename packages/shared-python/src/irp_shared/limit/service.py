@@ -23,7 +23,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.actions import ACTION_CREATE, ACTION_RECORD, ACTION_UPDATE
@@ -50,7 +50,6 @@ from irp_shared.limit.events import (
     LimitActor,
 )
 from irp_shared.limit.models import Breach, LimitDefinition
-from irp_shared.marketdata.benchmark import BenchmarkNotVisible, resolve_benchmark
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.risk.active_risk_service import latest_active_risk_for_portfolio
 from irp_shared.risk.events import (
@@ -294,11 +293,16 @@ def create_limit(
     assert_portfolio_in_tenant(
         session, str(scope_portfolio_id), acting_tenant=str(tenant_id), error=LimitError
     )
-    if benchmark_id:
-        try:
-            resolve_benchmark(session, str(benchmark_id), acting_tenant=str(tenant_id))
-        except BenchmarkNotVisible as exc:
-            raise LimitError(f"benchmark {benchmark_id} is not visible in the tenant") from exc
+    if benchmark_id and (
+        # A tenant-filtered existence check via raw SQL — keeps ``limit`` off the marketdata import
+        # fence (marketdata is a leaf) while still refusing a FOREIGN benchmark_id (the P3-5 guard).
+        session.execute(
+            text("SELECT 1 FROM benchmark WHERE id = :id AND tenant_id = :t"),
+            {"id": str(benchmark_id), "t": str(tenant_id)},
+        ).first()
+        is None
+    ):
+        raise LimitError(f"benchmark {benchmark_id} is not visible in the tenant")
     # Refuse a duplicate (tenant, code) with a clean domain error (not a raw IntegrityError/500).
     if session.execute(
         select(LimitDefinition.id).where(
