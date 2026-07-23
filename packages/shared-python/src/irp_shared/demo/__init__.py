@@ -72,6 +72,13 @@ from irp_shared.demo.ppf2_stage12 import (
     Ppf2Stage12Summary,
     run_demo_ppf2_stage12,
 )
+from irp_shared.demo.ppf3_stage13 import (
+    DemoPpf3AlreadySeededError,
+    DemoPpf3Error,
+    DemoPpf3PrereqError,
+    Ppf3Stage13Summary,
+    run_demo_ppf3_stage13,
+)
 from irp_shared.demo.rs1_stage5 import (
     DemoRs1AlreadySeededError,
     DemoRs1Error,
@@ -146,6 +153,11 @@ __all__ = [
     "DemoPpf2PrereqError",
     "Ppf2Stage12Summary",
     "run_demo_ppf2_stage12",
+    "DemoPpf3AlreadySeededError",
+    "DemoPpf3Error",
+    "DemoPpf3PrereqError",
+    "Ppf3Stage13Summary",
+    "run_demo_ppf3_stage13",
     "Ppf1Stage11Summary",
     "run_demo_ppf1_stage11",
 ]
