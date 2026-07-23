@@ -19,6 +19,7 @@ import argparse
 import os
 import sys
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -35,6 +36,7 @@ from irp_shared.scheduling.service import (
     record_failed_dispatch,
     select_active_due,
 )
+from irp_worker.breaches import poll_tenant_breaches
 
 #: The unique constraint that backstops the per-(schedule, tick) idempotency race. ONLY a violation
 #: of THIS constraint is the benign concurrent-double-fire dedup; any OTHER IntegrityError from the
@@ -91,14 +93,14 @@ def poll_tenant_schedules(
 
 
 def _record_failed(
-    session: Session, schedule: object, tick: datetime, now: datetime, reason: str
+    session: Session, schedule: Any, tick: datetime, now: datetime, reason: str
 ) -> str:
     """Append a FAILED ledger row in a fresh SAVEPOINT; FULLY catch-all so a failure in recording
     path itself cannot escape and unwind the tenant's other successful dispatches (the starvation
     fold). If even the record fails, the tick simply stays un-fired and retries next poll."""
     failed_sp = session.begin_nested()
     try:
-        record_failed_dispatch(session, schedule, tick, now, reason=reason)  # type: ignore[arg-type]
+        record_failed_dispatch(session, schedule, tick, now, reason=reason)
         failed_sp.commit()
         return OUTCOME_FAILED
     except IntegrityError:
@@ -110,35 +112,45 @@ def _record_failed(
         return OUTCOME_FAILED
 
 
-def run_scheduler_for_tenant(
+def run_operational_tick_for_tenant(
     session_factory: sessionmaker[Session],
     tenant_id: str,
     *,
     code_version: str,
     now: datetime | None = None,
-) -> list[tuple[str, str]]:
-    """Run one scheduler tick for ONE tenant under tenant-scoped RLS, then commit.
+) -> dict[str, list[Any]]:
+    """Run ONE per-tenant operational tick under tenant-scoped RLS, then commit — the single
+    per-tenant tick the Fable audit ratified (schedules-phase + breaches-phase under ONE
+    ``run_in_tenant`` entry, so operational concerns never accrete separate CLI entrypoints).
+
+    **Ordering INVARIANT (OD-LIM-1-G):** phase 1 (schedules) runs BEFORE phase 2 (breaches), because
+    ``dispatch_one`` runs ``run_var`` inline — a VaR fired this tick reaches a COMPLETED run visible
+    to the breach evaluation in the SAME transaction (same-tick detection). Reversing the order is
+    correct but adds one tick of breach latency; both phases land under the single terminal commit.
 
     ``now`` defaults to the canonical UTC wall clock; only this top-level entry reads it (the
-    due-computation itself is a pure function of the injected ``now`` — INV-SCH-1).
+    due/breach computation is a pure function of the injected ``now`` — INV-SCH-1).
     """
     tick_now = now if now is not None else utcnow()
-    return run_in_tenant(
-        session_factory,
-        tenant_id,
-        lambda session: poll_tenant_schedules(
+
+    def _work(session: Session) -> dict[str, list[Any]]:
+        scheduled = poll_tenant_schedules(
             session, tick_now, code_version=code_version, acting_tenant=tenant_id
-        ),
-    )
+        )
+        breached = poll_tenant_breaches(session, tick_now, acting_tenant=tenant_id)
+        return {"scheduled": scheduled, "breached": breached}
+
+    return run_in_tenant(session_factory, tenant_id, _work)
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entrypoint
     """CLI entry — infra invokes this once per tenant (OQ-SCH-1-1=B).
 
-    Runs a single scheduler tick for ``--tenant`` under the ordinary (non-BYPASSRLS) app role. It is
-    deliberately NOT a cross-tenant sweep: the app has no tenant registry and no ops-role read here.
+    Runs a single OPERATIONAL tick for ``--tenant`` (schedules + breaches) under the ordinary
+    (non-BYPASSRLS) app role. Deliberately NOT a cross-tenant sweep: the app has no tenant registry
+    and no ops-role read here.
     """
-    parser = argparse.ArgumentParser(description="Run one scheduler tick for one tenant.")
+    parser = argparse.ArgumentParser(description="Run one operational tick for one tenant.")
     parser.add_argument("--database-url", default=os.environ.get("DATABASE_URL"))
     parser.add_argument("--tenant", default=os.environ.get("IRP_TENANT_ID"))
     parser.add_argument("--code-version", default=os.environ.get("IRP_CODE_VERSION", "irp-worker"))
@@ -153,10 +165,14 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entry
     engine = make_engine(args.database_url)
     factory = make_session_factory(engine)
     try:
-        results = run_scheduler_for_tenant(factory, args.tenant, code_version=args.code_version)
+        results = run_operational_tick_for_tenant(
+            factory, args.tenant, code_version=args.code_version
+        )
     finally:
         engine.dispose()
-    print(f"irp-scheduler: tenant={args.tenant} fired={len(results)}")
+    n_sched = len(results["scheduled"])
+    n_breach = sum(1 for _limit_id, breach_id in results["breached"] if breach_id is not None)
+    print(f"irp-worker: tenant={args.tenant} fired={n_sched} breaches={n_breach}")
     return 0
 
 
