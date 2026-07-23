@@ -39,6 +39,23 @@ from irp_shared.limit.service import (
 _ACTOR = LimitActor(actor_id="risk-mgr-2l", actor_type="user")
 
 
+def _portfolio(session: Session, tenant: str) -> str:
+    """A real portfolio (the create_limit FK guard re-resolves scope tenant-filtered)."""
+    from irp_shared.portfolio.models import Portfolio
+
+    pf = Portfolio(
+        tenant_id=tenant,
+        code=f"ACCT-{uuid.uuid4().hex[:6]}",
+        name="acct",
+        node_type="ACCOUNT",
+        status="ACTIVE",
+        record_version=1,
+    )
+    session.add(pf)
+    session.flush()
+    return str(pf.id)
+
+
 def _mk(session: Session, tenant: str, **over: object) -> LimitDefinition:
     kwargs: dict[str, object] = {
         "tenant_id": tenant,
@@ -46,7 +63,7 @@ def _mk(session: Session, tenant: str, **over: object) -> LimitDefinition:
         "name": "VaR ceiling",
         "target_run_type": "VAR",
         "metric_type": "VAR_PARAMETRIC",
-        "scope_portfolio_id": str(uuid.uuid4()),
+        "scope_portfolio_id": _portfolio(session, tenant),
         "threshold_value": Decimal("5000000"),
         "threshold_unit": THRESHOLD_UNIT_CURRENCY,
         "breach_direction": BREACH_ABOVE,
@@ -183,3 +200,59 @@ def test_breach_is_append_only(session: Session) -> None:
     breach.status = "CLOSED"
     with pytest.raises(AppendOnlyViolation):
         session.flush()
+
+
+# --- the 4-finder coverage folds ---
+def test_create_refuses_a_foreign_portfolio(session: Session) -> None:
+    # D1: the P3-5 FK guard — a scope_portfolio_id from ANOTHER tenant is refused (PG FK checks
+    # bypass RLS, so create_limit re-resolves the target tenant-filtered).
+    tenant_a, tenant_b = str(uuid.uuid4()), str(uuid.uuid4())
+    foreign_pf = _portfolio(session, tenant_b)
+    with pytest.raises(LimitError):
+        create_limit(
+            session,
+            tenant_id=tenant_a,
+            code="foreign",
+            name="foreign",
+            target_run_type="VAR",
+            metric_type="VAR_PARAMETRIC",
+            scope_portfolio_id=foreign_pf,
+            threshold_value=Decimal("1000000"),
+            threshold_unit=THRESHOLD_UNIT_CURRENCY,
+            breach_direction=BREACH_ABOVE,
+            limit_kind=LIMIT_KIND_HARD,
+            actor=_ACTOR,
+        )
+
+
+def test_create_refuses_a_duplicate_code(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    pf = _portfolio(session, tenant)
+    kw = dict(
+        tenant_id=tenant,
+        code="dup",
+        name="dup",
+        target_run_type="VAR",
+        metric_type="VAR_PARAMETRIC",
+        scope_portfolio_id=pf,
+        threshold_value=Decimal("1000000"),
+        threshold_unit=THRESHOLD_UNIT_CURRENCY,
+        breach_direction=BREACH_ABOVE,
+        limit_kind=LIMIT_KIND_HARD,
+        actor=_ACTOR,
+    )
+    create_limit(session, **kw)  # type: ignore[arg-type]
+    with pytest.raises(LimitError):
+        create_limit(session, **kw)  # type: ignore[arg-type]  # same (tenant, code) -> clean error
+
+
+def test_update_change_event_payload_serializes_the_threshold(session: Session) -> None:
+    # S4: the LIMIT.CHANGE before/after must carry the OLD/NEW threshold as JSON-safe strings.
+    tenant = str(uuid.uuid4())
+    limit = _mk(session, tenant)  # threshold 5000000
+    update_limit(session, limit, actor=_ACTOR, threshold_value=Decimal("6000000"))
+    event = session.execute(
+        select(AuditEvent).where(AuditEvent.event_type == LIMIT_CHANGE_EVENT)
+    ).scalar_one()
+    assert event.before_value["threshold_value"] == "5000000"
+    assert event.after_value["threshold_value"] == "6000000"

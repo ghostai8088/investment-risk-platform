@@ -33,6 +33,7 @@ from irp_shared.limit.service import (
     create_limit,
     evaluate_limit,
     limit_health,
+    suspend_limit,
 )
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.risk.events import VarActor
@@ -130,8 +131,18 @@ def test_limit_health_distinguishes_the_states(session: Session) -> None:
     tenant, portfolio_id, var_value = _var_ready(session)
     tight = _var_limit(session, tenant, portfolio_id, var_value / 2, "tight")
     _var_limit(session, tenant, portfolio_id, var_value * 10, "loose")
-    # a limit on a portfolio with NO VaR run → never-evaluable
-    _var_limit(session, tenant, str(uuid.uuid4()), Decimal("1"), "orphan")
+    # a limit on a REAL portfolio that has NO VaR run → never-evaluable
+    orphan_pf = Portfolio(
+        tenant_id=tenant,
+        code="ORPH",
+        name="orphan",
+        node_type="ACCOUNT",
+        status="ACTIVE",
+        record_version=1,
+    )
+    session.add(orphan_pf)
+    session.flush()
+    _var_limit(session, tenant, str(orphan_pf.id), Decimal("1"), "orphan")
     now = datetime(2026, 1, 5, tzinfo=UTC)
     evaluate_limit(session, tight, now)  # record the breach
     health = {h.code: h.state for h in limit_health(session, acting_tenant=tenant)}
@@ -168,3 +179,51 @@ def test_schedules_phase_then_breaches_phase_detects_same_tick(session: Session)
     breached = poll_tenant_breaches(session, now, acting_tenant=tenant)
     breached_ids = [lid for lid, bid in breached if bid is not None]
     assert limit.id in breached_ids  # phase 2: its fresh run breached the limit same tick
+
+
+def test_floor_direction_breaches_end_to_end(session: Session) -> None:
+    # S3: a BELOW/floor limit breaches when observed < threshold (the evaluator floor branch).
+    tenant, portfolio_id, var_value = _var_ready(session)
+    limit = create_limit(
+        session,
+        tenant_id=tenant,
+        code="floor",
+        name="floor",
+        target_run_type="VAR",
+        metric_type="VAR_PARAMETRIC",
+        scope_portfolio_id=portfolio_id,
+        threshold_value=var_value * 2,  # a floor ABOVE the observed VaR
+        threshold_unit=THRESHOLD_UNIT_CURRENCY,
+        breach_direction="BELOW",
+        limit_kind=LIMIT_KIND_HARD,
+        actor=_ACTOR,
+    )
+    breach = evaluate_limit(session, limit, datetime(2026, 1, 5, tzinfo=UTC))
+    assert breach is not None
+    assert breach.breach_direction == "BELOW"
+    assert breach.observed_value == var_value
+
+
+def test_limit_health_recomputes_breached_before_evaluation(session: Session) -> None:
+    # F1: a breaching-but-not-yet-EVALUATED latest run must read BREACHED (health recomputes the
+    # predicate; it does NOT infer green from the absence of a breach row).
+    tenant, portfolio_id, var_value = _var_ready(session)
+    _var_limit(session, tenant, portfolio_id, var_value / 2, "tight")  # breaching, NOT evaluated
+    health = {h.code: h.state for h in limit_health(session, acting_tenant=tenant)}
+    assert health["tight"] == HEALTH_BREACHED  # would be a false-green if it read the breach table
+
+
+def test_poll_tenant_breaches_skips_a_suspended_limit(session: Session) -> None:
+    # S5: a SUSPENDED limit is never evaluated by the worker phase.
+    tenant, portfolio_id, var_value = _var_ready(session)
+    active = _var_limit(session, tenant, portfolio_id, var_value / 2, "active-ceiling")
+    suspended = _var_limit(session, tenant, portfolio_id, var_value / 2, "suspended-ceiling")
+    suspend_limit(session, suspended, actor=_ACTOR)
+    result_ids = {
+        lid
+        for lid, _bid in poll_tenant_breaches(
+            session, datetime(2026, 1, 7, 9, tzinfo=UTC), acting_tenant=tenant
+        )
+    }
+    assert active.id in result_ids
+    assert suspended.id not in result_ids

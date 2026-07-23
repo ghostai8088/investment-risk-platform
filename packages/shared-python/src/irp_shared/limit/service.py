@@ -39,6 +39,7 @@ from irp_shared.limit.events import (
     ENTITY_LIMIT_DEFINITION,
     LIMIT_CHANGE_EVENT,
     LIMIT_DEFINE_EVENT,
+    LIMIT_KIND_HARD,
     LIMIT_KINDS,
     LIMIT_STATUS_ACTIVE,
     LIMIT_STATUS_SUSPENDED,
@@ -49,6 +50,8 @@ from irp_shared.limit.events import (
     LimitActor,
 )
 from irp_shared.limit.models import Breach, LimitDefinition
+from irp_shared.marketdata.benchmark import BenchmarkNotVisible, resolve_benchmark
+from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.risk.active_risk_service import latest_active_risk_for_portfolio
 from irp_shared.risk.events import (
     METRIC_TYPE_ES_HISTORICAL,
@@ -131,6 +134,12 @@ def _resolve_latest(session: Session, limit: LimitDefinition) -> tuple[str, Deci
     and return ``(calculation_run_id, observed_value)`` — or None when no matching run exists (the
     NEVER-EVALUABLE / metric-cold case). Discovery is ``calculation_run``-driven (demand #1)."""
     spec = _spec_for(limit)
+    if spec.unit != limit.threshold_unit:
+        # Defense-in-depth (identity is frozen, so the create-time guard normally holds): a
+        # CURRENCY threshold must NEVER be compared against a FRACTION metric (or vice versa).
+        raise LimitError(
+            f"unit drift: threshold_unit {limit.threshold_unit!r} != metric unit {spec.unit!r}"
+        )
     tenant = limit.tenant_id
     rows: list[Any]
     if limit.target_run_type == RUN_TYPE_VAR:
@@ -248,7 +257,7 @@ def _validate_config(
         raise LimitError(f"limit_kind {limit_kind!r} is invalid")
     if status not in LIMIT_STATUSES:
         raise LimitError(f"status {status!r} is invalid")
-    if threshold_value <= 0:
+    if Decimal(threshold_value) <= 0:  # coerce (a str/float caller must not raise a raw TypeError)
         raise LimitError("threshold_value must be positive")
 
 
@@ -280,6 +289,23 @@ def create_limit(
         limit_kind=limit_kind,
         status=status,
     )
+    # Re-resolve the FK targets tenant-filtered BEFORE the write (the P3-5 doctrine — PG FK checks
+    # BYPASS RLS, so a caller-supplied FOREIGN scope/benchmark id must be refused, not stamped).
+    assert_portfolio_in_tenant(
+        session, str(scope_portfolio_id), acting_tenant=str(tenant_id), error=LimitError
+    )
+    if benchmark_id:
+        try:
+            resolve_benchmark(session, str(benchmark_id), acting_tenant=str(tenant_id))
+        except BenchmarkNotVisible as exc:
+            raise LimitError(f"benchmark {benchmark_id} is not visible in the tenant") from exc
+    # Refuse a duplicate (tenant, code) with a clean domain error (not a raw IntegrityError/500).
+    if session.execute(
+        select(LimitDefinition.id).where(
+            LimitDefinition.tenant_id == str(tenant_id), LimitDefinition.code == code
+        )
+    ).first():
+        raise LimitError(f"a limit with code {code!r} already exists in the tenant")
     limit = LimitDefinition(
         tenant_id=str(tenant_id),
         code=code,
@@ -288,7 +314,7 @@ def create_limit(
         metric_type=metric_type,
         benchmark_id=str(benchmark_id) if benchmark_id else None,
         scope_portfolio_id=str(scope_portfolio_id),
-        threshold_value=threshold_value,
+        threshold_value=Decimal(threshold_value),
         threshold_unit=threshold_unit,
         breach_direction=breach_direction,
         limit_kind=limit_kind,
@@ -327,7 +353,7 @@ def update_limit(
         raise LimitError("threshold_value must be positive")
     before = {key: json_safe(getattr(limit, key)) for key in changes}
     for key, value in changes.items():
-        setattr(limit, key, value)
+        setattr(limit, key, Decimal(value) if key == "threshold_value" else value)
     limit.record_version += 1
     session.flush()
     _record_limit_event(
@@ -380,14 +406,19 @@ def limit_health(session: Session, *, acting_tenant: str) -> list[LimitHealth]:
         if resolved is None:
             out.append(LimitHealth(limit.id, limit.code, HEALTH_NEVER_EVALUABLE, None, None))
             continue
-        run_id, _observed = resolved
+        run_id, observed = resolved
+        # RECOMPUTE the predicate from the latest observed — do NOT infer state from the breach
+        # table (a breaching-but-not-yet-evaluated run, or a threshold loosened after a breach,
+        # would otherwise misreport; the 4-finder false-green fold). The breach row is only the
+        # evidence reference.
+        breaching = _breaches(observed, Decimal(limit.threshold_value), limit.breach_direction)
         breach = session.execute(
             select(Breach).where(
                 Breach.limit_definition_id == limit.id,
                 Breach.calculation_run_id == run_id,
             )
         ).scalar_one_or_none()
-        state = HEALTH_BREACHED if breach is not None else HEALTH_IN_APPETITE
+        state = HEALTH_BREACHED if breaching else HEALTH_IN_APPETITE
         out.append(LimitHealth(limit.id, limit.code, state, run_id, breach.id if breach else None))
     return out
 
@@ -449,6 +480,9 @@ def _record_breach_event(session: Session, *, breach: Breach, actor_id: str) -> 
         entity_type=_ENTITY_BREACH,
         entity_id=breach.id,
         action=ACTION_RECORD,
+        # A HARD breach is an incident — escalate the audit envelope severity (the domain
+        # HARD/SOFT is also echoed in after_value["severity"]).
+        severity="warning" if breach.limit_kind == LIMIT_KIND_HARD else "info",
         after_value={
             "limit_definition_id": str(breach.limit_definition_id),
             "calculation_run_id": str(breach.calculation_run_id),

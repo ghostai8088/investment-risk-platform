@@ -17,9 +17,9 @@
 Both PROPRIETARY, tenant-scoped, symmetric FORCE RLS — NEVER hybrid. Migration ``0050_limit_breach``
 (``limit_definition`` gets RLS only; ``breach`` gets RLS + the append-only trigger). NO ops grant.
 
-Threshold/observed values are ``PreciseDecimal(28, 12)`` — unit-agnostic, holding BOTH a currency
-amount (VaR ``var_value``) and a dimensionless fraction (active-risk ``te_value``, 12 dp) without
-precision loss (OD-C).
+Threshold/observed values are ``PreciseDecimal(34, 12)`` — unit-agnostic: 34-12 = 22 integer digits
+match the source ``var_value`` ``(28, 6)`` range (NO overflow even in a low-unit currency), 12 scale
+holds the ``te_value`` fraction — BOTH without loss (OD-C; the 4-finder overflow fold).
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ class LimitDefinition(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, Timesta
         GUID, ForeignKey("portfolio.id"), nullable=False, index=True
     )
     #: The threshold (unit-agnostic precision) + its unit (CURRENCY/FRACTION — the guard, OD-C).
-    threshold_value: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 12), nullable=False)
+    threshold_value: Mapped[Decimal] = mapped_column(PreciseDecimal(34, 12), nullable=False)
     threshold_unit: Mapped[str] = mapped_column(String(20), nullable=False)
     #: The BREACH predicate (OD-D): ABOVE = breach when observed > threshold (ceiling, the default);
     #: BELOW = breach when observed < threshold (floor). Strict boundary.
@@ -112,8 +112,8 @@ class Breach(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
     benchmark_id: Mapped[str | None] = mapped_column(GUID, nullable=True)
     #: The comparison ARITHMETIC echo (OD-F) — reproduces the breach from its own row.
-    observed_value: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 12), nullable=False)
-    threshold_value: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 12), nullable=False)
+    observed_value: Mapped[Decimal] = mapped_column(PreciseDecimal(34, 12), nullable=False)
+    threshold_value: Mapped[Decimal] = mapped_column(PreciseDecimal(34, 12), nullable=False)
     threshold_unit: Mapped[str] = mapped_column(String(20), nullable=False)
     breach_direction: Mapped[str] = mapped_column(String(8), nullable=False)
     limit_kind: Mapped[str] = mapped_column(String(10), nullable=False)
