@@ -75,6 +75,7 @@ from irp_shared.risk.scenario_models import (
     ScenarioResult,
     ScenarioShock,
 )
+from irp_shared.scheduling.models import Schedule, ScheduledRun
 from irp_shared.snapshot.models import DatasetSnapshot, DatasetSnapshotComponent
 from irp_shared.transaction.models import Transaction
 from irp_shared.valuation.models import Valuation
@@ -149,4 +150,6 @@ __all__ = [
     "PortfolioReturnResult",
     "BenchmarkRelativeResult",
     "DesmoothedReturnResult",
+    "Schedule",
+    "ScheduledRun",
 ]

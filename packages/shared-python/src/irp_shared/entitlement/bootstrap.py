@@ -141,6 +141,16 @@ PERMISSIONS: list[tuple[str, str]] = [
     # perf.view precedent). Maker/read sets mirror the perf family.
     ("pacing.run", "Run governed commitment-pacing projections"),
     ("pacing.view", "View commitment-pacing projection results"),
+    # SCH-1 scheduling (ENT-061 schedule / ENT-062 scheduled_run, Wave-11 slice 1) — a governed
+    # R-07 mint (OD-SCH-1-G, ratified 2026-07-23). BOTH codes NEW — a schedule is a control-plane
+    # config object that DRIVES governed-number production; neither a risk nor a performance verb
+    # gates it. `schedule.manage` is the maker verb (create/edit/pause a schedule — mirrors
+    # pacing.run/risk.run); `schedule.view` reads schedules + the scheduled_run ledger. `.manage`
+    # goes to the 1L risk maker + the data_steward ops maker (the pacing.run placement); `.view`
+    # goes broadly INCLUDING auditor_3l — a governed control-plane object is 3L-oversight scope
+    # (the pacing.view precedent). Dispatch itself runs as a synthesized SYSTEM actor, ungated.
+    ("schedule.manage", "Create, edit and pause governed run schedules"),
+    ("schedule.view", "View run schedules and the scheduled-run ledger"),
 ]
 
 #: All permission codes, in catalog order.
@@ -229,6 +239,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # CC-2 pacing: steward is a maker — holds run + view (the perf/risk precedent).
         "pacing.run",
         "pacing.view",
+        # SCH-1 scheduling: steward is an ops maker — manage + view (the pacing.run precedent).
+        "schedule.manage",
+        "schedule.view",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -269,6 +282,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # CC-2 pacing: the 1L analyst RUNS projections (maker) + views the results.
         "pacing.run",
         "pacing.view",
+        # SCH-1 scheduling: the 1L analyst is the risk maker — manages + views schedules.
+        "schedule.manage",
+        "schedule.view",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -311,6 +327,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "commitment.view",
         # CC-2 pacing: 2L view-only (pacing.run is maker/admin-only).
         "pacing.view",
+        # SCH-1 scheduling: 2L view-only (schedule.manage is maker/admin-only).
+        "schedule.view",
         "model.inventory.view",
         # VW-1: the 2L independent validator (ROLE-MV) is the ONLY non-admin holder of
         # model.validate — SOD-03 (author ≠ validator): risk_analyst_1l holds register, not this.
@@ -340,6 +358,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # precedent — OD-CC-2-E; a governed OUTPUT is 3L-oversight scope, UNLIKE the captured-input
         # commitment.* verbs the auditor is excluded from).
         "pacing.view",
+        # SCH-1 scheduling: the 3L auditor VIEWS schedules + the scheduled_run ledger — a governed
+        # control-plane object is 3L-oversight scope (the pacing.view precedent).
+        "schedule.view",
     ],
 }
 
