@@ -324,7 +324,7 @@ def update_limit(
         raise LimitError(f"limit_kind {changes['limit_kind']!r} is invalid")
     if "threshold_value" in changes and Decimal(changes["threshold_value"]) <= 0:
         raise LimitError("threshold_value must be positive")
-    before = {key: getattr(limit, key) for key in changes}
+    before = {key: _json_safe(getattr(limit, key)) for key in changes}
     for key, value in changes.items():
         setattr(limit, key, value)
     limit.record_version += 1
@@ -335,7 +335,7 @@ def update_limit(
         event_type=LIMIT_CHANGE_EVENT,
         action=ACTION_UPDATE,
         before_value=before,
-        after_value={key: getattr(limit, key) for key in changes},
+        after_value={key: _json_safe(getattr(limit, key)) for key in changes},
         actor=actor,
     )
     return limit
@@ -392,6 +392,11 @@ def limit_health(session: Session, *, acting_tenant: str) -> list[LimitHealth]:
 
 
 # --- audit emit ---------------------------------------------------------------------------
+def _json_safe(value: Any) -> Any:
+    """Coerce an audit before/after value to a JSON-serializable form (``Decimal`` → ``str``)."""
+    return str(value) if isinstance(value, Decimal) else value
+
+
 def _limit_metadata(limit: LimitDefinition) -> dict[str, Any]:
     """DC-2 metadata payload for a ``LIMIT.*`` event — identifying/vocab fields only."""
     return {

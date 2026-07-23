@@ -744,5 +744,5 @@ def test_migration_head_is_scenario() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0049_scheduling"  # PPF-3
+    assert script.get_current_head() == "0050_limit_breach"  # PPF-3
     assert script.get_revision("0036_desmoothed_return").down_revision == "0035_scenario"
