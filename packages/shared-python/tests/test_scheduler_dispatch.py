@@ -14,7 +14,7 @@ from datetime import date as dt_date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from tests.test_var import _seed_upstream_runs, _var_model
+from test_var import _seed_upstream_runs, _var_model  # sibling module (pytest adds tests/ to path)
 
 from irp_shared.calc.models import CalculationRun
 from irp_shared.portfolio.models import Portfolio
