@@ -154,6 +154,19 @@ PERMISSIONS: list[tuple[str, str]] = [
     # enforces the maker verb (consistent with the perf/pacing service-ungated design).
     ("schedule.manage", "Create, edit and pause governed run schedules"),
     ("schedule.view", "View run schedules and the scheduled-run ledger"),
+    # LIM-1 limits/breach (ENT-031 limit_definition / ENT-033 breach, Wave-11 slice 2) — a governed
+    # R-07 mint (OD-LIM-1-J, ratified 2026-07-23) ACTIVATING the genesis-reserved LIMIT/BREACH
+    # decades. THE SoD TWIST vs SCH-1: `limit.manage` is a 2L RISK-MANAGER function (personas: limit
+    # maker = P-RM 2L; BX-SOD lists limits as maker-checked) — it goes to risk_manager_2l (+ admin),
+    # NOT the 1L analyst who runs the numbers (author != limit-setter, the VW-1 model.validate
+    # precedent). `limit.view` + `breach.view` go broadly INCLUDING auditor_3l (a governed
+    # control-plane object is 3L-oversight scope, the pacing.view/schedule.view precedent). Breach
+    # detection runs as a synthesized SYSTEM actor on the operational tick, ungated. Forward-gate:
+    # a future limit API endpoint MUST carry require_permission("limit.manage"). The formal
+    # LIMIT.APPROVE maker-checker gate is deferred to MG-2 (OQ-4=A) — no `limit.approve` yet.
+    ("limit.manage", "Define, edit and suspend governed risk limits (2L)"),
+    ("limit.view", "View risk limit definitions"),
+    ("breach.view", "View limit breach records"),
 ]
 
 #: All permission codes, in catalog order.
@@ -245,6 +258,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # SCH-1 scheduling: steward is an ops maker — manage + view (the pacing.run precedent).
         "schedule.manage",
         "schedule.view",
+        # LIM-1 limits: view-only (limit.manage is a 2L risk-manager function — OD-LIM-1-J).
+        "limit.view",
+        "breach.view",
     ],
     "risk_analyst_1l": [
         "reference.instrument.view",
@@ -288,6 +304,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # SCH-1 scheduling: the 1L analyst is the risk maker — manages + views schedules.
         "schedule.manage",
         "schedule.view",
+        # LIM-1 limits: the 1L RUNS the numbers but does NOT set limits (SoD) — view-only.
+        "limit.view",
+        "breach.view",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -332,6 +351,10 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "pacing.view",
         # SCH-1 scheduling: 2L view-only (schedule.manage is maker/admin-only).
         "schedule.view",
+        # LIM-1 limits: the 2L risk-manager is the limit MAKER (OD-LIM-1-J, the SoD twist) + views.
+        "limit.manage",
+        "limit.view",
+        "breach.view",
         "model.inventory.view",
         # VW-1: the 2L independent validator (ROLE-MV) is the ONLY non-admin holder of
         # model.validate — SOD-03 (author ≠ validator): risk_analyst_1l holds register, not this.
@@ -364,6 +387,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # SCH-1 scheduling: the 3L auditor VIEWS schedules + the scheduled_run ledger — a governed
         # control-plane object is 3L-oversight scope (the pacing.view precedent).
         "schedule.view",
+        # LIM-1 limits: the 3L auditor VIEWS limits + breach records (governed oversight scope).
+        "limit.view",
+        "breach.view",
     ],
 }
 
