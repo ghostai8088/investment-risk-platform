@@ -274,6 +274,20 @@ class VarResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     # ungated in v1 — a recorded limitation). EXCLUDED from var_result_content (the 0038 false-
     # drift landmine rule).
     estimate_age_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # PPF-3 (migration 0048): the pure-private systematic leg p'(Ω_pp/d_t)·p (base-currency²) a
+    # VAR_PARAMETRIC_UNIFIED run adds — the co-movement of the portfolio's private funds' pure-
+    # private returns (the Ω_pp block REPLACES the private-segment members' independent diagonal
+    # residual, so residual_variance on a unified row is the leg-3 sum over NON-private-segment
+    # members only). NULL on every prior/parametric/total/HS row. Decomposition evidence:
+    # σ_public² = sigma² − residual_variance − private_variance. Numeric(38,20). EXCLUDED from
+    # var_result_content (the 0038 false-drift landmine rule).
+    private_variance: Mapped[Decimal | None] = mapped_column(PreciseDecimal(38, 20), nullable=True)
+    # PPF-3 (migration 0048): the consumed private-covariance (Ω_pp) run — a hard-FK PROVENANCE
+    # column (calculation_run.run_id is unique + never deleted, the covariance_run_id precedent).
+    # NULL on every non-unified row. EXCLUDED from var_result_content.
+    private_covariance_run_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=True, index=True
+    )
 
 
 class ActiveRiskResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):

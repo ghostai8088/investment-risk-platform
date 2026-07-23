@@ -2671,23 +2671,26 @@ VAR_TOTAL_LIMITATIONS: tuple[str, ...] = (
 )
 
 
-def declared_appraisal_days(session: Session, version: ModelVersion) -> int:
-    """Parse the total-VaR version's declared appraisal-period length (calendar days) from its
-    ``model_assumption`` rows (the OD-PA-4-D identity: exactly ONE ``appraisal_days=N``, N >= 1).
+def declared_appraisal_days(
+    session: Session, version: ModelVersion, *, model_code: str = VAR_TOTAL_MODEL_CODE
+) -> int:
+    """Parse the total/unified-VaR version's declared appraisal-period length (calendar days) from
+    its ``model_assumption`` rows (the OD-PA-4-D identity: exactly ONE ``appraisal_days=N``, N>=1).
     Malformed/absent/ambiguous/sub-floor -> the fail-closed :class:`WrongModelVersionError`.
     The floor is IDENTITY, not registrar courtesy (the ``_hs_window_floor`` precedent): a
     generically-minted version (POST /models can stamp any assumptions) declaring
     ``appraisal_days=0`` must refuse at BIND time, not surface later as a committed FAILED run
     from the kernel's non-positive-period gate (2026-07 review, numeric + adversarial finders
-    independently)."""
+    independently). ``model_code`` only names the refusal (PPF-3 reuses this parser for
+    ``risk.var.parametric_unified``, whose Ω_pp de-scale needs the same ``d_t``)."""
     declared = require_declared(
         load_assumption_texts(session, version),
         APPRAISAL_DAYS_ASSUMPTION_PREFIX,
         pattern=_DIGITS_PATTERN,
-        on_invalid=lambda: WrongModelVersionError(str(version.id), VAR_TOTAL_MODEL_CODE),
+        on_invalid=lambda: WrongModelVersionError(str(version.id), model_code),
     )
     if int(declared) < 1:
-        raise WrongModelVersionError(str(version.id), VAR_TOTAL_MODEL_CODE)
+        raise WrongModelVersionError(str(version.id), model_code)
     return int(declared)
 
 
@@ -2822,6 +2825,183 @@ def register_var_parametric_total_model(
         raise ModelVersionConflictError(
             VAR_TOTAL_MODEL_CODE,
             VAR_TOTAL_VERSION_LABEL,
+            f"{code_version} (confidence_level={confidence_key}, horizon_days={horizon_days}, "
+            f"appraisal_days={appraisal_days}, max_estimate_age_days={max_estimate_age_days})",
+        )
+    return version
+
+
+# --- PPF-3: the UNIFIED public+private parametric VaR (OD-PPF-3-A; the 20th governed number) ---
+#: The unified-VaR model identity — a NEW CODE (the plain + total families stay byte-untouched), the
+#: SAME declared-parameter machinery (confidence/horizon/z + appraisal_days + the BT-2 staleness
+#: policy for its non-private-segment residual leg), through its OWN binder path.
+VAR_UNIFIED_MODEL_CODE = "risk.var.parametric_unified"
+VAR_UNIFIED_MODEL_NAME = "Unified public+private parametric VaR (factor + pure-private + residual)"
+VAR_UNIFIED_VERSION_LABEL = "v1"
+VAR_UNIFIED_METHODOLOGY_REF = "05_analytics_methodologies/var_parametric_unified_v1.md"
+
+#: Unified-family declared choices EXCLUDING the per-registration confidence/horizon/z + appraisal
+#: _days/max_estimate_age (appended per call). The REPARTITION + the block + the disclosures.
+VAR_UNIFIED_ASSUMPTIONS_BASE: tuple[str, ...] = (
+    "Unified parametric VaR: sigma_unified = sqrt(x'*Sigma*x + p'*(Omega_pp/d_t)*p + SUM_{i NOT "
+    "in any pure-private segment}(MV_i*sigma_e,i,daily)^2); VaR_alpha = z_alpha*sigma_unified "
+    "(1-day, UNLEVERED). The FACTOR leg x'*Sigma*x is the plain parametric family unchanged; "
+    "the PURE-PRIVATE block adds the co-movement of the portfolio's private funds' pure-private "
+    "returns (PPF-2 Omega_pp; the MSCI PE/Private-Credit Factor Model pure-private leg, Shepard "
+    "& Liu 2014).",
+    "REPARTITION (no double-count): a proxied instrument that is a current-head MANUAL member "
+    "of a pure-private segment carried in p/Omega_pp has its non-public variance counted in the "
+    "Omega_pp block ONLY and is REMOVED from the diagonal residual leg. PA-4's residual is the "
+    "WHOLE non-public residual (Var(PurePrivate)+Var(AssetSpecific)), so adding both would "
+    "double-count; residual_variance on a unified row is the leg-3 sum over NON-private-segment "
+    "members only. Replacing total-VaR's INDEPENDENT diagonal residual with the CORRELATED "
+    "Omega_pp block adds the block's OFF-DIAGONAL co-movement (2*p_s*p_t*Omega[s,t]/d_t) — the "
+    "cross-fund private co-movement total-VaR structurally omits; the block DIAGONAL also "
+    "re-estimates each member's non-public variance (Omega_pp sample covariance vs PA-4's OLS "
+    "residual, N-1 vs N-k denominators), a second (diagonal) difference. A lone private fund has "
+    "no off-diagonal, so it reduces toward total-VaR.",
+    "The private-exposure vector p_s = SUM over MANUAL-members i of segment s of MV_i (the same "
+    "pinned factor-exposure MV the residual leg uses); the portfolio's held-segment sub-block "
+    "of Omega_pp is used (a held segment absent from the pinned Omega_pp run fails closed). "
+    "Frequency: Omega_pp is APPRAISAL-frequency; Omega_pp,daily = Omega_pp / d_t, d_t = "
+    "appraisal_days*(252/365) (the same declared conversion PA-4 applies to the residual; the "
+    "whole matrix de-scales by 1/d_t). Valid because desmoothing (PA-1/DS-2) targets i.i.d. "
+    "returns (Getmansky-Lo-Makarov 2004).",
+    "Block-diagonal vs the public factors (no public<->private cross term): pure-private is a "
+    "public-residual by construction (approximately orthogonal to Sigma; the promoted-weights "
+    "subset leaves a small sign-ambiguous residual cross-term, PPF-2 CLAIM-4). UNLEVERED "
+    "(leverage=1, the at-average-leverage number; ILPA unlevered/levered norm). z_alpha a "
+    "REGISTERED constant; computed in Decimal at 50-digit context; sigma/VaR quantize_HALF_UP "
+    "to 6dp; the private_variance leg echoed at 20dp (Numeric(38,20)).",
+)
+
+#: Unified-family recorded scope-outs (OD-PPF-3-D/E/G + the Rule-6 caveats).
+VAR_UNIFIED_LIMITATIONS: tuple[str, ...] = (
+    "Block-diagonal ONLY (public<->private cross-covariance = 0): a disclosed APPROXIMATION, "
+    "extra-justified here (pure-private is a public residual by construction) but not exact "
+    "(promoted-weights subset). The state-of-the-art refinement is a global-factor linkage "
+    "(MSCI Barra Integrated Model, Shepard 2015) - a recorded v2, NOT block-diagonal.",
+    "Single-member / thin pure-private segments: the pure-private SYSTEMATIC factor is NOT "
+    "separately identified from asset-specific noise with one member, so the Omega_pp block "
+    "treats a member's ENTIRE non-public residual as pure-private (PPF-1 min_members=1 "
+    "disclosed-thin posture). Separately estimating the asset-specific a_i = pp_i - pp_s (so "
+    "the residual leg carries Var(a_i) for multi-member segments) is a recorded v2. For a lone "
+    "private fund the unified number reduces to ~ total-VaR (a coherence property, "
+    "regression-tested).",
+    "UNLEVERED (leverage held at the strategy-bucket average = 1.0): an 'unlevered / "
+    "at-average-leverage systematic VaR'. Full relative-leverage (reported vs bucket average; "
+    "MSCI's own formulation) is a recorded v2; full look-through leverage is data-constrained "
+    "(even MSCI does not see through).",
+    "sqrt-time scaling transports the SECOND MOMENT cleanly under i.i.d. but the VaR TAIL "
+    "degrades under jumps/fat tails (Danielsson-Zigrand 2006); a residual-autocorrelation "
+    "diagnostic (Ljung-Box on pp) is the recorded v2 control. 1-day horizon only; "
+    "historical-simulation + ES unified analogues are v2s.",
+    "Inherits PA-4's residual leg limitations for the NON-private-segment members (diagonal "
+    "residuals only; hostage to PA-3 estimate quality; zero idiosyncratic risk for "
+    "non-proxied/MANUAL-method instruments; no FX conversion). No backtest in v1 (the BT-2 "
+    "honest-pairing doctrine applies).",
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation exception, "
+    "MG-1) refuses every new bind at the shared seam.",
+)
+
+
+def declared_unified_appraisal_days(session: Session, version: ModelVersion) -> int:
+    """The unified-VaR version's declared appraisal cadence (for the Omega_pp de-scale) — the shared
+    ``declared_appraisal_days`` parser, naming the unified model on refusal."""
+    return declared_appraisal_days(session, version, model_code=VAR_UNIFIED_MODEL_CODE)
+
+
+def register_var_parametric_unified_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    confidence_level: str | Decimal,
+    appraisal_days: int,
+    max_estimate_age_days: int,
+    horizon_days: int = VAR_HORIZON_DAYS,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the UNIFIED public+private parametric-VaR ``model`` + a
+    ``model_version`` for this ``(code_version, confidence_level, horizon_days, appraisal_days,
+    max_estimate_age_days)`` identity (PPF-3, OD-PPF-3-A). Mirrors
+    :func:`register_var_parametric_total_model` exactly — a DISTINCT model CODE
+    (``risk.var.parametric_unified``) is the governance boundary; the SAME declared-parameter
+    machinery (confidence vocabulary + z table + horizon gate + ``appraisal_days`` for the Ω_pp
+    de-scale + the BT-2 staleness policy for the non-private-segment residual leg). Dispatched
+    through its OWN binder path (the unified `_VarFamily` axis)."""
+    if int(appraisal_days) < 1:
+        raise ValueError("appraisal_days must be >= 1 (the calendar-day appraisal cadence)")
+    if int(max_estimate_age_days) < 1:
+        raise ValueError("max_estimate_age_days must be >= 1 (the calendar-day staleness policy)")
+    text = str(confidence_level).strip()
+    if not _CONFIDENCE_PATTERN.fullmatch(text) or len(text) > 6:
+        raise ValueError(
+            f"confidence_level {confidence_level!r} is not in the v1 vocabulary "
+            f"{sorted(VAR_Z_SCORES)} (a new level is a new declared registration)"
+        )
+    confidence_key = f"{Decimal(text).quantize(Decimal('0.0001')):f}"
+    z_text = VAR_Z_SCORES.get(confidence_key)
+    if z_text is None:
+        raise ValueError(
+            f"confidence_level {confidence_level} not in the v1 vocabulary {sorted(VAR_Z_SCORES)}"
+        )
+    if int(horizon_days) != VAR_HORIZON_DAYS:
+        raise ValueError(
+            f"horizon_days must be {VAR_HORIZON_DAYS} in v1 (sqrt(h) scaling is a recorded seam)"
+        )
+    model = resolve_or_register_model(
+        session,
+        tenant_id=str(tenant_id),
+        code=VAR_UNIFIED_MODEL_CODE,
+        name=VAR_UNIFIED_MODEL_NAME,
+        model_type=VAR_MODEL_TYPE,
+        actor_id=actor_id,
+        description=(
+            "Unified public+private parametric VaR = factor variance + the pure-private systematic "
+            "block Ω_pp + the idiosyncratic residual (PPF-3, §2.1 arc slice 3)."
+        ),
+        actor_type=actor_type,
+    )
+    version = resolve_or_register_version(
+        session,
+        model=model,
+        version_label=VAR_UNIFIED_VERSION_LABEL,
+        register=lambda: register_model_version(
+            session,
+            model=model,
+            version_label=VAR_UNIFIED_VERSION_LABEL,
+            actor_id=actor_id,
+            methodology_ref=VAR_UNIFIED_METHODOLOGY_REF,
+            code_version=str(code_version),
+            status="REGISTERED",
+            assumptions=(
+                *VAR_UNIFIED_ASSUMPTIONS_BASE,
+                f"{CONFIDENCE_ASSUMPTION_PREFIX}{confidence_key}",
+                f"{HORIZON_ASSUMPTION_PREFIX}{int(horizon_days)}",
+                f"{Z_ASSUMPTION_PREFIX}{z_text}",
+                f"{APPRAISAL_DAYS_ASSUMPTION_PREFIX}{int(appraisal_days)}",
+                f"{MAX_ESTIMATE_AGE_ASSUMPTION_PREFIX}{int(max_estimate_age_days)}",
+            ),
+            limitations=VAR_UNIFIED_LIMITATIONS,
+            actor_type=actor_type,
+        ),
+    )
+    if version.status != "REGISTERED":
+        raise WrongModelVersionError(str(version.id), str(model.code))
+    declared = declared_var_parameters(session, version)
+    if (
+        version.code_version != str(code_version)
+        or f"{declared.confidence_level:f}" != confidence_key
+        or declared.horizon_days != int(horizon_days)
+        or declared_unified_appraisal_days(session, version) != int(appraisal_days)
+        or declared_max_estimate_age_days(session, version) != int(max_estimate_age_days)
+    ):
+        raise ModelVersionConflictError(
+            VAR_UNIFIED_MODEL_CODE,
+            VAR_UNIFIED_VERSION_LABEL,
             f"{code_version} (confidence_level={confidence_key}, horizon_days={horizon_days}, "
             f"appraisal_days={appraisal_days}, max_estimate_age_days={max_estimate_age_days})",
         )

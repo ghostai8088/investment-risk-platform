@@ -205,10 +205,11 @@ describe("proxy-weight-estimates (FL-1) family wiring", () => {
   });
 });
 
-describe("vars columns (FL-1 ride-along): the PA-4/BT-2 fields surface", () => {
-  it("renders residual_variance, estimate_age_days and model_version_id in the vars table", () => {
+describe("vars columns (FL-1 ride-along): the PA-4/BT-2/PPF-3 fields surface", () => {
+  it("renders residual_variance, private_variance, estimate_age_days and model_version_id", () => {
     const keys = FAMILY_ROW_COLUMNS.vars.map((c) => c.key);
     expect(keys).toContain("residual_variance");
+    expect(keys).toContain("private_variance"); // PPF-3: the unified pure-private block leg
     expect(keys).toContain("estimate_age_days");
     expect(keys).toContain("model_version_id");
   });

@@ -76,6 +76,8 @@ from irp_shared.risk.bootstrap import (
     VAR_TOTAL_METHODOLOGY_REF,
     VAR_TOTAL_MODEL_CODE,
     VAR_TOTAL_TRADING_DAYS_PER_YEAR,
+    VAR_UNIFIED_METHODOLOGY_REF,
+    VAR_UNIFIED_MODEL_CODE,
     VAR_Z_SCORES,
     WINDOW_ASSUMPTION_PREFIX,
     EsHsParameters,
@@ -94,6 +96,7 @@ from irp_shared.risk.bootstrap import (
     declared_private_window_observations,
     declared_proxy_weight_parameters,
     declared_pure_private_parameters,
+    declared_unified_appraisal_days,
     declared_var_backtest_alpha,
     declared_var_backtest_independence,
     declared_var_parameters,
@@ -119,6 +122,7 @@ from irp_shared.risk.bootstrap import (
     register_var_parametric_es_model,
     register_var_parametric_es_total_model,
     register_var_parametric_total_model,
+    register_var_parametric_unified_model,
 )
 from irp_shared.risk.covariance_kernel import (
     CovarianceKernelError,
@@ -162,6 +166,7 @@ from irp_shared.risk.events import (
     METRIC_TYPE_VAR_HISTORICAL,
     METRIC_TYPE_VAR_PARAMETRIC,
     METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
+    METRIC_TYPE_VAR_PARAMETRIC_UNIFIED,
     METRIC_TYPES,
     RISK_ACTIVE_RISK_CREATE_EVENT_RESERVED,
     RISK_COVARIANCE_CREATE_EVENT_RESERVED,
@@ -370,6 +375,7 @@ from irp_shared.risk.var_service import (
     resolve_var,
     resolve_var_run,
     run_var,
+    run_var_unified,
 )
 from irp_shared.risk.var_total_kernel import (
     ResidualInstrument,
@@ -377,6 +383,12 @@ from irp_shared.risk.var_total_kernel import (
     VarTotalKernelError,
     daily_residual_stdev,
     total_var_residual,
+)
+from irp_shared.risk.var_unified_kernel import (
+    VarUnifiedKernelError,
+    daily_omega,
+    private_block_variance,
+    sigma_unified,
 )
 
 __all__ = [
@@ -596,6 +608,7 @@ __all__ = [
     "compute_parametric_var",
     "EsKernelError",
     "run_var",
+    "run_var_unified",
     "list_vars",
     "list_var_results",
     "latest_var_for_portfolio",
@@ -620,15 +633,25 @@ __all__ = [
     "VAR_TOTAL_METHODOLOGY_REF",
     "VAR_TOTAL_TRADING_DAYS_PER_YEAR",
     "VAR_TOTAL_CALENDAR_DAYS_PER_YEAR",
+    "METRIC_TYPE_VAR_PARAMETRIC_UNIFIED",
+    "VAR_UNIFIED_MODEL_CODE",
+    "VAR_UNIFIED_METHODOLOGY_REF",
     "register_var_parametric_es_model",
     "register_var_parametric_es_total_model",
     "register_var_parametric_total_model",
+    "register_var_parametric_unified_model",
     "declared_appraisal_days",
+    "declared_unified_appraisal_days",
     "declared_max_estimate_age_days",
     "ResidualInstrument",
     "TotalVarResidual",
     "VarTotalKernelError",
     "total_var_residual",
+    "daily_residual_stdev",
+    "VarUnifiedKernelError",
+    "daily_omega",
+    "private_block_variance",
+    "sigma_unified",
     "daily_residual_stdev",
     "ActiveRiskResult",
     "ActiveRiskActor",

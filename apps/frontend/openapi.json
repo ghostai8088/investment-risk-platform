@@ -13366,6 +13366,28 @@
             "title": "N Observations",
             "type": "integer"
           },
+          "private_covariance_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Covariance Run Id"
+          },
+          "private_variance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Variance"
+          },
           "residual_variance": {
             "anyOf": [
               {
@@ -13431,7 +13453,9 @@
           "covariance_run_id",
           "model_version_id",
           "residual_variance",
-          "estimate_age_days"
+          "estimate_age_days",
+          "private_variance",
+          "private_covariance_run_id"
         ],
         "title": "VarRowOut",
         "type": "object"

@@ -8625,6 +8625,10 @@ export interface components {
             n_factors: number;
             /** N Observations */
             n_observations: number;
+            /** Private Covariance Run Id */
+            private_covariance_run_id: string | null;
+            /** Private Variance */
+            private_variance: string | null;
             /** Residual Variance */
             residual_variance: string | null;
             /** Sigma */

@@ -507,10 +507,11 @@ def var_result_content(row: Any) -> dict[str, Any]:
     set is pinned so the backtest binder reconstructs each forecast (``metric_type``/
     ``confidence_level``/``horizon_days``/``window_end``/``var_value``) exactly.
 
-    **TWO columns are DELIBERATELY excluded** — PA-4's ``residual_variance`` and BT-2's
-    ``estimate_age_days``. The reason is false drift, and it is sufficient on its own: adding a key
-    would change the recomputed bytes of every ALREADY-PINNED var_result component and make
-    ``verify_snapshot`` report drift on historical BT-1 snapshots that never moved. Test-pinned by
+    **FOUR columns are DELIBERATELY excluded** — PA-4's ``residual_variance``, BT-2's
+    ``estimate_age_days``, and PPF-3's ``private_variance`` + ``private_covariance_run_id``. The
+    reason is false drift, and it is sufficient on its own: adding a key would change the recomputed
+    bytes of every ALREADY-PINNED var_result component and make ``verify_snapshot`` report drift on
+    historical BT-1 snapshots that never moved. Test-pinned (all four) by
     ``test_var_result_pin_key_set_is_frozen``.
 
     *(Wave-5-close correction: this note also used to argue "and the backtest binder refuses

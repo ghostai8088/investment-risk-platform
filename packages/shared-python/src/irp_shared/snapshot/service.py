@@ -2990,6 +2990,223 @@ def build_var_total_snapshot(
     return header_row
 
 
+#: PPF-3 (OD-PPF-3-F): the unified binding/selection rule. A SHORT fresh string — NEVER a
+#: ``VAR_TOTAL`` suffix (``binding_predicate_version`` is ``String(50)``; VAR_TOTAL is already 49).
+VAR_UNIFIED_BINDING_PREDICATE = "v1:unified-pins+private-cov+memberships"
+
+
+class VarUnifiedSnapshotError(VarSnapshotError):
+    """Raised when a unified-VaR input snapshot cannot be built (an empty/non-APPRAISAL private
+    covariance run, no MANUAL pure-private membership among the exposure instruments, or a held
+    segment absent from the pinned Ω_pp run) — fail closed, BEFORE any write. Maps to 409."""
+
+
+def build_var_unified_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    exposure_run_id: str,
+    covariance_run_id: str,
+    private_covariance_run_id: str,
+) -> DatasetSnapshot:
+    """Build one immutable ``VAR_INPUT`` snapshot (PPF-3, OD-PPF-3-A/F) for the UNIFIED number.
+    Pins everything ``build_var_total_snapshot`` pins EXCEPT the REGRESSION residual leg is
+    REPARTITIONED — and ADDS the pure-private block:
+
+    - one ``COMPONENT_KIND_FACTOR_EXPOSURE`` per public exposure row + one
+      ``COMPONENT_KIND_COVARIANCE`` per public (DAILY) covariance row (the factor leg);
+    - one ``COMPONENT_KIND_COVARIANCE`` per PPF-2 Ω_pp (APPRAISAL) row (the pure-private block —
+      distinguished from the public Σ by ``frequency`` at parse) + one
+      ``COMPONENT_KIND_PROXY_MAPPING`` per current-head MANUAL membership (instrument -> segment);
+    - per REGRESSION-proxied instrument that is NOT a held pure-private segment member (the
+      REPARTITION, OD-3-G), its open REGRESSION ``proxy_mapping`` rows + the cited
+      ``ESTIMATION_SUMMARY`` (the residual leg over the non-private-segment members ONLY — a
+      private-segment member's variance is the Ω_pp block, so its residual is neither pinned nor
+      summed, avoiding the double-count).
+
+    Stamps ``VAR_UNIFIED_BINDING_PREDICATE`` (the per-family EXACT-predicate refusal, OD-3-F): a
+    unified snapshot is consumable ONLY by the unified binder — the plain/total binders refuse it,
+    so the private block can never be silently dropped. Fails closed BEFORE any write
+    (:class:`VarUnifiedSnapshotError` / :class:`VarTotalSnapshotError`) on an empty/non-APPRAISAL
+    private covariance run, no MANUAL membership, a held segment uncovered by Ω_pp, or an ambiguous
+    REGRESSION citation. Models-only, function-local reads; imports NO ``calc``/risk-SERVICE."""
+    from irp_shared.marketdata.models import (
+        FREQUENCY_APPRAISAL,
+        MAPPING_METHOD_MANUAL,
+        MAPPING_METHOD_REGRESSION,
+        ProxyMapping,
+    )
+    from irp_shared.risk.models import METRIC_TYPE_ESTIMATION_SUMMARY, ProxyWeightEstimateResult
+
+    now = utcnow()
+
+    exposure_rows = _list_factor_exposure_rows(
+        session, exposure_run_id, acting_tenant=acting_tenant
+    )
+    if not exposure_rows:
+        raise VarSnapshotError(f"exposure run {exposure_run_id} has no visible result rows")
+    covariance_rows = _list_covariance_rows(session, covariance_run_id, acting_tenant=acting_tenant)
+    if not covariance_rows:
+        raise VarSnapshotError(f"covariance run {covariance_run_id} has no visible result rows")
+    private_cov_rows = _list_covariance_rows(
+        session, private_covariance_run_id, acting_tenant=acting_tenant
+    )
+    if not private_cov_rows:
+        raise VarUnifiedSnapshotError(
+            f"private covariance run {private_covariance_run_id} has no visible result rows"
+        )
+    if any(r.frequency != FREQUENCY_APPRAISAL for r in private_cov_rows):
+        raise VarUnifiedSnapshotError(
+            f"private covariance run {private_covariance_run_id} is not APPRAISAL-frequency "
+            f"(not an Omega_pp run) — refused"
+        )
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in exposure_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_FACTOR_EXPOSURE,
+            "factor_exposure_result",
+            row,
+            factor_exposure_content(row),
+        )
+    for row in covariance_rows:
+        _append_spec(
+            specs, COMPONENT_KIND_COVARIANCE, "covariance_result", row, covariance_content(row)
+        )
+    for row in private_cov_rows:  # the Ω_pp block (APPRAISAL — parsed by frequency)
+        _append_spec(
+            specs, COMPONENT_KIND_COVARIANCE, "covariance_result", row, covariance_content(row)
+        )
+
+    instrument_ids = sorted({str(r.instrument_id) for r in exposure_rows})
+
+    # The MANUAL pure-private memberships (instrument -> segment) — these form p and drive the
+    # repartition. A unified run needs >= 1 private fund; the Ω_pp run must span every held segment.
+    manual_rows = (
+        session.execute(
+            select(ProxyMapping)
+            .where(
+                ProxyMapping.tenant_id == str(acting_tenant),
+                ProxyMapping.private_instrument_id.in_(instrument_ids),
+                ProxyMapping.mapping_method == MAPPING_METHOD_MANUAL,
+                ProxyMapping.valid_to.is_(None),
+                ProxyMapping.system_to.is_(None),
+            )
+            .order_by(ProxyMapping.private_instrument_id, ProxyMapping.factor_id)
+        )
+        .scalars()
+        .all()
+    )
+    if not manual_rows:
+        raise VarUnifiedSnapshotError(
+            "no MANUAL pure-private segment membership among the exposure instruments — a unified "
+            "run needs at least one private fund (else use the total-VaR family)"
+        )
+    held_segments = {str(r.factor_id).lower() for r in manual_rows}
+    omega_diagonal = {
+        str(r.factor_id_1).lower()
+        for r in private_cov_rows
+        if str(r.factor_id_1).lower() == str(r.factor_id_2).lower()
+    }
+    uncovered = held_segments - omega_diagonal
+    if uncovered:
+        raise VarUnifiedSnapshotError(
+            f"held pure-private segments {sorted(uncovered)} are absent from the pinned Omega_pp "
+            f"run {private_covariance_run_id} — the private covariance must span every held segment"
+        )
+    private_member_instruments = {str(r.private_instrument_id).lower() for r in manual_rows}
+    for row in manual_rows:
+        _append_spec(
+            specs, COMPONENT_KIND_PROXY_MAPPING, "proxy_mapping", row, proxy_mapping_content(row)
+        )
+
+    # The REPARTITIONED residual leg (OD-3-G): pin the REGRESSION proxy + cited estimate ONLY for
+    # proxied instruments that are NOT held pure-private members (their variance is the Ω_pp block).
+    regression_rows = (
+        session.execute(
+            select(ProxyMapping)
+            .where(
+                ProxyMapping.tenant_id == str(acting_tenant),
+                ProxyMapping.private_instrument_id.in_(instrument_ids),
+                ProxyMapping.mapping_method == MAPPING_METHOD_REGRESSION,
+                ProxyMapping.valid_to.is_(None),
+                ProxyMapping.system_to.is_(None),
+            )
+            .order_by(ProxyMapping.private_instrument_id, ProxyMapping.factor_id)
+        )
+        .scalars()
+        .all()
+    )
+    by_instrument: dict[str, list[Any]] = {}
+    for row in regression_rows:
+        iid = str(row.private_instrument_id).lower()
+        if iid in private_member_instruments:
+            continue  # repartitioned to the Ω_pp block — its residual is NOT a leg-3 term
+        by_instrument.setdefault(iid, []).append(row)
+
+    for instrument_id, mapping_rows in sorted(by_instrument.items()):
+        cited_run_ids = {
+            str(r.source_calculation_run_id).lower()
+            for r in mapping_rows
+            if r.source_calculation_run_id is not None
+        }
+        if len(cited_run_ids) != 1:
+            raise VarTotalSnapshotError(
+                f"instrument {instrument_id} has {len(cited_run_ids)} distinct/absent cited "
+                f"estimation runs across its open REGRESSION mapping(s) — refused"
+            )
+        run_id = next(iter(cited_run_ids))
+        summary = session.execute(
+            select(ProxyWeightEstimateResult).where(
+                ProxyWeightEstimateResult.tenant_id == str(acting_tenant),
+                ProxyWeightEstimateResult.calculation_run_id == run_id,
+                ProxyWeightEstimateResult.metric_type == METRIC_TYPE_ESTIMATION_SUMMARY,
+            )
+        ).scalar_one_or_none()
+        if summary is None:
+            raise VarTotalSnapshotError(
+                f"instrument {instrument_id}'s cited estimation run {run_id} has no visible "
+                f"ESTIMATION_SUMMARY row — refused"
+            )
+        if str(summary.instrument_id).lower() != instrument_id:
+            raise VarTotalSnapshotError(
+                f"instrument {instrument_id}'s cited estimation run {run_id} names a DIFFERENT "
+                f"instrument ({summary.instrument_id}) — refused"
+            )
+        for row in mapping_rows:
+            _append_spec(
+                specs,
+                COMPONENT_KIND_PROXY_MAPPING,
+                "proxy_mapping",
+                row,
+                proxy_mapping_content(row),
+            )
+        _append_spec(
+            specs,
+            COMPONENT_KIND_PROXY_WEIGHT,
+            "proxy_weight_estimate_result",
+            summary,
+            proxy_weight_estimate_content(summary),
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_VAR_INPUT,
+        as_of_valid_at=now,
+        as_of_known_at=now,
+        as_of_valuation_date=covariance_rows[0].window_end,
+        binding_predicate_version=VAR_UNIFIED_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def resolve_snapshot(session: Session, snapshot_id: str, *, acting_tenant: str) -> DatasetSnapshot:
     """Resolve a ``dataset_snapshot`` header by id with an EXPLICIT tenant predicate (fail-closed
     on
@@ -3419,6 +3636,7 @@ _BINDING_PREDICATES = (
     RESIDUAL_SHRINKAGE_BINDING_PREDICATE,
     PRIVATE_FACTOR_RETURN_BINDING_PREDICATE,
     PRIVATE_COVARIANCE_BINDING_PREDICATE,
+    VAR_UNIFIED_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "

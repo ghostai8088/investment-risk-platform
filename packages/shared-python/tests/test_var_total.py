@@ -1488,7 +1488,7 @@ def test_migration_chain_0038(session: Session) -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0047_private_factor_return"  # PPF-1
+    assert script.get_current_head() == "0048_var_private_variance"  # PPF-3
     assert (
         script.get_revision("0038_var_residual_variance").down_revision
         == "0037_proxy_weight_estimate"
@@ -1717,10 +1717,11 @@ def test_declared_policy_duplicate_declaration_refuses(session: Session) -> None
 
 def test_var_result_pin_key_set_is_frozen() -> None:
     """The 0038 false-drift LANDMINE, now guarded (BT-2 plan Step 2): ``var_result_content`` pins
-    the BT-1-era column set. Adding a key — ``residual_variance`` (PA-4) or ``estimate_age_days``
-    (BT-2) — would change the recomputed bytes of every ALREADY-PINNED var_result component and
-    make ``verify_snapshot`` report FALSE DRIFT on historical snapshots. Both columns are
-    deliberately absent; this test fails loudly if a future slice "completes" the serializer."""
+    the BT-1-era column set. Adding a key — ``residual_variance`` (PA-4), ``estimate_age_days``
+    (BT-2), or ``private_variance``/``private_covariance_run_id`` (PPF-3) — would change the
+    recomputed bytes of every ALREADY-PINNED var_result component and make ``verify_snapshot``
+    report FALSE DRIFT on historical snapshots. All four columns are deliberately absent; this test
+    fails loudly if a future slice "completes" the serializer."""
     from types import SimpleNamespace
 
     from irp_shared.snapshot.serialize import var_result_content
@@ -1747,10 +1748,14 @@ def test_var_result_pin_key_set_is_frozen() -> None:
         system_from=T0,
         residual_variance=Decimal("1.00000000000000000000"),  # present on the row...
         estimate_age_days=42,  # ...and so is the BT-2 echo
+        private_variance=Decimal("1.00000000000000000000"),  # ...and the PPF-3 unified leg...
+        private_covariance_run_id=str(uuid.uuid4()),  # ...and its Ω_pp provenance
     )
     keys = set(var_result_content(row))
-    assert "residual_variance" not in keys  # ...but NEITHER is pinned
+    assert "residual_variance" not in keys  # ...but NONE is pinned
     assert "estimate_age_days" not in keys
+    assert "private_variance" not in keys
+    assert "private_covariance_run_id" not in keys
     assert keys == {
         "id",
         "tenant_id",

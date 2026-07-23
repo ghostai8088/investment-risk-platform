@@ -52,7 +52,12 @@ from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
-from irp_shared.marketdata.models import MAPPING_METHOD_REGRESSION
+from irp_shared.marketdata.models import (
+    FREQUENCY_APPRAISAL,
+    FREQUENCY_DAILY,
+    MAPPING_METHOD_MANUAL,
+    MAPPING_METHOD_REGRESSION,
+)
 from irp_shared.model.models import ModelVersion
 from irp_shared.risk.bootstrap import (
     ES_MODEL_CODE,
@@ -61,6 +66,7 @@ from irp_shared.risk.bootstrap import (
     VAR_TOTAL_CALENDAR_DAYS_PER_YEAR,
     VAR_TOTAL_MODEL_CODE,
     VAR_TOTAL_TRADING_DAYS_PER_YEAR,
+    VAR_UNIFIED_MODEL_CODE,
     VarParameters,
     WrongModelVersionError,
     assert_model_version_of,
@@ -68,6 +74,7 @@ from irp_shared.risk.bootstrap import (
     declared_es_multiplier,
     declared_es_total_max_estimate_age_days,
     declared_max_estimate_age_days,
+    declared_unified_appraisal_days,
     declared_var_parameters,
 )
 from irp_shared.risk.covariance_service import resolve_covariance_run
@@ -76,16 +83,24 @@ from irp_shared.risk.events import (
     METRIC_TYPE_ES_PARAMETRIC,
     METRIC_TYPE_VAR_PARAMETRIC,
     METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
+    METRIC_TYPE_VAR_PARAMETRIC_UNIFIED,
     RUN_TYPE_VAR,
     VarActor,
 )
 from irp_shared.risk.factor_service import resolve_factor_exposure_run
 from irp_shared.risk.models import METRIC_TYPE_ESTIMATION_SUMMARY, VarResult
+from irp_shared.risk.private_covariance_service import resolve_private_covariance_run
 from irp_shared.risk.var_kernel import compute_parametric_var
 from irp_shared.risk.var_total_kernel import (
     ResidualInstrument,
     VarTotalKernelError,
     total_var_residual,
+)
+from irp_shared.risk.var_unified_kernel import (
+    VarUnifiedKernelError,
+    daily_omega,
+    private_block_variance,
+    sigma_unified,
 )
 from irp_shared.snapshot import (
     COMPONENT_KIND_COVARIANCE,
@@ -96,10 +111,12 @@ from irp_shared.snapshot import (
     PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
     PURPOSE_VAR_INPUT,
     VAR_TOTAL_BINDING_PREDICATE,
+    VAR_UNIFIED_BINDING_PREDICATE,
     SnapshotActor,
     SnapshotNotFound,
     build_var_snapshot,
     build_var_total_snapshot,
+    build_var_unified_snapshot,
     list_components,
     resolve_snapshot,
 )
@@ -456,6 +473,88 @@ def _adjudicate_total_proxies(
     return parsed
 
 
+def _adjudicate_private_covariance(
+    appraisal_cov_raw: list[dict[str, Any]],
+) -> tuple[dict[tuple[str, str], Decimal], str]:
+    """PRE-CREATE adjudication of the pinned APPRAISAL Ω_pp rows (PPF-3): >= 1 row; single-run
+    provenance; the APPRAISAL/COVARIANCE/SIMPLE vocabulary (NOT the DAILY public contract);
+    canonical pair order; no duplicate pair; the covariance envelope. Returns the Ω_pp matrix
+    (canonical ``(a, b)`` pairs -> Decimal) + the run id. Coverage against ``p`` is the kernel's
+    job (a held segment absent from the diagonal fails closed there)."""
+    if not appraisal_cov_raw:
+        raise VarInputError(
+            "the unified snapshot pins no APPRAISAL covariance rows — not an Omega_pp input"
+        )
+    run_ids = {str(r["calculation_run_id"]).lower() for r in appraisal_cov_raw}
+    if len(run_ids) != 1:
+        raise VarInputError("the pinned private (Omega_pp) covariance rows span multiple runs")
+    for r in appraisal_cov_raw:
+        if (
+            r["statistic_type"] != _REQUIRED_STATISTIC_TYPE
+            or r["return_type"] != _REQUIRED_RETURN_TYPE
+            or r["frequency"] != FREQUENCY_APPRAISAL
+        ):
+            raise VarInputError(
+                f"the pinned Omega_pp vocabulary ({r['statistic_type']!r}/{r['return_type']!r}/"
+                f"{r['frequency']!r}) is not the COVARIANCE/SIMPLE/APPRAISAL contract"
+            )
+    omega: dict[tuple[str, str], Decimal] = {}
+    for r in appraisal_cov_raw:
+        pair = (str(r["factor_id_1"]).lower(), str(r["factor_id_2"]).lower())
+        if pair[0] > pair[1]:
+            raise VarInputError(f"non-canonical Omega_pp pair order {pair} — refused")
+        if pair in omega:
+            raise VarInputError(f"duplicate Omega_pp pair {pair} — refused")
+        value = parse_strict_decimal(
+            r["covariance_value"], error=VarInputError, field="covariance_value"
+        )
+        if abs(value) >= _MAX_COVARIANCE_ABS:
+            raise VarInputError("a pinned Omega_pp value exceeds its source-column envelope")
+        omega[pair] = value
+    return omega, next(iter(run_ids))
+
+
+def _build_p_vector(
+    manual_mapping_raw: list[dict[str, Any]], mv_by_instrument: dict[str, Decimal]
+) -> dict[str, Decimal]:
+    """Form the private-exposure vector ``p_s = Σ_{i ∈ MANUAL-members(s)} MV_i`` from the pinned
+    MANUAL memberships + the exposure-derived ``MV_i`` (OD-PPF-3-B). Each membership's ``factor_id``
+    is the pure-private segment. Fail-closed: an instrument with no pinned exposure MV (a membership
+    that is not an exposure instrument), or an instrument that is a MANUAL member of MORE THAN ONE
+    segment (ambiguous private attribution). At least one membership is required (the builder
+    guarantees it; re-checked here for the consume-existing trust boundary)."""
+    if not manual_mapping_raw:
+        raise VarInputError(
+            "the unified snapshot pins no MANUAL pure-private membership — not a unified input"
+        )
+    seen_instruments: set[str] = set()
+    p_by_segment: dict[str, Decimal] = {}
+    with localcontext() as ctx:
+        ctx.prec = _COMPUTE_PREC
+        for r in manual_mapping_raw:
+            if r["mapping_method"] != MAPPING_METHOD_MANUAL:
+                raise VarInputError(
+                    f"a pinned membership carries mapping_method {r['mapping_method']!r} != MANUAL"
+                )
+            instrument_id = str(r["private_instrument_id"]).lower()
+            if instrument_id in seen_instruments:
+                raise VarInputError(
+                    f"instrument {instrument_id} is a MANUAL member of more than one pure-private "
+                    f"segment — ambiguous private attribution, refused"
+                )
+            seen_instruments.add(instrument_id)
+            if instrument_id not in mv_by_instrument:
+                raise VarInputError(
+                    f"MANUAL membership for instrument {instrument_id} has no pinned "
+                    f"FACTOR_EXPOSURE MV — refused (instrument mismatch)"
+                )
+            segment_id = str(r["factor_id"]).lower()
+            p_by_segment[segment_id] = (
+                p_by_segment.get(segment_id, Decimal(0)) + mv_by_instrument[instrument_id]
+            )
+    return p_by_segment
+
+
 #: The snapshot purposes whose ``as_of_valuation_date`` IS a regression span end (age-measurable
 #: for the staleness gate): the estimate's own input pin, and — RS-1 — a shrinkage cohort pin,
 #: whose builder stamps the STALEST member's span end (the conservative age by construction).
@@ -694,23 +793,28 @@ def run_var(
             raise VarInputError(
                 f"snapshot {snapshot_id} purpose {snapshot.purpose!r} != {PURPOSE_VAR_INPUT}"
             )
-        if not is_total and snapshot.binding_predicate_version == VAR_TOTAL_BINDING_PREDICATE:
-            # The MIRROR of the gate below (the OD-PA-2-C symmetric-refusal precedent): the plain
-            # model over a total-predicate snapshot would COMPLETE while silently discarding the
-            # pinned idiosyncratic evidence — two materially different governed numbers from ONE
-            # snapshot; refuse.
+        # The plain path must REFUSE any snapshot that pins a leg it would silently drop — the total
+        # predicate (idiosyncratic leg) AND, PPF-3 OD-3-F, the UNIFIED predicate (idiosyncratic +
+        # pure-private legs). The verifier's fold: the binary is_total toggle had a HOLE — a
+        # UNIFIED-predicate snapshot passed the plain path, running as a plain VaR while dropping
+        # BOTH extra legs. (The total path below already refuses a unified snapshot: != VAR_TOTAL.)
+        if not is_total and snapshot.binding_predicate_version in (
+            VAR_TOTAL_BINDING_PREDICATE,
+            VAR_UNIFIED_BINDING_PREDICATE,
+        ):
             raise VarInputError(
-                f"snapshot {snapshot_id} pins the idiosyncratic leg "
-                f"({VAR_TOTAL_BINDING_PREDICATE!r}) — bind the total model_version, not the "
-                f"plain parametric one"
+                f"snapshot {snapshot_id} predicate {snapshot.binding_predicate_version!r} pins an "
+                f"idiosyncratic/pure-private leg the plain parametric family drops — bind the "
+                f"model_version whose family built it (total, or the unified model), not the plain "
+                f"one (the OD-PA-2-C symmetric-refusal precedent, extended to unified)"
             )
         if is_total and snapshot.binding_predicate_version != VAR_TOTAL_BINDING_PREDICATE:
-            # A plain VAR_INPUT snapshot pins NO idiosyncratic evidence — running the total model
-            # over it would silently degrade to the plain number; refuse instead (OD-PA-4-C).
+            # A plain/unified VAR_INPUT snapshot pins the wrong leg set — running the total model
+            # over it would silently degrade or mis-decompose; refuse (OD-PA-4-C; unified != total).
             raise VarInputError(
                 f"snapshot {snapshot_id} predicate {snapshot.binding_predicate_version!r} does "
-                f"not pin the idiosyncratic leg — build the snapshot under the total model "
-                f"({VAR_TOTAL_BINDING_PREDICATE!r})"
+                f"not pin the total-family idiosyncratic leg — build the snapshot under the total "
+                f"model ({VAR_TOTAL_BINDING_PREDICATE!r})"
             )
     else:
         if not exposure_run_id or not covariance_run_id:
@@ -1016,6 +1120,306 @@ def run_var(
         # API-1b (OD-API-1b-B): the ROOT copies forward from the pinned factor-exposure run
         # (re-resolved above in BOTH paths); NULL propagates faithfully if that run was
         # snapshot-consume-rooted (OD-API-1b-D).
+        scope_portfolio_id=pinned_exposure_run.scope_portfolio_id,
+    )
+    return VarRunResult(
+        run=outcome.run,
+        status=outcome.status,
+        rows=outcome.rows,
+        failure_reason=outcome.failure_reason,
+    )
+
+
+def run_var_unified(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: VarActor,
+    code_version: str,
+    environment_id: str,
+    model_version_id: str,
+    exposure_run_id: str | None = None,
+    covariance_run_id: str | None = None,
+    private_covariance_run_id: str | None = None,
+    snapshot_id: str | None = None,
+) -> VarRunResult:
+    """Run the UNIFIED public+private parametric VaR (PPF-3, ``risk.var.parametric_unified``, the
+    20th governed number) — the §2.1 arc's final assembly. Its OWN binder path (the plain/total
+    ``run_var`` stays byte-untouched — OD-3-A). Build-in-request (``exposure_run_id`` +
+    ``covariance_run_id`` + ``private_covariance_run_id``: builds a unified ``VAR_INPUT`` snapshot)
+    or consume-existing (``snapshot_id``, which MUST carry the unified predicate). Both paths
+    adjudicate the pinned content pre-create. The three NON-OVERLAPPING legs (OD-3-G REPARTITION):
+    ``x'Σx`` (public factor) + ``p'(Ω_pp/d_t)·p`` (pure-private block) + the residual over the
+    NON-private-segment members (the builder pinned only those). See the module docstring for the
+    failure model + the AD-014 / CTRL-003 invariants."""
+    if not code_version:
+        raise VarInputError("code_version is required (FW-RUN/TR-15)")
+    if not environment_id:
+        raise VarInputError("environment_id is required (FW-RUN/TR-15)")
+    if actor is None or not actor.actor_id:
+        raise VarInputError("initiator is required (FW-RUN/TR-15)")
+    if not model_version_id:
+        raise VarInputError("model_version_id is required (CTRL-003 inventory-before-use)")
+    if snapshot_id is not None and (
+        exposure_run_id is not None
+        or covariance_run_id is not None
+        or private_covariance_run_id is not None
+    ):
+        raise VarInputError(
+            "ambiguous input — pass either snapshot_id or the build arguments (exposure_run_id/"
+            "covariance_run_id/private_covariance_run_id), not both"
+        )
+    # Inventory-before-use + model identity: MUST be the unified code (NOT the 2x2 VaR/ES family —
+    # this binder never dispatches on total/es; the unified number is VaR-only, v1).
+    version = assert_model_version_of(
+        session,
+        str(model_version_id),
+        tenant_id=acting_tenant,
+        expected_model_code=VAR_UNIFIED_MODEL_CODE,
+    )
+    declared: VarParameters = declared_var_parameters(session, version)
+    appraisal_days = declared_unified_appraisal_days(session, version)
+    max_estimate_age_days = declared_max_estimate_age_days(session, version)
+
+    # --- Bind the unified snapshot (cross-tenant/unknown/ill-formed => pre-create refusal) ---
+    if snapshot_id is not None:
+        snapshot = resolve_snapshot(session, snapshot_id, acting_tenant=acting_tenant)
+        if snapshot.purpose != PURPOSE_VAR_INPUT:
+            raise VarInputError(
+                f"snapshot {snapshot_id} purpose {snapshot.purpose!r} != {PURPOSE_VAR_INPUT}"
+            )
+        if snapshot.binding_predicate_version != VAR_UNIFIED_BINDING_PREDICATE:
+            raise VarInputError(
+                f"snapshot {snapshot_id} predicate {snapshot.binding_predicate_version!r} != the "
+                f"unified {VAR_UNIFIED_BINDING_PREDICATE!r} — a plain/total snapshot pins no "
+                f"pure-private block; build it under the unified model"
+            )
+    else:
+        if not (exposure_run_id and covariance_run_id and private_covariance_run_id):
+            raise VarInputError(
+                "exposure_run_id + covariance_run_id + private_covariance_run_id are required to "
+                "build a unified VaR snapshot"
+            )
+        exposure_run = resolve_factor_exposure_run(
+            session, str(exposure_run_id), acting_tenant=acting_tenant
+        )
+        if exposure_run.status != RunStatus.COMPLETED.value:
+            raise VarInputError(f"exposure run {exposure_run_id} status != COMPLETED")
+        covariance_run = resolve_covariance_run(
+            session, str(covariance_run_id), acting_tenant=acting_tenant
+        )
+        if covariance_run.status != RunStatus.COMPLETED.value:
+            raise VarInputError(f"covariance run {covariance_run_id} status != COMPLETED")
+        private_run = resolve_private_covariance_run(
+            session, str(private_covariance_run_id), acting_tenant=acting_tenant
+        )
+        if private_run.status != RunStatus.COMPLETED.value:
+            raise VarInputError(
+                f"private covariance run {private_covariance_run_id} status != COMPLETED"
+            )
+        snapshot = build_var_unified_snapshot(
+            session,
+            acting_tenant=acting_tenant,
+            actor=SnapshotActor(actor_id=actor.actor_id, actor_type=actor.actor_type),
+            exposure_run_id=str(exposure_run_id),
+            covariance_run_id=str(covariance_run_id),
+            private_covariance_run_id=str(private_covariance_run_id),
+        )
+
+    # --- Adjudicate the PINNED content pre-create (uniform for both paths) ---
+    try:
+        comps = list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+        exposure_raw, covariance_raw = _parse_pins(comps)
+        # Split the COVARIANCE pins by frequency: DAILY = the public Sigma; APPRAISAL = Omega_pp.
+        daily_cov_raw = [r for r in covariance_raw if r.get("frequency") == FREQUENCY_DAILY]
+        appraisal_cov_raw = [r for r in covariance_raw if r.get("frequency") == FREQUENCY_APPRAISAL]
+        parsed = _adjudicate_pins(exposure_raw, daily_cov_raw)  # the public factor leg (DAILY)
+        omega_pp, omega_run_id = _adjudicate_private_covariance(appraisal_cov_raw)
+        with localcontext() as ctx:
+            ctx.prec = _COMPUTE_PREC  # prec-50 MV sum (the total-path precedent)
+            mv_by_instrument: dict[str, Decimal] = {}
+            for r in exposure_raw:
+                iid = str(r["instrument_id"]).lower()
+                mv_by_instrument[iid] = mv_by_instrument.get(iid, Decimal(0)) + Decimal(
+                    r["exposure_amount"]
+                )
+        # Split PROXY_MAPPING pins by method: REGRESSION = the residual leg; MANUAL = the p vector.
+        mapping_raw, weight_raw = _parse_total_pins(comps)
+        regression_mapping_raw = [
+            m for m in mapping_raw if m.get("mapping_method") == MAPPING_METHOD_REGRESSION
+        ]
+        manual_mapping_raw = [
+            m for m in mapping_raw if m.get("mapping_method") == MAPPING_METHOD_MANUAL
+        ]
+        proxy_weights = _adjudicate_total_proxies(
+            regression_mapping_raw,
+            weight_raw,
+            base_currency=parsed.base_currency,
+            exposure_instrument_ids=set(mv_by_instrument),
+        )
+        p_by_segment = _build_p_vector(manual_mapping_raw, mv_by_instrument)
+        # OD-3-G repartition, RE-ENFORCED at the consume boundary (the 4-finder HIGH). The BUILDER
+        # skips a pure-private member's REGRESSION residual from leg 3, but a hand-minted/consumed
+        # snapshot could pin an instrument in BOTH a REGRESSION proxy (leg 3) AND a MANUAL
+        # membership (leg 2) — counting its non-public variance TWICE (the ratify-blocking
+        # double-count). The adjudicator, not the builder, is the snapshot_id trust boundary.
+        double_counted = {pw.instrument_id for pw in proxy_weights} & {
+            str(m["private_instrument_id"]).lower() for m in manual_mapping_raw
+        }
+        if double_counted:
+            raise VarInputError(
+                f"instrument(s) {sorted(double_counted)} appear in BOTH a REGRESSION residual (leg "
+                f"3) and a MANUAL pure-private membership (leg 2) — the repartition requires leg-2 "
+                f"XOR leg-3 per instrument (a variance double-count); refused (OD-3-G)"
+            )
+    except VarInputError:
+        raise
+    except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+        raise VarInputError(
+            f"pinned content is not a well-formed v1 unified input ({type(exc).__name__})"
+        ) from exc
+
+    estimate_age_days = _estimate_age_days(
+        session,
+        proxy_weights,
+        acting_tenant=str(acting_tenant),
+        window_end=parsed.window_end,
+        max_estimate_age_days=max_estimate_age_days,
+    )
+
+    # Re-resolve ALL THREE provenance ids under the acting tenant (run_type + COMPLETED) before
+    # they hit hard-FK columns — PG FK checks bypass RLS (the SSO-1/API-1 cross-tenant lesson).
+    pinned_exposure_run = resolve_factor_exposure_run(
+        session, parsed.exposure_run_id, acting_tenant=acting_tenant
+    )
+    if pinned_exposure_run.status != RunStatus.COMPLETED.value:
+        raise VarInputError(f"the pinned exposure run {parsed.exposure_run_id} is not COMPLETED")
+    pinned_covariance_run = resolve_covariance_run(
+        session, parsed.covariance_run_id, acting_tenant=acting_tenant
+    )
+    if pinned_covariance_run.status != RunStatus.COMPLETED.value:
+        raise VarInputError(
+            f"the pinned covariance run {parsed.covariance_run_id} is not COMPLETED"
+        )
+    pinned_private_run = resolve_private_covariance_run(
+        session, omega_run_id, acting_tenant=acting_tenant
+    )
+    if pinned_private_run.status != RunStatus.COMPLETED.value:
+        raise VarInputError(f"the pinned Omega_pp run {omega_run_id} is not COMPLETED")
+
+    def _compute(run: CalculationRun) -> tuple[list[VarResult], list[str]]:
+        estimate = compute_parametric_var(
+            parsed.exposure_rows, parsed.covariance, z_score=declared.z_score
+        )
+        gaps: list[str] = []
+        if estimate.sigma is None or estimate.var_value is None:
+            gaps.append(f"non-psd-radicand:{estimate.radicand:E}<-tol:{estimate.tolerance:E}")
+            return [], gaps
+        factor_var = estimate.radicand if estimate.radicand > 0 else Decimal(0)
+        try:
+            # Leg 3 (REPARTITIONED): the residual over the pinned proxy_weights, which the builder
+            # already restricted to NON-private-segment members. factor_var=0 -> just the residual.
+            residual = total_var_residual(
+                Decimal(0),
+                [
+                    ResidualInstrument(
+                        instrument_id=pw.instrument_id,
+                        market_value=mv_by_instrument[pw.instrument_id],
+                        residual_stdev_period=pw.residual_stdev,
+                        mean_period_calendar_days=Decimal(appraisal_days),
+                    )
+                    for pw in proxy_weights
+                ],
+                trading_days_per_year=VAR_TOTAL_TRADING_DAYS_PER_YEAR,
+                calendar_days_per_year=VAR_TOTAL_CALENDAR_DAYS_PER_YEAR,
+            )
+        except VarTotalKernelError as exc:
+            gaps.append(f"total-var-kernel:{exc.reason}:{exc}")
+            return [], gaps
+        try:
+            omega_d = daily_omega(
+                omega_pp,
+                appraisal_days,
+                trading_days_per_year=VAR_TOTAL_TRADING_DAYS_PER_YEAR,
+                calendar_days_per_year=VAR_TOTAL_CALENDAR_DAYS_PER_YEAR,
+            )
+            private_var = private_block_variance(p_by_segment, omega_d)
+            sigma_u = sigma_unified(factor_var, private_var, residual.residual_variance)
+        except VarUnifiedKernelError as exc:
+            gaps.append(f"var-unified-kernel:{exc.reason}:{exc}")
+            return [], gaps
+        with localcontext() as ctx:
+            ctx.prec = _COMPUTE_PREC
+            raw_var_value = declared.z_score * sigma_u
+        # The magnitude gate (DEFAULT prec-28 abs, closing the column-overflow windows — the PA-4
+        # note), extended to sigma / VaR / private_variance / residual_variance.
+        if (
+            abs(sigma_u) >= _MAX_RESULT_ABS
+            or abs(raw_var_value) >= _MAX_RESULT_ABS
+            or abs(private_var) >= _MAX_RESIDUAL_VARIANCE_ABS
+            or abs(residual.residual_variance) >= _MAX_RESIDUAL_VARIANCE_ABS
+        ):
+            if abs(sigma_u) >= _MAX_RESULT_ABS:
+                breach, breached_value = "sigma-unified", sigma_u
+            elif abs(private_var) >= _MAX_RESIDUAL_VARIANCE_ABS:
+                breach, breached_value = "private-variance", private_var
+            elif abs(residual.residual_variance) >= _MAX_RESIDUAL_VARIANCE_ABS:
+                breach, breached_value = "residual-variance", residual.residual_variance
+            else:
+                breach, breached_value = "var-unified", raw_var_value
+            gaps.append(f"magnitude-out-of-range:{breach}:{breached_value:E}")
+            return [], gaps
+        with localcontext() as ctx:
+            ctx.prec = _COMPUTE_PREC
+            sigma_q = sigma_u.quantize(_SIGMA_QUANTUM, rounding=ROUND_HALF_UP)
+            var_value_q = raw_var_value.quantize(_SIGMA_QUANTUM, rounding=ROUND_HALF_UP)
+            private_variance_q = private_var.quantize(
+                _RESIDUAL_VARIANCE_QUANTUM, rounding=ROUND_HALF_UP
+            )
+            residual_variance_q = residual.residual_variance.quantize(
+                _RESIDUAL_VARIANCE_QUANTUM, rounding=ROUND_HALF_UP
+            )
+        row = VarResult(
+            tenant_id=str(acting_tenant),
+            calculation_run_id=run.run_id,
+            input_snapshot_id=snapshot.id,
+            model_version_id=str(model_version_id),
+            exposure_run_id=parsed.exposure_run_id,
+            covariance_run_id=parsed.covariance_run_id,  # the PUBLIC Sigma run
+            metric_type=METRIC_TYPE_VAR_PARAMETRIC_UNIFIED,
+            base_currency=parsed.base_currency,
+            confidence_level=declared.confidence_level,
+            horizon_days=declared.horizon_days,
+            z_score=declared.z_score,
+            sigma=sigma_q,
+            var_value=var_value_q,
+            n_factors=parsed.n_factors,
+            n_observations=parsed.n_observations,
+            window_start=parsed.window_start,
+            window_end=parsed.window_end,
+            residual_variance=residual_variance_q,  # leg-3 sum over NON-private-segment members
+            estimate_age_days=estimate_age_days,
+            private_variance=private_variance_q,  # PPF-3: the pure-private block p'(Omega/d_t)p
+            private_covariance_run_id=omega_run_id,  # PPF-3: the Omega_pp provenance
+        )
+        return [row], gaps
+
+    outcome = execute_governed_run(
+        session,
+        acting_tenant=str(acting_tenant),
+        actor_id=actor.actor_id,
+        actor_type=actor.actor_type,
+        run_type=RUN_TYPE_VAR,
+        snapshot_id=snapshot.id,
+        model_version_id=str(model_version_id),
+        code_version=code_version,
+        environment_id=environment_id,
+        rule_code=_COMPLETENESS_RULE_CODE,
+        rule_name="Unified VaR run output sanity (radicand within the declared PSD floor)",
+        rule_target_entity_type="var_result",
+        result_entity_type="var_result",
+        compute=_compute,
+        format_reason=lambda gate, gaps: f"{gate} — {'; '.join(gaps)}",
         scope_portfolio_id=pinned_exposure_run.scope_portfolio_id,
     )
     return VarRunResult(
