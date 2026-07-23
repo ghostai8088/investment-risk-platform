@@ -375,6 +375,7 @@ from irp_shared.risk.var_service import (
     resolve_var,
     resolve_var_run,
     run_var,
+    run_var_unified,
 )
 from irp_shared.risk.var_total_kernel import (
     ResidualInstrument,
@@ -607,6 +608,7 @@ __all__ = [
     "compute_parametric_var",
     "EsKernelError",
     "run_var",
+    "run_var_unified",
     "list_vars",
     "list_var_results",
     "latest_var_for_portfolio",
