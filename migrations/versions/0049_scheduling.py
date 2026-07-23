@@ -80,11 +80,13 @@ def upgrade() -> None:
         sa.Column("record_version", sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint("id", name="pk_schedule"),
         sa.ForeignKeyConstraint(
-            ["scope_portfolio_id"], ["portfolio.id"],
+            ["scope_portfolio_id"],
+            ["portfolio.id"],
             name="fk_schedule_scope_portfolio_id_portfolio",
         ),
         sa.ForeignKeyConstraint(
-            ["model_version_id"], ["model_version.id"],
+            ["model_version_id"],
+            ["model_version.id"],
             name="fk_schedule_model_version_id_model_version",
         ),
         sa.UniqueConstraint("tenant_id", "code", name="uq_schedule_tenant_code"),
@@ -109,22 +111,20 @@ def upgrade() -> None:
         sa.Column("failure_reason", sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint("id", name="pk_scheduled_run"),
         sa.ForeignKeyConstraint(
-            ["schedule_id"], ["schedule.id"],
+            ["schedule_id"],
+            ["schedule.id"],
             name="fk_scheduled_run_schedule_id_schedule",
         ),
         sa.ForeignKeyConstraint(
-            ["calculation_run_id"], ["calculation_run.run_id"],
+            ["calculation_run_id"],
+            ["calculation_run.run_id"],
             name="fk_scheduled_run_calculation_run_id_calculation_run",
         ),
-        sa.UniqueConstraint(
-            "schedule_id", "scheduled_for", name="uq_scheduled_run_schedule_tick"
-        ),
+        sa.UniqueConstraint("schedule_id", "scheduled_for", name="uq_scheduled_run_schedule_tick"),
     )
     op.create_index("ix_scheduled_run_tenant_id", "scheduled_run", ["tenant_id"])
     op.create_index("ix_scheduled_run_schedule_id", "scheduled_run", ["schedule_id"])
-    op.create_index(
-        "ix_scheduled_run_calculation_run_id", "scheduled_run", ["calculation_run_id"]
-    )
+    op.create_index("ix_scheduled_run_calculation_run_id", "scheduled_run", ["calculation_run_id"])
 
     # --- symmetric FORCE RLS on both (PROPRIETARY; NO ops-role grant — OQ-1=B) ---
     for table in TENANT_SCOPED_TABLES:

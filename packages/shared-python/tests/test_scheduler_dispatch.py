@@ -33,9 +33,7 @@ def _var_ready_tenant(session: Session) -> tuple[str, str, str]:
     """A tenant with a COMPLETED factor-exposure + covariance run and a registered VaR model."""
     tenant = str(uuid.uuid4())
     _seed_upstream_runs(session, tenant)  # creates the portfolio + fx/cov runs internally
-    portfolio = session.execute(
-        select(Portfolio).where(Portfolio.tenant_id == tenant)
-    ).scalar_one()
+    portfolio = session.execute(select(Portfolio).where(Portfolio.tenant_id == tenant)).scalar_one()
     var_mv = _var_model(session, tenant, confidence="0.95")
     return tenant, str(portfolio.id), var_mv
 

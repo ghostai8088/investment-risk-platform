@@ -40,9 +40,7 @@ SCHEDULE_STATUSES = frozenset({SCHEDULE_STATUS_ACTIVE, SCHEDULE_STATUS_PAUSED})
 OUTCOME_DISPATCHED = "DISPATCHED"
 OUTCOME_SKIPPED_DUPLICATE = "SKIPPED_DUPLICATE"
 OUTCOME_FAILED = "FAILED"
-SCHEDULED_RUN_OUTCOMES = frozenset(
-    {OUTCOME_DISPATCHED, OUTCOME_SKIPPED_DUPLICATE, OUTCOME_FAILED}
-)
+SCHEDULED_RUN_OUTCOMES = frozenset({OUTCOME_DISPATCHED, OUTCOME_SKIPPED_DUPLICATE, OUTCOME_FAILED})
 
 #: The family binders SCH-1 v1 knows how to dispatch, keyed by the ``schedule.target_run_type``. v1
 #: ships VaR only (OD-SCH-1-D); active-risk + the other build-in-request families are the recorded

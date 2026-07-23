@@ -104,9 +104,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entry
     parser = argparse.ArgumentParser(description="Run one scheduler tick for one tenant.")
     parser.add_argument("--database-url", default=os.environ.get("DATABASE_URL"))
     parser.add_argument("--tenant", default=os.environ.get("IRP_TENANT_ID"))
-    parser.add_argument(
-        "--code-version", default=os.environ.get("IRP_CODE_VERSION", "irp-worker")
-    )
+    parser.add_argument("--code-version", default=os.environ.get("IRP_CODE_VERSION", "irp-worker"))
     args = parser.parse_args(argv)
     if not args.database_url:
         print("error: no database URL (set --database-url or $DATABASE_URL)", file=sys.stderr)
@@ -118,9 +116,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entry
     engine = make_engine(args.database_url)
     factory = make_session_factory(engine)
     try:
-        results = run_scheduler_for_tenant(
-            factory, args.tenant, code_version=args.code_version
-        )
+        results = run_scheduler_for_tenant(factory, args.tenant, code_version=args.code_version)
     finally:
         engine.dispose()
     print(f"irp-scheduler: tenant={args.tenant} fired={len(results)}")

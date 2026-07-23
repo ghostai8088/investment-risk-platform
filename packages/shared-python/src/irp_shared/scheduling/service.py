@@ -103,9 +103,7 @@ def select_active_due(session: Session, now: datetime) -> list[tuple[Schedule, d
     non-BYPASSRLS session, so RLS shows only that tenant's rows — no cross-tenant read, no ops role.
     """
     schedules = list(
-        session.execute(
-            select(Schedule).where(Schedule.status == SCHEDULE_STATUS_ACTIVE)
-        ).scalars()
+        session.execute(select(Schedule).where(Schedule.status == SCHEDULE_STATUS_ACTIVE)).scalars()
     )
     due: list[tuple[Schedule, datetime]] = []
     for schedule in schedules:
@@ -326,16 +324,12 @@ def update_schedule(
     return schedule
 
 
-def pause_schedule(
-    session: Session, schedule: Schedule, *, actor: SchedulingActor
-) -> Schedule:
+def pause_schedule(session: Session, schedule: Schedule, *, actor: SchedulingActor) -> Schedule:
     """Pause a schedule (excluded from ``select_active_due``; missed ticks are NOT backfilled)."""
     return update_schedule(session, schedule, actor=actor, status=SCHEDULE_STATUS_PAUSED)
 
 
-def resume_schedule(
-    session: Session, schedule: Schedule, *, actor: SchedulingActor
-) -> Schedule:
+def resume_schedule(session: Session, schedule: Schedule, *, actor: SchedulingActor) -> Schedule:
     """Resume a schedule; the next poll fires ONLY the current grid tick (no catch-up storm)."""
     return update_schedule(session, schedule, actor=actor, status=SCHEDULE_STATUS_ACTIVE)
 

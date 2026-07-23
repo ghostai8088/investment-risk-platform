@@ -59,9 +59,7 @@ class Schedule(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin
 
     __tablename__ = "schedule"
     __temporal_class__ = TemporalClass.EFFECTIVE_DATED
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "code", name="uq_schedule_tenant_code"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "code", name="uq_schedule_tenant_code"),)
 
     code: Mapped[str] = mapped_column(String(150), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
