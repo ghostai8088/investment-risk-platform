@@ -190,6 +190,10 @@ export const FAMILY_ROW_COLUMNS: { [F in Family]: FamilyColumn<F>[] } = {
     { key: "sigma", label: "Sigma" },
     { key: "var_value", label: "VaR" },
     { key: "residual_variance", label: "Residual var" },
+    // PPF-3: the UNIFIED number's pure-private block leg (null off VAR_PARAMETRIC_UNIFIED). Its Ω_pp
+    // provenance (private_covariance_run_id) rides the API row, not this table — the covariance_run_id
+    // / exposure_run_id provenance-id precedent (drill-down, not a column).
+    { key: "private_variance", label: "Private var" },
     { key: "estimate_age_days", label: "Est. age (d)" },
     { key: "n_factors", label: "Factors" },
     { key: "n_observations", label: "N" },

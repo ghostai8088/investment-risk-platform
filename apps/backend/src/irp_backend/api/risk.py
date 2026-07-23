@@ -1324,6 +1324,12 @@ class VarRowOut(BaseModel):
     # None off the total family, on a total run citing no estimates, and on an ungated
     # grandfathered v1 bind whose estimate snapshot is unresolvable. Negative = a look-ahead.
     estimate_age_days: int | None
+    # PPF-3: the UNIFIED number's pure-private block leg (p'(Ω_pp/d_t)·p) + its Ω_pp provenance.
+    # Both None off VAR_PARAMETRIC_UNIFIED (the residual_variance-is-None-off-total precedent). On a
+    # unified row residual_variance carries leg 3 (the NON-private-segment residual, 0 when every
+    # risk-bearing member is pure-private) — the two legs never overlap (the OD-3-G repartition).
+    private_variance: str | None
+    private_covariance_run_id: str | None
 
 
 class VarRunOut(BaseModel):
@@ -1359,6 +1365,8 @@ def _var_row_out(row: VarResult) -> VarRowOut:
         model_version_id=row.model_version_id,
         residual_variance=(None if row.residual_variance is None else f"{row.residual_variance:f}"),
         estimate_age_days=row.estimate_age_days,
+        private_variance=(None if row.private_variance is None else f"{row.private_variance:f}"),
+        private_covariance_run_id=row.private_covariance_run_id,
     )
 
 
