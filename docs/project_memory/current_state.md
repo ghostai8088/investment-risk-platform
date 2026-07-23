@@ -1,8 +1,67 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-22) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-23) — read this block; everything below it is HISTORY
 >
-> **HEAD `7aefd1c`** = merge of **PR #101** (PPF-2: the private covariance block Ω_pp — Wave 10
+> **HEAD `633e855`** = merge of **PR #104** (PPF-3: the unified public+private parametric VaR — Wave
+> 10 slice 3, §2.1 unification arc slice 3 of 3, THE CAPSTONE; migration `0048_var_private_variance`;
+> the 20th governed number, `risk.var.parametric_unified`, counts 22/37/104 → **23/38/109**), **CI
+> green** (all 6 jobs). `σ_unified = √(x'Σx + p'(Ω_pp/d_t)·p + residual_over_non-private-members)` —
+> its OWN binder `run_var_unified` (the plain/total `run_var` stays byte-untouched save one
+> per-family predicate fold). **The arc is DONE**: PPF-1 (pure-private return) → PPF-2 (Ω_pp) →
+> PPF-3 (this, the unified number).
+>
+> **The REPARTITION is the whole story.** Two pre-ratification verifiers REFUTED the naive additive
+> formula as a variance DOUBLE-COUNT: PA-4's residual σ_e² is the WHOLE non-public residual
+> (`Var(PurePrivate)+Var(AssetSpecific)`), already inside Ω_pp — adding both double-counts a private
+> fund. The fix: a pure-private-segment member's non-public variance lives in the Ω_pp block ALONE;
+> leg 3 (the residual) sums ONLY non-private-segment members. The BUILDER enforces this at pin time
+> (`build_var_unified_snapshot` excludes private members from the residual pins); the 4-finder review
+> found the CONSUME path (`run_var_unified(snapshot_id=...)`) did NOT re-enforce it — three finders
+> independently converged on the same hole (a hand-minted snapshot could pin one instrument in BOTH
+> legs). Folded: the binder now refuses any leg-2/leg-3 instrument overlap at adjudication, plus a
+> held-segment OFF-DIAGONAL completeness gate (parity with the public leg — an absent pair was
+> silently imputed as zero co-movement, understating the number). **Both are now enforced on BOTH the
+> build AND consume paths**, with regression tests for each.
+>
+> **Disclosure honesty, corrected.** A governed model assumption + the INITIAL validation scope_note
+> originally claimed the unified number differs from total VaR by "*exactly* the cross-segment
+> co-movement." The 4th finder caught this as an overstatement: `σ²_unified − σ²_total` also carries
+> a non-zero DIAGONAL re-estimation term (Ω_pp's sample variance, ÷(N−1), vs PA-4's OLS residual
+> variance, ÷(N−k) — two different estimators of the same quantity), and no test isolated the
+> off-diagonal. Reworded across the registered assumption, the governed dossier, the methodology doc,
+> and the demo: the number REPLACES total's independent diagonal residual with the CORRELATED Ω_pp
+> block, whose OFF-DIAGONAL is the structurally-new cross-fund term (the block's diagonal ALSO
+> re-estimates). The demo's `_pg` headline test now asserts the off-diagonal is non-zero (proving the
+> cross term is real, not merely that the numbers differ).
+>
+> **4-finder review: 1 HIGH (the converged consume-path double-count) + 2 MED (the off-diagonal gate;
+> the disclosure overstatement) + LOWs folded** (a mislabeled "guardrail" test that was actually a
+> kernel identity — relabeled, with the real anti-double-count enforcement now the build+consume
+> tests; the tier re-rated MEDIUM→HIGH materiality — the flagship public+private VaR, on exposure/
+> purpose grounds matching its sibling VaR flagships, not the non-enforcement ground the platform's
+> own rubric rejects). Everything else the finders attacked HELD: the build-path repartition, the
+> quadratic form + 1/d_t de-scale, cross-tenant Ω_pp provenance (both paths re-resolve under
+> acting_tenant), the migration (FK 55 chars, CHECK satisfied, `var_result_content` excludes the two
+> new columns — no false BT-1 drift), the API/FE exhaustive decimal contract, Rule-7 scope, the
+> three-way predicate isolation, and every hard governance invariant (no BYPASSRLS, frozen audit, no
+> new mint, immutable model identity).
+>
+> **Demo stage 13** (`DEMO-UNIFIED-PPF3`) seeds ONE new portfolio holding the two EXISTING private
+> funds (PE-HARBOR-IV, PC-BRIDGEWATER-II — **ZERO new instruments/segments/Ω_pp**), runs the union
+> public chain (exposure → LOADINGS factor-exposure → the campaign's REUSED window-30 DAILY
+> covariance, extended by 5 honestly-disclosed FX_USD returns so the FX×MF overlap reaches 30 obs) +
+> a PA-4 total-VaR contrast + the unified run consuming PPF-2's tenant-wide Ω_pp. Live numbers:
+> σ_unified = 85.758098 vs σ_total = 85.685795 (the correlated block replacing a 155.35 independent
+> residual with a 167.75 correlated one); the unified row's `residual_variance` is EXACTLY 0 (both
+> funds are pure-private) while the total row's is 155.35 — the double-count fix, proven end-to-end.
+> Files ONE INITIAL AWC (HIGH/HIGH). Gates: `make check` 1849 passed; `make fe-check` green; `make
+> gen-api-check` clean; the full demo PG chain in correct order green (`stage9zzzz` last); the
+> affected-family PG battery green on a clean schema; `alembic check` clean; `pip-audit` clean (one
+> pre-existing dev-only `pytest` advisory, not shipped). **NEXT = Wave 10 close review** (all three
+> slices — API-1b, FE-3b, the §2.1 PPF arc — are done; the §2.1 destination the whole platform thesis
+> pointed at is now shipped).
+>
+> **Prior: HEAD `7aefd1c`** = merge of **PR #101** (PPF-2: the private covariance block Ω_pp — Wave 10
 > slice 3, §2.1 unification arc slice 2 of 3; **NO migration**; the 19th governed number,
 > `risk.covariance.private`, counts 21/36/103 → **22/37/104**), **CI green run #519** (all 6 jobs).
 > A fail-closed SIBLING of `risk.covariance.sample` over PPF-1's pure-private return series: REUSES
@@ -11,38 +70,10 @@
 > pure-private series across ≥2 PRIVATE segments over their common appraisal grid; block-diagonal
 > treatment of Ω_pp against the public Σ is disclosed as an **APPROXIMATION, not
 > orthogonal-by-construction** (the promoted proxy weights are a SUBSET of the OLS fit — the Part-5
-> verifier's forced honesty correction). **3-slice arc**: PPF-1 (return) → PPF-2 (this) → PPF-3 (the
-> unified number `√(x'Σx + p'Ω_pp·p + residual)`). **NEXT = PPF-3 planning.**
->
-> **Isolation is the load-bearing property.** Step 1 closed a latent shared-table read bug BEFORE any
-> private row could exist: `latest_covariances`/`resolve_covariance` gained a `run_type` filter
-> (behavior-identical for all pre-PPF-2 data); the 4-finder fold extended it to the by-run-id
-> `list_covariances`/`list_private_covariances` too (self-defending, not merely caller-ordered). The
-> private binder mirrors this symmetrically; a private matrix can never leak into a public read, and
-> vice-versa — proven both directions. VaR/active-risk are doubly guarded (a `run_type`-gated
-> run-resolve PLUS a DAILY-frequency backstop). The APPRAISAL-aware adjudicator groups pinned
-> `PURE_PRIVATE_RETURN` components by segment, re-keys on `period_end` after asserting the FULL
-> interval vector identical, and asserts each paired factor pin is PRIVATE/APPRAISAL.
->
-> **4-finder review: ZERO HIGH**, 2 MED + 4 LOW folded. **MED** — `verify_snapshot`'s except-tuple
-> omitted the new component kind's resolver exception, so a gone pinned pure-private row would 500
-> instead of report DRIFT — fixed + a drift-not-500 test; the methodology doc's validation section
-> claimed a hand-computed reference, the consume-existing path, and TR-09 invariance as tested when
-> the consume branch (`snapshot_id`) was GENUINELY untested (every suite call used build-in-request)
-> — fixed by reconciling the doc to inherited-vs-new legs AND adding the missing consume==build +
-> `verify_snapshot` round-trip tests (closing the reachable gap, not just the doc). **LOW** — the
-> by-run-id list reads hardened with the same `run_type` self-defense; the data-derived "no
-> statistical-adequacy floor beyond N≥2" property recorded as an explicit v1 scope-out; a doc miscount
-> fixed.
->
-> **Demo stage 12** runs ONE Ω_pp over PPF-1's two seeded segments (PE-HARBOR-IV, PC-BRIDGEWATER-II)
-> with **ZERO new book data** — the declared window computed dynamically from the live common-interval
-> intersection (**N=5**, 2024-12-31→2026-03-31, matching the Part-5 verifier's prediction exactly);
-> files ONE INITIAL AWC (MEDIUM/MEDIUM). Rule-7 reads (`/risk/private-covariances[/latest,/{id}]`,
-> reusing `CovarianceRowOut`, zero new schema). Gates: `make check` 1826 passed; `make fe-check` green
-> (build); `make gen-api-check` clean; the full demo PG chain in CI order green (`stage9zzz` correctly
-> last); `test_covariance_pg.py` green (incl. the step-1 regression under the new join); `alembic
-> check` clean (genuinely NO migration); `pip-audit` clean.
+> verifier's forced honesty correction). Isolation was the load-bearing property (a `run_type` filter
+> closed a latent shared-table read bug before any private row could exist). 4-finder review: ZERO
+> HIGH, 2 MED + 4 LOW folded. Demo stage 12 ran ONE Ω_pp over the two seeded segments, ZERO new book
+> data, N=5 common appraisal periods matching the Part-5 verifier's prediction exactly.
 >
 > **Prior: HEAD `9d64b49`** = merge of **PR #98** (PPF-1: the pure-private factor return — Wave 10
 > slice 3, §2.1 arc slice 1 of 3; migration `0047_private_factor_return`; the 18th governed number,
