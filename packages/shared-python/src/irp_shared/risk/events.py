@@ -128,6 +128,15 @@ METRIC_TYPE_ES_PARAMETRIC = "ES_PARAMETRIC"
 #: PA-4 (OD-PA-4-B): total parametric VaR = factor + idiosyncratic residual variance, on the SAME
 #: var_result grain (a NEW registered model dispatched through the parametric binder).
 METRIC_TYPE_VAR_PARAMETRIC_TOTAL = "VAR_PARAMETRIC_TOTAL"
+#: PPF-3 (OD-PPF-3-A): the UNIFIED public+private parametric VaR = factor variance x'Sigma*x + the
+#: pure-private systematic block p'(Omega_pp/d_t)*p + the idiosyncratic residual over the
+#: NON-private-segment members (the REPARTITION — a private fund's non-public variance moves from
+#: the diagonal residual into PPF-2's correlated Omega_pp block, so the value over total-VaR is
+#: exactly the Omega_pp off-diagonal cross-fund co-movement). The §2.1 arc's final slice, the 20th
+#: governed number, on the SAME var_result grain (a NEW registered model, its OWN binder path).
+#: Backtestability is a future slice's concern (the BT-2 honest-pairing doctrine applies as to
+#: VAR_PARAMETRIC_TOTAL) — DELIBERATELY absent from VAR_BACKTEST_METRIC_TYPES in v1.
+METRIC_TYPE_VAR_PARAMETRIC_UNIFIED = "VAR_PARAMETRIC_UNIFIED"
 #: ES-HS-1 (OD-ES-HS-1-A): the EMPIRICAL Expected Shortfall over the historical-simulation
 #: scenario P&L distribution — the Acerbi-Tasche Prop 4.1 α-tail-mean (floor count + fractional
 #: boundary weight, ÷ n·a), NEVER the mean of the worst ⌈n·a⌉ (that is the forbidden TCE). The
@@ -162,6 +171,7 @@ METRIC_TYPES = (
     METRIC_TYPE_VAR_PARAMETRIC,
     METRIC_TYPE_VAR_HISTORICAL,
     METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
+    METRIC_TYPE_VAR_PARAMETRIC_UNIFIED,
 )
 
 #: Controlled-vocab ``active_risk_result.metric_type`` (P3-7; further active metrics reserved by
