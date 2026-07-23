@@ -1,6 +1,11 @@
 """End-to-end SQLite tests for PPF-3 — the UNIFIED public+private parametric VaR
 (``run_var_unified``, ``risk.var.parametric_unified``, the 20th governed number, §2.1 arc slice 3,
-the final assembly). RLS/append-only legs live in ``test_var_unified_pg.py``.
+the final assembly). The ``var_result`` FORCE-RLS + P0001 append-only legs are the SHARED,
+table-level ones already proven by ``test_var_pg``/``test_var_total_pg`` (a unified row is only a
+new ``metric_type`` + two nullable columns on that same table); the unified run under FORCE-RLS is
+proven LIVE by ``test_demo_stage9zzzz_ppf3_pg``. The one PPF-3-specific provenance leg — a unified
+run may not cite ANOTHER tenant's Ω_pp — is proven below via the binder's explicit acting-tenant
+filter (the app-level guard that PG RLS then backstops).
 
 Proves the number ASSEMBLES end-to-end over the REAL substrate. The book is TWO PRIVATE_EQUITY
 funds in ONE portfolio, each: currency-denominated + factor-exposed (the public factor leg),
@@ -63,6 +68,7 @@ from irp_shared.risk import (
     METRIC_TYPE_VAR_PARAMETRIC_UNIFIED,
     CovarianceActor,
     FactorExposureActor,
+    PrivateCovarianceRunNotVisible,
     ProxyWeightEstimateActor,
     PurePrivateCovarianceActor,
     PurePrivateFactorActor,
@@ -600,3 +606,27 @@ def test_per_family_predicate_isolation(session: Session) -> None:
     assert _run(unified_mv, unified_snap.id, unified=True).status == RunStatus.COMPLETED.value
     assert _run(plain_mv, plain_snap.id, unified=False).status == RunStatus.COMPLETED.value
     assert _run(total_mv, total_snap.id, unified=False).status == RunStatus.COMPLETED.value
+
+
+def test_unified_refuses_a_foreign_tenant_omega_pp(session: Session) -> None:
+    """PPF-3 provenance isolation: a unified run may cite ONLY its own tenant's Ω_pp. Binding
+    another tenant's private-covariance run is refused at the acting-tenant filter (the app-level
+    guard PG FORCE-RLS then backstops) — the SSO-1/API-1 cross-tenant-FK lesson at the Ω_pp seam."""
+    tenant_a = str(uuid.uuid4())
+    tenant_b = str(uuid.uuid4())
+    book_a = _seed_unified_book(session, tenant_a)
+    book_b = _seed_unified_book(session, tenant_b)  # tenant B's OWN Ω_pp run
+    # Tenant A builds a unified VaR over A's public chain but cites B's Ω_pp — B's run is invisible
+    # under A, so the build-path resolve fails closed (no pin of a foreign private matrix).
+    with pytest.raises((VarInputError, PrivateCovarianceRunNotVisible)):
+        run_var_unified(
+            session,
+            acting_tenant=tenant_a,
+            actor=VarActor(actor_id="analyst"),
+            code_version="risk-v1",
+            environment_id="ci",
+            model_version_id=_unified_model(session, tenant_a),
+            exposure_run_id=book_a.exposure_run_id,
+            covariance_run_id=book_a.covariance_run_id,
+            private_covariance_run_id=book_b.private_covariance_run_id,
+        )

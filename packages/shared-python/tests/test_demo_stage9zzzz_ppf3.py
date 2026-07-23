@@ -34,11 +34,12 @@ def test_stage13_targets_the_two_seeded_private_funds() -> None:
     assert _UNION_FACTOR_CODES == ("FX_USD", "MF_RATES_GOV", "MF_CRSPD_IG")
 
 
-def test_stage13_dossiers_are_medium_high_awc() -> None:
-    """The tier is MEDIUM materiality / HIGH complexity (the capstone with genuinely-new repartition
-    math) and the INITIAL is APPROVED_WITH_CONDITIONS; its finding keys are the ratified unified-VaR
-    limitation substrings (block-diagonal, single-member/thin, unlevered, tail)."""
-    assert PPF3_UNIFIED_VAR_TIER.materiality_rating == "MEDIUM"
+def test_stage13_dossiers_are_high_high_awc() -> None:
+    """The tier is HIGH materiality (the flagship public+private VaR — exposure+purpose, aligning
+    with the sibling VaR flagships) / HIGH complexity (the genuinely-new repartition math) and the
+    INITIAL is APPROVED_WITH_CONDITIONS; its finding keys are the ratified unified-VaR limitation
+    substrings (block-diagonal, single-member/thin, unlevered, tail)."""
+    assert PPF3_UNIFIED_VAR_TIER.materiality_rating == "HIGH"
     assert PPF3_UNIFIED_VAR_TIER.complexity_rating == "HIGH"
     assert PPF3_UNIFIED_VAR_INITIAL.outcome == "APPROVED_WITH_CONDITIONS"
     assert PPF3_UNIFIED_VAR_INITIAL.finding_keys == (

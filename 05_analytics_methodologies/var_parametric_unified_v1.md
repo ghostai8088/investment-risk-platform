@@ -17,9 +17,10 @@ so the number captures that a portfolio's private funds **co-move** in their pur
 Applicable to a portfolio that holds one or more private funds which are current-head **MANUAL**
 members of a `PRIVATE`-family pure-private segment (PPF-1) covered by a completed PPF-2
 `risk.covariance.private` (Ω_pp) run, plus the usual public factor-exposure + DAILY covariance +
-promoted REGRESSION proxy substrate. It degrades EXACTLY to PA-4's total VaR when the portfolio holds
-a single private fund (the pure-private block has no off-diagonal — a **coherence property**,
-regression-tested), and to the plain family when it holds none.
+promoted REGRESSION proxy substrate. When the portfolio holds a single private fund the pure-private
+block has **no off-diagonal**, so it **approximately** reduces to PA-4's total VaR — differing only by
+the diagonal re-estimation (Ω_pp's sample variance vs the OLS residual) — and to the plain family when
+it holds no private fund.
 
 **NOT applicable to / deferred (see Known limitations):** the public↔private cross-covariance
 (block-diagonal v1); leverage (unlevered v1); the asset-specific split of a multi-member segment's
@@ -58,8 +59,12 @@ VaR_α      = z_α · sqrt(σ²_unified)                                        
   proxied instruments that are NOT members of any pure-private segment in `p`. A private-segment
   member's non-public variance is leg 2 alone — **no double-count** (PA-4's `σ_e²` is the WHOLE
   non-public residual `Var(PurePrivate)+Var(AssetSpecific)`, already inside leg 2's `Var(pp)`).
-- **The value over total VaR** = `σ²_unified − σ²_total = 2·Σ_{s<t} p_s·p_t·Ω_pp[s,t]/d_t + (small
-  diagonal estimator difference)` — precisely the Ω_pp **off-diagonal** cross-fund co-movement.
+- **The value over total VaR:** the unified number REPLACES total-VaR's INDEPENDENT diagonal residual
+  with the CORRELATED `Ω_pp` block. Its **structurally-new** quantity is the block's **off-diagonal**
+  `2·Σ_{s<t} p_s·p_t·Ω_pp[s,t]/d_t` — the cross-fund private co-movement total VaR structurally omits.
+  The block's DIAGONAL *also* re-estimates each member's non-public variance (the pure-private sample
+  covariance, `÷(N−1)`, vs PA-4's OLS residual, `÷(N−k)`) — so `σ²_unified − σ²_total` is the
+  off-diagonal **plus** that diagonal re-estimation, NOT the off-diagonal alone.
 - **Rounding / precision:** Decimal at 50-digit context; `σ`/`VaR` `quantize_HALF_UP` to 6dp
   (`Numeric(28,6)`); `private_variance` echoed at 20dp (`Numeric(38,20)`). PSD by construction (Gram
   Σ + PSD Ω_pp sub-block + non-negative diagonal residual); a non-finite / negative-total guard fails
@@ -77,7 +82,8 @@ orthogonal by construction); UNLEVERED (leverage=1).
 Mirrored content-identically into `model_limitation` rows: block-diagonal ONLY (v2 = a global-factor
 linkage, MSCI Barra Integrated Model / Shepard 2015); single-member/thin segments do NOT identify
 pure-private-systematic from asset-specific (the block treats the whole member residual as
-pure-private; v2 = estimate `a_i = pp_i − pp_s`); a lone private fund reduces to ≈ total VaR;
+pure-private; v2 = estimate `a_i = pp_i − pp_s`); a lone private fund has no off-diagonal, so it
+differs from total VaR only by the diagonal re-estimation (approximately reduces to total VaR);
 UNLEVERED (v2 = MSCI relative-leverage; full look-through is data-constrained); √-time transports the
 second moment cleanly under i.i.d. but VaR **tail**-scaling degrades under jumps (Danielsson-Zigrand
 2006; v2 = a Ljung-Box residual-ACF control); inherits PA-4's residual-leg limitations for the
@@ -87,19 +93,24 @@ non-private-segment members; no backtest in v1; `validation_status = UNVALIDATED
 1. **Kernel hand-computed + `numpy` cross-check:** the private-block quadratic form `p'(Ω/d_t)·p`
    and `sigma_unified` against a hand-computed 2-segment reference at the column scale + an
    independent `numpy` evaluation (numpy TEST-ONLY; `irp_shared` runtime imports NO numpy).
-2. **The reduction guardrail (OD-3-G):** for a portfolio with a SINGLE private fund,
-   `σ_unified ≈ σ_total,PA4` (the pure-private block has no off-diagonal; the repartition merely
-   relabels the residual) — FAILS under a naive additive formula (the anti-double-count guard).
-3. **The cross-fund guardrail:** for two single-member segments,
-   `σ²_unified − σ²_total = 2·MV_PE·MV_PC·Ω_pp[PE,PC]/d_t` exactly — the only genuinely new term;
-   also FAILS under the naive formula.
-4. **Repartition completeness:** every private-segment member is EXCLUDED from leg 3 and its variance
-   appears in leg 2; a non-private-segment proxied instrument keeps its leg-3 residual.
-5. **Isolation (OD-3-F):** a unified snapshot is refused by the plain/total binders (per-family exact
+2. **Kernel reduction identity:** for a single segment, leg 2's diagonal `p²·Ω[s,s]/d_t` equals the
+   PA-4 residual form `(MV·σ_e,daily)²` GIVEN `Ω[s,s] = σ_e²` — a kernel-arithmetic identity (the
+   repartition's numerical basis; NOT a claim that the real pipeline's `Ω[s,s]` equals `σ_e²` — they
+   are two different estimators).
+3. **Kernel cross-fund identity:** for two single-member segments, `p'Ω_pp·p` minus the independent
+   diagonals equals the off-diagonal `2·p_PE·p_PC·Ω_pp[PE,PC]/d_t` — the co-movement leg 2 carries.
+4. **Anti-double-count ENFORCEMENT (the repartition):** (a) BUILD path — a two-private-fund book has
+   `residual_variance == 0` (every private member excluded from leg 3) while the SAME book's total
+   VaR has `residual_variance > 0` (e2e); (b) CONSUME path — a snapshot pinning any instrument in
+   BOTH a REGRESSION residual (leg 3) and a MANUAL membership (leg 2) is REFUSED (the adjudicator,
+   not the builder, is the `snapshot_id` trust boundary).
+5. **Held-pair coverage:** a held-segment off-diagonal ABSENT from Ω_pp is refused — no
+   zero-co-movement imputation (parity with the public leg's full-pairwise coverage).
+6. **Isolation (OD-3-F):** a unified snapshot is refused by the plain/total binders (per-family exact
    predicate) and vice-versa; a unified run's row carries `metric_type=VAR_PARAMETRIC_UNIFIED` +
    `private_variance` + `private_covariance_run_id`, excluded from `var_result_content` (no false
    drift on historical BT-1 pins).
-6. **Pin invariance (TR-09):** the result is invariant under a post-pin re-run of any upstream
+7. **Pin invariance (TR-09):** the result is invariant under a post-pin re-run of any upstream
    (public covariance, Ω_pp, exposure, estimate) — the pins capture the versions consumed.
 
 ## Known limitations

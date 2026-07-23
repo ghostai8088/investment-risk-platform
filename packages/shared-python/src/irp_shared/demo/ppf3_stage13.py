@@ -15,9 +15,12 @@ and a whole public chain, then contrasts the total and unified numbers.
   ``version_label`` is fixed "v1", so a smaller window cannot be minted; the stage instead extends
   FX_USD's daily returns 5 days so the FX×MF overlap reaches the 30 aligned obs the window needs).
 - Runs BOTH ``risk.var.parametric_total`` (the PA-4 contrast) AND ``run_var_unified`` (consuming the
-  tenant-wide Ω_pp), and asserts **σ_unified ≠ σ_total** — they differ by exactly the cross-segment
-  pure-private co-movement ``2·p_PE·p_PC·Ω_pp[PE,PC]/d_t`` (the headline; the correlated private
-  risk that independent-diagonal total VaR misses — non-trivial ONLY with ≥2 private segments).
+  tenant-wide Ω_pp), and asserts **σ_unified ≠ σ_total** — the unified number REPLACES total-VaR's
+  independent diagonal residual with the CORRELATED Ω_pp block, whose OFF-DIAGONAL
+  ``2·p_PE·p_PC·Ω_pp[PE,PC]/d_t`` is the cross-fund private co-movement total VaR structurally omits
+  (the ``_pg`` twin also asserts that off-diagonal is non-zero). The block's DIAGONAL additionally
+  re-estimates each fund's non-public variance (Ω_pp sample cov vs the OLS residual) — a second
+  (diagonal) difference, so the delta is NOT the off-diagonal alone.
 
 GOVERNED-NUMBER stage (the CC-2 / PPF-2 shape): it mints the 23rd model code
 (``risk.var.parametric_unified``, the 20th governed number), files ONE INITIAL AWC, and completes
@@ -143,7 +146,8 @@ class Ppf3Stage13Summary:
     sigma_unified: Decimal
     sigma_total: Decimal
     private_variance: Decimal
-    #: σ²_unified − σ²_total — the cross-segment pure-private co-movement headline (signed).
+    #: σ²_unified − σ²_total (signed): the correlated Ω_pp block MINUS total's independent diagonal
+    #: residual — the off-diagonal cross-fund co-movement PLUS a diagonal re-estimation.
     variance_delta: Decimal
     initials_filed: int
 
@@ -414,12 +418,13 @@ def run_demo_ppf3_stage13(session: Session) -> Ppf3Stage13Summary:
             or unified_row.private_variance is None
         ):
             raise DemoPpf3PrereqError("a parametric VaR row is missing sigma / private_variance")
-        # THE HEADLINE: the unified number differs from the total over the SAME book by the
-        # cross-segment pure-private co-movement — a non-trivial delta only with >= 2 segments.
+        # THE HEADLINE: over the SAME book the unified number replaces total's independent diagonal
+        # residual with the correlated Ω_pp block — whose OFF-DIAGONAL (the cross-fund co-movement,
+        # asserted non-zero in the _pg twin) total VaR structurally omits, so the numbers differ.
         if unified_row.sigma == total_row.sigma:
             raise DemoPpf3PrereqError(
-                "σ_unified == σ_total — the two-fund cross-segment term did not move the number "
-                "(expected a non-trivial difference; is Ω_pp off-diagonal zero?)"
+                "σ_unified == σ_total — the correlated Ω_pp block did not move the number off the "
+                "total (expected the private block to differ from the independent residual)"
             )
         variance_delta = unified_row.sigma * unified_row.sigma - total_row.sigma * total_row.sigma
 

@@ -56,6 +56,7 @@ from irp_shared.risk import (
     METRIC_TYPE_VAR_PARAMETRIC_TOTAL,
     METRIC_TYPE_VAR_PARAMETRIC_UNIFIED,
     latest_var_for_portfolio,
+    list_private_covariances,
 )
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
@@ -140,8 +141,9 @@ def test_ppf3_governed_number_counts_moved(db: Session) -> None:
 
 
 def test_ppf3_headline_unified_differs_from_total(db: Session) -> None:
-    """THE HEADLINE: over the SAME two-fund book, the unified number differs from PA-4's total VaR
-    by the cross-segment pure-private co-movement — the correlated private risk total VaR misses."""
+    """THE HEADLINE: over the SAME two-fund book the unified number REPLACES total-VaR's independent
+    diagonal residual with the correlated Ω_pp block — so the numbers differ AND the block carries a
+    genuinely non-zero cross-fund off-diagonal (the co-movement total VaR structurally omits)."""
     pf = _portfolio_id(db)
     unified = latest_var_for_portfolio(
         db,
@@ -157,12 +159,19 @@ def test_ppf3_headline_unified_differs_from_total(db: Session) -> None:
     )
     assert len(unified) == 1 and len(total) == 1
     urow, trow = unified[0], total[0]
-    assert urow.sigma != trow.sigma  # the two-fund cross-segment term moved the number
+    assert urow.sigma != trow.sigma  # the correlated block moved the number off the total
     assert urow.private_variance is not None and urow.private_variance > 0  # leg 2 is real
     # THE REPARTITION: both funds are pure-private members, so leg 3 (residual over NON-private
     # members) is EXACTLY zero on the unified row — their variance lives in leg 2, never twice.
     assert urow.residual_variance == Decimal(0)
     assert trow.residual_variance > 0  # ...while the total row DOES carry the private residual
+    # The genuinely-new quantity is the Ω_pp OFF-DIAGONAL: demonstrate it is non-zero (so the
+    # difference is driven by real cross-fund co-movement, not only the diagonal re-estimation).
+    omega_rows = list_private_covariances(
+        db, run_id=str(urow.private_covariance_run_id), acting_tenant=DEMO_TENANT_ID
+    )
+    off_diagonals = [r for r in omega_rows if r.factor_id_1 != r.factor_id_2]
+    assert len(off_diagonals) == 1 and off_diagonals[0].covariance_value != Decimal(0)
 
 
 def test_ppf3_unified_provenance_binds_the_omega_pp_run(db: Session) -> None:

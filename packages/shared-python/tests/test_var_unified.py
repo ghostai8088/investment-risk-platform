@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pathlib
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -21,12 +22,15 @@ from irp_shared.model.models import ModelAssumption, ModelLimitation, ModelVersi
 from irp_shared.risk import (
     VAR_UNIFIED_METHODOLOGY_REF,
     ModelVersionConflictError,
+    VarActor,
+    VarInputError,
     VarUnifiedKernelError,
     daily_omega,
     daily_residual_stdev,
     declared_unified_appraisal_days,
     private_block_variance,
     register_var_parametric_unified_model,
+    run_var_unified,
     sigma_unified,
 )
 from irp_shared.risk.bootstrap import (
@@ -34,6 +38,7 @@ from irp_shared.risk.bootstrap import (
     VAR_TOTAL_CALENDAR_DAYS_PER_YEAR,
     VAR_TOTAL_TRADING_DAYS_PER_YEAR,
 )
+from irp_shared.snapshot import VAR_UNIFIED_BINDING_PREDICATE, SnapshotActor
 
 _ROOT = pathlib.Path(__file__).resolve().parents[3]
 _APPRAISAL_DAYS = 91
@@ -214,10 +219,14 @@ def test_sigma_unified_sums_the_three_legs() -> None:
 
 
 # ---------- the TWO decomposition guardrails (both FAIL under a naive additive formula) ----------
-def test_reduction_a_lone_private_fund_equals_the_total_residual() -> None:
-    """OD-3-G coherence: for a SINGLE private fund (one member, one segment), the pure-private leg
-    equals what PA-4's diagonal residual would be — so the unified number reduces to ≈ total VaR.
-    Ω_pp[s,s] = Var(pp_s) = σ_e² for a single member, so p²·Ω[s,s]/d_t == (MV·σ_e,daily)²."""
+def test_kernel_reduction_single_segment_diagonal_equals_the_residual_form() -> None:
+    """KERNEL IDENTITY (the repartition's numerical BASIS, not its enforcement): GIVEN
+    ``Ω_pp[s,s] = σ_e²``, leg 2's single-member diagonal ``p²·Ω[s,s]/d_t`` equals the PA-4 residual
+    form ``(MV·σ_e,daily)²`` — the arithmetic that lets leg 2 REPLACE leg 3. This is a conditional
+    identity, NOT a claim about the real pipeline: there ``Ω[s,s]`` (pure-private sample variance,
+    ÷(N−1)) and ``σ_e²`` (the OLS residual variance, ÷(N−k)) are DIFFERENT estimators, so a lone
+    fund only APPROXIMATELY reduces to total VaR. The anti-double-count ENFORCEMENT (a member in leg
+    2 XOR leg 3) lives in the binder — see the consume-path double-count refusal test below."""
     mv, sigma_e_period = Decimal("100"), Decimal("0.20")  # 0.04 = sigma_e^2
     private_leg = private_block_variance({"s": mv}, _omega({("s", "s"): "0.04"}))
     sigma_e_daily = daily_residual_stdev(
@@ -228,19 +237,197 @@ def test_reduction_a_lone_private_fund_equals_the_total_residual() -> None:
     )
     residual_leg = (mv * sigma_e_daily) * (mv * sigma_e_daily)
     # The identity is exact in real arithmetic; the two computation paths (direct /d_t vs
-    # sqrt-then-square) agree far beyond the 20dp scale. leg 2 REPLACES leg 3, no double-count.
+    # sqrt-then-square) agree far beyond the 20dp scale.
     q = Decimal("1E-20")
     assert private_leg.quantize(q) == residual_leg.quantize(q)
 
 
-def test_cross_fund_a_two_segment_book_differs_by_the_off_diagonal() -> None:
-    """The genuinely-new quantity: for two single-member segments, the unified private block minus
-    the total-VaR independent diagonals == exactly the cross-fund covariance term
-    2·p_PE·p_PC·Ω[PE,PC]/d_t (the co-movement total VaR misses)."""
+def test_kernel_cross_fund_block_carries_the_off_diagonal_co_movement() -> None:
+    """KERNEL IDENTITY: for two single-member segments, the unified private block minus the
+    total-VaR independent diagonals == the cross-fund covariance term 2·p_PE·p_PC·Ω[PE,PC]/d_t (the
+    co-movement leg 2 carries). Canonical pair keys (a ≤ b): "pc" < "pe"."""
     p_pe, p_pc = Decimal("100"), Decimal("50")
-    om = _omega({("pe", "pe"): "0.04", ("pc", "pc"): "0.09", ("pe", "pc"): "0.012"})
+    om = _omega({("pc", "pc"): "0.09", ("pe", "pe"): "0.04", ("pc", "pe"): "0.012"})
     unified_private = private_block_variance({"pe": p_pe, "pc": p_pc}, om)
     # total VaR treats the two funds' non-public variance as INDEPENDENT diagonals:
     total_diagonals = p_pe * p_pe * om[("pe", "pe")] + p_pc * p_pc * om[("pc", "pc")]
-    cross_term = Decimal(2) * p_pe * p_pc * om[("pe", "pc")]
+    cross_term = Decimal(2) * p_pe * p_pc * om[("pc", "pe")]
     assert unified_private - total_diagonals == cross_term
+
+
+def test_private_block_variance_refuses_a_missing_held_pair() -> None:
+    """The 4-finder MED: a held-held OFF-DIAGONAL absent from Ω_pp is refused, NOT silently summed
+    as zero co-movement (parity with the public leg's full-pairwise coverage). Understating the
+    cross term — the unified number's whole value — must fail closed."""
+    from irp_shared.risk.var_unified_kernel import VarUnifiedKernelError
+
+    with pytest.raises(VarUnifiedKernelError) as exc:  # both diagonals present, (pc,pe) absent
+        private_block_variance(
+            {"pe": Decimal("100"), "pc": Decimal("50")},
+            _omega({("pc", "pc"): "0.09", ("pe", "pe"): "0.04"}),
+        )
+    assert exc.value.reason == "uncovered-pair"
+
+
+# ---------- consume-path double-count refusal (the 4-finder HIGH: OD-3-G trust boundary) ----
+_T0 = datetime(2024, 1, 1, tzinfo=UTC)
+_VALID_AT = datetime(2026, 6, 1, tzinfo=UTC)
+_KNOWN_AT = datetime(2030, 1, 1, tzinfo=UTC)
+
+
+def _content_hash(content: dict) -> tuple[str, str]:
+    from irp_shared.audit.hashing import sha256_hex
+    from irp_shared.snapshot.serialize import serialize_content
+
+    cc = serialize_content(content)
+    return cc, sha256_hex(cc)
+
+
+def _mint_unified_snapshot_with_instrument_in_both_legs(session: Session, tenant: str) -> str:
+    """Hand-mint a unified-predicate VAR_INPUT snapshot pinning ONE instrument X in BOTH a
+    REGRESSION proxy (leg 3) AND a MANUAL pure-private membership (leg 2) — the exact repartition
+    violation the builder silently excludes but a consumed snapshot could smuggle. Fabricated ids:
+    the disjointness gate fires DURING pin adjudication, before provenance re-resolution."""
+    from types import SimpleNamespace
+
+    from irp_shared.snapshot import COMPONENT_KIND_PROXY_MAPPING, COMPONENT_KIND_PROXY_WEIGHT
+    from irp_shared.snapshot.service import _persist_snapshot
+
+    fid, iid, seg = "f", "x", "s"
+    run = str(uuid.uuid4())
+    exposure = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant,
+        "calculation_run_id": run,
+        "input_snapshot_id": str(uuid.uuid4()),
+        "model_version_id": str(uuid.uuid4()),
+        "system_from": _T0.isoformat(),
+        "portfolio_id": str(uuid.uuid4()),
+        "instrument_id": iid,
+        "factor_id": fid,
+        "factor_code": "F",
+        "factor_family": "CURRENCY",
+        "base_currency": "USD",
+        "mark_currency": "USD",
+        "loading": "1.000000000000",
+        "exposure_amount": "30000.000000",
+    }
+    daily_cov = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant,
+        "calculation_run_id": run,
+        "input_snapshot_id": str(uuid.uuid4()),
+        "model_version_id": str(uuid.uuid4()),
+        "system_from": _T0.isoformat(),
+        "factor_id_1": fid,
+        "factor_id_2": fid,
+        "statistic_type": "COVARIANCE",
+        "return_type": "SIMPLE",
+        "frequency": "DAILY",
+        "n_observations": 4,
+        "window_start": "2026-05-01",
+        "window_end": "2026-05-25",
+        "covariance_value": "0.00010000000000000000",
+    }
+    omega = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant,
+        "calculation_run_id": str(uuid.uuid4()),
+        "input_snapshot_id": str(uuid.uuid4()),
+        "model_version_id": str(uuid.uuid4()),
+        "system_from": _T0.isoformat(),
+        "factor_id_1": seg,
+        "factor_id_2": seg,
+        "statistic_type": "COVARIANCE",
+        "return_type": "SIMPLE",
+        "frequency": "APPRAISAL",
+        "n_observations": 5,
+        "window_start": "2024-12-31",
+        "window_end": "2025-12-31",
+        "covariance_value": "0.04000000000000000000",
+    }
+
+    def _mapping(factor_id: str, method: str) -> dict:
+        return {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant,
+            "private_instrument_id": iid,
+            "factor_id": factor_id,
+            "weight": "0.500000000000",
+            "mapping_method": method,
+            "valid_from": _T0.isoformat(),
+            "system_from": _T0.isoformat(),
+            "record_version": 1,
+        }
+
+    weight = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant,
+        "calculation_run_id": str(uuid.uuid4()),
+        "input_snapshot_id": str(uuid.uuid4()),
+        "model_version_id": str(uuid.uuid4()),
+        "portfolio_id": str(uuid.uuid4()),
+        "instrument_id": iid,
+        "source_desmoothed_run_id": str(uuid.uuid4()),
+        "metric_type": "ESTIMATION_SUMMARY",
+        "factor_id": None,
+        "metric_value": "0.800000000000",
+        "std_error": None,
+        "n_observations": 6,
+        "n_regressors": 1,
+        "residual_stdev": "0.20",
+        "min_observations": 4,
+        "series_currency": "USD",
+        "system_from": _T0.isoformat(),
+    }
+    plan = [
+        ("FACTOR_EXPOSURE", "factor_exposure_result", exposure),
+        ("COVARIANCE", "covariance_result", daily_cov),
+        ("COVARIANCE", "covariance_result", omega),
+        (COMPONENT_KIND_PROXY_MAPPING, "proxy_mapping", _mapping(fid, "REGRESSION")),  # leg 3
+        (
+            COMPONENT_KIND_PROXY_MAPPING,
+            "proxy_mapping",
+            _mapping(seg, "MANUAL"),
+        ),  # leg 2 — SAME iid
+        (COMPONENT_KIND_PROXY_WEIGHT, "proxy_weight_estimate_result", weight),
+    ]
+    specs = []
+    for kind, ttype, content in plan:
+        anchor = SimpleNamespace(
+            id=content["id"], valid_from=None, system_from=_T0, record_version=None
+        )
+        cc, h = _content_hash(content)
+        specs.append((kind, ttype, anchor, cc, h))
+    header = _persist_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=SnapshotActor(actor_id="a"),
+        specs=specs,
+        label="",
+        purpose="VAR_INPUT",
+        as_of_valid_at=_VALID_AT,
+        as_of_known_at=_KNOWN_AT,
+        as_of_valuation_date=_VALID_AT.date(),
+        binding_predicate_version=VAR_UNIFIED_BINDING_PREDICATE,
+    )
+    return str(header.id)
+
+
+def test_consume_path_refuses_a_double_counted_instrument(session: Session) -> None:
+    """OD-3-G at the consume boundary (the 4-finder HIGH): a consumed unified snapshot pinning an
+    instrument in BOTH a REGRESSION residual (leg 3) and a MANUAL pure-private membership (leg 2)
+    would count its variance twice — the ratify-blocking double-count. The binder REFUSES it (the
+    builder's repartition skip is re-enforced where the adjudicator (not builder) is trusted)."""
+    tenant = str(uuid.uuid4())
+    snapshot_id = _mint_unified_snapshot_with_instrument_in_both_legs(session, tenant)
+    with pytest.raises(VarInputError, match="BOTH a REGRESSION residual"):
+        run_var_unified(
+            session,
+            acting_tenant=tenant,
+            actor=VarActor(actor_id="analyst"),
+            code_version="risk-v1",
+            environment_id="ci",
+            model_version_id=_model(session, tenant),
+            snapshot_id=snapshot_id,
+        )

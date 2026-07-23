@@ -87,6 +87,23 @@ def private_block_variance(
             f"held segments {sorted(uncovered)} are absent from the pinned Omega_pp diagonal — "
             f"the private covariance run must span every held segment",
         )
+    # FULL held-pair coverage (the 4-finder MED; parity with the public leg's _adjudicate_pins). A
+    # held-held OFF-DIAGONAL simply ABSENT from Omega_pp would be silently summed as zero
+    # co-movement — understating the cross term that IS the unified number's value over total-VaR.
+    # No zero imputation: every canonical (a, b) pair among held segments must be pinned.
+    held_sorted = sorted(held)
+    missing_pairs = [
+        (a, b)
+        for i, a in enumerate(held_sorted)
+        for b in held_sorted[i + 1 :]
+        if (a, b) not in omega_pp_daily
+    ]
+    if missing_pairs:
+        raise VarUnifiedKernelError(
+            "uncovered-pair",
+            f"held-segment pairs {missing_pairs} are absent from the pinned Omega_pp — the private "
+            f"covariance run must span every held-segment PAIR (no zero-cross-covariance impute)",
+        )
     with localcontext() as ctx:
         ctx.prec = _CTX_PRECISION
         acc = Decimal(0)

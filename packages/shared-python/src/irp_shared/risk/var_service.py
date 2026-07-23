@@ -1258,6 +1258,20 @@ def run_var_unified(
             exposure_instrument_ids=set(mv_by_instrument),
         )
         p_by_segment = _build_p_vector(manual_mapping_raw, mv_by_instrument)
+        # OD-3-G repartition, RE-ENFORCED at the consume boundary (the 4-finder HIGH). The BUILDER
+        # skips a pure-private member's REGRESSION residual from leg 3, but a hand-minted/consumed
+        # snapshot could pin an instrument in BOTH a REGRESSION proxy (leg 3) AND a MANUAL
+        # membership (leg 2) — counting its non-public variance TWICE (the ratify-blocking
+        # double-count). The adjudicator, not the builder, is the snapshot_id trust boundary.
+        double_counted = {pw.instrument_id for pw in proxy_weights} & {
+            str(m["private_instrument_id"]).lower() for m in manual_mapping_raw
+        }
+        if double_counted:
+            raise VarInputError(
+                f"instrument(s) {sorted(double_counted)} appear in BOTH a REGRESSION residual (leg "
+                f"3) and a MANUAL pure-private membership (leg 2) — the repartition requires leg-2 "
+                f"XOR leg-3 per instrument (a variance double-count); refused (OD-3-G)"
+            )
     except VarInputError:
         raise
     except (KeyError, TypeError, ValueError, ArithmeticError) as exc:

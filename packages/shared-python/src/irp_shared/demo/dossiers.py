@@ -1136,20 +1136,22 @@ PPF2_PRIVATE_COVARIANCE_INITIAL = FlagshipDossier(
 #: parametric VaR. NOT added to the TIER_DOSSIERS/FLAGSHIP_DOSSIERS registries (the CC2_PACING /
 #: PPF-2 module-level shape); the stage-13 runner references these constants directly.
 PPF3_UNIFIED_VAR_TIER = TierDossier(
-    "MEDIUM",
+    "HIGH",
     "HIGH",
     "The unified public+private parametric VaR: sigma_unified = sqrt(x'Sigma x + p'(Omega_pp/d_t)p "
     "+ residual_over_non-private-members) — the §2.1 arc's capstone (the 20th governed number, the "
-    "differentiator's headline). MEDIUM materiality — it is the flagship public+private risk "
-    "number, but in the demo tenant it gates no capital and prices no book (UNVALIDATED, "
-    "non-enforcing). HIGH complexity — genuinely-new math: it REPARTITIONS PA-4's diagonal "
-    "residual (a pure-private-segment member's whole non-public variance moves OUT of the "
-    "independent residual leg and INTO the correlated Omega_pp block), so the three legs are "
-    "non-overlapping BY CONSTRUCTION. Two adversarial verifiers REFUTED the naive additive formula "
-    "as a variance DOUBLE-COUNT before ratification; the repartition is the fix, and the reduction "
-    "(a lone private fund => sigma_unified ~ sigma_total) + the two-segment identity are "
-    "the shipped anti-double-count guardrail tests. It STACKS on PPF-1 (pure-private return) + "
-    "PPF-2 (Omega_pp) + PA-4 (the residual leg), so their model risk propagates in.",
+    "differentiator's headline). HIGH materiality — it is the flagship public+private risk number, "
+    "the arc's destination, intended to drive firm-wide risk decisions across the whole book (SR "
+    "26-2 exposure + purpose; its sibling VaR flagships are all HIGH — the demo's UNVALIDATED/"
+    "non-enforcing status is a validation-STATE point, not a materiality one). HIGH complexity — "
+    "genuinely-new math: it REPARTITIONS PA-4's diagonal residual (a pure-private-segment member's "
+    "whole non-public variance moves OUT of the independent residual leg and INTO the correlated "
+    "Omega_pp block), so the three legs are non-overlapping BY CONSTRUCTION. Two adversarial "
+    "verifiers REFUTED the naive additive formula as a variance DOUBLE-COUNT before ratification; "
+    "the repartition is the fix, ENFORCED on the build path (private members excluded from leg "
+    "3) and the consume path (a both-legs instrument refused) and regression-tested. It STACKS on "
+    "PPF-1 (pure-private return) + PPF-2 (Omega_pp) + PA-4 (the residual leg), so model risk "
+    "propagates in.",
 )
 
 PPF3_UNIFIED_VAR_INITIAL = FlagshipDossier(
@@ -1163,9 +1165,13 @@ PPF3_UNIFIED_VAR_INITIAL = FlagshipDossier(
         "cited evidence run is the DEMO-UNIFIED-PPF3 two-fund book — PE-HARBOR-IV (PRIVATE_EQUITY) "
         "+ PC-BRIDGEWATER-II (PRIVATE_CREDIT), each a single-member segment — over the "
         "union public factor set {FX_USD, MF_RATES_GOV, MF_CRSPD_IG}, consuming the tenant-wide "
-        "Omega_pp (PPF-2). THE HEADLINE: sigma_unified differs from PA-4's total VaR over the SAME "
-        "book by the cross-segment co-movement 2*p_PE*p_PC*Omega_pp[PE,PC]/d_t "
-        "— the correlated private risk that independent-diagonal total VaR misses. VALIDATION "
+        "Omega_pp (PPF-2). THE HEADLINE: over the SAME book the unified number REPLACES total's "
+        "INDEPENDENT diagonal residual with the CORRELATED Omega_pp block — adding the block's "
+        "OFF-DIAGONAL co-movement (2*p_PE*p_PC*Omega_pp[PE,PC]/d_t), the cross-fund private risk "
+        "total VaR omits (the block's diagonal also re-estimates each fund's non-public "
+        "variance via the pure-private sample covariance rather than the OLS residual — a second "
+        "(diagonal) difference). So sigma_unified != sigma_total, driven by the correlated block. "
+        "VALIDATION "
         "HONESTY: this is UNLEVERED (leverage=1, the at-average-leverage systematic number; ILPA "
         "unlevered/levered norm) and BLOCK-DIAGONAL against the public Sigma (a disclosed "
         "APPROXIMATION — pure-private is a public residual by construction, not orthogonal-by-"

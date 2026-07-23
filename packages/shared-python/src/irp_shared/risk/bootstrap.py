@@ -2854,8 +2854,12 @@ VAR_UNIFIED_ASSUMPTIONS_BASE: tuple[str, ...] = (
     "Omega_pp block ONLY and is REMOVED from the diagonal residual leg. PA-4's residual is the "
     "WHOLE non-public residual (Var(PurePrivate)+Var(AssetSpecific)), so adding both would "
     "double-count; residual_variance on a unified row is the leg-3 sum over NON-private-segment "
-    "members only. The value over total-VaR is exactly the Omega_pp off-diagonal (a lone "
-    "private fund reduces to ~ total-VaR).",
+    "members only. Replacing total-VaR's INDEPENDENT diagonal residual with the CORRELATED "
+    "Omega_pp block adds the block's OFF-DIAGONAL co-movement (2*p_s*p_t*Omega[s,t]/d_t) — the "
+    "cross-fund private co-movement total-VaR structurally omits; the block DIAGONAL also "
+    "re-estimates each member's non-public variance (Omega_pp sample covariance vs PA-4's OLS "
+    "residual, N-1 vs N-k denominators), a second (diagonal) difference. A lone private fund has "
+    "no off-diagonal, so it reduces toward total-VaR.",
     "The private-exposure vector p_s = SUM over MANUAL-members i of segment s of MV_i (the same "
     "pinned factor-exposure MV the residual leg uses); the portfolio's held-segment sub-block "
     "of Omega_pp is used (a held segment absent from the pinned Omega_pp run fails closed). "
