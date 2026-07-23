@@ -64,6 +64,14 @@ def _anchor_dt(anchor_date: dt_date) -> datetime:
     return datetime(anchor_date.year, anchor_date.month, anchor_date.day, tzinfo=UTC)
 
 
+def _require_aware(now: datetime) -> None:
+    """Fail closed (a clean ``ScheduleError``) if ``now`` is tz-naive — the module requires a
+    tz-aware UTC instant (the grid anchor is UTC-aware; a naive ``now`` would raise a raw
+    ``TypeError`` from the wrong layer). The worker sources ``now`` from ``utcnow()`` (tz-aware)."""
+    if now.tzinfo is None:
+        raise ScheduleError("now must be tz-aware (UTC)")
+
+
 def current_tick(anchor_date: dt_date, interval_days: int, now: datetime) -> datetime:
     """The most recent grid point at or before ``now`` (INV-SCH-1 — a PURE grid value).
 
@@ -74,6 +82,7 @@ def current_tick(anchor_date: dt_date, interval_days: int, now: datetime) -> dat
     """
     if interval_days <= 0:
         raise ScheduleError("interval_days must be positive")
+    _require_aware(now)
     anchor = _anchor_dt(anchor_date)
     step = timedelta(days=interval_days)
     k = (now - anchor) // step
@@ -82,11 +91,25 @@ def current_tick(anchor_date: dt_date, interval_days: int, now: datetime) -> dat
     return anchor + k * step
 
 
+def _assert_current_tick(schedule: Schedule, tick: datetime, now: datetime) -> None:
+    """Self-enforce INV-SCH-1 at the write boundary: ``tick`` MUST be the current grid tick for
+    ``now`` AND ``now`` must be at/after the anchor. Guards a mis-caller passing an arbitrary
+    ``tick`` (e.g. a wall clock), which would violate the invariant AND split the idempotency bucket
+    so ``uq(schedule_id, scheduled_for)`` no longer collides (a silent double-fire)."""
+    _require_aware(now)
+    if now < _anchor_dt(schedule.anchor_date):
+        raise ScheduleError(f"now {now} precedes the schedule anchor {schedule.anchor_date}")
+    expected = current_tick(schedule.anchor_date, schedule.interval_days, now)
+    if tick != expected:
+        raise ScheduleError(f"tick {tick} is not the current grid tick {expected} (INV-SCH-1)")
+
+
 def is_due(schedule: Schedule, now: datetime, fired_ticks: set[datetime]) -> bool:
     """Pure predicate: an ACTIVE schedule whose CURRENT grid tick has not already fired.
 
     No backfill: only the current tick is ever considered — missed grid points are honest gaps.
     """
+    _require_aware(now)
     if schedule.status != SCHEDULE_STATUS_ACTIVE:
         return False
     if now < _anchor_dt(schedule.anchor_date):
@@ -96,14 +119,25 @@ def is_due(schedule: Schedule, now: datetime, fired_ticks: set[datetime]) -> boo
 
 
 # ------------------------------------------------------------------------------- DB due-select ---
-def select_active_due(session: Session, now: datetime) -> list[tuple[Schedule, datetime]]:
+def select_active_due(
+    session: Session, now: datetime, *, acting_tenant: str
+) -> list[tuple[Schedule, datetime]]:
     """Tenant-scoped: ACTIVE schedules whose current grid tick has no ``scheduled_run`` yet.
 
     Reads ONLY the two scheduling tables. Under OQ-SCH-1-1=B this runs inside ONE tenant's
-    non-BYPASSRLS session, so RLS shows only that tenant's rows — no cross-tenant read, no ops role.
+    non-BYPASSRLS session, so RLS already shows only that tenant's rows — the explicit
+    ``tenant_id == acting_tenant`` predicate is defense-in-depth (the platform's belt-and-suspenders
+    explicit-predicate + RLS pattern), so a caller outside a forced-RLS session can never sweep
+    other tenants' schedules.
     """
+    _require_aware(now)
     schedules = list(
-        session.execute(select(Schedule).where(Schedule.status == SCHEDULE_STATUS_ACTIVE)).scalars()
+        session.execute(
+            select(Schedule).where(
+                Schedule.status == SCHEDULE_STATUS_ACTIVE,
+                Schedule.tenant_id == str(acting_tenant),
+            )
+        ).scalars()
     )
     due: list[tuple[Schedule, datetime]] = []
     for schedule in schedules:
@@ -140,6 +174,7 @@ def dispatch_one(
     FRESH input snapshot over current data. A pre-create refusal RAISES (the caller records a FAILED
     ledger row); a post-create FAILED run returns a row with ``outcome=FAILED`` + the failed run id.
     """
+    _assert_current_tick(schedule, tick, now)  # INV-SCH-1 self-enforcing at the write boundary
     existing = session.execute(
         select(ScheduledRun).where(
             ScheduledRun.schedule_id == schedule.id,
@@ -205,6 +240,7 @@ def record_failed_dispatch(
     Occupies the ``(schedule_id, tick)`` bucket so the SAME tick is not retried (record + continue,
     OD-SCH-1-J — the NEXT grid tick is the retry, not this one). ``calculation_run_id`` is NULL.
     """
+    _assert_current_tick(schedule, tick, now)  # INV-SCH-1 — the FAILED row uses the grid tick too
     row = ScheduledRun(
         tenant_id=schedule.tenant_id,
         schedule_id=schedule.id,

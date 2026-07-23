@@ -149,6 +149,9 @@ PERMISSIONS: list[tuple[str, str]] = [
     # goes to the 1L risk maker + the data_steward ops maker (the pacing.run placement); `.view`
     # goes broadly INCLUDING auditor_3l — a governed control-plane object is 3L-oversight scope
     # (the pacing.view precedent). Dispatch itself runs as a synthesized SYSTEM actor, ungated.
+    # Forward-gate: SCH-1 ships no schedule API endpoint yet; when one lands it MUST carry
+    # require_permission("schedule.manage") (the pacing.py pattern) — nothing below the API layer
+    # enforces the maker verb (consistent with the perf/pacing service-ungated design).
     ("schedule.manage", "Create, edit and pause governed run schedules"),
     ("schedule.view", "View run schedules and the scheduled-run ledger"),
 ]

@@ -201,7 +201,7 @@ def test_select_active_due_returns_the_current_tick_for_a_fresh_schedule(
     tenant = str(uuid.uuid4())
     sched = _mk(session, tenant)
     now = datetime(2026, 1, 20, tzinfo=UTC)
-    due = select_active_due(session, now)
+    due = select_active_due(session, now, acting_tenant=tenant)
     assert len(due) == 1
     got_sched, got_tick = due[0]
     assert got_sched.id == sched.id
@@ -211,7 +211,7 @@ def test_select_active_due_returns_the_current_tick_for_a_fresh_schedule(
 def test_select_active_due_excludes_a_paused_schedule(session: Session) -> None:
     tenant = str(uuid.uuid4())
     _mk(session, tenant, status=SCHEDULE_STATUS_PAUSED)
-    assert select_active_due(session, datetime(2026, 1, 20, tzinfo=UTC)) == []
+    assert select_active_due(session, datetime(2026, 1, 20, tzinfo=UTC), acting_tenant=tenant) == []
 
 
 def test_select_active_due_excludes_an_already_fired_current_tick(session: Session) -> None:
@@ -219,7 +219,9 @@ def test_select_active_due_excludes_an_already_fired_current_tick(session: Sessi
     sched = _mk(session, tenant)
     now = datetime(2026, 1, 20, tzinfo=UTC)
     _seed_fired(session, sched, current_tick(_ANCHOR, 7, now))
-    assert select_active_due(session, now) == []  # idempotent — no re-fire of the same tick
+    assert (
+        select_active_due(session, now, acting_tenant=tenant) == []
+    )  # idempotent — no re-fire of the same tick
 
 
 def test_select_active_due_overdue_fires_one_tick_not_a_backfill_series(
@@ -228,7 +230,7 @@ def test_select_active_due_overdue_fires_one_tick_not_a_backfill_series(
     tenant = str(uuid.uuid4())
     _mk(session, tenant)
     now = datetime(2026, 6, 1, tzinfo=UTC)  # ~21 intervals past the anchor
-    due = select_active_due(session, now)
+    due = select_active_due(session, now, acting_tenant=tenant)
     assert len(due) == 1  # exactly ONE due tick, never a burst of the missed intervals
     assert due[0][1] == datetime(2026, 5, 28, tzinfo=UTC)
 
@@ -240,9 +242,11 @@ def test_paused_over_a_window_then_resume_fires_only_the_current_tick(session: S
     sched = _mk(session, tenant)
     _seed_fired(session, sched, datetime(2026, 1, 8, tzinfo=UTC))  # an early fire
     pause_schedule(session, sched, actor=_ACTOR)
-    assert select_active_due(session, datetime(2026, 4, 1, tzinfo=UTC)) == []  # paused
+    assert (
+        select_active_due(session, datetime(2026, 4, 1, tzinfo=UTC), acting_tenant=tenant) == []
+    )  # paused
     resume_schedule(session, sched, actor=_ACTOR)
     now = datetime(2026, 4, 2, tzinfo=UTC)
-    due = select_active_due(session, now)
+    due = select_active_due(session, now, acting_tenant=tenant)
     assert len(due) == 1
     assert due[0][1] == current_tick(_ANCHOR, 7, now)  # the current tick, one fire only

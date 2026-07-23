@@ -19,7 +19,7 @@ from datetime import date as dt_date
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.pool import NullPool
 
 from irp_shared.db.session import make_engine, make_session_factory
@@ -222,4 +222,37 @@ def test_ops_role_has_no_grant_on_scheduling_tables() -> None:
                     ).scalar()
                     assert has is False, f"irp_ops unexpectedly has {priv} on {table}"
     finally:
+        engine.dispose()
+
+
+def test_scheduled_run_unique_tick_constraint_blocks_a_double_fire(app_url: str) -> None:
+    # The DB-level idempotency backstop (INV-SCH-1): a second insert of the same (schedule, tick)
+    # is rejected by uq_scheduled_run_schedule_tick — the concurrent-double-fire guarantee.
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    sched_id = _seed_schedule(factory, tenant)
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        tick = datetime(2026, 1, 5, tzinfo=UTC)
+
+        def _row() -> ScheduledRun:
+            return ScheduledRun(
+                tenant_id=tenant,
+                schedule_id=sched_id,
+                scheduled_for=tick,
+                fired_at=datetime(2026, 1, 5, 9, 0, tzinfo=UTC),
+                outcome=OUTCOME_DISPATCHED,
+            )
+
+        session.add(_row())
+        session.flush()
+        with pytest.raises(IntegrityError) as exc:
+            session.add(_row())
+            session.flush()
+        assert "uq_scheduled_run_schedule_tick" in str(exc.value)
+        session.rollback()
+    finally:
+        session.close()
         engine.dispose()
