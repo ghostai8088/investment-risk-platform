@@ -1,12 +1,14 @@
 # Wave-10 Close Review — the fast-follow read-surface + the §2.1 unification arc (THE DESTINATION)
 
-**Status: DRAFT for ratification (2026-07-23).** The mandatory rolling-wave close (roadmap Part 4
-rule 2) after Wave 10 shipped its ratified sequence **API-1b → FE-3b → the §2.1 private/public
-unification (PPF-1 → PPF-2 → PPF-3)** (OQ-W9C-3 fork A). This is the wave that finished Wave 9's
-read-surface/identity product AND shipped **the platform's declared strategic destination**: the
-unified public+private portfolio VaR the whole math roadmap called itself the substrate for. Open
-decisions (OQ-W10C-1…5) are in Part 6 — the pivotal one is the Wave-11 fork now that the destination
-is reached.
+**Status: RATIFIED by the user 2026-07-23.** OQ-W10C-1/2/3/5 approved as recommended (the
+zero-shipped-code-defect close verdict; the register dispositions; the broadened closure-teeth + the
+two stamps; the process lesson). **OQ-W10C-4 = fork A "OPERATIONALIZE"** — Wave 11 makes the governed
+engine RUN: the first scheduler → a limits/breach workflow → the MG-2 remediation lifecycle (Part
+2.14). The mandatory rolling-wave close (roadmap Part 4 rule 2) after Wave 10 shipped its ratified
+sequence **API-1b → FE-3b → the §2.1 private/public unification (PPF-1 → PPF-2 → PPF-3)** (OQ-W9C-3
+fork A). This is the wave that finished Wave 9's read-surface/identity product AND shipped **the
+platform's declared strategic destination**: the unified public+private portfolio VaR the whole math
+roadmap called itself the substrate for.
 
 **Method.** Four cross-cutting close auditors over the wave diff (`11967b8..4070438`, 148 files,
 +13.4k/−0.8k) — cross-slice integration/composition, security + doctrine (a dedicated lens for the

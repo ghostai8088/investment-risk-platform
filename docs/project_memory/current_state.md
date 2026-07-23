@@ -57,9 +57,22 @@
 > Files ONE INITIAL AWC (HIGH/HIGH). Gates: `make check` 1849 passed; `make fe-check` green; `make
 > gen-api-check` clean; the full demo PG chain in correct order green (`stage9zzzz` last); the
 > affected-family PG battery green on a clean schema; `alembic check` clean; `pip-audit` clean (one
-> pre-existing dev-only `pytest` advisory, not shipped). **NEXT = Wave 10 close review** (all three
-> slices — API-1b, FE-3b, the §2.1 PPF arc — are done; the §2.1 destination the whole platform thesis
-> pointed at is now shipped).
+> pre-existing dev-only `pytest` advisory, not shipped).
+>
+> **WAVE 10 CLOSED + RATIFIED 2026-07-23** (`wave_10_close_review.md`, on `wave-10-close` `1150cce`,
+> awaiting USER merge; OQ-W10C-1/2/3/5 approved + OQ-W10C-4 fork A). Four cross-cutting close auditors
+> + hand re-verification: **ZERO shipped-code defects — the SIXTH consecutive clean close on the code
+> axis**; every hard invariant held; gates green; counts 23/38/109. The one HIGH was doc/PROCESS — the
+> closure-stamp class recurred a SIXTH time (PPF-3 left at "RATIFIED") past a CI gate blind on two
+> counts (matched only "DRAFT for ratification"; the arc row's inline `✅ **PPF-N**` marks left all
+> three PPF slices out of scope) — fixed at-close: `check_docs.py` teeth broadened + tested, PPF-3 AND
+> a historical CC-2 both stamped CLOSED. **Destination check: the §2.1 destination is GENUINELY shipped
+> v1, not a toy** (the pre-impl double-count catch proves it); leverage is the one load-bearing v2 gap;
+> the demo delta is honestly tiny (~0.08%). **The frontier has crossed from methodology into
+> OPERATIONS** — 20 governed numbers, but nothing runs on a cadence / enforces a limit / carries a
+> remediation to term. **WAVE 11 RATIFIED (fork A "OPERATIONALIZE"): SCH-1 the first scheduler → LIM-1
+> limits/breach → MG-2 remediation lifecycle.** **NEXT = SCH-1 planning** (the first scheduler — a
+> genuinely-new architectural primitive, a Tier-3 sign-off at planning).
 >
 > **Prior: HEAD `7aefd1c`** = merge of **PR #101** (PPF-2: the private covariance block Ω_pp — Wave 10
 > slice 3, §2.1 unification arc slice 2 of 3; **NO migration**; the 19th governed number,
