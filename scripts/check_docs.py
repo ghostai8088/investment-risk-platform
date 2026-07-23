@@ -17,33 +17,43 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: API-1b (OQ-W9C-5): the closure-discipline teeth — a decision record whose slice is marked DONE in
-#: the roadmap must NOT still read "DRAFT for ratification" in its Status cell (the API-1-class miss
-#: that recurred at FIVE consecutive wave closes). Filename-keyed + row-anchored so it does NOT
-#: false-fail when a slice-id appears only in another row's PROSE (the verifier's CLAIM-6 trap:
-#: "API-1b" occurs inside two `✅ **DONE**` rows), nor false-fail an in-flight planning DRAFT (whose
-#: own roadmap row is not yet DONE). SCOPE (review finding B1): this guards the GO-FORWARD cadence —
-#: any slice whose roadmap row leads with `**SLICE — …** ✅ **DONE**`. Pre-cadence rows without that
-#: exact shape (or records with no `| **Status** |` cell — the old records that never had a Status
-#: line and so cannot be "DRAFT") are out of scope; broadening is a future hygiene option, not a
-#: silent guarantee.
+#: The closure-discipline teeth (API-1b OQ-W9C-5, BROADENED at the Wave-10 close OQ-W10C): a
+#: record whose slice is marked DONE in the roadmap must have its Status cell stamped CLOSED — NOT
+#: left at any pre-close stamp ("DRAFT for ratification" / "RATIFIED" / "pending ratification"). The
+#: class recurred at SIX consecutive closes; the pre-Wave-10 teeth had TWO blind spots the sixth
+#: (PPF-3) slipped through: they matched only the literal "DRAFT for ratification" (PPF-3 sat at
+#: "RATIFIED"), and the done-set keyed only on the leading `✅ **DONE**` row shape (the PPF arc row
+#: marks each slice INLINE as `✅ **PPF-N**`, so all three arc slices were invisible). Both are now
+#: covered. Filename-keyed + row-anchored so it does NOT false-fail when a slice-id appears only in
+#: another row's PROSE (the verifier's CLAIM-6 trap: "API-1b" occurs inside two `✅ **DONE**` rows),
+#: nor an in-flight planning DRAFT whose own roadmap row is not yet DONE. Records with no
+#: `| **Status** |` cell (old records that never had one) stay out of scope.
 BACKLOG_DIR = "10_delivery_backlog"
 ROADMAP = "10_delivery_backlog/delivery_roadmap.md"
 _DONE_MARK = "✅ **DONE**"
-_DRAFT_MARK = "DRAFT for ratification"
-#: The FIRST bold token on a line = that row's own slice-id (row-anchored; upper-cased to match).
+_CLOSED_MARK = "CLOSED"  # the required TERMINAL Status stamp for a shipped slice
+#: A bold slice-id token: `**API-1**`, `**PPF-3**`, … (row-anchored; upper-cased to match).
 _LEAD_SLICE = re.compile(r"\*\*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)")
+#: A ✅-ADJACENT bold slice token: the arc row marks each slice INLINE (`✅ **PPF-1**`), not with
+#: the leading `✅ **DONE**` row shape — Wave-10's PPF arc exposed this blind spot (OQ-W10C).
+_TICK_SLICE = re.compile(r"✅\s*\*\*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)")
 
 
 def _done_slice_ids(roadmap_text: str) -> set[str]:
-    """The slice-ids marked ``✅ **DONE**`` in the roadmap, keyed on each row's OWN leading bold
-    title token (never a whole-line substring — a slice-id in prose is not counted)."""
+    """The slice-ids marked done in the roadmap. Two shapes are recognized (the Wave-10 broadening,
+    OQ-W10C): a normal row's leading bold title on a ``✅ **DONE**`` line, AND every ✅-adjacent
+    bold token on any ``DONE`` line (the arc row's inline ``✅ **PPF-1**`` shape). Extra non-slice
+    tokens (DONE/ALL) never match a decision-record filename, so they cannot false-flag."""
     done: set[str] = set()
     for line in roadmap_text.splitlines():
-        if _DONE_MARK in line:
+        if "✅" not in line or "DONE" not in line.upper():
+            continue
+        if _DONE_MARK in line:  # a normal `… **SLICE …** ✅ **DONE** …` row → leading title token
             m = _LEAD_SLICE.search(line)
             if m:
                 done.add(m.group(1).upper())
+        for m in _TICK_SLICE.finditer(line):  # arc-style inline `✅ **SLICE**` marks
+            done.add(m.group(1).upper())
     return done
 
 
@@ -56,8 +66,13 @@ def _status_lines(record_text: str) -> list[str]:
 
 def _is_unstamped_shipped(slice_id: str, status_lines: list[str], done: set[str]) -> bool:
     """The rule's TEETH (pure, unit-tested): a record is an unstamped-shipped miss iff its slice is
-    DONE in the roadmap AND its Status cell still reads "DRAFT for ratification"."""
-    return slice_id in done and any(_DRAFT_MARK in ln for ln in status_lines)
+    DONE in the roadmap AND it HAS a Status cell NOT yet stamped CLOSED — catching a record stuck at
+    ANY pre-close stamp (``DRAFT for ratification`` / ``RATIFIED`` / ``pending ratification``), not
+    just the one literal the pre-Wave-10 gate matched (OQ-W10C: the class recurred a 6th time —
+    PPF-3 sat at "RATIFIED", past the old teeth). Records with no Status cell stay out of scope."""
+    if slice_id not in done or not status_lines:
+        return False
+    return not any(_CLOSED_MARK in ln for ln in status_lines)
 
 
 def _closure_stamp_errors() -> list[str]:
@@ -71,8 +86,8 @@ def _closure_stamp_errors() -> list[str]:
         status_lines = _status_lines(record.read_text(encoding="utf-8"))
         if _is_unstamped_shipped(slice_id, status_lines, done):
             errors.append(
-                f"{record.name}: slice {slice_id} is DONE in the roadmap but its Status cell still "
-                f"reads '{_DRAFT_MARK}' — stamp it CLOSED (the OQ-W9C-5 closure-discipline rule)"
+                f"{record.name}: slice {slice_id} is DONE in the roadmap but its Status cell is "
+                f"not stamped CLOSED (the OQ-W9C-5 / OQ-W10C closure-discipline rule)"
             )
     return errors
 
