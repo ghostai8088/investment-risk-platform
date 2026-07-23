@@ -2,7 +2,75 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-23) — read this block; everything below it is HISTORY
 >
-> **HEAD `96965cf`** = merge of **PR #108** (SCH-1: the FIRST scheduler — Wave-11 slice 1,
+> **HEAD `218afc9`** = merge of **PR #111** (LIM-1: the FIRST governed write-side workflow — the
+> governed LIMIT + BREACH control, Wave-11 slice 2 "operationalize"; migration `0050_limit_breach`),
+> **CI green** (all 6 jobs). **Counts UNCHANGED 23/38/109** — LIM-1 mints NO new governed number: a
+> breach is a control-plane predicate over an already-governed `calculation_run`, binding no new
+> snapshot/run/model. The platform computed 20 governed numbers but had NO limit to measure them
+> against; LIM-1 realizes the DETECTION half of limit monitoring.
+>
+> **What shipped.** It REALIZES the genesis-reserved entities **ENT-031 `limit_definition`** (EV,
+> entity-versioned-in-place — a threshold + a `(target_run_type, metric_type, benchmark_id?)`
+> metric-selector + an exact `scope_portfolio_id` + a `breach_direction` predicate + a `limit_kind`
+> HARD/SOFT; `LIMIT.DEFINE`/`.CHANGE` audited) + **ENT-033 `breach`** (IA TRUE append-only,
+> SELF-DESCRIBING — echoes the metric IDENTITY AND the comparison arithmetic at detection, FKs the
+> evaluated `calculation_run_id`, `uq(limit_definition_id, calculation_run_id)` idempotency) and
+> ACTIVATES the genesis-reserved `LIMIT.*` (EVT-060) + `BREACH.*` (EVT-070) audit decades (first
+> emission — the SCH-1/SCHEDULE realization precedent). R-07 mint `limit.manage` (**2L-maker SoD** —
+> `risk_manager_2l` + `platform_admin` ONLY; author≠limit-setter, DIVERGES from SCH-1's 1L
+> `schedule.manage`) / `limit.view` / `breach.view`.
+>
+> **All FOUR Fable foundation-audit demands discharged.** (1) breach discovery via
+> `calculation_run`/`calc/reads.py` (so MANUAL runs are limit-checked too), breach records FK
+> `calculation_run_id`, idempotency = the IA `(limit_id, run_id)` key; (2) breach evaluation is a PHASE
+> of the ONE per-tenant operational tick — `run_operational_tick_for_tenant` = `poll_tenant_schedules`
+> then `poll_tenant_breaches` under one `run_in_tenant` terminal commit (NO second entrypoint, NO
+> `Schedule` row); (3) per-tenant assembly inside the tick (OQ-1=B preserved, app 100% non-BYPASSRLS);
+> (4) grid-frozen-for-life ratified standing.
+>
+> **Ratified OQ-LIM-1-1…4:** OQ-1=A (EV header + self-describing echo; threshold history = the
+> `LIMIT.CHANGE` trail, NOT FR-bitemporal) / OQ-2=A (exact `scope_portfolio_id`; firm rollup v2) /
+> OQ-3=A (v1 metric set VAR/`var_value` + ACTIVE_RISK/`te_value`, hardcoded `_METRIC_MAP` + fail-closed
+> `column_unit == threshold_unit` assert + REQUIRED `benchmark_id` for ACTIVE_RISK) / OQ-4=A (DETECT +
+> record + read; the formal `LIMIT.APPROVE` maker-checker gate AND the breach
+> ASSIGN/1L/2L/ESCALATE/CLOSE lifecycle DEFERRED to MG-2).
+>
+> **Pre-ratification verifier folded TWO blocking correctness holes BEFORE ratification:** the breach
+> predicate's `LTE/GTE` naming was an inversion trap (a mis-code fires on every healthy book, silent on
+> real breaches) → `breach_direction` names the BREACH condition directly (ABOVE ⟺ `observed >
+> threshold` strict; BELOW ⟺ `observed < threshold`), a two-line total function tested against its table
+> from birth; and active-risk was under-specified without a benchmark (`active_risk_result.benchmark_id`
+> NOT-NULL; a portfolio computes TE vs MANY benchmarks) → `benchmark_id` added to the selector + echo.
+>
+> **4-finder impl review: ZERO HIGH, 6 MED folded.** The two load-bearing safety themes: **the
+> silent-green fail-open** — `limit_health` now RECOMPUTES its verdict from the source of truth via
+> `_breaches(observed, …)`, NEVER inferred from the presence of a breach row; the breach poll uses a
+> constraint-SPECIFIC dedup (`_is_breach_dedup` — only `uq_breach_limit_run` is benign) plus `logging`
+> on any non-dedup/eval failure — and **the precision overflow** — `threshold_value`/`observed_value`
+> widened `(28,6)→PreciseDecimal(34,12)` (22 integer digits cover `var_value`'s `(28,6)` range with no
+> loss, 12 scale holds the `te_value` fraction). Plus the **P3-5 cross-tenant FK guard** restored on the
+> NEW `create_limit` write path (`assert_portfolio_in_tenant` + a raw-SQL tenant-filtered `benchmark`
+> existence check kept OFF the marketdata import fence + a duplicate-code pre-check) and coverage folds
+> (active-risk `te_value`/FRACTION + floor-direction e2e). Two conformance-test catches during impl: a
+> local `_json_safe` dup → canonical `irp_shared.audit.payload.json_safe`; a
+> `from irp_shared.marketdata.benchmark` import → the raw-SQL benchmark check.
+> **Lesson: a health/status surface for a fail-open control must RECOMPUTE its verdict from the source
+> of truth, never infer it from the presence of an evidence row — and its echo/store columns must carry
+> at least the integer-range of every source they copy.** Gates at close: `make check` green; full suite
+> exit-0 on a FRESH PG schema; scheduler+limit PG battery
+> (RLS/append-only-trigger/ops-no-grant/uq-double-detect/forged-tenant) green; `alembic check` clean
+> (single linear head `0050`, chain `…0048→0049→0050`).
+>
+> **The platform can now enforce a limit and record a breach, auditably, over the numbers SCH-1 keeps
+> fresh. NEXT = MG-2 planning** (Wave-11 slice 3, the FINAL slice — carry a breach / a model-validation
+> finding to term: the breach ASSIGN→1L_RESPONSE→2L_REVIEW→ESCALATE→CLOSE lifecycle [ENT-034
+> `breach_action` + the greenfield `DEP-WFL` state machine] + the formal `LIMIT.APPROVE` maker-checker
+> gate LIM-1 deferred; deadline enforcement rides the SCH-1 cadence, the breach surface is LIM-1's. Then
+> the mandatory Wave-11 close review).
+>
+> ---
+>
+> **Prior: HEAD `96965cf`** = merge of **PR #108** (SCH-1: the FIRST scheduler — Wave-11 slice 1,
 > "operationalize"; migration `0049_scheduling`), **CI green** (all 6 jobs). **Counts UNCHANGED
 > 23/38/109** — SCH-1 mints NO new governed number; it is the platform's first genuinely-new
 > architectural primitive beyond request/response reuse: cadenced governed background execution that
@@ -56,9 +124,8 @@
 > `alembic check` clean (single linear head `0049`).
 >
 > **The platform's operational half is opening: a governed number can now RUN on a cadence, auditably.**
-> **NEXT = LIM-1 planning** (Wave-11 slice 2 — the governed limit + breach workflow over the numbers
-> SCH-1 keeps fresh: a limit definition + a deterministic breach evaluation over pinned results + an IA
-> breach record; the first governed *write-side workflow*). Then MG-2 (remediation lifecycle).
+> *(SCH-1's NEXT was LIM-1 planning — DONE + CLOSED 2026-07-23, PR #111 `218afc9`; see the CURRENT TRUTH
+> block at the top.)*
 >
 > **Prior: HEAD `633e855`** = merge of **PR #104** (PPF-3: the unified public+private parametric VaR —
 > Wave 10 slice 3, §2.1 arc CAPSTONE; migration `0048`; the 20th governed number,
