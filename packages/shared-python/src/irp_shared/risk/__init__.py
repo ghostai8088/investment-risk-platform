@@ -383,6 +383,12 @@ from irp_shared.risk.var_total_kernel import (
     daily_residual_stdev,
     total_var_residual,
 )
+from irp_shared.risk.var_unified_kernel import (
+    VarUnifiedKernelError,
+    daily_omega,
+    private_block_variance,
+    sigma_unified,
+)
 
 __all__ = [
     "register_proxy_weight_regression_model",
@@ -639,6 +645,11 @@ __all__ = [
     "TotalVarResidual",
     "VarTotalKernelError",
     "total_var_residual",
+    "daily_residual_stdev",
+    "VarUnifiedKernelError",
+    "daily_omega",
+    "private_block_variance",
+    "sigma_unified",
     "daily_residual_stdev",
     "ActiveRiskResult",
     "ActiveRiskActor",
