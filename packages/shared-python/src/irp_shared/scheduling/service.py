@@ -24,9 +24,9 @@ from sqlalchemy.orm import Session
 
 from irp_shared.audit.actions import ACTION_CREATE, ACTION_UPDATE
 from irp_shared.audit.service import record_event
-from irp_shared.exposure.service import latest_exposure
 from irp_shared.risk.covariance_service import latest_covariances
 from irp_shared.risk.events import VarActor
+from irp_shared.risk.factor_service import latest_factor_exposure
 from irp_shared.risk.var_service import VarRunResult, run_var
 from irp_shared.scheduling.events import (
     CADENCE_INTERVAL,
@@ -136,8 +136,9 @@ def dispatch_one(
 
     Idempotent: a pre-existing ``(schedule_id, tick)`` row is returned unchanged (the unique
     constraint is the hard race backstop — a concurrent loser rolls back its phantom run at COMMIT).
-    v1 dispatches VaR only (OD-SCH-1-D): resolve the latest COMPLETED exposure run for the scope
-    (tenant-scoped) + covariance run (tenant-global), then ``run_var`` with build args re-pins a
+    v1 dispatches VaR only (OD-SCH-1-D): resolve the latest COMPLETED FACTOR_EXPOSURE run for the
+    scope (tenant-scoped — this is what ``run_var`` re-pins as ``x``, NOT a plain EXPOSURE run) +
+    the latest COMPLETED COVARIANCE run (tenant-global), then ``run_var`` with build args re-pins a
     FRESH input snapshot over current data. A pre-create refusal RAISES (the caller records a FAILED
     ledger row); a post-create FAILED run returns a row with ``outcome=FAILED`` + the failed run id.
     """
@@ -156,12 +157,12 @@ def dispatch_one(
         )
 
     tenant = schedule.tenant_id
-    exposure_rows = latest_exposure(
+    fx_rows = latest_factor_exposure(
         session, acting_tenant=tenant, portfolio_id=schedule.scope_portfolio_id
     )
-    if not exposure_rows:
-        raise ScheduleError("no COMPLETED exposure run for the schedule scope")
-    exposure_run_id = exposure_rows[0].calculation_run_id
+    if not fx_rows:
+        raise ScheduleError("no COMPLETED factor-exposure run for the schedule scope")
+    exposure_run_id = fx_rows[0].calculation_run_id
     cov_rows = latest_covariances(session, acting_tenant=tenant)
     if not cov_rows:
         raise ScheduleError("no COMPLETED covariance run for the tenant")

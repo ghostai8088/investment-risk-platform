@@ -65,7 +65,7 @@ def upgrade() -> None:
         sa.Column("valid_to", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_by", sa.String(length=255), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_by", sa.String(length=255), nullable=True),
         sa.Column("code", sa.String(length=150), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
