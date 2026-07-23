@@ -2,77 +2,73 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-23) — read this block; everything below it is HISTORY
 >
-> **HEAD `633e855`** = merge of **PR #104** (PPF-3: the unified public+private parametric VaR — Wave
-> 10 slice 3, §2.1 unification arc slice 3 of 3, THE CAPSTONE; migration `0048_var_private_variance`;
-> the 20th governed number, `risk.var.parametric_unified`, counts 22/37/104 → **23/38/109**), **CI
-> green** (all 6 jobs). `σ_unified = √(x'Σx + p'(Ω_pp/d_t)·p + residual_over_non-private-members)` —
-> its OWN binder `run_var_unified` (the plain/total `run_var` stays byte-untouched save one
-> per-family predicate fold). **The arc is DONE**: PPF-1 (pure-private return) → PPF-2 (Ω_pp) →
-> PPF-3 (this, the unified number).
+> **HEAD `96965cf`** = merge of **PR #108** (SCH-1: the FIRST scheduler — Wave-11 slice 1,
+> "operationalize"; migration `0049_scheduling`), **CI green** (all 6 jobs). **Counts UNCHANGED
+> 23/38/109** — SCH-1 mints NO new governed number; it is the platform's first genuinely-new
+> architectural primitive beyond request/response reuse: cadenced governed background execution that
+> makes the *existing* numbers PRODUCIBLE on a cadence. New entities: an EV `schedule` (ENT-061,
+> config header, entity-versioned-in-place) + an IA append-only `scheduled_run` (ENT-062, one row per
+> fired grid tick, `uq(schedule_id, scheduled_for)` idempotency backstop); an R-07 permission mint
+> (`schedule.manage`/`.view`) + an R-07 audit-taxonomy mint (a new `SCHEDULE` category, EVT-260,
+> genuinely EMITTED — a control-plane lifecycle, not a CALC run). A fire re-invokes an existing family
+> binder (v1 `run_var`) over a FRESH re-pin.
 >
-> **The REPARTITION is the whole story.** Two pre-ratification verifiers REFUTED the naive additive
-> formula as a variance DOUBLE-COUNT: PA-4's residual σ_e² is the WHOLE non-public residual
-> (`Var(PurePrivate)+Var(AssetSpecific)`), already inside Ω_pp — adding both double-counts a private
-> fund. The fix: a pure-private-segment member's non-public variance lives in the Ω_pp block ALONE;
-> leg 3 (the residual) sums ONLY non-private-segment members. The BUILDER enforces this at pin time
-> (`build_var_unified_snapshot` excludes private members from the residual pins); the 4-finder review
-> found the CONSUME path (`run_var_unified(snapshot_id=...)`) did NOT re-enforce it — three finders
-> independently converged on the same hole (a hand-minted snapshot could pin one instrument in BOTH
-> legs). Folded: the binder now refuses any leg-2/leg-3 instrument overlap at adjudication, plus a
-> held-segment OFF-DIAGONAL completeness gate (parity with the public leg — an absent pair was
-> silently imputed as zero co-movement, understating the number). **Both are now enforced on BOTH the
-> build AND consume paths**, with regression tests for each.
+> **THE CRUX (OQ-1=B, ratified).** The census proved there is NO tenant registry and the app role
+> CANNOT enumerate tenants, so cross-tenant dispatch is inherently an AD-015 ops-role question. Two
+> pre-ratification verifiers REFUTED the draft framing of Option A (in-app ops-role cross-tenant read)
+> as a settled AD-015 reuse — it is a genuine 3-part doctrine EXPANSION (a first-ever ops grant on
+> non-audit tables + inverting the test-enforced no-grant invariant + a cross-tenant read of
+> governed-run provenance). **User ratified OQ-1=B (infra-driven per-tenant dispatch): the deploy
+> layer invokes the worker once per tenant, the whole poll+dispatch runs inside ONE tenant's
+> NON-BYPASSRLS `run_in_tenant` context — the app stays 100% non-BYPASSRLS, the standing
+> `test_ops_role_has_no_grant_on_*` isolation invariant is PRESERVED** (SCH-1 ships its own such test
+> for the two scheduling tables).
 >
-> **Disclosure honesty, corrected.** A governed model assumption + the INITIAL validation scope_note
-> originally claimed the unified number differs from total VaR by "*exactly* the cross-segment
-> co-movement." The 4th finder caught this as an overstatement: `σ²_unified − σ²_total` also carries
-> a non-zero DIAGONAL re-estimation term (Ω_pp's sample variance, ÷(N−1), vs PA-4's OLS residual
-> variance, ÷(N−k) — two different estimators of the same quantity), and no test isolated the
-> off-diagonal. Reworded across the registered assumption, the governed dossier, the methodology doc,
-> and the demo: the number REPLACES total's independent diagonal residual with the CORRELATED Ω_pp
-> block, whose OFF-DIAGONAL is the structurally-new cross-fund term (the block's diagonal ALSO
-> re-estimates). The demo's `_pg` headline test now asserts the off-diagonal is non-zero (proving the
-> cross term is real, not merely that the numbers differ).
+> **The no-backfill / coalesce-to-`current_tick` model.** The verifiers also caught TWO blocking
+> cadence defects (a backfill that would manufacture a fraudulent daily series of identical re-pins
+> wearing different date stamps; a pause/resume backfill storm) — BOTH folded by ONE fix: each poll
+> fires at most the CURRENT grid tick and leaves missed grid points as honest ledger gaps (a fresh
+> number is inherently as-of-now; the FRTB daily series accrues PROSPECTIVELY). **INV-SCH-1**
+> (ratified): `scheduled_for` = the pure `current_tick(anchor, interval, now)` grid value, NEVER a
+> wall clock — load-bearing for both idempotency and the pure-function test firewall.
 >
-> **4-finder review: 1 HIGH (the converged consume-path double-count) + 2 MED (the off-diagonal gate;
-> the disclosure overstatement) + LOWs folded** (a mislabeled "guardrail" test that was actually a
-> kernel identity — relabeled, with the real anti-double-count enforcement now the build+consume
-> tests; the tier re-rated MEDIUM→HIGH materiality — the flagship public+private VaR, on exposure/
-> purpose grounds matching its sibling VaR flagships, not the non-enforcement ground the platform's
-> own rubric rejects). Everything else the finders attacked HELD: the build-path repartition, the
-> quadratic form + 1/d_t de-scale, cross-tenant Ω_pp provenance (both paths re-resolve under
-> acting_tenant), the migration (FK 55 chars, CHECK satisfied, `var_result_content` excludes the two
-> new columns — no false BT-1 drift), the API/FE exhaustive decimal contract, Rule-7 scope, the
-> three-way predicate isolation, and every hard governance invariant (no BYPASSRLS, frozen audit, no
-> new mint, immutable model identity).
+> **4-finder impl review: ZERO HIGH, 4 MED + LOWs folded.** The doctrine finder found ZERO HIGH/MED
+> (frozen `audit/service.py` empty diff; app 100% non-BYPASSRLS; RLS/append-only/grants correct). The
+> substantive findings converged on the worker poll-loop error handling: (1) an over-broad
+> `except IntegrityError` masked non-dedup constraint failures → could hot-loop a failing tick forever
+> with no FAILED evidence — fixed with a constraint-name check (`_is_tick_dedup`); (2) the
+> failure-recording path caught only `IntegrityError` → a non-integrity error there could escape the
+> loop, abort `run_in_tenant`'s single commit, and unwind every sibling schedule — fixed by making
+> `_record_failed` FULLY catch-all (the starvation guarantee); (3) INV-SCH-1 unenforced at the write
+> boundary → `_assert_current_tick` self-enforces `tick == current_tick`; (4) the advertised
+> resilience behaviors were untested → 4 new tests. A build-time bug was caught by the recon + fixed
+> pre-review (dispatch resolved a plain EXPOSURE run when `run_var` needs a FACTOR_EXPOSURE run).
 >
-> **Demo stage 13** (`DEMO-UNIFIED-PPF3`) seeds ONE new portfolio holding the two EXISTING private
-> funds (PE-HARBOR-IV, PC-BRIDGEWATER-II — **ZERO new instruments/segments/Ω_pp**), runs the union
-> public chain (exposure → LOADINGS factor-exposure → the campaign's REUSED window-30 DAILY
-> covariance, extended by 5 honestly-disclosed FX_USD returns so the FX×MF overlap reaches 30 obs) +
-> a PA-4 total-VaR contrast + the unified run consuming PPF-2's tenant-wide Ω_pp. Live numbers:
-> σ_unified = 85.758098 vs σ_total = 85.685795 (the correlated block replacing a 155.35 independent
-> residual with a 167.75 correlated one); the unified row's `residual_variance` is EXACTLY 0 (both
-> funds are pure-private) while the total row's is 155.35 — the double-count fix, proven end-to-end.
-> Files ONE INITIAL AWC (HIGH/HIGH). Gates: `make check` 1849 passed; `make fe-check` green; `make
-> gen-api-check` clean; the full demo PG chain in correct order green (`stage9zzzz` last); the
-> affected-family PG battery green on a clean schema; `alembic check` clean; `pip-audit` clean (one
-> pre-existing dev-only `pytest` advisory, not shipped).
+> **Post-merge CI fix (PR #108 re-land).** **PR #107 had merged ONLY the planning DRAFT (`a382b93`)** —
+> no implementation reached main. The first push also had a CI-collection bug: the dispatch test
+> imported the VaR-chain seed as `from tests.test_var`, which resolves locally (cwd on `sys.path`) but
+> NOT under CI's repo-root `python -m pytest` (`ModuleNotFoundError: No module named 'tests'`) —
+> switched to the repo's `from test_var` sibling-module convention; the full implementation re-landed
+> via **PR #108** (CI green). **Lesson: a cross-test-module import MUST use the bare sibling form
+> (`from test_x import`), never `from tests.test_x import`.** Gates at close: `make check` green (ruff,
+> mypy 222 files, docs, secret); pytest **1453 passed / 388 skipped** (SQLite); scheduler PG battery
+> (RLS/append-only-trigger/ops-no-grant/unique-tick) + affected chain green on a clean schema;
+> `alembic check` clean (single linear head `0049`).
 >
-> **WAVE 10 CLOSED + RATIFIED 2026-07-23** (`wave_10_close_review.md`, on `wave-10-close` `1150cce`,
-> awaiting USER merge; OQ-W10C-1/2/3/5 approved + OQ-W10C-4 fork A). Four cross-cutting close auditors
-> + hand re-verification: **ZERO shipped-code defects — the SIXTH consecutive clean close on the code
-> axis**; every hard invariant held; gates green; counts 23/38/109. The one HIGH was doc/PROCESS — the
-> closure-stamp class recurred a SIXTH time (PPF-3 left at "RATIFIED") past a CI gate blind on two
-> counts (matched only "DRAFT for ratification"; the arc row's inline `✅ **PPF-N**` marks left all
-> three PPF slices out of scope) — fixed at-close: `check_docs.py` teeth broadened + tested, PPF-3 AND
-> a historical CC-2 both stamped CLOSED. **Destination check: the §2.1 destination is GENUINELY shipped
-> v1, not a toy** (the pre-impl double-count catch proves it); leverage is the one load-bearing v2 gap;
-> the demo delta is honestly tiny (~0.08%). **The frontier has crossed from methodology into
-> OPERATIONS** — 20 governed numbers, but nothing runs on a cadence / enforces a limit / carries a
-> remediation to term. **WAVE 11 RATIFIED (fork A "OPERATIONALIZE"): SCH-1 the first scheduler → LIM-1
-> limits/breach → MG-2 remediation lifecycle.** **NEXT = SCH-1 planning** (the first scheduler — a
-> genuinely-new architectural primitive, a Tier-3 sign-off at planning).
+> **The platform's operational half is opening: a governed number can now RUN on a cadence, auditably.**
+> **NEXT = LIM-1 planning** (Wave-11 slice 2 — the governed limit + breach workflow over the numbers
+> SCH-1 keeps fresh: a limit definition + a deterministic breach evaluation over pinned results + an IA
+> breach record; the first governed *write-side workflow*). Then MG-2 (remediation lifecycle).
+>
+> **Prior: HEAD `633e855`** = merge of **PR #104** (PPF-3: the unified public+private parametric VaR —
+> Wave 10 slice 3, §2.1 arc CAPSTONE; migration `0048`; the 20th governed number,
+> `risk.var.parametric_unified`, `σ_unified = √(x'Σx + p'(Ω_pp/d_t)·p + residual)`; counts
+> 22/37/104 → 23/38/109). A REPARTITION, not a naive add — two verifiers refuted the additive formula
+> as a variance double-count; 4-finder folded 1 HIGH (the consume-path double-count, three finders
+> converged) + 2 MED. **WAVE 10 CLOSED + RATIFIED 2026-07-23** (PR #106; SIXTH consecutive clean close
+> on the code axis; the one HIGH doc/process — the closure-stamp class recurred a sixth time, teeth
+> broadened + tested). The §2.1 destination shipped v1 (leverage the one load-bearing v2 gap). **WAVE
+> 11 RATIFIED (fork A "OPERATIONALIZE"): SCH-1 (done) → LIM-1 → MG-2.**
 >
 > **Prior: HEAD `7aefd1c`** = merge of **PR #101** (PPF-2: the private covariance block Ω_pp — Wave 10
 > slice 3, §2.1 unification arc slice 2 of 3; **NO migration**; the 19th governed number,
