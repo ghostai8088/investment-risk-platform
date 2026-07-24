@@ -16,7 +16,24 @@ A breach binds NO new snapshot/run/model — the scheduled RUNS it evaluates are
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
+
+
+def _canonical_actor_id(actor_id: str) -> str:
+    """Canonicalize a UUID-shaped actor id to its lowercase-hyphenated form so the person-level SoD
+    STAMP (``created_by``/``updated_by`` / ``breach_action.actor_id``) and the COMPARE (approve
+    maker-set; the MG-2 responder-set) are byte-identical regardless of the casing/format an IdP or
+    dev header presents (API-2 D1 / verifier F1 — else an uppercase-create then
+    lowercase-approve self-approves). The control is thus self-defending at the SERVICE layer, not
+    the transport, and API-2b's breach SoD inherits it for free. A NON-UUID id — a synthesized tick
+    SYSTEM actor (``limit-eval:{id}`` / ``breach-deadline:{id}``) or a test fixture — passes through
+    unchanged, so nothing breaks."""
+    try:
+        return str(uuid.UUID(actor_id))
+    except (ValueError, AttributeError, TypeError):
+        return actor_id
+
 
 #: GOVERNED audit codes (the genesis-reserved LIMIT/EVT-060 + BREACH/EVT-070 decades), ACTIVATED by
 #: LIM-1 and EMITTED for limit config changes + breach detection.
@@ -153,6 +170,10 @@ class LimitActor:
     actor_id: str
     actor_type: str = "user"
 
+    def __post_init__(self) -> None:
+        # Canonicalize at construction so stamp==compare for the person-level SoD (D1/F1).
+        object.__setattr__(self, "actor_id", _canonical_actor_id(self.actor_id))
+
 
 @dataclass(frozen=True)
 class BreachActor:
@@ -162,3 +183,6 @@ class BreachActor:
 
     actor_id: str
     actor_type: str = "user"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "actor_id", _canonical_actor_id(self.actor_id))

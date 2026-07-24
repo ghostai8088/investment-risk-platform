@@ -432,6 +432,29 @@ def test_suspend_and_resume_on_a_draft_are_refused(session: Session) -> None:
         resume_limit(session, limit, actor=_ACTOR)
 
 
+def test_actor_id_canonicalization_closes_case_variance_self_approval(session: Session) -> None:
+    # API-2 D1 / verifier F1: the person-level SoD compares actor ids; if one principal presents
+    # a different string-form of their UUID at create vs approve, an un-canonicalized compare would
+    # let them self-approve (PG-specific — uuid compares case-insensitively there). The LimitActor
+    # canonicalizes UUID-shaped ids at construction, so stamp == compare regardless of case.
+    tenant = str(uuid.uuid4())
+    raw = uuid.uuid4()
+    upper = LimitActor(actor_id=str(raw).upper())  # maker, uppercase form
+    lower = LimitActor(actor_id=str(raw).lower())  # same human, lowercase form
+    assert upper.actor_id == lower.actor_id == str(raw)  # canonicalized to one form
+    limit = _mk(session, tenant, actor=upper)
+    assert limit.created_by == str(raw)  # stamped canonical
+    with pytest.raises(LimitSodError):  # the lowercase form is recognized as the same maker
+        approve_limit(session, limit, actor=lower, approval_ref="RC-1")
+
+
+def test_non_uuid_actor_id_passes_through_unchanged() -> None:
+    # A synthesized tick SYSTEM actor / a test fixture id is not UUID-shaped and must pass through
+    # (canonicalization is lenient, so nothing breaks).
+    assert LimitActor(actor_id="limit-eval:abc").actor_id == "limit-eval:abc"
+    assert LimitActor(actor_id="risk-mgr-2l").actor_id == "risk-mgr-2l"
+
+
 def test_cosmetic_name_change_does_not_demote_an_active_limit(session: Session) -> None:
     tenant = str(uuid.uuid4())
     limit = _mk_active(session, tenant)

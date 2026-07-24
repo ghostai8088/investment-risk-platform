@@ -86,6 +86,11 @@ class LimitSodError(LimitError):
     SOD-02 / REQ-LIM-001; the MG-2 ``BreachSodError`` analog applied to a scalar maker)."""
 
 
+class DuplicateLimitError(LimitError):
+    """A limit with the same ``(tenant, code)`` already exists (the pre-check twin of the
+    ``uq_limit_definition_tenant_code`` race — API-2 maps both to a uniform 409)."""
+
+
 @dataclass(frozen=True)
 class MetricSpec:
     """The FIXED (result column, unit, benchmark-need) a ``(run_type, metric_type)`` thresholds."""
@@ -216,6 +221,34 @@ def select_active_limits(session: Session, *, acting_tenant: str) -> list[LimitD
             )
         ).scalars()
     )
+
+
+# --- reads (API-2) ------------------------------------------------------------------------
+def list_limits(
+    session: Session, *, acting_tenant: str, status: str | None = None
+) -> list[LimitDefinition]:
+    """Tenant-scoped limit list, optionally filtered by status (``status=DRAFT`` = the approval
+    queue). Explicit tenant predicate atop RLS (belt-and-suspenders, the ``select_active_limits``
+    pattern). Ordered by code for a stable read surface."""
+    if status is not None and status not in LIMIT_STATUSES:
+        raise LimitError(f"status {status!r} is invalid")
+    stmt = select(LimitDefinition).where(LimitDefinition.tenant_id == str(acting_tenant))
+    if status is not None:
+        stmt = stmt.where(LimitDefinition.status == status)
+    return list(session.execute(stmt.order_by(LimitDefinition.code)).scalars())
+
+
+def get_limit(session: Session, *, acting_tenant: str, limit_id: str) -> LimitDefinition | None:
+    """Read ONE limit by id, tenant-filtered atop RLS (the P3-5 doctrine: PG FK checks bypass RLS,
+    so an explicit tenant predicate is load-bearing for a caller-supplied id). Returns None on a
+    missing/cross-tenant id (the API maps that to an indistinguishable 404). Doubles as the
+    load-for-mutation step (``update_limit``/``approve_limit`` take the object, not an id)."""
+    return session.execute(
+        select(LimitDefinition).where(
+            LimitDefinition.id == str(limit_id),
+            LimitDefinition.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
 
 
 def evaluate_limit(session: Session, limit: LimitDefinition, now: datetime) -> Breach | None:
@@ -377,7 +410,7 @@ def create_limit(
             LimitDefinition.tenant_id == str(tenant_id), LimitDefinition.code == code
         )
     ).first():
-        raise LimitError(f"a limit with code {code!r} already exists in the tenant")
+        raise DuplicateLimitError(f"a limit with code {code!r} already exists in the tenant")
     limit = LimitDefinition(
         tenant_id=str(tenant_id),
         code=code,
