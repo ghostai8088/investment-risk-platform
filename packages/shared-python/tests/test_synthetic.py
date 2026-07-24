@@ -505,9 +505,10 @@ def test_no_migration_and_no_entity() -> None:
     # ES-HS-1 owns 0041_es_historical; DS-2 owns 0042_desmoothing_estimated_alpha; BT-3 owns
     # 0043_es_backtest; CC-1 owns 0044_private_capital; CC-2 owns 0045_pacing_projection;
     # API-1b owns 0046_run_scope_portfolio; PPF-1 owns 0047_private_factor_return; PPF-3 owns
-    # 0048_var_private_variance; SCH-1 owns 0049_scheduling; LIM-1 owns 0050_limit_breach; the
-    # synthetic slice still adds no migration, so the next slot (0051+) must remain empty.
-    assert not list(versions.glob("0051*")), "no 0051 migration may be added by the synthetic slice"
+    # 0048_var_private_variance; SCH-1 owns 0049_scheduling; LIM-1 owns 0050_limit_breach;
+    # MG-2 owns 0051_breach_action; the synthetic slice still adds no migration, so the next
+    # free slot (0052+) must remain empty.
+    assert not list(versions.glob("0052*")), "no 0052 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -

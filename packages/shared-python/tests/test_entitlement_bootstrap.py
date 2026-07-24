@@ -351,3 +351,26 @@ def test_pacing_permissions_grants_as_ratified() -> None:
         "platform_admin",
     }
     assert "auditor_3l" not in _holders("pacing.run")
+
+
+def test_breach_lifecycle_permissions_grants_as_ratified() -> None:
+    # MG-2 (OD-MG-2, Wave-11 slice 3): the three-lines breach workflow. `breach.respond` is the 1L
+    # verb (owns/remediates), `breach.review` is the 2L verb (assign/review/escalate/close).
+    for code in ("breach.respond", "breach.review"):
+        assert code in ALL_CODES
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    assert _holders("breach.respond") == {"risk_analyst_1l", "platform_admin"}
+    assert _holders("breach.review") == {"risk_manager_2l", "platform_admin"}
+
+    # SOD-02 (the maker-checker partition, VERIFIER H6): no NON-ADMIN role may hold BOTH — the role
+    # partition is the first line of defense, the person-level reviewer!=responder refusal the
+    # backstop for the platform_admin dual-hat.
+    for role, codes in ROLE_TEMPLATES.items():
+        if role == "platform_admin":
+            continue
+        assert not (
+            "breach.respond" in codes and "breach.review" in codes
+        ), f"{role} violates SOD-02 (holds both breach.respond and breach.review)"

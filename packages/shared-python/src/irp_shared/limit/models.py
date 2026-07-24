@@ -31,10 +31,12 @@ from typing import Any
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
     event,
+    text,
 )
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
@@ -123,13 +125,85 @@ class Breach(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)
 
 
+class BreachAction(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One transition of a breach's remediation lifecycle (ENT-034, IA TRUE append-only, MG-2).
+
+    The DEP-WFL state machine over ``breach``: ``DETECTED → ASSIGNED → RESPONDED(1L) → REVIEWED(2L)
+    → CLOSED`` with an orthogonal ``ESCALATED``. The breach's OPERATIVE current state is the
+    ``to_state`` of the latest action by ``seq`` (recency-derived — the VW-1 ``model_validation``
+    pattern; NEVER a mutated flag, since this table is append-only). ``breach.status`` is frozen at
+    ``DETECTED`` and is NOT the lifecycle source of truth (OD deprecation).
+    """
+
+    __tablename__ = "breach_action"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        # per-breach monotonic ordering key (app-assigned under the parent-breach FOR UPDATE lock
+        # as max(seq)+1 — race-free BECAUSE the lock serializes appends; SQLite serializes all
+        # writes globally, so cross-tier without a PG-only IDENTITY). Recency = ORDER BY seq DESC.
+        UniqueConstraint("breach_id", "seq", name="uq_breach_action_seq"),
+        # escalate AT MOST ONCE per deadline epoch: a partial-unique index over ESCALATE rows keyed
+        # by the (breach, epoch_seq) being escalated — a long-overdue breach re-selects each
+        # the second insert is a benign dedup; a post-recovery ASSIGN (a NEW governing action with a
+        # new seq) opens a fresh epoch so a legitimate re-escalation is admitted. The epoch key
+        # governing ASSIGN action's monotonic `seq` (NOT the derived `response_due` timestamp — two
+        # distinct epochs could compute the same due-time under an injected/coarse `now`, which
+        # silently suppress a real escalation; VERIFIER-F1-MED1). Enforced on BOTH tiers.
+        Index(
+            "uq_breach_escalation",
+            "breach_id",
+            "epoch_seq",
+            unique=True,
+            postgresql_where=text("action_type = 'ESCALATE'"),
+            sqlite_where=text("action_type = 'ESCALATE'"),
+        ),
+    )
+
+    breach_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("breach.id"), nullable=False, index=True
+    )
+    #: per-breach monotonic sequence (1-based), the deterministic recency key (VERIFIER-B1).
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: The transition verb ∈ BREACH_ACTION_TYPES (ASSIGN/1L_RESPONSE/2L_REVIEW/ESCALATE/CLOSE).
+    action_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: The recorded transition (both stored — the log is self-describing AND the allowed-transition
+    #: guard checks the observed pre-state; the LIM-1 self-describing-echo doctrine).
+    from_state: Mapped[str] = mapped_column(String(20), nullable=False)
+    to_state: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: The human principal who performed the action (the person-level SoD source); SYSTEM for
+    #: auto-escalate.
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    #: Line-of-defense tag (1L/2L/SYS) — derived from the gating permission.
+    actor_line: Mapped[str] = mapped_column(String(4), nullable=False)
+    #: The 1L owner assigned (populated on ASSIGN).
+    assigned_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: The response deadline stamped at ASSIGN (a FIXED timestamp; echoed onto the ESCALATE row as
+    #: evidence of which deadline was escalated). Compared ``< now`` to decide overdue, NOT a grid.
+    response_due: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: The governing ASSIGN action's ``seq`` — the escalation epoch key (populated on ESCALATE rows
+    #: only; ``uq_breach_escalation`` = one per epoch). A true monotonic id, not a derived
+    #: timestamp (VERIFIER-F1-MED1).
+    epoch_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: The 1L remediation response / 2L review note / closure rationale.
+    narrative: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    #: On 2L_REVIEW ∈ {ACCEPT, REJECT} (ACCEPT→REVIEWED, REJECT→ASSIGNED).
+    review_outcome: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    #: Closure-evidence pointer — REQUIRED on CLOSE (REQ-BRC-003).
+    evidence_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    #: The action's wall-clock (tick ``now`` for SYSTEM; request time for humans) — evidence, NOT
+    #: the recency key (``seq`` is).
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{type(target).__name__} is append-only (AUD-01); update/delete is forbidden"
     )
 
 
-# breach is IA TRUE append-only (the ORM guard paired with the migration-0050 P0001 trigger).
-# limit_definition (EV) is edited in place (record_version bump) and is NOT append-only.
+# breach + breach_action are IA TRUE append-only (the ORM guard paired with the P0001 DB triggers,
+# migrations 0050/0051). limit_definition (EV) is edited in place (record_version) and is NOT.
 event.listen(Breach, "before_update", _block_mutation)
 event.listen(Breach, "before_delete", _block_mutation)
+event.listen(BreachAction, "before_update", _block_mutation)
+event.listen(BreachAction, "before_delete", _block_mutation)
