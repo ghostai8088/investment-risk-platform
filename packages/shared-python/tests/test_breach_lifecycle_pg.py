@@ -97,7 +97,8 @@ def app_url() -> str:
 
 
 def _seed_breach(factory, tenant: str) -> str:  # noqa: ANN001
-    """A portfolio + ACTIVE limit + run + a persisted breach (real FKs). Returns the breach id."""
+    """A portfolio + limit + run + a persisted breach (real FKs; the breach is inserted directly, so
+    the limit's DRAFT/ACTIVE status is irrelevant here). Returns the breach id."""
     session = factory()
     try:
         set_tenant_context(session, tenant)

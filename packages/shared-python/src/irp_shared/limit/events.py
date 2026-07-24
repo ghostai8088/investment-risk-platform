@@ -22,6 +22,10 @@ from dataclasses import dataclass
 #: LIM-1 and EMITTED for limit config changes + breach detection.
 LIMIT_DEFINE_EVENT = "LIMIT.DEFINE"
 LIMIT_CHANGE_EVENT = "LIMIT.CHANGE"
+#: MG-3: the R-07 activation of the genesis-reserved `LIMIT.APPROVE` (EVT-060) — the DRAFT→ACTIVE
+#: maker-checker sign-off (approver != the draft's maker). Emitted caller-side to the FROZEN
+#: `record_event` with an `approval_ref`.
+LIMIT_APPROVE_EVENT = "LIMIT.APPROVE"
 BREACH_DETECT_EVENT = "BREACH.DETECT"
 
 #: The audit ``source_module`` tag for limit/breach emits.
@@ -50,10 +54,14 @@ LIMIT_KIND_HARD = "HARD"
 LIMIT_KIND_SOFT = "SOFT"
 LIMIT_KINDS = frozenset({LIMIT_KIND_HARD, LIMIT_KIND_SOFT})
 
-#: Limit lifecycle status. Only ACTIVE limits are evaluated. (No DRAFT/APPROVE gate in v1 — OQ-4=A.)
+#: Limit lifecycle status. Only ACTIVE limits are evaluated. MG-3 adds DRAFT — the un-approved
+#: state a limit is born into (create) and re-enters on a material change (REQ-LIM-001
+#: maker-checker, OQ-MG-3-5=A); it leaves DRAFT only via `approve_limit` (a non-maker 2L sign-off).
+#: SUSPENDED is the operational off-switch (ACTIVE<->SUSPENDED, not a config change; no re-approve).
+LIMIT_STATUS_DRAFT = "DRAFT"
 LIMIT_STATUS_ACTIVE = "ACTIVE"
 LIMIT_STATUS_SUSPENDED = "SUSPENDED"
-LIMIT_STATUSES = frozenset({LIMIT_STATUS_ACTIVE, LIMIT_STATUS_SUSPENDED})
+LIMIT_STATUSES = frozenset({LIMIT_STATUS_DRAFT, LIMIT_STATUS_ACTIVE, LIMIT_STATUS_SUSPENDED})
 
 #: Breach lifecycle status (the LIM-1 `breach.status` column — frozen at DETECTED at detection).
 #: DEPRECATED-IN-PLACE for lifecycle purposes at MG-2: `breach.status` can never change (breach is

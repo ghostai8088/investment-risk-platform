@@ -11,15 +11,18 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_STATUS_CHANGE
 from irp_shared.audit.models import AppendOnlyViolation, AuditEvent
 from irp_shared.limit.events import (
     BREACH_ABOVE,
     BREACH_BELOW,
     BREACH_STATUS_DETECTED,
+    LIMIT_APPROVE_EVENT,
     LIMIT_CHANGE_EVENT,
     LIMIT_DEFINE_EVENT,
     LIMIT_KIND_HARD,
     LIMIT_STATUS_ACTIVE,
+    LIMIT_STATUS_DRAFT,
     LIMIT_STATUS_SUSPENDED,
     THRESHOLD_UNIT_CURRENCY,
     THRESHOLD_UNIT_FRACTION,
@@ -28,7 +31,9 @@ from irp_shared.limit.events import (
 from irp_shared.limit.models import Breach, LimitDefinition
 from irp_shared.limit.service import (
     LimitError,
+    LimitSodError,
     _breaches,
+    approve_limit,
     create_limit,
     resume_limit,
     select_active_limits,
@@ -36,7 +41,12 @@ from irp_shared.limit.service import (
     update_limit,
 )
 
+#: The DRAFTER (maker). MG-3's person-level SoD forbids this principal from approving its own draft.
 _ACTOR = LimitActor(actor_id="risk-mgr-2l", actor_type="user")
+#: A DISTINCT 2L principal — the CHECKER (approver != maker, SOD-02).
+_APPROVER = LimitActor(actor_id="risk-mgr-2l-b", actor_type="user")
+#: A THIRD 2L principal — needed when both the author AND an editor are SoD-excluded makers.
+_APPROVER2 = LimitActor(actor_id="risk-mgr-2l-c", actor_type="user")
 
 
 def _portfolio(session: Session, tenant: str) -> str:
@@ -71,7 +81,14 @@ def _mk(session: Session, tenant: str, **over: object) -> LimitDefinition:
         "actor": _ACTOR,
     }
     kwargs.update(over)
-    return create_limit(session, **kwargs)  # type: ignore[arg-type]
+    return create_limit(session, **kwargs)  # type: ignore[arg-type]  # MG-3: born DRAFT
+
+
+def _mk_active(session: Session, tenant: str, **over: object) -> LimitDefinition:
+    """A DRAFT limit created by ``_ACTOR`` then APPROVED into ACTIVE by the distinct ``_APPROVER``
+    (the maker-checker gate exercised through ``approve_limit``, not a status shortcut)."""
+    limit = _mk(session, tenant, **over)
+    return approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-2026-001")
 
 
 # --- the breach predicate ---
@@ -93,11 +110,14 @@ def test_breaches_rejects_unknown_direction() -> None:
 
 
 # --- CRUD + audit + validate ---
-def test_create_limit_emits_define_and_sets_v1(session: Session) -> None:
+def test_create_limit_is_draft_emits_define_and_sets_v1(session: Session) -> None:
     tenant = str(uuid.uuid4())
     limit = _mk(session, tenant)
     assert limit.record_version == 1
-    assert limit.status == LIMIT_STATUS_ACTIVE
+    # MG-3: a new limit is born DRAFT (not immediately ACTIVE) and is NOT evaluated until approved.
+    assert limit.status == LIMIT_STATUS_DRAFT
+    assert limit.created_by == _ACTOR.actor_id  # the drafter-of-record for the SoD
+    assert select_active_limits(session, acting_tenant=tenant) == []
     events = list(
         session.execute(
             select(AuditEvent).where(AuditEvent.event_type == LIMIT_DEFINE_EVENT)
@@ -166,7 +186,7 @@ def test_update_rejects_frozen_identity_attribute(session: Session) -> None:
 
 def test_suspend_then_resume(session: Session) -> None:
     tenant = str(uuid.uuid4())
-    limit = _mk(session, tenant)
+    limit = _mk_active(session, tenant)
     suspend_limit(session, limit, actor=_ACTOR)
     assert limit.status == LIMIT_STATUS_SUSPENDED
     assert select_active_limits(session, acting_tenant=tenant) == []
@@ -256,3 +276,165 @@ def test_update_change_event_payload_serializes_the_threshold(session: Session) 
     ).scalar_one()
     assert event.before_value["threshold_value"] == "5000000"
     assert event.after_value["threshold_value"] == "6000000"
+
+
+# --- MG-3: the LIMIT.APPROVE maker-checker gate -----------------------------------------------
+def test_approve_activates_a_draft_and_emits_the_event(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk(session, tenant)
+    assert select_active_limits(session, acting_tenant=tenant) == []  # DRAFT is not evaluated
+    approved = approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-2026-007")
+    assert approved.status == LIMIT_STATUS_ACTIVE
+    assert approved.record_version == 2  # create (v1) -> approve (v2)
+    assert len(select_active_limits(session, acting_tenant=tenant)) == 1  # now evaluated
+    event = session.execute(
+        select(AuditEvent).where(AuditEvent.event_type == LIMIT_APPROVE_EVENT)
+    ).scalar_one()
+    assert event.action == ACTION_STATUS_CHANGE
+    assert event.approval_ref == "RC-2026-007"
+    assert event.after_value["approved_by"] == _APPROVER.actor_id
+    assert event.after_value["checked_makers"] == [_ACTOR.actor_id]  # the maker SoD was checked vs
+    assert event.before_value["status"] == LIMIT_STATUS_DRAFT
+
+
+def test_approve_refuses_the_drafter_self_approving(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk(session, tenant)  # drafted by _ACTOR
+    with pytest.raises(LimitSodError):
+        approve_limit(
+            session, limit, actor=_ACTOR, approval_ref="RC-1"
+        )  # maker == checker (SOD-02)
+
+
+def test_approve_requires_a_human_actor(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk(session, tenant)
+    ai = LimitActor(actor_id="agent-x", actor_type="ai")
+    with pytest.raises(LimitError):  # BR-15: AI never approves
+        approve_limit(session, limit, actor=ai, approval_ref="RC-1")
+
+
+def test_approve_requires_a_non_empty_approval_ref(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk(session, tenant)
+    with pytest.raises(LimitError):
+        approve_limit(session, limit, actor=_APPROVER, approval_ref="   ")
+
+
+def test_approve_refuses_a_non_draft_limit(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk_active(session, tenant)  # already ACTIVE
+    with pytest.raises(LimitError):  # re-approve of ACTIVE refused (idempotency / from-state)
+        approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-2")
+
+
+def test_approve_refuses_a_draft_with_no_maker(session: Session) -> None:
+    # A DRAFT with no recorded maker cannot establish SoD -> vacuous-SoD refusal (MG-2 precedent).
+    tenant = str(uuid.uuid4())
+    limit = _mk(session, tenant)
+    limit.created_by = None
+    limit.updated_by = None
+    session.flush()
+    with pytest.raises(LimitSodError):
+        approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-3")
+
+
+def test_update_cannot_activate_a_draft(session: Session) -> None:
+    # The create-side twin's edit-path sibling: update_limit must not flip DRAFT->ACTIVE (bypass).
+    tenant = str(uuid.uuid4())
+    limit = _mk(session, tenant)
+    with pytest.raises(LimitError):
+        update_limit(session, limit, actor=_APPROVER, status=LIMIT_STATUS_ACTIVE)
+
+
+def test_update_cannot_set_draft(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk_active(session, tenant)
+    with pytest.raises(LimitError):
+        update_limit(session, limit, actor=_ACTOR, status=LIMIT_STATUS_DRAFT)
+
+
+def test_material_change_to_an_active_limit_demotes_to_draft(session: Session) -> None:
+    # REQ-LIM-001 (OQ-MG-3-5=A): loosening a LIVE limit re-enters the maker-checker gate.
+    tenant = str(uuid.uuid4())
+    limit = _mk_active(session, tenant)  # drafted by _ACTOR, approved by _APPROVER
+    update_limit(session, limit, actor=_ACTOR, threshold_value=Decimal("9000000"))
+    assert limit.status == LIMIT_STATUS_DRAFT  # auto-demoted, not evaluated
+    assert limit.updated_by == _ACTOR.actor_id  # the editor is the new maker
+    assert select_active_limits(session, acting_tenant=tenant) == []
+    # the editor cannot self-re-approve; a DISTINCT principal must sign off
+    with pytest.raises(LimitSodError):
+        approve_limit(session, limit, actor=_ACTOR, approval_ref="RC-4")
+    approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-5")
+    assert limit.status == LIMIT_STATUS_ACTIVE
+
+
+def test_both_the_author_and_the_editor_are_sod_excluded(session: Session) -> None:
+    # The maker SET is {created_by, updated_by}: neither the original author (A) nor a later editor
+    # (B) may approve — else A could self-approve a draft B merely touched (SOD-02). Only a THIRD
+    # principal (C) can sign off.
+    tenant = str(uuid.uuid4())
+    limit = _mk(session, tenant)  # authored by _ACTOR (A)
+    update_limit(session, limit, actor=_APPROVER, threshold_value=Decimal("7000000"))  # edited by B
+    assert limit.status == LIMIT_STATUS_DRAFT
+    assert limit.updated_by == _APPROVER.actor_id
+    with pytest.raises(LimitSodError):  # B edited it
+        approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-6")
+    with pytest.raises(LimitSodError):  # A authored it
+        approve_limit(session, limit, actor=_ACTOR, approval_ref="RC-7")
+    approve_limit(session, limit, actor=_APPROVER2, approval_ref="RC-8")  # C is neither
+    assert limit.status == LIMIT_STATUS_ACTIVE
+
+
+def test_noop_governing_resave_does_not_demote_an_active_limit(session: Session) -> None:
+    # Presence of a governing field in the edit is not enough — only an ACTUAL value change demotes.
+    tenant = str(uuid.uuid4())
+    limit = _mk_active(session, tenant)  # threshold 5000000
+    update_limit(session, limit, actor=_ACTOR, threshold_value=Decimal("5000000"))  # same value
+    assert limit.status == LIMIT_STATUS_ACTIVE  # unchanged -> stays live, no re-approval churn
+    assert len(select_active_limits(session, acting_tenant=tenant)) == 1
+
+
+def test_update_refuses_combining_status_with_a_governing_change(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk_active(session, tenant)
+    with pytest.raises(LimitError):  # ambiguous: a config change may not ride a suspend/resume
+        update_limit(
+            session,
+            limit,
+            actor=_ACTOR,
+            status=LIMIT_STATUS_SUSPENDED,
+            threshold_value=Decimal("9000000"),
+        )
+
+
+def test_suspend_edit_resume_cannot_launder_an_unapproved_change(session: Session) -> None:
+    # The bypass 3 finders flagged: a governing edit while SUSPENDED must ALSO demote to DRAFT, so
+    # resume cannot relaunch a loosened threshold without a non-maker sign-off (REQ-LIM-001).
+    tenant = str(uuid.uuid4())
+    limit = _mk_active(session, tenant)  # authored A, approved B
+    suspend_limit(session, limit, actor=_ACTOR)
+    assert limit.status == LIMIT_STATUS_SUSPENDED
+    update_limit(session, limit, actor=_ACTOR, threshold_value=Decimal("50000000"))  # loosen
+    assert limit.status == LIMIT_STATUS_DRAFT  # demoted, NOT left SUSPENDED
+    with pytest.raises(LimitError):  # resume cannot activate a DRAFT (would bypass approval)
+        resume_limit(session, limit, actor=_ACTOR)
+    approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-9")  # a non-maker must sign off
+    assert limit.status == LIMIT_STATUS_ACTIVE
+
+
+def test_suspend_and_resume_on_a_draft_are_refused(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk(session, tenant)  # DRAFT
+    with pytest.raises(LimitError):
+        suspend_limit(session, limit, actor=_ACTOR)
+    with pytest.raises(LimitError):
+        resume_limit(session, limit, actor=_ACTOR)
+
+
+def test_cosmetic_name_change_does_not_demote_an_active_limit(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk_active(session, tenant)
+    update_limit(session, limit, actor=_ACTOR, name="renamed ceiling")
+    assert limit.status == LIMIT_STATUS_ACTIVE  # name is cosmetic — no re-approval
+    assert len(select_active_limits(session, acting_tenant=tenant)) == 1
