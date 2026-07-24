@@ -53,6 +53,8 @@ built outside it. No application code is authored here.
 +--------------------------------------------------------------+
 |  Data Platform: System-of-record | Time-series/market data |  |
 |                 Document store | Audit store (segregated)     |
+|                 Analytical plane (future, additive, read-only, |
+|                 AD-019 — Snowflake likely; PG stays SoR)       |
 +--------------------------------------------------------------+
 ```
 

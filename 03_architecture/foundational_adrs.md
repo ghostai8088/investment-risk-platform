@@ -164,7 +164,7 @@ AD-003 … AD-010 are ratified, closing prior OD-004 … OD-011. Residual, non-b
 
 | ID | Residual (non-blocking) |
 |---|---|
-| OD-046 | Confirm dedicated columnar/time-series store trigger and target (behind AD-004 market-data interface). |
+| OD-046 | Confirm dedicated columnar/time-series store trigger and target (behind AD-004 market-data interface). **Broadened by AD-019** to also cover a governed-results **analytical plane** (Snowflake likely) — hybrid/additive/read-only, PG stays SoR; build only when a trigger fires (external SQL consumer / volume / diligence date). See [analytical_plane_strategy.md](analytical_plane_strategy.md). |
 | OD-047 | Confirm managed vs self-hosted Kubernetes and cloud provider(s) for first deployment (AD-010). |
 | OD-048 | ~~Confirm local-dev OIDC provider choice (AD-007).~~ **CLOSED (SSO-1, 2026-07-21): Keycloak** (`infra/keycloak/`). |
 
