@@ -159,7 +159,7 @@ class BreachAction(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base)
     breach_id: Mapped[str] = mapped_column(
         GUID, ForeignKey("breach.id"), nullable=False, index=True
     )
-    #: per-breach monotonic sequence (1-based), the deterministic recency-ordering key (VERIFIER-B1).
+    #: per-breach monotonic sequence (1-based), the deterministic recency key (VERIFIER-B1).
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     #: The transition verb ∈ BREACH_ACTION_TYPES (ASSIGN/1L_RESPONSE/2L_REVIEW/ESCALATE/CLOSE).
     action_type: Mapped[str] = mapped_column(String(20), nullable=False)
