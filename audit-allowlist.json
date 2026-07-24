@@ -1,0 +1,14 @@
+{
+  "_comment": "Time-bound npm-audit exceptions for the PRODUCTION frontend tree (TC-1 / OD-TC-1-D gate; enforced by scripts/check_frontend_audit.mjs). Every exception MUST be reachability-justified (why the advisory cannot execute in this app) and carry a review_by date; an EXPIRED exception FAILS CI to force re-review, and any advisory NOT listed here still fails the gate. This is a disposition, not a suppression.",
+  "exceptions": [
+    {
+      "id": "GHSA-qwww-vcr4-c8h2",
+      "package": "react-router",
+      "severity": "high",
+      "advisory": "React Router: RSC Mode CSRF Bypass Allows Action Execution Before 400 Response",
+      "reason": "NOT REACHABLE in this app: the frontend is a client-only Vite SPA using the declarative react-router API (BrowserRouter / Routes / Route / Link / NavLink / Outlet — see apps/frontend/src/main.tsx, App.tsx, AppShell.tsx). It runs NO React Server Components and NO data-router server actions, so the vulnerable RSC-mode server-action code path cannot execute. The advisory's patched version is react-router@8.3.0 — a breaking v7->v8 migration (react-router-dom@8 does not exist; v8 restructured the packages), tracked as a Wave-12 FE carry.",
+      "introduced": "2026-07-24",
+      "review_by": "2026-10-24"
+    }
+  ]
+}
