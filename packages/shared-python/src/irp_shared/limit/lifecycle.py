@@ -21,7 +21,7 @@ line; this set-check is the backstop for the ``platform_admin`` dual-hat.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -57,6 +57,14 @@ from irp_shared.limit.models import Breach, BreachAction
 # States eligible for auto-escalation (a response clock is running). DETECTED (never assigned) has
 # no clock; REVIEWED/ESCALATED/CLOSED are not overdue-escalatable.
 _ESCALATABLE_STATES = frozenset({BREACH_STATE_ASSIGNED, BREACH_STATE_RESPONDED})
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Normalize a stored deadline to tz-aware UTC before comparison (PG returns aware datetimes;
+    SQLite drops the tz — the ``db/bitemporal.py`` convention). A no-op on already-aware values."""
+    if value is None:
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 class BreachLifecycleError(Exception):
@@ -132,11 +140,12 @@ def current_breach_state(session: Session, breach_id: str, *, acting_tenant: str
     return state or BREACH_STATE_DETECTED
 
 
-def _current_response_due(session: Session, breach_id: str, tenant_id: str) -> datetime | None:
-    """The governing response deadline = ``response_due`` of the latest action whose
-    ``to_state == ASSIGNED`` (the ASSIGN, or a 2L REJECT re-assignment stamping a fresh epoch)."""
+def _governing_assign(session: Session, breach_id: str, tenant_id: str) -> BreachAction | None:
+    """The governing epoch-opening action = the latest action whose ``to_state == ASSIGNED`` (the
+    ASSIGN, or a 2L REJECT re-assignment). Its ``response_due`` is the deadline in force; its
+    ``seq`` is the escalation epoch key (a true monotonic id — VERIFIER-F1-MED1)."""
     return session.execute(
-        select(BreachAction.response_due)
+        select(BreachAction)
         .where(
             BreachAction.breach_id == breach_id,
             BreachAction.tenant_id == tenant_id,
@@ -182,6 +191,7 @@ def _insert_action(
     now: datetime,
     assigned_to: str | None = None,
     response_due: datetime | None = None,
+    epoch_seq: int | None = None,
     narrative: str | None = None,
     review_outcome: str | None = None,
     evidence_ref: str | None = None,
@@ -198,6 +208,7 @@ def _insert_action(
         actor_line=actor_line,
         assigned_to=assigned_to,
         response_due=response_due,
+        epoch_seq=epoch_seq,
         narrative=narrative,
         review_outcome=review_outcome,
         evidence_ref=evidence_ref,
@@ -209,9 +220,7 @@ def _insert_action(
     return action
 
 
-def _record_breach_action_event(
-    session: Session, *, breach: Breach, action: BreachAction
-) -> None:
+def _record_breach_action_event(session: Session, *, breach: Breach, action: BreachAction) -> None:
     """Emit the realized BREACH lifecycle audit event caller-side to the FROZEN ``record_event``."""
     is_system = action.actor_line == BREACH_LINE_SYSTEM
     record_event(
@@ -235,6 +244,7 @@ def _record_breach_action_event(
             "actor_line": action.actor_line,
             "assigned_to": action.assigned_to,
             "response_due": action.response_due.isoformat() if action.response_due else None,
+            "epoch_seq": action.epoch_seq,
             "review_outcome": action.review_outcome,
             "evidence_ref": action.evidence_ref,
         },
@@ -248,7 +258,10 @@ def _require_human(actor: BreachActor) -> None:
 
 def _sla_due(breach: Breach, now: datetime) -> datetime:
     """The response deadline = ``now + SLA(limit_kind)`` (the OQ-4 hardcoded HARD/SOFT map v1)."""
-    return now + timedelta(days=BREACH_SLA_DAYS[breach.limit_kind])
+    sla_days = BREACH_SLA_DAYS.get(breach.limit_kind)
+    if sla_days is None:  # off-vocab limit_kind — a clean 422, not a bare KeyError → 500
+        raise BreachTransitionError(f"no response SLA for limit_kind {breach.limit_kind!r}")
+    return now + timedelta(days=sla_days)
 
 
 def assign_breach(
@@ -317,14 +330,22 @@ def review_breach(
 ) -> BreachAction:
     """2L reviews a 1L response (RESPONDED|ESCALATED → REVIEWED on ACCEPT, → ASSIGNED on REJECT).
 
-    Gate: ``breach.review``. Person-level SoD: the reviewer must NOT be any prior 1L responder. A
-    REJECT re-opens to ASSIGNED with a FRESH response deadline (a new escalation epoch).
+    Gate: ``breach.review``. A 2L review REQUIRES a prior 1L response — a breach cannot be
+    reviewed (and thus closed) with no 1L response, else a single 2L could assign→review→close an
+    unresponded breach and the person-level SoD set would be vacuously empty (VERIFIER-F1-HIGH1 /
+    REQ-BRC-002). Person-level SoD: reviewer must NOT be a prior 1L responder. A REJECT re-opens
+    to ASSIGNED with a FRESH response deadline (a new escalation epoch).
     """
     _require_human(actor)
     if outcome not in BREACH_REVIEW_OUTCOMES:
         raise BreachTransitionError(f"invalid review outcome {outcome!r}")
     locked = _lock_breach(session, breach.id, breach.tenant_id)
-    if actor.actor_id in _prior_1l_responders(session, locked.id, locked.tenant_id):
+    responders = _prior_1l_responders(session, locked.id, locked.tenant_id)
+    if not responders:
+        raise BreachTransitionError(
+            "a breach cannot be reviewed before a 1L response has been filed (REQ-BRC-002)"
+        )
+    if actor.actor_id in responders:
         raise BreachSodError(
             f"actor {actor.actor_id} filed a 1L response on this breach; cannot review it (SOD-02)"
         )
@@ -385,22 +406,24 @@ def close_breach(
     )
 
 
-def escalate_overdue_breach(
-    session: Session, breach: Breach, now: datetime
-) -> BreachAction | None:
+def escalate_overdue_breach(session: Session, breach: Breach, now: datetime) -> BreachAction | None:
     """Auto-escalate one overdue breach (SYSTEM). Returns the action, or ``None`` if — re-checked
     UNDER the lock — the breach is no longer escalatable (recovered/closed) or not yet overdue.
 
-    Idempotency: the ESCALATE row carries the governing ``response_due``; ``uq_breach_escalation``
-    (breach_id, response_due) makes a re-escalation of the SAME deadline a benign dedup, while a
-    post-recovery REJECT stamps a fresh ``response_due`` (a new epoch) that CAN escalate again.
+    Idempotency: the ESCALATE row is keyed by the governing ASSIGN action's ``epoch_seq``;
+    ``uq_breach_escalation`` (breach_id, epoch_seq) makes a re-escalation of the SAME epoch a benign
+    dedup, while a post-recovery REJECT opens a NEW governing action (a new epoch) that CAN escalate
+    again — robust even if two epochs compute the same ``response_due`` (VERIFIER-F1-MED1).
     """
+    now_utc = _as_utc(now)
+    assert now_utc is not None
     locked = _lock_breach(session, breach.id, breach.tenant_id)
     state = current_breach_state(session, locked.id, acting_tenant=locked.tenant_id)
     if state not in _ESCALATABLE_STATES:
         return None
-    due = _current_response_due(session, locked.id, locked.tenant_id)
-    if due is None or due >= now:
+    governing = _governing_assign(session, locked.id, locked.tenant_id)
+    due = _as_utc(governing.response_due) if governing is not None else None
+    if governing is None or due is None or due >= now_utc:
         return None
     return _insert_action(
         session,
@@ -410,27 +433,32 @@ def escalate_overdue_breach(
         to_state=BREACH_STATE_ESCALATED,
         actor_id=f"breach-deadline:{locked.id}",
         actor_line=BREACH_LINE_SYSTEM,
-        now=now,
+        now=now_utc,
         response_due=due,
+        epoch_seq=governing.seq,
     )
 
 
-def select_overdue_breaches(
-    session: Session, now: datetime, *, acting_tenant: str
-) -> list[Breach]:
+def select_overdue_breaches(session: Session, now: datetime, *, acting_tenant: str) -> list[Breach]:
     """Candidate breaches for auto-escalation: current state ∈ {ASSIGNED, RESPONDED} AND the
     governing response deadline has passed. A read-side pre-filter only —
     ``escalate_overdue_breach`` re-checks every condition UNDER the lock, so a stale candidate is
-    harmless."""
+    harmless. Ordered by ``Breach.id`` for a DETERMINISTIC cross-tick lock order (no lock-ordering
+    deadlock between two concurrent same-tenant ticks — VERIFIER-F3-MED1)."""
+    now_utc = _as_utc(now)
+    assert now_utc is not None
     breaches = (
-        session.execute(select(Breach).where(Breach.tenant_id == acting_tenant)).scalars().all()
+        session.execute(select(Breach).where(Breach.tenant_id == acting_tenant).order_by(Breach.id))
+        .scalars()
+        .all()
     )
     overdue: list[Breach] = []
     for breach in breaches:
         state = current_breach_state(session, breach.id, acting_tenant=acting_tenant)
         if state not in _ESCALATABLE_STATES:
             continue
-        due = _current_response_due(session, breach.id, acting_tenant)
-        if due is not None and due < now:
+        governing = _governing_assign(session, breach.id, acting_tenant)
+        due = _as_utc(governing.response_due) if governing is not None else None
+        if due is not None and due < now_utc:
             overdue.append(breach)
     return overdue

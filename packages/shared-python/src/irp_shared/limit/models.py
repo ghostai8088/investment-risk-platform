@@ -143,13 +143,16 @@ class BreachAction(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base)
         # writes globally, so cross-tier without a PG-only IDENTITY). Recency = ORDER BY seq DESC.
         UniqueConstraint("breach_id", "seq", name="uq_breach_action_seq"),
         # escalate AT MOST ONCE per deadline epoch: a partial-unique index over ESCALATE rows keyed
-        # by the (breach, response_due) being escalated — a long-overdue breach re-selects each tick
-        # but the second insert is a benign dedup; a post-recovery ASSIGN stamps a fresh due-time
-        # (a new epoch) so a legitimate re-escalation is admitted. Enforced on BOTH tiers.
+        # by the (breach, epoch_seq) being escalated — a long-overdue breach re-selects each
+        # the second insert is a benign dedup; a post-recovery ASSIGN (a NEW governing action with a
+        # new seq) opens a fresh epoch so a legitimate re-escalation is admitted. The epoch key
+        # governing ASSIGN action's monotonic `seq` (NOT the derived `response_due` timestamp — two
+        # distinct epochs could compute the same due-time under an injected/coarse `now`, which
+        # silently suppress a real escalation; VERIFIER-F1-MED1). Enforced on BOTH tiers.
         Index(
             "uq_breach_escalation",
             "breach_id",
-            "response_due",
+            "epoch_seq",
             unique=True,
             postgresql_where=text("action_type = 'ESCALATE'"),
             sqlite_where=text("action_type = 'ESCALATE'"),
@@ -174,9 +177,13 @@ class BreachAction(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base)
     actor_line: Mapped[str] = mapped_column(String(4), nullable=False)
     #: The 1L owner assigned (populated on ASSIGN).
     assigned_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    #: The response deadline stamped at ASSIGN (a FIXED timestamp; carried onto the ESCALATE row it
-    #: escalates — the (breach_id, response_due) idempotency epoch). Compared ``< now``, NOT a grid.
+    #: The response deadline stamped at ASSIGN (a FIXED timestamp; echoed onto the ESCALATE row as
+    #: evidence of which deadline was escalated). Compared ``< now`` to decide overdue, NOT a grid.
     response_due: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: The governing ASSIGN action's ``seq`` — the escalation epoch key (populated on ESCALATE rows
+    #: only; ``uq_breach_escalation`` = one per epoch). A true monotonic id, not a derived
+    #: timestamp (VERIFIER-F1-MED1).
+    epoch_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: The 1L remediation response / 2L review note / closure rationale.
     narrative: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     #: On 2L_REVIEW ∈ {ACCEPT, REJECT} (ACCEPT→REVIEWED, REJECT→ASSIGNED).

@@ -10,8 +10,9 @@ posture — the app does all reads/writes tenant-scoped NON-BYPASSRLS).
 
 Two idempotency structures: ``uq_breach_action_seq (breach_id, seq)`` pins the per-breach monotonic
 ordering key; ``uq_breach_escalation`` is a PARTIAL unique index over ESCALATE rows on
-``(breach_id, response_due)`` — a breach escalates at most once per deadline epoch (a post-recovery
-ASSIGN stamps a fresh ``response_due`` = a new epoch, admitting a legitimate re-escalation).
+``(breach_id, epoch_seq)`` — a breach escalates at most once per epoch, where ``epoch_seq`` is the
+governing ASSIGN action's ``seq`` (a true monotonic key, not the derived ``response_due`` timestamp);
+a post-recovery ASSIGN opens a new epoch, admitting a legitimate re-escalation.
 
 Realizes ENT-034; activates the reserved BREACH lifecycle audit codes
 (.ASSIGN/.1L_RESPONSE/.2L_REVIEW/.ESCALATE/.CLOSE). Mints NO governed number and NO ``run_type``.
@@ -65,6 +66,7 @@ def upgrade() -> None:
         sa.Column("actor_line", sa.String(length=4), nullable=False),
         sa.Column("assigned_to", sa.String(length=255), nullable=True),
         sa.Column("response_due", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("epoch_seq", sa.Integer(), nullable=True),
         sa.Column("narrative", sa.String(length=2000), nullable=True),
         sa.Column("review_outcome", sa.String(length=10), nullable=True),
         sa.Column("evidence_ref", sa.String(length=500), nullable=True),
@@ -77,11 +79,12 @@ def upgrade() -> None:
     )
     op.create_index("ix_breach_action_tenant_id", "breach_action", ["tenant_id"])
     op.create_index("ix_breach_action_breach_id", "breach_action", ["breach_id"])
-    # escalate-once-per-deadline: partial unique index over ESCALATE rows only.
+    # escalate-once-per-epoch: partial unique index over ESCALATE rows only, keyed by the governing
+    # ASSIGN action's monotonic `epoch_seq` (NOT the derived response_due timestamp).
     op.create_index(
         "uq_breach_escalation",
         "breach_action",
-        ["breach_id", "response_due"],
+        ["breach_id", "epoch_seq"],
         unique=True,
         postgresql_where=sa.text("action_type = 'ESCALATE'"),
     )

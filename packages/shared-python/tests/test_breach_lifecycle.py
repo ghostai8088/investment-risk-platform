@@ -257,3 +257,88 @@ def test_migration_chain_breach_action() -> None:
     script = ScriptDirectory.from_config(cfg)
     assert script.get_current_head() == "0051_breach_action"  # MG-2
     assert script.get_revision("0051_breach_action").down_revision == "0050_limit_breach"
+
+
+def test_cannot_review_without_1l_response(session: Session) -> None:
+    """VERIFIER-F1-HIGH1: an unresponded (escalated) breach cannot be reviewed/closed — a 2L review
+    REQUIRES a prior 1L response, else a single 2L could assign→review→close with vacuous SoD."""
+    tenant = str(uuid.uuid4())
+    breach = _seed_breach(session, tenant)
+    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    # never responded → auto-escalate → still no response
+    escalate_overdue_breach(session, breach, _T0 + timedelta(days=2))
+    assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_ESCALATED
+    with pytest.raises(BreachTransitionError):
+        review_breach(session, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
+
+
+def test_review_from_escalated_after_response(session: Session) -> None:
+    """A breach that WAS responded then escalated (slow 2L review) can still be reviewed from
+    ESCALATED — both ACCEPT (→REVIEWED→CLOSE) and REJECT (→ASSIGNED) branches."""
+    tenant = str(uuid.uuid4())
+    breach = _seed_breach(session, tenant)
+    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    respond_breach(session, breach, narrative="responded", actor=_ANALYST, now=_T0)
+    # 2L review is overdue → escalate from RESPONDED
+    escalate_overdue_breach(session, breach, _T0 + timedelta(days=2))
+    assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_ESCALATED
+    # REJECT from ESCALATED → ASSIGNED
+    review_breach(session, breach, outcome=BREACH_REVIEW_REJECT, actor=_MANAGER, now=_T0)
+    assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_ASSIGNED
+    # re-respond, escalate again, ACCEPT from ESCALATED → REVIEWED → CLOSE
+    respond_breach(session, breach, narrative="again", actor=_ANALYST, now=_T0)
+    escalate_overdue_breach(session, breach, _T0 + timedelta(days=9))
+    review_breach(session, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
+    assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_REVIEWED
+    close_breach(session, breach, evidence_ref="ev://x", actor=_MANAGER, now=_T0)
+    assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_CLOSED
+
+
+def test_full_reject_recovery_to_close(session: Session) -> None:
+    """A rejected breach carried through re-respond → re-review(ACCEPT) → CLOSE."""
+    tenant = str(uuid.uuid4())
+    breach = _seed_breach(session, tenant)
+    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    respond_breach(session, breach, narrative="v1", actor=_ANALYST, now=_T0)
+    review_breach(session, breach, outcome=BREACH_REVIEW_REJECT, actor=_MANAGER, now=_T0)
+    assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_ASSIGNED
+    respond_breach(session, breach, narrative="v2", actor=_ANALYST, now=_T0)
+    review_breach(session, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
+    close_breach(session, breach, evidence_ref="ev://done", actor=_MANAGER, now=_T0)
+    assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_CLOSED
+
+
+def test_audit_payload_shape_and_severity(session: Session) -> None:
+    """The realized BREACH.* events carry the full DC-2 transition payload; ESCALATE is a SYSTEM
+    warning; narrative is NOT leaked into the payload."""
+    tenant = str(uuid.uuid4())
+    breach = _seed_breach(session, tenant)
+    assign_breach(session, breach, assigned_to="owner", actor=_MANAGER, now=_T0)
+    respond_breach(session, breach, narrative="secret remediation detail", actor=_ANALYST, now=_T0)
+
+    assign_evt = _events(session, tenant, BREACH_ASSIGN_EVENT)[0]
+    assert assign_evt.actor_type == "user" and assign_evt.severity == "info"
+    assert set(assign_evt.after_value) == {
+        "breach_id",
+        "seq",
+        "action_type",
+        "from_state",
+        "to_state",
+        "actor_line",
+        "assigned_to",
+        "response_due",
+        "epoch_seq",
+        "review_outcome",
+        "evidence_ref",
+    }
+    assert assign_evt.after_value["to_state"] == BREACH_STATE_ASSIGNED
+    assert assign_evt.after_value["actor_line"] == "2L"
+    assert assign_evt.after_value["assigned_to"] == "owner"
+    # narrative must NOT appear in any audit payload (free-text, potential sensitivity)
+    resp_evt = _events(session, tenant, BREACH_1L_RESPONSE_EVENT)[0]
+    assert "narrative" not in resp_evt.after_value
+
+    escalate_overdue_breach(session, breach, _T0 + timedelta(days=2))
+    esc_evt = _events(session, tenant, BREACH_ESCALATE_EVENT)[0]
+    assert esc_evt.actor_type == "SYSTEM" and esc_evt.severity == "warning"
+    assert esc_evt.after_value["epoch_seq"] == 1  # the governing ASSIGN's seq

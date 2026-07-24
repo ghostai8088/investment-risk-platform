@@ -4,8 +4,9 @@ Gated on ``IRP_TEST_DATABASE_URL``; enforcement runs under the constrained non-s
 (NOSUPERUSER NOBYPASSRLS). Proves: a cross-tenant breach lock is RLS-refused (``_lock_breach`` sees
 nothing → BreachTransitionError); the append-only P0001 TRIGGER on ``breach_action`` (irp_app HAS
 UPDATE, so the rejection is the trigger, not a privilege); the ``uq_breach_escalation`` partial
-unique index rejects a second escalation of the same (breach, response_due) epoch; the full
-lifecycle round-trips under real FKs + RLS; and — the standing invariant — the BYPASSRLS ``irp_ops``
+unique index rejects a second escalation of the same (breach, epoch_seq) epoch; the FOR UPDATE lock
+serializes concurrent transitions; the full lifecycle round-trips under real FKs + RLS; and — the
+standing invariant — the BYPASSRLS ``irp_ops``
 role has NO grant on ``breach_action``.
 """
 
@@ -19,7 +20,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import IntegrityError, ProgrammingError
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.pool import NullPool
 
 from irp_shared.calc.service import create_run
@@ -42,6 +43,7 @@ from irp_shared.limit.events import (
 )
 from irp_shared.limit.lifecycle import (
     BreachTransitionError,
+    _lock_breach,
     assign_breach,
     close_breach,
     current_breach_state,
@@ -246,12 +248,13 @@ def test_escalation_unique_constraint_rejects_same_epoch(app_url: str) -> None:
                 actor_id="breach-deadline:x",
                 actor_line=BREACH_LINE_SYSTEM,
                 response_due=due,
+                epoch_seq=1,  # both escalate the SAME governing epoch → collision
                 occurred_at=due + timedelta(days=1),
             )
 
         session.add(_escalate_row(2))
         session.flush()
-        session.add(_escalate_row(3))  # same (breach_id, response_due) epoch
+        session.add(_escalate_row(3))  # same (breach_id, epoch_seq) epoch
         with pytest.raises(IntegrityError):
             session.flush()
     finally:
@@ -276,3 +279,37 @@ def test_ops_role_has_no_grant_on_breach_action(app_url: str) -> None:
         assert granted == [], f"irp_ops must have NO grant on breach_action, found {granted}"
     finally:
         engine.dispose()
+
+
+def test_for_update_lock_serializes_concurrent_transitions(app_url: str) -> None:
+    """VERIFIER-F3-MED2: prove the ``_lock_breach`` FOR UPDATE row lock is REAL — a second
+    connection cannot acquire it while the first holds it (FOR UPDATE NOWAIT → 55P03). A regression
+    dropping ``.with_for_update()`` would make this pass silently, so it guards linearizability."""
+    engine1 = make_engine(app_url, poolclass=NullPool)
+    engine2 = make_engine(app_url, poolclass=NullPool)
+    factory1 = make_session_factory(engine1)
+    factory2 = make_session_factory(engine2)
+    tenant = str(uuid.uuid4())
+    breach_id = _seed_breach(factory1, tenant)
+    s1 = factory1()
+    s2 = factory2()
+    try:
+        set_tenant_context(s1, tenant)
+        _lock_breach(s1, breach_id, tenant)  # s1 holds the FOR UPDATE lock (not committed)
+        set_tenant_context(s2, tenant)
+        with pytest.raises(OperationalError):  # 55P03 lock_not_available — s1 holds it
+            s2.execute(
+                text("SELECT id FROM breach WHERE id = :i FOR UPDATE NOWAIT"), {"i": breach_id}
+            )
+        s2.rollback()
+        s1.rollback()  # release the lock; s2 can now acquire it
+        set_tenant_context(s2, tenant)
+        got = s2.execute(
+            text("SELECT id FROM breach WHERE id = :i FOR UPDATE NOWAIT"), {"i": breach_id}
+        ).scalar_one()
+        assert str(got) == breach_id  # lock released → s2 acquires it
+    finally:
+        s1.close()
+        s2.close()
+        engine1.dispose()
+        engine2.dispose()
