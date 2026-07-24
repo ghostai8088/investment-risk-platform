@@ -2,7 +2,57 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-23) — read this block; everything below it is HISTORY
 >
-> **HEAD `218afc9`** = merge of **PR #111** (LIM-1: the FIRST governed write-side workflow — the
+> **HEAD `aa6503f`** = merge of **PR #113** (MG-2: the breach remediation lifecycle — Wave-11 slice 3
+> "operationalize"; migration `0051_breach_action`), **CI green** (all 6 checks). **Counts UNCHANGED
+> 23/38/109** — MG-2 mints NO new governed number: a breach action is a control-plane governance
+> event binding no snapshot/run/model. LIM-1 could DETECT a breach; MG-2 makes it something you
+> MANAGE — the FIRST governance-workflow-with-teeth.
+>
+> **What shipped.** MG-2 REALIZES the genesis-reserved **ENT-034 `breach_action`** (IA TRUE
+> append-only) as the **DEP-WFL** state machine `DETECTED → ASSIGNED → RESPONDED(1L) → REVIEWED(2L) →
+> CLOSED` with an orthogonal `ESCALATED`. The OPERATIVE current state is the recency-derived latest
+> action `to_state` by a per-breach monotonic `seq` (assigned `max+1` under a parent-breach
+> `SELECT … FOR UPDATE` lock — NEVER a mutated flag; `breach.status` is deprecated-in-place). Every
+> transition is a fail-closed guarded step: `assign_breach` (2L starts the clock), `respond_breach`
+> (1L files a remediation, narrative required), `review_breach` (2L, **requires a prior 1L response**,
+> ACCEPT→REVIEWED / REJECT→ASSIGNED-with-a-fresh-deadline), `close_breach` (2L, evidence required).
+> Auto-escalation is a **THIRD phase of the SCH-1 per-tenant operational tick**
+> (`poll_tenant_breach_deadlines`, a plain `response_due < now` check, NOT `current_tick`),
+> escalate-once-per-epoch via `uq_breach_escalation(breach_id, epoch_seq)`.
+>
+> **The platform's FIRST person-level SoD.** R-07 mint `breach.respond` (1L = `risk_analyst_1l`) /
+> `breach.review` (2L = `risk_manager_2l`), NEVER co-granted to a non-admin role (the SOD-03 partition
+> = the first line); the runtime backstop refuses a reviewer/closer who is in the SET of ALL prior 1L
+> responders (SOD-02, "1L cannot approve own closure"). Activates the genesis-reserved
+> `BREACH.ASSIGN`/`.1L_RESPONSE`/`.2L_REVIEW`/`.ESCALATE`/`.CLOSE` audit codes (REALIZE, no taxonomy
+> mint); the frozen `audit/service.py` is untouched.
+>
+> **Pre-ratification verifier folded 3 BLOCKING concurrency holes** (nondeterministic recency → a
+> monotonic `seq`; escalate TOCTOU → the epoch key + FOR UPDATE lock; SoD latest-responder bypass →
+> the all-responders set). **4-finder review: 1 HIGH + 4 MED, all folded** — HIGH: a breach could
+> reach CLOSED with ZERO 1L response, making the person-level SoD vacuous (a single 2L
+> assign→review→close) → `review_breach` now REFUSES with no prior 1L response. MED: the escalation
+> epoch was keyed on the DERIVED `response_due` (a same-due-time collision would silently suppress a
+> real re-escalation) → re-keyed to the governing ASSIGN's monotonic `epoch_seq`; no `ORDER BY` in the
+> overdue scan → a lock-ordering deadlock under concurrent ticks → `ORDER BY Breach.id`; the FOR UPDATE
+> lock was untested → a two-connection `FOR UPDATE NOWAIT` proof; audit-payload + ESCALATED-review
+> coverage gaps closed.
+> **Lesson: a state machine on an append-only log needs a DB-monotonic ordering key (not a uuid or a
+> caller timestamp), a per-item write lock for linearizable transitions, and an idempotency epoch
+> keyed on a monotonic id — and a "requires a prior step" control must be enforced explicitly, since
+> an empty set-check passes vacuously.** Gates: `make check` **1915 passed**; local PG (0051 up/down
+> smoke, `alembic check` zero-drift, breach+limit families green incl. the lock proof + append-only
+> trigger + cross-tenant + uq-escalation + ops-no-grant).
+>
+> **The platform can now carry a breach to term with teeth: owned, responded, independently reviewed,
+> auto-escalated, closed with evidence. NEXT = MG-3 planning** (the `LIMIT.APPROVE` DRAFT→ACTIVE
+> maker-checker gate LIM-1/MG-2 deferred — mints `limit.approve`, realizes the genesis-reserved
+> `LIMIT.APPROVE` code, reuses MG-2's person-level SoD primitive; a DRAFT limit is not evaluated).
+> Then the mandatory Wave-11 close review.
+>
+> ---
+>
+> **Prior: HEAD `218afc9`** = merge of **PR #111** (LIM-1: the FIRST governed write-side workflow — the
 > governed LIMIT + BREACH control, Wave-11 slice 2 "operationalize"; migration `0050_limit_breach`),
 > **CI green** (all 6 jobs). **Counts UNCHANGED 23/38/109** — LIM-1 mints NO new governed number: a
 > breach is a control-plane predicate over an already-governed `calculation_run`, binding no new
@@ -62,11 +112,8 @@
 > (single linear head `0050`, chain `…0048→0049→0050`).
 >
 > **The platform can now enforce a limit and record a breach, auditably, over the numbers SCH-1 keeps
-> fresh. NEXT = MG-2 planning** (Wave-11 slice 3, the FINAL slice — carry a breach / a model-validation
-> finding to term: the breach ASSIGN→1L_RESPONSE→2L_REVIEW→ESCALATE→CLOSE lifecycle [ENT-034
-> `breach_action` + the greenfield `DEP-WFL` state machine] + the formal `LIMIT.APPROVE` maker-checker
-> gate LIM-1 deferred; deadline enforcement rides the SCH-1 cadence, the breach surface is LIM-1's. Then
-> the mandatory Wave-11 close review).
+> fresh.** *(LIM-1's NEXT was MG-2 planning — DONE + CLOSED 2026-07-23, PR #113 `aa6503f`; MG-2 split
+> the `LIMIT.APPROVE` gate to MG-3. See the CURRENT TRUTH block at the top.)*
 >
 > ---
 >
