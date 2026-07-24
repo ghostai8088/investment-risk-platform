@@ -1,12 +1,55 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-23) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-24) — read this block; everything below it is HISTORY
 >
-> **HEAD `aa6503f`** = merge of **PR #113** (MG-2: the breach remediation lifecycle — Wave-11 slice 3
-> "operationalize"; migration `0051_breach_action`), **CI green** (all 6 checks). **Counts UNCHANGED
-> 23/38/109** — MG-2 mints NO new governed number: a breach action is a control-plane governance
-> event binding no snapshot/run/model. LIM-1 could DETECT a breach; MG-2 makes it something you
-> MANAGE — the FIRST governance-workflow-with-teeth.
+> **HEAD `96679e2`** = merge of **PR #115** (MG-3: the `LIMIT.APPROVE` maker-checker gate — Wave-11
+> slice 4, the FINAL slice, "operationalize"), **CI green** (all 6 checks). **NO migration** (code-only;
+> head stays `0051_breach_action`). **Counts UNCHANGED 23/38/109** — MG-3 mints NO new governed number:
+> a limit approval is a control-plane state transition binding no snapshot/run/model. **WAVE 11 IS
+> FUNCTIONALLY COMPLETE (SCH-1 → LIM-1 → MG-2 → MG-3); NEXT = the mandatory Wave-11 close review.**
+>
+> **What shipped.** The genesis-reserved `LIMIT.APPROVE` (EVT-060) REALIZED as a DRAFT→ACTIVE
+> maker-checker gate: `create_limit` now yields **DRAFT** (never immediately ACTIVE — not evaluated by
+> the tick); `approve_limit` transitions DRAFT→ACTIVE, **human-only** (BR-15), approver ∉ the maker SET
+> `{created_by, updated_by}` (the author AND the last editor — SOD-02), the from-state re-read under a
+> `SELECT … FOR UPDATE` lock (`populate_existing`) so a stale read can't double-approve. **RATIFIED
+> OQ-5=A — the gate covers limit CHANGES, not just creation:** a material governing-field edit
+> (threshold/kind/direction) to a live limit auto-demotes it to DRAFT for a NON-editor re-approval (the
+> full REQ-LIM-001/BX-SOD "limit changes are maker-checked"); a status/governing combo in one edit is
+> refused; `evaluate_limit` is fail-closed (only ACTIVE). R-07 mint `limit.approve` on `risk_manager_2l`
+> (person-level gate, same role as the maker `limit.manage` — spec-blessed "second 2L"); **code-only
+> seeding** (`0002_entitlement_seed` re-seeds from the live `bootstrap.py` catalog — a re-seed migration
+> would collide on the deterministic uuid5 PK; verifier B-1).
+>
+> **Pre-ratification verifier folded 3 BLOCKING holes** (no-migration; stale-read-under-lock;
+> create-side ACTIVE bypass). **4-finder: 1 HIGH (THREE finders converged) + 4 MED, all folded** — HIGH:
+> a solo 2L could bypass the change-gate via `suspend → edit-while-SUSPENDED → resume` OR by slipping a
+> no-op `status=` alongside a governing edit (the ACTIVE-only demote suppressed) → fixed to demote on a
+> real governing change to ANY non-DRAFT limit + refuse status/governing combos. MED: `update_limit`
+> TOCTOU → read fresh status under a scalar `FOR UPDATE`; a no-op re-save spuriously demoted →
+> value-compare; the SoD excluded only the LAST editor (a cosmetic edit let the author self-approve) →
+> the approver ∉ `{created_by, updated_by}` SET; `LIMIT.APPROVE` records `checked_makers` for durable
+> audit. MED-3 (SoD `actor_id` canonicalization) NOT folded — a forward-gate carry for the future
+> limit-API auth boundary (the SSO-1 lesson).
+> **Lesson: a "material change to a live control re-enters the gate" rule must fire on the change
+> regardless of the current lifecycle state AND regardless of a co-submitted status toggle — an
+> ACTIVE-only / not-in-`changes` guard is bypassable by the suspend→edit→resume and no-op-status
+> paths.** Gates: `make check` green; clean full PG suite **1912 passed**; `alembic check` zero-drift;
+> the new gate + concurrency (double-approve lock) + cross-tenant approve + tick DRAFT-skip tests green.
+>
+> **A separate additive doctrine landed alongside (docs-only, no code): AD-019** (PR #116 `466999d`) —
+> the analytical-plane / Snowflake strategy: **hybrid, additive, read-only** — Postgres stays the
+> governed system-of-record (RLS/append-only/locks/lineage), a future analytical plane (Snowflake
+> likely) is CDC/ELT-fed and never the enforcement layer; the governed OLTP core never moves. Build the
+> plane only when a trigger fires (external SQL consumer / volume threshold per OD-046 / diligence date).
+>
+> ---
+>
+> **Prior: HEAD `aa6503f`** = merge of **PR #113** (MG-2: the breach remediation lifecycle — Wave-11
+> slice 3 "operationalize"; migration `0051_breach_action`), **CI green** (all 6 checks). **Counts
+> UNCHANGED 23/38/109** — MG-2 mints NO new governed number: a breach action is a control-plane
+> governance event binding no snapshot/run/model. LIM-1 could DETECT a breach; MG-2 makes it something
+> you MANAGE — the FIRST governance-workflow-with-teeth.
 >
 > **What shipped.** MG-2 REALIZES the genesis-reserved **ENT-034 `breach_action`** (IA TRUE
 > append-only) as the **DEP-WFL** state machine `DETECTED → ASSIGNED → RESPONDED(1L) → REVIEWED(2L) →
@@ -45,10 +88,9 @@
 > trigger + cross-tenant + uq-escalation + ops-no-grant).
 >
 > **The platform can now carry a breach to term with teeth: owned, responded, independently reviewed,
-> auto-escalated, closed with evidence. NEXT = MG-3 planning** (the `LIMIT.APPROVE` DRAFT→ACTIVE
-> maker-checker gate LIM-1/MG-2 deferred — mints `limit.approve`, realizes the genesis-reserved
-> `LIMIT.APPROVE` code, reuses MG-2's person-level SoD primitive; a DRAFT limit is not evaluated).
-> Then the mandatory Wave-11 close review.
+> auto-escalated, closed with evidence.** *(MG-2's NEXT was MG-3 — DONE + CLOSED 2026-07-24, PR #115
+> `96679e2`: the `LIMIT.APPROVE` DRAFT→ACTIVE maker-checker gate. See the CURRENT TRUTH block at the
+> top; NEXT is now the mandatory Wave-11 close review.)*
 >
 > ---
 >
