@@ -176,6 +176,13 @@ analogous plan/decision return format the user specifies.) **Then hold for commi
   tables; the SYSTEM literal must NEVER appear in `WITH CHECK`.
 - FastAPI: `get_tenant_session` (sets context), `require_permission` (deny-by-default, module-level guard
   singletons to avoid B008), `uuid.UUID` path params (422 + indistinguishable 404), single end-of-request commit.
+- **Governed-result read seam (AD-019, 2026-07-24):** a new **"latest/list governed number"** read goes through
+  `calc/reads.py` (`list_governed_results`/`latest_run_rows`) + its typed wrappers (`latest_var_for_portfolio`,
+  `latest_sensitivities`, …) — **never** an ad-hoc `select(<ResultModel>)…join(CalculationRun)` for latest-run
+  selection scattered in a service/router. The second legit shape is a **by-run-id matrix read** (covariance
+  `covariance_service.py`/`private_covariance_service.py`, joining CalculationRun only for the `run_type`
+  self-defense filter) — keep those centralized in the result's own service, not scattered. This keeps the future
+  analytical-plane read re-point (Snowflake, hybrid/additive) a handful-of-modules change. Bypassing = review reject.
 
 ## Design-completeness checklist (standing, 2026-07-12; MD-H1)
 The judgment-gap bug class no mechanical guardrail catches — run these four questions at DESIGN time for
