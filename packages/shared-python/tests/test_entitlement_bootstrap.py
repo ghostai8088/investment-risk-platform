@@ -374,3 +374,18 @@ def test_breach_lifecycle_permissions_grants_as_ratified() -> None:
         assert not (
             "breach.respond" in codes and "breach.review" in codes
         ), f"{role} violates SOD-02 (holds both breach.respond and breach.review)"
+
+
+def test_limit_approve_grants_as_ratified() -> None:
+    # MG-3 (OQ-MG-3-2=A, Wave-11 slice 4): the LIMIT.APPROVE maker-checker gate. Unlike
+    # breach.respond/review (a cross-line partition), maker (`limit.manage`) and checker
+    # (`limit.approve`) share risk_manager_2l ON PURPOSE — the gate is PERSON-level (approver !=
+    # the draft's maker, SOD-02, enforced at runtime), so a role-level partition is NOT expected.
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    assert "limit.approve" in ALL_CODES
+    # Pin the exact holder set (== parity with every other mint) — and pin the maker too, since
+    # LIM-1 shipped no such assertion for limit.manage.
+    assert _holders("limit.manage") == {"risk_manager_2l", "platform_admin"}
+    assert _holders("limit.approve") == {"risk_manager_2l", "platform_admin"}

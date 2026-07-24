@@ -26,7 +26,12 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from irp_shared.audit.actions import ACTION_CREATE, ACTION_RECORD, ACTION_UPDATE
+from irp_shared.audit.actions import (
+    ACTION_CREATE,
+    ACTION_RECORD,
+    ACTION_STATUS_CHANGE,
+    ACTION_UPDATE,
+)
 from irp_shared.audit.payload import json_safe
 from irp_shared.audit.service import record_event
 from irp_shared.limit.events import (
@@ -37,11 +42,13 @@ from irp_shared.limit.events import (
     BREACH_STATUS_DETECTED,
     ENTITY_BREACH,
     ENTITY_LIMIT_DEFINITION,
+    LIMIT_APPROVE_EVENT,
     LIMIT_CHANGE_EVENT,
     LIMIT_DEFINE_EVENT,
     LIMIT_KIND_HARD,
     LIMIT_KINDS,
     LIMIT_STATUS_ACTIVE,
+    LIMIT_STATUS_DRAFT,
     LIMIT_STATUS_SUSPENDED,
     LIMIT_STATUSES,
     SOURCE_MODULE_LIMIT,
@@ -72,6 +79,11 @@ _ENTITY_BREACH = ENTITY_BREACH
 
 class LimitError(ValueError):
     """A limit config or evaluation precondition failure (fail-closed)."""
+
+
+class LimitSodError(LimitError):
+    """A person-level SoD violation on a limit approval (the approver is the draft's own maker —
+    SOD-02 / REQ-LIM-001; the MG-2 ``BreachSodError`` analog applied to a scalar maker)."""
 
 
 @dataclass(frozen=True)
@@ -114,6 +126,27 @@ _METRIC_MAP: dict[tuple[str, str], MetricSpec] = {
 #: (``target_run_type``/``metric_type``/``scope_portfolio_id``/``benchmark_id``/``threshold_unit``)
 #: are FROZEN — a re-target is a NEW limit (keeps a breach's echo meaningful).
 _UPDATABLE = ("name", "threshold_value", "limit_kind", "breach_direction", "status")
+
+#: The MATERIAL governing fields (MG-3, OQ-MG-3-5=A): a real change to any of these on a
+#: previously-approved limit (ACTIVE **or** SUSPENDED) re-enters the maker-checker gate (the limit
+#: returns to DRAFT for a non-maker re-approval — REQ-LIM-001 "limit CHANGES are maker-checked").
+#: ``name`` is cosmetic and does NOT trigger it; ``status`` is the lifecycle toggle
+#: (suspend/resume), which may not be combined with a governing change in one edit (ambiguous).
+_GOVERNING_FIELDS = ("threshold_value", "limit_kind", "breach_direction")
+
+
+def _governing_value_changed(limit: LimitDefinition, changes: dict[str, Any]) -> bool:
+    """True iff a governing field's NEW value actually differs from the current one — presence in
+    ``changes`` is not enough (a no-op re-save of the same value must not demote a live limit)."""
+    for key in _GOVERNING_FIELDS:
+        if key not in changes:
+            continue
+        if key == "threshold_value":
+            if Decimal(changes[key]) != Decimal(getattr(limit, key)):
+                return True
+        elif changes[key] != getattr(limit, key):
+            return True
+    return False
 
 
 # --- breach predicate ---------------------------------------------------------------------
@@ -189,6 +222,11 @@ def evaluate_limit(session: Session, limit: LimitDefinition, now: datetime) -> B
     """Evaluate ONE ACTIVE limit against its latest matching COMPLETED run; append a SELF-DESCRIBING
     ``breach`` (+ ``BREACH.DETECT``) if it breaches AND has not already been recorded for that run.
     Idempotent on ``(limit_id, calculation_run_id)`` (the unique constraint is the backstop)."""
+    if limit.status != LIMIT_STATUS_ACTIVE:
+        # Fail-closed backstop (MG-3): only an APPROVED, ACTIVE limit is ever evaluated. Production
+        # callers already pre-filter via `select_active_limits`, but a DRAFT/SUSPENDED limit handed
+        # here directly must NOT record a breach against an un-approved/suspended config.
+        return None
     resolved = _resolve_latest(session, limit)
     if resolved is None:
         return None  # no matching COMPLETED run — nothing to evaluate this tick
@@ -228,6 +266,31 @@ def evaluate_limit(session: Session, limit: LimitDefinition, now: datetime) -> B
 
 
 # --- limit CRUD ---------------------------------------------------------------------------
+def _require_human(actor: LimitActor) -> None:
+    """BR-15: AI/automation is NEVER an approver — a sign-off is a human act (MG-2/VW-1 guard)."""
+    if actor.actor_type != "user":
+        raise LimitError("a limit approval requires a human actor (BR-15)")
+
+
+def _lock_limit(session: Session, limit_id: str, tenant_id: str) -> LimitDefinition:
+    """Re-resolve the limit tenant-filtered AND take a row lock (linearizability backstop for the
+    approve gate). The tenant filter is load-bearing (PG FK checks bypass RLS — the P3-5 doctrine).
+
+    ``populate_existing`` is REQUIRED: ``LimitDefinition`` is EV and its ``status`` lives ON the row
+    (unlike MG-2's recency-derived breach state), so an already-mapped instance would return a STALE
+    ``status`` and defeat the lock's from-state check → a double-approve race. Refresh under lock.
+    """
+    limit = session.execute(
+        select(LimitDefinition)
+        .where(LimitDefinition.id == limit_id, LimitDefinition.tenant_id == tenant_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if limit is None:
+        raise LimitError(f"limit {limit_id} not found in tenant {tenant_id}")
+    return limit
+
+
 def _validate_config(
     *,
     target_run_type: str,
@@ -275,9 +338,14 @@ def create_limit(
     limit_kind: str,
     actor: LimitActor,
     benchmark_id: str | None = None,
-    status: str = LIMIT_STATUS_ACTIVE,
 ) -> LimitDefinition:
-    """Create a limit (2L-maker function); emit ``LIMIT.DEFINE`` (governed R-07)."""
+    """Create a limit (2L-maker function); emit ``LIMIT.DEFINE`` (governed R-07).
+
+    MG-3: a new limit is ALWAYS born ``DRAFT`` (never immediately ACTIVE) and is NOT evaluated until
+    ``approve_limit`` — the maker-checker gate (REQ-LIM-001/BX-SOD). There is deliberately no public
+    ``status=`` override: an ACTIVE-on-create seam would let the maker self-activate, the symmetric
+    twin of the ``update_limit`` DRAFT bypass. ``created_by`` records the drafter for the SoD.
+    """
     _validate_config(
         target_run_type=target_run_type,
         metric_type=metric_type,
@@ -286,7 +354,7 @@ def create_limit(
         threshold_value=threshold_value,
         breach_direction=breach_direction,
         limit_kind=limit_kind,
-        status=status,
+        status=LIMIT_STATUS_DRAFT,
     )
     # Re-resolve the FK targets tenant-filtered BEFORE the write (the P3-5 doctrine — PG FK checks
     # BYPASS RLS, so a caller-supplied FOREIGN scope/benchmark id must be refused, not stamped).
@@ -322,7 +390,8 @@ def create_limit(
         threshold_unit=threshold_unit,
         breach_direction=breach_direction,
         limit_kind=limit_kind,
-        status=status,
+        status=LIMIT_STATUS_DRAFT,
+        created_by=actor.actor_id,
         record_version=1,
     )
     session.add(limit)
@@ -343,7 +412,19 @@ def update_limit(
     session: Session, limit: LimitDefinition, *, actor: LimitActor, **changes: Any
 ) -> LimitDefinition:
     """Apply an in-place head edit (``_UPDATABLE`` only — identity is frozen, OD-I), bump
-    ``record_version``, emit ``LIMIT.CHANGE``. A re-target is a NEW limit."""
+    ``record_version``, emit ``LIMIT.CHANGE``. A re-target is a NEW limit.
+
+    MG-3 maker-checker rules:
+    - ``update_limit`` may NEVER set or clear ``DRAFT`` — DRAFT is entered only via ``create_limit``
+      (or the auto-demotion below) and left only via ``approve_limit``. This closes the "activate a
+      draft through the edit path" bypass (the twin of the create-side force-DRAFT).
+    - A MATERIAL governing-field change to a previously-approved limit (ACTIVE **or** SUSPENDED)
+      auto-demotes it to DRAFT and records the editor as a maker (``updated_by``); it is not
+      evaluated until a NON-maker re-approves (REQ-LIM-001/BX-SOD, OQ-MG-3-5=A). Enforcing this for
+      SUSPENDED too closes the suspend->loosen->resume laundering bypass.
+    - A status toggle (suspend/resume) may NOT be combined with a governing change in one edit —
+      that ambiguity was a demote-suppression bypass; make the two edits separately.
+    """
     unknown = set(changes) - set(_UPDATABLE)
     if unknown:
         raise LimitError(f"non-updatable limit attributes: {sorted(unknown)}")
@@ -355,9 +436,41 @@ def update_limit(
         raise LimitError(f"limit_kind {changes['limit_kind']!r} is invalid")
     if "threshold_value" in changes and Decimal(changes["threshold_value"]) <= 0:
         raise LimitError("threshold_value must be positive")
-    before = {key: json_safe(getattr(limit, key)) for key in changes}
+    # Take the row lock AND read the fresh status under it, so the DRAFT guard and the demote
+    # decision can never act on a stale identity-map status that a concurrent approve invalidated
+    # (verifier B-2 parity with approve_limit). A SCALAR select is used, not a whole-object refresh,
+    # so in-flight Decimal columns keep their in-memory representation (the audit payload format).
+    fresh_status = session.execute(
+        select(LimitDefinition.status)
+        .where(LimitDefinition.id == limit.id, LimitDefinition.tenant_id == limit.tenant_id)
+        .with_for_update()
+    ).scalar_one_or_none()
+    if fresh_status is None:
+        raise LimitError(f"limit {limit.id} not found in tenant {limit.tenant_id}")
+    limit.status = fresh_status  # sync the locked truth (only the status string)
+    governing_changed = _governing_value_changed(limit, changes)
+    if "status" in changes:
+        if governing_changed:
+            raise LimitError(
+                "cannot combine a status change (suspend/resume) with a governing-field change in "
+                "one edit — a config change requires re-approval; make the two edits separately"
+            )
+        if changes["status"] == LIMIT_STATUS_DRAFT or limit.status == LIMIT_STATUS_DRAFT:
+            raise LimitError(
+                "update_limit cannot set or clear DRAFT — a draft leaves only via approve_limit "
+                "(the maker-checker gate); suspend/resume operate on ACTIVE<->SUSPENDED only"
+            )
+    # A material change to a previously-approved (non-DRAFT) limit re-enters the maker-checker gate.
+    demote = governing_changed and limit.status != LIMIT_STATUS_DRAFT
+    keys = list(changes) + (["status"] if demote else [])
+    before = {key: json_safe(getattr(limit, key)) for key in keys}
     for key, value in changes.items():
         setattr(limit, key, Decimal(value) if key == "threshold_value" else value)
+    if demote:
+        limit.status = LIMIT_STATUS_DRAFT
+    # Record the editor as a maker on EVERY edit — ``approve_limit`` refuses any approver in the SET
+    # {created_by, updated_by}, so both the original author and the last editor are SoD-excluded.
+    limit.updated_by = actor.actor_id
     limit.record_version += 1
     session.flush()
     _record_limit_event(
@@ -366,10 +479,60 @@ def update_limit(
         event_type=LIMIT_CHANGE_EVENT,
         action=ACTION_UPDATE,
         before_value=before,
-        after_value={key: json_safe(getattr(limit, key)) for key in changes},
+        after_value={key: json_safe(getattr(limit, key)) for key in keys},
         actor=actor,
     )
     return limit
+
+
+def approve_limit(
+    session: Session, limit: LimitDefinition, *, actor: LimitActor, approval_ref: str
+) -> LimitDefinition:
+    """Approve a DRAFT limit into ACTIVE — the maker-checker gate (REQ-LIM-001/BX-SOD, SOD-02).
+
+    The approver MUST be human (BR-15) and MUST NOT be in the SET of makers of this draft —
+    ``{created_by, updated_by}`` (the author AND the last editor) — so neither signs off a limit
+    they shaped (SOD-02). The from-state is re-read UNDER the row lock (``populate_existing``)
+    so a stale read cannot double-approve. Emits ``LIMIT.APPROVE`` with the ``approval_ref``.
+    """
+    _require_human(actor)
+    if not (approval_ref or "").strip():
+        raise LimitError("approve_limit requires a non-empty approval_ref (the sign-off evidence)")
+    locked = _lock_limit(session, limit.id, limit.tenant_id)
+    if locked.status != LIMIT_STATUS_DRAFT:
+        raise LimitError(
+            f"only a DRAFT limit can be approved (limit {locked.id} is {locked.status})"
+        )
+    makers = {locked.created_by, locked.updated_by} - {None}
+    if not makers:
+        raise LimitSodError(
+            f"limit {locked.id} is DRAFT with no recorded maker — cannot establish SoD (refused)"
+        )
+    if actor.actor_id in makers:
+        raise LimitSodError(
+            f"actor {actor.actor_id} shaped this limit (a maker); cannot approve it (SOD-02)"
+        )
+    before = {"status": locked.status}
+    locked.status = LIMIT_STATUS_ACTIVE
+    locked.record_version += 1
+    session.flush()
+    _record_limit_event(
+        session,
+        limit=locked,
+        event_type=LIMIT_APPROVE_EVENT,
+        action=ACTION_STATUS_CHANGE,
+        before_value=before,
+        # Record the makers the SoD was checked against so the two-person control is provable from
+        # the immutable audit row alone (the maker columns are mutable EV state).
+        after_value={
+            "status": locked.status,
+            "approved_by": actor.actor_id,
+            "checked_makers": sorted(makers),
+        },
+        actor=actor,
+        approval_ref=approval_ref,
+    )
+    return locked
 
 
 def suspend_limit(
@@ -454,8 +617,10 @@ def _record_limit_event(
     before_value: dict[str, Any] | None,
     after_value: dict[str, Any],
     actor: LimitActor,
+    approval_ref: str | None = None,
 ) -> None:
-    """Emit a ``LIMIT.*`` audit event caller-side to the FROZEN ``record_event`` (DC-2 only)."""
+    """Emit a ``LIMIT.*`` audit event caller-side to the FROZEN ``record_event`` (DC-2 only).
+    ``approval_ref`` carries the maker-checker sign-off reference for ``LIMIT.APPROVE``."""
     record_event(
         session,
         event_type=event_type,
@@ -468,6 +633,7 @@ def _record_limit_event(
         action=action,
         before_value=before_value,
         after_value=after_value,
+        approval_ref=approval_ref,
         data_classification="DC-2",
     )
 

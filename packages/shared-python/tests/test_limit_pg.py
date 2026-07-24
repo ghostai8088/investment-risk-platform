@@ -33,7 +33,11 @@ from irp_shared.limit.events import (
     LimitActor,
 )
 from irp_shared.limit.models import Breach, LimitDefinition
-from irp_shared.limit.service import create_limit
+from irp_shared.limit.service import (
+    LimitError,
+    approve_limit,
+    create_limit,
+)
 from irp_shared.portfolio import PortfolioActor, create_portfolio
 from irp_shared.risk.events import RUN_TYPE_VAR
 
@@ -44,6 +48,7 @@ _LIM = ("limit_definition", "breach")
 _DEPS = ("portfolio", "benchmark", "calculation_run")
 _RAILS = ("data_source", "lineage_edge")
 _ACTOR = LimitActor(actor_id="risk-mgr-2l")
+_APPROVER = LimitActor(actor_id="risk-mgr-2l-b")
 
 
 def _is_rls_violation(error: ProgrammingError) -> bool:
@@ -82,8 +87,8 @@ def app_url() -> str:
     )
 
 
-def _seed_limit(factory, tenant: str) -> str:  # noqa: ANN001
-    """A portfolio + an ACTIVE VaR limit. Returns the limit id."""
+def _seed_draft_limit(factory, tenant: str) -> str:  # noqa: ANN001
+    """A portfolio + a DRAFT VaR limit (not yet approved). Returns the limit id."""
     session = factory()
     try:
         set_tenant_context(session, tenant)
@@ -112,6 +117,20 @@ def _seed_limit(factory, tenant: str) -> str:  # noqa: ANN001
         )
         session.commit()
         return limit.id
+    finally:
+        session.close()
+
+
+def _seed_limit(factory, tenant: str) -> str:  # noqa: ANN001
+    """A portfolio + an ACTIVE VaR limit (DRAFT then approved by a distinct 2L). Returns the id."""
+    limit_id = _seed_draft_limit(factory, tenant)
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        limit = session.get(LimitDefinition, limit_id)
+        approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-PG-1")  # DRAFT -> ACTIVE
+        session.commit()
+        return limit_id
     finally:
         session.close()
 
@@ -236,6 +255,66 @@ def test_uq_breach_limit_run_blocks_a_double_detect(app_url: str) -> None:
             session.add(_breach(tenant, limit_id, run_id))  # same (limit, run) → refused
             session.flush()
         assert "uq_breach_limit_run" in str(exc.value)
+        session.rollback()
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_concurrent_double_approve_is_blocked_by_the_lock(app_url: str) -> None:
+    """Verifier B-2: the FOR UPDATE lock + ``populate_existing`` re-reads the from-state so a STALE
+    identity-map read cannot double-approve. Session B pre-loads the DRAFT into its identity map
+    BEFORE A commits its approval — the interleaving a naive ``locked.status`` read would miss.
+    With the fix, B re-reads ACTIVE under the lock and refuses; ``record_version`` bumps ONCE."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    limit_id = _seed_draft_limit(factory, tenant)
+    session_a = factory()
+    session_b = factory()
+    try:
+        set_tenant_context(session_b, tenant)
+        stale = session_b.get(LimitDefinition, limit_id)  # B's stale DRAFT snapshot
+        assert stale.status == "DRAFT"
+
+        set_tenant_context(session_a, tenant)
+        a_limit = session_a.get(LimitDefinition, limit_id)
+        approve_limit(session_a, a_limit, actor=_APPROVER, approval_ref="RC-A")
+        session_a.commit()  # A's DRAFT->ACTIVE is now committed; the row lock is released
+
+        # B still holds a DRAFT object in its identity map; the lock must force a fresh re-read.
+        with pytest.raises(LimitError):
+            approve_limit(
+                session_b, stale, actor=LimitActor(actor_id="risk-mgr-2l-c"), approval_ref="RC-B"
+            )
+        session_b.rollback()
+
+        set_tenant_context(session_b, tenant)  # re-arm (txn-local, cleared by rollback)
+        version = session_b.execute(
+            text("SELECT record_version FROM limit_definition WHERE id = :i"), {"i": limit_id}
+        ).scalar_one()
+        assert (
+            version == 2
+        )  # create (v1) -> A's approve (v2); B did NOT double-approve (would be v3)
+    finally:
+        session_a.close()
+        session_b.close()
+        engine.dispose()
+
+
+def test_cross_tenant_approve_is_refused(app_url: str) -> None:
+    """`_lock_limit`'s tenant filter (P3-5 doctrine: PG FK checks bypass RLS) — approving a limit
+    while acting as another tenant must surface 'not found', never activate a foreign limit."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    a_limit = _seed_draft_limit(factory, a)  # tenant A's DRAFT
+    session = factory()
+    try:
+        set_tenant_context(session, b)  # acting as B
+        limit = LimitDefinition(id=a_limit, tenant_id=a)  # a hand-built ref to A's limit
+        with pytest.raises(LimitError):
+            approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-X")
         session.rollback()
     finally:
         session.close()
