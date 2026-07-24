@@ -6800,7 +6800,7 @@ export interface components {
             /** Threshold Unit */
             threshold_unit: string;
             /** Threshold Value */
-            threshold_value: number | string;
+            threshold_value: string;
         };
         /** LimitHealthOut */
         LimitHealthOut: {
@@ -6863,7 +6863,7 @@ export interface components {
             /** Name */
             name?: string | null;
             /** Threshold Value */
-            threshold_value?: number | string | null;
+            threshold_value?: string | null;
         };
         /** LineageEdgeOut */
         LineageEdgeOut: {

@@ -7041,6 +7041,7 @@
         "type": "object"
       },
       "LimitCreateIn": {
+        "additionalProperties": false,
         "properties": {
           "benchmark_id": {
             "anyOf": [
@@ -7088,16 +7089,8 @@
             "type": "string"
           },
           "threshold_value": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              }
-            ],
-            "title": "Threshold Value"
+            "title": "Threshold Value",
+            "type": "string"
           }
         },
         "required": [
@@ -7276,6 +7269,7 @@
         "type": "object"
       },
       "LimitUpdateIn": {
+        "additionalProperties": false,
         "properties": {
           "breach_direction": {
             "anyOf": [
@@ -7313,10 +7307,6 @@
           "threshold_value": {
             "anyOf": [
               {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {

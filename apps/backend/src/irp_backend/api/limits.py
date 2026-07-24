@@ -17,11 +17,10 @@ surface is API-2b. ``evaluate_limit``/``escalate`` are tick-only and never expos
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal
 from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -35,6 +34,7 @@ from irp_shared.limit.service import (
     LimitError,
     LimitHealth,
     LimitSodError,
+    LimitStateError,
     approve_limit,
     create_limit,
     get_limit,
@@ -62,6 +62,7 @@ _HealthState = Literal["IN_APPETITE", "NEVER_EVALUABLE", "BREACHED"]
 _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     LimitSodError: (status.HTTP_409_CONFLICT, "separation of duties: the actor shaped this limit"),
     DuplicateLimitError: (status.HTTP_409_CONFLICT, "a limit with that code already exists"),
+    LimitStateError: (status.HTTP_409_CONFLICT, "illegal transition from the current limit state"),
     LimitError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid limit request"),
 }
 
@@ -81,12 +82,16 @@ def _limit_actor(principal: Principal) -> LimitActor:
 
 # --- DTOs ---------------------------------------------------------------------------------
 class LimitCreateIn(BaseModel):
+    # `extra="forbid"`: an unknown field (a smuggled `status`, a typo) is a loud 422, not a silent
+    # drop (verifier MED-2). `threshold_value` is a STRING in/out (precision-safe; a JS number would
+    # lose precision on a large/precise threshold — verifier finder-3).
+    model_config = ConfigDict(extra="forbid")
     code: str
     name: str
     target_run_type: str
     metric_type: str
     scope_portfolio_id: uuid.UUID
-    threshold_value: Decimal
+    threshold_value: str
     threshold_unit: str
     breach_direction: str
     limit_kind: str
@@ -95,9 +100,11 @@ class LimitCreateIn(BaseModel):
 
 
 class LimitUpdateIn(BaseModel):
-    # The `_UPDATABLE` config knobs MINUS `status` (never edited via the API — D3). All optional.
+    # The `_UPDATABLE` config knobs MINUS `status` (never edited via the API — D3). All optional;
+    # `extra="forbid"` so a smuggled `status` or a frozen-field typo is a 422, not a silent no-op.
+    model_config = ConfigDict(extra="forbid")
     name: str | None = None
-    threshold_value: Decimal | None = None
+    threshold_value: str | None = None
     limit_kind: str | None = None
     breach_direction: str | None = None
 
