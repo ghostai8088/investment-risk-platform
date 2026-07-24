@@ -167,6 +167,7 @@ def test_full_lifecycle_round_trips_under_rls(app_url: str) -> None:
         review_breach(session, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
         close_breach(session, breach, evidence_ref="tkt://1", actor=_MANAGER, now=_T0)
         session.commit()
+        set_tenant_context(session, tenant)  # commit cleared the txn-local RLS GUC — re-arm to read
         assert current_breach_state(session, breach_id, acting_tenant=tenant) == BREACH_STATE_CLOSED
     finally:
         session.close()
@@ -180,14 +181,13 @@ def test_cross_tenant_lock_is_refused(app_url: str) -> None:
     breach_id = _seed_breach(factory, a)
     session = factory()
     try:
-        # Tenant B holds A's breach object but acts under B's RLS context; the lock read is empty.
-        set_tenant_context(session, a)
-        breach = _get(session, breach_id)
-        session.rollback()
+        # Act under tenant B; a TRANSIENT stub carries A's (id, tenant_id). The tenant-filtered lock
+        # under B's RLS finds nothing → refused. (A transient stub, not the persisted A-breach: the
+        # A-breach is append-only, so touching it under B would flush-fail on the trigger, not RLS.)
         set_tenant_context(session, b)
-        breach.tenant_id = b  # even a forged tenant on the object: the tenant lock still finds none
+        stub = Breach(id=breach_id, tenant_id=a, limit_kind=LIMIT_KIND_HARD)
         with pytest.raises(BreachTransitionError):
-            assign_breach(session, breach, assigned_to="x", actor=_MANAGER, now=_T0)
+            assign_breach(session, stub, assigned_to="x", actor=_MANAGER, now=_T0)
     finally:
         session.close()
         engine.dispose()
@@ -203,17 +203,19 @@ def test_breach_action_append_only_trigger_rejects_update(app_url: str) -> None:
         set_tenant_context(session, tenant)
         breach = _get(session, breach_id)
         action = assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
-        session.flush()
+        session.commit()  # PERSIST the action (a rollback would discard it, dodging the trigger)
+        action_id = action.id
+        set_tenant_context(session, tenant)
         with pytest.raises(ProgrammingError) as exc:
             session.execute(
                 text("UPDATE breach_action SET to_state = 'CLOSED' WHERE id = :i"),
-                {"i": action.id},
+                {"i": action_id},
             )
         assert _is_append_only_violation(exc.value)
         session.rollback()
         set_tenant_context(session, tenant)
         with pytest.raises(ProgrammingError) as exc2:
-            session.execute(text("DELETE FROM breach_action WHERE id = :i"), {"i": action.id})
+            session.execute(text("DELETE FROM breach_action WHERE id = :i"), {"i": action_id})
         assert _is_append_only_violation(exc2.value)
     finally:
         session.close()
