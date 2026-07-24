@@ -46,6 +46,16 @@ Planning-first, per-slice; Claude commits + pushes autonomously:
   economic-value fixtures are economically plausible by default; deliberately extreme values are allowed ONLY in
   clearly-labeled boundary/adversarial tests (the three-bucket rule + per-domain bands live in
   `08_testing_qa/test_data_realism.md`).
+- **Standing review angle — vacuous / bypassable controls (Wave-11 close, 2026-07-24):** for every governed
+  gate/SoD/lifecycle control, ask two questions at design AND review time — (a) *can it pass VACUOUSLY?* (its
+  precondition set is empty — MG-2's review-with-zero-1L-response; the empty-`var_run_ids` snapshot); (b) *can it
+  be BYPASSED via an alternate lifecycle path or a co-submitted field?* (MG-3's suspend→edit→resume and the no-op
+  `status=` alongside a governing edit). Both MG-2's and MG-3's sole HIGH were this class. A gate that fires only
+  in the "obvious" state is not a control until the alternate paths are closed.
+- **≥3-finder convergence = CONFIRMED-blocking (Wave-11 close, 2026-07-24):** when three or more independent
+  finders converge on the SAME finding, treat it as CONFIRMED-blocking, not PLAUSIBLE — empirically the strongest
+  real-HIGH signal (MG-3's change-gate bypass; PPF-3's consume-path double-count both surfaced this way). Do not
+  discount it as duplicate noise.
 
 ## Verification & objectivity (standing rules)
 - **No quantitative claim from model recall.** Every formula, convention, day-count, sign, tolerance, or
@@ -193,6 +203,13 @@ every new gate/input/scope, not just at review time (each line names the shipped
 - **Every doc-stated scope or convention: enforced in code, not just documented?** (the CURRENCY-family
   proxy scope, doc-stated but ungated — PA-0)
 - **Every failure path: no RUNNING orphan, whole-unit rollback?** (the NaN 500 + RUNNING orphan — BT-1)
+
+## Closeout sweep (standing, Wave-11 close 2026-07-24)
+Beyond stamping the decision record CLOSED (CI-enforced) + the roadmap/current_state sweep: at every slice
+closeout, **sweep the downstream governance docs a control moved** — check `09_compliance_controls/control_matrix_skeleton.md`
+for any CTRL row this slice took from *Planned/Designed* → *Operational* and update its Status cell. (Wave-11
+miss: CTRL-021/CTRL-031 read "Planned" though MG-2/MG-3 shipped the person-level SoD + breach 1L/2L separation —
+the same "downstream doc left stale after the code shipped" class as the closure-stamp recurrence.)
 
 ## Prohibited behavior
 - Committing/pushing without explicit approval; starting the next slice unprompted.

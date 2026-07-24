@@ -53,10 +53,16 @@ _ANALYST = BreachActor(actor_id="analyst-1l")
 _MANAGER = BreachActor(actor_id="manager-2l")
 
 
-def _seed_breach(session: Session, tenant: str, *, limit_kind: str = LIMIT_KIND_HARD) -> Breach:
+def _seed_breach(
+    session: Session,
+    tenant: str,
+    *,
+    limit_kind: str = LIMIT_KIND_HARD,
+    limit_definition_id: str | None = None,
+) -> Breach:
     breach = Breach(
         tenant_id=tenant,
-        limit_definition_id=str(uuid.uuid4()),
+        limit_definition_id=limit_definition_id or str(uuid.uuid4()),
         calculation_run_id=str(uuid.uuid4()),
         detected_at=_T0,
         target_run_type="VAR",
@@ -188,6 +194,56 @@ def test_recency_is_by_seq_not_occurred_at(session: Session) -> None:
     )
     assert [r[0] for r in rows] == [1, 2]
     assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_RESPONDED
+
+
+def test_a_breach_on_a_since_demoted_limit_still_escalates(session: Session) -> None:
+    # Wave-11 close (cross-slice anti-laundering): MG-3 demoting/suspending a limit must NOT stop an
+    # ALREADY-OPEN breach's escalation clock — `select_overdue_breaches` filters on breach lifecycle
+    # state, NOT the parent limit's status. Else suspend→wait would launder a missed 1L deadline.
+    from irp_shared.limit.events import (
+        BREACH_ABOVE,
+        THRESHOLD_UNIT_CURRENCY,
+        LimitActor,
+    )
+    from irp_shared.limit.service import approve_limit, create_limit, suspend_limit
+    from irp_shared.portfolio.models import Portfolio
+
+    tenant = str(uuid.uuid4())
+    pf = Portfolio(
+        tenant_id=tenant,
+        code=f"ACCT-{uuid.uuid4().hex[:6]}",
+        name="acct",
+        node_type="ACCOUNT",
+        status="ACTIVE",
+        record_version=1,
+    )
+    session.add(pf)
+    session.flush()
+    drafter, approver = LimitActor(actor_id="rm-2l-a"), LimitActor(actor_id="rm-2l-b")
+    limit = create_limit(
+        session,
+        tenant_id=tenant,
+        code="ceiling",
+        name="ceiling",
+        target_run_type="VAR",
+        metric_type="VAR_PARAMETRIC",
+        scope_portfolio_id=str(pf.id),
+        threshold_value=Decimal("50"),
+        threshold_unit=THRESHOLD_UNIT_CURRENCY,
+        breach_direction=BREACH_ABOVE,
+        limit_kind=LIMIT_KIND_HARD,
+        actor=drafter,
+    )
+    approve_limit(session, limit, actor=approver, approval_ref="RC-1")
+    breach = _seed_breach(session, tenant, limit_definition_id=limit.id)
+    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)  # due T0+1d (HARD)
+    # The parent limit is SUSPENDED after the breach is open (the laundering attempt).
+    suspend_limit(session, limit, actor=drafter)
+    late = _T0 + timedelta(days=2)
+    overdue = select_overdue_breaches(session, late, acting_tenant=tenant)
+    assert breach.id in [b.id for b in overdue]  # still overdue despite the limit being SUSPENDED
+    action = escalate_overdue_breach(session, breach, late)
+    assert action is not None and action.to_state == BREACH_STATE_ESCALATED
 
 
 def test_overdue_selection_and_escalation(session: Session) -> None:
