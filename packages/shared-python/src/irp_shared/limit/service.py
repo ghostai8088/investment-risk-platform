@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select, text
@@ -84,6 +84,26 @@ class LimitError(ValueError):
 class LimitSodError(LimitError):
     """A person-level SoD violation on a limit approval (the approver is the draft's own maker —
     SOD-02 / REQ-LIM-001; the MG-2 ``BreachSodError`` analog applied to a scalar maker)."""
+
+
+class DuplicateLimitError(LimitError):
+    """A limit with the same ``(tenant, code)`` already exists (the pre-check twin of the
+    ``uq_limit_definition_tenant_code`` race — API-2 maps both to a uniform 409)."""
+
+
+class LimitStateError(LimitError):
+    """An illegal lifecycle transition from the current state (approve a non-DRAFT; set/clear DRAFT
+    via update; the double-approve loser) — a STATE CONFLICT, not a validation error (API-2 maps it
+    to 409, uniform with the SoD conflict; verifier MED-1)."""
+
+
+def _threshold(value: Decimal | str) -> Decimal:
+    """Parse a threshold to Decimal, fail-closed to a clean ``LimitError`` (422 at the API) on a
+    malformed string — never a raw ``InvalidOperation`` (a 500). Accepts the API's string input."""
+    try:
+        return Decimal(value)
+    except (InvalidOperation, ValueError, TypeError):
+        raise LimitError(f"threshold_value {value!r} is not a valid decimal") from None
 
 
 @dataclass(frozen=True)
@@ -218,6 +238,34 @@ def select_active_limits(session: Session, *, acting_tenant: str) -> list[LimitD
     )
 
 
+# --- reads (API-2) ------------------------------------------------------------------------
+def list_limits(
+    session: Session, *, acting_tenant: str, status: str | None = None
+) -> list[LimitDefinition]:
+    """Tenant-scoped limit list, optionally filtered by status (``status=DRAFT`` = the approval
+    queue). Explicit tenant predicate atop RLS (belt-and-suspenders, the ``select_active_limits``
+    pattern). Ordered by code for a stable read surface."""
+    if status is not None and status not in LIMIT_STATUSES:
+        raise LimitError(f"status {status!r} is invalid")
+    stmt = select(LimitDefinition).where(LimitDefinition.tenant_id == str(acting_tenant))
+    if status is not None:
+        stmt = stmt.where(LimitDefinition.status == status)
+    return list(session.execute(stmt.order_by(LimitDefinition.code)).scalars())
+
+
+def get_limit(session: Session, *, acting_tenant: str, limit_id: str) -> LimitDefinition | None:
+    """Read ONE limit by id, tenant-filtered atop RLS (the P3-5 doctrine: PG FK checks bypass RLS,
+    so an explicit tenant predicate is load-bearing for a caller-supplied id). Returns None on a
+    missing/cross-tenant id (the API maps that to an indistinguishable 404). Doubles as the
+    load-for-mutation step (``update_limit``/``approve_limit`` take the object, not an id)."""
+    return session.execute(
+        select(LimitDefinition).where(
+            LimitDefinition.id == str(limit_id),
+            LimitDefinition.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+
+
 def evaluate_limit(session: Session, limit: LimitDefinition, now: datetime) -> Breach | None:
     """Evaluate ONE ACTIVE limit against its latest matching COMPLETED run; append a SELF-DESCRIBING
     ``breach`` (+ ``BREACH.DETECT``) if it breaches AND has not already been recorded for that run.
@@ -297,7 +345,7 @@ def _validate_config(
     metric_type: str,
     benchmark_id: str | None,
     threshold_unit: str,
-    threshold_value: Decimal,
+    threshold_value: Decimal | str,
     breach_direction: str,
     limit_kind: str,
     status: str,
@@ -319,7 +367,7 @@ def _validate_config(
         raise LimitError(f"limit_kind {limit_kind!r} is invalid")
     if status not in LIMIT_STATUSES:
         raise LimitError(f"status {status!r} is invalid")
-    if Decimal(threshold_value) <= 0:  # coerce (a str/float caller must not raise a raw TypeError)
+    if _threshold(threshold_value) <= 0:
         raise LimitError("threshold_value must be positive")
 
 
@@ -332,7 +380,7 @@ def create_limit(
     target_run_type: str,
     metric_type: str,
     scope_portfolio_id: str,
-    threshold_value: Decimal,
+    threshold_value: Decimal | str,
     threshold_unit: str,
     breach_direction: str,
     limit_kind: str,
@@ -377,7 +425,7 @@ def create_limit(
             LimitDefinition.tenant_id == str(tenant_id), LimitDefinition.code == code
         )
     ).first():
-        raise LimitError(f"a limit with code {code!r} already exists in the tenant")
+        raise DuplicateLimitError(f"a limit with code {code!r} already exists in the tenant")
     limit = LimitDefinition(
         tenant_id=str(tenant_id),
         code=code,
@@ -386,7 +434,7 @@ def create_limit(
         metric_type=metric_type,
         benchmark_id=str(benchmark_id) if benchmark_id else None,
         scope_portfolio_id=str(scope_portfolio_id),
-        threshold_value=Decimal(threshold_value),
+        threshold_value=_threshold(threshold_value),
         threshold_unit=threshold_unit,
         breach_direction=breach_direction,
         limit_kind=limit_kind,
@@ -434,7 +482,7 @@ def update_limit(
         raise LimitError(f"breach_direction {changes['breach_direction']!r} is invalid")
     if "limit_kind" in changes and changes["limit_kind"] not in LIMIT_KINDS:
         raise LimitError(f"limit_kind {changes['limit_kind']!r} is invalid")
-    if "threshold_value" in changes and Decimal(changes["threshold_value"]) <= 0:
+    if "threshold_value" in changes and _threshold(changes["threshold_value"]) <= 0:
         raise LimitError("threshold_value must be positive")
     # Take the row lock AND read the fresh status under it, so the DRAFT guard and the demote
     # decision can never act on a stale identity-map status that a concurrent approve invalidated
@@ -456,7 +504,7 @@ def update_limit(
                 "one edit — a config change requires re-approval; make the two edits separately"
             )
         if changes["status"] == LIMIT_STATUS_DRAFT or limit.status == LIMIT_STATUS_DRAFT:
-            raise LimitError(
+            raise LimitStateError(
                 "update_limit cannot set or clear DRAFT — a draft leaves only via approve_limit "
                 "(the maker-checker gate); suspend/resume operate on ACTIVE<->SUSPENDED only"
             )
@@ -500,7 +548,7 @@ def approve_limit(
         raise LimitError("approve_limit requires a non-empty approval_ref (the sign-off evidence)")
     locked = _lock_limit(session, limit.id, limit.tenant_id)
     if locked.status != LIMIT_STATUS_DRAFT:
-        raise LimitError(
+        raise LimitStateError(
             f"only a DRAFT limit can be approved (limit {locked.id} is {locked.status})"
         )
     makers = {locked.created_by, locked.updated_by} - {None}

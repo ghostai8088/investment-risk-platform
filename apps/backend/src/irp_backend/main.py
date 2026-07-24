@@ -18,6 +18,7 @@ from irp_backend.api.dq import router as dq_router
 from irp_backend.api.exposure import router as exposure_router
 from irp_backend.api.holdings import router as holdings_router
 from irp_backend.api.ingest import router as ingest_router
+from irp_backend.api.limits import router as limits_router
 from irp_backend.api.lineage import router as lineage_router
 from irp_backend.api.marketdata import benchmark_router as marketdata_benchmark_router
 from irp_backend.api.marketdata import curve_router as marketdata_curve_router
@@ -88,3 +89,4 @@ app.include_router(exposure_router)
 app.include_router(risk_router)
 app.include_router(perf_router)
 app.include_router(pacing_router)
+app.include_router(limits_router)
