@@ -37,6 +37,7 @@ from irp_shared.scheduling.service import (
     select_active_due,
 )
 from irp_worker.breaches import poll_tenant_breaches
+from irp_worker.deadlines import poll_tenant_breach_deadlines
 
 #: The unique constraint that backstops the per-(schedule, tick) idempotency race. ONLY a violation
 #: of THIS constraint is the benign concurrent-double-fire dedup; any OTHER IntegrityError from the
@@ -126,7 +127,12 @@ def run_operational_tick_for_tenant(
     **Ordering INVARIANT (OD-LIM-1-G):** phase 1 (schedules) runs BEFORE phase 2 (breaches), because
     ``dispatch_one`` runs ``run_var`` inline — a VaR fired this tick reaches a COMPLETED run visible
     to the breach evaluation in the SAME transaction (same-tick detection). Reversing the order is
-    correct but adds one tick of breach latency; both phases land under the single terminal commit.
+    correct but adds one tick of breach latency; all phases land under the single terminal commit.
+
+    **Phase 3 (breach deadlines, MG-2)** runs LAST — a read-of-prior-state sweep that auto-escalates
+    overdue breaches. Its ordering is immaterial to correctness: a breach DETECTED this tick has no
+    ``response_due`` (stamped only at the human ASSIGN, never in a tick), so it is never same-tick
+    escalatable; phase 3 only ever acts on breaches ASSIGNED in a prior committed request.
 
     ``now`` defaults to the canonical UTC wall clock; only this top-level entry reads it (the
     due/breach computation is a pure function of the injected ``now`` — INV-SCH-1).
@@ -138,7 +144,8 @@ def run_operational_tick_for_tenant(
             session, tick_now, code_version=code_version, acting_tenant=tenant_id
         )
         breached = poll_tenant_breaches(session, tick_now, acting_tenant=tenant_id)
-        return {"scheduled": scheduled, "breached": breached}
+        escalated = poll_tenant_breach_deadlines(session, tick_now, acting_tenant=tenant_id)
+        return {"scheduled": scheduled, "breached": breached, "escalated": escalated}
 
     return run_in_tenant(session_factory, tenant_id, _work)
 
@@ -146,7 +153,8 @@ def run_operational_tick_for_tenant(
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entrypoint
     """CLI entry — infra invokes this once per tenant (OQ-SCH-1-1=B).
 
-    Runs a single OPERATIONAL tick for ``--tenant`` (schedules + breaches) under the ordinary
+    Runs a single OPERATIONAL tick for ``--tenant`` (schedules + breaches + deadlines) under the
+    ordinary
     (non-BYPASSRLS) app role. Deliberately NOT a cross-tenant sweep: the app has no tenant registry
     and no ops-role read here.
     """
@@ -172,7 +180,11 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entry
         engine.dispose()
     n_sched = len(results["scheduled"])
     n_breach = sum(1 for _limit_id, breach_id in results["breached"] if breach_id is not None)
-    print(f"irp-worker: tenant={args.tenant} fired={n_sched} breaches={n_breach}")
+    n_escalated = len(results["escalated"])
+    print(
+        f"irp-worker: tenant={args.tenant} fired={n_sched} "
+        f"breaches={n_breach} escalated={n_escalated}"
+    )
     return 0
 
 
