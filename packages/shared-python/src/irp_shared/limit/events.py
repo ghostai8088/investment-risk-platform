@@ -1,8 +1,9 @@
 """Limit/breach vocabulary + actor (LIM-1, ENT-031/033 — the limit control-plane surface).
 
-Three GOVERNED audit codes were ACTIVATED at LIM-1 — `LIMIT.DEFINE` / `LIMIT.CHANGE` / `BREACH.DETECT`
-— the R-07 activation of the GENESIS-reserved `LIMIT` (EVT-060) + `BREACH` (EVT-070) taxonomy rows
-(OD-LIM-1-J). **MG-2 ACTIVATES the five reserved breach LIFECYCLE codes** — `BREACH.ASSIGN` /
+Three GOVERNED audit codes were ACTIVATED at LIM-1 — `LIMIT.DEFINE` / `LIMIT.CHANGE` /
+`BREACH.DETECT` — the R-07 activation of the GENESIS-reserved `LIMIT` (EVT-060) + `BREACH` (EVT-070)
+taxonomy rows (OD-LIM-1-J). **MG-2 ACTIVATES the five reserved breach LIFECYCLE codes** —
+`BREACH.ASSIGN` /
 `BREACH.1L_RESPONSE` / `BREACH.2L_REVIEW` / `BREACH.ESCALATE` / `BREACH.CLOSE` (the DEP-WFL breach
 remediation state machine over ENT-034 ``breach_action``). All are emitted by CALLING the FROZEN
 ``audit.service.record_event`` with the ``event_type`` parameter — the frozen append engine is
@@ -147,8 +148,8 @@ class LimitActor:
 
 @dataclass(frozen=True)
 class BreachActor:
-    """The principal performing a breach lifecycle action (MG-2). A 1L responder (``breach.respond``)
-    or a 2L reviewer/closer (``breach.review``); ``actor_type`` MUST be ``user`` for every human
+    """The principal performing a breach lifecycle action (MG-2). A 1L responder
+    (``breach.respond``) or a 2L reviewer/closer (``breach.review``); ``actor_type`` MUST be human
     transition (BR-15). Auto-escalation synthesizes a SYSTEM actor on the operational tick."""
 
     actor_id: str

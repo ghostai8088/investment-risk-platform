@@ -144,7 +144,7 @@ class BreachAction(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base)
         UniqueConstraint("breach_id", "seq", name="uq_breach_action_seq"),
         # escalate AT MOST ONCE per deadline epoch: a partial-unique index over ESCALATE rows keyed
         # by the (breach, response_due) being escalated — a long-overdue breach re-selects each tick
-        # but the second insert is a benign dedup; a post-recovery ASSIGN stamps a FRESH response_due
+        # but the second insert is a benign dedup; a post-recovery ASSIGN stamps a fresh due-time
         # (a new epoch) so a legitimate re-escalation is admitted. Enforced on BOTH tiers.
         Index(
             "uq_breach_escalation",
@@ -159,7 +159,7 @@ class BreachAction(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base)
     breach_id: Mapped[str] = mapped_column(
         GUID, ForeignKey("breach.id"), nullable=False, index=True
     )
-    #: per-breach monotonic sequence (1-based), the deterministic recency-ordering key (VERIFIER B-1).
+    #: per-breach monotonic sequence (1-based), the deterministic recency-ordering key (VERIFIER-B1).
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     #: The transition verb ∈ BREACH_ACTION_TYPES (ASSIGN/1L_RESPONSE/2L_REVIEW/ESCALATE/CLOSE).
     action_type: Mapped[str] = mapped_column(String(20), nullable=False)
