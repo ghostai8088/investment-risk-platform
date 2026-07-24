@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_STATUS_CHANGE
 from irp_shared.audit.models import AppendOnlyViolation, AuditEvent
 from irp_shared.limit.events import (
     BREACH_ABOVE,
@@ -44,6 +45,8 @@ from irp_shared.limit.service import (
 _ACTOR = LimitActor(actor_id="risk-mgr-2l", actor_type="user")
 #: A DISTINCT 2L principal — the CHECKER (approver != maker, SOD-02).
 _APPROVER = LimitActor(actor_id="risk-mgr-2l-b", actor_type="user")
+#: A THIRD 2L principal — needed when both the author AND an editor are SoD-excluded makers.
+_APPROVER2 = LimitActor(actor_id="risk-mgr-2l-c", actor_type="user")
 
 
 def _portfolio(session: Session, tenant: str) -> str:
@@ -287,8 +290,10 @@ def test_approve_activates_a_draft_and_emits_the_event(session: Session) -> None
     event = session.execute(
         select(AuditEvent).where(AuditEvent.event_type == LIMIT_APPROVE_EVENT)
     ).scalar_one()
+    assert event.action == ACTION_STATUS_CHANGE
     assert event.approval_ref == "RC-2026-007"
     assert event.after_value["approved_by"] == _APPROVER.actor_id
+    assert event.after_value["checked_makers"] == [_ACTOR.actor_id]  # the maker SoD was checked vs
     assert event.before_value["status"] == LIMIT_STATUS_DRAFT
 
 
@@ -364,18 +369,67 @@ def test_material_change_to_an_active_limit_demotes_to_draft(session: Session) -
     assert limit.status == LIMIT_STATUS_ACTIVE
 
 
-def test_editing_a_draft_makes_the_editor_the_maker_of_record(session: Session) -> None:
-    # Closes the edit-then-approve-your-own-edit hole: a SECOND person who edits a draft becomes the
-    # maker-of-record (updated_by), so THEY cannot approve the change they just made (SOD-02).
+def test_both_the_author_and_the_editor_are_sod_excluded(session: Session) -> None:
+    # The maker SET is {created_by, updated_by}: neither the original author (A) nor a later editor
+    # (B) may approve — else A could self-approve a draft B merely touched (SOD-02). Only a THIRD
+    # principal (C) can sign off.
     tenant = str(uuid.uuid4())
-    limit = _mk(session, tenant)  # drafted by _ACTOR
+    limit = _mk(session, tenant)  # authored by _ACTOR (A)
     update_limit(session, limit, actor=_APPROVER, threshold_value=Decimal("7000000"))  # edited by B
     assert limit.status == LIMIT_STATUS_DRAFT
     assert limit.updated_by == _APPROVER.actor_id
-    with pytest.raises(LimitSodError):  # B edited it -> B cannot approve it
+    with pytest.raises(LimitSodError):  # B edited it
         approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-6")
-    approve_limit(session, limit, actor=_ACTOR, approval_ref="RC-7")  # the original drafter may
+    with pytest.raises(LimitSodError):  # A authored it
+        approve_limit(session, limit, actor=_ACTOR, approval_ref="RC-7")
+    approve_limit(session, limit, actor=_APPROVER2, approval_ref="RC-8")  # C is neither
     assert limit.status == LIMIT_STATUS_ACTIVE
+
+
+def test_noop_governing_resave_does_not_demote_an_active_limit(session: Session) -> None:
+    # Presence of a governing field in the edit is not enough — only an ACTUAL value change demotes.
+    tenant = str(uuid.uuid4())
+    limit = _mk_active(session, tenant)  # threshold 5000000
+    update_limit(session, limit, actor=_ACTOR, threshold_value=Decimal("5000000"))  # same value
+    assert limit.status == LIMIT_STATUS_ACTIVE  # unchanged -> stays live, no re-approval churn
+    assert len(select_active_limits(session, acting_tenant=tenant)) == 1
+
+
+def test_update_refuses_combining_status_with_a_governing_change(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk_active(session, tenant)
+    with pytest.raises(LimitError):  # ambiguous: a config change may not ride a suspend/resume
+        update_limit(
+            session,
+            limit,
+            actor=_ACTOR,
+            status=LIMIT_STATUS_SUSPENDED,
+            threshold_value=Decimal("9000000"),
+        )
+
+
+def test_suspend_edit_resume_cannot_launder_an_unapproved_change(session: Session) -> None:
+    # The bypass 3 finders flagged: a governing edit while SUSPENDED must ALSO demote to DRAFT, so
+    # resume cannot relaunch a loosened threshold without a non-maker sign-off (REQ-LIM-001).
+    tenant = str(uuid.uuid4())
+    limit = _mk_active(session, tenant)  # authored A, approved B
+    suspend_limit(session, limit, actor=_ACTOR)
+    assert limit.status == LIMIT_STATUS_SUSPENDED
+    update_limit(session, limit, actor=_ACTOR, threshold_value=Decimal("50000000"))  # loosen
+    assert limit.status == LIMIT_STATUS_DRAFT  # demoted, NOT left SUSPENDED
+    with pytest.raises(LimitError):  # resume cannot activate a DRAFT (would bypass approval)
+        resume_limit(session, limit, actor=_ACTOR)
+    approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-9")  # a non-maker must sign off
+    assert limit.status == LIMIT_STATUS_ACTIVE
+
+
+def test_suspend_and_resume_on_a_draft_are_refused(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    limit = _mk(session, tenant)  # DRAFT
+    with pytest.raises(LimitError):
+        suspend_limit(session, limit, actor=_ACTOR)
+    with pytest.raises(LimitError):
+        resume_limit(session, limit, actor=_ACTOR)
 
 
 def test_cosmetic_name_change_does_not_demote_an_active_limit(session: Session) -> None:

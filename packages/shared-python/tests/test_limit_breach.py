@@ -203,6 +203,7 @@ def test_floor_direction_breaches_end_to_end(session: Session) -> None:
         limit_kind=LIMIT_KIND_HARD,
         actor=_ACTOR,
     )
+    approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-floor")  # DRAFT -> ACTIVE
     breach = evaluate_limit(session, limit, datetime(2026, 1, 5, tzinfo=UTC))
     assert breach is not None
     assert breach.breach_direction == "BELOW"
@@ -232,3 +233,33 @@ def test_poll_tenant_breaches_skips_a_suspended_limit(session: Session) -> None:
     }
     assert active.id in result_ids
     assert suspended.id not in result_ids
+
+
+def test_poll_tenant_breaches_skips_an_unapproved_draft_limit(session: Session) -> None:
+    # MG-3: a DRAFT (created-but-never-approved) limit is invisible to the tick and records NO
+    # breach, even though its threshold would breach — only the ACTIVE sibling is evaluated.
+    tenant, portfolio_id, var_value = _var_ready(session)
+    active = _var_limit(session, tenant, portfolio_id, var_value / 2, "active-ceiling")
+    draft = create_limit(  # NOT approved -> stays DRAFT
+        session,
+        tenant_id=tenant,
+        code="draft-ceiling",
+        name="draft-ceiling",
+        target_run_type="VAR",
+        metric_type="VAR_PARAMETRIC",
+        scope_portfolio_id=portfolio_id,
+        threshold_value=var_value / 2,  # would breach if it were evaluated
+        threshold_unit=THRESHOLD_UNIT_CURRENCY,
+        breach_direction=BREACH_ABOVE,
+        limit_kind=LIMIT_KIND_HARD,
+        actor=_ACTOR,
+    )
+    result_ids = {
+        lid
+        for lid, _bid in poll_tenant_breaches(
+            session, datetime(2026, 1, 7, 9, tzinfo=UTC), acting_tenant=tenant
+        )
+    }
+    assert active.id in result_ids
+    assert draft.id not in result_ids
+    assert _breaches_of(session, draft.id) == []  # a DRAFT never produces a breach row

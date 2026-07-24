@@ -302,6 +302,25 @@ def test_concurrent_double_approve_is_blocked_by_the_lock(app_url: str) -> None:
         engine.dispose()
 
 
+def test_cross_tenant_approve_is_refused(app_url: str) -> None:
+    """`_lock_limit`'s tenant filter (P3-5 doctrine: PG FK checks bypass RLS) — approving a limit
+    while acting as another tenant must surface 'not found', never activate a foreign limit."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    a_limit = _seed_draft_limit(factory, a)  # tenant A's DRAFT
+    session = factory()
+    try:
+        set_tenant_context(session, b)  # acting as B
+        limit = LimitDefinition(id=a_limit, tenant_id=a)  # a hand-built ref to A's limit
+        with pytest.raises(LimitError):
+            approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-X")
+        session.rollback()
+    finally:
+        session.close()
+        engine.dispose()
+
+
 def test_ops_role_has_no_grant_on_limit_tables() -> None:
     """The standing doctrine invariant: the app does ALL limit/breach reads/writes tenant-scoped
     non-BYPASSRLS, so the ops role gets NOTHING here."""

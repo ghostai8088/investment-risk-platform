@@ -127,11 +127,26 @@ _METRIC_MAP: dict[tuple[str, str], MetricSpec] = {
 #: are FROZEN — a re-target is a NEW limit (keeps a breach's echo meaningful).
 _UPDATABLE = ("name", "threshold_value", "limit_kind", "breach_direction", "status")
 
-#: The MATERIAL governing fields (MG-3, OQ-MG-3-5=A): editing any of these on a LIVE (ACTIVE) limit
-#: re-enters the maker-checker gate (the limit returns to DRAFT for a non-editor re-approval —
-#: REQ-LIM-001 "limit CHANGES are maker-checked"). ``name`` is cosmetic and does NOT trigger it;
-#: ``status`` is the lifecycle toggle (suspend/resume), not a config change.
+#: The MATERIAL governing fields (MG-3, OQ-MG-3-5=A): a real change to any of these on a
+#: previously-approved limit (ACTIVE **or** SUSPENDED) re-enters the maker-checker gate (the limit
+#: returns to DRAFT for a non-maker re-approval — REQ-LIM-001 "limit CHANGES are maker-checked").
+#: ``name`` is cosmetic and does NOT trigger it; ``status`` is the lifecycle toggle
+#: (suspend/resume), which may not be combined with a governing change in one edit (ambiguous).
 _GOVERNING_FIELDS = ("threshold_value", "limit_kind", "breach_direction")
+
+
+def _governing_value_changed(limit: LimitDefinition, changes: dict[str, Any]) -> bool:
+    """True iff a governing field's NEW value actually differs from the current one — presence in
+    ``changes`` is not enough (a no-op re-save of the same value must not demote a live limit)."""
+    for key in _GOVERNING_FIELDS:
+        if key not in changes:
+            continue
+        if key == "threshold_value":
+            if Decimal(changes[key]) != Decimal(getattr(limit, key)):
+                return True
+        elif changes[key] != getattr(limit, key):
+            return True
+    return False
 
 
 # --- breach predicate ---------------------------------------------------------------------
@@ -207,6 +222,11 @@ def evaluate_limit(session: Session, limit: LimitDefinition, now: datetime) -> B
     """Evaluate ONE ACTIVE limit against its latest matching COMPLETED run; append a SELF-DESCRIBING
     ``breach`` (+ ``BREACH.DETECT``) if it breaches AND has not already been recorded for that run.
     Idempotent on ``(limit_id, calculation_run_id)`` (the unique constraint is the backstop)."""
+    if limit.status != LIMIT_STATUS_ACTIVE:
+        # Fail-closed backstop (MG-3): only an APPROVED, ACTIVE limit is ever evaluated. Production
+        # callers already pre-filter via `select_active_limits`, but a DRAFT/SUSPENDED limit handed
+        # here directly must NOT record a breach against an un-approved/suspended config.
+        return None
     resolved = _resolve_latest(session, limit)
     if resolved is None:
         return None  # no matching COMPLETED run — nothing to evaluate this tick
@@ -398,44 +418,58 @@ def update_limit(
     - ``update_limit`` may NEVER set or clear ``DRAFT`` — DRAFT is entered only via ``create_limit``
       (or the auto-demotion below) and left only via ``approve_limit``. This closes the "activate a
       draft through the edit path" bypass (the twin of the create-side force-DRAFT).
-    - A MATERIAL governing-field change to a LIVE (ACTIVE) limit auto-demotes it to DRAFT and stamps
-      the editor as the new maker (``updated_by``); it is not evaluated until a non-editor
-      re-approves (REQ-LIM-001/BX-SOD "limit CHANGES are maker-checked", OQ-MG-3-5=A).
+    - A MATERIAL governing-field change to a previously-approved limit (ACTIVE **or** SUSPENDED)
+      auto-demotes it to DRAFT and records the editor as a maker (``updated_by``); it is not
+      evaluated until a NON-maker re-approves (REQ-LIM-001/BX-SOD, OQ-MG-3-5=A). Enforcing this for
+      SUSPENDED too closes the suspend->loosen->resume laundering bypass.
+    - A status toggle (suspend/resume) may NOT be combined with a governing change in one edit —
+      that ambiguity was a demote-suppression bypass; make the two edits separately.
     """
     unknown = set(changes) - set(_UPDATABLE)
     if unknown:
         raise LimitError(f"non-updatable limit attributes: {sorted(unknown)}")
-    if "status" in changes:
-        if changes["status"] not in LIMIT_STATUSES:
-            raise LimitError(f"status {changes['status']!r} is invalid")
-        if changes["status"] == LIMIT_STATUS_DRAFT or limit.status == LIMIT_STATUS_DRAFT:
-            raise LimitError(
-                "update_limit cannot set or clear DRAFT — a draft leaves only via approve_limit "
-                "(the maker-checker gate); suspend/resume operate on ACTIVE<->SUSPENDED only"
-            )
+    if "status" in changes and changes["status"] not in LIMIT_STATUSES:
+        raise LimitError(f"status {changes['status']!r} is invalid")
     if "breach_direction" in changes and changes["breach_direction"] not in BREACH_DIRECTIONS:
         raise LimitError(f"breach_direction {changes['breach_direction']!r} is invalid")
     if "limit_kind" in changes and changes["limit_kind"] not in LIMIT_KINDS:
         raise LimitError(f"limit_kind {changes['limit_kind']!r} is invalid")
     if "threshold_value" in changes and Decimal(changes["threshold_value"]) <= 0:
         raise LimitError("threshold_value must be positive")
-    # A material change to a LIVE limit re-enters the maker-checker gate (status is NOT itself a
-    # config change — an explicit suspend/resume is exempt).
-    demote = (
-        limit.status == LIMIT_STATUS_ACTIVE
-        and "status" not in changes
-        and any(key in changes for key in _GOVERNING_FIELDS)
-    )
+    # Take the row lock AND read the fresh status under it, so the DRAFT guard and the demote
+    # decision can never act on a stale identity-map status that a concurrent approve invalidated
+    # (verifier B-2 parity with approve_limit). A SCALAR select is used, not a whole-object refresh,
+    # so in-flight Decimal columns keep their in-memory representation (the audit payload format).
+    fresh_status = session.execute(
+        select(LimitDefinition.status)
+        .where(LimitDefinition.id == limit.id, LimitDefinition.tenant_id == limit.tenant_id)
+        .with_for_update()
+    ).scalar_one_or_none()
+    if fresh_status is None:
+        raise LimitError(f"limit {limit.id} not found in tenant {limit.tenant_id}")
+    limit.status = fresh_status  # sync the locked truth (only the status string)
+    governing_changed = _governing_value_changed(limit, changes)
+    if "status" in changes:
+        if governing_changed:
+            raise LimitError(
+                "cannot combine a status change (suspend/resume) with a governing-field change in "
+                "one edit — a config change requires re-approval; make the two edits separately"
+            )
+        if changes["status"] == LIMIT_STATUS_DRAFT or limit.status == LIMIT_STATUS_DRAFT:
+            raise LimitError(
+                "update_limit cannot set or clear DRAFT — a draft leaves only via approve_limit "
+                "(the maker-checker gate); suspend/resume operate on ACTIVE<->SUSPENDED only"
+            )
+    # A material change to a previously-approved (non-DRAFT) limit re-enters the maker-checker gate.
+    demote = governing_changed and limit.status != LIMIT_STATUS_DRAFT
     keys = list(changes) + (["status"] if demote else [])
     before = {key: json_safe(getattr(limit, key)) for key in keys}
     for key, value in changes.items():
         setattr(limit, key, Decimal(value) if key == "threshold_value" else value)
     if demote:
         limit.status = LIMIT_STATUS_DRAFT
-    # Stamp the editor as the last writer on EVERY edit — so a DRAFT's maker-of-record is whoever
-    # last touched its config (``approve_limit`` refuses ``approver == updated_by or created_by``).
-    # This closes the edit-a-draft-then-approve-your-own-edit hole (a second editor must not also be
-    # the approver of the change they just made).
+    # Record the editor as a maker on EVERY edit — ``approve_limit`` refuses any approver in the SET
+    # {created_by, updated_by}, so both the original author and the last editor are SoD-excluded.
     limit.updated_by = actor.actor_id
     limit.record_version += 1
     session.flush()
@@ -456,10 +490,10 @@ def approve_limit(
 ) -> LimitDefinition:
     """Approve a DRAFT limit into ACTIVE — the maker-checker gate (REQ-LIM-001/BX-SOD, SOD-02).
 
-    The approver MUST be human (BR-15) and MUST NOT be the maker of this draft: the drafter on a
-    fresh create (``created_by``), or the editor on a change-triggered re-draft (``updated_by``).
-    The from-state is re-read UNDER the row lock (``populate_existing``) so a stale identity-map
-    read cannot double-approve. Emits ``LIMIT.APPROVE`` with the ``approval_ref`` sign-off ref.
+    The approver MUST be human (BR-15) and MUST NOT be in the SET of makers of this draft —
+    ``{created_by, updated_by}`` (the author AND the last editor) — so neither signs off a limit
+    they shaped (SOD-02). The from-state is re-read UNDER the row lock (``populate_existing``)
+    so a stale read cannot double-approve. Emits ``LIMIT.APPROVE`` with the ``approval_ref``.
     """
     _require_human(actor)
     if not (approval_ref or "").strip():
@@ -469,14 +503,14 @@ def approve_limit(
         raise LimitError(
             f"only a DRAFT limit can be approved (limit {locked.id} is {locked.status})"
         )
-    maker = locked.updated_by or locked.created_by
-    if not maker:
+    makers = {locked.created_by, locked.updated_by} - {None}
+    if not makers:
         raise LimitSodError(
             f"limit {locked.id} is DRAFT with no recorded maker — cannot establish SoD (refused)"
         )
-    if actor.actor_id == maker:
+    if actor.actor_id in makers:
         raise LimitSodError(
-            f"actor {actor.actor_id} is the maker of this draft; cannot approve it (SOD-02)"
+            f"actor {actor.actor_id} shaped this limit (a maker); cannot approve it (SOD-02)"
         )
     before = {"status": locked.status}
     locked.status = LIMIT_STATUS_ACTIVE
@@ -488,7 +522,13 @@ def approve_limit(
         event_type=LIMIT_APPROVE_EVENT,
         action=ACTION_STATUS_CHANGE,
         before_value=before,
-        after_value={"status": locked.status, "approved_by": actor.actor_id},
+        # Record the makers the SoD was checked against so the two-person control is provable from
+        # the immutable audit row alone (the maker columns are mutable EV state).
+        after_value={
+            "status": locked.status,
+            "approved_by": actor.actor_id,
+            "checked_makers": sorted(makers),
+        },
         actor=actor,
         approval_ref=approval_ref,
     )

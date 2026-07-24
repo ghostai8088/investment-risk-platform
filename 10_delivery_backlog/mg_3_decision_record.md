@@ -120,6 +120,19 @@ New tests: create→DRAFT (not evaluated); approver==maker refused (SOD-02); app
 
 Verified NOT MG-3's surface, left for the mandatory Wave-11 close review (clean inventory so nothing is silently dropped): `create_schedule`'s P3-5 cross-tenant FK gap (SCH-1; note `create_limit` already carries the guard — verified); the `*.manage`/`breach.*`/`limit.approve` API forward-gate (latent until endpoints land); `select_overdue_breaches` N+1 (MG-2). **If OQ-MG-3-5=B**, change-re-approval joins this list as a new REQ-LIM-001 carry.
 
-## 8. Cadence
+## 8. Implementation + 4-finder review (folded)
 
-Recon ✅ → this decision record → pre-ratification verifier (fold blocking holes) → **user ratification gate** (OQ-1, OQ-2 are the real Tier-3 calls; OQ-3/4 recommended) → implement → `make check` + full-PG + CI-to-green → 4-finder adversarial review (fold) → merge → closeout → **the mandatory Wave-11 close review**.
+Implemented across two commits (`84bae83` record, `9631c91` impl); no migration (head stays `0051`); counts UNCHANGED 23/38/109. `make check` green (lint/typecheck/docs/secret-scan) + full SQLite + full PG suites green + zero alembic drift + `limit.approve` seeds from the live bootstrap catalog and binds to `risk_manager_2l`/`platform_admin`.
+
+**4-finder adversarial review — 1 HIGH (3 finders independently converged) + 4 MED + LOWs, ALL folded:**
+- **HIGH — the change-gate was bypassable two ways** (finders 1/2/4): a solo 2L could loosen a LIVE limit without a second sign-off by (a) `suspend → edit-while-SUSPENDED → resume` (the demote fired only on ACTIVE), or (b) slipping a no-op `status=` key alongside a governing change (the `"status" not in changes` guard suppressed the demote). Fold: **demote on a real governing change to any non-DRAFT limit (ACTIVE or SUSPENDED)**; **refuse combining a status toggle with a governing change** in one edit. Regression tests for both paths.
+- **MED — `update_limit` TOCTOU** (finder 1): it trusted the in-memory status, so a concurrent approve could slip an un-demoted change past. Fold: read the fresh status under a scalar `SELECT … FOR UPDATE` (not a whole-object refresh — that would reformat in-flight Decimals / the audit payload).
+- **MED — no-op re-save demoted a live limit** (finder 1): demote keyed off field *presence*, not an actual value change. Fold: `_governing_value_changed` compares values (Decimal-aware).
+- **MED — SoD excluded only the LAST editor** (finder 2): a cosmetic edit by B let the original author A self-approve. Fold: **approver ∉ the SET `{created_by, updated_by}`** (author AND last editor) — the MG-2 responder-set philosophy applied to a scalar pair.
+- **MED — audit durability** (finder 2): `LIMIT.APPROVE` now records `checked_makers` so the two-person control is provable from the immutable row (the maker columns are mutable EV state).
+- **LOW — `evaluate_limit` fail-closed backstop**: it now refuses to evaluate a non-ACTIVE limit (defense-in-depth beyond the `select_active_limits` filter). Plus added tests: tick-level DRAFT-skip, cross-tenant approve refusal (PG), suspend/resume-on-DRAFT refusal, the `ACTION_STATUS_CHANGE` pin.
+- **MED-3 (finder 2) NOT folded — forward-gate note:** the SoD compares raw `actor_id` strings; canonicalization belongs at the (not-yet-built) API auth boundary (the SSO-1 lesson). Recorded as a carry for when `limit.approve`/`limit.manage` endpoints land.
+
+## 9. Cadence
+
+Recon ✅ → decision record ✅ → pre-ratification verifier (3 blocking folds) ✅ → **user ratification gate** (OQ-5=A, OQ-2=A) ✅ → implement ✅ → `make check` + full-PG green ✅ → 4-finder review (1 HIGH + 4 MED folded) ✅ → **push → CI-to-green → merge → closeout → the mandatory Wave-11 close review** (remaining).
