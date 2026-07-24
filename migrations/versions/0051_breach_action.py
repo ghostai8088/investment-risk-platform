@@ -14,7 +14,7 @@ ordering key; ``uq_breach_escalation`` is a PARTIAL unique index over ESCALATE r
 ASSIGN stamps a fresh ``response_due`` = a new epoch, admitting a legitimate re-escalation).
 
 Realizes ENT-034; activates the reserved BREACH lifecycle audit codes
-(.ASSIGN/.1L_RESPONSE/.2L_REVIEW/.ESCALATE/.CLOSE). Mints NO new governed number and NO ``run_type``.
+(.ASSIGN/.1L_RESPONSE/.2L_REVIEW/.ESCALATE/.CLOSE). Mints NO governed number and NO ``run_type``.
 """
 
 from __future__ import annotations
