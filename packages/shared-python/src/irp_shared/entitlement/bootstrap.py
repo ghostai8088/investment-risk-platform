@@ -163,10 +163,20 @@ PERMISSIONS: list[tuple[str, str]] = [
     # control-plane object is 3L-oversight scope, the pacing.view/schedule.view precedent). Breach
     # detection runs as a synthesized SYSTEM actor on the operational tick, ungated. Forward-gate:
     # a future limit API endpoint MUST carry require_permission("limit.manage"). The formal
-    # LIMIT.APPROVE maker-checker gate is deferred to MG-2 (OQ-4=A) — no `limit.approve` yet.
+    # LIMIT.APPROVE maker-checker gate is deferred to MG-3 (OQ-MG-2-1=B) — no `limit.approve` yet.
     ("limit.manage", "Define, edit and suspend governed risk limits (2L)"),
     ("limit.view", "View risk limit definitions"),
     ("breach.view", "View limit breach records"),
+    # MG-2 breach remediation lifecycle (ENT-034 breach_action, Wave-11 slice 3) — a governed R-07
+    # mint splitting the three-lines-of-defense breach workflow: `breach.respond` is the 1L verb
+    # (the analyst who runs the numbers owns and remediates the breach), `breach.review` is the 2L
+    # verb (assign an owner, review the 1L response, escalate, close). These two are NEVER
+    # co-granted to a non-admin role (the SOD-03 register/validate partition precedent) — the role
+    # partition is the FIRST line of the maker-checker SoD; the runtime person-level refusal
+    # (reviewer/closer != any prior 1L responder, SOD-02) is the backstop for the platform_admin
+    # dual-hat. A future breach-action API endpoint MUST carry the matching require_permission.
+    ("breach.respond", "File a 1L remediation response on a breach (1L)"),
+    ("breach.review", "Assign, review, escalate and close a breach (2L)"),
 ]
 
 #: All permission codes, in catalog order.
@@ -307,6 +317,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # LIM-1 limits: the 1L RUNS the numbers but does NOT set limits (SoD) — view-only.
         "limit.view",
         "breach.view",
+        # MG-2: the 1L OWNS and remediates a breach (files the response) — but never reviews/closes
+        # it (SOD-02); `breach.review` is withheld from 1L (the register/validate partition twin).
+        "breach.respond",
         "model.inventory.view",
         # 1L model developer/owner = the maker side of the future SOD-03 maker-checker (P1A-2,
         # OQ-P1A-2-ENT); the independent validator (2L) deliberately does NOT hold register (MG-04).
@@ -355,6 +368,10 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "limit.manage",
         "limit.view",
         "breach.view",
+        # MG-2: the 2L independently REVIEWS the breach lifecycle — assign an owner, review the 1L
+        # response, escalate, close. NEVER co-held with `breach.respond` (SOD-02, the maker-checker
+        # partition); the person-level reviewer/closer != responder refusal is the runtime backstop.
+        "breach.review",
         "model.inventory.view",
         # VW-1: the 2L independent validator (ROLE-MV) is the ONLY non-admin holder of
         # model.validate — SOD-03 (author ≠ validator): risk_analyst_1l holds register, not this.
