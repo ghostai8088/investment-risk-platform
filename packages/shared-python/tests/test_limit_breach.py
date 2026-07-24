@@ -30,6 +30,7 @@ from irp_shared.limit.service import (
     HEALTH_BREACHED,
     HEALTH_IN_APPETITE,
     HEALTH_NEVER_EVALUABLE,
+    approve_limit,
     create_limit,
     evaluate_limit,
     limit_health,
@@ -44,6 +45,8 @@ from irp_worker.breaches import poll_tenant_breaches  # noqa: E402
 from irp_worker.scheduler import poll_tenant_schedules  # noqa: E402
 
 _ACTOR = LimitActor(actor_id="risk-mgr-2l", actor_type="user")
+#: A distinct 2L principal to APPROVE the draft (MG-3 maker-checker: approver != drafter).
+_APPROVER = LimitActor(actor_id="risk-mgr-2l-b", actor_type="user")
 
 
 def _var_ready(session: Session) -> tuple[str, str, Decimal]:
@@ -69,7 +72,8 @@ def _var_ready(session: Session) -> tuple[str, str, Decimal]:
 
 
 def _var_limit(session: Session, tenant: str, portfolio_id: str, threshold: Decimal, code: str):
-    return create_limit(
+    """A DRAFT limit approved into ACTIVE (MG-3) so it is actually evaluated by the tick."""
+    limit = create_limit(
         session,
         tenant_id=tenant,
         code=code,
@@ -83,6 +87,7 @@ def _var_limit(session: Session, tenant: str, portfolio_id: str, threshold: Deci
         limit_kind=LIMIT_KIND_HARD,
         actor=_ACTOR,
     )
+    return approve_limit(session, limit, actor=_APPROVER, approval_ref=f"RC-{code}")
 
 
 def _breaches_of(session: Session, limit_id: str) -> list[Breach]:

@@ -22,11 +22,12 @@ from irp_shared.limit.events import (
     LimitActor,
 )
 from irp_shared.limit.models import Breach
-from irp_shared.limit.service import create_limit, evaluate_limit
+from irp_shared.limit.service import approve_limit, create_limit, evaluate_limit
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.risk.active_risk_service import latest_active_risk_for_portfolio
 
 _ACTOR = LimitActor(actor_id="risk-mgr-2l", actor_type="user")
+_APPROVER = LimitActor(actor_id="risk-mgr-2l-b", actor_type="user")
 
 
 def test_a_tracking_error_limit_breaches_on_te_value(session: Session) -> None:
@@ -57,6 +58,7 @@ def test_a_tracking_error_limit_breaches_on_te_value(session: Session) -> None:
         limit_kind=LIMIT_KIND_HARD,
         actor=_ACTOR,
     )
+    approve_limit(session, limit, actor=_APPROVER, approval_ref="RC-TE-1")  # DRAFT -> ACTIVE
     breach = evaluate_limit(session, limit, datetime(2026, 1, 5, tzinfo=UTC))
     assert breach is not None
     assert breach.observed_value == te_value  # the te_value FRACTION, echoed exactly

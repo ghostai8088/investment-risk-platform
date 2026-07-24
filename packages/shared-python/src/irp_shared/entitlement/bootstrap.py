@@ -163,8 +163,17 @@ PERMISSIONS: list[tuple[str, str]] = [
     # control-plane object is 3L-oversight scope, the pacing.view/schedule.view precedent). Breach
     # detection runs as a synthesized SYSTEM actor on the operational tick, ungated. Forward-gate:
     # a future limit API endpoint MUST carry require_permission("limit.manage"). The formal
-    # LIMIT.APPROVE maker-checker gate is deferred to MG-3 (OQ-MG-2-1=B) — no `limit.approve` yet.
+    # MG-3 ACTIVATES the reserved LIMIT.APPROVE maker-checker gate (OQ-MG-2-1=B, ratified
+    # 2026-07-24, OQ-MG-3-2=A): `limit.approve` goes to the SAME risk_manager_2l as the maker verb
+    # `limit.manage`, because the gate is PERSON-level, not role-level — a limit is born DRAFT and a
+    # SECOND 2L person (approver != the draft's maker, by principal id) approves it into ACTIVE
+    # (personas: limit-change checker = "P-CRO / second 2L"; SOD-02). Unlike breach.respond/review
+    # (a cross-line 1L/2L partition, never co-granted), maker and checker here are the SAME role,
+    # so the runtime approver != created_by/updated_by refusal is the WHOLE gate. A material change
+    # to a LIVE limit re-enters the gate (auto-demote to DRAFT). Forward-gate: a future limit API
+    # endpoint MUST carry require_permission("limit.approve") on approve_limit.
     ("limit.manage", "Define, edit and suspend governed risk limits (2L)"),
+    ("limit.approve", "Approve a DRAFT limit into ACTIVE — maker-checker sign-off (2L)"),
     ("limit.view", "View risk limit definitions"),
     ("breach.view", "View limit breach records"),
     # MG-2 breach remediation lifecycle (ENT-034 breach_action, Wave-11 slice 3) — a governed R-07
@@ -366,6 +375,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "schedule.view",
         # LIM-1 limits: the 2L risk-manager is the limit MAKER (OD-LIM-1-J, the SoD twist) + views.
         "limit.manage",
+        # MG-3: the 2L is ALSO the limit CHECKER — maker and checker share the role because the gate
+        # is PERSON-level (approver != the draft's maker, SOD-02); a second 2L person signs off.
+        "limit.approve",
         "limit.view",
         "breach.view",
         # MG-2: the 2L independently REVIEWS the breach lifecycle — assign an owner, review the 1L
