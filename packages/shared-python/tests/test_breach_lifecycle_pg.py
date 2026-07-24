@@ -4,8 +4,8 @@ Gated on ``IRP_TEST_DATABASE_URL``; enforcement runs under the constrained non-s
 (NOSUPERUSER NOBYPASSRLS). Proves: a cross-tenant breach lock is RLS-refused (``_lock_breach`` sees
 nothing → BreachTransitionError); the append-only P0001 TRIGGER on ``breach_action`` (irp_app HAS
 UPDATE, so the rejection is the trigger, not a privilege); the ``uq_breach_escalation`` partial
-unique index rejects a second escalation of the same (breach, response_due) epoch; the full lifecycle
-round-trips under real FKs + RLS; and — the standing doctrine invariant — the BYPASSRLS ``irp_ops``
+unique index rejects a second escalation of the same (breach, response_due) epoch; the full
+lifecycle round-trips under real FKs + RLS; and — the standing invariant — the BYPASSRLS ``irp_ops``
 role has NO grant on ``breach_action``.
 """
 
@@ -262,9 +262,7 @@ def test_ops_role_has_no_grant_on_breach_action(app_url: str) -> None:
     engine = make_engine(URL, poolclass=NullPool)  # superuser to read the catalog
     try:
         with engine.begin() as conn:
-            has_ops = conn.execute(
-                text("SELECT 1 FROM pg_roles WHERE rolname = 'irp_ops'")
-            ).first()
+            has_ops = conn.execute(text("SELECT 1 FROM pg_roles WHERE rolname = 'irp_ops'")).first()
             if not has_ops:
                 pytest.skip("irp_ops role not provisioned in this database")
             granted = conn.execute(
