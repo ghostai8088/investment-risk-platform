@@ -40,6 +40,7 @@ from irp_shared.model.models import (
     ModelValidationFinding,
     ModelVersion,
 )
+from irp_shared.notification.models import BreachNotification
 from irp_shared.pacing.models import PacingProjectionResult
 from irp_shared.perf.models import (
     BenchmarkRelativeResult,
@@ -96,6 +97,7 @@ __all__ = [
     "UserRole",
     "DataSource",
     "LineageEdge",
+    "BreachNotification",
     "Model",
     "ModelVersion",
     "ModelAssumption",

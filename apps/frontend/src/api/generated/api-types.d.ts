@@ -403,6 +403,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/breaches/{breach_id}/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Notifications */
+        get: operations["notifications_breaches__breach_id__notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/breaches/{breach_id}/respond": {
         parameters: {
             query?: never;
@@ -5196,6 +5213,40 @@ export interface components {
             expected_seq?: number | null;
             /** Narrative */
             narrative?: string | null;
+        };
+        /** BreachNotificationOut */
+        BreachNotificationOut: {
+            /** Breach Id */
+            breach_id: string;
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "LOG" | "EMAIL" | "WEBHOOK";
+            /** Failure Reason */
+            failure_reason: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Notified At
+             * Format: date-time
+             */
+            notified_at: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "SENT" | "FAILED" | "SUPPRESSED";
+            /** Recipient Id */
+            recipient_id: string;
+            /** Recipient Reason */
+            recipient_reason: string;
+            /** Severity */
+            severity: string;
+            /** Source Event Type */
+            source_event_type: string;
+            /** Source Sequence No */
+            source_sequence_no: number;
         };
         /** BreachOut */
         BreachOut: {
@@ -10050,6 +10101,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BreachOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    notifications_breaches__breach_id__notifications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                breach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BreachNotificationOut"][];
                 };
             };
             /** @description Validation Error */

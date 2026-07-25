@@ -48,7 +48,9 @@ type CountKey =
   // API-2b (breach lifecycle): per-breach monotonic ordering integers, not governed decimals.
   | "seq"
   | "epoch_seq"
-  | "expected_seq";
+  | "expected_seq"
+  // NOTIF-1 (breach notification): the source audit-event cursor position, an integer.
+  | "source_sequence_no";
 
 /** Keys of `T` whose value can be a `number`. A governed decimal is `string`, so it never qualifies
  * — unless it regressed to `number` or `number | string`. (`-?` strips optionality so nullable
@@ -89,6 +91,7 @@ export type OnlyCountsAreNumbersOnEveryRowOut = [
   // the LimitOut backfill (the limit family predated its own guard row, an inherited gap).
   AssertTrue<OnlyCountsAreNumbers<Schemas["BreachOut"]>>,
   AssertTrue<OnlyCountsAreNumbers<Schemas["BreachActionOut"]>>,
+  AssertTrue<OnlyCountsAreNumbers<Schemas["BreachNotificationOut"]>>,
   AssertTrue<OnlyCountsAreNumbers<Schemas["LimitOut"]>>,
   AssertTrue<OnlyCountsAreNumbers<Schemas["LimitHealthOut"]>>,
 ];

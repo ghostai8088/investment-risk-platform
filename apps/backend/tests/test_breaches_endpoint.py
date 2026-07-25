@@ -408,6 +408,7 @@ def test_route_inventory_pins_the_verb_set(ctx) -> None:
         "/breaches/{breach_id}/review",
         "/breaches/{breach_id}/close",
         "/breaches/{breach_id}/actions",
+        "/breaches/{breach_id}/notifications",  # NOTIF-1 (read, breach.view)
     }
 
 
@@ -505,3 +506,91 @@ def test_non_deadlock_operational_error_is_not_swallowed(ctx) -> None:
             json={"narrative": "x"},
             headers=_hdr(ctx["responder"], ctx["tenant"]),
         )
+
+
+# --- NOTIF-1: the breach-notification read (GET /breaches/{id}/notifications) ----------------
+def _seed_notification(
+    db: Session,
+    tenant: str,
+    breach_id: str,
+    *,
+    seq: int,
+    outcome: str = "SENT",
+    recipient: str = "r",
+):  # noqa: ANN201
+    from irp_shared.notification.models import BreachNotification
+
+    row = BreachNotification(
+        tenant_id=tenant,
+        source_sequence_no=seq,
+        source_event_type="BREACH.DETECT",
+        breach_id=breach_id,
+        recipient_id=recipient,
+        recipient_reason="breach.review",
+        channel="LOG",
+        outcome=outcome,
+        severity="warning",
+        notified_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def test_notifications_read_returns_attempts(ctx) -> None:
+    db: Session = ctx["db"]
+    _seed_notification(db, ctx["tenant"], ctx["breach"], seq=1, recipient=ctx["reviewer"])
+    _seed_notification(
+        db, ctx["tenant"], ctx["breach"], seq=2, outcome="FAILED", recipient=ctx["responder"]
+    )
+    db.commit()
+    r = ctx["client"].get(
+        f"/breaches/{ctx['breach']}/notifications", headers=_hdr(ctx["viewer"], ctx["tenant"])
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert {n["outcome"] for n in body} == {"SENT", "FAILED"}
+    assert {n["source_sequence_no"] for n in body} == {1, 2}
+    assert all(n["breach_id"] == ctx["breach"] and n["channel"] == "LOG" for n in body)
+    assert body[0]["recipient_reason"] == "breach.review"
+
+
+def test_notifications_read_is_breach_view_gated(ctx) -> None:
+    # a principal with NO breach.view (an unknown user) → 403
+    r = ctx["client"].get(
+        f"/breaches/{ctx['breach']}/notifications", headers=_hdr(str(uuid.uuid4()), ctx["tenant"])
+    )
+    assert r.status_code == 403
+
+
+def test_notifications_read_is_empty_for_unnotified_breach(ctx) -> None:
+    r = ctx["client"].get(
+        f"/breaches/{ctx['breach']}/notifications", headers=_hdr(ctx["viewer"], ctx["tenant"])
+    )
+    assert r.status_code == 200 and r.json() == []
+
+
+def test_notifications_read_cross_tenant_is_404(ctx) -> None:
+    db: Session = ctx["db"]
+    _seed_notification(db, ctx["tenant"], ctx["breach"], seq=1)
+    db.commit()
+    hb = _hdr(ctx["user_b"], ctx["tenant_b"])  # acting as the other tenant
+    assert (
+        ctx["client"].get(f"/breaches/{ctx['breach']}/notifications", headers=hb).status_code == 404
+    )
+
+
+def test_notifications_read_pagination_caps(ctx) -> None:
+    hdr = _hdr(ctx["viewer"], ctx["tenant"])
+    assert (
+        ctx["client"]
+        .get(f"/breaches/{ctx['breach']}/notifications?limit=0", headers=hdr)
+        .status_code
+        == 422
+    )
+    assert (
+        ctx["client"]
+        .get(f"/breaches/{ctx['breach']}/notifications?limit=201", headers=hdr)
+        .status_code
+        == 422
+    )

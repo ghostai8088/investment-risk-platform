@@ -11,6 +11,7 @@ id-tie-broken for determinism.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -62,4 +63,34 @@ def list_audit_events(
         .limit(limit)
         .offset(offset)
     )
+    return list(session.execute(stmt).scalars().all())
+
+
+def list_events_since_sequence(
+    session: Session,
+    *,
+    acting_tenant: str,
+    after_sequence_no: int,
+    event_types: Collection[str],
+    limit: int | None = None,
+) -> list[AuditEvent]:
+    """The acting tenant's audit events of ``event_types`` with ``sequence_no > after_sequence_no``,
+    OLDEST-first by ``sequence_no`` (NOTIF-1 phase-4 consumer). Cursors on the per-tenant gap-free
+    monotonic ``sequence_no`` — NOT the string ``event_time`` (which has tie/precision risk and is
+    not guaranteed strictly monotonic). READ-ONLY — never mutates, never touches the frozen writer.
+    Tenant-scoped (explicit predicate atop RLS). ``limit`` bounds a single tick's batch (None = all
+    pending)."""
+    if not event_types:
+        return []
+    stmt = (
+        select(AuditEvent)
+        .where(
+            AuditEvent.tenant_id == str(acting_tenant),
+            AuditEvent.event_type.in_(list(event_types)),
+            AuditEvent.sequence_no > after_sequence_no,
+        )
+        .order_by(AuditEvent.sequence_no.asc())
+    )
+    if limit is not None:
+        stmt = stmt.limit(limit)
     return list(session.execute(stmt).scalars().all())
