@@ -1,8 +1,38 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-24) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-24, evening) — read this block; everything below it is HISTORY
 >
-> **HEAD `96679e2`** = merge of **PR #115** (MG-3: the `LIMIT.APPROVE` maker-checker gate — Wave-11
+> **HEAD `80d5ad6`** = merge of **PR #118** (the Fable Wave-12 API-boundary audit doc), atop THREE
+> same-day merges: **PR #117** (the Wave-11 close review — **WAVE 11 CLOSED + RATIFIED**, OQ-W11C-1/2/3,
+> 7th consecutive zero-shipped-code-defect close; **WAVE 12 RATIFIED = "Operations, Reachable"**),
+> **PR #119** (CI: the time-bound reachability-justified npm-audit allowlist for the live react-router
+> advisory GHSA-qwww-vcr4-c8h2 — `audit-allowlist.json` + `scripts/check_frontend_audit.mjs`,
+> review_by 2026-10-24), and **PR #120 = API-2, Wave-12 slice 1 SHIPPED** (`20da275`, CI green all 6).
+> **NO migration** (head stays `0051`); **counts UNCHANGED 23/38/109** (an API is transport, not a
+> governed number). **NEXT = API-2b (the breach lifecycle API — reuses API-2's auth foundation).**
+>
+> **What API-2 shipped.** The FIRST HTTP surface over the Wave-11 governed operational controls — the
+> **limit half** (OQ-1=B split; breach lifecycle = API-2b): `POST /limits` (born DRAFT), `PATCH`
+> (material change auto-demotes), `POST /limits/{id}/approve` (the person-level maker-checker gate over
+> HTTP), `/suspend`|`/resume`, reads `GET /limits[?status=DRAFT⇒approval queue]`, `/limits/{id}`,
+> `/limits/health` — all thin pass-throughs to the gated service fns (no second write path; `status` is
+> not a DTO field, `extra="forbid"`). **The Fable-audit auth foundation:** D1 actor-id canonicalization
+> lives in the ACTOR DATACLASSES (`LimitActor`/`BreachActor.__post_init__` → `str(uuid.UUID(x))`,
+> lenient) so stamp==compare in EVERY caller — API-2b's breach SoD inherits it for free; the router
+> additionally fail-closes a non-UUID `X-User-Id` → 401. Ratified: OQ-2=A (human-only by doctrine +
+> entrypoint; `_require_human` backstop), OQ-3=A (**SoD refusal = 409**, distinct from 403=entitlement
+> gap and 422=validation), OQ-4=A (one-human-one-row provisioning doctrine; schema tightening = a hard
+> provisioning-slice precondition). New service reads `list_limits`/`get_limit` (+ `DuplicateLimitError`,
+> `LimitStateError`, `_threshold` guarded parse). **4-finder: ZERO functional HIGH — the SoD held
+> against every HTTP probe**; 1 coverage HIGH folded (prove `limit.approve` ≠ `limit.manage`: a
+> manage-only principal → 403 while the maker → 409) + MED folds (state-conflict 409s; smuggled-status
+> 422; fixed-point `1E-8`). Fable demands: D1/D3/D4/D7/D10 PAID; D2/D5 doctrine; **OQ-a (worker
+> `--tenant` silent-fail-open) + D8 `create_schedule` guard CARRIED to cadence-wiring**; D6/D9 +
+> `assigned_to` resolution to API-2b.
+>
+> ---
+>
+> **Prior: HEAD `96679e2`** = merge of **PR #115** (MG-3: the `LIMIT.APPROVE` maker-checker gate — Wave-11
 > slice 4, the FINAL slice, "operationalize"), **CI green** (all 6 checks). **NO migration** (code-only;
 > head stays `0051_breach_action`). **Counts UNCHANGED 23/38/109** — MG-3 mints NO new governed number:
 > a limit approval is a control-plane state transition binding no snapshot/run/model. **WAVE 11 IS
