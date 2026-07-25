@@ -16,7 +16,12 @@ services:
     build:
       context: .
       dockerfile: infra/docker/worker.Dockerfile
+    # CAD-1: the supervisor ticks each tenant in IRP_TENANT_IDS every IRP_TICK_INTERVAL_SECONDS.
+    # Set these in .env (see .env.example); an empty IRP_TENANT_IDS fails closed at startup.
     env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy  # wait for PG to accept connections (avoids spurious first-cycle errors)
 
   frontend:
     build:
@@ -42,6 +47,11 @@ services:
       - "5432:5432"
     volumes:
       - irp_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # Local-dev OIDC provider (SSO-1 / AD-007, closes OD-048). Opt-in only:
   #   docker compose --profile oidc up keycloak

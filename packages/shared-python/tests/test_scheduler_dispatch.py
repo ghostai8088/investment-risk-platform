@@ -39,6 +39,18 @@ def _var_ready_tenant(session: Session) -> tuple[str, str, str]:
     return tenant, str(portfolio.id), var_mv
 
 
+def _bare_portfolio(session: Session, tenant: str) -> str:
+    """A real in-tenant portfolio with NO upstream factor-exposure/covariance run — the honest way
+    to trigger a DISPATCH failure now that the CAD-1 create guard refuses a foreign/fake FK at
+    create time (a bare portfolio passes the create guard, then dispatch fails at 'no upstream')."""
+    p = Portfolio(
+        tenant_id=tenant, code=f"pf-{uuid.uuid4().hex[:8]}", name="Bare", node_type="BOOK"
+    )
+    session.add(p)
+    session.flush()
+    return str(p.id)
+
+
 def _ledger(session: Session, schedule_id: str) -> list[ScheduledRun]:
     return list(
         session.execute(
@@ -166,7 +178,14 @@ def test_failed_dispatch_records_a_failed_row_and_does_not_refire(session: Sessi
     # A schedule whose scope has NO upstream factor-exposure run -> dispatch raises -> records
     # a FAILED ledger row (calculation_run_id NULL), NOT re-fired within the interval (OD-SCH-1-J).
     tenant = str(uuid.uuid4())
-    sched = _schedule(session, tenant, str(uuid.uuid4()), str(uuid.uuid4()), "no-upstream")
+    # real in-tenant referents (pass the create guard), but the portfolio has NO upstream run
+    sched = _schedule(
+        session,
+        tenant,
+        _bare_portfolio(session, tenant),
+        _var_model(session, tenant),
+        "no-upstream",
+    )
     now = datetime(2026, 1, 5, 9, 0, tzinfo=UTC)
     res = poll_tenant_schedules(session, now, code_version="risk-v1", acting_tenant=tenant)
     assert res == [(sched.id, OUTCOME_FAILED)]
@@ -191,8 +210,8 @@ def test_one_failing_schedule_does_not_starve_a_healthy_one(session: Session) ->
     # failure (isolated in its SAVEPOINT) must not prevent B from firing a real governed run.
     tenant, portfolio_id, var_mv = _var_ready_tenant(session)
     broken = _schedule(
-        session, tenant, str(uuid.uuid4()), var_mv, "broken"
-    )  # no upstream for scope
+        session, tenant, _bare_portfolio(session, tenant), var_mv, "broken"
+    )  # real in-tenant portfolio, but NO upstream run for its scope
     healthy = _schedule(session, tenant, portfolio_id, var_mv, "healthy")
     now = datetime(2026, 1, 5, 9, 0, tzinfo=UTC)
     res = dict(poll_tenant_schedules(session, now, code_version="risk-v1", acting_tenant=tenant))

@@ -12,5 +12,7 @@ COPY apps/worker ./apps/worker
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir ./packages/shared-python ./apps/worker
 
-# No calculations yet; this is a heartbeat entrypoint.
-CMD ["python", "-m", "irp_worker.main"]
+# CAD-1: the supervisor drives the per-tenant operational tick on a cadence (IRP_TENANT_IDS /
+# IRP_TICK_INTERVAL_SECONDS). An external scheduler can invoke `python -m irp_worker.scheduler
+# --tenant <id>` once per tenant instead (OQ-1=A keeps both).
+CMD ["python", "-m", "irp_worker.supervisor"]

@@ -13,6 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.models import AppendOnlyViolation, AuditEvent
+from irp_shared.model.models import Model, ModelVersion
+from irp_shared.portfolio.models import Portfolio
 from irp_shared.scheduling.events import (
     OUTCOME_DISPATCHED,
     SCHEDULE_CREATE_EVENT,
@@ -37,14 +39,37 @@ _ACTOR = SchedulingActor(actor_id="analyst-1", actor_type="user")
 _ANCHOR = dt_date(2026, 1, 1)
 
 
+def _seed_portfolio(session: Session, tenant: str) -> str:
+    """Seed a real in-tenant portfolio — the CAD-1 create_schedule guard re-resolves the FK, so a
+    fake random id is (correctly) refused; tests must provide a real referent."""
+    p = Portfolio(
+        tenant_id=tenant, code=f"pf-{uuid.uuid4().hex[:8]}", name="Book", node_type="BOOK"
+    )
+    session.add(p)
+    session.flush()
+    return str(p.id)
+
+
+def _seed_model_version(session: Session, tenant: str) -> str:
+    """Seed a real in-tenant model + model_version — the CAD-1 guard re-resolves this FK too."""
+    m = Model(tenant_id=tenant, code=f"m-{uuid.uuid4().hex[:8]}", name="VaR", model_type="RISK")
+    session.add(m)
+    session.flush()
+    mv = ModelVersion(tenant_id=tenant, model_id=str(m.id), version_label="v1")
+    session.add(mv)
+    session.flush()
+    return str(mv.id)
+
+
 def _mk(session: Session, tenant: str, **over: object) -> Schedule:
     kwargs: dict[str, object] = {
         "tenant_id": tenant,
         "code": f"sched-{uuid.uuid4().hex[:8]}",
         "name": "Daily VaR",
         "target_run_type": "VAR",
-        "scope_portfolio_id": str(uuid.uuid4()),
-        "model_version_id": str(uuid.uuid4()),
+        # real in-tenant referents (the CAD-1 P3-5 guard re-resolves both FKs under the tenant)
+        "scope_portfolio_id": _seed_portfolio(session, tenant),
+        "model_version_id": _seed_model_version(session, tenant),
         "environment_id": "ci",
         "interval_days": 7,
         "anchor_date": _ANCHOR,
@@ -52,6 +77,29 @@ def _mk(session: Session, tenant: str, **over: object) -> Schedule:
     }
     kwargs.update(over)
     return create_schedule(session, **kwargs)  # type: ignore[arg-type]
+
+
+def test_create_schedule_refuses_foreign_portfolio(session: Session) -> None:
+    """CAD-1 (OQ-W11C-2): a scope_portfolio_id not visible in the acting tenant is refused BEFORE
+    it can be stamped into the NOT-NULL FK (PG FK checks bypass RLS)."""
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="portfolio"):
+        _mk(session, tenant, scope_portfolio_id=str(uuid.uuid4()))  # random == foreign
+
+
+def test_create_schedule_refuses_foreign_model_version(session: Session) -> None:
+    """CAD-1 (OQ-W11C-2): a model_version_id not visible in the acting tenant is refused."""
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="model version"):
+        _mk(session, tenant, model_version_id=str(uuid.uuid4()))  # random == foreign
+
+
+def test_create_schedule_refuses_cross_tenant_portfolio(session: Session) -> None:
+    """A portfolio that exists but belongs to ANOTHER tenant is refused (the real P3-5 threat)."""
+    tenant_a, tenant_b = str(uuid.uuid4()), str(uuid.uuid4())
+    foreign_portfolio = _seed_portfolio(session, tenant_b)  # belongs to B
+    with pytest.raises(ScheduleError, match="portfolio"):
+        _mk(session, tenant_a, scope_portfolio_id=foreign_portfolio)
 
 
 # ------------------------------------------------------------------------- pure cadence math ---
