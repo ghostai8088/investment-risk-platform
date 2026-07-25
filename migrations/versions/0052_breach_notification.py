@@ -1,6 +1,6 @@
-"""NOTIF-1 breach notification: breach_notification (ENT-064, IA append-only).
+"""NOTIF-1 breach notification: breach_notification (ENT-063, IA append-only).
 
-Wave-12 slice 2. Realizes ENT-064 ``breach_notification`` — one durable attempt row per
+Wave-12 slice 2. Realizes ENT-063 ``breach_notification`` — one durable attempt row per
 (alarm audit event, recipient), the system-of-record for "who was owed a breach alert, for what
 event, when, with what outcome" (OQ-1=A record-first). Consumed by tick phase 4
 (``notify_tenant_breaches``) over the ``BREACH.DETECT``/``BREACH.ESCALATE`` audit stream.
@@ -53,7 +53,7 @@ assert all(len(name) <= 63 for name in _IDENTIFIERS), [
 
 
 def upgrade() -> None:
-    # --- ENT-064 breach_notification (IA TRUE append-only; one row per (event, recipient)) ---
+    # --- ENT-063 breach_notification (IA TRUE append-only; one row per (event, recipient)) ---
     op.create_table(
         "breach_notification",
         sa.Column("id", postgresql.UUID(as_uuid=False), nullable=False),

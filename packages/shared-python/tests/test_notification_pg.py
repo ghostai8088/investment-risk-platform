@@ -29,6 +29,7 @@ from irp_shared.entitlement.models import AppUser, Permission, Role, RolePermiss
 from irp_shared.limit.events import (
     BREACH_ABOVE,
     BREACH_DETECT_EVENT,
+    BREACH_ESCALATE_EVENT,
     LIMIT_KIND_HARD,
     THRESHOLD_UNIT_CURRENCY,
 )
@@ -345,4 +346,109 @@ def test_irp_ops_has_no_grant_on_breach_notification(app_url: str) -> None:
             ).scalar_one_or_none()
             assert granted is None
     finally:
+        engine.dispose()
+
+
+def test_break_on_failure_prevents_cursor_leapfrog(app_url, monkeypatch) -> None:  # noqa: ANN001
+    """THE 4-finder HIGH regression: with the DERIVED MAX(source_sequence_no) cursor, a middle event
+    that FAILS must NOT be leapfrogged by a later event's commit. The worker BREAKs on the first
+    non-dedup failure (fail-closed), so MAX stays below the gap and the failed event + tail retry
+    next tick. Pre-fix (continue-past-failure), E3 committing would advance MAX past the failed E2,
+    orphaning it forever — the silent no-notify this slice exists to close."""
+    from irp_shared.audit.service import record_event
+    from irp_worker import notifications as notif_worker
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    breach_id = _seed_breach_and_detect(factory, tenant)  # E1 = BREACH.DETECT
+
+    setup = _armed(factory, tenant)
+    try:
+        e2 = record_event(
+            setup,
+            event_type=BREACH_ESCALATE_EVENT,
+            tenant_id=tenant,
+            actor_type="SYSTEM",
+            actor_id="breach-deadline:x",
+            source_module="limit",
+            entity_type="breach_action",
+            entity_id=str(uuid.uuid4()),
+            action="record",
+            severity="warning",
+            after_value={"breach_id": breach_id},
+        )
+        e3 = record_event(
+            setup,
+            event_type=BREACH_ESCALATE_EVENT,
+            tenant_id=tenant,
+            actor_type="SYSTEM",
+            actor_id="breach-deadline:x",
+            source_module="limit",
+            entity_type="breach_action",
+            entity_id=str(uuid.uuid4()),
+            action="record",
+            severity="warning",
+            after_value={"breach_id": breach_id},
+        )
+        setup.commit()
+        e1_seq = e2.sequence_no - 1  # E1 (DETECT) immediately precedes E2 (gap-free monotonic)
+        e2_seq, e3_seq = e2.sequence_no, e3.sequence_no
+    finally:
+        setup.close()
+
+    real = notif_worker.notify_for_event
+
+    def _flaky(sess, event, now, *, sink):  # noqa: ANN001, ANN202
+        if event.sequence_no == e2_seq:
+            raise RuntimeError("injected mid-event DB failure")
+        return real(sess, event, now, sink=sink)
+
+    monkeypatch.setattr(notif_worker, "notify_for_event", _flaky)
+    session = factory()
+    try:
+        detach = persistent_tenant_context(session, tenant)
+        try:
+            notified = notif_worker.poll_tenant_notifications(session, _T0, acting_tenant=tenant)
+        finally:
+            detach()
+    finally:
+        session.close()
+    assert len(notified) == 1  # only E1 — the batch STOPPED at the failed E2 (no leapfrog to E3)
+
+    check = _armed(factory, tenant)
+    try:
+        from irp_shared.notification.service import _current_high_water
+
+        assert (
+            _current_high_water(check, tenant) == e1_seq
+        )  # MAX did NOT advance past the failed E2
+    finally:
+        check.close()
+
+    # next tick (no injected failure) reprocesses E2 AND E3 — nothing orphaned
+    monkeypatch.setattr(notif_worker, "notify_for_event", real)
+    session2 = factory()
+    try:
+        detach = persistent_tenant_context(session2, tenant)
+        try:
+            notif_worker.poll_tenant_notifications(session2, _T0, acting_tenant=tenant)
+        finally:
+            detach()
+    finally:
+        session2.close()
+    check2 = _armed(factory, tenant)
+    try:
+        from irp_shared.notification.service import _current_high_water
+
+        assert _current_high_water(check2, tenant) == e3_seq  # E2 + E3 now covered
+        seqs = {
+            r.source_sequence_no
+            for r in check2.execute(
+                select(BreachNotification).where(BreachNotification.tenant_id == tenant)
+            ).scalars()
+        }
+        assert {e1_seq, e2_seq, e3_seq} <= seqs  # every alarm event has evidence
+    finally:
+        check2.close()
         engine.dispose()

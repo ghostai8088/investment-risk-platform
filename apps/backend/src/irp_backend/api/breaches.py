@@ -73,6 +73,7 @@ _Direction = Literal["ABOVE", "BELOW"]
 _Unit = Literal["CURRENCY", "FRACTION"]
 _NotifyOutcome = Literal["SENT", "FAILED", "SUPPRESSED"]
 _NotifyChannel = Literal["LOG", "EMAIL", "WEBHOOK"]
+_NotifySourceEvent = Literal["BREACH.DETECT", "BREACH.ESCALATE"]
 
 #: Fail-closed refusal map (audit C-F4): the SoD sibling gets its OWN key (409); every reachable
 #: post-DTO ``BreachTransitionError`` is a genuine state conflict (409); the BASE stays 422 for
@@ -309,7 +310,7 @@ class BreachNotificationOut(BaseModel):
     id: str
     breach_id: str
     source_sequence_no: int
-    source_event_type: str  # BREACH.DETECT | BREACH.ESCALATE (dotted — not a Literal-friendly enum)
+    source_event_type: _NotifySourceEvent
     recipient_id: str
     recipient_reason: str
     channel: _NotifyChannel
@@ -324,7 +325,7 @@ def _notification_out(n: BreachNotification) -> BreachNotificationOut:
         id=n.id,
         breach_id=n.breach_id,
         source_sequence_no=n.source_sequence_no,
-        source_event_type=n.source_event_type,
+        source_event_type=cast(_NotifySourceEvent, n.source_event_type),
         recipient_id=n.recipient_id,
         recipient_reason=n.recipient_reason,
         channel=cast(_NotifyChannel, n.channel),

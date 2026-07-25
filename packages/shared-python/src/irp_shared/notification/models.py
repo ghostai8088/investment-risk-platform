@@ -1,6 +1,6 @@
 """NOTIF-1 ORM model — ``breach_notification`` (Wave-12 slice 2).
 
-``BreachNotification`` (ENT-064, **IA TRUE append-only**): one durable attempt row per
+``BreachNotification`` (ENT-063, **IA TRUE append-only**): one durable attempt row per
 (alarm audit event, recipient) — the system-of-record for "who was owed an alert, for what breach
 event, when, with what outcome" (OQ-1=A record-first). It binds NO snapshot/run/model (not a
 governed number — OD parity with ``breach``). PROPRIETARY, tenant-scoped, symmetric FORCE RLS.
@@ -38,7 +38,7 @@ from irp_shared.temporal import TemporalClass
 
 
 class BreachNotification(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
-    """One notification attempt for one (alarm event, recipient) — ENT-064, IA TRUE append-only."""
+    """One notification attempt for one (alarm event, recipient) — ENT-063, IA TRUE append-only."""
 
     __tablename__ = "breach_notification"
     __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY

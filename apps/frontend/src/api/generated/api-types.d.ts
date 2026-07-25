@@ -5243,8 +5243,11 @@ export interface components {
             recipient_reason: string;
             /** Severity */
             severity: string;
-            /** Source Event Type */
-            source_event_type: string;
+            /**
+             * Source Event Type
+             * @enum {string}
+             */
+            source_event_type: "BREACH.DETECT" | "BREACH.ESCALATE";
             /** Source Sequence No */
             source_sequence_no: number;
         };

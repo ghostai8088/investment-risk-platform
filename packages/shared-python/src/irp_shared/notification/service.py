@@ -10,11 +10,18 @@ ATOMICALLY — ``notify_for_event`` appends a durable terminal row (SENT/FAILED/
 resolved recipient within the caller's single transaction; a sink exception is CAUGHT and recorded
 FAILED (never left rowless, never head-of-line-blocks). So the worker's per-event commit either
 lands ALL of an event's rows (the derived ``MAX`` advances past a FULLY-covered event) or, on a DB
-failure, rolls back ALL of them (``MAX`` unchanged → the event is reprocessed next tick).
-This is why a per-RECIPIENT commit would be wrong here: it could advance ``MAX`` past an event on
-its first recipient and skip a later failed one — the silent no-notify. *v2 real-sink note:* a
-network sink must NOT deliver while holding the audit advisory lock (LOG has no I/O); a real channel
-moves delivery outside the audit txn and adopts per-recipient isolation + an explicit watermark.
+failure, rolls back ALL of them (``MAX`` unchanged → the event is reprocessed next tick). This is
+why a per-RECIPIENT commit would be wrong here: it could advance ``MAX`` past an event on its first
+recipient and skip a later failed one — the silent no-notify. **The worker's other half of the
+guarantee (``poll_tenant_notifications``): STOP the batch on the first non-dedup failure** — because
+a DERIVED ``MAX`` cannot represent a gap, processing a LATER (higher-seq) event after an EARLIER one
+failed would let the later commit leapfrog ``MAX`` past the failed event, orphaning it forever
+(4-finder HIGH). Fail-CLOSED: the failed event and its tail retry next tick.
+
+Delivery ordering (4-finder MED): ``notify_for_event`` calls the sink for ALL recipients FIRST, then
+records + emits — so NO sink runs while the per-tenant audit advisory lock is held (the v1 LOG sink
+has no I/O; this keeps a drop-in v2 network sink from holding the audit-chain lock across I/O, the
+API-2b P1 anti-pattern). A real v2 channel still moves delivery fully outside the audit txn.
 """
 
 from __future__ import annotations
@@ -177,7 +184,12 @@ def notify_for_event(
                 now=now,
             )
         ]
-    rows: list[BreachNotification] = []
+    # PHASE A — deliver to EVERY recipient BEFORE recording anything (4-finder MED: the FIRST
+    # ``_record_notification`` takes the per-tenant audit ADVISORY lock, held to commit; calling a
+    # sink for later recipients under that lock would hold it across the sink's work — harmless for
+    # the v1 LOG sink but a foot-gun for a drop-in v2 network sink, exactly the API-2b P1
+    # lock-hold-across-I/O anti-pattern. So NO sink runs while the advisory is held.
+    outcomes: list[tuple[str, str, str | None]] = []
     for recipient_id in recipients:
         message = NotificationMessage(
             tenant_id=event.tenant_id,
@@ -193,20 +205,23 @@ def notify_for_event(
         except Exception as exc:  # noqa: BLE001 - a sink must never rowless-drop a recipient
             outcome = NOTIFY_OUTCOME_FAILED
             failure = f"{type(exc).__name__}: {exc}"
-        rows.append(
-            _record_notification(
-                session,
-                event=event,
-                breach_id=breach_id,
-                recipient_id=recipient_id,
-                recipient_reason=NOTIFY_RECIPIENT_PERMISSION,
-                channel=sink.channel,
-                outcome=outcome,
-                failure_reason=failure,
-                now=now,
-            )
+        outcomes.append((recipient_id, outcome, failure))
+    # PHASE B — record the durable rows + NOTIFY.DISPATCH emits (the advisory lock is taken HERE,
+    # after all delivery; every recipient has a terminal outcome, so none is left rowless).
+    return [
+        _record_notification(
+            session,
+            event=event,
+            breach_id=breach_id,
+            recipient_id=recipient_id,
+            recipient_reason=NOTIFY_RECIPIENT_PERMISSION,
+            channel=sink.channel,
+            outcome=outcome,
+            failure_reason=failure,
+            now=now,
         )
-    return rows
+        for recipient_id, outcome, failure in outcomes
+    ]
 
 
 def default_sink() -> NotificationSink:

@@ -11,8 +11,11 @@ transaction (``notify_for_event`` is atomic — every recipient gets a durable t
 exceptions caught → FAILED). This keeps the derived high-water (``MAX(source_sequence_no)``) always
 at a FULLY-covered event: a DB failure rolls back the whole event → ``MAX`` unchanged → the event is
 reprocessed next tick; a benign ``IntegrityError`` on the ``(tenant, seq, recipient)`` unique key
-means a prior tick already recorded it (crash-retry dedup). Phase 4 takes NO breach-row lock
-(lock-free audit read + fresh-row inserts + the audit advisory), so a tick×HTTP deadlock cannot.
+means a prior tick already recorded it (crash-retry dedup). Deadlock ordering: each
+``breach_notification`` INSERT takes a ``FOR KEY SHARE`` lock on its ``breach`` FK row, THEN the
+audit advisory (``record_event``) — the SAME row-lock-before-advisory order as the HTTP breach
+verbs (``FOR UPDATE`` then advisory), so no cross-holding cycle can close (deadlock-safe by uniform
+ordering, NOT by lock absence — a future reorder emitting before the insert would reintroduce it).
 The caller MUST hold a ``persistent_tenant_context`` re-arm — the RLS GUC is transaction-local, and
 an un-re-armed post-commit transaction would read ZERO audit rows and notify NOTHING (fail-open).
 """
@@ -61,8 +64,9 @@ def poll_tenant_notifications(
     """
     channel = sink or default_sink()
     notified: list[str] = []
-    # Materialize the work list up front: each commit expires ORM instances (a plain snapshot avoids
-    # per-iteration refreshes). Bound the batch defensively at a large ceiling.
+    # Snapshot the (id, instance) pairs: the plain ``event_id`` string survives each commit's expiry
+    # (used at ``notified.append``); the ``event`` object still refreshes on attribute access after
+    # a commit, but under the re-armed GUC over immutable audit rows that is correct + stale-free.
     events = [
         (event.id, event) for event in pending_alarm_events(session, acting_tenant=acting_tenant)
     ]
@@ -74,14 +78,30 @@ def poll_tenant_notifications(
         except IntegrityError as exc:
             session.rollback()
             if _is_notify_dedup(exc):
-                # A prior tick already recorded this event's notifications — benign dedup.
+                # A prior tick already recorded this event's notifications — benign dedup; the
+                # derived high-water is already >= this event, so skipping it cannot open a gap.
                 continue
+            # A REAL non-dedup failure: the derived high-water is MAX(source_sequence_no), which
+            # cannot represent a GAP — if we processed a LATER (higher-seq) event now, its commit
+            # would advance MAX past THIS failed event and it would never be rescanned (a silent
+            # permanent no-notify, the exact fail-open this slice exists to close). So we STOP the
+            # batch here (fail-CLOSED head-of-line): the high-water stays below this event and the
+            # whole tail is retried next tick. (A permanently-poison head event stalls the tenant's
+            # queue with loud logs — a v2 dead-letter/skip-after-N is the refinement.)
             _LOGGER.error(
-                "notification hit a non-dedup IntegrityError for audit event %s: %s",
+                "notification hit a non-dedup IntegrityError for audit event %s; stopping the "
+                "batch to avoid a cursor gap: %s",
                 event_id,
                 exc,
             )
-        except Exception as exc:  # noqa: BLE001 - fail-closed per-event isolation
+            break
+        except Exception as exc:  # noqa: BLE001 - fail-CLOSED per-event isolation
             session.rollback()
-            _LOGGER.error("notification failed for audit event %s: %s", event_id, exc)
+            _LOGGER.error(
+                "notification failed for audit event %s; stopping the batch to avoid a cursor "
+                "gap: %s",
+                event_id,
+                exc,
+            )
+            break
     return notified

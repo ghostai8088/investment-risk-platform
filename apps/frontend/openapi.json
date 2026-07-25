@@ -1793,6 +1793,10 @@
             "type": "string"
           },
           "source_event_type": {
+            "enum": [
+              "BREACH.DETECT",
+              "BREACH.ESCALATE"
+            ],
             "title": "Source Event Type",
             "type": "string"
           },
