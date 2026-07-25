@@ -60,7 +60,7 @@ from irp_shared.risk.events import RUN_TYPE_VAR
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
-_TABLES = ("limit_definition", "breach", "breach_action")
+_TABLES = ("limit_definition", "breach", "breach_action", "breach_notification")
 _DEPS = ("portfolio", "benchmark", "calculation_run")
 _RAILS = (
     "data_source",

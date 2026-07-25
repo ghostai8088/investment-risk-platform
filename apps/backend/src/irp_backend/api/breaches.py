@@ -54,6 +54,8 @@ from irp_shared.limit.lifecycle import (
     review_breach,
 )
 from irp_shared.limit.models import Breach, BreachAction
+from irp_shared.notification.models import BreachNotification
+from irp_shared.notification.service import list_breach_notifications
 
 router = APIRouter(prefix="/breaches", tags=["breaches"])
 
@@ -69,6 +71,9 @@ _ActorLine = Literal["1L", "2L", "SYS"]
 _Kind = Literal["HARD", "SOFT"]
 _Direction = Literal["ABOVE", "BELOW"]
 _Unit = Literal["CURRENCY", "FRACTION"]
+_NotifyOutcome = Literal["SENT", "FAILED", "SUPPRESSED"]
+_NotifyChannel = Literal["LOG", "EMAIL", "WEBHOOK"]
+_NotifySourceEvent = Literal["BREACH.DETECT", "BREACH.ESCALATE"]
 
 #: Fail-closed refusal map (audit C-F4): the SoD sibling gets its OWN key (409); every reachable
 #: post-DTO ``BreachTransitionError`` is a genuine state conflict (409); the BASE stays 422 for
@@ -301,6 +306,36 @@ def _action_out(a: BreachAction) -> BreachActionOut:
     )
 
 
+class BreachNotificationOut(BaseModel):
+    id: str
+    breach_id: str
+    source_sequence_no: int
+    source_event_type: _NotifySourceEvent
+    recipient_id: str
+    recipient_reason: str
+    channel: _NotifyChannel
+    outcome: _NotifyOutcome
+    failure_reason: str | None
+    severity: str
+    notified_at: datetime
+
+
+def _notification_out(n: BreachNotification) -> BreachNotificationOut:
+    return BreachNotificationOut(
+        id=n.id,
+        breach_id=n.breach_id,
+        source_sequence_no=n.source_sequence_no,
+        source_event_type=cast(_NotifySourceEvent, n.source_event_type),
+        recipient_id=n.recipient_id,
+        recipient_reason=n.recipient_reason,
+        channel=cast(_NotifyChannel, n.channel),
+        outcome=cast(_NotifyOutcome, n.outcome),
+        failure_reason=n.failure_reason,
+        severity=n.severity,
+        notified_at=cast(datetime, _as_utc(n.notified_at)),
+    )
+
+
 def _detail_out(db: Session, principal: Principal, breach_id: str) -> BreachOut:
     item = breach_detail(db, acting_tenant=principal.tenant_id, breach_id=breach_id)
     if item is None:  # unreachable post-load; defensive
@@ -473,3 +508,20 @@ def actions(
         db, acting_tenant=principal.tenant_id, breach_id=str(breach_id)
     )
     return [_action_out(a) for a in timeline]
+
+
+@router.get("/{breach_id}/notifications", response_model=list[BreachNotificationOut])
+def notifications(
+    breach_id: uuid.UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[BreachNotificationOut]:
+    # NOTIF-1: the alarm-attempt evidence for this breach — "who was owed an alert, with what
+    # outcome". Gated `breach.view` (a notification is breach-adjacent evidence; no new permission).
+    _load_or_404(db, principal, breach_id)
+    rows = list_breach_notifications(
+        db, acting_tenant=principal.tenant_id, breach_id=str(breach_id), limit=limit, offset=offset
+    )
+    return [_notification_out(n) for n in rows]

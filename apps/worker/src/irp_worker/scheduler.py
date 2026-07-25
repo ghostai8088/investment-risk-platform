@@ -39,6 +39,7 @@ from irp_shared.scheduling.service import (
 )
 from irp_worker.breaches import poll_tenant_breaches
 from irp_worker.deadlines import poll_tenant_breach_deadlines
+from irp_worker.notifications import poll_tenant_notifications
 
 #: The unique constraint that backstops the per-(schedule, tick) idempotency race. ONLY a violation
 #: of THIS constraint is the benign concurrent-double-fire dedup; any OTHER IntegrityError from the
@@ -130,10 +131,14 @@ def run_operational_tick_for_tenant(
     to the breach evaluation in the SAME transaction (same-tick detection). Reversing the order is
     correct but adds one tick of breach latency; all phases land under the single terminal commit.
 
-    **Phase 3 (breach deadlines, MG-2)** runs LAST — a read-of-prior-state sweep that auto-escalates
-    overdue breaches. Its ordering is immaterial to correctness: a breach DETECTED this tick has no
-    ``response_due`` (stamped only at the human ASSIGN, never in a tick), so it is never same-tick
-    escalatable; phase 3 only ever acts on breaches ASSIGNED in a prior committed request.
+    **Phase 3 (breach deadlines, MG-2)** auto-escalates overdue breaches. A breach DETECTED this
+    tick has no ``response_due`` (stamped only at the human ASSIGN, never in a tick), so it is never
+    same-tick escalatable; phase 3 only ever acts on breaches ASSIGNED in a prior committed request.
+
+    **Phase 4 (breach notification, NOTIF-1)** runs LAST — it consumes the ``BREACH.DETECT``/
+    ``BREACH.ESCALATE`` audit events that phases 2-3 just committed (so a same-tick DETECT is
+    alerted this tick), appending durable ``breach_notification`` rows per (event, recipient). Like
+    phase 3 it runs as per-item (per-event) top-level transactions after the phases-1–2 commit.
 
     **Commit topology (OD-LIM-1-G as RE-RATIFIED at API-2b OQ-3=A — the B-F1 deadlock fix):**
     phases 1–2 land under ONE terminal commit (unchanged internally — SAVEPOINT-per-item); phase 3
@@ -162,7 +167,15 @@ def run_operational_tick_for_tenant(
             breached = poll_tenant_breaches(session, tick_now, acting_tenant=tenant_id)
             session.commit()  # the phases-1–2 terminal commit (releases the advisory lock)
             escalated = poll_tenant_breach_deadlines(session, tick_now, acting_tenant=tenant_id)
-            return {"scheduled": scheduled, "breached": breached, "escalated": escalated}
+            # Phase 4 (NOTIF-1): notify unnotified alarm events — runs LAST because it consumes the
+            # BREACH.DETECT/ESCALATE audit events that phases 2-3 just committed (same tick).
+            notified = poll_tenant_notifications(session, tick_now, acting_tenant=tenant_id)
+            return {
+                "scheduled": scheduled,
+                "breached": breached,
+                "escalated": escalated,
+                "notified": notified,
+            }
         finally:
             detach()
     finally:
@@ -200,9 +213,10 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entry
     n_sched = len(results["scheduled"])
     n_breach = sum(1 for _limit_id, breach_id in results["breached"] if breach_id is not None)
     n_escalated = len(results["escalated"])
+    n_notified = len(results["notified"])
     print(
         f"irp-worker: tenant={args.tenant} fired={n_sched} "
-        f"breaches={n_breach} escalated={n_escalated}"
+        f"breaches={n_breach} escalated={n_escalated} notified={n_notified}"
     )
     return 0
 

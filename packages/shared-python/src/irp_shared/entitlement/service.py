@@ -18,6 +18,7 @@ from irp_shared.audit.service import record_event
 from irp_shared.db.mixins import utcnow
 from irp_shared.entitlement.errors import PermissionDenied
 from irp_shared.entitlement.models import (
+    AppUser,
     Permission,
     Role,
     RolePermission,
@@ -64,6 +65,42 @@ def has_permission(
         .limit(1)
     )
     return session.execute(stmt).first() is not None
+
+
+def holders_of_permission(
+    session: Session,
+    *,
+    permission_code: str,
+    acting_tenant: str,
+    at: datetime | None = None,
+) -> list[str]:
+    """The DISTINCT ``app_user.id`` of every ACTIVE in-tenant user who holds ``permission_code`` —
+    the REVERSE of ``has_permission`` (NOTIF-1 recipient resolution). Tenant-scoped (an explicit
+    ``tenant_id`` predicate atop RLS — ``permission``/``role_permission`` are the global catalog;
+    ``role``/``user_role``/``app_user`` are tenant-scoped). Replicates ``has_permission``'s
+    effective-dated ``user_role`` window AND filters ``app_user.is_active`` — an expired grant or a
+    deactivated user is NOT a recipient. Ordered by id for determinism; silent-empty on none."""
+    now = at or utcnow()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+    stmt = (
+        select(AppUser.id)
+        .join(UserRole, UserRole.user_id == AppUser.id)
+        .join(Role, Role.id == UserRole.role_id)
+        .join(RolePermission, RolePermission.role_id == Role.id)
+        .join(Permission, Permission.id == RolePermission.permission_id)
+        .where(
+            AppUser.tenant_id == str(acting_tenant),
+            AppUser.is_active.is_(True),
+            UserRole.tenant_id == str(acting_tenant),
+            UserRole.valid_from <= now,
+            or_(UserRole.valid_to.is_(None), UserRole.valid_to > now),
+            Permission.code == permission_code,
+        )
+        .distinct()
+        .order_by(AppUser.id)
+    )
+    return list(session.execute(stmt).scalars().all())
 
 
 def require_permission(

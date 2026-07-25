@@ -1736,6 +1736,91 @@
         "title": "BreachCloseIn",
         "type": "object"
       },
+      "BreachNotificationOut": {
+        "properties": {
+          "breach_id": {
+            "title": "Breach Id",
+            "type": "string"
+          },
+          "channel": {
+            "enum": [
+              "LOG",
+              "EMAIL",
+              "WEBHOOK"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "notified_at": {
+            "format": "date-time",
+            "title": "Notified At",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "SENT",
+              "FAILED",
+              "SUPPRESSED"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "recipient_id": {
+            "title": "Recipient Id",
+            "type": "string"
+          },
+          "recipient_reason": {
+            "title": "Recipient Reason",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "source_event_type": {
+            "enum": [
+              "BREACH.DETECT",
+              "BREACH.ESCALATE"
+            ],
+            "title": "Source Event Type",
+            "type": "string"
+          },
+          "source_sequence_no": {
+            "title": "Source Sequence No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "breach_id",
+          "source_sequence_no",
+          "source_event_type",
+          "recipient_id",
+          "recipient_reason",
+          "channel",
+          "outcome",
+          "failure_reason",
+          "severity",
+          "notified_at"
+        ],
+        "title": "BreachNotificationOut",
+        "type": "object"
+      },
       "BreachOut": {
         "properties": {
           "assigned_to": {
@@ -16948,6 +17033,124 @@
           }
         },
         "summary": "Close",
+        "tags": [
+          "breaches"
+        ]
+      }
+    },
+    "/breaches/{breach_id}/notifications": {
+      "get": {
+        "operationId": "notifications_breaches__breach_id__notifications_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "breach_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Breach Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BreachNotificationOut"
+                  },
+                  "title": "Response Notifications Breaches  Breach Id  Notifications Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Notifications",
         "tags": [
           "breaches"
         ]
