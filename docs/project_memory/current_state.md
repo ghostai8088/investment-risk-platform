@@ -1,6 +1,39 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-24, evening) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-25) — read this block; everything below it is HISTORY
+>
+> **HEAD `b3f818a`** = merge of **PR #121 — API-2b, the Breach Lifecycle API** (Wave-12 slice 1b, the
+> OQ-1=B fast-follow completing slice 1), **CI green all 6**. **NO migration** (head stays `0051`);
+> **counts UNCHANGED 23/38/109** (an API is transport, not a governed number). **NEXT = Wave-12
+> slice 2: breach notification.**
+>
+> **What API-2b shipped.** The HTTP surface over the MG-2 breach remediation machine:
+> `POST /breaches/{id}/assign|respond|review|close` + the batched/filtered/paginated queue reads
+> (`GET /breaches`, `/{id}`, `/{id}/actions` timeline). Driven by a **3-finder Fable foundation
+> audit**; TWO blocking pre-fixes landed FIRST: **P1** — the tick×HTTP **deadlock** (the frozen
+> `record_event` takes a per-tenant audit-chain ADVISORY lock held to commit; the single-txn tick
+> held it across phase-3 breach ROW locks while HTTP verbs acquire row→advisory → reachable 40P01).
+> FIX: `run_operational_tick_for_tenant` commits phases 1–2, runs phase 3 as **per-breach top-level
+> transactions** (uniform row→advisory order). `persistent_tenant_context` is LOAD-BEARING — the RLS
+> GUC is transaction-local; a naive mid-tick commit would run phase 3 RLS-unarmed → silent
+> zero-escalation (the OQ-a fail-open pattern; the verifier's blocking fold). 40P01→503 at the API.
+> **P2** — the **epoch-aware review guard**: `reject→escalate→ACCEPT` could ratify a formally-REJECTED
+> response; now a 2L review requires a 1L response from the CURRENT epoch (`seq > _governing_assign`).
+> Ratified OQ-1=A (REJECT carries the owner) / OQ-2=A (per-observation lifecycle; queue groups
+> siblings) / OQ-3=A (tick restructure) / OQ-4=A (optional `expected_seq`, all four verbs). D6:
+> `BreachOut.state` recency-derived, frozen `status` never serialized; D8: `assigned_to`
+> canonicalized+resolved to an ACTIVE same-tenant `app_user` (router also requires `breach.respond`);
+> the fail-closed non-UUID→401 actor constructor HOISTED to `deps.require_uuid_principal_id`
+> (shared with limits). **4-finder review: ZERO HIGH** — the epoch guard, person-level SoD,
+> assignee resolution, and the P1 lock topology all held; folds: `BreachAssigneeError`→422 (non-UUID
+> `assigned_to` was a PG 500), the vacuous single-breach deadlock test rewritten to a real 2-breach
+> cycle, terminal-state deadline nulling, `ORDER BY id` phase determinism, and the twice-carried
+> **PG-tier case-variance self-review HTTP replay** finally shipped. Battery: `make check` +
+> `fe-check` + `gen-api-check` drift-clean + **full-PG 2393 passed / 0 failed** + CI 6/6.
+> **The `create_schedule` P3-5 FK guard + audit OQ-a (worker `--tenant` canonicalization) remain
+> carried to the cadence-wiring slice (Wave-12 slice 3).**
+>
+> ---
 >
 > **HEAD `80d5ad6`** = merge of **PR #118** (the Fable Wave-12 API-boundary audit doc), atop THREE
 > same-day merges: **PR #117** (the Wave-11 close review — **WAVE 11 CLOSED + RATIFIED**, OQ-W11C-1/2/3,
