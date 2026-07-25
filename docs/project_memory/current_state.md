@@ -1,8 +1,45 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-25) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-25, late) — read this block; everything below it is HISTORY
 >
-> **HEAD `b3f818a`** = merge of **PR #121 — API-2b, the Breach Lifecycle API** (Wave-12 slice 1b, the
+> **HEAD `c025ba0`** = merge of **PR #123 — NOTIF-1, breach notification / alerting** (Wave-12
+> slice 2), **CI green all 6**. Migration **`0052_breach_notification`**; **counts UNCHANGED
+> 23/38/109** (a notification binds no snapshot/run/model — control-plane egress evidence, NOT a
+> governed number). **NEXT = Wave-12 slice 3: cadence wiring** (turn the tick; pay OQ-a + the
+> `create_schedule` guard).
+>
+> **What NOTIF-1 shipped.** The alarm leg — "prove the CRO was alerted" (SR 11-7 / BCBS 239). A
+> decoupled audit-stream consumer as tick **phase 4** (`poll_tenant_notifications`, after the
+> phases-1–2 commit + phase 3, under the `persistent_tenant_context` re-arm) turns each unnotified
+> `BREACH.DETECT`/`BREACH.ESCALATE` audit event into a durable IA **`breach_notification`** (ENT-063)
+> attempt row per (event, recipient) + a **`NOTIFY.DISPATCH`** (EVT-270, R-07-minted) hash-chained
+> ledger entry. Recipients = the in-tenant `breach.review` holders (a NEW reverse-lookup
+> `holders_of_permission` replicating the effective-dated `user_role` window + `is_active`). The
+> cursor is the DERIVED `MAX(source_sequence_no)` (OQ-4=B, no watermark table); idempotency =
+> `uq(tenant, source_sequence_no, recipient_id)`. Delivery is OQ-1=A **record-first** — a
+> `LoggingNotificationSink` behind a `NotificationSink` Protocol (a real EMAIL/WEBHOOK channel is a
+> provisioning-coupled v2; `app_user` has no contact field, BR-10 forbids secrets). **NO new
+> permission** (the read `GET /breaches/{id}/notifications` reuses `breach.view`); **FROZEN
+> `audit/service.py` byte-untouched** (read via `audit/queries.py::list_events_since_sequence`; the
+> NOTIFY emit reuses existing `record_event` kwargs).
+>
+> **THE LOAD-BEARING CORRECTNESS PROPERTY (4-finder HIGH, 3-finder converged, folded):** a DERIVED
+> `MAX` cursor cannot represent a gap — so `poll_tenant_notifications` **STOPS the batch on the
+> first non-dedup failure** (`break`, fail-CLOSED head-of-line); processing a later event would
+> advance `MAX` past an earlier failed one, orphaning the alarm forever (the silent no-notify this
+> slice exists to close). Each alarm event is a per-EVENT atomic transaction (all recipients
+> committed together; a sink exception is caught → FAILED, never rowless). Deadlock-safe by
+> row-lock (FK KEY SHARE) → advisory ordering, uniform with the HTTP verbs (NOT by lock absence —
+> the 4-finder corrected that rationale). 4-finder also folded: the sink moved off the advisory
+> lock (v2-network-sink safety); ENT-063 registered; the record-vs-code drift. Battery: `make
+> check` + `fe-check` + `gen-api-check` drift-clean + **full-PG 2416/0** + CI 6/6.
+>
+> **The `create_schedule` P3-5 FK guard + the OQ-a worker `--tenant` canonicalization remain
+> carried to the cadence-wiring slice (Wave-12 slice 3, NEXT).**
+>
+> ---
+>
+> **Prior: HEAD `b3f818a`** = merge of **PR #121 — API-2b, the Breach Lifecycle API** (Wave-12 slice 1b, the
 > OQ-1=B fast-follow completing slice 1), **CI green all 6**. **NO migration** (head stays `0051`);
 > **counts UNCHANGED 23/38/109** (an API is transport, not a governed number). **NEXT = Wave-12
 > slice 2: breach notification.**
