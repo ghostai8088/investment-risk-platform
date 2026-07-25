@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.models import AuditEvent
+from irp_shared.entitlement.models import AppUser
 from irp_shared.limit.events import (
     BREACH_1L_RESPONSE_EVENT,
     BREACH_2L_REVIEW_EVENT,
@@ -35,6 +36,7 @@ from irp_shared.limit.events import (
     BreachActor,
 )
 from irp_shared.limit.lifecycle import (
+    BreachAssigneeError,
     BreachSodError,
     BreachTransitionError,
     assign_breach,
@@ -80,6 +82,15 @@ def _seed_breach(
     return breach
 
 
+def _mk_assignee(session: Session, tenant: str) -> str:
+    """A real ACTIVE app_user to assign to (API-2b D8: ``assigned_to`` is canonicalized + resolved
+    to an ACTIVE same-tenant app_user inside ``assign_breach`` — no longer a free string)."""
+    user = AppUser(tenant_id=tenant, display_name="assignee")
+    session.add(user)
+    session.flush()
+    return user.id
+
+
 def _events(session: Session, tenant: str, event_type: str) -> list[AuditEvent]:
     return list(
         session.execute(
@@ -95,7 +106,13 @@ def test_happy_path_assign_respond_review_close(session: Session) -> None:
     breach = _seed_breach(session, tenant)
 
     assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_DETECTED
-    a1 = assign_breach(session, breach, assigned_to="analyst-1l", actor=_MANAGER, now=_T0)
+    a1 = assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     assert a1.seq == 1
     assert a1.from_state == BREACH_STATE_DETECTED and a1.to_state == BREACH_STATE_ASSIGNED
     assert a1.response_due == _T0 + timedelta(days=1)  # HARD SLA
@@ -128,9 +145,21 @@ def test_illegal_transitions_refused(session: Session) -> None:
         respond_breach(session, breach, narrative="x", actor=_ANALYST, now=_T0)
     with pytest.raises(BreachTransitionError):  # close before review
         close_breach(session, breach, evidence_ref="e", actor=_MANAGER, now=_T0)
-    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     with pytest.raises(BreachTransitionError):  # double-assign
-        assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+        assign_breach(
+            session,
+            breach,
+            assigned_to=_mk_assignee(session, breach.tenant_id),
+            actor=_MANAGER,
+            now=_T0,
+        )
 
 
 def test_person_level_sod_all_responders_not_latest(session: Session) -> None:
@@ -139,7 +168,13 @@ def test_person_level_sod_all_responders_not_latest(session: Session) -> None:
     breach = _seed_breach(session, tenant)
     x = BreachActor(actor_id="person-x")
     y = BreachActor(actor_id="person-y")
-    assign_breach(session, breach, assigned_to="person-x", actor=_MANAGER, now=_T0)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     respond_breach(session, breach, narrative="x responds", actor=x, now=_T0)  # X responds
     review_breach(session, breach, outcome=BREACH_REVIEW_REJECT, actor=_MANAGER, now=_T0)  # ->ASGN
     respond_breach(session, breach, narrative="y responds", actor=y, now=_T0)  # Y latest responder
@@ -152,7 +187,13 @@ def test_sod_closer_cannot_be_responder(session: Session) -> None:
     tenant = str(uuid.uuid4())
     breach = _seed_breach(session, tenant)
     responder = BreachActor(actor_id="dual-hat")
-    assign_breach(session, breach, assigned_to="dual-hat", actor=_MANAGER, now=_T0)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     respond_breach(session, breach, narrative="self", actor=responder, now=_T0)
     review_breach(session, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
     with pytest.raises(BreachSodError):
@@ -164,13 +205,25 @@ def test_human_actor_required(session: Session) -> None:
     breach = _seed_breach(session, tenant)
     robot = BreachActor(actor_id="ai", actor_type="SYSTEM")
     with pytest.raises(BreachTransitionError):
-        assign_breach(session, breach, assigned_to="a", actor=robot, now=_T0)
+        assign_breach(
+            session,
+            breach,
+            assigned_to=_mk_assignee(session, breach.tenant_id),
+            actor=robot,
+            now=_T0,
+        )
 
 
 def test_evidence_and_narrative_required(session: Session) -> None:
     tenant = str(uuid.uuid4())
     breach = _seed_breach(session, tenant)
-    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     with pytest.raises(BreachTransitionError):
         respond_breach(session, breach, narrative="   ", actor=_ANALYST, now=_T0)
     respond_breach(session, breach, narrative="ok", actor=_ANALYST, now=_T0)
@@ -183,7 +236,13 @@ def test_recency_is_by_seq_not_occurred_at(session: Session) -> None:
     """VERIFIER B-1: two actions with the SAME occurred_at resolve deterministically by seq."""
     tenant = str(uuid.uuid4())
     breach = _seed_breach(session, tenant)
-    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     respond_breach(session, breach, narrative="same instant", actor=_ANALYST, now=_T0)
     rows = list(
         session.execute(
@@ -236,7 +295,13 @@ def test_a_breach_on_a_since_demoted_limit_still_escalates(session: Session) -> 
     )
     approve_limit(session, limit, actor=approver, approval_ref="RC-1")
     breach = _seed_breach(session, tenant, limit_definition_id=limit.id)
-    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)  # due T0+1d (HARD)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )  # due T0+1d (HARD)
     # The parent limit is SUSPENDED after the breach is open (the laundering attempt).
     suspend_limit(session, limit, actor=drafter)
     late = _T0 + timedelta(days=2)
@@ -251,7 +316,13 @@ def test_overdue_selection_and_escalation(session: Session) -> None:
     breach = _seed_breach(session, tenant)
     # unassigned (DETECTED) is never overdue
     assert select_overdue_breaches(session, _T0 + timedelta(days=99), acting_tenant=tenant) == []
-    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)  # due T0+1d (HARD)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )  # due T0+1d (HARD)
     assert select_overdue_breaches(session, _T0, acting_tenant=tenant) == []  # not yet overdue
     late = _T0 + timedelta(days=2)
     overdue = select_overdue_breaches(session, late, acting_tenant=tenant)
@@ -267,7 +338,13 @@ def test_escalation_idempotent_no_storm(session: Session) -> None:
     """A long-overdue breach escalates ONCE per deadline epoch (the tick phase swallows dedup)."""
     tenant = str(uuid.uuid4())
     breach = _seed_breach(session, tenant)
-    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     late = _T0 + timedelta(days=2)
     assert poll_tenant_breach_deadlines(session, late, acting_tenant=tenant) == [breach.id]
     # recovery: 1L responds (ESCALATED -> RESPONDED); still past the SAME deadline
@@ -282,7 +359,13 @@ def test_reject_starts_new_epoch_reescalates(session: Session) -> None:
     """A 2L REJECT stamps a fresh deadline (a new epoch) that CAN escalate again."""
     tenant = str(uuid.uuid4())
     breach = _seed_breach(session, tenant)
-    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     late = _T0 + timedelta(days=2)
     assert poll_tenant_breach_deadlines(session, late, acting_tenant=tenant) == [breach.id]
     respond_breach(session, breach, narrative="r", actor=_ANALYST, now=late)
@@ -297,7 +380,13 @@ def test_reject_starts_new_epoch_reescalates(session: Session) -> None:
 def test_soft_limit_gets_longer_sla(session: Session) -> None:
     tenant = str(uuid.uuid4())
     breach = _seed_breach(session, tenant, limit_kind=LIMIT_KIND_SOFT)
-    action = assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    action = assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     assert action.response_due == _T0 + timedelta(days=5)  # SOFT SLA
 
 
@@ -320,7 +409,13 @@ def test_cannot_review_without_1l_response(session: Session) -> None:
     REQUIRES a prior 1L response, else a single 2L could assign→review→close with vacuous SoD."""
     tenant = str(uuid.uuid4())
     breach = _seed_breach(session, tenant)
-    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     # never responded → auto-escalate → still no response
     escalate_overdue_breach(session, breach, _T0 + timedelta(days=2))
     assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_ESCALATED
@@ -333,7 +428,13 @@ def test_review_from_escalated_after_response(session: Session) -> None:
     ESCALATED — both ACCEPT (→REVIEWED→CLOSE) and REJECT (→ASSIGNED) branches."""
     tenant = str(uuid.uuid4())
     breach = _seed_breach(session, tenant)
-    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     respond_breach(session, breach, narrative="responded", actor=_ANALYST, now=_T0)
     # 2L review is overdue → escalate from RESPONDED
     escalate_overdue_breach(session, breach, _T0 + timedelta(days=2))
@@ -354,7 +455,13 @@ def test_full_reject_recovery_to_close(session: Session) -> None:
     """A rejected breach carried through re-respond → re-review(ACCEPT) → CLOSE."""
     tenant = str(uuid.uuid4())
     breach = _seed_breach(session, tenant)
-    assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
     respond_breach(session, breach, narrative="v1", actor=_ANALYST, now=_T0)
     review_breach(session, breach, outcome=BREACH_REVIEW_REJECT, actor=_MANAGER, now=_T0)
     assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_ASSIGNED
@@ -369,7 +476,8 @@ def test_audit_payload_shape_and_severity(session: Session) -> None:
     warning; narrative is NOT leaked into the payload."""
     tenant = str(uuid.uuid4())
     breach = _seed_breach(session, tenant)
-    assign_breach(session, breach, assigned_to="owner", actor=_MANAGER, now=_T0)
+    owner = _mk_assignee(session, breach.tenant_id)
+    assign_breach(session, breach, assigned_to=owner, actor=_MANAGER, now=_T0)
     respond_breach(session, breach, narrative="secret remediation detail", actor=_ANALYST, now=_T0)
 
     assign_evt = _events(session, tenant, BREACH_ASSIGN_EVENT)[0]
@@ -389,7 +497,7 @@ def test_audit_payload_shape_and_severity(session: Session) -> None:
     }
     assert assign_evt.after_value["to_state"] == BREACH_STATE_ASSIGNED
     assert assign_evt.after_value["actor_line"] == "2L"
-    assert assign_evt.after_value["assigned_to"] == "owner"
+    assert assign_evt.after_value["assigned_to"] == owner
     # narrative must NOT appear in any audit payload (free-text, potential sensitivity)
     resp_evt = _events(session, tenant, BREACH_1L_RESPONSE_EVENT)[0]
     assert "narrative" not in resp_evt.after_value
@@ -398,3 +506,232 @@ def test_audit_payload_shape_and_severity(session: Session) -> None:
     esc_evt = _events(session, tenant, BREACH_ESCALATE_EVENT)[0]
     assert esc_evt.actor_type == "SYSTEM" and esc_evt.severity == "warning"
     assert esc_evt.after_value["epoch_seq"] == 1  # the governing ASSIGN's seq
+
+
+# --- API-2b: the epoch-aware review guard (A-F1) + OQ-1=A ownership + expected_seq + D8 ------
+def test_accept_cannot_ratify_a_rejected_response(session: Session) -> None:
+    """THE audit A-F1 defeat, refused: assign→respond→REJECT→escalate→ACCEPT would have closed the
+    breach on the exact response the 2L formally rejected, with zero fresh 1L work. The epoch-aware
+    guard requires a 1L response with seq > the governing ASSIGNED-row seq — uniform on ACCEPT and
+    REJECT (OQ-A2b-3=A)."""
+    tenant = str(uuid.uuid4())
+    breach = _seed_breach(session, tenant)
+    assign_breach(
+        session, breach, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0
+    )
+    respond_breach(session, breach, narrative="v1", actor=_ANALYST, now=_T0)
+    review_breach(
+        session,
+        breach,
+        outcome=BREACH_REVIEW_REJECT,
+        narrative="inadequate",
+        actor=_MANAGER,
+        now=_T0,
+    )
+    escalate_overdue_breach(session, breach, _T0 + timedelta(days=3))  # epoch-2 overdue → ESCALATED
+    with pytest.raises(BreachTransitionError):  # ACCEPT of the stale (rejected) response — REFUSED
+        review_breach(session, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
+    with pytest.raises(BreachTransitionError):  # uniform: re-REJECT of the stale epoch — REFUSED
+        review_breach(session, breach, outcome=BREACH_REVIEW_REJECT, actor=_MANAGER, now=_T0)
+    # a FRESH response re-opens the path and the review proceeds
+    respond_breach(session, breach, narrative="v2", actor=_ANALYST, now=_T0)
+    review_breach(session, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
+    assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_REVIEWED
+
+
+def test_reject_carries_the_owner_forward(session: Session) -> None:
+    """OQ-API-2b-1=A: a REJECT re-opens the breach WITH an owner — default carry-forward of the
+    prior epoch's assignee; an explicit handoff is resolved like ASSIGN; assigned_to on ACCEPT is
+    refused. Pre-fix, the REJECT row's assigned_to was None → the ownership vacuum (A-F2)."""
+    tenant = str(uuid.uuid4())
+    breach = _seed_breach(session, tenant)
+    owner = _mk_assignee(session, tenant)
+    assign_breach(session, breach, assigned_to=owner, actor=_MANAGER, now=_T0)
+    respond_breach(session, breach, narrative="v1", actor=_ANALYST, now=_T0)
+    r1 = review_breach(
+        session, breach, outcome=BREACH_REVIEW_REJECT, narrative="redo", actor=_MANAGER, now=_T0
+    )
+    assert r1.assigned_to == owner  # carried forward — never None
+    respond_breach(session, breach, narrative="v2", actor=_ANALYST, now=_T0)
+    other = _mk_assignee(session, tenant)
+    r2 = review_breach(
+        session,
+        breach,
+        outcome=BREACH_REVIEW_REJECT,
+        narrative="handoff",
+        actor=_MANAGER,
+        now=_T0,
+        assigned_to=other,
+    )
+    assert r2.assigned_to == other  # explicit handoff, resolved
+    respond_breach(session, breach, narrative="v3", actor=_ANALYST, now=_T0)
+    with pytest.raises(BreachTransitionError):  # assigned_to may only accompany a REJECT
+        review_breach(
+            session,
+            breach,
+            outcome=BREACH_REVIEW_ACCEPT,
+            actor=_MANAGER,
+            now=_T0,
+            assigned_to=other,
+        )
+
+
+def test_expected_seq_precondition(session: Session) -> None:
+    """OQ-API-2b-4=A: a caller passing the timeline position it acted on is refused if any action
+    landed since (the cycle-class retry hole B-F3 — a retried respond after an interleaved
+    ESCALATE would silently clear the alarm state). None (default) = unconditioned."""
+    tenant = str(uuid.uuid4())
+    breach = _seed_breach(session, tenant)
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, tenant),
+        actor=_MANAGER,
+        now=_T0,
+        expected_seq=0,
+    )  # fresh breach: current max seq is 0 → passes
+    with pytest.raises(BreachTransitionError):  # stale: the assign advanced the timeline to 1
+        respond_breach(session, breach, narrative="x", actor=_ANALYST, now=_T0, expected_seq=0)
+    respond_breach(session, breach, narrative="x", actor=_ANALYST, now=_T0, expected_seq=1)
+    assert current_breach_state(session, breach.id, acting_tenant=tenant) == BREACH_STATE_RESPONDED
+
+
+def test_assign_resolves_and_canonicalizes_the_assignee(session: Session) -> None:
+    """D8/A-F5/C-F5: assigned_to must resolve to an ACTIVE same-tenant app_user and is stamped
+    CANONICAL (a non-canonical stamp would silently never match the canonical queue filter — the
+    D1 stamp≠compare bug's third instance)."""
+    tenant = str(uuid.uuid4())
+    # garbage / blank / cross-tenant / inactive all refused
+    for bad in ("not-a-user", "  "):
+        breach = _seed_breach(session, tenant)
+        with pytest.raises(BreachAssigneeError):
+            assign_breach(session, breach, assigned_to=bad, actor=_MANAGER, now=_T0)
+    foreign = _mk_assignee(session, str(uuid.uuid4()))  # another tenant's user
+    breach = _seed_breach(session, tenant)
+    with pytest.raises(BreachAssigneeError):
+        assign_breach(session, breach, assigned_to=foreign, actor=_MANAGER, now=_T0)
+    inactive = AppUser(tenant_id=tenant, display_name="gone", is_active=False)
+    session.add(inactive)
+    session.flush()
+    with pytest.raises(BreachAssigneeError):
+        assign_breach(session, breach, assigned_to=inactive.id, actor=_MANAGER, now=_T0)
+    # a case-variant form of a REAL user resolves and stamps the canonical id
+    owner = _mk_assignee(session, tenant)
+    action = assign_breach(session, breach, assigned_to=owner.upper(), actor=_MANAGER, now=_T0)
+    assert action.assigned_to == owner  # canonical, not the presented uppercase form
+
+
+# --- API-2b reads: the batched list parity + filters (finder-3 M3 parity demand) --------------
+def _advance_to(session: Session, breach, target: str) -> None:  # noqa: ANN001
+    """Drive a fresh breach to a target lifecycle state via the real verbs."""
+    from irp_shared.limit.lifecycle import BREACH_STATE_ESCALATED
+
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
+    if target == BREACH_STATE_ASSIGNED:
+        return
+    if target == BREACH_STATE_ESCALATED:
+        escalate_overdue_breach(session, breach, _T0 + timedelta(days=3))
+        return
+    respond_breach(session, breach, narrative="fix", actor=_ANALYST, now=_T0)
+    if target == BREACH_STATE_RESPONDED:
+        return
+    review_breach(session, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
+    if target == BREACH_STATE_REVIEWED:
+        return
+    close_breach(session, breach, evidence_ref="ev://done", actor=_MANAGER, now=_T0)
+
+
+def test_list_breaches_parity_across_all_states(session: Session) -> None:
+    """The §4 demand: batched list_breaches state == current_breach_state per breach, across ALL
+    six states incl. a zero-action DETECTED and a REJECT re-open (the greatest-n-per-group + the
+    coalesce-DETECTED outer join)."""
+    from irp_shared.limit.lifecycle import (
+        BREACH_STATE_ESCALATED,
+        current_breach_state,
+        list_breaches,
+    )
+
+    tenant = str(uuid.uuid4())
+    ids: dict[str, str] = {}
+    # one breach per target state (all share one synthetic limit id — the join needs a real limit)
+    from irp_shared.limit.service import create_limit
+    from irp_shared.portfolio.models import Portfolio
+
+    pf = Portfolio(
+        tenant_id=tenant,
+        code="ACCT",
+        name="a",
+        node_type="ACCOUNT",
+        status="ACTIVE",
+        record_version=1,
+    )
+    session.add(pf)
+    session.flush()
+    lim = create_limit(
+        session,
+        tenant_id=tenant,
+        code="L",
+        name="L",
+        target_run_type="VAR",
+        metric_type="VAR_PARAMETRIC",
+        scope_portfolio_id=str(pf.id),
+        threshold_value=Decimal("1"),
+        threshold_unit="CURRENCY",
+        breach_direction="ABOVE",
+        limit_kind=LIMIT_KIND_HARD,
+        actor=_MANAGER,
+    )
+    targets = [
+        BREACH_STATE_DETECTED,
+        BREACH_STATE_ASSIGNED,
+        BREACH_STATE_RESPONDED,
+        BREACH_STATE_REVIEWED,
+        BREACH_STATE_ESCALATED,
+        BREACH_STATE_CLOSED,
+    ]
+    for t in targets:
+        b = _seed_breach(session, tenant, limit_definition_id=lim.id)
+        ids[t] = b.id
+        if t != BREACH_STATE_DETECTED:
+            _advance_to(session, b, t)
+    session.flush()
+    items = list_breaches(session, acting_tenant=tenant, limit=100)
+    by_id = {it.breach.id: it for it in items}
+    assert len(items) == 6
+    for t, bid in ids.items():
+        assert by_id[bid].state == t
+        assert by_id[bid].state == current_breach_state(session, bid, acting_tenant=tenant)
+        assert by_id[bid].limit_code == "L"
+    # terminal states carry no live deadline; the reviewed/closed rows null it
+    assert by_id[ids[BREACH_STATE_REVIEWED]].response_due is None
+    assert by_id[ids[BREACH_STATE_CLOSED]].response_due is None
+    assert by_id[ids[BREACH_STATE_ASSIGNED]].response_due is not None
+    # filters
+    assert {
+        it.breach.id for it in list_breaches(session, acting_tenant=tenant, open_only=True)
+    } == {ids[t] for t in targets if t != BREACH_STATE_CLOSED}
+    assert [
+        it.breach.id
+        for it in list_breaches(session, acting_tenant=tenant, state=BREACH_STATE_CLOSED)
+    ] == [ids[BREACH_STATE_CLOSED]]
+    # a REJECT re-open still reads ASSIGNED with the carried owner
+    reopened = _seed_breach(session, tenant, limit_definition_id=lim.id)
+    owner = _mk_assignee(session, tenant)
+    assign_breach(session, reopened, assigned_to=owner, actor=_MANAGER, now=_T0)
+    respond_breach(session, reopened, narrative="v1", actor=_ANALYST, now=_T0)
+    review_breach(
+        session, reopened, outcome=BREACH_REVIEW_REJECT, narrative="redo", actor=_MANAGER, now=_T0
+    )
+    session.flush()
+    ro = next(
+        it
+        for it in list_breaches(session, acting_tenant=tenant, limit=100)
+        if it.breach.id == reopened.id
+    )
+    assert ro.state == BREACH_STATE_ASSIGNED and ro.assigned_to == owner

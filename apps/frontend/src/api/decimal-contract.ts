@@ -44,7 +44,11 @@ type CountKey =
   | "period_count"
   | "min_members"
   // A bitemporal row-version integer (FR-versioned captured-input DTOs), not a governed decimal.
-  | "record_version";
+  | "record_version"
+  // API-2b (breach lifecycle): per-breach monotonic ordering integers, not governed decimals.
+  | "seq"
+  | "epoch_seq"
+  | "expected_seq";
 
 /** Keys of `T` whose value can be a `number`. A governed decimal is `string`, so it never qualifies
  * — unless it regressed to `number` or `number | string`. (`-?` strips optionality so nullable
@@ -81,6 +85,12 @@ export type OnlyCountsAreNumbersOnEveryRowOut = [
   // decimal could be wired, not a sampled subset).
   AssertTrue<OnlyCountsAreNumbers<Schemas["PositionOut"]>>,
   AssertTrue<OnlyCountsAreNumbers<Schemas["ValuationOut"]>>,
+  // API-2b: breach observed/threshold values are governed-adjacent decimals (audit C-F13) — plus
+  // the LimitOut backfill (the limit family predated its own guard row, an inherited gap).
+  AssertTrue<OnlyCountsAreNumbers<Schemas["BreachOut"]>>,
+  AssertTrue<OnlyCountsAreNumbers<Schemas["BreachActionOut"]>>,
+  AssertTrue<OnlyCountsAreNumbers<Schemas["LimitOut"]>>,
+  AssertTrue<OnlyCountsAreNumbers<Schemas["LimitHealthOut"]>>,
 ];
 
 /** Illustrative companion: a handful of named governed decimals asserted `string` outright — human

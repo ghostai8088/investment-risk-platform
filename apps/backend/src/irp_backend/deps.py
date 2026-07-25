@@ -171,6 +171,21 @@ def require_permission(permission_code: str):  # noqa: ANN201 - returns a FastAP
     return _dependency
 
 
+def require_uuid_principal_id(principal: Principal) -> str:
+    """The principal's ``user_id``, FAIL-CLOSED on a non-UUID form (the API-2 D1/F2 dev-header
+    contract: ``X-User-Id`` MUST be a parseable ``app_user.id`` — a clean 401, never a bubbled
+    500). The SHARED actor-construction step for every domain actor (``LimitActor``/``BreachActor``
+    — hoisted at API-2b per audit C-F11: one dependency, not per-router copies); the dataclasses
+    then canonicalize so stamp == compare for the person-level SoD."""
+    try:
+        uuid.UUID(principal.user_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized"
+        ) from None
+    return principal.user_id
+
+
 def map_refusal(
     exc: Exception, error_map: dict[type[Exception], tuple[int, str]]
 ) -> tuple[int, str]:

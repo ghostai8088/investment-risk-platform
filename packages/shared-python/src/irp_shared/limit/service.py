@@ -227,13 +227,19 @@ def _spec_for(limit: LimitDefinition) -> MetricSpec:
 
 # --- evaluation ---------------------------------------------------------------------------
 def select_active_limits(session: Session, *, acting_tenant: str) -> list[LimitDefinition]:
-    """Tenant-scoped: ACTIVE limits (explicit tenant predicate + RLS — belt-and-suspenders)."""
+    """Tenant-scoped: ACTIVE limits (explicit tenant predicate + RLS — belt-and-suspenders).
+    Ordered by id: a DETERMINISTIC cross-tick iteration order so two concurrent same-tenant
+    ticks acquire their breach-insert unique-index entries in the same sequence (4-finder fold —
+    divergent heap-scan order could cycle a uq_breach_limit_run tuple-wait against the audit
+    advisory lock; benign/self-healing, but determinism removes it)."""
     return list(
         session.execute(
-            select(LimitDefinition).where(
+            select(LimitDefinition)
+            .where(
                 LimitDefinition.status == LIMIT_STATUS_ACTIVE,
                 LimitDefinition.tenant_id == str(acting_tenant),
             )
+            .order_by(LimitDefinition.id)
         ).scalars()
     )
 

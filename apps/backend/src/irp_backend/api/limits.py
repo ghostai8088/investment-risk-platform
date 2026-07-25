@@ -24,7 +24,12 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from irp_backend.deps import get_tenant_session, map_refusal, require_permission
+from irp_backend.deps import (
+    get_tenant_session,
+    map_refusal,
+    require_permission,
+    require_uuid_principal_id,
+)
 from irp_shared.db.integrity import is_unique_violation
 from irp_shared.entitlement.service import Principal
 from irp_shared.limit.events import LimitActor
@@ -68,16 +73,9 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
 
 
 def _limit_actor(principal: Principal) -> LimitActor:
-    """Construct the domain actor from the principal, FAIL-CLOSED on a non-UUID ``user_id`` (the
-    dev-header contract: ``X-User-Id`` MUST be a parseable ``app_user.id`` — API-2 D1/F2). The
-    dataclass canonicalizes the id so stamp == compare for the SoD."""
-    try:
-        uuid.UUID(principal.user_id)
-    except (ValueError, AttributeError, TypeError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized"
-        ) from None
-    return LimitActor(actor_id=principal.user_id)
+    """Construct the domain actor via the SHARED fail-closed step (hoisted to ``deps`` at API-2b —
+    audit C-F11); the dataclass canonicalizes the id so stamp == compare for the SoD."""
+    return LimitActor(actor_id=require_uuid_principal_id(principal))
 
 
 # --- DTOs ---------------------------------------------------------------------------------
