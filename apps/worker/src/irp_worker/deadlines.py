@@ -6,9 +6,12 @@ a new entrypoint). Auto-ESCALATES any breach whose response deadline has passed.
 
 **Commit topology (API-2b OQ-3=A, the B-F1 deadlock fix):** each breach escalates in its OWN
 TOP-LEVEL transaction (per-breach ``commit``/``rollback``, no SAVEPOINT) so every escalation
-acquires breach-row → audit-advisory in the SAME order as the HTTP breach verbs — the order
-inversion that made a tick×HTTP deadlock reachable under the old single-transaction shape is
-structurally gone. Escalations are independent and idempotent (``uq_breach_escalation`` + every
+acquires breach-row → audit-advisory in the SAME order as the HTTP breach verbs — the row-lock
+order inversion that made a tick×HTTP deadlock reachable under the old single-transaction shape is
+structurally gone. A residual tick×tick unique-INDEX tuple-wait inversion in phases 1–2 is
+foreclosed by the deterministic ``ORDER BY id`` iteration in the phase selectors; even unordered
+it was benign — SAVEPOINT-recovered and retried next tick.
+Escalations are independent and idempotent (``uq_breach_escalation`` + every
 condition re-checked UNDER the parent-breach lock inside ``escalate_overdue_breach``), so a
 mid-phase crash loses nothing (uncommitted candidates re-select next tick; committed ones dedup).
 ONLY a ``uq_breach_escalation`` violation is the benign already-escalated dedup; any OTHER
@@ -54,8 +57,9 @@ def poll_tenant_breach_deadlines(
     fresh deadline (a new epoch) that can legitimately escalate again.
     """
     escalated: list[str] = []
-    # Materialize the candidate ids up front: each loop iteration commits, which expires ORM
-    # instances — a plain (id) list avoids per-iteration refresh queries on expired objects.
+    # Materialize (id, instance) up front: each loop iteration commits, which EXPIRES the ORM
+    # instances — the next iteration's attribute access refreshes the row in the NEW (re-armed)
+    # transaction; a hypothetically invisible row raises into the blanket except (fail-closed).
     candidates = [
         (breach.id, breach)
         for breach in select_overdue_breaches(session, now, acting_tenant=acting_tenant)

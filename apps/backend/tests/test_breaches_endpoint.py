@@ -409,3 +409,99 @@ def test_route_inventory_pins_the_verb_set(ctx) -> None:
         "/breaches/{breach_id}/close",
         "/breaches/{breach_id}/actions",
     }
+
+
+# --- 4-finder folds: assignee taxonomy, terminal-state deadline, 40P01 mapping ---------------
+def test_non_uuid_assignee_is_422_not_500(ctx) -> None:
+    # Finders 1/4: a non-UUID assigned_to would reach the PG uuid cast → 22P02 → unmapped 500.
+    # The router UUID-shape-checks first → a clean 422 (SQLite-invisible pre-fix; now uniform).
+    r = ctx["client"].post(
+        f"/breaches/{ctx['breach']}/assign",
+        json={"assigned_to": "analyst-1"},  # non-blank, <=255, but not UUID-shaped
+        headers=_hdr(ctx["reviewer"], ctx["tenant"]),
+    )
+    assert r.status_code == 422
+    assert "state" not in r.json().get("detail", "")  # not the misleading 409 conflict detail
+
+
+def test_inactive_assignee_is_422_not_a_false_409(ctx) -> None:
+    # Finder 3 M1: an inactive-but-still-role-granted user passes the router permission gate but
+    # fails service resolution — must be a 422 (request content), NOT a 409 "illegal transition"
+    # (a lie about a healthy breach state).
+    db: Session = ctx["db"]
+    gone = AppUser(tenant_id=ctx["tenant"], display_name="Gone", is_active=False)
+    db.add(gone)
+    db.flush()
+    _grant(db, ctx["tenant"], gone.id, _RESPOND)  # role persists after deactivation
+    db.commit()
+    r = ctx["client"].post(
+        f"/breaches/{ctx['breach']}/assign",
+        json={"assigned_to": gone.id},
+        headers=_hdr(ctx["reviewer"], ctx["tenant"]),
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_terminal_states_report_no_live_deadline(ctx) -> None:
+    # Finder 3 L4 / finder 4: ACCEPT clears the clock, but the governing ASSIGNED row still carries
+    # the old response_due — a REVIEWED/CLOSED breach must NOT resurface it (a live-looking due).
+    _assign(ctx)
+    _respond(ctx)
+    assert _review(ctx, "ACCEPT").json()["response_due"] is None  # REVIEWED — cleared
+    assert _close(ctx).json()["response_due"] is None  # CLOSED — cleared
+
+
+def test_open_filter_excludes_closed(ctx) -> None:
+    # Finder 3 M3(i): the open=true → !=CLOSED exclusion was never proven against a CLOSED breach.
+    _assign(ctx)
+    _respond(ctx)
+    _review(ctx, "ACCEPT")
+    _close(ctx)  # the only breach is now CLOSED
+    hdr = _hdr(ctx["viewer"], ctx["tenant"])
+    c = ctx["client"]
+    assert c.get("/breaches?open=true", headers=hdr).json() == []  # excluded
+    assert [x["id"] for x in c.get("/breaches?state=CLOSED", headers=hdr).json()] == [ctx["breach"]]
+    assert len(c.get("/breaches", headers=hdr).json()) == 1  # unfiltered still sees it
+
+
+def test_deadlock_maps_to_503(ctx) -> None:
+    # Finder 3 M3(iii) / finder 4: pin the 40P01 → 503 mapping directly (the real interleave is
+    # unconstructible post-P1, so a synthetic OperationalError is the only way to prove it).
+    from unittest.mock import patch
+
+    from sqlalchemy.exc import OperationalError
+
+    class _Orig(Exception):
+        sqlstate = "40P01"
+
+    def _boom(*a, **k):
+        raise OperationalError("deadlock", {}, _Orig())
+
+    with patch("irp_backend.api.breaches.respond_breach", _boom):
+        r = ctx["client"].post(
+            f"/breaches/{ctx['breach']}/respond",
+            json={"narrative": "x"},
+            headers=_hdr(ctx["responder"], ctx["tenant"]),
+        )
+    assert r.status_code == 503
+    assert r.headers.get("Retry-After") == "1"
+
+
+def test_non_deadlock_operational_error_is_not_swallowed(ctx) -> None:
+    # The 503 mapping must NOT mask other OperationalErrors (fail loud).
+    from unittest.mock import patch
+
+    from sqlalchemy.exc import OperationalError
+
+    class _Orig(Exception):
+        sqlstate = "57014"  # query canceled — not a deadlock
+
+    def _boom(*a, **k):
+        raise OperationalError("canceled", {}, _Orig())
+
+    with patch("irp_backend.api.breaches.respond_breach", _boom), pytest.raises(OperationalError):
+        ctx["client"].post(
+            f"/breaches/{ctx['breach']}/respond",
+            json={"narrative": "x"},
+            headers=_hdr(ctx["responder"], ctx["tenant"]),
+        )

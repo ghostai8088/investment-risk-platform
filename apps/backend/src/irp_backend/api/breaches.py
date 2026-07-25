@@ -38,6 +38,7 @@ from irp_shared.db.mixins import utcnow
 from irp_shared.entitlement.service import Principal, has_permission
 from irp_shared.limit.events import BreachActor
 from irp_shared.limit.lifecycle import (
+    BreachAssigneeError,
     BreachLifecycleError,
     BreachQueueItem,
     BreachSodError,
@@ -74,6 +75,10 @@ _Unit = Literal["CURRENCY", "FRACTION"]
 #: future subclasses. NO ``IntegrityError`` key (B-F7 — fail loud) and never ``raise_mapped_write``
 #: (exact-type lookup would KeyError on the siblings).
 _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
+    BreachAssigneeError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "assignee must resolve to an active user in the tenant",
+    ),
     BreachSodError: (
         status.HTTP_409_CONFLICT,
         "separation of duties: the actor responded to this breach",
@@ -99,7 +104,9 @@ def _refuse(db: Session, exc: BreachLifecycleError) -> HTTPException:
 
 def _deadlock_503(db: Session, exc: OperationalError) -> HTTPException:
     """A 40P01 deadlock victim → 503 Retry-After (B-F1); anything else re-raises (fail loud)."""
-    if getattr(getattr(exc, "orig", None), "sqlstate", None) != "40P01":
+    orig = getattr(exc, "orig", None)
+    code = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    if code != "40P01":
         raise exc
     db.rollback()
     return HTTPException(
@@ -116,16 +123,27 @@ def _load_or_404(db: Session, principal: Principal, breach_id: uuid.UUID) -> Bre
     return breach
 
 
-def _require_assignee_can_respond(db: Session, tenant_id: str, assigned_to: str) -> None:
+def _require_assignee_can_respond(db: Session, tenant_id: str, assigned_to: str) -> str:
     """C-OQ2=B: the assignee must hold ``breach.respond`` — assigning to someone who cannot
     respond guarantees escalation. Checked at the ROUTER (entitlement is an API-layer concern;
-    the shared limit package stays free of entitlement imports)."""
-    assignee = Principal(user_id=assigned_to, tenant_id=tenant_id)
+    the shared limit package stays free of entitlement imports). The id is UUID-shape-checked and
+    CANONICALIZED first (4-finder fold): a raw non-UUID string would 22P02→500 at the PG uuid
+    cast, and a raw-cased compare is tier-divergent (the D1 stamp≠compare class). Returns the
+    canonical id for the service call."""
+    try:
+        canonical = str(uuid.UUID(assigned_to.strip()))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="assignee must be a user id",
+        ) from None
+    assignee = Principal(user_id=canonical, tenant_id=tenant_id)
     if not has_permission(db, assignee, "breach.respond", tenant_id):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="assignee must hold breach.respond",
         )
+    return canonical
 
 
 # --- DTOs ---------------------------------------------------------------------------------
@@ -162,11 +180,18 @@ class BreachReviewIn(BaseModel):
     assigned_to: str | None = None  # REJECT only (service-refused on ACCEPT); OQ-1=A
     expected_seq: int | None = None
 
-    @field_validator("narrative", "assigned_to")
+    @field_validator("narrative")
     @classmethod
     def _bounded(cls, v: str | None) -> str | None:
         if v is not None and (not v.strip() or len(v) > 2000):
             raise ValueError("must be non-empty when present (max 2000)")
+        return v
+
+    @field_validator("assigned_to")
+    @classmethod
+    def _bounded_assignee(cls, v: str | None) -> str | None:
+        if v is not None and (not v.strip() or len(v) > 255):
+            raise ValueError("must be non-empty when present (max 255)")
         return v
 
 
@@ -292,12 +317,12 @@ def assign(
     db: Session = Depends(get_tenant_session),
 ) -> BreachOut:
     breach = _load_or_404(db, principal, breach_id)
-    _require_assignee_can_respond(db, principal.tenant_id, body.assigned_to)
+    assignee = _require_assignee_can_respond(db, principal.tenant_id, body.assigned_to)
     try:
         assign_breach(
             db,
             breach,
-            assigned_to=body.assigned_to,
+            assigned_to=assignee,
             actor=_breach_actor(principal),
             now=utcnow(),
             expected_seq=body.expected_seq,
@@ -351,8 +376,9 @@ def review(
             detail="a REJECT review requires a narrative",
         )
     breach = _load_or_404(db, principal, breach_id)
+    assignee: str | None = None
     if body.assigned_to is not None:
-        _require_assignee_can_respond(db, principal.tenant_id, body.assigned_to)
+        assignee = _require_assignee_can_respond(db, principal.tenant_id, body.assigned_to)
     try:
         review_breach(
             db,
@@ -361,7 +387,7 @@ def review(
             actor=_breach_actor(principal),
             now=utcnow(),
             narrative=body.narrative,
-            assigned_to=body.assigned_to,
+            assigned_to=assignee,
             expected_seq=body.expected_seq,
         )
     except BreachLifecycleError as exc:

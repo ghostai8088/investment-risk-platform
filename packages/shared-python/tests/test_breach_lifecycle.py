@@ -36,6 +36,7 @@ from irp_shared.limit.events import (
     BreachActor,
 )
 from irp_shared.limit.lifecycle import (
+    BreachAssigneeError,
     BreachSodError,
     BreachTransitionError,
     assign_breach,
@@ -603,18 +604,134 @@ def test_assign_resolves_and_canonicalizes_the_assignee(session: Session) -> Non
     # garbage / blank / cross-tenant / inactive all refused
     for bad in ("not-a-user", "  "):
         breach = _seed_breach(session, tenant)
-        with pytest.raises(BreachTransitionError):
+        with pytest.raises(BreachAssigneeError):
             assign_breach(session, breach, assigned_to=bad, actor=_MANAGER, now=_T0)
     foreign = _mk_assignee(session, str(uuid.uuid4()))  # another tenant's user
     breach = _seed_breach(session, tenant)
-    with pytest.raises(BreachTransitionError):
+    with pytest.raises(BreachAssigneeError):
         assign_breach(session, breach, assigned_to=foreign, actor=_MANAGER, now=_T0)
     inactive = AppUser(tenant_id=tenant, display_name="gone", is_active=False)
     session.add(inactive)
     session.flush()
-    with pytest.raises(BreachTransitionError):
+    with pytest.raises(BreachAssigneeError):
         assign_breach(session, breach, assigned_to=inactive.id, actor=_MANAGER, now=_T0)
     # a case-variant form of a REAL user resolves and stamps the canonical id
     owner = _mk_assignee(session, tenant)
     action = assign_breach(session, breach, assigned_to=owner.upper(), actor=_MANAGER, now=_T0)
     assert action.assigned_to == owner  # canonical, not the presented uppercase form
+
+
+# --- API-2b reads: the batched list parity + filters (finder-3 M3 parity demand) --------------
+def _advance_to(session: Session, breach, target: str) -> None:  # noqa: ANN001
+    """Drive a fresh breach to a target lifecycle state via the real verbs."""
+    from irp_shared.limit.lifecycle import BREACH_STATE_ESCALATED
+
+    assign_breach(
+        session,
+        breach,
+        assigned_to=_mk_assignee(session, breach.tenant_id),
+        actor=_MANAGER,
+        now=_T0,
+    )
+    if target == BREACH_STATE_ASSIGNED:
+        return
+    if target == BREACH_STATE_ESCALATED:
+        escalate_overdue_breach(session, breach, _T0 + timedelta(days=3))
+        return
+    respond_breach(session, breach, narrative="fix", actor=_ANALYST, now=_T0)
+    if target == BREACH_STATE_RESPONDED:
+        return
+    review_breach(session, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
+    if target == BREACH_STATE_REVIEWED:
+        return
+    close_breach(session, breach, evidence_ref="ev://done", actor=_MANAGER, now=_T0)
+
+
+def test_list_breaches_parity_across_all_states(session: Session) -> None:
+    """The §4 demand: batched list_breaches state == current_breach_state per breach, across ALL
+    six states incl. a zero-action DETECTED and a REJECT re-open (the greatest-n-per-group + the
+    coalesce-DETECTED outer join)."""
+    from irp_shared.limit.lifecycle import (
+        BREACH_STATE_ESCALATED,
+        current_breach_state,
+        list_breaches,
+    )
+
+    tenant = str(uuid.uuid4())
+    ids: dict[str, str] = {}
+    # one breach per target state (all share one synthetic limit id — the join needs a real limit)
+    from irp_shared.limit.service import create_limit
+    from irp_shared.portfolio.models import Portfolio
+
+    pf = Portfolio(
+        tenant_id=tenant,
+        code="ACCT",
+        name="a",
+        node_type="ACCOUNT",
+        status="ACTIVE",
+        record_version=1,
+    )
+    session.add(pf)
+    session.flush()
+    lim = create_limit(
+        session,
+        tenant_id=tenant,
+        code="L",
+        name="L",
+        target_run_type="VAR",
+        metric_type="VAR_PARAMETRIC",
+        scope_portfolio_id=str(pf.id),
+        threshold_value=Decimal("1"),
+        threshold_unit="CURRENCY",
+        breach_direction="ABOVE",
+        limit_kind=LIMIT_KIND_HARD,
+        actor=_MANAGER,
+    )
+    targets = [
+        BREACH_STATE_DETECTED,
+        BREACH_STATE_ASSIGNED,
+        BREACH_STATE_RESPONDED,
+        BREACH_STATE_REVIEWED,
+        BREACH_STATE_ESCALATED,
+        BREACH_STATE_CLOSED,
+    ]
+    for t in targets:
+        b = _seed_breach(session, tenant, limit_definition_id=lim.id)
+        ids[t] = b.id
+        if t != BREACH_STATE_DETECTED:
+            _advance_to(session, b, t)
+    session.flush()
+    items = list_breaches(session, acting_tenant=tenant, limit=100)
+    by_id = {it.breach.id: it for it in items}
+    assert len(items) == 6
+    for t, bid in ids.items():
+        assert by_id[bid].state == t
+        assert by_id[bid].state == current_breach_state(session, bid, acting_tenant=tenant)
+        assert by_id[bid].limit_code == "L"
+    # terminal states carry no live deadline; the reviewed/closed rows null it
+    assert by_id[ids[BREACH_STATE_REVIEWED]].response_due is None
+    assert by_id[ids[BREACH_STATE_CLOSED]].response_due is None
+    assert by_id[ids[BREACH_STATE_ASSIGNED]].response_due is not None
+    # filters
+    assert {
+        it.breach.id for it in list_breaches(session, acting_tenant=tenant, open_only=True)
+    } == {ids[t] for t in targets if t != BREACH_STATE_CLOSED}
+    assert [
+        it.breach.id
+        for it in list_breaches(session, acting_tenant=tenant, state=BREACH_STATE_CLOSED)
+    ] == [ids[BREACH_STATE_CLOSED]]
+    # a REJECT re-open still reads ASSIGNED with the carried owner
+    reopened = _seed_breach(session, tenant, limit_definition_id=lim.id)
+    owner = _mk_assignee(session, tenant)
+    assign_breach(session, reopened, assigned_to=owner, actor=_MANAGER, now=_T0)
+    respond_breach(session, reopened, narrative="v1", actor=_ANALYST, now=_T0)
+    review_breach(
+        session, reopened, outcome=BREACH_REVIEW_REJECT, narrative="redo", actor=_MANAGER, now=_T0
+    )
+    session.flush()
+    ro = next(
+        it
+        for it in list_breaches(session, acting_tenant=tenant, limit=100)
+        if it.breach.id == reopened.id
+    )
+    assert ro.state == BREACH_STATE_ASSIGNED and ro.assigned_to == owner

@@ -1,7 +1,8 @@
 """SCH-1 worker scheduler — the per-tenant poll loop (Wave-11 slice 1).
 
 Under OQ-SCH-1-1=B (infra-driven per-tenant dispatch) the deploy layer invokes the worker once per
-tenant; the whole poll+dispatch runs inside ONE tenant's NON-BYPASSRLS ``run_in_tenant`` context.
+tenant; the whole poll+dispatch runs inside ONE tenant's NON-BYPASSRLS app-role session
+(``persistent_tenant_context`` — re-armed per transaction since the API-2b P1 restructure).
 The app never reads cross-tenant and never uses the BYPASSRLS ops role — the standing "no BYPASSRLS
 business path" doctrine is preserved (Option A, an in-app cross-tenant ops read, was REJECTED at
 ratification).
@@ -9,7 +10,7 @@ ratification).
 Per-schedule error isolation (the verifier fold): each ``dispatch_one`` runs in its OWN SAVEPOINT so
 a unique-violation dedup or a per-schedule failure rolls back only THAT schedule's phantom work —
 one schedule's collision never starves the tenant's other due schedules. The failure-recording path
-is FULLY catch-all: nothing escapes the per-schedule handler, so ``run_in_tenant``'s single terminal
+is FULLY catch-all: nothing escapes the per-schedule handler, so the phases-1–2 terminal
 commit always durably lands every successful sibling dispatch.
 """
 
@@ -67,7 +68,7 @@ def poll_tenant_schedules(
     back its phantom governed run); ANY OTHER failure — including a non-dedup constraint violation
     from the governed-run stack — is recorded as a FAILED ledger row (record + continue, OD-SCH-1-J)
     so it is never masked and never hot-loops. The failure-recording path is itself catch-all, so
-    nothing escapes to abort ``run_in_tenant``'s single terminal commit.
+    nothing escapes to abort the phases-1–2 terminal commit.
     """
     results: list[tuple[str, str]] = []
     for schedule, tick in select_active_due(session, now, acting_tenant=acting_tenant):
@@ -121,8 +122,8 @@ def run_operational_tick_for_tenant(
     now: datetime | None = None,
 ) -> dict[str, list[Any]]:
     """Run ONE per-tenant operational tick under tenant-scoped RLS, then commit — the single
-    per-tenant tick the Fable audit ratified (schedules-phase + breaches-phase under ONE
-    ``run_in_tenant`` entry, so operational concerns never accrete separate CLI entrypoints).
+    per-tenant tick the Fable audit ratified (schedules + breaches + deadlines under ONE
+    entrypoint, so operational concerns never accrete separate CLI entrypoints).
 
     **Ordering INVARIANT (OD-LIM-1-G):** phase 1 (schedules) runs BEFORE phase 2 (breaches), because
     ``dispatch_one`` runs ``run_var`` inline — a VaR fired this tick reaches a COMPLETED run visible
@@ -141,7 +142,9 @@ def run_operational_tick_for_tenant(
     it across phase 3's breach ROW locks while every HTTP breach verb acquires row→advisory, an
     order inversion = a reachable tick×HTTP (and tick×tick) deadlock. Phases 1–2 take NO row locks,
     so with phase 3 split off, no transaction anywhere holds the advisory lock while waiting on a
-    row lock. ``persistent_tenant_context`` is LOAD-BEARING here: the RLS GUC is transaction-local
+    ROW lock (phases 1–2 can still tuple-wait on unique-index entries — made order-deterministic
+    via ORDER BY id in the phase selectors, and SAVEPOINT-recovered regardless).
+    ``persistent_tenant_context`` is LOAD-BEARING here: the RLS GUC is transaction-local
     and clears at COMMIT — without the re-arm listener, phase 3 would run RLS-unarmed and silently
     escalate NOTHING (the OQ-a fail-open pattern; the API-2b verifier's blocking fold).
 

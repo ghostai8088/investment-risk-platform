@@ -133,10 +133,13 @@ def select_active_due(
     _require_aware(now)
     schedules = list(
         session.execute(
-            select(Schedule).where(
+            select(Schedule)
+            .where(
                 Schedule.status == SCHEDULE_STATUS_ACTIVE,
                 Schedule.tenant_id == str(acting_tenant),
             )
+            # deterministic cross-tick iteration order (the API-2b 4-finder determinism fold)
+            .order_by(Schedule.id)
         ).scalars()
     )
     due: list[tuple[Schedule, datetime]] = []

@@ -1,6 +1,6 @@
 """LIM-1 worker breach-evaluation phase — the second phase of the per-tenant operational tick.
 
-Runs alongside ``poll_tenant_schedules`` inside ONE tenant's non-BYPASSRLS ``run_in_tenant`` context
+Runs alongside ``poll_tenant_schedules`` inside ONE tenant's non-BYPASSRLS tenant-armed session
 (the Fable audit demand #2: breach evaluation is a PHASE of the single per-tenant tick, NOT a
 ``Schedule`` row). Each limit evaluates in its OWN SAVEPOINT — the SCH-1 isolation pattern: a
 concurrent dedup or a per-limit eval failure rolls back only THAT limit; the loop continues;

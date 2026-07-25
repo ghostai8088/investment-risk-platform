@@ -62,7 +62,17 @@ pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_D
 
 _TABLES = ("limit_definition", "breach", "breach_action")
 _DEPS = ("portfolio", "benchmark", "calculation_run")
-_RAILS = ("data_source", "lineage_edge", "app_user", "schedule", "scheduled_run")
+_RAILS = (
+    "data_source",
+    "lineage_edge",
+    "app_user",
+    "schedule",
+    "scheduled_run",
+    "role",
+    "permission",
+    "role_permission",
+    "user_role",
+)
 _LIMIT_ACTOR = LimitActor(actor_id="risk-mgr-2l")
 _ANALYST = BreachActor(actor_id="analyst-1l")
 _MANAGER = BreachActor(actor_id="manager-2l")
@@ -116,7 +126,7 @@ def _seed_breach(factory, tenant: str) -> str:  # noqa: ANN001
         limit = create_limit(
             session,
             tenant_id=tenant,
-            code="var-ceiling",
+            code=f"var-ceiling-{uuid.uuid4().hex[:6]}",  # unique per breach (multi-breach tests)
             name="VaR ceiling",
             target_run_type="VAR",
             metric_type="VAR_PARAMETRIC",
@@ -575,63 +585,182 @@ def test_respond_escalate_order_dependence_pinned(app_url: str) -> None:
 
 
 def test_tick_and_http_verb_complete_without_deadlock(app_url: str) -> None:
-    """THE B-F1 regression: pre-P1, a tick holding the audit-chain ADVISORY lock while taking
-    breach ROW locks could deadlock against an HTTP verb holding the row and wanting the advisory
-    (opposite order → 40P01). Post-P1 every transaction acquires row→advisory. A concurrent
-    tick + respond on the SAME breach must BOTH complete; no OperationalError."""
+    """THE B-F1 regression, CONSTRUCTED to actually cycle on the pre-P1 topology (4-finder MED-1:
+    the single-overdue-breach form could not deadlock even unfixed — the tick never held the
+    advisory before its ONE row lock).
+
+    The real inversion needs the tick holding the advisory lock BEFORE it takes a second breach's
+    row lock: seed TWO overdue breaches (B1, B2 by id order); a human transaction holds B2's ROW
+    lock and then wants the tenant audit ADVISORY lock (exactly a verb's row→advisory order). The
+    tick escalates B1 (row→advisory) then wants B2's row.
+      - PRE-P1 (single tick txn): tick holds advisory across both → wants row(B2) held by human;
+        human wants advisory held by tick → 40P01.
+      - POST-P1 (per-breach txns): tick commits B1's escalation (releasing advisory) before B2 →
+        human's advisory wait clears → both complete, no error.
+    """
     import threading
 
+    from irp_shared.audit.service import _advisory_lock_key
     from irp_worker.scheduler import run_operational_tick_for_tenant
 
     engine = make_engine(app_url, poolclass=NullPool)
     factory = make_session_factory(engine)
     tenant = str(uuid.uuid4())
-    breach_id = _seed_breach(factory, tenant)
+    b1, b2 = sorted([_seed_breach(factory, tenant), _seed_breach(factory, tenant)])
     setup = _armed(factory, tenant)
     try:
-        breach = _get(setup, breach_id)
-        assign_breach(
-            setup, breach, assigned_to=_mk_assignee(setup, tenant), actor=_MANAGER, now=_T0
-        )
-        setup.commit()  # overdue at T0+2d → the tick WILL take this breach's row lock
+        for bid in (b1, b2):
+            assign_breach(
+                setup,
+                _get(setup, bid),
+                assigned_to=_mk_assignee(setup, tenant),
+                actor=_MANAGER,
+                now=_T0,
+            )
+        setup.commit()  # both overdue at T0+2d
     finally:
         setup.close()
 
     tick_errors: list[str] = []
+    human_errors: list[str] = []
 
     def _tick() -> None:
         try:
             run_operational_tick_for_tenant(
                 factory, tenant, code_version="test", now=_T0 + timedelta(days=2)
             )
-        except Exception as exc:  # noqa: BLE001 - the test asserts on the error list
+        except Exception as exc:  # noqa: BLE001 - asserted via the list
             tick_errors.append(f"{type(exc).__name__}: {exc}")
 
+    # The human transaction: hold B2's row lock, pause so the tick can grab the advisory while
+    # escalating B1, THEN want the advisory (the verb's row→advisory order).
     human = _armed(factory, tenant)
     try:
+        human.execute(
+            select(Breach).where(Breach.id == b2).with_for_update()
+        ).scalar_one()  # row(B2) HELD
         t = threading.Thread(target=_tick)
-        hb = _get(human, breach_id)
         t.start()
+        import time as _time
+
+        _time.sleep(1.0)  # let the tick escalate B1 (acquiring the advisory) and reach B2
         try:
-            respond_breach(human, hb, narrative="concurrent", actor=_ANALYST, now=_T0)
-            human.commit()
-        except BreachTransitionError:
-            human.rollback()  # the tick escalated first and respond re-derived a refusal — fine
+            human.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"), {"k": _advisory_lock_key(tenant)}
+            )
+            human.commit()  # releases row(B2) → the tick's B2 escalation proceeds
+        except Exception as exc:  # noqa: BLE001
+            human.rollback()
+            human_errors.append(f"{type(exc).__name__}: {exc}")
         t.join(timeout=30)
         assert not t.is_alive()
-        assert tick_errors == []
+        assert tick_errors == [], tick_errors  # POST-P1: no 40P01 on the tick
+        assert human_errors == [], human_errors  # nor on the human
     finally:
         human.close()
     check = _armed(factory, tenant)
     try:
-        seqs = list(
-            check.execute(
-                select(BreachAction.seq)
-                .where(BreachAction.breach_id == breach_id)
-                .order_by(BreachAction.seq)
-            ).scalars()
-        )
-        assert seqs == list(range(1, len(seqs) + 1))  # contiguous — no torn writes
+        for bid in (b1, b2):
+            assert current_breach_state(check, bid, acting_tenant=tenant) == BREACH_STATE_ESCALATED
     finally:
         check.close()
+        engine.dispose()
+
+
+def test_case_variance_self_review_refused_through_http_on_pg(app_url: str) -> None:
+    """THE twice-carried API-2 → API-2b demand (§5): the PG-tier case-variance defeat replayed on
+    the breach 1L→review path THROUGH HTTP. On PG the entitlement gate's uuid cast is
+    case-INsensitive, so a responder presenting the UPPERCASE form of their app_user.id passes
+    ``require_permission`` — only the person-level SoD (over the CANONICALIZED actor id) stops them
+    reviewing their own response. Proven end-to-end against real RLS, the exact vector the SSO-1 /
+    D1 lesson targets (SQLite's CHAR-GUID compare is case-sensitive, so this can only be shown on
+    PG)."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from irp_backend.api.breaches import router as breaches_router
+    from irp_backend.config import settings
+    from irp_backend.deps import get_db
+    from irp_shared.entitlement.models import AppUser, Permission, Role, RolePermission, UserRole
+
+    # This suite lives outside apps/backend/tests, so the dev-header autouse fixture (conftest) does
+    # not apply — pin the shim here (app_env=local permits it) so X-User-Id resolves the principal.
+    _prev_auth = settings.auth_mode
+    settings.auth_mode = "dev_header"
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    breach_id = _seed_breach(factory, tenant)
+
+    # a dual-hat human (breach.respond + breach.review) + a distinct reviewer, provisioned on PG
+    prov = _armed(factory, tenant)
+    try:
+        dual = AppUser(tenant_id=tenant, display_name="Dual")
+        reviewer = AppUser(tenant_id=tenant, display_name="Rev")
+        prov.add_all([dual, reviewer])
+        prov.flush()
+        role = Role(tenant_id=tenant, code=f"r-{uuid.uuid4().hex[:6]}", name="R")
+        prov.add(role)
+        prov.flush()
+        for code in ("breach.respond", "breach.review", "breach.view"):
+            perm = prov.execute(
+                select(Permission).where(Permission.code == code)
+            ).scalar_one_or_none() or Permission(code=code, description="d")
+            prov.add(perm)
+            prov.flush()
+            prov.add(RolePermission(role_id=role.id, permission_id=perm.id))
+        prov.add(UserRole(tenant_id=tenant, user_id=dual.id, role_id=role.id))
+        prov.add(UserRole(tenant_id=tenant, user_id=reviewer.id, role_id=role.id))
+        prov.commit()
+        dual_id, reviewer_id = dual.id, reviewer.id
+    finally:
+        prov.close()
+
+    session = _armed(factory, tenant)
+
+    def _override_db():  # noqa: ANN202
+        try:
+            set_tenant_context(session, tenant)
+            yield session
+        finally:
+            pass
+
+    app = FastAPI()
+    app.include_router(breaches_router)
+    app.dependency_overrides[get_db] = _override_db
+    client = TestClient(app)
+
+    def hdr(uid: str) -> dict[str, str]:
+        return {"X-User-Id": uid, "X-Tenant-Id": tenant}
+
+    try:
+        assert (
+            client.post(
+                f"/breaches/{breach_id}/assign",
+                json={"assigned_to": dual_id},
+                headers=hdr(reviewer_id),
+            ).status_code
+            == 200
+        )
+        # the dual-hat responds under the LOWERCASE (canonical) form
+        assert (
+            client.post(
+                f"/breaches/{breach_id}/respond",
+                json={"narrative": "self"},
+                headers=hdr(dual_id.lower()),
+            ).status_code
+            == 200
+        )
+        # …then tries to review under the UPPERCASE form: the PG uuid cast lets it PAST the gate,
+        # but the canonicalized SoD recognizes the same maker → 409 (NOT 403, NOT a silent pass).
+        r = client.post(
+            f"/breaches/{breach_id}/review",
+            json={"outcome": "ACCEPT"},
+            headers=hdr(dual_id.upper()),
+        )
+        assert r.status_code == 409, r.text
+    finally:
+        settings.auth_mode = _prev_auth
+        session.close()
         engine.dispose()

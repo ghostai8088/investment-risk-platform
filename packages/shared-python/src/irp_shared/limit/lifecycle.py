@@ -21,6 +21,7 @@ line; this set-check is the backstop for the ``platform_admin`` dual-hat.
 
 from __future__ import annotations
 
+import uuid as uuid_module
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -81,6 +82,12 @@ class BreachTransitionError(BreachLifecycleError):
 
 class BreachSodError(BreachLifecycleError):
     """A person-level SoD violation (a prior 1L responder cannot review/close the same breach)."""
+
+
+class BreachAssigneeError(BreachLifecycleError):
+    """``assigned_to`` failed resolution (not UUID-shaped / unknown / inactive / cross-tenant) —
+    a REQUEST-CONTENT refusal, mapped 422, NEVER the 409 state-conflict class (4-finder M1: the
+    409 detail "illegal transition" would be a lie about a perfectly healthy breach state)."""
 
 
 def _resolve_to_state(from_state: str, action_type: str, review_outcome: str | None) -> str:
@@ -232,14 +239,20 @@ def _resolve_assignee(session: Session, tenant_id: str, assigned_to: str) -> str
     stamp≠compare bug's third instance). Raw SQL keeps the shared limit package free of an
     entitlement-model import (the ``service.py`` benchmark-check precedent)."""
     if not assigned_to or not assigned_to.strip():
-        raise BreachTransitionError("assigned_to requires a non-empty principal id")
+        raise BreachAssigneeError("assigned_to requires a non-empty principal id")
     canonical = _canonical_actor_id(assigned_to.strip())
+    try:
+        uuid_module.UUID(canonical)
+    except (ValueError, AttributeError, TypeError):
+        # Refuse BEFORE the SQL bind: a non-UUID string against the PG uuid column is a 22P02
+        # DataError -> an unmapped 500 (4-finder fold, finders 1+4 converged; SQLite-invisible).
+        raise BreachAssigneeError("assigned_to must be an app_user id") from None
     row = session.execute(
         text("SELECT 1 FROM app_user WHERE id = :id AND tenant_id = :tenant AND is_active"),
         {"id": canonical, "tenant": tenant_id},
     ).scalar()
     if row is None:
-        raise BreachTransitionError(
+        raise BreachAssigneeError(
             "assigned_to must resolve to an ACTIVE app_user in the acting tenant"
         )
     return canonical
@@ -557,6 +570,16 @@ def breach_action_timeline(
     )
 
 
+def _effective_due(state: str, response_due: datetime | None) -> datetime | None:
+    """The deadline IN FORCE for display: an ACCEPT deliberately clears the clock, but the
+    governing ASSIGNED row still carries the old ``response_due`` — resurfacing it on a
+    REVIEWED/CLOSED breach reads as a live (possibly overdue) deadline (4-finder fold). Only the
+    response-pending states carry a deadline."""
+    if state in (BREACH_STATE_REVIEWED, BREACH_STATE_CLOSED):
+        return None
+    return response_due
+
+
 @dataclass(frozen=True)
 class BreachQueueItem:
     """One breach-queue row: the breach + its recency-derived state + the governing epoch's owner
@@ -586,12 +609,16 @@ def breach_detail(
             LimitDefinition.id == breach.limit_definition_id,
             LimitDefinition.tenant_id == acting_tenant,
         )
-    ).scalar_one()
+    ).scalar_one_or_none()
+    if parent is None:  # orphan/cross-tenant parent — impossible via governed writes; fail as 404
+        return None
     return BreachQueueItem(
         breach=breach,
         state=state,
         assigned_to=governing.assigned_to if governing is not None else None,
-        response_due=governing.response_due if governing is not None else None,
+        response_due=_effective_due(
+            state, governing.response_due if governing is not None else None
+        ),
         scope_portfolio_id=parent.scope_portfolio_id,
         limit_code=parent.code,
     )
@@ -692,7 +719,7 @@ def list_breaches(
             breach=row[0],
             state=row[1],
             assigned_to=row[2],
-            response_due=row[3],
+            response_due=_effective_due(row[1], row[3]),
             scope_portfolio_id=row[4],
             limit_code=row[5],
         )
