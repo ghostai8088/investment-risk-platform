@@ -1,0 +1,449 @@
+"""Breach lifecycle endpoints (API-2b, Wave-12 slice 1b — "Operations, Reachable").
+
+The HTTP surface over the MG-2 breach remediation machine: ``assign`` (2L starts the clock),
+``respond`` (1L files remediation), ``review`` (2L ACCEPT/REJECT — REJECT re-opens a fresh epoch
+and CARRIES the owner, OQ-API-2b-1=A), ``close`` (2L, evidence required), plus the queue reads.
+Thin pass-throughs to ``irp_shared.limit.lifecycle`` — the router NEVER writes the ORM directly;
+``evaluate_limit``/``escalate_overdue_breach`` are tick-only and never exposed (D10).
+
+Boundary invariants (the API-2b audit): the actor id feeds the person-level SoD via the SHARED
+fail-closed constructor (``require_uuid_principal_id`` → ``BreachActor.__post_init__``
+canonicalization — D1 inherited); a SoD refusal is **409** (OQ-API-2-3=A, uniform with limits);
+every reachable ``BreachTransitionError`` post-DTO-validation is a genuine state conflict → 409;
+``IntegrityError`` is NOT mapped on the verbs (a seq collision under the lock = a lock/isolation
+regression — fail LOUD, audit B-F7); a deadlock victim (40P01) maps to **503 + Retry-After**
+(static body, no post-rollback DB reads — B-F1/B-F8). ``BreachOut`` NEVER serializes the frozen
+``Breach.status`` column — ``state`` is recency-derived (D6). Timeline order is ``seq``, never
+``occurred_at`` (B-F9).
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Literal, cast
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, field_validator
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
+
+from irp_backend.deps import (
+    get_tenant_session,
+    map_refusal,
+    require_permission,
+    require_uuid_principal_id,
+)
+from irp_shared.db.mixins import utcnow
+from irp_shared.entitlement.service import Principal, has_permission
+from irp_shared.limit.events import BreachActor
+from irp_shared.limit.lifecycle import (
+    BreachLifecycleError,
+    BreachQueueItem,
+    BreachSodError,
+    BreachTransitionError,
+    _as_utc,
+    assign_breach,
+    breach_action_timeline,
+    breach_detail,
+    close_breach,
+    get_breach,
+    list_breaches,
+    respond_breach,
+    review_breach,
+)
+from irp_shared.limit.models import Breach, BreachAction
+
+router = APIRouter(prefix="/breaches", tags=["breaches"])
+
+#: Module-level guard singletons (deny-by-default; the D4 permission table).
+_require_respond = require_permission("breach.respond")
+_require_review = require_permission("breach.review")
+_require_view = require_permission("breach.view")
+
+_BreachState = Literal["DETECTED", "ASSIGNED", "RESPONDED", "REVIEWED", "ESCALATED", "CLOSED"]
+_ActionType = Literal["ASSIGN", "1L_RESPONSE", "2L_REVIEW", "ESCALATE", "CLOSE"]
+_ReviewOutcome = Literal["ACCEPT", "REJECT"]
+_ActorLine = Literal["1L", "2L", "SYS"]
+_Kind = Literal["HARD", "SOFT"]
+_Direction = Literal["ABOVE", "BELOW"]
+_Unit = Literal["CURRENCY", "FRACTION"]
+
+#: Fail-closed refusal map (audit C-F4): the SoD sibling gets its OWN key (409); every reachable
+#: post-DTO ``BreachTransitionError`` is a genuine state conflict (409); the BASE stays 422 for
+#: future subclasses. NO ``IntegrityError`` key (B-F7 — fail loud) and never ``raise_mapped_write``
+#: (exact-type lookup would KeyError on the siblings).
+_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
+    BreachSodError: (
+        status.HTTP_409_CONFLICT,
+        "separation of duties: the actor responded to this breach",
+    ),
+    BreachTransitionError: (
+        status.HTTP_409_CONFLICT,
+        "illegal transition from the current breach state",
+    ),
+    BreachLifecycleError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid breach request"),
+}
+
+
+def _breach_actor(principal: Principal) -> BreachActor:
+    """The domain actor via the SHARED fail-closed step (C-F11); canonicalized at construction."""
+    return BreachActor(actor_id=require_uuid_principal_id(principal))
+
+
+def _refuse(db: Session, exc: BreachLifecycleError) -> HTTPException:
+    db.rollback()  # whole-unit rollback; NO DB reads after this (the GUC is gone — B-F8)
+    code, detail = map_refusal(exc, _ERROR_MAP)
+    return HTTPException(status_code=code, detail=detail)
+
+
+def _deadlock_503(db: Session, exc: OperationalError) -> HTTPException:
+    """A 40P01 deadlock victim → 503 Retry-After (B-F1); anything else re-raises (fail loud)."""
+    if getattr(getattr(exc, "orig", None), "sqlstate", None) != "40P01":
+        raise exc
+    db.rollback()
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="transient lock contention; retry",
+        headers={"Retry-After": "1"},
+    )
+
+
+def _load_or_404(db: Session, principal: Principal, breach_id: uuid.UUID) -> Breach:
+    breach = get_breach(db, acting_tenant=principal.tenant_id, breach_id=str(breach_id))
+    if breach is None:  # missing or cross-tenant — indistinguishable 404 (no existence oracle)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="breach not found")
+    return breach
+
+
+def _require_assignee_can_respond(db: Session, tenant_id: str, assigned_to: str) -> None:
+    """C-OQ2=B: the assignee must hold ``breach.respond`` — assigning to someone who cannot
+    respond guarantees escalation. Checked at the ROUTER (entitlement is an API-layer concern;
+    the shared limit package stays free of entitlement imports)."""
+    assignee = Principal(user_id=assigned_to, tenant_id=tenant_id)
+    if not has_permission(db, assignee, "breach.respond", tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="assignee must hold breach.respond",
+        )
+
+
+# --- DTOs ---------------------------------------------------------------------------------
+class BreachAssignIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assigned_to: str  # resolved+canonicalized in the SERVICE (D8); permission-checked here
+    expected_seq: int | None = None
+
+    @field_validator("assigned_to")
+    @classmethod
+    def _non_blank(cls, v: str) -> str:
+        if not v.strip() or len(v) > 255:
+            raise ValueError("assigned_to must be a non-empty principal id (max 255)")
+        return v
+
+
+class BreachRespondIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    narrative: str
+    expected_seq: int | None = None
+
+    @field_validator("narrative")
+    @classmethod
+    def _non_blank(cls, v: str) -> str:
+        if not v.strip() or len(v) > 2000:
+            raise ValueError("narrative must be non-empty (max 2000)")
+        return v
+
+
+class BreachReviewIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    outcome: _ReviewOutcome
+    narrative: str | None = None
+    assigned_to: str | None = None  # REJECT only (service-refused on ACCEPT); OQ-1=A
+    expected_seq: int | None = None
+
+    @field_validator("narrative", "assigned_to")
+    @classmethod
+    def _bounded(cls, v: str | None) -> str | None:
+        if v is not None and (not v.strip() or len(v) > 2000):
+            raise ValueError("must be non-empty when present (max 2000)")
+        return v
+
+
+class BreachCloseIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    evidence_ref: str
+    narrative: str | None = None
+    expected_seq: int | None = None
+
+    @field_validator("evidence_ref")
+    @classmethod
+    def _non_blank(cls, v: str) -> str:
+        if not v.strip() or len(v) > 500:
+            raise ValueError("evidence_ref must be non-empty (max 500)")
+        return v
+
+    @field_validator("narrative")
+    @classmethod
+    def _bounded(cls, v: str | None) -> str | None:
+        if v is not None and (not v.strip() or len(v) > 2000):
+            raise ValueError("narrative must be non-empty when present (max 2000)")
+        return v
+
+
+class BreachOut(BaseModel):
+    id: str
+    limit_definition_id: str
+    calculation_run_id: str
+    detected_at: datetime
+    target_run_type: str
+    metric_type: str
+    benchmark_id: str | None
+    observed_value: str  # fixed-point string (FE-2 decimal contract)
+    threshold_value: str
+    threshold_unit: _Unit
+    breach_direction: _Direction
+    limit_kind: _Kind
+    severity: _Kind
+    # NOTE: the frozen `Breach.status` column is deliberately NOT serialized (D6) — `state` is the
+    # recency-derived lifecycle truth; the column reads DETECTED forever.
+    state: _BreachState
+    assigned_to: str | None
+    response_due: datetime | None
+    scope_portfolio_id: str
+    limit_code: str
+
+
+class BreachActionOut(BaseModel):
+    id: str
+    breach_id: str
+    seq: int
+    action_type: _ActionType
+    from_state: _BreachState
+    to_state: _BreachState
+    actor_id: str
+    actor_line: _ActorLine
+    assigned_to: str | None
+    response_due: datetime | None
+    epoch_seq: int | None
+    narrative: str | None
+    review_outcome: _ReviewOutcome | None
+    evidence_ref: str | None
+    occurred_at: datetime
+
+
+def _breach_out(item: BreachQueueItem) -> BreachOut:
+    b = item.breach
+    return BreachOut(
+        id=b.id,
+        limit_definition_id=b.limit_definition_id,
+        calculation_run_id=b.calculation_run_id,
+        detected_at=cast(datetime, _as_utc(b.detected_at)),
+        target_run_type=b.target_run_type,
+        metric_type=b.metric_type,
+        benchmark_id=b.benchmark_id,
+        observed_value=f"{b.observed_value:f}",
+        threshold_value=f"{b.threshold_value:f}",
+        threshold_unit=cast(_Unit, b.threshold_unit),
+        breach_direction=cast(_Direction, b.breach_direction),
+        limit_kind=cast(_Kind, b.limit_kind),
+        severity=cast(_Kind, b.severity),
+        state=cast(_BreachState, item.state),
+        assigned_to=item.assigned_to,
+        response_due=_as_utc(item.response_due),
+        scope_portfolio_id=item.scope_portfolio_id,
+        limit_code=item.limit_code,
+    )
+
+
+def _action_out(a: BreachAction) -> BreachActionOut:
+    return BreachActionOut(
+        id=a.id,
+        breach_id=a.breach_id,
+        seq=a.seq,
+        action_type=cast(_ActionType, a.action_type),
+        from_state=cast(_BreachState, a.from_state),
+        to_state=cast(_BreachState, a.to_state),
+        actor_id=a.actor_id,
+        actor_line=cast(_ActorLine, a.actor_line),
+        assigned_to=a.assigned_to,
+        response_due=_as_utc(a.response_due),
+        epoch_seq=a.epoch_seq,
+        narrative=a.narrative,
+        review_outcome=cast("_ReviewOutcome | None", a.review_outcome),
+        evidence_ref=a.evidence_ref,
+        occurred_at=cast(datetime, _as_utc(a.occurred_at)),
+    )
+
+
+def _detail_out(db: Session, principal: Principal, breach_id: str) -> BreachOut:
+    item = breach_detail(db, acting_tenant=principal.tenant_id, breach_id=breach_id)
+    if item is None:  # unreachable post-load; defensive
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="breach not found")
+    return _breach_out(item)
+
+
+# --- transition endpoints -----------------------------------------------------------------
+@router.post("/{breach_id}/assign", response_model=BreachOut)
+def assign(
+    breach_id: uuid.UUID,
+    body: BreachAssignIn,
+    principal: Principal = Depends(_require_review),
+    db: Session = Depends(get_tenant_session),
+) -> BreachOut:
+    breach = _load_or_404(db, principal, breach_id)
+    _require_assignee_can_respond(db, principal.tenant_id, body.assigned_to)
+    try:
+        assign_breach(
+            db,
+            breach,
+            assigned_to=body.assigned_to,
+            actor=_breach_actor(principal),
+            now=utcnow(),
+            expected_seq=body.expected_seq,
+        )
+    except BreachLifecycleError as exc:
+        raise _refuse(db, exc) from None
+    except OperationalError as exc:
+        raise _deadlock_503(db, exc) from None
+    out = _detail_out(db, principal, str(breach_id))  # build BEFORE the single commit
+    db.commit()
+    return out
+
+
+@router.post("/{breach_id}/respond", response_model=BreachOut)
+def respond(
+    breach_id: uuid.UUID,
+    body: BreachRespondIn,
+    principal: Principal = Depends(_require_respond),
+    db: Session = Depends(get_tenant_session),
+) -> BreachOut:
+    breach = _load_or_404(db, principal, breach_id)
+    try:
+        respond_breach(
+            db,
+            breach,
+            narrative=body.narrative,
+            actor=_breach_actor(principal),
+            now=utcnow(),
+            expected_seq=body.expected_seq,
+        )
+    except BreachLifecycleError as exc:
+        raise _refuse(db, exc) from None
+    except OperationalError as exc:
+        raise _deadlock_503(db, exc) from None
+    out = _detail_out(db, principal, str(breach_id))
+    db.commit()
+    return out
+
+
+@router.post("/{breach_id}/review", response_model=BreachOut)
+def review(
+    breach_id: uuid.UUID,
+    body: BreachReviewIn,
+    principal: Principal = Depends(_require_review),
+    db: Session = Depends(get_tenant_session),
+) -> BreachOut:
+    if body.outcome == "REJECT" and (body.narrative is None or not body.narrative.strip()):
+        # A bare rejection gives the 1L nothing to remediate against (audit A-F8) — DTO-tier rule.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="a REJECT review requires a narrative",
+        )
+    breach = _load_or_404(db, principal, breach_id)
+    if body.assigned_to is not None:
+        _require_assignee_can_respond(db, principal.tenant_id, body.assigned_to)
+    try:
+        review_breach(
+            db,
+            breach,
+            outcome=body.outcome,
+            actor=_breach_actor(principal),
+            now=utcnow(),
+            narrative=body.narrative,
+            assigned_to=body.assigned_to,
+            expected_seq=body.expected_seq,
+        )
+    except BreachLifecycleError as exc:
+        raise _refuse(db, exc) from None
+    except OperationalError as exc:
+        raise _deadlock_503(db, exc) from None
+    out = _detail_out(db, principal, str(breach_id))
+    db.commit()
+    return out
+
+
+@router.post("/{breach_id}/close", response_model=BreachOut)
+def close(
+    breach_id: uuid.UUID,
+    body: BreachCloseIn,
+    principal: Principal = Depends(_require_review),
+    db: Session = Depends(get_tenant_session),
+) -> BreachOut:
+    breach = _load_or_404(db, principal, breach_id)
+    try:
+        close_breach(
+            db,
+            breach,
+            evidence_ref=body.evidence_ref,
+            actor=_breach_actor(principal),
+            now=utcnow(),
+            narrative=body.narrative,
+            expected_seq=body.expected_seq,
+        )
+    except BreachLifecycleError as exc:
+        raise _refuse(db, exc) from None
+    except OperationalError as exc:
+        raise _deadlock_503(db, exc) from None
+    out = _detail_out(db, principal, str(breach_id))
+    db.commit()
+    return out
+
+
+# --- reads --------------------------------------------------------------------------------
+@router.get("", response_model=list[BreachOut])
+def index(
+    state_filter: _BreachState | None = Query(default=None, alias="state"),
+    open_only: bool = Query(default=False, alias="open"),
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    assigned_to_me: bool = Query(default=False),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[BreachOut]:
+    # The batched queue read (D9) — one statement; `open=true` = the working queue.
+    items = list_breaches(
+        db,
+        acting_tenant=principal.tenant_id,
+        state=state_filter,
+        open_only=open_only,
+        portfolio_id=str(portfolio_id) if portfolio_id else None,
+        assigned_to=principal.user_id if assigned_to_me else None,
+        limit=limit,
+        offset=offset,
+    )
+    return [_breach_out(x) for x in items]
+
+
+@router.get("/{breach_id}", response_model=BreachOut)
+def show(
+    breach_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> BreachOut:
+    _load_or_404(db, principal, breach_id)
+    return _detail_out(db, principal, str(breach_id))
+
+
+@router.get("/{breach_id}/actions", response_model=list[BreachActionOut])
+def actions(
+    breach_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[BreachActionOut]:
+    _load_or_404(db, principal, breach_id)
+    timeline = breach_action_timeline(
+        db, acting_tenant=principal.tenant_id, breach_id=str(breach_id)
+    )
+    return [_action_out(a) for a in timeline]

@@ -1,15 +1,20 @@
 """MG-2 worker breach-deadline phase — the THIRD phase of the per-tenant operational tick.
 
-Runs after ``poll_tenant_breaches`` inside the SAME tenant-scoped non-BYPASSRLS ``run_in_tenant``
-context (the DEP-WFL deadline enforcement rides the SCH-1 cadence — a PHASE of the single per-tenant
-tick, not a new entrypoint). Auto-ESCALATES any breach whose response deadline has passed.
+Runs after ``poll_tenant_breaches`` inside the SAME tenant-scoped non-BYPASSRLS session (the
+DEP-WFL deadline enforcement rides the SCH-1 cadence — a PHASE of the single per-tenant tick, not
+a new entrypoint). Auto-ESCALATES any breach whose response deadline has passed.
 
-Mirrors the phase-2 (``breaches.py``) SINGLE-LAYER isolation shape (NOT phase-1's ``_record_failed``
-two-layer form — there is no failed-escalation ledger): each breach escalates in its OWN SAVEPOINT;
-ONLY a ``uq_breach_escalation`` violation is treated as the benign already-escalated-this-deadline
-dedup; any OTHER IntegrityError (or failure) is LOGGED, never masked; nothing escapes to abort the
-single terminal commit. The escalate decision is re-checked UNDER the parent-breach lock inside
-``escalate_overdue_breach`` — the candidate read here is a pre-filter only.
+**Commit topology (API-2b OQ-3=A, the B-F1 deadlock fix):** each breach escalates in its OWN
+TOP-LEVEL transaction (per-breach ``commit``/``rollback``, no SAVEPOINT) so every escalation
+acquires breach-row → audit-advisory in the SAME order as the HTTP breach verbs — the order
+inversion that made a tick×HTTP deadlock reachable under the old single-transaction shape is
+structurally gone. Escalations are independent and idempotent (``uq_breach_escalation`` + every
+condition re-checked UNDER the parent-breach lock inside ``escalate_overdue_breach``), so a
+mid-phase crash loses nothing (uncommitted candidates re-select next tick; committed ones dedup).
+ONLY a ``uq_breach_escalation`` violation is the benign already-escalated dedup; any OTHER
+IntegrityError (or failure) is LOGGED, never masked. The caller MUST hold a
+``persistent_tenant_context`` re-arm on the session — the RLS GUC is transaction-local, and an
+un-re-armed post-commit transaction would silently see ZERO breaches (fail-open).
 """
 
 from __future__ import annotations
@@ -49,25 +54,30 @@ def poll_tenant_breach_deadlines(
     fresh deadline (a new epoch) that can legitimately escalate again.
     """
     escalated: list[str] = []
-    for breach in select_overdue_breaches(session, now, acting_tenant=acting_tenant):
-        savepoint = session.begin_nested()
+    # Materialize the candidate ids up front: each loop iteration commits, which expires ORM
+    # instances — a plain (id) list avoids per-iteration refresh queries on expired objects.
+    candidates = [
+        (breach.id, breach)
+        for breach in select_overdue_breaches(session, now, acting_tenant=acting_tenant)
+    ]
+    for breach_id, breach in candidates:
         try:
             action = escalate_overdue_breach(session, breach, now)
-            savepoint.commit()
+            session.commit()  # per-breach TOP-LEVEL commit (row→advisory order, OQ-API-2b-3=A)
             if action is not None:
-                escalated.append(breach.id)
+                escalated.append(breach_id)
         except IntegrityError as exc:
-            savepoint.rollback()
+            session.rollback()
             if _is_escalate_dedup(exc):
                 # Already escalated this deadline epoch — benign concurrent-tick dedup.
                 continue
             # A REAL constraint violation — LOG it, do not mask.
             _LOGGER.error(
                 "breach escalation hit a non-dedup IntegrityError for breach %s: %s",
-                breach.id,
+                breach_id,
                 exc,
             )
         except Exception as exc:  # noqa: BLE001 - fail-closed per-breach isolation
-            savepoint.rollback()
-            _LOGGER.error("breach escalation failed for breach %s: %s", breach.id, exc)
+            session.rollback()
+            _LOGGER.error("breach escalation failed for breach %s: %s", breach_id, exc)
     return escalated

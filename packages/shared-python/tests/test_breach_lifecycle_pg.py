@@ -35,6 +35,7 @@ from irp_shared.limit.events import (
     BREACH_STATE_CLOSED,
     BREACH_STATE_DETECTED,
     BREACH_STATE_ESCALATED,
+    BREACH_STATE_RESPONDED,
     BREACH_STATUS_DETECTED,
     LIMIT_KIND_HARD,
     THRESHOLD_UNIT_CURRENCY,
@@ -47,6 +48,7 @@ from irp_shared.limit.lifecycle import (
     assign_breach,
     close_breach,
     current_breach_state,
+    escalate_overdue_breach,
     respond_breach,
     review_breach,
 )
@@ -60,7 +62,7 @@ pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_D
 
 _TABLES = ("limit_definition", "breach", "breach_action")
 _DEPS = ("portfolio", "benchmark", "calculation_run")
-_RAILS = ("data_source", "lineage_edge")
+_RAILS = ("data_source", "lineage_edge", "app_user", "schedule", "scheduled_run")
 _LIMIT_ACTOR = LimitActor(actor_id="risk-mgr-2l")
 _ANALYST = BreachActor(actor_id="analyst-1l")
 _MANAGER = BreachActor(actor_id="manager-2l")
@@ -153,6 +155,16 @@ def _get(session, breach_id: str) -> Breach:  # noqa: ANN001
     return session.execute(select(Breach).where(Breach.id == breach_id)).scalar_one()
 
 
+def _mk_assignee(session, tenant: str) -> str:  # noqa: ANN001
+    """A real ACTIVE app_user to assign to (API-2b D8: assigned_to is resolved in the service)."""
+    from irp_shared.entitlement.models import AppUser
+
+    user = AppUser(tenant_id=tenant, display_name="assignee")
+    session.add(user)
+    session.flush()
+    return user.id
+
+
 def test_full_lifecycle_round_trips_under_rls(app_url: str) -> None:
     engine = make_engine(app_url, poolclass=NullPool)
     factory = make_session_factory(engine)
@@ -165,7 +177,9 @@ def test_full_lifecycle_round_trips_under_rls(app_url: str) -> None:
         assert (
             current_breach_state(session, breach_id, acting_tenant=tenant) == BREACH_STATE_DETECTED
         )
-        assign_breach(session, breach, assigned_to="analyst-1l", actor=_MANAGER, now=_T0)
+        assign_breach(
+            session, breach, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0
+        )
         respond_breach(session, breach, narrative="hedged", actor=_ANALYST, now=_T0)
         review_breach(session, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
         close_breach(session, breach, evidence_ref="tkt://1", actor=_MANAGER, now=_T0)
@@ -205,7 +219,9 @@ def test_breach_action_append_only_trigger_rejects_update(app_url: str) -> None:
     try:
         set_tenant_context(session, tenant)
         breach = _get(session, breach_id)
-        action = assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+        action = assign_breach(
+            session, breach, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0
+        )
         session.commit()  # PERSIST the action (a rollback would discard it, dodging the trigger)
         action_id = action.id
         set_tenant_context(session, tenant)
@@ -234,7 +250,9 @@ def test_escalation_unique_constraint_rejects_same_epoch(app_url: str) -> None:
     try:
         set_tenant_context(session, tenant)
         breach = _get(session, breach_id)
-        assign_breach(session, breach, assigned_to="a", actor=_MANAGER, now=_T0)
+        assign_breach(
+            session, breach, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0
+        )
         session.flush()
         due = _T0 + timedelta(days=1)
 
@@ -314,3 +332,306 @@ def test_for_update_lock_serializes_concurrent_transitions(app_url: str) -> None
         s2.close()
         engine1.dispose()
         engine2.dispose()
+
+
+# --- API-2b: the P1 commit-topology + true-concurrency regressions (the audit's proof set) ----
+
+
+def _armed(factory, tenant: str):  # noqa: ANN001, ANN202
+    session = factory()
+    set_tenant_context(session, tenant)
+    return session
+
+
+def test_engine_runs_read_committed(app_url: str) -> None:
+    """D-B3: the re-derive-under-lock design is isolation-dependent — pin READ COMMITTED (no
+    engine-level override; under REPEATABLE READ the post-lock re-read would not see the
+    concurrent writer's committed actions → duplicate seq → IntegrityError)."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    session = make_session_factory(engine)()
+    try:
+        assert session.execute(text("SHOW transaction_isolation")).scalar() == "read committed"
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_restructured_tick_escalates_after_midtick_commit(app_url: str) -> None:
+    """THE P1/verifier GUC-re-arm regression: the restructured tick commits phases 1–2, then runs
+    phase 3 in per-breach TOP-LEVEL transactions. The RLS GUC is transaction-local — WITHOUT the
+    ``persistent_tenant_context`` re-arm, every post-commit transaction would be RLS-unarmed and
+    phase 3 would silently escalate NOTHING (the OQ-a fail-open pattern). 0 escalations here IS
+    that fail-open."""
+    from irp_worker.scheduler import run_operational_tick_for_tenant
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    breach_id = _seed_breach(factory, tenant)
+    session = _armed(factory, tenant)
+    try:
+        breach = _get(session, breach_id)
+        assign_breach(
+            session, breach, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0
+        )
+        session.commit()  # due = T0 + 1d (HARD)
+    finally:
+        session.close()
+    results = run_operational_tick_for_tenant(
+        factory, tenant, code_version="test", now=_T0 + timedelta(days=2)
+    )
+    assert results["escalated"] == [breach_id]
+    check = _armed(factory, tenant)
+    try:
+        assert current_breach_state(check, breach_id, acting_tenant=tenant) == (
+            BREACH_STATE_ESCALATED
+        )
+    finally:
+        check.close()
+        engine.dispose()
+
+
+def _run_loser(factory, tenant: str, breach_id: str, verb, outcomes: list) -> None:  # noqa: ANN001
+    """The blocked-in-flight loser: enters ``_lock_breach`` while the winner holds the row lock
+    uncommitted; on unblock it re-derives state from the winner's committed rows (READ COMMITTED
+    per-statement snapshot) and must refuse CLEANLY."""
+    session = _armed(factory, tenant)
+    try:
+        breach = _get(session, breach_id)
+        try:
+            verb(session, breach)
+            session.commit()
+            outcomes.append("won")
+        except BreachTransitionError:
+            session.rollback()
+            outcomes.append("refused")
+    except Exception as exc:  # noqa: BLE001 - the test asserts on the outcome list
+        outcomes.append(f"error:{type(exc).__name__}")
+    finally:
+        session.close()
+
+
+def test_blocked_in_flight_respond_race_refuses_cleanly(app_url: str) -> None:
+    """D-B2 (respond): winner holds the lock uncommitted; loser blocks INSIDE ``_lock_breach``;
+    winner commits; loser re-derives RESPONDED → clean refusal; exactly ONE response row with
+    contiguous seq. (The old sequential-commit test proved only that the lock exists.)"""
+    import threading
+    import time as _time
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    breach_id = _seed_breach(factory, tenant)
+    setup = _armed(factory, tenant)
+    try:
+        breach = _get(setup, breach_id)
+        assign_breach(
+            setup, breach, assigned_to=_mk_assignee(setup, tenant), actor=_MANAGER, now=_T0
+        )
+        setup.commit()
+    finally:
+        setup.close()
+
+    winner = _armed(factory, tenant)
+    outcomes: list[str] = []
+    try:
+        wb = _get(winner, breach_id)
+        respond_breach(winner, wb, narrative="winner", actor=_ANALYST, now=_T0)  # lock HELD
+        loser = threading.Thread(
+            target=_run_loser,
+            args=(
+                factory,
+                tenant,
+                breach_id,
+                lambda s, b: respond_breach(s, b, narrative="retry", actor=_ANALYST, now=_T0),
+                outcomes,
+            ),
+        )
+        loser.start()
+        _time.sleep(0.8)  # the loser is now blocked on the FOR UPDATE row lock
+        winner.commit()
+        loser.join(timeout=15)
+        assert not loser.is_alive()
+    finally:
+        winner.close()
+    assert outcomes == ["refused"]
+    check = _armed(factory, tenant)
+    try:
+        rows = list(
+            check.execute(
+                select(BreachAction.seq, BreachAction.action_type)
+                .where(BreachAction.breach_id == breach_id)
+                .order_by(BreachAction.seq)
+            )
+        )
+        assert [r.seq for r in rows] == [1, 2]  # ASSIGN, ONE response — contiguous, no orphan
+        assert [r.action_type for r in rows].count("1L_RESPONSE") == 1
+    finally:
+        check.close()
+        engine.dispose()
+
+
+def test_blocked_in_flight_close_race_refuses_cleanly(app_url: str) -> None:
+    """D-B2 (close): double-submitted close — the loser unblocks into CLOSED and refuses."""
+    import threading
+    import time as _time
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    breach_id = _seed_breach(factory, tenant)
+    setup = _armed(factory, tenant)
+    try:
+        breach = _get(setup, breach_id)
+        assign_breach(
+            setup, breach, assigned_to=_mk_assignee(setup, tenant), actor=_MANAGER, now=_T0
+        )
+        respond_breach(setup, breach, narrative="fix", actor=_ANALYST, now=_T0)
+        review_breach(setup, breach, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
+        setup.commit()  # REVIEWED
+    finally:
+        setup.close()
+
+    winner = _armed(factory, tenant)
+    outcomes: list[str] = []
+    try:
+        wb = _get(winner, breach_id)
+        close_breach(winner, wb, evidence_ref="ev://1", actor=_MANAGER, now=_T0)  # lock HELD
+        loser = threading.Thread(
+            target=_run_loser,
+            args=(
+                factory,
+                tenant,
+                breach_id,
+                lambda s, b: close_breach(s, b, evidence_ref="ev://2", actor=_MANAGER, now=_T0),
+                outcomes,
+            ),
+        )
+        loser.start()
+        _time.sleep(0.8)
+        winner.commit()
+        loser.join(timeout=15)
+        assert not loser.is_alive()
+    finally:
+        winner.close()
+    assert outcomes == ["refused"]
+    check = _armed(factory, tenant)
+    try:
+        assert current_breach_state(check, breach_id, acting_tenant=tenant) == BREACH_STATE_CLOSED
+        closes = check.execute(
+            select(BreachAction).where(
+                BreachAction.breach_id == breach_id, BreachAction.action_type == "CLOSE"
+            )
+        ).scalars()
+        assert len(list(closes)) == 1
+    finally:
+        check.close()
+        engine.dispose()
+
+
+def test_respond_escalate_order_dependence_pinned(app_url: str) -> None:
+    """B-F6 characterized: the respond×escalate race is order-dependent in its terminal DISPLAY
+    state — both orders are legal and serialize correctly; the FE brief states the nondeterminism.
+    human-first → final ESCALATED (a timely-responded breach still escalates: an unreviewed
+    response does not stop the clock — MG-2-ratified); tick-first → final RESPONDED."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    late = _T0 + timedelta(days=2)
+
+    # human-first
+    tenant_a = str(uuid.uuid4())
+    breach_a = _seed_breach(factory, tenant_a)
+    sa = _armed(factory, tenant_a)
+    try:
+        ba = _get(sa, breach_a)
+        assign_breach(sa, ba, assigned_to=_mk_assignee(sa, tenant_a), actor=_MANAGER, now=_T0)
+        respond_breach(sa, ba, narrative="late but filed", actor=_ANALYST, now=late)
+        assert escalate_overdue_breach(sa, ba, late) is not None  # RESPONDED is escalatable
+        sa.commit()
+        set_tenant_context(sa, tenant_a)  # the GUC is transaction-local — re-arm post-commit
+        assert current_breach_state(sa, breach_a, acting_tenant=tenant_a) == (
+            BREACH_STATE_ESCALATED
+        )
+    finally:
+        sa.close()
+
+    # tick-first
+    tenant_b = str(uuid.uuid4())
+    breach_b = _seed_breach(factory, tenant_b)
+    sb = _armed(factory, tenant_b)
+    try:
+        bb = _get(sb, breach_b)
+        assign_breach(sb, bb, assigned_to=_mk_assignee(sb, tenant_b), actor=_MANAGER, now=_T0)
+        assert escalate_overdue_breach(sb, bb, late) is not None
+        respond_breach(sb, bb, narrative="responding to the alarm", actor=_ANALYST, now=late)
+        sb.commit()
+        set_tenant_context(sb, tenant_b)  # re-arm (transaction-local GUC)
+        assert current_breach_state(sb, breach_b, acting_tenant=tenant_b) == (
+            BREACH_STATE_RESPONDED
+        )
+    finally:
+        sb.close()
+        engine.dispose()
+
+
+def test_tick_and_http_verb_complete_without_deadlock(app_url: str) -> None:
+    """THE B-F1 regression: pre-P1, a tick holding the audit-chain ADVISORY lock while taking
+    breach ROW locks could deadlock against an HTTP verb holding the row and wanting the advisory
+    (opposite order → 40P01). Post-P1 every transaction acquires row→advisory. A concurrent
+    tick + respond on the SAME breach must BOTH complete; no OperationalError."""
+    import threading
+
+    from irp_worker.scheduler import run_operational_tick_for_tenant
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    breach_id = _seed_breach(factory, tenant)
+    setup = _armed(factory, tenant)
+    try:
+        breach = _get(setup, breach_id)
+        assign_breach(
+            setup, breach, assigned_to=_mk_assignee(setup, tenant), actor=_MANAGER, now=_T0
+        )
+        setup.commit()  # overdue at T0+2d → the tick WILL take this breach's row lock
+    finally:
+        setup.close()
+
+    tick_errors: list[str] = []
+
+    def _tick() -> None:
+        try:
+            run_operational_tick_for_tenant(
+                factory, tenant, code_version="test", now=_T0 + timedelta(days=2)
+            )
+        except Exception as exc:  # noqa: BLE001 - the test asserts on the error list
+            tick_errors.append(f"{type(exc).__name__}: {exc}")
+
+    human = _armed(factory, tenant)
+    try:
+        t = threading.Thread(target=_tick)
+        hb = _get(human, breach_id)
+        t.start()
+        try:
+            respond_breach(human, hb, narrative="concurrent", actor=_ANALYST, now=_T0)
+            human.commit()
+        except BreachTransitionError:
+            human.rollback()  # the tick escalated first and respond re-derived a refusal — fine
+        t.join(timeout=30)
+        assert not t.is_alive()
+        assert tick_errors == []
+    finally:
+        human.close()
+    check = _armed(factory, tenant)
+    try:
+        seqs = list(
+            check.execute(
+                select(BreachAction.seq)
+                .where(BreachAction.breach_id == breach_id)
+                .order_by(BreachAction.seq)
+            ).scalars()
+        )
+        assert seqs == list(range(1, len(seqs) + 1))  # contiguous — no torn writes
+    finally:
+        check.close()
+        engine.dispose()

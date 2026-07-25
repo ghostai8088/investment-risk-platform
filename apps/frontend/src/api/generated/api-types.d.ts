@@ -318,6 +318,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/breaches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Index */
+        get: operations["index_breaches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/breaches/{breach_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Show */
+        get: operations["show_breaches__breach_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/breaches/{breach_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Actions */
+        get: operations["actions_breaches__breach_id__actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/breaches/{breach_id}/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assign */
+        post: operations["assign_breaches__breach_id__assign_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/breaches/{breach_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close */
+        post: operations["close_breaches__breach_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/breaches/{breach_id}/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Respond */
+        post: operations["respond_breaches__breach_id__respond_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/breaches/{breach_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review */
+        post: operations["review_breaches__breach_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/capital-calls": {
         parameters: {
             query?: never;
@@ -5014,6 +5133,148 @@ export interface components {
             /** File */
             file: string;
         };
+        /** BreachActionOut */
+        BreachActionOut: {
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "ASSIGN" | "1L_RESPONSE" | "2L_REVIEW" | "ESCALATE" | "CLOSE";
+            /** Actor Id */
+            actor_id: string;
+            /**
+             * Actor Line
+             * @enum {string}
+             */
+            actor_line: "1L" | "2L" | "SYS";
+            /** Assigned To */
+            assigned_to: string | null;
+            /** Breach Id */
+            breach_id: string;
+            /** Epoch Seq */
+            epoch_seq: number | null;
+            /** Evidence Ref */
+            evidence_ref: string | null;
+            /**
+             * From State
+             * @enum {string}
+             */
+            from_state: "DETECTED" | "ASSIGNED" | "RESPONDED" | "REVIEWED" | "ESCALATED" | "CLOSED";
+            /** Id */
+            id: string;
+            /** Narrative */
+            narrative: string | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Response Due */
+            response_due: string | null;
+            /** Review Outcome */
+            review_outcome: ("ACCEPT" | "REJECT") | null;
+            /** Seq */
+            seq: number;
+            /**
+             * To State
+             * @enum {string}
+             */
+            to_state: "DETECTED" | "ASSIGNED" | "RESPONDED" | "REVIEWED" | "ESCALATED" | "CLOSED";
+        };
+        /** BreachAssignIn */
+        BreachAssignIn: {
+            /** Assigned To */
+            assigned_to: string;
+            /** Expected Seq */
+            expected_seq?: number | null;
+        };
+        /** BreachCloseIn */
+        BreachCloseIn: {
+            /** Evidence Ref */
+            evidence_ref: string;
+            /** Expected Seq */
+            expected_seq?: number | null;
+            /** Narrative */
+            narrative?: string | null;
+        };
+        /** BreachOut */
+        BreachOut: {
+            /** Assigned To */
+            assigned_to: string | null;
+            /** Benchmark Id */
+            benchmark_id: string | null;
+            /**
+             * Breach Direction
+             * @enum {string}
+             */
+            breach_direction: "ABOVE" | "BELOW";
+            /** Calculation Run Id */
+            calculation_run_id: string;
+            /**
+             * Detected At
+             * Format: date-time
+             */
+            detected_at: string;
+            /** Id */
+            id: string;
+            /** Limit Code */
+            limit_code: string;
+            /** Limit Definition Id */
+            limit_definition_id: string;
+            /**
+             * Limit Kind
+             * @enum {string}
+             */
+            limit_kind: "HARD" | "SOFT";
+            /** Metric Type */
+            metric_type: string;
+            /** Observed Value */
+            observed_value: string;
+            /** Response Due */
+            response_due: string | null;
+            /** Scope Portfolio Id */
+            scope_portfolio_id: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "HARD" | "SOFT";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "DETECTED" | "ASSIGNED" | "RESPONDED" | "REVIEWED" | "ESCALATED" | "CLOSED";
+            /** Target Run Type */
+            target_run_type: string;
+            /**
+             * Threshold Unit
+             * @enum {string}
+             */
+            threshold_unit: "CURRENCY" | "FRACTION";
+            /** Threshold Value */
+            threshold_value: string;
+        };
+        /** BreachRespondIn */
+        BreachRespondIn: {
+            /** Expected Seq */
+            expected_seq?: number | null;
+            /** Narrative */
+            narrative: string;
+        };
+        /** BreachReviewIn */
+        BreachReviewIn: {
+            /** Assigned To */
+            assigned_to?: string | null;
+            /** Expected Seq */
+            expected_seq?: number | null;
+            /** Narrative */
+            narrative?: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "ACCEPT" | "REJECT";
+        };
         /** CalendarDetailOut */
         CalendarDetailOut: {
             /** Code */
@@ -9601,6 +9862,272 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BenchmarkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    index_breaches_get: {
+        parameters: {
+            query?: {
+                state?: ("DETECTED" | "ASSIGNED" | "RESPONDED" | "REVIEWED" | "ESCALATED" | "CLOSED") | null;
+                open?: boolean;
+                portfolio_id?: string | null;
+                assigned_to_me?: boolean;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BreachOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    show_breaches__breach_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                breach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BreachOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    actions_breaches__breach_id__actions_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                breach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BreachActionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assign_breaches__breach_id__assign_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                breach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BreachAssignIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BreachOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_breaches__breach_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                breach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BreachCloseIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BreachOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    respond_breaches__breach_id__respond_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                breach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BreachRespondIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BreachOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_breaches__breach_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                breach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BreachReviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BreachOut"];
                 };
             };
             /** @description Validation Error */

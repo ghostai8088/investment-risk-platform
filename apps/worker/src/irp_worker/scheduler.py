@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from irp_shared.db.mixins import utcnow
 from irp_shared.db.session import make_engine, make_session_factory
-from irp_shared.db.tenant import run_in_tenant
+from irp_shared.db.tenant import persistent_tenant_context
 from irp_shared.scheduling.events import (
     OUTCOME_FAILED,
     OUTCOME_SKIPPED_DUPLICATE,
@@ -134,20 +134,36 @@ def run_operational_tick_for_tenant(
     ``response_due`` (stamped only at the human ASSIGN, never in a tick), so it is never same-tick
     escalatable; phase 3 only ever acts on breaches ASSIGNED in a prior committed request.
 
+    **Commit topology (OD-LIM-1-G as RE-RATIFIED at API-2b OQ-3=A — the B-F1 deadlock fix):**
+    phases 1–2 land under ONE terminal commit (unchanged internally — SAVEPOINT-per-item); phase 3
+    then runs as PER-BREACH TOP-LEVEL transactions. Rationale: the frozen ``record_event`` takes the
+    per-tenant audit-chain ADVISORY lock, held to top-level commit — a single-transaction tick held
+    it across phase 3's breach ROW locks while every HTTP breach verb acquires row→advisory, an
+    order inversion = a reachable tick×HTTP (and tick×tick) deadlock. Phases 1–2 take NO row locks,
+    so with phase 3 split off, no transaction anywhere holds the advisory lock while waiting on a
+    row lock. ``persistent_tenant_context`` is LOAD-BEARING here: the RLS GUC is transaction-local
+    and clears at COMMIT — without the re-arm listener, phase 3 would run RLS-unarmed and silently
+    escalate NOTHING (the OQ-a fail-open pattern; the API-2b verifier's blocking fold).
+
     ``now`` defaults to the canonical UTC wall clock; only this top-level entry reads it (the
     due/breach computation is a pure function of the injected ``now`` — INV-SCH-1).
     """
     tick_now = now if now is not None else utcnow()
-
-    def _work(session: Session) -> dict[str, list[Any]]:
-        scheduled = poll_tenant_schedules(
-            session, tick_now, code_version=code_version, acting_tenant=tenant_id
-        )
-        breached = poll_tenant_breaches(session, tick_now, acting_tenant=tenant_id)
-        escalated = poll_tenant_breach_deadlines(session, tick_now, acting_tenant=tenant_id)
-        return {"scheduled": scheduled, "breached": breached, "escalated": escalated}
-
-    return run_in_tenant(session_factory, tenant_id, _work)
+    session = session_factory()
+    try:
+        detach = persistent_tenant_context(session, tenant_id)
+        try:
+            scheduled = poll_tenant_schedules(
+                session, tick_now, code_version=code_version, acting_tenant=tenant_id
+            )
+            breached = poll_tenant_breaches(session, tick_now, acting_tenant=tenant_id)
+            session.commit()  # the phases-1–2 terminal commit (releases the advisory lock)
+            escalated = poll_tenant_breach_deadlines(session, tick_now, acting_tenant=tenant_id)
+            return {"scheduled": scheduled, "breached": breached, "escalated": escalated}
+        finally:
+            detach()
+    finally:
+        session.close()
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entrypoint

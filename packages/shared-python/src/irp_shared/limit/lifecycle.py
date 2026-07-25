@@ -21,10 +21,11 @@ line; this set-check is the backstop for the ``platform_admin`` dual-hat.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func, select, text
+from sqlalchemy.orm import Session, aliased
 
 from irp_shared.audit.actions import ACTION_RECORD
 from irp_shared.audit.service import record_event
@@ -40,6 +41,7 @@ from irp_shared.limit.events import (
     BREACH_LINE_SYSTEM,
     BREACH_REVIEW_ACCEPT,
     BREACH_REVIEW_OUTCOMES,
+    BREACH_REVIEW_REJECT,
     BREACH_SLA_DAYS,
     BREACH_STATE_ASSIGNED,
     BREACH_STATE_CLOSED,
@@ -47,12 +49,14 @@ from irp_shared.limit.events import (
     BREACH_STATE_ESCALATED,
     BREACH_STATE_RESPONDED,
     BREACH_STATE_REVIEWED,
+    BREACH_STATES,
     BREACH_SYSTEM_ACTOR_TYPE,
     ENTITY_BREACH_ACTION,
     SOURCE_MODULE_LIMIT,
     BreachActor,
+    _canonical_actor_id,
 )
-from irp_shared.limit.models import Breach, BreachAction
+from irp_shared.limit.models import Breach, BreachAction, LimitDefinition
 
 # States eligible for auto-escalation (a response clock is running). DETECTED (never assigned) has
 # no clock; REVIEWED/ESCALATED/CLOSED are not overdue-escalatable.
@@ -179,6 +183,68 @@ def _next_seq(session: Session, breach_id: str, tenant_id: str) -> int:
     return (current or 0) + 1
 
 
+def _check_expected_seq(session: Session, breach: Breach, expected_seq: int | None) -> None:
+    """The OQ-API-2b-4=A optimistic-concurrency precondition, checked UNDER the lock.
+
+    A caller that read the timeline at ``seq == expected_seq`` is refused if any action landed
+    since — closing the cycle-class retry hole (a gateway-retried respond after an interleaved tick
+    ESCALATE would otherwise silently clear the alarm state; audit F-B3/F-B5). ``None`` (the
+    default) preserves the unconditioned MG-2 behavior for every existing caller.
+    """
+    if expected_seq is None:
+        return
+    current = _next_seq(session, breach.id, breach.tenant_id) - 1
+    if current != expected_seq:
+        raise BreachTransitionError(
+            f"stale expected_seq {expected_seq}: the breach timeline has advanced to {current}"
+        )
+
+
+def _require_current_epoch_response(session: Session, breach: Breach) -> None:
+    """The EPOCH-AWARE review guard (audit A-F1, uniform on ACCEPT and REJECT — OQ-A2b-3=A).
+
+    A 2L review requires a ``1L_RESPONSE`` filed IN THE CURRENT EPOCH — ``seq`` strictly greater
+    than the governing epoch-opening action's ``seq`` (the latest ``to_state == ASSIGNED`` row).
+    The all-time set check (REQ-BRC-002) alone is epoch-blind: after a REJECT, the rejected
+    response still satisfies it, so reject → (escalate) → ACCEPT could ratify the exact response
+    the 2L organization formally adjudicated inadequate, with zero fresh 1L work.
+    """
+    governing = _governing_assign(session, breach.id, breach.tenant_id)
+    governing_seq = governing.seq if governing is not None else 0
+    latest_response = session.execute(
+        select(func.max(BreachAction.seq)).where(
+            BreachAction.breach_id == breach.id,
+            BreachAction.tenant_id == breach.tenant_id,
+            BreachAction.action_type == BREACH_ACTION_1L_RESPONSE,
+        )
+    ).scalar_one_or_none()
+    if latest_response is None or latest_response <= governing_seq:
+        raise BreachTransitionError(
+            "a 2L review requires a 1L response from the CURRENT epoch — the prior response "
+            "was adjudicated by an earlier review (REQ-BRC-002, epoch-aware)"
+        )
+
+
+def _resolve_assignee(session: Session, tenant_id: str, assigned_to: str) -> str:
+    """Canonicalize + resolve ``assigned_to`` to an ACTIVE same-tenant ``app_user.id`` (audit
+    A-F5/C-F5, the D8 demand): the stamped value is the RESOLVED canonical id, never the request
+    string — a non-canonical stamp would silently never match the canonical queue filter (the D1
+    stamp≠compare bug's third instance). Raw SQL keeps the shared limit package free of an
+    entitlement-model import (the ``service.py`` benchmark-check precedent)."""
+    if not assigned_to or not assigned_to.strip():
+        raise BreachTransitionError("assigned_to requires a non-empty principal id")
+    canonical = _canonical_actor_id(assigned_to.strip())
+    row = session.execute(
+        text("SELECT 1 FROM app_user WHERE id = :id AND tenant_id = :tenant AND is_active"),
+        {"id": canonical, "tenant": tenant_id},
+    ).scalar()
+    if row is None:
+        raise BreachTransitionError(
+            "assigned_to must resolve to an ACTIVE app_user in the acting tenant"
+        )
+    return canonical
+
+
 def _insert_action(
     session: Session,
     breach: Breach,
@@ -271,10 +337,17 @@ def assign_breach(
     assigned_to: str,
     actor: BreachActor,
     now: datetime,
+    expected_seq: int | None = None,
 ) -> BreachAction:
-    """2L assigns a 1L owner + starts the clock (DETECTED → ASSIGNED). Gate breach.review."""
+    """2L assigns a 1L owner + starts the clock (DETECTED → ASSIGNED). Gate breach.review.
+
+    ``assigned_to`` is canonicalized + resolved to an ACTIVE same-tenant ``app_user`` UNDER the
+    lock (API-2b A-F5/D8 — a raw stamp would silently never match the canonical queue filter).
+    """
     _require_human(actor)
     locked = _lock_breach(session, breach.id, breach.tenant_id)
+    _check_expected_seq(session, locked, expected_seq)
+    resolved = _resolve_assignee(session, locked.tenant_id, assigned_to)
     state = current_breach_state(session, locked.id, acting_tenant=locked.tenant_id)
     to_state = _resolve_to_state(state, BREACH_ACTION_ASSIGN, None)
     return _insert_action(
@@ -286,7 +359,7 @@ def assign_breach(
         actor_id=actor.actor_id,
         actor_line=BREACH_LINE_2L,
         now=now,
-        assigned_to=assigned_to,
+        assigned_to=resolved,
         response_due=_sla_due(locked, now),
     )
 
@@ -298,12 +371,14 @@ def respond_breach(
     narrative: str,
     actor: BreachActor,
     now: datetime,
+    expected_seq: int | None = None,
 ) -> BreachAction:
     """1L files a remediation response (ASSIGNED|ESCALATED → RESPONDED). Gate: breach.respond."""
     _require_human(actor)
     if not narrative or not narrative.strip():
         raise BreachTransitionError("a 1L response requires a narrative")
     locked = _lock_breach(session, breach.id, breach.tenant_id)
+    _check_expected_seq(session, locked, expected_seq)
     state = current_breach_state(session, locked.id, acting_tenant=locked.tenant_id)
     to_state = _resolve_to_state(state, BREACH_ACTION_1L_RESPONSE, None)
     return _insert_action(
@@ -327,32 +402,44 @@ def review_breach(
     actor: BreachActor,
     now: datetime,
     narrative: str | None = None,
+    assigned_to: str | None = None,
+    expected_seq: int | None = None,
 ) -> BreachAction:
     """2L reviews a 1L response (RESPONDED|ESCALATED → REVIEWED on ACCEPT, → ASSIGNED on REJECT).
 
-    Gate: ``breach.review``. A 2L review REQUIRES a prior 1L response — a breach cannot be
-    reviewed (and thus closed) with no 1L response, else a single 2L could assign→review→close an
-    unresponded breach and the person-level SoD set would be vacuously empty (VERIFIER-F1-HIGH1 /
-    REQ-BRC-002). Person-level SoD: reviewer must NOT be a prior 1L responder. A REJECT re-opens
-    to ASSIGNED with a FRESH response deadline (a new escalation epoch).
+    Gate: ``breach.review``. A 2L review REQUIRES a 1L response FROM THE CURRENT EPOCH (the
+    epoch-aware form of REQ-BRC-002 — API-2b A-F1: the all-time set alone would let a REJECTed
+    response be ACCEPTed later with zero fresh 1L work). Person-level SoD: reviewer must NOT be
+    a prior 1L responder (the all-time SET — cumulative is correct for SoD). A REJECT re-opens
+    to ASSIGNED with a FRESH response deadline (a new escalation epoch) and CARRIES the owner
+    (OQ-API-2b-1=A): ``assigned_to`` explicit (resolved like ASSIGN) or defaulted to the prior
+    epoch's assignee — the queue's owner concept never goes None on a REJECT. ``assigned_to``
+    is refused on ACCEPT (an accepted breach awaits closure, not a new owner).
     """
     _require_human(actor)
     if outcome not in BREACH_REVIEW_OUTCOMES:
         raise BreachTransitionError(f"invalid review outcome {outcome!r}")
+    if assigned_to is not None and outcome != BREACH_REVIEW_REJECT:
+        raise BreachTransitionError("assigned_to may only accompany a REJECT review")
     locked = _lock_breach(session, breach.id, breach.tenant_id)
+    _check_expected_seq(session, locked, expected_seq)
     responders = _prior_1l_responders(session, locked.id, locked.tenant_id)
-    if not responders:
-        raise BreachTransitionError(
-            "a breach cannot be reviewed before a 1L response has been filed (REQ-BRC-002)"
-        )
     if actor.actor_id in responders:
         raise BreachSodError(
             f"actor {actor.actor_id} filed a 1L response on this breach; cannot review it (SOD-02)"
         )
+    _require_current_epoch_response(session, locked)  # subsumes the empty-set REQ-BRC-002 check
     state = current_breach_state(session, locked.id, acting_tenant=locked.tenant_id)
     to_state = _resolve_to_state(state, BREACH_ACTION_2L_REVIEW, outcome)
     # A REJECT restarts the clock; an ACCEPT clears it (the breach awaits closure, not response).
     response_due = _sla_due(locked, now) if to_state == BREACH_STATE_ASSIGNED else None
+    carried_assignee: str | None = None
+    if to_state == BREACH_STATE_ASSIGNED:
+        if assigned_to is not None:
+            carried_assignee = _resolve_assignee(session, locked.tenant_id, assigned_to)
+        else:
+            governing = _governing_assign(session, locked.id, locked.tenant_id)
+            carried_assignee = governing.assigned_to if governing is not None else None
     return _insert_action(
         session,
         locked,
@@ -365,6 +452,7 @@ def review_breach(
         review_outcome=outcome,
         narrative=narrative,
         response_due=response_due,
+        assigned_to=carried_assignee,
     )
 
 
@@ -376,6 +464,7 @@ def close_breach(
     actor: BreachActor,
     now: datetime,
     narrative: str | None = None,
+    expected_seq: int | None = None,
 ) -> BreachAction:
     """2L closes a reviewed breach with evidence (REVIEWED → CLOSED). Gate: ``breach.review``.
 
@@ -386,6 +475,7 @@ def close_breach(
     if not evidence_ref or not evidence_ref.strip():
         raise BreachTransitionError("closing a breach requires closure evidence (REQ-BRC-003)")
     locked = _lock_breach(session, breach.id, breach.tenant_id)
+    _check_expected_seq(session, locked, expected_seq)
     if actor.actor_id in _prior_1l_responders(session, locked.id, locked.tenant_id):
         raise BreachSodError(
             f"actor {actor.actor_id} filed a 1L response; cannot close this breach (SOD-02)"
@@ -437,6 +527,177 @@ def escalate_overdue_breach(session: Session, breach: Breach, now: datetime) -> 
         response_due=due,
         epoch_seq=governing.seq,
     )
+
+
+# --- API-2b reads (D9/C-F2: the batched greatest-n-per-group; one module owns the recency rule) ---
+
+
+def get_breach(session: Session, *, acting_tenant: str, breach_id: str) -> Breach | None:
+    """One breach, tenant-filtered atop RLS (mirrors ``get_limit`` — missing/cross-tenant → None,
+    an indistinguishable 404 at the API). Doubles as the transition endpoints' load step."""
+    return session.execute(
+        select(Breach).where(Breach.id == breach_id, Breach.tenant_id == acting_tenant)
+    ).scalar_one_or_none()
+
+
+def breach_action_timeline(
+    session: Session, *, acting_tenant: str, breach_id: str
+) -> list[BreachAction]:
+    """The breach's full action timeline ordered by ``seq`` ASC — NEVER ``occurred_at``, which is
+    non-monotonic across writers (tick ``now`` vs request ``now`` — audit B-F9)."""
+    return list(
+        session.execute(
+            select(BreachAction)
+            .where(
+                BreachAction.breach_id == breach_id,
+                BreachAction.tenant_id == acting_tenant,
+            )
+            .order_by(BreachAction.seq.asc())
+        ).scalars()
+    )
+
+
+@dataclass(frozen=True)
+class BreachQueueItem:
+    """One breach-queue row: the breach + its recency-derived state + the governing epoch's owner
+    and deadline (ONE governing row post-OQ-1=A — the latest ``to_state==ASSIGNED`` action carries
+    both) + the parent limit's frozen-identity echo for FE grouping (OQ-API-2b-2=A)."""
+
+    breach: Breach
+    state: str
+    assigned_to: str | None
+    response_due: datetime | None
+    scope_portfolio_id: str
+    limit_code: str
+
+
+def breach_detail(
+    session: Session, *, acting_tenant: str, breach_id: str
+) -> BreachQueueItem | None:
+    """One breach's queue view (state + owner + deadline + the limit echo). Per-breach queries are
+    fine at single-entity scale — the batched form exists for LIST scale (D9)."""
+    breach = get_breach(session, acting_tenant=acting_tenant, breach_id=breach_id)
+    if breach is None:
+        return None
+    state = current_breach_state(session, breach.id, acting_tenant=acting_tenant)
+    governing = _governing_assign(session, breach.id, acting_tenant)
+    parent = session.execute(
+        select(LimitDefinition).where(
+            LimitDefinition.id == breach.limit_definition_id,
+            LimitDefinition.tenant_id == acting_tenant,
+        )
+    ).scalar_one()
+    return BreachQueueItem(
+        breach=breach,
+        state=state,
+        assigned_to=governing.assigned_to if governing is not None else None,
+        response_due=governing.response_due if governing is not None else None,
+        scope_portfolio_id=parent.scope_portfolio_id,
+        limit_code=parent.code,
+    )
+
+
+def list_breaches(
+    session: Session,
+    *,
+    acting_tenant: str,
+    state: str | None = None,
+    open_only: bool = False,
+    portfolio_id: str | None = None,
+    assigned_to: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[BreachQueueItem]:
+    """The batched breach-queue read — ONE statement, portable PG+SQLite (plain GROUP-BY joins;
+    no ``DISTINCT ON``/window), never the ``select_overdue_breaches`` N+1 (D9).
+
+    Recency state = the latest action's ``to_state`` per breach, OUTER-joined + coalesced to
+    ``DETECTED`` so zero-action breaches surface (and a ``state=DETECTED`` filter finds them).
+    Owner + deadline come from the governing epoch row (the latest ``to_state==ASSIGNED`` action —
+    which post-OQ-1=A always carries the assignee). ``uq_breach_action_seq`` makes every max-seq
+    join ≤1 row per breach (no fan-out). Explicit tenant predicates on EVERY table incl. inside
+    the subqueries (the house rule atop RLS; SQLite has no RLS — the predicate is what tests
+    prove). Ordered ``detected_at DESC, id`` (deterministic); LIMIT/OFFSET after all filters.
+    """
+    if state is not None and state not in BREACH_STATES:
+        raise BreachLifecycleError(f"unknown breach state {state!r}")
+
+    latest_seq = (
+        select(BreachAction.breach_id, func.max(BreachAction.seq).label("max_seq"))
+        .where(BreachAction.tenant_id == acting_tenant)
+        .group_by(BreachAction.breach_id)
+        .subquery()
+    )
+    latest_action = aliased(BreachAction)
+    governing_seq = (
+        select(BreachAction.breach_id, func.max(BreachAction.seq).label("gov_seq"))
+        .where(
+            BreachAction.tenant_id == acting_tenant,
+            BreachAction.to_state == BREACH_STATE_ASSIGNED,
+        )
+        .group_by(BreachAction.breach_id)
+        .subquery()
+    )
+    governing_action = aliased(BreachAction)
+    derived_state = func.coalesce(latest_action.to_state, BREACH_STATE_DETECTED)
+
+    stmt = (
+        select(
+            Breach,
+            derived_state.label("state"),
+            governing_action.assigned_to,
+            governing_action.response_due,
+            LimitDefinition.scope_portfolio_id,
+            LimitDefinition.code,
+        )
+        .join(
+            LimitDefinition,
+            and_(
+                LimitDefinition.id == Breach.limit_definition_id,
+                LimitDefinition.tenant_id == acting_tenant,
+            ),
+        )
+        .outerjoin(latest_seq, latest_seq.c.breach_id == Breach.id)
+        .outerjoin(
+            latest_action,
+            and_(
+                latest_action.breach_id == latest_seq.c.breach_id,
+                latest_action.seq == latest_seq.c.max_seq,
+                latest_action.tenant_id == acting_tenant,
+            ),
+        )
+        .outerjoin(governing_seq, governing_seq.c.breach_id == Breach.id)
+        .outerjoin(
+            governing_action,
+            and_(
+                governing_action.breach_id == governing_seq.c.breach_id,
+                governing_action.seq == governing_seq.c.gov_seq,
+                governing_action.tenant_id == acting_tenant,
+            ),
+        )
+        .where(Breach.tenant_id == acting_tenant)
+    )
+    if state is not None:
+        stmt = stmt.where(derived_state == state)
+    if open_only:
+        stmt = stmt.where(derived_state != BREACH_STATE_CLOSED)
+    if portfolio_id is not None:
+        stmt = stmt.where(LimitDefinition.scope_portfolio_id == portfolio_id)
+    if assigned_to is not None:
+        # canonical-to-canonical compare (the D1 stamp==compare discipline applied to a read).
+        stmt = stmt.where(governing_action.assigned_to == _canonical_actor_id(assigned_to))
+    stmt = stmt.order_by(Breach.detected_at.desc(), Breach.id).limit(limit).offset(offset)
+    return [
+        BreachQueueItem(
+            breach=row[0],
+            state=row[1],
+            assigned_to=row[2],
+            response_due=row[3],
+            scope_portfolio_id=row[4],
+            limit_code=row[5],
+        )
+        for row in session.execute(stmt).all()
+    ]
 
 
 def select_overdue_breaches(session: Session, now: datetime, *, acting_tenant: str) -> list[Breach]:
