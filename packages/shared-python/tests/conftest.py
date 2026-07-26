@@ -116,17 +116,29 @@ def pg_role_permission_guard():  # noqa: ANN201
     from sqlalchemy.pool import NullPool
 
     engine = make_engine(url, poolclass=NullPool)
-    with engine.begin() as conn:
-        before = {r[0] for r in conn.execute(_text("SELECT id FROM role_permission")).all()}
+
+    def _ids() -> set[str] | None:
+        """Current role_permission ids, or None when the table is absent (an unmigrated database).
+        Degrading to a no-op matters: without it this guard raises a confusing
+        'relation role_permission does not exist' that masks the suite's own, clearer failure —
+        and a guard has no business being the first thing that breaks."""
+        try:
+            with engine.begin() as conn:
+                return {r[0] for r in conn.execute(_text("SELECT id FROM role_permission")).all()}
+        except Exception:
+            return None
+
+    before = _ids()
     try:
         yield
     finally:
-        with engine.begin() as conn:
-            after = {r[0] for r in conn.execute(_text("SELECT id FROM role_permission")).all()}
+        after = _ids()
+        if before is not None and after is not None:
             created = after - before
             if created:
-                conn.execute(
-                    _text("DELETE FROM role_permission WHERE id = ANY(:ids)"),
-                    {"ids": list(created)},
-                )
+                with engine.begin() as conn:
+                    conn.execute(
+                        _text("DELETE FROM role_permission WHERE id = ANY(:ids)"),
+                        {"ids": list(created)},
+                    )
         engine.dispose()

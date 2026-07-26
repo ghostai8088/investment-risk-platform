@@ -127,3 +127,82 @@ def test_exemptions_carry_a_rationale() -> None:
     """An exemption must say why: an unexplained exemption is a silent hole."""
     for name, reason in _EXEMPT.items():
         assert reason.strip(), f"exemption for {name} has no rationale"
+
+
+# ---------------------------------------------------------------------------------------------
+# The second drift class: a job can RUN a suite it cannot IMPORT.
+# ---------------------------------------------------------------------------------------------
+# The pin above proves every PG suite is referenced by a CI step. It cannot prove the step will
+# WORK: the migration job installs its own package list, and for two suites that list was missing
+# `apps/worker` / `apps/backend` (both imported inside test functions, so a top-of-file scan missed
+# them too). The result was a ModuleNotFoundError in CI while the same suites passed locally —
+# because a developer venv installs all three packages, so no local rehearsal of CI's step ORDER
+# can ever surface a gap in CI's install SURFACE.
+
+#: Editable-install path -> the top-level module it provides.
+_PACKAGE_MODULES = {
+    "packages/shared-python": "irp_shared",
+    "apps/backend": "irp_backend",
+    "apps/worker": "irp_worker",
+}
+
+_MIGRATION_JOB = "migration"
+
+
+def _job_block(job: str) -> str:
+    """The raw YAML text of one job, from its key to the next top-level job key."""
+    text = _CI.read_text(encoding="utf8")
+    start = text.index(f"\n  {job}:")
+    rest = text[start + 1 :]
+    nxt = re.search(r"\n  [a-z][a-z0-9_-]*:\n", rest)
+    return rest[: nxt.start()] if nxt else rest
+
+
+def _modules_installed_by(job: str) -> set[str]:
+    block = _job_block(job)
+    installed: set[str] = set()
+    for path, module in _PACKAGE_MODULES.items():
+        if re.search(rf"-e\s+{re.escape(path)}\b", block):
+            installed.add(module)
+    return installed
+
+
+def _suites_run_by(job: str) -> list[Path]:
+    block = _job_block(job)
+    return [
+        _ROOT / m.group(1)
+        for m in re.finditer(r"run:\s*pytest\s+(\S+\.py)", block)
+        if (_ROOT / m.group(1)).is_file()
+    ]
+
+
+def test_editable_install_paths_are_all_mapped() -> None:
+    """Non-vacuity: if a NEW package appears in any job's install list, the mapping above must learn
+    it — otherwise the coverage test below would silently stop checking that package's importers."""
+    text = _CI.read_text(encoding="utf8")
+    for path in re.findall(r"-e\s+(\S+)", text):
+        assert path in _PACKAGE_MODULES, (
+            f"unmapped editable-install path {path!r} — add it to _PACKAGE_MODULES so the "
+            "install-surface pin keeps covering it"
+        )
+
+
+def test_migration_job_installs_every_package_its_suites_import() -> None:
+    """A job must install what its tests import — including FUNCTION-LOCAL imports, which is how
+    this gap hid: `from irp_worker.scheduler import …` inside a test body collects fine locally and
+    explodes in a job that never installed the worker."""
+    installed = _modules_installed_by(_MIGRATION_JOB)
+    assert installed, "could not parse the migration job's editable installs"
+
+    problems: list[str] = []
+    for suite in _suites_run_by(_MIGRATION_JOB):
+        text = suite.read_text(encoding="utf8")
+        for module in _PACKAGE_MODULES.values():
+            imported = re.search(rf"^\s*(?:from|import)\s+{module}\b", text, re.MULTILINE)
+            if imported and module not in installed:
+                problems.append(f"{suite.relative_to(_ROOT).as_posix()} imports {module}")
+    assert not problems, (
+        "the CI migration job runs suites importing packages it does not install; those "
+        "steps fail with ModuleNotFoundError. Add the package to that job's install line:\n  "
+        + "\n  ".join(problems)
+    )

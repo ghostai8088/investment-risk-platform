@@ -72,6 +72,20 @@ Bare `pytest` (no paths) is deliberate: it uses `pyproject.toml`'s `testpaths`, 
 `pytest` step runs. Naming paths by hand previously omitted `apps/worker/tests`, so the worker tier
 was silently outside the local full run.
 
+A caution about what a local PG run can and cannot prove: your `.venv` has **all three** packages
+installed (`make setup` installs shared-python, backend and worker), so a local run cannot detect a
+CI job whose `pip install` list is missing a package a test imports. That failure mode is real — the
+CI PostgreSQL job installed only `shared-python` while two of its suites import `irp_worker` /
+`irp_backend` inside test functions, so they failed to collect with `ModuleNotFoundError` in CI while
+passing locally. Rehearsing CI's step *ordering* locally does not rehearse its *environment*. To
+check an install-surface change, build a throwaway venv with exactly the job's install list:
+
+```bash
+python3 -m venv /tmp/civenv && /tmp/civenv/bin/pip install -r requirements-dev.txt
+/tmp/civenv/bin/pip install -e packages/shared-python -e apps/backend -e apps/worker "psycopg[binary]"
+/tmp/civenv/bin/python -m pytest <the suites that job runs>
+```
+
 Finally, mirror CI's **downgrade smoke** — the step that proves every migration's `downgrade()` still
 works against real seeded rows. It is the last step of the CI migration job and has repeatedly caught
 things nothing else does (most recently an FK violation from demo rows referencing the migration-seeded

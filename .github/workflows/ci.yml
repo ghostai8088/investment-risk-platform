@@ -125,7 +125,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-          pip install -e packages/shared-python "psycopg[binary]"
+          # The PostgreSQL tier spans all three packages: several suites exercise the WORKER
+          # tick and the BACKEND router against a real database (function-local imports of
+          # irp_worker / irp_backend). Installing only shared-python made those suites fail
+          # to collect with ModuleNotFoundError — which stayed invisible while they were
+          # absent from CI, and surfaced the moment the CI-parity slice added them.
+          pip install -e packages/shared-python -e apps/backend -e apps/worker "psycopg[binary]"
       - name: Apply migrations (foundation + entitlement seed)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
