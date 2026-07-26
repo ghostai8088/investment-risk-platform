@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **DRAFT for ratification (OQ-RM-1-1…7)** — revised 2026-07-26 after a two-lane pre-ratification verifier pass that returned NOT-RATIFIABLE-AS-WRITTEN on the first draft |
+| Status | **RATIFIED 2026-07-26 — OQ-RM-1-1…7 approved as revised; the operability carry ratified INTO scope as its own preceding slice (SCH-2)** |
 | Slice | Wave-13 slice 1, ratified at the Wave-12 close (OQ-W12C-2=A; `wave_12_close_review.md` §5, `delivery_roadmap.md` Part 2.16) |
 | Kind | A **governed number** — new result family (ENT-064), new registered model, migration `0053`; consumes an existing governed series, captures nothing, mints no permission, emits no new audit code |
 | Counts | **MOVES all three: 23/38/109 → 24/39/131** (a new model code + an INITIAL validation record + 22 COMPLETED runs) |
@@ -171,6 +171,26 @@ Each carries its evidence (OQ-W12C-3a). **Both verifier lanes agreed the design 
 - **OQ-RM-1-5 — suppression.** A governed suppressed row per (metric, window) per run, with a **nullable value + explicit flag + CHECK** (OD-RM-1-I)? *Recommend APPROVE as revised* — noting the encoding matters more than the decision: a stuffed zero would be indistinguishable from three legitimate zeros.
 - **OQ-RM-1-6 — the demo history.** *Recommend* a **purpose-built past-dated book** (the PPF-3 pattern): **19 month-end boundaries + 1 mid-month boundary** (so one month genuinely relinks two sub-periods — on a pure month-end calendar the relink is the identity and the slice's crux would never be exercised, silently), two listed equities (USD + EUR, reusing existing instruments ⇒ 3 captured rows per boundary), and a **designed multi-month drawdown** (otherwise MDD is identically zero). Cost ≈60 captured rows, **N = 22 → counts 24/39/131**. Demonstrates the 12-month window as a genuine rolling series (7 windows); the 36-month GIPS measure is recorded reachable-but-not-demoed, and its suppression rows exercise OD-RM-1-I. *Rejected alternative:* forward-extending `DEMO-GLOBAL` — 13 boundaries yield one scalar not a series, its mid-month boundaries are refused by OD-RM-1-F anyway, and it would push ~19 new private-fund marks toward the valuation series the desmoothing window deliberately keeps clean.
 - **OQ-RM-1-7 — the REQ homes.** REQ-MKT-006 (drawdown, CAP-5.4) + REQ-PRF-003 with a CAP-20 extension (OD-RM-1-L)? *Recommend APPROVE.*
+
+## Part 4a — Ratified outcomes (2026-07-26)
+
+- **OQ-RM-1-1 = A (as revised)** — the monthly grid with the three-condition alignment criterion + the business-day allowance.
+- **OQ-RM-1-2 = A (as revised)** — annualization per metric: volatility ×√12 from the stored value, returns never below 12 months (enforced at the registered parameter domain, the kernel guard relabelled defense-in-depth), the redundant 12-month annualized row suppressed, MDD never.
+- **OQ-RM-1-3 = A (as revised)** — the `1 + mⱼ > 0` precondition, window-local rebasing, `V_0` as an observation, `0 ≤ MDD ≤ 1` asserted.
+- **OQ-RM-1-4 = A** — `{12, 36}` as a registered model parameter (with the four-column grain).
+- **OQ-RM-1-5 = A (as revised)** — suppression per (metric, window) per run, nullable value + explicit flag + CHECK.
+- **OQ-RM-1-6 = A** — a purpose-built past-dated book: 19 month-end boundaries + 1 mid-month, designed multi-month drawdown, N = 22 → counts **24/39/131**; the 12-month window demonstrated as a genuine 7-window rolling series, the 36-month window demonstrated through its suppression rows.
+- **OQ-RM-1-7 = A** — REQ-MKT-006 (drawdown, CAP-5.4) + REQ-PRF-003 with a CAP-20 extension.
+- **The operability carry = RATIFIED INTO SCOPE as a PRECEDING slice, `SCH-2`** (see Part 4b) — RM-1 will not ship as a governed number fed only by human discipline.
+
+## Part 4b — SCH-2, the preceding operability slice: **bigger than "small", and it pays recorded debt**
+
+The gate approved "a small cadence slice alongside". **Verified at ratification, "small" is wrong** — and the reason is worth recording, because it is a *good* surprise: SCH-2 is the slice that discharges a deferral the Wave-11 close recorded explicitly.
+
+- **A month-end cadence has no representation today.** `Schedule.interval_days` is **NOT NULL** (`scheduling/models.py:83`) and `CADENCE_KINDS = {INTERVAL}` (`scheduling/events.py:32`), so a calendar cadence needs a migration (nullable `interval_days` + the new cadence kind + a CHECK tying each kind to its required fields) — not merely a vocabulary addition.
+- **The dispatcher is hardcoded to VaR.** `dispatch_one` imports and calls `run_var` directly (`scheduling/service.py:32`, `:209`) with VaR-specific pinning (it resolves the scope exposure run *and* the latest COMPLETED covariance run). Dispatching an `EXPOSURE` family therefore requires the **dispatch registry** — which is precisely what the Wave-11 close named as deferred: the SCH-1 mechanism is family-agnostic but the *schema and the inline dispatch body* are not, "all additive-fixable, DEFERRED to whichever slice first ships family 2."
+- **So SCH-2 IS that family-2 slice.** It pays the SCH-1 family-agnostic debt (dispatch registry + the cadence-kind schema), and `scope_portfolio_id`'s NOT-NULL constraint is *not* a blocker for EXPOSURE (exposure is per-portfolio, so the column fits) — the one deferral that does not trip.
+- **Sequencing: SCH-2 → RM-1**, so RM-1 lands into a platform that can already feed it and the demo can exercise a real cadence rather than hand-seeded runs. SCH-2 mints no governed number (counts unchanged), touches the scheduler's schema and dispatch, and gets its own decision record and OQ gate.
 
 ## Part 5 — Pre-ratification verifier pass — RAN 2026-07-26 (two lanes)
 
