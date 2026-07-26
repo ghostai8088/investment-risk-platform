@@ -195,11 +195,9 @@ identity/error core), **OQ-3=A** (show actions; render 403/409 as first-class ex
 
 **RATIFIED** at the user gate — all six as recommended:
 
-- **OQ-1 = C** — **pin `react-router-dom` to ≤7.11.x NOW** (below the advisory's `>=7.12.0` affected
-  range, keeps `react >= 18`): the CI allowlist exception is **retired immediately**, with zero React
-  work and no 2026-10-24 cliff. The React 19 + react-router 8 migration is de-coupled entirely and will
-  be planned later on its own merits — it is no longer a security-driven deadline, so it must NOT be
-  smuggled into a feature slice.
+- **OQ-1 = C → REFUTED IN BUILD → falls back to OQ-1 = A.** See §7a immediately below. The ratified
+  option C was attempted first and **reversed on evidence**; the slice proceeds on **A** (split the
+  migration into its own slice), which was the pre-registered alternative.
 - **OQ-2 = A** — a dedicated write module sharing ONE internal identity/error core with `apiGet`; the
   read module keeps its no-write guarantee, and identity injection stays single-implementation.
 - **OQ-3 = A** — show the actions; render **403** and **409** as first-class plain-language explanations
@@ -216,5 +214,41 @@ identity/error core), **OQ-3=A** (show actions; render 403/409 as first-class ex
   the walk (it is false over a tenant-wide queue).
 
 **Net scope:** the four ops surfaces (assign dropped), the write module, the refusal UX, the demo
-operations extension, the six blocking folds (H1–H6) + the medium folds, and the OQ-1=C router pin.
+operations extension, the six blocking folds (H1–H6) + the medium folds. **No router change** (§7a).
 Status → **RATIFIED**; proceed to implementation.
+
+## 7a. IN-BUILD REVERSAL — OQ-1=C is REFUTED (2026-07-25)
+
+**The ratified option C was attempted first and reversed within the hour, on evidence.** The pin was
+applied (`react-router-dom@7.11.0`, exact) and the audit gate re-run. Result: pinning DOWN clears the
+one target advisory but **re-exposes SIX older ones that later 7.x had already fixed** — verified
+against the GitHub advisory API:
+
+| advisory | severity | vulnerable range | patched |
+|---|---|---|---|
+| `GHSA-chx6-hx7r-mcp5` — unauthenticated **DoS** via inefficient route matching | **HIGH** | `>=7.0.0, <7.18.0` | **7.18.0** |
+| `GHSA-wrjc-x8rr-h8h6` — **open redirect** via backslash in `<Link>` / `useNavigate` | medium | `>=6.0.0, <7.18.0` | **7.18.0** |
+| `GHSA-jjmj-jmhj-qwj2` — **open redirect → XSS** | medium | `>=7.9.6, <=7.12.0` | 7.13.0 |
+| + `GHSA-h5cw-625j-3rxh`, `GHSA-h8fp-f39c-q6mh`, `GHSA-337j-9hxr-rhxg` | moderate | (all fixed in later 7.x) | |
+
+**Why this decisively inverts the choice:** the advisory C was meant to escape
+(`GHSA-qwww-vcr4-c8h2`, RSC-mode CSRF) is **genuinely unreachable** here — this is a client-only SPA
+with no RSC and no server actions, which is exactly why it was allowlist-justified rather than
+suppressed. But two of the six re-exposed advisories are **open redirects in `<Link>` and
+`useNavigate`** — APIs this app uses on **15 sites** — i.e. **reachable**, and one more is a HIGH DoS.
+Option C would therefore have traded one unreachable advisory for six partly-reachable ones, making the
+security posture **strictly worse** while appearing greener on a naive count. **The tree was reverted to
+`^7.18.1` and the root `audit-allowlist.json` left untouched; the gate passes as before.**
+
+**Root cause of the bad recommendation (recorded so it does not recur):** the verifier established that
+7.11.x is below the target advisory's range and I carried that into a recommendation **without checking
+what pinning backwards re-exposes**. A "downgrade to escape an advisory" is only sound if the audit is
+re-run on the downgraded tree — *a version below one advisory's floor is not automatically below every
+other advisory's floor.* **Standing lesson: never recommend a dependency DOWNGRADE as a security fix
+without running the audit gate on the downgraded tree first.**
+
+**Consequence:** the slice proceeds on the pre-registered **OQ-1 = A** — the operations UI ships on
+React 18 / `react-router-dom` 7.18.1 unchanged, and the React 19 + react-router 8 migration becomes its
+own slice. **The `GHSA-qwww-vcr4-c8h2` allowlist exception therefore REMAINS LIVE and its
+2026-10-24 expiry is back on the clock** — the migration must be planned before then. This is now the
+single largest carried FE item out of Wave 12.
