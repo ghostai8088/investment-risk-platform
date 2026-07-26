@@ -9,6 +9,9 @@ import { SessionForm } from "./components/SessionForm";
 import { beginLogin, completeLogin, logout } from "./auth/oidc";
 import { clearSession, loadSession, saveSession } from "./session";
 import type { Session } from "./session";
+import { BreachDetail } from "./views/ops/BreachDetail";
+import { BreachQueue } from "./views/ops/BreachQueue";
+import { LimitHealth } from "./views/ops/LimitHealth";
 import { RunDetail } from "./views/RunDetail";
 import { RunsList } from "./views/RunsList";
 import { WalkOverview } from "./views/walk/WalkOverview";
@@ -113,8 +116,12 @@ export function App(): ReactElement {
       {session.kind === "dev" ? <DevBanner /> : null}
       <Routes>
         <Route element={<AppShell session={session} onEndSession={endSession} />}>
-          {/* The governance walk is the front door; the run browser stays reachable at /runs. */}
+          {/* OPS-1 (OQ-6=A): operations is the primary daily surface; the walk explains the
+              platform and keeps the index route as the landing page for a first-time viewer. */}
           <Route index element={<WalkOverview />} />
+          <Route path="ops/breaches" element={<BreachQueue session={session} />} />
+          <Route path="ops/breaches/:breachId" element={<BreachDetail session={session} />} />
+          <Route path="ops/limits" element={<LimitHealth session={session} />} />
           <Route path="walk" element={<WalkOverview />} />
           <Route path="walk/:step" element={<WalkStep session={session} />} />
           <Route path="runs" element={<RunsList session={session} />} />

@@ -1,0 +1,185 @@
+import { useState } from "react";
+import type { ReactElement } from "react";
+
+import { ApiError } from "../../api/client";
+import { useApiGet } from "../../api/useApiGet";
+import { verbatim } from "../../api/format";
+import { approveLimit } from "../../api/writes";
+import type { components } from "../../api/generated/api-types";
+import type { Session } from "../../session";
+import { Refusal, explain } from "./Refusal";
+
+type LimitOut = components["schemas"]["LimitOut"];
+type LimitHealthOut = components["schemas"]["LimitHealthOut"];
+
+/** How a limit's row reads, combining its lifecycle status with its evaluation health.
+ *
+ * The join is deliberately fail-CLOSED (verifier medium fold): `/limits/health` only reports on
+ * ACTIVE limits, so a DRAFT or SUSPENDED limit has NO health row. Defaulting an unmatched limit to
+ * green would render a suspended limit as healthy — exactly the fail-open dishonesty LIM-1 was
+ * built to prevent. A limit that is not in force is shown as NOT IN FORCE, which is neither pass
+ * nor fail: nothing is being checked. */
+function rowState(limit: LimitOut, health: LimitHealthOut | undefined): string {
+  if (limit.status !== "ACTIVE") return "NOT IN FORCE";
+  if (!health) return "NOT EVALUATED";
+  return health.state;
+}
+
+function stateClass(state: string): string {
+  if (state === "BREACHED") return "chip chip-hard";
+  if (state === "IN_APPETITE") return "chip chip-ok";
+  return "chip chip-muted"; // NEVER_EVALUABLE / NOT IN FORCE / NOT EVALUATED — honestly unknown
+}
+
+export function LimitHealth({ session }: { session: Session }): ReactElement {
+  const [reload, setReload] = useState(0);
+  const [approving, setApproving] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<ApiError | null>(null);
+  const [approvalRef, setApprovalRef] = useState("");
+
+  const limits = useApiGet<LimitOut[]>("/limits", session, reload);
+  const health = useApiGet<LimitHealthOut[]>("/limits/health", session, reload);
+
+  const healthById = new Map((health.data ?? []).map((h) => [h.limit_id, h]));
+  const all = limits.data ?? [];
+  const drafts = all.filter((l) => l.status === "DRAFT");
+
+  async function approve(limitId: string): Promise<void> {
+    setApproving(limitId);
+    setWriteError(null);
+    try {
+      await approveLimit(session, limitId, { approvalRef: approvalRef || "ops-ui" });
+      setApprovalRef("");
+      setReload((n) => n + 1);
+    } catch (e: unknown) {
+      setWriteError(e instanceof ApiError ? e : new ApiError("network", String(e)));
+    } finally {
+      setApproving(null);
+    }
+  }
+
+  return (
+    <section className="ops-view">
+      <header className="ops-header">
+        <h2>Limits</h2>
+        <p className="ops-lede">
+          Every governed limit, its lifecycle status, and — for limits actually in force — whether
+          the latest evaluation was within appetite.
+        </p>
+      </header>
+
+      {limits.error ? (
+        <p className="state error" role="alert">
+          {explain(limits.error, "view limits")}
+        </p>
+      ) : null}
+      {limits.loading ? <p className="state">Loading limits…</p> : null}
+
+      {/* --- the approval queue: the MG-3 maker-checker gate made visible --- */}
+      <div className="ops-panel">
+        <h3>Approval queue</h3>
+        <p className="ops-lede">
+          A DRAFT limit is <strong>not evaluated and cannot breach</strong> — it constrains nothing
+          until a second person approves it. The approver may not be one of its makers; that refusal
+          is the maker-checker control, and you will see it stated plainly if you are a maker here.
+        </p>
+        {writeError ? <Refusal error={writeError} action="approve this limit" /> : null}
+        {drafts.length === 0 ? (
+          <p className="state">Nothing awaiting approval.</p>
+        ) : (
+          <>
+            <label className="ops-field">
+              Approval reference
+              <input
+                type="text"
+                value={approvalRef}
+                onChange={(e) => setApprovalRef(e.target.value)}
+                maxLength={255}
+                placeholder="e.g. minutes://RISK-COMMITTEE-2026-07"
+              />
+            </label>
+            <table className="ops-table">
+              <thead>
+                <tr>
+                  <th scope="col">Limit</th>
+                  <th scope="col">Threshold</th>
+                  <th scope="col">Made by</th>
+                  <th scope="col" />
+                </tr>
+              </thead>
+              <tbody>
+                {drafts.map((l) => (
+                  <tr key={l.id}>
+                    <th scope="row">
+                      {verbatim(l.code)}
+                      <span className="cell-sub">{verbatim(l.name)}</span>
+                    </th>
+                    <td className="mono num">
+                      {verbatim(l.threshold_value)} {verbatim(l.threshold_unit)}
+                    </td>
+                    <td className="mono">{l.created_by ? verbatim(l.created_by) : "—"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        disabled={approving !== null}
+                        onClick={() => void approve(l.id)}
+                      >
+                        {approving === l.id ? "Approving…" : "Approve"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+      </div>
+
+      {/* --- health across all limits --- */}
+      <div className="ops-panel">
+        <h3>Limit health</h3>
+        {health.error ? (
+          <p className="state error">{explain(health.error, "view limit health")}</p>
+        ) : null}
+        {all.length === 0 && !limits.loading ? (
+          <p className="state">No limits are defined in this tenant yet.</p>
+        ) : null}
+        {all.length > 0 ? (
+          <table className="ops-table">
+            <thead>
+              <tr>
+                <th scope="col">Limit</th>
+                <th scope="col">Status</th>
+                <th scope="col">Threshold</th>
+                <th scope="col">Health</th>
+                <th scope="col">Latest run</th>
+              </tr>
+            </thead>
+            <tbody>
+              {all.map((l) => {
+                const h = healthById.get(l.id);
+                const state = rowState(l, h);
+                return (
+                  <tr key={l.id}>
+                    <th scope="row">
+                      {verbatim(l.code)}
+                      <span className="cell-sub">{verbatim(l.metric_type)}</span>
+                    </th>
+                    <td>{verbatim(l.status)}</td>
+                    <td className="mono num">
+                      {verbatim(l.threshold_value)} {verbatim(l.threshold_unit)}
+                    </td>
+                    <td>
+                      <span className={stateClass(state)}>{state}</span>
+                    </td>
+                    <td className="mono">{h?.latest_run_id ? verbatim(h.latest_run_id) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : null}
+      </div>
+    </section>
+  );
+}

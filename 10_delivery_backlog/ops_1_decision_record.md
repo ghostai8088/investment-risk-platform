@@ -252,3 +252,44 @@ React 18 / `react-router-dom` 7.18.1 unchanged, and the React 19 + react-router 
 own slice. **The `GHSA-qwww-vcr4-c8h2` allowlist exception therefore REMAINS LIVE and its
 2026-10-24 expiry is back on the clock** — the migration must be planned before then. This is now the
 single largest carried FE item out of Wave 12.
+
+## 8. Implementation notes (as built)
+
+**Backend (3 files).** `limit/lifecycle.py` gains `BreachStaleSeqError` (a `BreachTransitionError`
+subclass, raised by `_check_expected_seq`) and surfaces the timeline head as `BreachQueueItem.seq`
+(free in the batched query — the `max_seq` subquery already existed; computed via `_next_seq` in the
+per-breach path). `api/breaches.py` serializes `BreachOut.seq`, gives the stale-seq error its OWN
+`_ERROR_MAP` key with a distinct actionable detail, and declares `_WRITE_REFUSALS`/`_READ_REFUSALS`
+on every verb; `api/limits.py` does the same. No migration, no new permission, no audit code.
+
+**Frontend.** `api/client.ts` refactored to a shared `request()` core carrying `status` + a flattened
+`detail` (handling FastAPI's two `detail` shapes) with `conflict`/`unavailable` added to
+`ApiErrorKind`; `api/writes.ts` is the new single write surface (`classifyRefusal` +
+respond/review/close/approve); `useApiGet` gains `reloadKey`. Views: `ops/BreachQueue`,
+`ops/BreachDetail`, `ops/LimitHealth`, and the shared `ops/Refusal`. `AppShell` leads with
+Operations and scopes the book chip to the walk; `App.tsx` routes `/ops/*`. `api-prefixes.ts` is the
+new single source for the dev-proxy + nginx prefix lists.
+
+**Demo (Part D).** `demo/ops_stage14.py` + `test_demo_stage9zzzzz_ops_pg.py` (filename sorts last per
+the standing stage-ordering discipline; CI step inserted after stage 11, before the downgrade smoke).
+It grants the auditor persona the two missing read codes, creates FOUR operators with disjoint
+duties, creates three limits with thresholds derived from the demo's REAL latest VaR, approves two as
+a different person, evaluates through `evaluate_limit` (never a hand-minted `Breach`), advances the
+breach to RESPONDED, and drives the NOTIF-1 consumer to produce alert evidence.
+
+**Build discoveries worth recording:**
+
+- The demo book is **`DEMO-GLOBAL`**, not the `PC-BRIDGEWATER*` code the memory of HG-1 suggested.
+- The limit **approver is recorded in the audit event** (`after_value.approved_by` +
+  `checked_makers`), NOT on the limit row — deliberately, because the maker columns are mutable EV
+  state. The demo test therefore proves the two-person control **from the immutable ledger**, which
+  is the stronger assertion.
+- **`@types/node` is not installed**, and the typechecked `src` tree has no node types. Filesystem-
+  reading contract tests therefore live at the package root (the existing `api-prefixes.test.ts`
+  precedent), so `openapi-contract.test.ts` was placed there rather than adding a dependency.
+- **Pre-existing gap, NOT fixed here (recorded):** the PPF-2 (stage 12) and PPF-3 (stage 13) demo PG
+  suites have **no CI step** — they run only in a local full-PG battery. Out of scope for OPS-1, but
+  worth a Wave-12-close item.
+
+**Gates:** `make check` and full-PG run after a clean schema reset; `fe-check` **138 tests green**
+(27 files); `gen-api-check` drift-clean after committing the regenerated artifacts.

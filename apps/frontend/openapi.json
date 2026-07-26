@@ -1906,6 +1906,10 @@
             "title": "Scope Portfolio Id",
             "type": "string"
           },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
           "severity": {
             "enum": [
               "HARD",
@@ -1961,7 +1965,8 @@
           "assigned_to",
           "response_due",
           "scope_portfolio_id",
-          "limit_code"
+          "limit_code",
+          "seq"
         ],
         "title": "BreachOut",
         "type": "object"
@@ -16633,6 +16638,12 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "The caller does not hold `breach.view`."
+          },
+          "404": {
+            "description": "No such breach in the acting tenant."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -16723,6 +16734,12 @@
               }
             },
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "The caller does not hold `breach.view`."
+          },
+          "404": {
+            "description": "No such breach in the acting tenant."
           },
           "422": {
             "content": {
@@ -16818,6 +16835,12 @@
               }
             },
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "The caller does not hold `breach.view`."
+          },
+          "404": {
+            "description": "No such breach in the acting tenant."
           },
           "422": {
             "content": {
@@ -16920,6 +16943,15 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "The caller does not hold the required permission."
+          },
+          "404": {
+            "description": "No such breach in the acting tenant."
+          },
+          "409": {
+            "description": "A state conflict. Three distinct causes, distinguished by `detail`: a separation-of-duties refusal, a stale `expected_seq` (reload and retry), or an illegal transition."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -16929,6 +16961,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
           }
         },
         "summary": "Assign",
@@ -17021,6 +17056,15 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "The caller does not hold the required permission."
+          },
+          "404": {
+            "description": "No such breach in the acting tenant."
+          },
+          "409": {
+            "description": "A state conflict. Three distinct causes, distinguished by `detail`: a separation-of-duties refusal, a stale `expected_seq` (reload and retry), or an illegal transition."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17030,6 +17074,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
           }
         },
         "summary": "Close",
@@ -17139,6 +17186,12 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "The caller does not hold `breach.view`."
+          },
+          "404": {
+            "description": "No such breach in the acting tenant."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17240,6 +17293,15 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "The caller does not hold the required permission."
+          },
+          "404": {
+            "description": "No such breach in the acting tenant."
+          },
+          "409": {
+            "description": "A state conflict. Three distinct causes, distinguished by `detail`: a separation-of-duties refusal, a stale `expected_seq` (reload and retry), or an illegal transition."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17249,6 +17311,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
           }
         },
         "summary": "Respond",
@@ -17341,6 +17406,15 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "The caller does not hold the required permission."
+          },
+          "404": {
+            "description": "No such breach in the acting tenant."
+          },
+          "409": {
+            "description": "A state conflict. Three distinct causes, distinguished by `detail`: a separation-of-duties refusal, a stale `expected_seq` (reload and retry), or an illegal transition."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17350,6 +17424,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
           }
         },
         "summary": "Review",
@@ -22065,6 +22142,12 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "The caller does not hold `limit.view`."
+          },
+          "404": {
+            "description": "No such limit in the acting tenant."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -22154,6 +22237,15 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "The caller does not hold the required permission."
+          },
+          "404": {
+            "description": "No such limit in the acting tenant."
+          },
+          "409": {
+            "description": "A state conflict, distinguished by `detail`: the maker-checker separation-of-duties refusal (the approver may not be a maker), a duplicate logical identity, or a limit not in the state the verb requires."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -22238,6 +22330,12 @@
               }
             },
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "The caller does not hold `limit.view`."
+          },
+          "404": {
+            "description": "No such limit in the acting tenant."
           },
           "422": {
             "content": {
@@ -22329,6 +22427,12 @@
               }
             },
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "The caller does not hold `limit.view`."
+          },
+          "404": {
+            "description": "No such limit in the acting tenant."
           },
           "422": {
             "content": {
@@ -22530,6 +22634,15 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "The caller does not hold the required permission."
+          },
+          "404": {
+            "description": "No such limit in the acting tenant."
+          },
+          "409": {
+            "description": "A state conflict, distinguished by `detail`: the maker-checker separation-of-duties refusal (the approver may not be a maker), a duplicate logical identity, or a limit not in the state the verb requires."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -22621,6 +22734,15 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "The caller does not hold the required permission."
+          },
+          "404": {
+            "description": "No such limit in the acting tenant."
+          },
+          "409": {
+            "description": "A state conflict, distinguished by `detail`: the maker-checker separation-of-duties refusal (the approver may not be a maker), a duplicate logical identity, or a limit not in the state the verb requires."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -22711,6 +22833,15 @@
               }
             },
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "The caller does not hold the required permission."
+          },
+          "404": {
+            "description": "No such limit in the acting tenant."
+          },
+          "409": {
+            "description": "A state conflict, distinguished by `detail`: the maker-checker separation-of-duties refusal (the approver may not be a maker), a duplicate logical identity, or a limit not in the state the verb requires."
           },
           "422": {
             "content": {

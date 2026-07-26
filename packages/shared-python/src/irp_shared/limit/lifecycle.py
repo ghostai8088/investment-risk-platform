@@ -80,6 +80,15 @@ class BreachTransitionError(BreachLifecycleError):
     """An illegal state transition, a missing/cross-tenant breach, or a non-human actor."""
 
 
+class BreachStaleSeqError(BreachTransitionError):
+    """The optimistic-concurrency precondition failed: the timeline advanced since the caller read
+    it (OPS-1 fold H2). A SUBCLASS of ``BreachTransitionError`` so every existing handler keeps
+    working, but it gets its OWN API error-map key: on the wire it was previously INDISTINGUISHABLE
+    from an illegal transition (same 409, same detail string), which would make an operations UI
+    say "you may not do this" when the truthful answer is "someone — probably the tick — changed
+    this breach while you were reading it; reload and retry". Those demand opposite user actions."""
+
+
 class BreachSodError(BreachLifecycleError):
     """A person-level SoD violation (a prior 1L responder cannot review/close the same breach)."""
 
@@ -202,7 +211,9 @@ def _check_expected_seq(session: Session, breach: Breach, expected_seq: int | No
         return
     current = _next_seq(session, breach.id, breach.tenant_id) - 1
     if current != expected_seq:
-        raise BreachTransitionError(
+        # BreachStaleSeqError (not the bare transition error): "reload, someone changed this" is a
+        # different instruction to the operator than "that move is illegal" (OPS-1 fold H2).
+        raise BreachStaleSeqError(
             f"stale expected_seq {expected_seq}: the breach timeline has advanced to {current}"
         )
 
@@ -592,6 +603,11 @@ class BreachQueueItem:
     response_due: datetime | None
     scope_portfolio_id: str
     limit_code: str
+    #: The breach's CURRENT timeline head — ``max(BreachAction.seq)``, or 0 when no action has been
+    #: filed yet. This is exactly the ``expected_seq`` token the write verbs take (OPS-1 fold H3):
+    #: without it a client had to fetch the whole action list just to learn the head, and the
+    #: unconditioned ``expected_seq=None`` default is the fail-open path API-2b added it to close.
+    seq: int
 
 
 def breach_detail(
@@ -621,6 +637,7 @@ def breach_detail(
         ),
         scope_portfolio_id=parent.scope_portfolio_id,
         limit_code=parent.code,
+        seq=_next_seq(session, breach.id, acting_tenant) - 1,  # the current head (0 when empty)
     )
 
 
@@ -676,6 +693,8 @@ def list_breaches(
             governing_action.response_due,
             LimitDefinition.scope_portfolio_id,
             LimitDefinition.code,
+            # the timeline head for the expected_seq token (0 when the breach has no actions yet)
+            func.coalesce(latest_seq.c.max_seq, 0).label("seq"),
         )
         .join(
             LimitDefinition,
@@ -722,6 +741,7 @@ def list_breaches(
             response_due=_effective_due(row[1], row[3]),
             scope_portfolio_id=row[4],
             limit_code=row[5],
+            seq=row[6],
         )
         for row in session.execute(stmt).all()
     ]

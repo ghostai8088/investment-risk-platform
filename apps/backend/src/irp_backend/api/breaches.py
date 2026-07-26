@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -42,6 +42,7 @@ from irp_shared.limit.lifecycle import (
     BreachLifecycleError,
     BreachQueueItem,
     BreachSodError,
+    BreachStaleSeqError,
     BreachTransitionError,
     _as_utc,
     assign_breach,
@@ -88,11 +89,45 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
         status.HTTP_409_CONFLICT,
         "separation of duties: the actor responded to this breach",
     ),
+    # OPS-1 fold H2: the stale-seq subclass needs its OWN key (map_refusal walks the MRO, so the
+    # nearest ancestor wins — without this it inherited the transition detail and was
+    # wire-INDISTINGUISHABLE from an illegal move). The two demand OPPOSITE operator actions:
+    # "reload and retry" vs "this move is not legal from here".
+    BreachStaleSeqError: (
+        status.HTTP_409_CONFLICT,
+        "the breach changed while you were reading it; reload and retry",
+    ),
     BreachTransitionError: (
         status.HTTP_409_CONFLICT,
         "illegal transition from the current breach state",
     ),
     BreachLifecycleError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid breach request"),
+}
+
+
+#: The REFUSAL surface, declared so it reaches the OpenAPI document and therefore the generated FE
+#: types (OPS-1 medium fold). Until now the verbs documented only 200/422, so the operations UI had
+#: to hand-model 403/409/503 with ZERO drift protection from `gen-api-check` — precisely the
+#: FE-2 lesson (a contract you hand-model is a contract that silently rots). These are documentation
+#: only: the runtime statuses are produced by `_refuse` / `_deadlock_503` / the permission guard.
+_WRITE_REFUSALS: dict[int | str, dict[str, Any]] = {
+    status.HTTP_403_FORBIDDEN: {"description": "The caller does not hold the required permission."},
+    status.HTTP_404_NOT_FOUND: {"description": "No such breach in the acting tenant."},
+    status.HTTP_409_CONFLICT: {
+        "description": (
+            "A state conflict. Three distinct causes, distinguished by `detail`: a separation-of-"
+            "duties refusal, a stale `expected_seq` (reload and retry), or an illegal transition."
+        )
+    },
+    status.HTTP_503_SERVICE_UNAVAILABLE: {
+        "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
+    },
+}
+
+#: The read surface's refusals (no write conflicts).
+_READ_REFUSALS: dict[int | str, dict[str, Any]] = {
+    status.HTTP_403_FORBIDDEN: {"description": "The caller does not hold `breach.view`."},
+    status.HTTP_404_NOT_FOUND: {"description": "No such breach in the acting tenant."},
 }
 
 
@@ -242,6 +277,12 @@ class BreachOut(BaseModel):
     response_due: datetime | None
     scope_portfolio_id: str
     limit_code: str
+    #: The CURRENT timeline head (max action ``seq``; 0 when none) — the token to send back as
+    #: ``expected_seq`` on the next write (OPS-1 fold H3). Serializing it here is what makes the
+    #: optimistic-concurrency precondition usable: previously a client had to fetch the full action
+    #: list to learn the head, so the fail-open ``expected_seq=None`` default was the path of least
+    #: resistance. A COUNT, not a decimal (see the FE decimal-contract guard).
+    seq: int
 
 
 class BreachActionOut(BaseModel):
@@ -283,6 +324,7 @@ def _breach_out(item: BreachQueueItem) -> BreachOut:
         response_due=_as_utc(item.response_due),
         scope_portfolio_id=item.scope_portfolio_id,
         limit_code=item.limit_code,
+        seq=item.seq,
     )
 
 
@@ -344,7 +386,7 @@ def _detail_out(db: Session, principal: Principal, breach_id: str) -> BreachOut:
 
 
 # --- transition endpoints -----------------------------------------------------------------
-@router.post("/{breach_id}/assign", response_model=BreachOut)
+@router.post("/{breach_id}/assign", response_model=BreachOut, responses=_WRITE_REFUSALS)
 def assign(
     breach_id: uuid.UUID,
     body: BreachAssignIn,
@@ -371,7 +413,7 @@ def assign(
     return out
 
 
-@router.post("/{breach_id}/respond", response_model=BreachOut)
+@router.post("/{breach_id}/respond", response_model=BreachOut, responses=_WRITE_REFUSALS)
 def respond(
     breach_id: uuid.UUID,
     body: BreachRespondIn,
@@ -397,7 +439,7 @@ def respond(
     return out
 
 
-@router.post("/{breach_id}/review", response_model=BreachOut)
+@router.post("/{breach_id}/review", response_model=BreachOut, responses=_WRITE_REFUSALS)
 def review(
     breach_id: uuid.UUID,
     body: BreachReviewIn,
@@ -434,7 +476,7 @@ def review(
     return out
 
 
-@router.post("/{breach_id}/close", response_model=BreachOut)
+@router.post("/{breach_id}/close", response_model=BreachOut, responses=_WRITE_REFUSALS)
 def close(
     breach_id: uuid.UUID,
     body: BreachCloseIn,
@@ -462,7 +504,7 @@ def close(
 
 
 # --- reads --------------------------------------------------------------------------------
-@router.get("", response_model=list[BreachOut])
+@router.get("", response_model=list[BreachOut], responses=_READ_REFUSALS)
 def index(
     state_filter: _BreachState | None = Query(default=None, alias="state"),
     open_only: bool = Query(default=False, alias="open"),
@@ -487,7 +529,7 @@ def index(
     return [_breach_out(x) for x in items]
 
 
-@router.get("/{breach_id}", response_model=BreachOut)
+@router.get("/{breach_id}", response_model=BreachOut, responses=_READ_REFUSALS)
 def show(
     breach_id: uuid.UUID,
     principal: Principal = Depends(_require_view),
@@ -497,7 +539,7 @@ def show(
     return _detail_out(db, principal, str(breach_id))
 
 
-@router.get("/{breach_id}/actions", response_model=list[BreachActionOut])
+@router.get("/{breach_id}/actions", response_model=list[BreachActionOut], responses=_READ_REFUSALS)
 def actions(
     breach_id: uuid.UUID,
     principal: Principal = Depends(_require_view),
@@ -510,7 +552,11 @@ def actions(
     return [_action_out(a) for a in timeline]
 
 
-@router.get("/{breach_id}/notifications", response_model=list[BreachNotificationOut])
+@router.get(
+    "/{breach_id}/notifications",
+    response_model=list[BreachNotificationOut],
+    responses=_READ_REFUSALS,
+)
 def notifications(
     breach_id: uuid.UUID,
     limit: int = Query(default=50, ge=1, le=200),

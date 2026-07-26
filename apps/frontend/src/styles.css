@@ -696,3 +696,201 @@ main.shell-content {
   font-style: normal;
   max-width: 56rem;
 }
+
+/* --- OPS-1: the operations surfaces (breach queue, breach detail, limits & approvals) --------- */
+.ops-view {
+  max-width: 72rem;
+}
+
+.ops-header h2 {
+  margin-bottom: 0.25rem;
+}
+
+.ops-lede {
+  color: #4a5568;
+  max-width: 60rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.ops-filters {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.ops-filters label,
+.ops-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.ops-check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ops-field {
+  max-width: 40rem;
+  margin: 0.5rem 0;
+}
+
+.ops-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0 1rem;
+}
+
+.ops-table th,
+.ops-table td {
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+
+.ops-table thead th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #4a5568;
+}
+
+.ops-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.row-overdue {
+  background: #fff7ed;
+}
+
+.cell-sub {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: #718096;
+}
+
+.chip {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  border: 1px solid #cbd5e0;
+  background: #f7fafc;
+  white-space: nowrap;
+}
+
+.chip-hard {
+  border-color: #fc8181;
+  background: #fff5f5;
+  color: #9b2c2c;
+}
+
+.chip-soft {
+  border-color: #f6ad55;
+  background: #fffaf0;
+  color: #975a16;
+}
+
+.chip-ok {
+  border-color: #68d391;
+  background: #f0fff4;
+  color: #22543d;
+}
+
+.chip-muted {
+  color: #4a5568;
+}
+
+.chip-overdue {
+  margin-left: 0.4rem;
+  border-color: #fc8181;
+  background: #fff5f5;
+  color: #9b2c2c;
+}
+
+.ops-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin: 1rem 0;
+}
+
+.ops-panel h3,
+.ops-actions h3 {
+  margin-top: 0;
+}
+
+.ops-actions {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin: 1rem 0;
+  background: #fbfdff;
+}
+
+.ops-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0;
+}
+
+.ops-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.6rem 1.25rem;
+  margin: 0.75rem 0;
+}
+
+.ops-facts dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #4a5568;
+}
+
+.ops-facts dd {
+  margin: 0.1rem 0 0;
+}
+
+.ops-timeline {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.ops-timeline li {
+  margin-bottom: 0.6rem;
+}
+
+.ops-narrative {
+  margin: 0.2rem 0 0;
+  color: #2d3748;
+}
+
+.ops-pager {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.crumb {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
