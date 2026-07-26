@@ -21,7 +21,7 @@ import os
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.pool import NullPool
 
 from irp_shared.audit.models import AuditEvent
@@ -72,6 +72,36 @@ def summary():  # noqa: ANN201
     finally:
         session.close()
     yield factory, result
+
+    # Teardown: drop this stage's role->permission WIRING rows (the campaign fixture's ratified
+    # pattern, and REQUIRED here for the same reason).
+    #
+    # This stage wires FOUR new operator roles onto the migration-seeded `permission` catalog and
+    # adds two rows to the existing auditor role. CI's final `alembic downgrade base` deletes that
+    # catalog in 0002's downgrade, and any surviving `role_permission` row referencing it fails with
+    #     update or delete on table "permission" violates foreign key constraint
+    #     "fk_role_permission_permission_id_permission"
+    # — which is exactly how this job failed before the teardown existed. The governed end state
+    # (limits, the breach, its remediation, the alert evidence) is deliberately LEFT so the
+    # downgrade smoke still exercises the destructive migrations against real rows.
+    #
+    # Clean up ONLY what THIS run seeded (the MG-1 review fold): on an already-seeded tenant those
+    # rows are not ours to delete — stripping them would break the living tenant's wiring for the
+    # next act. In CI the schema is fresh, so this run always seeds.
+    if result is not None:
+        cleanup = factory()
+        try:
+            persistent_tenant_context(cleanup, DEMO_TENANT_ID)
+            cleanup.execute(
+                text(
+                    "DELETE FROM role_permission WHERE role_id IN "
+                    "(SELECT id FROM role WHERE tenant_id = :tenant)"
+                ),
+                {"tenant": DEMO_TENANT_ID},
+            )
+            cleanup.commit()
+        finally:
+            cleanup.close()
     engine.dispose()
 
 
