@@ -1,12 +1,75 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-25, latest) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-26) — read this block; everything below it is HISTORY
 >
-> **HEAD `b637bac`** = merge of **PR #125 — CAD-1, cadence wiring** (Wave-12 slice 3), **CI green**.
-> **NO migration** (head stays `0052`); **counts UNCHANGED 23/38/109** (infra ignition, NOT a
-> governed number). **NEXT = Wave-12 slice 4: the operations UI** (the breach/limits dashboard —
-> the first VISIBLE demo; a Tier-3 FE information-architecture sign-off; rides the react-router
-> v7→v8 migration).
+> **HEAD `8b889ed`** = merge of **PR #127 — OPS-1, the operations UI** (Wave-12 slice 4, the LAST),
+> **CI green all 6**. **NO migration** (head stays `0052`); **counts UNCHANGED 23/38/109**.
+>
+> ## WAVE 12 IS FUNCTIONALLY COMPLETE
+>
+> **API-2/API-2b ✅ → NOTIF-1 ✅ → CAD-1 ✅ → OPS-1 ✅.** The wave's thesis was "Operations,
+> Reachable": Wave 11 built a governed engine that computed nothing new but could not be reached,
+> alarmed, run, or seen. Wave 12 made it **reachable** (the limit/breach HTTP surface),
+> **alarmed** (durable proof-of-alert), **running** (an in-process supervisor turning the per-tenant
+> tick on a real cadence) and **visible** (the breach/limits dashboard). Counts never moved — by
+> design; not one slice was a governed number.
+>
+> **What OPS-1 shipped.** The breach queue; breach detail (the identity/arithmetic echo + the
+> remediation timeline + the NOTIF-1 proof-of-alert + the lifecycle actions); limit health; the
+> approval queue. It is also the platform's **first frontend write path**: `client.ts`'s read-only
+> fence became a read/write SEPARATION — one shared `request()` core (so identity injection has
+> exactly ONE implementation) with every mutating call confined to `api/writes.ts`, now enforced by
+> an eslint `no-restricted-imports` rule rather than a comment. Refusals are first-class UI: three
+> unrelated governed refusals arrive as HTTP 409 and demand OPPOSITE remedies, so the UI
+> discriminates on the server's `detail` and explains which control fired.
+>
+> **Ratified:** OQ-2=A (dedicated write module), OQ-3=A (refusals as explanations; no `/me`),
+> OQ-4=A (a demo operations extension), OQ-5=A (**Assign dropped** — no user directory exists), and
+> the **Tier-3 IA sign-off** OQ-6=A (Operations is the FIRST nav group; the book chip is scoped to
+> the walk, since it is false over a tenant-wide queue).
+>
+> **OQ-1 was ratified as C and REFUTED IN BUILD** — see the decision record §7a. Pinning
+> `react-router-dom` below the advisory range clears one *unreachable* advisory but re-exposes SIX
+> that later 7.x fixed, including a HIGH unauthenticated DoS and two open redirects in `<Link>` /
+> `useNavigate` (used on 15 sites — i.e. REACHABLE). The tree stayed at `^7.18.1`. **Standing
+> lesson: never recommend a dependency DOWNGRADE as a security fix without re-running the audit gate
+> ON the downgraded tree.** Consequence: the `GHSA-qwww-vcr4-c8h2` allowlist exception **remains
+> live with its 2026-10-24 expiry**, and the React-19 + react-router-8 migration is a carried slice.
+>
+> **Review load:** the pre-ratification verifier folded **6 BLOCKING** holes and the 4-finder folded
+> **4 HIGH + 5 MED** — the heaviest review of any slice so far. The two most instructive: the demo's
+> SoD showcase was **structurally unreachable** (splitting `limit.manage`/`limit.approve` across two
+> roles contradicted the ratified MG-3 doctrine that they share one role because the gate is
+> PERSON-level, so self-approval hit the 403 permission guard and the maker-checker 409 could never
+> fire — a control that LOOKS enforced while being untested); and `make fe-check` lacked the
+> `prettier --check` that CI runs, so five files would have failed the merge gate with every local
+> check green.
+>
+> ## CI-PARITY HARDENING (follow-on, same day)
+>
+> A five-reader audit run on the user's direction-check question found **systemic harness drift in
+> one direction**: CI's PostgreSQL tier is a hand-enumerated per-file allowlist (~65 steps) while the
+> local merge gate is a wildcard full battery — so a new `*_pg.py` suite joins the local gate
+> automatically and joins CI only if someone remembers. For four consecutive slices nobody did, and
+> **six suites were never run by CI**, including `test_scheduler_pg` / `test_limit_pg` /
+> `test_breach_lifecycle_pg` / `test_notification_pg` — **the entire RLS / append-only /
+> ops-no-grant enforcement layer of the Wave-11/12 governance surface** — plus the PPF-2/PPF-3 demo
+> stages. Nothing was broken (all pass, and the local full-PG battery is a merge precondition), but
+> the enforcement rested on human discipline. **Fixed:** the six steps added, AND
+> `test_ci_pg_coverage.py` — a unit-tier conformance pin that FAILS if any PG-gated suite is absent
+> from `ci.yml`, so the drift class cannot recur. Adding the suites also exposed that two of them
+> leaked `role_permission` rows that break the downgrade smoke; a shared snapshot-then-delete-new
+> fixture (`pg_role_permission_guard`) now cleans exactly what a suite created. Local mirrors added
+> for both audit gates (`make dep-audit`, `make fe-audit`), `fe-setup` switched to `npm ci`, and the
+> developer recipe gained the downgrade smoke + bare `pytest`.
+>
+> **NEXT = the WAVE-12 CLOSE REVIEW** (the mandatory Part-4 rule-2 re-baseline). Agenda: the
+> harness-parity audit; a **recommendation-before-verification** process rule; the React-19
+> migration slice (2026-10-24); and — on the user's 2026-07-26 direction — an **analytics-breadth
+> ratification** (rolling vol/returns + drawdown are computable from the existing governed return
+> series TODAY; Sharpe needs one captured risk-free series; sector/industry/geography-of-risk
+> exposure + concentration need reference dimensions that arrive WITH real data, so they fold into
+> the Wave-13 real-data candidate).
 >
 > **What CAD-1 shipped — THE ENGINE NOW TICKS.** Wave 11 built the per-tenant operational tick and
 > Wave-12 slices 1–2 put an HTTP surface and an alarm leg on it, but **nothing invoked it on a

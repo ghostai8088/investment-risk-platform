@@ -17,7 +17,7 @@
 ## 1. Purpose
 
 Describe how the Step 1D engineering scaffold enforces the ratified standards from the first commit. CI (`.github/workflows/ci.yml`)
-runs four jobs; any failing step fails its job and blocks the merge (BR-1: no feature complete without tests; enforcement gate).
+runs six jobs (backend, frontend, DB migration, secret scan, documentation check, API type drift); any failing step fails its job and blocks the merge (BR-1: no feature complete without tests; enforcement gate).
 
 ## 2. CI jobs → checks → build rules
 
