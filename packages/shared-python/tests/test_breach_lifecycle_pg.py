@@ -84,7 +84,7 @@ def _is_append_only_violation(error: ProgrammingError) -> bool:
 
 
 @pytest.fixture(scope="module")
-def app_url() -> str:
+def app_url(pg_role_permission_guard) -> str:  # noqa: ANN001 - fixture guard, value unused
     superuser = make_engine(URL, poolclass=NullPool)
     with superuser.begin() as conn:
         conn.execute(

@@ -1,6 +1,6 @@
 # OPS-1 — The operations UI (Wave-12 slice 4) — decision record
 
-**Status:** DRAFT — pre-ratification (verifier pass pending; then the OQ gate).
+**Status:** **✅ CLOSED 2026-07-26 — SHIPPED** (impl **PR #127**, merged `8b889ed`; commits `cfc7f94` plan → `d099605` OQ-1 refutation → `2dd59f6` impl → `762553a` review folds → `12fe667` the CI downgrade-smoke fix; **NO migration** — head stays `0052`; counts UNCHANGED **23/38/109**). Wave-12 slice 4, the LAST — the first genuinely VISIBLE deliverable and the platform's FIRST frontend write path. Gate: **OQ-1=A** (the ratified C was refuted in build — §7a), **OQ-2=A** (a dedicated write module sharing ONE identity/error core with reads), **OQ-3=A** (refusals as first-class plain-language UI; no `/me`), **OQ-4=A** (a demo operations extension incl. the grant + approval legs), **OQ-5=A** (Assign OUT — no user directory exists), **OQ-6=A** (the Tier-3 IA call: Operations is the FIRST nav group; the book chip is scoped to the walk). Pre-ratification verifier: **6 BLOCKING holes** folded (§5). 4-finder: **4 HIGH + 5 MED** folded (§9). Post-merge CI fix: the demo stage's `role_permission` wiring broke `alembic downgrade base` (FK to the migration-seeded permission catalog) — teardown added, CI green all 6.
 **Slice:** Wave-12 ("Operations, Reachable") slice 4 of 4 — the LAST. Prior: API-2/API-2b (1), NOTIF-1 (2), CAD-1 (3).
 **Size:** M/L. **Migration:** NONE expected. **New governed number:** NONE. **New permission / audit code:** NONE.
 **Counts:** UNCHANGED 23/38/109 (a UI computes nothing).

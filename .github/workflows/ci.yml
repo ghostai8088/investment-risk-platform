@@ -377,6 +377,32 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_private_factor_pg.py -q
+      # --- Wave-11/12 governance-surface enforcement (added by the CI-parity hardening slice) ---
+      # These four suites are the RLS / append-only / ops-no-grant enforcement layer of the
+      # scheduler, limits+breach, breach-lifecycle and notification surfaces. They ran ONLY in the
+      # local full-PG battery for four consecutive slices because CI's PG tier is a hand-enumerated
+      # per-file allowlist and nobody added a step. `test_ci_pg_coverage.py` now FAILS if any
+      # IRP_TEST_DATABASE_URL-gated suite is missing from this file, so the class cannot recur.
+      - name: Schedule symmetric-RLS + append-only + ops-no-grant tests (Postgres, SCH-1 / ENT-061/062)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_scheduler_pg.py -q
+      - name: Limit + breach symmetric-RLS + append-only tests (Postgres, LIM-1 / ENT-031/033)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_limit_pg.py -q
+      - name: Breach-lifecycle enforcement tests (Postgres, MG-2 / API-2b / ENT-034)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_breach_lifecycle_pg.py -q
+      - name: Breach-notification symmetric-RLS + append-only tests (Postgres, NOTIF-1 / ENT-063)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_notification_pg.py -q
       - name: Demo-campaign end-state test (Postgres, MG-1 / OD-MG-1-G)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
@@ -483,6 +509,21 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zz_ppf1_pg.py -q
+      # Stages 12 (PPF-2) and 13 (PPF-3) run AFTER stage 11 and BEFORE stage 14 + the downgrade
+      # smoke. They had NO CI step until the CI-parity hardening slice (the per-file-allowlist
+      # drift): PPF-2 mints the 19th governed code and PPF-3 the 20th, so they must follow stage
+      # 11's 18-code pin and precede any later count assertion. Filenames carry the one-more-`z`
+      # alpha-sort convention so a single-invocation local battery collates them in this same order.
+      - name: Demo stage-12 private-covariance test (Postgres, PPF-2)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9zzz_ppf2_pg.py -q
+      - name: Demo stage-13 unified-VaR capstone test (Postgres, PPF-3)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9zzzz_ppf3_pg.py -q
       # Stage 14 (OPS-1) runs AFTER stage 11 and BEFORE the downgrade smoke. It mints NO model
       # code and NO governed number (the 21/36/103 pins above hold): it seeds the CONTROL-PLANE
       # state the operations UI opens onto — limits (one breached, one in appetite, one DRAFT

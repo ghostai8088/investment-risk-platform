@@ -6,7 +6,8 @@ The live project state is `docs/project_memory/current_state.md`; the operative 
 ## Prerequisites
 
 - Python 3.12+ (the ratified backend runtime, AD-003; CI runs 3.12)
-- Node 20+ (for the frontend, AD-003; if installed via nvm, ensure its `bin` is on PATH)
+- Node 24 (the version CI pins — active LTS; Node 20 went EOL 2026-04). Node 20 will still
+  build but is no longer what the gates run, so version-sensitive failures may not reproduce.
 - Docker (for the local PostgreSQL container)
 
 ## Backend / Python
@@ -64,8 +65,25 @@ Run the FULL suite (incl. the PG-only RLS/append-only proofs):
 ```bash
 DATABASE_URL=postgresql+psycopg://irp:irp@localhost:5432/irp \
 IRP_TEST_DATABASE_URL=postgresql+psycopg://irp:irp@localhost:5432/irp \
-  .venv/bin/python -m pytest packages/shared-python/tests apps/backend/tests
+  .venv/bin/python -m pytest
 ```
+
+Bare `pytest` (no paths) is deliberate: it uses `pyproject.toml`'s `testpaths`, which is what CI's own
+`pytest` step runs. Naming paths by hand previously omitted `apps/worker/tests`, so the worker tier
+was silently outside the local full run.
+
+Finally, mirror CI's **downgrade smoke** — the step that proves every migration's `downgrade()` still
+works against real seeded rows. It is the last step of the CI migration job and has repeatedly caught
+things nothing else does (most recently an FK violation from demo rows referencing the migration-seeded
+permission catalog):
+
+```bash
+DATABASE_URL=postgresql+psycopg://irp:irp@localhost:5432/irp .venv/bin/alembic downgrade base
+```
+
+Run it AFTER the full suite (so it exercises the seeded state), and re-`upgrade head` afterwards. Note
+it also drops the `irp_ops` role, so it fails if any OTHER local database still holds objects owned by
+that role — drop stray `irp_*` databases first or the error will look like a migration defect.
 
 **Reset the schema between full runs** (some suites self-seed system-tenant rows; a second run against the same
 schema fails spuriously) — and restore the default PUBLIC grant CI gets for free:
