@@ -42,7 +42,10 @@ const BREACH = {
 
 /** Route each path to a canned response; unmatched paths reject loudly so a typo'd URL is not
  * mistaken for an empty result. */
-function routeFetch(routes: Record<string, unknown>, onPost?: (url: string, init: RequestInit) => unknown) {
+function routeFetch(
+  routes: Record<string, unknown>,
+  onPost?: (url: string, init: RequestInit) => unknown,
+) {
   const fn = vi.fn((url: string, init?: RequestInit) => {
     if (init?.method === "POST") {
       const body = onPost ? onPost(url, init) : {};
@@ -54,7 +57,11 @@ function routeFetch(routes: Record<string, unknown>, onPost?: (url: string, init
           json: () => Promise.resolve({ detail: failure.detail }),
         } as unknown as Response);
       }
-      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as unknown as Response);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+      } as unknown as Response);
     }
     const key = Object.keys(routes).find((k) => url.startsWith(k));
     if (key === undefined) return Promise.reject(new Error(`unrouted ${url}`));
@@ -145,7 +152,9 @@ describe("BreachDetail", () => {
     );
     renderDetail();
     await screen.findByText("VAR-CEIL");
-    const before = fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method !== "POST").length;
+    const before = fetchMock.mock.calls.filter(
+      (c) => (c[1] as RequestInit | undefined)?.method !== "POST",
+    ).length;
 
     fireEvent.change(screen.getByLabelText(/Narrative/i), { target: { value: "hedged" } });
     fireEvent.click(screen.getByRole("button", { name: /File 1L response/i }));
@@ -262,7 +271,7 @@ describe("LimitHealth", () => {
       },
       () => ({
         __status: 409,
-        detail: "separation of duties: the approver may not be a maker of this limit",
+        detail: "separation of duties: the actor shaped this limit", // the SHIPPED limits.py string
       }),
     );
     render(
@@ -270,8 +279,35 @@ describe("LimitHealth", () => {
         <LimitHealth session={SESSION} />
       </MemoryRouter>,
     );
+    // The approval reference is REQUIRED (it is the sign-off evidence written into the ledger),
+    // so it must be supplied before the button is even enabled.
+    fireEvent.change(await screen.findByLabelText(/Approval reference/i), {
+      target: { value: "minutes://RISK-COMMITTEE-2026-07" },
+    });
     fireEvent.click(await screen.findByRole("button", { name: /Approve/i }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("separation of duties");
+    expect(alert.textContent).toContain("Someone else must");
+  });
+
+  it("refuses to approve without sign-off evidence rather than inventing a placeholder", async () => {
+    const fetchMock = routeFetch({
+      "/limits/health": [],
+      "/limits": [{ ...ACTIVE_LIMIT, status: "DRAFT" }],
+    });
+    render(
+      <MemoryRouter>
+        <LimitHealth session={SESSION} />
+      </MemoryRouter>,
+    );
+    // approval_ref is written verbatim into the immutable LIMIT.APPROVE audit event, and the
+    // service refuses an empty one on purpose. A client-side default would fabricate provenance,
+    // so the button stays disabled and NO write is attempted.
+    const button = await screen.findByRole("button", { name: /Approve/i });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(
+      fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === "POST"),
+    ).toHaveLength(0);
   });
 });

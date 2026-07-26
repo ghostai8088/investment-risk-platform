@@ -40,9 +40,7 @@ describe("the refusal contract", () => {
     expect(classifyRefusal(BACKEND_DETAILS.stale)).not.toBe(
       classifyRefusal(BACKEND_DETAILS.illegal),
     );
-    expect(classifyRefusal(BACKEND_DETAILS.sod)).not.toBe(
-      classifyRefusal(BACKEND_DETAILS.illegal),
-    );
+    expect(classifyRefusal(BACKEND_DETAILS.sod)).not.toBe(classifyRefusal(BACKEND_DETAILS.illegal));
   });
 
   it("falls back to 'other' for an unrecognised detail rather than guessing", () => {
@@ -51,5 +49,4 @@ describe("the refusal contract", () => {
     // An assignee 422 is NOT a conflict cause — it must not be mistaken for one.
     expect(classifyRefusal(BACKEND_DETAILS.assignee)).toBe("other");
   });
-
 });

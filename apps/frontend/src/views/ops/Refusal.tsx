@@ -34,7 +34,7 @@ export function explain(error: ApiError, action: string): string {
     case "conflict":
       switch (classifyRefusal(error.detail)) {
         case "separation-of-duties":
-          return `Refused by separation of duties: ${error.detail}. This control is the point of the workflow, not an obstacle — the person who acted at the earlier step may not also ratify it. Someone else must ${action}.`;
+          return `${error.detail}. This is the separation-of-duties control working as intended, not an obstacle: the person who acted at the earlier step may not also ratify it. Someone else must ${action}.`;
         case "stale":
           return `This record changed while you were reading it — very often the operational tick escalating it underneath you. Nothing was written. Reload to see the current state, then act again.`;
         case "illegal-transition":

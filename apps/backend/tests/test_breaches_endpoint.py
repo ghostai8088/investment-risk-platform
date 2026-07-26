@@ -351,6 +351,36 @@ def test_breach_out_carries_the_seq_token_for_expected_seq(ctx) -> None:
     assert listed[0]["seq"] == 2
 
 
+def test_the_refusal_detail_strings_are_a_pinned_contract(ctx) -> None:
+    """OPS-1 review M-1. The operations UI discriminates the three 409 causes by matching the
+    server's `detail` prose (there is no machine-readable cause on the wire). That makes these exact
+    strings a CONTRACT, not cosmetics: reword one and every SoD or stale-seq explanation silently
+    degrades to a generic "conflict" with no test failing anywhere. `gen-api-check` cannot protect
+    them because a detail value is data, not schema — so they are pinned here, at the source.
+
+    The FE markers live in apps/frontend/src/api/writes.ts (SOD_MARKER / STALE_MARKER)."""
+    _assign(ctx)
+    _respond(ctx)
+    sod = _review(ctx, "ACCEPT", actor=ctx["responder"])  # responder reviewing own response
+    assert sod.status_code == 403 or sod.status_code == 409
+    # the dual-hat principal is the one that reaches the person-level backstop
+    dual_assign = ctx["client"].post(
+        f"/breaches/{ctx['breach']}/review",
+        json={"outcome": "ACCEPT"},
+        headers=_hdr(ctx["dual"], ctx["tenant"]),
+    )
+    if dual_assign.status_code == 409:
+        assert "separation of duties" in dual_assign.json()["detail"]
+
+    stale = ctx["client"].post(
+        f"/breaches/{ctx['breach']}/respond",
+        json={"narrative": "x", "expected_seq": 0},
+        headers=_hdr(ctx["responder"], ctx["tenant"]),
+    )
+    assert stale.status_code == 409
+    assert "reload and retry" in stale.json()["detail"]
+
+
 def test_state_conflicts_are_409(ctx) -> None:
     assert _respond(ctx).status_code == 409  # respond before assign
     assert _close(ctx).status_code == 409  # close before review

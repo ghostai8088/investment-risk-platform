@@ -72,6 +72,11 @@ _READ_REFUSALS: dict[int | str, dict[str, Any]] = {
     status.HTTP_404_NOT_FOUND: {"description": "No such limit in the acting tenant."},
 }
 
+#: Collection reads cannot 404 (an empty list is a valid answer) — 403 only.
+_COLLECTION_REFUSALS: dict[int | str, dict[str, Any]] = {
+    status.HTTP_403_FORBIDDEN: {"description": "The caller does not hold `limit.view`."},
+}
+
 #: Module-level guard singletons (deny-by-default; built once, not in argument defaults).
 _require_manage = require_permission("limit.manage")
 _require_approve = require_permission("limit.approve")
@@ -239,7 +244,7 @@ def create(
     return out
 
 
-@router.patch("/{limit_id}", response_model=LimitOut)
+@router.patch("/{limit_id}", response_model=LimitOut, responses=_WRITE_REFUSALS)
 def update(
     limit_id: uuid.UUID,
     body: LimitUpdateIn,
@@ -318,7 +323,7 @@ def health(
     return [_health_out(h) for h in limit_health(db, acting_tenant=principal.tenant_id)]
 
 
-@router.get("", response_model=list[LimitOut], responses=_READ_REFUSALS)
+@router.get("", response_model=list[LimitOut], responses=_COLLECTION_REFUSALS)
 def index(
     status_filter: _LimitStatus | None = Query(default=None, alias="status"),
     principal: Principal = Depends(_require_view),

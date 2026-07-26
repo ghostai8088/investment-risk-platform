@@ -31,10 +31,7 @@ function repoFile(relative: string): string {
 }
 
 interface OpenApiDoc {
-  paths: Record<
-    string,
-    Record<string, { responses?: Record<string, { description?: string }> }>
-  >;
+  paths: Record<string, Record<string, { responses?: Record<string, { description?: string }> }>>;
   components: { schemas: Record<string, { properties?: Record<string, unknown> }> };
 }
 

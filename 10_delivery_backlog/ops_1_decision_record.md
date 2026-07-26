@@ -291,5 +291,60 @@ breach to RESPONDED, and drives the NOTIF-1 consumer to produce alert evidence.
   suites have **no CI step** — they run only in a local full-PG battery. Out of scope for OPS-1, but
   worth a Wave-12-close item.
 
-**Gates:** `make check` and full-PG run after a clean schema reset; `fe-check` **138 tests green**
-(27 files); `gen-api-check` drift-clean after committing the regenerated artifacts.
+**Gates:** `make check` and full-PG run after a clean schema reset; `fe-check` green;
+`gen-api-check` drift-clean after committing the regenerated artifacts.
+
+## 9. 4-finder adversarial review — folds
+
+**4 HIGH, 5 MED, 9 LOW. All HIGH and MED folded.** The review confirmed the load-bearing mechanics
+were sound (the `seq` semantics match `_check_expected_seq` on both query paths; the MRO error-map
+key resolves the subclass first; identity injection is single-implementation; OQ-1=A genuinely
+unchanged at `^7.18.1` with the allowlist untouched; both new contract tests are falsifiable), and
+then found four defects that would each have shipped a lie on screen.
+
+- **H-1 (BLOCKING, CI) — `make fe-check` did not run `prettier --check` but CI does**, so five files
+  would have failed the merge gate with every local check green. **Fixed** the files AND added
+  `format:check` to the `fe-check` target so the local gate can no longer diverge from CI.
+- **H-2 (the most substantive) — the ratified SoD showcase was STRUCTURALLY UNREACHABLE.** The demo
+  split `limit.manage` and `limit.approve` into two roles, contradicting the ratified MG-3 doctrine
+  that they share `risk_manager_2l` *"because the gate is PERSON-level, not role-level … the runtime
+  approver != created_by/updated_by refusal is the WHOLE gate"*. Consequence: the maker did not hold
+  `limit.approve`, so self-approval was refused by the **permission guard (403)** and the
+  maker-checker **409 could never fire** — the control would have looked enforced while being
+  untested, and two shipped docstrings asserted the opposite. Same for breaches: with only a 1L-only
+  responder seeded, the person-level backstop was unreachable. **Fixed:** maker and checker now share
+  one 2L role (the ratified shape), and a **dual-hat supervisor** — the principal the person-level
+  backstop exists for — files the 1L response so their own review is a real 409. A new PG test
+  (`test_the_person_level_sod_refusals_are_actually_REACHABLE`) asserts entitlement is NOT what stops
+  either actor and that both refusals genuinely raise.
+- **H-3 — the Approve button fabricated governed sign-off evidence.** `approvalRef || "ops-ui"` wrote
+  a placeholder into the immutable `LIMIT.APPROVE` audit event, neutralizing a deliberately
+  fail-closed service input from the client. **Fixed:** no fallback; the button is disabled until a
+  real reference is supplied, with a test proving **no write is attempted**.
+- **H-4 — the empty queue asserted an all-clear the data cannot support.** "every ACTIVE limit was
+  within appetite" is false when there are no limits, when all are DRAFT/SUSPENDED, when ACTIVE
+  limits are `NEVER_EVALUABLE`, or when the emptiness is a filter artifact — the
+  empty-state-as-passing-state failure this slice's own limit-health handling was written to avoid.
+  **Fixed:** it now says the emptiness is not an all-clear and links to limit health.
+- **M-1 — the marker strings were not actually pinned** (the code comment claiming they were was
+  false; the test pinned its own copies, and a view test asserted a **fabricated** limits detail).
+  **Fixed:** a backend test pins the exact `_ERROR_MAP` details at the source, and the view test now
+  uses the shipped string.
+- **M-2 — after a stale-seq refusal the operator was told to reload but could not**, and every retry
+  re-sent the rejected token — a guaranteed infinite failure. **Fixed:** a conflict now bumps the
+  reload key so the explanation and a fresh token arrive together.
+- **M-3 — a BREACHED limit rendered as "NOT EVALUATED" while health was loading or errored.**
+  **Fixed:** an unknown health reads "UNKNOWN — health unavailable"; the error gets `role="alert"`.
+- **M-4 — the write fence rested on a comment.** **Fixed:** an eslint `no-restricted-imports` rule
+  permits `request` only in `writes.ts` (verified with a probe import that the rule fires).
+- **M-5 — `PATCH /limits/{id}`** was the one write verb without a declared refusal surface. **Fixed.**
+- **LOWs folded:** the doubled "separation of duties" phrasing on the showcase screen (L-5); the 404
+  declared on collection reads that never return it (L-6); and the stale comments (L-2/L-3/L-4).
+- **LOWs recorded, not folded:** L-1 (the fixed `_NOW` means the seeded breach reads permanently
+  overdue and would auto-escalate once a CAD-1 tick runs against the demo tenant — a demo-freshness
+  item for the Wave-12 close); L-7 (the notifications read has no pager); L-8 (no view test for the
+  503/422 explain branches); L-9 (`client.ts` still parses the success body outside the try, so a
+  future 200-with-HTML would still misreport as "unreachable" — the prefix test blocks the known
+  trigger).
+
+Status → **CLOSED-pending-merge.**

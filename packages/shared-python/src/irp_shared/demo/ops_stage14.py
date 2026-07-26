@@ -13,10 +13,13 @@ engine — would be unmet. This module seeds the honest end state instead.
    non-developer walks the demo AS — holds 11 `*.view` codes but NOT `limit.view`/`breach.view`
    (it predates LIM-1). Without them a stakeholder gets **403 on every operations screen**. Granted
    here additively onto the existing role, so the campaign is not edited.
-2. **A maker/checker pair, and a 1L/2L pair.** MG-3 refuses an approver who is in the limit's maker
-   SET `{created_by, updated_by}`, and MG-2 refuses a reviewer who was a prior 1L responder. Seeding
-   one super-user would make every SoD control vacuous in the demo — the opposite of the point. So
-   the extension creates FOUR distinct users with disjoint duties.
+2. **Principals shaped so the SoD controls are REACHABLE, not merely present.** MG-3 refuses an
+   approver in the limit's maker SET `{created_by, updated_by}`; MG-2 refuses a reviewer who was a
+   prior 1L responder. Getting the ROLE shapes wrong makes both undemonstrable: if the maker lacks
+   `limit.approve`, self-approval is stopped by the permission guard (403) and the person-level gate
+   never fires. So the limit maker and checker SHARE one 2L role (the ratified MG-3 shape), and a
+   dual-hat supervisor files the 1L response so their own review is a real 409. See the role
+   constants below.
 3. **Approval before evaluation.** A limit is born DRAFT and `select_active_limits` filters
    `status == ACTIVE`, so a seeded-but-unapproved limit is evaluated NEVER and can never breach.
    The extension therefore approves (as the checker) before evaluating — otherwise the tables are
@@ -72,16 +75,33 @@ _BREACHED_CODE = "OPS-VAR-CEILING"
 _HEALTHY_CODE = "OPS-VAR-HEADROOM"
 _DRAFT_CODE = "OPS-VAR-PROPOSED"
 
-#: The four demo operators, with DISJOINT duties so no SoD control is vacuous.
-_MAKER_ROLE = "ops_limit_maker_2l"
-_CHECKER_ROLE = "ops_limit_checker_2l"
+#: The demo operators. The role SHAPES here are not a demo convenience — they mirror the ratified
+#: entitlement doctrine exactly, because getting them wrong makes the controls undemonstrable:
+#:
+#: - **Limits: maker and checker share ONE role.** `bootstrap.py` ratifies (MG-3, OQ-MG-3-2=A) that
+#:   `limit.approve` goes to the SAME `risk_manager_2l` as `limit.manage` *"because the gate is
+#:   PERSON-level, not role-level … the runtime approver != created_by/updated_by refusal is the
+#:   WHOLE gate"*. Splitting them into two roles (as this module first did) means the maker lacks
+#:   `limit.approve`, so self-approval is stopped by the PERMISSION guard with a 403 and the
+#:   maker-checker gate never fires its 409 — the control would look enforced while being untested.
+#:   Two users share `_LIMIT_2L_ROLE` so the real SoD refusal is reachable.
+#: - **Breaches: respond and review are NEVER co-granted** (the same doctrine: "a cross-line 1L/2L
+#:   partition"). That role partition is the first line, and an analyst attempting a review is
+#:   correctly a 403. The PERSON-level backstop (reviewer ∉ prior responders) only bites for a
+#:   principal holding both, so the demo also seeds ONE dual-hat supervisor — the platform's own
+#:   test suite models exactly this as "the SoD backstop target" — and has THEM file the 1L
+#:   response, so their own review is the 409 a demo viewer can actually produce.
+_LIMIT_2L_ROLE = "ops_limit_2l"
 _ANALYST_ROLE = "ops_breach_analyst_1l"
 _MANAGER_ROLE = "ops_breach_manager_2l"
+_SUPERVISOR_ROLE = "ops_breach_supervisor"
 
-_MAKER_PERMS = ("limit.manage", "limit.view", "breach.view")
-_CHECKER_PERMS = ("limit.approve", "limit.view", "breach.view")
+#: Maker AND checker verbs — one role, two people (the ratified MG-3 shape).
+_LIMIT_2L_PERMS = ("limit.manage", "limit.approve", "limit.view", "breach.view")
 _ANALYST_PERMS = ("breach.respond", "breach.view", "limit.view")
 _MANAGER_PERMS = ("breach.review", "breach.view", "limit.view")
+#: The dual-hat principal the person-level backstop exists for (never a normal operating role).
+_SUPERVISOR_PERMS = ("breach.respond", "breach.review", "breach.view", "limit.view")
 
 #: The read codes the campaign's auditor persona is missing (it predates LIM-1).
 _AUDITOR_ADDITIONS = ("limit.view", "breach.view")
@@ -113,6 +133,9 @@ class OpsStage14Summary:
     notifications: int
     analyst_id: str
     manager_id: str
+    supervisor_id: str
+    maker_id: str
+    checker_id: str
 
 
 def _permission(session: Session, code: str) -> Permission:
@@ -123,16 +146,29 @@ def _permission(session: Session, code: str) -> Permission:
     return perm
 
 
-def _make_operator(session: Session, role_code: str, name: str, perms: tuple[str, ...]) -> str:
-    """One demo operator with its own role and its own narrow permission set."""
-    user = AppUser(tenant_id=DEMO_TENANT_ID, display_name=name)
-    session.add(user)
-    session.flush()
-    role = Role(tenant_id=DEMO_TENANT_ID, code=role_code, name=name)
+def _make_role(session: Session, role_code: str, perms: tuple[str, ...]) -> Role:
+    """A demo role carrying exactly ``perms``. Idempotent within a run so several people can share
+    ONE role — required for the limit maker/checker pair, whose gate is person-level."""
+    role = session.execute(
+        select(Role).where(Role.tenant_id == DEMO_TENANT_ID, Role.code == role_code)
+    ).scalar_one_or_none()
+    if role is not None:
+        return role
+    role = Role(tenant_id=DEMO_TENANT_ID, code=role_code, name=role_code)
     session.add(role)
     session.flush()
     for code in perms:
         session.add(RolePermission(role_id=role.id, permission_id=_permission(session, code).id))
+    session.flush()
+    return role
+
+
+def _make_operator(session: Session, role_code: str, name: str, perms: tuple[str, ...]) -> str:
+    """One demo operator granted ``role_code`` (created on first use, reused thereafter)."""
+    user = AppUser(tenant_id=DEMO_TENANT_ID, display_name=name)
+    session.add(user)
+    session.flush()
+    role = _make_role(session, role_code, perms)
     session.add(UserRole(tenant_id=DEMO_TENANT_ID, user_id=user.id, role_id=role.id))
     session.flush()
     return str(user.id)
@@ -211,10 +247,18 @@ def run_demo_ops_stage14(session: Session) -> OpsStage14Summary:
     var_value = _latest_var(session, portfolio_id)
 
     _grant_auditor_reads(session)
-    maker = _make_operator(session, _MAKER_ROLE, "Ops Limit Maker (2L)", _MAKER_PERMS)
-    checker = _make_operator(session, _CHECKER_ROLE, "Ops Limit Checker (2L)", _CHECKER_PERMS)
+    # Maker and checker SHARE one 2L role (the ratified MG-3 shape) — so the maker genuinely HOLDS
+    # limit.approve and self-approval is refused by the person-level gate (409), not by the
+    # permission guard (403). That distinction is the whole demonstration.
+    maker = _make_operator(session, _LIMIT_2L_ROLE, "Risk Manager — limit maker", _LIMIT_2L_PERMS)
+    checker = _make_operator(
+        session, _LIMIT_2L_ROLE, "Risk Manager — limit checker", _LIMIT_2L_PERMS
+    )
     analyst = _make_operator(session, _ANALYST_ROLE, "Ops Breach Analyst (1L)", _ANALYST_PERMS)
     manager = _make_operator(session, _MANAGER_ROLE, "Ops Breach Manager (2L)", _MANAGER_PERMS)
+    supervisor = _make_operator(
+        session, _SUPERVISOR_ROLE, "Ops Breach Supervisor (dual-hat)", _SUPERVISOR_PERMS
+    )
 
     maker_actor = LimitActor(actor_id=maker)
     checker_actor = LimitActor(actor_id=checker)
@@ -263,13 +307,20 @@ def run_demo_ops_stage14(session: Session) -> OpsStage14Summary:
     session.flush()
 
     # Advance the breach into the middle of its lifecycle so the UI opens on a live workflow:
-    # assigned by the manager (2L), responded by the analyst (1L). The 2L REVIEW is deliberately
-    # LEFT UNDONE — that is the action a demo viewer performs, and it is where the person-level SoD
-    # becomes visible (the analyst cannot review their own response).
+    # assigned by the manager (2L), responded by the DUAL-HAT supervisor (1L act).
+    #
+    # The 2L REVIEW is deliberately LEFT UNDONE — it is the action a demo viewer performs, and the
+    # responder's identity is what makes BOTH controls demonstrable:
+    #   - as the supervisor (who holds breach.review AND filed this response) → the person-level
+    #     backstop refuses with 409 "separation of duties";
+    #   - as the manager (who holds breach.review and did NOT respond) → it legitimately succeeds;
+    #   - as the analyst (1L only) → the role partition refuses with 403.
+    # Had the analyst filed the response, no seeded principal could ever produce the 409 and the
+    # person-level control would be invisible in the demo.
     assign_breach(
         session,
         breach,
-        assigned_to=analyst,
+        assigned_to=supervisor,
         actor=BreachActor(actor_id=manager),
         now=_NOW,
     )
@@ -277,7 +328,7 @@ def run_demo_ops_stage14(session: Session) -> OpsStage14Summary:
         session,
         breach,
         narrative="Reduced the equity overlay and re-ran the exposure chain; awaiting 2L review.",
-        actor=BreachActor(actor_id=analyst),
+        actor=BreachActor(actor_id=supervisor),
         now=_NOW,
     )
     session.flush()
@@ -304,4 +355,7 @@ def run_demo_ops_stage14(session: Session) -> OpsStage14Summary:
         notifications=notifications,
         analyst_id=analyst,
         manager_id=manager,
+        supervisor_id=supervisor,
+        maker_id=maker,
+        checker_id=checker,
     )

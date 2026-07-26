@@ -19,8 +19,17 @@ type LimitHealthOut = components["schemas"]["LimitHealthOut"];
  * green would render a suspended limit as healthy — exactly the fail-open dishonesty LIM-1 was
  * built to prevent. A limit that is not in force is shown as NOT IN FORCE, which is neither pass
  * nor fail: nothing is being checked. */
-function rowState(limit: LimitOut, health: LimitHealthOut | undefined): string {
+function rowState(
+  limit: LimitOut,
+  health: LimitHealthOut | undefined,
+  healthKnown: boolean,
+): string {
   if (limit.status !== "ACTIVE") return "NOT IN FORCE";
+  // Review M-3: `limit_health` emits a row for EVERY active limit (NEVER_EVALUABLE when it cannot
+  // resolve one), so a missing row while the health read is loading or failed means "we do not
+  // know" — NOT "not evaluated". Asserting the latter would state an evaluation fact the UI does
+  // not have, on a screen whose whole job is honesty about what has been checked.
+  if (!healthKnown) return "UNKNOWN — health unavailable";
   if (!health) return "NOT EVALUATED";
   return health.state;
 }
@@ -41,6 +50,7 @@ export function LimitHealth({ session }: { session: Session }): ReactElement {
   const health = useApiGet<LimitHealthOut[]>("/limits/health", session, reload);
 
   const healthById = new Map((health.data ?? []).map((h) => [h.limit_id, h]));
+  const healthKnown = !health.loading && health.error === null;
   const all = limits.data ?? [];
   const drafts = all.filter((l) => l.status === "DRAFT");
 
@@ -48,7 +58,11 @@ export function LimitHealth({ session }: { session: Session }): ReactElement {
     setApproving(limitId);
     setWriteError(null);
     try {
-      await approveLimit(session, limitId, { approvalRef: approvalRef || "ops-ui" });
+      // NO fallback value (review H-3): `approval_ref` is the governed sign-off EVIDENCE and is
+      // written verbatim into the immutable LIMIT.APPROVE audit event. The service refuses an empty
+      // one on purpose; defaulting it to a placeholder here would neutralize a fail-closed input
+      // from the client and fabricate provenance in the ledger. The button is disabled instead.
+      await approveLimit(session, limitId, { approvalRef: approvalRef.trim() });
       setApprovalRef("");
       setReload((n) => n + 1);
     } catch (e: unknown) {
@@ -96,7 +110,11 @@ export function LimitHealth({ session }: { session: Session }): ReactElement {
                 onChange={(e) => setApprovalRef(e.target.value)}
                 maxLength={255}
                 placeholder="e.g. minutes://RISK-COMMITTEE-2026-07"
+                required
               />
+              <span className="cell-sub">
+                Required — this is written verbatim into the immutable approval record.
+              </span>
             </label>
             <table className="ops-table">
               <thead>
@@ -121,7 +139,7 @@ export function LimitHealth({ session }: { session: Session }): ReactElement {
                     <td>
                       <button
                         type="button"
-                        disabled={approving !== null}
+                        disabled={approving !== null || !approvalRef.trim()}
                         onClick={() => void approve(l.id)}
                       >
                         {approving === l.id ? "Approving…" : "Approve"}
@@ -139,7 +157,9 @@ export function LimitHealth({ session }: { session: Session }): ReactElement {
       <div className="ops-panel">
         <h3>Limit health</h3>
         {health.error ? (
-          <p className="state error">{explain(health.error, "view limit health")}</p>
+          <p className="state error" role="alert">
+            {explain(health.error, "view limit health")}
+          </p>
         ) : null}
         {all.length === 0 && !limits.loading ? (
           <p className="state">No limits are defined in this tenant yet.</p>
@@ -158,7 +178,7 @@ export function LimitHealth({ session }: { session: Session }): ReactElement {
             <tbody>
               {all.map((l) => {
                 const h = healthById.get(l.id);
-                const state = rowState(l, h);
+                const state = rowState(l, h, healthKnown);
                 return (
                   <tr key={l.id}>
                     <th scope="row">

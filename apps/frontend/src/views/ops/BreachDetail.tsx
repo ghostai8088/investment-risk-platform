@@ -53,7 +53,13 @@ export function BreachDetail({ session }: { session: Session }): ReactElement {
       setEvidenceRef("");
       setReload((n) => n + 1); // refetch breach + timeline + alerts
     } catch (e: unknown) {
-      setWriteError(e instanceof ApiError ? e : new ApiError("network", String(e)));
+      const err = e instanceof ApiError ? e : new ApiError("network", String(e));
+      setWriteError(err);
+      // Review M-2: a CONFLICT means our `expected_seq` no longer matches the server. Without a
+      // refetch the stale token is re-sent on every retry, so the operator is told to "reload"
+      // while every button is guaranteed to fail forever. Refetch so the explanation and a fresh
+      // token arrive together.
+      if (err.kind === "conflict") setReload((n) => n + 1);
     } finally {
       setPending(null);
     }
@@ -218,7 +224,9 @@ export function BreachDetail({ session }: { session: Session }): ReactElement {
       {/* --- the remediation timeline --- */}
       <div className="ops-panel">
         <h3>Remediation timeline</h3>
-        {actions.error ? <p className="state error">{explain(actions.error, "view the timeline")}</p> : null}
+        {actions.error ? (
+          <p className="state error">{explain(actions.error, "view the timeline")}</p>
+        ) : null}
         {actions.data && actions.data.length === 0 ? (
           <p className="state">No actions filed yet — this breach is awaiting assignment.</p>
         ) : null}
@@ -248,7 +256,9 @@ export function BreachDetail({ session }: { session: Session }): ReactElement {
           Durable evidence that this breach was escalated to a human — the record a supervisor asks
           for when they ask &quot;how do you know the risk officer was told?&quot;
         </p>
-        {alerts.error ? <p className="state error">{explain(alerts.error, "view alerts")}</p> : null}
+        {alerts.error ? (
+          <p className="state error">{explain(alerts.error, "view alerts")}</p>
+        ) : null}
         {alerts.data && alerts.data.length === 0 ? (
           <p className="state">No alert records for this breach yet.</p>
         ) : null}

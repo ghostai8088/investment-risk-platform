@@ -130,6 +130,11 @@ _READ_REFUSALS: dict[int | str, dict[str, Any]] = {
     status.HTTP_404_NOT_FOUND: {"description": "No such breach in the acting tenant."},
 }
 
+#: Collection reads cannot 404 (an empty list is a valid answer) — 403 only.
+_COLLECTION_REFUSALS: dict[int | str, dict[str, Any]] = {
+    status.HTTP_403_FORBIDDEN: {"description": "The caller does not hold `breach.view`."},
+}
+
 
 def _breach_actor(principal: Principal) -> BreachActor:
     """The domain actor via the SHARED fail-closed step (C-F11); canonicalized at construction."""
@@ -504,7 +509,7 @@ def close(
 
 
 # --- reads --------------------------------------------------------------------------------
-@router.get("", response_model=list[BreachOut], responses=_READ_REFUSALS)
+@router.get("", response_model=list[BreachOut], responses=_COLLECTION_REFUSALS)
 def index(
     state_filter: _BreachState | None = Query(default=None, alias="state"),
     open_only: bool = Query(default=False, alias="open"),

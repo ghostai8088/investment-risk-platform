@@ -18,6 +18,7 @@ principals and two additive read grants.
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import select
@@ -33,10 +34,16 @@ from irp_shared.demo import (
 )
 from irp_shared.entitlement.models import Permission, Role, RolePermission
 from irp_shared.entitlement.service import Principal, has_permission
-from irp_shared.limit.events import LIMIT_APPROVE_EVENT
-from irp_shared.limit.lifecycle import breach_action_timeline, current_breach_state, list_breaches
+from irp_shared.limit.events import LIMIT_APPROVE_EVENT, BreachActor, LimitActor
+from irp_shared.limit.lifecycle import (
+    BreachSodError,
+    breach_action_timeline,
+    current_breach_state,
+    list_breaches,
+    review_breach,
+)
 from irp_shared.limit.models import LimitDefinition
-from irp_shared.limit.service import limit_health
+from irp_shared.limit.service import LimitSodError, approve_limit, limit_health
 from irp_shared.notification.models import BreachNotification
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
@@ -147,9 +154,7 @@ def test_the_remediation_timeline_shows_two_lines_of_defence(db, summary) -> Non
     timeline = breach_action_timeline(db, acting_tenant=DEMO_TENANT_ID, breach_id=breach_id)
     kinds = [a.action_type for a in timeline]
     assert kinds == ["ASSIGN", "1L_RESPONSE"]
-    # Distinct actors: the 1L responder is NOT the 2L assigner, so the person-level SoD the demo
-    # viewer will hit on review is real, not contrived.
-    assert timeline[0].actor_id != timeline[1].actor_id
+    assert timeline[0].actor_id != timeline[1].actor_id  # assigner != responder
     assert current_breach_state(db, breach_id, acting_tenant=DEMO_TENANT_ID) == "RESPONDED"
 
 
@@ -193,9 +198,9 @@ def test_the_demo_viewer_persona_can_actually_see_the_operations_screens(db) -> 
     assert "breach.view" in granted
 
 
-def test_the_four_operators_hold_disjoint_duties(db, summary) -> None:  # noqa: ANN001
-    """No demo operator may hold both sides of a separation-of-duties control — otherwise the demo
-    would show the controls as satisfiable by one person, which is precisely backwards."""
+def test_the_role_partition_holds_for_the_breach_lifecycle(db, summary) -> None:  # noqa: ANN001
+    """The FIRST line: breach.respond and breach.review are never co-granted to a normal operating
+    role, so an analyst attempting a review is refused by the permission guard (403)."""
     _, result = summary
     if result is None:
         pytest.skip("already-seeded run: the summary's principal ids are not available")
@@ -205,6 +210,50 @@ def test_the_four_operators_hold_disjoint_duties(db, summary) -> None:  # noqa: 
     assert not has_permission(db, analyst, "breach.review", DEMO_TENANT_ID)
     assert has_permission(db, manager, "breach.review", DEMO_TENANT_ID)
     assert not has_permission(db, manager, "breach.respond", DEMO_TENANT_ID)
+
+
+def test_the_person_level_sod_refusals_are_actually_REACHABLE(db, summary) -> None:  # noqa: ANN001
+    """The review's H-2 fold, and the point of the whole demo.
+
+    A control that can only ever be refused by the PERMISSION guard (403) is never demonstrated —
+    the person-level gate would look enforced while being untested. Both 409s must be producible by
+    a seeded principal:
+
+      * the limit maker HOLDS `limit.approve` (same 2L role as the checker, the ratified MG-3
+        shape), so approving their own draft is refused by SoD, not by entitlement;
+      * the dual-hat supervisor HOLDS `breach.review` AND filed the 1L response, so reviewing their
+        own response is refused by SoD, not by entitlement.
+    """
+    _, result = summary
+    if result is None:
+        pytest.skip("already-seeded run: the summary's principal ids are not available")
+
+    maker = Principal(user_id=result.maker_id, tenant_id=DEMO_TENANT_ID)
+    supervisor = Principal(user_id=result.supervisor_id, tenant_id=DEMO_TENANT_ID)
+    # Entitlement must NOT be what stops them — otherwise the 409 is unreachable.
+    assert has_permission(db, maker, "limit.approve", DEMO_TENANT_ID)
+    assert has_permission(db, supervisor, "breach.review", DEMO_TENANT_ID)
+
+    # The maker self-approving the DRAFT → the maker-checker SoD refusal.
+    draft = _limit(db, _DRAFT)
+    with pytest.raises(LimitSodError):
+        approve_limit(
+            db, draft, actor=LimitActor(actor_id=result.maker_id), approval_ref="minutes://x"
+        )
+    db.rollback()
+
+    # The supervisor reviewing their OWN 1L response → the person-level backstop.
+    rows = list_breaches(db, acting_tenant=DEMO_TENANT_ID, open_only=True)
+    breach = next(r for r in rows if r.limit_code == _BREACHED).breach
+    with pytest.raises(BreachSodError):
+        review_breach(
+            db,
+            breach,
+            outcome="ACCEPT",
+            actor=BreachActor(actor_id=result.supervisor_id),
+            now=datetime(2026, 7, 25, 10, 0, tzinfo=UTC),
+        )
+    db.rollback()
 
 
 def test_second_run_refuses(db) -> None:  # noqa: ANN001

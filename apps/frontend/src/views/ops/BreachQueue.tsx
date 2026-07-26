@@ -36,7 +36,10 @@ export function BreachQueue({ session }: { session: Session }): ReactElement {
   params.set("limit", String(PAGE_SIZE + 1)); // one extra row = the has-more signal
   params.set("offset", String(offset));
 
-  const { data, error, loading } = useApiGet<BreachOut[]>(`/breaches?${params.toString()}`, session);
+  const { data, error, loading } = useApiGet<BreachOut[]>(
+    `/breaches?${params.toString()}`,
+    session,
+  );
   const rows = data ? data.slice(0, PAGE_SIZE) : null;
   const hasMore = data !== null && data.length > PAGE_SIZE;
   const now = Date.now();
@@ -90,9 +93,16 @@ export function BreachQueue({ session }: { session: Session }): ReactElement {
       ) : null}
 
       {rows && rows.length === 0 ? (
+        /* Review H-4: an empty queue is NOT evidence that everything is within appetite. It is
+           equally consistent with: no limits defined, every limit DRAFT/SUSPENDED (never
+           evaluated), ACTIVE limits that are NEVER_EVALUABLE, or simply these filters. Asserting
+           the reassuring reading would be the empty-state-as-passing-state failure this slice's
+           own limit-health handling was written to avoid — so point at the surface that CAN
+           answer the question instead of answering it here. */
         <p className="state">
-          No breaches match. An empty queue is a real result — it means every ACTIVE limit was within
-          appetite at its last evaluation, not that nothing has been checked.
+          No breaches match these filters. This is not by itself an all-clear:{" "}
+          <Link to="/ops/limits">check limit health</Link> to see which limits are actually in force
+          and evaluated.
         </p>
       ) : null}
 
@@ -131,7 +141,9 @@ export function BreachQueue({ session }: { session: Session }): ReactElement {
                   {b.response_due ? (
                     <>
                       {new Date(b.response_due).toISOString().slice(0, 16).replace("T", " ")}
-                      {isOverdue(b, now) ? <span className="chip chip-overdue">overdue</span> : null}
+                      {isOverdue(b, now) ? (
+                        <span className="chip chip-overdue">overdue</span>
+                      ) : null}
                     </>
                   ) : (
                     "—"
@@ -144,7 +156,11 @@ export function BreachQueue({ session }: { session: Session }): ReactElement {
       ) : null}
 
       <div className="ops-pager">
-        <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
+        <button
+          type="button"
+          disabled={offset === 0}
+          onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+        >
           Previous
         </button>
         <button type="button" disabled={!hasMore} onClick={() => setOffset(offset + PAGE_SIZE)}>

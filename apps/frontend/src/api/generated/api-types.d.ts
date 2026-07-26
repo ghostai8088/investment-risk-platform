@@ -9967,13 +9967,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description No such breach in the acting tenant. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12060,13 +12053,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description No such limit in the acting tenant. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12259,6 +12245,27 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LimitOut"];
                 };
+            };
+            /** @description The caller does not hold the required permission. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such limit in the acting tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A state conflict, distinguished by `detail`: the maker-checker separation-of-duties refusal (the approver may not be a maker), a duplicate logical identity, or a limit not in the state the verb requires. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

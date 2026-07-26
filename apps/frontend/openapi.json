@@ -16641,9 +16641,6 @@
           "403": {
             "description": "The caller does not hold `breach.view`."
           },
-          "404": {
-            "description": "No such breach in the acting tenant."
-          },
           "422": {
             "content": {
               "application/json": {
@@ -22145,9 +22142,6 @@
           "403": {
             "description": "The caller does not hold `limit.view`."
           },
-          "404": {
-            "description": "No such limit in the acting tenant."
-          },
           "422": {
             "content": {
               "application/json": {
@@ -22532,6 +22526,15 @@
               }
             },
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "The caller does not hold the required permission."
+          },
+          "404": {
+            "description": "No such limit in the acting tenant."
+          },
+          "409": {
+            "description": "A state conflict, distinguished by `detail`: the maker-checker separation-of-duties refusal (the approver may not be a maker), a duplicate logical identity, or a limit not in the state the verb requires."
           },
           "422": {
             "content": {
