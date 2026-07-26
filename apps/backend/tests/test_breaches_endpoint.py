@@ -352,33 +352,39 @@ def test_breach_out_carries_the_seq_token_for_expected_seq(ctx) -> None:
 
 
 def test_the_refusal_detail_strings_are_a_pinned_contract(ctx) -> None:
-    """OPS-1 review M-1. The operations UI discriminates the three 409 causes by matching the
-    server's `detail` prose (there is no machine-readable cause on the wire). That makes these exact
-    strings a CONTRACT, not cosmetics: reword one and every SoD or stale-seq explanation silently
-    degrades to a generic "conflict" with no test failing anywhere. `gen-api-check` cannot protect
-    them because a detail value is data, not schema — so they are pinned here, at the source.
+    """OPS-1 review M-1, re-folded at the Wave-12 close. The operations UI discriminates the three
+    409 causes by matching the server's `detail` prose (there is no machine-readable cause on the
+    wire). That makes these exact strings a CONTRACT, not cosmetics: reword one and every SoD or
+    stale-seq explanation silently degrades to a generic "conflict" with no test failing anywhere.
+    `gen-api-check` cannot protect them because a detail value is data, not schema — so they are
+    pinned here, at the source, one UNCONDITIONAL exact-string assertion per marker. (The original
+    shape guarded the SoD assertion behind a status check that never fired — the close audit proved
+    the dual-hat had not responded, so their review legally returned 200 and the branch was dead.)
 
     The FE markers live in apps/frontend/src/api/writes.ts (SOD_MARKER / STALE_MARKER)."""
-    _assign(ctx)
-    _respond(ctx)
-    sod = _review(ctx, "ACCEPT", actor=ctx["responder"])  # responder reviewing own response
-    assert sod.status_code == 403 or sod.status_code == 409
-    # the dual-hat principal is the one that reaches the person-level backstop
-    dual_assign = ctx["client"].post(
-        f"/breaches/{ctx['breach']}/review",
-        json={"outcome": "ACCEPT"},
-        headers=_hdr(ctx["dual"], ctx["tenant"]),
-    )
-    if dual_assign.status_code == 409:
-        assert "separation of duties" in dual_assign.json()["detail"]
+    # ILLEGAL TRANSITION: respond on a DETECTED (never-assigned) breach.
+    illegal = _respond(ctx)
+    assert illegal.status_code == 409
+    assert illegal.json()["detail"] == "illegal transition from the current breach state"
 
+    # SEPARATION OF DUTIES, guaranteed reachable: the dual-hat responds, then reviews their OWN
+    # response — the person-level backstop refuses (they HOLD breach.review, so not the role gate).
+    _assign(ctx, assignee=ctx["dual"])
+    _respond(ctx, actor=ctx["dual"])
+    sod = _review(ctx, "ACCEPT", actor=ctx["dual"])
+    assert sod.status_code == 409
+    assert sod.json()["detail"] == "separation of duties: the actor responded to this breach"
+
+    # STALE SEQ: a stale token refuses with the reload instruction.
     stale = ctx["client"].post(
         f"/breaches/{ctx['breach']}/respond",
         json={"narrative": "x", "expected_seq": 0},
         headers=_hdr(ctx["responder"], ctx["tenant"]),
     )
     assert stale.status_code == 409
-    assert "reload and retry" in stale.json()["detail"]
+    assert (
+        stale.json()["detail"] == "the breach changed while you were reading it; reload and retry"
+    )
 
 
 def test_state_conflicts_are_409(ctx) -> None:

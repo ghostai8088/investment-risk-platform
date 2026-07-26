@@ -26,8 +26,10 @@ ROOT = Path(__file__).resolve().parents[1]
 #: marks each slice INLINE as `✅ **PPF-N**`, so all three arc slices were invisible). Both are now
 #: covered. Filename-keyed + row-anchored so it does NOT false-fail when a slice-id appears only in
 #: another row's PROSE (the verifier's CLAIM-6 trap: "API-1b" occurs inside two `✅ **DONE**` rows),
-#: nor an in-flight planning DRAFT whose own roadmap row is not yet DONE. Records with no
-#: `| **Status** |` cell (old records that never had one) stay out of scope.
+#: nor an in-flight planning DRAFT whose own roadmap row is not yet DONE. BROADENED AGAIN at the
+#: Wave-12 close: the `**Status:**` PROSE shape (CAD-1/OPS-1's record form) is recognized alongside
+#: the `| **Status** |` table row — the table-only matcher had silently exempted both newest
+#: records. Records with NEITHER shape (old pre-cadence records) stay out of scope.
 BACKLOG_DIR = "10_delivery_backlog"
 ROADMAP = "10_delivery_backlog/delivery_roadmap.md"
 _DONE_MARK = "✅ **DONE**"
@@ -58,10 +60,18 @@ def _done_slice_ids(roadmap_text: str) -> set[str]:
 
 
 def _status_lines(record_text: str) -> list[str]:
-    """The record's actual Status table row(s) — the line must START WITH the table-row pattern, not
-    merely CONTAIN it, so prose that quotes/describes a Status line (as this very record's own OD-
-    API-1b-E does) is not mistaken for one."""
-    return [ln for ln in record_text.splitlines() if ln.strip().startswith("| **Status** |")]
+    """The record's actual Status line(s). TWO shapes are recognized (Wave-12 close broadening):
+    the table row ``| **Status** |`` AND the prose line ``**Status:**`` — the CAD-1/OPS-1 records
+    adopted the prose shape and the table-only matcher silently exempted them (the same
+    coverage-narrowing failure mode OQ-W10C fixed for the roadmap side). Each must START WITH the
+    pattern, not merely CONTAIN it, so prose that quotes/describes a Status line (as API-1b's own
+    OD-API-1b-E does) is not mistaken for one."""
+    lines = []
+    for ln in record_text.splitlines():
+        stripped = ln.strip()
+        if stripped.startswith("| **Status** |") or stripped.startswith("**Status:**"):
+            lines.append(ln)
+    return lines
 
 
 def _is_unstamped_shipped(slice_id: str, status_lines: list[str], done: set[str]) -> bool:

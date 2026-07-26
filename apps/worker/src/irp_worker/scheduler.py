@@ -146,10 +146,14 @@ def run_operational_tick_for_tenant(
     then runs as PER-BREACH TOP-LEVEL transactions. Rationale: the frozen ``record_event`` takes the
     per-tenant audit-chain ADVISORY lock, held to top-level commit — a single-transaction tick held
     it across phase 3's breach ROW locks while every HTTP breach verb acquires row→advisory, an
-    order inversion = a reachable tick×HTTP (and tick×tick) deadlock. Phases 1–2 take NO row locks,
-    so with phase 3 split off, no transaction anywhere holds the advisory lock while waiting on a
-    ROW lock (phases 1–2 can still tuple-wait on unique-index entries — made order-deterministic
-    via ORDER BY id in the phase selectors, and SAVEPOINT-recovered regardless).
+    order inversion = a reachable tick×HTTP (and tick×tick) deadlock. Splitting phase 3 off removes
+    the breach-row leg of that cycle. HONEST RESIDUAL (Wave-12 close): phases 1–2 are NOT lock-free
+    — a new-breach INSERT takes FK ``FOR KEY SHARE`` on the parent ``limit_definition`` row, so
+    with the advisory already held from an earlier same-transaction emit, a concurrent limit verb
+    (``FOR UPDATE`` then advisory) can still close a 40P01 cycle. Both sides treat it as transient:
+    the tick's per-limit SAVEPOINT recovers and retries next tick; every write router maps 40P01 →
+    503 + Retry-After (``deadlock_503``). Phases 1–2 can also tuple-wait on unique-index entries —
+    made order-deterministic via ORDER BY id in the phase selectors, and SAVEPOINT-recovered.
     ``persistent_tenant_context`` is LOAD-BEARING here: the RLS GUC is transaction-local
     and clears at COMMIT — without the re-arm listener, phase 3 would run RLS-unarmed and silently
     escalate NOTHING (the OQ-a fail-open pattern; the API-2b verifier's blocking fold).

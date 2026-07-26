@@ -2,8 +2,60 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-26) — read this block; everything below it is HISTORY
 >
-> **HEAD `8b889ed`** = merge of **PR #127 — OPS-1, the operations UI** (Wave-12 slice 4, the LAST),
-> **CI green all 6**. **NO migration** (head stays `0052`); **counts UNCHANGED 23/38/109**.
+> **Audited baseline `6f8d923`** = merge of **PR #128 — CI-parity hardening + the OPS-1 closeout**,
+> **CI green all 6 (run #624)**; the Wave-12 close folds ride the `wave-12-close` branch on top.
+> **NO migration** (head stays `0052`); **counts UNCHANGED 23/38/109** (census-pinned).
+>
+> ## WAVE 12 CLOSED + RATIFIED 2026-07-26 (OQ-W12C-1/2/3 approved) — `wave_12_close_review.md`
+>
+> **Ten close auditors under ultracode (Fable 5)** — five slice verifiers, four cross-cutting
+> (integration/adversarial re-probe, security/doctrine, register, docs/CI), one agenda-claims
+> verifier — refute-by-default, every HIGH/MED finding attacked by two adversarial refuters.
+> **Zero RUNTIME defects: the 8th consecutive clean close on that axis.** Every end-to-end probe
+> held (SoD via every route/verb combination; the seq/epoch laundering sequences; canonicalization
+> at every RLS-arming entry; the anti-laundering property composing through phase 4; hard
+> invariants byte-verified). **But the guard layer took its first two HIGHs** — both OPS-1 review
+> folds whose delivered form failed its own claim: the eslint **write fence was bypassable** by the
+> natural src-root (`./api/client`) and depth-4+ import forms, and the **refusal-detail pin's SoD
+> assertion sat in a provably dead branch** (the dual-hat never responded, so their review legally
+> returned 200 — 4-auditor convergence). **Both folded AT the close with executed negative
+> controls**: a `patterns`-based fence + `write-fence.test.ts` (proven: 3/9 fail against the old
+> rule), and unconditional exact-string wire pins on BOTH routers. Also folded: the phase-2
+> FK-KEY-SHARE tick×HTTP 40P01 edge ("phases 1–2 take NO row locks" was FALSE — `deadlock_503`
+> hoisted to `deps.py`, applied on all five limit verbs, OpenAPI 503s regenerated, docstring
+> corrected); the closure-teeth `**Status:**` prose-shape blindness (broadened + shape-tested —
+> the class's 8th appearance, mechanism axis; outcome axis stayed clean); the skipped
+> control-matrix sweeps (CTRL-021/031 backfilled with their HTTP/UI legs); CI-pin comment-strip +
+> multi-path hardening. **Register: 5 PAID / 15 OPEN-legitimate / 3 TIPPED-and-slotted.** Gates
+> re-verified post-fold: `make check` 2036, full-PG **2463/0** fresh-schema, `fe-check` 148,
+> downgrade smoke clean.
+>
+> **Outward (rule 6b):** Wave 11's named gap — "the controls have no consumption surface" — is
+> **CLOSED** (reachable, alarmed with durable proof-of-alert, running on an evidenced cadence,
+> visible/operable). Honest residuals: LOG-sink alerting (provisioning-coupled), single-replica
+> supervisor, no UI assign verb. **The new distance-to-frontier: credibility of the numbers** —
+> analytics breadth, then real data through the governed rails.
+>
+> ## WAVE 13 RATIFIED (Part 2.16, OQ-W12C-2=A): "ANALYTICS BREADTH ON THE GOVERNED RAILS"
+>
+> **RM-1 rolling metrics → SR-1 Sharpe → OPS-H1 operations hygiene → FE-M1 React-19/router-8**, on
+> VERIFIED slotting facts: rolling return/vol + max drawdown need ZERO new capture (the governed
+> PM-1 series suffices; carries the Tier-3 day-count fork, the annualization deferral re-open, a
+> demo-history extension, and a REQ mint for drawdown); **Sharpe's risk-free series rides the
+> EXISTING ENT-052 benchmark capture** (or ENT-021 curve + a registered conversion) — NOT a new
+> capture family; **sector exposure is 0% computable today** (no issuer rows, no aggregation
+> engine), so sector/industry/geo + concentration ride the **Wave-14 real-data tee** as its
+> payoff. FE-M1 lands well before the **2026-10-24** allowlist expiry.
+>
+> **Process (OQ-W12C-3, all four ratified):** (a) **recommendation-before-verification** is
+> STANDING and generalized to review folds — any cheaply-testable ratification option or shipped
+> guard carries its EXECUTED test/negative control IN the record; (b) the **conformance-pin
+> pattern** is the standing answer to any hand-mirrored contract (+ CI Python 3.12 vs local 3.13
+> accepted-as-recorded); (c) every closeout leaves a **control-matrix trace** (touch it or state
+> "no control moved"); (d) interim: **`DEMO_TENANT_ID` never enters `IRP_TENANT_IDS`** until
+> OPS-H1 pays regenerate-on-seed (the frozen-clock demo breach would escalate + page).
+>
+> **NEXT = RM-1 planning** (the 21st governed number).
 >
 > ## WAVE 12 IS FUNCTIONALLY COMPLETE
 >

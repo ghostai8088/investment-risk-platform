@@ -56,6 +56,26 @@ Planning-first, per-slice; Claude commits + pushes autonomously:
   finders converge on the SAME finding, treat it as CONFIRMED-blocking, not PLAUSIBLE — empirically the strongest
   real-HIGH signal (MG-3's change-gate bypass; PPF-3's consume-path double-count both surfaced this way). Do not
   discount it as duplicate noise.
+- **Recommendation-before-verification (Wave-12 close, 2026-07-26, OQ-W12C-3a — STANDING, generalized to review
+  folds):** any ratification-gate option OR shipped guard that is CHEAPLY TESTABLE must carry its EXECUTED test
+  in the decision record before the gate — an audit run on the actually-proposed tree (the OQ-1=C downgrade was
+  ratified before the gate ran on it), a reachability probe (the OPS-1 demo asserted SoD controls it could not
+  reach), and for every shipped fence/pin/conformance gate its NEGATIVE CONTROL run against the actual
+  bypass/failure form (the Wave-12 close's only two HIGHs were guards ratified as enforcing whose delivered form
+  had never been shown to fire: the write fence missed the natural src-root import spelling; the refusal-detail
+  pin's key assertion was a dead branch). "Verified with a probe" means the probe covered the ADVERSARIAL form,
+  not a listed one. This generalizes OQ-W10C-5 from CI teeth to all guard code.
+- **The conformance-pin pattern is the standing answer to hand-mirrored contracts (Wave-12 close, OQ-W12C-3b):**
+  whenever one artifact hand-mirrors another (nginx prefixes ↔ vite proxy; PG suites ↔ ci.yml steps; a job's
+  install list ↔ its suites' imports; FE refusal markers ↔ backend `_ERROR_MAP` details; an eslint fence ↔ its
+  bypass forms), ship a machine pin with a negative control rather than relying on discipline. A gate that
+  depends on remembering is not a gate.
+- **Closeout control-matrix trace (Wave-12 close, OQ-W12C-3c):** every slice closeout either updates
+  `09_compliance_controls/control_matrix_skeleton.md` or states "no control moved" in its decision record —
+  the API-2/OPS-1 closeouts skipped the sweep silently and left the flagship SoD row (CTRL-021) stale.
+- **Interim demo-tick exclusion (Wave-12 close, OQ-W12C-3d — until OPS-H1 ships regenerate-on-seed):**
+  `DEMO_TENANT_ID` is never placed in `IRP_TENANT_IDS`; the demo's frozen-clock RESPONDED breach would
+  auto-escalate and page on the first real tick and mutate the curated walk.
 
 ## Verification & objectivity (standing rules)
 - **No quantitative claim from model recall.** Every formula, convention, day-count, sign, tolerance, or
