@@ -1,12 +1,53 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-25, late) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-25, latest) — read this block; everything below it is HISTORY
 >
-> **HEAD `c025ba0`** = merge of **PR #123 — NOTIF-1, breach notification / alerting** (Wave-12
-> slice 2), **CI green all 6**. Migration **`0052_breach_notification`**; **counts UNCHANGED
-> 23/38/109** (a notification binds no snapshot/run/model — control-plane egress evidence, NOT a
-> governed number). **NEXT = Wave-12 slice 3: cadence wiring** (turn the tick; pay OQ-a + the
-> `create_schedule` guard).
+> **HEAD `b637bac`** = merge of **PR #125 — CAD-1, cadence wiring** (Wave-12 slice 3), **CI green**.
+> **NO migration** (head stays `0052`); **counts UNCHANGED 23/38/109** (infra ignition, NOT a
+> governed number). **NEXT = Wave-12 slice 4: the operations UI** (the breach/limits dashboard —
+> the first VISIBLE demo; a Tier-3 FE information-architecture sign-off; rides the react-router
+> v7→v8 migration).
+>
+> **What CAD-1 shipped — THE ENGINE NOW TICKS.** Wave 11 built the per-tenant operational tick and
+> Wave-12 slices 1–2 put an HTTP surface and an alarm leg on it, but **nothing invoked it on a
+> cadence** — the shipped worker container still ran the `irp_worker/main.py` heartbeat placeholder.
+> CAD-1 adds an in-process **supervisor** (`irp_worker/supervisor.py`) that, every
+> `IRP_TICK_INTERVAL_SECONDS`, runs `run_operational_tick_for_tenant` (schedules → breach detection
+> → deadline escalation → notification) for each **configured** tenant with **per-tenant fault
+> isolation** (one tenant's failure never halts the cycle), and retires the placeholder. **OQ-1=A**
+> keeps the one-shot `scheduler --tenant` for an external scheduler (k8s CronJob / cron); **OQ-2=A**
+> sources the tenant list from config env **`IRP_TENANT_IDS`** — no DB sweep, no BYPASSRLS, so the
+> ratified OQ-SCH-1-1=B "app never reads cross-tenant" doctrine is intact; **OQ-3=A** skips a
+> malformed tenant id (logged) so the rest keep ticking, while the one-shot fails closed (exit 2)
+> and an **EMPTY list fails closed at startup** (a silently-idle engine is the exact failure this
+> slice exists to prevent).
+>
+> **BOTH STANDING CARRIES ARE NOW PAID (and CLOSED).** (1) **OQ-a** — every tenant id is
+> canonicalized `str(uuid.UUID(x))` **before it arms the RLS GUC**, at both entry boundaries plus a
+> defensive check at the shared tick (`irp_worker/tenants.py`). This was the **SSO-1 bug's second
+> instance**: `tenant_id::text` renders lowercase-hyphenated, so a non-canonical UUID matched
+> NOTHING and the tick fired/evaluated/escalated/notified nothing while printing a normal summary —
+> a fail-OPEN. (2) **OQ-W11C-2** — `create_schedule` re-resolves `scope_portfolio_id` and
+> `model_version_id` under the acting tenant before stamping the NOT-NULL FKs (the P3-5 finding: PG
+> FK checks BYPASS RLS), via `assert_portfolio_in_tenant` + the NEW
+> `model/guards.py::assert_model_version_in_tenant`; `environment_id` is a free `String(100)` label
+> (`calculation_run.environment_id`, NOT a security boundary) and is correctly unguarded.
+>
+> **Review.** Pre-ratification verifier folded 2 (the **BLOCKING** `test_worker.py` `run_once`
+> import that would have failed pytest at COLLECTION once `main.py` was retired; the empty-list
+> fail-closed). **4-finder: ZERO HIGH** — folded M1 (the `main()` fail-closed/canonicalization exit
+> codes were untested), M2 (a permanently-failing tenant was log-only with no durable evidence → a
+> consecutive-failure WARN escalation), L3 (the success log sat inside the isolation `try` and could
+> misreport a committed success as a failure), L4 (defensive tick canonicalization), L5 (compose
+> `db` healthcheck). FROZEN `audit/service.py` byte-untouched. Battery: `make check` **2021 passed /
+> 416 skipped** + **full-PG GREEN** (clean single run, `PYTEST_EXIT=0`, 100% pass) + CI green.
+>
+> **Env lesson (cost 3 wasted PG runs):** the module-scoped `test_demo_campaign_pg.py` fixture
+> COMMITS demo-tenant data, so re-running full-PG against `irp_pg_local` **without a schema reset**
+> pollutes `DEMO_TENANT_ID` and the governed-number census tests fail with "Extra items" — NOT a
+> code regression. Always reset the schema + `alembic upgrade head` before EACH full-PG run, run it
+> ONCE, and capture pytest to a plain log with an explicit `echo PYTEST_EXIT=$?` (piping through
+> `grep`/`tail` drops the summary line AND masks the real exit code).
 >
 > **What NOTIF-1 shipped.** The alarm leg — "prove the CRO was alerted" (SR 11-7 / BCBS 239). A
 > decoupled audit-stream consumer as tick **phase 4** (`poll_tenant_notifications`, after the
