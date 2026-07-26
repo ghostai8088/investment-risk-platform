@@ -17,7 +17,7 @@ surface is API-2b. ``evaluate_limit``/``escalate`` are tick-only and never expos
 from __future__ import annotations
 
 import uuid
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
@@ -51,6 +51,31 @@ from irp_shared.limit.service import (
 )
 
 router = APIRouter(prefix="/limits", tags=["limits"])
+
+#: The REFUSAL surface, declared so it reaches the OpenAPI document and therefore the generated FE
+#: types (OPS-1 medium fold — the operations UI otherwise hand-models these with no drift gate).
+_WRITE_REFUSALS: dict[int | str, dict[str, Any]] = {
+    status.HTTP_403_FORBIDDEN: {"description": "The caller does not hold the required permission."},
+    status.HTTP_404_NOT_FOUND: {"description": "No such limit in the acting tenant."},
+    status.HTTP_409_CONFLICT: {
+        "description": (
+            "A state conflict, distinguished by `detail`: the maker-checker separation-of-duties "
+            "refusal (the approver may not be a maker), a duplicate logical identity, or a limit "
+            "not in the state the verb requires."
+        )
+    },
+}
+
+#: The read surface's refusals.
+_READ_REFUSALS: dict[int | str, dict[str, Any]] = {
+    status.HTTP_403_FORBIDDEN: {"description": "The caller does not hold `limit.view`."},
+    status.HTTP_404_NOT_FOUND: {"description": "No such limit in the acting tenant."},
+}
+
+#: Collection reads cannot 404 (an empty list is a valid answer) — 403 only.
+_COLLECTION_REFUSALS: dict[int | str, dict[str, Any]] = {
+    status.HTTP_403_FORBIDDEN: {"description": "The caller does not hold `limit.view`."},
+}
 
 #: Module-level guard singletons (deny-by-default; built once, not in argument defaults).
 _require_manage = require_permission("limit.manage")
@@ -181,7 +206,9 @@ def _load_or_404(db: Session, principal: Principal, limit_id: uuid.UUID) -> Limi
 
 
 # --- write endpoints ----------------------------------------------------------------------
-@router.post("", response_model=LimitOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=LimitOut, status_code=status.HTTP_201_CREATED, responses=_WRITE_REFUSALS
+)
 def create(
     body: LimitCreateIn,
     principal: Principal = Depends(_require_manage),
@@ -217,7 +244,7 @@ def create(
     return out
 
 
-@router.patch("/{limit_id}", response_model=LimitOut)
+@router.patch("/{limit_id}", response_model=LimitOut, responses=_WRITE_REFUSALS)
 def update(
     limit_id: uuid.UUID,
     body: LimitUpdateIn,
@@ -238,7 +265,7 @@ def update(
     return out
 
 
-@router.post("/{limit_id}/approve", response_model=LimitOut)
+@router.post("/{limit_id}/approve", response_model=LimitOut, responses=_WRITE_REFUSALS)
 def approve(
     limit_id: uuid.UUID,
     body: LimitApproveIn,
@@ -257,7 +284,7 @@ def approve(
     return out
 
 
-@router.post("/{limit_id}/suspend", response_model=LimitOut)
+@router.post("/{limit_id}/suspend", response_model=LimitOut, responses=_WRITE_REFUSALS)
 def suspend(
     limit_id: uuid.UUID,
     principal: Principal = Depends(_require_manage),
@@ -272,7 +299,7 @@ def suspend(
     return out
 
 
-@router.post("/{limit_id}/resume", response_model=LimitOut)
+@router.post("/{limit_id}/resume", response_model=LimitOut, responses=_WRITE_REFUSALS)
 def resume(
     limit_id: uuid.UUID,
     principal: Principal = Depends(_require_manage),
@@ -288,7 +315,7 @@ def resume(
 
 
 # --- read endpoints (literal /health BEFORE the /{limit_id} param route) -------------------
-@router.get("/health", response_model=list[LimitHealthOut])
+@router.get("/health", response_model=list[LimitHealthOut], responses=_READ_REFUSALS)
 def health(
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
@@ -296,7 +323,7 @@ def health(
     return [_health_out(h) for h in limit_health(db, acting_tenant=principal.tenant_id)]
 
 
-@router.get("", response_model=list[LimitOut])
+@router.get("", response_model=list[LimitOut], responses=_COLLECTION_REFUSALS)
 def index(
     status_filter: _LimitStatus | None = Query(default=None, alias="status"),
     principal: Principal = Depends(_require_view),
@@ -309,7 +336,7 @@ def index(
     ]
 
 
-@router.get("/{limit_id}", response_model=LimitOut)
+@router.get("/{limit_id}", response_model=LimitOut, responses=_READ_REFUSALS)
 def show(
     limit_id: uuid.UUID,
     principal: Principal = Depends(_require_view),

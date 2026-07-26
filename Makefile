@@ -51,6 +51,7 @@ fe-setup:
 fe-check: fe-setup
 	npm run -w packages/shared-ts test
 	npm run -w apps/frontend lint
+	npm run -w apps/frontend format:check
 	npm run -w apps/frontend typecheck
 	npm run -w apps/frontend test
 	npm run -w apps/frontend build

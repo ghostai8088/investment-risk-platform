@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import type { Session } from "../session";
 import { DEMO_PORTFOLIO_CODE, WALK_STEPS } from "../walk/steps";
@@ -11,9 +11,12 @@ function sessionLabel(session: Session): string {
 }
 
 /**
- * The application shell (FE-3, OD-FE-3-B): a header + a left nav listing the six-step governance
- * walk and the (kept) run browser, with the routed content in the outlet. The walk is the front
- * door; the run browser stays reachable but secondary.
+ * The application shell (FE-3, OD-FE-3-B; IA re-ordered at OPS-1, OQ-6=A).
+ *
+ * A header + a left nav, with the routed content in the outlet. **Operations is the first group.**
+ * FE-3 made the governance walk the front door because there was nothing operational to do yet —
+ * the platform could explain itself but not be worked. With a live breach queue and an approval
+ * queue, the daily user is an operator and the walk becomes the explainer, so it moves below.
  */
 export function AppShell({
   session,
@@ -22,6 +25,12 @@ export function AppShell({
   session: Session;
   onEndSession: () => void;
 }): ReactElement {
+  // The book chip describes the WALK's scope only. The operations surfaces are tenant-wide across
+  // every portfolio, so showing a single book alongside them would be a false claim about what is
+  // on screen (OPS-1 verifier fold).
+  const { pathname } = useLocation();
+  const showBookChip = pathname === "/" || pathname.startsWith("/walk");
+
   return (
     <div className="shell">
       <a className="skip-link" href="#walk-main">
@@ -30,9 +39,11 @@ export function AppShell({
       <header className="app-header">
         <div className="app-title">
           <h1>Investment Risk Platform</h1>
-          <span className="book-chip" title="The walk is scoped to this book">
-            {DEMO_PORTFOLIO_CODE}
-          </span>
+          {showBookChip ? (
+            <span className="book-chip" title="The walk is scoped to this book">
+              {DEMO_PORTFOLIO_CODE}
+            </span>
+          ) : null}
         </div>
         <div className="session-info">
           <span className="mono" aria-label="active session">
@@ -45,7 +56,22 @@ export function AppShell({
       </header>
 
       <div className="shell-body">
-        <nav className="walk-nav" aria-label="Governance walk">
+        <nav className="walk-nav" aria-label="Main">
+          {/* OQ-6=A: operations first — the daily surface outranks the explainer. */}
+          <p className="nav-heading">Operations</p>
+          <NavLink
+            to="/ops/breaches"
+            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+          >
+            Breach queue
+          </NavLink>
+          <NavLink
+            to="/ops/limits"
+            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+          >
+            Limits &amp; approvals
+          </NavLink>
+
           <p className="nav-heading">The walk</p>
           <ol className="nav-steps">
             {WALK_STEPS.map((step) => (

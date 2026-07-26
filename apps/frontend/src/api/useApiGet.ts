@@ -14,8 +14,17 @@ export interface AsyncState<T> {
  * response never renders (the RunDetail review-fold pattern, shared). Pass `path === null` to
  * intentionally HOLD — no request is made and the state is idle — e.g. until a dependency such as
  * the resolved portfolio id is available.
+ *
+ * `reloadKey` (OPS-1 fold H4) forces a re-fetch of the SAME path when its value changes. Every FE
+ * slice before OPS-1 was read-only, so a hook keyed solely on `[path, session]` was sufficient —
+ * but after a write the queue, the detail, the action timeline and the alert list are all stale,
+ * and re-requesting an unchanged path was a no-op. Write handlers bump a counter and pass it here.
  */
-export function useApiGet<T>(path: string | null, session: Session | null): AsyncState<T> {
+export function useApiGet<T>(
+  path: string | null,
+  session: Session | null,
+  reloadKey = 0,
+): AsyncState<T> {
   const [state, setState] = useState<AsyncState<T>>(() => ({
     data: null,
     error: null,
@@ -45,7 +54,7 @@ export function useApiGet<T>(path: string | null, session: Session | null): Asyn
     return () => {
       stale = true;
     };
-  }, [path, session]);
+  }, [path, session, reloadKey]);
 
   return state;
 }

@@ -100,7 +100,22 @@ describe("App", () => {
     );
     renderApp("/walk/capture");
     expect(screen.getByRole("heading", { name: /1 · Capture/ })).toBeTruthy();
-    // The shell nav lists the walk steps and the run browser.
-    expect(screen.getByRole("navigation", { name: "Governance walk" })).toBeTruthy();
+    // OPS-1 (OQ-6=A): the nav is no longer walk-only — it leads with Operations and keeps the walk
+    // and the run browser below, so it is labelled "Main".
+    expect(screen.getByRole("navigation", { name: "Main" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Breach queue" })).toBeTruthy();
+  });
+
+  it("routes the operations surfaces and scopes the book chip to the walk", () => {
+    withSession();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve([]) }),
+    );
+    renderApp("/ops/breaches");
+    expect(screen.getByRole("heading", { name: "Breach queue" })).toBeTruthy();
+    // The header's book chip claims "the walk is scoped to this book" — over a TENANT-WIDE queue
+    // that claim is false, so it must not render here (OPS-1 verifier fold).
+    expect(screen.queryByTitle(/scoped to this book/i)).toBeNull();
   });
 });
