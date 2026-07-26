@@ -21,10 +21,11 @@ from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from irp_backend.deps import (
+    deadlock_503,
     get_tenant_session,
     map_refusal,
     require_permission,
@@ -63,6 +64,9 @@ _WRITE_REFUSALS: dict[int | str, dict[str, Any]] = {
             "refusal (the approver may not be a maker), a duplicate logical identity, or a limit "
             "not in the state the verb requires."
         )
+    },
+    status.HTTP_503_SERVICE_UNAVAILABLE: {
+        "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
     },
 }
 
@@ -239,6 +243,8 @@ def create(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="a limit with that code already exists"
         ) from None
+    except OperationalError as exc:
+        raise deadlock_503(db, exc) from None
     out = _limit_out(limit)  # in-memory read; build before the single end-of-request commit
     db.commit()
     return out
@@ -260,6 +266,8 @@ def update(
         updated = update_limit(db, limit, actor=_limit_actor(principal), **changes)
     except LimitError as exc:
         raise _refuse(db, exc) from None
+    except OperationalError as exc:
+        raise deadlock_503(db, exc) from None
     out = _limit_out(updated)
     db.commit()
     return out
@@ -279,6 +287,8 @@ def approve(
         )
     except LimitError as exc:
         raise _refuse(db, exc) from None
+    except OperationalError as exc:
+        raise deadlock_503(db, exc) from None
     out = _limit_out(approved)
     db.commit()
     return out
@@ -295,6 +305,8 @@ def suspend(
         out = _limit_out(suspend_limit(db, limit, actor=_limit_actor(principal)))
     except LimitError as exc:
         raise _refuse(db, exc) from None
+    except OperationalError as exc:
+        raise deadlock_503(db, exc) from None
     db.commit()
     return out
 
@@ -310,6 +322,8 @@ def resume(
         out = _limit_out(resume_limit(db, limit, actor=_limit_actor(principal)))
     except LimitError as exc:
         raise _refuse(db, exc) from None
+    except OperationalError as exc:
+        raise deadlock_503(db, exc) from None
     db.commit()
     return out
 

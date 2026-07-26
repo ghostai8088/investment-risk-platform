@@ -28,6 +28,7 @@ from functools import lru_cache
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from irp_backend.auth import TokenError, get_verifier
@@ -197,3 +198,23 @@ def map_refusal(
         if klass in error_map:
             return error_map[klass]
     raise KeyError(type(exc))
+
+
+def deadlock_503(db: Session, exc: OperationalError) -> HTTPException:
+    """A 40P01 deadlock victim → 503 + Retry-After (B-F1); anything else re-raises (fail loud).
+
+    Hoisted from the breaches router at the Wave-12 close: phases 1–2 of the tick can hold the
+    audit-chain advisory lock while a new-breach INSERT waits on the parent ``limit_definition``
+    row's FK KEY SHARE, so a limit verb holding FOR UPDATE and waiting on the advisory is a
+    reachable 40P01 victim too — BOTH write routers must treat 40P01 as transient/retryable.
+    """
+    orig = getattr(exc, "orig", None)
+    code = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    if code != "40P01":
+        raise exc
+    db.rollback()
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="transient lock contention; retry",
+        headers={"Retry-After": "1"},
+    )

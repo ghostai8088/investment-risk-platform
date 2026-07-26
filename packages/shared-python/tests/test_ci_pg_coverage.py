@@ -49,6 +49,19 @@ _SKIP_MARKER = re.compile(r"pytest\.mark\.skipif")
 _EXEMPT: dict[str, str] = {}
 
 
+def _strip_comments(raw: str) -> str:
+    """FULL-LINE comments removed (Wave-12 close fold): a step commented out with ``#`` still
+    matched the raw-text scans, so comment-out was an invisible bypass while deletion fired the
+    pin. Dropping ``#``-led lines makes both edits equivalent to the scan. (Mid-line comments are
+    left alone — a trailing comment does not disable a step.)"""
+    return "\n".join(ln for ln in raw.splitlines() if not ln.lstrip().startswith("#"))
+
+
+def _workflow_text() -> str:
+    """The workflow source as the scans see it: live lines only."""
+    return _strip_comments(_CI.read_text(encoding="utf8"))
+
+
 def _pg_gated_suites() -> list[Path]:
     """Every suite that SKIPS itself without PostgreSQL.
 
@@ -73,9 +86,8 @@ def _pg_gated_suites() -> list[Path]:
     return found
 
 
-def _ci_pytest_paths() -> set[str]:
-    """Every path appearing in a `run: pytest …` line of the workflow."""
-    text = _CI.read_text(encoding="utf8")
+def _pytest_paths_in(text: str) -> set[str]:
+    """Every path appearing in a `run: pytest …` line of the given (already-stripped) text."""
     paths: set[str] = set()
     for match in re.finditer(r"run:\s*pytest\s+(?P<args>[^\n]+)", text):
         for token in match.group("args").split():
@@ -84,6 +96,11 @@ def _ci_pytest_paths() -> set[str]:
             elif "/tests" in token:  # a whole-directory invocation covers everything under it
                 paths.add(token.rstrip("/") + "/")
     return paths
+
+
+def _ci_pytest_paths() -> set[str]:
+    """Every path appearing in a LIVE `run: pytest …` line of the workflow (comments stripped)."""
+    return _pytest_paths_in(_workflow_text())
 
 
 def _is_covered(suite: Path, ci_paths: set[str]) -> bool:
@@ -150,8 +167,8 @@ _MIGRATION_JOB = "migration"
 
 
 def _job_block(job: str) -> str:
-    """The raw YAML text of one job, from its key to the next top-level job key."""
-    text = _CI.read_text(encoding="utf8")
+    """One job's text (comments stripped), from its key to the next top-level job key."""
+    text = _workflow_text()
     start = text.index(f"\n  {job}:")
     rest = text[start + 1 :]
     nxt = re.search(r"\n  [a-z][a-z0-9_-]*:\n", rest)
@@ -168,12 +185,16 @@ def _modules_installed_by(job: str) -> set[str]:
 
 
 def _suites_run_by(job: str) -> list[Path]:
+    """Every suite file a job's pytest steps run. ALL ``.py`` tokens of each line count (Wave-12
+    close fold) — the first-token-only regex would drop ``b.py`` from a future ``pytest a.py b.py``
+    step, silently shrinking the install-surface pin."""
     block = _job_block(job)
-    return [
-        _ROOT / m.group(1)
-        for m in re.finditer(r"run:\s*pytest\s+(\S+\.py)", block)
-        if (_ROOT / m.group(1)).is_file()
-    ]
+    suites: list[Path] = []
+    for match in re.finditer(r"run:\s*pytest\s+(?P<args>[^\n]+)", block):
+        for token in match.group("args").split():
+            if token.endswith(".py") and (_ROOT / token).is_file():
+                suites.append(_ROOT / token)
+    return suites
 
 
 def test_editable_install_paths_are_all_mapped() -> None:
@@ -206,3 +227,26 @@ def test_migration_job_installs_every_package_its_suites_import() -> None:
         "steps fail with ModuleNotFoundError. Add the package to that job's install line:\n  "
         + "\n  ".join(problems)
     )
+
+
+def test_a_commented_out_step_is_not_coverage() -> None:
+    """Negative control (Wave-12 close fold): commenting a step out must be equivalent to DELETING
+    it in the eyes of the pin — before the comment-strip, deletion fired the pin but comment-out
+    passed clean (an intent-requiring bypass, but a bypass in a gate built to not need intent)."""
+    raw = _CI.read_text(encoding="utf8")
+    target = "packages/shared-python/tests/test_scheduler_pg.py"
+    assert target in _pytest_paths_in(_strip_comments(raw))  # live today
+    mutated = "\n".join(("# " + ln) if target in ln else ln for ln in raw.splitlines())
+    assert target not in _pytest_paths_in(_strip_comments(mutated))
+
+
+def test_multi_path_pytest_lines_count_every_suite() -> None:
+    """Negative control (Wave-12 close fold): a ``pytest a.py b.py`` step must contribute BOTH
+    files to the install-surface scan — the first-token-only regex dropped the second."""
+    sample = (
+        "      - run: pytest packages/shared-python/tests/test_scheduler.py"
+        " apps/worker/tests/test_worker.py\n"
+    )
+    paths = _pytest_paths_in(sample)
+    assert "packages/shared-python/tests/test_scheduler.py" in paths
+    assert "apps/worker/tests/test_worker.py" in paths

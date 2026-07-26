@@ -327,3 +327,75 @@ def test_tick_only_verbs_are_not_exposed(ctx) -> None:
         "/limits/{limit_id}/resume",
         "/limits/health",
     }
+
+
+def test_the_limit_refusal_detail_strings_are_a_pinned_contract(ctx) -> None:
+    """Wave-12 close fold (the M-1 class, limits side). The operations UI classifies limit 409s on
+    the same `detail` markers as the breach verbs (apps/frontend/src/api/writes.ts SOD_MARKER +
+    the illegal-transition marker), but until this test only the STATUS codes were asserted here —
+    a backend reword shipped with zero failing tests and silently degraded every approve refusal
+    explanation to a generic "conflict". One UNCONDITIONAL exact-string assertion per 409 cause."""
+    lim = _create(ctx, ctx["maker"])
+    # SEPARATION OF DUTIES: the maker self-approves — person-level, not the role gate.
+    sod = _approve(ctx, lim["id"], ctx["maker"])
+    assert sod.status_code == 409
+    assert sod.json()["detail"] == "separation of duties: the actor shaped this limit"
+    # DUPLICATE IDENTITY: a second limit with the same code.
+    dup = ctx["client"].post(
+        "/limits", json=_body(ctx["pf"]), headers=_hdr(ctx["maker"], ctx["tenant"])
+    )
+    assert dup.status_code == 409
+    assert dup.json()["detail"] == "a limit with that code already exists"
+    # ILLEGAL TRANSITION: suspend a DRAFT.
+    ill = ctx["client"].post(
+        f"/limits/{lim['id']}/suspend", headers=_hdr(ctx["maker"], ctx["tenant"])
+    )
+    assert ill.status_code == 409
+    assert ill.json()["detail"] == "illegal transition from the current limit state"
+
+
+def test_limit_deadlock_maps_to_503(ctx) -> None:
+    # Wave-12 close fold: phases 1-2 of the tick hold the audit advisory while a new-breach INSERT
+    # waits on the parent limit row's FK KEY SHARE, so a limit verb (FOR UPDATE -> advisory) is a
+    # reachable 40P01 victim — it must get the same retryable 503 the breach verbs give (B-F1
+    # symmetry), not a raw 500. The real interleave needs PG; a synthetic OperationalError pins
+    # the mapping.
+    from unittest.mock import patch
+
+    from sqlalchemy.exc import OperationalError
+
+    class _Orig(Exception):
+        sqlstate = "40P01"
+
+    def _boom(*a, **k):
+        raise OperationalError("deadlock", {}, _Orig())
+
+    lim = _create(ctx, ctx["maker"])
+    _approve(ctx, lim["id"], ctx["approver"])
+    with patch("irp_backend.api.limits.suspend_limit", _boom):
+        r = ctx["client"].post(
+            f"/limits/{lim['id']}/suspend", headers=_hdr(ctx["maker"], ctx["tenant"])
+        )
+    assert r.status_code == 503
+    assert r.headers.get("Retry-After") == "1"
+
+
+def test_limit_non_deadlock_operational_error_is_not_swallowed(ctx) -> None:
+    # The 503 mapping must NOT mask other OperationalErrors (fail loud).
+    from unittest.mock import patch
+
+    from sqlalchemy.exc import OperationalError
+
+    class _Orig(Exception):
+        sqlstate = "57014"  # query canceled — not a deadlock
+
+    def _boom(*a, **k):
+        raise OperationalError("canceled", {}, _Orig())
+
+    lim = _create(ctx, ctx["maker"])
+    with patch("irp_backend.api.limits.approve_limit", _boom), pytest.raises(OperationalError):
+        ctx["client"].post(
+            f"/limits/{lim['id']}/approve",
+            json={"approval_ref": "RC"},
+            headers=_hdr(ctx["approver"], ctx["tenant"]),
+        )

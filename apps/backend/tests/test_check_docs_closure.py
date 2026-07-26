@@ -72,6 +72,22 @@ def test_teeth_fire_on_a_shipped_but_unclosed_record() -> None:
     assert _is_unstamped_shipped("API-1", [], done) is False
 
 
+def test_status_lines_recognize_the_prose_shape_the_wave12_records_use() -> None:
+    """Wave-12 close broadening: CAD-1 and OPS-1 carry status as a `**Status:**` PROSE line and
+    contain ZERO `| **Status** |` table rows — the table-only matcher silently exempted both, so
+    had either shipped un-CLOSED the gate would have stayed green (the exact coverage-narrowing
+    class OQ-W10C fixed on the roadmap side). Tested against the ACTUAL failure forms: the real
+    prose shape at RATIFIED must FIRE, at CLOSED must not."""
+    prose_ratified = ["**Status:** **RATIFIED 2026-07-25 (OQ-CAD-1-1/2/3 = A)** — implementation"]
+    prose_closed = ["**Status:** **✅ CLOSED 2026-07-25 — SHIPPED (PR #125, CI green)**"]
+    assert _status_lines("\n".join(prose_ratified)) == prose_ratified
+    assert _is_unstamped_shipped("CAD-1", prose_ratified, {"CAD-1"}) is True
+    assert _is_unstamped_shipped("CAD-1", prose_closed, {"CAD-1"}) is False
+    # Prose ABOUT a prose Status line (indented/quoted mid-sentence) still does not count.
+    quoting = "  the record carries a `**Status:**` line per the template."
+    assert _status_lines(quoting) == []
+
+
 def test_status_lines_ignore_prose_describing_a_status_line() -> None:
     """Real false-positive this check hit on itself (API-1b's own record): Part 3 quotes the rule
     verbatim — "`| **Status** |` cell contains 'DRAFT for ratification'" — which is prose ABOUT the

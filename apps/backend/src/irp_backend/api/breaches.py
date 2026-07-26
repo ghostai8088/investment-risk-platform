@@ -29,6 +29,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from irp_backend.deps import (
+    deadlock_503,
     get_tenant_session,
     map_refusal,
     require_permission,
@@ -109,7 +110,7 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
 #: types (OPS-1 medium fold). Until now the verbs documented only 200/422, so the operations UI had
 #: to hand-model 403/409/503 with ZERO drift protection from `gen-api-check` — precisely the
 #: FE-2 lesson (a contract you hand-model is a contract that silently rots). These are documentation
-#: only: the runtime statuses are produced by `_refuse` / `_deadlock_503` / the permission guard.
+#: only: the runtime statuses are produced by `_refuse` / `deadlock_503` / the permission guard.
 _WRITE_REFUSALS: dict[int | str, dict[str, Any]] = {
     status.HTTP_403_FORBIDDEN: {"description": "The caller does not hold the required permission."},
     status.HTTP_404_NOT_FOUND: {"description": "No such breach in the acting tenant."},
@@ -145,20 +146,6 @@ def _refuse(db: Session, exc: BreachLifecycleError) -> HTTPException:
     db.rollback()  # whole-unit rollback; NO DB reads after this (the GUC is gone — B-F8)
     code, detail = map_refusal(exc, _ERROR_MAP)
     return HTTPException(status_code=code, detail=detail)
-
-
-def _deadlock_503(db: Session, exc: OperationalError) -> HTTPException:
-    """A 40P01 deadlock victim → 503 Retry-After (B-F1); anything else re-raises (fail loud)."""
-    orig = getattr(exc, "orig", None)
-    code = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
-    if code != "40P01":
-        raise exc
-    db.rollback()
-    return HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="transient lock contention; retry",
-        headers={"Retry-After": "1"},
-    )
 
 
 def _load_or_404(db: Session, principal: Principal, breach_id: uuid.UUID) -> Breach:
@@ -412,7 +399,7 @@ def assign(
     except BreachLifecycleError as exc:
         raise _refuse(db, exc) from None
     except OperationalError as exc:
-        raise _deadlock_503(db, exc) from None
+        raise deadlock_503(db, exc) from None
     out = _detail_out(db, principal, str(breach_id))  # build BEFORE the single commit
     db.commit()
     return out
@@ -438,7 +425,7 @@ def respond(
     except BreachLifecycleError as exc:
         raise _refuse(db, exc) from None
     except OperationalError as exc:
-        raise _deadlock_503(db, exc) from None
+        raise deadlock_503(db, exc) from None
     out = _detail_out(db, principal, str(breach_id))
     db.commit()
     return out
@@ -475,7 +462,7 @@ def review(
     except BreachLifecycleError as exc:
         raise _refuse(db, exc) from None
     except OperationalError as exc:
-        raise _deadlock_503(db, exc) from None
+        raise deadlock_503(db, exc) from None
     out = _detail_out(db, principal, str(breach_id))
     db.commit()
     return out
@@ -502,7 +489,7 @@ def close(
     except BreachLifecycleError as exc:
         raise _refuse(db, exc) from None
     except OperationalError as exc:
-        raise _deadlock_503(db, exc) from None
+        raise deadlock_503(db, exc) from None
     out = _detail_out(db, principal, str(breach_id))
     db.commit()
     return out

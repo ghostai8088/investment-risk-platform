@@ -22249,6 +22249,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
           }
         },
         "summary": "Create",
@@ -22545,6 +22548,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
           }
         },
         "summary": "Update",
@@ -22655,6 +22661,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
           }
         },
         "summary": "Approve",
@@ -22755,6 +22764,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
           }
         },
         "summary": "Resume",
@@ -22855,6 +22867,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Transient lock contention (deadlock victim). Retryable; see `Retry-After`."
           }
         },
         "summary": "Suspend",
