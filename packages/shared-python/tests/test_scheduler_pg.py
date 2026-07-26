@@ -28,7 +28,7 @@ from irp_shared.portfolio import PortfolioActor, create_portfolio
 from irp_shared.risk import register_var_model
 from irp_shared.scheduling.events import OUTCOME_DISPATCHED, SchedulingActor
 from irp_shared.scheduling.models import Schedule, ScheduledRun
-from irp_shared.scheduling.service import create_schedule
+from irp_shared.scheduling.service import ScheduleError, create_schedule
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
@@ -205,6 +205,91 @@ def test_forged_tenant_schedule_insert_is_denied(app_url: str) -> None:
         session.rollback()
     finally:
         session.close()
+        engine.dispose()
+
+
+def test_create_schedule_refuses_cross_tenant_portfolio_under_rls(app_url: str) -> None:
+    """CAD-1 (OQ-W11C-2) under REAL RLS: a schedule in tenant A referencing tenant B's portfolio is
+    refused by the P3-5 guard BEFORE the insert. This is the load-bearing case: a PG FK check
+    BYPASSES RLS, so without the guard's explicit tenant predicate the DB would durably admit the
+    cross-tenant reference; the guard closes it fail-closed (a clean ScheduleError, not a 500)."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    # Seed a real portfolio + registered model in tenant B.
+    session_b = factory()
+    try:
+        set_tenant_context(session_b, b)
+        b_portfolio = create_portfolio(
+            session_b,
+            tenant_id=b,
+            code=f"ACCT-{uuid.uuid4().hex[:6]}",
+            name="b-acct",
+            node_type="ACCOUNT",
+            actor=PortfolioActor(actor_id="s"),
+        )
+        session_b.flush()
+        b_mv = register_var_model(
+            session_b, tenant_id=b, actor_id="a", code_version="risk-v1", confidence_level="0.95"
+        )
+        session_b.commit()
+        b_portfolio_id, b_mv_id = str(b_portfolio.id), b_mv.id
+    finally:
+        session_b.close()
+    # Acting as tenant A, try to point a schedule at tenant B's portfolio → refused by the guard.
+    session_a = factory()
+    try:
+        set_tenant_context(session_a, a)
+        # A needs its own real referents so each FAILURE isolates to the intended guard (portfolio
+        # is checked first, so the model-version case must supply a REAL in-tenant-A portfolio).
+        a_portfolio = create_portfolio(
+            session_a,
+            tenant_id=a,
+            code=f"ACCT-{uuid.uuid4().hex[:6]}",
+            name="a-acct",
+            node_type="ACCOUNT",
+            actor=PortfolioActor(actor_id="s"),
+        )
+        session_a.flush()
+        a_mv = register_var_model(
+            session_a, tenant_id=a, actor_id="a", code_version="risk-v1", confidence_level="0.95"
+        )
+        session_a.commit()  # durable so the sub-case rollbacks below don't revert A's referents
+        set_tenant_context(session_a, a)  # re-arm the txn-local RLS GUC after the commit cleared it
+        with pytest.raises(ScheduleError, match="portfolio"):
+            create_schedule(
+                session_a,
+                tenant_id=a,
+                code="cross-tenant",
+                name="x",
+                target_run_type="VAR",
+                scope_portfolio_id=b_portfolio_id,  # tenant B's portfolio — foreign to A
+                model_version_id=a_mv.id,
+                environment_id="ci",
+                interval_days=1,
+                anchor_date=_ANCHOR,
+                actor=_ACTOR,
+            )
+        session_a.rollback()
+        set_tenant_context(session_a, a)  # rollback cleared the txn-local GUC — re-arm for the read
+        # And symmetrically, A's own model_version cannot be paired with B's foreign model either.
+        with pytest.raises(ScheduleError, match="model version"):
+            create_schedule(
+                session_a,
+                tenant_id=a,
+                code="cross-tenant-mv",
+                name="x",
+                target_run_type="VAR",
+                scope_portfolio_id=str(a_portfolio.id),  # real A portfolio (passes the first guard)
+                model_version_id=b_mv_id,  # tenant B's model version — foreign to A
+                environment_id="ci",
+                interval_days=1,
+                anchor_date=_ANCHOR,
+                actor=_ACTOR,
+            )
+        session_a.rollback()
+    finally:
+        session_a.close()
         engine.dispose()
 
 

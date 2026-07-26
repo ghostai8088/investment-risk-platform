@@ -40,6 +40,7 @@ from irp_shared.scheduling.service import (
 from irp_worker.breaches import poll_tenant_breaches
 from irp_worker.deadlines import poll_tenant_breach_deadlines
 from irp_worker.notifications import poll_tenant_notifications
+from irp_worker.tenants import TenantIdError, canonical_tenant_id
 
 #: The unique constraint that backstops the per-(schedule, tick) idempotency race. ONLY a violation
 #: of THIS constraint is the benign concurrent-double-fire dedup; any OTHER IntegrityError from the
@@ -156,6 +157,10 @@ def run_operational_tick_for_tenant(
     ``now`` defaults to the canonical UTC wall clock; only this top-level entry reads it (the
     due/breach computation is a pure function of the injected ``now`` — INV-SCH-1).
     """
+    # Defense-in-depth (L4): the boundary entrypoints already canonicalize, but this shared,
+    # importable unit arms the RLS GUC from ``tenant_id`` — canonicalize here too so a future direct
+    # caller can never arm RLS from a non-canonical string (the SSO-1 silent RLS-hide fail-open).
+    tenant_id = canonical_tenant_id(tenant_id)
     tick_now = now if now is not None else utcnow()
     session = session_factory()
     try:
@@ -201,13 +206,19 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entry
     if not args.tenant:
         print("error: no tenant (set --tenant or $IRP_TENANT_ID)", file=sys.stderr)
         return 2
+    # OQ-a fail-open fix: canonicalize the tenant id BEFORE it arms the RLS GUC. A non-canonical
+    # UUID would silently RLS-hide every row and make the tick do nothing (SSO-1's second instance);
+    # a non-UUID fails CLOSED here (exit 2), never arming RLS from an uncanonicalizable string.
+    try:
+        tenant = canonical_tenant_id(args.tenant)
+    except TenantIdError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     engine = make_engine(args.database_url)
     factory = make_session_factory(engine)
     try:
-        results = run_operational_tick_for_tenant(
-            factory, args.tenant, code_version=args.code_version
-        )
+        results = run_operational_tick_for_tenant(factory, tenant, code_version=args.code_version)
     finally:
         engine.dispose()
     n_sched = len(results["scheduled"])
@@ -215,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entry
     n_escalated = len(results["escalated"])
     n_notified = len(results["notified"])
     print(
-        f"irp-worker: tenant={args.tenant} fired={n_sched} "
+        f"irp-worker: tenant={tenant} fired={n_sched} "
         f"breaches={n_breach} escalated={n_escalated} notified={n_notified}"
     )
     return 0

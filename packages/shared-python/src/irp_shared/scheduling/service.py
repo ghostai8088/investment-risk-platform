@@ -24,6 +24,8 @@ from sqlalchemy.orm import Session
 
 from irp_shared.audit.actions import ACTION_CREATE, ACTION_UPDATE
 from irp_shared.audit.service import record_event
+from irp_shared.model.guards import assert_model_version_in_tenant
+from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.risk.covariance_service import latest_covariances
 from irp_shared.risk.events import VarActor
 from irp_shared.risk.factor_service import latest_factor_exposure
@@ -302,6 +304,16 @@ def create_schedule(
         status=status,
         interval_days=interval_days,
         environment_id=environment_id,
+    )
+    # P3-5 cross-tenant FK guard (OQ-W11C-2): re-resolve the two HARD FKs under the acting tenant
+    # BEFORE they are stamped into NOT-NULL FK columns — PG FK checks bypass RLS, so the DB alone
+    # would durably admit a foreign portfolio/model_version. ``environment_id`` is a free label
+    # (``calculation_run.environment_id``; NOT a security boundary) and correctly needs no guard.
+    assert_portfolio_in_tenant(
+        session, scope_portfolio_id, acting_tenant=tenant_id, error=ScheduleError
+    )
+    assert_model_version_in_tenant(
+        session, model_version_id, acting_tenant=tenant_id, error=ScheduleError
     )
     schedule = Schedule(
         tenant_id=str(tenant_id),
