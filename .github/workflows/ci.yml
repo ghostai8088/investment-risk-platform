@@ -388,6 +388,15 @@ jobs:
       # local full-PG battery for four consecutive slices because CI's PG tier is a hand-enumerated
       # per-file allowlist and nobody added a step. `test_ci_pg_coverage.py` now FAILS if any
       # IRP_TEST_DATABASE_URL-gated suite is missing from this file, so the class cannot recur.
+      # SCH-2: the per-family/per-cadence CHECKs are migration-only and ORM-invisible, so the
+      # SQLite battery is blind to them; and the 0053 downgrade is a TWO-TABLE cascade whose
+      # destructive leg the `alembic downgrade base` smoke alone cannot prove. Both are PG-only.
+      # assert-then-ROLLBACK restores the relaxed state for the demo steps later in THIS job.
+      - name: Schedule cadence CHECKs + non-superuser downgrade-path tests (Postgres, SCH-2)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_scheduler_cadence_pg.py -q
       - name: Schedule symmetric-RLS + append-only + ops-no-grant tests (Postgres, SCH-1 / ENT-061/062)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
@@ -541,6 +550,19 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zzzzz_ops_pg.py -q
+      # Stage 15 (SCH-2) runs AFTER stage 14 and BEFORE the downgrade smoke. It mints NO model
+      # code and NO validation record, so only the COMPLETED-run count moves. It is the FIRST demo
+      # stage to create a schedule at all: before it, migration 0053's destructive two-table
+      # downgrade leg deleted ZERO rows in this job and went green while testing nothing. It leaves
+      # an unrepresentable schedule (EXPOSURE => NULL model_version_id) + an append-only
+      # scheduled_run child committed, so the smoke below exercises the FK cascade for real.
+      # Filename ``stage9zzzzzz`` (one more ``z`` than stage 14) so a single-invocation local
+      # battery collates it LAST — the standing stage-ordering discipline.
+      - name: Demo stage-15 cadence test (Postgres, SCH-2)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9zzzzzz_sch2_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

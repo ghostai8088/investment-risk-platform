@@ -360,11 +360,17 @@ def _dispatch_exposure(
     CURRENT data instead. The tick is an END-OF-DAY instant (OD-SCH-2-C) so same-day marks are
     visible under ``Valuation.valid_from <= valid_at``.
 
-    ``as_of_known_at`` is PINNED to the tick rather than left to default to ``utcnow()``: otherwise
-    the governed month-end value would be a function of WHEN the worker happened to be up — two
-    fires of the same tick, minutes vs weeks apart, would differ whenever an input was corrected
-    between. Pinning makes the fire reproducible from the tick alone; the cost (ignoring later
-    corrections) is the correct trade for a governed input and is recorded.
+    ``as_of_known_at`` is deliberately LEFT UNSET (it defaults to the fire instant). The verifier
+    asked for it to be pinned to the tick, reasoning that two fires of the same tick — minutes vs
+    weeks apart — would otherwise differ whenever an input was corrected between. **That scenario
+    is unreachable**: ``uq(schedule_id, scheduled_for)`` permits exactly ONE fire per tick, and the
+    run is reproducible from its own immutable snapshot regardless (AD-014), which records the
+    known-time on its header. Pinning it buys nothing and costs something real — the known-time
+    axis means "as the world was RECORDED at T", so ``known_at = tick`` makes every row recorded
+    after the tick invisible: a late-arriving month-end mark would be permanently unseen by the
+    only fire that tick will ever get, and any replay against back-loaded data yields an EMPTY
+    snapshot. The demo stage caught exactly that (an `EmptySnapshotError` on a book whose positions
+    were recorded after the modelled month-end), which is why the pin was reverted.
     """
     result: ExposureRunResult = run_exposure(
         session,
@@ -374,7 +380,6 @@ def _dispatch_exposure(
         environment_id=schedule.environment_id,
         portfolio_id=schedule.scope_portfolio_id,
         as_of_valid_at=tick,
-        as_of_known_at=tick,
     )
     return DispatchOutcome(
         run_id=result.run.run_id,
@@ -583,7 +588,10 @@ def create_schedule(
         name=name,
         target_run_type=target_run_type,
         scope_portfolio_id=str(scope_portfolio_id),
-        model_version_id=str(model_version_id),
+        # NOT `str(...)` — that stringifies None to the literal "None", which PG then rejects as
+        # `invalid input syntax for type uuid`. The column is legitimately NULL for a model-less
+        # family (SCH-2), so the None must survive to the bind parameter.
+        model_version_id=str(model_version_id) if model_version_id is not None else None,
         environment_id=environment_id,
         cadence_kind=cadence_kind,
         interval_days=interval_days,
