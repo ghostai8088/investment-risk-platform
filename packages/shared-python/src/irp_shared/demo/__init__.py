@@ -86,6 +86,12 @@ from irp_shared.demo.ppf3_stage13 import (
     Ppf3Stage13Summary,
     run_demo_ppf3_stage13,
 )
+from irp_shared.demo.rm1_stage16 import (
+    DemoRm1AlreadySeededError,
+    DemoRm1Error,
+    Rm1Stage16Summary,
+    run_demo_rm1_stage16,
+)
 from irp_shared.demo.rs1_stage5 import (
     DemoRs1AlreadySeededError,
     DemoRs1Error,
@@ -109,6 +115,10 @@ from irp_shared.demo.stage10_api1 import (
 )
 
 __all__ = [
+    "run_demo_rm1_stage16",
+    "Rm1Stage16Summary",
+    "DemoRm1Error",
+    "DemoRm1AlreadySeededError",
     "DEMO_TENANT_ID",
     "CampaignSummary",
     "DemoCampaignAlreadySeededError",
