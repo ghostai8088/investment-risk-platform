@@ -5,7 +5,7 @@ the end-to-end dispatch → run_var chain is exercised in the PG/demo tier)."""
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from datetime import date as dt_date
 
 import pytest
@@ -16,16 +16,21 @@ from irp_shared.audit.models import AppendOnlyViolation, AuditEvent
 from irp_shared.model.models import Model, ModelVersion
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.scheduling.events import (
+    CADENCE_CALENDAR_MONTH_END,
     OUTCOME_DISPATCHED,
     SCHEDULE_CREATE_EVENT,
     SCHEDULE_STATUS_ACTIVE,
     SCHEDULE_STATUS_PAUSED,
     SCHEDULE_UPDATE_EVENT,
+    TARGET_RUN_TYPE_EXPOSURE_AGGREGATE,
     SchedulingActor,
 )
 from irp_shared.scheduling.models import Schedule, ScheduledRun
 from irp_shared.scheduling.service import (
+    FAMILY_REGISTRY,
+    SCHEDULABLE_RUN_TYPES,
     ScheduleError,
+    _assert_current_tick,
     create_schedule,
     current_tick,
     is_due,
@@ -298,3 +303,129 @@ def test_paused_over_a_window_then_resume_fires_only_the_current_tick(session: S
     due = select_active_due(session, now, acting_tenant=tenant)
     assert len(due) == 1
     assert due[0][1] == current_tick(_ANCHOR, 7, now)  # the current tick, one fire only
+
+
+# --- SCH-2: the CALENDAR_MONTH_END cadence + the family registry ---------------------------------
+# `cadence_kind` had ZERO test coverage before SCH-2 (`_validate_config`'s cadence branch was never
+# exercised and `_mk` never passed the field), so these are the first tests that vocabulary has had.
+
+
+def _mk_month_end(session: Session, tenant: str, **over: object) -> Schedule:
+    """A CALENDAR_MONTH_END + EXPOSURE_AGGREGATE schedule (no model_version, no interval_days)."""
+    kwargs: dict[str, object] = {
+        "target_run_type": TARGET_RUN_TYPE_EXPOSURE_AGGREGATE,
+        "cadence_kind": CADENCE_CALENDAR_MONTH_END,
+        "model_version_id": None,
+        "interval_days": None,
+        "name": "Month-end exposure",
+    }
+    kwargs.update(over)
+    return _mk(session, tenant, **kwargs)
+
+
+def test_month_end_tick_is_the_last_weekday_at_end_of_day() -> None:
+    # 2026-01-31 is a SATURDAY, so January's grid point is Friday the 30th — the QS-11 `preceding`
+    # roll. The instant is END of day: the tick becomes the exposure run's `as_of_valid_at`, and a
+    # midnight tick would sit before every same-day mark's `valid_from` (invisible → FAILED run).
+    tick = current_tick(
+        _ANCHOR, None, datetime(2026, 2, 3, tzinfo=UTC), cadence_kind=CADENCE_CALENDAR_MONTH_END
+    )
+    assert tick.date() == dt_date(2026, 1, 30)
+    assert (tick.hour, tick.minute, tick.second) == (23, 59, 59)
+
+
+def test_month_end_tick_is_monotone_and_never_ahead_of_now() -> None:
+    # The bucket must be a pure, monotone function of `now` — two concurrent polls in the same
+    # bucket MUST agree, or `uq(schedule_id, scheduled_for)` stops colliding (a silent double-fire).
+    seen: list[datetime] = []
+    probe = datetime(2026, 1, 1, tzinfo=UTC)
+    while probe < datetime(2027, 1, 1, tzinfo=UTC):
+        tick = current_tick(_ANCHOR, None, probe, cadence_kind=CADENCE_CALENDAR_MONTH_END)
+        assert tick <= probe
+        if not seen or tick != seen[-1]:
+            assert not seen or tick > seen[-1]  # strictly increasing bucket sequence
+            seen.append(tick)
+        probe += timedelta(hours=6)
+    assert len(seen) == 12  # one grid point per calendar month
+
+
+def test_month_end_grid_refuses_a_tick_from_before_the_anchor(session: Session) -> None:
+    """The SCH-2 blocking defect: under INTERVAL, `tick >= anchor` was held STRUCTURALLY by
+    `current_tick`'s `k < 0` clamp. A calendar grid is not anchor-generated, so without an explicit
+    tick-vs-anchor test a schedule anchored mid-month fires the PREVIOUS month's grid point — a
+    backfill of a period before the schedule existed, which under the tick→as-of rule would mint a
+    governed run dated before the book was configured. 93% of 2026 anchor dates hit this."""
+    tenant = str(uuid.uuid4())
+    sched = _mk_month_end(session, tenant, anchor_date=dt_date(2026, 1, 5))
+    just_after_creation = datetime(2026, 1, 6, tzinfo=UTC)
+
+    tick = current_tick(
+        sched.anchor_date, None, just_after_creation, cadence_kind=CADENCE_CALENDAR_MONTH_END
+    )
+    assert tick.date() == dt_date(2025, 12, 31)  # the pre-anchor grid point is what the grid yields
+    assert is_due(sched, just_after_creation, fired_ticks=set()) is False
+    with pytest.raises(ScheduleError, match="outside the start boundary"):
+        _assert_current_tick(sched, tick, just_after_creation)
+
+    # ...and the FIRST legitimate fire is January's month-end, discovered in February.
+    in_february = datetime(2026, 2, 2, tzinfo=UTC)
+    first = current_tick(
+        sched.anchor_date, None, in_february, cadence_kind=CADENCE_CALENDAR_MONTH_END
+    )
+    assert first.date() == dt_date(2026, 1, 30)
+    assert is_due(sched, in_february, fired_ticks=set()) is True
+    _assert_current_tick(sched, first, in_february)  # must not raise
+
+
+def test_interval_cadence_still_refuses_a_future_tick_before_the_anchor(session: Session) -> None:
+    """The other leg of the start boundary, kept: under INTERVAL the clamp makes `tick == anchor`
+    when `now` precedes the anchor — which satisfies the tick-vs-anchor test while being a tick in
+    the FUTURE. Both legs are required; replacing rather than adding regressed this."""
+    tenant = str(uuid.uuid4())
+    sched = _mk(session, tenant, anchor_date=dt_date(2026, 3, 1))
+    assert is_due(sched, datetime(2026, 1, 15, tzinfo=UTC), fired_ticks=set()) is False
+
+
+def test_current_tick_fails_closed_on_a_bad_cadence_or_missing_interval() -> None:
+    """`current_tick` runs on the POLL path, and `select_active_due` is evaluated in the worker's
+    `for` header OUTSIDE the per-schedule SAVEPOINT — so a raw TypeError here would abort ALL FOUR
+    tick phases for the tenant. Every exit must be a clean ScheduleError."""
+    with pytest.raises(ScheduleError, match="unknown cadence_kind"):
+        current_tick(_ANCHOR, 7, datetime(2026, 6, 1, tzinfo=UTC), cadence_kind="NOPE")
+    with pytest.raises(ScheduleError, match="interval_days is required"):
+        current_tick(_ANCHOR, None, datetime(2026, 6, 1, tzinfo=UTC))
+
+
+def test_month_end_schedule_forbids_interval_days_and_model_version(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="interval_days is meaningless"):
+        _mk_month_end(session, tenant, interval_days=7)
+    with pytest.raises(ScheduleError, match="model-less"):
+        _mk_month_end(session, tenant, model_version_id=_seed_model_version(session, tenant))
+
+
+def test_var_family_still_requires_a_model_version(session: Session) -> None:
+    """The CTRL-003 inventory-before-use rule is gated on the registry DECLARATION, never on
+    whether the caller supplied a value — `if model_version_id:` would be a fail-open."""
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="model_version_id is required"):
+        _mk(session, tenant, model_version_id=None)
+
+
+def test_interval_cadence_still_requires_a_positive_interval(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="positive integer"):
+        _mk(session, tenant, interval_days=None)
+    with pytest.raises(ScheduleError, match="positive integer"):
+        _mk(session, tenant, interval_days=0)
+
+
+def test_the_schedulable_set_is_derived_from_the_registry() -> None:
+    """One source for the family gate (SCH-2): `events` no longer defines a second list, and the
+    schedule's family key IS the real `calculation_run.run_type` (OQ-SCH-2-8)."""
+    assert SCHEDULABLE_RUN_TYPES == frozenset(FAMILY_REGISTRY)
+    assert SCHEDULABLE_RUN_TYPES == {"VAR", "EXPOSURE_AGGREGATE"}
+    assert FAMILY_REGISTRY["VAR"].requires_model_version is True
+    assert FAMILY_REGISTRY["EXPOSURE_AGGREGATE"].requires_model_version is False
+    # EXPOSURE has no upstream to resolve, so its failures are POST-create (a committed run).
+    assert FAMILY_REGISTRY["EXPOSURE_AGGREGATE"].produces_run_on_failure is True
