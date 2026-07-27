@@ -62,6 +62,14 @@ _EXPOSURE = "EXPOSURE_AGGREGATE"
 _INTERVAL = "INTERVAL"
 _MONTH_END = "CALENDAR_MONTH_END"
 
+#: Runaway ENVELOPE on ``interval_days``, mirroring ``scheduling.service.MAX_INTERVAL_DAYS`` (a
+#: century). Not a business rule: the column is a 32-bit Integer, but Python's ``timedelta`` caps at
+#: 999,999,999 days, so every value between the two limits made the grid arithmetic raise
+#: ``OverflowError`` — not a ``ScheduleError``, therefore escaping the poll loop's skip-and-report
+#: and killing the tenant's whole tick cycle. The DB is the layer that also covers a row written by
+#: something other than ``create_schedule``.
+_MAX_INTERVAL_DAYS = 36_525
+
 #: Every identifier this migration mints, checked at import (the P3-8/BT-1 63-char lesson). The
 #: convention expands to ``ck_schedule_<name>`` (db/base.py naming_convention).
 _CHECK_MODEL_VERSION = "model_version_by_family"
@@ -100,7 +108,8 @@ def upgrade() -> None:
     op.create_check_constraint(
         _CHECK_INTERVAL,
         "schedule",
-        f"(cadence_kind = '{_INTERVAL}' AND interval_days IS NOT NULL AND interval_days > 0)"
+        f"(cadence_kind = '{_INTERVAL}' AND interval_days IS NOT NULL"
+        f" AND interval_days > 0 AND interval_days <= {_MAX_INTERVAL_DAYS})"
         f" OR (cadence_kind = '{_MONTH_END}' AND interval_days IS NULL)",
     )
     op.create_check_constraint(

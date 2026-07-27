@@ -72,6 +72,20 @@ ENTITY_SCHEDULE = "schedule"
 _UPDATABLE = ("name", "status")
 
 
+#: Runaway ceiling on ``interval_days`` — an ENVELOPE, not a business rule (the CC-2 pattern: a
+#: ceiling plus an envelope BELOW the column capacity). 36,525 days is a century; no real cadence
+#: approaches it. Why it must exist at all (SCH-2 4-finder review, grid lens): the column is a
+#: 32-bit ``Integer`` (max 2,147,483,647) but ``timedelta`` caps at 999,999,999 days, so every value
+#: in between made ``current_tick`` raise **OverflowError** — which is NOT a ``ScheduleError``, so
+#: it escaped ``select_active_due``'s skip-and-report, escaped the worker's ``for`` header (outside
+#: the per-schedule SAVEPOINT), and aborted all four tick phases for the tenant every cycle. That is
+#: precisely the failure class the ratified B3 fold exists to prevent, reached by a different door.
+#: Enforced in THREE places, like every other per-family rule here: this bound in
+#: ``_validate_config``, the DB CHECK ``ck_schedule_interval_days_by_cadence``, and a defensive
+#: ``OverflowError`` catch in ``current_tick`` for any row that predates or bypasses both.
+MAX_INTERVAL_DAYS = 36_525
+
+
 class ScheduleError(ValueError):
     """A schedule config or dispatch precondition failure (fail-closed)."""
 
@@ -157,11 +171,20 @@ def current_tick(
     if interval_days <= 0:
         raise ScheduleError("interval_days must be positive")
     anchor = _anchor_dt(anchor_date)
-    step = timedelta(days=interval_days)
-    k = (now - anchor) // step
-    if k < 0:
-        k = 0
-    return anchor + k * step
+    try:
+        step = timedelta(days=interval_days)
+        k = (now - anchor) // step
+        if k < 0:
+            k = 0
+        return anchor + k * step
+    except OverflowError as exc:
+        # The LAST of the three layers guarding MAX_INTERVAL_DAYS, and the only one that protects a
+        # row already in the table. Without it an OverflowError is not a ScheduleError, so it
+        # escapes the caller's skip-and-report and takes the whole tenant's tick cycle down.
+        raise ScheduleError(
+            f"interval_days {interval_days} overflows the grid arithmetic — "
+            f"the ceiling is {MAX_INTERVAL_DAYS}"
+        ) from exc
 
 
 def _schedule_tick(schedule: Schedule, now: datetime) -> datetime:
@@ -298,10 +321,22 @@ class ScheduledFamily:
       the DB CHECK, ``_validate_config``, AND the CAD-1 FK guard — each of which is gated on the
       DECLARATION, never on whether the caller happened to supply a value (that would be a CTRL-003
       fail-open: a VAR schedule created with ``None`` would skip inventory-before-use entirely).
-    - ``produces_run_on_failure`` — VaR can refuse PRE-create (leaving ``calculation_run_id`` NULL);
-      EXPOSURE has no upstream to resolve and therefore no pre-create gate, so its dominant failure
-      (a missing mark) is a POST-create FAILED run that leaves a committed ``calculation_run`` +
-      audit events + a DQ result. Recorded so the operator surface is written against the truth.
+    **``produces_run_on_failure`` was REMOVED at the SCH-2 4-finder review (grid lens).** It
+    declared that EXPOSURE "has no upstream to resolve and therefore no pre-create gate", so its
+    dominant failure was a POST-create FAILED run leaving a committed ``calculation_run`` + audit
+    events + a DQ result. **That is false on the only path the scheduler uses.** The pre-create gate
+    is not upstream resolution — it is the SNAPSHOT BUILD's completeness gate, and
+    ``_dispatch_exposure`` always takes the build path: a missing month-end mark raises
+    ``DataQualityError`` from ``build_snapshot`` BEFORE ``execute_governed_run`` mints anything
+    (the repo's own ``test_exposure.test_pre_create_refusal_incomplete_snapshot`` proves it — zero
+    runs). So the dominant scheduled EXPOSURE failure leaves ``calculation_run_id`` NULL and, after
+    the worker's SAVEPOINT rollback, NO durable artefact but the ledger row itself.
+
+    It was removed rather than corrected because the distinction is **not a family property at
+    all** — both families can fail on either side of run creation, depending on which gate trips.
+    Nothing read the flag; a false declaration with no consumer is worse than no declaration. The
+    operator-relevant version of this fact now lives in the burned-month runbook, where it changes
+    what someone actually does.
     - ``dispatch`` — the per-family callable. Upstream resolution is genuinely per-family (VaR needs
       two upstream runs from two different resolvers; EXPOSURE needs none), so it is a callback,
       not a shared body.
@@ -309,7 +344,6 @@ class ScheduledFamily:
 
     target_run_type: str
     requires_model_version: bool
-    produces_run_on_failure: bool
     dispatch: Callable[..., DispatchOutcome]
 
 
@@ -414,13 +448,11 @@ FAMILY_REGISTRY: dict[str, ScheduledFamily] = {
     TARGET_RUN_TYPE_VAR: ScheduledFamily(
         target_run_type=TARGET_RUN_TYPE_VAR,
         requires_model_version=True,
-        produces_run_on_failure=False,
         dispatch=_dispatch_var,
     ),
     TARGET_RUN_TYPE_EXPOSURE_AGGREGATE: ScheduledFamily(
         target_run_type=TARGET_RUN_TYPE_EXPOSURE_AGGREGATE,
         requires_model_version=False,
-        produces_run_on_failure=True,
         dispatch=_dispatch_exposure,
     ),
 }
@@ -480,6 +512,36 @@ def dispatch_one(
     return row
 
 
+#: Everything from here on in a SQLAlchemy ``DBAPIError`` string is the statement and its BOUND
+#: PARAMETERS; PG additionally appends a ``DETAIL:`` line quoting the failing row's values.
+_REASON_CUTS = ("\n[SQL:", "\n[parameters:", "\nDETAIL:", "\nCONTEXT:")
+
+
+def redact_failure_reason(reason: str) -> str:
+    """Keep the diagnostic head of a failure string; drop everything that carries DATA.
+
+    **Why this exists (SCH-2 4-finder review, doctrine lens).** The worker's catch-all records
+    ``f"{type(exc).__name__}: {exc}"`` into ``scheduled_run.failure_reason``. For a DB error that
+    string embeds the failing statement AND its bound parameters — verified: SQLAlchemy renders
+    ``[SQL: INSERT ...]\\n[parameters: (...)]``, and PG adds ``DETAIL: Failing row contains (...)``.
+    The values in an EXPOSURE dispatch are marks, quantities and valuations.
+
+    That was write-only until SCH-2 gave the ledger its first reader, and the reader is gated on
+    ``schedule.view`` — whose holder set includes ``auditor_3l``, a role deliberately granted NO
+    ``valuation.view`` / ``position.view`` / ``marketdata.view``. Surfacing the raw string would
+    hand that role, through the back door, the very data its permission set withholds.
+
+    Redaction happens HERE, at the WRITE boundary, not in the worker: every caller is then covered,
+    and a redacted ledger cannot be un-redacted by a later reader (the ``_assert_current_tick``
+    self-enforcement pattern). The first line survives — that is the driver + constraint name, which
+    is what an operator actually needs to act on.
+    """
+    head = reason
+    for cut in _REASON_CUTS:
+        head = head.split(cut, 1)[0]
+    return head.strip()[:2000]
+
+
 def record_failed_dispatch(
     session: Session,
     schedule: Schedule,
@@ -491,6 +553,7 @@ def record_failed_dispatch(
 
     Occupies the ``(schedule_id, tick)`` bucket so the SAME tick is not retried (record + continue,
     OD-SCH-1-J — the NEXT grid tick is the retry, not this one). ``calculation_run_id`` is NULL.
+    ``reason`` is REDACTED before it is persisted — see ``redact_failure_reason``.
     """
     _assert_current_tick(schedule, tick, now)  # INV-SCH-1 — the FAILED row uses the grid tick too
     row = ScheduledRun(
@@ -500,7 +563,7 @@ def record_failed_dispatch(
         fired_at=now,
         calculation_run_id=None,
         outcome=OUTCOME_FAILED,
-        failure_reason=reason[:2000],
+        failure_reason=redact_failure_reason(reason),
     )
     session.add(row)
     session.flush()
@@ -547,6 +610,11 @@ def _validate_config(
     if cadence_kind == CADENCE_INTERVAL:
         if interval_days is None or interval_days <= 0:
             raise ScheduleError("interval_days must be a positive integer for the INTERVAL cadence")
+        if interval_days > MAX_INTERVAL_DAYS:
+            raise ScheduleError(
+                f"interval_days must not exceed {MAX_INTERVAL_DAYS} (a runaway envelope, not a "
+                "business rule — the column admits values the grid arithmetic cannot represent)"
+            )
     elif interval_days is not None:
         raise ScheduleError(f"interval_days is meaningless under {cadence_kind} — omit it")
 

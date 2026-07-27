@@ -138,3 +138,29 @@ def test_the_var_named_resolved_columns_are_null_for_an_exposure_fire(db) -> Non
 def test_a_second_seed_refuses_rather_than_silently_skipping(db) -> None:  # noqa: ANN001
     with pytest.raises(DemoSch2AlreadySeededError):
         run_demo_sch2_stage15(db)
+
+
+def test_the_seeded_schedule_would_not_have_fired_before_its_own_anchor(db) -> None:  # noqa: ANN001
+    """The start boundary, exercised on REAL SEEDED DATA rather than a unit fixture.
+
+    The stage seeds anchor 2026-05-11 — after April's grid point, before May's. A poll on 2026-05-12
+    computes the 2026-04-30 tick, which is 11 days BEFORE the schedule existed; firing it would mint
+    a governed EXPOSURE run dated before the book was configured. `is_due` is a PURE predicate, so
+    probing it here writes nothing and cannot disturb the stage's end state.
+
+    This assertion exists because the 4-finder review showed the stage's own poll (2026-06-01, after
+    the grid point) satisfies the tick leg trivially — the stage demonstrated the happy path while
+    its comment claimed it demonstrated the boundary.
+    """
+    from datetime import UTC, datetime
+
+    from irp_shared.scheduling.service import current_tick, is_due
+
+    sched = _schedule(db)
+    mid_may = datetime(2026, 5, 12, 9, 0, tzinfo=UTC)
+
+    tick = current_tick(sched.anchor_date, None, mid_may, cadence_kind=sched.cadence_kind)
+    assert tick.date() == date(2026, 4, 30)  # April's grid point — before the anchor
+    assert tick.date() < sched.anchor_date
+
+    assert is_due(sched, mid_may, fired_ticks=set()) is False

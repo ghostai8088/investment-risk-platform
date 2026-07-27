@@ -46,7 +46,14 @@ from irp_shared.scheduling.queries import (
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
 #: Module-level guard singleton (deny-by-default; built once, not in an argument default).
-#: The SCH-1-minted ``schedule.view`` — held by platform_admin, risk_manager_2l, auditor_3l and ops.
+#: The SCH-1-minted ``schedule.view``. Holder set VERIFIED against ``entitlement/bootstrap.py``
+#: (an earlier hand-written version of this comment was wrong in both directions):
+#: ``platform_admin``, ``data_steward``, ``risk_analyst_1l``, ``risk_manager_2l``, ``auditor_3l``.
+#: ``ops`` does NOT hold it — the ops role holds only ``ops.audit.verify``.
+#:
+#: ``auditor_3l`` is the holder that constrains what may be surfaced here: it holds NO
+#: ``valuation.view`` / ``position.view`` / ``marketdata.view``, so a ledger field must never carry
+#: raw row data (see ``scheduling.service.redact_failure_reason``, which enforces that upstream).
 _require_schedule_view = require_permission("schedule.view")
 
 

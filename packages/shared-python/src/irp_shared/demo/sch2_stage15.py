@@ -64,10 +64,17 @@ _CAPTURED_AT = datetime(2026, 5, 29, 17, 30, tzinfo=UTC)
 #: its next cycle, not at the instant itself).
 _POLL_AT = datetime(2026, 6, 1, 6, 5, tzinfo=UTC)
 
-#: The schedule's start boundary. Deliberately MID-MONTH and BEFORE the grid point, so the stage
-#: exercises the anchor semantics that the SCH-2 verifier pass found broken: a calendar grid is not
-#: anchor-generated, so without the tick-vs-anchor test this would have fired April's grid point —
-#: a run dated before the schedule existed.
+#: The schedule's start boundary — deliberately MID-MONTH, i.e. AFTER April's grid point and
+#: BEFORE May's. That shape is what makes the schedule a realistic subject for the anchor semantics
+#: the SCH-2 verifier pass found broken (a calendar grid is not anchor-generated, so nothing
+#: structurally stops it computing a tick from before the schedule existed).
+#:
+#: **Correction (4-finder review, claims lens):** an earlier version of this comment claimed the
+#: stage itself "exercises" that boundary. It does not — the stage polls ONLY at ``_POLL_AT``,
+#: after May's grid point, where the tick leg of ``_outside_start_boundary`` is satisfied trivially
+#: and never consulted. Removing the guard leaves this stage's behaviour identical. The boundary is
+#: exercised on this seeded row by ``test_demo_stage9zzzzzz_sch2_pg`` (a mid-May ``is_due`` probe,
+#: which is a pure predicate and writes nothing) and by the unit tier.
 _ANCHOR = date(2026, 5, 11)
 
 _SCHEDULE_CODE = "DEMO-MONTH-END-EXPOSURE"

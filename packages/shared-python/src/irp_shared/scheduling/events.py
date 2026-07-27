@@ -16,7 +16,9 @@ family (``EXPOSURE_AGGREGATE``) and a second cadence (``CALENDAR_MONTH_END``) sh
 family set moved OUT of this module. ``SCHEDULABLE_RUN_TYPES`` is now DERIVED from the dispatch
 registry in ``scheduling.service`` (OD-SCH-2-D/F) — it cannot live here, because the registry must
 import the family binders and this module is a leaf vocabulary that ``irp_worker`` imports for
-three string constants. This module keeps only the ``TARGET_RUN_TYPE_*`` literals.
+two outcome constants (``OUTCOME_FAILED``, ``OUTCOME_SKIPPED_DUPLICATE`` — count verified at the
+SCH-2 4-finder review; an earlier draft said three). This module keeps only the
+``TARGET_RUN_TYPE_*`` literals.
 """
 
 from __future__ import annotations
@@ -70,7 +72,8 @@ SCHEDULED_RUN_OUTCOMES = frozenset({OUTCOME_DISPATCHED, OUTCOME_SKIPPED_DUPLICAT
 #:
 #: The SCHEDULABLE set itself is DERIVED from the dispatch registry — see
 #: ``scheduling.service.SCHEDULABLE_RUN_TYPES``. It cannot be defined here (this module must stay a
-#: binder-free leaf; the registry imports ``risk``/``exposure``).
+#: binder-free leaf that ``irp_worker`` can import without dragging in the compute stack; the
+#: registry imports ``risk``/``exposure``).
 TARGET_RUN_TYPE_VAR = "VAR"
 TARGET_RUN_TYPE_EXPOSURE_AGGREGATE = "EXPOSURE_AGGREGATE"
 

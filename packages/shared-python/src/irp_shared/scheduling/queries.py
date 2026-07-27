@@ -78,7 +78,13 @@ def list_schedules(
         .outerjoin(
             ScheduledRun,
             (ScheduledRun.schedule_id == latest_tick.c.schedule_id)
-            & (ScheduledRun.scheduled_for == latest_tick.c.scheduled_for),
+            & (ScheduledRun.scheduled_for == latest_tick.c.scheduled_for)
+            # The tenant term on the RE-JOIN leg. Not load-bearing for correctness — the joined
+            # pair comes from a MAX over this tenant's own rows, and the tenant-agnostic
+            # ``uq_scheduled_run_schedule_tick`` means at most one row table-wide carries it — but
+            # without it this leg had two of the three layers the module docstring claims, and a
+            # future edit to either the subquery or the constraint would silently make it matter.
+            & (ScheduledRun.tenant_id == tenant),
         )
         .where(Schedule.tenant_id == tenant)
         .order_by(Schedule.code)

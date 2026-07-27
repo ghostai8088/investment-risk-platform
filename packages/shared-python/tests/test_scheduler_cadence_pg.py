@@ -34,8 +34,9 @@ from sqlalchemy.pool import NullPool
 
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import persistent_tenant_context
+from irp_shared.scheduling.events import CADENCE_CALENDAR_RESERVED
 from irp_shared.scheduling.queries import list_scheduled_runs, list_schedules
-from irp_shared.scheduling.service import FAMILY_REGISTRY
+from irp_shared.scheduling.service import FAMILY_REGISTRY, MAX_INTERVAL_DAYS
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
@@ -61,7 +62,11 @@ def app_url() -> str:
             )
         )
         conn.execute(text("GRANT USAGE ON SCHEMA public TO irp_app"))
-        for table in ("schedule", "scheduled_run"):
+        # The referent tables are here because `_seed_referents` INSERTs into all three as
+        # `irp_app` (4-finder review, schema lens): without them this file is green in CI only by
+        # GRANT LEAKAGE from ~30 earlier suites in the same job, and fails when run alone against a
+        # freshly migrated database. The SCH-1 sibling suite declares the same `_DEPS` set.
+        for table in ("schedule", "scheduled_run", "portfolio", "model", "model_version"):
             conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO irp_app"))
     superuser.dispose()
     return (
@@ -361,10 +366,99 @@ def test_downgrade_body_under_nonsuperuser_owner_member_role(app_url: str) -> No
         ).scalar_one()
         assert remaining_children == 0  # the FK cascade was handled child-first
         assert remaining_schedules == 0  # ...and the unrepresentable parent is gone
+
+        # (c) THE RE-TIGHTEN, asserted (4-finder review, schema lens). Clearing the rows was the
+        #     only thing checked before, so deleting the sandwich's CLOSING legs left this test
+        #     green — and CI's `downgrade base` smoke is equally blind, because 0049 then DROPS
+        #     both tables and erases the evidence. The realistic production rollback is 0053 -> 0052
+        #     and STOP, which would leave `scheduled_run` MUTABLE (its append-only trigger off) and
+        #     both tables readable ACROSS TENANTS (RLS off) — an IA + isolation breach that no
+        #     other gate would catch.
+        for table in ("schedule", "scheduled_run"):
+            rls_on, force_on = conn.execute(
+                text(
+                    "SELECT relrowsecurity, relforcerowsecurity FROM pg_class"
+                    " WHERE oid = to_regclass(:t)"
+                ),
+                {"t": table},
+            ).one()
+            assert rls_on is True, f"{table}: RLS left DISABLED by the downgrade"
+            assert force_on is True, f"{table}: FORCE RLS left off by the downgrade"
+        trigger_state = conn.execute(
+            text(
+                "SELECT tgenabled FROM pg_trigger WHERE tgname = 'scheduled_run_append_only'"
+                " AND tgrelid = to_regclass('scheduled_run')"
+            )
+        ).scalar_one()
+        # 'O' = enabled for ORIGIN (what 0049 created); 'D' = disabled.
+        assert trigger_state == "O", f"append-only trigger left in state {trigger_state!r}"
         trans.rollback()  # PG DDL is transactional — the relaxed state is restored
 
     mig_engine.dispose()
     su.dispose()
+    engine.dispose()
+
+
+def test_an_unenumerated_cadence_is_refused_by_the_vocab_check(app_url: str) -> None:  # noqa: F811
+    """The THIRD CHECK shipped with no test at all (4-finder review, claims lens).
+
+    ``ck_schedule_cadence_kind_vocab`` exists so an unresolvable ``cadence_kind`` cannot reach the
+    poll loop in the first place — the DB half of the defence whose service half is
+    ``current_tick``'s fail-closed branch. It is migration-only, so no other tier can see it: a
+    typo'd or dropped constraint was invisible to the entire battery.
+
+    ``CADENCE_CALENDAR_RESERVED`` is the sharpest probe available — it is a real constant in the
+    vocabulary module, deliberately RESERVED-and-unimplemented (OD-SCH-1-F), so a CHECK written
+    against the reserved name instead of the shipped one would pass a lazier test.
+    """
+    engine = make_engine(app_url, poolclass=NullPool)
+    with engine.connect() as conn:
+        trans = conn.begin()
+        tenant = str(uuid.uuid4())
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant})
+        portfolio_id, model_version_id = _seed_referents(conn, tenant)
+        for bad in (CADENCE_CALENDAR_RESERVED, "MONTHLY", "interval", ""):
+            with pytest.raises(IntegrityError) as caught:
+                _raw_insert_schedule(
+                    conn,
+                    tenant=tenant,
+                    target_run_type="VAR",
+                    model_version_id=model_version_id,
+                    portfolio_id=portfolio_id,
+                    cadence_kind=bad,
+                )
+            assert "ck_schedule_cadence_kind_vocab" in str(
+                caught.value.orig
+            ), f"cadence_kind={bad!r} was refused by the WRONG constraint"
+            conn.rollback()
+            trans = conn.begin()
+            conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant})
+            portfolio_id, model_version_id = _seed_referents(conn, tenant)
+        trans.rollback()
+    engine.dispose()
+
+
+def test_the_runaway_interval_envelope_is_enforced_by_the_db_too(app_url: str) -> None:  # noqa: F811
+    """The DB layer of ``MAX_INTERVAL_DAYS``. The service refuses it at create, but the ceiling
+    exists for the row written by something OTHER than ``create_schedule`` — which is precisely the
+    row that would then kill the tenant's whole tick cycle on every poll."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    with engine.connect() as conn:
+        trans = conn.begin()
+        tenant = str(uuid.uuid4())
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant})
+        portfolio_id, model_version_id = _seed_referents(conn, tenant)
+        with pytest.raises(IntegrityError) as caught:
+            _raw_insert_schedule(
+                conn,
+                tenant=tenant,
+                target_run_type="VAR",
+                model_version_id=model_version_id,
+                portfolio_id=portfolio_id,
+                interval_days=MAX_INTERVAL_DAYS + 1,
+            )
+        assert "ck_schedule_interval_days_by_cadence" in str(caught.value.orig)
+        trans.rollback()
     engine.dispose()
 
 
