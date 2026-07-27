@@ -538,8 +538,8 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zzzz_ppf3_pg.py -q
-      # Stage 14 (OPS-1) runs AFTER stage 11 and BEFORE the downgrade smoke. It mints NO model
-      # code and NO governed number (the 21/36/103 pins above hold): it seeds the CONTROL-PLANE
+      # Stage 14 (OPS-1) runs AFTER stage 13 and BEFORE the downgrade smoke. It mints NO model
+      # code and NO governed number (the 23/38/109 pins above hold): it seeds the CONTROL-PLANE
       # state the operations UI opens onto — limits (one breached, one in appetite, one DRAFT
       # awaiting approval), a real evaluated breach mid-remediation, its alert evidence, four
       # operator principals with disjoint duties, and the two read grants the demo's auditor
@@ -569,11 +569,23 @@ jobs:
       # would never be exercised), a DESIGNED multi-month drawdown (else MDD is identically zero),
       # and BOTH registered windows (12 fills as a genuine 7-window series; 36 cannot, so its
       # SUPPRESSED rows exercise the nullable-value encoding on real data). Counts move
-      # 23/38/110 -> 24/38/132, MEASURED (the ratified 24/39/131 was wrong twice: the baseline
-      # ignored the COMPLETED run SCH-2's stage 15 adds, and the perf registrar mints no
-      # model_validation row). A count pin now runs AFTER the last stage.
+      # 23/38/110 -> 24/39/132, MEASURED (the ratified 24/39/131 was right except for the
+      # baseline: SCH-2's stage 15 adds one COMPLETED run its own record did not count). A count
+      # pin now runs AFTER the last stage, where the total is actually final.
       # Filename ``stage9zzzzzzz`` (SEVEN ``z``, one more than SCH-2's stage 15) — the standing
       # stage-ordering discipline; the ratified record said six, written before SCH-2 took it.
+      # ENT-064's DB-enforcement tier (RM-1). The CHECK, the RLS policy and the append-only
+      # trigger are all created imperatively in migration 0054, so they are ORM-invisible and the
+      # entire SQLite battery is blind to them. Each control carries its EXECUTED reject side,
+      # including two negative controls (the CHECK dropped in a rolled-back transaction; a
+      # superuser bypassing RLS) so a constraint that refused everything could not masquerade as a
+      # correct one. Added after the 4-finder review found ENT-064 was the only governed result
+      # family with no PG suite at all.
+      - name: Rolling-risk DB enforcement tests (Postgres, RM-1 / ENT-064)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_rolling_risk_pg.py -q
       - name: Demo stage-16 rolling-risk test (Postgres, RM-1)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

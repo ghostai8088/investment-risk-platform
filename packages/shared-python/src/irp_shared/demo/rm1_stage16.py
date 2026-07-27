@@ -27,19 +27,16 @@ appends one more ``z``. SCH-2's stage 15 is ``stage9zzzzzz`` (six), so RM-1's su
 ``stage9zzzzzzz`` (SEVEN). The ratified record said stage 15 / six ``z`` — written the day before
 SCH-2 merged; that name would now COLLIDE and collate ahead of it.
 
-Counts move **23/38/110 -> 24/38/132** (MEASURED on a fresh-schema battery, not derived): one new
-model code and 22 COMPLETED runs (20 boundary exposure runs + 1 PM-1 return run + 1 RM-1
-rolling-risk run). The ratified figure `24/39/131` was wrong twice — the baseline ignored the one
-COMPLETED run SCH-2's stage 15 adds, and no validation record is minted (the perf registrar creates
-model + version + assumptions and no `model_validation`). **A validation record SHOULD be filed
-here** — every prior new-code stage files one — and that gap is recorded as outstanding, not
-silently accepted; see the RM-1 decision record Part 6.0.
+Counts move **23/38/110 -> 24/39/132** (MEASURED on a fresh-schema battery, not derived): one new
+model code, one INITIAL validation record, and 22 COMPLETED runs (20 boundary exposure runs +
+1 PM-1 return run + 1 RM-1 rolling-risk run). The ratified `24/39/131` was right except for the
+BASELINE: SCH-2's stage 15 adds one COMPLETED run its own record did not count.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from datetime import date as dt_date
 from decimal import Decimal
 
@@ -49,7 +46,19 @@ from sqlalchemy.orm import Session
 from irp_shared.demo.campaign import DEMO_TENANT_ID
 from irp_shared.entitlement.models import AppUser
 from irp_shared.exposure import ExposureActor, run_exposure
-from irp_shared.model.models import Model, ModelVersion
+from irp_shared.model.models import (
+    VALIDATION_OUTCOME_APPROVED_WITH_CONDITIONS,
+    VALIDATION_TYPE_INITIAL,
+    Model,
+    ModelVersion,
+)
+from irp_shared.model.service import assign_model_tier
+from irp_shared.model.validation import (
+    ModelValidationActor,
+    RecordValidationRequest,
+    ValidationEvidenceInput,
+    record_validation,
+)
 from irp_shared.perf import (
     PortfolioReturnActor,
     RollingRiskActor,
@@ -66,6 +75,31 @@ from irp_shared.reference.models import Instrument
 from irp_shared.snapshot import build_rolling_risk_snapshot
 from irp_shared.snapshot.events import SnapshotActor
 from irp_shared.valuation import ValuationActor, create_valuation
+
+#: Tier + INITIAL-AWC dossier constants, kept MODULE-LEVEL and deliberately OUT of
+#: ``TIER_DOSSIERS``/``FLAGSHIP_DOSSIERS`` — ``campaign.py`` refuses on a set mismatch and five
+#: suites pin ``len == 16`` (OD-RM-1-P).
+_TIER_MATERIALITY = "MEDIUM"
+_TIER_COMPLEXITY = "MEDIUM"
+_TIER_RATIONALE = (
+    "Trailing-window risk statistics over an existing governed return series: no new market data, "
+    "no new estimator family, and a registered parameter domain of two windows — but the drawdown "
+    "and volatility figures are supervisor-facing and feed allocator conversations, so the "
+    "materiality is not low."
+)
+_INITIAL_SCOPE = (
+    "Initial validation of perf.rolling_risk v1: the calendar-month relink and its five-condition "
+    "alignment gate, the n-1 volatility with the x sqrt(12) transform, the geometric return "
+    "annualization above 12 months, and the window-local maximum drawdown with V_0 as an "
+    "observation."
+)
+_INITIAL_CONDITIONS = (
+    "Rolling values are NOT independent (~92% overlap between adjacent 12-month windows) and must "
+    "not be read as a re-estimate; the month-end convention is holiday-free in v1; two-stage "
+    "linking is not bit-identical to PM-1's one-stage TWR_LINKED where a month holds two or more "
+    "sub-periods; no benchmark leg, so GIPS 2.A.18.a binds only the v2."
+)
+_REPORT_REF = "05_analytics_methodologies/rolling_risk_v1.md"
 
 _PORTFOLIO_CODE = "DEMO-ROLLING-RISK"
 _CODE_VERSION = "rm-1-demo"
@@ -207,6 +241,7 @@ def run_demo_rm1_stage16(session: Session) -> Rm1Stage16Summary:
         raise DemoRm1AlreadySeededError(f"{_PORTFOLIO_CODE} already exists in the demo tenant")
 
     registrar = _resolve_principal(session)
+    validator = registrar
     instrument_ids = [_resolve_instrument(session, code) for code in _INSTRUMENT_CODES]
 
     month_ends = _month_end_grid()
@@ -314,6 +349,41 @@ def run_demo_rm1_stage16(session: Session) -> Rm1Stage16Summary:
         snapshot_id=snapshot.id,
     )
     _require_completed(rolling_result, "rolling-risk run")
+
+    # --- Tier + the INITIAL AWC. NEW code => SOME record (the MG-1/CC-2/PPF-2/PPF-3 precedent).
+    # The 4-finder review found this missing: every prior new-code stage files one, and without it
+    # `perf.rolling_risk` would be the ONLY model code in the demo inventory carrying no tier and no
+    # validation — breaking the MG-1 governance story the demo exists to demonstrate, while the
+    # ratified record, the stage docstring and the CI comment all claimed the record was filed.
+    assign_model_tier(
+        session,
+        acting_tenant=DEMO_TENANT_ID,
+        model_id=str(rolling_version.model_id),
+        materiality_rating=_TIER_MATERIALITY,
+        complexity_rating=_TIER_COMPLEXITY,
+        rationale=_TIER_RATIONALE,
+        actor_id=validator,
+    )
+    record_validation(
+        session,
+        acting_tenant=DEMO_TENANT_ID,
+        actor=ModelValidationActor(actor_id=validator),
+        request=RecordValidationRequest(
+            model_version_id=str(rolling_version.id),
+            validation_type=VALIDATION_TYPE_INITIAL,
+            outcome=VALIDATION_OUTCOME_APPROVED_WITH_CONDITIONS,
+            scope_summary=_INITIAL_SCOPE,
+            conditions=_INITIAL_CONDITIONS,
+            report_ref=_REPORT_REF,
+            next_review_due=date(2026, 7, 27) + timedelta(days=365),
+            findings=(),
+            evidence=(
+                ValidationEvidenceInput(
+                    evidence_type="CALCULATION_RUN", run_id=str(rolling_result.run.run_id)
+                ),
+            ),
+        ),
+    )
 
     return Rm1Stage16Summary(
         portfolio_id=portfolio_id,

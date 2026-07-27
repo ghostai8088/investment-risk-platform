@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
@@ -38,7 +39,14 @@ from irp_shared.perf.models import (
 from irp_shared.perf.rolling_kernel import last_weekday_of_month
 from irp_shared.perf.rolling_service import (
     RollingRiskInputError,
+    RollingRiskNotVisible,
+    RollingRiskRunNotVisible,
     _adjudicate_pins,
+    latest_rolling_risk,
+    list_rolling_risk_rows,
+    list_rolling_risks,
+    resolve_rolling_risk,
+    resolve_rolling_risk_run,
     run_rolling_risk,
 )
 from irp_shared.portfolio import PortfolioActor, create_portfolio
@@ -234,6 +242,16 @@ def test_an_unfillable_window_is_SUPPRESSED_with_a_reason_not_a_stuffed_zero(
     result = _run_rolling(session, tenant, returns=["0.01"] * 13, windows=(12, 36))
     suppressed = [r for r in result.rows if r.window_months == 36]
     assert suppressed, "the unfillable window emitted nothing at all"
+    # EVERY metric a computable 36-month window would emit must be disclosed — including the
+    # annualized return. Omitting it left that key with no row at all: an UNDISCLOSED absence,
+    # which is exactly the state the suppression design exists to prevent.
+    assert {r.metric_type for r in suppressed} == {
+        METRIC_TYPE_ROLLING_RETURN,
+        METRIC_TYPE_ROLLING_RETURN_ANN,
+        METRIC_TYPE_ROLLING_VOLATILITY,
+        METRIC_TYPE_ROLLING_VOLATILITY_ANN,
+        METRIC_TYPE_MAX_DRAWDOWN,
+    }
     for row in suppressed:
         assert row.suppressed is True
         assert row.metric_value is None
@@ -250,8 +268,8 @@ def test_suppression_is_one_row_per_metric_and_window_not_per_evaluation_point(
     tenant = str(uuid.uuid4())
     result = _run_rolling(session, tenant, returns=["0.01"] * 13, windows=(12, 36))
     suppressed = [r for r in result.rows if r.window_months == 36]
-    assert len(suppressed) == 4  # one per metric, once
-    assert len({r.metric_type for r in suppressed}) == 4
+    assert len(suppressed) == 5  # one per metric, once
+    assert len({r.metric_type for r in suppressed}) == 5
 
 
 def test_an_emitted_row_carries_a_value_and_NO_reason(session: Session) -> None:
@@ -367,6 +385,16 @@ def test_missing_prerequisites_refuse_before_any_write(session: Session) -> None
         run_rolling_risk(session, code_version="", **common)
     with pytest.raises(RollingRiskInputError, match="at least one window"):
         run_rolling_risk(session, **{**common, "code_version": _CODE_VERSION, "window_months": ()})
+    with pytest.raises(RollingRiskInputError, match="outside the registered domain"):
+        run_rolling_risk(
+            session, **{**common, "code_version": _CODE_VERSION, "window_months": (24,)}
+        )
+    with pytest.raises(RollingRiskInputError, match="outside the registered domain"):
+        # Below 12 months: previously a COMMITTED FAILED run whose persisted reason was mislabelled
+        # `magnitude-out-of-range:` for what is an ill-formed REQUEST, not extreme data.
+        run_rolling_risk(
+            session, **{**common, "code_version": _CODE_VERSION, "window_months": (6,)}
+        )
     with pytest.raises(RollingRiskInputError, match="duplicate windows"):
         run_rolling_risk(
             session, **{**common, "code_version": _CODE_VERSION, "window_months": (12, 12)}
@@ -487,3 +515,135 @@ def test_the_requirement_mints_are_present_in_backbone_AND_rtm() -> None:
         assert req in rtm, f"{req} missing from the RTM"
     # OD-RM-1-L: PRF was in use from PM-1 onward but absent from the domain-code line.
     assert "BAI, PRF." in backbone
+
+
+# --------------------------------------------------- the rule-7 read surface (shipped untested) ---
+# The 4-finder review found all five read functions and all three endpoints with ZERO tests. Rule 7
+# makes the reads part of the governed number's slice, so they shipped unproven.
+
+
+def _seeded_run(session: Session, tenant: str, *, returns: list[str] | None = None):  # noqa: ANN202
+    return _run_rolling(session, tenant, returns=returns or (["0.01"] * 13), windows=(12,))
+
+
+def test_the_entity_read_filters_by_metric_type_and_window(session: Session) -> None:
+    """The filters exist because this family emits ONE statistic under two transforms at two
+    windows; unfiltered, a caller receives four metric types interleaved and reading that as a
+    single series is the most likely way to misuse the surface."""
+    tenant = str(uuid.uuid4())
+    result = _run_rolling(session, tenant, returns=["0.01"] * 13, windows=(12, 36))
+
+    everything = list_rolling_risks(session, acting_tenant=tenant)
+    assert len(everything) == len(result.rows)
+
+    by_metric = list_rolling_risks(
+        session, acting_tenant=tenant, metric_type=METRIC_TYPE_MAX_DRAWDOWN
+    )
+    assert by_metric
+    assert {r.metric_type for r in by_metric} == {METRIC_TYPE_MAX_DRAWDOWN}
+
+    by_window = list_rolling_risks(session, acting_tenant=tenant, window_months=36)
+    assert by_window
+    assert {r.window_months for r in by_window} == {36}
+    assert all(r.suppressed for r in by_window)  # 36 cannot fill on a 13-month book
+
+
+def test_an_unknown_or_foreign_portfolio_is_silently_empty(session: Session) -> None:
+    """The entity-filter precedent: no existence oracle, and no 404 for a read that legitimately
+    has nothing to return."""
+    tenant = str(uuid.uuid4())
+    _seeded_run(session, tenant)
+    assert list_rolling_risks(session, acting_tenant=tenant, portfolio_id=str(uuid.uuid4())) == []
+    assert list_rolling_risks(session, acting_tenant=str(uuid.uuid4())) == []
+
+
+def test_the_latest_resolver_returns_ONE_runs_rows_never_a_merge(session: Session) -> None:
+    """Cross-run aggregation is a CONSUMER ERROR, and a particularly bad one here: two runs of
+    different model versions can carry different window sets, so a merged series would silently
+    mix estimator domains."""
+    tenant = str(uuid.uuid4())
+    first = _seeded_run(session, tenant)
+    portfolio_id = first.rows[0].portfolio_id
+
+    # A SECOND run over the same book.
+    version = register_rolling_risk_model(
+        session, tenant_id=tenant, actor_id="steward", code_version=_CODE_VERSION
+    )
+    snapshot = build_rolling_risk_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=first.rows[0].portfolio_return_run_id,
+    )
+    second = run_rolling_risk(
+        session,
+        acting_tenant=tenant,
+        actor=_ACTOR,
+        code_version=_CODE_VERSION,
+        environment_id="test",
+        model_version_id=str(version.id),
+        window_months=(12,),
+        snapshot_id=snapshot.id,
+    )
+    latest = latest_rolling_risk(session, acting_tenant=tenant, portfolio_id=portfolio_id)
+    assert latest
+    assert {r.calculation_run_id for r in latest} == {second.run.run_id}
+    assert first.run.run_id not in {r.calculation_run_id for r in latest}
+
+
+def test_the_resolvers_refuse_a_foreign_id_rather_than_leaking(session: Session) -> None:
+    tenant, other = str(uuid.uuid4()), str(uuid.uuid4())
+    result = _seeded_run(session, tenant)
+    row_id = result.rows[0].id
+
+    assert resolve_rolling_risk(session, row_id, acting_tenant=tenant).id == row_id
+    with pytest.raises(RollingRiskNotVisible):
+        resolve_rolling_risk(session, row_id, acting_tenant=other)
+    assert resolve_rolling_risk_run(session, result.run.run_id, acting_tenant=tenant) is not None
+    with pytest.raises(RollingRiskRunNotVisible):
+        resolve_rolling_risk_run(session, result.run.run_id, acting_tenant=other)
+    with pytest.raises(RollingRiskRunNotVisible):
+        resolve_rolling_risk_run(session, str(uuid.uuid4()), acting_tenant=tenant)
+
+
+def test_the_run_centric_read_returns_every_row_of_one_run(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    result = _seeded_run(session, tenant)
+    rows = list_rolling_risk_rows(session, run_id=result.run.run_id, acting_tenant=tenant)
+    assert len(rows) == len(result.rows)
+    assert (
+        list_rolling_risk_rows(session, run_id=result.run.run_id, acting_tenant=str(uuid.uuid4()))
+        == []
+    )
+
+
+# ------------------------------------------------- the FAILED-run path + the audit-silence pin ---
+
+
+def test_an_extreme_but_column_legal_pin_yields_a_COMMITTED_FAILED_run(session: Session) -> None:
+    """The declared failure model, finally executed. Each monthly return is legal at
+    Numeric(20,12), but the 12-month geometric product leaves the result envelope — which must
+    produce a COMMITTED FAILED run with ZERO rows, never an uncaught raise with the run stranded in
+    RUNNING. The review proved the original catch missed this: `link_periods` raises
+    ReturnKernelError, not the sibling class the binder caught."""
+    tenant = str(uuid.uuid4())
+    result = _run_rolling(session, tenant, returns=["9.0"] * 13, windows=(12,))
+    assert result.status == "FAILED"
+    assert result.rows == []
+    assert result.failure_reason
+    assert "magnitude-out-of-range" in result.failure_reason
+
+
+def test_a_rolling_risk_run_emits_NO_PERF_audit_code(session: Session) -> None:
+    """OD-RM-1-C: the `PERF.*` block stays RESERVED-not-minted. The run is audited by the governed
+    scaffold's `CALC.*` codes only — the sibling families each carry this same pin."""
+    from irp_shared.audit.models import AuditEvent
+
+    tenant = str(uuid.uuid4())
+    _seeded_run(session, tenant)
+    emitted = {
+        e.event_type
+        for e in session.execute(select(AuditEvent).where(AuditEvent.chain_id == tenant)).scalars()
+    }
+    assert emitted, "no audit events at all — the pin would be vacuous"
+    assert not [code for code in emitted if code.startswith("PERF.")], sorted(emitted)

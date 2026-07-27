@@ -41,7 +41,7 @@ from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_completed_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
-from irp_shared.perf.bootstrap import ROLLING_RISK_MODEL_CODE
+from irp_shared.perf.bootstrap import ROLLING_RISK_MODEL_CODE, ROLLING_RISK_WINDOWS
 from irp_shared.perf.events import (
     RUN_TYPE_PORTFOLIO_RETURN,
     RUN_TYPE_ROLLING_RISK,
@@ -61,6 +61,7 @@ from irp_shared.perf.models import (
 )
 from irp_shared.perf.return_kernel import ReturnKernelError
 from irp_shared.perf.rolling_kernel import (
+    MONTHS_PER_YEAR,
     MonthlyReturn,
     RollingKernelError,
     SubPeriod,
@@ -248,6 +249,20 @@ def run_rolling_risk(
         raise RollingRiskInputError("at least one window is required")
     if len(set(window_months)) != len(window_months):
         raise RollingRiskInputError(f"duplicate windows {window_months} — refused")
+    # THE PARAMETER DOMAIN, actually enforced (4-finder review). The record calls {12, 36} "a
+    # registered model parameter" and names it as where GIPS 2.A.12 is enforced — but the perf
+    # registrar is code_version-only and has no parameter mechanism, so until this check the domain
+    # was a Python constant plus prose. Two things got through: `window_months=(24,)` minted a
+    # COMPLETED governed run outside the ratified domain under a v1 model whose assumptions present
+    # that domain as the compliance point; and `(6,)` produced a COMMITTED FAILED run whose
+    # persisted reason was mislabelled `magnitude-out-of-range:` for what is an ill-formed REQUEST.
+    # Both are pre-create refusals now. A registrar-held parameter set is the recorded v2.
+    outside = sorted(set(window_months) - set(ROLLING_RISK_WINDOWS))
+    if outside:
+        raise RollingRiskInputError(
+            f"window(s) {outside} are outside the registered domain {list(ROLLING_RISK_WINDOWS)} "
+            "for this model version — a governed run may only use a declared window"
+        )
 
     assert_model_version_of(
         session,
@@ -319,12 +334,22 @@ def run_rolling_risk(
                     f"only {len(parsed.months)} monthly observations are available for a "
                     f"{window}-month window"
                 )
-                for metric, basis in (
+                suppressed_metrics = [
                     (METRIC_TYPE_ROLLING_RETURN, ANNUALIZATION_NONE),
                     (METRIC_TYPE_ROLLING_VOLATILITY, ANNUALIZATION_NONE),
                     (METRIC_TYPE_ROLLING_VOLATILITY_ANN, ANNUALIZATION_SQRT_12),
                     (METRIC_TYPE_MAX_DRAWDOWN, ANNUALIZATION_NONE),
-                ):
+                ]
+                # The annualized RETURN is emitted only above 12 months (at 12 it is definitionally
+                # the cumulative return), so it must be SUPPRESSED only where it would otherwise be
+                # emitted. Omitting it at W > 12 left `(ROLLING_RETURN_ANN, 36, GEOMETRIC_12)` with
+                # no row at all — an UNDISCLOSED absence, which is the precise state the suppression
+                # design exists to prevent (4-finder review; two finders, independently).
+                if window > MONTHS_PER_YEAR:
+                    suppressed_metrics.append(
+                        (METRIC_TYPE_ROLLING_RETURN_ANN, ANNUALIZATION_GEOMETRIC_12)
+                    )
+                for metric, basis in suppressed_metrics:
                     rows.append(
                         _row(
                             metric,

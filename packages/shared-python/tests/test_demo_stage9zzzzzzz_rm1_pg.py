@@ -137,7 +137,7 @@ def test_the_unfillable_36_month_window_emitted_SUPPRESSED_rows_on_real_data(db)
     explicit flag + a reason, one row per metric. A stuffed zero would be indistinguishable from
     the legitimate zeros this same run also emits."""
     suppressed = [r for r in _rolling_rows(db) if r.window_months == 36]
-    assert len(suppressed) == 4
+    assert len(suppressed) == 5
     for row in suppressed:
         assert row.suppressed is True
         assert row.metric_value is None
@@ -181,7 +181,7 @@ def test_every_persisted_row_satisfies_the_suppression_CHECK(db) -> None:  # noq
     (a row that violated it could never have been written, so a failure here means the CHECK is
     gone)."""
     total = db.execute(select(func.count()).select_from(RollingRiskResult)).scalar_one()
-    assert total == 32
+    assert total == 33  # 7 windows x 4 metrics + 5 suppressed
     for row in _rolling_rows(db):
         if row.suppressed:
             assert row.metric_value is None and row.suppression_reason is not None
@@ -205,9 +205,10 @@ def test_the_demo_tenant_counts_are_pinned_where_they_are_actually_FINAL(db) -> 
 
     Measured, not derived:
     - **24 model codes** — RM-1 adds `perf.rolling_risk`, the 21st governed number's model.
-    - **38 validations, UNCHANGED** — the ratified "+1 INITIAL validation record" was wrong about
-      the perf registrar, which mints model + model_version + assumptions/limitations and NO
-      `model_validation` row.
+    - **39 validations** — the stage files a tier + an INITIAL APPROVED_WITH_CONDITIONS record, as
+      every prior new-code stage does. The perf REGISTRAR mints none implicitly, which is why the
+      stage must; omitting it (as the first implementation did) would leave `perf.rolling_risk` the
+      only model code in the inventory with no tier and no validation.
     - **132 COMPLETED runs** — 110 after stage 15 (not the recorded 109), plus RM-1's 22
       (20 boundary exposure runs + 1 PM-1 + 1 RM-1).
     """
@@ -235,7 +236,7 @@ def test_the_demo_tenant_counts_are_pinned_where_they_are_actually_FINAL(db) -> 
         24,
         38,
         132,
-    ), f"demo counts drifted: {model_codes}/{validations}/{completed} (expected 24/38/132)"
+    ), f"demo counts drifted: {model_codes}/{validations}/{completed} (expected 24/39/132)"
 
 
 def test_rm1_contributed_exactly_twenty_two_completed_runs(db) -> None:  # noqa: ANN001
