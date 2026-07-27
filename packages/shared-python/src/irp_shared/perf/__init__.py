@@ -63,6 +63,7 @@ from irp_shared.perf.bootstrap import (
     register_desmoothed_return_model,
     register_desmoothed_return_okunev_white_model,
     register_portfolio_return_model,
+    register_rolling_risk_model,
 )
 from irp_shared.perf.desmoothing_kernel import (
     DesmoothingKernelError,
@@ -92,6 +93,7 @@ from irp_shared.perf.events import (
     BenchmarkRelativeActor,
     DesmoothedReturnActor,
     PortfolioReturnActor,
+    RollingRiskActor,
 )
 from irp_shared.perf.models import (
     METRIC_TYPE_ACTIVE_RETURN,
@@ -130,6 +132,21 @@ from irp_shared.perf.return_service import (
     resolve_portfolio_return,
     resolve_portfolio_return_run,
     run_portfolio_return,
+)
+from irp_shared.perf.rolling_service import (
+    RollingRiskInputError,
+    RollingRiskNotVisible,
+    RollingRiskRunNotVisible,
+    RollingRiskRunResult,
+    latest_rolling_risk,
+    list_rolling_risk_rows,
+    list_rolling_risks,
+    resolve_rolling_risk,
+    resolve_rolling_risk_run,
+    run_rolling_risk,
+)
+from irp_shared.perf.stats_kernel import (
+    StatsKernelError,
 )
 
 __all__ = [
@@ -181,11 +198,13 @@ __all__ = [
     "PORTFOLIO_RETURN_MODEL_TYPE",
     "PORTFOLIO_RETURN_VERSION_LABEL",
     "register_portfolio_return_model",
+    "register_rolling_risk_model",
     # events / vocab
     "RUN_TYPE_PORTFOLIO_RETURN",
     "EXTERNAL_FLOW_TXN_TYPES",
     "PERF_RETURN_CREATE_EVENT_RESERVED",
     "PortfolioReturnActor",
+    "RollingRiskActor",
     # model + metric vocab
     "PortfolioReturnResult",
     "METRIC_TYPE_DIETZ_PERIOD",
@@ -212,6 +231,17 @@ __all__ = [
     "active_series",
     "mean_return",
     "sample_stdev",
+    "StatsKernelError",
+    "RollingRiskInputError",
+    "RollingRiskNotVisible",
+    "RollingRiskRunNotVisible",
+    "RollingRiskRunResult",
+    "latest_rolling_risk",
+    "list_rolling_risk_rows",
+    "list_rolling_risks",
+    "resolve_rolling_risk",
+    "resolve_rolling_risk_run",
+    "run_rolling_risk",
     "information_ratio",
     # P3-8 registrar
     "BENCHMARK_RELATIVE_MODEL_CODE",

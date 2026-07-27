@@ -23,6 +23,9 @@ from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 
 from irp_shared.perf.return_kernel import ReturnKernelError, link_periods
+from irp_shared.perf.stats_kernel import StatsKernelError
+from irp_shared.perf.stats_kernel import mean_return as _mean_return
+from irp_shared.perf.stats_kernel import sample_stdev as _sample_stdev
 
 #: Result quantum: HALF_UP to 12dp = the ``benchmark_relative_result.metric_value`` Numeric(20,12)
 #: fraction/ratio scale.
@@ -78,32 +81,45 @@ def active_series(portfolio: Sequence[Decimal], benchmark: Sequence[Decimal]) ->
 
 
 def mean_return(values: Sequence[Decimal]) -> Decimal:
-    """The arithmetic mean of a return series, ``quantize_HALF_UP`` to 12dp. Raises on an empty
-    set."""
-    if not values:
-        raise BenchmarkRelativeKernelError("no values to average")
-    with localcontext() as ctx:
-        ctx.prec = _COMPUTE_PREC
-        total = sum(values, Decimal(0))
-        return _quantize(total / Decimal(len(values)))
+    """The arithmetic mean of a return series, ``quantize_HALF_UP`` to 12dp. Raises on an empty set.
+
+    DELEGATES to the domain-neutral :mod:`~irp_shared.perf.stats_kernel` (lifted at RM-1,
+    OD-RM-1-M) and re-wraps its error so P3-8's contract — the exception TYPE and the message text
+    — is byte-unchanged for existing callers and tests.
+    """
+    try:
+        return _mean_return(values)
+    except StatsKernelError as exc:
+        # Same condition-preserving split as `sample_stdev` — an empty set and an out-of-range
+        # magnitude are different diagnoses and this string reaches persisted DQ evidence.
+        if not values:
+            raise BenchmarkRelativeKernelError("no values to average") from exc
+        raise BenchmarkRelativeKernelError("result magnitude out of range") from exc
 
 
 def sample_stdev(values: Sequence[Decimal]) -> Decimal:
     """The unbiased SAMPLE standard deviation (``n - 1`` denominator) of the active returns — the
-    ESMA ex-post tracking-error estimator (the P3-4 unbiased-sample precedent). Computed at 50-digit
-    precision (mean + variance internally UNquantized so the deviation is faithful), then
-    ``sqrt`` + ``quantize_HALF_UP`` to 12dp. Raises :class:`BenchmarkRelativeKernelError` when
-    ``n < 2`` (a 1-observation volatility is undefined)."""
-    n = len(values)
-    if n < 2:
-        raise BenchmarkRelativeKernelError(
-            f"tracking error needs >= 2 sub-period observations (got {n})"
-        )
-    with localcontext() as ctx:
-        ctx.prec = _COMPUTE_PREC
-        mean = sum(values, Decimal(0)) / Decimal(n)
-        variance = sum(((v - mean) ** 2 for v in values), Decimal(0)) / Decimal(n - 1)
-        return _quantize(variance.sqrt())
+    ESMA ex-post tracking-error estimator (the P3-4 unbiased-sample precedent). Raises
+    :class:`BenchmarkRelativeKernelError` when ``n < 2`` (a 1-observation volatility is undefined).
+
+    DELEGATES to the domain-neutral :mod:`~irp_shared.perf.stats_kernel` (lifted at RM-1,
+    OD-RM-1-M): ONE implementation, but this boundary keeps P3-8's error type AND its
+    tracking-error message verbatim, so nothing downstream of P3-8 changes. RM-1 imports the
+    neutral function instead of borrowing this one, which is the point of the lift.
+    """
+    try:
+        return _sample_stdev(values)
+    except StatsKernelError as exc:
+        # Re-wrap by CONDITION, not blanket. `StatsKernelError` covers both the structural n<2 case
+        # AND a quantize-magnitude overflow, so a single message misdiagnosed the latter as
+        # "needs >= 2 sub-period observations (got 12)" — self-contradictory, and the P3-8 binder
+        # PERSISTS this string into committed DQ gap evidence, so an extreme-pin FAILED run would
+        # have committed a lying explanation (4-finder review).
+        if len(values) < 2:
+            raise BenchmarkRelativeKernelError(
+                f"tracking error needs >= 2 sub-period observations (got {len(values)})"
+            ) from exc
+        raise BenchmarkRelativeKernelError("result magnitude out of range") from exc
 
 
 def information_ratio(mean_active: Decimal, tracking_error: Decimal) -> Decimal:

@@ -49,6 +49,9 @@ type CountKey =
   | "seq"
   | "epoch_seq"
   | "expected_seq"
+  // RM-1 (ENT-064): the trailing window length in MONTHS — a declared model parameter and part of
+  // the four-column grain, an integer. `n_observations` is already listed above.
+  | "window_months"
   // NOTIF-1 (breach notification): the source audit-event cursor position, an integer.
   | "source_sequence_no";
 
@@ -60,41 +63,49 @@ type NumberKeys<T> = { [K in keyof T]-?: number extends NonNullable<T[K]> ? K : 
 /** Passes (`true`) iff every `number` field on `T` is a known count — i.e. no decimal regressed. */
 type OnlyCountsAreNumbers<T> = Exclude<NumberKeys<T>, CountKey> extends never ? true : false;
 
-/** Passes iff `T` is exactly `true` (a `false` — a decimal-turned-number — is a constraint error). */
-type AssertTrue<T extends true> = T;
-
 /** EXHAUSTIVE guard over every governed row DTO. If any grows a non-count `number` field, `tsc`
  * fails on that row's line. (Includes es-backtest + pacing — not yet FE-displayed families, but
  * governed decimals all the same, guarded from the moment they could be wired.) */
-export type OnlyCountsAreNumbersOnEveryRowOut = [
-  AssertTrue<OnlyCountsAreNumbers<Schemas["SensitivityRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["FactorExposureRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["CovarianceRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["VarRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["ActiveRiskRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["ExposureRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["PortfolioReturnRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["BenchmarkRelativeRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["VarBacktestRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["ScenarioRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["DesmoothedReturnRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["ProxyWeightRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["EsBacktestRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["PacingRowOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["PurePrivateFactorRowOut"]>>,
-  // FE-3 is the first slice to render captured-input decimals (quantity / cost_basis / mark_value)
-  // to the DOM, so those DTOs join the exhaustive guard (the FE-2 lesson: guard the moment a
-  // decimal could be wired, not a sampled subset).
-  AssertTrue<OnlyCountsAreNumbers<Schemas["PositionOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["ValuationOut"]>>,
-  // API-2b: breach observed/threshold values are governed-adjacent decimals (audit C-F13) — plus
-  // the LimitOut backfill (the limit family predated its own guard row, an inherited gap).
-  AssertTrue<OnlyCountsAreNumbers<Schemas["BreachOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["BreachActionOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["BreachNotificationOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["LimitOut"]>>,
-  AssertTrue<OnlyCountsAreNumbers<Schemas["LimitHealthOut"]>>,
-];
+/** Every schema key that names a governed row DTO — derived, so a NEW result family is covered the
+ * moment `make gen-api` emits it. */
+type RowOutKey = Extract<keyof Schemas, `${string}RowOut`>;
+
+/** Governed DTOs carrying decimals that do NOT follow the `*RowOut` naming — captured-input and
+ * control-plane surfaces. These must stay CURATED: no naming rule identifies them.
+ *
+ * **This list exists because RM-1 nearly deleted it.** The guard was rewritten from a hand-curated
+ * array to a derived `*RowOut` mapped type; the array had 22 entries and only 15 matched that
+ * template, so the rewrite silently dropped these 7 — added deliberately at FE-3 ("guard the moment
+ * a decimal could be wired") and API-2b (the LimitOut backfill). Caught by adversarial review, not
+ * by tsc: dropping a name from a guard cannot fail a compile. Derive what a rule can identify;
+ * curate the rest — and never let "exhaustive by construction" mean "narrower than what it
+ * replaced". */
+type ExtraGovernedDtoKey =
+  | "PositionOut"
+  | "ValuationOut"
+  | "BreachOut"
+  | "BreachActionOut"
+  | "BreachNotificationOut"
+  | "LimitOut"
+  | "LimitHealthOut";
+
+/** Every governed DTO the contract covers: the derived row families PLUS the curated extras. */
+type GuardedDtoKey = RowOutKey | ExtraGovernedDtoKey;
+
+/** The DTOs that FAIL the contract — i.e. grew a non-count `number` field. `never` when the whole
+ * surface is clean; otherwise a union naming exactly which ones regressed. */
+type DtosWithNonCountNumbers = {
+  [K in GuardedDtoKey]: OnlyCountsAreNumbers<Schemas[K]> extends true ? never : K;
+}[GuardedDtoKey];
+
+/** Passes iff `T` is `never`. A failure prints the offending DTO names in the error. */
+type AssertNever<T extends never> = T;
+
+/** EXHAUSTIVE over every governed DTO: the `*RowOut` families derived from the schema keys, plus
+ * the curated non-`RowOut` set above. A new result family is guarded automatically; a new
+ * non-`RowOut` governed DTO must be added to `ExtraGovernedDtoKey` — and THAT is the residual gap,
+ * stated rather than glossed, because no naming rule can close it. */
+export type OnlyCountsAreNumbersOnEveryRowOut = AssertNever<DtosWithNonCountNumbers>;
 
 /** Illustrative companion: a handful of named governed decimals asserted `string` outright — human
  * documentation of the contract the exhaustive guard above enforces structurally. */
@@ -108,4 +119,8 @@ export type GovernedDecimalIsString = [
   AssertString<NonNullable<Schemas["ScenarioRowOut"]["pnl"]>>,
   AssertString<Schemas["PortfolioReturnRowOut"]["return_value"]>,
   AssertString<Schemas["PurePrivateFactorRowOut"]["metric_value"]>,
+  // RM-1: NULLABLE by design — NULL exactly when the row is suppressed. `NonNullable` asserts the
+  // NON-null branch is a string, so a suppressed row stays representable while a decimal that
+  // regressed to `number` still fails here.
+  AssertString<NonNullable<Schemas["RollingRiskRowOut"]["metric_value"]>>,
 ];

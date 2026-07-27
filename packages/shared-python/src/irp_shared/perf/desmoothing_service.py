@@ -46,7 +46,6 @@ from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
-from irp_shared.perf.benchmark_relative_kernel import sample_stdev
 from irp_shared.perf.bootstrap import (
     DESMOOTHED_RETURN_MODEL_CODE,
     DESMOOTHING_AR1_ESTIMATED_CONVENTION,
@@ -68,6 +67,11 @@ from irp_shared.perf.models import (
     METRIC_TYPE_DESMOOTHING_SUMMARY,
     DesmoothedReturnResult,
 )
+
+# The domain-neutral estimator (RM-1's OD-RM-1-M lift). DS-2 previously borrowed this from
+# `benchmark_relative_kernel`, importing a tracking-error error class into a desmoothing binder;
+# the lift removes that cross-family borrow without changing a single computed value.
+from irp_shared.perf.stats_kernel import sample_stdev
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.reference.guards import assert_instrument_in_tenant
 from irp_shared.snapshot import (

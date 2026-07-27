@@ -110,6 +110,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_PROXY_WEIGHT_INPUT,
     PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
     PURPOSE_RETURN_INPUT,
+    PURPOSE_ROLLING_RISK_INPUT,
     PURPOSE_SCENARIO_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
     PURPOSE_VAR_BACKTEST_INPUT,
@@ -1813,6 +1814,73 @@ def build_var_backtest_snapshot(
         as_of_known_at=known,
         as_of_valuation_date=max(r.period_end for r in return_rows),
         binding_predicate_version=VAR_BACKTEST_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
+class RollingRiskSnapshotError(Exception):
+    """A rolling-risk input snapshot cannot be built (a return run with no visible rows) — raised
+    BEFORE any write; never mints immutable governance garbage."""
+
+
+#: The rolling-risk binding/selection rule (RM-1, OD-RM-1-E): every row of ONE return run.
+ROLLING_RISK_BINDING_PREDICATE = "v1:portfolio-return-run-rows"
+
+
+def build_rolling_risk_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    portfolio_return_run_id: str,
+) -> DatasetSnapshot:
+    """Build one immutable ``ROLLING_RISK_INPUT`` snapshot (RM-1, OD-RM-1-E) pinning one
+    ``COMPONENT_KIND_PORTFOLIO_RETURN`` per ``portfolio_return_result`` row of the consumed run.
+
+    **No new pin-key surface, and therefore no historical pin drift.** The existing
+    ``portfolio_return_content`` serializer already carries ``metric_type``, ``period_start``,
+    ``period_end``, ``return_value`` and ``n_periods`` — which is everything the month partition,
+    the relink, the volatility, the rolling return AND the compounded-index drawdown need. The
+    verifier confirmed this sufficiency; reusing the serializer verbatim is what keeps every
+    previously-written PROXY/RETURN pin byte-stable (the 0038/0040 false-drift landmine class).
+
+    Both sides are IA rows with no valid/known axis to reconstruct, so the header instants are
+    stamped now/now — BT-1's precedent. A caller-supplied cutoff would be a backdatable
+    knowledge-time claim binding nothing.
+    """
+    now = utcnow()
+    valid_at = known = now
+
+    return_rows = _list_portfolio_return_rows(
+        session, portfolio_return_run_id, acting_tenant=acting_tenant
+    )
+    if not return_rows:
+        raise RollingRiskSnapshotError(
+            f"portfolio-return run {portfolio_return_run_id} has no visible result rows to pin"
+        )
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in return_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_PORTFOLIO_RETURN,
+            "portfolio_return_result",
+            row,
+            portfolio_return_content(row),
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_ROLLING_RISK_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=max(r.period_end for r in return_rows),
+        binding_predicate_version=ROLLING_RISK_BINDING_PREDICATE,
     )
     record_snapshot_create(session, header=header_row, actor=actor)
     return header_row

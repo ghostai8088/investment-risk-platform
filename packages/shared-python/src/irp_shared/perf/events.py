@@ -75,3 +75,18 @@ class DesmoothedReturnActor:
 
     actor_id: str
     actor_type: str = "user"
+
+
+#: RM-1 (ENT-064). The FAMILY, not the metric — one run emits rolling return, rolling volatility
+#: and maximum drawdown at every registered window. Mints NO new audit code: the run reuses
+#: ``CALC.RUN_CREATE``/``CALC.RUN_STATUS_CHANGE``, and the ``PERF.*`` block stays
+#: RESERVED-not-minted (OD-RM-1-C).
+RUN_TYPE_ROLLING_RISK = "ROLLING_RISK"
+
+
+@dataclass(frozen=True)
+class RollingRiskActor:
+    """The principal initiating a rolling-risk run (mirrors ``PortfolioReturnActor``)."""
+
+    actor_id: str
+    actor_type: str = "user"

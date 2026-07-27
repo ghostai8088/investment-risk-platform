@@ -100,6 +100,11 @@ PURPOSE_PRIVATE_FACTOR_RETURN_INPUT = "PRIVATE_FACTOR_RETURN_INPUT"
 #: dedicated builder sets it; membership in the allow-list below is deliberate (the PACING/PPF-1
 #: precedent, NOT the PROXY_WEIGHT/RESIDUAL_SHRINKAGE tuple-bypass).
 PURPOSE_PRIVATE_COVARIANCE_INPUT = "PRIVATE_COVARIANCE_INPUT"
+#: RM-1 (ENT-064). Joins the ENFORCED allow-list below deliberately (the PACING/PPF-1/PPF-2
+#: convention): ``snapshot/service.py`` raises ``SnapshotPurposeError`` on a non-member, so every
+#: rolling-risk build fails closed until this name is a member — the allow-list is a real gate, not
+#: documentation.
+PURPOSE_ROLLING_RISK_INPUT = "ROLLING_RISK_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 SNAPSHOT_PURPOSES = (
@@ -118,6 +123,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_PACING_INPUT,
     PURPOSE_PRIVATE_FACTOR_RETURN_INPUT,
     PURPOSE_PRIVATE_COVARIANCE_INPUT,
+    PURPOSE_ROLLING_RISK_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )

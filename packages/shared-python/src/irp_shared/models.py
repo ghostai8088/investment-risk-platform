@@ -46,6 +46,7 @@ from irp_shared.perf.models import (
     BenchmarkRelativeResult,
     DesmoothedReturnResult,
     PortfolioReturnResult,
+    RollingRiskResult,
 )
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.position.models import Position
@@ -151,6 +152,7 @@ __all__ = [
     "ScenarioShock",
     "ScenarioResult",
     "PortfolioReturnResult",
+    "RollingRiskResult",
     "BenchmarkRelativeResult",
     "DesmoothedReturnResult",
     "Schedule",

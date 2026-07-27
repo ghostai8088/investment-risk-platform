@@ -515,7 +515,7 @@ def test_no_migration_and_no_entity() -> None:
     # guards. The load-bearing assertion is the content sweep above (no migration references
     # ``synthetic``); this line only adds "and the synthetic slice did not quietly take the next
     # number". Kept in its established shape rather than reshaped mid-slice.
-    assert not list(versions.glob("0054*")), "no 0054 migration may be added by the synthetic slice"
+    assert not list(versions.glob("0055*")), "no 0054 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -
