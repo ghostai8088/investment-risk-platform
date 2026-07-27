@@ -1,0 +1,412 @@
+"""RM-1 rolling-risk binder (ENT-064 — the 21st governed number).
+
+Consumes ONE governed PM-1 ``PORTFOLIO_RETURN`` run, relinks its ``DIETZ_PERIOD`` sub-periods to a
+calendar-month grid, and emits trailing-window statistics: rolling return (raw + annualized),
+rolling volatility (raw + annualized), and maximum drawdown.
+
+**RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** (AD-014 / FW-RUN / TR-15 / CTRL-003). Computes ONLY
+from pinned content — a later re-run of the upstream PM-1 run cannot move a historical rolling
+number (TR-09).
+
+**Failure model.** A pre-create refusal (missing/invalid prerequisite, an unregistered or wrong
+``model_version``, a misaligned month grid, a month at or below -100%) raises and rolls the WHOLE
+unit back — ZERO run. A post-create FAILED run (a magnitude past the ``Numeric(20,12)`` envelope) is
+COMMITTED with zero rows, the governed-run precedent.
+
+**Preconditions live HERE, not in the kernel** (OD-RM-1-M). The kernel's raises are defense-in-depth
+and stay structurally unreachable through the governed path: this binder adjudicates the pinned
+content first, so a caller never sees a kernel error where a governed refusal was owed.
+
+**Suppression is a first-class emitted state** (OD-RM-1-I). A window the series cannot fill emits a
+governed row with a NULL value, ``suppressed=True`` and a reason — never a stuffed zero, because
+``0`` is a LEGITIMATE value for all three metrics and a consumer would read "not computable" as "no
+drawdown, excellent". Granularity is one suppressed row per ``(metric_type, window_months)`` per run
+(per-evaluation-point would collide on the grain at n=12 and is the worse reading of GIPS 4.C.36).
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from datetime import date as dt_date
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.runs import resolve_completed_run_of_type
+from irp_shared.calc.scaffold import execute_governed_run
+from irp_shared.model.service import assert_model_version_of
+from irp_shared.perf.bootstrap import ROLLING_RISK_MODEL_CODE
+from irp_shared.perf.events import (
+    RUN_TYPE_PORTFOLIO_RETURN,
+    RUN_TYPE_ROLLING_RISK,
+    RollingRiskActor,
+)
+from irp_shared.perf.models import (
+    ANNUALIZATION_GEOMETRIC_12,
+    ANNUALIZATION_NONE,
+    ANNUALIZATION_SQRT_12,
+    METRIC_TYPE_MAX_DRAWDOWN,
+    METRIC_TYPE_ROLLING_RETURN,
+    METRIC_TYPE_ROLLING_RETURN_ANN,
+    METRIC_TYPE_ROLLING_VOLATILITY,
+    METRIC_TYPE_ROLLING_VOLATILITY_ANN,
+    SAMPLING_FREQUENCY_MONTHLY,
+    RollingRiskResult,
+)
+from irp_shared.perf.rolling_kernel import (
+    MonthlyReturn,
+    RollingKernelError,
+    SubPeriod,
+    assert_above_total_loss,
+    assert_month_aligned,
+    relink_to_months,
+    rolling_windows,
+)
+from irp_shared.portfolio.guards import assert_portfolio_in_tenant
+from irp_shared.snapshot import (
+    COMPONENT_KIND_PORTFOLIO_RETURN,
+    PURPOSE_ROLLING_RISK_INPUT,
+    list_components,
+    resolve_snapshot,
+)
+
+#: PM-1's metric vocabulary, kept as a FENCE-KEPT LOCAL copy (the P3-8/PM-1 precedent — ``perf``
+#: modules do not reach across for a string). Pinned equal to the source in the test suite.
+_DIETZ_PERIOD = "DIETZ_PERIOD"
+
+#: The DQ rule this binder's completeness gate registers under.
+_COMPLETENESS_RULE_CODE = "perf.rolling_risk.completeness"
+_COMPLETENESS_RULE_NAME = "Rolling-risk input completeness"
+
+#: The result-scale envelope. The magnitude gate applies to the EMITTED (post-annualization) value:
+#: annualizing can amplify, so gating the pre-transform number would let an out-of-range row reach
+#: the flush — which happens OUTSIDE the caught DataQualityError and would surface as a 500 with the
+#: run orphaned in RUNNING (the P3-8 review fold, inherited deliberately).
+_MAX_RESULT_ABS = Decimal("1E7")
+
+
+class RollingRiskInputError(Exception):
+    """A pre-create refusal: an ill-formed or ungovernable rolling-risk input."""
+
+
+class RollingRiskNotVisible(Exception):
+    """A rolling-risk row is not visible in the acting tenant."""
+
+
+class RollingRiskRunNotVisible(Exception):
+    """A rolling-risk run is not visible in the acting tenant."""
+
+
+@dataclass(frozen=True)
+class RollingRiskRunResult:
+    run: CalculationRun
+    status: str
+    rows: list[RollingRiskResult]
+    failure_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class _ParsedInput:
+    """The adjudicated pinned content — everything the compute needs, all of it from pins."""
+
+    portfolio_return_run_id: str
+    portfolio_id: str
+    months: list[MonthlyReturn]
+    opening_boundary: dt_date
+
+
+def _parse_pins(components: list[Any]) -> list[dict[str, Any]]:
+    """Parse the pinned ``captured_content`` into raw portfolio-return dicts (PURE — no live read).
+
+    The existing ``portfolio_return_content`` serializer is sufficient with NO new pin-key surface:
+    it carries ``metric_type``, ``period_start``, ``period_end`` and ``return_value``, which is
+    everything the month partition, the relink, the volatility, the rolling return AND the
+    compounded-index drawdown need. That also means no historical pin drifts.
+    """
+    rows: list[dict[str, Any]] = []
+    for component in components:
+        if component.component_kind == COMPONENT_KIND_PORTFOLIO_RETURN:
+            rows.append(json.loads(component.captured_content))
+    return rows
+
+
+def _as_date(value: Any) -> dt_date:
+    return value if isinstance(value, dt_date) else dt_date.fromisoformat(str(value))
+
+
+def _adjudicate_pins(raw: list[dict[str, Any]]) -> _ParsedInput:
+    """PRE-CREATE adjudication of the full pinned input. Raises :class:`RollingRiskInputError`.
+
+    Order matters: structural checks first (is this even a return run?), then the month grid, then
+    the economic precondition. Each refusal names the offending value so an operator can act on it
+    without reading the snapshot by hand.
+    """
+    if not raw:
+        raise RollingRiskInputError(
+            "the snapshot pins no PORTFOLIO_RETURN rows — not a rolling-risk input"
+        )
+    dietz = [r for r in raw if r["metric_type"] == _DIETZ_PERIOD]
+    if not dietz:
+        raise RollingRiskInputError("the pinned return run has no DIETZ_PERIOD sub-periods")
+
+    run_ids = {str(r["calculation_run_id"]).lower() for r in raw}
+    portfolio_ids = {str(r["portfolio_id"]) for r in raw}
+    if len(run_ids) != 1:
+        raise RollingRiskInputError("the pinned return rows span multiple runs — refused")
+    if len(portfolio_ids) != 1:
+        raise RollingRiskInputError(
+            f"the pinned return rows span {len(portfolio_ids)} portfolios — refused"
+        )
+
+    sub_periods = sorted(
+        (
+            SubPeriod(
+                period_start=_as_date(r["period_start"]),
+                period_end=_as_date(r["period_end"]),
+                return_value=Decimal(str(r["return_value"])),
+            )
+            for r in dietz
+        ),
+        key=lambda p: p.period_start,
+    )
+
+    # The boundary grid: d_0 is the first sub-period's START (the close of the month BEFORE the
+    # first measured month), then every sub-period end.
+    boundaries = [sub_periods[0].period_start] + [p.period_end for p in sub_periods]
+    try:
+        assert_month_aligned(boundaries)
+        months = relink_to_months(sub_periods)
+        assert_above_total_loss(months)
+    except RollingKernelError as exc:
+        # Converted at the binder boundary: a caller owed a governed refusal must not receive a
+        # kernel error. The kernel's own raises stay defense-in-depth.
+        raise RollingRiskInputError(str(exc)) from exc
+
+    return _ParsedInput(
+        portfolio_return_run_id=next(iter(run_ids)),
+        portfolio_id=next(iter(portfolio_ids)),
+        months=months,
+        opening_boundary=boundaries[0],
+    )
+
+
+def _resolve_return_run(session: Session, run_id: str, *, acting_tenant: str) -> CalculationRun:
+    """Re-resolve the consumed PORTFOLIO_RETURN run under the acting tenant (+ run_type +
+    COMPLETED) BEFORE its id is stamped into the ``portfolio_return_run_id`` hard FK — PG FK checks
+    bypass RLS, so a hand-minted snapshot could otherwise reference a FOREIGN tenant's run (P3-5).
+    """
+    return resolve_completed_run_of_type(
+        session,
+        run_id,
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_PORTFOLIO_RETURN,
+        label="portfolio-return",
+        error=RollingRiskInputError,
+    )
+
+
+def _format_reason(gate: Exception, gaps: list[str]) -> str:
+    return f"rolling-risk completeness failed: {'; '.join(gaps) or gate}"
+
+
+def run_rolling_risk(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: RollingRiskActor,
+    code_version: str,
+    environment_id: str,
+    model_version_id: str,
+    window_months: tuple[int, ...],
+    snapshot_id: str,
+) -> RollingRiskRunResult:
+    """Run a governed rolling-risk calculation over a pinned ``ROLLING_RISK_INPUT`` snapshot.
+
+    ``window_months`` comes from the REGISTERED model version's declared parameters ({12, 36} in
+    v1). **That registered domain — not the kernel's guard — is where GIPS 2.A.12 is actually
+    enforced**: no governed caller can request a window below 12 months, so the kernel check is
+    honest defense-in-depth rather than "the invariant".
+    """
+    # --- Pre-create prerequisite gate (raise BEFORE create_run => zero run/result/run-audit) ---
+    if not code_version:
+        raise RollingRiskInputError("code_version is required (FW-RUN/TR-15)")
+    if not environment_id:
+        raise RollingRiskInputError("environment_id is required (FW-RUN/TR-15)")
+    if actor is None or not actor.actor_id:
+        raise RollingRiskInputError("initiator is required (FW-RUN/TR-15)")
+    if not model_version_id:
+        raise RollingRiskInputError("model_version_id is required (CTRL-003 inventory-before-use)")
+    if not window_months:
+        raise RollingRiskInputError("at least one window is required")
+    if len(set(window_months)) != len(window_months):
+        raise RollingRiskInputError(f"duplicate windows {window_months} — refused")
+
+    assert_model_version_of(
+        session,
+        str(model_version_id),
+        tenant_id=acting_tenant,
+        expected_model_code=ROLLING_RISK_MODEL_CODE,
+    )
+
+    snapshot = resolve_snapshot(session, snapshot_id, acting_tenant=acting_tenant)
+    if snapshot.purpose != PURPOSE_ROLLING_RISK_INPUT:
+        raise RollingRiskInputError(
+            f"snapshot {snapshot_id} has purpose {snapshot.purpose!r}, expected "
+            f"{PURPOSE_ROLLING_RISK_INPUT!r}"
+        )
+
+    parsed = _adjudicate_pins(
+        _parse_pins(
+            list(list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant))
+        )
+    )
+    # Re-resolve BOTH ids out of the PINNED content before either is stamped into a hard FK (P3-5:
+    # PG FK checks bypass RLS, so the DB alone would durably admit a foreign tenant's run/book).
+    _resolve_return_run(session, parsed.portfolio_return_run_id, acting_tenant=acting_tenant)
+    assert_portfolio_in_tenant(
+        session, parsed.portfolio_id, acting_tenant=acting_tenant, error=RollingRiskInputError
+    )
+
+    def _compute(run: CalculationRun) -> tuple[list[RollingRiskResult], list[str]]:
+        gaps: list[str] = []
+        rows: list[RollingRiskResult] = []
+
+        def _row(
+            metric_type: str,
+            window: int,
+            period_start: dt_date,
+            period_end: dt_date,
+            *,
+            value: Decimal | None,
+            basis: str,
+            n_observations: int | None,
+            suppression_reason: str | None = None,
+        ) -> RollingRiskResult:
+            return RollingRiskResult(
+                tenant_id=str(acting_tenant),
+                calculation_run_id=run.run_id,
+                input_snapshot_id=snapshot.id,
+                model_version_id=str(model_version_id),
+                portfolio_id=parsed.portfolio_id,
+                portfolio_return_run_id=parsed.portfolio_return_run_id,
+                metric_type=metric_type,
+                window_months=window,
+                period_start=period_start,
+                period_end=period_end,
+                metric_value=value,
+                suppressed=value is None,
+                suppression_reason=suppression_reason,
+                annualization_basis=basis,
+                sampling_frequency=SAMPLING_FREQUENCY_MONTHLY,
+                n_observations=n_observations,
+            )
+
+        span_start, span_end = parsed.opening_boundary, parsed.months[-1].month_end
+        for window in sorted(window_months):
+            if len(parsed.months) < window:
+                # SUPPRESSED, not skipped and not zero: GIPS 4.C.36 wants the absence disclosed, and
+                # a stuffed 0 would be indistinguishable from a legitimate zero. One row per
+                # (metric, window) per run — per-point would collide on the grain at n=12.
+                reason = (
+                    f"only {len(parsed.months)} monthly observations are available for a "
+                    f"{window}-month window"
+                )
+                for metric, basis in (
+                    (METRIC_TYPE_ROLLING_RETURN, ANNUALIZATION_NONE),
+                    (METRIC_TYPE_ROLLING_VOLATILITY, ANNUALIZATION_NONE),
+                    (METRIC_TYPE_ROLLING_VOLATILITY_ANN, ANNUALIZATION_SQRT_12),
+                    (METRIC_TYPE_MAX_DRAWDOWN, ANNUALIZATION_NONE),
+                ):
+                    rows.append(
+                        _row(
+                            metric,
+                            window,
+                            span_start,
+                            span_end,
+                            value=None,
+                            basis=basis,
+                            n_observations=None,
+                            suppression_reason=reason,
+                        )
+                    )
+                continue
+
+            try:
+                windows = rolling_windows(
+                    parsed.months, window, opening_boundary=parsed.opening_boundary
+                )
+            except RollingKernelError as exc:
+                # A column-legal-but-extreme pin can drive a linked product past the 12dp scale: a
+                # committed FAILED run + DQ evidence, never a PG overflow 500.
+                gaps.append(f"magnitude-out-of-range:{exc}")
+                return [], gaps
+
+            for evaluated in windows:
+                emitted: list[tuple[str, Decimal | None, str]] = [
+                    (METRIC_TYPE_ROLLING_RETURN, evaluated.cumulative_return, ANNUALIZATION_NONE),
+                    (METRIC_TYPE_ROLLING_VOLATILITY, evaluated.volatility, ANNUALIZATION_NONE),
+                    (
+                        METRIC_TYPE_ROLLING_VOLATILITY_ANN,
+                        evaluated.annualized_volatility,
+                        ANNUALIZATION_SQRT_12,
+                    ),
+                    (METRIC_TYPE_MAX_DRAWDOWN, evaluated.max_drawdown, ANNUALIZATION_NONE),
+                ]
+                # At W == 12 the geometric exponent is exactly 1, so the annualized return is
+                # DEFINITIONALLY the cumulative return; emitting both would ship two governed
+                # numbers that can never differ. The kernel reports None and we omit the row.
+                if evaluated.annualized_return is not None:
+                    emitted.append(
+                        (
+                            METRIC_TYPE_ROLLING_RETURN_ANN,
+                            evaluated.annualized_return,
+                            ANNUALIZATION_GEOMETRIC_12,
+                        )
+                    )
+                for metric, value, basis in emitted:
+                    # The gate is on the EMITTED value — annualizing amplifies, so gating the
+                    # pre-transform number would let an out-of-range row reach the flush, which is
+                    # OUTSIDE the caught DataQualityError (a 500 with the run stuck in RUNNING).
+                    if value is not None and abs(value) >= _MAX_RESULT_ABS:
+                        gaps.append(f"magnitude-out-of-range:{metric}:{value:E}")
+                        return [], gaps
+                    rows.append(
+                        _row(
+                            metric,
+                            window,
+                            evaluated.period_start,
+                            evaluated.period_end,
+                            value=value,
+                            basis=basis,
+                            n_observations=evaluated.n_observations,
+                        )
+                    )
+        return rows, gaps
+
+    outcome = execute_governed_run(
+        session,
+        acting_tenant=str(acting_tenant),
+        actor_id=actor.actor_id,
+        actor_type=actor.actor_type,
+        run_type=RUN_TYPE_ROLLING_RISK,
+        snapshot_id=snapshot.id,
+        model_version_id=str(model_version_id),
+        code_version=code_version,
+        environment_id=environment_id,
+        rule_code=_COMPLETENESS_RULE_CODE,
+        rule_name=_COMPLETENESS_RULE_NAME,
+        rule_target_entity_type="calculation_run",
+        result_entity_type="rolling_risk_result",
+        compute=_compute,
+        format_reason=_format_reason,
+        scope_portfolio_id=parsed.portfolio_id,
+    )
+    return RollingRiskRunResult(
+        run=outcome.run,
+        status=outcome.status,
+        rows=list(outcome.rows),
+        failure_reason=outcome.failure_reason,
+    )

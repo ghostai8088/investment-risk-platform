@@ -774,3 +774,121 @@ def register_desmoothed_return_okunev_white_model(
             f"ow_max_order={ow_max_order})",
         )
     return version
+
+
+# --------------------------------------------------------------------------------------------------
+
+#: The per-tenant inventory identity of the rolling-risk model (RM-1, OD-RM-1-G/M). The declared
+#: WINDOW SET is part of the version identity: {12, 36} months. That is not a convenience — **it is
+#: where GIPS 2.A.12 is actually enforced**. No governed caller can present a window under 12
+#: months, so the kernel's own annualization guard is honest defense-in-depth rather than "the
+#: invariant" (calling it the invariant would be a vacuous control).
+ROLLING_RISK_MODEL_CODE = "perf.rolling_risk"
+ROLLING_RISK_MODEL_NAME = "Rolling risk over the governed return series (return/volatility/MDD, v1)"
+ROLLING_RISK_MODEL_TYPE = "ROLLING_RISK"
+ROLLING_RISK_VERSION_LABEL = "v1"
+ROLLING_RISK_METHODOLOGY_REF = "05_analytics_methodologies/rolling_risk_v1.md"
+
+#: The registered window set — the parameter domain that enforces GIPS 2.A.12.
+ROLLING_RISK_WINDOWS: tuple[int, ...] = (12, 36)
+
+ROLLING_RISK_ASSUMPTIONS: tuple[str, ...] = (
+    "GRID: the pinned DIETZ_PERIOD sub-periods of ONE COMPLETED portfolio-return run (PM-1) are "
+    "GEOMETRICALLY RELINKED within each calendar month (GIPS 2.A.24.f), and every statistic is "
+    "computed on the resulting MONTHLY series. GIPS defines the ex-post risk statistic only on the "
+    "monthly series (4.A.1.j) over inputs valued at least monthly, as of the calendar month end OR "
+    "THE LAST BUSINESS DAY of the month (2.A.23.a/b) - so sub-period returns are inputs, never the "
+    "sample. A span that does not partition into whole months is REFUSED, never truncated: the "
+    "boundary grid must open on a month end, close on a month end, and contain a month-end "
+    "boundary for every interior calendar month.",
+    "VOLATILITY: the sample standard deviation on the unbiased-VARIANCE (n-1) denominator, centred "
+    "on the ARITHMETIC mean, ANNUALIZED by x sqrt(12) (GIPS 4.A.1.j's operator) computed from the "
+    "STORED 12dp monthly value so the emitted pair reconciles EXACTLY. GIPS does not prescribe n "
+    "vs n-1; the choice is material (+4.45% at n=12, +1.42% at n=36). The square root of an "
+    "unbiased variance is itself a DOWNWARD-BIASED estimator of sigma by about 2.24% at n=12 "
+    "(Bessel/c4) - GIPS and CFA Institute both use it and neither applies a c4 correction, and "
+    "RM-1 follows them. Centring is arithmetic although returns link geometrically: an internal "
+    "tension in the standard, documented rather than silently resolved.",
+    "RETURN: R = prod(1 + m_j) - 1 over the window; annualized as R_ann = (1 + R)^(12/W) - 1 "
+    "(GIPS's geometric convention). Never below a 12-month window (GIPS 2.A.12: returns for "
+    "periods of less than one year MUST NOT be annualized), enforced by this registered window "
+    "domain. At W = 12 the exponent is exactly 1, so the annualized return is DEFINITIONALLY the "
+    "cumulative return and the redundant row is SUPPRESSED rather than emitted twice.",
+    "MAXIMUM DRAWDOWN: max over the window of (running_peak - V)/running_peak on the compounded "
+    "TWR wealth index (a NAV path would register a redemption as a drawdown; the linked TWR index "
+    "is flow-neutral). The index is REBASED TO 1 AT EACH WINDOW'S OPENING BOUNDARY and the peak is "
+    "taken within that window only, so MDD_36 >= MDD_12 at a common end date. The base point V_0 = "
+    "1 IS an observation with drawdown zero (Chekhlov's w_0/xi_0). NEVER annualized: a bounded, "
+    "saturating, horizon-monotone statistic has no horizon-scaling law. Every row carries its "
+    "window and its sampling frequency (MONTHLY), the measure being frequency-dependent and "
+    "downward-biased by discretisation (monthly MDD <= daily MDD <= continuous MDD, always).",
+    "PRECONDITION: every monthly return must satisfy 1 + m > 0. PM-1 admits EMV = 0 (yielding "
+    "exactly -1), and link_periods has no such guard, so the wealth index would be ABSORBING, the "
+    "ratio-to-peak could exceed 1 or invert sign, and the geometric annualization would raise on a "
+    "negative base. A total-loss book cannot carry a governed drawdown - a first-class recorded "
+    "limitation, not a 500.",
+)
+
+ROLLING_RISK_LIMITATIONS: tuple[str, ...] = (
+    "TWO-STAGE LINKING IS NOT BIT-IDENTICAL TO PM-1's. The same link_periods implementation is "
+    "used, so the linkage CONVENTION is shared, but it quantizes to 12dp on return - so "
+    "sub-periods -> month -> window aggregation is NOT associative with PM-1's one-stage link "
+    "(worst case a few ulp at 12dp). A supervisor comparing RM-1's 12-month rolling return with "
+    "PM-1's TWR_LINKED over the same span will find a 12th-decimal difference. This is expected; "
+    "a test pins the NON-equality direction so nobody later 'fixes' it with an equality assert.",
+    "ROLLING VALUES ARE NOT INDEPENDENT. Adjacent 12-month windows share 11 of 12 observations "
+    "(~92% overlap), so a change between consecutive windows reflects the single entering and "
+    "exiting month, NOT a re-estimate. This is the most likely misreading of the surface.",
+    "MONTH-END CONVENTION IS HOLIDAY-FREE in v1: the last calendar day, or the last WEEKDAY when "
+    "that falls on a weekend. A month end landing on a market HOLIDAY is a recorded residual - no "
+    "holiday substrate exists (the ENT-006 calendar tables carry no business-day logic). A full "
+    "holiday-aware convention is a recorded v2.",
+    "CAPTURED-HOLDINGS BOOK PROPAGATION: PM-1 measures a book with no cash ledger, so uncaptured "
+    "income understates the return series - and that understatement flows into every RM-1 "
+    "statistic. Mitigation is operational (capture the cash), never mathematical imputation.",
+    "NO BENCHMARK LEG in v1, so GIPS 2.A.18.a (same-grid, same-methodology comparison) does not "
+    "bind here - it binds the v2 benchmark leg. Rows are GROSS-of-fees (inherited from PM-1) and "
+    "carry that flag rather than inferring it (GIPS 4.C.44). No Sharpe (SR-1), no AvDD/CDD, no "
+    "drawdown duration or time-to-recovery, no daily grid (k=252 is uncited). "
+    "validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator records an "
+    "outcome (VW-1); a REJECTED latest outcome (or an EXPIRED use-before-validation exception, "
+    "MG-1) refuses every new bind at the shared seam.",
+)
+
+
+def register_rolling_risk_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the rolling-risk ``model`` + a ``model_version`` for this
+    ``code_version`` identity (RM-1, OD-RM-1-G/M).
+
+    **PM-1's ``PORTFOLIO_RETURN_ASSUMPTIONS`` tuple is deliberately NOT edited here**, even though
+    it is where the annualization deferral was originally recorded: ``resolve_or_register_version``
+    returns an existing version UNTOUCHED on a SELECT hit, so amending that tuple would leave
+    tenants registered before the change carrying DIFFERENT assumption text under the same ``v1``
+    label — silent, un-audited divergence. The discharge lives in RM-1's own assumption rows above
+    and in the doc amendments.
+    """
+    return _register_perf_model(
+        session,
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        code_version=code_version,
+        actor_type=actor_type,
+        model_code=ROLLING_RISK_MODEL_CODE,
+        model_name=ROLLING_RISK_MODEL_NAME,
+        model_type=ROLLING_RISK_MODEL_TYPE,
+        version_label=ROLLING_RISK_VERSION_LABEL,
+        methodology_ref=ROLLING_RISK_METHODOLOGY_REF,
+        description=(
+            "Trailing-window rolling return, rolling volatility and maximum drawdown over the "
+            "governed portfolio-return series, on a relinked calendar-month grid (RM-1, ENT-064)."
+        ),
+        assumptions=ROLLING_RISK_ASSUMPTIONS,
+        limitations=ROLLING_RISK_LIMITATIONS,
+    )
