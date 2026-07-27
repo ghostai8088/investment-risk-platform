@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **DRAFT for ratification (OQ-SCH-2-1…8)** — revised 2026-07-27 after a two-lane pre-ratification verifier pass returned **NOT RATIFIABLE** on the first draft (8 BLOCKING, ~14 MATERIAL, and **two of the draft's own load-bearing factual claims false**) |
+| Status | **RATIFIED 2026-07-27 — OQ-SCH-2-1…8 approved as revised** (see Part 4a). Revised after a two-lane pre-ratification verifier pass returned **NOT RATIFIABLE** on the first draft (8 BLOCKING, ~14 MATERIAL, and **two of the draft's own load-bearing factual claims false**). |
 | Slice | Wave-13 slice **0**, inserted at the RM-1 gate; runs BEFORE RM-1 so RM-1 lands into a platform that can feed it |
 | Kind | **Control-plane.** No governed number, no result family, no permission, no audit code. Counts stay **23/38/109**. |
 | Size | **M/L — revised up.** The verifier established the slice must also carry a **demo stage** and a **dedicated PG downgrade-body suite** (neither optional; see OD-G/OD-H). The RM-1 gate's "small cadence slice" framing was wrong twice over. |
@@ -103,6 +103,13 @@ Amended in-slice: `audit_event_taxonomy.md:85` (incl. the ratified DC-2 key list
 - **OQ-SCH-2-6 — scope.** No governed number, no permission, no audit code, no binder-internal change — **but** the fence now explicitly includes a demo stage and a downgrade-body PG suite (OD-G/OD-H), which is why the size is M/L. *Recommend APPROVE as revised.*
 - **OQ-SCH-2-7 (NEW) — the burned month.** A FAILED fire occupies the `(schedule, tick)` bucket permanently (append-only ledger + unique key + `_UPDATABLE` forbidding re-cadence), so at monthly cadence a single transient failure loses that month with **no re-run mechanism** — and RM-1 refuses a series with a missing interior month-end, so it poisons the governed number until hand-repaired. Options: (a) accept and record the manual runbook + the ≤33-day recovery window; (b) add a bounded re-fire verb (conflicts with the idempotency-bucket invariant, needs its own design); (c) a read surface so the failure is at least *visible* — today there is no API or UI for schedules at all, so the only detector is an RM-1 refusal months later. *Recommend (a) + (c)-lite: accept, record the runbook, and expose a minimal read.*
 - **OQ-SCH-2-8 (NEW) — the schedule's family key.** `"EXPOSURE"` (new vocabulary, diverges from the `target_run_type` meaning already shipped on `limit_definition`/`breach` and rendered in the UI) vs **`"EXPOSURE_AGGREGATE"`** (the run_type itself; no divergence, CHECKs enumerate real run_types; loses a hypothetical generality). *Recommend `"EXPOSURE_AGGREGATE"`.*
+
+## Part 4a — Ratified outcomes (2026-07-27)
+
+- **OQ-SCH-2-1…6 = A (as revised)** — the design package: the registry-driven `model_version_id` relaxation with a total-enumeration CHECK; the last-weekday `preceding` convention; the corrected grid (tick↔anchor start boundary + end-of-day tick instant); the per-family as-of declaration with `as_of_known_at` pinned; the registry as the single source for the family gate with the cadence gate answered separately; and the scope fence **explicitly including the demo stage and the downgrade-body suite**.
+- **OQ-SCH-2-7 = A (accept + runbook + minimal read)** — the append-only guarantee and the idempotency bucket are preserved; a burned month is **not** re-firable. SCH-2 therefore ships (a) a recorded manual runbook naming the ≤33-day recovery window and the out-of-band `run_exposure` path (which produces a run with no `scheduled_run` provenance — stated), and (b) a **minimal read surface** so a FAILED fire is visible when it happens rather than surfacing months later as an RM-1 refusal. A re-fire verb is recorded as the v2 that would need its own design against the idempotency invariant.
+- **OQ-SCH-2-8 = A (`EXPOSURE_AGGREGATE`)** — the schedule's family key is the **real run_type**, not a new short name. This avoids two divergent meanings behind one column name across `schedule`, `limit_definition` and `breach` — the last two already outward-facing on generated DTOs and the OPS-1 UI. `produced_run_type` becomes an identity for both families, and the CHECKs enumerate real run_types. The cost (the registry loses a hypothetical one-family-many-run-types generality) is accepted and recorded.
+- **Sequencing = SCH-2 first, unchanged** — re-confirmed at the gate after the size was honestly revised M → M/L. RM-1 lands into a platform that can feed it, and its demo can exercise a real cadence.
 
 ## Part 5 — Pre-ratification verifier pass — RAN 2026-07-27 (two lanes)
 
