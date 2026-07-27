@@ -441,3 +441,49 @@ def test_the_registered_window_domain_is_where_gips_2a12_is_enforced() -> None:
     assert ROLLING_RISK_WINDOWS == (12, 36)
     assert all(w >= 12 for w in ROLLING_RISK_WINDOWS)
     assert ROLLING_RISK_MODEL_CODE == "perf.rolling_risk"
+
+
+def test_methodology_doc_exists_and_has_required_sections() -> None:
+    """The house guard: a registered model_version's `methodology_ref` must resolve to a real doc
+    carrying the required sections. A registered pointer to a missing file is a governance gap, not
+    a broken link."""
+    import pathlib
+
+    from irp_shared.perf.bootstrap import ROLLING_RISK_METHODOLOGY_REF
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    doc = root / ROLLING_RISK_METHODOLOGY_REF
+    assert doc.is_file(), f"missing methodology doc: {ROLLING_RISK_METHODOLOGY_REF}"
+    text = doc.read_text(encoding="utf-8")
+    for section in (
+        "Purpose & applicability",
+        "Inputs & data policy",
+        "Formulas & numerical standards",
+        "Assumptions",
+        "Validation / reproduction tests",
+        "Governed-number contract",
+        "Known limitations",
+        "External benchmarks",
+    ):
+        assert section in text, f"missing methodology section: {section}"
+    # Rule 6: every external source carries a grade, and the uncited bases stay uncited.
+    for grade in ("[V]", "[C]", "[U]"):
+        assert grade in text, f"missing source grade {grade}"
+    assert (
+        "k = 252 / 52 / 365" in text
+    ), "the uncited annualization bases must stay declared-uncited"
+
+
+def test_the_requirement_mints_are_present_in_backbone_AND_rtm() -> None:
+    """D19: backbone + RTM in the SAME commit. A REQ minted in one and not the other is a
+    traceability hole that no later slice would notice."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    backbone = (root / "02_requirements/requirements_backbone.md").read_text(encoding="utf-8")
+    rtm = (root / "02_requirements/requirements_traceability_matrix.md").read_text(encoding="utf-8")
+    for req in ("REQ-MKT-006", "REQ-PRF-003"):
+        assert req in backbone, f"{req} missing from the backbone"
+        assert req in rtm, f"{req} missing from the RTM"
+    # OD-RM-1-L: PRF was in use from PM-1 onward but absent from the domain-code line.
+    assert "BAI, PRF." in backbone
