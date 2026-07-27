@@ -32,7 +32,17 @@ from datetime import date as dt_date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Date, ForeignKey, Integer, String, UniqueConstraint, event
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+)
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
 from irp_shared.audit.models import AppendOnlyViolation
@@ -268,6 +278,117 @@ class DesmoothedReturnResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMi
     alpha_stderr: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
 
 
+#: The ``rolling_risk_result.metric_type`` controlled vocabulary (RM-1, ENT-064; plain String,
+#: extended by value). The family emits the SAME statistic under two transforms, which is why the
+#: read-surface disambiguation key is ``(metric_type, window_months, annualization_basis)`` and not
+#: ``metric_type`` alone (OD-RM-1-K).
+METRIC_TYPE_ROLLING_RETURN = "ROLLING_RETURN"
+METRIC_TYPE_ROLLING_RETURN_ANN = "ROLLING_RETURN_ANN"
+METRIC_TYPE_ROLLING_VOLATILITY = "ROLLING_VOLATILITY"
+METRIC_TYPE_ROLLING_VOLATILITY_ANN = "ROLLING_VOLATILITY_ANN"
+METRIC_TYPE_MAX_DRAWDOWN = "MAX_DRAWDOWN"
+
+#: ``annualization_basis`` vocabulary. NONE = the raw monthly statistic; SQRT_12 = sigma x sqrt(12)
+#: (GIPS 4.A.1.j's operator); GEOMETRIC_12 = ``(1+R)^(12/window_months) - 1`` (GIPS's return
+#: convention). MDD is NEVER annualized — a bounded, saturating, horizon-monotone statistic has no
+#: horizon-scaling law at all, so its rows carry NONE.
+ANNUALIZATION_NONE = "NONE"
+ANNUALIZATION_SQRT_12 = "SQRT_12"
+ANNUALIZATION_GEOMETRIC_12 = "GEOMETRIC_12"
+
+#: ``sampling_frequency`` — v1 computes on the relinked CALENDAR-MONTH grid only.
+SAMPLING_FREQUENCY_MONTHLY = "MONTHLY"
+
+#: The ``window_months`` sentinel for a run-summary row. An explicit 0, never NULL: on PostgreSQL a
+#: NULL in a UNIQUE constraint constrains NOTHING (``NULL != NULL``), so a nullable window column
+#: would silently disable the grain for exactly the rows it most needs to protect.
+WINDOW_MONTHS_RUN_SUMMARY = 0
+
+
+class RollingRiskResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One rolling-risk row (RM-1, **ENT-064**, IA TRUE append-only) — the 21st governed number.
+
+    Trailing-window statistics over the governed PM-1 return series, relinked to a CALENDAR-MONTH
+    grid: rolling return (raw + geometrically annualized), rolling volatility (raw + x sqrt(12)),
+    and maximum drawdown on the compounded, window-locally-rebased wealth index.
+
+    **RUN-BOUND + SNAPSHOT-GATED + MODEL-BOUND** plus a hard FK to the ONE upstream
+    ``PORTFOLIO_RETURN`` run consumed (``portfolio_return_run_id``) — exactly one, so it is a
+    column, unlike PM-1's variable-N boundary runs whose provenance can only live in pinned atoms.
+
+    **Two ratified departures from the sibling perf families**, both explained at length in
+    migration ``0054``:
+
+    - a **FOUR-column grain** ``(calculation_run_id, metric_type, window_months, period_start)``,
+      because two windows collide under the sibling three-column grain and the window will not fit
+      in a ``String(30)`` ``metric_type``;
+    - a **nullable ``metric_value`` + an explicit ``suppressed`` flag**, because ``0`` is a
+      LEGITIMATE value for all three metrics, so a stuffed zero would be indistinguishable from
+      "not computable" — and a consumer would read the latter as "no drawdown, excellent".
+
+    A DB CHECK (total enumeration over the boolean) keeps the two states coherent.
+    """
+
+    __tablename__ = "rolling_risk_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        UniqueConstraint(
+            "calculation_run_id",
+            "metric_type",
+            "window_months",
+            "period_start",
+            name="uq_rolling_risk_result_run_grain",
+        ),
+        CheckConstraint(
+            "(suppressed = true AND metric_value IS NULL AND suppression_reason IS NOT NULL)"
+            " OR (suppressed = false AND metric_value IS NOT NULL"
+            " AND suppression_reason IS NULL)",
+            # Just the SUFFIX: the metadata naming convention expands `ck` to
+            # `ck_%(table_name)s_%(constraint_name)s`, so passing the full name here would mint
+            # `ck_rolling_risk_result_ck_rolling_risk_result_suppression_coherent` and drift from
+            # the migration. The migration passes the full literal (op.create_table does not carry
+            # this convention); a PG test pins the two forms equal.
+            #
+            # Declaring the CHECK in the ORM as well as the migration is deliberate: SQLite builds
+            # its schema from ORM metadata, so the unit tier ENFORCES this constraint too. That is
+            # the direct answer to the SCH-2 finding that migration-only CHECKs leave the entire
+            # unit tier blind to the rule they encode.
+            name="suppression_coherent",
+        ),
+    )
+
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("dataset_snapshot.id"), nullable=False, index=True
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    )
+    portfolio_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("portfolio.id"), nullable=False, index=True
+    )
+    #: The single upstream PM-1 run whose DIETZ_PERIOD series was consumed and relinked.
+    portfolio_return_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    #: The trailing window in months; ``WINDOW_MONTHS_RUN_SUMMARY`` (0) on a run-summary row.
+    window_months: Mapped[int] = mapped_column(Integer, nullable=False)
+    period_start: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    #: A FRACTION at the return scale, NOT currency. NULL iff ``suppressed`` (DB-CHECKed).
+    metric_value: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
+    #: Suppression as a first-class state — never inferred from a sentinel value.
+    suppressed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    suppression_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    annualization_basis: Mapped[str] = mapped_column(String(20), nullable=False)
+    sampling_frequency: Mapped[str] = mapped_column(String(10), nullable=False)
+    #: Observations inside the window; NULL when suppressed (there is no sample).
+    n_observations: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{target.__tablename__} is IA true append-only — UPDATE/DELETE is prohibited "
@@ -281,3 +402,5 @@ event.listen(BenchmarkRelativeResult, "before_update", _block_mutation)
 event.listen(BenchmarkRelativeResult, "before_delete", _block_mutation)
 event.listen(DesmoothedReturnResult, "before_update", _block_mutation)
 event.listen(DesmoothedReturnResult, "before_delete", _block_mutation)
+event.listen(RollingRiskResult, "before_update", _block_mutation)
+event.listen(RollingRiskResult, "before_delete", _block_mutation)
