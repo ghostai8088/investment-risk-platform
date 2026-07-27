@@ -4,6 +4,7 @@ the end-to-end dispatch → run_var chain is exercised in the PG/demo tier)."""
 
 from __future__ import annotations
 
+import pathlib
 import uuid
 from datetime import UTC, datetime, timedelta
 from datetime import date as dt_date
@@ -429,3 +430,59 @@ def test_the_schedulable_set_is_derived_from_the_registry() -> None:
     assert FAMILY_REGISTRY["EXPOSURE_AGGREGATE"].requires_model_version is False
     # EXPOSURE has no upstream to resolve, so its failures are POST-create (a committed run).
     assert FAMILY_REGISTRY["EXPOSURE_AGGREGATE"].produces_run_on_failure is True
+
+
+# ------------------------------------------------------------------ the corrected fence sweep ---
+#: The REAL inbound importers of ``risk``/``exposure`` (SCH-2, OD-SCH-2-F). The draft claimed
+#: `scheduling` was the first violator of those packages' "nothing imports me" docstrings; the
+#: verifier refuted it, and an AST scan of the tree confirmed the true set below. Two entries are
+#: structural and will never shrink: ``models.py`` is the metadata aggregator (it must import every
+#: package), and ``demo`` is the orchestration layer that drives all of them.
+_RISK_IMPORTERS = frozenset({"models.py", "demo", "snapshot", "limit", "scheduling"})
+_EXPOSURE_IMPORTERS = frozenset({"models.py", "demo", "snapshot", "risk", "scheduling"})
+
+
+def _inbound_importers(target: str) -> set[str]:
+    """Every package (or top-level module) outside ``target`` importing ``irp_shared.<target>``."""
+    import ast
+
+    import irp_shared
+
+    root = pathlib.Path(irp_shared.__file__).parent
+    found: set[str] = set()
+    for path in root.rglob("*.py"):
+        rel = path.relative_to(root)
+        owner = rel.parts[0] if len(rel.parts) > 1 else rel.name
+        if owner == target:
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            modules: list[str] = []
+            if isinstance(node, ast.ImportFrom) and node.module:
+                modules = [node.module]
+            elif isinstance(node, ast.Import):
+                modules = [a.name for a in node.names]
+            for module in modules:
+                parts = module.split(".")
+                if len(parts) >= 2 and parts[0] == "irp_shared" and parts[1] == target:
+                    found.add(owner)
+    return found
+
+
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [("risk", _RISK_IMPORTERS), ("exposure", _EXPOSURE_IMPORTERS)],
+)
+def test_no_new_package_imports_risk_or_exposure(target: str, expected: frozenset[str]) -> None:
+    """The narrow-but-true replacement for two docstring claims that had quietly become false
+    (OQ-SCH-2-5 = APPROVE, re-scoped).
+
+    **What this closes:** a NEW package reaching into ``risk``/``exposure`` now turns a test red
+    instead of silently widening the dependency graph, and the two package docstrings now describe
+    the tree that exists.
+
+    **What it does NOT close, stated rather than glossed:** the whitelist is by PACKAGE, so each
+    entry blanket-exempts everything inside it — a new module inside ``snapshot`` or ``demo`` may
+    still import freely. Set equality (not a subset check) is deliberate: if an importer goes away,
+    this test fails and the whitelist shrinks with the truth rather than drifting stale.
+    """
+    assert _inbound_importers(target) == set(expected)

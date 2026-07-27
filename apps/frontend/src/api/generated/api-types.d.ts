@@ -4407,6 +4407,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Schedules Endpoint
+         * @description The acting tenant's schedule heads (``code`` ASC), each stamped with its last fire.
+         *
+         *     A stale ``last_scheduled_for`` relative to the cadence is the ONLY signal of a tick that never
+         *     ran at all — a failed fire leaves a ledger row, an outage leaves nothing. Read-only.
+         */
+        get: operations["list_schedules_endpoint_schedules_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/schedules/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Scheduled Runs Endpoint
+         * @description The acting tenant's fired-tick ledger, newest first, filtered + paginated.
+         *
+         *     ``since``/``until`` bound ``scheduled_for`` (the GRID tick — what an operator reasons about
+         *     calendar-wise), not ``fired_at``. ``outcome=FAILED`` is the burned-month feed the ratification
+         *     asked for. Unknown/foreign ``schedule_id`` is silently empty (no existence oracle).
+         */
+        get: operations["list_scheduled_runs_endpoint_schedules_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/snapshots": {
         parameters: {
             query?: never;
@@ -8450,6 +8497,88 @@ export interface components {
             shock_type: string;
             /** Shock Value */
             shock_value: number | string;
+        };
+        /** ScheduleListOut */
+        ScheduleListOut: {
+            /** Items */
+            items: components["schemas"]["ScheduleOut"][];
+        };
+        /**
+         * ScheduleOut
+         * @description A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable
+         *     since SCH-2 (each is required for some cadences/families and forbidden for others), so the DTO
+         *     mirrors the column nullability rather than inventing a placeholder.
+         */
+        ScheduleOut: {
+            /** Anchor Date */
+            anchor_date: string;
+            /** Cadence Kind */
+            cadence_kind: string;
+            /** Code */
+            code: string;
+            /** Environment Id */
+            environment_id: string;
+            /** Id */
+            id: string;
+            /** Interval Days */
+            interval_days: number | null;
+            /** Last Failure Reason */
+            last_failure_reason: string | null;
+            /** Last Fired At */
+            last_fired_at: string | null;
+            /** Last Outcome */
+            last_outcome: string | null;
+            /** Last Scheduled For */
+            last_scheduled_for: string | null;
+            /** Model Version Id */
+            model_version_id: string | null;
+            /** Name */
+            name: string;
+            /** Record Version */
+            record_version: number;
+            /** Scope Portfolio Id */
+            scope_portfolio_id: string;
+            /** Status */
+            status: string;
+            /** Target Run Type */
+            target_run_type: string;
+        };
+        /** ScheduledRunListOut */
+        ScheduledRunListOut: {
+            /** Items */
+            items: components["schemas"]["ScheduledRunOut"][];
+        };
+        /**
+         * ScheduledRunOut
+         * @description One fired grid tick. ``scheduled_for`` is the deterministic grid value (INV-SCH-1);
+         *     ``fired_at`` is the wall clock. ``calculation_run_id`` is NULL when dispatch was refused BEFORE
+         *     a run was created — the operator's cue that there is no run to inspect, only ``failure_reason``.
+         */
+        ScheduledRunOut: {
+            /** Calculation Run Id */
+            calculation_run_id: string | null;
+            /** Failure Reason */
+            failure_reason: string | null;
+            /**
+             * Fired At
+             * Format: date-time
+             */
+            fired_at: string;
+            /** Id */
+            id: string;
+            /** Outcome */
+            outcome: string;
+            /** Resolved Covariance Run Id */
+            resolved_covariance_run_id: string | null;
+            /** Resolved Exposure Run Id */
+            resolved_exposure_run_id: string | null;
+            /** Schedule Id */
+            schedule_id: string;
+            /**
+             * Scheduled For
+             * Format: date-time
+             */
+            scheduled_for: string;
         };
         /** SensitivityModelIn */
         SensitivityModelIn: {
@@ -18481,6 +18610,81 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VarRowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_schedules_endpoint_schedules_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_scheduled_runs_endpoint_schedules_runs_get: {
+        parameters: {
+            query?: {
+                schedule_id?: string | null;
+                outcome?: string | null;
+                since?: string | null;
+                until?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledRunListOut"];
                 };
             };
             /** @description Validation Error */

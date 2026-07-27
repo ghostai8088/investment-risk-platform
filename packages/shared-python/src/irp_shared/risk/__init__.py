@@ -2,7 +2,14 @@
 sensitivities: curve-node DV01 / spread-DV01).
 
 Leaf domain package: ``risk -> {snapshot, marketdata(constants/kernel), calc, model, lineage, dq,
-audit, db}``; nothing imports ``risk``. Every compute reads ONLY snapshot-pinned captured content
+audit, db}``. **"Nothing imports ``risk``" was true at P3-1 and is NOT true now** (corrected in
+SCH-2, OD-SCH-2-F — the draft asserted the fence still held and the verifier refuted it). The real
+inbound set is ``snapshot/service.py``, ``limit/service.py``, ``scheduling/service.py``, the
+top-level ``models.py`` metadata aggregator, and the ``demo`` orchestration package — pinned by
+``test_scheduler.test_no_new_package_imports_risk_or_exposure``, which now catches only a NEW
+importer from an untouched package. The OUTBOUND direction is the fence that still holds strictly
+(``risk`` imports no ``perf``/``limit``/``scheduling`` symbol — AST-checked in
+``test_var_backtest``). Every compute reads ONLY snapshot-pinned captured content
 (never a live curve/exposure/factor/return read); no ES/scenario/stress symbol exists yet.
 Run-bound + snapshot-gated + **model_version-bound** (AD-014 / FW-RUN / TR-15 / CTRL-003) — no
 risk number escapes the model inventory. P3-1 analytic sensitivities (curve-intrinsic — NO

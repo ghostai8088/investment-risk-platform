@@ -3,14 +3,20 @@
 Two clean layers:
 
 - **Pure cadence functions** (``current_tick`` / ``is_due``) — deterministic functions of
-  ``(anchor, interval, now)`` and the already-fired tick set. They read NO wall clock (INV-SCH-1:
-  ``scheduled_for`` is the computed ``current_tick`` grid value, never ``now``), so the whole
-  scheduler is testable with an injected ``now`` — no clock abstraction (none exists in the repo;
-  ``utcnow()`` is the only time source and reproducibility is the snapshot pin, AD-014).
+  ``(anchor, interval, cadence, now)`` and the already-fired tick set. They read NO wall clock
+  (INV-SCH-1: ``scheduled_for`` is the computed ``current_tick`` grid value, never ``now``), so the
+  whole scheduler is testable with an injected ``now`` — no clock abstraction (none exists in the
+  repo; ``utcnow()`` is the only time source and reproducibility is the snapshot pin, AD-014).
 - **DB layer** (``select_active_due`` / ``dispatch_one`` / schedule CRUD) — all tenant-scoped
   NON-BYPASSRLS (OQ-SCH-1-1=B). ``dispatch_one`` NEVER backfills: it fires the ONE current grid tick
   and leaves missed grid points as honest ledger gaps (OD-SCH-1-F, which folds the two blocking
   verifier defects — the fraudulent-backfill series + the pause/resume storm).
+
+**SCH-2 (Wave-13 slice 0)** retired SCH-1's "v1 = INTERVAL cadence, VAR family, ``run_var`` binder":
+the grid is now cadence-dispatched (``INTERVAL`` | ``CALENDAR_MONTH_END``) and the family is
+dispatched through ``FAMILY_REGISTRY``, the SINGLE source for what is schedulable and for which
+families require a ``model_version``. Reads live in the sibling ``queries.py`` — deliberately NOT
+here, because this module imports the risk + exposure compute stack and a read must not drag it in.
 """
 
 from __future__ import annotations
@@ -319,6 +325,17 @@ def _dispatch_var(
     patches ``scheduling.service.run_var``, and capturing the function object in the registry would
     make that patch invisible. The registry must not move out of this module without that test.
     """
+    # A REAL guard, not a cast (SCH-2): `model_version_id` became nullable for the model-less
+    # family, so the type is now `str | None` here. Three layers should already have refused a VAR
+    # schedule without one (the DB CHECK, `_validate_config`, the registry-gated FK guard) — if a
+    # row reaches dispatch with NULL anyway, every one of them has failed and firing an unbound run
+    # would breach CTRL-003 inventory-before-use. Refuse PRE-create; the caller records FAILED.
+    model_version_id = schedule.model_version_id
+    if model_version_id is None:
+        raise ScheduleError(
+            f"schedule {schedule.id} targets {schedule.target_run_type} but carries no "
+            "model_version_id — refusing to fire an unbound governed run (CTRL-003)"
+        )
     tenant = schedule.tenant_id
     fx_rows = latest_factor_exposure(
         session, acting_tenant=tenant, portfolio_id=schedule.scope_portfolio_id
@@ -337,7 +354,7 @@ def _dispatch_var(
         actor=VarActor(actor_id=f"scheduler:{schedule.id}", actor_type="SYSTEM"),
         code_version=code_version,
         environment_id=schedule.environment_id,
-        model_version_id=schedule.model_version_id,
+        model_version_id=model_version_id,
         exposure_run_id=exposure_run_id,
         covariance_run_id=covariance_run_id,
     )
@@ -578,7 +595,12 @@ def create_schedule(
     # model_version_id:` would look equivalent and would be a CTRL-003 FAIL-OPEN: a VAR schedule
     # created with None/"" would skip inventory-before-use entirely. `_validate_config` has already
     # refused a falsy value for a requiring family, so this is never reached with None.
-    if FAMILY_REGISTRY[target_run_type].requires_model_version:
+    if FAMILY_REGISTRY[target_run_type].requires_model_version and model_version_id is not None:
+        # The `is not None` leg is a TYPE narrowing, not a second gate — `_validate_config` above
+        # already raised for a requiring family with a falsy value, so it can never be the reason
+        # this guard is skipped. Written as `and` rather than an assert so a future reordering
+        # degrades to "the FK guard did not run", which the DB CHECK + `_validate_config` still
+        # catch, instead of a raw AssertionError from the wrong layer.
         assert_model_version_in_tenant(
             session, model_version_id, acting_tenant=tenant_id, error=ScheduleError
         )

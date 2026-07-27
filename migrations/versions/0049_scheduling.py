@@ -11,6 +11,13 @@ table — preserving the standing ``test_ops_role_has_no_grant_on_*`` isolation 
 prior slice upholds (Option A, an ops-role cross-tenant read, was REJECTED at ratification).
 
 Mints NO new governed number and NO new ``run_type``: a fire re-invokes an existing family binder.
+
+**SUPERSEDED IN PART by ``0053_schedule_cadence_family`` (SCH-2, 2026-07-27).** This migration
+created ``model_version_id`` and ``interval_days`` NOT NULL, encoding SCH-1's "VAR family, INTERVAL
+cadence only" v1. ``0053`` relaxes BOTH to nullable and replaces the lost enforcement with three
+total-enumeration CHECKs (per-family ``model_version_id``, per-cadence ``interval_days`` incl. the
+``> 0`` rule this migration never had, and the ``cadence_kind`` vocabulary). Read ``0053`` before
+reasoning about either column's nullability from the DDL below.
 """
 
 from __future__ import annotations

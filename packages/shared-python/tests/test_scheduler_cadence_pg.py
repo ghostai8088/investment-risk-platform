@@ -24,7 +24,7 @@ import importlib.util
 import os
 import pathlib
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -33,6 +33,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import NullPool
 
 from irp_shared.db.session import make_engine, make_session_factory
+from irp_shared.db.tenant import persistent_tenant_context
+from irp_shared.scheduling.queries import list_scheduled_runs, list_schedules
 from irp_shared.scheduling.service import FAMILY_REGISTRY
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
@@ -364,3 +366,113 @@ def test_downgrade_body_under_nonsuperuser_owner_member_role(app_url: str) -> No
     mig_engine.dispose()
     su.dispose()
     engine.dispose()
+
+
+# ---------------------------------------------------- the OQ-SCH-2-7c read surface, under RLS ---
+def _raw_insert_scheduled_run(
+    conn,  # noqa: ANN001
+    *,
+    tenant: str,
+    schedule_id: str,
+    tick: datetime,
+    outcome: str,
+) -> None:
+    conn.execute(
+        text(
+            "INSERT INTO scheduled_run (id, tenant_id, system_from, schedule_id, scheduled_for,"
+            " fired_at, calculation_run_id, outcome)"
+            " VALUES (:id, :tenant, now(), :sched, :tick, now(), NULL, :outcome)"
+        ),
+        {
+            "id": str(uuid.uuid4()),
+            "tenant": tenant,
+            "sched": schedule_id,
+            "tick": tick,
+            "outcome": outcome,
+        },
+    )
+
+
+def _seed_two_tenant_schedules(conn) -> tuple[str, str]:  # noqa: ANN001
+    """One month-end EXPOSURE schedule with a FAILED fire in EACH of two tenants.
+
+    The GUC is re-armed per tenant: the app role is NON-BYPASSRLS, so the WRITE policy refuses an
+    insert whose ``tenant_id`` does not match ``app.current_tenant``. (Which is itself a small
+    proof that the role under test really is subject to RLS.)
+    """
+    tenants = (str(uuid.uuid4()), str(uuid.uuid4()))
+    for tenant in tenants:
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant})
+        pf, _mv = _seed_referents(conn, tenant)
+        sched = str(uuid.uuid4())
+        conn.execute(
+            text(
+                "INSERT INTO schedule (id, tenant_id, valid_from, created_at, updated_at, code,"
+                " name, target_run_type, scope_portfolio_id, model_version_id, environment_id,"
+                " cadence_kind, interval_days, anchor_date, status, record_version)"
+                " VALUES (:id, :t, now(), now(), now(), :code, 'n', 'EXPOSURE_AGGREGATE', :pf,"
+                " NULL, 'ci', 'CALENDAR_MONTH_END', NULL, :anchor, 'ACTIVE', 1)"
+            ),
+            {
+                "id": sched,
+                "t": tenant,
+                "code": f"c-{uuid.uuid4().hex[:8]}",
+                "pf": pf,
+                "anchor": date(2026, 1, 1),
+            },
+        )
+        _raw_insert_scheduled_run(
+            conn,
+            tenant=tenant,
+            schedule_id=sched,
+            tick=datetime(2026, 5, 29, 23, 59, 59, 999999, tzinfo=UTC),
+            outcome="FAILED",
+        )
+    return tenants
+
+
+def test_the_schedule_reads_are_rls_scoped_under_the_app_role(app_url: str) -> None:  # noqa: F811
+    """The OQ-SCH-2-7c operator surface, proven at the tier that can prove it.
+
+    The endpoint tests run on SQLite, where RLS is a no-op — so they can only show the explicit
+    ``tenant_id`` predicate refusing. Here BOTH layers are live and each is checked ALONE:
+
+    1. GUC = A, ``acting_tenant`` = A → sees exactly A's rows (the normal path).
+    2. GUC = A, ``acting_tenant`` = B → EMPTY. RLS alone already hides B, so a caller who
+       mis-passes an ``acting_tenant`` cannot read across the boundary.
+    3. GUC = B, ``acting_tenant`` = A → EMPTY. The explicit predicate alone already refuses, so a
+       session whose GUC was armed for the wrong tenant cannot leak A's rows either.
+
+    (2) and (3) are the belt and the suspenders tested SEPARATELY — a test that only ever ran with
+    both agreeing would pass with either one deleted.
+    """
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    session = factory()
+    try:
+        conn = session.connection()
+        tenant_a, tenant_b = _seed_two_tenant_schedules(conn)
+
+        persistent_tenant_context(session, tenant_a)
+        mine = list_schedules(session, acting_tenant=tenant_a)
+        assert len(mine) == 1
+        assert mine[0].schedule.tenant_id == tenant_a
+        # The head's last-fire join must not reach across the boundary either.
+        assert mine[0].last_outcome == "FAILED"
+        assert len(list_scheduled_runs(session, acting_tenant=tenant_a)) == 1
+        assert len(list_scheduled_runs(session, acting_tenant=tenant_a, outcome="FAILED")) == 1
+
+        # (2) RLS alone refuses: the GUC is still A's.
+        assert list_schedules(session, acting_tenant=tenant_b) == []
+        assert list_scheduled_runs(session, acting_tenant=tenant_b) == []
+
+        # (3) The explicit predicate alone refuses: arm the GUC for B, ask for A.
+        persistent_tenant_context(session, tenant_b)
+        assert list_schedules(session, acting_tenant=tenant_a) == []
+        assert list_scheduled_runs(session, acting_tenant=tenant_a) == []
+        # ...and B's own session still reads B, so the emptiness above is scoping, not a dead query.
+        assert len(list_schedules(session, acting_tenant=tenant_b)) == 1
+    finally:
+        session.rollback()
+        session.close()
+        engine.dispose()

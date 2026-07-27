@@ -3,9 +3,11 @@
 - ``Schedule`` (ENT-061, **EV**) — the cadence CONFIG header, entity-versioned in place
   (``record_version``, NOT append-only, NO system axis — the ``scenario_definition``/``factor`` EV
   precedent); ``SCHEDULE.CREATE``/``SCHEDULE.UPDATE`` audited. Says "run family ``target_run_type``
-  for ``scope_portfolio_id`` under ``model_version_id`` in ``environment_id`` every
-  ``interval_days`` from ``anchor_date``." Pause/resume = a ``status`` flip. Logical identity
-  ``(tenant_id, code)``.
+  for ``scope_portfolio_id`` under ``model_version_id`` in ``environment_id`` on the
+  ``cadence_kind`` grid from ``anchor_date``." Pause/resume = a ``status`` flip. Logical identity
+  ``(tenant_id, code)``. **Since SCH-2 both ``model_version_id`` and ``interval_days`` are
+  NULLABLE** — each is required for some families/cadences and FORBIDDEN for others, per the
+  ``service.FAMILY_REGISTRY`` declaration and the two migration-``0053`` CHECKs.
 - ``ScheduledRun`` (ENT-062, **IA TRUE append-only**) — one row per fired grid tick, binding the
   tick to the governed ``calculation_run`` it produced + the upstream runs it resolved.
   ``UniqueConstraint(schedule_id, scheduled_for)`` is the per-``(schedule, tick)`` idempotency
@@ -13,9 +15,12 @@
   wall-clock read; ``fired_at`` is the wall-clock fire evidence). A re-poll of an already-fired tick
   is refused by the unique constraint — never mutated.
 
-Both PROPRIETARY, tenant-scoped, symmetric FORCE RLS — NEVER hybrid. Migration ``0049_scheduling``
-(``schedule`` gets RLS only; ``scheduled_run`` gets RLS + the append-only trigger). Under OQ-1=B the
-app does all reads/writes tenant-scoped non-BYPASSRLS — the ops role has NO grant on either table.
+Both PROPRIETARY, tenant-scoped, symmetric FORCE RLS — NEVER hybrid. Migrations ``0049_scheduling``
+(``schedule`` gets RLS only; ``scheduled_run`` gets RLS + the append-only trigger) and
+``0053_schedule_cadence_family`` (the two SCH-2 nullability relaxations + three total-enumeration
+CHECKs). Under OQ-1=B the app does all reads/writes tenant-scoped non-BYPASSRLS — the ops role has
+NO grant on either table. Read-only access is ``scheduling/queries.py`` behind ``schedule.view``
+(SCH-2, OQ-SCH-2-7c — so a burned month is visible when it happens).
 """
 
 from __future__ import annotations
@@ -63,7 +68,9 @@ class Schedule(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin
 
     code: Mapped[str] = mapped_column(String(150), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    #: The family binder to dispatch (controlled vocab ``SCHEDULABLE_RUN_TYPES``; v1 = ``VAR``).
+    #: The family binder to dispatch. The controlled vocab is ``service.SCHEDULABLE_RUN_TYPES``,
+    #: DERIVED from ``FAMILY_REGISTRY`` — since SCH-2 ``{VAR, EXPOSURE_AGGREGATE}``, and these are
+    #: the REAL ``calculation_run.run_type`` strings, not a parallel vocabulary (OQ-SCH-2-8).
     target_run_type: Mapped[str] = mapped_column(String(100), nullable=False)
     #: The WITHIN-TENANT portfolio scope the fired number is computed for (a hard FK — a schedule
     #: targets a real book; exposure resolution is scope-filtered). NOT a security boundary.
@@ -93,7 +100,8 @@ class Schedule(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin
     #: The grid anchor — the schedule's START BOUNDARY. Under ``INTERVAL`` it also generates the
     #: grid (every tick lands on ``anchor + k·interval_days``); under ``CALENDAR_MONTH_END`` the
     #: grid is calendar-generated and the anchor is ONLY the start boundary. That boundary is
-    #: tested against the TICK, not the clock — see ``service._starts_before_anchor``.
+    #: tested against the TICK **and** the clock — see ``service._outside_start_boundary``, where
+    #: both legs are load-bearing (the tick leg is the one a calendar grid needs).
     anchor_date: Mapped[dt_date] = mapped_column(Date, nullable=False)
     #: Lifecycle status (controlled vocab; only ``ACTIVE`` is selected for dispatch).
     status: Mapped[str] = mapped_column(String(20), nullable=False)

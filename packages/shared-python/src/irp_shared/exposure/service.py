@@ -30,7 +30,8 @@ whole
 
 One-way imports: ``exposure -> {snapshot, marketdata(pure legs), calc, lineage, dq, portfolio,
 audit, db}``; imports **no** live position/valuation/FX resolver into the compute; imports no
-risk/factor/scenario symbol; nothing imports ``exposure``.
+risk/factor/scenario symbol. (The old "nothing imports ``exposure``" claim was retired in SCH-2 —
+see the package docstring; the OUTBOUND fence stated here is the one that still holds.)
 """
 
 from __future__ import annotations
