@@ -131,6 +131,9 @@ from irp_shared.perf.return_service import (
     resolve_portfolio_return_run,
     run_portfolio_return,
 )
+from irp_shared.perf.stats_kernel import (
+    StatsKernelError,
+)
 
 __all__ = [
     "DESMOOTHED_RETURN_MODEL_CODE",
@@ -212,6 +215,7 @@ __all__ = [
     "active_series",
     "mean_return",
     "sample_stdev",
+    "StatsKernelError",
     "information_ratio",
     # P3-8 registrar
     "BENCHMARK_RELATIVE_MODEL_CODE",
