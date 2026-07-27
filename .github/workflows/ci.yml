@@ -569,7 +569,9 @@ jobs:
       # would never be exercised), a DESIGNED multi-month drawdown (else MDD is identically zero),
       # and BOTH registered windows (12 fills as a genuine 7-window series; 36 cannot, so its
       # SUPPRESSED rows exercise the nullable-value encoding on real data). Counts move
-      # 23/38/109 -> 24/39/131 (+1 model code, +1 INITIAL validation, +22 runs).
+      # 23/38/110 -> 24/38/132, MEASURED (the ratified 24/39/131 was wrong twice: the baseline
+      # ignored the COMPLETED run SCH-2's stage 15 adds, and the perf registrar mints no
+      # model_validation row). A count pin now runs AFTER the last stage.
       # Filename ``stage9zzzzzzz`` (SEVEN ``z``, one more than SCH-2's stage 15) — the standing
       # stage-ordering discipline; the ratified record said six, written before SCH-2 took it.
       - name: Demo stage-16 rolling-risk test (Postgres, RM-1)

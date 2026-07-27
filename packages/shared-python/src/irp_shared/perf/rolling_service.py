@@ -59,6 +59,7 @@ from irp_shared.perf.models import (
     SAMPLING_FREQUENCY_MONTHLY,
     RollingRiskResult,
 )
+from irp_shared.perf.return_kernel import ReturnKernelError
 from irp_shared.perf.rolling_kernel import (
     MonthlyReturn,
     RollingKernelError,
@@ -68,6 +69,7 @@ from irp_shared.perf.rolling_kernel import (
     relink_to_months,
     rolling_windows,
 )
+from irp_shared.perf.stats_kernel import StatsKernelError
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.snapshot import (
     COMPONENT_KIND_PORTFOLIO_RETURN,
@@ -341,9 +343,15 @@ def run_rolling_risk(
                 windows = rolling_windows(
                     parsed.months, window, opening_boundary=parsed.opening_boundary
                 )
-            except RollingKernelError as exc:
-                # A column-legal-but-extreme pin can drive a linked product past the 12dp scale: a
-                # committed FAILED run + DQ evidence, never a PG overflow 500.
+            except (RollingKernelError, ReturnKernelError, StatsKernelError) as exc:
+                # ALL THREE classes, not just the sibling. `rolling_windows` calls into
+                # `link_periods` (raises ReturnKernelError) and `sample_stdev`/`quantize_result`
+                # (raise StatsKernelError), and the three are INDEPENDENT ValueError subclasses —
+                # so catching only RollingKernelError left the extreme band escaping AFTER
+                # create_run, giving neither declared outcome: not a pre-create refusal, not a
+                # committed FAILED run, but an uncaught raise with the run stranded in RUNNING.
+                # Executed: twelve pinned sub-periods at return_value = 10000 (each below PM-1's
+                # own 1E7 emit gate) reached this line as a bare ReturnKernelError.
                 gaps.append(f"magnitude-out-of-range:{exc}")
                 return [], gaps
 

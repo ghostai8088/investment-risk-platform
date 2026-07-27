@@ -66,26 +66,46 @@ type OnlyCountsAreNumbers<T> = Exclude<NumberKeys<T>, CountKey> extends never ? 
 /** EXHAUSTIVE guard over every governed row DTO. If any grows a non-count `number` field, `tsc`
  * fails on that row's line. (Includes es-backtest + pacing — not yet FE-displayed families, but
  * governed decimals all the same, guarded from the moment they could be wired.) */
-/** Every schema key that names a governed row DTO. */
+/** Every schema key that names a governed row DTO — derived, so a NEW result family is covered the
+ * moment `make gen-api` emits it. */
 type RowOutKey = Extract<keyof Schemas, `${string}RowOut`>;
 
-/** The row DTOs that FAIL the contract — i.e. grew a non-count `number` field. `never` when the
- * whole surface is clean; otherwise a union naming exactly which rows regressed. */
-type RowOutsWithNonCountNumbers = {
-  [K in RowOutKey]: OnlyCountsAreNumbers<Schemas[K]> extends true ? never : K;
-}[RowOutKey];
+/** Governed DTOs carrying decimals that do NOT follow the `*RowOut` naming — captured-input and
+ * control-plane surfaces. These must stay CURATED: no naming rule identifies them.
+ *
+ * **This list exists because RM-1 nearly deleted it.** The guard was rewritten from a hand-curated
+ * array to a derived `*RowOut` mapped type; the array had 22 entries and only 15 matched that
+ * template, so the rewrite silently dropped these 7 — added deliberately at FE-3 ("guard the moment
+ * a decimal could be wired") and API-2b (the LimitOut backfill). Caught by adversarial review, not
+ * by tsc: dropping a name from a guard cannot fail a compile. Derive what a rule can identify;
+ * curate the rest — and never let "exhaustive by construction" mean "narrower than what it
+ * replaced". */
+type ExtraGovernedDtoKey =
+  | "PositionOut"
+  | "ValuationOut"
+  | "BreachOut"
+  | "BreachActionOut"
+  | "BreachNotificationOut"
+  | "LimitOut"
+  | "LimitHealthOut";
 
-/** Passes iff `T` is `never`. A failure prints the offending row names in the error. */
+/** Every governed DTO the contract covers: the derived row families PLUS the curated extras. */
+type GuardedDtoKey = RowOutKey | ExtraGovernedDtoKey;
+
+/** The DTOs that FAIL the contract — i.e. grew a non-count `number` field. `never` when the whole
+ * surface is clean; otherwise a union naming exactly which ones regressed. */
+type DtosWithNonCountNumbers = {
+  [K in GuardedDtoKey]: OnlyCountsAreNumbers<Schemas[K]> extends true ? never : K;
+}[GuardedDtoKey];
+
+/** Passes iff `T` is `never`. A failure prints the offending DTO names in the error. */
 type AssertNever<T extends never> = T;
 
-/** EXHAUSTIVE BY CONSTRUCTION over every governed row DTO — derived from the schema keys, so a NEW
- * family's DTO is guarded from the moment `make gen-api` emits it, with no list to remember.
- *
- * This replaced a hand-curated ARRAY at RM-1. That array was "exhaustive" only by discipline: I
- * proved by mutation that deleting a row's entry left that DTO silently unguarded — the very
- * failure FE-2 shipped this guard to prevent ("a sampled compile-time contract guard is false
- * security — make it exhaustive"). Curation cannot be the mechanism when forgetting is the risk. */
-export type OnlyCountsAreNumbersOnEveryRowOut = AssertNever<RowOutsWithNonCountNumbers>;
+/** EXHAUSTIVE over every governed DTO: the `*RowOut` families derived from the schema keys, plus
+ * the curated non-`RowOut` set above. A new result family is guarded automatically; a new
+ * non-`RowOut` governed DTO must be added to `ExtraGovernedDtoKey` — and THAT is the residual gap,
+ * stated rather than glossed, because no naming rule can close it. */
+export type OnlyCountsAreNumbersOnEveryRowOut = AssertNever<DtosWithNonCountNumbers>;
 
 /** Illustrative companion: a handful of named governed decimals asserted `string` outright — human
  * documentation of the contract the exhaustive guard above enforces structurally. */

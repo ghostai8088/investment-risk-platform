@@ -26,6 +26,7 @@ from irp_shared.perf.rolling_kernel import (
     relink_to_months,
     rolling_windows,
 )
+from irp_shared.perf.stats_kernel import sample_stdev
 
 
 def _months(*pairs: tuple[date, str]) -> list[MonthlyReturn]:
@@ -254,9 +255,15 @@ def test_only_complete_windows_are_emitted() -> None:
 
 
 def test_mdd_36_is_at_least_mdd_12_at_a_common_end_date() -> None:
-    """THE test that proves window-local rebasing was resolved correctly (OD-RM-1-H). A 36-month
-    window contains its trailing 12-month window, and sup(subset) <= sup(superset), so the longer
-    window can never report the SMALLER drawdown. Run-global peaks would break this."""
+    """A 36-month window contains its trailing 12-month window, and sup(subset) <= sup(superset),
+    so the longer window can never report the smaller drawdown — up to 1 ulp at 12dp, where a
+    half-way rounding point can invert the last digit (a constructed witness exists; 20k random
+    trials found none).
+
+    **This is NOT the test that proves window-local rebasing**, though it was described that way in
+    four places. Under a run-global peak the drawdown at each point is window-INDEPENDENT, so the
+    inequality holds under both conventions and a run-global mutant passes this test unchanged. The
+    discriminating test is ``test_the_drawdown_is_WINDOW_LOCAL_not_run_global``."""
     months = _twenty_four_months() + _twenty_four_months()[:12]  # 36 months
     w12 = rolling_windows(months, 12, opening_boundary=date(2024, 12, 31))[-1]
     w36 = rolling_windows(months, 36, opening_boundary=date(2024, 12, 31))[-1]
@@ -293,3 +300,77 @@ def test_every_emitted_pair_reconciles_EXACTLY_from_the_stored_value() -> None:
     assert windows, "no windows to reconcile"
     for window in windows:
         assert window.annualized_volatility == annualize_volatility(window.volatility)
+
+
+# ------------------------------------------- the POSITIVE path, pinned to golden values ---
+# The 4-finder review found the slice's refusal/alignment edges well covered and its COMPUTATIONAL
+# path almost entirely unpinned: an arithmetic-sum mutant replacing the geometric link, and a
+# volatility computed over the wrong slice, BOTH survived the whole suite. A governed number whose
+# value is never asserted is not governed. These are the missing goldens.
+
+
+def test_the_rolling_return_is_GEOMETRICALLY_linked_not_summed() -> None:
+    """Twelve +2% months. The geometric link gives 1.02^12 - 1; an arithmetic sum gives 0.24 — a
+    2.8pp error in the headline statistic that no other test could see."""
+    months = _months(*[(last_weekday_of_month(2025, m), "0.02") for m in range(1, 13)])
+    window = rolling_windows(months, 12, opening_boundary=date(2024, 12, 31))[0]
+    assert window.cumulative_return == Decimal("0.268241794563")  # 1.02^12-1, HALF_UP 12dp
+    assert window.cumulative_return != Decimal("0.240000000000")  # the summation mutant's answer
+
+
+def test_the_volatility_is_computed_over_the_WHOLE_window() -> None:
+    """A slice-off-by-one (``values[:-1]``) survives every reconciliation test, because the
+    annualized row is derived from the SAME wrong sigma. Only a golden over a known sample catches
+    it — so the sample here has a deliberately distinctive final observation."""
+    values = ["0.01"] * 11 + ["0.20"]
+    months = _months(*[(last_weekday_of_month(2025, m), v) for m, v in enumerate(values, start=1)])
+    window = rolling_windows(months, 12, opening_boundary=date(2024, 12, 31))[0]
+    assert window.n_observations == 12
+    assert window.volatility == sample_stdev([Decimal(v) for v in values])
+    # ...and NOT the 11-observation answer the off-by-one would give.
+    assert window.volatility != sample_stdev([Decimal(v) for v in values[:-1]])
+
+
+def test_the_drawdown_is_WINDOW_LOCAL_not_run_global() -> None:
+    """THE discriminating test for OD-RM-1-H — and my first attempt at it did not discriminate.
+
+    ``MDD_36 >= MDD_12`` does NOT distinguish the conventions: under a run-global peak the drawdown
+    at each point is window-independent, so a max over a superset still dominates a max over a
+    subset. The inequality holds either way, and the review proved a run-global mutant passes it.
+
+    Nor is "a window that opens after a peak" enough on its own: if the run peak IS the window's
+    opening level, the two conventions COINCIDE, because the rebasing is a scale factor and the
+    ratio-to-peak is scale-invariant. My first fixture made exactly that mistake and the mutant
+    survived it.
+
+    What actually discriminates is a book already DECLINING when the window opens, so the run's
+    high-water mark sits strictly ABOVE the window's opening level: months 1-6 rise 10%/mo (the run
+    peak), months 7-12 fall 5%/mo, and the final window covers months 13-24, which merely drift with
+    one small dip. Window-local sees only that dip. Run-global measures every point against a peak
+    the window never contained, and reports roughly an order of magnitude more.
+    """
+    values = ["0.10"] * 6 + ["-0.05"] * 6 + ["0.01"] * 5 + ["-0.02"] + ["0.01"] * 6
+    months = _months(
+        *[(last_weekday_of_month(2025 + (i // 12), (i % 12) + 1), v) for i, v in enumerate(values)]
+    )
+    last = rolling_windows(months, 12, opening_boundary=date(2024, 12, 31))[-1]
+    assert last.period_end == last_weekday_of_month(2026, 12)
+    # Window-local: only the -2% dip inside this window, against the window's own running peak.
+    assert last.max_drawdown < Decimal("0.05")
+    # Run-global would carry the month-6 high-water mark in and report ~0.26 — an order of
+    # magnitude larger. Pinning the small value is what refuses that implementation.
+    assert last.max_drawdown < Decimal("0.10")
+
+
+def test_an_interior_month_represented_ONLY_by_a_mid_month_boundary_is_refused() -> None:
+    """February present only as a mid-month date would pool a 14-day observation with a 46-day one.
+
+    **Honest note on which condition catches it.** This was written as a negative control for
+    condition (3)'s ``is_month_end`` filter, and it is NOT one: dropping that filter leaves this
+    test green, because the newer condition (5) — every measured month must CLOSE on a month-end —
+    already refuses the same input. Given (5), the filter in (3) cannot change any outcome: a month
+    whose last boundary is a month-end is in the set either way, and a month whose last boundary is
+    not is refused by (5) first. The filter is kept as defense-in-depth and documented as
+    subsumed, rather than left with a test that appears to guard it and does not."""
+    with pytest.raises(RollingKernelError, match="2026-02"):
+        assert_month_aligned([date(2026, 1, 30), date(2026, 2, 13), date(2026, 3, 31)])

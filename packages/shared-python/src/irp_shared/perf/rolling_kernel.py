@@ -111,7 +111,12 @@ def assert_month_aligned(boundaries: Sequence[dt_date]) -> None:
        whole;
     2. ``d_n`` is a month-end — the span closes on one, so the last measured month is whole;
     3. every calendar month strictly between them contributes a month-end boundary — no interior
-       month is missing.
+       month is missing;
+    4. ``d_0`` is the LAST boundary in its own month — otherwise the first measured month is a
+       partial stub (see the inline note: a Friday/Saturday month-end pair admits a ONE-DAY
+       "month");
+    5. every measured month CLOSES on a month-end — intra-month boundaries relink, but a month may
+       not end on a non-grid date.
 
     Extra INTRA-month boundaries are explicitly fine: they are relinked into their month by
     :func:`relink_to_months`. The criterion constrains which months are *represented*, never how
@@ -147,6 +152,38 @@ def assert_month_aligned(boundaries: Sequence[dt_date]) -> None:
             f"the span {first} -> {last} does not cover a whole calendar month: both boundaries "
             "fall in the same month, so there is nothing to measure"
         )
+
+    # (4) d_0 must be the LAST boundary in its own month — the ratified rule said so ("d_0 is the
+    # last boundary of the month preceding the first measured month") and the first implementation
+    # only checked that d_0 IS a month-end. That is not the same thing, because `is_month_end`
+    # accepts BOTH the last weekday AND the weekend calendar end, so ONE month can hold two of
+    # them. Executed counterexample, admitted by the first version: 2026-01-30 (Friday, the last
+    # business day) followed by 2026-01-31 (Saturday, the calendar end) — condition (1) passes on
+    # d_0 and the relink then emits a ONE-DAY "January" observation, which is pooled into sigma,
+    # x sqrt(12), the drawdown and the 12-month return. The dispersion ratio against a 31-day month
+    # is sqrt(31) ~ 5.6x — five times worse than the 1.32x partial-edge case that conditions (1)
+    # and (2) exist to prevent.
+    if any(d in ordered[1:] and _month_key(d) == _month_key(first) for d in ordered[1:]):
+        offender = next(d for d in ordered[1:] if _month_key(d) == _month_key(first))
+        raise RollingKernelError(
+            f"the opening boundary {first} is not the LAST boundary in its month ({offender} also "
+            "falls there) — the first measured month would be a partial stub, not a whole month"
+        )
+
+    # (5) the last boundary in every measured month must itself be a month-end. Intra-month
+    # boundaries are still welcome (they relink); what is refused is a month that CLOSES on one.
+    # Same root cause as (4) at the other end: 2026-05-29 (last weekday) followed by 2026-05-30
+    # (a Saturday, NOT a month end) would otherwise make May's observation close on a non-grid
+    # date, and that date is then stamped into governed rows as `period_end`.
+    last_in_month: dict[tuple[int, int], dt_date] = {}
+    for day in ordered[1:]:
+        last_in_month[_month_key(day)] = day
+    for key, day in last_in_month.items():
+        if not is_month_end(day):
+            raise RollingKernelError(
+                f"{key[0]}-{key[1]:02d} closes on {day}, which is not a month end — a measured "
+                "month must close on a grid point"
+            )
 
     # (3): every interior calendar month must contribute a month-end boundary.
     month_ends = {_month_key(d) for d in ordered if is_month_end(d)}
@@ -249,8 +286,11 @@ def max_drawdown(returns: Sequence[Decimal]) -> Decimal:
     - **Window-local rebasing.** ``V`` is rebased to 1 at the window's opening boundary and the peak
       is taken over observations WITHIN the window only. A run-global peak would import a high-water
       mark from outside and report a "12-month maximum drawdown" for a drawdown that did not happen
-      in those 12 months. Window-local is also what makes ``MDD_36 >= MDD_12`` hold at a common end
-      date — pinned as the test that proves this was resolved correctly.
+      in those 12 months. **``MDD_36 >= MDD_12`` does NOT prove this choice** (an earlier comment
+      claimed it did): under a run-global peak the drawdown at each point is window-independent, so
+      that inequality holds under BOTH conventions. What discriminates is a window opening while
+      the book is already BELOW an earlier run peak — see
+      ``test_the_drawdown_is_WINDOW_LOCAL_not_run_global``.
     - **The base point IS an observation.** ``V_0 = 1`` with ``DD_0 = 0`` (Chekhlov's ``w_0`` /
       ``xi_0`` treatment). Omitting it makes a window that OPENS on a loss report zero: for -10%
       then eleven +1% months, including ``V_0`` gives 0.10 and omitting it gives 0.00 — a 10pp error
@@ -309,7 +349,10 @@ def annualize_return(cumulative: Decimal, window_months: int) -> Decimal:
     not this guard — under that domain no governed caller can reach ``W < 12``, so calling the check
     below "the invariant" would be a vacuous control. It is honest defense-in-depth and labelled as
     such. (Twelve consecutive month-ends span exactly 365/366 days, so expressing the one-year
-    threshold in months is coherent.)
+    threshold in months is coherent — though note the supporting arithmetic often quoted for it,
+    "twelve consecutive month-ends span exactly 365/366 days", is FALSE under this module's own
+    last-weekday convention: 2026-01-30 to 2027-01-29 is 364 days. The conclusion rests on GIPS's
+    monthly convention, not on the day count.)
 
     At ``W == 12`` the exponent is exactly 1 and the annualized return is DEFINITIONALLY the
     cumulative return — which is why the binder suppresses that row rather than shipping two

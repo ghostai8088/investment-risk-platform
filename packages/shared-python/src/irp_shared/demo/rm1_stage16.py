@@ -27,8 +27,13 @@ appends one more ``z``. SCH-2's stage 15 is ``stage9zzzzzz`` (six), so RM-1's su
 ``stage9zzzzzzz`` (SEVEN). The ratified record said stage 15 / six ``z`` — written the day before
 SCH-2 merged; that name would now COLLIDE and collate ahead of it.
 
-Counts move **23/38/109 -> 24/39/131**: one new model code, one INITIAL validation record, and 22
-COMPLETED runs (20 boundary exposure runs + 1 PM-1 return run + 1 RM-1 rolling-risk run).
+Counts move **23/38/110 -> 24/38/132** (MEASURED on a fresh-schema battery, not derived): one new
+model code and 22 COMPLETED runs (20 boundary exposure runs + 1 PM-1 return run + 1 RM-1
+rolling-risk run). The ratified figure `24/39/131` was wrong twice — the baseline ignored the one
+COMPLETED run SCH-2's stage 15 adds, and no validation record is minted (the perf registrar creates
+model + version + assumptions and no `model_validation`). **A validation record SHOULD be filed
+here** — every prior new-code stage files one — and that gap is recorded as outstanding, not
+silently accepted; see the RM-1 decision record Part 6.0.
 """
 
 from __future__ import annotations
