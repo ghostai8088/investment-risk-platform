@@ -17,6 +17,7 @@ commit always durably lands every successful sibling dispatch.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from datetime import datetime
@@ -41,6 +42,15 @@ from irp_worker.breaches import poll_tenant_breaches
 from irp_worker.deadlines import poll_tenant_breach_deadlines
 from irp_worker.notifications import poll_tenant_notifications
 from irp_worker.tenants import TenantIdError, canonical_tenant_id
+
+log = logging.getLogger(__name__)
+
+#: A worker-level REPORTING value (never a ``scheduled_run.outcome`` — no row carries it): the
+#: recording path itself failed, so NOTHING was written and the tick stays un-fired and retryable.
+#: Distinct from ``OUTCOME_FAILED``, which means FAILED evidence was durably recorded and the tick
+#: bucket is permanently occupied — at a monthly cadence that is the difference between a retry
+#: next poll and a lost month (SCH-2).
+OUTCOME_UNRECORDED = "UNRECORDED"
 
 #: The unique constraint that backstops the per-(schedule, tick) idempotency race. ONLY a violation
 #: of THIS constraint is the benign concurrent-double-fire dedup; any OTHER IntegrityError from the
@@ -112,8 +122,13 @@ def _record_failed(
         failed_sp.rollback()
         return OUTCOME_SKIPPED_DUPLICATE
     except Exception:  # noqa: BLE001 - the recording path must never starve sibling schedules
+        # SCH-2: distinguish "recorded FAILED evidence" from "could not even record it". The former
+        # durably occupies the tick bucket; the latter leaves the tick un-fired and retryable — at
+        # a monthly cadence that difference is a month of lost evidence versus a retry next poll,
+        # and returning OUTCOME_FAILED for both made them indistinguishable to the caller.
         failed_sp.rollback()
-        return OUTCOME_FAILED
+        log.exception("could not record FAILED evidence for schedule %s tick %s", schedule.id, tick)
+        return OUTCOME_UNRECORDED
 
 
 def run_operational_tick_for_tenant(
@@ -127,10 +142,14 @@ def run_operational_tick_for_tenant(
     per-tenant tick the Fable audit ratified (schedules + breaches + deadlines under ONE
     entrypoint, so operational concerns never accrete separate CLI entrypoints).
 
-    **Ordering INVARIANT (OD-LIM-1-G):** phase 1 (schedules) runs BEFORE phase 2 (breaches), because
-    ``dispatch_one`` runs ``run_var`` inline — a VaR fired this tick reaches a COMPLETED run visible
-    to the breach evaluation in the SAME transaction (same-tick detection). Reversing the order is
-    correct but adds one tick of breach latency; all phases land under the single terminal commit.
+    **Ordering INVARIANT (OD-LIM-1-G), restated family-specifically at SCH-2:** phase 1 (schedules)
+    runs BEFORE phase 2 (breaches) because a dispatched **VaR** fire runs its binder inline, so it
+    reaches a COMPLETED run visible to the breach evaluation in the SAME transaction (same-tick
+    detection). The rationale is about the VaR family, not about scheduling in general: SCH-2's
+    second family (``EXPOSURE_AGGREGATE``) has no phase-2 consumer — LIM-1's ``_METRIC_MAP`` keys
+    only on VaR/active-risk run types — so admitting it neither strengthens nor breaks the ordering.
+    Reversing the order stays correct but adds one tick of breach latency; all phases land under the
+    single terminal commit.
 
     **Phase 3 (breach deadlines, MG-2)** auto-escalates overdue breaches. A breach DETECTED this
     tick has no ``response_due`` (stamped only at the human ASSIGN, never in a tick), so it is never

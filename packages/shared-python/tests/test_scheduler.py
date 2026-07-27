@@ -4,8 +4,9 @@ the end-to-end dispatch → run_var chain is exercised in the PG/demo tier)."""
 
 from __future__ import annotations
 
+import pathlib
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from datetime import date as dt_date
 
 import pytest
@@ -16,20 +17,29 @@ from irp_shared.audit.models import AppendOnlyViolation, AuditEvent
 from irp_shared.model.models import Model, ModelVersion
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.scheduling.events import (
+    CADENCE_CALENDAR_MONTH_END,
     OUTCOME_DISPATCHED,
     SCHEDULE_CREATE_EVENT,
     SCHEDULE_STATUS_ACTIVE,
     SCHEDULE_STATUS_PAUSED,
     SCHEDULE_UPDATE_EVENT,
+    TARGET_RUN_TYPE_EXPOSURE_AGGREGATE,
     SchedulingActor,
 )
 from irp_shared.scheduling.models import Schedule, ScheduledRun
 from irp_shared.scheduling.service import (
+    FAMILY_REGISTRY,
+    MAX_INTERVAL_DAYS,
+    SCHEDULABLE_RUN_TYPES,
     ScheduleError,
+    _assert_current_tick,
     create_schedule,
     current_tick,
+    dispatch_one,
     is_due,
     pause_schedule,
+    record_failed_dispatch,
+    redact_failure_reason,
     resume_schedule,
     select_active_due,
     update_schedule,
@@ -298,3 +308,311 @@ def test_paused_over_a_window_then_resume_fires_only_the_current_tick(session: S
     due = select_active_due(session, now, acting_tenant=tenant)
     assert len(due) == 1
     assert due[0][1] == current_tick(_ANCHOR, 7, now)  # the current tick, one fire only
+
+
+# --- SCH-2: the CALENDAR_MONTH_END cadence + the family registry ---------------------------------
+# `cadence_kind` had ZERO test coverage before SCH-2 (`_validate_config`'s cadence branch was never
+# exercised and `_mk` never passed the field), so these are the first tests that vocabulary has had.
+
+
+def _mk_month_end(session: Session, tenant: str, **over: object) -> Schedule:
+    """A CALENDAR_MONTH_END + EXPOSURE_AGGREGATE schedule (no model_version, no interval_days)."""
+    kwargs: dict[str, object] = {
+        "target_run_type": TARGET_RUN_TYPE_EXPOSURE_AGGREGATE,
+        "cadence_kind": CADENCE_CALENDAR_MONTH_END,
+        "model_version_id": None,
+        "interval_days": None,
+        "name": "Month-end exposure",
+    }
+    kwargs.update(over)
+    return _mk(session, tenant, **kwargs)
+
+
+def test_month_end_tick_is_the_last_weekday_at_end_of_day() -> None:
+    # 2026-01-31 is a SATURDAY, so January's grid point is Friday the 30th — the QS-11 `preceding`
+    # roll. The instant is END of day: the tick becomes the exposure run's `as_of_valid_at`, and a
+    # midnight tick would sit before every same-day mark's `valid_from` (invisible → FAILED run).
+    tick = current_tick(
+        _ANCHOR, None, datetime(2026, 2, 3, tzinfo=UTC), cadence_kind=CADENCE_CALENDAR_MONTH_END
+    )
+    assert tick.date() == dt_date(2026, 1, 30)
+    assert (tick.hour, tick.minute, tick.second) == (23, 59, 59)
+
+
+def test_month_end_tick_is_monotone_and_never_ahead_of_now() -> None:
+    # The bucket must be a pure, monotone function of `now` — two concurrent polls in the same
+    # bucket MUST agree, or `uq(schedule_id, scheduled_for)` stops colliding (a silent double-fire).
+    seen: list[datetime] = []
+    probe = datetime(2026, 1, 1, tzinfo=UTC)
+    while probe < datetime(2027, 1, 1, tzinfo=UTC):
+        tick = current_tick(_ANCHOR, None, probe, cadence_kind=CADENCE_CALENDAR_MONTH_END)
+        assert tick <= probe
+        if not seen or tick != seen[-1]:
+            assert not seen or tick > seen[-1]  # strictly increasing bucket sequence
+            seen.append(tick)
+        probe += timedelta(hours=6)
+    assert len(seen) == 12  # one grid point per calendar month
+
+
+def test_month_end_grid_refuses_a_tick_from_before_the_anchor(session: Session) -> None:
+    """The SCH-2 blocking defect: under INTERVAL, `tick >= anchor` was held STRUCTURALLY by
+    `current_tick`'s `k < 0` clamp. A calendar grid is not anchor-generated, so without an explicit
+    tick-vs-anchor test a schedule anchored mid-month fires the PREVIOUS month's grid point — a
+    backfill of a period before the schedule existed, which under the tick→as-of rule would mint a
+    governed run dated before the book was configured. 93% of 2026 anchor dates hit this."""
+    tenant = str(uuid.uuid4())
+    sched = _mk_month_end(session, tenant, anchor_date=dt_date(2026, 1, 5))
+    just_after_creation = datetime(2026, 1, 6, tzinfo=UTC)
+
+    tick = current_tick(
+        sched.anchor_date, None, just_after_creation, cadence_kind=CADENCE_CALENDAR_MONTH_END
+    )
+    assert tick.date() == dt_date(2025, 12, 31)  # the pre-anchor grid point is what the grid yields
+    assert is_due(sched, just_after_creation, fired_ticks=set()) is False
+    with pytest.raises(ScheduleError, match="outside the start boundary"):
+        _assert_current_tick(sched, tick, just_after_creation)
+
+    # ...and the FIRST legitimate fire is January's month-end, discovered in February.
+    in_february = datetime(2026, 2, 2, tzinfo=UTC)
+    first = current_tick(
+        sched.anchor_date, None, in_february, cadence_kind=CADENCE_CALENDAR_MONTH_END
+    )
+    assert first.date() == dt_date(2026, 1, 30)
+    assert is_due(sched, in_february, fired_ticks=set()) is True
+    _assert_current_tick(sched, first, in_february)  # must not raise
+
+
+def test_interval_cadence_still_refuses_a_future_tick_before_the_anchor(session: Session) -> None:
+    """The other leg of the start boundary, kept: under INTERVAL the clamp makes `tick == anchor`
+    when `now` precedes the anchor — which satisfies the tick-vs-anchor test while being a tick in
+    the FUTURE. Both legs are required; replacing rather than adding regressed this."""
+    tenant = str(uuid.uuid4())
+    sched = _mk(session, tenant, anchor_date=dt_date(2026, 3, 1))
+    assert is_due(sched, datetime(2026, 1, 15, tzinfo=UTC), fired_ticks=set()) is False
+
+
+def test_current_tick_fails_closed_on_a_bad_cadence_or_missing_interval() -> None:
+    """`current_tick` runs on the POLL path, and `select_active_due` is evaluated in the worker's
+    `for` header OUTSIDE the per-schedule SAVEPOINT — so a raw TypeError here would abort ALL FOUR
+    tick phases for the tenant. Every exit must be a clean ScheduleError."""
+    with pytest.raises(ScheduleError, match="unknown cadence_kind"):
+        current_tick(_ANCHOR, 7, datetime(2026, 6, 1, tzinfo=UTC), cadence_kind="NOPE")
+    with pytest.raises(ScheduleError, match="interval_days is required"):
+        current_tick(_ANCHOR, None, datetime(2026, 6, 1, tzinfo=UTC))
+
+
+def test_month_end_schedule_forbids_interval_days_and_model_version(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="interval_days is meaningless"):
+        _mk_month_end(session, tenant, interval_days=7)
+    with pytest.raises(ScheduleError, match="model-less"):
+        _mk_month_end(session, tenant, model_version_id=_seed_model_version(session, tenant))
+
+
+def test_var_family_still_requires_a_model_version(session: Session) -> None:
+    """The CTRL-003 inventory-before-use rule is gated on the registry DECLARATION, never on
+    whether the caller supplied a value — `if model_version_id:` would be a fail-open."""
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="model_version_id is required"):
+        _mk(session, tenant, model_version_id=None)
+
+
+def test_interval_cadence_still_requires_a_positive_interval(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="positive integer"):
+        _mk(session, tenant, interval_days=None)
+    with pytest.raises(ScheduleError, match="positive integer"):
+        _mk(session, tenant, interval_days=0)
+
+
+def test_the_schedulable_set_is_derived_from_the_registry() -> None:
+    """One source for the family gate (SCH-2): `events` no longer defines a second list, and the
+    schedule's family key IS the real `calculation_run.run_type` (OQ-SCH-2-8)."""
+    assert SCHEDULABLE_RUN_TYPES == frozenset(FAMILY_REGISTRY)
+    assert SCHEDULABLE_RUN_TYPES == {"VAR", "EXPOSURE_AGGREGATE"}
+    assert FAMILY_REGISTRY["VAR"].requires_model_version is True
+    assert FAMILY_REGISTRY["EXPOSURE_AGGREGATE"].requires_model_version is False
+    # `produces_run_on_failure` was REMOVED at the 4-finder review: it declared that EXPOSURE's
+    # dominant failure is POST-create, which is false on the path the scheduler actually uses (the
+    # snapshot build's completeness gate refuses PRE-create). Pin its absence so the false
+    # declaration cannot quietly return.
+    assert not hasattr(FAMILY_REGISTRY["EXPOSURE_AGGREGATE"], "produces_run_on_failure")
+
+
+# ------------------------------------------------------------------ the corrected fence sweep ---
+#: The REAL inbound importers of ``risk``/``exposure`` (SCH-2, OD-SCH-2-F). The draft claimed
+#: `scheduling` was the first violator of those packages' "nothing imports me" docstrings; the
+#: verifier refuted it, and an AST scan of the tree confirmed the true set below. Two entries are
+#: structural and will never shrink: ``models.py`` is the metadata aggregator (it must import every
+#: package), and ``demo`` is the orchestration layer that drives all of them.
+_RISK_IMPORTERS = frozenset({"models.py", "demo", "snapshot", "limit", "scheduling"})
+_EXPOSURE_IMPORTERS = frozenset({"models.py", "demo", "snapshot", "risk", "scheduling"})
+
+
+def _inbound_importers(target: str) -> set[str]:
+    """Every package (or top-level module) outside ``target`` importing ``irp_shared.<target>``."""
+    import ast
+
+    import irp_shared
+
+    root = pathlib.Path(irp_shared.__file__).parent
+    found: set[str] = set()
+    for path in root.rglob("*.py"):
+        rel = path.relative_to(root)
+        owner = rel.parts[0] if len(rel.parts) > 1 else rel.name
+        if owner == target:
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            modules: list[str] = []
+            if isinstance(node, ast.ImportFrom) and node.module:
+                modules = [node.module]
+            elif isinstance(node, ast.Import):
+                modules = [a.name for a in node.names]
+            for module in modules:
+                parts = module.split(".")
+                if len(parts) >= 2 and parts[0] == "irp_shared" and parts[1] == target:
+                    found.add(owner)
+    return found
+
+
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [("risk", _RISK_IMPORTERS), ("exposure", _EXPOSURE_IMPORTERS)],
+)
+def test_no_new_package_imports_risk_or_exposure(target: str, expected: frozenset[str]) -> None:
+    """The narrow-but-true replacement for two docstring claims that had quietly become false
+    (OQ-SCH-2-5 = APPROVE, re-scoped).
+
+    **What this closes:** a NEW package reaching into ``risk``/``exposure`` now turns a test red
+    instead of silently widening the dependency graph, and the two package docstrings now describe
+    the tree that exists.
+
+    **What it does NOT close, stated rather than glossed.** (1) The whitelist is by PACKAGE, so
+    each entry blanket-exempts everything inside it — a new module inside ``snapshot`` or ``demo``
+    may still import freely. (2) It matches ABSOLUTE imports only: a RELATIVE ``from ..risk import
+    events`` is invisible to it, demonstrated by executing exactly that mutation during the SCH-2
+    4-finder review (the sweep passed; the same import written absolutely failed it). The repo
+    convention is absolute imports everywhere, so the residual is small — but "a new package
+    reaching into risk/exposure turns a test red" is true only for the absolute form.
+
+    Set equality (not a subset check) is deliberate: if an importer goes away, this test fails and
+    the whitelist shrinks with the truth rather than drifting stale.
+    """
+    assert _inbound_importers(target) == set(expected)
+
+
+# ------------------------------------------------- executed controls for the SCH-2 fail-closed ---
+# Every guard below shipped WITHOUT one until the 4-finder review, which proved by MUTATION that
+# deleting each guard left the whole suite green. A guard that has never been demonstrated to fire
+# is not a guard (the standing rule).
+
+
+def test_an_unresolvable_cadence_is_skipped_not_raised(session: Session) -> None:
+    """THE B3 ISOLATION CONTROL. `select_active_due` runs in the worker's `for` HEADER, outside the
+    per-schedule SAVEPOINT, so a raise here aborts ALL FOUR tick phases for the tenant. The fix was
+    ratified; the mutation test showed that reverting it to raise-through kept 47 tests green.
+
+    SQLite has no CHECKs, which is exactly why a poisoned row is constructible at this tier.
+    """
+    tenant = str(uuid.uuid4())
+    healthy = _mk(session, tenant)
+    poisoned = _mk(session, tenant)
+    poisoned.cadence_kind = "NOT_A_CADENCE"  # only reachable where the DB CHECK does not exist
+    session.flush()
+
+    due = select_active_due(session, datetime(2026, 1, 15, tzinfo=UTC), acting_tenant=tenant)
+
+    ids = [s.id for s, _tick in due]
+    assert healthy.id in ids, "the healthy sibling was starved by its poisoned neighbour"
+    assert poisoned.id not in ids
+
+
+def test_a_runaway_interval_is_skipped_rather_than_killing_the_tenants_cycle(
+    session: Session,
+) -> None:
+    """The same isolation, reached through the OTHER door the review found: the column is a 32-bit
+    Integer but `timedelta` caps at 999,999,999 days, so this value made `current_tick` raise
+    OverflowError — NOT a ScheduleError, so it escaped the skip-and-report entirely."""
+    tenant = str(uuid.uuid4())
+    healthy = _mk(session, tenant)
+    runaway = _mk(session, tenant)
+    runaway.interval_days = 1_500_000_000  # between timedelta's cap and the column's
+    session.flush()
+
+    due = select_active_due(session, datetime(2026, 1, 15, tzinfo=UTC), acting_tenant=tenant)
+    assert [s.id for s, _t in due] == [
+        s.id for s, _t in due if s.id in {healthy.id, runaway.id}
+    ]  # sanity: only our two schedules are in play
+    assert healthy.id in [s.id for s, _t in due]
+    assert runaway.id not in [s.id for s, _t in due]
+
+
+def test_current_tick_converts_the_overflow_into_a_clean_schedule_error() -> None:
+    """The docstring promises "every exit from here is a clean ScheduleError". Prove the promise
+    for the one input that used to break it."""
+    with pytest.raises(ScheduleError, match="overflows the grid arithmetic"):
+        current_tick(_ANCHOR, 1_500_000_000, datetime(2026, 6, 1, tzinfo=UTC))
+
+
+def test_create_refuses_an_interval_beyond_the_runaway_envelope(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="must not exceed"):
+        _mk(session, tenant, interval_days=MAX_INTERVAL_DAYS + 1)
+    # ...and the boundary itself is admitted — the envelope is a ceiling, not an off-by-one.
+    assert _mk(session, tenant, interval_days=MAX_INTERVAL_DAYS).interval_days == MAX_INTERVAL_DAYS
+
+
+def test_a_var_schedule_reaching_dispatch_unbound_is_refused(session: Session) -> None:
+    """THE DISPATCH-TIME CTRL-003 CONTROL. `_validate_config` refuses this at CREATE, and that was
+    the only place it was ever tested — deleting the dispatch-layer guard left the suite green. The
+    guard exists for the row that reaches dispatch anyway (SQLite has no CHECK; a direct writer or
+    a future migration could), where firing would mint a governed run with no model binding.
+    """
+    tenant = str(uuid.uuid4())
+    sched = _mk(session, tenant)
+    sched.model_version_id = None  # the state all three create-time layers are meant to prevent
+    session.flush()
+    now = datetime(2026, 1, 15, tzinfo=UTC)
+    with pytest.raises(ScheduleError, match="CTRL-003"):
+        dispatch_one(session, sched, current_tick(_ANCHOR, 7, now), now, code_version="test")
+
+
+# ------------------------------------------------------- the failure-reason redaction (DC lens) ---
+_RAW_PG_REASON = (
+    "IntegrityError: (psycopg.errors.UniqueViolation) duplicate key value violates unique "
+    'constraint "uq_x"\n'
+    "DETAIL:  Key (portfolio_id, mark)=(abc, 1234567.89) already exists.\n"
+    "[SQL: INSERT INTO valuation (id, amount) VALUES (%(id)s, %(amount)s)]\n"
+    "[parameters: {'id': 'abc', 'amount': Decimal('1234567.89')}]"
+)
+
+
+def test_redaction_strips_sql_parameters_and_detail_but_keeps_the_diagnosis() -> None:
+    """The worker records `f"{type(exc).__name__}: {exc}"`, which for a DB error carries the failing
+    statement, its BOUND PARAMETERS, and PG's DETAIL line quoting the row. SCH-2 gave that field its
+    first reader, gated on `schedule.view` — a permission `auditor_3l` holds while holding NO
+    valuation/position/marketdata view. Unredacted, the ledger would route that role the very data
+    its permission set withholds."""
+    out = redact_failure_reason(_RAW_PG_REASON)
+    assert out.startswith("IntegrityError: (psycopg.errors.UniqueViolation) duplicate key")
+    assert "uq_x" in out  # the operator keeps the constraint name — the actionable part
+    for leaked in ("1234567.89", "DETAIL", "INSERT INTO", "parameters", "%(id)s"):
+        assert leaked not in out, f"{leaked!r} survived redaction"
+
+
+def test_redaction_is_applied_at_the_write_boundary_not_left_to_callers(session: Session) -> None:
+    """The EXECUTED control: redaction lives in `record_failed_dispatch`, so a caller passing raw
+    driver text still cannot persist it. Deleting the call makes this fail."""
+    tenant = str(uuid.uuid4())
+    sched = _mk(session, tenant)
+    now = datetime(2026, 1, 15, tzinfo=UTC)
+    row = record_failed_dispatch(session, sched, current_tick(_ANCHOR, 7, now), now, _RAW_PG_REASON)
+    assert row.failure_reason is not None
+    assert "1234567.89" not in row.failure_reason
+    assert "[SQL:" not in row.failure_reason
+
+
+def test_redaction_leaves_a_curated_domain_reason_untouched() -> None:
+    """It must not mangle the ordinary case — the pre-create refusals raise plain sentences."""
+    reason = "ScheduleError: no COMPLETED covariance run for the tenant"
+    assert redact_failure_reason(reason) == reason

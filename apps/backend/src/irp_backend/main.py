@@ -40,6 +40,7 @@ from irp_backend.api.reference_corporate_actions import (
 from irp_backend.api.reference_entities import router as reference_entities_router
 from irp_backend.api.reference_instruments import router as reference_instruments_router
 from irp_backend.api.risk import router as risk_router
+from irp_backend.api.schedules import router as schedules_router
 from irp_backend.api.snapshots import router as snapshots_router
 from irp_backend.api.system import router as system_router
 from irp_backend.api.transactions import router as transactions_router
@@ -92,3 +93,4 @@ app.include_router(perf_router)
 app.include_router(pacing_router)
 app.include_router(limits_router)
 app.include_router(breaches_router)
+app.include_router(schedules_router)

@@ -8,6 +8,7 @@ handling — without a DB. The real tick chain is covered in the PG/scheduler-di
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
@@ -190,3 +191,77 @@ def test_run_operational_tick_rejects_non_uuid_tenant() -> None:
 
     with pytest.raises(TenantIdError):
         run_operational_tick_for_tenant(_boom_factory, "not-a-uuid", code_version="v")  # type: ignore[arg-type]
+
+
+# ------------------------------------------- the OUTCOME_UNRECORDED distinction (SCH-2 review) ---
+def test_record_failed_reports_unrecorded_when_the_recording_path_itself_fails() -> None:
+    """SCH-2 added a THIRD outcome to the worker's reporting vocabulary and shipped it untested.
+
+    The distinction is load-bearing: `FAILED` means the tick bucket is durably occupied and that
+    month is BURNED; `UNRECORDED` means the tick was never fired at all and the NEXT poll retries
+    it. Returning `FAILED` for both — which is what the code did before — makes a recoverable
+    outage indistinguishable from a lost month at the only surface an operator sees.
+
+    Driven by making `record_failed_dispatch` raise a non-Integrity error, the one path that
+    reaches the branch.
+    """
+    from irp_worker import scheduler as sched_mod
+
+    class _FakeSavepoint:
+        def commit(self) -> None: ...
+        def rollback(self) -> None: ...
+
+    class _FakeSession:
+        def begin_nested(self) -> _FakeSavepoint:
+            return _FakeSavepoint()
+
+    class _FakeSchedule:
+        id = "sched-1"
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("the ledger insert itself failed")
+
+    original = sched_mod.record_failed_dispatch
+    sched_mod.record_failed_dispatch = _boom  # type: ignore[assignment]
+    try:
+        outcome = sched_mod._record_failed(
+            _FakeSession(),  # type: ignore[arg-type]
+            _FakeSchedule(),
+            datetime(2026, 5, 29, 23, 59, 59, 999999, tzinfo=UTC),
+            datetime(2026, 6, 1, 6, 5, tzinfo=UTC),
+            "some reason",
+        )
+    finally:
+        sched_mod.record_failed_dispatch = original  # type: ignore[assignment]
+
+    assert outcome == sched_mod.OUTCOME_UNRECORDED
+    assert outcome != sched_mod.OUTCOME_FAILED  # the whole point of the distinction
+
+
+def test_record_failed_reports_failed_on_the_ordinary_path() -> None:
+    """The control for the test above: the SAME helper returns FAILED when recording succeeds, so
+    the assertion is discriminating rather than always-UNRECORDED."""
+    from irp_worker import scheduler as sched_mod
+
+    class _FakeSavepoint:
+        def commit(self) -> None: ...
+        def rollback(self) -> None: ...
+
+    class _FakeSession:
+        def begin_nested(self) -> _FakeSavepoint:
+            return _FakeSavepoint()
+
+    original = sched_mod.record_failed_dispatch
+    sched_mod.record_failed_dispatch = lambda *a, **k: None  # type: ignore[assignment]
+    try:
+        outcome = sched_mod._record_failed(
+            _FakeSession(),  # type: ignore[arg-type]
+            type("S", (), {"id": "sched-1"})(),
+            datetime(2026, 5, 29, 23, 59, 59, 999999, tzinfo=UTC),
+            datetime(2026, 6, 1, 6, 5, tzinfo=UTC),
+            "some reason",
+        )
+    finally:
+        sched_mod.record_failed_dispatch = original  # type: ignore[assignment]
+
+    assert outcome == sched_mod.OUTCOME_FAILED
