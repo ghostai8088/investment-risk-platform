@@ -70,18 +70,30 @@ class Schedule(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin
     scope_portfolio_id: Mapped[str] = mapped_column(
         GUID, ForeignKey("portfolio.id"), nullable=False, index=True
     )
-    #: The REGISTERED model version the fired run binds (CTRL-003 inventory-before-use).
-    model_version_id: Mapped[str] = mapped_column(
-        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    #: The REGISTERED model version the fired run binds (CTRL-003 inventory-before-use). NULLABLE
+    #: since SCH-2 because it is required for SOME families and FORBIDDEN for others: the EXPOSURE
+    #: family is the MODEL-LESS deterministic rollup and cannot honestly nominate one. Which is
+    #: which is declared ONCE in ``service.FAMILY_REGISTRY`` and enforced three ways — a DB CHECK
+    #: (``ck_schedule_model_version_by_family``), ``_validate_config`` in both directions, and the
+    #: registry-gated CAD-1 FK guard. Never treat "a value was supplied" as the rule (a CTRL-003
+    #: fail-open); always ask the registry.
+    model_version_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=True, index=True
     )
     #: The run-environment label pinned on every fired run (a required governed-run pin — the
     #: ``calculation_run.environment_id`` free String(100) label; NOT a security boundary).
     environment_id: Mapped[str] = mapped_column(String(100), nullable=False)
-    #: Cadence kind (controlled vocab ``CADENCE_KINDS``; v1 = ``INTERVAL``).
+    #: Cadence kind (controlled vocab ``CADENCE_KINDS``: ``INTERVAL`` | ``CALENDAR_MONTH_END``).
     cadence_kind: Mapped[str] = mapped_column(String(20), nullable=False)
-    #: Interval length in calendar days (the ``INTERVAL`` grid step).
-    interval_days: Mapped[int] = mapped_column(Integer, nullable=False)
-    #: The grid anchor — the first grid point; every tick lands on ``anchor + k·interval_days``.
+    #: Interval length in calendar days — the ``INTERVAL`` grid step. NULLABLE since SCH-2: it is
+    #: meaningless under ``CALENDAR_MONTH_END`` and is FORBIDDEN there (DB CHECK
+    #: ``ck_schedule_interval_days_by_cadence``, which also carries the ``> 0`` rule the DB
+    #: previously lacked).
+    interval_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: The grid anchor — the schedule's START BOUNDARY. Under ``INTERVAL`` it also generates the
+    #: grid (every tick lands on ``anchor + k·interval_days``); under ``CALENDAR_MONTH_END`` the
+    #: grid is calendar-generated and the anchor is ONLY the start boundary. That boundary is
+    #: tested against the TICK, not the clock — see ``service._starts_before_anchor``.
     anchor_date: Mapped[dt_date] = mapped_column(Date, nullable=False)
     #: Lifecycle status (controlled vocab; only ``ACTIVE`` is selected for dispatch).
     status: Mapped[str] = mapped_column(String(20), nullable=False)

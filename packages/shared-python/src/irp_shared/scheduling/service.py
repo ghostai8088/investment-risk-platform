@@ -15,6 +15,10 @@ Two clean layers:
 
 from __future__ import annotations
 
+import calendar as _calendar
+import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from datetime import date as dt_date
 from typing import Any
@@ -24,6 +28,8 @@ from sqlalchemy.orm import Session
 
 from irp_shared.audit.actions import ACTION_CREATE, ACTION_UPDATE
 from irp_shared.audit.service import record_event
+from irp_shared.exposure.events import ExposureActor
+from irp_shared.exposure.service import ExposureRunResult, run_exposure
 from irp_shared.model.guards import assert_model_version_in_tenant
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.risk.covariance_service import latest_covariances
@@ -31,20 +37,24 @@ from irp_shared.risk.events import VarActor
 from irp_shared.risk.factor_service import latest_factor_exposure
 from irp_shared.risk.var_service import VarRunResult, run_var
 from irp_shared.scheduling.events import (
+    CADENCE_CALENDAR_MONTH_END,
     CADENCE_INTERVAL,
     CADENCE_KINDS,
     OUTCOME_DISPATCHED,
     OUTCOME_FAILED,
-    SCHEDULABLE_RUN_TYPES,
     SCHEDULE_CREATE_EVENT,
     SCHEDULE_STATUS_ACTIVE,
     SCHEDULE_STATUS_PAUSED,
     SCHEDULE_STATUSES,
     SCHEDULE_UPDATE_EVENT,
     SOURCE_MODULE_SCHEDULING,
+    TARGET_RUN_TYPE_EXPOSURE_AGGREGATE,
+    TARGET_RUN_TYPE_VAR,
     SchedulingActor,
 )
 from irp_shared.scheduling.models import Schedule, ScheduledRun
+
+_log = logging.getLogger(__name__)
 
 #: The audit ``entity_type`` for a schedule head.
 ENTITY_SCHEDULE = "schedule"
@@ -74,17 +84,72 @@ def _require_aware(now: datetime) -> None:
         raise ScheduleError("now must be tz-aware (UTC)")
 
 
-def current_tick(anchor_date: dt_date, interval_days: int, now: datetime) -> datetime:
+def _last_weekday_of_month(year: int, month: int) -> dt_date:
+    """The last Mon–Fri date of a calendar month — the QS-11 ``preceding`` roll over a WEEKEND-ONLY
+    non-business-day predicate (SCH-2, OD-SCH-2-C). Pure arithmetic: no holiday substrate exists
+    (ENT-006 ``calendar``/``calendar_holiday`` are vocabulary tables with no business-day logic),
+    so a month-end landing on a market HOLIDAY is a recorded residual, not a handled case."""
+    day = _calendar.monthrange(year, month)[1]
+    candidate = dt_date(year, month, day)
+    while candidate.weekday() >= 5:  # 5=Sat, 6=Sun
+        candidate -= timedelta(days=1)
+    return candidate
+
+
+def _month_end_tick_at_or_before(now: datetime) -> datetime:
+    """The most recent CALENDAR_MONTH_END grid point ``<= now``, as an END-OF-DAY instant.
+
+    **The instant is end-of-day, and that is load-bearing** (OD-SCH-2-C): the tick becomes the
+    EXPOSURE run's ``as_of_valid_at`` (OD-SCH-2-E), which is a BITEMPORAL CUTOFF, not a label —
+    it reaches ``Valuation.valid_from <= valid_at``. An end-of-day mark for day ``T`` is captured
+    DURING/AFTER ``T``, so at ``T 00:00Z`` it is not yet visible and the run would fail its
+    completeness gate EVERY month. At end-of-day ``valid_from <= tick`` holds for any same-day
+    capture, ``tick.date()`` is still ``T`` (so RM-1's month-alignment is satisfied), and trades
+    booked on ``T`` are included.
+    """
+    candidate = _end_of_day(_last_weekday_of_month(now.year, now.month))
+    if candidate <= now:
+        return candidate
+    # Still before this month's grid point — roll back to the previous month.
+    year, month = (now.year - 1, 12) if now.month == 1 else (now.year, now.month - 1)
+    return _end_of_day(_last_weekday_of_month(year, month))
+
+
+def _end_of_day(day: dt_date) -> datetime:
+    """The last representable microsecond of ``day`` in UTC."""
+    return datetime(day.year, day.month, day.day, 23, 59, 59, 999999, tzinfo=UTC)
+
+
+def current_tick(
+    anchor_date: dt_date,
+    interval_days: int | None,
+    now: datetime,
+    *,
+    cadence_kind: str = CADENCE_INTERVAL,
+) -> datetime:
     """The most recent grid point at or before ``now`` (INV-SCH-1 — a PURE grid value).
 
-    Grid = ``anchor_midnight_utc + k·interval_days``; returns the largest such point ``<= now``
-    (clamped to the anchor for ``now < anchor``, though callers gate that with ``is_due``). Depends
-    ONLY on ``(anchor, interval, now)`` — never on the ledger or a wall clock — so two concurrent
-    polls compute the identical bucket and collide on the unique constraint.
+    Two cadences (SCH-2): ``INTERVAL`` = ``anchor_midnight_utc + k·interval_days``, clamped to the
+    anchor; ``CALENDAR_MONTH_END`` = the end of the last weekday of the calendar month. Depends ONLY
+    on ``(anchor, interval, cadence, now)`` — never on the ledger or a wall clock — so two
+    concurrent polls compute the identical bucket and collide on the unique constraint.
+
+    **Fails CLOSED on an unresolvable cadence** (SCH-2, verifier B3). This function runs on the POLL
+    path, and ``select_active_due`` is evaluated in the worker's ``for`` header — OUTSIDE the
+    per-schedule SAVEPOINT — so a raw ``TypeError`` here (e.g. a NULL ``interval_days`` reaching the
+    INTERVAL branch after a rollback) would escape ``poll_tenant_schedules`` and abort ALL FOUR tick
+    phases for the tenant. Every exit from here is a clean ``ScheduleError``.
     """
+    _require_aware(now)
+    now = now.astimezone(UTC)  # the month-end branch reads calendar fields; normalize explicitly
+    if cadence_kind == CADENCE_CALENDAR_MONTH_END:
+        return _month_end_tick_at_or_before(now)
+    if cadence_kind != CADENCE_INTERVAL:
+        raise ScheduleError(f"unknown cadence_kind {cadence_kind!r} — cannot compute a grid tick")
+    if interval_days is None:
+        raise ScheduleError("interval_days is required for the INTERVAL cadence")
     if interval_days <= 0:
         raise ScheduleError("interval_days must be positive")
-    _require_aware(now)
     anchor = _anchor_dt(anchor_date)
     step = timedelta(days=interval_days)
     k = (now - anchor) // step
@@ -93,17 +158,50 @@ def current_tick(anchor_date: dt_date, interval_days: int, now: datetime) -> dat
     return anchor + k * step
 
 
+def _schedule_tick(schedule: Schedule, now: datetime) -> datetime:
+    """``current_tick`` for a schedule row (its cadence, interval and anchor)."""
+    return current_tick(
+        schedule.anchor_date,
+        schedule.interval_days,
+        now,
+        cadence_kind=schedule.cadence_kind,
+    )
+
+
+def _outside_start_boundary(schedule: Schedule, tick: datetime, now: datetime) -> bool:
+    """Is this (tick, now) pair outside the schedule's start boundary? BOTH legs are load-bearing.
+
+    **(a) ``tick >= anchor`` — the leg SCH-2 ADDS.** Under INTERVAL this held STRUCTURALLY, from
+    ``current_tick``'s ``if k < 0`` clamp, and the three gates only ever compared ``now`` to the
+    anchor. A calendar grid is not anchor-generated, so the clamp has no analogue: a schedule
+    anchored 2026-01-05 and polled the next day computes the 2025-12-31 tick — 35 days BEFORE its
+    own anchor (across 2026, 93% of anchor dates do this). That is a backfill of a period before the
+    schedule existed, and under OD-SCH-2-E it would mint a governed run dated before the book was
+    configured.
+
+    **(b) ``now >= anchor`` — the ORIGINAL leg, kept.** Dropping it in favour of (a) alone is a
+    regression the shipped suite catches: under INTERVAL with ``now`` before the anchor, the clamp
+    returns ``tick == anchor``, which satisfies (a) while being a tick in the FUTURE. A schedule
+    must not fire before it starts, and it must not fire a grid point it has not reached.
+    """
+    anchor = _anchor_dt(schedule.anchor_date)
+    return tick < anchor or now < anchor
+
+
 def _assert_current_tick(schedule: Schedule, tick: datetime, now: datetime) -> None:
     """Self-enforce INV-SCH-1 at the write boundary: ``tick`` MUST be the current grid tick for
-    ``now`` AND ``now`` must be at/after the anchor. Guards a mis-caller passing an arbitrary
-    ``tick`` (e.g. a wall clock), which would violate the invariant AND split the idempotency bucket
-    so ``uq(schedule_id, scheduled_for)`` no longer collides (a silent double-fire)."""
+    ``now`` AND must be at/after the anchor. Guards a mis-caller passing an arbitrary ``tick``
+    (e.g. a wall clock), which would violate the invariant AND split the idempotency bucket so
+    ``uq(schedule_id, scheduled_for)`` no longer collides (a silent double-fire)."""
     _require_aware(now)
-    if now < _anchor_dt(schedule.anchor_date):
-        raise ScheduleError(f"now {now} precedes the schedule anchor {schedule.anchor_date}")
-    expected = current_tick(schedule.anchor_date, schedule.interval_days, now)
+    expected = _schedule_tick(schedule, now)
     if tick != expected:
         raise ScheduleError(f"tick {tick} is not the current grid tick {expected} (INV-SCH-1)")
+    if _outside_start_boundary(schedule, tick, now):
+        raise ScheduleError(
+            f"tick {tick} is outside the start boundary of anchor {schedule.anchor_date} — "
+            "refusing to fire a grid point from before the schedule existed"
+        )
 
 
 def is_due(schedule: Schedule, now: datetime, fired_ticks: set[datetime]) -> bool:
@@ -114,9 +212,9 @@ def is_due(schedule: Schedule, now: datetime, fired_ticks: set[datetime]) -> boo
     _require_aware(now)
     if schedule.status != SCHEDULE_STATUS_ACTIVE:
         return False
-    if now < _anchor_dt(schedule.anchor_date):
+    tick = _schedule_tick(schedule, now)
+    if _outside_start_boundary(schedule, tick, now):
         return False
-    tick = current_tick(schedule.anchor_date, schedule.interval_days, now)
     return tick not in fired_ticks
 
 
@@ -146,9 +244,20 @@ def select_active_due(
     )
     due: list[tuple[Schedule, datetime]] = []
     for schedule in schedules:
-        if now < _anchor_dt(schedule.anchor_date):
+        try:
+            tick = _schedule_tick(schedule, now)
+        except ScheduleError:
+            # SKIP-AND-REPORT, never raise (SCH-2, verifier B3): this loop runs in the worker's
+            # `for` HEADER, outside the per-schedule SAVEPOINT, so a raise here would abort ALL
+            # FOUR tick phases for the tenant. An unresolvable cadence isolates to its own schedule.
+            _log.error(
+                "schedule %s has an unresolvable cadence (%s) — skipped this cycle",
+                schedule.id,
+                schedule.cadence_kind,
+            )
             continue
-        tick = current_tick(schedule.anchor_date, schedule.interval_days, now)
+        if _outside_start_boundary(schedule, tick, now):
+            continue
         already = session.execute(
             select(ScheduledRun.id).where(
                 ScheduledRun.schedule_id == schedule.id,
@@ -160,40 +269,56 @@ def select_active_due(
     return due
 
 
-# --------------------------------------------------------------------------------- dispatch -----
-def dispatch_one(
-    session: Session,
-    schedule: Schedule,
-    tick: datetime,
-    now: datetime,
-    *,
-    code_version: str,
-) -> ScheduledRun:
-    """Fire ONE grid tick: resolve upstream, run the family binder, append the ledger row.
+# ------------------------------------------------------------------- the family dispatch registry
+@dataclass(frozen=True)
+class DispatchOutcome:
+    """What a family dispatch produced: the governed run + the family-specific resolved ids."""
 
-    Idempotent: a pre-existing ``(schedule_id, tick)`` row is returned unchanged (the unique
-    constraint is the hard race backstop — a concurrent loser rolls back its phantom run at COMMIT).
-    v1 dispatches VaR only (OD-SCH-1-D): resolve the latest COMPLETED FACTOR_EXPOSURE run for the
-    scope (tenant-scoped — this is what ``run_var`` re-pins as ``x``, NOT a plain EXPOSURE run) +
-    the latest COMPLETED COVARIANCE run (tenant-global), then ``run_var`` with build args re-pins a
-    FRESH input snapshot over current data. A pre-create refusal RAISES (the caller records a FAILED
-    ledger row); a post-create FAILED run returns a row with ``outcome=FAILED`` + the failed run id.
+    run_id: str
+    status: str
+    failure_reason: str | None
+    resolved_exposure_run_id: str | None = None
+    resolved_covariance_run_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ScheduledFamily:
+    """One dispatchable family (SCH-2, OD-SCH-2-D — the SCH-1 family-2 deferral discharged).
+
+    Declares exactly what the generic dispatcher cannot infer:
+
+    - ``requires_model_version`` — VaR binds a registered ``model_version``; EXPOSURE is the
+      MODEL-LESS deterministic rollup and must NOT carry one. This flag is the single source for
+      the DB CHECK, ``_validate_config``, AND the CAD-1 FK guard — each of which is gated on the
+      DECLARATION, never on whether the caller happened to supply a value (that would be a CTRL-003
+      fail-open: a VAR schedule created with ``None`` would skip inventory-before-use entirely).
+    - ``produces_run_on_failure`` — VaR can refuse PRE-create (leaving ``calculation_run_id`` NULL);
+      EXPOSURE has no upstream to resolve and therefore no pre-create gate, so its dominant failure
+      (a missing mark) is a POST-create FAILED run that leaves a committed ``calculation_run`` +
+      audit events + a DQ result. Recorded so the operator surface is written against the truth.
+    - ``dispatch`` — the per-family callable. Upstream resolution is genuinely per-family (VaR needs
+      two upstream runs from two different resolvers; EXPOSURE needs none), so it is a callback,
+      not a shared body.
     """
-    _assert_current_tick(schedule, tick, now)  # INV-SCH-1 self-enforcing at the write boundary
-    existing = session.execute(
-        select(ScheduledRun).where(
-            ScheduledRun.schedule_id == schedule.id,
-            ScheduledRun.scheduled_for == tick,
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
 
-    if schedule.target_run_type not in SCHEDULABLE_RUN_TYPES:
-        raise ScheduleError(
-            f"target_run_type {schedule.target_run_type!r} is not schedulable in v1"
-        )
+    target_run_type: str
+    requires_model_version: bool
+    produces_run_on_failure: bool
+    dispatch: Callable[..., DispatchOutcome]
 
+
+def _dispatch_var(
+    session: Session, schedule: Schedule, tick: datetime, *, code_version: str
+) -> DispatchOutcome:
+    """VaR: resolve the latest COMPLETED FACTOR_EXPOSURE run for the scope (tenant-scoped — this is
+    what ``run_var`` re-pins as ``x``, NOT a plain EXPOSURE run) + the latest COMPLETED COVARIANCE
+    run (tenant-global), then ``run_var`` with build args re-pins a FRESH snapshot over current
+    data. Both misses are PRE-create refusals (no ``calculation_run`` is minted).
+
+    ``run_var`` is resolved from the MODULE GLOBAL at call time — ``test_scheduler_dispatch``
+    patches ``scheduling.service.run_var``, and capturing the function object in the registry would
+    make that patch invisible. The registry must not move out of this module without that test.
+    """
     tenant = schedule.tenant_id
     fx_rows = latest_factor_exposure(
         session, acting_tenant=tenant, portfolio_id=schedule.scope_portfolio_id
@@ -216,15 +341,115 @@ def dispatch_one(
         exposure_run_id=exposure_run_id,
         covariance_run_id=covariance_run_id,
     )
+    return DispatchOutcome(
+        run_id=result.run.run_id,
+        status=result.status,
+        failure_reason=result.failure_reason,
+        resolved_exposure_run_id=exposure_run_id,
+        resolved_covariance_run_id=covariance_run_id,
+    )
+
+
+def _dispatch_exposure(
+    session: Session, schedule: Schedule, tick: datetime, *, code_version: str
+) -> DispatchOutcome:
+    """EXPOSURE_AGGREGATE: no upstream to resolve — the TICK is the economic as-of (OD-SCH-2-E).
+
+    The tick→as-of coupling is declared HERE, per-family, rather than as a structural rule: today
+    the tick is otherwise a purely control-plane bucket, and the VaR path deliberately re-pins over
+    CURRENT data instead. The tick is an END-OF-DAY instant (OD-SCH-2-C) so same-day marks are
+    visible under ``Valuation.valid_from <= valid_at``.
+
+    ``as_of_known_at`` is PINNED to the tick rather than left to default to ``utcnow()``: otherwise
+    the governed month-end value would be a function of WHEN the worker happened to be up — two
+    fires of the same tick, minutes vs weeks apart, would differ whenever an input was corrected
+    between. Pinning makes the fire reproducible from the tick alone; the cost (ignoring later
+    corrections) is the correct trade for a governed input and is recorded.
+    """
+    result: ExposureRunResult = run_exposure(
+        session,
+        acting_tenant=schedule.tenant_id,
+        actor=ExposureActor(actor_id=f"scheduler:{schedule.id}", actor_type="SYSTEM"),
+        code_version=code_version,
+        environment_id=schedule.environment_id,
+        portfolio_id=schedule.scope_portfolio_id,
+        as_of_valid_at=tick,
+        as_of_known_at=tick,
+    )
+    return DispatchOutcome(
+        run_id=result.run.run_id,
+        status=result.status,
+        failure_reason=result.failure_reason,
+    )
+
+
+#: The dispatch registry — the SINGLE source for which families are schedulable (OD-SCH-2-F). It
+#: lives here, not in ``events``: the registry must import the family binders, and ``events`` is a
+#: leaf vocabulary module that ``irp_worker`` imports for three string constants (putting it there
+#: would drag the whole risk+exposure compute stack into the worker's import graph, and defining
+#: the derived set in ``events`` while the registry lives here is a circular import).
+FAMILY_REGISTRY: dict[str, ScheduledFamily] = {
+    TARGET_RUN_TYPE_VAR: ScheduledFamily(
+        target_run_type=TARGET_RUN_TYPE_VAR,
+        requires_model_version=True,
+        produces_run_on_failure=False,
+        dispatch=_dispatch_var,
+    ),
+    TARGET_RUN_TYPE_EXPOSURE_AGGREGATE: ScheduledFamily(
+        target_run_type=TARGET_RUN_TYPE_EXPOSURE_AGGREGATE,
+        requires_model_version=False,
+        produces_run_on_failure=True,
+        dispatch=_dispatch_exposure,
+    ),
+}
+
+#: DERIVED from the registry (SCH-2) — never a hand-maintained second list. ``events`` deliberately
+#: no longer defines this; the family gate has exactly ONE source.
+SCHEDULABLE_RUN_TYPES = frozenset(FAMILY_REGISTRY)
+
+
+# --------------------------------------------------------------------------------- dispatch -----
+def dispatch_one(
+    session: Session,
+    schedule: Schedule,
+    tick: datetime,
+    now: datetime,
+    *,
+    code_version: str,
+) -> ScheduledRun:
+    """Fire ONE grid tick: resolve upstream, run the family binder, append the ledger row.
+
+    Idempotent: a pre-existing ``(schedule_id, tick)`` row is returned unchanged (the unique
+    constraint is the hard race backstop — a concurrent loser rolls back its phantom run at COMMIT).
+    The family binder and its upstream resolution come from ``FAMILY_REGISTRY`` (SCH-2). A
+    pre-create refusal RAISES (the caller records a FAILED ledger row); a post-create FAILED
+    run returns a row
+    with ``outcome=FAILED`` + the failed run id.
+    """
+    _assert_current_tick(schedule, tick, now)  # INV-SCH-1 self-enforcing at the write boundary
+    existing = session.execute(
+        select(ScheduledRun).where(
+            ScheduledRun.schedule_id == schedule.id,
+            ScheduledRun.scheduled_for == tick,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    family = FAMILY_REGISTRY.get(schedule.target_run_type)
+    if family is None:
+        raise ScheduleError(f"target_run_type {schedule.target_run_type!r} is not schedulable")
+
+    result = family.dispatch(session, schedule, tick, code_version=code_version)
     outcome = OUTCOME_DISPATCHED if result.status == "COMPLETED" else OUTCOME_FAILED
     row = ScheduledRun(
-        tenant_id=tenant,
+        tenant_id=schedule.tenant_id,
         schedule_id=schedule.id,
         scheduled_for=tick,
         fired_at=now,
-        calculation_run_id=result.run.run_id,
-        resolved_exposure_run_id=exposure_run_id,
-        resolved_covariance_run_id=covariance_run_id,
+        calculation_run_id=result.run_id,
+        resolved_exposure_run_id=result.resolved_exposure_run_id,
+        resolved_covariance_run_id=result.resolved_covariance_run_id,
         outcome=outcome,
         failure_reason=result.failure_reason,
     )
@@ -266,17 +491,43 @@ def _validate_config(
     target_run_type: str,
     cadence_kind: str,
     status: str,
-    interval_days: int,
+    interval_days: int | None,
     environment_id: str,
+    model_version_id: str | None,
 ) -> None:
-    if target_run_type not in SCHEDULABLE_RUN_TYPES:
-        raise ScheduleError(f"target_run_type {target_run_type!r} is not schedulable in v1")
+    """Fail-closed config validation, driven by the registry and mirroring the DB CHECKs in BOTH
+    directions (SCH-2, verifier B4).
+
+    Why both directions matter: SQLite builds its schema from ORM metadata and this repo creates
+    every CHECK imperatively in migrations, so relaxing the two NOT-NULLs would leave the ENTIRE
+    unit tier (where every scheduler / limit / breach / notification test runs) with NO enforcement
+    of the per-family rule. The service must therefore carry it, or SQLite admits what PG rejects
+    at flush with a raw ``IntegrityError`` that the worker records as an opaque FAILED row.
+    """
+    family = FAMILY_REGISTRY.get(target_run_type)
+    if family is None:
+        raise ScheduleError(f"target_run_type {target_run_type!r} is not schedulable")
     if cadence_kind not in CADENCE_KINDS:
-        raise ScheduleError(f"cadence_kind {cadence_kind!r} is not a supported v1 cadence")
+        raise ScheduleError(f"cadence_kind {cadence_kind!r} is not a supported cadence")
     if status not in SCHEDULE_STATUSES:
         raise ScheduleError(f"status {status!r} is not a valid schedule status")
-    if interval_days <= 0:
-        raise ScheduleError("interval_days must be positive")
+
+    # model_version: required XOR forbidden, per the registry DECLARATION (never per the value).
+    if family.requires_model_version and not model_version_id:
+        raise ScheduleError(
+            f"model_version_id is required for the {target_run_type} family "
+            "(CTRL-003 inventory-before-use)"
+        )
+    if not family.requires_model_version and model_version_id is not None:
+        raise ScheduleError(f"{target_run_type} is model-less — model_version_id must be omitted")
+
+    # interval_days: required-and-positive for INTERVAL, forbidden otherwise.
+    if cadence_kind == CADENCE_INTERVAL:
+        if interval_days is None or interval_days <= 0:
+            raise ScheduleError("interval_days must be a positive integer for the INTERVAL cadence")
+    elif interval_days is not None:
+        raise ScheduleError(f"interval_days is meaningless under {cadence_kind} — omit it")
+
     if not environment_id:
         raise ScheduleError("environment_id is required (a governed-run pin)")
 
@@ -289,32 +540,43 @@ def create_schedule(
     name: str,
     target_run_type: str,
     scope_portfolio_id: str,
-    model_version_id: str,
     environment_id: str,
-    interval_days: int,
     anchor_date: dt_date,
     actor: SchedulingActor,
+    model_version_id: str | None = None,
+    interval_days: int | None = None,
     cadence_kind: str = CADENCE_INTERVAL,
     status: str = SCHEDULE_STATUS_ACTIVE,
 ) -> Schedule:
-    """Create an ACTIVE (by default) schedule head; emit ``SCHEDULE.CREATE`` (governed R-07)."""
+    """Create an ACTIVE (by default) schedule head; emit ``SCHEDULE.CREATE`` (governed R-07).
+
+    ``model_version_id`` and ``interval_days`` became optional at SCH-2 (each is required for some
+    families/cadences and FORBIDDEN for others — ``_validate_config`` enforces both directions), so
+    every existing keyword call site still compiles.
+    """
     _validate_config(
         target_run_type=target_run_type,
         cadence_kind=cadence_kind,
         status=status,
         interval_days=interval_days,
         environment_id=environment_id,
+        model_version_id=model_version_id,
     )
-    # P3-5 cross-tenant FK guard (OQ-W11C-2): re-resolve the two HARD FKs under the acting tenant
-    # BEFORE they are stamped into NOT-NULL FK columns — PG FK checks bypass RLS, so the DB alone
-    # would durably admit a foreign portfolio/model_version. ``environment_id`` is a free label
+    # P3-5 cross-tenant FK guard (OQ-W11C-2): re-resolve the HARD FKs under the acting tenant
+    # BEFORE they are stamped into FK columns — PG FK checks bypass RLS, so the DB alone would
+    # durably admit a foreign portfolio/model_version. ``environment_id`` is a free label
     # (``calculation_run.environment_id``; NOT a security boundary) and correctly needs no guard.
     assert_portfolio_in_tenant(
         session, scope_portfolio_id, acting_tenant=tenant_id, error=ScheduleError
     )
-    assert_model_version_in_tenant(
-        session, model_version_id, acting_tenant=tenant_id, error=ScheduleError
-    )
+    # Gated on the registry DECLARATION, never on the value (SCH-2, verifier B5). `if
+    # model_version_id:` would look equivalent and would be a CTRL-003 FAIL-OPEN: a VAR schedule
+    # created with None/"" would skip inventory-before-use entirely. `_validate_config` has already
+    # refused a falsy value for a requiring family, so this is never reached with None.
+    if FAMILY_REGISTRY[target_run_type].requires_model_version:
+        assert_model_version_in_tenant(
+            session, model_version_id, acting_tenant=tenant_id, error=ScheduleError
+        )
     schedule = Schedule(
         tenant_id=str(tenant_id),
         code=code,
