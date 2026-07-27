@@ -58,9 +58,11 @@ from irp_shared.perf import (
     PortfolioReturnResult,
     PortfolioReturnRunNotVisible,
     PortfolioReturnRunResult,
+    RollingRiskNotVisible,
     latest_benchmark_relative,
     latest_desmoothed_result,
     latest_portfolio_return,
+    latest_rolling_risk,
     list_benchmark_relatives,
     list_benchmark_relatives_by_entity,
     list_desmoothed_results,
@@ -68,6 +70,7 @@ from irp_shared.perf import (
     list_perf_runs,
     list_portfolio_returns,
     list_portfolio_returns_by_entity,
+    list_rolling_risks,
     register_benchmark_relative_model,
     register_desmoothed_return_estimated_model,
     register_desmoothed_return_model,
@@ -79,10 +82,12 @@ from irp_shared.perf import (
     resolve_desmoothed_return_run,
     resolve_portfolio_return,
     resolve_portfolio_return_run,
+    resolve_rolling_risk,
     run_benchmark_relative,
     run_desmoothed_return,
     run_portfolio_return,
 )
+from irp_shared.perf.models import RollingRiskResult
 from irp_shared.portfolio import PortfolioNotVisible
 from irp_shared.snapshot import (
     BenchmarkRelativeSnapshotError,
@@ -1138,3 +1143,131 @@ def get_desmoothed_return(
             status_code=status.HTTP_404_NOT_FOUND, detail="desmoothed-return result not found"
         ) from None
     return _dr_row_out(row)
+
+
+# ---------------------------------------------------------------- RM-1 rolling risk (ENT-064) ---
+
+
+class RollingRiskRowOut(BaseModel):
+    """One rolling-risk row. **The disambiguation key is
+    ``(metric_type, window_months, annualization_basis)``** — this family emits the same statistic
+    under two transforms at two windows, so a consumer keying on ``metric_type`` alone will conflate
+    governed numbers. ``metric_value`` is NULL exactly when ``suppressed``; a stuffed zero is
+    forbidden because 0 is a legitimate value for all three metrics."""
+
+    id: str
+    calculation_run_id: str
+    input_snapshot_id: str
+    model_version_id: str
+    portfolio_id: str
+    portfolio_return_run_id: str
+    metric_type: str
+    window_months: int
+    period_start: date
+    period_end: date
+    metric_value: str | None  # decimals as strings (the OQ-FE-1-7 contract); NULL iff suppressed
+    suppressed: bool
+    suppression_reason: str | None
+    annualization_basis: str
+    sampling_frequency: str
+    n_observations: int | None
+
+
+class RollingRiskListOut(BaseModel):
+    items: list[RollingRiskRowOut]
+
+
+def _rr_row_out(row: RollingRiskResult) -> RollingRiskRowOut:
+    return RollingRiskRowOut(
+        id=row.id,
+        calculation_run_id=row.calculation_run_id,
+        input_snapshot_id=row.input_snapshot_id,
+        model_version_id=row.model_version_id,
+        portfolio_id=row.portfolio_id,
+        portfolio_return_run_id=row.portfolio_return_run_id,
+        metric_type=row.metric_type,
+        window_months=row.window_months,
+        period_start=row.period_start,
+        period_end=row.period_end,
+        # Fixed-point, never scientific (the P3-4 serialization lesson). NULL survives as NULL —
+        # rendering a suppressed row as "0" would destroy the distinction the column exists for.
+        metric_value=(f"{row.metric_value:f}" if row.metric_value is not None else None),
+        suppressed=row.suppressed,
+        suppression_reason=row.suppression_reason,
+        annualization_basis=row.annualization_basis,
+        sampling_frequency=row.sampling_frequency,
+        n_observations=row.n_observations,
+    )
+
+
+# NOTE: `/latest` is declared BEFORE `/{result_id}` — FastAPI matches in declaration order, so the
+# path-parameter route would otherwise swallow the literal (the house rule).
+@router.get("/rolling-risk/latest", response_model=RollingRiskListOut)
+def get_latest_rolling_risk(
+    portfolio_id: uuid.UUID,
+    metric_type: str | None = Query(default=None),
+    window_months: int | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> RollingRiskListOut:
+    """The newest COMPLETED rolling-risk run's rows for a book (empty when none).
+
+    ONE run's rows, never a merge across runs: two runs of different model versions can carry
+    different window sets, so a merged series would silently mix estimator domains.
+    """
+    rows = latest_rolling_risk(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        metric_type=metric_type,
+        window_months=window_months,
+        as_of=as_of,
+    )
+    return RollingRiskListOut(items=[_rr_row_out(r) for r in rows])
+
+
+@router.get("/rolling-risk", response_model=RollingRiskListOut)
+def list_rolling_risk_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    metric_type: str | None = Query(default=None),
+    window_months: int | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> RollingRiskListOut:
+    """The rule-7 entity/time read across COMPLETED runs.
+
+    **``metric_type``/``window_months`` filters exist deliberately**, breaking a family precedent on
+    its merits: no perf read has ever taken a ``metric_type`` filter, but no perf family has ever
+    emitted one statistic under two transforms at two windows either. Unfiltered, a caller receives
+    four metric types across two windows interleaved — and reading that as a single series is the
+    most likely way to misuse this surface. **Rolling values are also not independent**: adjacent
+    12-month windows share 11 of 12 observations, so a change between consecutive points reflects
+    the single entering and exiting month, not a re-estimate.
+    """
+    rows = list_rolling_risks(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        metric_type=metric_type,
+        window_months=window_months,
+        as_of=as_of,
+    )
+    return RollingRiskListOut(items=[_rr_row_out(r) for r in rows])
+
+
+@router.get("/rolling-risk/{result_id}", response_model=RollingRiskRowOut)
+def get_rolling_risk(
+    result_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> RollingRiskRowOut:
+    """Read a single ``rolling_risk_result`` row (tenant-scoped; read-only)."""
+    try:
+        row = resolve_rolling_risk(db, str(result_id), acting_tenant=principal.tenant_id)
+    except RollingRiskNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="rolling-risk result not found"
+        ) from None
+    return _rr_row_out(row)

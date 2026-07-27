@@ -131,6 +131,18 @@ from irp_shared.perf.return_service import (
     resolve_portfolio_return_run,
     run_portfolio_return,
 )
+from irp_shared.perf.rolling_service import (
+    RollingRiskInputError,
+    RollingRiskNotVisible,
+    RollingRiskRunNotVisible,
+    RollingRiskRunResult,
+    latest_rolling_risk,
+    list_rolling_risk_rows,
+    list_rolling_risks,
+    resolve_rolling_risk,
+    resolve_rolling_risk_run,
+    run_rolling_risk,
+)
 from irp_shared.perf.stats_kernel import (
     StatsKernelError,
 )
@@ -216,6 +228,16 @@ __all__ = [
     "mean_return",
     "sample_stdev",
     "StatsKernelError",
+    "RollingRiskInputError",
+    "RollingRiskNotVisible",
+    "RollingRiskRunNotVisible",
+    "RollingRiskRunResult",
+    "latest_rolling_risk",
+    "list_rolling_risk_rows",
+    "list_rolling_risks",
+    "resolve_rolling_risk",
+    "resolve_rolling_risk_run",
+    "run_rolling_risk",
     "information_ratio",
     # P3-8 registrar
     "BENCHMARK_RELATIVE_MODEL_CODE",

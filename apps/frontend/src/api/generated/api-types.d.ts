@@ -2003,6 +2003,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/perf/rolling-risk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rolling Risk Endpoint
+         * @description The rule-7 entity/time read across COMPLETED runs.
+         *
+         *     **``metric_type``/``window_months`` filters exist deliberately**, breaking a family precedent on
+         *     its merits: no perf read has ever taken a ``metric_type`` filter, but no perf family has ever
+         *     emitted one statistic under two transforms at two windows either. Unfiltered, a caller receives
+         *     four metric types across two windows interleaved — and reading that as a single series is the
+         *     most likely way to misuse this surface. **Rolling values are also not independent**: adjacent
+         *     12-month windows share 11 of 12 observations, so a change between consecutive points reflects
+         *     the single entering and exiting month, not a re-estimate.
+         */
+        get: operations["list_rolling_risk_endpoint_perf_rolling_risk_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/perf/rolling-risk/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Rolling Risk
+         * @description The newest COMPLETED rolling-risk run's rows for a book (empty when none).
+         *
+         *     ONE run's rows, never a merge across runs: two runs of different model versions can carry
+         *     different window sets, so a merged series would silently mix estimator domains.
+         */
+        get: operations["get_latest_rolling_risk_perf_rolling_risk_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/perf/rolling-risk/{result_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Rolling Risk
+         * @description Read a single ``rolling_risk_result`` row (tenant-scoped; read-only).
+         */
+        get: operations["get_rolling_risk_perf_rolling_risk__result_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/perf/runs": {
         parameters: {
             query?: never;
@@ -8268,6 +8339,59 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** RollingRiskListOut */
+        RollingRiskListOut: {
+            /** Items */
+            items: components["schemas"]["RollingRiskRowOut"][];
+        };
+        /**
+         * RollingRiskRowOut
+         * @description One rolling-risk row. **The disambiguation key is
+         *     ``(metric_type, window_months, annualization_basis)``** — this family emits the same statistic
+         *     under two transforms at two windows, so a consumer keying on ``metric_type`` alone will conflate
+         *     governed numbers. ``metric_value`` is NULL exactly when ``suppressed``; a stuffed zero is
+         *     forbidden because 0 is a legitimate value for all three metrics.
+         */
+        RollingRiskRowOut: {
+            /** Annualization Basis */
+            annualization_basis: string;
+            /** Calculation Run Id */
+            calculation_run_id: string;
+            /** Id */
+            id: string;
+            /** Input Snapshot Id */
+            input_snapshot_id: string;
+            /** Metric Type */
+            metric_type: string;
+            /** Metric Value */
+            metric_value: string | null;
+            /** Model Version Id */
+            model_version_id: string;
+            /** N Observations */
+            n_observations: number | null;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Portfolio Return Run Id */
+            portfolio_return_run_id: string;
+            /** Sampling Frequency */
+            sampling_frequency: string;
+            /** Suppressed */
+            suppressed: boolean;
+            /** Suppression Reason */
+            suppression_reason: string | null;
+            /** Window Months */
+            window_months: number;
+        };
         /** RuleOut */
         RuleOut: {
             /** Code */
@@ -13836,6 +13960,117 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PortfolioReturnRowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rolling_risk_endpoint_perf_rolling_risk_get: {
+        parameters: {
+            query?: {
+                portfolio_id?: string | null;
+                metric_type?: string | null;
+                window_months?: number | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RollingRiskListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_latest_rolling_risk_perf_rolling_risk_latest_get: {
+        parameters: {
+            query: {
+                portfolio_id: string;
+                metric_type?: string | null;
+                window_months?: number | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RollingRiskListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rolling_risk_perf_rolling_risk__result_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                result_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RollingRiskRowOut"];
                 };
             };
             /** @description Validation Error */

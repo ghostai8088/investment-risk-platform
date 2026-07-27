@@ -29,12 +29,15 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import date as dt_date
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_completed_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
@@ -410,3 +413,124 @@ def run_rolling_risk(
         rows=list(outcome.rows),
         failure_reason=outcome.failure_reason,
     )
+
+
+# ------------------------------------------------------------------------- rule-7 reads (RM-1) ---
+def list_rolling_risks(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    metric_type: str | None = None,
+    window_months: int | None = None,
+    as_of: datetime | None = None,
+) -> list[RollingRiskResult]:
+    """Entity/time-centric read across COMPLETED rolling-risk runs (the AD-019 ``calc/reads.py``
+    seam — governed-result reads never hand-roll a join to ``calculation_run``).
+
+    **``metric_type`` and ``window_months`` filters are offered deliberately, breaking a family
+    precedent on its merits** (OD-RM-1-K). No perf read has ever taken a ``metric_type`` filter —
+    but no perf family has ever emitted the SAME statistic under two transforms at two windows
+    either. Without them a caller asking "the rolling volatility" receives four metric types across
+    two windows interleaved, and the most likely way to misread this surface is to treat that as one
+    series. The disambiguation key is ``(metric_type, window_months, annualization_basis)``; the
+    third is always stamped on the row, and the first two are filterable here.
+
+    Silent-empty on an unknown/foreign id (the platform's entity-filter precedent).
+    """
+    return list_governed_results(
+        session,
+        RollingRiskResult,
+        acting_tenant=acting_tenant,
+        filters=(
+            (RollingRiskResult.portfolio_id, portfolio_id),
+            (RollingRiskResult.metric_type, metric_type),
+            (RollingRiskResult.window_months, window_months),
+        ),
+        run_type=RUN_TYPE_ROLLING_RISK,
+        as_of=as_of,
+        order_by=(
+            RollingRiskResult.window_months,
+            RollingRiskResult.metric_type,
+            RollingRiskResult.period_end,
+        ),
+    )
+
+
+def latest_rolling_risk(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    metric_type: str | None = None,
+    window_months: int | None = None,
+    as_of: datetime | None = None,
+) -> list[RollingRiskResult]:
+    """The newest COMPLETED rolling-risk run's rows for a book (empty when none).
+
+    ONE run's rows, never a merge across runs — cross-run aggregation is a CONSUMER ERROR, and it
+    would be a particularly bad one here: two runs of different model versions can carry different
+    window sets, so a merged series would silently mix estimator domains.
+    """
+    return latest_run_rows(
+        list_rolling_risks(
+            session,
+            acting_tenant=acting_tenant,
+            portfolio_id=portfolio_id,
+            metric_type=metric_type,
+            window_months=window_months,
+            as_of=as_of,
+        )
+    )
+
+
+def list_rolling_risk_rows(
+    session: Session, *, run_id: str, acting_tenant: str
+) -> list[RollingRiskResult]:
+    """Every row of ONE rolling-risk run (the run-centric read), deterministically ordered."""
+    return list(
+        session.execute(
+            select(RollingRiskResult)
+            .where(
+                RollingRiskResult.calculation_run_id == str(run_id),
+                RollingRiskResult.tenant_id == str(acting_tenant),
+            )
+            .order_by(
+                RollingRiskResult.window_months,
+                RollingRiskResult.metric_type,
+                RollingRiskResult.period_end,
+            )
+        ).scalars()
+    )
+
+
+def resolve_rolling_risk_run(
+    session: Session, run_id: str, *, acting_tenant: str
+) -> CalculationRun:
+    """Resolve a rolling-risk run by id with an EXPLICIT tenant predicate (fail-closed). A committed
+    FAILED run is a real resource and resolves — it is durable refusal evidence, not a 404."""
+    run = session.execute(
+        select(CalculationRun).where(
+            CalculationRun.run_id == str(run_id),
+            CalculationRun.tenant_id == str(acting_tenant),
+            CalculationRun.run_type == RUN_TYPE_ROLLING_RISK,
+        )
+    ).scalar_one_or_none()
+    if run is None:
+        raise RollingRiskRunNotVisible(f"rolling-risk run {run_id} is not visible")
+    return run
+
+
+def resolve_rolling_risk(
+    session: Session, result_id: str, *, acting_tenant: str
+) -> RollingRiskResult:
+    """Resolve one ``rolling_risk_result`` row by id with an EXPLICIT tenant predicate."""
+    row = session.execute(
+        select(RollingRiskResult).where(
+            RollingRiskResult.id == str(result_id),
+            RollingRiskResult.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise RollingRiskNotVisible(f"rolling-risk result {result_id} is not visible")
+    return row
