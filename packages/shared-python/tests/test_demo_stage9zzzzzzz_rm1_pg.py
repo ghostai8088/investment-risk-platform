@@ -192,3 +192,74 @@ def test_every_persisted_row_satisfies_the_suppression_CHECK(db) -> None:  # noq
 def test_a_second_seed_refuses_rather_than_silently_skipping(db) -> None:  # noqa: ANN001
     with pytest.raises(DemoRm1AlreadySeededError):
         run_demo_rm1_stage16(db)
+
+
+def test_the_demo_tenant_counts_are_pinned_where_they_are_actually_FINAL(db) -> None:  # noqa: ANN001
+    """The count pin, placed AFTER the last demo stage — which is the point.
+
+    The platform's only other absolute-count pin lives in the stage-13 suite and asserts 109. It
+    collates BEFORE stages 14/15/16, so it is a pin on an INTERMEDIATE total and cannot see any
+    later increment. That is exactly how SCH-2 shipped a merged record claiming "counts unchanged
+    at 23/38/109" while its stage 15 added one COMPLETED EXPOSURE_AGGREGATE run — its own module
+    docstring says "only the COMPLETED-run count moves", and nothing contradicted the record.
+
+    Measured, not derived:
+    - **24 model codes** — RM-1 adds `perf.rolling_risk`, the 21st governed number's model.
+    - **38 validations, UNCHANGED** — the ratified "+1 INITIAL validation record" was wrong about
+      the perf registrar, which mints model + model_version + assumptions/limitations and NO
+      `model_validation` row.
+    - **132 COMPLETED runs** — 110 after stage 15 (not the recorded 109), plus RM-1's 22
+      (20 boundary exposure runs + 1 PM-1 + 1 RM-1).
+    """
+    from irp_shared.calc.models import CalculationRun
+    from irp_shared.model.models import Model, ModelValidation
+
+    model_codes = db.execute(
+        select(func.count(func.distinct(Model.code))).where(Model.tenant_id == DEMO_TENANT_ID)
+    ).scalar_one()
+    validations = db.execute(
+        select(func.count())
+        .select_from(ModelValidation)
+        .where(ModelValidation.tenant_id == DEMO_TENANT_ID)
+    ).scalar_one()
+    completed = db.execute(
+        select(func.count())
+        .select_from(CalculationRun)
+        .where(
+            CalculationRun.tenant_id == DEMO_TENANT_ID,
+            CalculationRun.status == "COMPLETED",
+        )
+    ).scalar_one()
+
+    assert (model_codes, validations, completed) == (
+        24,
+        38,
+        132,
+    ), f"demo counts drifted: {model_codes}/{validations}/{completed} (expected 24/38/132)"
+
+
+def test_rm1_contributed_exactly_twenty_two_completed_runs(db) -> None:  # noqa: ANN001
+    """The slice's OWN contribution, isolated from the baseline — so a future baseline shift is
+    attributed correctly instead of being absorbed into RM-1's number."""
+    from irp_shared.calc.models import CalculationRun
+
+    rolling = db.execute(
+        select(func.count())
+        .select_from(CalculationRun)
+        .where(
+            CalculationRun.tenant_id == DEMO_TENANT_ID,
+            CalculationRun.run_type == "ROLLING_RISK",
+            CalculationRun.status == "COMPLETED",
+        )
+    ).scalar_one()
+    returns = db.execute(
+        select(func.count())
+        .select_from(CalculationRun)
+        .where(
+            CalculationRun.tenant_id == DEMO_TENANT_ID,
+            CalculationRun.run_type == "PORTFOLIO_RETURN",
+            CalculationRun.status == "COMPLETED",
+        )
+    ).scalar_one()
+    assert rolling == 1
+    assert returns == 2  # the campaign's, plus stage 16's

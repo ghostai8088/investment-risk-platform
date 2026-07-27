@@ -5,7 +5,7 @@
 | Status | **RATIFIED 2026-07-26 — OQ-RM-1-1…7 approved as revised; the operability carry ratified INTO scope as its own preceding slice (SCH-2)** |
 | Slice | Wave-13 slice 1, ratified at the Wave-12 close (OQ-W12C-2=A; `wave_12_close_review.md` §5, `delivery_roadmap.md` Part 2.16) |
 | Kind | A **governed number** — new result family (ENT-064), new registered model, migration `0053`; consumes an existing governed series, captures nothing, mints no permission, emits no new audit code |
-| Counts | **MOVES all three: 23/38/109 → 24/39/131** (a new model code + an INITIAL validation record + 22 COMPLETED runs) |
+| Counts | **23/38/109 → 24/38/132** — a new model code + 22 COMPLETED runs; **validations do NOT move** and the run baseline was 110, not 109 (both corrected at implementation — see Part 6.0 item 4; the ratified figure was `24/39/131`) |
 | Recon | 2026-07-26 at `646b6a6`, five parallel readers. **Two recon claims and one of this record's own claims were refuted by hand-verification** (§0.1). |
 
 ## Part 0 — What RM-1 actually is
@@ -213,7 +213,11 @@ RM-1 was ratified 2026-07-26, one day before SCH-2 merged. Verified against `mai
 2. **The demo stage is stage 16 with SEVEN `z`, not stage 15 with six.** SCH-2's stage 15 is `test_demo_stage9zzzzzz_sch2_pg.py` (six `z`, verified by `ls`). OD-RM-1-P's `rm1_stage15.py` / `test_demo_stage9zzzzzz_rm1_pg.py` would COLLIDE with it and, worse, would collate ahead of it in a shared-DB local battery. RM-1 ships `demo/rm1_stage16.py` and `test_demo_stage9zzzzzzz_rm1_pg.py`. The alpha-sort discipline is load-bearing, not cosmetic — earlier suites pin governed-code sets with set-equality.
 3. **OQ-RM-1-1's operability carry is DISCHARGED.** The record states "nothing on this platform can produce month-end exposure runs — `SCHEDULABLE_RUN_TYPES = {VAR}`, `CADENCE_KINDS = {INTERVAL}`". Both are now false: SCH-2 shipped `CALENDAR_MONTH_END` (last weekday, end-of-day) and admitted `EXPOSURE_AGGREGATE` to the registry. **RM-1 no longer ships a governed number fed only by human discipline** — which was the condition the gate attached to its approval. The counts SCH-2 was ratified not to move did not move (23/38/109 holds).
 
-Recorded per OQ-W12C-3a: all three were cheaply checkable and are checked, not assumed.
+4. **The ratified COUNTS are wrong in BOTH directions: `24/39/131` is actually `24/38/132`.** Measured on a fresh-schema full-PG battery, not derived. Two independent causes, each a claim that was never executed:
+   - **Validations do not move at all (39 -> 38).** The ratified "+1 INITIAL validation record" assumed perf model registration mints one. It does not: `_register_perf_model` creates the `model` + `model_version` + assumption/limitation rows and **no `model_validation`** (grep: zero matches). The PPF-1 slice that set the "+1 validation" expectation is a different family with a different registrar. RM-1 therefore adds a model code and no validation record.
+   - **Runs move by 22 as designed, but from a baseline of 110, not 109 (131 -> 132).** RM-1's own arithmetic is right — 20 boundary exposure runs + 1 PM-1 + 1 RM-1. **The BASELINE was stale: SCH-2's demo stage 15 adds one COMPLETED `EXPOSURE_AGGREGATE` run** (its tick fires a real governed run — its own PG suite asserts `status == "COMPLETED"`, and its module docstring says plainly "only the COMPLETED-run count moves"), while the SCH-2 decision record and roadmap row both state "counts unchanged at 23/38/109". **That is a false claim in a MERGED slice**, and nothing caught it: the only suite pinning absolute totals (`test_demo_stage9zzzz_ppf3_pg.py`, at 109) collates BEFORE stage 15, so it never sees the increment. Corrected in the SCH-2 record and roadmap by this slice; a count pin now runs AFTER the last stage so the total is asserted where it is actually final.
+
+Recorded per OQ-W12C-3a: all four were cheaply checkable and are checked, not assumed.
 
 ### 6.1 Ordered build
 
