@@ -90,7 +90,11 @@ def mean_return(values: Sequence[Decimal]) -> Decimal:
     try:
         return _mean_return(values)
     except StatsKernelError as exc:
-        raise BenchmarkRelativeKernelError("no values to average") from exc
+        # Same condition-preserving split as `sample_stdev` — an empty set and an out-of-range
+        # magnitude are different diagnoses and this string reaches persisted DQ evidence.
+        if not values:
+            raise BenchmarkRelativeKernelError("no values to average") from exc
+        raise BenchmarkRelativeKernelError("result magnitude out of range") from exc
 
 
 def sample_stdev(values: Sequence[Decimal]) -> Decimal:
@@ -106,9 +110,16 @@ def sample_stdev(values: Sequence[Decimal]) -> Decimal:
     try:
         return _sample_stdev(values)
     except StatsKernelError as exc:
-        raise BenchmarkRelativeKernelError(
-            f"tracking error needs >= 2 sub-period observations (got {len(values)})"
-        ) from exc
+        # Re-wrap by CONDITION, not blanket. `StatsKernelError` covers both the structural n<2 case
+        # AND a quantize-magnitude overflow, so a single message misdiagnosed the latter as
+        # "needs >= 2 sub-period observations (got 12)" — self-contradictory, and the P3-8 binder
+        # PERSISTS this string into committed DQ gap evidence, so an extreme-pin FAILED run would
+        # have committed a lying explanation (4-finder review).
+        if len(values) < 2:
+            raise BenchmarkRelativeKernelError(
+                f"tracking error needs >= 2 sub-period observations (got {len(values)})"
+            ) from exc
+        raise BenchmarkRelativeKernelError("result magnitude out of range") from exc
 
 
 def information_ratio(mean_active: Decimal, tracking_error: Decimal) -> Decimal:

@@ -120,3 +120,23 @@ def test_desmoothing_no_longer_borrows_the_benchmark_relative_kernel() -> None:
         if isinstance(node, ast.ImportFrom) and node.module and "benchmark_relative" in node.module
     ]
     assert borrowed == [], f"desmoothing_service still borrows: {borrowed}"
+
+
+def test_the_rewrap_diagnoses_an_OVERFLOW_correctly_not_as_a_sample_size_error() -> None:
+    """``StatsKernelError`` covers BOTH the structural n<2 case and a quantize-magnitude overflow,
+    so a blanket re-wrap misdiagnosed the latter as "tracking error needs >= 2 sub-period
+    observations (got 2)" — self-contradictory, since there ARE two.
+
+    It matters beyond tidiness: P3-8's binder PERSISTS this string into committed DQ gap evidence,
+    so an extreme-pin FAILED run would have committed a lying explanation of its own failure.
+    """
+    huge = [Decimal("9.9E+48"), Decimal("-9.9E+48")]
+    with pytest.raises(BenchmarkRelativeKernelError) as caught:
+        br_sample_stdev(huge)
+    assert str(caught.value) == "result magnitude out of range"
+    assert "sub-period observations" not in str(caught.value)
+
+    # ...and the structural case still reports the structural message, unchanged.
+    with pytest.raises(BenchmarkRelativeKernelError) as small:
+        br_sample_stdev([Decimal("0.01")])
+    assert str(small.value) == "tracking error needs >= 2 sub-period observations (got 1)"

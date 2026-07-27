@@ -434,26 +434,49 @@ def test_a_snapshot_with_no_return_pins_is_refused(session: Session) -> None:
 # --- the non-associativity pin ------------------------------------------------------------------
 
 
-def test_the_twelve_month_rolling_return_need_not_equal_pm1s_linked_value(
-    session: Session,
-) -> None:
-    """OD-RM-1-N (V1-M1). RM-1 links sub-periods -> month -> window; PM-1 links sub-periods -> span
-    in ONE stage. ``link_periods`` quantizes to 12dp on return, so the two are NOT associative and
-    can differ in the 12th decimal.
+def test_two_stage_linking_DIFFERS_from_one_stage_only_when_a_month_holds_two_sub_periods() -> None:
+    """OD-RM-1-N, rewritten after review — the original "pin" pinned nothing.
 
-    Pinned in the NON-equality direction deliberately: P3-8's exact-linkage cross-check habit would
-    make an equality assert here look natural, and it would be flaky BY CONSTRUCTION. This test
-    exists so nobody later "fixes" the difference.
+    It asserted only that the value was non-None and inside the envelope, which passes against ANY
+    implementation (including an arithmetic-sum mutant), and its premise was false on its own
+    fixture: with month-end-only boundaries every month holds ONE sub-period, the relink is the
+    bit-identity, and one-stage and two-stage linking agree EXACTLY.
+
+    So the real contract has two halves, and both are asserted here directly on the kernel:
+    - a pure month-end book: two-stage == one-stage, bit-for-bit;
+    - a month holding two sub-periods: they MAY differ, because `link_periods` quantizes to 12dp on
+      return and the aggregation is therefore not associative.
+
+    Pinned in the NON-equality direction for the second case so nobody later "fixes" the difference
+    with an equality assert — which is what the registered model_limitation warns against.
     """
-    tenant = str(uuid.uuid4())
-    # Returns chosen so the two-stage rounding actually bites somewhere in the chain.
-    returns = ["0.0333333333" if i % 2 else "-0.0166666667" for i in range(12)]
-    result = _run_rolling(session, tenant, returns=returns, windows=(12,))
-    rolling = [r for r in result.rows if r.metric_type == METRIC_TYPE_ROLLING_RETURN]
-    assert len(rolling) == 1
-    # The assertion is that this is a GOVERNED value in range — NOT that it equals PM-1's link.
-    assert rolling[0].metric_value is not None
-    assert abs(rolling[0].metric_value) < Decimal("1E7")
+    from irp_shared.perf.return_kernel import link_periods
+    from irp_shared.perf.rolling_kernel import SubPeriod, relink_to_months
+
+    jan, feb, mar = date(2026, 1, 30), date(2026, 2, 28), date(2026, 3, 31)
+
+    # (a) One sub-period per month: the two paths agree exactly.
+    singles = [
+        SubPeriod(jan, feb, Decimal("0.012345678901")),
+        SubPeriod(feb, mar, Decimal("-0.004321098765")),
+    ]
+    two_stage = link_periods([m.value for m in relink_to_months(singles)])
+    one_stage = link_periods([p.return_value for p in singles])
+    assert two_stage == one_stage
+
+    # (b) A month holding TWO sub-periods: an intermediate quantize enters, so the paths need not
+    # agree. The relinked month is itself a rounded value that the outer link then rounds again.
+    mid = date(2026, 2, 13)
+    doubled = [
+        SubPeriod(jan, mid, Decimal("0.033333333333")),
+        SubPeriod(mid, feb, Decimal("0.033333333333")),
+        SubPeriod(feb, mar, Decimal("0.033333333333")),
+    ]
+    months = relink_to_months(doubled)
+    assert len(months) == 2  # February genuinely relinked two
+    assert months[0].n_sub_periods == 2
+    # The contract is that equality is NOT guaranteed here — assert the structure, never equality.
+    assert link_periods([m.value for m in months]) is not None
 
 
 def test_the_dietz_metric_constant_matches_pm1s(session: Session) -> None:
@@ -647,3 +670,25 @@ def test_a_rolling_risk_run_emits_NO_PERF_audit_code(session: Session) -> None:
     }
     assert emitted, "no audit events at all — the pin would be vacuous"
     assert not [code for code in emitted if code.startswith("PERF.")], sorted(emitted)
+
+
+def test_malformed_pinned_content_is_a_REFUSAL_not_a_500(session: Session) -> None:
+    """The generic ``build_snapshot`` accepts this purpose (it is an allow-list member), so a
+    hand-built snapshot can carry components whose ``captured_content`` lacks a key or holds a
+    non-numeric return. Those reached a bare subscript and ``Decimal()`` as a raw
+    KeyError/InvalidOperation — pre-create, so zero-run, but a 500 where a governed refusal is
+    owed."""
+    base = {
+        "metric_type": METRIC_TYPE_DIETZ_PERIOD,
+        "calculation_run_id": str(uuid.uuid4()),
+        "portfolio_id": "p1",
+        "period_start": "2026-01-30",
+        "period_end": "2026-02-28",
+        "return_value": "0.01",
+    }
+    with pytest.raises(RollingRiskInputError, match="malformed"):
+        _adjudicate_pins([{k: v for k, v in base.items() if k != "period_end"}])
+    with pytest.raises(RollingRiskInputError, match="malformed"):
+        _adjudicate_pins([{**base, "return_value": "not-a-number"}])
+    with pytest.raises(RollingRiskInputError, match="malformed"):
+        _adjudicate_pins([{**base, "period_start": "not-a-date"}])

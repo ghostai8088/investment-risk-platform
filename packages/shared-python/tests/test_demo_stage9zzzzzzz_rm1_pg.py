@@ -234,7 +234,7 @@ def test_the_demo_tenant_counts_are_pinned_where_they_are_actually_FINAL(db) -> 
 
     assert (model_codes, validations, completed) == (
         24,
-        38,
+        39,
         132,
     ), f"demo counts drifted: {model_codes}/{validations}/{completed} (expected 24/39/132)"
 

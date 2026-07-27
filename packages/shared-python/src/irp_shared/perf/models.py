@@ -299,9 +299,14 @@ ANNUALIZATION_GEOMETRIC_12 = "GEOMETRIC_12"
 #: ``sampling_frequency`` — v1 computes on the relinked CALENDAR-MONTH grid only.
 SAMPLING_FREQUENCY_MONTHLY = "MONTHLY"
 
-#: The ``window_months`` sentinel for a run-summary row. An explicit 0, never NULL: on PostgreSQL a
-#: NULL in a UNIQUE constraint constrains NOTHING (``NULL != NULL``), so a nullable window column
-#: would silently disable the grain for exactly the rows it most needs to protect.
+#: The ``window_months`` sentinel reserved for a run-summary row. An explicit 0, never NULL: on
+#: PostgreSQL a NULL in a UNIQUE constraint constrains NOTHING (``NULL != NULL``), so a nullable
+#: window column would silently disable the grain for exactly the rows it most needs to protect.
+#:
+#: **RESERVED, not used: v1 emits no run-summary row** (flagged in the 4-finder review as a
+#: constant with no producer). Kept because the NOT-NULL column and the migration comment both
+#: depend on a declared sentinel existing — deleting it would leave the "never NULL" rule with no
+#: stated alternative — but it is documented as unreachable rather than left looking live.
 WINDOW_MONTHS_RUN_SUMMARY = 0
 
 

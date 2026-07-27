@@ -167,17 +167,26 @@ def _adjudicate_pins(raw: list[dict[str, Any]]) -> _ParsedInput:
             f"the pinned return rows span {len(portfolio_ids)} portfolios — refused"
         )
 
-    sub_periods = sorted(
-        (
-            SubPeriod(
-                period_start=_as_date(r["period_start"]),
-                period_end=_as_date(r["period_end"]),
-                return_value=Decimal(str(r["return_value"])),
-            )
-            for r in dietz
-        ),
-        key=lambda p: p.period_start,
-    )
+    try:
+        sub_periods = sorted(
+            (
+                SubPeriod(
+                    period_start=_as_date(r["period_start"]),
+                    period_end=_as_date(r["period_end"]),
+                    return_value=Decimal(str(r["return_value"])),
+                )
+                for r in dietz
+            ),
+            key=lambda p: p.period_start,
+        )
+    except (KeyError, ValueError, ArithmeticError, TypeError) as exc:
+        # Malformed pinned content is a pre-create REFUSAL, not a 500. The generic `build_snapshot`
+        # accepts this purpose (it is an allow-list member), so a hand-built snapshot can carry
+        # components whose captured_content lacks a key or holds a non-numeric return — and those
+        # reached the bare subscript/Decimal() as a raw KeyError/InvalidOperation (4-finder review).
+        raise RollingRiskInputError(
+            f"a pinned PORTFOLIO_RETURN component is malformed and cannot be read: {exc}"
+        ) from exc
 
     # The boundary grid: d_0 is the first sub-period's START (the close of the month BEFORE the
     # first measured month), then every sub-period end.
