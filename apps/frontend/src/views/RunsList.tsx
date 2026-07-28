@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 
 import { ApiError, apiGet } from "../api/client";
 import { FAMILIES, RUN_STATUSES, RUN_TYPE_TO_FAMILY } from "../api/types";

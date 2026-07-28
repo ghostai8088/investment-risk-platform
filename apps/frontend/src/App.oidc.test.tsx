@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 
 // FE-3b (OD-FE-3b-F): the honesty invariant — in oidc mode the "unverified DEV SESSION" banner must
 // NEVER render (a verified Bearer session IS a security boundary). Mock authConfig into oidc mode.

@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router";
 
 import type { Session } from "../session";
 import { DEMO_PORTFOLIO_CODE, WALK_STEPS } from "../walk/steps";

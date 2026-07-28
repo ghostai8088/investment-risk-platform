@@ -76,7 +76,25 @@ npm run -w apps/frontend format:check  # prettier
 
 ## Dependency discipline (OD-FE-1-F)
 
-Runtime deps are `react`, `react-dom`, `react-router-dom` — nothing else without a decision
+Runtime deps are `react`, `react-dom`, `react-router` — nothing else without a decision
 record. Test tooling (`vitest`, `jsdom`, `@testing-library/react`) is dev-only. Decimal values
 from the API are exact strings and are rendered **verbatim** — never `Number()`/`parseFloat`
 (OQ-FE-1-7; there is a test that fails if this regresses).
+
+**FE-M1 (2026-07-28) — React 19 + react-router 8.** `react-router-dom` no longer exists: v8 removed
+the re-export package, and every symbol this app uses (`BrowserRouter`, `MemoryRouter`, `Link`,
+`NavLink`, `Outlet`, `Navigate`, `Route`, `Routes`, `useLocation`, `useNavigate`, `useParams`)
+resolves at the root `react-router` entry. react-router 8 declares `react >= 19.2.7` as a hard peer
+floor, so React 19 came with it, and `node >= 22.22.0` as an engines floor — hence `node:24-slim` in
+`infra/docker/frontend.Dockerfile`, matching CI.
+
+Two operational notes for anyone touching these dependencies:
+
+- **Install with `npm install && npm dedupe`.** A plain `npm install` can leave
+  `@testing-library/react` holding its own `react@18` beside the app's `react@19` — two React
+  copies, which breaks hooks at runtime and in tests while still passing `tsc` and `vite build`.
+  `dependency-fence.test.ts` fails loudly if that happens, and says so in its message.
+- **Do not run `npm audit fix` blindly.** It has previously recommended reinstalling
+  `react-router-dom@7.11.0`, which re-opens `GHSA-qwww-vcr4-c8h2` plus five more advisories
+  (two reachable open-redirects and a High DoS). `eslint.config.js` and `router-fence.test.ts`
+  both refuse it.

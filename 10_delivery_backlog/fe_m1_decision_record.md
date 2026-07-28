@@ -297,7 +297,84 @@ green is never quoted as a shipped green.
 
 ## Part 6 — Implementation outcomes
 
-*(Recorded at implementation.)*
+### What shipped
+
+| Item | Delivered |
+|---|---|
+| **M1-1** deps | `react` 18.3.1→**19.2.8**, `react-dom` 18.3.1→**19.2.8**, `react-router-dom` 7.18.1 **removed**, `react-router` **8.3.0** added, `@types/react` →19.2.17, `@types/react-dom` →19.2.3. Installed via `npm install` → **`npm dedupe`** → `npm ls react` (one copy) → `npm ci` (reproducible) |
+| **M1-2** imports | 18 files, `react-router-dom` → `react-router`. Zero residual references in `src/` |
+| **M1-3** container | `infra/docker/frontend.Dockerfile` `node:20-slim` → `node:24-slim` |
+| **M1-4** gate | `audit-allowlist.json` → `exceptions: []` (+ a `_history` field recording that the one entry it ever held was retired **by fix**, not by expiry); `scripts/check_frontend_audit.mjs` refactored to export the pure `evaluateAudit(report, allowlist, today)` + `collectAdvisories(report)` behind an `import.meta.url`/`argv[1]` main guard — CLI behaviour unchanged |
+| **M1-5** fences | eslint router ban; `router-fence.test.ts` (11); `dependency-fence.test.ts` (8) |
+| **M1-6** router | `src/App.browserrouter.test.tsx` (5) |
+| **M1-7** docs | README (current truth + two operational warnings), roadmap slice row + register row, `current_state.md` CURRENT TRUTH, `wave_12_close_review.md` §5 TIPPED item (2) marked **PAID** |
+
+### The lockfile delta — declared before implementation, measured after
+
+Part 2 declared **exactly 12**, and said a 13th would be a defect. Measured: **12**, matching
+line for line — `react`, `react-dom`, `react-router`, `@types/react`, `@types/react-dom`,
+`scheduler` 0.23.2→0.27.0, `cookie-es` added, and `react-router-dom` / `loose-envify` /
+`@types/prop-types` / `cookie` / `set-cookie-parser` removed. `vite` stayed at 8.1.3 — the
+scope boundary (OQ-FE-M1-6=A) held in fact, not merely in intent.
+
+### The verification ladder (OQ-FE-M1-5=A), executed
+
+| # | Check | Result |
+|---|---|---|
+| 1 | `npm audit --omit=dev` **before** | 2 High, both `GHSA-qwww-vcr4-c8h2` |
+| 2 | install procedure | `npm ls react` → **one** `react@19.2.8`, deduped everywhere; `npm ci` reproducible |
+| 3 | lockfile delta | **12**, as declared |
+| 4 | `make fe-check` | **green** — eslint, prettier, `tsc --noEmit`, vitest **32 files / 187 tests**, `vite build` 287.95 kB, audit gate |
+| 5 | `npm audit --omit=dev` **after** | **`found 0 vulnerabilities`** |
+| 6 | fence negative + positive controls | all executed — see below |
+| 7 | gate behaviours | 13 cases, incl. the three that must FAIL |
+| 8 | test-count drift | 150 → 187 = **+37**, exactly `audit-gate` 13 + `router-fence` 11 + `dependency-fence` 8 + `browserrouter` 5. The migration itself added **0** and removed **0** |
+| 9 | container | `docker compose build frontend` on `node:24-slim` **succeeded with ZERO `EBADENGINE` warnings**; the image served `/ops/breaches` → **200 + the SPA shell**, and its `/assets/index-azwg_KpJ.js` → **200, 287,953 bytes** (the migrated bundle, byte-identical to the local build) |
+| 10 | `make check` (Python tier) | **2193 passed / 478 skipped**, secret-scan and docs-check green — identical to the OPS-H1 baseline, which is the "nothing else was disturbed" control. Scope confirmed: **zero** Python files, **zero** migrations, frozen `audit/service.py` untouched |
+| 11 | CI | *(pending — recorded here only once watched to green, never in advance)* |
+
+**The audit gate's own output, pasted verbatim (the OQ-W12C-3a rule):**
+
+```text
+$ node scripts/check_frontend_audit.mjs
+Frontend runtime-dependency audit passed (no moderate+ advisories).
+```
+
+### Executed controls — every guard carries its own refutation
+
+| Guard | Negative control (must FAIL) | Positive control (must PASS) |
+|---|---|---|
+| eslint router ban | `import { Link } from "react-router-dom"` from six sites incl. `writes.ts` → rejected | `react-router` clean; `@scope/react-router-dom-utils` **not** over-matched |
+| the **V-3** hole | Config mutated back to `"no-restricted-imports": "off"` for `writes.ts` → **killed exactly 2 assertions and no others**; config restored, residue grepped clean | write fence still relaxed in `writes.ts` |
+| manifest pin | `react-router-dom@^7.11.0` injected into `package.json` + lockfile → 2 assertions failed | restored, `grep` confirms no residue |
+| single-React pin | second `react@18.3.1` injected into the lockfile → failed **with a message naming the cause and the `npm dedupe` fix** | restored |
+| audit gate | empty allowlist + an advisory → FAIL; expired exception → FAIL (even when the advisory is gone); JSON drift → FAIL-CLOSED | empty allowlist + clean tree → pass; unexpired exception → pass; `review_by == today` → still valid |
+
+### Two things measured that the plan had wrong, and one it had right for the wrong reason
+
+- **V-1/V-2 (folded pre-gate)** are recorded in Part 1b. Both were invisible to reading and to the
+  upstream upgrade guide.
+- **V-6, restated honestly here because it is a claim about a shipped guard:** the single-React pin
+  is a **diagnostic**, not a detector. The suite *does* catch a duplicate React — loudly, at 73
+  failures. What it does not do is say *why*. The pin's contribution is the message, plus covering
+  the one shape `tsc` and `vite build` both pass.
+
+### The six-ledger omission sweep (standing Wave-13 closeout step)
+
+Run in full, with the SR-1 clause *verify the fix is on `main`* applied to this slice's own commits:
+
+| # | Ledger | Result |
+|---|---|---|
+| 1 | `canonical_data_model_standard.md` | **No change owed** — FE-M1 mints no entity; "next free = **ENT-066**" remains correct |
+| 2 | `audit_event_taxonomy.md` | **No change owed** — FE-M1 mints no audit code; the `PERF.*` reserved set is still exactly three |
+| 3 | `control_matrix_skeleton.md` | **NO CONTROL MOVED** — stated explicitly per OQ-W12C-3c. The supply-chain audit gate (TC-1 / OD-TC-1-D) has no CTRL row to move; FE-M1 strengthens its *evidence* (its first test) without changing any control's status |
+| 4 | `current_state.md` | **Updated** — CURRENT TRUTH advanced to 2026-07-28c |
+| 5 | `02_requirements/` backbone + RTM | **No change owed** — no requirement added or satisfied; the both-halves test stays green under `make check` |
+| 6 | Counts | **UNCHANGED at 25/40/133**, and *not* re-derived — FE-M1 adds no demo stage and touches no Python, so the existing post-last-stage pin is the measurement |
+
+## Part 7 — Review and folds
+
+*(Recorded after the adversarial review.)*
 
 ## Part 7 — Review and folds
 
