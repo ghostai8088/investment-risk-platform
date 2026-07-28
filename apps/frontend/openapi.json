@@ -12615,6 +12615,144 @@
         "title": "SensitivityRunOut",
         "type": "object"
       },
+      "SharpeRatioListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SharpeRatioRowOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SharpeRatioListOut",
+        "type": "object"
+      },
+      "SharpeRatioRowOut": {
+        "description": "One Sharpe-ratio row. **The disambiguation key is\n``(metric_type, window_months, annualization_basis)``** \u2014 this family emits the ratio under two\ntransforms at two windows, so a consumer keying on ``metric_type`` alone will conflate governed\nnumbers.\n\n``metric_value`` is NULL exactly when ``suppressed``, and a stuffed zero is forbidden because\n**zero is a legitimate Sharpe ratio**: a book that exactly earns the risk-free rate scores 0,\nand rendering \"not computable\" as 0 would read as \"earned nothing above cash\".\n\n``n_observations`` distinguishes the two suppression states: NULL when the window could not be\nfilled (there is no sample), POPULATED when the excess series was constant (the sample exists,\nthe ratio does not).\n\n``risk_free_benchmark_id`` + ``rf_return_basis`` are the provenance this family exists for \u2014 the\nratio is meaningless without knowing what the excess was measured against.",
+        "properties": {
+          "annualization_basis": {
+            "title": "Annualization Basis",
+            "type": "string"
+          },
+          "calculation_run_id": {
+            "title": "Calculation Run Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_snapshot_id": {
+            "title": "Input Snapshot Id",
+            "type": "string"
+          },
+          "metric_type": {
+            "title": "Metric Type",
+            "type": "string"
+          },
+          "metric_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Value"
+          },
+          "model_version_id": {
+            "title": "Model Version Id",
+            "type": "string"
+          },
+          "n_observations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Observations"
+          },
+          "period_end": {
+            "format": "date",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "portfolio_id": {
+            "title": "Portfolio Id",
+            "type": "string"
+          },
+          "portfolio_return_run_id": {
+            "title": "Portfolio Return Run Id",
+            "type": "string"
+          },
+          "rf_return_basis": {
+            "title": "Rf Return Basis",
+            "type": "string"
+          },
+          "risk_free_benchmark_id": {
+            "title": "Risk Free Benchmark Id",
+            "type": "string"
+          },
+          "sampling_frequency": {
+            "title": "Sampling Frequency",
+            "type": "string"
+          },
+          "suppressed": {
+            "title": "Suppressed",
+            "type": "boolean"
+          },
+          "suppression_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suppression Reason"
+          },
+          "window_months": {
+            "title": "Window Months",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "calculation_run_id",
+          "input_snapshot_id",
+          "model_version_id",
+          "portfolio_id",
+          "portfolio_return_run_id",
+          "risk_free_benchmark_id",
+          "rf_return_basis",
+          "metric_type",
+          "window_months",
+          "period_start",
+          "period_end",
+          "metric_value",
+          "suppressed",
+          "suppression_reason",
+          "annualization_basis",
+          "sampling_frequency",
+          "n_observations"
+        ],
+        "title": "SharpeRatioRowOut",
+        "type": "object"
+      },
       "SnapshotHeaderOut": {
         "properties": {
           "as_of_known_at": {
@@ -27207,6 +27345,387 @@
           }
         },
         "summary": "Get Perf Runs",
+        "tags": [
+          "perf"
+        ]
+      }
+    },
+    "/perf/sharpe": {
+      "get": {
+        "description": "The rule-7 entity/time read across COMPLETED runs.\n\nRolling values are NOT independent: adjacent 12-month windows share 11 of 12 observations, so a\nchange between consecutive points reflects the single entering and exiting month, not a\nre-estimate. The ``metric_type``/``window_months`` filters exist so a caller can ask for one\nseries instead of four interleaved row kinds.",
+        "operationId": "list_sharpe_endpoint_perf_sharpe_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portfolio Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_months",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Months"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharpeRatioListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sharpe Endpoint",
+        "tags": [
+          "perf"
+        ]
+      }
+    },
+    "/perf/sharpe/latest": {
+      "get": {
+        "description": "The newest COMPLETED Sharpe run's rows for a book (empty when none).\n\nONE run's rows, never a merge across runs: two runs can carry different window sets AND\ndifferent risk-free series, so a merge would silently mix both the estimator domain and the\nthing the excess is measured against.",
+        "operationId": "get_latest_sharpe_perf_sharpe_latest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Portfolio Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_months",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Months"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharpeRatioListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Latest Sharpe",
+        "tags": [
+          "perf"
+        ]
+      }
+    },
+    "/perf/sharpe/{result_id}": {
+      "get": {
+        "description": "Read a single ``sharpe_ratio_result`` row (tenant-scoped; read-only).",
+        "operationId": "get_sharpe_perf_sharpe__result_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "result_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Result Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharpeRatioRowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Sharpe",
         "tags": [
           "perf"
         ]

@@ -591,6 +591,35 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzz_rm1_pg.py -q
+      # ENT-065's DB-enforcement tier (SR-1) — shipped FROM BIRTH rather than after a review, which
+      # is the direct answer to RM-1's finding that ENT-064 was the only governed result family with
+      # no PG suite at all. The CHECK, the RLS policy and the append-only trigger are created
+      # imperatively in migration 0055 and are therefore ORM-invisible, so the whole SQLite battery
+      # is blind to them. Each control carries its EXECUTED reject side, plus two negative controls
+      # (the CHECK dropped in a rolled-back transaction; a superuser bypassing RLS) and a read of
+      # pg_constraint that pins the CHECK's NAME — the RM-1 drift class `alembic check` cannot see,
+      # because it does not compare CHECK constraints at all.
+      - name: Sharpe DB enforcement tests (Postgres, SR-1 / ENT-065)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_sharpe_pg.py -q
+      # SR-1 demo stage 17 (ENT-065, the 22nd governed number): captures an 18-row monthly USD-cash
+      # risk-free series over RM-1's EXISTING book and return run — it seeds no book and no second
+      # PM-1 run. The series is deliberately NOT constant: against a constant risk-free rate
+      # sigma(excess) == sigma(portfolio) identically, and the demo would then be unable to
+      # distinguish the Sharpe (1994) construction this platform implements from the Sharpe (1966)
+      # one it refuses (the OPS-1 lesson: a demo that cannot REACH a control does not demonstrate
+      # it). BOTH registered windows: 12 fills as a genuine 7-window series; 36 cannot, so its
+      # SUPPRESSED rows exercise the nullable-value encoding on real data. Counts move
+      # 24/39/132 -> 25/40/133, MEASURED. Filename ``stage9zzzzzzzz`` (EIGHT ``z``, one more than
+      # RM-1's stage 16, verified by `ls`) — the standing stage-ordering discipline; this suite also
+      # carries the FINAL-POSITION count pin forward, with RM-1's demoted to INTERMEDIATE.
+      - name: Demo stage-17 Sharpe test (Postgres, SR-1)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzz_sr1_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

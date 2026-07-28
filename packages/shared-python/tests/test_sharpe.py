@@ -678,3 +678,70 @@ def test_the_fence_kept_metric_constant_matches_PM_1s(session: Session) -> None:
     from irp_shared.perf.sharpe_service import _DIETZ_PERIOD
 
     assert _DIETZ_PERIOD == METRIC_TYPE_DIETZ_PERIOD
+
+
+# --- 8. the endpoint serialization contract ------------------------------------------------------
+
+
+def test_the_endpoint_serializes_fixed_point_and_keeps_NULL_as_NULL() -> None:
+    """Two things at once, because they fail in opposite directions.
+
+    ``str(Decimal('1E-8'))`` flips to scientific notation, which no consumer parses as a decimal —
+    so the row-out must stay fixed-point. And a SUPPRESSED row must keep ``metric_value`` NULL:
+    rendering it as ``"0"`` would destroy the exact distinction the nullable column exists for, and
+    a zero Sharpe ratio is a real governed value that a reader would then be unable to tell apart
+    from "we could not compute this".
+    """
+    from irp_backend.api.perf import _sr_row_out
+    from irp_shared.perf.models import SharpeRatioResult
+
+    def _row(**over) -> SharpeRatioResult:  # noqa: ANN003
+        values = {
+            "tenant_id": str(uuid.uuid4()),
+            "calculation_run_id": str(uuid.uuid4()),
+            "input_snapshot_id": str(uuid.uuid4()),
+            "model_version_id": str(uuid.uuid4()),
+            "portfolio_id": str(uuid.uuid4()),
+            "portfolio_return_run_id": str(uuid.uuid4()),
+            "risk_free_benchmark_id": str(uuid.uuid4()),
+            "rf_return_basis": RETURN_BASIS_TOTAL,
+            "metric_type": METRIC_TYPE_SHARPE_RATIO,
+            "window_months": 12,
+            "period_start": date(2024, 12, 31),
+            "period_end": date(2025, 12, 31),
+            "metric_value": D("1E-8").quantize(D(1).scaleb(-12)),
+            "suppressed": False,
+            "suppression_reason": None,
+            "annualization_basis": ANNUALIZATION_NONE,
+            "sampling_frequency": "MONTHLY",
+            "n_observations": 12,
+        }
+        values.update(over)
+        row = SharpeRatioResult(**values)
+        row.id = str(uuid.uuid4())
+        return row
+
+    emitted = _sr_row_out(_row())
+    assert emitted.metric_value == "0.000000010000"
+    assert "E" not in emitted.metric_value and "e" not in emitted.metric_value
+
+    suppressed = _sr_row_out(
+        _row(
+            metric_value=None,
+            suppressed=True,
+            suppression_reason=ZERO_DISPERSION_REASON,
+        )
+    )
+    assert suppressed.metric_value is None
+    assert suppressed.suppressed is True
+    assert suppressed.suppression_reason == ZERO_DISPERSION_REASON
+
+
+def test_the_latest_route_is_declared_BEFORE_the_path_parameter_route() -> None:
+    """FastAPI matches in declaration order, so ``/{result_id}`` declared first would swallow the
+    literal ``/latest`` and turn a governed read into a 422 on an unparseable UUID (the house rule,
+    asserted rather than assumed)."""
+    from irp_backend.api.perf import router
+
+    paths = [r.path for r in router.routes if "/perf/sharpe" in getattr(r, "path", "")]
+    assert paths.index("/perf/sharpe/latest") < paths.index("/perf/sharpe/{result_id}")

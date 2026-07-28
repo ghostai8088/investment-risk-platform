@@ -194,14 +194,19 @@ def test_a_second_seed_refuses_rather_than_silently_skipping(db) -> None:  # noq
         run_demo_rm1_stage16(db)
 
 
-def test_the_demo_tenant_counts_are_pinned_where_they_are_actually_FINAL(db) -> None:  # noqa: ANN001
-    """The count pin, placed AFTER the last demo stage — which is the point.
+def test_the_demo_tenant_counts_after_stage_16_are_pinned_INTERMEDIATE(db) -> None:  # noqa: ANN001
+    """The count pin at THIS stage's collation point — INTERMEDIATE since SR-1's stage 17 landed.
 
-    The platform's only other absolute-count pin lives in the stage-13 suite and asserts 109. It
-    collates BEFORE stages 14/15/16, so it is a pin on an INTERMEDIATE total and cannot see any
-    later increment. That is exactly how SCH-2 shipped a merged record claiming "counts unchanged
-    at 23/38/109" while its stage 15 added one COMPLETED EXPOSURE_AGGREGATE run — its own module
-    docstring says "only the COMPLETED-run count moves", and nothing contradicted the record.
+    **This test was named "...where they are actually FINAL" for exactly one slice.** It collates
+    before stage 17, so it can only ever observe the totals as of stage 16 — which is correct and is
+    why the numbers below are unchanged. What is NOT correct is calling that position final: the
+    final-position pin is a RELAY BATON, and it now lives in
+    ``test_demo_stage9zzzzzzzz_sr1_pg.py`` at 25/40/133.
+
+    The platform's other absolute-count pin lives in the stage-13 suite and asserts 109 for the same
+    structural reason. That is how SCH-2 shipped a merged record claiming "counts unchanged at
+    23/38/109" while its stage 15 added one COMPLETED EXPOSURE_AGGREGATE run — nothing contradicted
+    the record, because no pin collated after the stage that moved the number.
 
     Measured, not derived:
     - **24 model codes** — RM-1 adds `perf.rolling_risk`, the 21st governed number's model.

@@ -2097,6 +2097,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/perf/sharpe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sharpe Endpoint
+         * @description The rule-7 entity/time read across COMPLETED runs.
+         *
+         *     Rolling values are NOT independent: adjacent 12-month windows share 11 of 12 observations, so a
+         *     change between consecutive points reflects the single entering and exiting month, not a
+         *     re-estimate. The ``metric_type``/``window_months`` filters exist so a caller can ask for one
+         *     series instead of four interleaved row kinds.
+         */
+        get: operations["list_sharpe_endpoint_perf_sharpe_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/perf/sharpe/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Sharpe
+         * @description The newest COMPLETED Sharpe run's rows for a book (empty when none).
+         *
+         *     ONE run's rows, never a merge across runs: two runs can carry different window sets AND
+         *     different risk-free series, so a merge would silently mix both the estimator domain and the
+         *     thing the excess is measured against.
+         */
+        get: operations["get_latest_sharpe_perf_sharpe_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/perf/sharpe/{result_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Sharpe
+         * @description Read a single ``sharpe_ratio_result`` row (tenant-scoped; read-only).
+         */
+        get: operations["get_sharpe_perf_sharpe__result_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/portfolios": {
         parameters: {
             query?: never;
@@ -8796,6 +8865,73 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** SharpeRatioListOut */
+        SharpeRatioListOut: {
+            /** Items */
+            items: components["schemas"]["SharpeRatioRowOut"][];
+        };
+        /**
+         * SharpeRatioRowOut
+         * @description One Sharpe-ratio row. **The disambiguation key is
+         *     ``(metric_type, window_months, annualization_basis)``** — this family emits the ratio under two
+         *     transforms at two windows, so a consumer keying on ``metric_type`` alone will conflate governed
+         *     numbers.
+         *
+         *     ``metric_value`` is NULL exactly when ``suppressed``, and a stuffed zero is forbidden because
+         *     **zero is a legitimate Sharpe ratio**: a book that exactly earns the risk-free rate scores 0,
+         *     and rendering "not computable" as 0 would read as "earned nothing above cash".
+         *
+         *     ``n_observations`` distinguishes the two suppression states: NULL when the window could not be
+         *     filled (there is no sample), POPULATED when the excess series was constant (the sample exists,
+         *     the ratio does not).
+         *
+         *     ``risk_free_benchmark_id`` + ``rf_return_basis`` are the provenance this family exists for — the
+         *     ratio is meaningless without knowing what the excess was measured against.
+         */
+        SharpeRatioRowOut: {
+            /** Annualization Basis */
+            annualization_basis: string;
+            /** Calculation Run Id */
+            calculation_run_id: string;
+            /** Id */
+            id: string;
+            /** Input Snapshot Id */
+            input_snapshot_id: string;
+            /** Metric Type */
+            metric_type: string;
+            /** Metric Value */
+            metric_value: string | null;
+            /** Model Version Id */
+            model_version_id: string;
+            /** N Observations */
+            n_observations: number | null;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Portfolio Return Run Id */
+            portfolio_return_run_id: string;
+            /** Rf Return Basis */
+            rf_return_basis: string;
+            /** Risk Free Benchmark Id */
+            risk_free_benchmark_id: string;
+            /** Sampling Frequency */
+            sampling_frequency: string;
+            /** Suppressed */
+            suppressed: boolean;
+            /** Suppression Reason */
+            suppression_reason: string | null;
+            /** Window Months */
+            window_months: number;
+        };
         /** SnapshotHeaderOut */
         SnapshotHeaderOut: {
             /**
@@ -14109,6 +14245,117 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PerfRunListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sharpe_endpoint_perf_sharpe_get: {
+        parameters: {
+            query?: {
+                portfolio_id?: string | null;
+                metric_type?: string | null;
+                window_months?: number | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharpeRatioListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_latest_sharpe_perf_sharpe_latest_get: {
+        parameters: {
+            query: {
+                portfolio_id: string;
+                metric_type?: string | null;
+                window_months?: number | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharpeRatioListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sharpe_perf_sharpe__result_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                result_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharpeRatioRowOut"];
                 };
             };
             /** @description Validation Error */
