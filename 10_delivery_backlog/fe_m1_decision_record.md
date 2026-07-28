@@ -372,6 +372,12 @@ Run in full, with the SR-1 clause *verify the fix is on `main`* applied to this 
 | 5 | `02_requirements/` backbone + RTM | **No change owed** — no requirement added or satisfied; the both-halves test stays green under `make check` |
 | 6 | Counts | **UNCHANGED at 25/40/133**, and *not* re-derived — FE-M1 adds no demo stage and touches no Python, so the existing post-last-stage pin is the measurement |
 
+**The SR-1 clause discharged — re-verified AGAINST `main` at closeout, not against the branch.**
+Every row above was first run on `fe-m1`; each was then re-checked on merged `main` (`bd1073b`):
+ledger 1 reads "the next free NEW canonical id is now **ENT-066**"; ledger 2's `PERF` row still
+reserves exactly **three** names; ledger 4 carries the `2026-07-28c` CURRENT TRUTH block. **This is
+the step that mattered — see Part 8b, where the same clause caught a real gap in this very slice.**
+
 ## Part 7 — Review and folds
 
 ### Method, stated honestly
@@ -389,7 +395,13 @@ Two things partly compensate, and neither is a substitute:
 2. **Every fence carries an executed mutation control**, so the guards are proven by refutation
    rather than by the author's assessment of them.
 
-`/code-review ultra` on this branch remains available to the user and would be the stronger check.
+**`/code-review ultra` was subsequently RUN on this branch, and it earned its cost.** It returned one
+finding — **R-4**, below — and that finding was a vacuous assertion in a test *this slice wrote to
+close a coverage gap*. The in-context pass had read that test and passed it. This is the
+independence ladder demonstrated rather than asserted: the weak rung found R-1/R-2/R-3 (holes in
+guards it had not authored), and the independent rung found the one defect in the author's own new
+evidence — precisely the class an author's own review cannot see, because reviewing it means
+re-making the assumption that produced it.
 
 ### R-1 (fold) — the fences had an EXTENSION hole
 
@@ -461,3 +473,50 @@ existing case rather than adding one), `vite build` clean, audit gate clean. `ma
 full 190 all clean; `make docs-check` passed. CI run **30392210205** (`922cf20`, the R-4 fold)
 observed **completed / success across all six jobs** — written here after observing the completed
 run, per R-3.
+
+## Part 8 — Closure
+
+### Part 8a — CLOSED 2026-07-28
+
+Merged to `main` in **two** pull requests, which is itself the finding recorded in 8b:
+
+| PR | Merge commit | Carried | Merged-`main` CI |
+|---|---|---|---|
+| **#143** | `44ee905` | `c2e5965` (RATIFIED) → `8f9711c` (implementation) → `b8767ce` (folds R-1/R-2/R-3) → `a5e69be` (observed CI) | run **30391171870**, `conclusion=success` |
+| **#144** | `bd1073b` | `922cf20` (fold **R-4**) → `a0f7528` (observed CI) → `f370059` (session log) | run **30394936639**, `conclusion=success` — **all six jobs** (Frontend, Backend, DB migration, API type drift, Documentation check, Secret scan) |
+
+*(That row was written as an explicit `PENDING` marker while the run was in progress and filled in
+only from the observed `conclusion` — the R-3 discipline, applied to the merged-`main` run too.)*
+
+**NO migration** (head stays `0055`). **Counts UNCHANGED at 25/40/133.** Frontend **28 files / 150
+tests → 32 / 190**. `npm audit --omit=dev` **0 vulnerabilities**; `audit-allowlist.json` holds
+`exceptions: []` with a `_history` field recording retirement **by fix**, ~3 months before the
+2026-10-24 cliff. The FROZEN `audit/service.py` is byte-untouched.
+
+**Control-matrix trace (OQ-W12C-3c):** **NO CONTROL MOVED.** Stated explicitly rather than omitted.
+
+### Part 8b — A process finding: the fold RACED the merge, and only the `main` check caught it
+
+**PR #143 merged at `a5e69be` — one commit before the R-4 fold existed.** For roughly twenty
+minutes, `main` carried the vacuous `useParams` test while the branch, the decision record and this
+slice's own narrative all said the defect was fixed. Nothing in the process noticed: the fold was
+committed, CI-verified and recorded, and every one of those facts was true *about the branch*.
+
+It was caught by the SR-1 clause — *verify the fix is on `main`* — run as a plain
+`git merge-base --is-ancestor 922cf20 origin/main`, which answered **NO**.
+
+**This is the third appearance of the class, and the first on a new axis.** RM-1's sweep commit was
+never merged (found at SR-1); SR-1 recorded the clause; here the clause caught a **review fold**
+rather than a ledger sweep, and caught it in a slice that had *already run the sweep on the branch
+and passed*. The mechanism was different too — not a forgotten commit, but a **race**: the merge and
+the fold were concurrent, and merging is not idempotent with respect to work that arrives after the
+PR is opened.
+
+**Therefore, proposed for the Wave-13 close as an amendment rather than a new rule:** the
+verify-on-`main` clause is not a *ledger-sweep* step, it is a **closeout** step, and it must run
+against `main` **after the last merge**, covering **every artifact the slice claims to have
+delivered** — review folds included. A sweep run on the branch measures intent; only the `main`
+check measures delivery.
+
+*(The `git merge-base --is-ancestor <sha> origin/main` form is the cheap version of this check and
+is worth naming in the operating instructions alongside the clause.)*
