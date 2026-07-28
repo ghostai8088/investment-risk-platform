@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **VERIFIED — the pre-ratification pass RAN as a full executed dry run (Part 1b) and refuted two of this record's own claims; both folded. Awaiting the Tier-3 gate (OQ-FE-M1-1…6)** |
+| Status | **RATIFIED 2026-07-28 — OQ-FE-M1-1…6 ALL approved as recommended. Previously: DRAFT → VERIFIED (the pre-ratification pass RAN as a full executed dry run, Part 1b, and refuted two of this record's own claims; both folded before the gate).** Implementation next |
 | Slice | Wave-13 slice 4 — the LAST slice before the Wave-13 close, per the ratified sequence (OQ-W12C-2=A) |
 | Kind | **Supply-chain / framework migration.** No governed number, no entity, no migration, no permission, no audit code, no RLS surface, no Python. Frontend + one Dockerfile line only |
 | Counts | **UNCHANGED at 25/40/133.** Recorded NOW, before implementation, so a drift is a defect in the code rather than in the expectation (the SCH-2 lesson) |
@@ -246,6 +246,18 @@ closing the gap between "the tests pass" and "the deployed SPA boots".
 | **OQ-FE-M1-4** | Regression fences (M1-5) | **A** eslint import ban only · **B** manifest conformance pin only · **C** the ban + the manifest pin · **D** C **plus the single-React pin** · **E** none — rely on the audit gate | **D.** `npm audit`'s own `fixAvailable` field today recommends `react-router-dom@7.11.0`, the refuted downgrade — the reintroduction path is not hypothetical, it is *advised by the tooling*. eslint cannot see `package.json`; a manifest test cannot see import specifiers; **neither sees a duplicate React, which the dry run proved is one forgotten `npm dedupe` away and passes both `tsc` and `vite build` (V-1)**. Each fence covers exactly what the others structurally cannot. **E** fails because a 7.11.x reintroduction goes *green* on the audit gate until the next advisory lands |
 | **OQ-FE-M1-5** | Verification standard for a slice with no governed number | **A** the full ladder: `make fe-check` green; `npm audit --omit=dev` measured before **and** after with the output pasted **into this record** (the OQ-W12C-3a rule); the 150-test baseline re-measured and pinned; **the 12-line lockfile delta asserted exactly**; executed negative controls on all three fences and on all five gate behaviours; a `docker compose build frontend` smoke on the new base image; and a deep-link `BrowserRouter` render test (M1-6) · **B** A without the container build and the `BrowserRouter` test | **A.** This slice's entire deliverable *is* a verification claim ("the advisory is gone and nothing broke"), so the verification is the product. The two items **B** drops are precisely the two paths nothing else covers: the container build is the only place the Node floor is exercised (and Docker is confirmed available on this host), and `BrowserRouter` is the only shipped component the suite never mounts. The dry run has already executed most of this ladder once — implementation re-runs it on the real tree, since a scratchpad result is evidence about the plan, not about the commit |
 | **OQ-FE-M1-6** | Scope boundary against the rest of `npm outdated` (F13) | **A** react/react-dom/react-router + their `@types` + the Dockerfile base only — **via the `npm dedupe` path (V-2)**; everything else recorded as debt · **B** also take the five safe patch/minor bumps · **C** also take eslint 10 and TypeScript 7 | **A — and note this recommendation survived only because measurement rescued it.** As first drafted, **A was unachievable**: the natural fix for the duplicate React is a lockfile regeneration, which moves **61** packages (V-2). `npm dedupe` was measured as the path that fixes the duplicate while moving exactly **12**, all attributable. On the merits: bundling makes a failure in either half indistinguishable in review — the identical reasoning that split FE-M1 out of OPS-1. **C** would additionally put a **TypeScript major** in the same diff as a **React major**, with no way to attribute a resulting type error to either. The remainder goes to the Wave-13 close as a named FE-toolchain debt item |
+
+### Ratification (2026-07-28)
+
+**All six approved as recommended**, with no amendments:
+
+- **OQ-FE-M1-1 = A** — caret ranges; the lockfile is the reproducibility boundary.
+- **OQ-FE-M1-2 = A** — the Dockerfile moves to `node:24-slim` in this slice.
+- **OQ-FE-M1-3 = A** — `exceptions: []`, the mechanism kept, and the gate finally gets a test.
+- **OQ-FE-M1-4 = D** — all three fences (eslint ban + manifest pin + single-React pin).
+- **OQ-FE-M1-5 = A** — the full verification ladder, container build and `BrowserRouter` test included.
+- **OQ-FE-M1-6 = A** — scope held to the five declared packages + the Dockerfile base, **via the
+  `npm dedupe` path**; the remaining 11 `npm outdated` drifts go to the Wave-13 close as debt.
 
 ## Part 5 — Verification plan
 
