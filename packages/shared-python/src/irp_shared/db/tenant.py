@@ -120,6 +120,19 @@ def attach_tenant_reset(engine: Engine) -> None:
             connection_record.invalidate()  # never reuse a connection we could not reset
 
 
+def _canonical_tenant(tenant_id: str) -> str:
+    """Defensive canonicalization for the L4 seams (OPS-H1 H1-6). No external-string caller exists
+    at HEAD — the worker canonicalizes at its own boundary (the CAD-1 OQ-a fold) — but these
+    helpers ARM the GUC, and the SSO-1 standing rule does not carve out internal seams: a future
+    caller passing an uppercased/brace-wrapped UUID would arm a GUC matching no ``tenant_id::text``
+    and read silently empty. Canonicalized, NOT refused: these are internal seams, and the
+    canonical form of a valid UUID is the correct behavior; a non-UUID still raises (fail-loud —
+    there is no legitimate non-UUID tenant)."""
+    import uuid as _uuid
+
+    return str(_uuid.UUID(tenant_id))
+
+
 @contextmanager
 def tenant_session(session_factory: sessionmaker[Session], tenant_id: str) -> Iterator[Session]:
     """Open a session with tenant context set, for worker/job/CLI **tenant-scoped** paths (AD-016).
@@ -128,7 +141,7 @@ def tenant_session(session_factory: sessionmaker[Session], tenant_id: str) -> It
     """
     session = session_factory()
     try:
-        set_tenant_context(session, tenant_id)
+        set_tenant_context(session, _canonical_tenant(tenant_id))
         yield session
     finally:
         session.close()

@@ -36,8 +36,13 @@ export function BreachDetail({ session }: { session: Session }): ReactElement {
 
   const breach = useApiGet<BreachOut>(`/breaches/${breachId}`, session, reload);
   const actions = useApiGet<BreachActionOut[]>(`/breaches/${breachId}/actions`, session, reload);
+  // OPS-H1 H1-9 (the REAL residual of OPS-1 L-7): the backend pager shipped in NOTIF-1, but this
+  // fetch used the default page — so the 51st notification silently vanished from the operator's
+  // view with nothing on screen saying so. The fetch now pages explicitly and, because the API's
+  // cap is 200, a full page is surfaced as VISIBLE truncation rather than silence.
+  const ALERTS_PAGE = 200; // the backend's cap (le=200)
   const alerts = useApiGet<BreachNotificationOut[]>(
-    `/breaches/${breachId}/notifications`,
+    `/breaches/${breachId}/notifications?limit=${String(ALERTS_PAGE)}`,
     session,
     reload,
   );
@@ -285,6 +290,12 @@ export function BreachDetail({ session }: { session: Session }): ReactElement {
               ))}
             </tbody>
           </table>
+        ) : null}
+        {alerts.data && alerts.data.length >= ALERTS_PAGE ? (
+          <p className="state">
+            Showing the first {ALERTS_PAGE} alerts — the list is capped; older alerts may not be
+            displayed.
+          </p>
         ) : null}
       </div>
     </section>

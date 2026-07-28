@@ -13,6 +13,7 @@ role has NO grant on ``breach_action``.
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -764,3 +765,134 @@ def test_case_variance_self_review_refused_through_http_on_pg(app_url: str) -> N
         settings.auth_mode = _prev_auth
         session.close()
         engine.dispose()
+
+
+# --- OPS-H1 (H1-3): the M-C1 phase-1-2 FK-KEY-SHARE interleave -----------------------------------
+
+
+def test_the_m_c1_fk_key_share_interleave_forces_a_real_40P01_and_both_sides_recover(
+    app_url: str,
+) -> None:
+    """THE EXECUTED CONTROL for the M-C1 fold (Wave-12 close §1), owed by OPS-H1.
+
+    The ratified claim "phases 1-2 take NO row locks" was FALSE: a new-breach INSERT takes FK
+    ``FOR KEY SHARE`` on the parent ``limit_definition`` row. With the audit advisory already held
+    from an earlier same-transaction emit, a limit verb holding ``FOR UPDATE`` and then wanting the
+    advisory closes a real 40P01 cycle. ``deadlock_503`` was shipped for exactly this — but until
+    OPS-H1 no test EXECUTED the interleave; the only pins fed a SYNTHETIC error to the handler.
+
+    This test forces the TRUE cycle with the M-C1 lock shapes:
+
+      TICK side:  pg_advisory_xact_lock(tenant)  →  INSERT breach (waits: FOR KEY SHARE vs H's
+                  FOR UPDATE on the limit row)
+      HTTP side:  SELECT limit FOR UPDATE (held)  →  pg_advisory_xact_lock(tenant) (waits: held
+                  by the tick)
+
+    PostgreSQL's detector must kill exactly ONE side with 40P01 (either victim is a legal
+    schedule), and the survivor must COMPLETE. Then each side's declared recovery is asserted with
+    the REAL error object, not a synthetic one: the HTTP victim maps through ``deadlock_503`` to
+    503 + Retry-After; the tick victim's error is exactly the class the per-limit SAVEPOINT
+    swallows for a next-tick retry.
+    """
+    import threading
+
+    from sqlalchemy.exc import OperationalError
+
+    from irp_shared.audit.service import _advisory_lock_key
+    from irp_shared.limit.models import LimitDefinition
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    breach_id = _seed_breach(factory, tenant)  # seeds the parent limit + one breach on it
+    lookup = _armed(factory, tenant)
+    try:
+        limit_id = _get(lookup, breach_id).limit_definition_id
+        # A FRESH run for the interleave INSERT — `uq_breach_limit_run` (once-per-(limit, run))
+        # would otherwise refuse it as a duplicate of the seeded breach before any lock waits.
+        run_id = create_run(
+            lookup, tenant_id=tenant, run_type=RUN_TYPE_VAR, initiated_by="t"
+        ).run_id
+        lookup.commit()
+    finally:
+        lookup.close()
+
+    barrier = threading.Barrier(2, timeout=30)
+    tick_error: list[BaseException] = []
+    http_error: list[BaseException] = []
+
+    def _tick_side() -> None:
+        """Advisory FIRST (the earlier same-transaction emit), then the INSERT's FOR KEY SHARE."""
+        s = _armed(factory, tenant)
+        try:
+            s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _advisory_lock_key(tenant)})
+            barrier.wait()  # H now takes FOR UPDATE on the limit row
+            time.sleep(0.5)  # let H reach its advisory wait so the cycle is closed by our INSERT
+            s.execute(
+                text(
+                    "INSERT INTO breach (id, tenant_id, system_from, limit_definition_id,"
+                    " calculation_run_id, detected_at, target_run_type, metric_type,"
+                    " observed_value, threshold_value, threshold_unit, breach_direction,"
+                    " limit_kind, severity, status)"
+                    " VALUES (:id, :t, now(), :limit, :run, now(), 'VAR', 'VAR_PARAMETRIC',"
+                    " 2000000, 1000000, 'CURRENCY', 'ABOVE', 'HARD', 'HARD', 'DETECTED')"
+                ),
+                {"id": str(uuid.uuid4()), "t": tenant, "limit": limit_id, "run": run_id},
+            )
+            s.commit()
+        except BaseException as exc:  # noqa: BLE001 - adjudicated below
+            tick_error.append(exc)
+            s.rollback()
+        finally:
+            s.close()
+
+    def _http_side() -> None:
+        """The limit verb's order: FOR UPDATE on the limit row, THEN the advisory."""
+        s = _armed(factory, tenant)
+        try:
+            barrier.wait()  # the tick holds the advisory
+            s.execute(
+                select(LimitDefinition).where(LimitDefinition.id == limit_id).with_for_update()
+            ).scalar_one()
+            s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _advisory_lock_key(tenant)})
+            s.commit()
+        except BaseException as exc:  # noqa: BLE001
+            http_error.append(exc)
+            s.rollback()
+        finally:
+            s.close()
+
+    t1 = threading.Thread(target=_tick_side)
+    t2 = threading.Thread(target=_http_side)
+    t1.start(), t2.start()
+    t1.join(timeout=60), t2.join(timeout=60)
+    assert not t1.is_alive() and not t2.is_alive(), "the interleave hung — no deadlock detection?"
+
+    victims = [e for e in (tick_error + http_error)]
+    assert len(victims) == 1, (
+        f"expected exactly ONE 40P01 victim, got {len(victims)}: "
+        f"tick={tick_error} http={http_error}"
+    )
+    victim = victims[0]
+    assert isinstance(victim, OperationalError), victim
+    code = getattr(victim.orig, "sqlstate", None) or getattr(victim.orig, "pgcode", None)
+    assert code == "40P01", f"the victim's SQLSTATE is {code!r}, not a deadlock"
+
+    # The declared recoveries, asserted with the REAL error object:
+    if http_error:
+        # HTTP victim -> deadlock_503 maps it to 503 + Retry-After (never a raw 500).
+        from fastapi import HTTPException
+
+        from irp_backend.deps import deadlock_503
+
+        recovery = _armed(factory, tenant)
+        try:
+            mapped = deadlock_503(recovery, http_error[0])
+        finally:
+            recovery.close()
+        assert isinstance(mapped, HTTPException) and mapped.status_code == 503
+        assert mapped.headers and mapped.headers.get("Retry-After") == "1"
+    else:
+        # Tick victim -> exactly the class the per-limit SAVEPOINT recovery swallows
+        # (scheduler phases 1-2 catch OperationalError per item and retry next tick).
+        assert isinstance(tick_error[0], OperationalError)

@@ -67,3 +67,35 @@ def test_oidc_fully_configured_ok() -> None:
             oidc_audience="irp-backend",
         )
     )
+
+
+# --- OPS-H1 (H1-5): the dev-header tenant is canonicalized before it can arm the GUC -------------
+
+
+def test_dev_header_tenant_is_canonicalized() -> None:
+    """The OQ-a class's third boundary: every form a client might send for the SAME tenant must
+    yield the ONE canonical form RLS's ``tenant_id::text`` compares against — an uppercased or
+    brace-wrapped UUID would otherwise arm a GUC matching nothing and read silently empty."""
+    from irp_backend.deps import _principal_from_headers
+
+    canonical = "8c3193a6-1c9c-5353-bbe1-ab8716e986a9"
+    for form in (
+        canonical,
+        canonical.upper(),
+        "{" + canonical + "}",
+        "urn:uuid:" + canonical,
+    ):
+        principal = _principal_from_headers("user-1", form)
+        assert principal.tenant_id == canonical, form
+
+
+def test_dev_header_non_uuid_tenant_is_a_401_not_an_armed_guc() -> None:
+    """Fail-loud on garbage: a non-UUID tenant header must never reach the GUC."""
+    import pytest
+    from fastapi import HTTPException
+
+    from irp_backend.deps import _principal_from_headers
+
+    with pytest.raises(HTTPException) as caught:
+        _principal_from_headers("user-1", "not-a-uuid")
+    assert caught.value.status_code == 401

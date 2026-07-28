@@ -41,7 +41,7 @@ commit, so a mid-chain failure rolls back whole and the tenant stays clean and r
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -107,7 +107,31 @@ _SUPERVISOR_PERMS = ("breach.respond", "breach.review", "breach.view", "limit.vi
 _AUDITOR_ADDITIONS = ("limit.view", "breach.view")
 _AUDITOR_ROLE = "auditor_3l"
 
-_NOW = datetime(2026, 7, 25, 9, 0, tzinfo=UTC)
+
+def _seed_now() -> datetime:
+    """The stage clock — SEED-TIME-RELATIVE since OPS-H1 (H1-4), BACKDATED two days.
+
+    The clock was frozen at 2026-07-25 09:00 UTC, which made the seeded overdue breach permanently
+    a-year-stale: the first real tick against the demo tenant would have escalated + notified on it
+    INSTANTLY, mutating the curated walk into nonsense — the reason the OQ-W12C-3d interim rule
+    (`DEMO_TENANT_ID` never enters `IRP_TENANT_IDS`) existed.
+
+    Now every seeded instant is an offset from seed time, truncated to the hour (stable-looking
+    demo timestamps), and **backdated by two days so the curated walk is PRESERVED exactly**: the
+    assign lands at seed−2d, its HARD-SLA deadline (+1d) at seed−1d, so the breach reads OVERDUE at
+    seed just as it always did.
+
+    **What this buys, stated honestly (the verifier caught the draft over-claiming):** regeneration
+    removes the ABSURDITY, not the mutation. An overdue breach under a running tick escalates,
+    because that is what the platform is FOR — enrolling the demo tenant in `IRP_TENANT_IDS` runs
+    its lifecycle as governed, correct behavior, and an operator who wants the pristine walk back
+    re-seeds. The prohibition is retired and replaced by that documented consequence.
+
+    Demo timestamps are therefore no longer byte-identical across seed days; the PG suite asserts
+    RELATIVE facts only.
+    """
+    now = datetime.now(tz=UTC).replace(minute=0, second=0, microsecond=0)
+    return now - timedelta(days=2)
 
 
 class DemoOpsError(RuntimeError):
@@ -240,6 +264,7 @@ def _already_seeded(session: Session) -> bool:
 
 def run_demo_ops_stage14(session: Session) -> OpsStage14Summary:
     """Seed the operations end state. Caller owns the single commit."""
+    now = _seed_now()
     if _already_seeded(session):
         raise DemoOpsAlreadySeededError()
 
@@ -296,12 +321,12 @@ def run_demo_ops_stage14(session: Session) -> OpsStage14Summary:
     )
 
     # Detection through the REAL evaluation path (what the tick calls) — never a hand-minted row.
-    breach = evaluate_limit(session, breached, _NOW)
+    breach = evaluate_limit(session, breached, now)
     if breach is None:
         raise DemoOpsError(
             "the seeded ceiling did not breach — the demo VaR moved; re-derive the threshold"
         )
-    healthy_breach = evaluate_limit(session, healthy, _NOW)
+    healthy_breach = evaluate_limit(session, healthy, now)
     if healthy_breach is not None:
         raise DemoOpsError("the headroom monitor breached — the demo fixture is not as intended")
     session.flush()
@@ -322,14 +347,14 @@ def run_demo_ops_stage14(session: Session) -> OpsStage14Summary:
         breach,
         assigned_to=supervisor,
         actor=BreachActor(actor_id=manager),
-        now=_NOW,
+        now=now,
     )
     respond_breach(
         session,
         breach,
         narrative="Reduced the equity overlay and re-ran the exposure chain; awaiting 2L review.",
         actor=BreachActor(actor_id=supervisor),
-        now=_NOW,
+        now=now,
     )
     session.flush()
 
@@ -344,7 +369,7 @@ def run_demo_ops_stage14(session: Session) -> OpsStage14Summary:
     )
     notifications = 0
     for event in events:
-        notifications += len(notify_for_event(session, event, _NOW, sink=sink))
+        notifications += len(notify_for_event(session, event, now, sink=sink))
     session.flush()
 
     return OpsStage14Summary(

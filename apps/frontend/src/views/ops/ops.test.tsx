@@ -213,6 +213,36 @@ describe("BreachDetail", () => {
     // the crucial distinction: it must NOT accuse the operator of an illegal action
     expect(alert.textContent).not.toContain("not legal");
   });
+
+  it("pages the alerts explicitly and SURFACES truncation at a full page (OPS-H1 H1-9)", async () => {
+    // The real residual of OPS-1 L-7: the backend pager shipped in NOTIF-1, but this screen
+    // fetched the default page, so the 51st alert silently vanished. The fetch must now carry an
+    // explicit limit at the API's cap, and a FULL page must render a visible truncation notice
+    // instead of silence. (The ratified item said "a load-more affordance"; what shipped is the
+    // static notice — the substitution is recorded in the decision record, and THIS test is the
+    // truncation-visible control it owed.)
+    const fullPage = Array.from({ length: 200 }, (_, i) => ({
+      id: `n-${String(i)}`,
+      breach_id: "b-1",
+      source_event_type: "LIMIT.BREACH_ESCALATE",
+      source_sequence_no: i,
+      recipient_id: "u-9",
+      channel: "LOG",
+      outcome: "SENT",
+      notified_at: "2026-07-01T00:00:00Z",
+    }));
+    const fetchMock = routeFetch({
+      "/breaches/b-1/actions": [],
+      "/breaches/b-1/notifications": fullPage,
+      "/breaches/b-1": BREACH,
+    });
+    renderDetail();
+    await screen.findByText("VAR-CEIL");
+    const alertCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes("/notifications"));
+    expect(alertCalls.length).toBeGreaterThan(0);
+    expect(String(alertCalls[0][0])).toContain("limit=200");
+    await screen.findByText(/the list is capped/i);
+  });
 });
 
 describe("LimitHealth", () => {
