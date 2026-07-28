@@ -331,7 +331,7 @@ scope boundary (OQ-FE-M1-6=A) held in fact, not merely in intent.
 | 8 | test-count drift | 150 → 187 = **+37**, exactly `audit-gate` 13 + `router-fence` 11 + `dependency-fence` 8 + `browserrouter` 5. The migration itself added **0** and removed **0** |
 | 9 | container | `docker compose build frontend` on `node:24-slim` **succeeded with ZERO `EBADENGINE` warnings**; the image served `/ops/breaches` → **200 + the SPA shell**, and its `/assets/index-azwg_KpJ.js` → **200, 287,953 bytes** (the migrated bundle, byte-identical to the local build) |
 | 10 | `make check` (Python tier) | **2193 passed / 478 skipped**, secret-scan and docs-check green — identical to the OPS-H1 baseline, which is the "nothing else was disturbed" control. Scope confirmed: **zero** Python files, **zero** migrations, frozen `audit/service.py` untouched |
-| 11 | CI | *(pending — recorded here only once watched to green, never in advance)* |
+| 11 | CI | **GREEN, all six jobs, on BOTH commits** — run **30388265933** (`8f9711c`, the implementation) and run **30388621527** (`b8767ce`, the review folds), each `conclusion=success` across Frontend (TypeScript), Backend (Python), DB migration (Postgres), API type drift, Documentation check, Secret scan. Written here only after the runs were observed completed, not when they were queued (R-3) |
 
 **The audit gate's own output, pasted verbatim (the OQ-W12C-3a rule):**
 
