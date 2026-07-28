@@ -79,10 +79,25 @@ def get_principal(
 
 
 def _principal_from_headers(x_user_id: str | None, x_tenant_id: str | None) -> Principal:
-    """The DEV shim: trust the caller's asserted identity headers (local only)."""
+    """The DEV shim: trust the caller's asserted identity headers (local only).
+
+    **The tenant header is CANONICALIZED before it can arm the RLS GUC** (OPS-H1 H1-5 — the OQ-a
+    class's third boundary). The SSO-1 standing rule is *any code path arming a tenant GUC from an
+    external string canonicalizes first*; this path is dev-only (refused outside
+    ``app_env == "local"``), but a rule with a carve-out is weaker than a rule — an uppercased or
+    brace-wrapped UUID here would arm a GUC that matches NO ``tenant_id::text``, turning every read
+    silently empty (the fail-open-looking fail-closed that wastes a debugging afternoon). A
+    non-UUID header is a 401, same as the OIDC path's claim treatment.
+    """
     if not x_user_id or not x_tenant_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing principal")
-    return Principal(user_id=x_user_id, tenant_id=x_tenant_id)
+    try:
+        tenant = str(uuid.UUID(x_tenant_id))  # canonicalize so RLS's tenant_id::text matches
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="missing principal"
+        ) from None
+    return Principal(user_id=x_user_id, tenant_id=tenant)
 
 
 def _principal_from_token(authorization: str | None, db: Session) -> Principal:

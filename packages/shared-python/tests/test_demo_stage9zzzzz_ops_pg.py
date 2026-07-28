@@ -24,6 +24,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.pool import NullPool
 
+import irp_shared.demo.ops_stage14 as _stage14
 from irp_shared.audit.models import AuditEvent
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import persistent_tenant_context
@@ -92,12 +93,42 @@ def summary():  # noqa: ANN201
         cleanup = factory()
         try:
             persistent_tenant_context(cleanup, DEMO_TENANT_ID)
+            # NARROWED at OPS-H1 (H1-7): delete ONLY the wiring THIS stage seeded — the four
+            # operator roles' 14 rows by role code, plus the TWO auditor additions by (role,
+            # permission) pair. The previous form deleted ALL demo-tenant role_permission rows,
+            # which its own comment above forbids: on a shared/local DB it stripped the LIVING
+            # tenant's wiring (the campaign's own personas) for the next act. CI never noticed
+            # because its schema is fresh — the exact class of defect that stays invisible until
+            # someone runs the suite against a database they care about.
             cleanup.execute(
                 text(
                     "DELETE FROM role_permission WHERE role_id IN "
-                    "(SELECT id FROM role WHERE tenant_id = :tenant)"
+                    "(SELECT id FROM role WHERE tenant_id = :tenant "
+                    "AND code IN (:r1, :r2, :r3, :r4))"
                 ),
-                {"tenant": DEMO_TENANT_ID},
+                {
+                    "tenant": DEMO_TENANT_ID,
+                    # IMPORTED from the stage, not hand-mirrored (review LOW: a rename would turn
+                    # this teardown into a silent no-op on a shared DB — its exact defect class).
+                    "r1": _stage14._LIMIT_2L_ROLE,
+                    "r2": _stage14._ANALYST_ROLE,
+                    "r3": _stage14._MANAGER_ROLE,
+                    "r4": _stage14._SUPERVISOR_ROLE,
+                },
+            )
+            cleanup.execute(
+                text(
+                    "DELETE FROM role_permission WHERE role_id IN "
+                    "(SELECT id FROM role WHERE tenant_id = :tenant AND code = :auditor) "
+                    "AND permission_id IN "
+                    "(SELECT id FROM permission WHERE code IN (:p1, :p2))"
+                ),
+                {
+                    "tenant": DEMO_TENANT_ID,
+                    "auditor": _stage14._AUDITOR_ROLE,
+                    "p1": _stage14._AUDITOR_ADDITIONS[0],
+                    "p2": _stage14._AUDITOR_ADDITIONS[1],
+                },
             )
             cleanup.commit()
         finally:
@@ -281,7 +312,10 @@ def test_the_person_level_sod_refusals_are_actually_REACHABLE(db, summary) -> No
             breach,
             outcome="ACCEPT",
             actor=BreachActor(actor_id=result.supervisor_id),
-            now=datetime(2026, 7, 25, 10, 0, tzinfo=UTC),
+            # RELATIVE since OPS-H1 (H1-4): the stage clock is seed-time-relative, so an absolute
+            # instant here would drift a day per day. Any current instant works — the SoD refusal
+            # fires pre-insert on WHO acts, not WHEN.
+            now=datetime.now(tz=UTC),
         )
     db.rollback()
 
@@ -290,3 +324,49 @@ def test_second_run_refuses(db) -> None:  # noqa: ANN001
     """Refuse-not-skip on this module's own footprint (the campaign shim's ratified shape)."""
     with pytest.raises(DemoOpsAlreadySeededError):
         run_demo_ops_stage14(db)
+
+
+# --- OPS-H1 (H1-8): the FIRST demo-tenant role/permission census pin ------------------------------
+
+
+def test_the_demo_tenant_role_census_after_stage_14(db) -> None:  # noqa: ANN001
+    """The first role/permission census over the LIVING demo tenant — not a re-pin: the register
+    called this a 're-pin' and the verifier found no prior census exists anywhere (the set-equality
+    locks pin governed MODEL codes; the only role census is template-level). Stage 14's four
+    operator roles were therefore structurally outside every census.
+
+    SET-equality over the role codes AND per-role wiring counts, so a drift in EITHER direction —
+    a role vanishing, a rogue role appearing, a permission silently added or dropped — fails."""
+    from sqlalchemy import text as sql
+
+    roles = {
+        row[0]: row[1]
+        for row in db.execute(
+            sql(
+                "SELECT r.code, count(rp.permission_id) FROM role r "
+                "LEFT JOIN role_permission rp ON rp.role_id = r.id "
+                "WHERE r.tenant_id = :t GROUP BY r.code"
+            ),
+            {"t": DEMO_TENANT_ID},
+        )
+    }
+    stage_roles = {
+        _stage14._LIMIT_2L_ROLE: len(_stage14._LIMIT_2L_PERMS),
+        _stage14._ANALYST_ROLE: len(_stage14._ANALYST_PERMS),
+        _stage14._MANAGER_ROLE: len(_stage14._MANAGER_PERMS),
+        _stage14._SUPERVISOR_ROLE: len(_stage14._SUPERVISOR_PERMS),
+    }
+    for code, wired in stage_roles.items():
+        assert (
+            roles.get(code) == wired
+        ), f"{code}: expected {wired} wired perms, got {roles.get(code)}"
+    # Pinned EXACTLY, to the MEASURED truth: the demo tenant's `auditor_3l` ROLE carries exactly
+    # this stage's two read additions and nothing else — the campaign's auditor persona is wired
+    # through the entitlement bootstrap's template layer, not through demo-tenant role_permission
+    # rows. Two claims died here in one day: the draft's `>= 2` was trivially satisfiable, and a
+    # reviewer's "the campaign grants auditor_3l 11 perms" was refuted by running the pin against
+    # the live battery (it read the source of a different wiring path). Measured beats cited.
+    assert roles.get(_stage14._AUDITOR_ROLE) == len(_stage14._AUDITOR_ADDITIONS)
+    # No rogue ops_* role beyond the four this stage declares.
+    rogue = {c for c in roles if c.startswith("ops_")} - set(stage_roles)
+    assert not rogue, f"unexpected ops roles: {rogue}"

@@ -123,9 +123,20 @@ export async function request<T>(
       detail,
     );
   }
-  // Every endpoint on this API returns a JSON body (the write verbs return the updated resource),
-  // so the success path parses directly — unchanged from the read-only client.
-  return (await response.json()) as T;
+  // Every endpoint on this API returns a JSON body (the write verbs return the updated resource).
+  // The parse is guarded (OPS-H1 H1-10 / OPS-1 L-9): a 200 with a NON-JSON body — a proxy or SPA
+  // fallback serving HTML with a happy status — previously threw a bare SyntaxError that callers
+  // wrapped as "network / the API is unreachable", sending an operator to check a backend that
+  // answered. It is a server-shape problem and says so.
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new ApiError(
+      "server",
+      "the API returned a 200 with a non-JSON body (a proxy or fallback page?)",
+      response.status,
+    );
+  }
 }
 
 export async function apiGet<T>(path: string, session: Session | null): Promise<T> {

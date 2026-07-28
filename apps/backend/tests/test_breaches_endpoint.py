@@ -686,3 +686,38 @@ def test_notifications_read_pagination_caps(ctx) -> None:
         .status_code
         == 422
     )
+
+
+# --- OPS-H1 (H1-9): the FE page-size mirror is CONFORMANCE-PINNED --------------------------------
+
+
+def test_the_fe_alerts_page_size_mirrors_the_backend_cap() -> None:
+    """`BreachDetail.tsx` fetches `/breaches/{id}/notifications?limit=ALERTS_PAGE` with
+    `ALERTS_PAGE` hand-mirrored from this route's `le=` cap. The Wave-12 standing rule: a
+    hand-mirrored contract carries a conformance pin — if the cap is ever LOWERED, the FE's
+    `limit=200` becomes a 422 and the alerts panel breaks with nothing failing at build time.
+
+    The pin reads BOTH sides: the route's declared `le` (via the FastAPI param model) and the FE
+    constant (parsed from the source — TS constants are not importable here, so the file is the
+    contract surface)."""
+    # The declared cap, read off the endpoint's signature default (a fastapi Query).
+    import inspect
+    import re
+    from pathlib import Path
+
+    from irp_backend.api.breaches import notifications as _notifications_endpoint
+
+    sig = inspect.signature(_notifications_endpoint)
+    limit_param = sig.parameters["limit"].default
+    backend_cap = getattr(limit_param, "le", None) or next(
+        (m.le for m in getattr(limit_param, "metadata", []) if hasattr(m, "le")), None
+    )
+    assert backend_cap == 200, f"the backend cap moved to {backend_cap!r} — update BOTH sides"
+
+    fe = Path(__file__).resolve().parents[2] / "frontend/src/views/ops/BreachDetail.tsx"
+    match = re.search(r"ALERTS_PAGE = (\d+)", fe.read_text())
+    assert match, "ALERTS_PAGE not found — the FE pager moved; re-point this pin"
+    assert int(match.group(1)) == backend_cap, (
+        f"FE ALERTS_PAGE={match.group(1)} != backend cap {backend_cap} — the mirrored contract "
+        "drifted"
+    )

@@ -171,3 +171,73 @@ statement-count test for H1-1; the interleave regression (or its disclosed fallb
 canonicalization matrix for H1-5/6; the narrowed-teardown and census pins for H1-7/8; FE typecheck +
 the 200-non-JSON fixture for H1-9/10. Counts pinned UNCHANGED at 25/40/133 in this record — the
 final-position pin in the 8-z suite must keep passing untouched, which is itself the drift alarm.
+
+## Part 6 — Implementation outcomes (recorded at implementation)
+
+- **H1-1** — the batched form shipped; equivalence, statement-count (ONE SELECT, counted not
+  timed), exact-boundary and an eight-row lock-order pin all green. **Four mutants executed, four
+  killed** (state filter dropped; `<` → `<=`; ORDER BY dropped — which SURVIVED the two-row fixture
+  at even odds and forced the eight-row pin; the equivalence itself).
+- **H1-2** — the survey found exactly ONE current-truth site (`scheduler.py:169`) and it already
+  carries the honest statement from the M-C1 fold; the only other occurrences present the falsified
+  claim as HISTORY (close review, current_state) and correctly stay. **No edit was needed — the
+  survey's value is that this is now VERIFIED rather than assumed.**
+- **H1-3** — **the TRUE interleave was forced: no fallback needed.** Two raw sessions with the M-C1
+  lock shapes (advisory-then-INSERT vs FOR-UPDATE-then-advisory) produce a real 40P01
+  deterministically — 3/3 consecutive runs — with exactly one victim, and the recovery asserted on
+  the REAL error object (`deadlock_503` → 503 + Retry-After when HTTP loses; the
+  SAVEPOINT-swallowed class when the tick loses). One fixture correction en route: the INSERT needs
+  a FRESH run id or `uq_breach_limit_run` refuses it before any lock waits.
+- **H1-4** — the stage clock is seed-relative, backdated two days, threaded through all five use sites
+  as a per-run value (never frozen at import); the suite's one absolute input rewritten relative;
+  the §6d interim rule amended with its dated retirement. Demo chain green on a fresh schema.
+- **H1-5/6** — the dev-header path canonicalizes (four forms → one canonical; garbage → 401) and
+  `tenant_session` canonicalizes for all three L4 seams (`run_in_tenant`/`run_tenant_job` delegate
+  to it). The L4 pin observes the SPIED argument to `set_tenant_context` — SQLite has no GUC to
+  read back, and a loop that arms-and-asserts-nothing is the vacuous-test pattern. **Mutant
+  (canonicalization dropped): killed.**
+- **H1-7/8** — the teardown deletes exactly the stage's own wiring (the four role codes; the two
+  named auditor grants), and the FIRST demo-tenant role/permission census pin landed (per-role
+  wired counts + a no-rogue-`ops_*` sweep, so drift fails in either direction).
+- **H1-9/10** — the alerts fetch pages explicitly at the API's cap with a VISIBLE truncation
+  notice at a full page; the success parse is guarded so a 200-with-HTML classifies as `server`
+  ("non-JSON body"), never as "unreachable". 149 FE tests green including the new 200-non-JSON
+  fixture.
+
+Counts remain **25/40/133** by construction; the 8-z final-position pin is untouched.
+
+## Part 7 — The 2-finder review (RAN 2026-07-28) and its folds
+
+**0 HIGH / 5 MED / 4 LOW from the claims/omissions lane, all folded** (the code/tests lane's report
+is folded in the same pass):
+
+- **A dead docstring**: `now = _seed_now()` was inserted ABOVE `run_demo_ops_stage14`'s docstring,
+  turning it into a no-op string expression (`__doc__` was `None` — executed proof; ruff is blind
+  to it). Swapped.
+- **H1-9's ratified shape was quietly substituted, and the substitution is recorded HERE, at the
+  gate record (the SCH-2 rule):** the ratified text said *"a load-more affordance"*; what shipped is
+  a static truncation notice — simpler, honest about the cap, and sufficient for an operator to
+  know older alerts exist. The finder also caught that **no test rendered the notice**; the
+  truncation-visible control now exists (a 200-row fixture asserting both the explicit `limit=200`
+  param and the rendered notice).
+- **The equivalence fixture's "every lifecycle shape" claim was refutable** — ESCALATED and the
+  REJECT→re-ASSIGN epoch were absent, and the re-assign is precisely where a wrong governing-row
+  join would pick the STALE deadline. Both shapes added; the re-assigned breach is SELECTED via its
+  NEW governing due.
+- **The truncation notice over-claimed** ("older alerts exist" is unknowable at exactly the cap) —
+  hedged.
+- **Control-matrix trace (OQ-W12C-3c): NO control moved.** H1-5/6 add canonicalization at
+  RLS-arming boundaries — a strengthening of the existing CTRL-011 posture's application surface,
+  not a state or enforcement-shape change; the batched H1-1 read changes cost, not control. Stated
+  here so the closeout has its trace.
+- **The interim-rule discharge sweep is a CLOSEOUT item and is named here so it cannot be skipped:**
+  `claude_operating_instructions.md:76-78` still commands the prohibition on the now-false
+  frozen-clock premise (self-limited by "until OPS-H1 ships") and `current_state.md` repeats it —
+  both are amended at the closeout, with the memory note. This is the ledger-class omission
+  pattern; naming the files in the record is what makes the absence reviewable.
+- **The census pin's first exact value was wrong, and the way it was wrong is the lesson.** A
+  reviewer read the campaign source and reported "auditor_3l holds 11 perms", so the pin was set to
+  `11 + 2` — and the LIVE battery measured **2**: the campaign's auditor persona is wired through
+  the entitlement template layer, not through demo-tenant `role_permission` rows, so the demo-tenant
+  role carries exactly this stage's two additions. Pinned to the measured value. *Measured beats
+  cited — the same rule that governs the demo counts governs a census.*

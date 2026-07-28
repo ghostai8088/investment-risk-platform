@@ -752,21 +752,80 @@ def select_overdue_breaches(session: Session, now: datetime, *, acting_tenant: s
     governing response deadline has passed. A read-side pre-filter only —
     ``escalate_overdue_breach`` re-checks every condition UNDER the lock, so a stale candidate is
     harmless. Ordered by ``Breach.id`` for a DETERMINISTIC cross-tick lock order (no lock-ordering
-    deadlock between two concurrent same-tenant ticks — VERIFIER-F3-MED1)."""
+    deadlock between two concurrent same-tenant ticks — VERIFIER-F3-MED1); that ordering is
+    load-bearing and pinned, not incidental.
+
+    **ONE statement since OPS-H1 (H1-1), retiring the N+1 the Wave-12 close register TIPPED.** The
+    previous shape loaded EVERY breach in the tenant — including CLOSED ones — then issued 1–2
+    queries per breach; CAD-1's cadence made that a recurring per-interval cost on a table that
+    only grows. This is the D9 greatest-n-per-group template ``list_breaches`` already ships,
+    reduced to the tick's needs: the derived recency state filtered to ``_ESCALATABLE_STATES``,
+    and the governing deadline compared IN SQL. Semantics are exactly the old loop's — it compared
+    ``governing.response_due`` directly (never ``_effective_due``): a NULL due is excluded by
+    ``<``; a zero-action breach coalesces to DETECTED and is state-filtered; an ACCEPT moves the
+    derived state to REVIEWED, so the stale ASSIGNED-row deadline never resurfaces. An equivalence
+    test pins new-vs-old on a mixed fixture, and a statement-count test pins the "ONE statement"
+    claim itself.
+
+    **The datetime bind is normalized to the STORED convention before comparison** — PG stores
+    tz-aware UTC; SQLite drops the tz (the ``db/bitemporal.py`` convention), so a bound AWARE
+    ``now`` on SQLite would compare an offset-suffixed string against naive column text at the
+    boundary. Binding the naive-UTC form on SQLite keeps the comparison exact on both engines; a
+    boundary test sits at exact equality (``due == now`` is NOT overdue on either engine).
+    """
     now_utc = _as_utc(now)
     assert now_utc is not None
-    breaches = (
-        session.execute(select(Breach).where(Breach.tenant_id == acting_tenant).order_by(Breach.id))
-        .scalars()
-        .all()
+    bind_now = (
+        now_utc
+        if session.get_bind().dialect.name == "postgresql"
+        else (now_utc.replace(tzinfo=None))
     )
-    overdue: list[Breach] = []
-    for breach in breaches:
-        state = current_breach_state(session, breach.id, acting_tenant=acting_tenant)
-        if state not in _ESCALATABLE_STATES:
-            continue
-        governing = _governing_assign(session, breach.id, acting_tenant)
-        due = _as_utc(governing.response_due) if governing is not None else None
-        if due is not None and due < now_utc:
-            overdue.append(breach)
-    return overdue
+
+    latest_seq = (
+        select(BreachAction.breach_id, func.max(BreachAction.seq).label("max_seq"))
+        .where(BreachAction.tenant_id == acting_tenant)
+        .group_by(BreachAction.breach_id)
+        .subquery()
+    )
+    latest_action = aliased(BreachAction)
+    governing_seq = (
+        select(BreachAction.breach_id, func.max(BreachAction.seq).label("gov_seq"))
+        .where(
+            BreachAction.tenant_id == acting_tenant,
+            BreachAction.to_state == BREACH_STATE_ASSIGNED,
+        )
+        .group_by(BreachAction.breach_id)
+        .subquery()
+    )
+    governing_action = aliased(BreachAction)
+    derived_state = func.coalesce(latest_action.to_state, BREACH_STATE_DETECTED)
+
+    stmt = (
+        select(Breach)
+        .outerjoin(latest_seq, latest_seq.c.breach_id == Breach.id)
+        .outerjoin(
+            latest_action,
+            and_(
+                latest_action.breach_id == latest_seq.c.breach_id,
+                latest_action.seq == latest_seq.c.max_seq,
+                latest_action.tenant_id == acting_tenant,
+            ),
+        )
+        .outerjoin(governing_seq, governing_seq.c.breach_id == Breach.id)
+        .outerjoin(
+            governing_action,
+            and_(
+                governing_action.breach_id == governing_seq.c.breach_id,
+                governing_action.seq == governing_seq.c.gov_seq,
+                governing_action.tenant_id == acting_tenant,
+            ),
+        )
+        .where(
+            Breach.tenant_id == acting_tenant,
+            derived_state.in_(sorted(_ESCALATABLE_STATES)),
+            governing_action.response_due.is_not(None),
+            governing_action.response_due < bind_now,
+        )
+        .order_by(Breach.id)
+    )
+    return list(session.execute(stmt).scalars())

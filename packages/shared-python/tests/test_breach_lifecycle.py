@@ -735,3 +735,171 @@ def test_list_breaches_parity_across_all_states(session: Session) -> None:
         if it.breach.id == reopened.id
     )
     assert ro.state == BREACH_STATE_ASSIGNED and ro.assigned_to == owner
+
+
+# --- OPS-H1 (H1-1): the batched select_overdue_breaches ------------------------------------------
+
+
+def _mixed_overdue_fixture(session: Session, tenant: str, *, late) -> dict[str, str]:  # noqa: ANN001
+    """Every lifecycle shape the old per-breach loop distinguished, on ONE tenant:
+
+    - ``overdue_assigned``   — ASSIGNED, due passed          → SELECTED
+    - ``overdue_responded``  — RESPONDED, due passed         → SELECTED (the epoch clock keeps
+      running until review — a response does not stop the SLA)
+    - ``future``             — ASSIGNED, due not yet passed  → excluded
+    - ``detected``           — zero actions                  → excluded (no governing row)
+    - ``reviewed``           — ACCEPTed, its old due passed  → excluded (the derived state moved
+      to REVIEWED, so the stale ASSIGNED-row deadline never resurfaces — the `_effective_due`
+      semantics the batch must reproduce)
+    - ``closed``             — fully walked, due passed      → excluded
+    - ``escalated``          — auto-escalated, due passed    → excluded (ESCALATED ∉ the set)
+    - ``reassigned``         — REJECT re-assign OVERDUE      → SELECTED via the NEW governing due
+      (the max-seq ASSIGNED row is the re-assign, the most interesting greatest-n-per-group case)
+
+    A review found the first version's "every lifecycle shape" claim refutable — the last two
+    shapes were absent, and the re-assign epoch is precisely where a wrong governing-row join
+    would pick the STALE deadline.
+    """
+    out: dict[str, str] = {}
+
+    def _assigned(key: str, *, now) -> None:  # noqa: ANN001
+        b = _seed_breach(session, tenant)
+        assign_breach(
+            session, b, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=now
+        )
+        out[key] = b.id
+
+    _assigned("overdue_assigned", now=_T0)  # due _T0+1d, late is beyond it
+    _assigned("future", now=late)  # due late+1d — never overdue at `late`
+
+    b = _seed_breach(session, tenant)
+    assign_breach(session, b, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0)
+    respond_breach(session, b, narrative="hedged", actor=_ANALYST, now=_T0)
+    out["overdue_responded"] = b.id
+
+    out["detected"] = _seed_breach(session, tenant).id
+
+    b = _seed_breach(session, tenant)
+    assign_breach(session, b, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0)
+    respond_breach(session, b, narrative="hedged", actor=_ANALYST, now=_T0)
+    review_breach(session, b, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
+    out["reviewed"] = b.id
+
+    b = _seed_breach(session, tenant)
+    assign_breach(session, b, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0)
+    respond_breach(session, b, narrative="hedged", actor=_ANALYST, now=_T0)
+    review_breach(session, b, outcome=BREACH_REVIEW_ACCEPT, actor=_MANAGER, now=_T0)
+    close_breach(session, b, evidence_ref="e", actor=_MANAGER, now=_T0)
+    out["closed"] = b.id
+
+    b = _seed_breach(session, tenant)
+    assign_breach(session, b, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0)
+    respond_breach(session, b, narrative="hedged", actor=_ANALYST, now=_T0)
+    escalate_overdue_breach(session, b, _T0 + timedelta(days=1, hours=1))
+    out["escalated"] = b.id
+
+    b = _seed_breach(session, tenant)
+    assign_breach(session, b, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0)
+    respond_breach(session, b, narrative="hedged", actor=_ANALYST, now=_T0)
+    # A 2L REJECT re-assigns: the NEW governing ASSIGNED row carries a NEW due (late-1h < late,
+    # so still overdue at `late` — through the RE-ASSIGN's deadline, not the original's).
+    review_breach(
+        session, b, outcome=BREACH_REVIEW_REJECT, actor=_MANAGER, now=_T0 + timedelta(hours=1)
+    )
+    out["reassigned"] = b.id
+    return out
+
+
+def test_the_batched_overdue_selection_is_EQUIVALENT_to_the_per_breach_loop(
+    session: Session,
+) -> None:
+    """H1-1's equivalence control: the batch must reproduce the OLD loop's verdict on every
+    lifecycle shape it distinguished. The expectation below is computed by the old loop's own
+    per-breach logic (state + governing due), inline — not by calling the new code twice."""
+    tenant = str(uuid.uuid4())
+    late = _T0 + timedelta(days=2)
+    ids = _mixed_overdue_fixture(session, tenant, late=late)
+
+    # The OLD loop, restated inline as the independent expectation.
+    expected: set[str] = set()
+    for breach_id in ids.values():
+        state = current_breach_state(session, breach_id, acting_tenant=tenant)
+        if state not in {"ASSIGNED", "RESPONDED"}:
+            continue
+        from irp_shared.limit.lifecycle import _as_utc, _governing_assign
+
+        governing = _governing_assign(session, breach_id, tenant)
+        due = _as_utc(governing.response_due) if governing is not None else None
+        if due is not None and due < late:
+            expected.add(breach_id)
+    assert expected == {
+        ids["overdue_assigned"],
+        ids["overdue_responded"],
+        ids["reassigned"],
+    }  # the fixture premise — incl. the re-assign epoch, selected via its NEW governing due
+
+    got = select_overdue_breaches(session, late, acting_tenant=tenant)
+    assert {b.id for b in got} == expected
+    # The load-bearing lock order (VERIFIER-F3-MED1): ascending Breach.id, pinned.
+    assert [b.id for b in got] == sorted(b.id for b in got)
+
+
+def test_the_overdue_selection_is_ONE_statement_not_an_N_plus_1(session: Session) -> None:
+    """The statement-count control — the N+1 was the defect, so the test COUNTS queries rather than
+    inferring from timing. Six breaches in every lifecycle shape; the count must not grow with N."""
+    from sqlalchemy import event as sa_event
+
+    tenant = str(uuid.uuid4())
+    late = _T0 + timedelta(days=2)
+    _mixed_overdue_fixture(session, tenant, late=late)
+    session.flush()
+
+    counted: list[str] = []
+    engine = session.get_bind()
+
+    def _count(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001, ANN202
+        if statement.lstrip().upper().startswith("SELECT"):
+            counted.append(statement)
+
+    sa_event.listen(engine, "before_cursor_execute", _count)
+    try:
+        select_overdue_breaches(session, late, acting_tenant=tenant)
+    finally:
+        sa_event.remove(engine, "before_cursor_execute", _count)
+    assert len(counted) == 1, f"expected ONE statement, saw {len(counted)}"
+
+
+def test_the_overdue_boundary_is_exact_on_this_engine(session: Session) -> None:
+    """The SQLite datetime-bind caveat (verifier minor): stored deadlines come back NAIVE on SQLite
+    while PG returns aware — the bind is normalized to the stored convention so exact equality
+    behaves identically on both engines. ``due == now`` is NOT overdue; one microsecond past is."""
+    tenant = str(uuid.uuid4())
+    breach = _seed_breach(session, tenant)
+    assign_breach(
+        session, breach, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0
+    )  # due exactly _T0 + 1d (HARD SLA)
+    due = _T0 + timedelta(days=1)
+    assert select_overdue_breaches(session, due, acting_tenant=tenant) == []
+    assert [
+        b.id
+        for b in select_overdue_breaches(
+            session, due + timedelta(microseconds=1), acting_tenant=tenant
+        )
+    ] == [breach.id]
+
+
+def test_the_overdue_lock_order_is_PINNED_not_coincidental(session: Session) -> None:
+    """VERIFIER-F3-MED1's deterministic cross-tick lock order, pinned with enough rows to
+    discriminate: two overdue breaches pass an ORDER-BY-less query by coincidence half the time
+    (a mutation survived the two-row fixture); eight random UUIDs make insertion order match id
+    order with probability 1/8! — the pin now genuinely observes the ORDER BY."""
+    tenant = str(uuid.uuid4())
+    for _ in range(8):
+        b = _seed_breach(session, tenant)
+        assign_breach(
+            session, b, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0
+        )
+    late = _T0 + timedelta(days=2)
+    got = [b.id for b in select_overdue_breaches(session, late, acting_tenant=tenant)]
+    assert len(got) == 8
+    assert got == sorted(got)

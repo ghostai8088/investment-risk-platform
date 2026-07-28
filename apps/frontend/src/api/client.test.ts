@@ -70,4 +70,22 @@ describe("apiGet", () => {
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).kind).toBe("network");
   });
+
+  it("maps a 200 with a NON-JSON body to 'server', never 'unreachable' (OPS-H1 H1-10)", async () => {
+    // A proxy error page or SPA history-fallback serving HTML with a happy status: the success
+    // parse previously threw a bare SyntaxError outside the try, which callers wrapped as
+    // "network / the API is unreachable" — sending an operator to check a backend that ANSWERED.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.reject(new SyntaxError("Unexpected token '<'")),
+      }),
+    );
+    const err = await apiGet("/risk/runs", SESSION).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).kind).toBe("server");
+    expect((err as ApiError).message).toContain("non-JSON");
+  });
 });
