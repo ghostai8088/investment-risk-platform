@@ -12,11 +12,13 @@
 >   number** — ENT-064 `rolling_risk_result`, rolling return/volatility/max-drawdown on a
 >   calendar-month relink of the PM-1 series. The 4-finder review was the largest to date
 >   (8 HIGH / 10 MED / 6 LOW, all folded). **Counts 24/39/132**, pinned AFTER the last demo stage.
-> - **SR-1 IN FLIGHT** (branch `sr-1-impl`; ratified 2026-07-28, OQ-SR-1-1…6; planning merged as
->   PR #138 = `eceac08`): **the 22nd governed number** — ENT-065 `sharpe_ratio_result`, migration
->   `0055`. Sharpe (1994)'s differential-return form with a DISCLOSED n−1 divisor divergence,
->   single-quantization, a magnitude gate from birth, and a CAPTURED risk-free leg joined by MONTH
->   KEY. **Counts move to 25/40/133.**
+> - **SR-1 CLOSED 2026-07-28** (impl **PR #139** = `b86aa28`, CI #663; planning PR #138; migration
+>   `0055`): **the 22nd governed number** — ENT-065 `sharpe_ratio_result`, Sharpe (1994)'s
+>   differential-return form with a DISCLOSED n−1 divisor divergence, single-quantization, a
+>   magnitude gate + PG suite FROM BIRTH, and a CAPTURED risk-free leg joined by MONTH KEY.
+>   **Counts 25/40/133 MEASURED; 20/20 mutants killed.** The 4-finder review's two worst HIGHs were
+>   PRODUCT defects in the snapshot builder's rf window (both edges), invisible to the demo because
+>   its fixture was derived FROM the book under test — both fixed, both mutation-proved.
 >
 > **A DOC-DEBT CORRECTION, found while running the SR-1 ledger sweep.** The "systematic omission
 > sweep" commit (`c9d0374`, three further ledger-class gaps across three slices) was authored but
@@ -28,7 +30,7 @@
 > gaps could not tell that its own fix had not landed.** Verify the FIX is on `main`, not merely
 > that it was written.
 >
-> **NEXT after SR-1: OPS-H1 (hygiene) → FE-M1** (React-19/router-8, allowlist expiry 2026-10-24),
+> **NEXT: OPS-H1 (hygiene) → FE-M1** (React-19/router-8, allowlist expiry 2026-10-24),
 > then the Wave-13 close. Standing proposal for that close: ratify the six-ledger omission sweep as
 > a closeout step in `claude_operating_instructions.md`.
 >
