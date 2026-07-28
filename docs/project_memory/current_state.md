@@ -1,6 +1,17 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-28) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-28b) — read this block; everything below it is HISTORY
+>
+> **Wave 13 is FOUR slices in — only FE-M1 remains before the wave close.**
+>
+> - **OPS-H1 CLOSED 2026-07-28** (PR #141 = `03da139`, CI #669; NO migration; counts UNCHANGED
+>   25/40/133): the tick's N+1 retired (ONE statement, count-asserted); **the true M-C1 tick×HTTP
+>   40P01 interleave FORCED deterministically** with both recoveries proven on the real error; the
+>   demo clock seed-relative + backdated (walk preserved) — **the OQ-W12C-3d demo-tick prohibition
+>   is RETIRED and replaced by a documented consequence** (enrolling runs the lifecycle by design;
+>   re-seed restores the walk); every RLS-arming boundary canonicalizes; the first demo role census
+>   (pinned to MEASURED values); the alerts screen pages visibly; client.ts guards the success
+>   parse. 2-finder review 0 HIGH.
 >
 > **Wave 13 is THREE slices in.** Re-verify HEAD/CI at session start as always.
 >
