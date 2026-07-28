@@ -85,28 +85,41 @@ PURPOSE_RESIDUAL_SHRINKAGE_INPUT = "RESIDUAL_SHRINKAGE_INPUT"
 #: CC-2 (OD-CC-2-D): pins ONE (portfolio, instrument) commitment's current head + ALL its
 #: capital_call/distribution event rows + the latest current-head valuation mark — the
 #: commitment-pacing projection input. Its dedicated builder sets it; membership in the enforced
-#: allow-list below is deliberate (NOT the PROXY_WEIGHT/RESIDUAL_SHRINKAGE tuple-bypass — the
-#: CC-2-census-flagged inconsistency is not repeated).
+#: allow-list below is deliberate (the CC-2-census-flagged PROXY_WEIGHT/RESIDUAL_SHRINKAGE omission
+#: is not repeated — and SR-1 has since closed it at the source).
 PURPOSE_PACING_INPUT = "PACING_INPUT"
 #: PPF-1 (OD-PPF-1-C): pins, per segment member, the consumed DESMOOTHED_RETURN run's per-period
 #: rows + the member's current-head REGRESSION public proxy blend + the membership row (onto the
 #: PRIVATE segment factor) + each public factor's return window — the pure-private factor-return
 #: input. Its dedicated builder sets it; membership in the allow-list below is deliberate (the
-#: PACING precedent, NOT the PROXY_WEIGHT/RESIDUAL_SHRINKAGE tuple-bypass).
+#: PACING precedent; the PROXY_WEIGHT/RESIDUAL_SHRINKAGE omission was closed by SR-1).
 PURPOSE_PRIVATE_FACTOR_RETURN_INPUT = "PRIVATE_FACTOR_RETURN_INPUT"
 #: PPF-2 (OD-PPF-2-A): the private-covariance (Ω_pp) input — pins, per PRIVATE segment factor, its
 #: definition (COMPONENT_KIND_FACTOR) + the PPF-1 pure-private APPRAISAL return series
 #: (COMPONENT_KIND_PURE_PRIVATE_RETURN) over the common ``(period_start, period_end]`` grid. Its
 #: dedicated builder sets it; membership in the allow-list below is deliberate (the PACING/PPF-1
-#: precedent, NOT the PROXY_WEIGHT/RESIDUAL_SHRINKAGE tuple-bypass).
+#: precedent; the PROXY_WEIGHT/RESIDUAL_SHRINKAGE omission was closed by SR-1).
 PURPOSE_PRIVATE_COVARIANCE_INPUT = "PRIVATE_COVARIANCE_INPUT"
 #: RM-1 (ENT-064). Joins the ENFORCED allow-list below deliberately (the PACING/PPF-1/PPF-2
 #: convention): ``snapshot/service.py`` raises ``SnapshotPurposeError`` on a non-member, so every
 #: rolling-risk build fails closed until this name is a member — the allow-list is a real gate, not
 #: documentation.
 PURPOSE_ROLLING_RISK_INPUT = "ROLLING_RISK_INPUT"
+#: SR-1 (ENT-065): pins ONE COMPLETED PM-1 return run's rows PLUS the in-span risk-free
+#: ``benchmark_return`` window (the P3-8 shape under a new purpose) — the Sharpe-ratio input.
+PURPOSE_SHARPE_INPUT = "SHARPE_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
+
+#: The purpose allow-list. **Enforced at ``_persist_snapshot`` since SR-1**, so it now gates EVERY
+#: build path rather than only the two generic entry points — see the note there.
+#:
+#: SR-1 also ADDED ``PROXY_WEIGHT_INPUT`` and ``RESIDUAL_SHRINKAGE_INPUT``, which had been omitted
+#: since PA-3/RS-1 (CC-2's census flagged the omission as an
+#: inconsistency that later slices declined to repeat but nobody fixed). They had to be added BEFORE
+#: the check could move: their builders pass those constants straight through, so enforcing the old
+#: tuple at the shared tail would have made every PA-3 and RS-1 snapshot build fail closed. The
+#: change is additive in the only direction that matters — nothing previously accepted is refused.
 SNAPSHOT_PURPOSES = (
     PURPOSE_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
@@ -124,6 +137,10 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_PRIVATE_FACTOR_RETURN_INPUT,
     PURPOSE_PRIVATE_COVARIANCE_INPUT,
     PURPOSE_ROLLING_RISK_INPUT,
+    PURPOSE_SHARPE_INPUT,
+    # Added by SR-1 (see the note above) — their builders always passed them; only the tuple lagged.
+    PURPOSE_PROXY_WEIGHT_INPUT,
+    PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
     PURPOSE_ADHOC,
     PURPOSE_TEST,
 )
@@ -321,8 +338,8 @@ def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
 
 
 # True append-only: the ORM guard (paired with the migration-0016 P0001 trigger) forbids
-# update/delete on BOTH the header and the component. A snapshot is never mutated — a new input
-# set is a new snapshot.
+# update/delete on BOTH the header and the component. A snapshot is never mutated — a new input set
+# is a new snapshot.
 for _model in (DatasetSnapshot, DatasetSnapshotComponent):
     event.listen(_model, "before_update", _block_mutation)
     event.listen(_model, "before_delete", _block_mutation)

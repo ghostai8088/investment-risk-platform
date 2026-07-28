@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -113,6 +113,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_ROLLING_RISK_INPUT,
     PURPOSE_SCENARIO_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
+    PURPOSE_SHARPE_INPUT,
     PURPOSE_VAR_BACKTEST_INPUT,
     PURPOSE_VAR_HS_INPUT,
     PURPOSE_VAR_INPUT,
@@ -158,7 +159,8 @@ DEFAULT_BINDING_PREDICATE = "v1:subtree-open-positions"
 _COMPLETENESS_RULE_CODE = "snapshot.completeness"
 
 
-def _ensure_snapshot_presence_rule(session: Session, *, acting_tenant: str, actor: SnapshotActor):  # noqa: ANN202
+def _ensure_snapshot_presence_rule(session: Session, *, acting_tenant: str, actor: SnapshotActor):
+    # noqa: ANN202
     """The snapshot-completeness presence rule via the shared ``dq.gates`` helper (P3-4-R0 —
     rule code/name/target unchanged; evidence shape byte-identical to the pre-R0 copy)."""
     return ensure_presence_rule(
@@ -394,6 +396,21 @@ def _persist_snapshot(
     component row per spec + one internal lineage edge per pinned target. The caller runs its own
     completeness gate(s) and ``record_snapshot_create`` AFTER this returns (ordering preserved
     byte-identically from the pre-R0 builders)."""
+    # THE PURPOSE ALLOW-LIST, ENFORCED WHERE EVERY BUILD PATH PASSES (SR-1).
+    #
+    # Until SR-1 this check lived ONLY at the two generic entry points (`build_snapshot` and
+    # `build_window_snapshot`), while the fifteen family builders passed their own constant straight
+    # to this tail — so `SNAPSHOT_PURPOSES` was convention on the paths that actually mint governed
+    # snapshots, and documentation everywhere it was described as "the ENFORCED allow-list". Raising
+    # here makes it enforcement: this is the single line every build path crosses, and it still
+    # fires
+    # BEFORE any write (the header below is the first INSERT), so a bad purpose mints no immutable
+    # governance garbage.
+    #
+    # The generic entry points keep their own check: it refuses before the subtree enumeration and
+    # the portfolio resolution, which is cheaper and gives the caller a better-placed error.
+    if purpose not in SNAPSHOT_PURPOSES:
+        raise SnapshotPurposeError(purpose)
     m_hash = manifest_hash(
         tenant_id=acting_tenant,
         as_of_valid_at=as_of_valid_at,
@@ -1881,6 +1898,125 @@ def build_rolling_risk_snapshot(
         as_of_known_at=known,
         as_of_valuation_date=max(r.period_end for r in return_rows),
         binding_predicate_version=ROLLING_RISK_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
+class SharpeSnapshotError(Exception):
+    """A Sharpe-ratio input snapshot cannot be built (a return run with no visible rows, or a
+    risk-free series with no rows in the span) — raised BEFORE any write; never mints immutable
+    governance garbage. Its OWN class (the V8 lesson). Maps to 409."""
+
+
+#: The Sharpe binding/selection rule (SR-1, OD-SR-1-E): every row of ONE return run PLUS the in-span
+#: risk-free benchmark return window. 48 chars — the varchar(50) ceiling genuinely bites here, which
+#: is why the module-end ``_BINDING_PREDICATES`` assert exists.
+SHARPE_BINDING_PREDICATE = "v1:portfolio-return-run-rows+rf-benchmark-window"
+
+
+def build_sharpe_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    portfolio_return_run_id: str,
+    risk_free_benchmark_id: str,
+    rf_return_basis: str,
+) -> DatasetSnapshot:
+    """Build one immutable ``SHARPE_INPUT`` snapshot (SR-1, OD-SR-1-E) pinning:
+
+    - one ``COMPONENT_KIND_PORTFOLIO_RETURN`` per ``portfolio_return_result`` row of the consumed
+      PM-1 run (the RM-1/P3-8 flavor, existing serializer, no new pin-key surface); and
+    - one ``COMPONENT_KIND_BENCHMARK_RETURN`` series component pinning the in-span ``SIMPLE`` /
+      ``rf_return_basis`` rows of the RISK-FREE benchmark head.
+
+    **The risk-free series is an ordinary benchmark** (OQ-SR-1-2 = A): ENT-052 carries vendor-
+    published fraction returns at the shared 12dp scale with no frequency column, so a monthly cash
+    series is capturable today with zero vocabulary change — and ENT-052's twice-ratified constraint
+    (*"captured vendor-published values ONLY — NEVER computed from levels"*) is honored on its face
+    because SR-1 captures published RETURNS. A yield curve (ENT-021) would need a registered
+    yield→period-return model plus one curve header and selector per month-end; recorded, costed,
+    and
+    not taken in v1.
+
+    **The pinned window is INCLUSIVE of the span's opening boundary month** — deliberately unlike
+    P3-8's half-open ``(span_start, span_end]``. P3-8 buckets benchmark rows into sub-period windows
+    where the opening boundary belongs to no window; SR-1 joins by MONTH KEY, and a vendor may date
+    a
+    month's return anywhere inside that month, including on or before ``span_start`` itself. Pinning
+    from the first of ``span_start``'s month therefore captures the rows the binder will actually
+    look for. ``span_start``'s own month contributes no observation (it is ``d_0``, the close of the
+    month BEFORE the first measured month), so the binder refuses any pinned row whose month is not
+    a
+    measured month rather than silently ignoring it — an unconsumed pin is a lie in the provenance.
+
+    Fails closed BEFORE any write on an empty return run or an empty risk-free window. Both sides
+    are
+    IA/FR rows the header cutoffs reproduce; instants are stamped now/now (BT-1's precedent — a
+    caller-supplied cutoff would be a backdatable knowledge-time claim binding nothing).
+    """
+    now = utcnow()
+    valid_at = known = now
+
+    return_rows = _list_portfolio_return_rows(
+        session, portfolio_return_run_id, acting_tenant=acting_tenant
+    )
+    if not return_rows:
+        raise SharpeSnapshotError(
+            f"portfolio-return run {portfolio_return_run_id} has no visible result rows to pin"
+        )
+    span_start = min(r.period_start for r in return_rows)
+    span_end = max(r.period_end for r in return_rows)
+
+    benchmark = resolve_benchmark(session, str(risk_free_benchmark_id), acting_tenant=acting_tenant)
+    # From the FIRST DAY of the opening boundary's month (see the docstring), exclusive-lower being
+    # the day BEFORE it so the helper's half-open span includes that first day.
+    month_floor = date(span_start.year, span_start.month, 1)
+    window = _benchmark_return_window(
+        session,
+        benchmark_id=benchmark.id,
+        return_basis=rf_return_basis,
+        start_exclusive=month_floor - timedelta(days=1),
+        end_inclusive=span_end,
+        valid_at=valid_at,
+        known_at=known,
+        acting_tenant=acting_tenant,
+    )
+    if not window:
+        raise SharpeSnapshotError(
+            f"risk-free benchmark {risk_free_benchmark_id} has no {rf_return_basis} returns in "
+            f"[{month_floor}, {span_end}] as-of the declared instants"
+        )
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for row in return_rows:
+        _append_spec(
+            specs,
+            COMPONENT_KIND_PORTFOLIO_RETURN,
+            "portfolio_return_result",
+            row,
+            portfolio_return_content(row),
+        )
+    _append_spec(
+        specs,
+        COMPONENT_KIND_BENCHMARK_RETURN,
+        "benchmark",
+        benchmark,
+        benchmark_return_series_content(benchmark, window),
+    )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_SHARPE_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=span_end,
+        binding_predicate_version=SHARPE_BINDING_PREDICATE,
     )
     record_snapshot_create(session, header=header_row, actor=actor)
     return header_row
@@ -3705,6 +3841,14 @@ _BINDING_PREDICATES = (
     PRIVATE_FACTOR_RETURN_BINDING_PREDICATE,
     PRIVATE_COVARIANCE_BINDING_PREDICATE,
     VAR_UNIFIED_BINDING_PREDICATE,
+    # SR-1 folded in the two entries this guard had been missing since CC-2 and RM-1. A conformance
+    # guard that does not enumerate every member is not a guard — PACING (44 chars) and ROLLING_RISK
+    # (28) both fit, so nothing was broken, but the varchar(50) ceiling was unchecked for two
+    # shipped
+    # predicates and would have stayed unchecked for the next one.
+    PACING_BINDING_PREDICATE,
+    ROLLING_RISK_BINDING_PREDICATE,
+    SHARPE_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "

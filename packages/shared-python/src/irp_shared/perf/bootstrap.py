@@ -892,3 +892,119 @@ def register_rolling_risk_model(
         assumptions=ROLLING_RISK_ASSUMPTIONS,
         limitations=ROLLING_RISK_LIMITATIONS,
     )
+
+
+#: The per-tenant inventory identity of the Sharpe model (SR-1, OD-SR-1-E). The declared WINDOW SET
+#: {12, 36} is part of the version identity, exactly as in RM-1 — and here too it is the parameter
+#: domain, not a kernel guard, that keeps a governed caller off sub-annual windows.
+SHARPE_MODEL_CODE = "perf.sharpe"
+SHARPE_MODEL_NAME = "Sharpe ratio over the governed return series (excess/sigma-excess, v1)"
+SHARPE_MODEL_TYPE = "SHARPE"
+SHARPE_VERSION_LABEL = "v1"
+SHARPE_METHODOLOGY_REF = "05_analytics_methodologies/sharpe_v1.md"
+
+#: The registered window set — the same domain RM-1 declares, reused rather than re-argued.
+SHARPE_WINDOWS: tuple[int, ...] = (12, 36)
+
+SHARPE_ASSUMPTIONS: tuple[str, ...] = (
+    "CONSTRUCTION: SHARPE (1994)'s DIFFERENTIAL-RETURN form - SR = mean(d)/sigma(d) over the "
+    "trailing window, where d_j = m_j - r_f,j on the relinked CALENDAR-MONTH grid. The denominator "
+    "is the standard deviation of the EXCESS series, NOT of the portfolio series. Sharpe (1966) "
+    "divided by sigma of the TOTAL return series; that earlier form is NOT what this model "
+    "computes, and reusing RM-1's persisted ROLLING_VOLATILITY rows as the denominator would "
+    "silently implement it (the two coincide only when r_f is constant across the window). If the "
+    "1966 form is ever wanted it is a SECOND declared metric, never a substitution.",
+    "DIVISOR - A DISCLOSED DIVERGENCE FROM THE NAMED PAPER. Sharpe (1994)'s own endnote 1 uses the "
+    "POPULATION standard deviation (divisor T). This model uses the platform's uniform n-1 sample "
+    "standard deviation, which makes sigma larger by sqrt(12/11) = about +4.4% at n = 12 and the "
+    "ratio correspondingly about 4.3% SMALLER. That is above this platform's own materiality bar, "
+    "so it is stated here rather than absorbed into the paper's name: the construction is "
+    "'Sharpe (1994)'s differential-return form with OUR n-1 divisor', following the shared "
+    "stats_kernel estimator and GIPS practice (GIPS does not prescribe n vs n-1).",
+    "QUANTIZATION: the mean and sigma of the excess series are accumulated UNQUANTIZED at 50 "
+    "digits, the division performed at that precision, and only the RATIO quantized once to 12dp. "
+    "Dividing the quantized operands instead was executed and refuted: a NON-constant excess "
+    "series can quantize to sigma = 0E-12 and raise DivisionByZero on a legal input. The "
+    "SUPPRESSION predicate names the SAME unquantized sigma, so the predicate and the arithmetic "
+    "cannot disagree - a row is suppressed iff the excess series is genuinely CONSTANT.",
+    "ANNUALIZATION: SR_ann = SR_STORED x sqrt(12), the iid scaling law, computed from the STORED "
+    "12dp ratio so the emitted pair reconciles EXACTLY. Grounded by Lo (2002) SR(q) = sqrt(q)SR(1) "
+    "AND by Sharpe (1994) eqs. 7/8 (mean scales with T, sigma with sqrt(T) under zero serial "
+    "correlation). Under AUTOCORRELATION this MISSTATES; Lo Eq. 20 gives the correction, exact "
+    "only on log returns, and is a recorded v2. sqrt(12) is carried as a DECLARED CONVENTION, not "
+    "as a claim that these books are iid - this platform's own desmoothing slices exist because "
+    "they are not. BOTH metrics are emitted at EVERY computable window INCLUDING W = 12: unlike "
+    "RM-1's geometric return annualization, whose exponent is exactly 1 at W = 12, sqrt(12) x SR "
+    "differs from SR at every window.",
+    "RISK-FREE LEG: a CAPTURED vendor-published monthly return series carried as an ordinary "
+    "benchmark head (ENT-052), joined to the portfolio months by MONTH KEY (year, month) - never "
+    "by date, so a last-business-day book and a calendar-month-end vendor align without either "
+    "side bending its dates. EXACTLY ONE current-head rf return per MEASURED month is required: a "
+    "missing month is a pre-create REFUSAL naming the month and more than one is a refusal too. "
+    "There is NO imputation and no carry-forward. This is deliberately ASYMMETRIC with the "
+    "per-window suppression convention: window-insufficiency is structural and time fills it, "
+    "while a missing rf month is a CAPTURE GAP an operator must fix, and computing 'the windows we "
+    "can' would ship a partially-poisoned surface whose gaps are invisible on the read side.",
+    "PRECONDITION: every monthly return must satisfy 1 + m > 0. This is POLICY, not domain "
+    "necessity - the Sharpe arithmetic computes cleanly at -100% and even -150% (there is no "
+    "wealth index and no geometric exponent here). The grounds are that the monthly series is "
+    "SHARED SUBSTRATE with RM-1: a book RM-1 refuses to carry a drawdown for must not quietly "
+    "carry a Sharpe ratio, and a month at or below -100% means the PM-1 series itself is "
+    "degenerate (the no-cash-ledger pathology).",
+)
+
+SHARPE_LIMITATIONS: tuple[str, ...] = (
+    "THE RATIO IS UNBOUNDED on admitted inputs. Twelve column-legal monthly returns can yield a "
+    "Sharpe ratio of 1E10 - past both the Numeric(20,12) column and the house 1E7 envelope - so a "
+    "magnitude gate applies to the EMITTED value of every row INCLUDING the annualized member of "
+    "the pair (a column-fitting SR of 9E6 still overflows at x sqrt(12)). A breach is a COMMITTED "
+    "FAILED run with DQ evidence and zero rows, never a partial emit.",
+    "ROLLING VALUES ARE NOT INDEPENDENT. Adjacent 12-month windows share 11 of 12 observations, so "
+    "a change between consecutive windows reflects the single entering and exiting month, not a "
+    "re-estimate. Inherited from RM-1's grid and equally the most likely misreading here.",
+    "GIPS 2020 does NOT require or define a Sharpe ratio. Presented, it is an 'additional risk "
+    "measure': 4.C.43.a (describe it) and 4.C.44 (gross/net) apply. Rows are GROSS-of-fees, "
+    "inherited from PM-1, and say so rather than inferring it. NO benchmark-relative variant "
+    "(the information ratio is P3-8's, on a different grain), no Sortino, no Treynor, no "
+    "downside-deviation denominator, no daily grid (k = 252 is uncited here).",
+    "THE RISK-FREE SERIES IS A CAPTURE, and its quality bounds the number. v1 takes vendor-"
+    "published RETURNS only; a source publishing index LEVELS cannot be used, because level -> "
+    "return conversion is a registered-model exercise this slice deliberately refuses to smuggle "
+    "in (ENT-052's twice-ratified never-derive-from-levels constraint). A yield curve (ENT-021) "
+    "would additionally need a registered yield -> period-return model; recorded, costed, and not "
+    "taken in v1. validation_status UNVALIDATED - recorded, non-enforcing until a 2L validator "
+    "records an outcome (VW-1).",
+)
+
+
+def register_sharpe_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the Sharpe ``model`` + a ``model_version`` for this ``code_version``
+    identity (SR-1, OD-SR-1-E). RM-1's ``ROLLING_RISK_ASSUMPTIONS`` is deliberately NOT edited to
+    mention SR-1 — ``resolve_or_register_version`` returns an existing version UNTOUCHED on a SELECT
+    hit, so amending a shipped tuple would leave tenants registered before the change carrying
+    DIFFERENT assumption text under the same ``v1`` label (silent, un-audited divergence)."""
+    return _register_perf_model(
+        session,
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        code_version=code_version,
+        actor_type=actor_type,
+        model_code=SHARPE_MODEL_CODE,
+        model_name=SHARPE_MODEL_NAME,
+        model_type=SHARPE_MODEL_TYPE,
+        version_label=SHARPE_VERSION_LABEL,
+        methodology_ref=SHARPE_METHODOLOGY_REF,
+        description=(
+            "Trailing-window Sharpe ratio over the governed portfolio-return series against a "
+            "captured risk-free return series, on a relinked calendar-month grid (SR-1, ENT-065)."
+        ),
+        assumptions=SHARPE_ASSUMPTIONS,
+        limitations=SHARPE_LIMITATIONS,
+    )
