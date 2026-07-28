@@ -458,4 +458,6 @@ family-key trap that produced this is now called out in the test's own comment.
 `make fe-check` green: **32 files / 190 tests** (187 + the three `.jsx` fence cases; R-4 rewrote an
 existing case rather than adding one), `vite build` clean, audit gate clean. `make check` unaffected
 (no Python touched). Re-run after R-4: prettier, eslint `--max-warnings=0`, `tsc --noEmit` and the
-full 190 all clean.
+full 190 all clean; `make docs-check` passed. CI run **30392210205** (`922cf20`, the R-4 fold)
+observed **completed / success across all six jobs** — written here after observing the completed
+run, per R-3.
