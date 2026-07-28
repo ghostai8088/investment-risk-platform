@@ -1,6 +1,42 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-26) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-28) — read this block; everything below it is HISTORY
+>
+> **Wave 13 is THREE slices in.** Re-verify HEAD/CI at session start as always.
+>
+> - **SCH-2 CLOSED 2026-07-27** (PR #133 = `8c8c17b`; migration `0053`): month-end cadence
+>   (last weekday, END-of-day tick), `EXPOSURE_AGGREGATE` schedulable, the family dispatch registry,
+>   the `schedule.view` read surface. Its record's "counts unchanged" was WRONG — stage 15 adds one
+>   COMPLETED run (corrected at RM-1).
+> - **RM-1 CLOSED 2026-07-27** (PR #135 = `b6e7ba0`, CI #652; migration `0054`): **the 21st governed
+>   number** — ENT-064 `rolling_risk_result`, rolling return/volatility/max-drawdown on a
+>   calendar-month relink of the PM-1 series. The 4-finder review was the largest to date
+>   (8 HIGH / 10 MED / 6 LOW, all folded). **Counts 24/39/132**, pinned AFTER the last demo stage.
+> - **SR-1 IN FLIGHT** (branch `sr-1-impl`; ratified 2026-07-28, OQ-SR-1-1…6; planning merged as
+>   PR #138 = `eceac08`): **the 22nd governed number** — ENT-065 `sharpe_ratio_result`, migration
+>   `0055`. Sharpe (1994)'s differential-return form with a DISCLOSED n−1 divisor divergence,
+>   single-quantization, a magnitude gate from birth, and a CAPTURED risk-free leg joined by MONTH
+>   KEY. **Counts move to 25/40/133.**
+>
+> **A DOC-DEBT CORRECTION, found while running the SR-1 ledger sweep.** The "systematic omission
+> sweep" commit (`c9d0374`, three further ledger-class gaps across three slices) was authored but
+> **never merged** — PR #137 carried only the two incidentally-found fixes (`5e46c5a`). So this
+> CURRENT TRUTH block sat at 2026-07-26/PR #128 for four merged PRs, the ENT registry was missing
+> rows for ENT-061…064, and the CTRL-003 SCH-2 trace was absent from `main`. All of it is carried
+> forward on `sr-1-impl`. **The lesson is about the sweep, not the docs: an omission sweep that ends
+> in an unmerged commit has the same effect as never running it, and the checklist that found the
+> gaps could not tell that its own fix had not landed.** Verify the FIX is on `main`, not merely
+> that it was written.
+>
+> **NEXT after SR-1: OPS-H1 (hygiene) → FE-M1** (React-19/router-8, allowlist expiry 2026-10-24),
+> then the Wave-13 close. Standing proposal for that close: ratify the six-ledger omission sweep as
+> a closeout step in `claude_operating_instructions.md`.
+>
+> ---
+>
+> ## Prior current-truth block (2026-07-26), kept as history
+>
+> ## ⚠️ CURRENT TRUTH (2026-07-26) — superseded
 >
 > **Audited baseline `6f8d923`** = merge of **PR #128 — CI-parity hardening + the OPS-1 closeout**,
 > **CI green all 6 (run #624)**; the Wave-12 close folds ride the `wave-12-close` branch on top.
