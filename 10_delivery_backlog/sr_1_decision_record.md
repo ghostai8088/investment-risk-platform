@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **VERIFIED — ready for the ratification gate.** Two-lane pre-ratification pass RAN 2026-07-28: math lane **NOT RATIFIABLE as drafted (3 BLOCKING, 4 MATERIAL)**, engineering lane **ratifiable after corrections (8 MATERIAL)**; ALL folded below. The design direction survived both lanes; the specification did not — and the two worst defects were again the author's own reasoning (a fidelity claim contradicted by the cited paper's own endnote; an "only undefined case" claim its own operand choice refutes with a DivisionByZero). |
+| Status | **RATIFIED 2026-07-28 — OQ-SR-1-1…6 approved as revised (Part 4a).** Verified pre-gate: Two-lane pre-ratification pass RAN 2026-07-28: math lane **NOT RATIFIABLE as drafted (3 BLOCKING, 4 MATERIAL)**, engineering lane **ratifiable after corrections (8 MATERIAL)**; ALL folded below. The design direction survived both lanes; the specification did not — and the two worst defects were again the author's own reasoning (a fidelity claim contradicted by the cited paper's own endnote; an "only undefined case" claim its own operand choice refutes with a DivisionByZero). |
 | Slice | Wave-13 slice 2, per the ratified sequence (Wave-12 close OQ-W12C-2=A); follows RM-1 |
 | Kind | A **governed number** — new result family, new registered model, ONE new captured data series (through an EXISTING capture family); no permission, no audit code |
 | Counts | 24/39/132 → **25/40/133** (+1 model code, +1 INITIAL validation record filed EXPLICITLY in the demo stage — the RM-1 lesson — and +1 COMPLETED run) |
@@ -90,6 +90,15 @@ Stage 17 (EIGHT `z`): captures the rf series (~19 monthly vendor-style rows over
 - **OQ-SR-1-4 — the undefined ratio.** RM-1's suppress-and-disclose, with the P3-8 divergence recorded and P3-8 left untouched? *Recommend APPROVE.*
 - **OQ-SR-1-5 — annualization.** `√12 × SR_stored` as the DECLARED iid convention (Lo), reconciling exactly from the stored value; the autocorrelation-corrected annualizer a recorded v2? *Recommend APPROVE.*
 - **OQ-SR-1-6 — sizing + scope.** M (not S/M), explicitly including the rf capture, demo stage 17, the PG suite from birth, and the count-pin relay? *Recommend APPROVE.*
+
+## Part 4a — Ratified outcomes (2026-07-28)
+
+- **OQ-SR-1-1 = A (as revised)** — Sharpe (1994)'s differential-return form with the DISCLOSED n−1 divisor divergence (in the registered assumptions), single-quantization with the declared suppression predicate, the magnitude gate from birth, √12 as the declared iid annualization.
+- **OQ-SR-1-2 = A** — the risk-free series rides ENT-052 as an ordinary benchmark head (vendor-published monthly returns; zero schema change; never-derive-from-levels honored). ENT-021 + a registered yield→return model is the recorded alternative, revisited when Wave-14 lands real curve feeds.
+- **OQ-SR-1-3 = A** — NEW ENT-065 `sharpe_ratio_result`, `risk_free_benchmark_id` NOT NULL; no nullable-placeholder provenance on ENT-064.
+- **OQ-SR-1-4 = A** — the RM-1 suppress-and-disclose convention; the P3-8 divergence recorded, P3-8's shipped rows untouched.
+- **OQ-SR-1-5 = A** — `√12 × SR_stored`, the autocorrelation-corrected annualizer a recorded v2.
+- **OQ-SR-1-6 = A** — sizing **M**, the full fence including the PG suite from birth, the golden-value tests on the number, the count-pin relay, and the inherited-debt folds.
 
 ## Part 5 — Pre-ratification verifier pass — RAN 2026-07-28 (two lanes)
 
