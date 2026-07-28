@@ -433,7 +433,31 @@ Changed to an explicit *pending* marker, filled in only from an observed result.
 recorded because "reporting success without verification" is a named prohibition and this is how it
 begins.
 
+### R-4 (fold, found by the cloud review) — the M1-6 `useParams` test proved nothing
+
+`App.browserrouter.test.tsx`'s deep-link-with-a-parameter case booted at `/runs/risk/{uuid}`. But
+`risk` is a `permissionFamily` **value** in `FAMILIES`, not a **key** — so `RunDetail`'s allowlist
+(`family in FAMILIES`) resolved `validFamily=null`, the effect early-returned **without fetching**,
+and the component rendered its *"Unknown run family in the URL"* page rather than the 404 branch
+the mock staged. Both assertions (pathname unchanged; walk text absent) are satisfied by that page
+too, so the test passed **coincidentally**: a genuine break in `useParams`-over-the-History-API —
+the only reason M1-6 exists — would have left it green.
+
+Same defect class as R-1 and the Wave-12 HIGH, one axis further out: a control whose *positive*
+result is produced by a path other than the one under test. A by-absence assertion cannot tell
+"the param arrived and the view honestly reported not-found" from "the view bailed out early".
+
+**Fold:** `vars` (a real `FAMILIES` key) for `risk`, and the assertions strengthened from
+by-absence to by-evidence — the fetch is asserted to have been called **exactly once** with
+`/risk/vars/runs/{uuid}` (the runId from the URL reaching the request path is the actual claim), and
+the rendered text asserted to be the *not-found* branch, not merely "not the walk overview". The
+family-key trap that produced this is now called out in the test's own comment.
+
 ### Post-fold gates
 
-`make fe-check` green: **32 files / 190 tests** (187 + the three `.jsx` fence cases), `vite build`
-clean, audit gate clean. `make check` unaffected (no Python touched).
+`make fe-check` green: **32 files / 190 tests** (187 + the three `.jsx` fence cases; R-4 rewrote an
+existing case rather than adding one), `vite build` clean, audit gate clean. `make check` unaffected
+(no Python touched). Re-run after R-4: prettier, eslint `--max-warnings=0`, `tsc --noEmit` and the
+full 190 all clean; `make docs-check` passed. CI run **30392210205** (`922cf20`, the R-4 fold)
+observed **completed / success across all six jobs** — written here after observing the completed
+run, per R-3.

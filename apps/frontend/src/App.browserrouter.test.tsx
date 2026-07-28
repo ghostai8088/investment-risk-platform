@@ -79,21 +79,25 @@ describe("BrowserRouter (the router main.tsx actually ships)", () => {
 
   it("resolves a deep link with a URL PARAMETER (useParams over the History API)", async () => {
     withSession();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 404,
-        json: async () => ({ detail: "not found" }),
-        headers: new Headers({ "content-type": "application/json" }),
-      }),
-    );
-    bootAt("/runs/risk/11111111-1111-4111-8111-111111111111");
-    // The route matched and the param reached the view — proven by it having issued the fetch and
-    // rendered its own honest not-found state rather than the catch-all redirect.
+    const mock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ detail: "not found" }),
+      headers: new Headers({ "content-type": "application/json" }),
+    });
+    vi.stubGlobal("fetch", mock);
+    // `vars` must be a real FAMILIES key: RunDetail allowlists the family segment and returns its
+    // "Unknown run family" page WITHOUT fetching for anything else — and that page would satisfy a
+    // by-absence assertion just as well, leaving a broken useParams green (review fold).
+    bootAt("/runs/vars/11111111-1111-4111-8111-111111111111");
+    // The param reached the view — proven by the request URL carrying the runId from the URL, and
+    // by the view rendering its own honest not-found state rather than the catch-all redirect.
     await waitFor(() =>
-      expect(window.location.pathname).toBe("/runs/risk/11111111-1111-4111-8111-111111111111"),
+      expect(screen.getByText(/Run not found \(or not visible to this identity\)/)).toBeTruthy(),
     );
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(mock.mock.calls[0][0]).toBe("/risk/vars/runs/11111111-1111-4111-8111-111111111111");
+    expect(window.location.pathname).toBe("/runs/vars/11111111-1111-4111-8111-111111111111");
     expect(screen.queryByText(/How you can trust a governed number/)).toBeNull();
   });
 
