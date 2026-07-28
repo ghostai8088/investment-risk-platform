@@ -141,3 +141,29 @@ Ordered so each commit is independently green. Sub-items marked **[C]** carry an
 **9. Inherited-debt folds.** `test_synthetic.py` → `0056*` **and** its stale 0053-era comment block; the LYING ORM comment at `perf/models.py:351-355`; the CAP-20 taxonomy row extended VISIBLY for 20.6; the PERF audit-taxonomy row's "still exactly three after a FIFTH family" sentence.
 
 **10. Docs + ledgers.** `05_analytics_methodologies/sharpe_v1.md`; REQ-PRF-004 backbone + RTM in the SAME commit; then the **six-ledger omission sweep** and the control-matrix trace at closeout.
+
+## Part 7 — Verification evidence (recorded at implementation, before the review pass)
+
+| Gate | Result |
+|---|---|
+| `make check` | GREEN — ruff, **mypy 250 source files**, the full unit battery, secret scan, docs check |
+| Full-PG validation | GREEN — schema RESET first (`DROP SCHEMA public CASCADE` + `GRANT USAGE ON SCHEMA public TO PUBLIC`), `alembic upgrade head` clean, whole battery `PYTEST_EXIT=0` |
+| `alembic check` | *No new upgrade operations detected* — no ORM/migration drift |
+| `pg_constraint` read-back | All nine ENT-065 constraint names EXACT; no doubling, no hash-truncation (**the RM-1 drift class, checked by reading the database rather than trusting `alembic check`, which does not compare CHECKs**) |
+| RLS + trigger | `relrowsecurity` AND `relforcerowsecurity` both true; `tenant_isolation_sharpe_ratio_result` + `sharpe_ratio_result_append_only` present |
+| Demo counts | **25/40/133 MEASURED** on the fresh-schema PG run (queried directly, not derived) |
+| Demo emitted rows | 7 + 7 emitted at W=12, 1 + 1 SUPPRESSED at W=36 — the designed fixture shape exactly |
+| Mutation controls | **15 mutants EXECUTED, 15 killed** — five kernel (`n-1 → n`, `√12 → 12`, the suppression predicate moved to the quantized σ, the risk-free leg dropped, a 1-ulp drift) and ten binder (every refusal, the magnitude gate, the window domain, the purpose gate, the cross-tenant rf check, dropping the annualized metric) |
+| FE decimal guard | Coverage of `SharpeRatioRowOut` proved BY MUTATION — with `metric_value` retyped to float, `tsc` names that DTO specifically. Not inferred from the `*RowOut` naming rule (the RM-1 guard-regression lesson) |
+
+**Two claims the first completeness test did not actually prove, found by mutating the source.** Deleting the binder's risk-free-completeness refusal left the suite GREEN, because `build_excess_series` refuses too and its message also names the month — a control passing on another layer's evidence. The test now asserts the binder's own phrasing (it reports how many FURTHER months are missing, which the kernel, stopping at the first, cannot), and the fixture carries two gaps so that phrasing is reachable. Re-mutated: killed.
+
+## Part 8 — Closeout
+
+**Status: CLOSED pending the 4-finder review fold and CI green.** Counts **24/39/132 → 25/40/133**, measured. Migration `0055`; entity **ENT-065**; the next free canonical id moves to **ENT-066**.
+
+**Control-matrix trace (OQ-W12C-3c).** **No control changed STATE.** CTRL-003 gains a second instantiation (`assert_model_version_of` pre-create against the expected model CODE, plus the registered `{12, 36}` window domain enforced on day one rather than after a review); **CTRL-002 gains real enforcement** — the `SNAPSHOT_PURPOSES` allow-list moved into `_persist_snapshot`, the single line every build path crosses, where it had been enforced only at the two generic entry points while fifteen family builders passed their constant straight through. Both remain Operational. Traced in `09_compliance_controls/control_matrix_skeleton.md`.
+
+**Ledger-class omission sweep — and what it found.** All six ledgers swept. The sweep's own headline finding is that **the PREVIOUS sweep never merged**: commit `c9d0374` (three further ledger-class gaps across three slices, authored at the RM-1 close) is not an ancestor of `main`, because PR #137 carried only `5e46c5a`, the two incidentally-found fixes. So `current_state.md` sat four merged PRs stale, the ENT registry had NO row for ENT-061…064, and the CTRL-003 SCH-2 trace was absent. All carried forward here.
+
+*The lesson is about the sweep, not the documents.* **An omission sweep that ends in an unmerged commit has exactly the effect of never running it, and the checklist that found the gaps had no way to notice that its own fix had not landed.** The sweep therefore gains a final step — *verify the fix is on `main`, not merely that it was written* — and that step should be part of the standing rule proposed at the Wave-13 close.
