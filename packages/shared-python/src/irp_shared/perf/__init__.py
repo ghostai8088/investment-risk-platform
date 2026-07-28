@@ -64,6 +64,7 @@ from irp_shared.perf.bootstrap import (
     register_desmoothed_return_okunev_white_model,
     register_portfolio_return_model,
     register_rolling_risk_model,
+    register_sharpe_model,
 )
 from irp_shared.perf.desmoothing_kernel import (
     DesmoothingKernelError,
@@ -90,10 +91,12 @@ from irp_shared.perf.events import (
     RUN_TYPE_BENCHMARK_RELATIVE,
     RUN_TYPE_DESMOOTHED_RETURN,
     RUN_TYPE_PORTFOLIO_RETURN,
+    RUN_TYPE_SHARPE,
     BenchmarkRelativeActor,
     DesmoothedReturnActor,
     PortfolioReturnActor,
     RollingRiskActor,
+    SharpeRatioActor,
 )
 from irp_shared.perf.models import (
     METRIC_TYPE_ACTIVE_RETURN,
@@ -144,6 +147,18 @@ from irp_shared.perf.rolling_service import (
     resolve_rolling_risk,
     resolve_rolling_risk_run,
     run_rolling_risk,
+)
+from irp_shared.perf.sharpe_service import (
+    SharpeInputError,
+    SharpeNotVisible,
+    SharpeRunNotVisible,
+    SharpeRunResult,
+    latest_sharpe_ratio,
+    list_sharpe_ratio_rows,
+    list_sharpe_ratios,
+    resolve_sharpe_ratio,
+    resolve_sharpe_run,
+    run_sharpe_ratio,
 )
 from irp_shared.perf.stats_kernel import (
     StatsKernelError,
@@ -199,12 +214,15 @@ __all__ = [
     "PORTFOLIO_RETURN_VERSION_LABEL",
     "register_portfolio_return_model",
     "register_rolling_risk_model",
+    "register_sharpe_model",
     # events / vocab
     "RUN_TYPE_PORTFOLIO_RETURN",
     "EXTERNAL_FLOW_TXN_TYPES",
     "PERF_RETURN_CREATE_EVENT_RESERVED",
     "PortfolioReturnActor",
+    "RUN_TYPE_SHARPE",
     "RollingRiskActor",
+    "SharpeRatioActor",
     # model + metric vocab
     "PortfolioReturnResult",
     "METRIC_TYPE_DIETZ_PERIOD",
@@ -242,6 +260,16 @@ __all__ = [
     "resolve_rolling_risk",
     "resolve_rolling_risk_run",
     "run_rolling_risk",
+    "SharpeInputError",
+    "SharpeNotVisible",
+    "SharpeRunNotVisible",
+    "SharpeRunResult",
+    "latest_sharpe_ratio",
+    "list_sharpe_ratio_rows",
+    "list_sharpe_ratios",
+    "resolve_sharpe_ratio",
+    "resolve_sharpe_run",
+    "run_sharpe_ratio",
     "information_ratio",
     # P3-8 registrar
     "BENCHMARK_RELATIVE_MODEL_CODE",

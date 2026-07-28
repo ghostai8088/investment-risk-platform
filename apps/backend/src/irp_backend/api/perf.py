@@ -59,10 +59,12 @@ from irp_shared.perf import (
     PortfolioReturnRunNotVisible,
     PortfolioReturnRunResult,
     RollingRiskNotVisible,
+    SharpeNotVisible,
     latest_benchmark_relative,
     latest_desmoothed_result,
     latest_portfolio_return,
     latest_rolling_risk,
+    latest_sharpe_ratio,
     list_benchmark_relatives,
     list_benchmark_relatives_by_entity,
     list_desmoothed_results,
@@ -71,6 +73,7 @@ from irp_shared.perf import (
     list_portfolio_returns,
     list_portfolio_returns_by_entity,
     list_rolling_risks,
+    list_sharpe_ratios,
     register_benchmark_relative_model,
     register_desmoothed_return_estimated_model,
     register_desmoothed_return_model,
@@ -83,11 +86,12 @@ from irp_shared.perf import (
     resolve_portfolio_return,
     resolve_portfolio_return_run,
     resolve_rolling_risk,
+    resolve_sharpe_ratio,
     run_benchmark_relative,
     run_desmoothed_return,
     run_portfolio_return,
 )
-from irp_shared.perf.models import RollingRiskResult
+from irp_shared.perf.models import RollingRiskResult, SharpeRatioResult
 from irp_shared.portfolio import PortfolioNotVisible
 from irp_shared.snapshot import (
     BenchmarkRelativeSnapshotError,
@@ -1271,3 +1275,144 @@ def get_rolling_risk(
             status_code=status.HTTP_404_NOT_FOUND, detail="rolling-risk result not found"
         ) from None
     return _rr_row_out(row)
+
+
+# --------------------------------------------------------------------- SR-1 Sharpe (ENT-065) ---
+
+
+class SharpeRatioRowOut(BaseModel):
+    """One Sharpe-ratio row. **The disambiguation key is
+    ``(metric_type, window_months, annualization_basis)``** — this family emits the ratio under two
+    transforms at two windows, so a consumer keying on ``metric_type`` alone will conflate governed
+    numbers.
+
+    ``metric_value`` is NULL exactly when ``suppressed``, and a stuffed zero is forbidden because
+    **zero is a legitimate Sharpe ratio**: a book that exactly earns the risk-free rate scores 0,
+    and rendering "not computable" as 0 would read as "earned nothing above cash".
+
+    ``n_observations`` distinguishes the two suppression states: NULL when the window could not be
+    filled (there is no sample), POPULATED when the excess series was constant (the sample exists,
+    the ratio does not).
+
+    ``risk_free_benchmark_id`` + ``rf_return_basis`` are the provenance this family exists for — the
+    ratio is meaningless without knowing what the excess was measured against.
+    """
+
+    id: str
+    calculation_run_id: str
+    input_snapshot_id: str
+    model_version_id: str
+    portfolio_id: str
+    portfolio_return_run_id: str
+    risk_free_benchmark_id: str
+    rf_return_basis: str
+    metric_type: str
+    window_months: int
+    period_start: date
+    period_end: date
+    metric_value: str | None  # decimals as strings (the OQ-FE-1-7 contract); NULL iff suppressed
+    suppressed: bool
+    suppression_reason: str | None
+    annualization_basis: str
+    sampling_frequency: str
+    n_observations: int | None
+
+
+class SharpeRatioListOut(BaseModel):
+    items: list[SharpeRatioRowOut]
+
+
+def _sr_row_out(row: SharpeRatioResult) -> SharpeRatioRowOut:
+    return SharpeRatioRowOut(
+        id=row.id,
+        calculation_run_id=row.calculation_run_id,
+        input_snapshot_id=row.input_snapshot_id,
+        model_version_id=row.model_version_id,
+        portfolio_id=row.portfolio_id,
+        portfolio_return_run_id=row.portfolio_return_run_id,
+        risk_free_benchmark_id=row.risk_free_benchmark_id,
+        rf_return_basis=row.rf_return_basis,
+        metric_type=row.metric_type,
+        window_months=row.window_months,
+        period_start=row.period_start,
+        period_end=row.period_end,
+        # Fixed-point, never scientific (the P3-4 serialization lesson). NULL survives as NULL —
+        # rendering a suppressed row as "0" would destroy the distinction the column exists for.
+        metric_value=(f"{row.metric_value:f}" if row.metric_value is not None else None),
+        suppressed=row.suppressed,
+        suppression_reason=row.suppression_reason,
+        annualization_basis=row.annualization_basis,
+        sampling_frequency=row.sampling_frequency,
+        n_observations=row.n_observations,
+    )
+
+
+# NOTE: `/latest` is declared BEFORE `/{result_id}` — FastAPI matches in declaration order, so the
+# path-parameter route would otherwise swallow the literal (the house rule).
+@router.get("/sharpe/latest", response_model=SharpeRatioListOut)
+def get_latest_sharpe(
+    portfolio_id: uuid.UUID,
+    metric_type: str | None = Query(default=None),
+    window_months: int | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> SharpeRatioListOut:
+    """The newest COMPLETED Sharpe run's rows for a book (empty when none).
+
+    ONE run's rows, never a merge across runs: two runs can carry different window sets AND
+    different risk-free series, so a merge would silently mix both the estimator domain and the
+    thing the excess is measured against.
+    """
+    rows = latest_sharpe_ratio(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=str(portfolio_id),
+        metric_type=metric_type,
+        window_months=window_months,
+        as_of=as_of,
+    )
+    return SharpeRatioListOut(items=[_sr_row_out(r) for r in rows])
+
+
+@router.get("/sharpe", response_model=SharpeRatioListOut)
+def list_sharpe_endpoint(
+    portfolio_id: uuid.UUID | None = Query(default=None),
+    metric_type: str | None = Query(default=None),
+    window_months: int | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> SharpeRatioListOut:
+    """The rule-7 entity/time read across COMPLETED runs.
+
+    Rolling values are NOT independent: adjacent 12-month windows share 11 of 12 observations, so a
+    change between consecutive points reflects the single entering and exiting month, not a
+    re-estimate. The ``metric_type``/``window_months`` filters exist so a caller can ask for one
+    series instead of four interleaved row kinds.
+    """
+    rows = list_sharpe_ratios(
+        db,
+        acting_tenant=principal.tenant_id,
+        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+        metric_type=metric_type,
+        window_months=window_months,
+        as_of=as_of,
+    )
+    return SharpeRatioListOut(items=[_sr_row_out(r) for r in rows])
+
+
+@router.get("/sharpe/{result_id}", response_model=SharpeRatioRowOut)
+def get_sharpe(
+    result_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> SharpeRatioRowOut:
+    """Read a single ``sharpe_ratio_result`` row (tenant-scoped; read-only)."""
+    try:
+        row = resolve_sharpe_ratio(db, str(result_id), acting_tenant=principal.tenant_id)
+    except SharpeNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="sharpe result not found"
+        ) from None
+    return _sr_row_out(row)

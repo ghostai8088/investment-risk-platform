@@ -123,4 +123,9 @@ export type GovernedDecimalIsString = [
   // NON-null branch is a string, so a suppressed row stays representable while a decimal that
   // regressed to `number` still fails here.
   AssertString<NonNullable<Schemas["RollingRiskRowOut"]["metric_value"]>>,
+  // SR-1: also nullable-by-suppression. Listed here even though `SharpeRatioRowOut` matches the
+  // derived `*RowOut` rule and is therefore ALREADY guarded — the derived coverage was verified by
+  // MUTATION (retyping this field as a float and confirming `tsc` goes red), not assumed from the
+  // naming, which is the check RM-1's guard regression showed a name match does not substitute for.
+  AssertString<NonNullable<Schemas["SharpeRatioRowOut"]["metric_value"]>>,
 ];

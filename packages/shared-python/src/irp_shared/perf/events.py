@@ -90,3 +90,29 @@ class RollingRiskActor:
 
     actor_id: str
     actor_type: str = "user"
+
+
+#: SR-1 (ENT-065). The FAMILY, not the metric — one run emits the Sharpe ratio and its annualization
+#: at every registered window (the GS2 family≠metric rule; ``SHARPE_RATIO`` is a ``metric_type``).
+#: Its OWN family rather than a ROLLING_RISK metric: the input set differs (a risk-free leg RM-1
+#: does
+#: not pin) and so does the provenance. Mints NO new audit code — the run reuses
+#: ``CALC.RUN_CREATE``/``CALC.RUN_STATUS_CHANGE``, and the ``PERF.*`` block stays
+#: RESERVED-not-minted, still exactly THREE reserved codes after a FIFTH perf family.
+#:
+#: **``"SHARPE"``, not ``"SHARPE_RATIO"``** — the ratified record named the constant
+#: ``RUN_TYPE_SHARPE_RATIO`` while also invoking the GS2 family≠metric rule, and the obvious value
+#: for that name is exactly ``METRIC_TYPE_SHARPE_RATIO``. Every prior family keeps the two disjoint
+#: (ROLLING_RISK vs MAX_DRAWDOWN, BENCHMARK_RELATIVE vs INFORMATION_RATIO); a run_type that equals a
+#: metric_type makes ``run_type == 'SHARPE_RATIO'`` and ``metric_type == 'SHARPE_RATIO'`` mean two
+#: different things in two tables, which is precisely what GS2 forbids. A platform-wide conformance
+#: test now pins the disjointness for EVERY family rather than per-slice prose.
+RUN_TYPE_SHARPE = "SHARPE"
+
+
+@dataclass(frozen=True)
+class SharpeRatioActor:
+    """The principal initiating a Sharpe-ratio run (mirrors ``PortfolioReturnActor``)."""
+
+    actor_id: str
+    actor_type: str = "user"

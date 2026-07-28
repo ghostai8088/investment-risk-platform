@@ -351,8 +351,11 @@ class RollingRiskResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
             # Just the SUFFIX: the metadata naming convention expands `ck` to
             # `ck_%(table_name)s_%(constraint_name)s`, so passing the full name here would mint
             # `ck_rolling_risk_result_ck_rolling_risk_result_suppression_coherent` and drift from
-            # the migration. The migration passes the full literal (op.create_table does not carry
-            # this convention); a PG test pins the two forms equal.
+            # the migration. **The migration passes the SUFFIX too** — `env.py` hands
+            # `target_metadata` to Alembic, so `op.create_table` DOES apply this convention, and
+            # migration 0054's own comment documents the doubled+truncated name that results from
+            # passing the full literal. (This comment claimed the opposite until SR-1; the two
+            # sides have always agreed, and `test_rolling_risk_pg` pins the resulting name.)
             #
             # Declaring the CHECK in the ORM as well as the migration is deliberate: SQLite builds
             # its schema from ORM metadata, so the unit tier ENFORCES this constraint too. That is
@@ -394,6 +397,106 @@ class RollingRiskResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     n_observations: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+#: The ``sharpe_ratio_result.metric_type`` controlled vocabulary (SR-1, ENT-065; plain String,
+#: extended by value). **Both metrics are emitted at EVERY computable window, including W = 12** —
+#: RM-1 suppresses its redundant ``ROLLING_RETURN_ANN`` at W = 12 because the geometric exponent is
+#: exactly 1 there, but ``sqrt(12) * SR != SR`` at every window, so that rationale does NOT transfer
+#: and is deliberately not imported (verifier M4).
+METRIC_TYPE_SHARPE_RATIO = "SHARPE_RATIO"
+METRIC_TYPE_SHARPE_RATIO_ANN = "SHARPE_RATIO_ANN"
+
+
+class SharpeRatioResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
+    """One Sharpe-ratio row (SR-1, **ENT-065**, IA TRUE append-only) — the 22nd governed number.
+
+    ``SR = mean(excess) / sigma(excess)`` per trailing window on the relinked CALENDAR-MONTH grid,
+    where ``excess_j = m_j - r_f,j`` against a CAPTURED risk-free return series. Sharpe (1994)'s
+    differential-return form — **the denominator is the standard deviation of the EXCESS series, not
+    of the portfolio series**, which is why this family cannot reuse RM-1's persisted
+    ``ROLLING_VOLATILITY`` rows (those coincide only when ``r_f`` is constant over the window).
+
+    **A NEW entity rather than an ENT-064 extension** (OD-SR-1-C): Sharpe rows carry
+    ``risk_free_benchmark_id`` provenance that rolling-risk rows have no meaning for, and adding it
+    there would mean a NULLABLE provenance column on every existing row — a stuffed placeholder by
+    another name (the 0028 doctrine), with two different provenance shapes behind one table.
+
+    Carries RM-1's pattern otherwise: the FOUR-column grain
+    ``(calculation_run_id, metric_type, window_months, period_start)``, and a nullable
+    ``metric_value`` + explicit ``suppressed`` flag under a total-enumeration CHECK. **Zero is a
+    legitimate Sharpe ratio** (a book that exactly earns the risk-free rate), so a stuffed zero
+    would
+    be indistinguishable from "not computable" — and would read as "no excess return earned" rather
+    than "we could not compute this".
+    """
+
+    __tablename__ = "sharpe_ratio_result"
+    __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
+    __table_args__ = (
+        UniqueConstraint(
+            "calculation_run_id",
+            "metric_type",
+            "window_months",
+            "period_start",
+            name="uq_sharpe_ratio_result_run_grain",
+        ),
+        CheckConstraint(
+            "(suppressed = true AND metric_value IS NULL AND suppression_reason IS NOT NULL)"
+            " OR (suppressed = false AND metric_value IS NOT NULL"
+            " AND suppression_reason IS NULL)",
+            # SUFFIX ONLY, on BOTH sides — see the note on ``RollingRiskResult`` above. `env.py`
+            # passes `target_metadata`, so `op.create_table` applies
+            # `ck_%(table_name)s_%(constraint_name)s` in the migration as well; passing the full
+            # literal in either place mints a doubled, hash-truncated name that drifts silently
+            # (`alembic check` does not compare CHECK constraints). Declared here as well as in the
+            # migration so the SQLite unit tier ENFORCES the rule too.
+            name="suppression_coherent",
+        ),
+    )
+
+    calculation_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    input_snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("dataset_snapshot.id"), nullable=False, index=True
+    )
+    model_version_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("model_version.id"), nullable=False, index=True
+    )
+    portfolio_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("portfolio.id"), nullable=False, index=True
+    )
+    #: The single upstream PM-1 run whose DIETZ_PERIOD series was consumed and relinked.
+    portfolio_return_run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("calculation_run.run_id"), nullable=False, index=True
+    )
+    #: The captured risk-free series' benchmark head. NOT NULL — every Sharpe row has exactly one,
+    #: and a row that cannot say what it was measured against is not evidence of anything.
+    risk_free_benchmark_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("benchmark.id"), nullable=False, index=True
+    )
+    #: The rf series' PRICE/TOTAL/NET_TOTAL basis, echoed on EVERY row (the ENT-054 precedent): the
+    #: benchmark head alone does not identify the series, since one head can publish three bases.
+    rf_return_basis: Mapped[str] = mapped_column(String(20), nullable=False)
+    metric_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    window_months: Mapped[int] = mapped_column(Integer, nullable=False)
+    period_start: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[dt_date] = mapped_column(Date, nullable=False)
+    #: A RATIO (not a fraction of anything), at the shared 12dp scale. NULL iff ``suppressed``.
+    metric_value: Mapped[Decimal | None] = mapped_column(PreciseDecimal(20, 12), nullable=True)
+    suppressed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    suppression_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: NONE on the raw ratio, SQRT_12 on the annualized one.
+    annualization_basis: Mapped[str] = mapped_column(String(20), nullable=False)
+    sampling_frequency: Mapped[str] = mapped_column(String(10), nullable=False)
+    #: Observations inside the window. NULL when the window could not be FILLED (there is no
+    #: sample); POPULATED on a zero-dispersion suppression, where the sample exists and the
+    #: ratio does not. That distinction is deliberate and readable on the API surface — the
+    #: two suppression states are different facts. (This comment said "NULL when suppressed"
+    #: until a review caught it: a NEW lying comment, on the entity minted partly to fix the
+    #: last one. The binder is the authority — see `sharpe_service._compute`.)
+    n_observations: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
     raise AppendOnlyViolation(
         f"{target.__tablename__} is IA true append-only — UPDATE/DELETE is prohibited "
@@ -409,3 +512,5 @@ event.listen(DesmoothedReturnResult, "before_update", _block_mutation)
 event.listen(DesmoothedReturnResult, "before_delete", _block_mutation)
 event.listen(RollingRiskResult, "before_update", _block_mutation)
 event.listen(RollingRiskResult, "before_delete", _block_mutation)
+event.listen(SharpeRatioResult, "before_update", _block_mutation)
+event.listen(SharpeRatioResult, "before_delete", _block_mutation)

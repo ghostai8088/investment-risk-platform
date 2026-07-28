@@ -507,15 +507,21 @@ def test_no_migration_and_no_entity() -> None:
     # API-1b owns 0046_run_scope_portfolio; PPF-1 owns 0047_private_factor_return; PPF-3 owns
     # 0048_var_private_variance; SCH-1 owns 0049_scheduling; LIM-1 owns 0050_limit_breach;
     # MG-2 owns 0051_breach_action; NOTIF-1 owns 0052_breach_notification; SCH-2 owns
-    # 0053_schedule_cadence_family; the synthetic slice still adds no migration, so the next free
-    # slot (0054+) must remain empty.
+    # 0053_schedule_cadence_family; RM-1 owns 0054_rolling_risk_result; SR-1 owns
+    # 0055_sharpe_ratio_result; the synthetic slice still adds no migration, so the next free slot
+    # (0056+) must remain empty.
     #
     # NOTE (SCH-2): this next-free-slot glob is a hand-maintained proxy — it must be bumped by
     # EVERY migration slice, and it fires on a legitimate new migration rather than on the thing it
     # guards. The load-bearing assertion is the content sweep above (no migration references
     # ``synthetic``); this line only adds "and the synthetic slice did not quietly take the next
     # number". Kept in its established shape rather than reshaped mid-slice.
-    assert not list(versions.glob("0055*")), "no 0054 migration may be added by the synthetic slice"
+    #
+    # NOTE (SR-1): RM-1 bumped the GLOB to 0055 but left this comment block and the failure message
+    # naming 0053/0054 — so for one slice the guard's own explanation of itself was wrong, and
+    # PR #137's drift sweep did not catch it because a stale comment leaves no diff to review. Both
+    # the prose and the message are part of the fold now, not just the number.
+    assert not list(versions.glob("0056*")), "no 0056 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -

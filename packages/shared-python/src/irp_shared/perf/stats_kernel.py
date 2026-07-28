@@ -64,11 +64,43 @@ def quantize_result(value: Decimal) -> Decimal:
         raise StatsKernelError("result magnitude out of range at the 12dp scale") from exc
 
 
+def mean_and_stdev_unquantized(values: Sequence[Decimal]) -> tuple[Decimal, Decimal]:
+    """The ``(mean, sigma)`` pair accumulated at ``COMPUTE_PREC`` and returned **UNQUANTIZED**
+    (SR-1's lift; the estimator conventions are exactly those of the two wrappers below).
+
+    **Why this exists.** :func:`mean_return` and :func:`sample_stdev` each quantize to 12dp before
+    returning, which is right for a family that PERSISTS the mean or the sigma. SR-1 persists
+    neither — it persists their RATIO — so quantizing the operands first is pure precision loss, and
+    worse than that: a NON-constant series can quantize to ``sigma = 0E-12`` (e.g. eleven values of
+    ``1E-12`` and one ``0``), and dividing by that quantized zero raises ``DivisionByZero`` on a
+    perfectly legal input. Consumers that need the ratio therefore divide HERE, at 50 digits, and
+    quantize ONCE at the end.
+
+    Raises :class:`StatsKernelError` when ``n < 2`` — a one-observation dispersion is undefined, not
+    zero, and emitting ``0`` would be indistinguishable from a genuinely constant series.
+
+    The returned values are exact Decimals; a caller doing further arithmetic on them must open its
+    own ``localcontext`` at :data:`COMPUTE_PREC`, exactly as the wrappers below do.
+    """
+    n = len(values)
+    if n < 2:
+        raise StatsKernelError(f"standard deviation needs >= 2 observations (got {n})")
+    with localcontext() as ctx:
+        ctx.prec = COMPUTE_PREC
+        mean = sum(values, Decimal(0)) / Decimal(n)
+        variance = sum(((v - mean) ** 2 for v in values), Decimal(0)) / Decimal(n - 1)
+        return mean, variance.sqrt()
+
+
 def mean_return(values: Sequence[Decimal]) -> Decimal:
     """The arithmetic mean of a series, ``quantize_HALF_UP`` to 12dp.
 
     Raises :class:`StatsKernelError` on an empty series (a mean over no observations is undefined —
-    it is not zero).
+    it is not zero). **Deliberately NOT re-expressed over
+    :func:`mean_and_stdev_unquantized`**: that helper needs ``n >= 2`` for its variance, while a
+    mean
+    is perfectly well defined at ``n == 1``, so routing this through it would tighten a shipped
+    precondition. The three-line accumulation is duplicated rather than the contract changed.
     """
     if not values:
         raise StatsKernelError("cannot take the mean of an empty series")
@@ -84,14 +116,19 @@ def sample_stdev(values: Sequence[Decimal]) -> Decimal:
 
     The mean and the variance are accumulated UNquantized at 50-digit precision so the deviation is
     faithful; only the final square root is quantized. Raises :class:`StatsKernelError` when
-    ``n < 2`` — a one-observation dispersion is undefined, not zero, and emitting ``0`` would be
-    indistinguishable from a genuinely constant series.
+    ``n < 2``.
+
+    A thin quantizing wrapper over :func:`mean_and_stdev_unquantized` since SR-1 — the accumulation
+    itself is unchanged, and a bit-identity test pins the P3-8/DS-2/RM-1 outputs so the shared
+    accumulator cannot be edited without breaking three shipped families loudly.
+
+    **The quantize stays inside a ``COMPUTE_PREC`` context**, as it was before the extraction.
+    ``quantize`` raises ``InvalidOperation`` when the result would exceed the context's precision,
+    so performing it at the ambient 28 digits instead would convert a ~1e16 sigma from a returned
+    value into a :class:`StatsKernelError` — a behavior change for three shipped families, in a
+    magnitude band their own binders already gate. Bit-identity means the errors too.
     """
-    n = len(values)
-    if n < 2:
-        raise StatsKernelError(f"standard deviation needs >= 2 observations (got {n})")
+    sigma = mean_and_stdev_unquantized(values)[1]
     with localcontext() as ctx:
         ctx.prec = COMPUTE_PREC
-        mean = sum(values, Decimal(0)) / Decimal(n)
-        variance = sum(((v - mean) ** 2 for v in values), Decimal(0)) / Decimal(n - 1)
-        return quantize_result(variance.sqrt())
+        return quantize_result(sigma)

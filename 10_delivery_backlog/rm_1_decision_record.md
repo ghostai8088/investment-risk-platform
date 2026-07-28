@@ -222,6 +222,10 @@ RM-1 was ratified 2026-07-26, one day before SCH-2 merged. Verified against `mai
 
 Recorded per OQ-W12C-3a: all four were cheaply checkable and are checked, not assumed.
 
+### 6.0a Closeout control-matrix trace (OQ-W12C-3c — added at the drift-fix sweep; the closeout initially skipped it)
+
+**No control moved.** RM-1 instantiates the standing governed-number controls for a new family — CTRL-002 (reproducibility: snapshot-pinned compute, TR-09), CTRL-003 (inventory-before-use: `assert_model_version_of` at bind, the `{12, 36}` window domain part of the registered identity), CTRL-018 (run-bound provenance) — under their existing mechanisms; an instantiation note is recorded on the CTRL-003 row. The suppression CHECK and the four-column grain are data-integrity constraints of ENT-064, not control-matrix controls.
+
 ### 6.1 Ordered build
 
 1. **Migration `0054` + ORM.** ENT-064 `rolling_risk_result`: the four-column grain `(calculation_run_id, metric_type, window_months, period_start)`; nullable `metric_value` + NOT NULL `suppressed` + `suppression_reason` + `CHECK (suppressed = (metric_value IS NULL))`; `annualization_basis` NOT NULL; hard FK `portfolio_return_run_id`; IA append-only (both ORM guards + the 0001 trigger); symmetric RLS byte-identical to `0047:134-158`; the `_IDENTIFIERS` ≤63-char import-time assert; registration in `irp_shared/models.py`. Window sentinel `0` for run-summary rows — never NULL (`NULL != NULL` constrains nothing).

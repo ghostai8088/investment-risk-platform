@@ -106,6 +106,12 @@ from irp_shared.demo.sch2_stage15 import (
     Sch2Stage15Summary,
     run_demo_sch2_stage15,
 )
+from irp_shared.demo.sr1_stage17 import (
+    DemoSr1AlreadySeededError,
+    DemoSr1Error,
+    Sr1Stage17Summary,
+    run_demo_sr1_stage17,
+)
 from irp_shared.demo.stage10_api1 import (
     DemoStage10AlreadySeededError,
     DemoStage10Error,
@@ -119,6 +125,10 @@ __all__ = [
     "Rm1Stage16Summary",
     "DemoRm1Error",
     "DemoRm1AlreadySeededError",
+    "run_demo_sr1_stage17",
+    "Sr1Stage17Summary",
+    "DemoSr1Error",
+    "DemoSr1AlreadySeededError",
     "DEMO_TENANT_ID",
     "CampaignSummary",
     "DemoCampaignAlreadySeededError",

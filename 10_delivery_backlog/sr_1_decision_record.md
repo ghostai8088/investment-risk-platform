@@ -110,6 +110,107 @@ Stage 17 (EIGHT `z`): captures the rf series (~19 monthly vendor-style rows over
 
 **Attacks that HELD (evidence carried):** the 12dp subtraction exactness; the √12 direction/form incl. negative SR, grounded by Lo AND Sharpe's own eqs. 7/8; σ(excess)≠σ(portfolio) confirmed against the fetched primary; the whole ENT-052 reuse surface verified to exist end-to-end (capture path, DQ, lineage, no missing prerequisite, no `calculation_run` minted); every file:line and collision claim; counts 24/39/132 → 25/40/133 arithmetically sound; the count-pin relay implementable exactly as written; the FE guard auto-covers the new DTO; M sizing defensible with the folds counted as folds, not scope growth.
 
+## Part 4b — Post-ratification reversals (recorded AT the gate they change, the SCH-2 standing rule)
+
+**R1 — the `_persist_snapshot` membership fold cannot be applied as ratified: it is NOT additive, and applying it verbatim would break TWO shipped families.** OD-SR-1-E (fold M3) says *"every existing builder passes a member"*. Execution refutes it: `PURPOSE_PROXY_WEIGHT_INPUT` (PA-3) and `PURPOSE_RESIDUAL_SHRINKAGE_INPUT` (RS-1) are **deliberately absent** from `SNAPSHOT_PURPOSES` — their own docstrings name the omission *"the PROXY_WEIGHT/RESIDUAL_SHRINKAGE tuple-bypass"* — while `build_proxy_weight_snapshot` (`snapshot/service.py:2382`) and `build_residual_shrinkage_snapshot` (`:2873`) both pass those constants straight to `_persist_snapshot`. Moving the check in unchanged makes every PA-3 and RS-1 snapshot build raise `SnapshotPurposeError` — a hard regression in two governed families, discovered by enumerating the call sites rather than by trusting the record's own sentence.
+
+**The revision, and why it is the right shape rather than a retreat.** SR-1 (a) ADDS both purposes to `SNAPSHOT_PURPOSES`, then (b) moves the check into `_persist_snapshot`. This is genuinely additive in the only direction that matters — nothing that was accepted before is refused now; the generic entry points accept two more purposes than they did. It is also the correction the platform already told itself to make: `PURPOSE_PACING_INPUT`'s own comment records the bypass as *"the CC-2-census-flagged inconsistency"* that PACING deliberately did not repeat. The census flagged it; three slices declined to fix it; SR-1 fixes it, because SR-1 is the slice that turns the list into an enforced gate and an enforced gate over an incomplete vocabulary is worse than an unenforced one.
+
+**The lesson, generalized:** the record's premise was checkable in one grep and was checked only at implementation. *A claim of the form "every existing X already satisfies Y" is a census claim, and a census claim belongs in the verifier pass, not in the fold that depends on it.* SCH-2 refuted two ratified decisions at execution; RM-1 refuted one; this is the third slice running. The verifier lanes examine reasoning and sources well and enumerate call sites poorly.
+
+**R2 — `RUN_TYPE_SHARPE_RATIO` becomes `RUN_TYPE_SHARPE = "SHARPE"`.** OD-SR-1-E and Part 6 named the constant `RUN_TYPE_SHARPE_RATIO` while invoking the GS2 family≠metric rule — and the obvious value for that name is exactly `METRIC_TYPE_SHARPE_RATIO`. Every prior family keeps the two disjoint (ROLLING_RISK vs MAX_DRAWDOWN; BENCHMARK_RELATIVE vs INFORMATION_RATIO); a `run_type` equal to a `metric_type` makes the same string mean two different things in two tables, which is what GS2 forbids. The value is `"SHARPE"`.
+
+*Recorded here rather than only in the constant's docstring* — which is where the implementation first put it, repeating verbatim the SCH-2 lesson this record's own Part 4b heading cites. **A reversal a reader can only find by reading the code is not recorded.**
+
+**R3 — the snapshot builder's risk-free window was wrong at BOTH edges, and the ratified prose specified one of the errors.** Found by an adversarial finder, by execution, after the gates were green:
+
+- the lower edge pinned from `d_0`'s month, which the alignment criterion guarantees is never a MEASURED month — so the builder captured only rows the binder must refuse as unconsumed pins, and an ordinary continuous vendor series produced a **permanently unrunnable snapshot** (immutable, so unrepairable). Part 1's own sentence — *"the window = the return run's span"* — is what made this feel right;
+- the upper edge truncated at `span_end`, a DATE, while the binder joins by MONTH. A book closing on the last BUSINESS day (GIPS 2.A.23.b) against a vendor dating on the calendar month end lost its final risk-free row and was refused for a missing month — in roughly five months of twelve, and *exactly the pair the month-key join exists to accept*.
+
+The window is now the measured months, whole: first day of the first measured month to last day of the last. **Both regression tests are mutation-proved** by reverting each edge in turn.
+
+**The lesson is about the demo, and it is the OPS-1 lesson again.** Neither defect could surface, because the demo stage derived its risk-free dates from the book's own month-ends — making the capture tautologically date-identical to the pins, so the stage exercised the month-key join not at all while its docstring called that join the slice's load-bearing new criterion. The stage now dates on the CALENDAR month end against a last-weekday book, and a test asserts the two sets differ. *A fixture built from the thing under test cannot test it.*
+
 ## Part 6 — Implementation plan
 
-*To be written after ratification.*
+Ordered so each commit is independently green. Sub-items marked **[C]** carry an EXECUTED negative control (the standing rule: a guard never demonstrated to fire is not a guard).
+
+**1. Schema — `0055_sharpe_ratio_result` + ENT-065.** Columns per OD-SR-1-C: the run/snapshot/model trio, `portfolio_id` + `portfolio_return_run_id` + `risk_free_benchmark_id` (all hard FK, all NOT NULL), `rf_return_basis`, `metric_type`, `window_months`, `period_start`, `period_end`, nullable `metric_value`, `suppressed`, `suppression_reason`, `annualization_basis`, `sampling_frequency`, `n_observations`. Four-column grain; the suppression CHECK **suffix-only in BOTH the ORM and the migration** (the RM-1 name-drift lesson) and verified by reading `pg_constraint` back, not by `alembic check` (which does not compare CHECKs). Symmetric FORCE RLS + the `irp_prevent_mutation` trigger. 63-char identifier assert at import.
+
+**2. The estimator lift, second pass — `stats_kernel`.** `mean_return`/`sample_stdev` quantize; SR-1's single-quantization needs the UNQUANTIZED pair. Add `mean_and_stdev_unquantized` returning both at 50-digit context, and re-express the two shipped functions as its quantizing wrappers — **bit-identity pinned** so P3-8/DS-2/RM-1 outputs cannot move. **[C]** a mutation to the shared accumulator must break the bit-identity pin.
+
+**3. `perf/sharpe_kernel.py`.** `excess_series` (exact 12dp subtraction), `sharpe_ratio` (single-quantization; suppression iff the UNQUANTIZED σ is exactly zero), `annualize_sharpe` (×√12 from the STORED value), `sharpe_windows`. Reuses RM-1's `relink_to_months`/`assert_month_aligned`/`assert_above_total_loss` unchanged. **[C]** the zero-dispersion suppression; **[C]** a NON-constant series whose quantized σ is `0E-12` must EMIT (the B1 refutation, executed).
+
+**4. Snapshot — `PURPOSE_SHARPE_INPUT` + `build_sharpe_snapshot` + `SHARPE_BINDING_PREDICATE`.** Pins one PM-1 run's rows + the rf `benchmark_return` window (the P3-8 shape). Plus the Part-4b/R1 revision, plus `PACING_`/`ROLLING_RISK_` into `_BINDING_PREDICATES`. **[C]** a non-member purpose reaching `_persist_snapshot` must raise.
+
+**5. `perf/sharpe_service.py` — the binder.** Pre-create: the window domain, the model code, the purpose, the pin adjudication (`parse_strict_decimal`, not a bare `Decimal()`), the **month-key rf join** with the duplicate-month refusal, the **one-rf-row-per-MEASURED-month completeness refusal naming the month**, the uniform-series check, the cross-tenant rf refusal. Post-create: the magnitude gate on the EMITTED value covering the `_ANN` member ⇒ committed FAILED run, zero rows. Then `bootstrap` (`perf.sharpe` v1, assumptions carrying the DISCLOSED n−1 divergence) + `events` (`RUN_TYPE_SHARPE_RATIO`, `SharpeRatioActor`).
+
+**6. Rule-7 reads + API.** `list_sharpe_ratios` / `latest_sharpe_ratio` / `list_sharpe_ratio_rows` / `resolve_sharpe_ratio{,_run}` through `calc/reads.py`; `/perf/sharpe{,/latest,/{id}}` with `/latest` declared first; decimals as strings, NULL surviving as NULL. Regenerate the FE types and **verify** (not assume) that `SharpeRatioRowOut` is inside the derived guard.
+
+**7. Demo stage 17 + the count-pin relay.** `sr1_stage17.py`, suite `test_demo_stage9zzzzzzzz_sr1_pg.py` (EIGHT `z`, verified by `ls`). Captures the 18-row rf series; resolves stage-16's PM-1 run DETERMINISTICALLY (by portfolio code → exactly-one assert); files the tier + INITIAL validation EXPLICITLY; demotes the 7-z "FINAL" pin to an explicitly-intermediate one; lands the new final-position pin at **25/40/133** MEASURED on a fresh-schema battery.
+
+**8. Tests owed, each with its control.** Golden Sharpe values on a hand-computable series (**mutation-test the NUMBER**); the discriminating **σ(excess) ≠ σ(portfolio)** fixture; the missing-rf-month refusal naming the month; the duplicate-rf-month refusal; the SR/SR_ann reconciliation on PERSISTED rows; the FAILED-run path; the zero-`PERF.*`-emissions pin; the PG enforcement suite **from birth** (CHECK matrix, grain collision, append-only, RLS — each **[C]**).
+
+**9. Inherited-debt folds.** `test_synthetic.py` → `0056*` **and** its stale 0053-era comment block; the LYING ORM comment at `perf/models.py:351-355`; the CAP-20 taxonomy row extended VISIBLY for 20.6; the PERF audit-taxonomy row's "still exactly three after a FIFTH family" sentence.
+
+**10. Docs + ledgers.** `05_analytics_methodologies/sharpe_v1.md`; REQ-PRF-004 backbone + RTM in the SAME commit; then the **six-ledger omission sweep** and the control-matrix trace at closeout.
+
+## Part 7 — Verification evidence (recorded at implementation, before the review pass)
+
+| Gate | Result |
+|---|---|
+| `make check` | GREEN, RE-RUN post-fold from purged bytecode — **2185 passed, 0 failed**; ruff, mypy 250 source files, secret scan, docs check |
+| Full-PG validation | GREEN, RE-RUN post-fold — schema RESET first (`DROP SCHEMA public CASCADE` + `GRANT USAGE ON SCHEMA public TO PUBLIC`), `alembic upgrade head` = 0, `alembic check` = 0, whole battery `PYTEST_EXIT=0` |
+| `alembic check` | *No new upgrade operations detected* — no ORM/migration drift |
+| `pg_constraint` read-back | All nine ENT-065 constraint names EXACT; no doubling, no hash-truncation (**the RM-1 drift class, checked by reading the database rather than trusting `alembic check`, which does not compare CHECKs**) |
+| RLS + trigger | `relrowsecurity` AND `relforcerowsecurity` both true; `tenant_isolation_sharpe_ratio_result` + `sharpe_ratio_result_append_only` present |
+| Demo counts | **25/40/133 MEASURED** on the post-fold fresh-schema PG run (queried directly, not derived), with **16 ENT-065 rows** — the designed inventory exactly |
+| Demo emitted rows | 7 + 7 emitted at W=12, 1 + 1 SUPPRESSED at W=36 — the designed fixture shape exactly |
+| Mutation controls | **20 mutants EXECUTED, 20 killed, 0 survived — RE-RUN from PURGED BYTECODE.** The earlier 15/15 run is DISCARDED: a stale `.pyc` was found serving a mutated `COMPUTE_PREC = 20` while the source read 50, so every result from that window is of unknown validity. The battery now covers the estimator divisor, the annualizer, both suppression predicates, the excess construction, a 1-ulp ratio drift, HALF_UP rounding, nine binder refusals including all three cross-tenant hard-FK re-resolutions, BOTH snapshot-builder window edges, and an injected GS2 collision |
+| FE decimal guard | Coverage of `SharpeRatioRowOut` proved BY MUTATION — with `metric_value` retyped to float, `tsc` names that DTO specifically. Not inferred from the `*RowOut` naming rule (the RM-1 guard-regression lesson) |
+
+**Two claims the first completeness test did not actually prove, found by mutating the source.** Deleting the binder's risk-free-completeness refusal left the suite GREEN, because `build_excess_series` refuses too and its message also names the month — a control passing on another layer's evidence. The test now asserts the binder's own phrasing (it reports how many FURTHER months are missing, which the kernel, stopping at the first, cannot), and the fixture carries two gaps so that phrasing is reachable. Re-mutated: killed.
+
+## Part 8 — Closeout
+
+**Status: CLOSED pending the 4-finder review fold and CI green.** Counts **24/39/132 → 25/40/133**, measured. Migration `0055`; entity **ENT-065**; the next free canonical id moves to **ENT-066**.
+
+**Control-matrix trace (OQ-W12C-3c).** **No control changed STATE.** CTRL-003 gains a second instantiation (`assert_model_version_of` pre-create against the expected model CODE, plus the registered `{12, 36}` window domain enforced on day one rather than after a review); **CTRL-002 gains real enforcement** — the `SNAPSHOT_PURPOSES` allow-list moved into `_persist_snapshot`, the single line every build path crosses, where it had been enforced only at the two generic entry points while fifteen family builders passed their constant straight through. Both remain Operational. Traced in `09_compliance_controls/control_matrix_skeleton.md`.
+
+**Ledger-class omission sweep — and what it found.** All six ledgers swept. The sweep's own headline finding is that **the PREVIOUS sweep never merged**: commit `c9d0374` (three further ledger-class gaps across three slices, authored at the RM-1 close) is not an ancestor of `main`, because PR #137 carried only `5e46c5a`, the two incidentally-found fixes. So `current_state.md` sat four merged PRs stale, the ENT registry had NO row for ENT-061…064, and the CTRL-003 SCH-2 trace was absent. All carried forward here.
+
+*The lesson is about the sweep, not the documents.* **An omission sweep that ends in an unmerged commit has exactly the effect of never running it, and the checklist that found the gaps had no way to notice that its own fix had not landed.** The sweep therefore gains a final step — *verify the fix is on `main`, not merely that it was written* — and that step should be part of the standing rule proposed at the Wave-13 close.
+
+## Part 9 — The 4-finder adversarial review (RAN 2026-07-28)
+
+**4 HIGH / 8 MED / ~12 LOW, all folded.** Four finders in parallel: the number and its mathematics; the binder, snapshot layer and governance invariants; the read surface, demo and CI; omissions and doctrine. Every finding below was EXECUTED by its finder, not argued.
+
+**The two HIGHs that were real product defects** are R3 above — the snapshot builder's risk-free window, wrong at both edges, making legitimate captures unrunnable. They are the slice's most serious findings and neither was reachable from the demo.
+
+**The two HIGHs that were hollow guards:**
+
+- **The `test_the_divisor_is_n_MINUS_ONE…` test never called the kernel.** It compared a LITERAL against a locally-recomputed population Sharpe, so under the exact mutation it names (`n−1 → n`) it PASSED while five other tests failed. This was the named control for the slice's headline fidelity divergence — the text that goes into `model_assumption` rows. Rewritten to call `sharpe_ratio` and to check the sample estimator against an independent computation.
+- **The "platform-wide" GS2 test covered 5 of 18 run types.** It scanned only `perf.events`/`perf.models`; a finder injected a genuine collision into `risk.events` and it stayed green — the FE-2 *"a sampled contract guard is false security"* lesson, one level up from the slice that was fixing GS2. The module list is now DISCOVERED from the package, with a census assertion so a rename cannot silently empty the scan, and the injected collision is EXECUTED as its negative control.
+
+**The MEDs worth carrying forward:**
+
+- **Three hard-FK cross-tenant re-resolutions could each be deleted with the suite green.** The one owed test called the private helper directly — proving the helper works and nothing about the binder calling it, which is this project's own *"a control passing on another layer's evidence"* defect, flagged BY NAME in a neighbouring docstring. Replaced with three forged-snapshot tests that go through `run_sharpe_ratio`; all three mutations now killed.
+- **The `_persist_snapshot` purpose gate — the centrepiece of R1 — had no negative control**, and neither promised membership pin shipped.
+- **The demo's own load-bearing property was unguarded**: `test_the_risk_free_series_is_NOT_constant` counted distinct values across EVERY benchmark return in the demo tenant, and stage 10 already contributes eight distinct values — so replacing this stage's entire series with eighteen identical values left it green. Now scoped to the risk-free head.
+- **The registered assumptions never stated the `{12, 36}` window domain** while three documents claimed they did. The enforcement was real; the disclosure was missing. Added.
+- **A BRAND-NEW lying ORM comment** (`n_observations` — "NULL when suppressed", which the binder deliberately contradicts for zero-dispersion rows) on the very entity minted partly to fix the last one. Corrected.
+- Two arithmetic claims in prose were wrong in the same way: *"a column-fitting SR of 9E6 still **overflows** at ×√12"* — 9E6 × √12 = 3.12E7 fits `Numeric(20,12)`; it breaches the HOUSE envelope. The gate is a declared policy ceiling, not an overflow guard.
+
+**A finding the review produced that no fold can close, recorded as a limitation:** a vendor dating a monthly return on the **first of the following month** joins one month LATE under a `(year, month)` key, and nothing in the data distinguishes that from a correctly-dated series — the row counts match exactly. The builder's docstring had claimed that convention worked. It does not. The capture convention is now DECLARED (*the `return_date` must fall inside the month its return is for*) and the alternative is refused at capture, not accommodated silently.
+
+### Part 9a — The process failure, recorded because it nearly shipped
+
+**A `git add -A` during the review captured a finder's live source MUTATION and a 247-line scratch file into a commit.** The mutation deleted a fail-closed guard; the scratch file would have entered the governed suite *pinning defects as expected behaviour*, so any later fix would have broken CI. Caught by the finders themselves, purged, and re-committed.
+
+Worse, and separately: **a stale `.pyc` served a mutated `COMPUTE_PREC = 20` while the source read 50.** Every test run during that window is of unknown validity. All gates were re-run from purged bytecode.
+
+Three rules follow, and they generalise beyond this slice:
+
+1. **Mutation testing and a wildcard stage cannot share a working tree.** Stage explicit paths while any agent holds the tree.
+2. **Grep the COMMIT for mutation markers, not the tree.** Restoring the tree does not restore the commit, and `make check` green *before* a mutation lands says nothing about what the commit contains.
+3. **Purge `__pycache__` before trusting any post-mutation run.** Source-mtime invalidation is not reliable when files are restored by tooling.
