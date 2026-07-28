@@ -73,9 +73,12 @@ Planning-first, per-slice; Claude commits + pushes autonomously:
 - **Closeout control-matrix trace (Wave-12 close, OQ-W12C-3c):** every slice closeout either updates
   `09_compliance_controls/control_matrix_skeleton.md` or states "no control moved" in its decision record —
   the API-2/OPS-1 closeouts skipped the sweep silently and left the flagship SoD row (CTRL-021) stale.
-- **Interim demo-tick exclusion (Wave-12 close, OQ-W12C-3d — until OPS-H1 ships regenerate-on-seed):**
-  `DEMO_TENANT_ID` is never placed in `IRP_TENANT_IDS`; the demo's frozen-clock RESPONDED breach would
-  auto-escalate and page on the first real tick and mutate the curated walk.
+- **Demo-tick consequence (REPLACED the OQ-W12C-3d interim prohibition at OPS-H1, 2026-07-28):** the
+  stage-14 clock is seed-time-relative (backdated two days; the curated walk preserved exactly), so
+  enrolling `DEMO_TENANT_ID` in `IRP_TENANT_IDS` is now an OPERATOR CHOICE with a documented
+  consequence, not a prohibition: the demo lifecycle RUNS — the overdue breach escalates on the first
+  tick as governed, correct behavior — and re-seeding restores the pristine walk. Never present the
+  old prohibition as current.
 
 ## Verification & objectivity (standing rules)
 - **No quantitative claim from model recall.** Every formula, convention, day-count, sign, tolerance, or

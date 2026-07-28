@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **VERIFIED 2026-07-28 — the pass returned NOT RATIFIABLE as drafted (1 BLOCKING, 1 MATERIAL, 7 minor), ALL FOLDED: H1-9's planned fix was for a route that does not exist paying a debt NOTIF-1 already paid (redrafted against the real FE truncation); H1-4's fix shape contradicted its own discharge rationale (restated: regeneration removes the absurdity, not the mutation — the prohibition becomes a documented consequence). RATIFIED 2026-07-28 — OQ-OPS-H1-1/2/3 all approved as recommended (scope as verified; the demo-clock prohibition becomes a documented consequence with backdated offsets preserving the walk; the interleave attempted first with the disclosed fallback).** |
+| Status | **CLOSED 2026-07-28 — implementation MERGED as PR #141 = `03da139` (CI #669 green all 6). Ten items delivered; the TRUE M-C1 interleave forced (no fallback); counts UNCHANGED at 25/40/133; 2-finder review 0 HIGH, all folded (Part 7). The OQ-W12C-3d interim rule is RETIRED in §6d AND in `claude_operating_instructions.md` (this closeout).** Previously: VERIFIED → RATIFIED (OQ-OPS-H1-1/2/3). |
 | Slice | Wave-13 slice 3, per the ratified sequence (OQ-W12C-2=A); a Part-4 rule-3 insertion (the MD-H1 precedent) |
 | Kind | **Hygiene** — no governed number, no entity, no migration, no permission, no audit code. Pays the fired-trigger cluster + the recorded LOW cluster from the Wave-12 close register (§2/§5 of `wave_12_close_review.md`) |
 | Counts | **UNCHANGED at 25/40/133** — and this record says so NOW, before implementation, so a drift is a defect in the code rather than in the expectation (the SCH-2 lesson) |
