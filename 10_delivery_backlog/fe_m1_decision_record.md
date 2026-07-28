@@ -374,8 +374,66 @@ Run in full, with the SR-1 clause *verify the fix is on `main`* applied to this 
 
 ## Part 7 — Review and folds
 
-*(Recorded after the adversarial review.)*
+### Method, stated honestly
 
-## Part 7 — Review and folds
+This session had subagents and workflows unavailable, so the adversarial pass could not be run at
+the top of the operating instructions' independence ladder (`/code-review ultra`, then an
+independent-context agent). It was run **inside the authoring context**, which is that ladder's
+weakest rung and inherits the author's blind spots by construction.
 
-*(Recorded after the adversarial review.)*
+Two things partly compensate, and neither is a substitute:
+
+1. **The pre-ratification pass was empirical, not analytical** (Part 1b). An executed dry run does
+   not share the author's blind spots — which is precisely why it caught V-1 and V-2 when reading,
+   `grep` and the upstream upgrade guide had all missed them.
+2. **Every fence carries an executed mutation control**, so the guards are proven by refutation
+   rather than by the author's assessment of them.
+
+`/code-review ultra` on this branch remains available to the user and would be the stronger check.
+
+### R-1 (fold) — the fences had an EXTENSION hole
+
+**Found by probing rather than reading.** Both `no-restricted-imports` fences were scoped to
+`.ts`/`.tsx`. A `.jsx` file is linted by **nothing**: eslint reports *"File ignored because no
+matching configuration was supplied"* and **exits 0**. So a single JSX component could import
+`react-router-dom` — undoing this slice — or reach `client.ts::request` and issue an unaudited
+POST, past the OPS-1 M-4 write fence. The app is 100% TypeScript today, but Vite compiles `.jsx`
+without complaint, so nothing structural stops it.
+
+This is the **Wave-12 close HIGH's own defect class along a different axis**: there, the write
+fence was bypassable by import-path *spellings* the ratifying probe never enumerated; here, by file
+*extension*. Its third appearance in the fence family argued for closing it now rather than letting
+a close audit find it again.
+
+**Fold:** a fourth eslint block covering `**/*.{js,jsx,mjs,cjs}` with both fences and
+`ecmaFeatures.jsx` enabled — a separate block because those files need espree-with-JSX rather than
+the TS parser, and because the file set is **disjoint** from the blocks above, so the
+re-declaration cannot silently override them (the same flat-config trap V-3 was about).
+
+**Controls executed:** the `.jsx` router import and the `.jsx` `request` import both now fail lint;
+a clean `.jsx` importing `react-router` passes. Mutating the block's glob to match nothing **killed
+exactly the two negative-control tests**; the positive control correctly survived, because an
+unlinted file also yields zero findings — it is a permission check, not a detector. Both cases are
+pinned in `router-fence.test.ts` and `write-fence.test.ts` rather than left as a one-time hand
+proof.
+
+### R-2 (fold) — an overclaim in the audit-gate refactor's own comment
+
+The refactor header said *"Behaviour is UNCHANGED — the CLI composes exactly the same steps in the
+same order."* The **decisions, failure conditions and exit code** are unchanged, but the console
+**output order is not**: messages were previously printed as each check ran (interleaved) and are
+now collected and emitted as info → warnings → errors. Corrected in place to say exactly that. A
+slice whose stated purpose is replacing an untested claim with evidence should not ship a new
+untrue claim in the same file.
+
+### R-3 (noted, not folded) — Part 6 asserted a CI result before CI had run
+
+The verification table listed row 11 as "CI — watched to green" while the run was still queued.
+Changed to an explicit *pending* marker, filled in only from an observed result. No defect shipped;
+recorded because "reporting success without verification" is a named prohibition and this is how it
+begins.
+
+### Post-fold gates
+
+`make fe-check` green: **32 files / 190 tests** (187 + the three `.jsx` fence cases), `vite build`
+clean, audit gate clean. `make check` unaffected (no Python touched).

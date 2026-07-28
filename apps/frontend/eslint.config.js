@@ -66,4 +66,27 @@ export default tseslint.config(
       "no-restricted-imports": ["error", { patterns: [ROUTER_FENCE] }],
     },
   },
+  {
+    // FE-M1 review fold — the EXTENSION axis of the fence-hole class.
+    //
+    // Both fences above are scoped to `.ts`/`.tsx`. The app is 100% TypeScript today, but Vite
+    // compiles `.jsx`/`.js` just as happily, and a probe confirmed such a file is currently linted
+    // by NOTHING at all — eslint reports "File ignored because no matching configuration was
+    // supplied" and exits 0. So a single `.jsx` component could import `react-router-dom`, or reach
+    // `client.ts::request` and issue an unaudited POST, past both governance fences.
+    //
+    // This is the same defect class the Wave-12 close took a HIGH for (the write fence was
+    // bypassable by import-path shapes the ratifying probe did not enumerate) — one axis over:
+    // there it was the specifier spelling, here it is the file extension. Closing it now rather
+    // than waiting for a close audit to find it a third time.
+    //
+    // A separate block because these files need espree with JSX enabled (the TS parser covers
+    // `.tsx` already), and because the file sets are DISJOINT from the blocks above — so this
+    // re-declaration of the rule cannot silently override them.
+    files: ["**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"],
+    languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [WRITE_FENCE, ROUTER_FENCE] }],
+    },
+  },
 );

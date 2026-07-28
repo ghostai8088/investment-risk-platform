@@ -62,6 +62,27 @@ describe("the router fence: react-router-dom is unimportable anywhere", () => {
     expect(hits[0].message).toContain("react-router");
   });
 
+  it("blocks it in a .jsx file — the EXTENSION axis of the fence-hole class", async () => {
+    // FE-M1 review fold. Both fences were scoped to `.ts`/`.tsx`; a probe showed eslint reported
+    // "File ignored because no matching configuration was supplied" for `.jsx` and exited 0, so a
+    // single JSX component could route around both. The app is 100% TypeScript, but Vite compiles
+    // `.jsx` regardless. Same class as the Wave-12 close HIGH (bypass shapes the ratifying probe
+    // never enumerated), one axis over.
+    const hits = await fenceMessages(
+      `import { Link } from "react-router-dom";\nexport const X = () => <Link to="/" />;`,
+      "src/probe.jsx",
+    );
+    expect(hits.length).toBeGreaterThan(0);
+  });
+
+  it("PERMITS react-router in a .jsx file (the extension fence is not a blanket ban)", async () => {
+    const hits = await fenceMessages(
+      `import { Link } from "react-router";\nexport const X = () => <Link to="/" />;`,
+      "src/probe.jsx",
+    );
+    expect(hits).toEqual([]);
+  });
+
   it("blocks a deep subpath import too (react-router-dom/server and friends)", async () => {
     const hits = await fenceMessages(
       `import { StaticRouter } from "react-router-dom/server";\nexport { StaticRouter };`,

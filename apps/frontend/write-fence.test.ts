@@ -55,6 +55,19 @@ describe("the write fence (OQ-2=A): request() is importable ONLY in src/api/writ
     expect(hits.length).toBeGreaterThan(0);
   });
 
+  it("blocks `request` in a .jsx file too (FE-M1 fold: the EXTENSION axis)", async () => {
+    // This fence was scoped to `src/**/*.ts(x)`, so a `.jsx` component was linted by nothing at all
+    // — eslint reported "File ignored because no matching configuration was supplied" and exited 0,
+    // leaving an unaudited route to `client.ts::request`. Found while widening the fence set at
+    // FE-M1; it is the Wave-12 close HIGH's own class along a different axis, so it is pinned here
+    // rather than left for a fourth audit to rediscover.
+    const hits = await fenceMessages(
+      `import { request } from "./api/client";\nexport const X = request;`,
+      "src/probe.jsx",
+    );
+    expect(hits.length).toBeGreaterThan(0);
+  });
+
   it("blocks the namespace form too (a `* as` import reaches request)", async () => {
     const hits = await fenceMessages(
       `import * as c from "../api/client";\nexport const r = c.request;`,
