@@ -1,4 +1,5 @@
-"""Governed registration of the perf-family models (PM-1 return + P3-8 benchmark-relative).
+"""Perf-family model registration (PM-1 return, P3-8 benchmark-relative, PA-1/DS-2 desmoothing,
+RM-1 rolling risk, SR-1 Sharpe).
 
 Each performance-measurement method is a **registered model** (the risk-family precedent, but a
 PEER family — ``perf``, never under ``risk``): the per-model registrars inventory the ``model``
@@ -936,6 +937,12 @@ SHARPE_ASSUMPTIONS: tuple[str, ...] = (
     "they are not. BOTH metrics are emitted at EVERY computable window INCLUDING W = 12: unlike "
     "RM-1's geometric return annualization, whose exponent is exactly 1 at W = 12, sqrt(12) x SR "
     "differs from SR at every window.",
+    "WINDOW DOMAIN: the registered windows are {12, 36} MONTHS, and that set is part of this "
+    "version's IDENTITY, not a caller convenience. A governed run may present ONLY a declared "
+    "window - enforced PRE-CREATE, so a run outside the domain never reaches a result row. "
+    "Twelve months is the floor for the reason RM-1 carries it: GIPS 2.A.12 forbids "
+    "annualizing a period of less than one year, and the x sqrt(12) operator is an "
+    "annualization. Adding a window is a NEW version label, never a silent widening.",
     "RISK-FREE LEG: a CAPTURED vendor-published monthly return series carried as an ordinary "
     "benchmark head (ENT-052), joined to the portfolio months by MONTH KEY (year, month) - never "
     "by date, so a last-business-day book and a calendar-month-end vendor align without either "
@@ -957,7 +964,10 @@ SHARPE_LIMITATIONS: tuple[str, ...] = (
     "THE RATIO IS UNBOUNDED on admitted inputs. Twelve column-legal monthly returns can yield a "
     "Sharpe ratio of 1E10 - past both the Numeric(20,12) column and the house 1E7 envelope - so a "
     "magnitude gate applies to the EMITTED value of every row INCLUDING the annualized member of "
-    "the pair (a column-fitting SR of 9E6 still overflows at x sqrt(12)). A breach is a COMMITTED "
+    "the pair: an SR of 9E6 passes the gate while 9E6 x sqrt(12) = 3.12E7 does not. That pair "
+    "breaches the HOUSE 1E7 envelope, NOT the Numeric(20,12) column, which admits values below "
+    "1E8 - the gate is a declared policy ceiling, not an overflow guard, and earlier drafts of "
+    "this text said overflows, which was arithmetically wrong. A breach is a COMMITTED "
     "FAILED run with DQ evidence and zero rows, never a partial emit.",
     "ROLLING VALUES ARE NOT INDEPENDENT. Adjacent 12-month windows share 11 of 12 observations, so "
     "a change between consecutive windows reflects the single entering and exiting month, not a "

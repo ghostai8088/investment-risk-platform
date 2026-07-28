@@ -570,8 +570,13 @@ jobs:
       # and BOTH registered windows (12 fills as a genuine 7-window series; 36 cannot, so its
       # SUPPRESSED rows exercise the nullable-value encoding on real data). Counts move
       # 23/38/110 -> 24/39/132, MEASURED (the ratified 24/39/131 was right except for the
-      # baseline: SCH-2's stage 15 adds one COMPLETED run its own record did not count). A count
-      # pin now runs AFTER the last stage, where the total is actually final.
+      # baseline: SCH-2's stage 15 adds one COMPLETED run its own record did not count).
+      # NOTE (SR-1): this step's pin is now INTERMEDIATE. It collates before stage 17 and can
+      # only ever observe the totals as of stage 16 — correct, and exactly why the
+      # final-position pin is a RELAY BATON. It now lives in the stage-17 step below at
+      # 25/40/133. RM-1's claim that a pin 'now runs AFTER the last stage' was true for one
+      # slice; leaving it standing would have been the same stale-ledger class the relay
+      # rule exists to kill.
       # Filename ``stage9zzzzzzz`` (SEVEN ``z``, one more than SCH-2's stage 15) — the standing
       # stage-ordering discipline; the ratified record said six, written before SCH-2 took it.
       # ENT-064's DB-enforcement tier (RM-1). The CHECK, the RLS policy and the append-only

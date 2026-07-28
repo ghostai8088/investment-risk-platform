@@ -30,6 +30,7 @@ from irp_shared.perf.stats_kernel import (
     StatsKernelError,
     mean_and_stdev_unquantized,
     mean_return,
+    quantize_result,
     sample_stdev,
 )
 
@@ -100,13 +101,22 @@ def test_the_golden_sharpe_ratio_matches_the_hand_computation() -> None:
 
 
 def test_the_divisor_is_n_MINUS_ONE_and_the_alternative_is_MEASURABLY_different() -> None:
-    """The DISCLOSED divergence from Sharpe (1994)'s own endnote, executed rather than asserted.
+    """The DISCLOSED divergence from Sharpe (1994)'s own endnote, executed against the KERNEL.
 
-    The paper uses the POPULATION sigma (divisor T = 12); this platform uses n-1. If a future edit
-    "corrects" the divisor to match the paper's name, this test fails AND reports the size of the
-    change — which is the point: the divergence is material (~4.3%), which is exactly why it is
-    disclosed in the registered assumptions instead of being absorbed into the paper's brand.
+    The paper uses the POPULATION sigma (divisor T = 12); this platform uses n-1, making the ratio
+    about 4.3% smaller at n = 12. That is above this record's own materiality bar, which is why
+    it is disclosed in the registered assumptions rather than absorbed into the paper's brand.
+
+    **The first version of this test was VACUOUS and its docstring said the opposite.** It compared
+    the LITERAL ``_GOLDEN_SHARPE`` against a locally-recomputed population Sharpe and never called
+    the kernel at all — so under the exact mutation it names (``n-1 -> n`` in ``stats_kernel``) it
+    PASSED while five other tests failed. A guard for the slice's headline fidelity claim that
+    cannot observe the code it guards is worse than none, because the docstring reads as coverage.
     """
+    # THE CALL UNDER TEST — the kernel, not a literal.
+    ours = sharpe_ratio(_GOLDEN)
+    assert ours is not None
+
     with localcontext() as ctx:
         ctx.prec = COMPUTE_PREC
         mean = sum(_GOLDEN, D(0)) / D(12)
@@ -114,10 +124,102 @@ def test_the_divisor_is_n_MINUS_ONE_and_the_alternative_is_MEASURABLY_different(
         population_sharpe = (mean / pop_var.sqrt()).quantize(
             D(1).scaleb(-12), rounding=ROUND_HALF_UP
         )
-    assert population_sharpe != _GOLDEN_SHARPE
-    # Ours is SMALLER, by about 4.3% — the direction and magnitude the assumptions state.
-    ratio = _GOLDEN_SHARPE / population_sharpe
-    assert D("0.954") < ratio < D("0.958"), f"the divergence moved: {ratio}"
+
+    # The kernel must NOT agree with the population form...
+    assert ours != population_sharpe
+    # ...and the sample estimator it DOES use must be the n-1 one, checked against an independent
+    # computation rather than against another call to the same function.
+    with localcontext() as ctx:
+        ctx.prec = COMPUTE_PREC
+        sample_var = sum(((v - mean) ** 2 for v in _GOLDEN), D(0)) / D(11)
+        expected = (mean / sample_var.sqrt()).quantize(D(1).scaleb(-12), rounding=ROUND_HALF_UP)
+    assert ours == expected
+
+    # Ours is SMALLER, by about 4.3% — the direction and magnitude the assumptions state. The exact
+    # factor is sqrt(11/12); a divisor change moves this ratio and fails here.
+    divergence = ours / population_sharpe
+    assert D("0.954") < divergence < D("0.958"), f"the divergence moved: {divergence}"
+
+
+def test_HALF_UP_rounding_is_LOAD_BEARING_not_merely_declared() -> None:
+    """The registered assumptions and the methodology doc both say ``quantize_HALF_UP``. A review
+    found the rounding mode could be switched to HALF_EVEN with the whole suite green, because every
+    other fixture lands away from a tie.
+
+    This one sits exactly on the tie, with an EVEN 12th digit — the only place the two modes differ.
+    HALF_UP rounds away from zero on both signs; HALF_EVEN would round to the even neighbour.
+    """
+    tie_up = D("0.123456789012") + D("0.0000000000005")
+    assert quantize_result(tie_up) == D("0.123456789013")  # HALF_EVEN gives ...012
+    tie_down = D("-0.123456789012") - D("0.0000000000005")
+    assert quantize_result(tie_down) == D("-0.123456789013")  # away from zero, not toward even
+
+
+def test_the_annualization_reads_the_STORED_value_and_that_choice_is_OBSERVABLE() -> None:
+    """``SR_ann = quantize(SR_STORED x sqrt(12))``, not ``quantize(unquantized_ratio x sqrt(12))``.
+
+    The order is what makes the emitted PAIR reconcile exactly — a consumer multiplies the raw row
+    by sqrt(12) and must land on the annualized row. A review found every fixture in this file gave
+    byte-identical results under both orders, so the choice was declared and unguarded.
+
+    This series separates them by 2 ulp at 12dp: it is an ordinary twelve-observation book of
+    3-decimal monthly excess returns, not a constructed extreme.
+    """
+    series = [
+        D(x)
+        for x in (
+            "-0.022",
+            "0.006",
+            "0.024",
+            "0.021",
+            "0.018",
+            "-0.026",
+            "-0.014",
+            "-0.023",
+            "0.001",
+            "0.018",
+            "-0.002",
+            "0.000",
+        )
+    ]
+    stored = sharpe_ratio(series)
+    assert stored is not None
+
+    with localcontext() as ctx:
+        ctx.prec = COMPUTE_PREC
+        mean, sigma = mean_and_stdev_unquantized(series)
+        from_unquantized = ((mean / sigma) * D(12).sqrt()).quantize(
+            D(1).scaleb(-12), rounding=ROUND_HALF_UP
+        )
+    # PREMISE: the two orders genuinely differ here, so the assertion below discriminates.
+    assert annualize_sharpe(stored) != from_unquantized
+
+    assert annualize_sharpe(stored) == D("0.015977287727")
+    # And the pair reconciles EXACTLY from the stored value, which is the whole point of the order.
+    with localcontext() as ctx:
+        ctx.prec = COMPUTE_PREC
+        assert annualize_sharpe(stored) == (stored * D(12).sqrt()).quantize(
+            D(1).scaleb(-12), rounding=ROUND_HALF_UP
+        )
+
+
+def test_the_compute_precision_is_a_declared_MARGIN_not_a_tuned_minimum() -> None:
+    """``COMPUTE_PREC = 50`` is pinned as a CONSTANT, and this test states honestly what that pin
+    does and does not buy.
+
+    A review observed that mutating it to 20 leaves the suite green and filed it as an unguarded
+    convention. Investigated by search rather than by argument: over 20,000 randomised
+    twelve-observation 12dp series I could find NO input where 28-digit and 50-digit accumulation
+    produce different 12dp ratios at any plausible magnitude. That is the honest finding — on
+    column-legal input the constant is **over-provisioned head-room, not a tuned minimum**, and no
+    fixture can make it load-bearing without being a contrivance.
+
+    So the pin is a literal, and the claim in the registered assumptions is worded as what it is:
+    the accumulation happens at 50 digits. Manufacturing an exotic fixture to "guard" it would be
+    the vacuous-test pattern this file exists to avoid — a test that looks like coverage and
+    measures nothing anyone will ever hit.
+    """
+    assert COMPUTE_PREC == 50
 
 
 def test_the_two_denominators_genuinely_differ_and_the_excess_one_is_used() -> None:

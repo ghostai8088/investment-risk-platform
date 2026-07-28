@@ -31,6 +31,7 @@ from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import persistent_tenant_context
 from irp_shared.demo import DEMO_TENANT_ID, DemoSr1AlreadySeededError, run_demo_sr1_stage17
 from irp_shared.marketdata.models import BenchmarkReturn
+from irp_shared.perf.events import RUN_TYPE_SHARPE
 from irp_shared.perf.models import (
     METRIC_TYPE_SHARPE_RATIO,
     METRIC_TYPE_SHARPE_RATIO_ANN,
@@ -87,21 +88,77 @@ def test_the_stage_captured_a_real_risk_free_series_and_ran_a_governed_sharpe(su
     assert result.risk_free_benchmark_id
 
 
-def test_the_risk_free_series_is_NOT_constant(db) -> None:  # noqa: ANN001
+def test_the_risk_free_series_is_NOT_constant(summary, db) -> None:  # noqa: ANN001
     """THE FIXTURE'S LOAD-BEARING PROPERTY. Against a CONSTANT risk-free rate,
     ``sigma(excess) == sigma(portfolio)`` identically — so the demo would be unable to distinguish
     the Sharpe (1994) construction this platform implements from the Sharpe (1966) one it refuses,
     and the whole stage would demonstrate nothing about its own crux.
 
     A demo that cannot REACH a control does not demonstrate it (the OPS-1 standing lesson).
+
+    **SCOPED TO THE RISK-FREE HEAD, and the first version was not.** It counted distinct values over
+    EVERY ``benchmark_return`` in the demo tenant — and stage 10 already captured eight rows with
+    eight distinct values, so the assertion passed on another stage's data. Replacing this stage's
+    entire eighteen-row series with eighteen identical values left it green. A test that reads
+    beyond the thing it names is measuring someone else's fixture.
     """
+    _factory, result = summary
+    rf_id = (
+        result.risk_free_benchmark_id
+        if result is not None
+        else str(db.execute(select(SharpeRatioResult.risk_free_benchmark_id).limit(1)).scalar_one())
+    )
     values = {
         r.return_value
+        for r in db.execute(
+            select(BenchmarkReturn).where(
+                BenchmarkReturn.tenant_id == DEMO_TENANT_ID,
+                BenchmarkReturn.benchmark_id == rf_id,
+            )
+        ).scalars()
+    }
+    assert len(values) > 1, (
+        f"the risk-free series carries {len(values)} distinct value(s) — a constant rate makes "
+        "sigma(excess) == sigma(portfolio) and the demo demonstrates nothing about its own crux"
+    )
+
+
+def test_the_demo_actually_EXERCISES_the_month_key_join(db) -> None:  # noqa: ANN001
+    """THE FIXTURE'S SECOND LOAD-BEARING PROPERTY, added after a review found the first version of
+    this stage could not reach the control it claimed to demonstrate.
+
+    Stage 16's book values on the LAST WEEKDAY of each month; this stage dates its risk-free rows on
+    the CALENDAR month end. For roughly five months of twelve those differ — so the run only
+    COMPLETES because the legs join by MONTH KEY rather than by date. Dating the risk-free rows on
+    the book's own boundaries (as the first version did) made the capture tautologically
+    date-identical to the pins, and the demo proved nothing about the criterion the decision record
+    calls the load-bearing new one.
+
+    A demo that cannot REACH a control does not demonstrate it (the OPS-1 standing lesson).
+    """
+    from irp_shared.perf.models import METRIC_TYPE_DIETZ_PERIOD, PortfolioReturnResult
+
+    rf_dates = {
+        r.return_date
         for r in db.execute(
             select(BenchmarkReturn).where(BenchmarkReturn.tenant_id == DEMO_TENANT_ID)
         ).scalars()
     }
-    assert len(values) > 1
+    book_dates = {
+        r.period_end
+        for r in db.execute(
+            select(PortfolioReturnResult).where(
+                PortfolioReturnResult.tenant_id == DEMO_TENANT_ID,
+                PortfolioReturnResult.metric_type == METRIC_TYPE_DIETZ_PERIOD,
+            )
+        ).scalars()
+    }
+    assert rf_dates and book_dates
+    differing = rf_dates - book_dates
+    assert differing, (
+        "every risk-free date coincides with a book boundary — the month-key join is not exercised "
+        "and this demo demonstrates nothing about it"
+    )
 
 
 def test_the_twelve_month_window_is_a_GENUINE_rolling_series(db) -> None:  # noqa: ANN001
@@ -153,6 +210,13 @@ def test_the_unfillable_36_month_window_emitted_SUPPRESSED_rows_on_real_data(db)
         assert row.suppression_reason and "18 monthly observations" in row.suppression_reason
         assert row.n_observations is None  # there IS no sample — distinct from zero dispersion
         assert row.suppression_reason != ZERO_DISPERSION_REASON
+
+
+def test_the_run_emitted_EXACTLY_the_expected_row_inventory(db) -> None:  # noqa: ANN001
+    """A total pin, which RM-1's suite has and the first version of this one lacked: 7 evaluation
+    points x 2 metrics at W=12, plus the suppressed pair at W=36. Without it a stray extra
+    metric/window row passes unnoticed, since every other test here filters."""
+    assert len(_rows(db)) == 16
 
 
 def test_every_persisted_row_carries_its_risk_free_provenance(db) -> None:  # noqa: ANN001
@@ -226,7 +290,7 @@ def test_sr1_contributed_exactly_ONE_completed_run(db) -> None:  # noqa: ANN001
         .select_from(CalculationRun)
         .where(
             CalculationRun.tenant_id == DEMO_TENANT_ID,
-            CalculationRun.run_type == "SHARPE",
+            CalculationRun.run_type == RUN_TYPE_SHARPE,
             CalculationRun.status == "COMPLETED",
         )
     ).scalar_one()

@@ -9,7 +9,9 @@ structural" claim the verifier pass refuted.
 
 from __future__ import annotations
 
+import json
 import uuid
+from calendar import monthrange
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -449,23 +451,127 @@ def test_TWO_risk_free_rows_in_one_month_are_refused(session: Session) -> None:
     assert "more than one risk-free return" in str(caught.value)
 
 
-def test_a_pinned_risk_free_row_outside_the_measured_months_is_refused(session: Session) -> None:
-    """An unconsumed pin is a lie in the provenance: the snapshot would claim to bind an input the
-    run never read."""
+def test_a_CONTINUOUS_vendor_series_covering_d0s_month_still_RUNS(session: Session) -> None:
+    """THE REGRESSION TEST for a defect this slice shipped and a finder found by execution.
+
+    ``d_0``'s month is NEVER a measured month — the alignment criterion guarantees it. The first
+    builder pinned from the first of ``d_0``'s month anyway, so it captured ONLY rows the binder is
+    guaranteed to refuse as unconsumed pins. An ordinary continuous vendor cash series publishes
+    that month like any other, so the result was a **permanently unrunnable snapshot** — immutable,
+    therefore unrepairable, from a completely legal capture.
+
+    The fixture is deliberately the NORMAL shape: a vendor with no gaps, including d_0's month.
+    """
     tenant = str(uuid.uuid4())
     bounds = _month_ends(13)
-    # The OPENING boundary's month is d_0 — it contributes no observation, so a row there is
-    # pinned by the builder's window but must never be silently ignored.
+    # A continuous series: every month from d_0's onward, exactly as a real vendor publishes.
+    continuous = bounds[:]
+    result = _run_sharpe(
+        session,
+        tenant,
+        returns=["0.01", "0.02"] * 6,
+        boundaries=bounds,
+        rf_dates=continuous,
+        windows=(12,),
+    )
+    assert result.status == "COMPLETED"
+    assert all(not r.suppressed for r in result.rows)
+
+
+def test_a_LAST_BUSINESS_DAY_book_against_a_CALENDAR_month_end_vendor_RUNS(
+    session: Session,
+) -> None:
+    """THE SECOND REGRESSION TEST, for the same class at the other edge.
+
+    ``is_month_end`` admits the last BUSINESS day (GIPS 2.A.23.b), so a compliant book may close on
+    2024-08-30 when 2024-08-31 is a Saturday. The first builder truncated the risk-free window at
+    that DATE while the binder joins by MONTH — so a vendor dating on the calendar month end lost
+    its final row and the run was refused for a missing month. A pure calendar accident, firing in
+    roughly five months of twelve.
+
+    **This is exactly the pair the month-key join was invented to accept**, which is what makes the
+    defect so pointed: the mechanism was right and the window feeding it was not.
+    """
+    tenant = str(uuid.uuid4())
+    bounds = _month_ends(13, start_year=2023, start_month=8)  # ends 2024-08-30 (Fri; 31st is a Sat)
+    assert bounds[-1] == date(2024, 8, 30), f"fixture premise moved: {bounds[-1]}"
+    calendar_ends = [date(b.year, b.month, monthrange(b.year, b.month)[1]) for b in bounds[1:]]
+    # PREMISE: the vendor's last date really is AFTER the book's last boundary.
+    assert calendar_ends[-1] > bounds[-1]
+
+    result = _run_sharpe(
+        session,
+        tenant,
+        returns=["0.01", "0.02"] * 6,
+        boundaries=bounds,
+        rf_dates=calendar_ends,
+        windows=(12,),
+    )
+    assert result.status == "COMPLETED"
+    assert all(not r.suppressed for r in result.rows)
+
+
+def test_a_hand_built_snapshot_pinning_a_NON_measured_month_is_refused(session: Session) -> None:
+    """The unconsumed-pin guard, now unreachable through the BUILD path and tested through a FORGED
+    snapshot instead — the `test_var_hs`/`test_benchmark_relative` pattern.
+
+    Keeping the guard is right: it defends the provenance against a hand-built snapshot, where a
+    pinned row the run never reads is a lie about what the number was computed from. But testing it
+    through the builder would now require the builder to be wrong, which is the defect above.
+    """
+    from irp_shared.snapshot.serialize import benchmark_return_series_content
+
+    tenant = str(uuid.uuid4())
+    bounds = _month_ends(13)
+    run, _pf, _b = _seed_return_run(
+        session, tenant, returns=["0.01", "0.02"] * 6, boundaries=bounds
+    )
+    head = _seed_risk_free(
+        session,
+        tenant,
+        dates=[*bounds[1:], date(2030, 3, 29)],  # one row in a month the book never measured
+        values=["0.004"] * 13,
+    )
+    snapshot = build_sharpe_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=run.run_id,
+        risk_free_benchmark_id=head.id,
+        rf_return_basis=RETURN_BASIS_TOTAL,
+    )
+    # PREMISE: the BUILDER correctly excluded the foreign month — so the guard below is genuinely
+    # about hand-built content, not about the build path.
+    from irp_shared.snapshot import COMPONENT_KIND_BENCHMARK_RETURN, list_components
+
+    pinned = [
+        json.loads(c.captured_content)
+        for c in list_components(session, snapshot_id=snapshot.id, acting_tenant=tenant)
+        if c.component_kind == COMPONENT_KIND_BENCHMARK_RETURN
+    ]
+    assert pinned and all(
+        r["return_date"] != "2030-03-29" for r in pinned[0]["rows"]
+    ), "the builder pinned a non-measured month — the window fix regressed"
+
+    # Now forge it: adjudicate content carrying that foreign row directly.
+    from irp_shared.perf.sharpe_service import _adjudicate_pins, _parse_pins
+
+    portfolio_raw, rf_raw = _parse_pins(
+        list(list_components(session, snapshot_id=snapshot.id, acting_tenant=tenant))
+    )
+    rf_raw[0]["rows"].append(
+        {
+            "id": str(uuid.uuid4()),
+            "return_date": "2030-03-29",
+            "return_type": "SIMPLE",
+            "return_basis": RETURN_BASIS_TOTAL,
+            "return_value": "0.004",
+        }
+    )
     with pytest.raises(SharpeInputError) as caught:
-        _run_sharpe(
-            session,
-            tenant,
-            returns=["0.01", "0.02"] * 6,
-            boundaries=bounds,
-            rf_dates=[bounds[0], *bounds[1:]],
-            windows=(12,),
-        )
+        _adjudicate_pins(portfolio_raw, rf_raw)
     assert "not a measured month" in str(caught.value)
+    assert benchmark_return_series_content  # the serializer the forged shape mirrors
 
 
 def test_a_risk_free_series_with_no_rows_in_the_span_fails_closed_before_any_write(
@@ -489,16 +595,126 @@ def test_a_risk_free_series_with_no_rows_in_the_span_fails_closed_before_any_wri
         )
 
 
-def test_a_FOREIGN_tenants_risk_free_head_is_refused(session: Session) -> None:
-    """P3-5: PG FK checks bypass RLS, so a hand-minted snapshot could durably stamp another tenant's
-    benchmark into the ``risk_free_benchmark_id`` hard FK. Re-resolved under the acting tenant
-    BEFORE the stamp."""
-    from irp_shared.perf.sharpe_service import _assert_benchmark_in_tenant
+def _forge_snapshot_with(session: Session, tenant: str, *, mutate) -> tuple[str, str]:  # noqa: ANN001
+    """Build a legitimate SHARPE_INPUT snapshot, then persist a SECOND one whose pinned content has
+    been tampered with — the `test_var_hs`/`test_benchmark_relative` forged-snapshot pattern.
 
+    This is what makes the binder's cross-tenant re-resolutions testable AT THE BINDER. Calling the
+    private helpers directly proves the helpers work and proves nothing about the binder calling
+    them — the project's own "a control passing on another layer's evidence" defect, which a review
+    found in the first version of these tests.
+    """
+    from irp_shared.snapshot import list_components
+    from irp_shared.snapshot.service import _persist_snapshot
+
+    run, _pf, bounds = _seed_return_run(session, tenant, returns=["0.01", "0.02"] * 6)
+    head = _seed_risk_free(session, tenant, dates=bounds[1:], values=["0.004"] * 12)
+    good = build_sharpe_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=run.run_id,
+        risk_free_benchmark_id=head.id,
+        rf_return_basis=RETURN_BASIS_TOTAL,
+    )
+    specs: list = []
+    for comp in list_components(session, snapshot_id=good.id, acting_tenant=tenant):
+        content = json.loads(comp.captured_content)
+        mutate(content, comp.component_kind)
+        raw = json.dumps(content, sort_keys=True, separators=(",", ":"))
+        specs.append(
+            (
+                comp.component_kind,
+                comp.target_entity_type,
+                type("Row", (), {"id": comp.target_entity_id})(),
+                raw,
+                comp.content_hash,
+            )
+        )
+    forged = _persist_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        specs=specs,
+        label="",
+        purpose="SHARPE_INPUT",
+        as_of_valid_at=good.as_of_valid_at,
+        as_of_known_at=good.as_of_known_at,
+        as_of_valuation_date=good.as_of_valuation_date,
+        binding_predicate_version=good.binding_predicate_version,
+    )
+    version = register_sharpe_model(
+        session, tenant_id=tenant, actor_id="steward", code_version=_CODE_VERSION
+    )
+    return forged.id, str(version.id)
+
+
+def _run_forged(session: Session, tenant: str, snapshot_id: str, version_id: str):  # noqa: ANN202
+    return run_sharpe_ratio(
+        session,
+        acting_tenant=tenant,
+        actor=_ACTOR,
+        code_version=_CODE_VERSION,
+        environment_id="test",
+        model_version_id=version_id,
+        window_months=(12,),
+        snapshot_id=snapshot_id,
+    )
+
+
+def test_the_BINDER_refuses_a_foreign_tenants_risk_free_head(session: Session) -> None:
+    """P3-5 at the BINDER, not at the helper. PG FK checks bypass RLS, so a hand-minted snapshot
+    could durably stamp another tenant's benchmark into the `risk_free_benchmark_id` hard FK.
+
+    A mutation deleting the binder's `_assert_benchmark_in_tenant` call survived the first version
+    of this suite, because the only test called that helper directly.
+    """
     tenant, other = str(uuid.uuid4()), str(uuid.uuid4())
-    head = _seed_risk_free(session, other, dates=[date(2024, 1, 31)], values=["0.004"])
+    foreign = _seed_risk_free(session, other, dates=[date(2024, 1, 31)], values=["0.004"])
+
+    def _swap(content: dict, kind: str) -> None:
+        if kind == "BENCHMARK_RETURN":
+            content["benchmark_id"] = str(foreign.id)
+
+    snapshot_id, version_id = _forge_snapshot_with(session, tenant, mutate=_swap)
+    with pytest.raises(SharpeInputError, match="not visible"):
+        _run_forged(session, tenant, snapshot_id, version_id)
+
+
+def test_the_BINDER_refuses_a_foreign_tenants_portfolio(session: Session) -> None:
+    """The same guard on the measured book. Had NO test at all before a review found the gap."""
+    tenant, other = str(uuid.uuid4()), str(uuid.uuid4())
+    foreign_book = create_portfolio(
+        session,
+        tenant_id=other,
+        code=f"pf-{uuid.uuid4().hex[:8]}",
+        name="Foreign",
+        node_type="ACCOUNT",
+        actor=PortfolioActor(actor_id="steward"),
+    )
+    session.flush()
+
+    def _swap(content: dict, kind: str) -> None:
+        if kind == "PORTFOLIO_RETURN":
+            content["portfolio_id"] = str(foreign_book.id)
+
+    snapshot_id, version_id = _forge_snapshot_with(session, tenant, mutate=_swap)
     with pytest.raises(SharpeInputError):
-        _assert_benchmark_in_tenant(session, str(head.id), acting_tenant=tenant)
+        _run_forged(session, tenant, snapshot_id, version_id)
+
+
+def test_the_BINDER_refuses_a_foreign_tenants_portfolio_return_run(session: Session) -> None:
+    """And on the consumed upstream run — the third hard FK. Also had no test."""
+    tenant, other = str(uuid.uuid4()), str(uuid.uuid4())
+    foreign_run, _pf, _b = _seed_return_run(session, other, returns=["0.01"] * 12)
+
+    def _swap(content: dict, kind: str) -> None:
+        if kind == "PORTFOLIO_RETURN":
+            content["calculation_run_id"] = str(foreign_run.run_id)
+
+    snapshot_id, version_id = _forge_snapshot_with(session, tenant, mutate=_swap)
+    with pytest.raises(SharpeInputError):
+        _run_forged(session, tenant, snapshot_id, version_id)
 
 
 # --- 4. the pre-create gate ----------------------------------------------------------------------
@@ -642,20 +858,60 @@ def test_the_reads_are_tenant_scoped_and_filterable(session: Session) -> None:
 
 
 def test_the_run_family_is_NEVER_a_metric_type_for_ANY_family(session: Session) -> None:
-    """GS2, pinned platform-wide rather than as per-slice prose.
+    """GS2, pinned across EVERY module that declares either vocabulary.
 
     Every prior slice asserted this for itself in its own file, which is why SR-1's ratified record
     could name ``RUN_TYPE_SHARPE_RATIO`` — a value identical to ``METRIC_TYPE_SHARPE_RATIO`` — while
-    invoking the rule it breaks. One test for all of them now.
-    """
-    import irp_shared.perf.events as events
-    import irp_shared.perf.models as models
+    invoking the rule it breaks.
 
-    run_types = {v for k, v in vars(events).items() if k.startswith("RUN_TYPE_")}
-    metric_types = {v for k, v in vars(models).items() if k.startswith("METRIC_TYPE_")}
-    assert run_types and metric_types
-    collisions = run_types & metric_types
-    assert not collisions, f"run_type values that are also metric_type values: {sorted(collisions)}"
+    **The first version of THIS test was the same mistake one level up.** It scanned only
+    ``perf.events`` and ``perf.models``: 5 of 18 run types and 15 of 38 metric types. A finder
+    injected a genuine collision into ``risk.events`` and it stayed green — a sampled contract guard
+    is false security (the standing FE-2 lesson). The module list is now DISCOVERED from the package
+    rather than enumerated, so a new family is covered the moment it declares a constant, and the
+    census below asserts the scan is not silently empty.
+    """
+    import importlib
+    import pkgutil
+
+    import irp_shared
+
+    run_types: dict[str, str] = {}
+    metric_types: dict[str, str] = {}
+    scanned: list[str] = []
+    for info in pkgutil.walk_packages(irp_shared.__path__, prefix="irp_shared."):
+        if not info.name.endswith((".events", ".models")):
+            continue
+        try:
+            module = importlib.import_module(info.name)
+        except (
+            Exception
+        ):  # pragma: no cover - a module that cannot import is another test's problem
+            continue
+        found = False
+        for name, value in vars(module).items():
+            if not isinstance(value, str):
+                continue
+            if name.startswith("RUN_TYPE_"):
+                run_types[value] = f"{info.name}.{name}"
+                found = True
+            elif name.startswith("METRIC_TYPE_"):
+                metric_types[value] = f"{info.name}.{name}"
+                found = True
+        if found:
+            scanned.append(info.name)
+
+    # The scan must actually reach the modules that carry these vocabularies — otherwise a rename or
+    # a package move would silently empty it and the guard would pass by finding nothing.
+    assert {"irp_shared.perf.events", "irp_shared.perf.models"} <= set(scanned)
+    assert {"irp_shared.risk.events", "irp_shared.risk.models"} <= set(scanned)
+    assert len(run_types) >= 15, f"only {len(run_types)} run types discovered: {sorted(run_types)}"
+    assert len(metric_types) >= 30, f"only {len(metric_types)} metric types discovered"
+
+    collisions = sorted(set(run_types) & set(metric_types))
+    assert not collisions, "run_type values that are also metric_type values: " + ", ".join(
+        f"{v} ({run_types[v]} vs {metric_types[v]})" for v in collisions
+    )
 
 
 def test_the_binder_emits_NO_PERF_audit_code(session: Session) -> None:

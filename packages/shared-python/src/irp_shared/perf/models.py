@@ -488,7 +488,12 @@ class SharpeRatioResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     #: NONE on the raw ratio, SQRT_12 on the annualized one.
     annualization_basis: Mapped[str] = mapped_column(String(20), nullable=False)
     sampling_frequency: Mapped[str] = mapped_column(String(10), nullable=False)
-    #: Observations inside the window; NULL when suppressed (there is no sample).
+    #: Observations inside the window. NULL when the window could not be FILLED (there is no
+    #: sample); POPULATED on a zero-dispersion suppression, where the sample exists and the
+    #: ratio does not. That distinction is deliberate and readable on the API surface — the
+    #: two suppression states are different facts. (This comment said "NULL when suppressed"
+    #: until a review caught it: a NEW lying comment, on the entity minted partly to fix the
+    #: last one. The binder is the authority — see `sharpe_service._compute`.)
     n_observations: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 

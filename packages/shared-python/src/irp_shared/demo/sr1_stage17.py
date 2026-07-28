@@ -37,8 +37,10 @@ left the new model code the only one in the demo inventory carrying no tier and 
 
 from __future__ import annotations
 
+from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -61,8 +63,8 @@ from irp_shared.model.validation import (
 )
 from irp_shared.perf import SharpeRatioActor, register_sharpe_model, run_sharpe_ratio
 from irp_shared.perf.bootstrap import SHARPE_WINDOWS
-from irp_shared.perf.events import RUN_TYPE_PORTFOLIO_RETURN
-from irp_shared.perf.models import PortfolioReturnResult
+from irp_shared.perf.events import RUN_TYPE_PORTFOLIO_RETURN, RUN_TYPE_SHARPE
+from irp_shared.perf.models import METRIC_TYPE_DIETZ_PERIOD, PortfolioReturnResult
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.snapshot import build_sharpe_snapshot
 from irp_shared.snapshot.events import SnapshotActor
@@ -226,17 +228,23 @@ def _measured_month_ends(session: Session, return_run_id: str) -> list[date]:
                 select(PortfolioReturnResult).where(
                     PortfolioReturnResult.tenant_id == DEMO_TENANT_ID,
                     PortfolioReturnResult.calculation_run_id == return_run_id,
-                    PortfolioReturnResult.metric_type == "DIETZ_PERIOD",
+                    PortfolioReturnResult.metric_type == METRIC_TYPE_DIETZ_PERIOD,
                 )
             ).scalars()
         }
     )
     # One entry per calendar MONTH — stage 16's mid-month boundary makes January hold two
     # sub-periods, and the risk-free leg needs one row per month, not per sub-period.
-    by_month: dict[tuple[int, int], date] = {}
-    for when in ends:
-        by_month[(when.year, when.month)] = max(by_month.get((when.year, when.month), when), when)
-    return [by_month[key] for key in sorted(by_month)]
+    months = sorted({(when.year, when.month) for when in ends})
+    # **Dated on the CALENDAR month end, deliberately NOT on the book's own boundary date.**
+    # Stage 16 values on the LAST WEEKDAY (GIPS 2.A.23.b), so for roughly five months of twelve
+    # these two dates DIFFER — which is the whole point: dating the risk-free rows on the book's
+    # own boundaries would make the capture tautologically date-identical to the pins, and the
+    # demo would demonstrate NOTHING about the month-key join, the criterion the record calls the
+    # load-bearing new one. A vendor publishing on the calendar end is also the realistic shape.
+    # (This is the OPS-1 standing lesson: a demo that cannot REACH a control does not demonstrate
+    # it. A review found the first version of this stage could not.)
+    return [date(year, month, monthrange(year, month)[1]) for year, month in months]
 
 
 def run_demo_sr1_stage17(session: Session) -> Sr1Stage17Summary:
@@ -245,7 +253,8 @@ def run_demo_sr1_stage17(session: Session) -> Sr1Stage17Summary:
     Idempotent by REFUSAL — a second call raises rather than half-seeding."""
     existing = session.execute(
         select(CalculationRun).where(
-            CalculationRun.tenant_id == DEMO_TENANT_ID, CalculationRun.run_type == "SHARPE"
+            CalculationRun.tenant_id == DEMO_TENANT_ID,
+            CalculationRun.run_type == RUN_TYPE_SHARPE,
         )
     ).first()
     if existing is not None:
@@ -275,7 +284,6 @@ def run_demo_sr1_stage17(session: Session) -> Sr1Stage17Summary:
         index_family="CASH",
     )
     session.flush()
-    from decimal import Decimal
 
     for when, value in zip(month_ends, _RF_RETURNS, strict=True):
         capture_benchmark_return(

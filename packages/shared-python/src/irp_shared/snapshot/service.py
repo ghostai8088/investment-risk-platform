@@ -32,6 +32,7 @@ the run consumers (``exposure``, ``risk``) import ``snapshot``.
 from __future__ import annotations
 
 import json
+from calendar import monthrange
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
@@ -1940,16 +1941,33 @@ def build_sharpe_snapshot(
     and
     not taken in v1.
 
-    **The pinned window is INCLUSIVE of the span's opening boundary month** — deliberately unlike
-    P3-8's half-open ``(span_start, span_end]``. P3-8 buckets benchmark rows into sub-period windows
-    where the opening boundary belongs to no window; SR-1 joins by MONTH KEY, and a vendor may date
-    a
-    month's return anywhere inside that month, including on or before ``span_start`` itself. Pinning
-    from the first of ``span_start``'s month therefore captures the rows the binder will actually
-    look for. ``span_start``'s own month contributes no observation (it is ``d_0``, the close of the
-    month BEFORE the first measured month), so the binder refuses any pinned row whose month is not
-    a
-    measured month rather than silently ignoring it — an unconsumed pin is a lie in the provenance.
+    **The pinned window spans exactly the MEASURED MONTHS, whole.** The binder joins by MONTH KEY,
+    so the window must be expressed in months too: from the FIRST DAY of the first measured month to
+    the LAST DAY of the last measured month. Both edges are load-bearing and both were wrong in the
+    first implementation, in opposite directions — a review found each by execution:
+
+    - **The lower edge must NOT reach into ``d_0``'s month.** ``d_0`` is the close of the month
+      BEFORE the first measured month, and the alignment criterion guarantees its month is never a
+      measured month (condition 4 forbids another boundary there; condition 3 forces every interior
+      month to contribute). Pinning from ``d_0``'s month therefore captured ONLY rows the binder is
+      guaranteed to refuse as unconsumed pins — so an ordinary continuous vendor cash series, which
+      of course also publishes that month, produced a permanently unrunnable snapshot. Immutable, so
+      unrepairable.
+    - **The upper edge must be the last day of the last measured MONTH, not ``span_end``.** A book
+      may close on the last BUSINESS day (GIPS 2.A.23.b) while its vendor dates on the calendar
+      month end; truncating at ``span_end`` then dropped the final month's risk-free row and the
+      binder refused for a missing month. A pure calendar accident, firing in roughly five months
+      of twelve — and exactly the pair the month-key join exists to accept.
+
+    **The vendor's ``return_date`` must fall INSIDE the month its return is for.** That is a
+    declared capture convention, not an inference: a series dated on the first of the FOLLOWING
+    month joins one month late under a ``(year, month)`` key, and nothing in the data can
+    distinguish that from a correctly-dated series — the row counts match exactly. Such a series
+    must be re-dated at capture. Recorded as a limitation rather than silently accommodated.
+
+    The binder still refuses any pinned row whose month is not a measured month. Under this window
+    that refusal is structurally unreachable through the build path and is therefore honest
+    defense-in-depth against a hand-built snapshot — an unconsumed pin is a lie in the provenance.
 
     Fails closed BEFORE any write on an empty return run or an empty risk-free window. Both sides
     are
@@ -1966,19 +1984,26 @@ def build_sharpe_snapshot(
         raise SharpeSnapshotError(
             f"portfolio-return run {portfolio_return_run_id} has no visible result rows to pin"
         )
-    span_start = min(r.period_start for r in return_rows)
     span_end = max(r.period_end for r in return_rows)
+    # The MEASURED months, read off the sub-period ENDS (the month a return is realized into). The
+    # smallest period_end lies in the FIRST measured month; the largest in the last. `period_start`
+    # is deliberately NOT used: the smallest of those is d_0, whose month is never measured.
+    first_measured_end = min(r.period_end for r in return_rows)
+    month_floor = date(first_measured_end.year, first_measured_end.month, 1)
+    month_ceiling = date(
+        span_end.year,
+        span_end.month,
+        monthrange(span_end.year, span_end.month)[1],
+    )
 
     benchmark = resolve_benchmark(session, str(risk_free_benchmark_id), acting_tenant=acting_tenant)
-    # From the FIRST DAY of the opening boundary's month (see the docstring), exclusive-lower being
-    # the day BEFORE it so the helper's half-open span includes that first day.
-    month_floor = date(span_start.year, span_start.month, 1)
     window = _benchmark_return_window(
         session,
         benchmark_id=benchmark.id,
         return_basis=rf_return_basis,
+        # Half-open on the lower side, so step back one day to include month_floor itself.
         start_exclusive=month_floor - timedelta(days=1),
-        end_inclusive=span_end,
+        end_inclusive=month_ceiling,
         valid_at=valid_at,
         known_at=known,
         acting_tenant=acting_tenant,
@@ -1986,7 +2011,7 @@ def build_sharpe_snapshot(
     if not window:
         raise SharpeSnapshotError(
             f"risk-free benchmark {risk_free_benchmark_id} has no {rf_return_basis} returns in "
-            f"[{month_floor}, {span_end}] as-of the declared instants"
+            f"[{month_floor}, {month_ceiling}] as-of the declared instants"
         )
 
     specs: list[tuple[str, str, Any, str, str]] = []
@@ -3842,7 +3867,7 @@ _BINDING_PREDICATES = (
     PRIVATE_COVARIANCE_BINDING_PREDICATE,
     VAR_UNIFIED_BINDING_PREDICATE,
     # SR-1 folded in the two entries this guard had been missing since CC-2 and RM-1. A conformance
-    # guard that does not enumerate every member is not a guard — PACING (44 chars) and ROLLING_RISK
+    # guard that does not enumerate every member is not a guard — PACING (41 chars) and ROLLING_RISK
     # (28) both fit, so nothing was broken, but the varchar(50) ceiling was unchecked for two
     # shipped
     # predicates and would have stayed unchecked for the next one.

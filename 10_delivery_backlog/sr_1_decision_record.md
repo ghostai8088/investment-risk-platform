@@ -118,6 +118,19 @@ Stage 17 (EIGHT `z`): captures the rf series (~19 monthly vendor-style rows over
 
 **The lesson, generalized:** the record's premise was checkable in one grep and was checked only at implementation. *A claim of the form "every existing X already satisfies Y" is a census claim, and a census claim belongs in the verifier pass, not in the fold that depends on it.* SCH-2 refuted two ratified decisions at execution; RM-1 refuted one; this is the third slice running. The verifier lanes examine reasoning and sources well and enumerate call sites poorly.
 
+**R2 — `RUN_TYPE_SHARPE_RATIO` becomes `RUN_TYPE_SHARPE = "SHARPE"`.** OD-SR-1-E and Part 6 named the constant `RUN_TYPE_SHARPE_RATIO` while invoking the GS2 family≠metric rule — and the obvious value for that name is exactly `METRIC_TYPE_SHARPE_RATIO`. Every prior family keeps the two disjoint (ROLLING_RISK vs MAX_DRAWDOWN; BENCHMARK_RELATIVE vs INFORMATION_RATIO); a `run_type` equal to a `metric_type` makes the same string mean two different things in two tables, which is what GS2 forbids. The value is `"SHARPE"`.
+
+*Recorded here rather than only in the constant's docstring* — which is where the implementation first put it, repeating verbatim the SCH-2 lesson this record's own Part 4b heading cites. **A reversal a reader can only find by reading the code is not recorded.**
+
+**R3 — the snapshot builder's risk-free window was wrong at BOTH edges, and the ratified prose specified one of the errors.** Found by an adversarial finder, by execution, after the gates were green:
+
+- the lower edge pinned from `d_0`'s month, which the alignment criterion guarantees is never a MEASURED month — so the builder captured only rows the binder must refuse as unconsumed pins, and an ordinary continuous vendor series produced a **permanently unrunnable snapshot** (immutable, so unrepairable). Part 1's own sentence — *"the window = the return run's span"* — is what made this feel right;
+- the upper edge truncated at `span_end`, a DATE, while the binder joins by MONTH. A book closing on the last BUSINESS day (GIPS 2.A.23.b) against a vendor dating on the calendar month end lost its final risk-free row and was refused for a missing month — in roughly five months of twelve, and *exactly the pair the month-key join exists to accept*.
+
+The window is now the measured months, whole: first day of the first measured month to last day of the last. **Both regression tests are mutation-proved** by reverting each edge in turn.
+
+**The lesson is about the demo, and it is the OPS-1 lesson again.** Neither defect could surface, because the demo stage derived its risk-free dates from the book's own month-ends — making the capture tautologically date-identical to the pins, so the stage exercised the month-key join not at all while its docstring called that join the slice's load-bearing new criterion. The stage now dates on the CALENDAR month end against a last-weekday book, and a test asserts the two sets differ. *A fixture built from the thing under test cannot test it.*
+
 ## Part 6 — Implementation plan
 
 Ordered so each commit is independently green. Sub-items marked **[C]** carry an EXECUTED negative control (the standing rule: a guard never demonstrated to fire is not a guard).
@@ -146,14 +159,14 @@ Ordered so each commit is independently green. Sub-items marked **[C]** carry an
 
 | Gate | Result |
 |---|---|
-| `make check` | GREEN — ruff, **mypy 250 source files**, the full unit battery, secret scan, docs check |
-| Full-PG validation | GREEN — schema RESET first (`DROP SCHEMA public CASCADE` + `GRANT USAGE ON SCHEMA public TO PUBLIC`), `alembic upgrade head` clean, whole battery `PYTEST_EXIT=0` |
+| `make check` | GREEN, RE-RUN post-fold from purged bytecode — **2185 passed, 0 failed**; ruff, mypy 250 source files, secret scan, docs check |
+| Full-PG validation | GREEN, RE-RUN post-fold — schema RESET first (`DROP SCHEMA public CASCADE` + `GRANT USAGE ON SCHEMA public TO PUBLIC`), `alembic upgrade head` = 0, `alembic check` = 0, whole battery `PYTEST_EXIT=0` |
 | `alembic check` | *No new upgrade operations detected* — no ORM/migration drift |
 | `pg_constraint` read-back | All nine ENT-065 constraint names EXACT; no doubling, no hash-truncation (**the RM-1 drift class, checked by reading the database rather than trusting `alembic check`, which does not compare CHECKs**) |
 | RLS + trigger | `relrowsecurity` AND `relforcerowsecurity` both true; `tenant_isolation_sharpe_ratio_result` + `sharpe_ratio_result_append_only` present |
-| Demo counts | **25/40/133 MEASURED** on the fresh-schema PG run (queried directly, not derived) |
+| Demo counts | **25/40/133 MEASURED** on the post-fold fresh-schema PG run (queried directly, not derived), with **16 ENT-065 rows** — the designed inventory exactly |
 | Demo emitted rows | 7 + 7 emitted at W=12, 1 + 1 SUPPRESSED at W=36 — the designed fixture shape exactly |
-| Mutation controls | **15 mutants EXECUTED, 15 killed** — five kernel (`n-1 → n`, `√12 → 12`, the suppression predicate moved to the quantized σ, the risk-free leg dropped, a 1-ulp drift) and ten binder (every refusal, the magnitude gate, the window domain, the purpose gate, the cross-tenant rf check, dropping the annualized metric) |
+| Mutation controls | **20 mutants EXECUTED, 20 killed, 0 survived — RE-RUN from PURGED BYTECODE.** The earlier 15/15 run is DISCARDED: a stale `.pyc` was found serving a mutated `COMPUTE_PREC = 20` while the source read 50, so every result from that window is of unknown validity. The battery now covers the estimator divisor, the annualizer, both suppression predicates, the excess construction, a 1-ulp ratio drift, HALF_UP rounding, nine binder refusals including all three cross-tenant hard-FK re-resolutions, BOTH snapshot-builder window edges, and an injected GS2 collision |
 | FE decimal guard | Coverage of `SharpeRatioRowOut` proved BY MUTATION — with `metric_value` retyped to float, `tsc` names that DTO specifically. Not inferred from the `*RowOut` naming rule (the RM-1 guard-regression lesson) |
 
 **Two claims the first completeness test did not actually prove, found by mutating the source.** Deleting the binder's risk-free-completeness refusal left the suite GREEN, because `build_excess_series` refuses too and its message also names the month — a control passing on another layer's evidence. The test now asserts the binder's own phrasing (it reports how many FURTHER months are missing, which the kernel, stopping at the first, cannot), and the fixture carries two gaps so that phrasing is reachable. Re-mutated: killed.
@@ -167,3 +180,37 @@ Ordered so each commit is independently green. Sub-items marked **[C]** carry an
 **Ledger-class omission sweep — and what it found.** All six ledgers swept. The sweep's own headline finding is that **the PREVIOUS sweep never merged**: commit `c9d0374` (three further ledger-class gaps across three slices, authored at the RM-1 close) is not an ancestor of `main`, because PR #137 carried only `5e46c5a`, the two incidentally-found fixes. So `current_state.md` sat four merged PRs stale, the ENT registry had NO row for ENT-061…064, and the CTRL-003 SCH-2 trace was absent. All carried forward here.
 
 *The lesson is about the sweep, not the documents.* **An omission sweep that ends in an unmerged commit has exactly the effect of never running it, and the checklist that found the gaps had no way to notice that its own fix had not landed.** The sweep therefore gains a final step — *verify the fix is on `main`, not merely that it was written* — and that step should be part of the standing rule proposed at the Wave-13 close.
+
+## Part 9 — The 4-finder adversarial review (RAN 2026-07-28)
+
+**4 HIGH / 8 MED / ~12 LOW, all folded.** Four finders in parallel: the number and its mathematics; the binder, snapshot layer and governance invariants; the read surface, demo and CI; omissions and doctrine. Every finding below was EXECUTED by its finder, not argued.
+
+**The two HIGHs that were real product defects** are R3 above — the snapshot builder's risk-free window, wrong at both edges, making legitimate captures unrunnable. They are the slice's most serious findings and neither was reachable from the demo.
+
+**The two HIGHs that were hollow guards:**
+
+- **The `test_the_divisor_is_n_MINUS_ONE…` test never called the kernel.** It compared a LITERAL against a locally-recomputed population Sharpe, so under the exact mutation it names (`n−1 → n`) it PASSED while five other tests failed. This was the named control for the slice's headline fidelity divergence — the text that goes into `model_assumption` rows. Rewritten to call `sharpe_ratio` and to check the sample estimator against an independent computation.
+- **The "platform-wide" GS2 test covered 5 of 18 run types.** It scanned only `perf.events`/`perf.models`; a finder injected a genuine collision into `risk.events` and it stayed green — the FE-2 *"a sampled contract guard is false security"* lesson, one level up from the slice that was fixing GS2. The module list is now DISCOVERED from the package, with a census assertion so a rename cannot silently empty the scan, and the injected collision is EXECUTED as its negative control.
+
+**The MEDs worth carrying forward:**
+
+- **Three hard-FK cross-tenant re-resolutions could each be deleted with the suite green.** The one owed test called the private helper directly — proving the helper works and nothing about the binder calling it, which is this project's own *"a control passing on another layer's evidence"* defect, flagged BY NAME in a neighbouring docstring. Replaced with three forged-snapshot tests that go through `run_sharpe_ratio`; all three mutations now killed.
+- **The `_persist_snapshot` purpose gate — the centrepiece of R1 — had no negative control**, and neither promised membership pin shipped.
+- **The demo's own load-bearing property was unguarded**: `test_the_risk_free_series_is_NOT_constant` counted distinct values across EVERY benchmark return in the demo tenant, and stage 10 already contributes eight distinct values — so replacing this stage's entire series with eighteen identical values left it green. Now scoped to the risk-free head.
+- **The registered assumptions never stated the `{12, 36}` window domain** while three documents claimed they did. The enforcement was real; the disclosure was missing. Added.
+- **A BRAND-NEW lying ORM comment** (`n_observations` — "NULL when suppressed", which the binder deliberately contradicts for zero-dispersion rows) on the very entity minted partly to fix the last one. Corrected.
+- Two arithmetic claims in prose were wrong in the same way: *"a column-fitting SR of 9E6 still **overflows** at ×√12"* — 9E6 × √12 = 3.12E7 fits `Numeric(20,12)`; it breaches the HOUSE envelope. The gate is a declared policy ceiling, not an overflow guard.
+
+**A finding the review produced that no fold can close, recorded as a limitation:** a vendor dating a monthly return on the **first of the following month** joins one month LATE under a `(year, month)` key, and nothing in the data distinguishes that from a correctly-dated series — the row counts match exactly. The builder's docstring had claimed that convention worked. It does not. The capture convention is now DECLARED (*the `return_date` must fall inside the month its return is for*) and the alternative is refused at capture, not accommodated silently.
+
+### Part 9a — The process failure, recorded because it nearly shipped
+
+**A `git add -A` during the review captured a finder's live source MUTATION and a 247-line scratch file into a commit.** The mutation deleted a fail-closed guard; the scratch file would have entered the governed suite *pinning defects as expected behaviour*, so any later fix would have broken CI. Caught by the finders themselves, purged, and re-committed.
+
+Worse, and separately: **a stale `.pyc` served a mutated `COMPUTE_PREC = 20` while the source read 50.** Every test run during that window is of unknown validity. All gates were re-run from purged bytecode.
+
+Three rules follow, and they generalise beyond this slice:
+
+1. **Mutation testing and a wildcard stage cannot share a working tree.** Stage explicit paths while any agent holds the tree.
+2. **Grep the COMMIT for mutation markers, not the tree.** Restoring the tree does not restore the commit, and `make check` green *before* a mutation lands says nothing about what the commit contains.
+3. **Purge `__pycache__` before trusting any post-mutation run.** Source-mtime invalidation is not reliable when files are restored by tooling.
