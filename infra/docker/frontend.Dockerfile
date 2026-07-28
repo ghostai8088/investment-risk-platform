@@ -1,5 +1,16 @@
 # Frontend build + static serve — scaffold. Aligns to AD-003 / AD-010.
-FROM node:20-slim AS build
+#
+# FE-M1 (OQ-FE-M1-2=A): node:20 -> node:24, matching the two `setup-node` steps in ci.yml. Three
+# reasons, none of which CI can surface on its own — CI never builds this image:
+#   (1) react-router@8 declares `engines: { node: ">=22.22.0" }`. There is no `.npmrc`, so npm
+#       treats that as ADVISORY — the Node-20 build emitted an EBADENGINE warning and still produced
+#       a bundle. This is a correctness-of-configuration fix, not a broken-build fix; saying
+#       otherwise would overstate it (FE-M1 verifier finding V-4).
+#   (2) Node 20 reached EOL 2026-04 (ci.yml records this in its own comment), so the PRODUCTION
+#       artifact was being built by an unsupported toolchain while CI built it on a supported one.
+#   (3) The asymmetry itself is the defect class the Wave-12 CI-parity slice paid on the Python
+#       side: a harness the gates cannot see drifts silently.
+FROM node:24-slim AS build
 
 WORKDIR /app
 

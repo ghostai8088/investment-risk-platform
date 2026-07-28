@@ -1,8 +1,24 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-28b) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-28c) — read this block; everything below it is HISTORY
 >
-> **Wave 13 is FOUR slices in — only FE-M1 remains before the wave close.**
+> **WAVE 13 IS FUNCTIONALLY COMPLETE — all five slices shipped. NEXT = the WAVE-13 CLOSE REVIEW**
+> (the mandatory Part-4 rule-2 re-baseline).
+>
+> - **FE-M1 CLOSED 2026-07-28** (NO migration; counts UNCHANGED 25/40/133): **React 19.2.8 +
+>   react-router 8.3.0**, and with them the `GHSA-qwww-vcr4-c8h2` exception **retired by fix, not by
+>   expiry** — `npm audit --omit=dev` 2 High → **0**, ~3 months before the 2026-10-24 cliff;
+>   `audit-allowlist.json` is now empty. Three regression fences (eslint ban / manifest pin /
+>   single-React pin), each with executed negative **and** positive controls, because `npm audit`'s
+>   own `fixAvailable` field recommends the refuted 7.11.0 downgrade. **The pre-ratification pass
+>   ran as a full EXECUTED DRY RUN in a throwaway workspace copy and refuted two of the plan's own
+>   claims before the gate** — a plain `npm install` leaves a DUPLICATE React that fails 73/150
+>   tests while passing `tsc` AND `vite build` (so `npm dedupe` is load-bearing), and the natural
+>   fix for that moves 61 packages against a declared scope of 12. Two findings no register held:
+>   the shipped container built on **EOL `node:20-slim`**, below react-router 8's `>=22.22.0` floor
+>   and invisible to CI because CI never builds the image; and **the fail-closed audit gate this
+>   slice exists to satisfy had no test at all**, while about to enter its untested empty-allowlist
+>   state. FE 28 files/150 tests → **32/187**.
 >
 > - **OPS-H1 CLOSED 2026-07-28** (PR #141 = `03da139`, CI #669; NO migration; counts UNCHANGED
 >   25/40/133): the tick's N+1 retired (ONE statement, count-asserted); **the true M-C1 tick×HTTP
@@ -41,9 +57,23 @@
 > gaps could not tell that its own fix had not landed.** Verify the FIX is on `main`, not merely
 > that it was written.
 >
-> **NEXT: OPS-H1 (hygiene) → FE-M1** (React-19/router-8, allowlist expiry 2026-10-24),
-> then the Wave-13 close. Standing proposal for that close: ratify the six-ledger omission sweep as
-> a closeout step in `claude_operating_instructions.md`.
+> **NEXT = the WAVE-13 CLOSE REVIEW.** Standing proposals for that close: ratify the six-ledger
+> omission sweep as a closeout step in `claude_operating_instructions.md` (with its new final
+> clause, *verify the fix is on `main`*); ratify the shared-tree mutation rules; and ratify
+> *"a register entry is a claim about the code — verify it at planning recon"*, which FE-M1 is the
+> third slice to demonstrate. FE-M1 additionally proposes a fourth: **for a migration or
+> dependency-floor slice, run the pre-ratification pass as an EXECUTED DRY RUN in a throwaway tree**
+> — reading, `grep` and the upstream upgrade guide all missed both of FE-M1's blocking findings,
+> and ten minutes of actually running it found them. Wave-14 tee = real-data onboarding.
+>
+> **FE-toolchain debt recorded at FE-M1, deliberately NOT taken (OQ-FE-M1-6=A):** 11 further
+> `npm outdated` drifts including two majors — **TypeScript 5.9 → 7.0** and **eslint 9 → 10** — plus
+> `jsdom 29 → 30` and five patch/minor bumps. Bundling a TypeScript major with a React major would
+> make a resulting type error unattributable to either. Also deferred, with its cost MEASURED: the
+> frontend `tsconfig.json` `include` omits the four root-level guard tests (write-fence,
+> router-fence, api-prefixes, openapi-contract, audit-gate, dependency-fence), so they are linted
+> and run but never typechecked — probed at **12 errors, all `@types/node` resolution, no
+> substantive defects**, so closing it needs a new dev dependency rather than a fix.
 >
 > ---
 >

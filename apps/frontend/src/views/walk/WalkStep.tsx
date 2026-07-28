@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router";
 
 import { Pane } from "../../components/Pane";
 import type { Session } from "../../session";
