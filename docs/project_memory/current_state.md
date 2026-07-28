@@ -1,11 +1,16 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-28c) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-28d) — read this block; everything below it is HISTORY
 >
-> **WAVE 13 IS FUNCTIONALLY COMPLETE — all five slices shipped. NEXT = the WAVE-13 CLOSE REVIEW**
-> (the mandatory Part-4 rule-2 re-baseline).
+> **HEAD `bd1073b`** = merge of **PR #144** (the FE-M1 R-4 fold), atop **PR #143** = `44ee905` (the
+> FE-M1 implementation). **CI green all six jobs on both.** Migration head stays `0055`; counts
+> UNCHANGED **25/40/133**.
 >
-> - **FE-M1 CLOSED 2026-07-28** (NO migration; counts UNCHANGED 25/40/133): **React 19.2.8 +
+> **WAVE 13 IS FUNCTIONALLY COMPLETE — all five slices shipped and merged. NEXT = the WAVE-13 CLOSE
+> REVIEW** (the mandatory Part-4 rule-2 re-baseline).
+>
+> - **FE-M1 CLOSED 2026-07-28** (PR **#143** = `44ee905` + PR **#144** = `bd1073b`; NO migration;
+>   counts UNCHANGED 25/40/133): **React 19.2.8 +
 >   react-router 8.3.0**, and with them the `GHSA-qwww-vcr4-c8h2` exception **retired by fix, not by
 >   expiry** — `npm audit --omit=dev` 2 High → **0**, ~3 months before the 2026-10-24 cliff;
 >   `audit-allowlist.json` is now empty. Three regression fences (eslint ban / manifest pin /
@@ -18,7 +23,22 @@
 >   the shipped container built on **EOL `node:20-slim`**, below react-router 8's `>=22.22.0` floor
 >   and invisible to CI because CI never builds the image; and **the fail-closed audit gate this
 >   slice exists to satisfy had no test at all**, while about to enter its untested empty-allowlist
->   state. FE 28 files/150 tests → **32/187**.
+>   state. FE 28 files/150 tests → **32/190**.
+>
+>   **And the reason it took TWO PRs is the slice's most transferable finding.** An independent
+>   `/code-review ultra` found **R-4**: the one test FE-M1 wrote to cover `BrowserRouter`'s
+>   `useParams` deep link booted at `/runs/risk/{uuid}`, but `risk` is a `permissionFamily` VALUE in
+>   `FAMILIES`, not a key — so `RunDetail`'s allowlist bailed out **without fetching** and rendered
+>   "Unknown run family", a page that satisfies both of the test's by-absence assertions. **A real
+>   break in the exact thing the test exists to pin would have left it green.** Fixed by using a real
+>   family key and raising the assertions to by-evidence (the fetch asserted called once with
+>   `/risk/vars/runs/{uuid}`). **PR #143 had already merged one commit earlier**, so `main` briefly
+>   carried the vacuous test while the branch and the record both said it was fixed — caught only by
+>   running the SR-1 *verify-the-fix-is-on-`main`* clause as
+>   `git merge-base --is-ancestor <sha> origin/main`. **Third appearance of that class, first on the
+>   RACE axis** (not a forgotten commit — a fold that arrived after its own PR was opened). See
+>   `fe_m1_decision_record.md` Part 8b: the clause belongs to the **closeout**, must run **after the
+>   last merge**, and must cover **review folds**, not only ledger sweeps.
 >
 > - **OPS-H1 CLOSED 2026-07-28** (PR #141 = `03da139`, CI #669; NO migration; counts UNCHANGED
 >   25/40/133): the tick's N+1 retired (ONE statement, count-asserted); **the true M-C1 tick×HTTP
@@ -29,7 +49,9 @@
 >   (pinned to MEASURED values); the alerts screen pages visibly; client.ts guards the success
 >   parse. 2-finder review 0 HIGH.
 >
-> **Wave 13 is THREE slices in.** Re-verify HEAD/CI at session start as always.
+> **Wave 13 is COMPLETE — all five slices merged** (SCH-2 → RM-1 → SR-1 → OPS-H1 → FE-M1). *(This
+> line read "THREE slices in" until the FE-M1 closeout; it had gone stale two slices earlier.)*
+> Re-verify HEAD/CI at session start as always.
 >
 > - **SCH-2 CLOSED 2026-07-27** (PR #133 = `8c8c17b`; migration `0053`): month-end cadence
 >   (last weekday, END-of-day tick), `EXPOSURE_AGGREGATE` schedulable, the family dispatch registry,
@@ -59,12 +81,18 @@
 >
 > **NEXT = the WAVE-13 CLOSE REVIEW.** Standing proposals for that close: ratify the six-ledger
 > omission sweep as a closeout step in `claude_operating_instructions.md` (with its new final
-> clause, *verify the fix is on `main`*); ratify the shared-tree mutation rules; and ratify
-> *"a register entry is a claim about the code — verify it at planning recon"*, which FE-M1 is the
-> third slice to demonstrate. FE-M1 additionally proposes a fourth: **for a migration or
+> clause, *verify the fix is on `main`*) — **AMENDED at the FE-M1 closeout: the clause is a
+> CLOSEOUT step, not a ledger-sweep step; it runs against `main` AFTER THE LAST MERGE and covers
+> every artifact the slice claims to have delivered, review folds included** (FE-M1 ran the sweep
+> on its branch and passed, then merged a PR that did not contain its own R-4 fold; the cheap form
+> is `git merge-base --is-ancestor <sha> origin/main`); ratify the shared-tree mutation rules; and
+> ratify *"a register entry is a claim about the code — verify it at planning recon"*, which FE-M1
+> is the third slice to demonstrate. FE-M1 additionally proposes a fourth: **for a migration or
 > dependency-floor slice, run the pre-ratification pass as an EXECUTED DRY RUN in a throwaway tree**
 > — reading, `grep` and the upstream upgrade guide all missed both of FE-M1's blocking findings,
-> and ten minutes of actually running it found them. Wave-14 tee = real-data onboarding.
+> and ten minutes of actually running it found them. And a fifth, from R-4: **a test whose failure
+> mode is a DIFFERENT render path is vacuous — assert by evidence (the call that proves the path ran)
+> rather than by absence.** Wave-14 tee = real-data onboarding.
 >
 > **FE-toolchain debt recorded at FE-M1, deliberately NOT taken (OQ-FE-M1-6=A):** 11 further
 > `npm outdated` drifts including two majors — **TypeScript 5.9 → 7.0** and **eslint 9 → 10** — plus
