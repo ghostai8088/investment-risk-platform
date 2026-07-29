@@ -311,11 +311,32 @@ green is never quoted as a shipped green.
 
 ### The lockfile delta — declared before implementation, measured after
 
-Part 2 declared **exactly 12**, and said a 13th would be a defect. Measured: **12**, matching
-line for line — `react`, `react-dom`, `react-router`, `@types/react`, `@types/react-dom`,
-`scheduler` 0.23.2→0.27.0, `cookie-es` added, and `react-router-dom` / `loose-envify` /
-`@types/prop-types` / `cookie` / `set-cookie-parser` removed. `vite` stayed at 8.1.3 — the
-scope boundary (OQ-FE-M1-6=A) held in fact, not merely in intent.
+Part 2 declared **exactly 12**, and said a 13th would be a defect. This section originally
+reported "Measured: **12**, matching line for line". **CORRECTED at the Wave-13 close — that
+measurement was wrong, and the declared gate did not fire.** A JSON-level diff of
+`package-lock.json` between `c2e5965` (pre-implementation) and `8f9711c` (the implementation)
+shows **22 entry-level changes** (5 added / 10 removed / 7 version-changed):
+
+- **15 entries realize the declared 12** — the count difference is bookkeeping, not drift: three
+  of the twelve (`@types/react`, `@types/react-dom`, `react-router`) land as remove-at-root +
+  add-under-`apps/frontend` relocation **pairs**. The declared logical set itself was accurate:
+  `react`, `react-dom`, `react-router`, `@types/react`, `@types/react-dom`, `scheduler`
+  0.23.2→0.27.0, `cookie-es` added, and `react-router-dom` / `loose-envify` / `@types/prop-types`
+  / `cookie` / `set-cookie-parser` removed.
+- **7 entries fall OUTSIDE the declared set** — the 13th delta arrived, and the human "the review
+  checks the count" step did not catch it: **four unattributable dev-transitive version bumps**
+  (`@redocly/openapi-core`'s `brace-expansion` 2.1.2→2.1.3; `@typescript-eslint/eslint-plugin`'s
+  `ignore` 7.0.5→7.0.6; `@typescript-eslint/typescript-estree`'s `brace-expansion` 5.0.6→5.0.8,
+  which also **narrowed its declared `engines`** from "18 || 20 || >=22" to "20 || >=22"; and its
+  `minimatch` 10.2.5→10.2.6) plus a three-entry `@rolldown/pluginutils` **hoist relocation**.
+
+All seven are dev-tree, cosmetically small, and none affects the runtime bundle — but that is a
+fact established only NOW, at the close, which is precisely the point: a declared-expectation gate
+that depends on a human counting is a convention, not a control. `vite` stayed at 8.1.3 — the
+OQ-FE-M1-6=A scope boundary held for the runtime tree in fact, not merely in intent. *(Carried to
+the Wave-13 close agenda under Proposal 4: a dry run's numbers are a point-in-time reading of a
+mutable registry and must be RE-MEASURED against the merged artifact at closeout, not carried
+forward as a pin.)*
 
 ### The verification ladder (OQ-FE-M1-5=A), executed
 
@@ -323,7 +344,7 @@ scope boundary (OQ-FE-M1-6=A) held in fact, not merely in intent.
 |---|---|---|
 | 1 | `npm audit --omit=dev` **before** | 2 High, both `GHSA-qwww-vcr4-c8h2` |
 | 2 | install procedure | `npm ls react` → **one** `react@19.2.8`, deduped everywhere; `npm ci` reproducible |
-| 3 | lockfile delta | **12**, as declared |
+| 3 | lockfile delta | ~~12, as declared~~ **CORRECTED at the Wave-13 close: 22 entries — 15 realizing the declared 12 (three land as relocation pairs) + 4 unattributable dev-transitive bumps + a 3-entry pluginutils hoist. The declared gate did not fire; see "The lockfile delta" above** |
 | 4 | `make fe-check` | **green** — eslint, prettier, `tsc --noEmit`, vitest **32 files / 187 tests**, `vite build` 287.95 kB, audit gate |
 | 5 | `npm audit --omit=dev` **after** | **`found 0 vulnerabilities`** |
 | 6 | fence negative + positive controls | all executed — see below |

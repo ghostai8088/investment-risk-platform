@@ -49,6 +49,7 @@ from irp_shared.perf.sharpe_service import (
     SharpeInputError,
     SharpeNotVisible,
     SharpeRunNotVisible,
+    _adjudicate_portfolio_leg,
     latest_sharpe_ratio,
     list_sharpe_ratio_rows,
     list_sharpe_ratios,
@@ -1001,3 +1002,27 @@ def test_the_latest_route_is_declared_BEFORE_the_path_parameter_route() -> None:
 
     paths = [r.path for r in router.routes if "/perf/sharpe" in getattr(r, "path", "")]
     assert paths.index("/perf/sharpe/latest") < paths.index("/perf/sharpe/{result_id}")
+
+
+# --- the strict-parse pin, mirrored from RM-1 (Wave-13 close) ------------------------------------
+
+
+def test_a_NaN_pinned_return_is_refused_by_the_strict_parse(session: Session) -> None:
+    """SR-1's behaviour was already correct — ``parse_strict_decimal`` with a comment naming the
+    exact hazard — but NOTHING pinned it: no NaN case existed in this suite, so the shipped
+    convention was one refactor away from silently regressing to the bare ``Decimal()`` its RM-1
+    sibling shipped with (the Wave-13 close's cross-integration finding). The pin is symmetric with
+    ``test_rolling_risk.py``'s, so the two governed families can no longer drift apart unnoticed
+    on the same pin shape.
+    """
+    base = {
+        "metric_type": METRIC_TYPE_DIETZ_PERIOD,
+        "calculation_run_id": str(uuid.uuid4()),
+        "portfolio_id": "p1",
+        "period_start": "2026-01-30",
+        "period_end": "2026-02-28",
+        "return_value": "0.01",
+    }
+    for bad in ("NaN", "sNaN", "Infinity", "-Infinity"):
+        with pytest.raises(SharpeInputError, match="not a finite number"):
+            _adjudicate_portfolio_leg([{**base, "return_value": bad}])

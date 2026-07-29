@@ -37,6 +37,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_completed_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
@@ -173,7 +174,16 @@ def _adjudicate_pins(raw: list[dict[str, Any]]) -> _ParsedInput:
                 SubPeriod(
                     period_start=_as_date(r["period_start"]),
                     period_end=_as_date(r["period_end"]),
-                    return_value=Decimal(str(r["return_value"])),
+                    # parse_strict_decimal, not a bare Decimal() — the Wave-13 close fold, and the
+                    # SR-1 sibling's shipped comment names the exact hazard: Decimal("NaN") parses
+                    # CLEANLY (no ArithmeticError), so a hand-built snapshot carrying "NaN" sailed
+                    # past the except envelope below and detonated LATER, in
+                    # assert_above_total_loss's ordering comparison, as a decimal.InvalidOperation
+                    # that nothing caught — a raw 500 where this binder owes a governed 422, and a
+                    # convention split from SR-1 over the SAME pin shape in the SAME wave.
+                    return_value=parse_strict_decimal(
+                        r["return_value"], error=RollingRiskInputError, field="return_value"
+                    ),
                 )
                 for r in dietz
             ),
@@ -184,6 +194,8 @@ def _adjudicate_pins(raw: list[dict[str, Any]]) -> _ParsedInput:
         # accepts this purpose (it is an allow-list member), so a hand-built snapshot can carry
         # components whose captured_content lacks a key or holds a non-numeric return — and those
         # reached the bare subscript/Decimal() as a raw KeyError/InvalidOperation (4-finder review).
+        # (parse_strict_decimal's own raise is RollingRiskInputError, which is not in this tuple,
+        # so its precise per-field message propagates rather than being double-wrapped.)
         raise RollingRiskInputError(
             f"a pinned PORTFOLIO_RETURN component is malformed and cannot be read: {exc}"
         ) from exc

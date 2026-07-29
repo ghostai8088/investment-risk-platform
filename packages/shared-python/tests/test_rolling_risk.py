@@ -688,7 +688,33 @@ def test_malformed_pinned_content_is_a_REFUSAL_not_a_500(session: Session) -> No
     }
     with pytest.raises(RollingRiskInputError, match="malformed"):
         _adjudicate_pins([{k: v for k, v in base.items() if k != "period_end"}])
-    with pytest.raises(RollingRiskInputError, match="malformed"):
+    # Since the Wave-13 close fold, a non-numeric return is refused by parse_strict_decimal with
+    # its field-precise message (it raises RollingRiskInputError directly, which the malformed-wrap
+    # envelope deliberately does not catch) — sharper than the generic wrap it got before.
+    with pytest.raises(RollingRiskInputError, match="not a parseable decimal"):
         _adjudicate_pins([{**base, "return_value": "not-a-number"}])
     with pytest.raises(RollingRiskInputError, match="malformed"):
         _adjudicate_pins([{**base, "period_start": "not-a-date"}])
+
+
+def test_a_NaN_pinned_return_is_a_REFUSAL_not_an_InvalidOperation(session: Session) -> None:
+    """Wave-13 close fold — the RM-1/SR-1 asymmetry over the SAME pin shape.
+
+    ``Decimal("NaN")`` parses CLEANLY — it is not an ArithmeticError — so a NaN return sailed past
+    the malformed-content envelope above and detonated later, in ``assert_above_total_loss``'s
+    ordering comparison, as a raw ``decimal.InvalidOperation`` escaping the public binder. SR-1,
+    shipped in the SAME wave over the SAME ``COMPONENT_KIND_PORTFOLIO_RETURN`` shape, already
+    refused it via ``parse_strict_decimal`` with a comment naming exactly this hazard. Both binders
+    now share the strict parse; both cases here would have passed as a 500 before the fold.
+    """
+    base = {
+        "metric_type": METRIC_TYPE_DIETZ_PERIOD,
+        "calculation_run_id": str(uuid.uuid4()),
+        "portfolio_id": "p1",
+        "period_start": "2026-01-30",
+        "period_end": "2026-02-28",
+        "return_value": "0.01",
+    }
+    for bad in ("NaN", "sNaN", "Infinity", "-Infinity"):
+        with pytest.raises(RollingRiskInputError, match="not a finite number"):
+            _adjudicate_pins([{**base, "return_value": bad}])
