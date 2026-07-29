@@ -2,10 +2,12 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-29) — read this block; everything below it is HISTORY
 >
-> **THE WAVE-13 CLOSE REVIEW IS RUN AND FOLDED — `wave_13_close_review.md`, PENDING RATIFICATION**
-> (P1–P6 + the Wave-14 proposal at the gate). Branch `wave-13-close`; fold batches `396d513` →
-> `b131e89`. Migration head stays `0055`; counts UNCHANGED **25/40/133**; FE **32 files / 204
-> tests** (was 190 at the FE-M1 close).
+> **WAVE 13 IS CLOSED + RATIFIED (2026-07-29) — `wave_13_close_review.md`. P1–P6 ALL APPROVED AS
+> RECOMMENDED and WRITTEN into `claude_operating_instructions.md` as standing sections; WAVE 14
+> RATIFIED = "REAL DATA THROUGH THE GOVERNED RAILS" (roadmap Part 2.17 — direction only, slicing
+> at Wave-14 planning). NEXT = Wave-14 planning.** Branch `wave-13-close`; fold batches `396d513`
+> → `b131e89`; CI run **30455596382** observed green all six. Migration head stays `0055`; counts
+> UNCHANGED **25/40/133**; FE **32 files / 204 tests** (was 190 at the FE-M1 close).
 >
 > - **THE RUNTIME-CLEAN STREAK ENDED AT EIGHT.** The close audit (121 agents under ultracode,
 >   refute-by-default, 3-lens adversarial refutation; 11 findings survived, 26 killed, 3 of 6

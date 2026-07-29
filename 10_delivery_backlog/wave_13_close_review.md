@@ -1,9 +1,12 @@
 # Wave-13 Close Review — "Analytics breadth on the governed rails"
 
-> **Status: PENDING RATIFICATION (2026-07-29)** — the mandatory Part-4 rule-2 re-baseline over
-> SCH-2 → RM-1 → SR-1 → OPS-H1 → FE-M1. Method and findings below; the five standing-rule
-> proposals (plus one minted BY this close) await the gate. Fold batches 1–4 are committed on
-> `wave-13-close`; validation evidence in §0.3.
+> **Status: RATIFIED 2026-07-29** — the mandatory Part-4 rule-2 re-baseline over
+> SCH-2 → RM-1 → SR-1 → OPS-H1 → FE-M1. **P1–P6 ALL APPROVED AS RECOMMENDED** (P4 with the
+> binding re-measure clause) and **WAVE 14 RATIFIED as the direction** ("real data through the
+> governed rails"; slicing at Wave-14 planning per the normal discipline). The six ratified rules
+> are WRITTEN into `claude_operating_instructions.md` as standing sections (this closeout commit),
+> so a future session inherits them from the read-order, not from this record. Fold batches 1–4 +
+> the close document are on `wave-13-close`; validation evidence in §0.3/§7.
 
 ## 0. Method — and the honest account of what it can and cannot see
 
@@ -216,4 +219,10 @@ pacing test, four record corrections) → `b131e89` (batch 4 — the twenty LOWs
 | Mutation controls | **11 mutants across the batches, each killed by the fold's tests; restorations shown green** |
 | CI | run **30455596382** (`866e10e`) observed **completed / `conclusion=success` across all six jobs** (Frontend, Backend, DB migration, API type drift, Documentation check, Secret scan) — written after observing the completed run, per R-3 |
 
-**Ratified outcomes: PENDING the gate** — P1–P6 above, plus the Wave-14 ratification (§5).
+**Ratified outcomes (USER, 2026-07-29 — "Proceed" on the briefed recommendations):** **P1–P6 all
+approved as recommended** — P1 the six-ledger sweep + verify-on-main-after-last-merge; P2 the
+shared-tree mutation rules; P3 register-entries-are-claims; P4 executed dry runs WITH the binding
+re-measure clause; P5 assert-by-evidence with mandatory positive controls; P6 non-vacuity floors
+on enumerating guards. All six now live as standing sections in
+`claude_operating_instructions.md`. **WAVE 14 RATIFIED: "REAL DATA THROUGH THE GOVERNED RAILS"**
+(§5) — direction only; the slice sequence ratifies at Wave-14 planning.
