@@ -395,8 +395,8 @@ def test_condition_4_refuses_an_opening_boundary_that_is_not_last_in_its_month()
     a later slice would rely on.
 
     The counterexample is the record's own: 2026-01-30 (Friday, the last business day) followed by
-    2026-01-31 (Saturday, the calendar end). Condition (1) passes on d_0, and the relink then emits a
-    one-day January pooled into sigma, x sqrt(12), the drawdown and the 12-month return — a
+    2026-01-31 (Saturday, the calendar end). Condition (1) passes on d_0, and the relink then emits
+    a one-day January pooled into sigma, x sqrt(12), the drawdown and the 12-month return — a
     dispersion ratio of sqrt(31) ~ 5.6x against a whole month.
     """
     with pytest.raises(RollingKernelError, match="not the LAST boundary in its month"):
