@@ -212,4 +212,38 @@ describe("check_frontend_audit gate", () => {
     expect(r.failed).toBe(false);
     expect(r.warnings.join("\n")).toContain("no longer present");
   });
+
+  // ---- Exception SHAPE (Wave-13 close: a fail-OPEN inside the fail-closed gate) ----
+
+  // Every date test in the gate is a JS relational comparison against a string, and EVERY relational
+  // comparison with `undefined` is false. So an exception missing `review_by` was simultaneously
+  // "not expired" (rule 1 silent), "not current" (no info line), and present (so `!e` was false and
+  // no UNALLOWLISTED error fired) — the advisory fell through every branch and vanished. These cases
+  // pin the failure DIRECTION: a malformed governance record must fail, never degrade to silence.
+  it.each([
+    ["missing review_by", { id: "GHSA-qwww-vcr4-c8h2", reason: "r" }],
+    ["null review_by", { id: "GHSA-qwww-vcr4-c8h2", reason: "r", review_by: null }],
+    ["non-string review_by", { id: "GHSA-qwww-vcr4-c8h2", reason: "r", review_by: 20261024 }],
+    ["non-ISO review_by", { id: "GHSA-qwww-vcr4-c8h2", reason: "r", review_by: "24/10/2026" }],
+    ["missing reason", { id: "GHSA-qwww-vcr4-c8h2", review_by: "2026-10-24" }],
+  ])("FAILS closed on a %s exception instead of swallowing the advisory", (_label, exception) => {
+    const r = evaluateAudit(reportWithReactRouterAdvisory(), { exceptions: [exception] }, TODAY);
+    expect(r.failed).toBe(true);
+    // Both halves matter: the record is named AND the advisory it was covering is named, so the
+    // operator sees what is actually unguarded rather than merely that a file is untidy.
+    expect(r.errors.join("\n")).toContain("MALFORMED EXCEPTION");
+    expect(r.errors.join("\n")).toContain("GHSA-qwww-vcr4-c8h2");
+  });
+
+  it("POSITIVE CONTROL: a well-formed, unexpired exception still allowlists its advisory", () => {
+    // Without this, a shape gate that rejected EVERY exception would pass all five cases above
+    // while breaking the mechanism entirely — the by-absence trap R-4 was raised about.
+    const r = evaluateAudit(
+      reportWithReactRouterAdvisory(),
+      { exceptions: [LIVE_EXCEPTION] },
+      TODAY,
+    );
+    expect(r.failed).toBe(false);
+    expect(r.info.join("\n")).toContain("allowlisted");
+  });
 });
