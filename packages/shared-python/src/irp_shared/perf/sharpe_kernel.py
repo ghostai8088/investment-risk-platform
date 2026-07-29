@@ -77,16 +77,21 @@ def month_key(day: dt_date) -> tuple[int, int]:
     """The ``(year, month)`` join key.
 
     **The risk-free leg joins the portfolio leg by MONTH, never by date** (the load-bearing
-    criterion
-    the draft record omitted entirely). The book's month-end convention is "the calendar month end
-    or
-    the last business day" (GIPS 2.A.23.b), while a vendor publishes a monthly return dated however
-    it
-    pleases — the calendar end, the last business day, or the first of the following month. Joining
-    on
-    the date would refuse a perfectly aligned pair for a weekend; joining on the month makes an rf
-    row
-    dated ANY day of its month match that month's observation, with neither side bending its dates.
+    criterion the draft record omitted entirely). The book's month-end convention is "the calendar
+    month end or the last business day" (GIPS 2.A.23.b), while a vendor may date a monthly return
+    on the calendar end or the last business day. Joining on the date would refuse a perfectly
+    aligned pair for a weekend; joining on the month makes an rf row dated any day INSIDE its month
+    match that month's observation, with neither side bending its dates.
+
+    **The DECLARED capture convention this key depends on (SR-1 review; docstring corrected at the
+    Wave-13 close):** the rf ``return_date`` must fall INSIDE the month its return is for. An
+    earlier version of this docstring blessed "the first of the following month" as one more
+    harmless vendor habit — that is the exact convention the SR-1 review REFUTED: under this key a
+    first-of-following-month series joins one month LATE, every row, with matching row counts, and
+    nothing in the data can distinguish it from a correctly-dated series (the builder's limitation
+    paragraph in ``snapshot/service.py`` records the same fact; enforcement is the declaration plus
+    vendor-onboarding diligence, the Wave-14 carry). The refuted belief sat here, on the join
+    primitive itself — the first thing a future implementer reads.
     """
     return (day.year, day.month)
 

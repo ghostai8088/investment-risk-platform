@@ -407,3 +407,37 @@ def test_the_isolation_test_would_notice_if_rls_were_off() -> None:
         assert visible == 2, "the superuser did not bypass RLS — the control proves nothing"
         trans.rollback()
     engine.dispose()
+
+
+# --- the typed-filter seam (Wave-13 close, a shipped HIGH) ---------------------------------------
+
+
+def test_the_window_months_filter_works_on_postgresql(app_url: str) -> None:  # noqa: F811
+    """SR-1's half of the shared-seam HIGH — see ``test_rolling_risk_pg`` for the full narrative.
+
+    ``calc/reads.py`` bound every filter value with a blanket ``str()``; ``window_months`` is the
+    platform's first Integer filter, so ``GET /perf/sharpe?window_months=…`` reached PostgreSQL as
+    ``integer = character varying`` and 500'd. Pinned in the PG tier because SQLite's INTEGER column
+    affinity converts ``'12'`` -> ``12`` and makes a unit-tier version of this test unable to fail.
+    """
+    from sqlalchemy.orm import Session as OrmSession
+
+    from irp_shared.perf.sharpe_service import list_sharpe_ratios
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    with engine.connect() as conn:
+        trans = conn.begin()
+        tenant = str(uuid.uuid4())
+        _arm(conn, tenant)
+        ids = _seed_referents(conn, tenant)
+        _insert_row(conn, tenant, ids, window_months=12)
+        _insert_row(conn, tenant, ids, window_months=36)
+
+        with OrmSession(bind=conn) as session:
+            only_12 = list_sharpe_ratios(session, acting_tenant=tenant, window_months=12)
+            unfiltered = list_sharpe_ratios(session, acting_tenant=tenant)
+
+        assert {r.window_months for r in only_12} == {12}
+        assert len(unfiltered) > len(only_12), "the filter narrowed nothing — it is not applied"
+        trans.rollback()
+    engine.dispose()

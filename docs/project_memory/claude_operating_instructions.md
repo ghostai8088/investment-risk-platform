@@ -234,6 +234,58 @@ for any CTRL row this slice took from *Planned/Designed* → *Operational* and u
 miss: CTRL-021/CTRL-031 read "Planned" though MG-2/MG-3 shipped the person-level SoD + breach 1L/2L separation —
 the same "downstream doc left stale after the code shipped" class as the closure-stamp recurrence.)
 
+## The six-ledger omission sweep + verify-on-main (standing, RATIFIED at the Wave-13 close 2026-07-29, P1)
+At EVERY slice closeout, sweep the six ledgers where an omission leaves NO diff for a review to see:
+(1) `04_data_model/canonical_data_model_standard.md` — new ENT ids have registry rows AND the "next free id"
+pointer is right; (2) `04_data_model/audit_event_taxonomy.md` — minted vs reserved is accurate (or the
+"deliberately minted nothing" sentence is updated); (3) `09_compliance_controls/control_matrix_skeleton.md` —
+touch a control or state "no control moved" (OQ-W12C-3c); (4) `docs/project_memory/current_state.md` CURRENT
+TRUTH; (5) `02_requirements/` backbone + RTM both halves; (6) counts — MEASURED on a fresh battery, never
+derived. **THEN the verify-on-main clause: it is a CLOSEOUT step, it runs AFTER THE LAST MERGE, and it covers
+EVERY artifact the slice claims to have delivered — review folds included** (cheap form:
+`git merge-base --is-ancestor <sha> origin/main`). Evidence class: RM-1's sweep commit was authored and never
+merged; FE-M1's R-4 fold raced its own PR — a sweep run on the branch measures intent, only the main check
+measures delivery.
+
+## Shared-tree mutation rules (standing, RATIFIED at the Wave-13 close 2026-07-29, P2)
+Whenever ANY agent may hold the tree (reviews, mutation batteries, parallel finders): **never `git add -A`** —
+stage explicit paths; **grep the COMMIT, not the tree** for mutation markers before pushing
+(`git grep -n "MUTATED" <rev> -- packages apps scripts`); **purge `__pycache__` and re-run every gate** after a
+mutation battery (`PYTHONDONTWRITEBYTECODE=1`); finders mutate in ISOLATED copies; a green gate from a
+contaminated tree is NOT evidence — re-run and report the re-run. (SR-1: a `git add -A` committed a live
+finder mutation + a scratch file; a stale `.pyc` served a mutated constant through a full battery.)
+
+## Register entries are claims about the code (standing, RATIFIED at the Wave-13 close 2026-07-29, P3)
+At planning recon, any register/deferral/debt entry the slice stands on is VERIFIED against today's code, not
+trusted — stale in either direction counts (an entry describing a fixed thing as open, or register silence on
+a thing that exists). Three Wave-13 slices demonstrated the class (OPS-H1's H1-9, FE-M1's node:20/audit-gate
+finds, SCH-2's holder-set comment).
+
+## Executed dry runs for migration/dependency-floor slices (standing, RATIFIED at the Wave-13 close 2026-07-29, P4)
+The pre-ratification verifier pass for a migration or dependency-floor slice RUNS the migration in a throwaway
+workspace copy — reading, grep, and the upstream guide all missed both of FE-M1's blocking findings; ten
+minutes of executing found them. **Binding clause (the audit's refutation of the pin half): every number a dry
+run produces is a DATED point-in-time reading of a mutable registry and MUST be re-measured against the merged
+artifact at closeout — never carried forward as a pin** (FE-M1's "exactly 12" lockfile delta was 22 entries at
+merge and the human counting gate did not fire).
+
+## Assert by evidence, not by absence (standing, RATIFIED at the Wave-13 close 2026-07-29, P5)
+A test's positive result must be produced by the PROPERTY UNDER TEST: assert the call/render/row that proves
+the path ran, not merely the absence of a wrong artifact — and any by-absence assertion carries a positive
+control that fails when the mechanism breaks. The class shipped three times in one wave, in two languages
+(FE-M1's R-4; the session-gate matcher in the same file; the pacing purpose test whose own comment conceded
+the alternate path). A whole test TIER can be the alternate path (SQLite's column affinity vs the PG-only
+`window_months` 500).
+
+## Non-vacuity floors on enumerating guards (standing, RATIFIED at the Wave-13 close 2026-07-29, P6)
+Any guard that works by ENUMERATION (a matcher over document shapes, a lint fence over import forms, a
+discovery scan over modules) ships WITH a coverage floor that fails loudly when the guard's in-scope
+population collapses — because a matcher covers only the shapes someone thought of, while a floor notices
+coverage falling whatever the next shape is. Evidence: the closure-stamp gate was broadened three times and
+went blind a fourth way (guarding 29 of 62 records, silently); the import fences are on their third
+un-enumerated bypass axis. In-tree exemplars: the closure gate's two floors, the GS2 exact census, the
+`_BINDING_PREDICATES`/`PURPOSE_*` set-equality censuses, `test_ci_pg_coverage.py`.
+
 ## Prohibited behavior
 - Committing/pushing without explicit approval; starting the next slice unprompted.
 - Writing application code during a planning/decision turn.

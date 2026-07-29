@@ -800,8 +800,14 @@ ROLLING_RISK_ASSUMPTIONS: tuple[str, ...] = (
     "monthly series (4.A.1.j) over inputs valued at least monthly, as of the calendar month end OR "
     "THE LAST BUSINESS DAY of the month (2.A.23.a/b) - so sub-period returns are inputs, never the "
     "sample. A span that does not partition into whole months is REFUSED, never truncated: the "
-    "boundary grid must open on a month end, close on a month end, and contain a month-end "
-    "boundary for every interior calendar month.",
+    "boundary grid must open on a month end, close on a month end, contain a month-end boundary "
+    "for every interior calendar month, open on the LAST boundary of its month (a later boundary "
+    "in the opening month would make the first observation a partial stub), and close every "
+    "measured month on a month-end (an intra-month closing date would be stamped into governed "
+    "rows as period_end). (Enumeration completed at the Wave-13 close: this registered text "
+    "previously stated the first three conditions while the kernel enforces five - the two added "
+    "here are the pair the 4-finder review's one-day-month HIGH was folded with, so the per-tenant "
+    "governance artifact a 2L validator reads now matches the enforced gate.)",
     "VOLATILITY: the sample standard deviation on the unbiased-VARIANCE (n-1) denominator, centred "
     "on the ARITHMETIC mean, ANNUALIZED by x sqrt(12) (GIPS 4.A.1.j's operator) computed from the "
     "STORED 12dp monthly value so the emitted pair reconciles EXACTLY. GIPS does not prescribe n "

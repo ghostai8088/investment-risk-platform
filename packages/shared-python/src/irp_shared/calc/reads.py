@@ -26,10 +26,36 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import String, select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun, RunStatus
+
+
+def _bind_at_column_type(column: Any, value: object) -> object:
+    """Bind a filter value at the COLUMN's type instead of blindly as text.
+
+    **Wave-13 close fold — a shipped HIGH.** This helper used to be an unconditional ``str(value)``
+    inline in the filter loop. That was invisible for eight waves because every caller filtered a
+    UUID- or String-typed column, where the coercion is a no-op. RM-1 and SR-1 were the FIRST to
+    route an ``Integer`` column (``window_months``) through this seam, and SQLAlchemy types a bind
+    parameter from the PYTHON value, not from the column — so the query went to PostgreSQL as
+    ``window_months = $1::VARCHAR`` and the server refused it:
+
+        ProgrammingError: operator does not exist: integer = character varying
+
+    i.e. ``GET /perf/rolling-risk?window_months=…`` and the three sibling endpoints returned 500 on
+    the production database. **The unit tier could not see it**: SQLite applies INTEGER column
+    affinity and silently converts ``'12'`` -> ``12``, so the two tests written specifically for
+    this filter passed against the engine the platform does not run on. That is why the regression
+    pin lives in the PG tier (``test_rolling_risk_pg`` / ``test_sharpe_pg``) — a unit-tier test
+    here would be structurally incapable of failing.
+
+    The coercion is kept for string-typed columns because callers legitimately pass ``uuid.UUID``
+    objects and stringly-typed ids there; it is dropped everywhere else so the value keeps the type
+    the column expects. ``Text``/``Unicode``/``Enum`` all subclass ``String``, so they coerce too.
+    """
+    return str(value) if isinstance(column.type, String) else value
 
 
 def list_governed_results(
@@ -45,8 +71,10 @@ def list_governed_results(
     """Entity/time-centric read of ONE governed-result family (the CC-2 pacing pattern, factored).
 
     ``model`` MUST carry ``calculation_run_id`` + ``tenant_id`` (the run-bound trio — every governed
-    result does). ``filters`` are ``(column, value)`` pairs applied str-coerced ONLY when ``value``
-    is not None (an absent filter widens; a foreign id yields silent-empty). ``run_type`` filters
+    result does). ``filters`` are ``(column, value)`` pairs applied ONLY when ``value`` is not None
+    (an absent filter widens; a foreign id yields silent-empty), each bound at its COLUMN's type via
+    ``_bind_at_column_type`` — see that helper for why a blanket ``str()`` was a shipped 500 on
+    PostgreSQL that the SQLite unit tier could not detect. ``run_type`` filters
     the joined ``CalculationRun.run_type`` — REQUIRED to disambiguate families that SHARE a result
     table (es-backtest + var-backtest share ``var_backtest_result``, distinguished by run_type).
     ``as_of`` is a run ``system_from`` cutoff (None = now). ``order_by`` is the intra-run grain
@@ -66,7 +94,7 @@ def list_governed_results(
         stmt = stmt.where(CalculationRun.run_type == run_type)
     for column, value in filters:
         if value is not None:
-            stmt = stmt.where(column == str(value))
+            stmt = stmt.where(column == _bind_at_column_type(column, value))
     if as_of is not None:
         stmt = stmt.where(CalculationRun.system_from <= as_of)
     grain = order_by if isinstance(order_by, list | tuple) else (order_by,)

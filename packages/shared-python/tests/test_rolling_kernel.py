@@ -372,5 +372,59 @@ def test_an_interior_month_represented_ONLY_by_a_mid_month_boundary_is_refused()
     whose last boundary is a month-end is in the set either way, and a month whose last boundary is
     not is refused by (5) first. The filter is kept as defense-in-depth and documented as
     subsumed, rather than left with a test that appears to guard it and does not."""
-    with pytest.raises(RollingKernelError, match="2026-02"):
+    # Wave-13 close: tightened from `match="2026-02"`. Conditions (3) and (5) BOTH mention that
+    # month in their messages, so the loose pattern passed under either — which is precisely how a
+    # condition-(5) deletion mutant survived this file. Matching the (5) wording makes the two
+    # distinguishable.
+    with pytest.raises(RollingKernelError, match="closes on 2026-02-13"):
         assert_month_aligned([date(2026, 1, 30), date(2026, 2, 13), date(2026, 3, 31)])
+
+
+# --- the alignment conditions (4) and (5): the Wave-13 close's mutation controls ----------------
+
+
+def test_condition_4_refuses_an_opening_boundary_that_is_not_last_in_its_month() -> None:
+    """RM-1's 4-finder review folded a HIGH here — the alignment gate admitted a ONE-DAY "month" —
+    and the fix landed in the kernel. But the close audit MUTATED condition (4) away and the entire
+    committed suite still passed: no input anywhere in the repo discriminates it.
+
+    That matters more than an ordinary coverage gap, because the slice's own closing gate asserts
+    the opposite: *"every new guard is mutation-tested — the source is broken in a scratch copy and
+    the test must fail — before the slice is called done"* (rm_1_decision_record.md; repeated in the
+    registered methodology doc). The guard was real, the claim about it was not, and it is the claim
+    a later slice would rely on.
+
+    The counterexample is the record's own: 2026-01-30 (Friday, the last business day) followed by
+    2026-01-31 (Saturday, the calendar end). Condition (1) passes on d_0, and the relink then emits
+    a one-day January pooled into sigma, x sqrt(12), the drawdown and the 12-month return — a
+    dispersion ratio of sqrt(31) ~ 5.6x against a whole month.
+    """
+    with pytest.raises(RollingKernelError, match="not the LAST boundary in its month"):
+        assert_month_aligned(
+            [date(2026, 1, 30), date(2026, 1, 31), date(2026, 2, 28), date(2026, 3, 31)]
+        )
+
+
+def test_condition_5_refuses_a_measured_month_closing_off_the_grid() -> None:
+    """The other end of the same root cause, equally undefended before this close.
+
+    2026-05-29 is the last weekday of May; 2026-05-30 is a Saturday and NOT a month end. Without
+    condition (5) the May observation closes on 2026-05-30, and that date is then stamped into
+    governed rows as ``period_end`` — a governed number carrying a boundary that is not on the grid
+    its own model declares.
+    """
+    with pytest.raises(RollingKernelError, match="closes on 2026-05-30"):
+        assert_month_aligned(
+            [date(2026, 4, 30), date(2026, 5, 29), date(2026, 5, 30), date(2026, 6, 30)]
+        )
+
+
+def test_the_two_conditions_accept_the_shapes_they_must_not_refuse() -> None:
+    """POSITIVE CONTROL. Conditions (4) and (5) refuse *specific* shapes; a mutant that refused
+    every grid would satisfy both negatives above and break every legitimate book. Intra-month
+    boundaries must still relink freely — only the month's CLOSING boundary is constrained."""
+    assert_month_aligned([date(2025, 12, 31), date(2026, 1, 31), date(2026, 2, 28)])
+    # an extra intra-month boundary is welcome: it relinks, and January still closes on the grid
+    assert_month_aligned(
+        [date(2025, 12, 31), date(2026, 1, 15), date(2026, 1, 31), date(2026, 2, 28)]
+    )

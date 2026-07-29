@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **RATIFIED 2026-07-28 — OQ-FE-M1-1…6 ALL approved as recommended. Previously: DRAFT → VERIFIED (the pre-ratification pass RAN as a full executed dry run, Part 1b, and refuted two of this record's own claims; both folded before the gate).** Implementation next |
+| Status | **CLOSED 2026-07-28** — merged via **PR #143** = `44ee905` (implementation + folds R-1/R-2/R-3) and **PR #144** = `bd1073b` (fold R-4, from the independent cloud review); closeout **PR #145** = `179778e`. CI green all six jobs on both merges. Previously: DRAFT → VERIFIED → RATIFIED 2026-07-28 (OQ-FE-M1-1…6 all approved as recommended; the pre-ratification pass RAN as a full executed dry run, Part 1b, and refuted two of this record's own claims — both folded before the gate). *(Stamped RETROACTIVELY at the Wave-13 close, 2026-07-29: the closure-stamp gate matched only the bolded-key form of the Status row, so this record — which writes the key unbolded — was invisible to it. Six records were unstamped behind that hole; the gate now matches any emphasis and carries a non-vacuity floor.)* |
 | Slice | Wave-13 slice 4 — the LAST slice before the Wave-13 close, per the ratified sequence (OQ-W12C-2=A) |
 | Kind | **Supply-chain / framework migration.** No governed number, no entity, no migration, no permission, no audit code, no RLS surface, no Python. Frontend + one Dockerfile line only |
 | Counts | **UNCHANGED at 25/40/133.** Recorded NOW, before implementation, so a drift is a defect in the code rather than in the expectation (the SCH-2 lesson) |
@@ -216,7 +216,7 @@ closing the gap between "the tests pass" and "the deployed SPA boots".
   seven historical records that mention it (FE-1/2/3/3b, TC-1, OPS-1, the roadmap) quote it as
   **history** and stay untouched, per the SR-1 precedent.
 - `10_delivery_backlog/wave_12_close_review.md` §5 — the TIPPED item (2) marked PAID.
-- The **six-ledger omission sweep** (the standing Wave-13 closeout step), including its new final
+- The **six-ledger omission sweep** (PROPOSED as a standing rule — its ratification is on the Wave-13 close agenda; run here regardless), including its new final
   clause: *verify the fix is on `main`*.
 - `09_compliance_controls/control_matrix_skeleton.md` — the closeout sweep requires either a CTRL
   row moving or an explicit "no control moved" statement. FE-M1 expects the latter; it is stated,
@@ -311,11 +311,32 @@ green is never quoted as a shipped green.
 
 ### The lockfile delta — declared before implementation, measured after
 
-Part 2 declared **exactly 12**, and said a 13th would be a defect. Measured: **12**, matching
-line for line — `react`, `react-dom`, `react-router`, `@types/react`, `@types/react-dom`,
-`scheduler` 0.23.2→0.27.0, `cookie-es` added, and `react-router-dom` / `loose-envify` /
-`@types/prop-types` / `cookie` / `set-cookie-parser` removed. `vite` stayed at 8.1.3 — the
-scope boundary (OQ-FE-M1-6=A) held in fact, not merely in intent.
+Part 2 declared **exactly 12**, and said a 13th would be a defect. This section originally
+reported "Measured: **12**, matching line for line". **CORRECTED at the Wave-13 close — that
+measurement was wrong, and the declared gate did not fire.** A JSON-level diff of
+`package-lock.json` between `c2e5965` (pre-implementation) and `8f9711c` (the implementation)
+shows **22 entry-level changes** (5 added / 10 removed / 7 version-changed):
+
+- **15 entries realize the declared 12** — the count difference is bookkeeping, not drift: three
+  of the twelve (`@types/react`, `@types/react-dom`, `react-router`) land as remove-at-root +
+  add-under-`apps/frontend` relocation **pairs**. The declared logical set itself was accurate:
+  `react`, `react-dom`, `react-router`, `@types/react`, `@types/react-dom`, `scheduler`
+  0.23.2→0.27.0, `cookie-es` added, and `react-router-dom` / `loose-envify` / `@types/prop-types`
+  / `cookie` / `set-cookie-parser` removed.
+- **7 entries fall OUTSIDE the declared set** — the 13th delta arrived, and the human "the review
+  checks the count" step did not catch it: **four unattributable dev-transitive version bumps**
+  (`@redocly/openapi-core`'s `brace-expansion` 2.1.2→2.1.3; `@typescript-eslint/eslint-plugin`'s
+  `ignore` 7.0.5→7.0.6; `@typescript-eslint/typescript-estree`'s `brace-expansion` 5.0.6→5.0.8,
+  which also **narrowed its declared `engines`** from "18 || 20 || >=22" to "20 || >=22"; and its
+  `minimatch` 10.2.5→10.2.6) plus a three-entry `@rolldown/pluginutils` **hoist relocation**.
+
+All seven are dev-tree, cosmetically small, and none affects the runtime bundle — but that is a
+fact established only NOW, at the close, which is precisely the point: a declared-expectation gate
+that depends on a human counting is a convention, not a control. `vite` stayed at 8.1.3 — the
+OQ-FE-M1-6=A scope boundary held for the runtime tree in fact, not merely in intent. *(Carried to
+the Wave-13 close agenda under Proposal 4: a dry run's numbers are a point-in-time reading of a
+mutable registry and must be RE-MEASURED against the merged artifact at closeout, not carried
+forward as a pin.)*
 
 ### The verification ladder (OQ-FE-M1-5=A), executed
 
@@ -323,7 +344,7 @@ scope boundary (OQ-FE-M1-6=A) held in fact, not merely in intent.
 |---|---|---|
 | 1 | `npm audit --omit=dev` **before** | 2 High, both `GHSA-qwww-vcr4-c8h2` |
 | 2 | install procedure | `npm ls react` → **one** `react@19.2.8`, deduped everywhere; `npm ci` reproducible |
-| 3 | lockfile delta | **12**, as declared |
+| 3 | lockfile delta | ~~12, as declared~~ **CORRECTED at the Wave-13 close: 22 entries — 15 realizing the declared 12 (three land as relocation pairs) + 4 unattributable dev-transitive bumps + a 3-entry pluginutils hoist. The declared gate did not fire; see "The lockfile delta" above** |
 | 4 | `make fe-check` | **green** — eslint, prettier, `tsc --noEmit`, vitest **32 files / 187 tests**, `vite build` 287.95 kB, audit gate |
 | 5 | `npm audit --omit=dev` **after** | **`found 0 vulnerabilities`** |
 | 6 | fence negative + positive controls | all executed — see below |
@@ -359,7 +380,7 @@ Frontend runtime-dependency audit passed (no moderate+ advisories).
   failures. What it does not do is say *why*. The pin's contribution is the message, plus covering
   the one shape `tsc` and `vite build` both pass.
 
-### The six-ledger omission sweep (standing Wave-13 closeout step)
+### The six-ledger omission sweep (proposed standing rule — ratification at the Wave-13 close; run here regardless)
 
 Run in full, with the SR-1 clause *verify the fix is on `main`* applied to this slice's own commits:
 

@@ -943,3 +943,83 @@ def test_migration_0016_chain_position() -> None:
     rev = script.get_revision("0016_dataset_snapshot")
     assert rev.down_revision == "0015_valuation"
     assert "0016_dataset_snapshot" in {r.revision for r in script.walk_revisions()}
+
+
+# --- the moved purpose gate: its OWN controls (Wave-13 close) ------------------------------------
+
+
+def test_the_persist_tail_purpose_gate_fires_directly_and_writes_nothing(session: Session) -> None:
+    """SR-1's R1 moved the ``SNAPSHOT_PURPOSES`` allow-list INTO ``_persist_snapshot`` — the single
+    line every build path crosses — and CTRL-002 cites that move as its "real enforcement". The
+    Wave-13 close audit then DELETED the moved gate in a scratch copy and the whole suite stayed
+    green: the only ``SnapshotPurposeError`` test rides ``build_snapshot``, one of the two generic
+    entry points that kept its own pre-check, so the centrepiece of the fold was undefended by any
+    test. This is that control: the tail itself, called directly, must refuse — and must have
+    written NOTHING, because the gate sits before the first INSERT precisely so a bad purpose can
+    never mint immutable governance garbage.
+    """
+    before = session.execute(
+        select(func.count()).select_from(snapshot_service.DatasetSnapshot)
+    ).scalar_one()
+    with pytest.raises(SnapshotPurposeError):
+        snapshot_service._persist_snapshot(
+            session,
+            acting_tenant=str(uuid.uuid4()),
+            actor=ACTOR,
+            specs=[],
+            label="purpose-gate probe",
+            purpose="BOGUS",
+            as_of_valid_at=VALID_AT,
+            as_of_known_at=KNOWN_AT,
+            as_of_valuation_date=VD,
+            binding_predicate_version="v1:probe",
+        )
+    after = session.execute(
+        select(func.count()).select_from(snapshot_service.DatasetSnapshot)
+    ).scalar_one()
+    assert after == before, "a refused purpose must write no snapshot header"
+
+
+def test_every_declared_purpose_constant_is_an_allowlist_member_and_vice_versa() -> None:
+    """The census pin the SR-1 record promised and did not ship (the pacing suite has the only
+    membership pin, and it predates SR-1). SET EQUALITY in both directions, because the omission
+    R1 itself had to fix was a census failure: ``PROXY_WEIGHT_INPUT`` and
+    ``RESIDUAL_SHRINKAGE_INPUT`` had builders passing them for slices while the tuple lagged. A
+    new ``PURPOSE_*`` constant that skips the tuple now fails here, as does a tuple entry with no
+    declared constant.
+    """
+    from irp_shared.snapshot import models as snapshot_models
+    from irp_shared.snapshot.models import (
+        PURPOSE_ROLLING_RISK_INPUT,
+        PURPOSE_SHARPE_INPUT,
+        SNAPSHOT_PURPOSES,
+    )
+
+    # The two membership pins SR-1's record promised, in the pacing style:
+    assert PURPOSE_SHARPE_INPUT in SNAPSHOT_PURPOSES
+    assert PURPOSE_ROLLING_RISK_INPUT in SNAPSHOT_PURPOSES
+    declared = {
+        value
+        for name, value in vars(snapshot_models).items()
+        if name.startswith("PURPOSE_") and isinstance(value, str)
+    }
+    assert declared == set(SNAPSHOT_PURPOSES)
+    assert len(SNAPSHOT_PURPOSES) == len(set(SNAPSHOT_PURPOSES)), "duplicate allow-list entries"
+
+
+def test_every_declared_binding_predicate_is_registered() -> None:
+    """Wave-13 close: the census over ``_BINDING_PREDICATES``, which SR-1's own R1 fold repaired by
+    hand (two entries had been missing for two slices) and then guarded with a length-only assert —
+    the identical hand-maintained-enumeration failure mode, one slice later. Set equality in both
+    directions: a 23rd ``*_BINDING_PREDICATE`` module constant that skips the tuple fails here, as
+    does a tuple entry with no declared constant. The length ceiling is asserted too because
+    ``VAR_HS_BINDING_PREDICATE`` already sits exactly ON the varchar(50) column limit — the next
+    character in the WRONG place is a PG-only insert failure the SQLite tier cannot see.
+    """
+    declared = {
+        value
+        for name, value in vars(snapshot_service).items()
+        if name.endswith("_BINDING_PREDICATE") and isinstance(value, str)
+    }
+    assert declared == set(snapshot_service._BINDING_PREDICATES)
+    assert all(len(p) <= 50 for p in declared)

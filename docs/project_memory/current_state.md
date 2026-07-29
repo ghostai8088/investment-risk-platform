@@ -1,6 +1,48 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-28d) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-29) — read this block; everything below it is HISTORY
+>
+> **WAVE 13 IS CLOSED + RATIFIED (2026-07-29) — `wave_13_close_review.md`. P1–P6 ALL APPROVED AS
+> RECOMMENDED and WRITTEN into `claude_operating_instructions.md` as standing sections; WAVE 14
+> RATIFIED = "REAL DATA THROUGH THE GOVERNED RAILS" (roadmap Part 2.17 — direction only, slicing
+> at Wave-14 planning). NEXT = Wave-14 planning.** Branch `wave-13-close`; fold batches `396d513`
+> → `b131e89`; CI run **30455596382** observed green all six. Migration head stays `0055`; counts
+> UNCHANGED **25/40/133**; FE **32 files / 204 tests** (was 190 at the FE-M1 close).
+>
+> - **THE RUNTIME-CLEAN STREAK ENDED AT EIGHT.** The close audit (121 agents under ultracode,
+>   refute-by-default, 3-lens adversarial refutation; 11 findings survived, 26 killed, 3 of 6
+>   thin-margin kills overturned by hand) found ONE shipped runtime HIGH: `calc/reads.py` bound
+>   every entity-read filter as text, so RM-1/SR-1's `window_months` — the platform's first
+>   Integer filter — reached PostgreSQL as `integer = character varying` and **all four new
+>   `/perf/rolling-risk{,/latest}` + `/perf/sharpe{,/latest}` endpoints 500'd on the production
+>   database while every gate was green.** SQLite's column affinity converts `'12'`→`12`, so the
+>   unit tier is STRUCTURALLY blind to the class — the pin lives in the PG tier, where a unit pin
+>   could never fail. Fixed by binding at the column's type; 10-family equivalence proven on live
+>   PG; mutant kills the pin with the exact ProgrammingError.
+> - **The guard layer took its heaviest close yet, all folded with executed mutants (11/11
+>   killed):** the closure-stamp gate was blind to the WHOLE wave (7th recurrence — six unstamped
+>   records found, five stale for many waves incl. PM-1; now widened + **NON-VACUITY FLOORS**, the
+>   close's new P6 pattern); RM-1's headline alignment fix was deletable suite-green against its
+>   own "every new guard is mutation-tested" claim; the FE audit gate failed OPEN on a malformed
+>   exception (undefined date comparisons — a CRITICAL advisory could vanish silently); the import
+>   fences' THIRD un-enumerated bypass axis (dynamic `import()`) + `.mts`/`.cts`; SR-1's
+>   `_persist_snapshot` purpose gate had no negative control; RM-1 accepted a NaN pinned return as
+>   a raw InvalidOperation where SR-1 refuses a governed 422 (now shared strict parse, pinned both
+>   sides); the R-4 vacuous-assertion class recurred in the file R-4 rewrote AND in the Python
+>   suite (the pacing purpose test).
+> - **Four false claims in governed records corrected in place** (the registered `sharpe_v1.md`
+>   carried refuted overflow arithmetic; "refused at capture" named an enforcement that does not
+>   exist; CTRL-002 told three different stories across three documents; FE-M1's lockfile delta
+>   was 22 entries, not "exactly 12", and the declared gate never fired).
+> - **Wave-14 PROPOSED = real-data onboarding** (reference dimensions, concentration, liquidity
+>   tiers, the ENT-006 holiday calendar with its dated 2027-05-31 forcing function, the rf vendor
+>   diligence). Ratification at the gate.
+>
+> ---
+>
+> ## Prior current-truth block (2026-07-28d), kept as history
+>
+> ## ⚠️ CURRENT TRUTH (2026-07-28d) — superseded
 >
 > **HEAD `bd1073b`** = merge of **PR #144** (the FE-M1 R-4 fold), atop **PR #143** = `44ee905` (the
 > FE-M1 implementation). **CI green all six jobs on both.** Migration head stays `0055`; counts
@@ -98,7 +140,7 @@
 > `npm outdated` drifts including two majors — **TypeScript 5.9 → 7.0** and **eslint 9 → 10** — plus
 > `jsdom 29 → 30` and five patch/minor bumps. Bundling a TypeScript major with a React major would
 > make a resulting type error unattributable to either. Also deferred, with its cost MEASURED: the
-> frontend `tsconfig.json` `include` omits the four root-level guard tests (write-fence,
+> frontend `tsconfig.json` `include` omits the SIX root-level guard tests (miscounted "four" until the Wave-13 close, while listing six) (write-fence,
 > router-fence, api-prefixes, openapi-contract, audit-gate, dependency-fence), so they are linted
 > and run but never typechecked — probed at **12 errors, all `@types/node` resolution, no
 > substantive defects**, so closing it needs a new dev dependency rather than a fix.

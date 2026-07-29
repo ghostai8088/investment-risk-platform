@@ -119,7 +119,11 @@ describe("BrowserRouter (the router main.tsx actually ships)", () => {
     vi.stubGlobal("fetch", mock);
     bootAt("/ops/breaches");
     expect(screen.getByText(/Start a dev session/)).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: /Breaches/ })).toBeNull();
+    // "Breach queue" — the heading BreachQueue actually renders (see the authed test above, which
+    // proves the name). This matcher was `/Breaches/` until the Wave-13 close: that regex does NOT
+    // match "Breach queue", so the assertion was satisfied whether or not the ops surface rendered
+    // — the R-4 by-absence class, recurring in the very file R-4 rewrote.
+    expect(screen.queryByRole("heading", { name: "Breach queue" })).toBeNull();
     expect(mock).not.toHaveBeenCalled();
   });
 });

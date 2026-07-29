@@ -299,14 +299,37 @@ def test_runaway_growth_fails_the_run_not_crashes(session: Session) -> None:
 
 
 def test_wrong_purpose_snapshot_refused(session: Session) -> None:
+    """Rewritten at the Wave-13 close: the original passed a RANDOM uuid, so ``resolve_snapshot``
+    raised ``SnapshotNotFound`` before the purpose gate was ever evaluated — and the bare
+    ``pytest.raises(Exception)`` accepted it. Its own comment conceded the alternate path. That is
+    the R-4 class (a control whose pass is produced by something other than the property under
+    test) in the Python suite, cited at the close as evidence Proposal 5 generalizes beyond the
+    frontend.
+
+    Now the snapshot EXISTS (hand-minted with a valid non-pacing purpose, the RM-1 suite's recipe),
+    so resolution succeeds and the refusal below can only come from the purpose gate itself — and
+    the match pins the purpose-mismatch message, not merely any raise.
+    """
+    from irp_shared.snapshot.models import DatasetSnapshot
+
     tenant = str(uuid.uuid4())
     pf, fund = _seed_pair(session, tenant)
     _stage8_commitment(session, tenant, pf, fund)
     mv = _register(session, tenant)
+    wrong_purpose = DatasetSnapshot(
+        tenant_id=tenant,
+        label="",
+        purpose="ADHOC",  # a VALID allow-list member — just not PACING_INPUT
+        as_of_valid_at=datetime(2026, 1, 1, tzinfo=UTC),
+        as_of_known_at=datetime(2026, 1, 1, tzinfo=UTC),
+        as_of_valuation_date=date(2026, 1, 1),
+        binding_predicate_version="v1:test",
+        component_count=0,
+        manifest_hash="0" * 64,
+    )
+    session.add(wrong_purpose)
     session.flush()
-    # A non-pacing snapshot id (reuse a random uuid -> resolve fails first; use an actual other
-    # snapshot would need another builder — the purpose gate is covered by resolve raising).
-    with pytest.raises(Exception):  # noqa: B017 (SnapshotNotFound or purpose refusal)
+    with pytest.raises(PacingInputError, match="purpose 'ADHOC'"):
         run_pacing_projection(
             session,
             acting_tenant=tenant,
@@ -314,7 +337,7 @@ def test_wrong_purpose_snapshot_refused(session: Session) -> None:
             code_version="cc2-v1",
             environment_id="ci",
             model_version_id=mv.id,
-            snapshot_id=str(uuid.uuid4()),
+            snapshot_id=str(wrong_purpose.id),
         )
 
 

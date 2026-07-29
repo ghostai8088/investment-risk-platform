@@ -28,6 +28,42 @@ const ROUTER_FENCE = {
     "Reinstalling it re-opens GHSA-qwww-vcr4-c8h2 and, at 7.11.x, five more.",
 };
 
+// Wave-13 close fold — the SYNTAX axis, this fence class's THIRD un-enumerated bypass.
+//
+// `no-restricted-imports` is a STATIC-import rule: eslint's implementation registers visitors for
+// `ImportDeclaration` / `ExportNamedDeclaration` / `ExportAllDeclaration` / `TSImportEqualsDeclaration`
+// and NOTHING else (node_modules/eslint/lib/rules/no-restricted-imports.js — no `ImportExpression`
+// visitor exists). A dynamic `await import("../api/client")` is therefore invisible to it. Proven by
+// executed control at the close: the dynamic form linted CLEAN while the static form errored.
+//
+// The router half of this axis is already closed by a DIFFERENT control — `dependency-fence.test.ts`
+// pins `react-router-dom` absent from both the manifest and the lockfile, so a bare specifier cannot
+// resolve at all. The WRITE half was genuinely open: `../api/client` is a local module that resolves
+// perfectly well through `import()`, so a dynamic import could reach `request()` and issue an
+// unaudited POST past the OPS-1 M-4 fence.
+//
+// HONEST RESIDUAL, recorded rather than papered over: a COMPUTED specifier
+// (`await import(someVariable)`) is not statically analysable and no lint rule can see it. This
+// fence now covers every literal form; it does not and cannot cover a computed one. The three
+// bypass axes found so far (specifier spelling at the Wave-12 close, file extension at FE-M1 R-1,
+// import syntax here) were each found by an audit rather than by enumeration, which is the argument
+// recorded at the close for pairing lint fences with a build-artifact check rather than broadening
+// them a fourth time.
+const DYNAMIC_IMPORT_FENCE = [
+  {
+    selector: "ImportExpression[source.type='Literal'][source.value=/(^|[./])client$/]",
+    message:
+      "Dynamic `import()` of the api client is restricted — `request` must be reached only from " +
+      "src/api/writes.ts, the single audited write surface. Use a static `apiGet` import for reads.",
+  },
+  {
+    selector: "ImportExpression[source.type='Literal'][source.value=/^react-router-dom($|\\/)/]",
+    message:
+      "react-router-dom was removed upstream at v8 (FE-M1) — import from `react-router`. " +
+      "A dynamic import bypasses no-restricted-imports, so it is banned here explicitly.",
+  },
+];
+
 export default tseslint.config(
   { ignores: ["dist", "node_modules", "src/api/generated"] },
   js.configs.recommended,
@@ -45,12 +81,19 @@ export default tseslint.config(
     // vite aliases, so relative specifiers are the only route). The glob set is pinned by
     // write-fence.test.ts against the actual bypass forms.
     //
-    // FE-M1 widened the file glob from `src/**` to `**/*`: the three root-level guard tests
-    // (write-fence, api-prefixes, openapi-contract, audit-gate) were outside every fence, and the
-    // router ban in particular must not have a directory-shaped hole.
-    files: ["**/*.ts", "**/*.tsx"],
+    // FE-M1 widened the file glob from `src/**` to `**/*`: the SIX root-level guard tests
+    // (write-fence, router-fence, dependency-fence, api-prefixes, openapi-contract, audit-gate)
+    // were outside every fence, and the router ban in particular must not have a directory-shaped
+    // hole. (That comment said "three" while naming four; corrected at the Wave-13 close, where a
+    // sibling miscount of the same list was also found in `current_state.md`.)
+    //
+    // Wave-13 close fold: `.mts`/`.cts` added. FE-M1's R-1 closed the extension axis for the
+    // JS family but left the TypeScript family's own module-signalling extensions out — Vite and
+    // `tsc` both compile them, so the hole R-1 was raised to close was still open one letter over.
+    files: ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],
     rules: {
       "no-restricted-imports": ["error", { patterns: [WRITE_FENCE, ROUTER_FENCE] }],
+      "no-restricted-syntax": ["error", ...DYNAMIC_IMPORT_FENCE],
     },
   },
   {
@@ -64,6 +107,10 @@ export default tseslint.config(
     files: ["src/api/writes.ts"],
     rules: {
       "no-restricted-imports": ["error", { patterns: [ROUTER_FENCE] }],
+      // The dynamic-import fence is re-declared here WITHOUT its client clause, for exactly the
+      // V-3 reason recorded above: turning the rule `off` for this file would also hand it a free
+      // pass on the router half. The exemption stays scoped to the thing it exempts.
+      "no-restricted-syntax": ["error", DYNAMIC_IMPORT_FENCE[1]],
     },
   },
   {
@@ -87,6 +134,7 @@ export default tseslint.config(
     languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
     rules: {
       "no-restricted-imports": ["error", { patterns: [WRITE_FENCE, ROUTER_FENCE] }],
+      "no-restricted-syntax": ["error", ...DYNAMIC_IMPORT_FENCE],
     },
   },
 );

@@ -68,20 +68,72 @@ export function evaluateAudit(report, allowlist, today) {
   const warnings = [];
   const info = [];
 
+  // (0) Wave-13 close fold — the exception SHAPE gate, closing a fail-OPEN in a fail-closed gate.
+  //
+  // Every date test here is a JS relational comparison against a string. If `review_by` is missing,
+  // null, or not a string, EVERY such comparison is false — `undefined < "2026-07-29"` is false, and
+  // so is `undefined >= "2026-07-29"`. The consequence in the code below was that a malformed
+  // exception made its advisory fall through BOTH branches of (2): not expired (so (1) stays
+  // silent), not allowlisted-and-current (so no info line), and `!e` is false (so no UNALLOWLISTED
+  // error). A CRITICAL advisory was silently swallowed — no error, no warning, not even an info
+  // line — by the gate whose entire purpose is to fail closed.
+  //
+  // An exception is a governance artifact: a written rationale plus a review date. One missing its
+  // date is not a weaker exception, it is not an exception at all, so it fails rather than degrades.
+  const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  const malformed = new Set();
+  for (const [i, e] of (allowlist.exceptions ?? []).entries()) {
+    const problems = [];
+    if (typeof e?.id !== "string" || !e.id)
+      problems.push("id must be a non-empty string");
+    if (typeof e?.review_by !== "string" || !ISO_DATE.test(e.review_by)) {
+      problems.push(
+        `review_by must be a yyyy-mm-dd string (got ${JSON.stringify(e?.review_by)})`,
+      );
+    }
+    if (typeof e?.reason !== "string" || !e.reason)
+      problems.push("reason must be a non-empty string");
+    if (problems.length) {
+      if (typeof e?.id === "string") malformed.add(e.id);
+      errors.push(
+        `MALFORMED EXCEPTION at index ${i}${typeof e?.id === "string" ? ` (${e.id})` : ""}: ` +
+          `${problems.join("; ")}. Refusing to pass — an exception without a valid review date ` +
+          `cannot expire, so it would silence its advisory forever.`,
+      );
+    }
+  }
+
   // (1) Expired exceptions fail — force a re-review.
   for (const e of allowlist.exceptions ?? []) {
-    if (e.review_by < today) {
-      errors.push(`EXCEPTION EXPIRED: ${e.id} (review_by ${e.review_by}) — re-review required.`);
+    if (
+      typeof e?.review_by === "string" &&
+      ISO_DATE.test(e.review_by) &&
+      e.review_by < today
+    ) {
+      errors.push(
+        `EXCEPTION EXPIRED: ${e.id} (review_by ${e.review_by}) — re-review required.`,
+      );
     }
   }
 
   // (2) Unallowlisted moderate+ advisories fail (fail-closed).
   for (const [id, a] of advisories) {
     const e = allowById.get(id);
-    if (e && e.review_by >= today) {
+    const usable = e && !malformed.has(id) && ISO_DATE.test(e.review_by ?? "");
+    if (usable && e.review_by >= today) {
       info.push(`allowlisted (${a.severity}) ${id} [${a.pkg}] — ${e.reason}`);
     } else if (!e) {
-      errors.push(`UNALLOWLISTED ${a.severity} advisory ${id} [${a.pkg}] — ${a.title}`);
+      errors.push(
+        `UNALLOWLISTED ${a.severity} advisory ${id} [${a.pkg}] — ${a.title}`,
+      );
+    } else if (!usable) {
+      // The malformed-shape error above names the entry; this names the ADVISORY it was silently
+      // covering, so the operator sees what is actually unguarded rather than only that a record
+      // is untidy.
+      errors.push(
+        `UNGUARDED ${a.severity} advisory ${id} [${a.pkg}] — ${a.title} (its allowlist entry is ` +
+          `malformed, so it grants nothing).`,
+      );
     }
     // An allowlisted-but-EXPIRED advisory is already failed by (1); it is deliberately not
     // double-reported here.
@@ -89,7 +141,8 @@ export function evaluateAudit(report, allowlist, today) {
 
   // (3) Fail closed on JSON-format drift: npm reports moderate+ vulns but the parser found none.
   const meta = report.metadata?.vulnerabilities ?? {};
-  const metaGatePlus = (meta.moderate ?? 0) + (meta.high ?? 0) + (meta.critical ?? 0);
+  const metaGatePlus =
+    (meta.moderate ?? 0) + (meta.high ?? 0) + (meta.critical ?? 0);
   if (metaGatePlus > 0 && advisories.size === 0) {
     errors.push(
       `FAIL-CLOSED: npm reports ${metaGatePlus} moderate+ vulnerabilities but no advisory ids were ` +

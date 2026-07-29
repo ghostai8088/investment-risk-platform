@@ -138,10 +138,21 @@ def test_the_demo_actually_EXERCISES_the_month_key_join(db) -> None:  # noqa: AN
     """
     from irp_shared.perf.models import METRIC_TYPE_DIETZ_PERIOD, PortfolioReturnResult
 
+    # Wave-13 close fold: BOTH reads are now scoped to the run under test. The first version read
+    # EVERY benchmark_return in the demo tenant and every DIETZ period_end — the exact un-scoped
+    # read its own SIBLING test (the constant-rate pin, above) was tightened to avoid, in the same
+    # file, for the same reason. It discriminated only because stage 10's eight rf dates all
+    # coincide with campaign period_ends; a stage-10 fixture change could have satisfied
+    # `differing` while THIS stage's series was tautologically date-identical to the book.
+    sr = db.execute(select(SharpeRatioResult).limit(1)).scalars().first()
+    assert sr is not None, "no Sharpe rows — the stage under test did not run"
     rf_dates = {
         r.return_date
         for r in db.execute(
-            select(BenchmarkReturn).where(BenchmarkReturn.tenant_id == DEMO_TENANT_ID)
+            select(BenchmarkReturn).where(
+                BenchmarkReturn.tenant_id == DEMO_TENANT_ID,
+                BenchmarkReturn.benchmark_id == sr.risk_free_benchmark_id,
+            )
         ).scalars()
     }
     book_dates = {
@@ -150,6 +161,7 @@ def test_the_demo_actually_EXERCISES_the_month_key_join(db) -> None:  # noqa: AN
             select(PortfolioReturnResult).where(
                 PortfolioReturnResult.tenant_id == DEMO_TENANT_ID,
                 PortfolioReturnResult.metric_type == METRIC_TYPE_DIETZ_PERIOD,
+                PortfolioReturnResult.calculation_run_id == sr.portfolio_return_run_id,
             )
         ).scalars()
     }
@@ -159,6 +171,10 @@ def test_the_demo_actually_EXERCISES_the_month_key_join(db) -> None:  # noqa: AN
         "every risk-free date coincides with a book boundary — the month-key join is not exercised "
         "and this demo demonstrates nothing about it"
     )
+    # ... and the two legs must cover the SAME months: differing DATES with matching MONTHS is
+    # precisely "the join is exercised"; a month mismatch would mean the difference set came from
+    # somewhere other than the date-vs-month distinction this pin exists to prove.
+    assert {(d.year, d.month) for d in rf_dates} == {(d.year, d.month) for d in book_dates}
 
 
 def test_the_twelve_month_window_is_a_GENUINE_rolling_series(db) -> None:  # noqa: ANN001

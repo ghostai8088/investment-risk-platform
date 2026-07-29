@@ -349,3 +349,54 @@ def test_the_isolation_test_would_notice_if_rls_were_off() -> None:
         assert visible == 2, "the superuser did not bypass RLS — the control proves nothing"
         trans.rollback()
     engine.dispose()
+
+
+# --- 5. the typed-filter seam (Wave-13 close, a shipped HIGH) ------------------------------------
+
+
+def test_the_window_months_filter_works_on_postgresql(app_url: str) -> None:  # noqa: F811
+    """``calc/reads.py`` used to bind EVERY filter value with a blanket ``str(value)``.
+
+    Harmless for eight waves — every prior caller filtered a UUID/String column. RM-1 and SR-1 were
+    the FIRST to route an ``Integer`` column (``window_months``) through that seam, and SQLAlchemy
+    types a bind parameter from the PYTHON value, not the column, so the query reached PostgreSQL as
+    ``window_months = $1::VARCHAR`` and the server refused it outright::
+
+        ProgrammingError: operator does not exist: integer = character varying
+
+    Every ``GET /perf/rolling-risk?window_months=…`` and its three siblings returned 500 on the
+    production database while `make check`, the SQLite battery, the PG suites and CI were all green.
+
+    **This test belongs in the PG tier and NOWHERE ELSE.** SQLite applies INTEGER column affinity
+    and silently converts ``'12'`` -> ``12``, which is exactly why the two service-tier tests
+    written for this filter passed against an engine the platform does not run on. A unit-tier
+    version of this test would be structurally incapable of failing — the R-4 class (a control
+    whose pass is produced by something other than the property under test), at the level of a
+    whole test tier.
+    """
+    from irp_shared.perf.rolling_service import list_rolling_risks
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    with engine.connect() as conn:
+        trans = conn.begin()
+        tenant = str(uuid.uuid4())
+        _arm(conn, tenant)
+        ids = _seed_referents(conn, tenant)
+        _insert_row(conn, tenant, ids, window_months=12)
+        _insert_row(conn, tenant, ids, window_months=36)
+
+        from sqlalchemy.orm import Session as OrmSession
+
+        with OrmSession(bind=conn) as session:
+            # The filter must EXECUTE (this raised ProgrammingError before the fold) ...
+            only_12 = list_rolling_risks(session, acting_tenant=tenant, window_months=12)
+            only_36 = list_rolling_risks(session, acting_tenant=tenant, window_months=36)
+            unfiltered = list_rolling_risks(session, acting_tenant=tenant)
+
+        # ... and it must DISCRIMINATE. A filter that silently matched everything would execute
+        # cleanly and still be broken, so the counts are asserted, not just the absence of a raise.
+        assert {r.window_months for r in only_12} == {12}
+        assert {r.window_months for r in only_36} == {36}
+        assert len(unfiltered) > len(only_12), "the filter narrowed nothing — it is not applied"
+        trans.rollback()
+    engine.dispose()
