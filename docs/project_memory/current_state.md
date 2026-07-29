@@ -98,7 +98,7 @@
 > `npm outdated` drifts including two majors — **TypeScript 5.9 → 7.0** and **eslint 9 → 10** — plus
 > `jsdom 29 → 30` and five patch/minor bumps. Bundling a TypeScript major with a React major would
 > make a resulting type error unattributable to either. Also deferred, with its cost MEASURED: the
-> frontend `tsconfig.json` `include` omits the four root-level guard tests (write-fence,
+> frontend `tsconfig.json` `include` omits the SIX root-level guard tests (miscounted "four" until the Wave-13 close, while listing six) (write-fence,
 > router-fence, api-prefixes, openapi-contract, audit-gate, dependency-fence), so they are linted
 > and run but never typechecked — probed at **12 errors, all `@types/node` resolution, no
 > substantive defects**, so closing it needs a new dev dependency rather than a fix.

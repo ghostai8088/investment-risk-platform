@@ -880,14 +880,14 @@ def test_the_run_family_is_NEVER_a_metric_type_for_ANY_family(session: Session) 
     run_types: dict[str, str] = {}
     metric_types: dict[str, str] = {}
     scanned: list[str] = []
+    failed_imports: list[str] = []
     for info in pkgutil.walk_packages(irp_shared.__path__, prefix="irp_shared."):
         if not info.name.endswith((".events", ".models")):
             continue
         try:
             module = importlib.import_module(info.name)
-        except (
-            Exception
-        ):  # pragma: no cover - a module that cannot import is another test's problem
+        except Exception:  # noqa: BLE001 - collected and ASSERTED empty below (Wave-13 close)
+            failed_imports.append(info.name)
             continue
         found = False
         for name, value in vars(module).items():
@@ -902,12 +902,24 @@ def test_the_run_family_is_NEVER_a_metric_type_for_ANY_family(session: Session) 
         if found:
             scanned.append(info.name)
 
+    # Wave-13 close: a silently-skipped unimportable module was a hole in the census — a declaring
+    # module with a broken import would drop its whole vocabulary from the scan and the guard would
+    # pass by finding less. Nothing fails to import today; if something does, THIS fails, loudly.
+    assert not failed_imports, f"declaring-module candidates failed to import: {failed_imports}"
     # The scan must actually reach the modules that carry these vocabularies — otherwise a rename or
-    # a package move would silently empty it and the guard would pass by finding nothing.
+    # a package move would silently empty it and the guard would pass by finding nothing. ALL SIX
+    # declaring modules are pinned since the Wave-13 close (exposure.events and pacing.events both
+    # declare RUN_TYPE_* constants and were absent from this membership assert).
     assert {"irp_shared.perf.events", "irp_shared.perf.models"} <= set(scanned)
     assert {"irp_shared.risk.events", "irp_shared.risk.models"} <= set(scanned)
-    assert len(run_types) >= 15, f"only {len(run_types)} run types discovered: {sorted(run_types)}"
-    assert len(metric_types) >= 30, f"only {len(metric_types)} metric types discovered"
+    assert {"irp_shared.exposure.events", "irp_shared.pacing.events"} <= set(scanned)
+    # Exact census, not a floor (Wave-13 close: the floors sat at 15/30 against true totals of
+    # 18/38, so up to 3 run types and 8 metric types could vanish from the scan without failing —
+    # a census that tolerates shrinkage is a floor wearing a census's name). Adding a run type or
+    # metric type legitimately moves these pins; that is what a census pin is FOR (the demo-counts
+    # precedent: the pin moves consciously, with the slice that moves it).
+    assert len(run_types) == 18, f"run-type census moved: {len(run_types)}: {sorted(run_types)}"
+    assert len(metric_types) == 38, f"metric-type census moved: {len(metric_types)}"
 
     collisions = sorted(set(run_types) & set(metric_types))
     assert not collisions, "run_type values that are also metric_type values: " + ", ".join(

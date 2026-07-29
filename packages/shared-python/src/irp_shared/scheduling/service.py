@@ -441,9 +441,12 @@ def _dispatch_exposure(
 
 #: The dispatch registry — the SINGLE source for which families are schedulable (OD-SCH-2-F). It
 #: lives here, not in ``events``: the registry must import the family binders, and ``events`` is a
-#: leaf vocabulary module that ``irp_worker`` imports for three string constants (putting it there
-#: would drag the whole risk+exposure compute stack into the worker's import graph, and defining
-#: the derived set in ``events`` while the registry lives here is a circular import).
+#: leaf vocabulary module that ``irp_worker`` imports for two string constants — the dispatch
+#: outcomes ``OUTCOME_FAILED``/``OUTCOME_SKIPPED_DUPLICATE`` (this comment said "three", a count
+#: the 4-finder correction reached in one of its two locations; fixed at the Wave-13 close —
+#: putting the registry there would drag the whole risk+exposure compute stack into the worker's
+#: import graph, and defining the derived set in ``events`` while the registry lives here is a
+#: circular import).
 FAMILY_REGISTRY: dict[str, ScheduledFamily] = {
     TARGET_RUN_TYPE_VAR: ScheduledFamily(
         target_run_type=TARGET_RUN_TYPE_VAR,
@@ -493,6 +496,17 @@ def dispatch_one(
     family = FAMILY_REGISTRY.get(schedule.target_run_type)
     if family is None:
         raise ScheduleError(f"target_run_type {schedule.target_run_type!r} is not schedulable")
+    # Wave-13 close fold: the dispatch-time CTRL-003 refusal, DECLARATION-driven like its three
+    # sibling layers. It previously lived only as a hand-written `is None` check inside
+    # `_dispatch_var` — correct for VaR, but a third family registered with
+    # `requires_model_version=True` would have inherited NO dispatch-layer inventory gate unless
+    # its author hand-copied the pattern, which is exactly the per-family-hand-copy failure the
+    # registry exists to end. `_dispatch_var`'s own raise stays as defense-in-depth/type-narrowing.
+    if family.requires_model_version and schedule.model_version_id is None:
+        raise ScheduleError(
+            f"schedule {schedule.id} targets {schedule.target_run_type} but carries no "
+            "model_version_id — refusing to fire an unbound governed run (CTRL-003)"
+        )
 
     result = family.dispatch(session, schedule, tick, code_version=code_version)
     outcome = OUTCOME_DISPATCHED if result.status == "COMPLETED" else OUTCOME_FAILED

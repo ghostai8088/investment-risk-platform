@@ -216,7 +216,7 @@ closing the gap between "the tests pass" and "the deployed SPA boots".
   seven historical records that mention it (FE-1/2/3/3b, TC-1, OPS-1, the roadmap) quote it as
   **history** and stay untouched, per the SR-1 precedent.
 - `10_delivery_backlog/wave_12_close_review.md` §5 — the TIPPED item (2) marked PAID.
-- The **six-ledger omission sweep** (the standing Wave-13 closeout step), including its new final
+- The **six-ledger omission sweep** (PROPOSED as a standing rule — its ratification is on the Wave-13 close agenda; run here regardless), including its new final
   clause: *verify the fix is on `main`*.
 - `09_compliance_controls/control_matrix_skeleton.md` — the closeout sweep requires either a CTRL
   row moving or an explicit "no control moved" statement. FE-M1 expects the latter; it is stated,
@@ -380,7 +380,7 @@ Frontend runtime-dependency audit passed (no moderate+ advisories).
   failures. What it does not do is say *why*. The pin's contribution is the message, plus covering
   the one shape `tsc` and `vite build` both pass.
 
-### The six-ledger omission sweep (standing Wave-13 closeout step)
+### The six-ledger omission sweep (proposed standing rule — ratification at the Wave-13 close; run here regardless)
 
 Run in full, with the SR-1 clause *verify the fix is on `main`* applied to this slice's own commits:
 

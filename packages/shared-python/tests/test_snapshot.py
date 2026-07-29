@@ -1005,3 +1005,21 @@ def test_every_declared_purpose_constant_is_an_allowlist_member_and_vice_versa()
     }
     assert declared == set(SNAPSHOT_PURPOSES)
     assert len(SNAPSHOT_PURPOSES) == len(set(SNAPSHOT_PURPOSES)), "duplicate allow-list entries"
+
+
+def test_every_declared_binding_predicate_is_registered() -> None:
+    """Wave-13 close: the census over ``_BINDING_PREDICATES``, which SR-1's own R1 fold repaired by
+    hand (two entries had been missing for two slices) and then guarded with a length-only assert —
+    the identical hand-maintained-enumeration failure mode, one slice later. Set equality in both
+    directions: a 23rd ``*_BINDING_PREDICATE`` module constant that skips the tuple fails here, as
+    does a tuple entry with no declared constant. The length ceiling is asserted too because
+    ``VAR_HS_BINDING_PREDICATE`` already sits exactly ON the varchar(50) column limit — the next
+    character in the WRONG place is a PG-only insert failure the SQLite tier cannot see.
+    """
+    declared = {
+        value
+        for name, value in vars(snapshot_service).items()
+        if name.endswith("_BINDING_PREDICATE") and isinstance(value, str)
+    }
+    assert declared == set(snapshot_service._BINDING_PREDICATES)
+    assert all(len(p) <= 50 for p in declared)

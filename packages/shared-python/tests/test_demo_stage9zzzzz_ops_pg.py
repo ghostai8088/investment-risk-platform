@@ -335,8 +335,13 @@ def test_the_demo_tenant_role_census_after_stage_14(db) -> None:  # noqa: ANN001
     locks pin governed MODEL codes; the only role census is template-level). Stage 14's four
     operator roles were therefore structurally outside every census.
 
-    SET-equality over the role codes AND per-role wiring counts, so a drift in EITHER direction —
-    a role vanishing, a rogue role appearing, a permission silently added or dropped — fails."""
+    WHAT IS ACTUALLY ASSERTED (docstring narrowed at the Wave-13 close — it previously claimed
+    "SET-equality over the role codes", which nothing below asserts; the decision record's own
+    Part 6 words the scope correctly and the guard's self-description now matches it): exact
+    wired-permission COUNTS for the five named roles (the four ``ops_*`` operators plus
+    ``auditor_3l``), and a no-rogue sweep SCOPED to the ``ops_*`` namespace — stage 14's own. A
+    drift in a campaign-owned role outside that namespace is the campaign census's concern, not
+    this stage's."""
     from sqlalchemy import text as sql
 
     roles = {

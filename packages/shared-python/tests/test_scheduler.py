@@ -432,6 +432,12 @@ def test_the_schedulable_set_is_derived_from_the_registry() -> None:
     assert SCHEDULABLE_RUN_TYPES == {"VAR", "EXPOSURE_AGGREGATE"}
     assert FAMILY_REGISTRY["VAR"].requires_model_version is True
     assert FAMILY_REGISTRY["EXPOSURE_AGGREGATE"].requires_model_version is False
+    # Wave-13 close fold: `target_run_type` was a declaration with NO consumer — written at both
+    # entries, read by nothing, so a registry entry whose key and field disagreed would have been
+    # accepted silently. That is the same shape the slice itself removed `produces_run_on_failure`
+    # for ("a false declaration with no consumer is worse than no declaration"). This assert makes
+    # the field consumed: the dict key IS the family identity, and the field must agree with it.
+    assert all(key == fam.target_run_type for key, fam in FAMILY_REGISTRY.items())
     # `produces_run_on_failure` was REMOVED at the 4-finder review: it declared that EXPOSURE's
     # dominant failure is POST-create, which is false on the path the scheduler actually uses (the
     # snapshot build's completeness gate refuses PRE-create). Pin its absence so the false
@@ -568,13 +574,21 @@ def test_a_var_schedule_reaching_dispatch_unbound_is_refused(session: Session) -
     guard exists for the row that reaches dispatch anyway (SQLite has no CHECK; a direct writer or
     a future migration could), where firing would mint a governed run with no model binding.
     """
-    tenant = str(uuid.uuid4())
-    sched = _mk(session, tenant)
-    sched.model_version_id = None  # the state all three create-time layers are meant to prevent
-    session.flush()
+    # Wave-13 close fold: parametrized over the REGISTRY DECLARATION rather than hard-coding VaR.
+    # The refusal now lives in `dispatch_one` keyed on `family.requires_model_version`, so a future
+    # third declaring family is covered by this loop automatically — the guard and its test both
+    # read the same declaration, which is the slice's own single-source thesis applied to itself.
+    requiring = [k for k, fam in FAMILY_REGISTRY.items() if fam.requires_model_version]
+    assert requiring, "no family declares requires_model_version — the loop below would be vacuous"
     now = datetime(2026, 1, 15, tzinfo=UTC)
-    with pytest.raises(ScheduleError, match="CTRL-003"):
-        dispatch_one(session, sched, current_tick(_ANCHOR, 7, now), now, code_version="test")
+    for run_type in requiring:
+        tenant = str(uuid.uuid4())
+        sched = _mk(session, tenant)
+        sched.target_run_type = run_type
+        sched.model_version_id = None  # the state all three create-time layers are meant to prevent
+        session.flush()
+        with pytest.raises(ScheduleError, match="CTRL-003"):
+            dispatch_one(session, sched, current_tick(_ANCHOR, 7, now), now, code_version="test")
 
 
 # ------------------------------------------------------- the failure-reason redaction (DC lens) ---

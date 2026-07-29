@@ -385,6 +385,35 @@ def test_restructured_tick_escalates_after_midtick_commit(app_url: str) -> None:
         assign_breach(
             session, breach, assigned_to=_mk_assignee(session, tenant), actor=_MANAGER, now=_T0
         )
+        # Wave-13 close fold: a breach.review holder, so phase 4 has a recipient and the COMPOSED
+        # tick's notification leg is assertable below. Without one, `notified` is legitimately
+        # empty and the phase-4 re-arm goes unobserved by this test — the close audit showed the
+        # dedicated phase-4 pin stays green with the re-arm removed (its single event never
+        # crosses a commit), so the composed assertion here is the one that actually exercises
+        # phase 4 running AFTER the phases-1-2 commit under the re-armed GUC.
+        from irp_shared.entitlement.models import AppUser, Permission, Role, RolePermission
+        from irp_shared.entitlement.models import UserRole as UserRoleRow
+
+        reviewer = AppUser(tenant_id=tenant, display_name="rev")
+        session.add(reviewer)
+        session.flush()
+        role = Role(tenant_id=tenant, code=f"r-{uuid.uuid4().hex[:6]}", name="R")
+        session.add(role)
+        session.flush()
+        perm = session.execute(
+            select(Permission).where(Permission.code == "breach.review")
+        ).scalar_one_or_none() or Permission(code="breach.review", description="d")
+        session.add(perm)
+        session.flush()
+        session.add(RolePermission(role_id=role.id, permission_id=perm.id))
+        session.add(
+            UserRoleRow(
+                tenant_id=tenant,
+                user_id=reviewer.id,
+                role_id=role.id,
+                valid_from=_T0 - timedelta(days=1),
+            )
+        )
         session.commit()  # due = T0 + 1d (HARD)
     finally:
         session.close()
@@ -392,6 +421,13 @@ def test_restructured_tick_escalates_after_midtick_commit(app_url: str) -> None:
         factory, tenant, code_version="test", now=_T0 + timedelta(days=2)
     )
     assert results["escalated"] == [breach_id]
+    # The composed phase-4 leg: the BREACH.ESCALATE that phase 3 just committed must be consumed
+    # and alerted IN THE SAME TICK, in a transaction that only works if the GUC re-arm survived
+    # the phases-1-2 commit AND phase 3's per-breach commits.
+    assert results["notified"], (
+        "phase 4 notified nothing off the escalation this tick just committed — either the "
+        "re-arm failed post-commit (the OQ-a fail-open) or the composed ordering broke"
+    )
     check = _armed(factory, tenant)
     try:
         assert current_breach_state(check, breach_id, acting_tenant=tenant) == (
@@ -821,24 +857,43 @@ def test_the_m_c1_fk_key_share_interleave_forces_a_real_40P01_and_both_sides_rec
     tick_error: list[BaseException] = []
     http_error: list[BaseException] = []
 
+    tick_recovered: list[bool] = []
+
     def _tick_side() -> None:
-        """Advisory FIRST (the earlier same-transaction emit), then the INSERT's FOR KEY SHARE."""
+        """Advisory FIRST (the earlier same-transaction emit), then the INSERT's FOR KEY SHARE.
+
+        Wave-13 close fold: the INSERT now runs inside a per-item SAVEPOINT, exactly as phases 1-2
+        run their per-limit work — so when the TICK is the victim, this side EXECUTES the declared
+        recovery (ROLLBACK TO SAVEPOINT over the aborted subtransaction, then the outer transaction
+        keeps working and commits) instead of merely asserting the error's type. Before this fold
+        only the HTTP branch executed its recovery; the tick branch was assert-only, so the test's
+        name claimed a symmetry it did not exercise.
+        """
         s = _armed(factory, tenant)
         try:
             s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _advisory_lock_key(tenant)})
             barrier.wait()  # H now takes FOR UPDATE on the limit row
             time.sleep(0.5)  # let H reach its advisory wait so the cycle is closed by our INSERT
-            s.execute(
-                text(
-                    "INSERT INTO breach (id, tenant_id, system_from, limit_definition_id,"
-                    " calculation_run_id, detected_at, target_run_type, metric_type,"
-                    " observed_value, threshold_value, threshold_unit, breach_direction,"
-                    " limit_kind, severity, status)"
-                    " VALUES (:id, :t, now(), :limit, :run, now(), 'VAR', 'VAR_PARAMETRIC',"
-                    " 2000000, 1000000, 'CURRENCY', 'ABOVE', 'HARD', 'HARD', 'DETECTED')"
-                ),
-                {"id": str(uuid.uuid4()), "t": tenant, "limit": limit_id, "run": run_id},
-            )
+            sp = s.begin_nested()  # the per-limit SAVEPOINT, as the production phases 1-2 run it
+            try:
+                s.execute(
+                    text(
+                        "INSERT INTO breach (id, tenant_id, system_from, limit_definition_id,"
+                        " calculation_run_id, detected_at, target_run_type, metric_type,"
+                        " observed_value, threshold_value, threshold_unit, breach_direction,"
+                        " limit_kind, severity, status)"
+                        " VALUES (:id, :t, now(), :limit, :run, now(), 'VAR', 'VAR_PARAMETRIC',"
+                        " 2000000, 1000000, 'CURRENCY', 'ABOVE', 'HARD', 'HARD', 'DETECTED')"
+                    ),
+                    {"id": str(uuid.uuid4()), "t": tenant, "limit": limit_id, "run": run_id},
+                )
+                sp.commit()
+            except OperationalError as exc:
+                tick_error.append(exc)
+                sp.rollback()  # ROLLBACK TO SAVEPOINT recovers the 40P01-aborted subtransaction
+                # ... and the OUTER transaction must remain usable, or the recovery is fiction:
+                s.execute(text("SELECT 1"))
+                tick_recovered.append(True)
             s.commit()
         except BaseException as exc:  # noqa: BLE001 - adjudicated below
             tick_error.append(exc)
@@ -893,6 +948,12 @@ def test_the_m_c1_fk_key_share_interleave_forces_a_real_40P01_and_both_sides_rec
         assert isinstance(mapped, HTTPException) and mapped.status_code == 503
         assert mapped.headers and mapped.headers.get("Retry-After") == "1"
     else:
-        # Tick victim -> exactly the class the per-limit SAVEPOINT recovery swallows
-        # (scheduler phases 1-2 catch OperationalError per item and retry next tick).
+        # Tick victim -> the per-limit SAVEPOINT recovery, EXECUTED on the real error (Wave-13
+        # close): ROLLBACK TO SAVEPOINT recovered the aborted subtransaction, the outer
+        # transaction stayed usable (SELECT 1 succeeded), and the outer commit landed — the same
+        # sequence scheduler phases 1-2 run per item before retrying next tick.
         assert isinstance(tick_error[0], OperationalError)
+        assert tick_recovered, (
+            "the tick was the 40P01 victim but the SAVEPOINT recovery did not complete — "
+            "the production claim this test exists to prove"
+        )

@@ -195,7 +195,13 @@ def test_phase4_loop_notifies_under_rls(app_url: str) -> None:
 
     session = factory()
     try:
-        detach = persistent_tenant_context(session, tenant)  # the re-arm (else RLS hides all rows)
+        # The ARMING context. (Wave-13 close: this comment used to claim "the re-arm (else RLS
+        # hides all rows)" — refutable by mutation: this single-event test never crosses a commit,
+        # so the after-begin RE-ARM listener never fires here and the test passes with the re-arm
+        # removed. The re-arm's real regression pins are `test_break_on_failure_prevents_cursor_
+        # leapfrog` (multi-event, crosses per-event commits) and the COMPOSED tick assertion in
+        # `test_breach_lifecycle_pg.py::test_restructured_tick_escalates_after_midtick_commit`.)
+        detach = persistent_tenant_context(session, tenant)
         try:
             notified = poll_tenant_notifications(session, _T0, acting_tenant=tenant)
         finally:
