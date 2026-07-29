@@ -1,6 +1,44 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-29b) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-29c) — read this block; everything below it is HISTORY
+>
+> **REF-1 IS IMPLEMENTED (Wave-14 slice 0) — the platform's FIRST governed reference DIMENSIONS.**
+> Branch `ref-1-planning`; migration head **`0056`**; next free canonical id **ENT-069**; demo
+> counts **UNCHANGED 25/40/133**; fresh-schema full-PG **2719 passed / 0 failed**.
+>
+> - **ENT-066 `classification_scheme` + ENT-067 `classification_node`** (EV, **HYBRID**) and
+>   **ENT-068 `classification_assignment`** (**FR bitemporal, PROPRIETARY symmetric**). ISIC Rev. 5
+>   is the canonical sector/industry scheme; ISO 3166-1 alpha-2 is the country scheme. Sector and
+>   industry are LEVELS OF ONE HIERARCHY — "sector" is the level-1 ANCESTOR of an assigned leaf,
+>   resolved by a bounded cycle-safe walk CON-1 consumes. Country-of-risk is CAPTURED with a NOT
+>   NULL `basis` (no authoritative rule is computable on today's schema).
+> - **THE CLOSED HYBRID SET IS NOW N = 7** (AD-013-R2, user-ratified; `CLAUDE.md` amended). The
+>   single declaration is `reference.models.HYBRID_TABLES`; **migration 0008 stays byte-untouched**
+>   because its tuple is DDL that drives its own policy loop — 0056 polices only its own tables,
+>   and the parity test asserts declaration == union(migrations). 31 hand-mirrored copies collapsed.
+> - **THREE new platform floors (P6):** the EFFECTIVE write check `COALESCE(with_check, qual)` may
+>   never carry the SYSTEM literal (every prior census read `with_check` alone and was blind to a
+>   `USING`-only policy — six exist on main); every `tenant_id`-bearing table must be FORCE-RLS;
+>   and a closure-stamp COVERAGE floor over an exact grandfather set — added because **this slice's
+>   own record was invisible to the closure gate, recurrence EIGHT**, and the count floors could
+>   never catch one record going dark.
+> - **R-07 mint: THREE permission codes split by tenancy class** —
+>   `reference.classification.view` (hybrid vocabulary, auditor INCLUDED),
+>   `reference.classification_assignment.view` (proprietary, auditor EXCLUDED),
+>   `reference.classification.edit`. A single view code would have handed the 3L auditor its first
+>   proprietary-identity read, invisible because SoD pins are per-code.
+> - **REQ-SMR-006 minted** (classification taxonomies) and **REQ-CRD-005** (spread sensitivity,
+>   split out of REQ-CRD-003 per OQ-W14P-4 — 004 was already taken by Internal/shadow ratings).
+> - **Demo stage 18** — the first issuer-creating stage; backfills `issuer_id` onto the three
+>   instruments that carry exposure, so CON-1's demo computes over a CLASSIFIED book. The
+>   final-position count pin relays to the 9-`z` suite at unchanged counts.
+> - **NEXT = CON-1** (concentration, the 23rd governed number), carrying REF-1's named obligations:
+>   the instrument→issuer pin decision, fail-closed refusal of mixed-scheme-version aggregation,
+>   and the `CLASSIFICATION` component kind.
+>
+> ---
+>
+> ## Prior current-truth block (2026-07-29b), kept as history
 >
 > **WAVE 14 IS SLICED + RATIFIED (2026-07-29, OQ-W14P-1…8 ALL as recommended) — `wave_14_planning.md`
 > (RATIFIED) + roadmap Part 2.18. The sequence: REF-1 (reference dimensions + the

@@ -179,6 +179,16 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_reference_pg.py -q
+      - name: Platform tenancy FLOORS (Postgres, REF-1 / AD-013-R2 / P6)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_tenancy_floors_pg.py -q
+      - name: Classification hybrid + FR capture tests (Postgres, REF-1 / ENT-066-068)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_classification_pg.py -q
       - name: Legal-entity symmetric-RLS tests (Postgres, REQ-SMR-002 / OD-P1B-D / BR-17)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
@@ -625,6 +635,11 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzz_sr1_pg.py -q
+      - name: Demo stage 18 (Postgres, REF-1 classification — final-position count pin)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzz_ref1_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

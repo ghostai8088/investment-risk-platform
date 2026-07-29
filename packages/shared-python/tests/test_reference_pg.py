@@ -37,13 +37,15 @@ from irp_shared.lineage.service import assert_has_lineage
 from irp_shared.reference.bootstrap import seed_system_reference
 from irp_shared.reference.calendar import HolidaySpec, create_calendar
 from irp_shared.reference.currency import create_currency
-from irp_shared.reference.models import CalendarHoliday, Currency
+from irp_shared.reference.models import HYBRID_TABLES, CalendarHoliday, Currency
 from irp_shared.reference.service import ReferenceActor
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
-_HYBRID = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
+#: Derived from the single closed-set DECLARATION (REF-1 collapsed 31 hand-mirrored copies:
+#: independently-maintained expected values ARE the drift surface the census exists to detect).
+_HYBRID = HYBRID_TABLES
 _RAILS = ("data_source", "lineage_edge")
 
 

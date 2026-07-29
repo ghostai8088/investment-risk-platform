@@ -126,6 +126,34 @@ def _is_unstamped_shipped(slice_id: str, status_lines: list[str], done: set[str]
 _MIN_RECORDS_WITH_STATUS = 50
 _MIN_DONE_SLICES = 38
 
+#: Decision records whose Status line the matcher does NOT recognize, enumerated EXACTLY.
+#:
+#: Added at REF-1 after the closure-stamp class recurred an EIGHTH time — in the REF-1 planning
+#: record itself, whose status sat inside a blockquote so neither ``_STATUS_ROW`` nor
+#: ``_STATUS_PROSE`` anchored after stripping. The two count floors above could never have caught
+#: it: 61 of 62 records still had a recognized status, comfortably above the floor of 50. A MINIMUM
+#: is blind to one record going dark; only an EXACT set is not.
+#:
+#: This is a grandfather list, not an allowlist to grow. A NEW record that the matcher cannot see
+#: fails the gate by name. Removing entries (by giving those records a recognized Status line) is
+#: always welcome; adding one requires explaining why a record may be invisible to the gate that
+#: exists to read it.
+_RECORDS_WITHOUT_RECOGNIZED_STATUS: frozenset[str] = frozenset(
+    {
+        "bt_1_decision_record.md",
+        "md_h1_decision_record.md",
+        "p3_6_decision_record.md",
+        "pa_0_decision_record.md",
+        "pa_1_decision_record.md",
+        "pa_2_decision_record.md",
+        "pa_3_decision_record.md",
+        "pa_4_decision_record.md",
+        "rd_1_decision_record.md",
+        "rd_2_decision_record.md",
+        "rd_3_decision_record.md",
+    }
+)
+
 
 def _closure_stamp_errors() -> list[str]:
     roadmap_path = ROOT / ROADMAP
@@ -139,6 +167,14 @@ def _closure_stamp_errors() -> list[str]:
         status_lines = _status_lines(record.read_text(encoding="utf-8"))
         if status_lines:
             with_status += 1
+        elif record.name not in _RECORDS_WITHOUT_RECOGNIZED_STATUS:
+            errors.append(
+                f"{record.name}: no Status line the closure-stamp gate can SEE. The gate "
+                f"short-circuits on records it cannot read, so this record would ship unstamped "
+                f"with the gate green (the eighth recurrence of that class, found at REF-1). "
+                f"Use a `| Status | ... |` table row or an unprefixed `**Status:** ...` line — a "
+                f"blockquote-prefixed status does not anchor."
+            )
         if _is_unstamped_shipped(slice_id, status_lines, done):
             errors.append(
                 f"{record.name}: slice {slice_id} is DONE in the roadmap but its Status cell is "

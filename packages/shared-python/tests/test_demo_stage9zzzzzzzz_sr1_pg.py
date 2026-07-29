@@ -10,7 +10,12 @@ appends one more ``z``. ``stage9zzzzzzzz`` (EIGHT) collates after RM-1's stage-1
 (seven) — verified by ``ls`` on the tests directory, not read off the decision record, which is
 exactly how RM-1 discovered its own ratified name had gone stale.
 
-**This file also carries the FINAL-POSITION count pin forward.** The 7-z suite's pin was named
+**RELAYED AT REF-1: this pin is now INTERMEDIATE.** The final-position pin moved to
+``test_demo_stage9zzzzzzzzz_ref1_pg.py`` (nine ``z``), which collates after stage 18. This pin
+stays — an intermediate pin at a known collation point is useful — but it is no longer the one
+that proves the demo's END state. Original note follows.
+
+**This file also carried the FINAL-POSITION count pin forward.** The 7-z suite's pin was named
 "where the counts are actually FINAL" and stopped being final the moment this stage landed; it is
 demoted there to an explicitly-intermediate pin, and the final-position pin lives here. That relay
 is the point: *a final-position pin is a RELAY BATON, not a monument*, and the platform has already
@@ -294,6 +299,8 @@ def test_the_demo_tenant_counts_are_pinned_where_they_are_actually_FINAL(db) -> 
         40,
         133,
     ), f"demo counts drifted: {model_codes}/{validations}/{completed} (expected 25/40/133)"
+    # NOTE (REF-1): INTERMEDIATE pin — this suite collates BEFORE stage 18, so it cannot see
+    # anything that stage does. The final-position pin lives in the 9-z REF-1 suite.
 
 
 def test_sr1_contributed_exactly_ONE_completed_run(db) -> None:  # noqa: ANN001

@@ -488,15 +488,17 @@ def test_fail_closed_no_audit_no_lineage(session: Session) -> None:
 # --- scope fences ---
 
 
-def test_hybrid_set_unchanged() -> None:
-    # P1B-3 adds NO hybrid table; the closed set stays exactly the five P1B-1 tables.
-    assert HYBRID_TABLES == (
-        "currency",
-        "calendar",
-        "calendar_holiday",
-        "rating_scale",
-        "rating_grade",
-    )
+def test_p1b3_adds_no_hybrid_table() -> None:
+    """P1B-3's own scope fence: the instrument slice adds NO hybrid table.
+
+    RESTATED AT REF-1: this test's SUBJECT is P1B-3, so it now asserts what P1B-3 is responsible
+    for (its three tables are proprietary and absent from the set) rather than pinning the set's
+    total membership — which belongs to the closed-set parity test and grew to seven under the
+    user-ratified AD-013-R2. Pinning a global total inside a per-slice fence made an unrelated
+    slice's legitimate extension look like this slice's regression.
+    """
+    for table in ("instrument", "instrument_terms", "identifier_xref"):
+        assert table not in HYBRID_TABLES
 
 
 def test_instrument_has_no_terms_or_risk_columns() -> None:

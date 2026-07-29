@@ -31,13 +31,16 @@ from irp_shared.reference.corporate_action import (
     transition_corporate_action_status,
 )
 from irp_shared.reference.instrument import InstrumentNotVisible, create_instrument
+from irp_shared.reference.models import HYBRID_TABLES
 from irp_shared.reference.service import ReferenceActor
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
 _P1B4 = ("corporate_action",)
-_P1B1_HYBRID = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
+#: Derived from the single closed-set DECLARATION (REF-1 collapsed 31 hand-mirrored copies:
+#: independently-maintained expected values ARE the drift surface the census exists to detect).
+_P1B1_HYBRID = HYBRID_TABLES
 _DEPS = ("instrument",)
 _RAILS = ("data_source", "lineage_edge")
 _ACT = ReferenceActor(actor_id="a")

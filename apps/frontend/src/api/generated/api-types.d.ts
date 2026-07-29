@@ -510,6 +510,131 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/classification/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Assignments
+         * @description Entity- and time-filtered list (rule 7's captured-input clause).
+         *
+         *     ``as_of`` selects the versions in force at that valid instant on the current system view;
+         *     omitted, it returns the OPEN versions. Both filters are non-String column classes (uuid and
+         *     timestamp), which is why their binds are pinned in the PG tier — SQLite's affinity makes the
+         *     unit tier structurally blind to a mistyped bind.
+         */
+        get: operations["list_assignments_classification_assignments_get"];
+        /**
+         * Reclassify
+         * @description Reclassify (supersede on the VALID axis) — the prior version stays byte-stable.
+         */
+        put: operations["reclassify_classification_assignments_put"];
+        /** Create Assignment */
+        post: operations["create_assignment_classification_assignments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classification/assignments/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct
+         * @description As-known restatement (TR-08) — closes the SYSTEM axis, reproduces the valid interval.
+         */
+        post: operations["correct_classification_assignments_corrections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classification/schemes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Schemes */
+        get: operations["list_schemes_classification_schemes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classification/schemes/{scheme_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scheme */
+        get: operations["get_scheme_classification_schemes__scheme_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classification/schemes/{scheme_id}/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Nodes */
+        get: operations["list_nodes_classification_schemes__scheme_id__nodes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classification/schemes/{scheme_id}/nodes/{code}/ancestors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ancestors
+         * @description Nearest parent first, up to the scheme root — the walk a per-sector bucket needs.
+         *
+         *     Shipped in the slice that owns the vocabulary rather than deferred to its first consumer: a
+         *     vendor delivers a LEAF code, so "sector" is an ancestor, and a hierarchy nobody can walk is not
+         *     a hierarchy.
+         */
+        get: operations["get_ancestors_classification_schemes__scheme_id__nodes__code__ancestors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/commitments": {
         parameters: {
             query?: never;
@@ -4946,6 +5071,56 @@ export interface components {
             /** Tier */
             tier: string;
         };
+        /** AssignmentIn */
+        AssignmentIn: {
+            /**
+             * Basis
+             * @default NOT_APPLICABLE
+             */
+            basis: string;
+            /** Dimension Kind */
+            dimension_kind: string;
+            /**
+             * Entity Id
+             * Format: uuid
+             */
+            entity_id: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Node Code */
+            node_code: string;
+            /**
+             * Scheme Id
+             * Format: uuid
+             */
+            scheme_id: string;
+        };
+        /** AssignmentOut */
+        AssignmentOut: {
+            /** Basis */
+            basis: string;
+            /** Dimension Kind */
+            dimension_kind: string;
+            /** Entity Id */
+            entity_id: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Id */
+            id: string;
+            /** Node Code */
+            node_code: string;
+            /** Record Version */
+            record_version: number;
+            /** Scheme Id */
+            scheme_id: string;
+            /**
+             * Valid From
+             * Format: date-time
+             */
+            valid_from: string;
+            /** Valid To */
+            valid_to: string | null;
+        };
         /**
          * AuditEventOut
          * @description Metadata-only projection of an ``audit_event`` — the chain identity, the who/what/when, the
@@ -5917,6 +6092,32 @@ export interface components {
             source: string | null;
             /** Status */
             status: string;
+        };
+        /** CorrectionIn */
+        CorrectionIn: {
+            /**
+             * Basis
+             * @default NOT_APPLICABLE
+             */
+            basis: string;
+            /** Dimension Kind */
+            dimension_kind: string;
+            /**
+             * Entity Id
+             * Format: uuid
+             */
+            entity_id: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Node Code */
+            node_code: string;
+            /** Restatement Reason */
+            restatement_reason: string;
+            /**
+             * Scheme Id
+             * Format: uuid
+             */
+            scheme_id: string;
         };
         /** CounterpartyDetailOut */
         CounterpartyDetailOut: {
@@ -7512,6 +7713,23 @@ export interface components {
             /** Version Label */
             version_label: string;
         };
+        /** NodeOut */
+        NodeOut: {
+            /** Code */
+            code: string;
+            /** Description */
+            description: string | null;
+            /** Id */
+            id: string;
+            /** Level */
+            level: number;
+            /** Name */
+            name: string;
+            /** Parent Node Id */
+            parent_node_id: string | null;
+            /** Scheme Id */
+            scheme_id: string;
+        };
         /** PacingModelIn */
         PacingModelIn: {
             /** Bow */
@@ -8772,6 +8990,23 @@ export interface components {
              * Format: date-time
              */
             scheduled_for: string;
+        };
+        /** SchemeOut */
+        SchemeOut: {
+            /** Authority */
+            authority: string | null;
+            /** Dimension Kind */
+            dimension_kind: string;
+            /** Id */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+            /** Scheme Family */
+            scheme_family: string;
+            /** Version Label */
+            version_label: string;
         };
         /** SensitivityModelIn */
         SensitivityModelIn: {
@@ -10882,6 +11117,298 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CapitalCallOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assignments_classification_assignments_get: {
+        parameters: {
+            query?: {
+                entity_id?: string | null;
+                scheme_id?: string | null;
+                dimension_kind?: string | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reclassify_classification_assignments_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignmentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_assignment_classification_assignments_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignmentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    correct_classification_assignments_corrections_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_schemes_classification_schemes_get: {
+        parameters: {
+            query?: {
+                dimension_kind?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchemeOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scheme_classification_schemes__scheme_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                scheme_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchemeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_nodes_classification_schemes__scheme_id__nodes_get: {
+        parameters: {
+            query?: {
+                level?: number | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                scheme_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ancestors_classification_schemes__scheme_id__nodes__code__ancestors_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                scheme_id: string;
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeOut"][];
                 };
             };
             /** @description Validation Error */

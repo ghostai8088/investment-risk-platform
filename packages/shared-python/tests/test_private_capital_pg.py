@@ -40,13 +40,16 @@ from irp_shared.private_capital.commitment_service import (
     supersede_commitment,
 )
 from irp_shared.reference.instrument import create_instrument
+from irp_shared.reference.models import HYBRID_TABLES
 from irp_shared.reference.service import ReferenceActor
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
 _CC1 = ("commitment", "capital_call", "distribution")
-_HYBRID = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
+#: Derived from the single closed-set DECLARATION (REF-1 collapsed 31 hand-mirrored copies:
+#: independently-maintained expected values ARE the drift surface the census exists to detect).
+_HYBRID = HYBRID_TABLES
 _DEPS = ("portfolio", "instrument")
 _RAILS = ("data_source", "lineage_edge", "data_quality_rule", "data_quality_result")
 _ACT = CommitmentActor(actor_id="a")

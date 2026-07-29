@@ -15,6 +15,7 @@ from fastapi import FastAPI
 
 from irp_backend.api.audit import router as audit_router
 from irp_backend.api.breaches import router as breaches_router
+from irp_backend.api.classification import router as classification_router
 from irp_backend.api.dq import router as dq_router
 from irp_backend.api.exposure import router as exposure_router
 from irp_backend.api.holdings import router as holdings_router
@@ -71,6 +72,7 @@ app.include_router(models_router)
 app.include_router(dq_router)
 app.include_router(ingest_router)
 app.include_router(reference_router)
+app.include_router(classification_router)
 app.include_router(reference_entities_router)
 app.include_router(reference_instruments_router)
 app.include_router(reference_corporate_actions_router)

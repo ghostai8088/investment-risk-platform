@@ -27,6 +27,7 @@ from irp_shared.audit.service import verify_chain
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import set_tenant_context
 from irp_shared.marketdata import CurveActor, CurveNode, capture_curve
+from irp_shared.reference.models import HYBRID_TABLES
 from irp_shared.risk import SensitivityActor, register_sensitivity_model, run_sensitivities
 from irp_shared.snapshot import CurveSelector, SnapshotNotFound
 
@@ -34,7 +35,9 @@ URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
 _P3_1 = ("sensitivity_result",)
-_P1B1_HYBRID = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
+#: Derived from the single closed-set DECLARATION (REF-1 collapsed 31 hand-mirrored copies:
+#: independently-maintained expected values ARE the drift surface the census exists to detect).
+_P1B1_HYBRID = HYBRID_TABLES
 _DEPS = (
     "curve",
     "curve_point",

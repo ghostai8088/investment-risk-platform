@@ -28,14 +28,16 @@ from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import set_tenant_context
 from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.marketdata import FxRateActor, capture_fx_rate
-from irp_shared.reference.models import Currency
+from irp_shared.reference.models import HYBRID_TABLES, Currency
 from irp_shared.reference.service import CurrencyNotVisible, resolve_currency
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
 _P2_2 = ("fx_rate",)
-_P1B1_HYBRID = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
+#: Derived from the single closed-set DECLARATION (REF-1 collapsed 31 hand-mirrored copies:
+#: independently-maintained expected values ARE the drift surface the census exists to detect).
+_P1B1_HYBRID = HYBRID_TABLES
 _RAILS = ("data_source", "lineage_edge", "data_quality_rule", "data_quality_result")
 _VA = datetime(2026, 6, 1, tzinfo=UTC)
 _RD = date(2026, 6, 1)
