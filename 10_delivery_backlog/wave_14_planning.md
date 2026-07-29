@@ -1,9 +1,11 @@
 # Wave-14 Planning — "Real data through the governed rails" (the ratified direction, sliced)
 
-> **Status: DRAFT, VERIFIED — pre-ratification.** Direction ratified 2026-07-29 at the Wave-13
-> close (`delivery_roadmap.md` Part 2.17). This document proposes the slice sequence and the
-> wave-level decision ledger (OQ-W14P-1…8) for Tier-3 ratification. On ratification, the sequence
-> is written into `delivery_roadmap.md` as **Part 2.18** and this document is stamped RATIFIED.
+> **Status: RATIFIED 2026-07-29** — the USER approved OQ-W14P-1…8 ALL AS RECOMMENDED ("Proceed"
+> on the briefed gate). OQ-W14P-6(i)'s ratification sets the DIRECTION (extend the hybrid set for
+> the new scheme/taxonomy tables); the mechanics — the AD-013-R2 entry, the CLAUDE.md closed-set
+> invariant amendment, and the migration-0008/ORM mirror updates — execute at REF-1's gate as
+> recorded below. The sequence is written into `delivery_roadmap.md` as **Part 2.18**.
+> *(Prior status: DRAFT, VERIFIED — direction ratified 2026-07-29 at the Wave-13 close, Part 2.17.)*
 >
 > **Method (honest labeling, per the independence ladder):** recon ran as a 6-lane parallel
 > subagent fan-out in fresh contexts (requirements / data model / capture infra / engines+reads /

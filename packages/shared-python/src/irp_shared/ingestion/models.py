@@ -9,7 +9,10 @@ ORM guard) so transitions are allowed, and every transition is written immutably
 append-only (ORM guard here + the DB ``irp_prevent_mutation`` trigger added by migration 0007). The
 ``payload`` is a single generic JSON column — NO domain shape/FK/canonical column; a re-ingest is a
 NEW batch, never a mutation. Staging is domain-agnostic (no Security Master /
-portfolio / position / valuation coupling) — canonical mapping is deferred to P1B/P1C.
+portfolio / position / valuation coupling) — canonical mapping of staged rows does NOT exist
+(zero consumers of ``ingestion_staged_record`` outside this package); whether Wave-14's REF-1
+onboarding rail completes it is a named slice-gate fork (the stale "deferred to P1B/P1C"
+pointer was re-synced at the Wave-14 planning gate, OQ-W14P-7 — those phases closed without it).
 
 ``ingestion_batch.data_source_id`` is a real intra-context FK to ``data_source.id`` (the provenance
 root the mandatory lineage ORIGIN edge needs). No FK points at any domain/analytical table.

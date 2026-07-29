@@ -1,6 +1,40 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-29) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-07-29b) — read this block; everything below it is HISTORY
+>
+> **WAVE 14 IS SLICED + RATIFIED (2026-07-29, OQ-W14P-1…8 ALL as recommended) — `wave_14_planning.md`
+> (RATIFIED) + roadmap Part 2.18. The sequence: REF-1 (reference dimensions + the
+> vendor-classification capture rail, L) → CON-1 (concentration, the 23rd governed family, M/L) →
+> LIM-2 (the dimensional limit selector, M) → CAL-1 (ENT-006 holiday resolution + the atomic
+> scheduler+perf convention move, M/L) → LQ-1 (liquidity tiers + governed % illiquid, M/L).
+> NEXT = REF-1 planning.** Branch `wave-14-planning` (`489c7fd` = the verified draft, CI run
+> **30464515268** green all six; the ratification folds follow on the same branch).
+>
+> - **Key wave-level ratifications:** real data = authoritative external datasets through governed
+>   capture, NO live adapters (trigger: a real vendor contract); open taxonomy schemes (`scheme`
+>   discriminator; licensed GICS/ICB = user procurement, additive later); REQ-CRD-003 SPLITS
+>   (spread REQ minted at REF-1); REQ-LIQ-002 deferred + homed (Part 3 RTM-P4, event trigger);
+>   **scheme tenancy = EXTEND THE HYBRID SET via AD-013-R2 + the CLAUDE.md closed-set invariant
+>   amendment + 0008/ORM mirror updates — EXECUTING AT REF-1's GATE, not yet done** (assignments
+>   stay per-tenant; holiday sets SYSTEM only if the source is public); demo campaign extends
+>   (count-pin relay); FE toolchain debt re-deferred with triggers.
+> - **Planning method:** 6-lane recon fan-out (P3 register-verification against `2411d00`) +
+>   single-threaded draft + 4-lane refute-by-default verifier pass — **24 findings (2 BLOCKING,
+>   4 HIGH, 12 MED, 6 LOW), ALL folded**; BLOCKINGs hand re-verified (slice-id collision with the
+>   shipped Wave-3 RD-1 → renamed REF-1; the taxonomy-tenancy recommendation contradicted Accepted
+>   AD-013 uncited → OQ-W14P-6 rebuilt around the AD-013/AD-013-R1 fork).
+> - **The OQ-W14P-7 register re-sync EXECUTED on this branch:** LIM/BRC ×6, SCN-001 (stale ~11
+>   waves), ADM-001, DQR-001 (three evaluators), SMR-004 (QS-11 → CAL-1; QS-10 trigger-based),
+>   RTM §3 summary re-measured (20 CAP domains, 72 REQ rows, 52 BX-LIN, 27 ModelGov — column-exact
+>   2026-07-29); three declared Tier-2 items: the `ingestion/models.py` canonical-mapping
+>   docstring, the Wave-13-close ES-multiplier mis-attribution (corrected in place), the SR-1
+>   wave-named curve pointers → event triggers.
+> - Migration head stays `0055`; counts UNCHANGED **25/40/133**; next free canonical id ENT-066;
+>   FE 32 files / 204 tests. No code changed on this branch except the one ingestion docstring.
+>
+> ---
+>
+> ## Prior current-truth block (2026-07-29), kept as history
 >
 > **WAVE 13 IS CLOSED + RATIFIED (2026-07-29) — `wave_13_close_review.md`. P1–P6 ALL APPROVED AS
 > RECOMMENDED and WRITTEN into `claude_operating_instructions.md` as standing sections; WAVE 14
