@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **RATIFIED 2026-07-28 — OQ-FE-M1-1…6 ALL approved as recommended. Previously: DRAFT → VERIFIED (the pre-ratification pass RAN as a full executed dry run, Part 1b, and refuted two of this record's own claims; both folded before the gate).** Implementation next |
+| Status | **CLOSED 2026-07-28** — merged via **PR #143** = `44ee905` (implementation + folds R-1/R-2/R-3) and **PR #144** = `bd1073b` (fold R-4, from the independent cloud review); closeout **PR #145** = `179778e`. CI green all six jobs on both merges. Previously: DRAFT → VERIFIED → RATIFIED 2026-07-28 (OQ-FE-M1-1…6 all approved as recommended; the pre-ratification pass RAN as a full executed dry run, Part 1b, and refuted two of this record's own claims — both folded before the gate). *(Stamped RETROACTIVELY at the Wave-13 close, 2026-07-29: the closure-stamp gate matched only the BOLDED key `| **Status** |`, so this record — which writes it unbolded — was invisible to it. Six records were unstamped behind that hole; the gate now matches any emphasis and carries a non-vacuity floor.)* |
 | Slice | Wave-13 slice 4 — the LAST slice before the Wave-13 close, per the ratified sequence (OQ-W12C-2=A) |
 | Kind | **Supply-chain / framework migration.** No governed number, no entity, no migration, no permission, no audit code, no RLS surface, no Python. Frontend + one Dockerfile line only |
 | Counts | **UNCHANGED at 25/40/133.** Recorded NOW, before implementation, so a drift is a defect in the code rather than in the expectation (the SCH-2 lesson) |

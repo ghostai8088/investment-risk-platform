@@ -39,6 +39,10 @@ _LEAD_SLICE = re.compile(r"\*\*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)")
 #: A ✅-ADJACENT bold slice token: the arc row marks each slice INLINE (`✅ **PPF-1**`), not with
 #: the leading `✅ **DONE**` row shape — Wave-10's PPF arc exposed this blind spot (OQ-W10C).
 _TICK_SLICE = re.compile(r"✅\s*\*\*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)")
+#: Wave-13 close: the tick INSIDE the bold — `**✅ SR-1 — … DONE …**`. SR-1 and OPS-H1 both used
+#: this shape and were therefore absent from the done-set entirely, so the gate could not have
+#: flagged them however they were stamped.
+_BOLD_TICK_SLICE = re.compile(r"\*\*\s*✅\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)")
 
 
 def _done_slice_ids(roadmap_text: str) -> set[str]:
@@ -56,22 +60,47 @@ def _done_slice_ids(roadmap_text: str) -> set[str]:
                 done.add(m.group(1).upper())
         for m in _TICK_SLICE.finditer(line):  # arc-style inline `✅ **SLICE**` marks
             done.add(m.group(1).upper())
+        # Wave-13 close fold: the tick INSIDE the bold — `**✅ SR-1 — … DONE + CLOSED …**`. Both
+        # SR-1 and OPS-H1 wrote their roadmap rows this way, so neither slice was in the done-set
+        # at all and neither could ever be flagged. `_TICK_SLICE` requires `✅` followed by `**`,
+        # which is exactly inverted for this shape.
+        for m in _BOLD_TICK_SLICE.finditer(line):
+            done.add(m.group(1).upper())
     return done
 
 
+#: Wave-13 close: the Status key with ANY emphasis — `| Status |`, `| **Status** |`, `| *Status* |`
+#: — plus the prose `**Status:**` / `Status:` forms. Anchored, so prose merely QUOTING a Status line
+#: is still not mistaken for one (the API-1b OD-API-1b-E case the anchoring was added for).
+_STATUS_ROW = re.compile(r"^\|\s*\*{0,2}_?\s*Status\s*_?\*{0,2}\s*\|", re.IGNORECASE)
+_STATUS_PROSE = re.compile(r"^\*{0,2}Status\*{0,2}\s*:", re.IGNORECASE)
+
+
 def _status_lines(record_text: str) -> list[str]:
-    """The record's actual Status line(s). TWO shapes are recognized (Wave-12 close broadening):
-    the table row ``| **Status** |`` AND the prose line ``**Status:**`` — the CAD-1/OPS-1 records
-    adopted the prose shape and the table-only matcher silently exempted them (the same
-    coverage-narrowing failure mode OQ-W10C fixed for the roadmap side). Each must START WITH the
-    pattern, not merely CONTAIN it, so prose that quotes/describes a Status line (as API-1b's own
-    OD-API-1b-E does) is not mistaken for one."""
-    lines = []
-    for ln in record_text.splitlines():
-        stripped = ln.strip()
-        if stripped.startswith("| **Status** |") or stripped.startswith("**Status:**"):
-            lines.append(ln)
-    return lines
+    """The record's actual Status line(s).
+
+    **Wave-13 close fold — this matcher was the reason the gate saw NOTHING.** It recognized only
+    the BOLDED table key ``| **Status** |`` and the prose ``**Status:**``. Every Wave-13 record
+    writes the key UNBOLDED (``| Status |``), so ``_status_lines`` returned an empty list for all
+    five, ``_is_unstamped_shipped`` short-circuited on ``not status_lines``, and the gate reported
+    clean while FE-M1 actually shipped with its Status cell reading ``RATIFIED … Implementation
+    next``. Measured at the close: 20 roadmap-DONE records were invisible to the gate this way.
+
+    That is the SEVENTH recurrence of the closure-discipline class and the THIRD time the fix has
+    been "broaden the matcher" (OQ-W9C-5 → OQ-W10C → Wave-12 close → here). Broadening alone has
+    now failed three times because each broadening is only as good as the shapes someone thought to
+    enumerate, so this fold also adds a NON-VACUITY FLOOR (see ``_closure_stamp_errors``): if the
+    gate's in-scope population ever collapses again, the floor fails loudly instead of the gate
+    silently guarding nothing.
+
+    Each pattern is ANCHORED — prose that quotes or describes a Status line (as API-1b's own
+    OD-API-1b-E does) must still not be mistaken for one.
+    """
+    return [
+        ln
+        for ln in record_text.splitlines()
+        if _STATUS_ROW.match(ln.strip()) or _STATUS_PROSE.match(ln.strip())
+    ]
 
 
 def _is_unstamped_shipped(slice_id: str, status_lines: list[str], done: set[str]) -> bool:
@@ -85,20 +114,47 @@ def _is_unstamped_shipped(slice_id: str, status_lines: list[str], done: set[str]
     return not any(_CLOSED_MARK in ln for ln in status_lines)
 
 
+#: Wave-13 close — the NON-VACUITY FLOORS. Measured at the fold: 61 records carry a recognized
+#: Status line and 45 slice-ids are in the roadmap done-set. The floors sit deliberately BELOW the
+#: measured values (records are only ever added) and exist to fail LOUDLY if a future shape drift
+#: silently shrinks the gate's population again — which is exactly how this control reported clean
+#: while guarding nothing for an entire wave. `test_ci_pg_coverage.py` uses the same pattern.
+#:
+#: The lesson these encode: three consecutive fixes to this gate were "broaden the matcher", and a
+#: matcher is only as good as the shapes someone thought to enumerate. A floor does not need to
+#: anticipate the next shape — it only needs to notice that coverage fell.
+_MIN_RECORDS_WITH_STATUS = 50
+_MIN_DONE_SLICES = 38
+
+
 def _closure_stamp_errors() -> list[str]:
     roadmap_path = ROOT / ROADMAP
     if not roadmap_path.is_file():
         return [f"missing roadmap: {ROADMAP}"]
     done = _done_slice_ids(roadmap_path.read_text(encoding="utf-8"))
     errors: list[str] = []
+    with_status = 0
     for record in sorted((ROOT / BACKLOG_DIR).glob("*_decision_record.md")):
         slice_id = record.name.removesuffix("_decision_record.md").replace("_", "-").upper()
         status_lines = _status_lines(record.read_text(encoding="utf-8"))
+        if status_lines:
+            with_status += 1
         if _is_unstamped_shipped(slice_id, status_lines, done):
             errors.append(
                 f"{record.name}: slice {slice_id} is DONE in the roadmap but its Status cell is "
                 f"not stamped CLOSED (the OQ-W9C-5 / OQ-W10C closure-discipline rule)"
             )
+    if with_status < _MIN_RECORDS_WITH_STATUS:
+        errors.append(
+            f"closure-stamp gate NON-VACUITY: only {with_status} decision records have a "
+            f"recognized Status line (floor {_MIN_RECORDS_WITH_STATUS}). The gate's matcher has "
+            f"lost coverage — fix _status_lines rather than lowering this floor."
+        )
+    if len(done) < _MIN_DONE_SLICES:
+        errors.append(
+            f"closure-stamp gate NON-VACUITY: only {len(done)} slice-ids parsed from the roadmap "
+            f"done-set (floor {_MIN_DONE_SLICES}). Fix _done_slice_ids rather than the floor."
+        )
     return errors
 
 

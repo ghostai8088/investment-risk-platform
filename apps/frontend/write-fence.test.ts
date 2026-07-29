@@ -91,4 +91,78 @@ describe("the write fence (OQ-2=A): request() is importable ONLY in src/api/writ
     );
     expect(hits).toEqual([]);
   });
+
+  it("blocks `request` from a .mts file (Wave-13 close: the TS half of the extension axis)", async () => {
+    // FE-M1's R-1 closed the extension axis for the JS family (.js/.jsx/.mjs/.cjs) but left the
+    // TypeScript family's own module-signalling extensions out of every fence glob. Both `tsc` and
+    // Vite compile them, so the hole R-1 was raised to close was still open one letter over.
+    const hits = await fenceMessages(
+      `import { request } from "./client";\nexport const X = request;`,
+      "src/api/probe.mts",
+    );
+    expect(hits.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Wave-13 close fold — the SYNTAX axis, this fence class's THIRD un-enumerated bypass (after
+ * specifier spelling at the Wave-12 close and file extension at FE-M1 R-1).
+ *
+ * `no-restricted-imports` registers visitors for `ImportDeclaration` and friends and has NO
+ * `ImportExpression` visitor, so `await import("../api/client")` was invisible to it. The router
+ * half of the same axis is closed by a different control (`dependency-fence.test.ts` pins the
+ * package absent from the lockfile, so a bare specifier cannot resolve at all) — but `../api/client`
+ * is a LOCAL module that resolves through `import()` perfectly well, so the write half was open.
+ */
+describe("the dynamic-import fence (Wave-13 close): import() cannot reach request() either", () => {
+  async function syntaxMessages(code: string, filePath: string) {
+    const [result] = await eslint.lintText(code, { filePath });
+    return result.messages.filter((m) => m.ruleId === "no-restricted-syntax");
+  }
+
+  it.each([
+    ["../api/client", "src/views/probe.ts"],
+    ["./api/client", "src/probe.ts"],
+    ["./client", "src/api/probe.ts"],
+    ["../../../api/client", "src/views/deep/deeper/probe.ts"],
+  ])("blocks a dynamic import of %s from %s", async (spec, file) => {
+    const hits = await syntaxMessages(
+      `export async function s() { return await import("${spec}"); }`,
+      file,
+    );
+    expect(hits.length).toBeGreaterThan(0);
+  });
+
+  it("blocks a dynamic import of react-router-dom", async () => {
+    const hits = await syntaxMessages(
+      `export async function s() { return await import("react-router-dom"); }`,
+      "src/views/probe.ts",
+    );
+    expect(hits.length).toBeGreaterThan(0);
+  });
+
+  it("POSITIVE CONTROL: an unrelated dynamic import is untouched", async () => {
+    // Without this, a fence that matched EVERY ImportExpression would pass the negatives above
+    // while breaking legitimate code splitting — the by-absence trap R-4 was raised about.
+    const hits = await syntaxMessages(
+      `export async function s() { return await import("../session"); }`,
+      "src/views/probe.ts",
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it("POSITIVE CONTROL: writes.ts keeps its exemption for the client clause only", async () => {
+    const allowed = await syntaxMessages(
+      `export async function s() { return await import("./client"); }`,
+      "src/api/writes.ts",
+    );
+    expect(allowed).toEqual([]);
+    // ...but the router clause is still enforced there — the V-3 lesson: an exemption must stay
+    // scoped to the thing it exempts, never switch the whole rule off.
+    const stillFenced = await syntaxMessages(
+      `export async function s() { return await import("react-router-dom"); }`,
+      "src/api/writes.ts",
+    );
+    expect(stillFenced.length).toBeGreaterThan(0);
+  });
 });
