@@ -400,7 +400,7 @@ def test_migration_chain_breach_action() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0055_sharpe_ratio_result"  # SR-1
+    assert script.get_current_head() == "0056_classification"  # SR-1
     assert script.get_revision("0051_breach_action").down_revision == "0050_limit_breach"
 
 

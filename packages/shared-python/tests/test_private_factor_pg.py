@@ -15,12 +15,15 @@ from sqlalchemy.pool import NullPool
 
 from irp_shared.db.session import make_engine
 from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
+from irp_shared.reference.models import HYBRID_TABLES
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
 _TABLE = "private_factor_return_result"
-_HYBRID = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
+#: Derived from the single closed-set DECLARATION (REF-1 collapsed 31 hand-mirrored copies:
+#: independently-maintained expected values ARE the drift surface the census exists to detect).
+_HYBRID = HYBRID_TABLES
 
 
 def test_symmetric_force_rls_not_hybrid() -> None:

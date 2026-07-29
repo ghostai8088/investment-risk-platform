@@ -41,6 +41,7 @@ from irp_shared.perf import (
 )
 from irp_shared.portfolio import PortfolioActor, create_portfolio
 from irp_shared.reference.instrument import create_instrument
+from irp_shared.reference.models import HYBRID_TABLES
 from irp_shared.reference.service import ReferenceActor
 from irp_shared.risk import (
     ProxyWeightEstimateActor,
@@ -54,7 +55,9 @@ URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
 _PA_3 = ("proxy_weight_estimate_result",)
-_P1B1_HYBRID = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
+#: Derived from the single closed-set DECLARATION (REF-1 collapsed 31 hand-mirrored copies:
+#: independently-maintained expected values ARE the drift surface the census exists to detect).
+_P1B1_HYBRID = HYBRID_TABLES
 _DEPS = (
     "portfolio",
     "instrument",

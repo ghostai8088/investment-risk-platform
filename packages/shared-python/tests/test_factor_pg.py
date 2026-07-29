@@ -35,7 +35,7 @@ from irp_shared.marketdata import (
     capture_factor_return,
     resolve_factor,
 )
-from irp_shared.reference.models import Currency
+from irp_shared.reference.models import HYBRID_TABLES, Currency
 
 _ACT = FactorActor(actor_id="a")
 
@@ -43,7 +43,9 @@ URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
 _P3_2 = ("factor", "factor_return")
-_P1B1_HYBRID = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
+#: Derived from the single closed-set DECLARATION (REF-1 collapsed 31 hand-mirrored copies:
+#: independently-maintained expected values ARE the drift surface the census exists to detect).
+_P1B1_HYBRID = HYBRID_TABLES
 _RAILS = ("data_source", "lineage_edge", "data_quality_rule", "data_quality_result")
 _VF = datetime(2020, 1, 1, tzinfo=UTC)
 _RD = date(2026, 5, 29)

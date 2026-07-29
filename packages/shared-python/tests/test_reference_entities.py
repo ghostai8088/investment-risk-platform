@@ -453,15 +453,24 @@ def test_audit_after_value_is_metadata_only(session: Session) -> None:
 
 
 def test_scope_fence_proprietary_never_hybrid() -> None:
-    # The three P1B-2 tables are NOT in the closed hybrid set (which stays the five P1B-1 tables).
+    """The closed hybrid set is EXACTLY the standard curated vocabularies; proprietary NEVER joins.
+
+    EXTENDED AT REF-1 (AD-013-R2, user-ratified): the five P1B-1 tables plus the two classification
+    VOCABULARY tables — N = 7. The membership rule is unchanged, which is the point of pinning the
+    exact set rather than a count: ``classification_assignment`` attaches to proprietary
+    issuers/instruments and is symmetric, so it is excluded here alongside legal_entity/issuer/
+    counterparty.
+    """
     assert set(HYBRID_TABLES) == {
         "currency",
         "calendar",
         "calendar_holiday",
         "rating_scale",
         "rating_grade",
+        "classification_scheme",
+        "classification_node",
     }
-    for table in ("legal_entity", "issuer", "counterparty"):
+    for table in ("legal_entity", "issuer", "counterparty", "classification_assignment"):
         assert table not in HYBRID_TABLES
 
 
@@ -608,20 +617,51 @@ def test_resolve_ultimate_parent_rejects_foreign_start_node(session: Session) ->
 # --- source-of-truth drift guards (PRD-01 / PRD-02) ---
 
 
-def test_hybrid_tables_parity_models_vs_migration() -> None:
+def _load_migration(filename: str):  # noqa: ANN202
     import importlib.util
     import pathlib
 
-    expected = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
-    assert tuple(HYBRID_TABLES) == expected
-    mig_path = (
-        pathlib.Path(__file__).resolve().parents[3] / "migrations/versions/0008_reference_data.py"
-    )
-    spec = importlib.util.spec_from_file_location("_mig0008", mig_path)
+    mig_path = pathlib.Path(__file__).resolve().parents[3] / "migrations/versions" / filename
+    spec = importlib.util.spec_from_file_location(f"_mig_{filename}", mig_path)
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    assert tuple(mod.HYBRID_TABLES) == expected  # the migration literal still equals the ORM set
+    return mod
+
+
+def test_hybrid_tables_parity_models_vs_migrations() -> None:
+    """The ORM closed-set DECLARATION equals the UNION of each migration's own frozen tuple.
+
+    RE-FOUNDED AT REF-1 (OQ-REF-1-12). Before: this asserted the ORM set equalled migration 0008's
+    literal. That framing only worked while the set never grew, and it implied 0008's tuple was a
+    MIRROR that a later slice could edit. It is not — it DRIVES 0008's own ``CREATE POLICY`` loop,
+    so adding a name to it would make ``alembic upgrade head`` from zero police tables 0008 never
+    creates. Every migration's DDL therefore stays frozen at what it shipped, and the governance
+    concept lives in ONE declaration that unions them.
+    """
+    m0008 = _load_migration("0008_reference_data.py")
+    m0056 = _load_migration("0056_classification.py")
+
+    # 0008 is frozen at its five, forever.
+    assert tuple(m0008.HYBRID_TABLES) == (
+        "currency",
+        "calendar",
+        "calendar_holiday",
+        "rating_scale",
+        "rating_grade",
+    )
+    # 0056 (REF-1, AD-013-R2) carries only the two tables IT creates and polices.
+    assert tuple(m0056.HYBRID_TABLES) == ("classification_scheme", "classification_node")
+
+    # The declaration is exactly the union — no name policed by no migration, and no migration
+    # policing a name the declaration does not carry.
+    assert set(HYBRID_TABLES) == set(m0008.HYBRID_TABLES) | set(m0056.HYBRID_TABLES)
+    assert len(HYBRID_TABLES) == len(set(HYBRID_TABLES))  # no duplicates
+    assert len(HYBRID_TABLES) == 7  # N = 7 after AD-013-R2
+
+    # The PROPRIETARY assignment table is NEVER hybrid — the invariant AD-013-R2 did not relax.
+    assert "classification_assignment" not in HYBRID_TABLES
+    assert tuple(m0056.TENANT_SCOPED_TABLES) == ("classification_assignment",)
 
 
 def test_excluded_entity_tables_absent_from_metadata() -> None:

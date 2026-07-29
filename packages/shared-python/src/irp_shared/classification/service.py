@@ -38,6 +38,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.audit.actions import ACTION_CORRECT, ACTION_CREATE, ACTION_UPDATE
 from irp_shared.audit.service import record_event
 from irp_shared.classification.models import (
     ASSIGNMENT_ENTITY_TYPES,
@@ -451,7 +452,7 @@ def create_scheme(
         entity_type=ENTITY_CLASSIFICATION_SCHEME,
         entity_id=row.id,
         event_type=REFERENCE_CREATE_EVENT,
-        action="CREATE",
+        action=ACTION_CREATE,
         after_value={
             "scheme_family": scheme_family,
             "version_label": version_label,
@@ -534,7 +535,7 @@ def create_node(
         entity_type=ENTITY_CLASSIFICATION_NODE,
         entity_id=row.id,
         event_type=REFERENCE_CREATE_EVENT,
-        action="CREATE",
+        action=ACTION_CREATE,
         after_value={
             "scheme_id": str(scheme.id),
             "code": code,
@@ -648,7 +649,7 @@ def capture_assignment(
         entity_type=ENTITY_CLASSIFICATION_ASSIGNMENT,
         entity_id=row.id,
         event_type=REFERENCE_CREATE_EVENT,
-        action="CREATE",
+        action=ACTION_CREATE,
         after_value=_assignment_summary(row),
         actor=actor,
         now=now,
@@ -733,7 +734,7 @@ def supersede_assignment(
         entity_type=ENTITY_CLASSIFICATION_ASSIGNMENT,
         entity_id=new.id,
         event_type=REFERENCE_UPDATE_EVENT,
-        action="UPDATE",
+        action=ACTION_UPDATE,
         before_value=before,
         after_value=_assignment_summary(new),
         actor=actor,
@@ -821,7 +822,7 @@ def correct_assignment(
         entity_type=ENTITY_CLASSIFICATION_ASSIGNMENT,
         entity_id=corrected.id,
         event_type=REFERENCE_CORRECTION_EVENT,
-        action="CORRECTION",
+        action=ACTION_CORRECT,
         before_value=before,
         after_value=_assignment_summary(corrected),
         actor=actor,

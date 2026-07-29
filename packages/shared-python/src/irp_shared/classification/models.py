@@ -56,16 +56,16 @@ from irp_shared.db.mixins import (
     TimestampMixin,
 )
 from irp_shared.db.types import GUID
+from irp_shared.reference.models import HYBRID_TABLES
 from irp_shared.temporal import TemporalClass
 
-#: Table names REF-1 adds to the closed hybrid set (AD-013-R2). The single closed-set DECLARATION
-#: lives at ``reference.models.HYBRID_TABLES``, which unions this in; migration 0056 carries its own
-#: frozen tuple for its own DDL (0008's tuple is DDL for 0008's tables and stays byte-untouched —
-#: editing it would make ``alembic upgrade head`` from zero CREATE POLICY on tables 0008 never
-#: creates).
-HYBRID_CLASSIFICATION_TABLES: tuple[str, ...] = (
-    "classification_scheme",
-    "classification_node",
+#: The tables REF-1 adds to the closed hybrid set (AD-013-R2), DERIVED from the single declaration
+#: at ``reference.models.HYBRID_TABLES`` rather than restated. The dependency runs this way — a
+#: domain package may import ``reference``, never the reverse (the reference import-direction
+#: fence). Migration 0056 carries its own frozen copy for its own DDL, and the parity test proves
+#: declaration == union(migrations); 0008's tuple is DDL for 0008's tables and stays byte-untouched.
+HYBRID_CLASSIFICATION_TABLES: tuple[str, ...] = tuple(
+    t for t in HYBRID_TABLES if t.startswith("classification_")
 )
 
 #: ``dimension_kind`` controlled vocabulary (MG-01 plain strings — new kinds are data, not a

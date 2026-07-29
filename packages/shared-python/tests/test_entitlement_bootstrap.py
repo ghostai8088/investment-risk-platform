@@ -146,6 +146,54 @@ def test_legal_entity_permissions_additive_and_recipient_parity() -> None:
     assert _holders("reference.legal_entity.edit") == {"data_steward", "platform_admin"}
 
 
+def test_classification_permissions_split_by_tenancy_class() -> None:
+    """REF-1: THREE codes, and the split is the point.
+
+    The verifier pass caught a single ``reference.classification.view`` as a BLOCKING SoD defect:
+    it would have gated BOTH the hybrid SYSTEM-global vocabulary and the PROPRIETARY
+    issuer-attached assignments, and the demo grants that code to ``auditor_3l`` — handing the 3L
+    auditor its first proprietary-identity read. Nothing would have caught it, because every SoD
+    pin in this file is PER CODE. These assertions are that missing per-code pin.
+    """
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    catalog = {code for code, _ in PERMISSIONS}
+    assert "reference.classification.view" in catalog
+    assert "reference.classification_assignment.view" in catalog
+    assert "reference.classification.edit" in catalog
+    # reference.rating.* STILL reserved — a new taxonomy domain does not release it.
+    assert "reference.rating.view" not in catalog
+    assert "reference.rating.edit" not in catalog
+
+    # The VOCABULARY is global standard reference -> the currency/rating_scale/calendar set,
+    # auditor_3l INCLUDED (the independent reviewer reads the taxonomy).
+    assert _holders("reference.classification.view") == _holders("reference.currency.view")
+    assert _holders("reference.classification.view") == _holders("reference.rating_scale.view")
+    assert "auditor_3l" in _holders("reference.classification.view")
+
+    # ASSIGNMENTS attach to proprietary issuers/instruments -> the legal_entity/identifier/
+    # corporate_action set, auditor_3l EXCLUDED. Pinned in BOTH directions: equality to the
+    # precedent set AND the explicit exclusion, so neither can drift silently.
+    assert _holders("reference.classification_assignment.view") == _holders(
+        "reference.legal_entity.view"
+    )
+    assert _holders("reference.classification_assignment.view") == _holders(
+        "reference.identifier.view"
+    )
+    assert "auditor_3l" not in _holders("reference.classification_assignment.view")
+
+    # The two view codes are NOT interchangeable — this inequality is the whole reason both exist.
+    assert _holders("reference.classification.view") != _holders(
+        "reference.classification_assignment.view"
+    )
+
+    # .edit: the steward maker + platform_admin only; never a read tier, never the auditor.
+    assert _holders("reference.classification.edit") == {"data_steward", "platform_admin"}
+    assert "auditor_3l" not in _holders("reference.classification.edit")
+
+
 def test_identifier_permissions_additive_and_recipient_parity() -> None:
     # P1B-3: the two additive identifier permissions exist; reference.rating.* still absent.
     assert "reference.identifier.view" in ALL_CODES

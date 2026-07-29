@@ -44,7 +44,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from irp_shared.classification.models import HYBRID_CLASSIFICATION_TABLES
 from irp_shared.db.base import Base
 from irp_shared.db.mixins import (
     EffectiveDatedMixin,
@@ -79,7 +78,13 @@ _HYBRID_TABLES_0008: tuple[str, ...] = (
 #: ``classification_assignment``) is symmetric and NEVER hybrid.
 HYBRID_TABLES: tuple[str, ...] = (
     *_HYBRID_TABLES_0008,
-    *HYBRID_CLASSIFICATION_TABLES,
+    # Added by AD-013-R2 at REF-1 and policed by migration 0056. Spelled literally rather than
+    # imported from ``classification.models``: this package must not import a downstream domain
+    # package (the reference import-direction fence, which caught exactly that inversion), and a
+    # table NAME is a governance fact, not a code dependency. The parity test proves this list
+    # equals the UNION of what the migrations actually police, so it cannot drift silently.
+    "classification_scheme",
+    "classification_node",
 )
 
 

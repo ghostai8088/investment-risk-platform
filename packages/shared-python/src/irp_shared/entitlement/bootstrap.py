@@ -65,6 +65,18 @@ PERMISSIONS: list[tuple[str, str]] = [
     # already exists above — only .view is NEW. .view granted to the reference.instrument.view set;
     # auditor_3l EXCLUDED (proprietary security-master SoD). reference.rating.* stays RESERVED.
     ("reference.corporate_action.view", "View corporate actions"),
+    # REF-1 classification (Wave-14 slice 0). THREE codes, split by TENANCY CLASS — the
+    # verifier pass caught a single `.view` here as a BLOCKING SoD defect: it would have gated the
+    # hybrid SYSTEM-global vocabulary AND the proprietary issuer-attached assignments with one
+    # permission, and granting it to auditor_3l (which the demo does) would have handed the 3L
+    # auditor its first proprietary-identity read. No shipped test would have caught that, because
+    # the SoD pins are PER CODE. reference.rating.* stays RESERVED.
+    #   .view          -> the hybrid vocabulary; auditor-INCLUDED (the currency/rating_scale set).
+    #   _assignment.view -> the proprietary assignments; auditor-EXCLUDED (the legal_entity set).
+    #   .edit          -> the steward maker verb over both.
+    ("reference.classification.view", "View classification schemes and nodes"),
+    ("reference.classification_assignment.view", "View classification assignments"),
+    ("reference.classification.edit", "Edit classification schemes, nodes and assignments"),
     ("portfolio.view", "View portfolios"),
     ("portfolio.edit", "Edit portfolios"),
     ("position.view", "View positions"),
@@ -213,6 +225,7 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # P1B-1 reference vocabularies: steward holds view + edit (the reference maker).
         "reference.currency.view",
         "reference.currency.edit",
+        "reference.classification.edit",
         "reference.rating_scale.view",
         "reference.rating_scale.edit",
         "reference.calendar.view",
@@ -225,6 +238,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.identifier.edit",
         # P1B-4 corporate_action: steward holds view (.edit already granted above).
         "reference.corporate_action.view",
+        "reference.classification.view",
+        "reference.classification_assignment.view",
         # P1C-1 portfolio: steward is the maker — holds BOTH view + edit (so it can read its own
         # writes). The codes pre-exist in the catalog (placeholders); this is the additive GRANT
         # (OD-P1C1-3). risk_analyst_1l/risk_manager_2l already hold portfolio.view (below);
@@ -296,6 +311,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.identifier.view",
         # P1B-4 corporate_action: view-only.
         "reference.corporate_action.view",
+        "reference.classification.view",
+        "reference.classification_assignment.view",
         "portfolio.view",
         "position.view",
         # P1C-2 transaction: read-tier view-only (transaction.record is maker/admin-only).
@@ -351,6 +368,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.identifier.view",
         # P1B-4 corporate_action: view-only.
         "reference.corporate_action.view",
+        "reference.classification.view",
+        "reference.classification_assignment.view",
         "portfolio.view",
         "position.view",
         # P1C-2 transaction: read-tier view-only (transaction.record is maker/admin-only).
@@ -399,6 +418,12 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "reference.currency.view",
         "reference.rating_scale.view",
         "reference.calendar.view",
+        # REF-1: the 3L auditor reads the GLOBAL taxonomy vocabulary (the
+        # currency/rating_scale precedent) but NOT classification ASSIGNMENTS,
+        # which attach to proprietary issuers/instruments (the legal_entity /
+        # identifier / corporate_action exclusion). Two codes exist precisely so
+        # this line can differ from the others.
+        "reference.classification.view",
         # P2-3 exposure: the 3L auditor VIEWS governed derived outputs (the deliberate inclusion —
         # OD-P2-3-I; distinct from the operational input SoD that excludes auditor from
         # portfolio/transaction/position/valuation/marketdata).

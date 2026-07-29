@@ -30,14 +30,16 @@ from irp_shared.reference.legal_entity import (
     create_legal_entity,
     resolve_ultimate_parent,
 )
-from irp_shared.reference.models import LegalEntity
+from irp_shared.reference.models import HYBRID_TABLES, LegalEntity
 from irp_shared.reference.service import ReferenceActor
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
 _P1B2 = ("legal_entity", "issuer", "counterparty")
-_P1B1_HYBRID = ("currency", "calendar", "calendar_holiday", "rating_scale", "rating_grade")
+#: Derived from the single closed-set DECLARATION (REF-1 collapsed 31 hand-mirrored copies:
+#: independently-maintained expected values ARE the drift surface the census exists to detect).
+_P1B1_HYBRID = HYBRID_TABLES
 _RAILS = ("data_source", "lineage_edge")
 
 

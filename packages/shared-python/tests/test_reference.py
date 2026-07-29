@@ -339,17 +339,24 @@ def test_seed_system_reference_creates_governed_global_slice(session: Session) -
 # --- scope fence (negative) ---
 
 
-def test_scope_fence_exactly_five_tables() -> None:
+def test_scope_fence_hybrid_set_is_exactly_seven_tables() -> None:
+    """EXTENDED AT REF-1 (AD-013-R2, user-ratified): five P1B-1 vocabularies + two classification
+    vocabulary tables. The five P1B-1 models still account for exactly their own five, so this
+    package's own contribution to the set cannot drift while the total grows."""
     assert set(HYBRID_TABLES) == {
         "currency",
         "calendar",
         "calendar_holiday",
         "rating_scale",
         "rating_grade",
+        "classification_scheme",
+        "classification_node",
     }
-    assert {
+    p1b1 = {
         m.__tablename__ for m in (Currency, Calendar, CalendarHoliday, RatingScale, RatingGrade)
-    } == set(HYBRID_TABLES)
+    }
+    assert p1b1 <= set(HYBRID_TABLES)
+    assert set(HYBRID_TABLES) - p1b1 == {"classification_scheme", "classification_node"}
 
 
 def test_rating_is_taxonomy_only_no_assignment_columns() -> None:
