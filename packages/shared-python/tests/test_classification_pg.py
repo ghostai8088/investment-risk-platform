@@ -108,12 +108,17 @@ def test_vocabulary_is_hybrid_and_assignment_is_not(app_url: str) -> None:
     # Seed the global taxonomy under SYSTEM context.
     engine, sys_session = _session(app_url, SYSTEM_TENANT_ID)
     sys_actor = ClassificationActor(tenant_id=SYSTEM_TENANT_ID, actor_id="platform_admin")
+    # SYSTEM_TENANT_ID is a FIXED tenant, so a SYSTEM row seeded here is visible to every other
+    # module in the same database. This suite therefore uses a DISTINCT version label — the
+    # test_reference_pg isolation convention ("each test uses a distinct SYSTEM currency code").
+    # Without it this row collides with the demo stage's real ISIC Rev. 5 and makes the demo
+    # suite's refuse-not-skip guard fire against a scheme the demo never seeded.
     scheme = create_scheme(
         sys_session,
         actor=sys_actor,
         scheme_family="ISIC",
-        version_label="Rev. 5",
-        name="ISIC Rev. 5",
+        version_label=f"pgtest-{uuid.uuid4().hex[:8]}",
+        name="ISIC (PG suite fixture)",
         dimension_kind=DIMENSION_KIND_SECTOR_INDUSTRY,
         authority="UNSD",
     )
