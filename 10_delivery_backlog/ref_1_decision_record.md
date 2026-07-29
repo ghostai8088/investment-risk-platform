@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | IMPLEMENTED 2026-07-29 (pending merge) — OQ-REF-1-1…30 ratified and built; `0056` on `ref-1-planning`; full-PG 2719/0 |
+| Status | **CLOSED 2026-07-29** — merged via **PR #148** = `727f3c9`, merged-main CI run **30482058389** green all six. OQ-REF-1-1…30 ratified as recommended; migration `0056`; ENT-066/067/068; counts UNCHANGED 25/40/133; fresh-schema full-PG 2719/0. P1 verify-on-main sweep executed and clean. |
 | Slice | Wave-14 slice 0 (`wave_14_planning.md`, roadmap Part 2.18) |
 | Entities | ENT-066 `classification_scheme`, ENT-067 `classification_node`, ENT-068 `classification_assignment` |
 | Migration | `0056` |
@@ -414,3 +414,26 @@ REQ-CRD-003 — `instrument` being unpinned is an AD-014 exposure for CON-1, not
 (OQ-REF-1-5). Mixed-scheme-version aggregation is a legal state that CON-1 must refuse fail-closed
 (OQ-REF-1-10). The intended component kind is `CLASSIFICATION`, pinning assignment rows (FR,
 drift-free) plus the node-set content hash excluding `name`/`description` (OQ-REF-1-25).
+
+## Part 9 — Closeout: the P1 verify-on-main sweep (executed AFTER the merge)
+
+Run against `origin/main` at `727f3c9`, per the P1 clause that a sweep on the branch measures
+INTENT and only the main check measures DELIVERY (the RM-1 evidence: a sweep commit authored and
+never merged; FE-M1's fold racing its own PR).
+
+**All seven commits are ancestors of `main`:** `41e8836`, `dbce327`, `3f75907`, `138b38d`,
+`da09a85`, `6a5b929`, `1ff0d70`.
+
+**Every claimed artifact present on `main`** — the `classification/` package (init, models,
+service), migration `0056`, the API router, demo stage 18, and all four test suites
+(`test_classification`, `test_classification_pg`, `test_tenancy_floors_pg`,
+`test_demo_stage9zzzzzzzzz_ref1_pg`).
+
+**Every ledger CLAIM verified by content on `main`, not by file presence:** ENT-066/067/068 rows
+and the next-free pointer at ENT-069; the audit-taxonomy REF-1 extension; CTRL-017's classification
+evidence; `current_state` CURRENT TRUTH 2026-07-29c; REQ-SMR-006 + REQ-CRD-005 in the backbone AND
+the RTM; **AD-013-R2** in the ADR log; the **CLAUDE.md 7-table invariant**; the roadmap's
+IMPLEMENTED stamp; and all three new CI PG steps.
+
+**Merged-main CI run `30482058389` green on all six jobs** — the merge itself verified, not just
+the branch.

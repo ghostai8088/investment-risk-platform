@@ -2,8 +2,9 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-29c) — read this block; everything below it is HISTORY
 >
-> **REF-1 IS IMPLEMENTED (Wave-14 slice 0) — the platform's FIRST governed reference DIMENSIONS.**
-> Branch `ref-1-planning`; migration head **`0056`**; next free canonical id **ENT-069**; demo
+> **REF-1 IS CLOSED (Wave-14 slice 0) — the platform's FIRST governed reference DIMENSIONS.**
+> Merged via **PR #148** = `727f3c9`, merged-main CI **30482058389** green all six; the P1
+> verify-on-main sweep executed and clean. Migration head **`0056`**; next free canonical id **ENT-069**; demo
 > counts **UNCHANGED 25/40/133**; fresh-schema full-PG **2719 passed / 0 failed**.
 >
 > - **ENT-066 `classification_scheme` + ENT-067 `classification_node`** (EV, **HYBRID**) and
