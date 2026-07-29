@@ -24,7 +24,9 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
   scope/ambiguity) and anything hard-to-reverse or outward-facing beyond the repo itself. The next slice
   comes from the roadmap sequence by default.
 - **`packages/shared-python/src/irp_shared/audit/service.py` is FROZEN** — never modify it.
-- **No BYPASSRLS app path; no hybrid/SYSTEM_TENANT behavior** beyond the closed 5-table hybrid set; proprietary
+- **No BYPASSRLS app path; no hybrid/SYSTEM_TENANT behavior** beyond the closed **7-table** hybrid set (five at
+  AD-013-R1, extended to seven by **AD-013-R2** at REF-1 2026-07-29 — user-ratified; the declaration is
+  `reference.models.HYBRID_TABLES`, and each migration polices only the tables it created); proprietary
   data = symmetric FORCE RLS.
 - **No new audit code, permission, or role** outside the governed R-07 mint; no secrets in source (BR-10).
 - **Verification gates are never waived** (`make check`, full-PG validation, CI-watch-to-green, reproduction

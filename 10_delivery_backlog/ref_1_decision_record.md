@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | RATIFIED 2026-07-29 — OQ-REF-1-1…30 ALL approved as recommended ("proceed" on the briefed gate); implementation follows on this branch |
+| Status | IMPLEMENTED 2026-07-29 (pending merge) — OQ-REF-1-1…30 ratified and built; `0056` on `ref-1-planning`; full-PG 2719/0 |
 | Slice | Wave-14 slice 0 (`wave_14_planning.md`, roadmap Part 2.18) |
 | Entities | ENT-066 `classification_scheme`, ENT-067 `classification_node`, ENT-068 `classification_assignment` |
 | Migration | `0056` |
@@ -372,3 +372,45 @@ striking the wave plan's GICS-shaped option.
   fact-10 pendency claim); "four-times shipped" → three; "behaviour-preserving" → derived-not-independent;
   the AD-013 "both halves" over-claim narrowed; the missing OpenAPI/FE regeneration, downgrade-body
   step, teardown, and six-ledger completions — all now in Part 5's gates.
+
+## Part 8 — Delivery record (what actually shipped)
+
+**Commits on `ref-1-planning`:** `41e8836` (planning, DRAFT→VERIFIED) → `dbce327` (ratification +
+substrate) → `3f75907` (the CI-failure fix + the R-07 mint + tests) → `138b38d` (floors, PG suite,
+REQ mints) → `da09a85` (read surface) → `6a5b929` (demo stage 18) → this closeout.
+
+**Measured gates** (P1 ledger 6 — measured, never derived): `make check` green; **fresh-schema
+full-PG 2719 passed / 0 failed, `PYTEST_EXIT=0`** (2681 at the Wave-13 close, +38); `alembic check`
+no drift; migration head `0056`; demo counts **UNCHANGED 25/40/133**; ruff + mypy (255 files) +
+secret-scan + docs-check + fe-check + fe-audit green.
+
+**P1 six-ledger sweep.** (1) Canonical model — ENT-066/067/068 minted, next-free → ENT-069.
+(2) Audit taxonomy — the `REFERENCE` row records REF-1's extension, the node-folds-into-parent
+grain, the FR per-op grain, and the SYSTEM-vs-tenant chain split; **no audit code minted**.
+(3) Control matrix — CTRL-017's evidence extended with the classification family; **no control
+changed state**, and the rf diligence CTRL row moved to CAL-1 with split trigger (b).
+(4) `current_state.md` CURRENT TRUTH updated. (5) Requirements — REQ-SMR-006 + REQ-CRD-005 minted
+in the backbone AND both RTM halves, CRD-003 narrowed, coverage summary re-measured (74 rows / 28
+ModelGov / 54 BX-LIN). (6) Counts measured above.
+
+**Governance artifacts executed:** **AD-013-R2** recorded in the ADR log (hybrid set 5 → 7, with
+both halves of AD-013 quoted as the warrant and the REF-1 floors named as its bound); the
+**CLAUDE.md hard invariant amended** from "closed 5-table" to "closed 7-table" with the pointer to
+the single declaration.
+
+**What was found by BUILDING that reading did not (the P4 argument, again):** the FK name
+`fk_classification_assignment_supersedes_id_classification_assignment` is 68 characters against
+PostgreSQL's 63-character limit; the SCH-2 RLS sandwich is dead ceremony in a drop-the-table
+downgrade (RLS governs DML, not DDL); `dedupe_tenant_wins` could not accept a scheme at all
+(mypy caught the missing `.code`, which is the same defect the verifier predicted from the
+opposite direction); a first negative control for the Integer bind did NOT fire, because psycopg
+sends a Python `str` as *unknown* and PostgreSQL coerces it — the real Wave-13 shape needs an
+explicit VARCHAR cast; and three separate superuser-bypasses-RLS isolation defects in the demo
+suite, including my own PG fixture colliding with the demo's real ISIC seed.
+
+**Carried forward to CON-1, named rather than left to be discovered:** CON-1 must either mint an
+instrument→issuer component kind (an EV-flavored, drift-prone pin) or refuse the per-issuer half of
+REQ-CRD-003 — `instrument` being unpinned is an AD-014 exposure for CON-1, not a safety property
+(OQ-REF-1-5). Mixed-scheme-version aggregation is a legal state that CON-1 must refuse fail-closed
+(OQ-REF-1-10). The intended component kind is `CLASSIFICATION`, pinning assignment rows (FR,
+drift-free) plus the node-set content hash excluding `name`/`description` (OQ-REF-1-25).
