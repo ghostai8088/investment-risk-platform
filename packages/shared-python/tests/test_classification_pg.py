@@ -28,6 +28,7 @@ from irp_shared.classification.models import (
     DIMENSION_KIND_COUNTRY_OF_RISK,
     DIMENSION_KIND_SECTOR_INDUSTRY,
     ClassificationAssignment,
+    ClassificationNode,
 )
 from irp_shared.classification.service import (
     ClassificationActor,
@@ -322,5 +323,68 @@ def test_read_filters_bind_at_the_column_type_on_pg(app_url: str) -> None:
     )
     assert len(as_of_rows) == 1
     assert as_of_rows[0].basis == BASIS_IMMEDIATE_ISSUER_RESIDENCE
+    session.close()
+    engine.dispose()
+
+
+def test_integer_level_filter_binds_as_integer_on_pg(app_url: str) -> None:
+    """PG-TIER PIN for the INTEGER filter — the exact column class that ended the streak.
+
+    ``GET /classification/schemes/{id}/nodes?level=N`` filters ``classification_node.level``, an
+    Integer column. At the Wave-13 close a blanket ``str()`` bind made ``window_months`` reach
+    PostgreSQL as ``integer = character varying`` and 500 four endpoints while every gate was green
+    — because SQLite's INTEGER affinity converts ``'1'`` to ``1`` and the unit tier is
+    STRUCTURALLY incapable of seeing it. This pin exercises both the correct bind and, as a
+    negative control, proves the stringified form is genuinely rejected here.
+    """
+    tenant = str(uuid.uuid4())
+    engine, session = _session(app_url, tenant)
+    actor = ClassificationActor(tenant_id=tenant, actor_id="steward")
+    scheme = create_scheme(
+        session,
+        actor=actor,
+        scheme_family="ISIC",
+        version_label=f"Rev. {uuid.uuid4().hex[:6]}",
+        name="ISIC",
+        dimension_kind=DIMENSION_KIND_SECTOR_INDUSTRY,
+    )
+    create_node(session, actor=actor, scheme_id=scheme.id, code="C", name="Manufacturing", level=1)
+    create_node(
+        session, actor=actor, scheme_id=scheme.id, code="C10", name="Food", level=2, parent_code="C"
+    )
+    session.commit()
+    set_tenant_context(session, tenant)
+
+    level_1 = (
+        session.execute(
+            select(ClassificationNode).where(
+                ClassificationNode.scheme_id == str(scheme.id),
+                ClassificationNode.level == 1,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [n.code for n in level_1] == ["C"]
+
+    # NEGATIVE CONTROL — and the cast here is deliberate, not decoration.
+    #
+    # A first attempt passed a Python ``str`` as a bind parameter and did NOT raise: psycopg sends
+    # it as *unknown*, and PostgreSQL happily coerces unknown to integer. That control would have
+    # been a lie — green while proving nothing. The Wave-13 defect was not an unknown-typed value;
+    # it was a value bound at an explicit VARCHAR type (the blanket ``str()`` in the read seam),
+    # which PostgreSQL refuses with "operator does not exist: integer = character varying". So the
+    # control reproduces THAT shape.
+    with pytest.raises(ProgrammingError) as exc:
+        session.execute(
+            text(
+                "SELECT count(*) FROM classification_node "
+                "WHERE scheme_id = CAST(:s AS uuid) AND level = CAST(:lvl AS varchar)"
+            ),
+            {"s": str(scheme.id), "lvl": "1"},
+        )
+    message = str(exc.value).lower()
+    assert "operator does not exist" in message and "character varying" in message
+    session.rollback()
     session.close()
     engine.dispose()

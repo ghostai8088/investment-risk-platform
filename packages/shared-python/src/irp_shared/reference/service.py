@@ -21,7 +21,7 @@ Imports only ``lineage`` / ``audit`` / ``db`` / ``entitlement`` (one-way). No ``
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, TypeVar
@@ -82,14 +82,20 @@ class ReferenceActor:
     correlation_id: str | None = None
 
 
-class _CodedRow(Protocol):
-    """Structural type for an EV row carrying ``code`` + ``tenant_id`` (for read dedup)."""
+class _TenantRow(Protocol):
+    """Structural type for an EV row carrying ``tenant_id`` (the only field dedup itself needs).
 
-    code: str
+    WIDENED AT REF-1: the key is now supplied by the caller (see ``dedupe_tenant_wins``), so a row
+    no longer has to carry a ``code`` attribute. ``classification_scheme`` is keyed
+    ``(scheme_family, version_label)`` and has no ``code`` at all — under the old bound it could
+    not be deduped, and under a scheme discriminator a bare ``.code`` key would collapse the same
+    code string across different schemes.
+    """
+
     tenant_id: str
 
 
-_RowT = TypeVar("_RowT", bound=_CodedRow)
+_RowT = TypeVar("_RowT", bound=_TenantRow)
 
 
 def ensure_manual_source(session: Session, tenant_id: str, actor_id: str) -> DataSource:
@@ -284,21 +290,34 @@ def record_reference_status_change(
     )
 
 
-def dedupe_tenant_wins(rows: Sequence[_RowT], acting_tenant: str) -> list[_RowT]:
-    """Application-layer "tenant override wins" dedup (AD-013-R1): keep one row per ``code``, the
-    acting tenant's row preferred over the SYSTEM_TENANT row. Deterministic (sorted by code).
+def dedupe_tenant_wins(
+    rows: Sequence[_RowT],
+    acting_tenant: str,
+    key: Callable[[_RowT], str] | None = None,
+) -> list[_RowT]:
+    """Application-layer "tenant override wins" dedup (AD-013-R1): keep one row per KEY, the
+    acting tenant's row preferred over the SYSTEM_TENANT row. Deterministic (sorted by key).
 
     RLS already returned the union (own + SYSTEM); precedence is decided here, not in the policy.
-    This is the portable equivalent of ``SELECT DISTINCT ON (code) ... ORDER BY code,
-    (tenant_id = :acting) DESC`` and behaves identically on PostgreSQL and SQLite."""
+    Portable equivalent of ``SELECT DISTINCT ON (key) ... ORDER BY key, (tenant_id = :acting)
+    DESC``; identical on PostgreSQL and SQLite.
+
+    ``key`` defaults to ``r.code``, so every pre-REF-1 caller is unchanged. REF-1 generalized it
+    (OQ-REF-1-14) because the classification vocabulary needs two different key spaces:
+    ``classification_scheme`` is keyed ``(scheme_family, version_label)`` and carries no ``code``,
+    while ``classification_node`` is keyed ``code`` WITHIN a scheme — so a bare ``.code`` key would
+    have collapsed the same code string across different schemes (ISIC "C" and NACE "C" are not
+    the same node). A single fixed key could not serve both.
+    """
+    key_of: Callable[[_RowT], str] = key if key is not None else (lambda r: str(r.code))  # type: ignore[attr-defined]
     chosen: dict[str, _RowT] = {}
     ordered = sorted(
         rows,
-        key=lambda r: (r.code, 0 if str(r.tenant_id) == str(acting_tenant) else 1),
+        key=lambda r: (key_of(r), 0 if str(r.tenant_id) == str(acting_tenant) else 1),
     )
     for row in ordered:
-        chosen.setdefault(row.code, row)  # own-tenant sorts first within a code -> wins
-    return [chosen[code] for code in sorted(chosen)]
+        chosen.setdefault(key_of(row), row)  # own-tenant sorts first within a key -> wins
+    return [chosen[k] for k in sorted(chosen)]
 
 
 class CurrencyNotVisible(Exception):
