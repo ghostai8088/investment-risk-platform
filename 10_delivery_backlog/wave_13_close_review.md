@@ -110,8 +110,10 @@ root-level guard tests — count corrected at this close); the month-end **holid
 (2.8%, next real collision **2027-05-31** — MUST ride Wave-14's calendar work, recorded here so it
 has a dated gate); the computed-specifier fence residual (§1); the rf **uniform-shift
 limitation** (undetectable in-data by design — enforcement is the declared convention + vendor
-onboarding diligence, a Wave-14 obligation); SR-1's ES-multiplier v2 and the other standing
-scope-outs, unchanged.
+onboarding diligence, a Wave-14 obligation); the ES-multiplier backend v2 (FL-1's recorded v2 —
+**correction 2026-07-29 at the Wave-14 planning gate, OQ-W14P-7:** this row originally attributed
+it to SR-1, whose record contains no such item; SR-1's own recorded v2 is the
+autocorrelation-corrected annualizer) and the other standing scope-outs, unchanged.
 
 **Register hygiene finding, folded:** the OPS-H1 rows and two trigger-fired items were stale in
 the Wave-12 register text; the audit's two register survivors were doc-class and are corrected by
