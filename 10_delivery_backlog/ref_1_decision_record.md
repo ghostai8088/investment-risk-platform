@@ -230,9 +230,14 @@
   `calendar_holiday` precedent) rather than emitting its own.
 - **OQ-REF-1-19 — DQ completeness rule type: OUT, with the honest statement.** The draft's
   justification is withdrawn (Part 0 fact 3). What is true: no completeness RULE TYPE exists, and
-  the shipped presence GATE is invoked on no capture path — so REF-1's rail computes its own
-  expected-set diff and calls `run_presence_gate` explicitly, becoming the **first capture-path
-  caller**. Minting `RULE_TYPE_COMPLETENESS` (so the persisted rule can say *what* was expected)
+  the shipped presence GATE is invoked on no capture path. **CORRECTED at the REF-1 fold
+  2026-07-29:** the original text went on to say REF-1's rail "computes its own expected-set diff
+  and calls `run_presence_gate` explicitly, becoming the first capture-path caller". It does not —
+  executed grep shows `classification/service.py` never calls `run_presence_gate` or
+  `ensure_presence_rule`; it runs a required-fields NOT_NULL gate through `run_quality_check` and
+  computes no expected-set diff. Forward-looking prose read as delivery — the FOURTH instance of
+  that class in this record. The rail's actual DQ leg is the NOT_NULL gate; a presence-gate
+  capture-path caller remains unbuilt, with the trigger unchanged. Minting `RULE_TYPE_COMPLETENESS` (so the persisted rule can say *what* was expected)
   is deferred, trigger: *the first vendor dataset whose acceptance is expressed as an expected key
   set in the rule itself*.
 - **OQ-REF-1-20 — vocabulary resolution (NEW — the draft's rail had none).** The capture verb
