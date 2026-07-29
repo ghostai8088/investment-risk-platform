@@ -149,9 +149,13 @@ def get_legal_entity(
 
 
 class IssuerIn(BaseModel):
+    """Issuer create body. ``sector`` is deliberately ABSENT (frozen at the REF-1 fold,
+    OQ-REF-1-23): the governed replacement is a ``classification_assignment`` against a versioned
+    ``classification_scheme``. ``IssuerOut`` still RETURNS the legacy column — the read side is a
+    shipped contract and removing it is a breaking change no gate here can detect."""
+
     legal_entity_id: uuid.UUID  # malformed -> 422
     issuer_type: str | None = None
-    sector: str | None = None
     is_active: bool = True
 
 
@@ -192,7 +196,6 @@ def create_issuer_endpoint(
             legal_entity_id=str(body.legal_entity_id),
             actor=_actor(principal),
             issuer_type=body.issuer_type,
-            sector=body.sector,
             is_active=body.is_active,
         )
     except LegalEntityNotVisible:  # cross-tenant/unknown core -> indistinguishable 404

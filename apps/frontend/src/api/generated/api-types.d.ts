@@ -7370,7 +7370,13 @@ export interface components {
             /** Sector */
             sector: string | null;
         };
-        /** IssuerIn */
+        /**
+         * IssuerIn
+         * @description Issuer create body. ``sector`` is deliberately ABSENT (frozen at the REF-1 fold,
+         *     OQ-REF-1-23): the governed replacement is a ``classification_assignment`` against a versioned
+         *     ``classification_scheme``. ``IssuerOut`` still RETURNS the legacy column — the read side is a
+         *     shipped contract and removing it is a breaking change no gate here can detect.
+         */
         IssuerIn: {
             /**
              * Is Active
@@ -7384,8 +7390,6 @@ export interface components {
              * Format: uuid
              */
             legal_entity_id: string;
-            /** Sector */
-            sector?: string | null;
         };
         /** IssuerOut */
         IssuerOut: {

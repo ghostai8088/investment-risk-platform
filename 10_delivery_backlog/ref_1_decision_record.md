@@ -77,16 +77,25 @@
 - **OQ-REF-1-3 — assignments are a separate FR bitemporal table. Recommend B.** The decisive
   argument is drift, test-proven in both directions: an EV in-place amend flips `verify_snapshot`
   to `ok=False` (`test_snapshot.py:416-436`); an FR supersede leaves the pin byte-stable
-  (`:370-413`), and that flows to the user-visible unfakeable `snapshotVerified` badge. Under an
+  (`:370-413`), and that surfaces through the shipped `/snapshots/{id}/verify` endpoint.
+  **CORRECTED at the REF-1 fold 2026-07-29:** the original text said this "flows to the user-visible
+  unfakeable `snapshotVerified` badge". `GovernedValue` SUPPORTS the prop but **no production view
+  passes it** (executed grep: the only non-test references are the component and its stylesheet), so
+  the user-visibility clause was FALSE as shipped. The decision stands on the drift mechanics alone,
+  which are test-proven; the claim about what a user sees did not, and is withdrawn. Under an
   EV attribute column, an ordinary reclassification permanently reddens the governance walk on
   every historical concentration run, with **no remedy** — snapshots are IA append-only.
   Independently, AD-005 §2A already classifies rating ASSIGNMENTS as FR (`:47`, `:85-86`,
   OD-P1B-J): REF-1 realizes the taxonomy=EV / assignments=FR split ENT-007 designed.
   **Applying my own criterion consistently to the EV half I kept** (the verifier's catch): the
-  vocabulary tables stay EV, so a node correction would drift a CON-1 pin. **Fence:** semantic
-  node fields (`code`, `parent_node_id`, `level`) are correctable ONLY by a new scheme revision;
-  `name`/`description` are in-place correctable and **excluded from the pinned content hash**. The
-  drift criterion is thus satisfied on both halves, not just the one it was convenient for.
+  vocabulary tables stay EV, so a node correction would drift a CON-1 pin. **Fence (status CORRECTED at the REF-1 fold 2026-07-29):** the intent is that semantic node
+  fields (`code`, `parent_node_id`, `level`) are correctable ONLY by minting a new scheme revision,
+  while `name`/`description` are in-place correctable and excluded from any pinned content hash.
+  **As shipped both halves are VACUOUSLY true: `classification/service.py` has no `update_node` or
+  `update_scheme`, and the API exposes no vocabulary-mutation route — there is no writer for the
+  fence to constrain.** That is the vacuous-guard class this project keeps finding, so it is
+  labelled rather than asserted. It becomes real when a vocabulary-mutation verb lands; CON-1 ships
+  the hash exclusion prophylactically.
 - **OQ-REF-1-4 — one generic assignment table with `dimension_kind`. Recommend A**, with the
   draft's sparse-column defect fixed: **`basis` is NOT NULL with a `NOT_APPLICABLE` sentinel** and
   a binder-enforced `dimension_kind` ↔ `basis` invariant with a fail-closed refusal test — the
@@ -258,6 +267,16 @@
   **Recorded reversal:** `sector` was deliberately ratified open-vocab under MG-01. *(Honest
   correction to the draft: "no schema change" is right, but freezing writes DOES change `IssuerIn`
   and therefore the OpenAPI artifact — so the regeneration obligation below applies.)*
+  **DELIVERY CORRECTION (REF-1 fold, 2026-07-29):** ratified at the gate and then **NOT implemented
+  in the slice** — `sector` stayed in `_UPDATABLE`, stayed a written `create_issuer` kwarg, and
+  stayed on `IssuerIn`, while this record described the freeze as done. CON-1's recon caught it by
+  verifying the record against the code (P3), which is the whole point of that rule. Now delivered:
+  removed from `_UPDATABLE`, from `create_issuer`'s signature (passing it raises `TypeError`) and
+  from `IssuerIn`; `IssuerOut` and the column are deliberately KEPT; the audit payload retains the
+  `sector` key at `None` because that key set is a pinned contract. Guarded by
+  `test_issuer_sector_writes_are_frozen_and_no_engine_reads_it`, which asserts the DECLARED frozen
+  intent (`_FROZEN_ATTRIBUTES`) rather than the incidental shape of a tuple, and carries a positive
+  control that the column still exists.
 - **OQ-REF-1-24 — read surface: backend-only.** Rule 7's captured-input clause requires
   entity-filtered list reads from birth and no more; **the FE obligation the draft and the wave
   plan attributed to rule 7 is not in its text**, and the FE has zero reference screens, so any FE

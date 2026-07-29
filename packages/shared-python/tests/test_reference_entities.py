@@ -321,7 +321,9 @@ def test_update_emits_update_event_and_bumps_version(session: Session) -> None:
     update_legal_entity(session, le, actor=_actor(), name="New Name", is_active=False)
     assert le.record_version == 2 and le.name == "New Name"
     iss = create_issuer(session, tenant_id=tenant, legal_entity_id=le.id, actor=_actor())
-    update_issuer(session, iss, actor=_actor(), sector="Financials")
+    update_issuer(session, iss, actor=_actor(), issuer_type="SOVEREIGN")
+    # (was `sector=...`; frozen at the REF-1 fold — the property under test is the UPDATE
+    # event + the version bump, not the particular attribute.)
     cpty = create_counterparty(session, tenant_id=tenant, legal_entity_id=le.id, actor=_actor())
     update_counterparty(session, cpty, actor=_actor(), counterparty_type="CCP")
     assert _events(session, REFERENCE_UPDATE_EVENT) == 3
@@ -450,6 +452,45 @@ def test_audit_after_value_is_metadata_only(session: Session) -> None:
 
 
 # --- scope fence (proprietary never hybrid; no excluded columns/entities) ---
+
+
+def test_issuer_sector_writes_are_frozen_and_no_engine_reads_it() -> None:
+    """OQ-REF-1-23's ratified write-freeze, DELIVERED at the REF-1 fold (2026-07-29).
+
+    The ratification said: keep the column and the read field, freeze the WRITE paths, and guard
+    that no engine reads it. The freeze was ratified at the REF-1 gate but NOT implemented in the
+    slice — the record claimed it while `sector` stayed in `_UPDATABLE`, on `IssuerIn`, and written
+    by `create_issuer`. Found by CON-1's recon verifying the record against the code (P3), and this
+    test is what makes the claim true rather than asserted.
+
+    Two live sector representations is precisely the ambiguity the governed dimension removes: a
+    reader could not tell which one a concentration bucket came from.
+    """
+    import inspect
+
+    from irp_shared.reference import issuer as issuer_mod
+
+    # 1. Not updatable, and the frozen intent is DECLARED rather than merely absent.
+    assert "sector" not in issuer_mod._UPDATABLE
+    assert "sector" in issuer_mod._FROZEN_ATTRIBUTES
+
+    # 2. Not settable at create — asserted on the SIGNATURE, so passing it is a TypeError.
+    create_params = inspect.signature(issuer_mod.create_issuer).parameters
+    assert "sector" not in create_params
+    with pytest.raises(TypeError):
+        issuer_mod.create_issuer(  # type: ignore[call-arg]
+            None, tenant_id="t", legal_entity_id="l", actor=None, sector="TECH"
+        )
+
+    # 3. Not on the request model; STILL on the response model (the read contract is kept).
+    from irp_backend.api.reference_entities import IssuerIn, IssuerOut
+
+    assert "sector" not in IssuerIn.model_fields
+    assert "sector" in IssuerOut.model_fields
+
+    # 4. POSITIVE CONTROL: the column itself still exists, so this test is about the WRITE paths
+    # and would fail loudly if someone "simplified" it into a column drop.
+    assert "sector" in Issuer.__table__.columns
 
 
 def test_scope_fence_proprietary_never_hybrid() -> None:
@@ -594,7 +635,9 @@ def test_update_single_origin_edge_all_entities_incl_reparent(session: Session) 
 
     before = {child.id: _edge(child.id).id, iss.id: _edge(iss.id).id, cpty.id: _edge(cpty.id).id}
     update_legal_entity(session, child, actor=_actor(), parent_legal_entity_id=p2.id)  # re-parent
-    update_issuer(session, iss, actor=_actor(), sector="Financials")
+    update_issuer(session, iss, actor=_actor(), issuer_type="SOVEREIGN")
+    # (was `sector=...`; frozen at the REF-1 fold — the property under test is the UPDATE
+    # event + the version bump, not the particular attribute.)
     update_counterparty(session, cpty, actor=_actor(), counterparty_type="CCP")
     for eid, before_id in before.items():
         edges = (
