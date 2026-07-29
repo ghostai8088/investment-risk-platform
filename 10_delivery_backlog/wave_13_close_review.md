@@ -214,6 +214,6 @@ pacing test, four record corrections) → `b131e89` (batch 4 — the twenty LOWs
 | downgrade smoke | `alembic downgrade base` clean → `upgrade head` restored → `alembic check` no drift (head stays `0055`; this close ships no migration) |
 | `fe-check` | prettier + eslint 0 + `tsc` 0 + **32 files / 204 tests** |
 | Mutation controls | **11 mutants across the batches, each killed by the fold's tests; restorations shown green** |
-| CI | ⏳ recorded from the observed run on the pushed branch before merge |
+| CI | run **30455596382** (`866e10e`) observed **completed / `conclusion=success` across all six jobs** (Frontend, Backend, DB migration, API type drift, Documentation check, Secret scan) — written after observing the completed run, per R-3 |
 
 **Ratified outcomes: PENDING the gate** — P1–P6 above, plus the Wave-14 ratification (§5).
