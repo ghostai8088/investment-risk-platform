@@ -44,6 +44,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from irp_shared.classification.models import HYBRID_CLASSIFICATION_TABLES
 from irp_shared.db.base import Base
 from irp_shared.db.mixins import (
     EffectiveDatedMixin,
@@ -55,14 +56,30 @@ from irp_shared.db.mixins import (
 from irp_shared.db.types import GUID, PreciseDecimal
 from irp_shared.temporal import TemporalClass
 
-#: Table names of the closed hybrid set (mirrors ``HYBRID_TABLES`` in migration 0008). Kept here as
-#: the single ORM-side source of truth for scope-fence/closed-set tests (proprietary never hybrid).
-HYBRID_TABLES: tuple[str, ...] = (
+#: The five tables migration 0008 created AND policed. This tuple exists to document that
+#: correspondence; 0008's own literal is DDL (it drives 0008's ``CREATE POLICY`` loop) and stays
+#: byte-untouched forever — adding a name to it would make ``alembic upgrade head`` from zero
+#: attempt to police a table 0008 never creates.
+_HYBRID_TABLES_0008: tuple[str, ...] = (
     "currency",
     "calendar",
     "calendar_holiday",
     "rating_scale",
     "rating_grade",
+)
+
+#: **The single closed-set DECLARATION** (AD-013-R1 as extended by AD-013-R2 at REF-1, 2026-07-29).
+#: N = 7. Every guard imports THIS — the 31 per-file private copies that used to hand-mirror it were
+#: collapsed at REF-1: 31 independently-maintained copies of an expected value are themselves the
+#: drift surface the census exists to detect. The non-vacuity floors shipped with REF-1 are what
+#: keep the derived census honest (P6).
+#:
+#: Membership rule, unchanged by the extension: a *standard, curated, globally shared* vocabulary is
+#: hybrid; anything PROPRIETARY (issuer, legal_entity, counterparty, instrument, and REF-1's own
+#: ``classification_assignment``) is symmetric and NEVER hybrid.
+HYBRID_TABLES: tuple[str, ...] = (
+    *_HYBRID_TABLES_0008,
+    *HYBRID_CLASSIFICATION_TABLES,
 )
 
 

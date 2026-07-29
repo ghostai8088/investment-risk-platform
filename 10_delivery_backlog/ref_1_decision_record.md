@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | DRAFT, VERIFIED — pre-ratification |
+| Status | RATIFIED 2026-07-29 — OQ-REF-1-1…30 ALL approved as recommended ("proceed" on the briefed gate); implementation follows on this branch |
 | Slice | Wave-14 slice 0 (`wave_14_planning.md`, roadmap Part 2.18) |
 | Entities | ENT-066 `classification_scheme`, ENT-067 `classification_node`, ENT-068 `classification_assignment` |
 | Migration | `0056` |

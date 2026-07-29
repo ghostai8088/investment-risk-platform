@@ -3,8 +3,12 @@
 > **Status: RATIFIED 2026-07-29** — the USER approved OQ-W14P-1…8 ALL AS RECOMMENDED ("Proceed"
 > on the briefed gate). OQ-W14P-6(i)'s ratification sets the DIRECTION (extend the hybrid set for
 > the new scheme/taxonomy tables); the mechanics — the AD-013-R2 entry, the CLAUDE.md closed-set
-> invariant amendment, and the migration-0008/ORM mirror updates — execute at REF-1's gate as
-> recorded below. The sequence is written into `delivery_roadmap.md` as **Part 2.18**.
+> invariant amendment, and the closed-set mirror updates — execute at REF-1's gate as
+> recorded below. **AMENDED 2026-07-29 at the REF-1 gate (executed verification):** migration
+> 0008's `HYBRID_TABLES` is **DDL, not a mirror** — it drives 0008's own `CREATE POLICY` loop, so
+> editing it would break `alembic upgrade head` from zero. 0008 stays byte-untouched and REF-1's
+> own migration carries its tables' policies; the closed-set surface is **38 sites across 36
+> files**, not three; ratified **N = 7**. The sequence is written into `delivery_roadmap.md` as **Part 2.18**.
 > *(Prior status: DRAFT, VERIFIED — direction ratified 2026-07-29 at the Wave-13 close, Part 2.17.)*
 >
 > **Method (honest labeling, per the independence ladder):** recon ran as a 6-lane parallel
@@ -165,7 +169,12 @@ choice, argued in OQ-W14P-1 on those honest terms. LQ-1 is independent of CAL-1.
   vendor-contract trigger). B: include one real adapter — refuted by recon: no vendor
   relationship exists, and an adapter without a counterparty is scaffolding.
 - **OQ-W14P-3 — taxonomy licensing (outward-facing).** **Recommend A: an open/vendor-neutral
-  scheme** (ICB/GICS-SHAPED structure without licensed content, or NACE/NAICS-class public
+  scheme.** *(**AMENDED 2026-07-29 at the REF-1 gate:** the original wording "ICB/GICS-SHAPED
+  structure without licensed content" is **STRUCK** — S&P DJI's licence covers the GICS structure
+  itself and forbids derivative works, so a deliberately GICS-shaped hierarchy is the
+  derivative-work case, not a safe harbour. Ratified: **ISIC Rev. 5** canonical, NACE/NAICS/SIC
+  additional by value; sector and industry are LEVELS OF ONE HIERARCHY, not parallel dimensions;
+  and the discriminator must be scheme-family + **VERSION**.)* (NACE/NAICS-class public
   codes) — no procurement, no license exposure; the dimension tables carry a `scheme`
   discriminator so a licensed taxonomy is additive data later. B: license GICS/ICB now — a
   real procurement/legal decision the USER owns; nothing in-wave requires it. The scheme
@@ -307,3 +316,33 @@ LQ-1 model-fork pre-emption.
   staleness re-attributed to Wave 2 (strengthens OQ-7); the QS-10/QS-11 split in fact 10 and
   the SMR-004 re-point; the LIQ-002 trigger made concrete + homed; the CON-1↔LIM-2
   frozen-identity representation constraint named; Part 2/Part 5 fork lists made identical.
+
+## Part 7 — Amendments executed at the REF-1 gate (2026-07-29)
+
+REF-1's recon returned **52 corrections to this document** and its verifier pass a further 61
+findings against REF-1's own draft; the items below amend THIS plan. None re-opens the wave's
+ratified direction. Full evidence in `ref_1_decision_record.md` Parts 0 and 6.
+
+1. **Migration 0008 is DDL, not a mirror** — amended in the header above (executed verification).
+2. **The closed-set surface is 38 sites across 36 files**, not three; **N = 7**.
+3. **Sector and industry are ONE hierarchy** — REF-1 therefore ships a bounded ancestor resolver,
+   because CON-1's per-sector metric needs it.
+4. **"ICB/GICS-SHAPED structure" STRUCK** (licence covers the structure) — amended at OQ-W14P-3.
+5. **The `scheme` discriminator must be scheme-family + version.**
+6. **The country-of-risk captured-vs-derived fork was omitted** — ratified CAPTURED with a NOT NULL
+   `basis` discriminator (no authoritative rule is computable on today's schema).
+7. **The EV-vs-FR discriminator is drift-on-verify, not the §2A promotion test.**
+8. **Part 4's rule-7 line attributes an FE clause rule 7 does not contain** — REF-1 is
+   backend-only; FE expansion stays under the standing no-FE-expansion rule.
+9. **A CTRL mint is an R-10 act with H-05 as approver** (this plan left the routing unstated).
+10. **One demo stage, not "stages"**; "tiers" in the OQ-W14P-6(iii) clause is LQ-1 scope.
+11. **The spread-REQ mint discrepancy is three-way** — the roadmap changelog assigns it to REF-1,
+    Part 2/OQ-W14P-4 assign it nowhere, and the roadmap contradicts itself. Resolved: minted at
+    REF-1.
+12. **Split trigger (b) FIRED:** the rf vendor-diligence control moves from REF-1 to **CAL-1**,
+    where the registered-assumption versioning machinery it requires is already in scope. REF-1's
+    draft discharge home was refuted — editing a shipped `SHARPE_ASSUMPTIONS` tuple is a silent
+    un-audited divergence the platform explicitly refused once in code.
+13. **NOT amended — a correction withdrawn.** REF-1's draft claimed this plan's DQ fact 7 was
+    "materially wrong". Executed grep refutes the draft, not the plan: `run_presence_gate` has
+    three production callers, **none on a capture/ingestion path**, so fact 7 stands as written.
