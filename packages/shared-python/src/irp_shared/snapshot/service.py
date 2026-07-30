@@ -41,6 +41,12 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.classification.service import (
+    ClassificationNotVisible,
+    resolve_ancestors,
+    resolve_node,
+    resolve_scheme,
+)
 from irp_shared.db.mixins import utcnow
 from irp_shared.dq.gates import ensure_presence_rule, run_presence_gate
 from irp_shared.holdings import (
@@ -75,11 +81,14 @@ from irp_shared.marketdata.models import REFERENCE_KEY_NONE, RETURN_TYPE_SIMPLE,
 from irp_shared.marketdata.service import FxRateNotVisible, resolve_fx_rate
 from irp_shared.portfolio import PortfolioNotVisible, resolve_portfolio
 from irp_shared.position import PositionNotVisible, resolve_position
+from irp_shared.reference.instrument import InstrumentNotVisible, resolve_instrument
 from irp_shared.snapshot.events import SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
     COMPONENT_KIND_BENCHMARK,
     COMPONENT_KIND_BENCHMARK_RETURN,
     COMPONENT_KIND_CAPITAL_CALL,
+    COMPONENT_KIND_CLASSIFICATION,
+    COMPONENT_KIND_CLASSIFICATION_SCHEME,
     COMPONENT_KIND_COMMITMENT,
     COMPONENT_KIND_COVARIANCE,
     COMPONENT_KIND_CURVE,
@@ -90,6 +99,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_FACTOR_EXPOSURE,
     COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FX,
+    COMPONENT_KIND_ISSUER_EDGE,
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_PORTFOLIO_RETURN,
     COMPONENT_KIND_POSITION,
@@ -102,6 +112,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_VAR,
     PURPOSE_ACTIVE_RISK_INPUT,
     PURPOSE_BENCHMARK_RELATIVE_INPUT,
+    PURPOSE_CONCENTRATION_INPUT,
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
@@ -3582,6 +3593,36 @@ def _reresolve_content(
                 session, comp.target_entity_id, acting_tenant=acting_tenant
             )
         )
+    if comp.component_kind == COMPONENT_KIND_ISSUER_EDGE:
+        # The narrow edge pin: drift iff the ISSUER EDGE moves (OQ-CON-1-7). Explicit-tenant
+        # resolver; every other instrument field is excluded by the serializer.
+        return issuer_edge_content(
+            resolve_instrument(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
+    if comp.component_kind == COMPONENT_KIND_CLASSIFICATION:
+        # THE PLATFORM'S FIRST RE-DERIVE-FLAVORED BRANCH (OQ-CON-1-9, deliberate deviation from
+        # the by-id idiom): the assignment's physical row is re-read by id (FR — its fields are
+        # immutable; a supersede is a NEW row), but the closure is re-resolved CODE-FIRST via
+        # resolve_node's tenant precedence + a fresh ancestor walk — so a LEAF override, a level
+        # or parent move, or an ancestor code change REDDENS the pin, while a name/description
+        # rename cannot (both are excluded from the content).
+        assignment = _resolve_assignment_row(
+            session, comp.target_entity_id, acting_tenant=acting_tenant
+        )
+        node = resolve_node(
+            session,
+            scheme_id=str(assignment.scheme_id),
+            code=assignment.node_code,
+            acting_tenant=acting_tenant,
+        )
+        chain = resolve_ancestors(session, node=node, acting_tenant=acting_tenant)
+        return classification_assignment_closure_content(assignment, [*chain, node])
+    if comp.component_kind == COMPONENT_KIND_CLASSIFICATION_SCHEME:
+        # Hybrid two-tenant resolver (SYSTEM rows are the normal case — the v5-pass resolver-
+        # pattern correction).
+        return classification_scheme_content(
+            resolve_scheme(session, scheme_id=comp.target_entity_id, acting_tenant=acting_tenant)
+        )
     if comp.component_kind == COMPONENT_KIND_VAR:
         return var_result_content(
             _resolve_var_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
@@ -3723,6 +3764,11 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             ScenarioSnapshotError,
             ProxyWeightSnapshotError,
             PacingSnapshotError,
+            # CON-1's three shapes: a gone instrument/assignment/scheme (or an unresolvable
+            # code-first closure) is definitionally failed reproduction — drift, not a 500.
+            InstrumentNotVisible,
+            ClassificationNotVisible,
+            ConcentrationSnapshotError,
             # RD-3 OD-A: the BENCHMARK_RETURN/FACTOR_RETURN/BENCHMARK/SCENARIO branches parse
             # ``captured_content`` via ``_parsed_pin``/``_pinned_row_ids``, which raise ONLY this
             # class on a truncated/tampered/non-object/missing-key pin — never a bare
@@ -3842,6 +3888,235 @@ def build_var_hs_snapshot(
     return header_row
 
 
+class ConcentrationSnapshotError(Exception):
+    """A concentration-input snapshot cannot be built — raised BEFORE any write (the PRE-BUILD
+    refusals of OQ-CON-1-1/10/24/26: NULL-scope upstream run, mixed scheme versions of one family,
+    mixed basis within a dimension, empty atom set); never mints immutable governance garbage."""
+
+
+#: CON-1 (OQ-CON-1-6…10): atoms + issuer edges + assignments/closures + scheme rows. ≤ 50 chars.
+CONCENTRATION_BINDING_PREDICATE = "v1:exposure-atoms+issuer-edges+classification"
+
+
+def issuer_edge_content(instrument: Any) -> dict[str, Any]:
+    """The NARROW instrument→issuer edge pin (OQ-CON-1-7): ``{id, tenant_id, issuer_id}`` ONLY.
+
+    ``record_version`` and every other ``_UPDATABLE`` field are deliberately EXCLUDED — the pin
+    drifts iff the ISSUER EDGE moves, and is inert to renames/currency fixes/``is_active`` flips
+    (the ``var_result_content`` field-exclusion precedent). Two mandatory controls ride the tests:
+    the pin DOES drift on an issuer move, and does NOT drift on each excluded field."""
+    return {
+        "id": str(instrument.id),
+        "tenant_id": str(instrument.tenant_id),
+        "issuer_id": str(instrument.issuer_id) if instrument.issuer_id is not None else None,
+    }
+
+
+def classification_assignment_closure_content(assignment: Any, chain: list[Any]) -> dict[str, Any]:
+    """One assignment row (incl. ``basis`` — OQ-CON-1-26) PLUS its resolved ancestor closure.
+
+    The closure hashes ``code``/``parent_node_id``/``level`` and EXCLUDES ``name``/``description``
+    (REF-1's carry #3: a cosmetic rename cannot redden a historical run)."""
+    return {
+        "id": str(assignment.id),
+        "tenant_id": str(assignment.tenant_id),
+        "entity_type": assignment.entity_type,
+        "entity_id": str(assignment.entity_id),
+        "scheme_id": str(assignment.scheme_id),
+        "dimension_kind": assignment.dimension_kind,
+        "node_code": assignment.node_code,
+        "basis": assignment.basis,
+        "closure": [
+            {
+                "code": node.code,
+                "parent_node_id": (
+                    str(node.parent_node_id) if node.parent_node_id is not None else None
+                ),
+                "level": node.level,
+            }
+            for node in chain
+        ],
+    }
+
+
+def classification_scheme_content(scheme: Any) -> dict[str, Any]:
+    """The scheme-row pin (OQ-CON-1-24 ii): the co-existing-scheme discriminator's inputs."""
+    return {
+        "id": str(scheme.id),
+        "scheme_family": scheme.scheme_family,
+        "version_label": scheme.version_label,
+    }
+
+
+def build_concentration_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    exposure_run_id: str,
+    scheme_by_dimension: dict[str, str],
+) -> DatasetSnapshot:
+    """Build one immutable ``CONCENTRATION_INPUT`` snapshot (CON-1) pinning FOUR shapes:
+
+    - one ``COMPONENT_KIND_EXPOSURE`` per atom of the EXPLICITLY SELECTED exposure run (REUSED —
+      the IA-row pin; "latest COMPLETED" is never a selection here, Part 6b item 5);
+    - one ``COMPONENT_KIND_ISSUER_EDGE`` per DISTINCT instrument carrying exposure (the narrow
+      ``{id, tenant_id, issuer_id}`` pin — a NULL edge pins honestly as NULL, the residual fact);
+    - one ``COMPONENT_KIND_CLASSIFICATION`` per current-head assignment of a pinned instrument's
+      ISSUER under a REQUESTED scheme (assignment + ancestor closure, code-first semantics); and
+    - one ``COMPONENT_KIND_CLASSIFICATION_SCHEME`` per requested scheme row.
+
+    **PRE-BUILD refusals (computable from current heads — no snapshot, no run):** a requested
+    scheme id that resolves to a different ``dimension_kind`` than requested; MIXED BASIS within
+    one dimension's pinned assignments (OQ-CON-1-26); a second live scheme of the SAME
+    ``(dimension_kind, scheme_family)`` among the pinned assignments (OQ-CON-1-24 i — mixed
+    VERSIONS refuse; a different family simply is not consumed); an empty atom set. The NULL-scope
+    upstream-run refusal lives in the BINDER (it needs the run head, read there). Classification
+    is AS-OF-BUILD (OQ-CON-1-11): current heads, declared as a model assumption."""
+    now = utcnow()
+    valid_at = known = now
+
+    atoms = _list_exposure_atoms(session, exposure_run_id, acting_tenant=acting_tenant)
+    if not atoms:
+        raise ConcentrationSnapshotError(
+            f"exposure run {exposure_run_id} has no visible atoms to pin"
+        )
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for atom in atoms:
+        _append_spec(
+            specs, COMPONENT_KIND_EXPOSURE, "exposure_aggregate", atom, exposure_content(atom)
+        )
+
+    # The DISTINCT instruments carrying exposure — each edge pinned narrow, NULL edges included
+    # (an issuer-less instrument is the UNCLASSIFIABLE residual, a fact the snapshot must carry).
+    instrument_ids = sorted({str(a.instrument_id) for a in atoms})
+    instruments = [
+        resolve_instrument(session, iid, acting_tenant=acting_tenant) for iid in instrument_ids
+    ]
+    for inst in instruments:
+        _append_spec(
+            specs, COMPONENT_KIND_ISSUER_EDGE, "instrument", inst, issuer_edge_content(inst)
+        )
+
+    # The requested schemes, resolved (hybrid two-tenant read) and pinned.
+    schemes: dict[str, Any] = {}
+    for dimension_kind, scheme_id in sorted(scheme_by_dimension.items()):
+        scheme = resolve_scheme(session, scheme_id=scheme_id, acting_tenant=acting_tenant)
+        if scheme.dimension_kind != dimension_kind:
+            raise ConcentrationSnapshotError(
+                f"scheme {scheme_id} is a {scheme.dimension_kind} scheme; requested for "
+                f"{dimension_kind}"
+            )
+        schemes[dimension_kind] = scheme
+        _append_spec(
+            specs,
+            COMPONENT_KIND_CLASSIFICATION_SCHEME,
+            "classification_scheme",
+            scheme,
+            classification_scheme_content(scheme),
+        )
+
+    # Current-head assignments for the pinned INSTRUMENTS under each requested scheme (REF-1's
+    # assignment grain is the instrument — ``ASSIGNMENT_ENTITY_TYPES == ('instrument',)``), with
+    # the ancestor closure resolved CODE-FIRST (tenant precedence) — plus the PRE-BUILD coherence
+    # refusals over the pinned set.
+    for dimension_kind, scheme in sorted(schemes.items()):
+        rows = _list_current_assignments(
+            session,
+            entity_ids=instrument_ids,
+            scheme_id=str(scheme.id),
+            dimension_kind=dimension_kind,
+            acting_tenant=acting_tenant,
+        )
+        bases = sorted({r.basis for r in rows})
+        if len(bases) > 1:
+            raise ConcentrationSnapshotError(
+                f"mixed basis within {dimension_kind}: {bases} — mixed-basis aggregation is "
+                f"refused fail-closed (OQ-CON-1-26); capture a single basis per dimension"
+            )
+        for row in rows:
+            node = resolve_node(
+                session,
+                scheme_id=str(row.scheme_id),
+                code=row.node_code,
+                acting_tenant=acting_tenant,
+            )
+            chain = resolve_ancestors(session, node=node, acting_tenant=acting_tenant)
+            _append_spec(
+                specs,
+                COMPONENT_KIND_CLASSIFICATION,
+                "classification_assignment",
+                row,
+                classification_assignment_closure_content(row, [*chain, node]),
+            )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_CONCENTRATION_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=valid_at.date(),
+        binding_predicate_version=CONCENTRATION_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
+def _resolve_assignment_row(session: Session, assignment_id: str, *, acting_tenant: str) -> Any:
+    """The pinned assignment's PHYSICAL row by surrogate id, own-tenant only (proprietary
+    symmetric). FR: the row's fields are immutable (a supersede is a NEW row), so this re-read is
+    byte-stable — the drift door is the code-first closure, not this row."""
+    from irp_shared.classification.models import ClassificationAssignment
+
+    row = session.execute(
+        select(ClassificationAssignment).where(
+            ClassificationAssignment.id == assignment_id,
+            ClassificationAssignment.tenant_id == acting_tenant,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ClassificationNotVisible(
+            f"classification_assignment {assignment_id} is not visible to {acting_tenant}"
+        )
+    return row
+
+
+def _list_current_assignments(
+    session: Session,
+    *,
+    entity_ids: list[str],
+    scheme_id: str,
+    dimension_kind: str,
+    acting_tenant: str,
+) -> list[Any]:
+    """Current-head INSTRUMENT assignments under ONE requested scheme+dimension, own-tenant only
+    (assignments are PROPRIETARY symmetric — never hybrid; the REF-1 grain is the instrument)."""
+    from irp_shared.classification.models import ClassificationAssignment
+
+    if not entity_ids:
+        return []
+    return list(
+        session.execute(
+            select(ClassificationAssignment)
+            .where(
+                ClassificationAssignment.tenant_id == acting_tenant,
+                ClassificationAssignment.entity_type == "instrument",
+                ClassificationAssignment.entity_id.in_(entity_ids),
+                ClassificationAssignment.scheme_id == scheme_id,
+                ClassificationAssignment.dimension_kind == dimension_kind,
+                ClassificationAssignment.valid_to.is_(None),
+                ClassificationAssignment.system_to.is_(None),
+            )
+            .order_by(ClassificationAssignment.entity_id)
+        ).scalars()
+    )
+
+
 #: Every binding predicate is stamped verbatim into ``dataset_snapshot.binding_predicate_version``
 #: (``String(50)``); SQLite ignores the length, so an over-long constant would surface only as an
 #: opaque PG ``StringDataRightTruncation`` on the build path (review). Enforce the ceiling at import
@@ -3874,6 +4149,7 @@ _BINDING_PREDICATES = (
     PACING_BINDING_PREDICATE,
     ROLLING_RISK_BINDING_PREDICATE,
     SHARPE_BINDING_PREDICATE,
+    CONCENTRATION_BINDING_PREDICATE,
 )
 assert all(len(p) <= 50 for p in _BINDING_PREDICATES), (
     "a *_BINDING_PREDICATE exceeds dataset_snapshot.binding_predicate_version varchar(50): "
