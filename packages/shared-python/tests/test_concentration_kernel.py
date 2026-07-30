@@ -181,3 +181,45 @@ class TestVocabularyCensus:
 
     def test_bucket_sentinels_are_dunder(self) -> None:
         assert all(s.startswith("__") and s.endswith("__") for s in BUCKET_SENTINELS)
+
+
+class TestGovernancePins:
+    """The R-07 mint pinned BOTH directions per code (the REF-1 lesson: SoD pins are PER CODE),
+    plus the CON-1-owned dimension split."""
+
+    def test_holder_sets_exactly_as_ratified(self) -> None:
+        from irp_shared.entitlement.bootstrap import ROLE_TEMPLATES
+
+        def holders(code: str) -> set[str]:
+            named = {r for r, cs in ROLE_TEMPLATES.items() if code in cs}
+            return named | {"platform_admin"}  # ALL_CODES by construction
+
+        assert holders("concentration.run") == {
+            "platform_admin",
+            "data_steward",
+            "risk_analyst_1l",
+        }
+        assert holders("concentration.view") == {
+            "platform_admin",
+            "data_steward",
+            "risk_analyst_1l",
+            "risk_manager_2l",
+            "auditor_3l",
+        }
+        assert holders("concentration.issuer.view") == {
+            "platform_admin",
+            "data_steward",
+            "risk_analyst_1l",
+            "risk_manager_2l",
+        }, "auditor_3l must NEVER hold the issuer-identity read (the three-mint precedent)"
+
+    def test_issuer_is_not_an_assignment_dimension(self) -> None:
+        """ISSUER is CON-1-owned: no classification assignment may carry it (OQ-CON-1-23)."""
+        from irp_shared.classification.models import DIMENSION_KINDS
+        from irp_shared.concentration.models import (
+            CONCENTRATION_DIMENSION_KINDS,
+            DIMENSION_KIND_ISSUER,
+        )
+
+        assert DIMENSION_KIND_ISSUER not in DIMENSION_KINDS
+        assert set(CONCENTRATION_DIMENSION_KINDS) == set(DIMENSION_KINDS) | {DIMENSION_KIND_ISSUER}
