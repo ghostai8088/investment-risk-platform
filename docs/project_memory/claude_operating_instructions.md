@@ -346,6 +346,17 @@ of drafting is a manifest gap to fix in the same fold). Seeded 2026-07-30 from t
 - **New demo stage:** the stage-ordering filename (`ls` the tests dir, never a record); the count-pin
   relay to final position; schema reset BEFORE each full-PG run; superuser-bypasses-RLS scoping (never
   "everything in the table"); the already-seeded double-run path.
+- **A module importing a package it did not import before (ADDED at PERF-0, which found this the
+  expensive way — a red CI run):** there are TWO independent fence layers and they are in different
+  files. (1) The importing package's OWN import-direction test (e.g. `test_synthetic.py::
+  test_import_direction`, and the `test_*_import_direction` siblings — ~23 fences repo-wide, one per
+  package). (2) The imported package's REPO-WIDE leaf fence, which lives in the IMPORTED package's
+  test file, not the importer's — `test_fx_rate.py::test_nothing_imports_marketdata`,
+  `test_snapshot.py::test_nothing_imports_snapshot`. Amending only the first leaves the second red.
+  Enumerate BOTH before drafting: `grep -rn "def test_nothing_imports\|import_direction" */tests`.
+  Amend in place WITH the rationale at the fence; check for an existing exemption whose reasoning
+  already covers the new case (`synthetic` rode `demo`'s: orchestrator seed tooling that drives real
+  capture services and that nothing imports).
 - **Dependency/toolchain change:** the P4 executed dry run; the audit gate re-run on the ACTUAL proposed
   tree; dry-run numbers re-measured at closeout, never carried as pins.
 
