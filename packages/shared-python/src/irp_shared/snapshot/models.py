@@ -108,6 +108,11 @@ PURPOSE_ROLLING_RISK_INPUT = "ROLLING_RISK_INPUT"
 #: SR-1 (ENT-065): pins ONE COMPLETED PM-1 return run's rows PLUS the in-span risk-free
 #: ``benchmark_return`` window (the P3-8 shape under a new purpose) — the Sharpe-ratio input.
 PURPOSE_SHARPE_INPUT = "SHARPE_INPUT"
+#: CON-1 (OQ-CON-1-6…10, ENT-069): pins the FOUR shapes a concentration run consumes — the
+#: exposure atoms (the existing EXPOSURE kind), the narrow instrument→issuer edge, the
+#: classification assignments (incl. ``basis``) + ancestor closure, and the referenced
+#: ``classification_scheme`` rows (the OQ-CON-1-24 discriminator inputs).
+PURPOSE_CONCENTRATION_INPUT = "CONCENTRATION_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 
@@ -138,6 +143,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_PRIVATE_COVARIANCE_INPUT,
     PURPOSE_ROLLING_RISK_INPUT,
     PURPOSE_SHARPE_INPUT,
+    PURPOSE_CONCENTRATION_INPUT,
     # Added by SR-1 (see the note above) — their builders always passed them; only the tuple lagged.
     PURPOSE_PROXY_WEIGHT_INPUT,
     PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
@@ -241,6 +247,27 @@ COMPONENT_KIND_DISTRIBUTION = "DISTRIBUTION"
 #: consumes. ``target_entity_type='private_factor_return_result'`` (the desmoothed_return pin
 #: precedent — a run-bound governed result pinned as a downstream input).
 COMPONENT_KIND_PURE_PRIVATE_RETURN = "PURE_PRIVATE_RETURN"
+#: CON-1 (OQ-CON-1-7): the NARROW instrument→issuer edge pin — ``{id, tenant_id, issuer_id}``
+#: ONLY (drift iff the issuer edge moves; inert to every other ``_UPDATABLE`` field — a rename or
+#: currency fix must NOT redden historical concentration snapshots). EV-current-head flavor;
+#: ``record_version`` deliberately EXCLUDED from the content (it bumps on excluded-field edits).
+#: ``target_entity_type='instrument'``.
+COMPONENT_KIND_ISSUER_EDGE = "ISSUER_EDGE"
+#: CON-1 (OQ-CON-1-9, REF-1's carry #3): ONE component per pinned assignment — the assignment
+#: row (incl. ``basis``, OQ-CON-1-26) PLUS its resolved ANCESTOR CLOSURE, hashed over
+#: ``code``/``parent_node_id``/``level`` and EXCLUDING ``name``/``description`` (a cosmetic
+#: rename cannot redden a run). Re-resolves CODE-FIRST with tenant precedence — the platform's
+#: first re-derive-flavored branch (a leaf override MUST redden the pin; a by-id re-read would
+#: never see it). ``target_entity_type='classification_assignment'``.
+COMPONENT_KIND_CLASSIFICATION = "CLASSIFICATION"
+#: CON-1 (OQ-CON-1-24 ii): the referenced ``classification_scheme`` rows —
+#: ``{id, scheme_family, version_label}`` — WHICH taxonomy version produced the number, pinned as
+#: re-verifiable evidence. (It was ratified as "the discriminator's inputs, so the refusal is
+#: computable from pinned bytes"; the review proved that unfireable — a scheme-filtered pinned set
+#: can never hold the second version — so the OQ-CON-1-24 (i) refusal reads LIVE heads instead and
+#: this pin is evidence only.) Hybrid two-tenant resolver (SYSTEM rows are
+#: the normal case). ``target_entity_type='classification_scheme'``.
+COMPONENT_KIND_CLASSIFICATION_SCHEME = "CLASSIFICATION_SCHEME"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -265,6 +292,9 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_CAPITAL_CALL,
     COMPONENT_KIND_DISTRIBUTION,
     COMPONENT_KIND_PURE_PRIVATE_RETURN,
+    COMPONENT_KIND_ISSUER_EDGE,
+    COMPONENT_KIND_CLASSIFICATION,
+    COMPONENT_KIND_CLASSIFICATION_SCHEME,
 )
 
 

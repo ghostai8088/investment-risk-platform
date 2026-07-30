@@ -726,6 +726,135 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/concentration/models/dimensional": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register Model
+         * @description Register the governed concentration model with its declared parameters (idempotent; a
+         *     same-label different-declaration is a 409).
+         */
+        post: operations["register_model_concentration_models_dimensional_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/concentration/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Results
+         * @description Entity/time-centric list across COMPLETED runs (silent-empty on a foreign id). ISSUER
+         *     detail rows are excluded STRUCTURALLY at the service query — not filtered here.
+         */
+        get: operations["list_results_concentration_results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/concentration/results/issuers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Issuer Detail
+         * @description The ISSUER-dimension detail rows — the ONLY read that returns ``issuer_id``.
+         */
+        get: operations["list_issuer_detail_concentration_results_issuers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/concentration/results/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest Results
+         * @description The latest COMPLETED run's rows (404 when none).
+         */
+        get: operations["latest_results_concentration_results_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/concentration/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Concentration Runs
+         * @description List the tenant's concentration runs, newest first (the runs-surface source for the FE).
+         */
+        get: operations["get_concentration_runs_concentration_runs_get"];
+        put?: never;
+        /**
+         * Create Concentration Run
+         * @description Run a governed concentration calculation over an EXPLICITLY SELECTED exposure run (never
+         *     'latest' — Part 6b item 5). The response carries only NON-issuer rows; the issuer detail rides
+         *     ``GET /concentration/results/issuers`` behind its own code.
+         */
+        post: operations["create_concentration_run_concentration_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/concentration/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Concentration Run
+         * @description One run's rows (non-issuer — the ``.view`` payload; a FAILED run legitimately has none;
+         *     404 on an unknown/foreign run id).
+         */
+        get: operations["get_concentration_run_concentration_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/curves": {
         parameters: {
             query?: never;
@@ -5930,6 +6059,144 @@ export interface components {
             target_entity_id: string;
             /** Target Entity Type */
             target_entity_type: string;
+        };
+        /** ConcentrationListOut */
+        ConcentrationListOut: {
+            /** Rows */
+            rows: components["schemas"]["ConcentrationRowOut"][];
+        };
+        /** ConcentrationModelIn */
+        ConcentrationModelIn: {
+            /** Code Version */
+            code_version: string;
+            /** Coverage Floor */
+            coverage_floor: number | string;
+            /**
+             * Version Label
+             * @default v1
+             */
+            version_label: string;
+        };
+        /** ConcentrationModelOut */
+        ConcentrationModelOut: {
+            /** Model Code */
+            model_code: string;
+            /** Model Version Id */
+            model_version_id: string;
+            /** Status */
+            status: string;
+            /** Version Label */
+            version_label: string;
+        };
+        /** ConcentrationRowOut */
+        ConcentrationRowOut: {
+            /** Basis */
+            basis: string;
+            /** Bucket Code */
+            bucket_code: string;
+            /** Calculation Run Id */
+            calculation_run_id: string;
+            /** Coverage Classifiable */
+            coverage_classifiable: string | null;
+            /** Coverage Ratio */
+            coverage_ratio: string | null;
+            /** Denominator Basis */
+            denominator_basis: string;
+            /** Dimension Kind */
+            dimension_kind: string;
+            /** Gross Amount */
+            gross_amount: string;
+            /** Id */
+            id: string;
+            /** Input Snapshot Id */
+            input_snapshot_id: string;
+            /** Issuer Id */
+            issuer_id: string | null;
+            /** Long Amount */
+            long_amount: string;
+            /** Metric Type */
+            metric_type: string;
+            /** Metric Value */
+            metric_value: string | null;
+            /** Model Version Id */
+            model_version_id: string;
+            /** Net Amount */
+            net_amount: string;
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Row Kind */
+            row_kind: string;
+            /** Scheme Id */
+            scheme_id: string | null;
+            /** Share Invested Long */
+            share_invested_long: string | null;
+            /** Short Amount */
+            short_amount: string;
+        };
+        /** ConcentrationRunIn */
+        ConcentrationRunIn: {
+            /** Code Version */
+            code_version: string;
+            /** Environment Id */
+            environment_id: string;
+            /**
+             * Exposure Run Id
+             * Format: uuid
+             */
+            exposure_run_id: string;
+            /**
+             * Model Version Id
+             * Format: uuid
+             */
+            model_version_id: string;
+            /** Scheme By Dimension */
+            scheme_by_dimension: {
+                [key: string]: string;
+            };
+        };
+        /** ConcentrationRunListOut */
+        ConcentrationRunListOut: {
+            /** Items */
+            items: components["schemas"]["ConcentrationRunSummaryOut"][];
+        };
+        /** ConcentrationRunOut */
+        ConcentrationRunOut: {
+            /** Failure Reason */
+            failure_reason: string | null;
+            /** Rows */
+            rows: components["schemas"]["ConcentrationRowOut"][];
+            /** Run Id */
+            run_id: string;
+            /** Status */
+            status: string;
+        };
+        /** ConcentrationRunSummaryOut */
+        ConcentrationRunSummaryOut: {
+            /** Code Version */
+            code_version: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Environment Id */
+            environment_id: string | null;
+            /** Failure Reason */
+            failure_reason: string | null;
+            /** Initiated By */
+            initiated_by: string;
+            /** Input Snapshot Id */
+            input_snapshot_id: string | null;
+            /** Model Version Id */
+            model_version_id: string | null;
+            /** Run Id */
+            run_id: string;
+            /** Run Type */
+            run_type: string;
+            /** Status */
+            status: string;
         };
         /** ConstituentIn */
         ConstituentIn: {
@@ -11598,6 +11865,261 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommitmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_model_concentration_models_dimensional_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConcentrationModelIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConcentrationModelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_results_concentration_results_get: {
+        parameters: {
+            query?: {
+                portfolio_id?: string | null;
+                dimension_kind?: string | null;
+                metric_type?: string | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConcentrationListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_issuer_detail_concentration_results_issuers_get: {
+        parameters: {
+            query?: {
+                portfolio_id?: string | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConcentrationListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_results_concentration_results_latest_get: {
+        parameters: {
+            query?: {
+                portfolio_id?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConcentrationListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_concentration_runs_concentration_runs_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConcentrationRunListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_concentration_run_concentration_runs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConcentrationRunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConcentrationRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_concentration_run_concentration_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConcentrationRunOut"];
                 };
             };
             /** @description Validation Error */

@@ -3,9 +3,9 @@
 > ## ⚠️ CURRENT TRUTH (2026-07-30) — read this block; everything below it is HISTORY
 >
 > **THE GOVERNANCE BATCH (user-ratified 2026-07-30) — standing rules amended, Wave 14 re-sequenced,
-> the document surface shrunk.** On branch `ref-1-fold-missed-freeze` (on top of `3b74a52` = the
-> delivered REF-1 `issuer.sector` write-freeze + record corrections, and `dfe0591` = CON-1 planning
-> v2 — both CI green all six); merge to `main` via the user (compare link handed at the batch close).
+> the document surface shrunk.** **MERGED to `main` via PR #150 = `d598ba4`** (carrying `3b74a52` =
+> the delivered REF-1 `issuer.sector` write-freeze + record corrections, `dfe0591` = CON-1 planning
+> v2, and the five governance commits — all CI green all six).
 >
 > - **Standing rules amended (`claude_operating_instructions.md`): P7 — lessons are recorded as
 >   ACTS, not facts** (mechanical gate with the census > floor > matcher hierarchy / procedural
@@ -34,9 +34,26 @@
 >   pointer; `00_ai_operating_model/` marked HISTORICAL.
 > - **Position unchanged by this batch:** migration head `0056`; next free canonical id ENT-069;
 >   demo counts 25/40/133; the closed hybrid set N = 7 (AD-013-R2).
-> - **NEXT = CON-1 descoped-form planning pass** — fold the remaining v3 BLOCKING findings (the
->   `_METRIC_MAP` structural vocabulary, `String(30)` widths, the `concentration.view` SoD split)
->   into the descoped record, re-verify (incl. the NEW citation lane), THEN implement.
+> - **CON-1 PLANNING RATIFIED 2026-07-30 (v6, OQ-CON-1-1…28 all as recommended)** after FOUR
+>   verifier passes (46 → 47 → 26 → 6 findings; the first citation-lane execution; the targeted
+>   pass caught the record's own mis-measured holder sets). The ratified core:
+>   `share_invested_long` + `denominator_basis`; `_METRIC_MAP` REVERSED to LIM-2 (no unbased-limit
+>   window — REQ-CRD-003 = "produced, bindable at LIM-2"); the three-code mint (auditor_3l out of
+>   issuer-identity reads, holder sets recomputed from `ROLE_TEMPLATES`); the row_kind/bucket_code
+>   grain with both-dialect partial indexes; the basis discipline; two REF-1 hardenings paid
+>   in-slice; the DEMO-CONCENTRATION book; counts 25/40/133 → 26/41/136; minimal FE read KEPT.
+>   Branch `con-1-descope-planning`; the Part 6b in-place amendments EXECUTED.
+> - **CON-1 IMPLEMENTED (2026-07-30, branch `con-1-descope-planning`, nine checkpoints
+>   `668e04f`→`1754359` + the ledger sweep): ENT-069 + migration `0057` (P4 dry run EXECUTED —
+>   up/no-drift/down-destroys-staged-rows/up-restores), the `concentration/` package (kernel
+>   reproducing the Part 2 literals to 6dp; the binder with the ratified refusal timings), one
+>   purpose + four pinned shapes incl. the platform's FIRST code-first re-resolve branch, the
+>   three-code mint with recomputed holder sets, seven API routes with the exact route→code
+>   census, the minimal FE read, demo stage 19 (counts 25/40/133 → 26/41/136 MEASURED), and the
+>   PG suites (grain/RLS/drift-doors). FIRST LIVE BATTERY 143/144 — the single failure (the
+>   stage-14 ops role census) REPRODUCES IDENTICALLY ON UNTOUCHED MAIN in the local layout
+>   (isolation pair): a pre-existing census layout-sensitivity, recorded, CI adjudicates.**
+> - **NEXT = the adversarial review pass, fold, push, CI-to-green, PR** (the merge preconditions).
 >
 > ---
 >

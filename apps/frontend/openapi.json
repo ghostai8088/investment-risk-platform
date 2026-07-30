@@ -2789,6 +2789,444 @@
         "title": "ComponentOut",
         "type": "object"
       },
+      "ConcentrationListOut": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ConcentrationRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "ConcentrationListOut",
+        "type": "object"
+      },
+      "ConcentrationModelIn": {
+        "properties": {
+          "code_version": {
+            "title": "Code Version",
+            "type": "string"
+          },
+          "coverage_floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Coverage Floor"
+          },
+          "version_label": {
+            "default": "v1",
+            "title": "Version Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code_version",
+          "coverage_floor"
+        ],
+        "title": "ConcentrationModelIn",
+        "type": "object"
+      },
+      "ConcentrationModelOut": {
+        "properties": {
+          "model_code": {
+            "title": "Model Code",
+            "type": "string"
+          },
+          "model_version_id": {
+            "title": "Model Version Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version_label": {
+            "title": "Version Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_version_id",
+          "model_code",
+          "version_label",
+          "status"
+        ],
+        "title": "ConcentrationModelOut",
+        "type": "object"
+      },
+      "ConcentrationRowOut": {
+        "properties": {
+          "basis": {
+            "title": "Basis",
+            "type": "string"
+          },
+          "bucket_code": {
+            "title": "Bucket Code",
+            "type": "string"
+          },
+          "calculation_run_id": {
+            "title": "Calculation Run Id",
+            "type": "string"
+          },
+          "coverage_classifiable": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Classifiable"
+          },
+          "coverage_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Ratio"
+          },
+          "denominator_basis": {
+            "title": "Denominator Basis",
+            "type": "string"
+          },
+          "dimension_kind": {
+            "title": "Dimension Kind",
+            "type": "string"
+          },
+          "gross_amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gross Amount",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_snapshot_id": {
+            "title": "Input Snapshot Id",
+            "type": "string"
+          },
+          "issuer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer Id"
+          },
+          "long_amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Long Amount",
+            "type": "string"
+          },
+          "metric_type": {
+            "title": "Metric Type",
+            "type": "string"
+          },
+          "metric_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Value"
+          },
+          "model_version_id": {
+            "title": "Model Version Id",
+            "type": "string"
+          },
+          "net_amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Net Amount",
+            "type": "string"
+          },
+          "portfolio_id": {
+            "title": "Portfolio Id",
+            "type": "string"
+          },
+          "row_kind": {
+            "title": "Row Kind",
+            "type": "string"
+          },
+          "scheme_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheme Id"
+          },
+          "share_invested_long": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Invested Long"
+          },
+          "short_amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Short Amount",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "calculation_run_id",
+          "input_snapshot_id",
+          "model_version_id",
+          "portfolio_id",
+          "row_kind",
+          "dimension_kind",
+          "metric_type",
+          "bucket_code",
+          "issuer_id",
+          "scheme_id",
+          "basis",
+          "denominator_basis",
+          "gross_amount",
+          "long_amount",
+          "short_amount",
+          "net_amount",
+          "share_invested_long",
+          "metric_value",
+          "coverage_ratio",
+          "coverage_classifiable"
+        ],
+        "title": "ConcentrationRowOut",
+        "type": "object"
+      },
+      "ConcentrationRunIn": {
+        "properties": {
+          "code_version": {
+            "title": "Code Version",
+            "type": "string"
+          },
+          "environment_id": {
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "exposure_run_id": {
+            "format": "uuid",
+            "title": "Exposure Run Id",
+            "type": "string"
+          },
+          "model_version_id": {
+            "format": "uuid",
+            "title": "Model Version Id",
+            "type": "string"
+          },
+          "scheme_by_dimension": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Scheme By Dimension",
+            "type": "object"
+          }
+        },
+        "required": [
+          "exposure_run_id",
+          "scheme_by_dimension",
+          "model_version_id",
+          "code_version",
+          "environment_id"
+        ],
+        "title": "ConcentrationRunIn",
+        "type": "object"
+      },
+      "ConcentrationRunListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConcentrationRunSummaryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ConcentrationRunListOut",
+        "type": "object"
+      },
+      "ConcentrationRunOut": {
+        "properties": {
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ConcentrationRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "failure_reason",
+          "rows"
+        ],
+        "title": "ConcentrationRunOut",
+        "type": "object"
+      },
+      "ConcentrationRunSummaryOut": {
+        "properties": {
+          "code_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Version"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "initiated_by": {
+            "title": "Initiated By",
+            "type": "string"
+          },
+          "input_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Snapshot Id"
+          },
+          "model_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version Id"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_type": {
+            "title": "Run Type",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "run_type",
+          "status",
+          "created_at",
+          "completed_at",
+          "initiated_by",
+          "input_snapshot_id",
+          "model_version_id",
+          "code_version",
+          "environment_id",
+          "failure_reason"
+        ],
+        "title": "ConcentrationRunSummaryOut",
+        "type": "object"
+      },
       "ConstituentIn": {
         "properties": {
           "constituent_currency": {
@@ -19835,6 +20273,761 @@
         "summary": "Supersede Commitment Endpoint",
         "tags": [
           "private-capital"
+        ]
+      }
+    },
+    "/concentration/models/dimensional": {
+      "post": {
+        "description": "Register the governed concentration model with its declared parameters (idempotent; a\nsame-label different-declaration is a 409).",
+        "operationId": "register_model_concentration_models_dimensional_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConcentrationModelIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConcentrationModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Model",
+        "tags": [
+          "concentration"
+        ]
+      }
+    },
+    "/concentration/results": {
+      "get": {
+        "description": "Entity/time-centric list across COMPLETED runs (silent-empty on a foreign id). ISSUER\ndetail rows are excluded STRUCTURALLY at the service query \u2014 not filtered here.",
+        "operationId": "list_results_concentration_results_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portfolio Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dimension_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dimension Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConcentrationListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Results",
+        "tags": [
+          "concentration"
+        ]
+      }
+    },
+    "/concentration/results/issuers": {
+      "get": {
+        "description": "The ISSUER-dimension detail rows \u2014 the ONLY read that returns ``issuer_id``.",
+        "operationId": "list_issuer_detail_concentration_results_issuers_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portfolio Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConcentrationListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Issuer Detail",
+        "tags": [
+          "concentration"
+        ]
+      }
+    },
+    "/concentration/results/latest": {
+      "get": {
+        "description": "The latest COMPLETED run's rows (404 when none).",
+        "operationId": "latest_results_concentration_results_latest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portfolio Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConcentrationListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Latest Results",
+        "tags": [
+          "concentration"
+        ]
+      }
+    },
+    "/concentration/runs": {
+      "get": {
+        "description": "List the tenant's concentration runs, newest first (the runs-surface source for the FE).",
+        "operationId": "get_concentration_runs_concentration_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConcentrationRunListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Concentration Runs",
+        "tags": [
+          "concentration"
+        ]
+      },
+      "post": {
+        "description": "Run a governed concentration calculation over an EXPLICITLY SELECTED exposure run (never\n'latest' \u2014 Part 6b item 5). The response carries only NON-issuer rows; the issuer detail rides\n``GET /concentration/results/issuers`` behind its own code.",
+        "operationId": "create_concentration_run_concentration_runs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConcentrationRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConcentrationRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Concentration Run",
+        "tags": [
+          "concentration"
+        ]
+      }
+    },
+    "/concentration/runs/{run_id}": {
+      "get": {
+        "description": "One run's rows (non-issuer \u2014 the ``.view`` payload; a FAILED run legitimately has none;\n404 on an unknown/foreign run id).",
+        "operationId": "get_concentration_run_concentration_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConcentrationRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Concentration Run",
+        "tags": [
+          "concentration"
         ]
       }
     },

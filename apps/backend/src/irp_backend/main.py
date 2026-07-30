@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from irp_backend.api.audit import router as audit_router
 from irp_backend.api.breaches import router as breaches_router
 from irp_backend.api.classification import router as classification_router
+from irp_backend.api.concentration import router as concentration_router
 from irp_backend.api.dq import router as dq_router
 from irp_backend.api.exposure import router as exposure_router
 from irp_backend.api.holdings import router as holdings_router
@@ -93,6 +94,7 @@ app.include_router(exposure_router)
 app.include_router(risk_router)
 app.include_router(perf_router)
 app.include_router(pacing_router)
+app.include_router(concentration_router)
 app.include_router(limits_router)
 app.include_router(breaches_router)
 app.include_router(schedules_router)

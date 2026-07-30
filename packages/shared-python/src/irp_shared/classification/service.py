@@ -245,7 +245,14 @@ def resolve_ancestors(
             )
         ).scalar_one_or_none()
         if parent is None:
-            break
+            # FAIL-CLOSED (CON-1 OQ-CON-1-28; previously a silent ``break``): a short chain would
+            # let "the level-1 ancestor" silently be a NEARER node — a concentration bucket on the
+            # wrong sector with verify green (the Part 0 fact 11 false-positive-verify harm). An
+            # invisible parent is a refusal, never a truncation.
+            raise ClassificationNotVisible(
+                f"parent node {current.parent_node_id} of {current.code!r} is not visible to "
+                f"{tenant} — refusing the truncated ancestor walk (a short chain mis-buckets)"
+            )
         if str(parent.id) in seen:
             raise ClassificationValueError(
                 f"cycle detected walking ancestors of node {node.code!r} — refusing"
@@ -486,6 +493,15 @@ def create_node(
     scheme = resolve_scheme(session, scheme_id=scheme_id, acting_tenant=actor.acting_tenant)
     if level < 1:
         raise ClassificationValueError(f"level must be >= 1 (got {level})")
+    # CON-1 (OQ-CON-1-23): node codes share ENT-069's ``bucket_code`` TEXT namespace with the
+    # dunder sentinels (__UNCLASSIFIED__/__UNCLASSIFIABLE__/__SUMMARY__) — a vendor node literally
+    # coded like a sentinel would collide with a residual bucket. Closed at BOTH ends: the
+    # sentinels are dunder-delimited, and capture refuses the dunder shape.
+    if code.startswith("__") and code.endswith("__"):
+        raise ClassificationValueError(
+            f"node code {code!r} uses the reserved dunder sentinel shape __*__ — refused (the "
+            "concentration bucket_code namespace guard)"
+        )
 
     parent: ClassificationNode | None = None
     if parent_code is not None:
@@ -586,8 +602,15 @@ def capture_assignment(
     dimension_kind: str,
     node_code: str,
     basis: str = BASIS_NOT_APPLICABLE,
+    asserted_ancestor_code: str | None = None,
 ) -> ClassificationAssignment:
-    """Capture a NEW open assignment. Refuses if one is already open for the logical key."""
+    """Capture a NEW open assignment. Refuses if one is already open for the logical key.
+
+    ``asserted_ancestor_code`` (OQ-REF-1-1, PAID at CON-1 as OQ-CON-1-27): when the vendor row
+    carries BOTH the leaf and its claimed ancestor (a sector column alongside an industry column),
+    the caller passes the ancestor code and capture REFUSES fail-closed — naming both codes — if
+    the resolved leaf's ancestor chain does not contain it. A contradictory vendor pair must never
+    become a stored state CON-1 buckets on."""
     validate_entity_type(entity_type)
     validate_dimension_kind(dimension_kind)
     validate_basis(dimension_kind, basis)
@@ -600,9 +623,18 @@ def capture_assignment(
         )
     # Fail-closed vocabulary resolution BEFORE any write: a code that does not exist in the scheme
     # would otherwise become its own concentration bucket in CON-1.
-    resolve_node(
+    node = resolve_node(
         session, scheme_id=str(scheme.id), code=node_code, acting_tenant=actor.acting_tenant
     )
+    if asserted_ancestor_code is not None:
+        chain = resolve_ancestors(session, node=node, acting_tenant=actor.acting_tenant)
+        chain_codes = {n.code for n in chain}
+        if asserted_ancestor_code not in chain_codes:
+            raise ClassificationValueError(
+                f"vendor assertion contradiction: node {node_code!r} does not descend from the "
+                f"asserted ancestor {asserted_ancestor_code!r} (its chain is "
+                f"{sorted(chain_codes) or ['<root>']}) — refused fail-closed (OQ-REF-1-1)"
+            )
 
     existing = _current_open(
         session,

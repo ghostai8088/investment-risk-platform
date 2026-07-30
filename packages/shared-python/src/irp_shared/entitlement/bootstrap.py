@@ -153,6 +153,16 @@ PERMISSIONS: list[tuple[str, str]] = [
     # perf.view precedent). Maker/read sets mirror the perf family.
     ("pacing.run", "Run governed commitment-pacing projections"),
     ("pacing.view", "View commitment-pacing projection results"),
+    # CON-1 (OQ-CON-1-25, the v6 THREE-code split by WHAT THE READ EXPOSES): `.view` carries the
+    # summary metrics + sector/country buckets (no issuer identity anywhere in the payload) and is
+    # 3L-oversight scope (the pacing.view governed-output precedent); `.issuer.view` carries the
+    # ISSUER-dimension detail reads and any payload with issuer_id/name — auditor_3l is EXCLUDED,
+    # consistent with reference.issuer.view/legal_entity.view/classification_assignment.view (the
+    # three prior issuer-identity refusals). One combined code would hand the 3L auditor exactly
+    # the proprietary-identity read those mints refused — and the per-code SoD pins would PASS.
+    ("concentration.run", "Run governed dimensional-concentration calculations"),
+    ("concentration.view", "View concentration results (no issuer identity)"),
+    ("concentration.issuer.view", "View ISSUER-dimension concentration detail (issuer identity)"),
     # SCH-1 scheduling (ENT-061 schedule / ENT-062 scheduled_run, Wave-11 slice 1) — a governed
     # R-07 mint (OD-SCH-1-G, ratified 2026-07-23). BOTH codes NEW — a schedule is a control-plane
     # config object that DRIVES governed-number production; neither a risk nor a performance verb
@@ -289,6 +299,10 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # CC-2 pacing: steward is a maker — holds run + view (the perf/risk precedent).
         "pacing.run",
         "pacing.view",
+        # CON-1: steward is a maker — run + both view codes (the pacing.run placement).
+        "concentration.run",
+        "concentration.view",
+        "concentration.issuer.view",
         # SCH-1 scheduling: steward is an ops maker — manage + view (the pacing.run precedent).
         "schedule.manage",
         "schedule.view",
@@ -337,6 +351,10 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # CC-2 pacing: the 1L analyst RUNS projections (maker) + views the results.
         "pacing.run",
         "pacing.view",
+        # CON-1: the 1L analyst RUNS concentration (maker) + both view codes.
+        "concentration.run",
+        "concentration.view",
+        "concentration.issuer.view",
         # SCH-1 scheduling: the 1L analyst is the risk maker — manages + views schedules.
         "schedule.manage",
         "schedule.view",
@@ -390,6 +408,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "commitment.view",
         # CC-2 pacing: 2L view-only (pacing.run is maker/admin-only).
         "pacing.view",
+        # CON-1: 2L view-only, BOTH codes (concentration.run is maker/admin-only).
+        "concentration.view",
+        "concentration.issuer.view",
         # SCH-1 scheduling: 2L view-only (schedule.manage is maker/admin-only).
         "schedule.view",
         # LIM-1 limits: the 2L risk-manager is the limit MAKER (OD-LIM-1-J, the SoD twist) + views.
@@ -438,6 +459,11 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # precedent — OD-CC-2-E; a governed OUTPUT is 3L-oversight scope, UNLIKE the captured-input
         # commitment.* verbs the auditor is excluded from).
         "pacing.view",
+        # CON-1: the 3L auditor VIEWS governed concentration outputs — `.view` ONLY. The
+        # `.issuer.view` code is deliberately ABSENT from this line: issuer-identity reads are the
+        # class three prior mints refused the auditor (reference.issuer/legal_entity/
+        # classification_assignment.view), and this split exists precisely so this line can differ.
+        "concentration.view",
         # SCH-1 scheduling: the 3L auditor VIEWS schedules + the scheduled_run ledger — a governed
         # control-plane object is 3L-oversight scope (the pacing.view precedent).
         "schedule.view",

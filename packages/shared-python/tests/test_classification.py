@@ -17,6 +17,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from irp_shared.classification.models import (
@@ -504,3 +505,102 @@ def test_tenant_node_shadows_the_system_node_of_the_same_code(session: Session) 
     # POSITIVE control: a tenant with no override still resolves the SYSTEM row.
     fallback = resolve_node(session, scheme_id=scheme.id, code="C", acting_tenant=OTHER_TENANT)
     assert fallback.tenant_id == SYSTEM_TENANT_ID
+
+
+# ---------- The CON-1 hardenings (OQ-CON-1-27/28 + the dunder namespace guard) ----------
+
+
+def test_create_node_refuses_the_dunder_sentinel_shape(session: Session) -> None:
+    """The bucket_code namespace guard: a vendor node coded like a residual sentinel is refused."""
+    actor = _actor()
+    scheme = _isic(session, actor)
+    with pytest.raises(ClassificationValueError, match="reserved dunder sentinel"):
+        create_node(
+            session, actor=actor, scheme_id=scheme.id, code="__UNCLASSIFIED__", name="x", level=1
+        )
+    # POSITIVE control: an ordinary code still creates.
+    node = create_node(session, actor=actor, scheme_id=scheme.id, code="C", name="Mfg", level=1)
+    assert node.code == "C"
+
+
+def test_capture_refuses_a_contradictory_vendor_ancestor_assertion(session: Session) -> None:
+    """OQ-REF-1-1, PAID at CON-1 (OQ-CON-1-27): a vendor pair whose leaf does not descend from its
+    asserted ancestor refuses fail-closed NAMING BOTH CODES; a consistent pair captures."""
+    actor = _actor()
+    scheme = _isic(session, actor)
+    create_node(session, actor=actor, scheme_id=scheme.id, code="C", name="Mfg", level=1)
+    create_node(session, actor=actor, scheme_id=scheme.id, code="K", name="Fin", level=1)
+    create_node(
+        session,
+        actor=actor,
+        scheme_id=scheme.id,
+        code="C26",
+        name="Electronics",
+        level=2,
+        parent_code="C",
+    )
+    entity = str(uuid.uuid4())
+    with pytest.raises(ClassificationValueError, match="C26.*does not descend.*'K'"):
+        capture_assignment(
+            session,
+            actor=actor,
+            entity_type="instrument",
+            entity_id=entity,
+            scheme_id=scheme.id,
+            dimension_kind=DIMENSION_KIND_SECTOR_INDUSTRY,
+            node_code="C26",
+            asserted_ancestor_code="K",
+        )
+    # POSITIVE control: the CONSISTENT pair captures.
+    row = capture_assignment(
+        session,
+        actor=actor,
+        entity_type="instrument",
+        entity_id=entity,
+        scheme_id=scheme.id,
+        dimension_kind=DIMENSION_KIND_SECTOR_INDUSTRY,
+        node_code="C26",
+        asserted_ancestor_code="C",
+    )
+    assert row.node_code == "C26"
+
+
+def test_resolve_ancestors_refuses_an_invisible_parent(session: Session) -> None:
+    """OQ-CON-1-28 (previously a silent ``break`` returning a SHORT chain): an ancestor walk that
+    cannot see a parent REFUSES rather than mis-bucketing on a nearer node."""
+    import datetime as _dt
+
+    actor = _actor()
+    scheme = _isic(session, actor)
+    create_node(session, actor=actor, scheme_id=scheme.id, code="C", name="Mfg", level=1)
+    child = create_node(
+        session, actor=actor, scheme_id=scheme.id, code="C26", name="El", level=2, parent_code="C"
+    )
+    # Re-parent the child onto a node owned by an UNRELATED tenant (neither ours nor SYSTEM):
+    # visible to nobody on our walk — the plain self-FK admits it, which is the point.
+    now = _dt.datetime.now(_dt.UTC)
+    foreign = ClassificationNode(
+        tenant_id=OTHER_TENANT,
+        valid_from=now,
+        scheme_id=scheme.id,
+        code="ZZ",
+        name="foreign parent",
+        level=1,
+        record_version=1,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(foreign)
+    session.flush()
+    session.execute(
+        sa.update(ClassificationNode)
+        .where(ClassificationNode.id == str(child.id))
+        .values(parent_node_id=str(foreign.id))
+    )
+    session.flush()
+    refreshed = resolve_node(session, scheme_id=scheme.id, code="C26", acting_tenant=TENANT)
+    with pytest.raises(ClassificationNotVisible, match="refusing the truncated ancestor walk"):
+        resolve_ancestors(session, node=refreshed, acting_tenant=TENANT)
+    # POSITIVE control: a fully visible chain still resolves.
+    visible = resolve_node(session, scheme_id=scheme.id, code="C", acting_tenant=TENANT)
+    assert resolve_ancestors(session, node=visible, acting_tenant=TENANT) == []

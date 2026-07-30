@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **DRAFT v6 (2026-07-30) — READY FOR THE RATIFICATION GATE.** Four verifier passes (Part 7): the descoped form survived the full 4-lane pass (registers CLEAN 12/12; the citation lane's first execution CLEAN at the core; the OQ-CON-1-15 reversal resolved its BLOCKING structurally), and the v5 targeted pass then caught the record's own mis-measured holder sets (`ops` for `data_steward`) plus four narrow contradictions — all folded here at v6, every holder set recomputed from source. History: v1 broke 46 findings deep (5 BLOCKING, the methodology foundation refuted); the 2026-07-29 dual-share repair was itself REFUTED (47 findings, 8 BLOCKING), triggering the user-ratified stopping rule → the `share_invested_long` descope with the `denominator_basis` vocabulary (OQ-CON-1-1) |
+| Status | **RATIFIED 2026-07-30 (v6) — OQ-CON-1-1…28 ALL approved as recommended at the user gate ("proceed", no exceptions), including the OQ-CON-1-15 reversal and decision point 8 (the minimal FE read KEPT in-slice). The Part 6b in-place amendments to `wave_14_planning.md`, roadmap Part 2.18 and `current_state.md` are EXECUTED. Implementation next.** Four verifier passes (Part 7): the descoped form survived the full 4-lane pass (registers CLEAN 12/12; the citation lane's first execution CLEAN at the core; the OQ-CON-1-15 reversal resolved its BLOCKING structurally), and the v5 targeted pass then caught the record's own mis-measured holder sets (`ops` for `data_steward`) plus four narrow contradictions — all folded here at v6, every holder set recomputed from source. History: v1 broke 46 findings deep (5 BLOCKING, the methodology foundation refuted); the 2026-07-29 dual-share repair was itself REFUTED (47 findings, 8 BLOCKING), triggering the user-ratified stopping rule → the `share_invested_long` descope with the `denominator_basis` vocabulary (OQ-CON-1-1) |
 | Slice | Wave-14 slice 1 (roadmap Part 2.18) |
 | Realizes | REQ-CRD-003's **concentration half** (CAP-6.4); the spread half split to REQ-CRD-005 at REF-1 |
 | Entity | ENT-069 `concentration_result` (IA append-only, run + snapshot + model bound) |
@@ -681,8 +681,11 @@ reading re-measured at closeout.
 **Gates** — `make check`; fresh-schema full-PG; `alembic check`; the P4 executed dry run of `0057`
 up and down (destructive-proven); the new CI PG steps; `make gen-api`; the closure stamp verified
 by executing `check_docs._status_lines`. **P6 floors shipped WITH their guards:** the
-`metric_type` census, the `dimension_kind` per-kind CHECK census, the `row_kind` census, the NEW
-`_METRIC_MAP` exact census, the `SNAPSHOT_COMPONENT_KINDS` set-equality upgrade.
+`metric_type` census, the `dimension_kind` per-kind CHECK census, the `row_kind` census, the
+`SNAPSHOT_COMPONENT_KINDS` set-equality upgrade. *(The `_METRIC_MAP` exact census was listed
+here in v5 and is STRUCK: it contradicts this record's own OQ-CON-1-15 reversal, which defers
+`_METRIC_MAP` registration — and therefore its census — to LIM-2. The code correctly ships
+neither. Corrected at the 2026-07-30 review fold, Part 8.)*
 
 **The P1 SEVEN-ledger closeout obligations, named now so the closeout cannot omit them (the second
 pass found the record silent on four of six):** (1) ENT-069 registry row + next-free-id → ENT-070;
@@ -833,11 +836,14 @@ Recorded per the SCH-2 record-reversals-at-the-gate rule. v1 narrowed ratified d
    because OQ-CON-1-17 defers schedulability. The roadmap row ratified both. `FAMILY_REGISTRY` *is*
    the schedulability registry, so deferring one drops the other. Trigger: the first operator ask for
    an unattended concentration cadence.
-2. **"Rule-7 reads + FE in-slice" is narrowed to backend-only.** REF-1 established that **rule 7 has
-   no FE clause** — but the FE obligation here comes from the **roadmap row**, not from rule 7, so it
-   **cannot be inherited away** by citing REF-1. Dropping it is a reversal of a ratified deliverable
-   and needs the user's approval; if approved, the slice that owns the concentration view must be
-   named.
+2. **"Rule-7 reads + FE in-slice" — DECIDED AT THE GATE (2026-07-30, decision point 8): the FE
+   read is KEPT, minimal.** A concentration list/detail read on the existing runs surface (the
+   FE-3 runs view pattern), summary metrics + the classification-dimension buckets; the
+   issuer-identity detail rides only behind `concentration.issuer.view`. If the slice runs long,
+   the SPLIT ORDER is fixed: the country dimension splits first (Part 4), the FE read second —
+   never the coverage gate, the basis discipline, or the REF-1 hardenings. (The earlier
+   narrowed-to-backend proposal is withdrawn; the roadmap row's FE clause stands satisfied by the
+   minimal read.)
 3. **CR-N and HHI become GOVERNED stored values rather than read-surface derivations** — that is
    the genuine content here, and it is what makes the metric table hard to re-open later. *(The
    second pass refuted v3's framing of this as a widening OF THE ROADMAP: the roadmap explicitly
@@ -899,3 +905,191 @@ ratified registers stay false on completion).
    non-collision; the 26/41/136 consistency.
 
 *(Four passes total; the v6 deltas are pure record edits verified against measured code state.)*
+
+**Execution addendum (2026-07-30, the seventh ledger — delivery claims cited to executed
+artifacts):** the P4 dry run EXECUTED on `0057` (upgrade clean; `alembic check` no-drift; the
+STAGED-ROWS destructive proof: 3 rows staged → downgrade → table GONE → upgrade → 0 rows, trigger
+restored — never a zero-row smoke). FIRST LIVE BATTERY: 143/144 — every stage-19 assertion green
+on first execution, including the Part 2 literals to six decimals on both books, the counts pin
+26/41/136 MEASURED, and the MULTIASSET 0/0 FAILED-run control. **The single failure
+(`test_demo_stage9zzzzz_ops_pg.py::test_the_demo_tenant_role_census_after_stage_14`, 13 vs 2)
+REPRODUCES IDENTICALLY ON UNTOUCHED MAIN under the same local single-database layout** (isolation
+pair, fresh schemas, main via worktree): the census's expected value encodes its CI execution
+layout (a teardown between steps clears the campaign's 11 auditor role rows before the census
+reads), so it is a PRE-EXISTING environment-layout sensitivity in that OPS-1-era census, NOT a
+CON-1 defect — recorded here for the review pass and for OPS hygiene; CI (the authoritative
+layout) adjudicates on push.*
+
+## Part 8 — The adversarial review fold (2026-07-30, POST-implementation)
+
+Three refute-by-default lanes (quant/correctness, security/RLS, record-vs-diff) ran in fresh
+contexts against `git diff b89601e..HEAD`. All three independently returned the SAME BLOCKING, and
+the fold below is what changed as a result. Two of these entries CORRECT claims made earlier in
+this record; they are written here rather than silently edited in place so the record shows what
+was ratified, what shipped, and why they differ.
+
+### The BLOCKING — OQ-CON-1-24 (i) was ratified in an unfireable form
+
+**As ratified**, the mixed-VERSION discriminator was "more than one live `scheme_id` within the
+SAME (`dimension_kind`, `scheme_family`) **among the pinned assignments**". The pinned assignment
+set is filtered to the REQUESTED `scheme_id` (`_list_current_assignments`), so it can never contain
+a second version — the refusal could not fire under any input. The FOURTH pinned shape was
+ratified specifically to make that discriminator computable from pinned bytes, and nothing consumed
+it. Meanwhile FOUR shipped surfaces advertised the control (the builder docstring, the
+`ConcentrationSnapshotError` docstring, `concentration/service.py`'s pin comment, and the API's 409
+detail string). This is the vacuous-guard class the SCH-2 and MG-2 lessons name: a documented
+fail-closed control with no reachable firing path.
+
+**Folded as a deliberate STRENGTHENING of the ratified wording:** the discriminator now reads the
+tenant's **LIVE current-head assignments** for the pinned instruments, WITHOUT the scheme filter
+(`_list_current_assignment_scheme_ids`), and refuses when more than one live `scheme_id` shares the
+requested scheme's family in that dimension. Clause (iii) is untouched — a different FAMILY
+co-existing stays legal and simply is not consumed. The pinned scheme rows are **re-recorded as
+EVIDENCE** (which taxonomy version produced the number, re-verifiable from pinned bytes), not as
+the discriminator, and all four advertising surfaces now describe what the code does.
+
+Controls: an ISIC Rev.5 + Rev.6 book REFUSES; an ISIC + NACE book still BUILDS (the positive
+control clause (i)'s own rationale demands, without which the refusal could be a blanket
+over-refusal). Both are PG-tier. The refusal is **mutation-proven**: widening the threshold to
+`> 99` reddens exactly the new control and nothing else — which also confirms the test would have
+been RED against the shipped code, i.e. the lanes' finding was correct.
+
+### What EXECUTION found that three reading lanes missed
+
+The security lane byte-compared the migration's CHECK text against the ORM's and reported them
+identical, "names align via the `ck_` convention". **They did not.** `0057` passed FULL constraint
+names into `op.create_table`, but the metadata naming convention prepends `ck_<table>_` itself, so
+every CHECK landed **double-prefixed** — `ck_concentration_result_ck_concentration_result_row_kind`
+— and the longest was TRUNCATED by PostgreSQL to 63 characters
+(`..._ck_concentration_result_issuer__a1f4`). `0055` gets this right and says so in a comment;
+`0057` did not follow it. The existing tests' `match="summary_shape"` passed either way, because
+the ratified name is a SUBSTRING of the double-prefixed one.
+
+Nothing found this by reading. It surfaced the moment a fresh schema was migrated and the live
+catalog was queried. **Mechanical gate added** (P7 — a lesson is an act): a PG test that reads
+`pg_constraint` for `concentration_result` and asserts set-equality against the ORM's declared
+CHECK names, plus a ≤63 length assert so a truncation can never again present as a passing
+substring match. The six names are now correct in the database, and the P4 destructive dry run was
+**RE-EXECUTED** on the amended migration (6 rows staged → downgrade → table GONE → upgrade → 0
+rows, trigger restored, FORCE RLS on, 6 CHECKs present).
+
+### Ratified-but-undelivered items, now delivered
+
+1. **The pre-build refusals shipped with ZERO negative controls** while Part 3 called them
+   "negative-controlled". All now have executed PG-tier controls: mixed VERSIONS (+ the
+   co-existing-families positive control), mixed BASIS, scheme/dimension MISMATCH, EMPTY atoms, and
+   the NULL-scope upstream run — the last asserting **zero `calculation_run` and zero
+   `dataset_snapshot` rows** survive the refusal, which is the actual claim ("refused from the run
+   head", a run being unwithdrawable).
+2. **The `0057` P0001 append-only trigger was never executed by any test.** UPDATE and DELETE
+   controls added, asserting the SQLSTATE itself.
+3. **`SNAPSHOT_COMPONENT_KINDS` set-equality**, claimed three times as landing "HERE", was never
+   written — every prior guard was a membership assert, which cannot notice an added, removed or
+   renamed kind. Added, plus a companion asserting every kind has a `_reresolve_content` branch (a
+   pinned shape without one verifies VACUOUSLY). The companion's first draft was itself vacuous —
+   `k in source` is satisfied by every constant name containing its own value — and tightening it
+   to a word-bounded match immediately exposed that `PORTFOLIO` is dispatched by FALLTHROUGH; that
+   exemption is now explicit and grounded by an assertion on the fallthrough itself.
+4. **The `row_kind` census** (a ratified P6 floor) had no test. Added, cross-checked against the
+   DDL CHECK text so a third kind added in Python without the migration is loud in the unit tier.
+5. **OQ-REF-1-29's demo role census + teardown**, recorded HERE as "paid in CON-1's demo stage",
+   was not built — stage 19 contained no Role/Permission code at all, exactly as REF-1's stage 18
+   had not. Now built: the stage grants the six REF-1 + CON-1 read codes to a demo role, censuses
+   them exactly, then TEARS THE GRANTS DOWN and proves none survive (a demo that only ever grants
+   leaves rows a later entitlement census misreads as production access). Pinned by a test that
+   re-reads the database rather than trusting the stage's return value.
+6. **Both-tier obligations that shipped in one tier.** The duplicate-refusal controls (including
+   the ratified duplicate-`__UNCLASSIFIED__` case) now run in the UNIT tier too, so the
+   `sqlite_where` half of the v4 repair is exercised rather than merely declared; the short-bearing
+   book now runs END-TO-END in the PG tier, not only in the unit kernel.
+7. **CR-N's real coverage.** OQ-CON-1-21's labelled P5 mitigation promised a seven-bucket unit
+   fixture; every shipped fixture had at most three classified buckets, where `CR_5` equals the
+   classified total identically and the top-5 truncation is never executed. Added with
+   hand-derived literals (CR-5 = 0.900000 ≠ 1.000000, HHI = 0.201000).
+8. **The `str(issuer_id)` bucket-code invariant** ("a service invariant with its own PG-tier test")
+   and **the non-String read filter pins** (`portfolio_id`, `as_of`) had no tests; both added
+   against a real governed run.
+9. **OQ-CON-1-7's "no drift on EACH excluded field"** tested one of four. Now loops all four, with
+   a census assert so a new `_UPDATABLE` field forces a decision rather than silently widening.
+10. **OQ-CON-1-9 through the REAL verify path.** The existing control computed closure content
+    directly, so the CLASSIFICATION `_reresolve_content` branch — the platform's first code-first
+    re-derive and this slice's headline deviation — was executed by NO test. Now proven through
+    `verify_snapshot`, with a positive control (a fresh snapshot verifies clean) before the
+    negative (a leaf override reddens it).
+
+### Hardening taken beyond the findings
+
+- **`coverage_floor` must now be strictly positive.** A zero floor is not permissive but broken:
+  an all-UNCLASSIFIED dimension has classifiable coverage 0, clears a zero floor, and COMPLETES —
+  writing immutable MAX/HHI/CR-5 rows of `0.000000` over an EMPTY classified set.
+- **A DB-level disclosure fence.** `issuer_id` is now refused on any non-ISSUER row. The prior
+  CHECKs required an issuer on real ISSUER buckets but never forbade one elsewhere, so a
+  `SECTOR_INDUSTRY` DETAIL row carrying `issuer_id` was schema-legal and would have passed the
+  `concentration.view` exclusion (which keys on `(ISSUER, DETAIL)`) carrying proprietary issuer
+  identity to a caller holding no `concentration.issuer.view`. Only binder discipline stood in the
+  way; now the engine does. Negative-controlled.
+- **The compute-zone orphan closed.** `_level1_code` raised from INSIDE `_compute`, and the
+  scaffold calls `compute()` outside its only `try` — so corrupt pinned content would have orphaned
+  a run in RUNNING with a committed snapshot (Part 0 fact 2's own BT-1 class). Such breaches now
+  return a `CORRUPT_PINNED_CONTENT` gap: a committed FAILED run with a named reason. The
+  `ConcentrationInputError` docstring, which claimed "raised BEFORE any run/snapshot write", is now
+  true again.
+- **`GET /concentration/runs/{run_id}` point-selects.** It had listed the newest 1000 runs and
+  filtered in Python, so a tenant past its 1000th run got a spurious 404 on every older run — and
+  the scheduler ticks these monthly per tenant per portfolio, so the ceiling is reachable.
+- **`ConcentrationModelParameterError`** replaces bare `ValueError` in the API error map, which had
+  relabelled ANY server-side bug inside registration as a client 422 and re-armed the API-2 MRO
+  trap (isinstance-caught, exact-type-mapped → `KeyError` 500).
+- **Join-key normalization.** The issuer-edge and assignment serializers used raw `str()` while the
+  atoms are `_norm_guid`-normalized, so an uppercase-stored id would have silently read
+  UNCLASSIFIABLE instead of failing loudly. Both sides now normalize.
+
+### Deviations from the ratified wording, recorded rather than hidden
+
+- **OQ-CON-1-24 (i)** now reads LIVE heads, not the pinned set — see above. This is a
+  strengthening; the ratified form was unfireable.
+- **OQ-CON-1-28** shipped as a RAISE at build/verify time (`resolve_ancestors` raises
+  `ClassificationNotVisible`), not the ratified "gaps-mapped refusal in the binder". Fail-closed
+  either way, and arguably the stronger form (it refuses PRE-BUILD rather than committing a FAILED
+  run), but it is a timing deviation and is recorded as one.
+- **`0057`'s downgrade body** drops the trigger and policy explicitly and lets the partial indexes
+  ride the table drop; the ratified wording said the reverse. Functionally equivalent, executed
+  destructively in both directions.
+- **Effective-number-of-holdings (`1/HHI`)** is NOT rendered. OQ-CON-1-2 ratified it "at the read
+  surface rather than stored", but v1's FE surface for concentration is the generic runs list with
+  no dimension detail table, so there is no honest home for a derived column yet. **DEFERRED with
+  a trigger: the first concentration detail view.** It remains a pure derivation over a shipped
+  number — nothing is lost by not storing it.
+- **The Part 3 gates line** listed "the NEW `_METRIC_MAP` exact census" among P6 floors shipped
+  with their guards. That contradicts this record's own OQ-CON-1-15 reversal, which defers
+  `_METRIC_MAP` registration to LIM-2. The CODE is correct (no census, no entry); the gates line
+  was stale from v5. Corrected in place.
+- **CTRL-018** (scheduled reproduction job) — **no control moved.** CON-1 ships per-snapshot
+  `verify_snapshot` coverage for `CONCENTRATION_INPUT`, which is not the scheduled reproduction job
+  CTRL-018 describes; it stays Planned. Stated explicitly per the P1 seventh-ledger obligation,
+  which the closeout had half-delivered (CTRL-002 extended, CTRL-018 silent).
+
+### Correction to this record's own execution addendum
+
+The addendum above reports the stage-14 ops role census failing 13-vs-2 locally and reproducing on
+untouched `main`. That diagnosis was right about the cause and incomplete about the consequence:
+in a **single fresh-schema battery over all three testpaths** — the layout CI uses — the census
+**passes**. The sensitivity is real but is a property of running partial subsets against a reused
+database, not of the census's expected value being wrong. No OPS follow-up is owed.
+
+### The fold's own verification pass (2026-07-30, fresh context)
+
+The fold itself was then adversarially verified by an independent fresh-context pass over the
+uncommitted diff, instructed to refute every claim above. It CONFIRMED all ten numbered items —
+including recomputing the seven-bucket CR-5/HHI/MAX literals by hand, reading the six constraint
+names back from the live `pg_catalog`, and establishing that the serializer normalization cannot
+false-drift previously pinned content (every id generator in the codepath already emits lowercase,
+and the three serializers are CON-1-new) — and REFUTED one sub-claim: the compute-zone except
+tuple omitted `KeyError`/`TypeError`, the archetypal shapes corrupt pinned JSON actually takes (a
+missing content field; `Decimal(None)`), so that residue of the orphan path was still open while
+the comment claimed it closed. **Folded before push:** the tuple now covers both, and the kernel
+comment states the covered shapes precisely. Two informational notes stand without code change:
+a book live-classified under only ONE version, requested under another, degrades to
+all-UNCLASSIFIED and fail-closes via the coverage floor rather than the mixed-version refusal
+(fail-closed either way, by a different gate); and the closure's `parent_node_id` was normalized
+for consistency though it could not false-drift (build and verify share the serializer).
