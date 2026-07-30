@@ -2,58 +2,60 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-07-30) — read this block; everything below it is HISTORY
 >
-> **THE GOVERNANCE BATCH (user-ratified 2026-07-30) — standing rules amended, Wave 14 re-sequenced,
-> the document surface shrunk.** **MERGED to `main` via PR #150 = `d598ba4`** (carrying `3b74a52` =
-> the delivered REF-1 `issuer.sector` write-freeze + record corrections, `dfe0591` = CON-1 planning
-> v2, and the five governance commits — all CI green all six).
+> **CON-1 IS CLOSED (Wave-14 slice 1) — the 23rd governed number family, dimensional
+> concentration.** Merged via **PR #152** = `19fb4f7`, merged-main CI **30581831315** green all
+> six; the P1 verify-on-main sweep executed and clean (all seven ledgers verified against the
+> MERGED diff). Migration head **`0057`**; next free canonical id **ENT-070**; demo counts
+> **26/41/136**; the closed hybrid set N = 7 (AD-013-R2) unchanged; fresh-schema full-PG
+> **2,776 passed / 0 failed** (the merged tree is byte-identical to the validated tree).
 >
-> - **Standing rules amended (`claude_operating_instructions.md`): P7 — lessons are recorded as
->   ACTS, not facts** (mechanical gate with the census > floor > matcher hierarchy / procedural
->   prose bound to a trigger moment / explicit recurrence acceptance — declarative "remember X" is
->   no longer a valid countermeasure), **plus the pre-flight manifests companion** (per change
->   class: migration, governed family, permission, entity, demo stage, dependency — the `dbce327`
->   class becomes a lookup), **the P1 sweep's SEVENTH ledger** (every delivery claim in a record
->   cites its artifact against the MERGED diff — the REF-1 five-false-claims class), **the
->   both-tier-before-push commit rule**, and **roadmap Part 4 rule 6a strengthened** (citations
->   enter records ONLY as verbatim quotes with locators + an independent citation-verification
->   lane — the RM-1/CON-1 misread class). Grounded in the 2026-07-30 four-lane error-trend audit:
->   the escape rate is roughly FLAT; finding counts track verifier intensity, not generation decline.
-> - **Wave 14 re-sequenced (Part 2.18): CON-1 DESCOPED** to the `share_invested_long` core with a
->   `denominator_basis` controlled vocabulary — the stopping rule after TWO consecutive refuted
->   denominator foundations (the 2026-07-29 dual-share ratification refuted: `sum(long_amount)` ≠
->   total assets per IRC §851(b)(3)(A)(i), so the share OVERSTATES and LIM-2 would write false
->   breaches into a non-withdrawable lifecycle); **PERF-0** (the measured scale probe) inserted as
->   slice 1.5; **DATA-1** (the first genuinely-sourced external dataset — a real T-bill series
->   through the governed rails + the executed vendor-diligence artifact) inserted as slice 3.5;
->   **DEP-1 + RPT-1 COMMITTED as the Wave-15 openers.** Sequence now: CON-1 → PERF-0 → LIM-2 →
->   CAL-1 → DATA-1 → LQ-1.
-> - **Document surface shrunk:** the roadmap 313KB → 164KB (Part 5 rows before 2026-07-27 →
->   `delivery_roadmap_amendment_archive.md`; done-set invariance verified BEFORE the split — 55
->   real ids, floor 38); this file capped to the truth block + live sections (history →
->   `current_state_archive.md`); `build_sequence.md`'s decayed Status column RETIRED to a roadmap
->   pointer; `00_ai_operating_model/` marked HISTORICAL.
-> - **Position unchanged by this batch:** migration head `0056`; next free canonical id ENT-069;
->   demo counts 25/40/133; the closed hybrid set N = 7 (AD-013-R2).
-> - **CON-1 PLANNING RATIFIED 2026-07-30 (v6, OQ-CON-1-1…28 all as recommended)** after FOUR
->   verifier passes (46 → 47 → 26 → 6 findings; the first citation-lane execution; the targeted
->   pass caught the record's own mis-measured holder sets). The ratified core:
->   `share_invested_long` + `denominator_basis`; `_METRIC_MAP` REVERSED to LIM-2 (no unbased-limit
->   window — REQ-CRD-003 = "produced, bindable at LIM-2"); the three-code mint (auditor_3l out of
->   issuer-identity reads, holder sets recomputed from `ROLE_TEMPLATES`); the row_kind/bucket_code
->   grain with both-dialect partial indexes; the basis discipline; two REF-1 hardenings paid
->   in-slice; the DEMO-CONCENTRATION book; counts 25/40/133 → 26/41/136; minimal FE read KEPT.
->   Branch `con-1-descope-planning`; the Part 6b in-place amendments EXECUTED.
-> - **CON-1 IMPLEMENTED (2026-07-30, branch `con-1-descope-planning`, nine checkpoints
->   `668e04f`→`1754359` + the ledger sweep): ENT-069 + migration `0057` (P4 dry run EXECUTED —
->   up/no-drift/down-destroys-staged-rows/up-restores), the `concentration/` package (kernel
->   reproducing the Part 2 literals to 6dp; the binder with the ratified refusal timings), one
->   purpose + four pinned shapes incl. the platform's FIRST code-first re-resolve branch, the
->   three-code mint with recomputed holder sets, seven API routes with the exact route→code
->   census, the minimal FE read, demo stage 19 (counts 25/40/133 → 26/41/136 MEASURED), and the
->   PG suites (grain/RLS/drift-doors). FIRST LIVE BATTERY 143/144 — the single failure (the
->   stage-14 ops role census) REPRODUCES IDENTICALLY ON UNTOUCHED MAIN in the local layout
->   (isolation pair): a pre-existing census layout-sensitivity, recorded, CI adjudicates.**
-> - **NEXT = the adversarial review pass, fold, push, CI-to-green, PR** (the merge preconditions).
+> - **What shipped:** ENT-069 `concentration_result` + migration `0057` (IA append-only,
+>   PROPRIETARY symmetric FORCE RLS), the `concentration/` package (DB-free kernel reproducing the
+>   Part 2 literals to 6dp; the binder with the ratified refusal timings), one new snapshot purpose
+>   + FOUR pinned shapes including the platform's FIRST code-first re-resolve branch, the R-07
+>   three-code mint (`concentration.run`/`.view`/`.issuer.view`, auditor_3l deliberately OUT of
+>   issuer-identity reads), seven API routes under an exact route→code census, the minimal FE read,
+>   and demo stage 19.
+> - **The measure is `share_invested_long`, NOT a regulatory ratio** — the descope after TWO
+>   consecutive refuted denominator foundations. Every row carries `denominator_basis` (sole v1
+>   value `INVESTED_LONG`) so a future NAV basis is additive. **`_METRIC_MAP` registration is
+>   REVERSED to LIM-2**, so shipped fail-closed code refuses every concentration limit until the
+>   basis column exists — REQ-CRD-003 is "produced, BINDABLE AT LIM-2", deliberately not Done.
+> - **The adversarial review fold (three lanes + an independent verification of the fold).** The
+>   BLOCKING, found identically by all three lanes: **the ratified OQ-CON-1-24(i) mixed-VERSION
+>   refusal was structurally UNFIREABLE** — its discriminator read "among the pinned assignments",
+>   a set filtered to the requested scheme, so the second version could never appear in it, while
+>   FOUR shipped surfaces advertised the control. Reimplemented over the tenant's LIVE current
+>   heads as a recorded strengthening; mutation-proven. **And EXECUTION found what three reading
+>   lanes missed:** `0057` passed FULL constraint names into `op.create_table` while the naming
+>   convention prepends `ck_<table>_` itself, so every CHECK landed double-prefixed and the longest
+>   was PG-truncated at 63 chars — a text-vs-text comparison cannot see this, and the tests'
+>   `match=` substrings passed either way. Fixed, with the standing gate now reading the LIVE
+>   `pg_constraint` catalog and comparing set-equality against the ORM.
+> - **Ten ratified-but-undelivered items were delivered in the fold**, the largest being that every
+>   pre-build refusal had shipped with ZERO negative controls while the record called them
+>   "negative-controlled"; the P0001 append-only trigger was never executed by any test; and
+>   OQ-REF-1-29's demo role census + teardown (recorded as "paid" by TWO successive slices, built
+>   by neither) now exists and is pinned by a test that re-reads the database.
+> - **Hardening beyond the findings:** `coverage_floor` strictly (0,1]; a DB-level disclosure fence
+>   (`issuer_id` refused on non-ISSUER rows — previously schema-legal and invisible to the
+>   `.view` exclusion); the compute-zone orphan closed via a `CORRUPT_PINNED_CONTENT` gap; a
+>   point-select `GET /runs/{run_id}` (the 1000-row scan 404'd legitimately-owned runs).
+> - **Standing rules in force from the governance batch (PR #150 = `d598ba4`, earlier the same
+>   day):** P7 — lessons are recorded as ACTS not facts (mechanical gate / trigger-bound procedure
+>   / explicit recurrence acceptance); the pre-flight manifests companion; the P1 sweep's SEVENTH
+>   ledger (delivery claims cite their artifact against the MERGED diff); both-tier-before-push;
+>   roadmap rule 6a (citations enter records ONLY as verbatim quotes with locators, plus an
+>   independent citation-verification lane). The 2026-07-30 four-lane error-trend audit found the
+>   escape rate roughly FLAT — finding counts track verifier intensity, not generation decline.
+> - **Wave 14 sequence (re-sequenced in the same batch):** CON-1 ✅ → **PERF-0** → LIM-2 → CAL-1 →
+>   DATA-1 → LQ-1; DEP-1 + RPT-1 are the committed Wave-15 openers.
+> - **CON-1 lessons carried forward:** a parity claim between two texts is not parity — ASK THE
+>   DATABASE (the live-catalog gate generalizes to any migration minting named objects); at
+>   ratification, check a refusal's discriminator for REACHABILITY, especially when it reads a
+>   FILTERED set; `match=` substrings mask DDL name corruption; a census guard can be vacuous by
+>   construction (`k in source` when the constant name contains its own value).
+> - **NEXT = PERF-0** (the measured scale probe, Wave-14 slice 1.5).
 >
 > ---
 >
