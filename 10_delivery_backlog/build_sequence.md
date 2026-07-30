@@ -5,12 +5,12 @@
 | Field | Value |
 |---|---|
 | Document ID | BACKLOG-BUILDSEQ-001 |
-| Version | 0.1 (Draft baseline) |
-| Status | Accepted as the construction sequence |
+| Version | 0.2 (Status column retired 2026-07-30, user-ratified) |
+| Status | Accepted as the construction THEME map (execution status lives in `delivery_roadmap.md`) |
 | Owner | R-01 Product Manager AI (with R-02 Chief Architect AI) |
 | Approver | H-07 Product Owner (H-06 Engineering Lead) |
 | Created | 2026-06-18 |
-| Last Reviewed | 2026-06-18 |
+| Last Reviewed | 2026-07-30 |
 | Related Documents | ../02_requirements/requirements_backbone.md, ../02_requirements/requirements_traceability_matrix.md, ../02_requirements/definition_of_ready_done.md, ../11_decision_log/architecture_decision_log.md |
 | Supported Build Rules | BR-1 … BR-19 |
 
@@ -24,19 +24,28 @@ prototype. A phase opens only when its dependencies are met and its requirements
 
 ## 2. Phase map
 
-| Phase | Theme | Primary requirements | Key dependencies delivered | Status |
-|---|---|---|---|---|
-| **P0** | Foundation slice + hardening | REQ-AUD-002; DEP-CIH, DEP-FELOCK | Audit/entitlement/calc-run/temporal frameworks (done); CI drift check + audit-write concurrency; frontend lockfile/`npm ci` | **DONE** (executed as P0.5) |
-| **P1** | Reference & portfolio core + governance skeletons | PPM-001..004, SMR-001..004, LIN-001, MDG-001, DQR-001, INT-001, AUD-001 | DEP-SMR, DEP-LIN, DEP-MREG (skeleton), DEP-DQF (skeleton) | **DONE** (executed as P1A/P1B/P1C) |
-| **P2** | Public market data + market-risk core | PUB-001..003, MKT-001..003 | Market-data store usage; first FR-class domain + first governed calc runs | **DONE for market risk** (executed as P2 captured data + P3 risk engines: sensitivities, factor exposures, covariance, parametric VaR; +FE-1 read-only UI). MKT-004 stress + further VaR methods per the delivery roadmap |
-| **P3** | Credit & counterparty risk | CRD-001..004, CPT-001..004 | Credit/counterparty analytics; seeded MC (PFE/VaR) | Not started |
-| **P4** | Private assets + liquidity risk | PRV-001..004, LIQ-001..004, ADM-003 (MNPI barriers) | Private-markets data; MNPI classification; liquidity analytics | Not started |
-| **P5** | Scenario & stress testing | SCN-001..003, MKT-004 | Versioned scenarios; combined stress | Not started |
-| **P6** | Limits, breach workflow + SoD | LIM-001..003, BRC-001..003, ADM-002 (SoD/maker-checker) | DEP-WFL; SoD/maker-checker across the platform | Not started |
-| **P7** | Full model governance + DQ/reconciliation | MDG-002/003, DQR-002/003, LIN-002 | DEP-MGW (validation workflow); reconciliation; lineage query | Not started |
-| **P8** | Reporting & dashboards | RPT-001..003, AUD-003 | DEP-RPT; 1L/2L dashboards; reproducible reports | Not started |
-| **P9** | Admin, SSO, integration adapters | ADM-001/004, INT-002/003 | DEP-SSO (real OIDC/MFA); API/SFTP/vendor/GP adapters | Not started |
-| **P10** | BAU AI agents + production hardening | BAI-001..003 | Embedded/BAU agents under AD-009; final hardening | Not started |
+> **The Status column was RETIRED on 2026-07-30 (user-ratified).** It had decayed into active
+> misinformation: it read "Not started" for P4 (private assets — PA-0…PA-4, PPF-1…3, CC-1/2 shipped
+> across Waves 2–10), P6 (limits/breach/SoD — LIM-1, MG-2/MG-3, API-2/2b, NOTIF-1 shipped in Waves
+> 11–12), and P9's SSO half (SSO-1/FE-3b shipped the real OIDC boundary in Waves 9–10), seven wave
+> closes after its own note promised refresh-at-close. Per the conformance-pin doctrine, a
+> hand-mirrored status surface is retired, not refreshed into decaying again: **status lives ONLY in
+> `delivery_roadmap.md`** (Part 2 wave tables + Part 5 amendment log) and, per requirement, in the
+> RTM. This table remains the ratified THEME map.
+
+| Phase | Theme | Primary requirements | Key dependencies delivered |
+|---|---|---|---|
+| **P0** | Foundation slice + hardening | REQ-AUD-002; DEP-CIH, DEP-FELOCK | Audit/entitlement/calc-run/temporal frameworks; CI drift check + audit-write concurrency; frontend lockfile/`npm ci` |
+| **P1** | Reference & portfolio core + governance skeletons | PPM-001..004, SMR-001..004, LIN-001, MDG-001, DQR-001, INT-001, AUD-001 | DEP-SMR, DEP-LIN, DEP-MREG (skeleton), DEP-DQF (skeleton) |
+| **P2** | Public market data + market-risk core | PUB-001..003, MKT-001..003 | Market-data store usage; first FR-class domain + first governed calc runs |
+| **P3** | Credit & counterparty risk | CRD-001..004, CPT-001..004 | Credit/counterparty analytics; seeded MC (PFE/VaR) |
+| **P4** | Private assets + liquidity risk | PRV-001..004, LIQ-001..004, ADM-003 (MNPI barriers) | Private-markets data; MNPI classification; liquidity analytics |
+| **P5** | Scenario & stress testing | SCN-001..003, MKT-004 | Versioned scenarios; combined stress |
+| **P6** | Limits, breach workflow + SoD | LIM-001..003, BRC-001..003, ADM-002 (SoD/maker-checker) | DEP-WFL; SoD/maker-checker across the platform |
+| **P7** | Full model governance + DQ/reconciliation | MDG-002/003, DQR-002/003, LIN-002 | DEP-MGW (validation workflow); reconciliation; lineage query |
+| **P8** | Reporting & dashboards | RPT-001..003, AUD-003 | DEP-RPT; 1L/2L dashboards; reproducible reports |
+| **P9** | Admin, SSO, integration adapters | ADM-001/004, INT-002/003 | DEP-SSO (real OIDC/MFA); API/SFTP/vendor/GP adapters |
+| **P10** | BAU AI agents + production hardening | BAI-001..003 | Embedded/BAU agents under AD-009; final hardening |
 
 ## 3. Phase exit criteria (applies to every phase)
 
@@ -91,8 +100,10 @@ depend on it (BX-SOD).
 This sequence depends on the requirements backbone (scope), the RTM (per-requirement dependencies), and the foundational ADRs
 (AD-002 phasing principle, AD-004…012). Phase boundaries are revisited after each enterprise review.
 
-> **Status note (2026-07-08).** This map remains the ratified THEME order (what the platform must eventually
-> contain). The EXECUTED phase numbering diverged early (this map's P2 theme was delivered as the executed P2+P3;
-> hence "RTM-P5" caveats on stress in later records). The **operative near-term slice sequence is
-> `delivery_roadmap.md`** (rolling-wave; re-baselined at wave closes); the executed ledger is
-> `docs/project_memory/build_plan.md`. This map's Status column is refreshed only at wave closes.
+> **Status note (2026-07-08; amended 2026-07-30).** This map remains the ratified THEME order (what the
+> platform must eventually contain). The EXECUTED phase numbering diverged early (this map's P2 theme was
+> delivered as the executed P2+P3; hence "RTM-P5" caveats on stress in later records). The **operative
+> slice sequence and ALL execution status live in `delivery_roadmap.md`** (rolling-wave; re-baselined at
+> wave closes); the executed ledger is `docs/project_memory/build_plan.md`. The 2026-07-08 promise that
+> "this map's Status column is refreshed only at wave closes" went unkept for seven consecutive closes,
+> so on 2026-07-30 the column was retired rather than refreshed (see the note above the phase map).
