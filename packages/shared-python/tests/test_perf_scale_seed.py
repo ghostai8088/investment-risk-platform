@@ -90,6 +90,39 @@ class TestShape:
         assert summary.valuations == valuations
         assert summary.tenant_id == PERF_TENANT_ID
 
+    def test_factor_counts_are_COUNTED_not_echoed_from_the_arguments(self, db, _allow) -> None:  # noqa: ANN001
+        """An earlier draft reported ``factors=n_factors`` while creating NONE and
+        ``factor_returns=0`` unconditionally — a summary that describes its arguments rather than
+        its writes. Both halves are now read back from the database."""
+        from irp_shared.marketdata.models import Factor, FactorReturn
+
+        summary = build_perf_book(
+            db, rung_positions=4, allow_perf_seed=True, n_factors=3, n_return_days=5
+        )
+        db.flush()
+        factors = db.execute(select(func.count()).select_from(Factor)).scalar_one()
+        returns = db.execute(select(func.count()).select_from(FactorReturn)).scalar_one()
+        assert factors == 3, f"asked for 3 factors, seeded {factors}"
+        assert returns == 3 * 5, f"asked for 15 factor returns, seeded {returns}"
+        assert summary.factors == factors, "the summary's factor count disagrees with the database"
+        assert summary.factor_returns == returns, "the summary's return count disagrees"
+
+    def test_no_factor_series_is_constant(self, db, _allow) -> None:
+        """A constant return series makes the covariance matrix singular, so the chain would fail
+        for a reason that has nothing to do with scale — the probe would measure a bug."""
+        from irp_shared.marketdata.models import FactorReturn
+
+        build_perf_book(db, rung_positions=4, allow_perf_seed=True, n_factors=3, n_return_days=8)
+        db.flush()
+        by_factor: dict[str, set] = {}
+        for fid, value in db.execute(
+            select(FactorReturn.factor_id, FactorReturn.return_value)
+        ).all():
+            by_factor.setdefault(str(fid), set()).add(value)
+        assert by_factor, "no factor returns were seeded"
+        for fid, values in by_factor.items():
+            assert len(values) > 1, f"factor {fid} has a CONSTANT series ({values}) — singular"
+
     def test_every_row_lands_in_the_PERF_tenant_only(self, db, _allow) -> None:  # noqa: ANN001
         build_perf_book(db, rung_positions=_RUNG, allow_perf_seed=True)
         db.flush()

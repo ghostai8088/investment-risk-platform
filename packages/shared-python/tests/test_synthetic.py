@@ -562,7 +562,23 @@ def test_no_migration_and_no_entity() -> None:
 
 def test_import_direction() -> None:
     pkg = pathlib.Path(builder_mod.__file__).parent
-    allowed = {"portfolio", "position", "valuation", "transaction", "reference", "db", "synthetic"}
+    # ``marketdata`` ADDED at PERF-0, with its reason recorded at the fence rather than the fence
+    # quietly widened: the scale seed captures FACTOR RETURNS, which the covariance/VaR segments of
+    # the chain consume (they pin factor series, not position marks — see the PERF-0 record's
+    # Part 0 fact 7). A factor return is captured market data of exactly the same kind as a
+    # valuation, so it belongs on the CAPTURE side of this package's one-way rule. The rule's real
+    # purpose is unchanged and still enforced: no ``irp_backend``, no ``irp_shared.models``, and
+    # nothing on the COMPUTE side (calc, risk, perf, snapshot) — a seed still computes nothing.
+    allowed = {
+        "portfolio",
+        "position",
+        "valuation",
+        "transaction",
+        "reference",
+        "marketdata",
+        "db",
+        "synthetic",
+    }
     forbidden_roots = {"irp_backend", "irp_shared.models"}
     for py in pkg.glob("*.py"):
         for line in py.read_text().splitlines():

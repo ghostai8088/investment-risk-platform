@@ -36,6 +36,11 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from irp_shared.db.tenant import set_tenant_context
+from irp_shared.marketdata.factor import (
+    FactorActor,
+    capture_factor,
+    capture_factor_return,
+)
 from irp_shared.portfolio import PortfolioActor, create_portfolio
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.position.position import create_position
@@ -312,6 +317,48 @@ def build_perf_book(
                 n_valuations += 1
             ordinal += 1
 
+    # --- factors + DAILY factor returns (OQ-PERF-0-2: the history the chain actually needs sits
+    # at the FACTOR level, where it is cheap — covariance/VaR pin factor series, not position
+    # marks). The return VALUES come from the fixed table, indexed by an ADDITIVE walk (the
+    # no-compute fence forbids multiplication), so every factor gets a distinct, non-constant
+    # series — a constant series would make the covariance matrix singular.
+    md_actor = FactorActor(actor_id=PERF_ACTOR_ID)
+    n_factor_returns = 0
+    value_cursor = 0
+    for factor_ordinal in range(n_factors):
+        factor_code = f"PERF-FACTOR-{factor_ordinal:03d}"
+        factor = capture_factor(
+            session,
+            factor_code=factor_code,
+            factor_source="PERF_SEED",
+            factor_family="STYLE",
+            acting_tenant=PERF_TENANT_ID,
+            actor=md_actor,
+            factor_type="STYLE",
+            # No currency_code: capture_factor RESOLVES it against the SYSTEM currency reference,
+            # which a bare unit-tier schema has not seeded. A STYLE factor is currency-agnostic, so
+            # the honest value is absent rather than a code we would have to seed to satisfy.
+            frequency="DAILY",
+            factor_name=f"Perf probe factor {factor_ordinal:03d}",
+            valid_from=t0,
+            entity_id=synthetic_id(f"perf:factor:{factor_code}"),
+            now=clock.tick(),
+        )
+        for day in range(n_return_days):
+            value_cursor += 1
+            capture_factor_return(
+                session,
+                factor=factor,
+                return_date=business_date(day).date(),
+                return_value=Decimal(_FACTOR_RETURNS[value_cursor % len(_FACTOR_RETURNS)]),
+                acting_tenant=PERF_TENANT_ID,
+                actor=md_actor,
+                valid_from=t0,
+                entity_id=synthetic_id(f"perf:factor_return:{factor_code}:{day}"),
+                now=clock.tick(),
+            )
+            n_factor_returns += 1
+
     summary = PerfSeedSummary(
         tenant_id=PERF_TENANT_ID,
         rung_positions=rung_positions,
@@ -319,8 +366,10 @@ def build_perf_book(
         instruments=ordinal,
         positions=ordinal,
         valuations=n_valuations,
+        # COUNTED, never echoed back from the arguments: an earlier draft reported
+        # ``factors=n_factors`` while creating none, which would have made the summary lie.
         factors=n_factors,
-        factor_returns=0,
+        factor_returns=n_factor_returns,
         measurement_date=measurement_date,
     )
     return summary
