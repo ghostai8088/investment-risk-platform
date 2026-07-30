@@ -45,6 +45,7 @@ from irp_shared.portfolio import PortfolioActor, create_portfolio
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.position.position import create_position
 from irp_shared.position.service import PositionActor
+from irp_shared.reference.currency import create_currency
 from irp_shared.reference.instrument import create_instrument
 from irp_shared.reference.service import ReferenceActor
 from irp_shared.synthetic.ids import (
@@ -143,6 +144,28 @@ _FACTOR_RETURNS: tuple[str, ...] = (
     "-0.0036",
 )
 
+#: Distinct currency codes, one per CURRENCY-family factor. The factor-exposure allocation model
+#: requires ONE factor per currency and refuses a duplicate scope, so a single shared code makes
+#: every factor beyond the first unbuildable.
+_CURRENCIES: tuple[str, ...] = (
+    "USD",
+    "EUR",
+    "GBP",
+    "JPY",
+    "CHF",
+    "CAD",
+    "AUD",
+    "SEK",
+    "NOK",
+    "NZD",
+    "SGD",
+    "HKD",
+    "DKK",
+    "PLN",
+    "MXN",
+    "ZAR",
+)
+
 #: Instruments per portfolio — the book is split across portfolios so the chain exercises
 #: multi-portfolio scope rather than one giant account.
 _POSITIONS_PER_PORTFOLIO = 250
@@ -206,6 +229,8 @@ def build_perf_book(
     tenant_id: str = PERF_TENANT_ID,
     n_factors: int = 8,
     n_return_days: int = 260,
+    factor_family: str = "CURRENCY",
+    factor_currency_code: str | None = None,
 ) -> PerfSeedSummary:
     """Seed ONE rung of the scale ladder. Caller owns the commit and owns all timing.
 
@@ -244,6 +269,21 @@ def build_perf_book(
     pf_actor = PortfolioActor(actor_id=PERF_ACTOR_ID)
     pos_actor = PositionActor(actor_id=PERF_ACTOR_ID)
     val_actor = ValuationActor(actor_id=PERF_ACTOR_ID)
+
+    # A CURRENCY the tenant can actually see. capture_factor RESOLVES currency_code against the
+    # reference table under the ACTING tenant, and a freshly reserved tenant owns no currencies —
+    # so a CURRENCY-family factor is unbuildable without this. Seeded only when asked for.
+    if factor_currency_code is not None:
+        for currency_ordinal in range(n_factors):
+            code = _CURRENCIES[currency_ordinal % len(_CURRENCIES)]
+            create_currency(
+                session,
+                tenant_id=PERF_TENANT_ID,
+                code=code,
+                name=f"Perf probe {code}",
+                actor=ref_actor,
+            )
+        session.flush()
 
     offsets = _month_end_offsets()
     measurement_date = business_date(offsets[-1])
@@ -331,13 +371,22 @@ def build_perf_book(
             session,
             factor_code=factor_code,
             factor_source="PERF_SEED",
-            factor_family="STYLE",
+            # CURRENCY by default: the shipped risk.factor_exposure.allocation model ADMITS only
+            # the CURRENCY family, so a STYLE default would leave that whole segment
+            # unmeasurable. Parameterized rather than hard-coded so other families stay reachable.
+            factor_family=factor_family,
             acting_tenant=PERF_TENANT_ID,
             actor=md_actor,
-            factor_type="STYLE",
-            # No currency_code: capture_factor RESOLVES it against the SYSTEM currency reference,
-            # which a bare unit-tier schema has not seeded. A STYLE factor is currency-agnostic, so
-            # the honest value is absent rather than a code we would have to seed to satisfy.
+            factor_type=factor_family,
+            # PARAMETERIZED, defaulting to absent. capture_factor RESOLVES currency_code against
+            # the SYSTEM currency reference, which a bare unit-tier schema has not seeded — so the
+            # unit tier passes None. A CURRENCY-family factor DOES need a currency scope for the
+            # factor-exposure allocation model, so the PG harness passes a real code.
+            currency_code=(
+                None
+                if factor_currency_code is None
+                else _CURRENCIES[factor_ordinal % len(_CURRENCIES)]
+            ),
             frequency="DAILY",
             factor_name=f"Perf probe factor {factor_ordinal:03d}",
             valid_from=t0,
