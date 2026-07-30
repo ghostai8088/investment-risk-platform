@@ -7356,6 +7356,7 @@
         "type": "object"
       },
       "IssuerIn": {
+        "description": "Issuer create body. ``sector`` is deliberately ABSENT (frozen at the REF-1 fold,\nOQ-REF-1-23): the governed replacement is a ``classification_assignment`` against a versioned\n``classification_scheme``. ``IssuerOut`` still RETURNS the legacy column \u2014 the read side is a\nshipped contract and removing it is a breaking change no gate here can detect.",
         "properties": {
           "is_active": {
             "default": true,
@@ -7377,17 +7378,6 @@
             "format": "uuid",
             "title": "Legal Entity Id",
             "type": "string"
-          },
-          "sector": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sector"
           }
         },
         "required": [

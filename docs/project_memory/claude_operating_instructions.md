@@ -73,6 +73,14 @@ Planning-first, per-slice; Claude commits + pushes autonomously:
 - **Closeout control-matrix trace (Wave-12 close, OQ-W12C-3c):** every slice closeout either updates
   `09_compliance_controls/control_matrix_skeleton.md` or states "no control moved" in its decision record —
   the API-2/OPS-1 closeouts skipped the sweep silently and left the flagship SoD row (CTRL-021) stale.
+- **Citation-verification lane for methodology slices (2026-07-30 — the rule-6a strengthening; see the
+  amended roadmap Part 4 rule 6a for the binding text):** every regulatory/academic citation in a decision
+  record enters ONLY as a verbatim quoted passage with a paragraph/page locator, and the pre-ratification
+  verifier pass includes a lane that reads ONLY the cited source (never the draft's framing) and answers
+  "does it say what the record claims?". The class this kills: RM-1's truncated GIPS quote would have
+  refused compliant books; CON-1 v1 cited three regulatory texts for the OPPOSITE of what they say, and the
+  ratified fix was itself refuted on the same class (para-87 adjacent-paragraph misread) — a confidently
+  wrong citation launders a guess as authority, worse than no citation.
 - **Demo-tick consequence (REPLACED the OQ-W12C-3d interim prohibition at OPS-H1, 2026-07-28):** the
   stage-14 clock is seed-time-relative (backdated two days; the curated walk preserved exactly), so
   enrolling `DEMO_TENANT_ID` in `IRP_TENANT_IDS` is now an OPERATOR CHOICE with a documented
@@ -140,6 +148,12 @@ the model's self-assessed confidence ("zero areas of concern" is not a criterion
 - **Per-commit pre-checks:** run `make check` (lint, format, mypy, pytest, secret-scan, docs-check); confirm
   the staged set is exactly the intended files; no generated artifacts / `node_modules` / `dist` / caches /
   `.pyc` / secrets / `.env` staged; the scope-specific exclusions hold.
+- **Both-tier verification before EVERY push (2026-07-30 — the `dbce327` lesson made standing):** a push is
+  preceded by the full local gate battery for EVERY tier the diff touches — `make check` always; the full-PG
+  battery (fresh schema, ALL configured testpaths) whenever the diff touches a migration, PG-tier code, or a
+  demo stage; the FE checks whenever it touches the frontend. Never push on a partial signal: `dbce327` went
+  red because `make check` ran BEFORE the tests that pin the migration head were written, and the first PG
+  run that session covered one of three configured testpaths.
 - **Commit message trailer:** end with a `Co-Authored-By` trailer naming the **model that actually performed the
   work in that session** (e.g. `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`), so commit provenance stays
   accurate across model changes — never a stale hard-coded model name.
@@ -234,14 +248,19 @@ for any CTRL row this slice took from *Planned/Designed* → *Operational* and u
 miss: CTRL-021/CTRL-031 read "Planned" though MG-2/MG-3 shipped the person-level SoD + breach 1L/2L separation —
 the same "downstream doc left stale after the code shipped" class as the closure-stamp recurrence.)
 
-## The six-ledger omission sweep + verify-on-main (standing, RATIFIED at the Wave-13 close 2026-07-29, P1)
-At EVERY slice closeout, sweep the six ledgers where an omission leaves NO diff for a review to see:
+## The seven-ledger omission sweep + verify-on-main (standing, RATIFIED at the Wave-13 close 2026-07-29 as six, P1; SEVENTH ledger added 2026-07-30)
+At EVERY slice closeout, sweep the seven ledgers where an omission leaves NO diff for a review to see:
 (1) `04_data_model/canonical_data_model_standard.md` — new ENT ids have registry rows AND the "next free id"
 pointer is right; (2) `04_data_model/audit_event_taxonomy.md` — minted vs reserved is accurate (or the
 "deliberately minted nothing" sentence is updated); (3) `09_compliance_controls/control_matrix_skeleton.md` —
 touch a control or state "no control moved" (OQ-W12C-3c); (4) `docs/project_memory/current_state.md` CURRENT
 TRUTH; (5) `02_requirements/` backbone + RTM both halves; (6) counts — MEASURED on a fresh battery, never
-derived. **THEN the verify-on-main clause: it is a CLOSEOUT step, it runs AFTER THE LAST MERGE, and it covers
+derived; (7) **the record's OWN delivery claims (added 2026-07-30): every "shipped / enforced / delivered /
+implemented" claim in the slice's decision and close records is verified against the MERGED diff and cited
+to its artifact (file, test name, or commit) before close** — REF-1's merged, ratified record carried FIVE
+false or undelivered claims (an unimplemented ratified write-freeze among them), found only because the
+NEXT slice's recon happened to re-read it; a record written from plan memory measures intent. **THEN the
+verify-on-main clause: it is a CLOSEOUT step, it runs AFTER THE LAST MERGE, and it covers
 EVERY artifact the slice claims to have delivered — review folds included** (cheap form:
 `git merge-base --is-ancestor <sha> origin/main`). Evidence class: RM-1's sweep commit was authored and never
 merged; FE-M1's R-4 fold raced its own PR — a sweep run on the branch measures intent, only the main check
@@ -285,6 +304,50 @@ coverage falling whatever the next shape is. Evidence: the closure-stamp gate wa
 went blind a fourth way (guarding 29 of 62 records, silently); the import fences are on their third
 un-enumerated bypass axis. In-tree exemplars: the closure gate's two floors, the GS2 exact census, the
 `_BINDING_PREDICATES`/`PURPOSE_*` set-equality censuses, `test_ci_pg_coverage.py`.
+
+## Lessons are recorded as acts, not facts (standing, RATIFIED 2026-07-30, P7)
+Every lesson or review fold lands in EXACTLY ONE of three declared forms, stated at the fold:
+- **(a) a MECHANICAL GATE**, preferring — in measured order of durability — **exact set-equality census >
+  coverage floor > enumerating matcher**, with its negative control executed against the adversarial form
+  (OQ-W12C-3a). The 2026-07-30 error-trend audit (4-lane, over all 23 session logs + this document + the
+  memory corpus) measured the hierarchy: the closure-stamp class recurred FIVE times AFTER mechanization,
+  each at the matcher's enumeration boundary; the import fences were bypassed on three unenumerated axes;
+  the fail-closed npm-audit gate was found fail-OPEN — while exact censuses have zero recorded recurrences.
+- **(b) PROCEDURAL PROSE binding an EXECUTED act to a defined trigger moment** ("before X, run/do Y") — the
+  prose form with zero recorded recurrences (P4's executed dry runs; downgrade-requires-re-audit; the
+  read-the-mutation-memory-before-folding act that prevented a Wave-13-close recurrence).
+- **(c) an EXPLICIT recurrence acceptance**, recorded with the reason the class cannot be (a) or (b).
+**DECLARATIVE prose ("remember that X is true") is NOT a valid countermeasure form** — the audit found every
+top recurring class (id-namespace collisions ×2 in one day, citation misreads across RM-1→CON-1,
+schema-reset pollution, shell-quoting) was declarative-prose-only. Corollary: when a MECHANIZED class
+recurs anyway, the fold widens the gate's enumeration AXIS or upgrades it up the (a)-hierarchy — never
+just teaches the matcher the one missed shape (the closure gate's three broadenings each did the latter,
+and each went blind a new way).
+
+## Pre-flight manifests per change class (standing, RATIFIED 2026-07-30 — P7's companion; the `dbce327` class)
+Before DRAFTING a change, enumerate what its change class touches — a lookup, not a CI discovery. Every
+newly discovered pin/fence is ADDED to this manifest in the fold that found it (a pin discovered downstream
+of drafting is a manifest gap to fix in the same fold). Seeded 2026-07-30 from the error-trend audit:
+- **New migration:** the migration-head pin population (`grep -rn` the current head id across
+  `packages/*/tests` + `apps/*/tests` — ~21 assertions at REF-1); `test_synthetic.py`'s next-free-slot
+  glob; the closed-set fences (HYBRID_TABLES declaration==union(migrations) parity, `APPEND_ONLY_TABLES`
+  membership decision, `FAMILY_REGISTRY`/`ck_schedule_model_version_by_family` CHECK); every DDL
+  identifier ≤ 63 chars named explicitly in BOTH ORM and migration (`test_migration_identifiers.py`);
+  `alembic check` drift; the per-table CI RLS step; the downgrade smoke; guarded audit `ACTION_*`
+  constants (raw string literals are rejected by a shipped guard).
+- **New governed number family:** COMPONENT_KIND + registry/CHECK migration; model registration +
+  validation; snapshot+run+model binding; rule-7 entity/time reads + FE in-slice; demo stage + the
+  final-position count-pin relay; PG-tier pins on non-String filters; the seven-ledger sweep (P1).
+- **New permission/role:** the R-07 mint; per-code SoD pins (the 3L auditor exclusion is PER CODE — a
+  single view code across tenancy classes re-commits REF-1's SoD defect); control-matrix row;
+  `entitlement_sod_model.md`.
+- **New entity:** ENT next-free id (CHECK THE NAMESPACE — collisions hit twice in one day at REF-1);
+  canonical-model registry row; `__temporal_class__` declaration; CI RLS step; six/seven-ledger sweep.
+- **New demo stage:** the stage-ordering filename (`ls` the tests dir, never a record); the count-pin
+  relay to final position; schema reset BEFORE each full-PG run; superuser-bypasses-RLS scoping (never
+  "everything in the table"); the already-seeded double-run path.
+- **Dependency/toolchain change:** the P4 executed dry run; the audit gate re-run on the ACTUAL proposed
+  tree; dry-run numbers re-measured at closeout, never carried as pins.
 
 ## Prohibited behavior
 - Committing/pushing without explicit approval; starting the next slice unprompted.

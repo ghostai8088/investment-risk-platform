@@ -24,7 +24,18 @@ from irp_shared.reference.service import (
 )
 
 #: Mutable role attributes ``update_issuer`` will diff/apply (legal_entity_id is the stable link).
-_UPDATABLE = ("issuer_type", "sector", "is_active")
+#:
+#: ``sector`` was REMOVED at the REF-1 fold (2026-07-29), delivering OQ-REF-1-23's ratified
+#: write-freeze. REF-1 ships the governed replacement — a ``classification_assignment`` (ENT-068,
+#: FR bitemporal) against a versioned ``classification_scheme`` — and two live sector
+#: representations is exactly the ambiguity a governed dimension exists to remove. The COLUMN and
+#: the read field are deliberately KEPT (dropping them is a breaking response-schema change no gate
+#: in this repo can detect); only the WRITE paths are closed.
+_UPDATABLE = ("issuer_type", "is_active")
+
+#: Frozen at the REF-1 fold: settable at neither create nor update. Named rather than merely absent
+#: so the guard asserts a DECLARED intent instead of the incidental shape of a tuple.
+_FROZEN_ATTRIBUTES = ("sector",)
 
 
 class IssuerNotVisible(Exception):
@@ -58,17 +69,21 @@ def create_issuer(
     legal_entity_id: str,
     actor: ReferenceActor,
     issuer_type: str | None = None,
-    sector: str | None = None,
     is_active: bool = True,
 ) -> Issuer:
     """Create an ``issuer`` profile over an existing core (governed: MANUAL-source lineage +
-    ``REFERENCE.CREATE``). A cross-tenant/unknown ``legal_entity_id`` fails closed."""
+    ``REFERENCE.CREATE``). A cross-tenant/unknown ``legal_entity_id`` fails closed.
+
+    ``sector`` is NOT a parameter — frozen at the REF-1 fold (OQ-REF-1-23); the governed
+    replacement is a ``classification_assignment`` on a versioned scheme. The audit payload still
+    carries the ``sector`` KEY, now always ``None``, because that key set is a pinned contract
+    asserted in ``test_reference_entities`` AND written into the ratified P1B-2 plan — dropping the
+    key would be a ratified-record amendment for no benefit."""
     core = resolve_legal_entity(session, legal_entity_id, acting_tenant=tenant_id)
     issuer = Issuer(
         tenant_id=core.tenant_id,  # server-stamped from the resolved core (== acting tenant)
         legal_entity_id=core.id,
         issuer_type=issuer_type,
-        sector=sector,
         is_active=is_active,
         record_version=1,
     )
@@ -81,7 +96,8 @@ def create_issuer(
         after_value={
             "legal_entity_id": core.id,
             "issuer_type": issuer_type,
-            "sector": sector,
+            # Frozen at the REF-1 fold; the KEY is retained (pinned payload contract).
+            "sector": None,
             "is_active": is_active,
         },
         actor=actor,
