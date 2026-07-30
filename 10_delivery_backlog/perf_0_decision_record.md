@@ -159,15 +159,50 @@ A naive harness would put `perf_counter()` inside the seeder and break that guar
 therefore **wraps** the seed calls and times them from outside; the fenced modules stay
 wall-clock-free. This is a real trap, named here so the implementation cannot walk into it.
 
-### OQ-PERF-0-10 — Reuse the SYNTHETIC tenant, and record the change in what it holds
+### OQ-PERF-0-10 — PERF-0 gets its OWN reserved tenant. **REVERSED at first implementation contact.**
 
-**Recommend: reuse `SYNTHETIC_TENANT_ID`; do NOT mint a second reserved tenant.**
+**Originally recommended: reuse `SYNTHETIC_TENANT_ID`. REVERSED 2026-07-30 — reuse would corrupt a
+shipped guard.**
 
-It already exists, is already env-gated, already refuses to write elsewhere, and "its own tenant"
-(the roadmap's words) is satisfied. **But state the consequence honestly:** the synthetic package's
-contract is that *the BUILDER* computes nothing, and PERF-0 runs governed COMPUTE over that
-tenant's data. That does not violate the builder's contract, but it does change what the SYNTHETIC
-tenant CONTAINS (governed runs, snapshots, result rows). Recorded here rather than discovered later.
+`test_synthetic_pg.py` connects as the constrained `irp_app` role (NOSUPERUSER, **NOBYPASSRLS**)
+with the tenant context set to `SYNTHETIC_TENANT_ID`, then asserts
+`count(Position) == 6`. That count is **RLS-SCOPED to the synthetic tenant** — it is not a global
+count that happens to be small. Seeding 500–10,000 perf positions into that tenant turns 6 into
+506…10,006 and breaks the assertion; "fixing" it by relaxing the number would permanently destroy
+the precision of the synthetic dataset's exact-count guards, which are valuable *because* they are
+exact.
+
+Reading matters here: the roadmap's own words are *"in its own tenant"*, which I had over-read as
+"any non-production tenant". It means what it says.
+
+**RESOLVED: a second reserved tenant, `PERF_TENANT_ID = synthetic_id("tenant:perf-probe")`**, with
+the same discipline as the synthetic one — deterministic `uuid5`, the fixed `SeedClock`, an explicit
+confirmation argument, a non-production env gate, and an EXACT-tenant refusal so the perf seed can
+never write to the synthetic tenant (or any other) and the synthetic seed can never write to the
+perf tenant. The two seeds are mutually exclusive by construction, so neither can pollute the
+other's counts.
+
+**Consequent contract change, recorded rather than discovered later:** the `synthetic` package's
+docstring states it *"can only ever write to the SYNTHETIC tenant"*. Hosting the perf generator
+there makes the package **deterministic seed tooling with TWO reserved tenants, each refusing the
+other's**. The package docstring and `build_synthetic_dataset`'s docstring are amended to say
+exactly that.
+
+### OQ-PERF-0-11 — The AST fences must become a package CENSUS (found in the same pass)
+
+**Recommend: replace the enumerated `_SYN_MODULES` with a census over the package.**
+
+`test_synthetic.py:43` reads `_SYN_MODULES = (ids_mod, builder_mod)` — an ENUMERATED tuple. All
+three AST fences (no wall-clock/`random`, no arithmetic, no raw SQL / BYPASSRLS) iterate it, so **a
+new module added to `irp_shared/synthetic/` silently escapes every one of them.** PERF-0 is about to
+add exactly such a module. Enumerate-vs-census is the CON-1 lesson (`SNAPSHOT_COMPONENT_KINDS`
+membership asserts could not see an added kind); the fix is the same shape: glob the package's
+modules and fence whatever is found, so the NEXT module cannot escape either.
+
+The scale generator is written to PASS the existing fences unchanged — in particular **no
+multiplication**, which the no-compute fence forbids outright. Deterministic quantities and marks
+come from fixed value tables indexed by position, never from `i * step`. The fence stays a real
+constraint rather than being widened to accommodate new code.
 
 ---
 

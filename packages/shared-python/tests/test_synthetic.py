@@ -40,7 +40,36 @@ from irp_shared.synthetic import ids as ids_mod
 from irp_shared.transaction.models import Transaction
 from irp_shared.valuation import Valuation, reconstruct_valuation_as_of
 
-_SYN_MODULES = (ids_mod, builder_mod)
+def _all_synthetic_modules() -> tuple[object, ...]:
+    """EVERY module in ``irp_shared.synthetic`` — a CENSUS, not an enumeration (PERF-0).
+
+    This was ``(ids_mod, builder_mod)``: a hand-listed tuple. The three AST fences below iterate it,
+    so a module ADDED to the package silently escaped all of them — no wall-clock fence, no
+    no-compute fence, no raw-SQL/BYPASSRLS fence. PERF-0 added exactly such a module (``scale.py``),
+    which is what surfaced it. The enumerate-vs-census failure is the CON-1
+    ``SNAPSHOT_COMPONENT_KINDS`` lesson in a new place: a guard that lists its members cannot see a
+    new one. Globbing the package means the NEXT module is fenced on arrival, with no edit here.
+    """
+    import importlib
+    import pkgutil
+
+    import irp_shared.synthetic as pkg
+
+    mods = []
+    for info in pkgutil.iter_modules(pkg.__path__):
+        mods.append(importlib.import_module(f"{pkg.__name__}.{info.name}"))
+    assert mods, "the synthetic package census found NO modules — the glob is broken"
+    return tuple(mods)
+
+
+_SYN_MODULES = _all_synthetic_modules()
+
+
+def test_the_fence_census_covers_every_module_in_the_package() -> None:
+    """The census must actually see the package's modules — including the ones added after it was
+    written. A fence list that silently shrinks to nothing would make every fence below vacuous."""
+    names = {m.__name__.rsplit(".", 1)[-1] for m in _SYN_MODULES}
+    assert {"ids", "builder", "scale"} <= names, f"census missed modules: {names}"
 
 
 @pytest.fixture(autouse=True)
