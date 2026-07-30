@@ -43,8 +43,17 @@
 >   grain with both-dialect partial indexes; the basis discipline; two REF-1 hardenings paid
 >   in-slice; the DEMO-CONCENTRATION book; counts 25/40/133 → 26/41/136; minimal FE read KEPT.
 >   Branch `con-1-descope-planning`; the Part 6b in-place amendments EXECUTED.
-> - **NEXT = CON-1 IMPLEMENTATION** (ENT-069 `concentration_result`, migration `0057`, the
->   `concentration/` package, four pinned shapes, three permission codes, demo stage 19).
+> - **CON-1 IMPLEMENTED (2026-07-30, branch `con-1-descope-planning`, nine checkpoints
+>   `668e04f`→`1754359` + the ledger sweep): ENT-069 + migration `0057` (P4 dry run EXECUTED —
+>   up/no-drift/down-destroys-staged-rows/up-restores), the `concentration/` package (kernel
+>   reproducing the Part 2 literals to 6dp; the binder with the ratified refusal timings), one
+>   purpose + four pinned shapes incl. the platform's FIRST code-first re-resolve branch, the
+>   three-code mint with recomputed holder sets, seven API routes with the exact route→code
+>   census, the minimal FE read, demo stage 19 (counts 25/40/133 → 26/41/136 MEASURED), and the
+>   PG suites (grain/RLS/drift-doors). FIRST LIVE BATTERY 143/144 — the single failure (the
+>   stage-14 ops role census) REPRODUCES IDENTICALLY ON UNTOUCHED MAIN in the local layout
+>   (isolation pair): a pre-existing census layout-sensitivity, recorded, CI adjudicates.**
+> - **NEXT = the adversarial review pass, fold, push, CI-to-green, PR** (the merge preconditions).
 >
 > ---
 >

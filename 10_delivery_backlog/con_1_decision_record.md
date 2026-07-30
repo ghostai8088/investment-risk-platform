@@ -902,3 +902,17 @@ ratified registers stay false on completion).
    non-collision; the 26/41/136 consistency.
 
 *(Four passes total; the v6 deltas are pure record edits verified against measured code state.)*
+
+**Execution addendum (2026-07-30, the seventh ledger — delivery claims cited to executed
+artifacts):** the P4 dry run EXECUTED on `0057` (upgrade clean; `alembic check` no-drift; the
+STAGED-ROWS destructive proof: 3 rows staged → downgrade → table GONE → upgrade → 0 rows, trigger
+restored — never a zero-row smoke). FIRST LIVE BATTERY: 143/144 — every stage-19 assertion green
+on first execution, including the Part 2 literals to six decimals on both books, the counts pin
+26/41/136 MEASURED, and the MULTIASSET 0/0 FAILED-run control. **The single failure
+(`test_demo_stage9zzzzz_ops_pg.py::test_the_demo_tenant_role_census_after_stage_14`, 13 vs 2)
+REPRODUCES IDENTICALLY ON UNTOUCHED MAIN under the same local single-database layout** (isolation
+pair, fresh schemas, main via worktree): the census's expected value encodes its CI execution
+layout (a teardown between steps clears the campaign's 11 auditor role rows before the census
+reads), so it is a PRE-EXISTING environment-layout sensitivity in that OPS-1-era census, NOT a
+CON-1 defect — recorded here for the review pass and for OPS hygiene; CI (the authoritative
+layout) adjudicates on push.*
