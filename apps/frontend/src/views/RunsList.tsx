@@ -63,9 +63,11 @@ export function RunsList({ session }: { session: Session }): ReactElement {
     const isExposure = permissionFamily === "exposure";
     const isPerf = permissionFamily === "perf";
     if (runType && !isExposure) params.set("run_type", runType);
+    const isConcentration = permissionFamily === "concentration";
     let base = "/risk/runs";
     if (isExposure) base = "/exposure/runs";
     else if (isPerf) base = "/perf/runs";
+    else if (isConcentration) base = "/concentration/runs";
     const url = `${base}?${params.toString()}`;
     setItems(null);
     setError(null);

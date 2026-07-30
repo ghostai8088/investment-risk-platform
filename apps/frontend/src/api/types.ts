@@ -88,6 +88,14 @@ export const FAMILIES = {
     label: "Proxy-weight estimates",
     permissionFamily: "risk",
   },
+  // CON-1 (decision point 8: the minimal FE read KEPT in-slice): its own permission family —
+  // concentration.view gates the runs surface; the issuer-identity detail NEVER rides this
+  // surface (it lives behind concentration.issuer.view, API-only in v1).
+  concentration: {
+    runType: "CONCENTRATION",
+    label: "Concentration",
+    permissionFamily: "concentration",
+  },
 } as const;
 
 export type Family = keyof typeof FAMILIES;
@@ -105,6 +113,7 @@ export const RUN_TYPE_TO_FAMILY: Record<string, Family> = {
   SCENARIO: "scenarios",
   DESMOOTHED_RETURN: "desmoothed-returns",
   PROXY_WEIGHT_ESTIMATE: "proxy-weight-estimates",
+  CONCENTRATION: "concentration",
 };
 
 /** The run-detail fetch URL for a family: exposure and the perf families have their own endpoint
@@ -119,6 +128,7 @@ export function runDetailUrl(family: Family, runId: string): string {
   // Scenario runs are a separate collection (/risk/scenario-runs/{id}) so the run path never
   // collides with /risk/scenarios/{scenario_id} (the definition + its shocks).
   if (family === "scenarios") return `/risk/scenario-runs/${id}`;
+  if (family === "concentration") return `/concentration/runs/${id}`;
   return `/risk/${family}/runs/${id}`;
 }
 
@@ -140,6 +150,7 @@ type FamilyRowOut = {
   scenarios: Schemas["ScenarioRowOut"];
   "desmoothed-returns": Schemas["DesmoothedReturnRowOut"];
   "proxy-weight-estimates": Schemas["ProxyWeightRowOut"];
+  concentration: Schemas["ConcentrationRowOut"];
 };
 
 /** A display column whose `key` MUST be a field on family F's generated row DTO. This is the FE-2
@@ -293,5 +304,18 @@ export const FAMILY_ROW_COLUMNS: { [F in Family]: FamilyColumn<F>[] } = {
     { key: "n_observations", label: "N" },
     { key: "residual_stdev", label: "Residual stdev" },
     { key: "series_currency", label: "Series ccy" },
+  ],
+  // CON-1: the .view payload only — issuer_id is on the DTO but NEVER a column here (the
+  // issuer-identity read is a separate permission code, API-only in v1).
+  concentration: [
+    { key: "dimension_kind", label: "Dimension" },
+    { key: "row_kind", label: "Kind" },
+    { key: "metric_type", label: "Metric" },
+    { key: "bucket_code", label: "Bucket" },
+    { key: "share_invested_long", label: "Share (invested long)" },
+    { key: "metric_value", label: "Value" },
+    { key: "coverage_ratio", label: "Coverage" },
+    { key: "coverage_classifiable", label: "Classifiable cov." },
+    { key: "denominator_basis", label: "Denominator basis" },
   ],
 };

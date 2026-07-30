@@ -338,3 +338,160 @@ def _dimension_rows(
             )
         )
     return rows
+
+
+def list_concentration_results(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    dimension_kind: str | None = None,
+    metric_type: str | None = None,
+    as_of: Any | None = None,
+    include_issuer_detail: bool = False,
+) -> list[ConcentrationResult]:
+    """Entity/time-centric read across COMPLETED concentration runs (the AD-019 seam).
+
+    **The issuer-identity split is STRUCTURAL here, not a router courtesy (OQ-CON-1-25):** with
+    ``include_issuer_detail=False`` (the ``concentration.view`` shape) ISSUER-dimension DETAIL
+    rows — the rows carrying ``issuer_id`` — are excluded at the query, so a mis-scoped caller
+    cannot receive issuer identity by accident. The ``concentration.issuer.view`` endpoints call
+    :func:`list_concentration_issuer_detail` instead. Silent-empty on a foreign id.
+    """
+    from irp_shared.calc.reads import list_governed_results
+
+    filters = [
+        (ConcentrationResult.portfolio_id, portfolio_id),
+        (ConcentrationResult.dimension_kind, dimension_kind),
+        (ConcentrationResult.metric_type, metric_type),
+    ]
+    rows = list_governed_results(
+        session,
+        ConcentrationResult,
+        acting_tenant=acting_tenant,
+        filters=filters,
+        run_type=RUN_TYPE_CONCENTRATION,
+        as_of=as_of,
+        order_by=(
+            ConcentrationResult.dimension_kind,
+            ConcentrationResult.row_kind,
+            ConcentrationResult.metric_type,
+            ConcentrationResult.bucket_code,
+        ),
+    )
+    if include_issuer_detail:
+        return rows
+    return [
+        r
+        for r in rows
+        if not (r.dimension_kind == DIMENSION_KIND_ISSUER and r.row_kind == ROW_KIND_DETAIL)
+    ]
+
+
+def list_concentration_issuer_detail(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    as_of: Any | None = None,
+) -> list[ConcentrationResult]:
+    """The ISSUER-dimension DETAIL rows — the issuer-identity-bearing read, gated by
+    ``concentration.issuer.view`` at the router (auditor_3l excluded by the ratified holder set)."""
+    from irp_shared.calc.reads import list_governed_results
+
+    return [
+        r
+        for r in list_governed_results(
+            session,
+            ConcentrationResult,
+            acting_tenant=acting_tenant,
+            filters=((ConcentrationResult.portfolio_id, portfolio_id),),
+            run_type=RUN_TYPE_CONCENTRATION,
+            as_of=as_of,
+            order_by=(ConcentrationResult.dimension_kind, ConcentrationResult.bucket_code),
+        )
+        if r.dimension_kind == DIMENSION_KIND_ISSUER and r.row_kind == ROW_KIND_DETAIL
+    ]
+
+
+def latest_concentration(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    include_issuer_detail: bool = False,
+) -> list[ConcentrationResult]:
+    """The latest COMPLETED run's rows (the latest-resolver; empty when none)."""
+    from irp_shared.calc.reads import latest_run_rows
+
+    return latest_run_rows(
+        list_concentration_results(
+            session,
+            acting_tenant=acting_tenant,
+            portfolio_id=portfolio_id,
+            include_issuer_detail=include_issuer_detail,
+        )
+    )
+
+
+def list_concentration_runs(
+    session: Session,
+    *,
+    acting_tenant: str,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[CalculationRun]:
+    """The tenant's CONCENTRATION runs, newest first (the FE-1 runs-listing shape)."""
+    from sqlalchemy import select
+
+    stmt = (
+        select(CalculationRun)
+        .where(
+            CalculationRun.tenant_id == str(acting_tenant),
+            CalculationRun.run_type == RUN_TYPE_CONCENTRATION,
+        )
+        .order_by(CalculationRun.created_at.desc(), CalculationRun.run_id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if status is not None:
+        stmt = stmt.where(CalculationRun.status == status)
+    return list(session.execute(stmt).scalars().all())
+
+
+def concentration_rows_for_run(
+    session: Session,
+    *,
+    acting_tenant: str,
+    run_id: str,
+    include_issuer_detail: bool = False,
+) -> list[ConcentrationResult]:
+    """One run's result rows (any status — a FAILED run legitimately has none). The issuer split
+    applies here exactly as on the list reads."""
+    from sqlalchemy import select
+
+    rows = list(
+        session.execute(
+            select(ConcentrationResult)
+            .where(
+                ConcentrationResult.tenant_id == str(acting_tenant),
+                ConcentrationResult.calculation_run_id == str(run_id),
+            )
+            .order_by(
+                ConcentrationResult.dimension_kind,
+                ConcentrationResult.row_kind,
+                ConcentrationResult.metric_type,
+                ConcentrationResult.bucket_code,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if include_issuer_detail:
+        return rows
+    return [
+        r
+        for r in rows
+        if not (r.dimension_kind == DIMENSION_KIND_ISSUER and r.row_kind == ROW_KIND_DETAIL)
+    ]
