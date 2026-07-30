@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **DRAFT v2 — pre-ratification, NOT yet re-verified.** v1 broke 46 findings deep (5 BLOCKING) including its methodology foundation; all folded here, and the folded record warrants its own verifier pass before implementation |
+| Status | **DRAFT v4-DESCOPE (2026-07-30) — the stopping rule applied, user-ratified: the 2026-07-29 dual-share ratification was REFUTED by the second verifier pass (47 findings, 8 BLOCKING — `share_total_assets` overstates shares; false breaches into a non-withdrawable lifecycle), so the slice DESCOPES to the `share_invested_long` core with a `denominator_basis` vocabulary (OQ-CON-1-1). The remaining v3 BLOCKING findings (the `_METRIC_MAP` structural vocabulary, `String(30)` widths, the `concentration.view` SoD split) fold in the descoped-form planning pass, which re-verifies BEFORE implementation** — v1 broke 46 findings deep (5 BLOCKING) including its methodology foundation |
 | Slice | Wave-14 slice 1 (roadmap Part 2.18) |
 | Realizes | REQ-CRD-003's **concentration half** (CAP-6.4); the spread half split to REQ-CRD-005 at REF-1 |
 | Entity | ENT-069 `concentration_result` (IA append-only, run + snapshot + model bound) |
@@ -90,11 +90,31 @@
   UNDERSTATES every regulatory ratio** — the FAIL-OPEN direction, on exactly the long/short books
   reason (iii) invokes. So **CON-1's primary share is NOT the UCITS Art. 52, IRC §851(b)(3),
   Solvency II or BCBS ratio**, and the registered model assumptions must say so in those words.
-  **Mitigation in-slice:** `long_amount` is already a stored column and equals total assets on a
-  long-only book, so a total-assets-based share is additionally derivable; store or declare it, and
-  record the trigger "the first consumer needing a limit-comparable share" for the NAV entity that
-  would make the real ratio computable.
-  **Refusal:** a zero gross total is refused as a `gaps` entry, never divided by.
+  **RE-RATIFIED 2026-07-30 — the DESCOPE (the stopping rule applied; supersedes the 2026-07-29
+  dual-share ratification, which the second verifier pass REFUTED).** The refutation: `sum(long_amount)`
+  does NOT equal total assets even on a long-only book — total assets additionally include **cash, cash
+  items and receivables** (IRC §851(b)(3)(A)(i) enumerates them; the UCITS "total value of assets" basis
+  is the same class), none of which the platform holds as entities — so `share_total_assets` OVERSTATES
+  every share and LIM-2 would have written **false breaches into an append-only, non-withdrawable
+  lifecycle**. The 2026-07-29 fold RELOCATED the fail-open defect rather than removing it; recorded here
+  AT the gate (the SCH-2 reversal rule). Two consecutive refuted foundations triggered the 2026-07-30
+  stopping rule (user-ratified): descope to the defensible core rather than a third fold. The core:
+  - CON-1 ships ONE share: **`share_invested_long`** — numerator per the no-netting long decomposition,
+    denominator = the invested-long total `sum(long_amount)`, **named for what it IS** (share of the
+    invested long book), always computable from stored rows, auditable from the evidence columns.
+  - Every share row carries **`denominator_basis`**, a controlled-vocabulary column with the single v1
+    value `INVESTED_LONG` — so a future NAV or total-assets denominator is an ADDITIVE vocabulary value
+    on new rows, never a reinterpretation of shipped ones.
+  - The registered model assumptions state, in these words: **this share is NOT the UCITS Art. 52,
+    IRC §851(b)(3), Solvency II or BCBS ratio; no denominator those regimes require is computable on
+    this schema.** The limitation stays first-class, exactly as the paragraph above records it.
+  - **The LIM-2 named acceptance constraint (replaces the refuted flag-binding):** a limit may bind ONLY
+    to a `denominator_basis` whose semantics its threshold was written against; regulatory-shaped
+    thresholds are therefore **REFUSED fail-closed** until a basis matching a regulatory denominator
+    exists. **Trigger for the real ratio:** a cash/liability/NAV entity — the first consumer needing a
+    NAV-denominated share (unchanged).
+  **Refusal:** a zero invested-long total is refused as a `gaps` entry, never divided by (gross/long/
+  short/net evidence columns are unchanged by the descope).
 - **OQ-CON-1-2 — the measure set. Recommend share + CR-N + HHI**, with effective-number-of-holdings
   rendered at the read surface rather than stored (it is `1/HHI`, a pure derivation).
   Share-of-total is mandatory — it is the numerator of every cited limit (UCITS Art. 52's 5/10/40,
@@ -306,7 +326,8 @@ non-trivial — a book with one holding per sector could not demonstrate concent
 NOT NULL: `calculation_run_id`, `input_snapshot_id`, `model_version_id`, `portfolio_id`,
 `dimension_kind`, `metric_type`, `scheme_id`-or-sentinel, `node_code`-or-sentinel. Nullable and
 CHECK-gated: `issuer_id` (OQ-CON-1-23). Values: `gross_amount`, `long_amount`, `short_amount`,
-`net_amount`, `metric_value`, `coverage_ratio`.
+`net_amount`, `metric_value`, `coverage_ratio`, `share_invested_long`, `denominator_basis`
+(controlled vocabulary; sole v1 value `INVESTED_LONG` — the 2026-07-30 descope).
 
 **Grain constraints — specified, because v1 left them to "a run-grain unique constraint" and that
 was VACUOUS where it mattered most.** Every key column is NOT NULL with a declared sentinel (the
