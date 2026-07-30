@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **CLOSED 2026-07-29** — merged via **PR #148** = `727f3c9`, merged-main CI run **30482058389** green all six. OQ-REF-1-1…30 ratified as recommended; migration `0056`; ENT-066/067/068; counts UNCHANGED 25/40/133; fresh-schema full-PG 2719/0. P1 verify-on-main sweep executed and clean. |
+| Status | **CLOSED 2026-07-29** — merged via **PR #148** = `727f3c9`, merged-main CI run **30482058389** green all six. OQ-REF-1-1…30 ratified as recommended; migration `0056`; ENT-066/067/068; counts UNCHANGED 25/40/133; fresh-schema full-PG 2719/0. P1 verify-on-main sweep executed and clean **on artifact delivery; SCOPED 2026-07-30: five ratified-but-undelivered ratifications were subsequently found by CON-1's passes (the OQ-REF-1-23 freeze — since delivered via PR #150; the OQ-REF-1-1 guard, OQ-REF-1-29 census/teardown, OQ-REF-1-15 seeder, the OQ-REF-1-19 `run_presence_gate` claim) — dispositioned in `con_1_decision_record.md` Part 6 items 8/10–12** |
 | Slice | Wave-14 slice 0 (`wave_14_planning.md`, roadmap Part 2.18) |
 | Entities | ENT-066 `classification_scheme`, ENT-067 `classification_node`, ENT-068 `classification_assignment` |
 | Migration | `0056` |
@@ -458,6 +458,12 @@ and the next-free pointer at ENT-069; the audit-taxonomy REF-1 extension; CTRL-0
 evidence; `current_state` CURRENT TRUTH 2026-07-29c; REQ-SMR-006 + REQ-CRD-005 in the backbone AND
 the RTM; **AD-013-R2** in the ADR log; the **CLAUDE.md 7-table invariant**; the roadmap's
 IMPLEMENTED stamp; and all three new CI PG steps.
+
+> **Scope amendment (2026-07-30):** this sweep verified LEDGER claims and artifact delivery — it
+> did not (and could not) verify every RATIFIED OQ against the code. CON-1's subsequent passes
+> found five OQ-REF-1 ratifications undelivered (the Status cell names them); dispositions live in
+> `con_1_decision_record.md` Part 6. The lesson feeds P1's seventh ledger: delivery claims cite
+> their artifact, ratification-by-ratification.
 
 **Merged-main CI run `30482058389` green on all six jobs** — the merge itself verified, not just
 the branch.

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **DRAFT v4 (2026-07-30) — the DESCOPED form, all 47 second-pass findings folded; awaiting the descoped-form verifier pass (incl. the NEW rule-6a citation lane) before the ratification gate.** History: v1 broke 46 findings deep (5 BLOCKING) including its methodology foundation; the 2026-07-29 dual-share repair was itself REFUTED by the second pass (47 findings, 8 BLOCKING), triggering the user-ratified stopping rule: descope to the `share_invested_long` core with a `denominator_basis` vocabulary (OQ-CON-1-1) rather than fold a third time |
+| Status | **DRAFT v5 (2026-07-30) — READY FOR THE RATIFICATION GATE.** The descoped form survived its verifier pass (4 lanes incl. the first citation-lane execution: registers lane CLEAN 12/12, citation core CLEAN; 1 BLOCKING resolved structurally by the OQ-CON-1-15 reversal, all 26 findings folded here at v5 — Part 7 has the three-pass ledger). History: v1 broke 46 findings deep (5 BLOCKING, the methodology foundation refuted); the 2026-07-29 dual-share repair was itself REFUTED (47 findings, 8 BLOCKING), triggering the user-ratified stopping rule → the `share_invested_long` descope with the `denominator_basis` vocabulary (OQ-CON-1-1) |
 | Slice | Wave-14 slice 1 (roadmap Part 2.18) |
 | Realizes | REQ-CRD-003's **concentration half** (CAP-6.4); the spread half split to REQ-CRD-005 at REF-1 |
 | Entity | ENT-069 `concentration_result` (IA append-only, run + snapshot + model bound) |
@@ -110,28 +110,61 @@
     numerator), denominator = the run's invested-long total, **named for what it IS** (share of the
     invested long book), always computable from stored rows, auditable from the evidence columns.
     Shares sum to 1 across the classified buckets plus the residual buckets (OQ-CON-1-4).
+  - **The LONG predicate, pinned (the v4 pass: "the word the whole descope hangs on is never given
+    a predicate", and no long/short decomposition exists anywhere in shared-python):**
+    `exposure_aggregate` stores ONE SIGNED `exposure_amount` per atom — so CON-1's kernel COMPUTES
+    the decomposition itself: **long = atoms with `exposure_amount > 0`; short = atoms with
+    `exposure_amount < 0`; zero atoms contribute nothing.** `Σ long ≥ 0` by construction, making
+    the zero-denominator refusal complete. The gross/long/short/net evidence columns on ENT-069 are
+    kernel-computed from the signed atoms, not read from upstream. Recorded consequence: a
+    negative captured mark (storable — no sign guard exists on capture) makes an economically-long
+    position read as short by value sign; the assumptions state the decomposition is BY VALUE SIGN,
+    not by position direction.
+  - **The denominator's SCOPE, ratified (the second-pass subtree finding, previously unfolded):**
+    an exposure run's rows span the portfolio SUBTREE of its `scope_portfolio_id` (each row carries
+    the CHILD's portfolio id). **The run's subtree IS the book**: ENT-069's `portfolio_id` = the
+    run's `scope_portfolio_id`, the denominator = Σ long over ALL rows of the run, and the model
+    assumptions state "concentration is measured over the exposure run's aggregation scope — the
+    subtree rooted at `scope_portfolio_id`". A fund-level (single-book) number is obtained by
+    running exposure at that portfolio; no per-child decomposition ships in v1 (trigger: the first
+    consumer needing child-level concentration inside one run).
   - Every share row carries **`denominator_basis`**, a controlled-vocabulary column with the single v1
     value `INVESTED_LONG` — so a future NAV or total-assets denominator is an ADDITIVE vocabulary value
     on new rows, never a reinterpretation of shipped ones.
   - The registered model assumptions state, in these words: **this share is NOT the UCITS Art. 52,
     IRC §851(b)(3), Solvency II or BCBS ratio; no denominator those regimes require is computable on
     this schema.** The limitation stays first-class, exactly as the paragraph above records it.
-  - **The LIM-2 named acceptance constraint (replaces the refuted flag-binding):** a limit may bind ONLY
-    to a `denominator_basis` whose semantics its threshold was written against; regulatory-shaped
-    thresholds are therefore **REFUSED fail-closed AT LIMIT DEFINITION** until a basis matching a
-    regulatory denominator exists. Definition-time refusal is load-bearing: it means NO evaluation-time
-    suppression path exists, so the second pass's NEVER_EVALUABLE hazard (a regulatory limit silently
-    ceasing to evaluate when a book takes a short, indistinguishable from never-ran) is structurally
-    unreachable — `_resolve_latest` never sees a NULL share. **Trigger for the real ratio:** a
-    cash/liability/NAV entity — the first consumer needing a NAV-denominated share (unchanged).
+  - **The LIM-2 named acceptance constraint (replaces the refuted flag-binding; NARROWED and made
+    implementable by the v4 pass, which found the definition-time refusal had no predicate and no
+    in-slice enforcement point):** LIM-2 adds a **basis declaration column on `limit_definition`**
+    (mandatory LIM-2 scope, named here as the acceptance constraint) and a limit may bind ONLY to a
+    `denominator_basis` its declared basis matches — regulatory-shaped thresholds are REFUSED
+    fail-closed at limit definition BY THAT MACHINERY, which does not exist until LIM-2. **The
+    in-slice closure is therefore structural, not textual: `_METRIC_MAP` registration is DEFERRED
+    to LIM-2 (the OQ-CON-1-15 reversal)** — with no registered metric, the shipped
+    `_validate_config` membership check refuses ANY limit on the concentration family today, so no
+    window exists in which a threshold binds this share without a basis discipline. What the
+    definition-time design closes is the REGULATORY-limit hazard; two consequences are recorded
+    rather than claimed away: (a) when a previously-long book goes zero-long, new runs refuse and
+    `_resolve_latest` keeps resolving the LAST COMPLETED run — an internal-appetite limit evaluates
+    a stale pre-refusal book with no staleness signal; LIM-2 routes a refusal-after-success into
+    `limit_health` as a distinct staleness state (named LIM-2 scope), and until then this is a
+    recorded limitation; (b) the NEVER_EVALUABLE hazard is closed for the regulatory path only —
+    that is the narrowed claim. **Trigger for the real ratio:** a cash/liability/NAV entity — the
+    first consumer needing a NAV-denominated share (unchanged).
   - **The long-only identity, stated so the tests can use it honestly:** on an all-long book
     `gross == long` for every bucket, so `share_invested_long` coincides with the withdrawn gross
     share there — which means the DEMO (long-only) cannot distinguish the two denominators. The
     distinguishing case is therefore pinned in the unit + PG tiers on a short-bearing book: the
     denominator must EXCLUDE the short leg (`Σ long`, not `Σ long + |short|`) and the numerator must
     exclude the bucket's own shorts. A suite without that book would leave the descope untested.
-  **Refusal:** a zero invested-long total is refused as a `gaps` entry, never divided by (gross/long/
-  short/net evidence columns are unchanged by the descope).
+  **Refusal timings, stated once and used consistently (the v4 pass found OQ-1 and Part 3
+  contradicting each other):** refusals computable from CURRENT HEADS — mixed scheme version
+  (OQ-CON-1-10), co-existing same-family schemes (OQ-CON-1-24), mixed basis (OQ-CON-1-26) — are
+  **PRE-BUILD**: no run row is created. Refusals needing the PINNED ATOMS — the zero
+  invested-long total, the classifiable-coverage floor, the all-UNCLASSIFIABLE (0/0) book — are
+  **POST-BUILD `gaps` entries**: the run commits as FAILED (Part 0 fact 2's orphan discipline),
+  never divided by. Gross/long/short/net evidence columns are unchanged by the descope.
 - **OQ-CON-1-2 — the measure set. Recommend share + CR-N + HHI**, with effective-number-of-holdings
   rendered at the read surface rather than stored (it is `1/HHI`, a pure derivation).
   Share-of-total is mandatory — it is the numerator shape every cited regime thresholds (UCITS
@@ -179,13 +212,21 @@
   **FOLDED (second pass): "unclassifiable by design" is split from "unclassified by omission", so
   the refusal cannot fail-closed on a correct book.** `instrument.issuer_id` is nullable BY DESIGN
   (cash/FX/index carry no issuer), so a 30%-cash book has coverage 0.70 through no data-quality
-  fault — a floor over raw coverage would refuse a correct book. TWO residual buckets, both
-  computable from stored columns: **`UNCLASSIFIABLE`** (`issuer_id IS NULL` — no issuer edge exists
-  by design) and **`UNCLASSIFIED`** (an issuer edge exists but no assignment covers the dimension).
-  Both stay IN the share denominator and OUT of the rankings and HHI. The declared coverage floor
-  gates **classifiable coverage** = `classified ÷ (classified + UNCLASSIFIED)` — the omission rate
-  among instruments that COULD be classified — while raw `coverage_ratio` (classified ÷ total) is
-  stored alongside so the read surface shows both facts.
+  fault — a floor over raw coverage would refuse a correct book. TWO residual buckets:
+  **`UNCLASSIFIABLE`** and **`UNCLASSIFIED`**, both IN the share denominator and OUT of the
+  rankings and HHI. **The predicates are PER-DIMENSION (the v4 pass found the global issuer-NULL
+  proxy double-assigns a reachable row — `capture_assignment` never requires an issuer, so an
+  issuerless instrument WITH a sector assignment exists):** for the ISSUER dimension,
+  `issuer_id IS NULL` ⇒ UNCLASSIFIABLE; for the classification dimensions, **an existing
+  assignment ALWAYS classifies regardless of issuer** — UNCLASSIFIABLE there means "no assignment
+  AND no issuer edge to inherit one through", and an issuerless-but-assigned instrument buckets by
+  its assignment. The declared coverage floor gates **classifiable coverage** =
+  `classified ÷ (classified + UNCLASSIFIED)` — the omission rate among instruments that COULD be
+  classified — while raw `coverage_ratio` (classified ÷ total) is stored alongside so the read
+  surface shows both facts. **The 0/0 edge (v4 pass): an all-UNCLASSIFIABLE book (classified =
+  UNCLASSIFIED = 0, Σ long > 0) REFUSES as a `gaps` entry** — a book with nothing classifiable has
+  no concentration to govern, and summary metrics over an empty classified set (MAX of nothing,
+  HHI of no terms) have no defined value; negative-controlled on an all-cash fixture.
 - **OQ-CON-1-5 — dimension uniformity. Recommend the IDENTICAL measure set for every dimension**,
   with the dimension differing only in its bucketing rule and its scheme pin. The measures are
   dimension-agnostic in every source surveyed, and per-dimension sets would make a new dimension
@@ -269,20 +310,25 @@
   proprietary row reference a hybrid node its own `USING` cannot see. A bare code is ambiguous
   across schemes. This is also LIM-2's frozen selector, so it is fixed here with limits-readiness
   as a named acceptance constraint.
-- **OQ-CON-1-15 — register the metrics in `_METRIC_MAP` in-slice. Recommend YES.** REQ-CRD-003's
-  acceptance verb is literally "Limits-ready metrics **produced**", so leaving registration to LIM-2
-  would mean the REQ cannot honestly advance at CON-1's close. With the descope each summary
-  `metric_type` maps to the single `MetricSpec.result_attr = metric_value` — the one-attr shape
-  `_METRIC_MAP` can represent; no basis selection rides the map (`denominator_basis` is an ECHO on
-  the row, not a selector, until a second basis exists). **The resolver fold (second pass):** the
-  family dispatch's current `if …VAR… else: # ACTIVE_RISK` becomes `elif` per family plus a
-  **fail-closed `else` raise** — a third family must never silently route into another family's
-  latest-read and surface as NEVER_EVALUABLE. **And `_METRIC_MAP` gains its FIRST exact
-  set-equality census in this slice** (P6): v3 claimed the census existed to be updated; grep shows
-  NO census over `_METRIC_MAP` exists anywhere, and `SNAPSHOT_COMPONENT_KINDS` carries only
-  membership asserts — CON-1 upgrades that to set-equality too, and the reflective
-  `SNAPSHOT_PURPOSES`/`_BINDING_PREDICATES` censuses are self-deriving and need no edit (stated
-  accurately this time).
+- **OQ-CON-1-15 — `_METRIC_MAP` registration: REVERSED at v5 — DEFERRED TO LIM-2 (a Tier-3
+  reversal of this record's own v4 position, forced by the descoped-form pass's BLOCKING).** The
+  v4 position (register in-slice, so REQ-CRD-003's "limits-ready metrics produced" advances)
+  opened a one-slice window: the shipped `create_limit`/`_validate_config` checks only
+  `_METRIC_MAP` membership and unit — no basis machinery exists until LIM-2 — so an in-slice
+  registration would let a UCITS-shaped threshold bind to `share_invested_long` with zero refusal:
+  **the v2 false-breach harm, relocated a third time.** The structural fix: CON-1 produces the
+  metrics in exactly the shape LIM-2's selector needs (the ten-name census, the summary grain,
+  `result_attr = metric_value`, `SHARE` explicitly EXCLUDED from any future registration) but
+  registers NOTHING — the shipped membership check therefore refuses every concentration limit
+  today, fail-closed by existing code. LIM-2 registers the metrics IN THE SAME SLICE as the
+  `limit_definition` basis column and the basis-match refusal. **The honest REQ consequence,
+  recorded:** REQ-CRD-003's concentration half advances at CON-1's close to "metrics produced,
+  limits-ready in shape; BINDABLE at LIM-2" — the RTM row says exactly that, not "Done".
+  **The resolver fold stands from v4:** when LIM-2 adds the family, the dispatch's `if/else`
+  becomes `elif` per family plus a fail-closed `else` raise. **Census obligations stand:**
+  `_METRIC_MAP` gains its FIRST exact set-equality census (at LIM-2's registration);
+  `SNAPSHOT_COMPONENT_KINDS` upgrades to set-equality HERE; the reflective
+  `SNAPSHOT_PURPOSES`/`_BINDING_PREDICATES` censuses are self-deriving and need no edit.
 - **OQ-CON-1-16 — the wildcard appetite rule binds to the run-level MAX metric, not to N
   per-bucket limits. Recommend the MAX form** — close to forced, because `uq_breach_limit_run`
   permits one breach per (limit, run), so a per-bucket wildcard could not record the three issuers
@@ -317,24 +363,37 @@
     v3 constraints were missing (OQ-CON-1-13).
   - **`bucket_code`**, TEXT NOT NULL — the single keyed bucket identity: the node code for
     classification kinds; the issuer id's canonical string for `ISSUER`; the declared sentinels
-    `UNCLASSIFIED` / `UNCLASSIFIABLE` for the residuals; `SUMMARY` for summary rows. Every key
-    column NOT NULL — the NULL-vacuity class is structurally gone.
+    **`__UNCLASSIFIED__` / `__UNCLASSIFIABLE__`** for the residuals and **`__SUMMARY__`** for
+    summary rows — dunder-delimited BECAUSE the column shares its namespace with taxonomy node
+    codes (the v4 pass: a vendor scheme could legally carry a node literally coded `UNCLASSIFIED`),
+    with a capture-side guard in `create_node` refusing any node code matching `__*__` (small,
+    negative-controlled — the collision is closed at both ends). Every key column NOT NULL — the
+    NULL-vacuity class is structurally gone.
   - **`issuer_id`** stays a nullable GUID FK convenience column OUTSIDE every unique key
     (intra-tenant; FK legal here — `issuer` is same-tenant proprietary, so no RLS-bypass concern),
     with row-kind-qualified CHECKs: `row_kind='DETAIL' AND dimension_kind='ISSUER' AND bucket_code
     NOT IN (sentinels)` ⇒ `issuer_id IS NOT NULL`; `row_kind='SUMMARY'` ⇒ `issuer_id IS NULL`.
     `bucket_code == str(issuer_id)` is a service invariant with a PG-tier test (a cross-column cast
     CHECK is not portable to the SQLite tier).
-  - **`scheme_id`** becomes a nullable ECHOED column outside the keys (NOT NULL for classification
-    detail rows via CHECK, NULL for ISSUER/summary rows) — within one run OQ-CON-1-24 admits ONE
-    live scheme per dimension, so `(dimension_kind, bucket_code)` is unique without scheme
-    qualification and no GUID sentinel is needed (v3's "scheme_id-or-sentinel" in a uuid column had
-    no declared literal, no FK story, and PG/SQLite divergence).
+  - **`scheme_id`** becomes a nullable ECHOED column outside the keys — NOT NULL via CHECK for
+    classification DETAIL rows **AND for classification-dimension SUMMARY rows** (the v4 pass found
+    v4's summary-⇒-no-scheme CHECK contradicted OQ-CON-1-24(ii): the limit-selectable
+    classification numbers ARE summary rows, and "the number records which taxonomy produced it"
+    must hold for them; the CHECK is a total enumeration over the ten metric names — issuer trio ⇒
+    scheme_id NULL, classification six ⇒ NOT NULL, `SHARE` per its dimension). NULL for
+    ISSUER-dimension rows; within one run OQ-CON-1-24 admits ONE live scheme per dimension, so
+    `(dimension_kind, bucket_code)` is unique without scheme qualification and no GUID sentinel is
+    needed (v3's "scheme_id-or-sentinel" in a uuid column had no declared literal, no FK story,
+    and PG/SQLite divergence).
   - The two grain constraints become **PARTIAL unique indexes with their predicates STATED**:
     summary `UNIQUE(calculation_run_id, metric_type) WHERE row_kind = 'SUMMARY'`; detail
-    `UNIQUE(calculation_run_id, dimension_kind, bucket_code) WHERE row_kind = 'DETAIL'`. Partial
-    indexes are PG-only semantics — the PG tier carries the duplicate-refusal negative controls for
-    BOTH row kinds including a duplicate `UNCLASSIFIED` row (SQLite is structurally blind here).
+    `UNIQUE(calculation_run_id, dimension_kind, bucket_code) WHERE row_kind = 'DETAIL'` —
+    **declared with BOTH `postgresql_where` AND `sqlite_where`** (the v4 pass REFUTED v4's
+    "SQLite is structurally blind" claim: the repo's own dominant convention declares partial
+    indexes for both dialects — REF-1's current-head index, `position`, `limit` and ~8 marketdata
+    indexes all do — and the unit tier builds schema via `create_all`, so both tiers enforce).
+    The duplicate-refusal negative controls for BOTH row kinds including a duplicate
+    `__UNCLASSIFIED__` row run in BOTH tiers, with PG the authoritative gate.
   **`ISSUER` remains a CON-1-owned `dimension_kind` value, NOT added to
   `classification.DIMENSION_KINDS`** — no assignment row can carry it — and that split is pinned by
   a test. The per-kind CHECK census + the row_kind census + the metric_type census each ship WITH
@@ -370,10 +429,21 @@
   - **`concentration.issuer.view`** — the ISSUER-dimension detail reads and any payload carrying
     `issuer_id`/issuer name: **`auditor_3l` EXCLUDED**, consistent with the three prior
     issuer-identity refusals.
-  Every code's holder set is NAMED in the implementation plan and pinned `_holders(code) == {...}`
-  in both directions, and a route-level test asserts the issuer-bearing endpoints demand the
-  `.issuer.view` code (the pin alone cannot catch a mis-scoped route — REF-1's own finding).
-  *(Tier-3: the split and the auditor's exclusion from issuer-identity reads are the gate's call.)*
+  **The holder sets, ENUMERATED HERE so the gate ratifies them and the pins are written FROM this
+  record (the v4 pass: deferring enumeration to a not-yet-written plan is the same silence one
+  document over). Measured from `ROLE_TEMPLATES` (seven roles; `platform_admin` holds ALL_CODES by
+  construction):**
+  - `concentration.run` = **{platform_admin, ops, risk_analyst_1l}** — the measured
+    `risk.run`/`pacing.run` precedent exactly.
+  - `concentration.view` = **{platform_admin, ops, risk_analyst_1l, risk_manager_2l, auditor_3l}**
+    — the measured `risk.view`/`pacing.view` governed-output precedent exactly.
+  - `concentration.issuer.view` = **{platform_admin, ops, risk_analyst_1l, risk_manager_2l}** —
+    the measured `reference.issuer.view` precedent exactly (auditor_3l excluded).
+  Each pinned `_holders(code) == {...}` in both directions, and a route-level test asserts the
+  issuer-bearing endpoints demand the `.issuer.view` code (the pin alone cannot catch a mis-scoped
+  route — REF-1's own finding).
+  *(Tier-3: the split, the sets above, and the auditor's exclusion from issuer-identity reads are
+  the gate's call.)*
 
 - **OQ-CON-1-26 — the `basis` discipline (NEW; the second pass found `basis` — the mechanism REF-1
   built expressly to protect concentration numbers — absent from CON-1 entirely).**
@@ -432,10 +502,11 @@
   same 'pins nothing' defect the OQ accuses v1 of, one level down").** One new model code
   (`concentration.dimensional` — fixed at the gate), one INITIAL validation record, and THREE new
   COMPLETED runs: DEMO-GLOBAL's concentration run, DEMO-CONCENTRATION's exposure run, and
-  DEMO-CONCENTRATION's concentration run. DEMO-MULTIASSET's refusal is PRE-BUILD (OQ-CON-1-10/24
-  semantics): the stage exercises it and asserts NO run row is created — a refusal that leaves a
-  FAILED run would count, and the stage pins that it does not. **The declared triple: 25/40/133 →
-  26/41/136.** Per P4's binding clause this is a dated planning-time reading, RE-MEASURED against
+  DEMO-CONCENTRATION's concentration run. DEMO-MULTIASSET's refusal is the COVERAGE floor —
+  amount-weighted, so **POST-BUILD** per OQ-CON-1-1's timing rule (v4 said pre-build/no-run, which
+  contradicted that rule): the stage asserts the run row EXISTS, is **FAILED** with the named
+  coverage gap, and that the COMPLETED count is unmoved by it. **The declared triple: 25/40/133 →
+  26/41/136** (COMPLETED runs only; the FAILED refusal run is additionally pinned by status). Per P4's binding clause this is a dated planning-time reading, RE-MEASURED against
   the merged artifact at closeout, never carried forward as a pin. The final-position pin relays to
   CON-1's suite (ten `z`, verified by `ls`, not read off this record). **Census obligations,
   restated accurately (v3 claimed censuses that do not exist):** `_METRIC_MAP` has NO census today —
@@ -487,6 +558,25 @@ run COMPLETES with visible residuals. `HHI_ISSUER` (classified only) = 0.6² = *
 triple (C / US at 0.600000, both residuals identical) since the single classified instrument
 carries one node per dimension.
 
+**The SHORT-BEARING distinguishing fixture (unit + PG tiers, not the demo), reference values —
+the v4 pass found the ONLY test that distinguishes the descoped denominator had no independently
+derived literals anywhere.** Four signed atoms across two issuers:
+
+| Atom | Issuer | Signed exposure |
+|---|---|---|
+| SB-A | X-CORP | +80,000.000000 |
+| SB-B long | X-CORP | +20,000.000000 |
+| SB-B short | X-CORP | −25,000.000000 |
+| SB-D | Y-CORP | −15,000.000000 |
+
+By the pinned LONG predicate (`exposure_amount > 0`): **Σ long = 100,000.000000**. Issuer shares:
+X-CORP = 100,000 ÷ 100,000 = **1.000000** (its −25,000 short is `short_amount` evidence, not
+numerator); Y-CORP has no long atom, so `share_invested_long` = **0.000000** with `short_amount`
+−15,000.000000 as evidence. The withdrawn gross share would have read X-CORP as 125,000 ÷
+140,000 = **0.892857** — the distinguishing literal pair **1.000000 ≠ 0.892857** fails any kernel
+that uses gross in either numerator or denominator. Run-level evidence totals: gross =
+140,000.000000; long = 100,000.000000; short = −40,000.000000; net = 60,000.000000.
+
 > **Why these are stated to six decimals and were re-derived by execution.** The first draft of this
 > section carried **0.348834** for the HHI (and 2.867 for the effective number) — arithmetic I did in
 > prose and got wrong; the sector shares were also off by 3e-6 from carrying rounded intermediates.
@@ -501,11 +591,14 @@ carries one node per dimension.
 **ENT-069 `concentration_result`, migration `0057`** — IA append-only (ORM guard + P0001 trigger).
 NOT NULL: `calculation_run_id`, `input_snapshot_id`, `model_version_id`, `portfolio_id`,
 `row_kind` (`DETAIL`|`SUMMARY`, total-enumeration CHECK), `dimension_kind`, `metric_type`,
-`bucket_code` (TEXT — node code / issuer-id string / `UNCLASSIFIED` / `UNCLASSIFIABLE` /
-`SUMMARY`), `denominator_basis` (controlled vocabulary; sole v1 value `INVESTED_LONG`), `basis`
+`bucket_code` (TEXT — node code / issuer-id string / `__UNCLASSIFIED__` / `__UNCLASSIFIABLE__` /
+`__SUMMARY__`, the dunder sentinels of OQ-CON-1-23 with the `create_node` collision guard),
+`denominator_basis` (controlled vocabulary; sole v1 value `INVESTED_LONG`), `basis`
 echo for classification dimensions (OQ-CON-1-26; sentinel `NOT_APPLICABLE` elsewhere). Nullable,
-NON-KEY, CHECK-gated: `issuer_id` (FK, DETAIL+ISSUER real buckets only), `scheme_id` (echo,
-classification DETAIL rows only — no FK, the RLS-bypass refusal of OQ-CON-1-14). Values:
+NON-KEY, CHECK-gated: `issuer_id` (FK, DETAIL+ISSUER real buckets only), `scheme_id` (echo — no
+FK, the RLS-bypass refusal of OQ-CON-1-14 — NOT NULL for classification DETAIL rows **and
+classification-dimension SUMMARY rows** via the ten-name total-enumeration CHECK, the
+OQ-CON-1-24(ii) echo repair). Values:
 `gross_amount`, `long_amount`, `short_amount`, `net_amount`, `share_invested_long`,
 `metric_value`, `coverage_ratio`, `coverage_classifiable`.
 
@@ -515,12 +608,15 @@ the second pass proved v3's nullable-`issuer_id`-in-UNIQUE grain constrained NOT
 dimensions REF-1 actually shipped). Two **PARTIAL unique indexes, predicates stated**:
 `uq_concentration_summary` = `UNIQUE(calculation_run_id, metric_type) WHERE row_kind = 'SUMMARY'`;
 `uq_concentration_detail` = `UNIQUE(calculation_run_id, dimension_kind, bucket_code) WHERE
-row_kind = 'DETAIL'`. Row-kind-qualified CHECKs per OQ-CON-1-23 (summary ⇒ no bucket identity, no
-issuer_id, no scheme_id; detail ISSUER real buckets ⇒ issuer_id NOT NULL; classification detail ⇒
-scheme_id NOT NULL). Partial-index semantics are PG-only, so the **PG tier carries the
-duplicate-refusal negative controls for BOTH row kinds including a duplicate `UNCLASSIFIED` row**
-— SQLite is structurally blind here, and `bucket_code == str(issuer_id)` is a service invariant
-with its own PG-tier test.
+row_kind = 'DETAIL'` — **declared with BOTH `postgresql_where` and `sqlite_where`** (the shipped
+convention: REF-1's current-head index, `position`, `limit`, ~8 marketdata indexes; the v4 pass
+refuted the "SQLite is structurally blind" claim — `create_all` builds these in the unit tier
+too). Row-kind-qualified CHECKs per OQ-CON-1-23 (summary ⇒ `bucket_code = '__SUMMARY__'`, no
+issuer_id, scheme_id per the ten-name enumeration — NOT NULL for the classification six, NULL for
+the issuer trio; detail ISSUER real buckets ⇒ issuer_id NOT NULL; classification detail ⇒
+scheme_id NOT NULL). The **duplicate-refusal negative controls for BOTH row kinds including a
+duplicate `__UNCLASSIFIED__` row run in BOTH tiers with PG authoritative**, and
+`bucket_code == str(issuer_id)` is a service invariant with its own PG-tier test.
 
 **`metric_type` vocabulary:** the exact ten-name census of OQ-CON-1-13, longest measured 25 ≤ the
 shipped `String(30)`, with the set-equality census test and its P6 floor.
@@ -530,12 +626,22 @@ refusals: mixed-scheme-version, mixed-basis, zero-denominator, sub-floor classif
 a DB-free kernel (shares, CR-N, HHI over pinned rows), and the bootstrap registrar with the
 declared parameters (`declared_concentration_parameters()`, exact-identity refusal).
 
-**Snapshot legs** — a new PURPOSE, binding predicate, and FOUR pinned shapes: the exposure atoms,
-the narrow instrument→issuer edge, the classification assignments (incl. `basis`) + ancestor
-closure (hash over `code`/`parent_node_id`/`level`, excluding `name`/`description`), and the
-referenced `classification_scheme` rows (`id`, `scheme_family`, `version_label` — OQ-CON-1-24's
-discriminator inputs). Each with its serializer, explicit-tenant resolver, `_reresolve_content`
-branch, and verify except-tuple entry.
+**Snapshot legs** — ONE new PURPOSE + ONE binding predicate for the snapshot, and FOUR pinned
+shapes (the mint accounting stated precisely — per-SHAPE: serializer, resolver,
+`_reresolve_content` branch, verify except-tuple entry): the exposure atoms, the narrow
+instrument→issuer edge, the classification assignments (incl. `basis`) + ancestor closure (hash
+over `code`/`parent_node_id`/`level`, excluding `name`/`description`), and the referenced
+`classification_scheme` rows (`id`, `scheme_family`, `version_label` — OQ-CON-1-24's discriminator
+inputs). **Two resolver patterns, not one (the v4 pass: a plain explicit-tenant resolver finds NO
+SYSTEM row):** the exposure-atom and issuer-edge shapes use the plain explicit-acting-tenant
+predicate every shipped resolver uses; the two HYBRID vocabulary shapes (assignments' closure +
+scheme rows) use the two-tenant `tenant_id IN (tenant, SYSTEM)` predicate with tenant-override
+precedence — the `resolve_node` idiom. **And the closure branch re-resolves CODE-FIRST (the v4
+pass: every one of the ~18 shipped `_reresolve_content` branches re-resolves by pinned surrogate
+id, under which a leaf override is INVISIBLE and OQ-CON-1-9's mandatory negative control could
+never fire):** re-run `resolve_node` on each pinned `(scheme_id, node_code)` with tenant
+precedence, then re-walk `resolve_ancestors` — the platform's FIRST re-derive-flavored branch,
+named as such so the review knows it deviates from the shipped idiom deliberately.
 
 **Reads** — `calc/reads.py` typed wrappers + list/latest/entity-time endpoints (rule 7), with
 PG-tier pins for every non-String filter; the issuer-identity-bearing endpoints demand
@@ -583,9 +689,13 @@ either REF-1 hardening, which are correctness rails.
 Sources dated 2026-07-29; **restated 2026-07-30 after the second pass found the RESTATEMENT itself
 misattributed its two load-bearing citations** (¶87 quoted with its operative qualifier dropped;
 two CESR box numbers wrong) — in the section whose stated purpose was citing each source for what
-it actually establishes. Per the amended rule 6a, every citation below is a VERBATIM quote with a
-locator, and the pre-ratification pass includes a citation lane that reads ONLY the sources and
-answers "does it say what the record claims?". Nothing below enters the methodology on my reading
+it actually establishes. Per the amended rule 6a, **every LOAD-BEARING citation below carries a
+VERBATIM quote with a locator** (the citation lane's v4 run found the earlier blanket
+"every citation" claim false for three regime cites that carried none — scoped honestly now), and
+the citation lane reads ONLY the sources. **Citation-lane verdict on this section (first
+execution, 2026-07-30): zero BLOCKING/HIGH — Art. 6(1)/Art. 7, CESR Boxes 2/3/8/9, ESMA
+¶84/87/91/93 and the IRC §851(b)(3) STRUCTURE all verified verbatim-exact or correct; the
+remaining fidelity nits are folded below.** Nothing here enters the methodology on my reading
 alone.
 
 - **Regulation (EU) 231/2013, Art. 7** — the gross method computes "*the sum of the absolute
@@ -593,26 +703,38 @@ alone.
   as "*the ratio between the exposure of an AIF and its net asset value*". Art. 7 further excludes
   cash and cash equivalents in the base currency and requires derivative conversion per Art. 10 —
   none of which this platform performs, so the platform's gross is not Art. 7 gross either.
-- **CESR/10-788, Box 2** — the absolute value is applied **after** netting and hedging arrangements
-  are taken into account (the guideline is netting-permissive). **Box 3** *excludes* from the
-  commitment calculation a derivative that "*totally offsets the market risk of the swapped
-  assets*" (v3 wrote "mandates offsetting" — inverted). The 100%-of-NAV global-exposure bound is
-  **Box 9 point 3**, not Box 8 (Box 8 is hedging criteria): "*global exposure … not greater than
-  100% of NAV*" (verbatim confirmation is the citation lane's to make).
-- **ESMA/2013/1339, ¶84/91/93** — no netting between instruments of the same sub-asset type,
-  reported by long and short: the **NUMERATOR** discipline the long/short decomposition satisfies.
+- **CESR/10-788, Box 2 point 2(b)** — after netting and hedging arrangements are identified,
+  "*The absolute value of the resulting calculation is equal to net commitment*" — the absolute
+  value applies AFTER netting (the guideline is netting-permissive). **Box 3** *excludes* from the
+  commitment calculation a derivative that "*totally offsets the market risk of the swapped assets
+  held in the UCITS portfolio*" — Box 3 point 1: such a derivative "*is not taken into account*"
+  (v3 wrote "mandates offsetting" — inverted). The 100%-of-NAV bound is **Box 9 point 3**, not
+  Box 8 (Box 8 is titled "Hedging"): "*the total of these must not be greater than 100% of NAV*" —
+  stated in the EPM context (derivatives + EPM-generated exposure combined).
+- **ESMA/2013/1339, ¶84/91/93** — "*AIFMs should not net the positions between instruments that
+  are part of the same sub-asset type*" (¶84; ¶91 the same at asset-type level; ¶93 long/short
+  indicated): the **NUMERATOR** discipline the long/short decomposition satisfies.
   **¶87 gives the denominator WITH ITS QUALIFIER, which v3 dropped:** "*its percentage in terms of
-  total value of assets **under management of the AIF***" — AuM as calculated under Articles 2 and
-  10 of the Regulation, a DEFINED regulatory quantity (including derivative conversion), NOT a naive
-  balance-sheet total and NOT anything computable on this schema. This strengthens, not weakens,
-  OQ-CON-1-1's conclusion that no cited regime's denominator is computable here.
-- **Limit regimes and their denominators** — UCITS Directive 2009/65/EC Art. 52 (5/10/40 with the
-  20%/35% variants) against NAV. **US IRC §851(b)(3), stated structurally (v3's flat "5%/25%" was
-  wrong):** the 5% test — "*not greater than 5 percent of the value of the total assets*" — is a
+  total value of assets **under management of the AIF***" (verbatim-exact per the citation lane) —
+  AuM as calculated under Articles 2 and 10 of the Regulation (the tie stated at ¶51 and ¶103 of
+  the same guidelines), a DEFINED regulatory quantity (including derivative conversion), NOT a
+  naive balance-sheet total and NOT anything computable on this schema. This strengthens, not
+  weakens, OQ-CON-1-1's conclusion that no cited regime's denominator is computable here.
+- **Limit regimes and their denominators** — **UCITS Directive 2009/65/EC Art. 52: the operative
+  denominator words are "its assets", verbatim** — "*no more than … 5 % of its assets in
+  transferable securities or money market instruments issued by the same body*", with the 40%
+  aggregate as "*40 % of the value of its assets*" (the citation lane: the directive never says
+  NAV; the NAV reading is CESR/ESMA supervisory convention, cited here as convention, separately
+  from the text). **US IRC §851(b)(3), stated structurally (v3's flat "5%/25%" was wrong):** the
+  5% test — "*not greater in value than 5 percent of the value of the total assets of the
+  taxpayer*" (verbatim; the v4 quote silently dropped "in value" and the lane caught it) — is a
   condition **inside the 50%-of-total-assets basket of §851(b)(3)(A)(ii)** and applies to "*other
   securities*" only; Government securities, securities of other RICs and "*cash and cash items
   (including receivables)*" (§851(b)(3)(A)(i)) sit outside it; the 25% leg is §851(b)(3)(B).
-  Solvency II market-concentration SCR (CT_i × Assets); BCBS large exposures (25% of Tier 1).
+  Solvency II market-risk concentration sub-module and BCBS large exposures (25% of Tier 1) are
+  cited as REGIME SHAPES ONLY — no verbatim quote is carried for them here, and pinning their
+  exact articles (Delegated Regulation 2015/35; the Basel LEX standard) is a NAMED citation-lane
+  obligation for the implementation-phase check, not satisfied by this record.
   **None uses an invested-long or gross denominator** — which is precisely why OQ-CON-1-1 records
   that CON-1's share is not any of these ratios and LIM-2 refuses regulatory-shaped thresholds.
 - **Measures** — HHI as the sum of squared shares (DOJ/OECD merger-guidelines convention 0–10,000,
@@ -671,6 +793,11 @@ made the claims true, and this line cites the evidence rather than the intent.
     REF-1 debt with the trigger** "the first second consumer of the SYSTEM seed outside the demo
     campaign" — CON-1's stage consumes the seed through the existing already-seeded guard and does
     not need the rewrite; building it now would be P5 vacuity (its only exercise its own test).
+13. **REF-1's record and Part-9 sweep verdict SCOPED on this branch (the v4 pass: the sweep's
+    "clean" read as covering ratifications it never checked).** `ref_1_decision_record.md`'s
+    Status cell and Part 9 now carry the 2026-07-30 scope amendment naming the five undelivered
+    ratifications and pointing at this Part's dispositions — the register surface no longer asserts
+    the superseded truth.
 
 ## Part 6b — Amendments this slice forces on the RATIFIED wave plan and roadmap
 
@@ -708,6 +835,29 @@ Recorded per the SCH-2 record-reversals-at-the-gate rule. v1 narrowed ratified d
 place** (the REF-1 closing clause, which the second pass found missing here — without it the
 ratified registers stay false on completion).
 
-## Part 7 — Pre-ratification verifier pass (findings ledger)
+## Part 7 — Pre-ratification verifier passes (findings ledger)
 
-*(Filled before the gate; refute-by-default, fresh-context lanes.)*
+**Three passes across three record versions; every finding dispositioned:**
+
+1. **v1 pass (2026-07-29, 4 lanes): 46 findings, 5 BLOCKING** — including the refuted
+   gross-denominator methodology (all three rule-6a citations misread). All folded into v2/v3;
+   the folded denominator (dual-share) was itself the next pass's subject.
+2. **v2/v3 pass (2026-07-29, 3 lanes): 47 findings, 8 BLOCKING** — the dual-share denominator
+   REFUTED (`sum(long_amount)` ≠ total assets; false breaches into a non-withdrawable lifecycle);
+   the jointly-unsatisfiable grain CHECKs; the NULL-vacuous detail UNIQUE; the single-code SoD
+   re-commit; the misread ¶87 requalification. Triggered the user-ratified stopping rule → the
+   v4 DESCOPE, all 47 folded (raw ledger retained at the session task dir, `wojjugwka`).
+3. **v4 descoped-form pass (2026-07-30, 4 lanes incl. the FIRST citation-lane execution):
+   1 BLOCKING, 3 HIGH, 14 MED, 8 LOW; the registers lane fully CLEAN (12/12 code-state claims
+   true) and the citation lane's core CLEAN (¶87/IRC/CESR/ESMA verified verbatim or correct).**
+   The BLOCKING (in-slice `_METRIC_MAP` registration would open a one-slice unbased-limit window)
+   is resolved STRUCTURALLY by the OQ-CON-1-15 reversal (registration deferred to LIM-2). The
+   HIGHs: the LONG predicate pinned (`exposure_amount > 0`); the subtree denominator scope
+   ratified; the "SQLite structurally blind" claim corrected to the both-dialect
+   `sqlite_where` idiom. All 26 findings folded at v5 (this version); the fold quality measured
+   by the pass itself: 40/47 of the prior ledger resolved with substance, and the descope's core
+   — the share, the grain redesign, the three-code mint, the basis discipline — SURVIVED
+   refutation for the first time in three passes.
+
+*(The descoped-form record has now been verified once in full; the gate may additionally demand a
+targeted re-verify of the v5 fold diff — the deltas are material but narrow.)*
