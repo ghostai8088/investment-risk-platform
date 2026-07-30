@@ -95,6 +95,46 @@ def test_the_stage_ran_and_declared_its_contribution(summary) -> None:  # noqa: 
     assert result.validations_added == 1
 
 
+def test_oq_ref_1_29_entitlement_census_and_teardown(summary, db) -> None:  # noqa: ANN001
+    """REF-1's deferred obligation, recorded as "paid in CON-1's demo stage" — now actually paid.
+
+    The stage grants the REF-1 + CON-1 read codes to a demo role, censuses them, then tears the
+    grants down. This asserts BOTH halves: the census set is exact, and nothing survives — a demo
+    that only grants leaves rows a later entitlement census misreads as production access."""
+    from irp_shared.entitlement.models import Role, RolePermission
+
+    _factory, result = summary
+    if result is None:
+        pytest.skip("stage already seeded in this database")
+    assert set(result.entitlement_codes_censused) == {
+        "concentration.issuer.view",
+        "concentration.view",
+        "reference.classification.view",
+        "reference.classification_assignment.view",
+        "reference.issuer.view",
+        "reference.legal_entity.view",
+    }
+    assert result.role_permission_rows_torn_down == len(result.entitlement_codes_censused)
+    # TEARDOWN proven from the database, not from the stage's return value.
+    leftover_roles = list(
+        db.execute(
+            select(Role).where(
+                Role.tenant_id == DEMO_TENANT_ID, Role.code == "demo_concentration_reader"
+            )
+        ).scalars()
+    )
+    assert leftover_roles == [], "the demo census role survived its own teardown"
+    assert (
+        db.execute(
+            select(func.count())
+            .select_from(RolePermission)
+            .join(Role, Role.id == RolePermission.role_id)
+            .where(Role.code == "demo_concentration_reader")
+        ).scalar()
+        == 0
+    ), "role_permission rows survived the teardown"
+
+
 def test_flagship_issuer_shares_reproduce_the_part2_literals(summary, db) -> None:  # noqa: ANN001
     """The DEMO-GLOBAL boundary book: shares + HHI to six decimals — the record's own numbers."""
     _factory, result = summary

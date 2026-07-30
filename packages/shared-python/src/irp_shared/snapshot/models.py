@@ -261,8 +261,11 @@ COMPONENT_KIND_ISSUER_EDGE = "ISSUER_EDGE"
 #: never see it). ``target_entity_type='classification_assignment'``.
 COMPONENT_KIND_CLASSIFICATION = "CLASSIFICATION"
 #: CON-1 (OQ-CON-1-24 ii): the referenced ``classification_scheme`` rows —
-#: ``{id, scheme_family, version_label}`` — the co-existing-scheme discriminator's inputs, pinned
-#: so the refusal is computable from pinned bytes. Hybrid two-tenant resolver (SYSTEM rows are
+#: ``{id, scheme_family, version_label}`` — WHICH taxonomy version produced the number, pinned as
+#: re-verifiable evidence. (It was ratified as "the discriminator's inputs, so the refusal is
+#: computable from pinned bytes"; the review proved that unfireable — a scheme-filtered pinned set
+#: can never hold the second version — so the OQ-CON-1-24 (i) refusal reads LIVE heads instead and
+#: this pin is evidence only.) Hybrid two-tenant resolver (SYSTEM rows are
 #: the normal case). ``target_entity_type='classification_scheme'``.
 COMPONENT_KIND_CLASSIFICATION_SCHEME = "CLASSIFICATION_SCHEME"
 SNAPSHOT_COMPONENT_KINDS = (

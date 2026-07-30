@@ -112,6 +112,88 @@ class Con1Stage19Summary:
     multiasset_failed_run_id: str
     completed_runs_added: int  # 3
     validations_added: int  # 1
+    #: OQ-REF-1-29: the codes the demo role was granted and then TORE DOWN (REF-1's four + CON-1's
+    #: three). Reported so the stage's test can assert the census rather than trust this docstring.
+    entitlement_codes_censused: tuple[str, ...] = ()
+    role_permission_rows_torn_down: int = 0
+
+
+#: The REF-1 + CON-1 read codes OQ-REF-1-29 requires the demo to census. ``concentration.run`` is
+#: deliberately absent: this role demonstrates READ access.
+_CENSUS_CODES: tuple[str, ...] = (
+    "concentration.issuer.view",
+    "concentration.view",
+    "reference.classification.view",
+    "reference.classification_assignment.view",
+    "reference.issuer.view",
+    "reference.legal_entity.view",
+)
+
+
+def _census_and_teardown_entitlements(session: Session) -> tuple[tuple[str, ...], int]:
+    """OQ-REF-1-29, PAID HERE: census the REF-1 + CON-1 read codes against the catalog, grant them
+    to a demo role, prove the grant resolves, then TEAR THE GRANTS DOWN and prove none survive.
+
+    REF-1 recorded this as its own obligation and shipped no Role/Permission code at all; the CON-1
+    record then recorded it as "paid in CON-1's demo stage" while stage 19 likewise had none. It is
+    built now rather than re-deferred a second time.
+
+    The teardown is the point: a demo that only ever GRANTS leaves rows behind that a later census
+    reads as production entitlements. Deleting them and asserting zero remain is what makes the
+    demonstration honest."""
+    from irp_shared.entitlement.models import Permission, Role, RolePermission
+
+    missing = [
+        code
+        for code in _CENSUS_CODES
+        if session.execute(select(Permission).where(Permission.code == code)).scalar_one_or_none()
+        is None
+    ]
+    if missing:
+        # The catalog is bootstrap-seeded; a missing code means the wrong schema, not a demo gap.
+        raise DemoCon1Error(f"permission codes absent from the catalog: {missing}")
+
+    role = Role(
+        tenant_id=DEMO_TENANT_ID,
+        code="demo_concentration_reader",
+        name="Demo concentration reader (OQ-REF-1-29 census)",
+    )
+    session.add(role)
+    session.flush()
+    for code in _CENSUS_CODES:
+        permission = session.execute(select(Permission).where(Permission.code == code)).scalar_one()
+        session.add(RolePermission(role_id=role.id, permission_id=permission.id))
+    session.flush()
+
+    granted = {
+        session.execute(select(Permission).where(Permission.id == rp.permission_id))
+        .scalar_one()
+        .code
+        for rp in session.execute(
+            select(RolePermission).where(RolePermission.role_id == role.id)
+        ).scalars()
+    }
+    if granted != set(_CENSUS_CODES):
+        raise DemoCon1Error(
+            f"the demo role's grants {sorted(granted)} do not match the "
+            f"census {list(_CENSUS_CODES)}"
+        )
+
+    torn_down = 0
+    for rp in list(
+        session.execute(select(RolePermission).where(RolePermission.role_id == role.id)).scalars()
+    ):
+        session.delete(rp)
+        torn_down += 1
+    session.flush()
+    session.delete(role)
+    session.flush()
+    survivors = list(
+        session.execute(select(RolePermission).where(RolePermission.role_id == role.id)).scalars()
+    )
+    if survivors:
+        raise DemoCon1Error(f"{len(survivors)} role_permission rows survived the teardown")
+    return _CENSUS_CODES, torn_down
 
 
 def _system_scheme(session: Session, family: str, version: str) -> ClassificationScheme:
@@ -400,7 +482,12 @@ def run_demo_con1_stage19(session: Session) -> Con1Stage19Summary:
     )
     session.flush()
 
+    # --- 4. OQ-REF-1-29: the entitlement census + teardown (REF-1's debt, paid here) ---
+    census_codes, torn_down = _census_and_teardown_entitlements(session)
+
     return Con1Stage19Summary(
+        entitlement_codes_censused=census_codes,
+        role_permission_rows_torn_down=torn_down,
         model_version_id=str(version.id),
         global_concentration_run_id=str(global_run.run.run_id),
         book_exposure_run_id=str(book_exposure.run.run_id),

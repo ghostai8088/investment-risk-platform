@@ -134,6 +134,16 @@ class ConcentrationResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin
             "OR issuer_id IS NOT NULL",
             name="issuer_bucket",  # ck_ SUFFIX only (the 0055 naming-convention note)
         ),
+        # The DISCLOSURE fence, structural (review). ``issuer_bucket`` above requires an issuer on
+        # real ISSUER buckets but never FORBIDS one elsewhere, so a SECTOR_INDUSTRY DETAIL row
+        # carrying ``issuer_id`` was schema-legal — and it would sail through the
+        # ``concentration.view`` exclusion (which keys on (ISSUER, DETAIL)) carrying proprietary
+        # issuer identity to a caller who holds no ``concentration.issuer.view``. Only binder
+        # discipline kept that row class nonexistent; now the engine does.
+        CheckConstraint(
+            "issuer_id IS NULL OR dimension_kind = 'ISSUER'",
+            name="issuer_only_on_issuer_rows",  # ck_ SUFFIX only (the 0055 note)
+        ),
         CheckConstraint(
             "dimension_kind IN ('ISSUER', 'SECTOR_INDUSTRY', 'COUNTRY_OF_RISK')",
             name="dimension_kind",  # ck_ SUFFIX only (the 0055 naming-convention note)

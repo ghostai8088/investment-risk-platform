@@ -160,6 +160,159 @@ class TestGaps:
             compute_dimension([Atom(_d("10000"), None, None)], FLOOR)
 
 
+class TestUnitTierGrain:
+    """The ratified BOTH-TIER duplicate refusal, unit tier (SQLite ``create_all``).
+
+    The v4 pass added ``sqlite_where`` beside ``postgresql_where`` on both partial unique indexes
+    precisely so the unit tier enforces the grain too — but no unit-tier test ever touched
+    ``ConcentrationResult``, so the SQLite half of that repair shipped unexercised. PG remains the
+    authoritative gate; this proves the declaration is real on the second dialect."""
+
+    @staticmethod
+    def _session():  # noqa: ANN205
+        import uuid
+
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        from irp_shared.models import Base
+
+        engine = create_engine(
+            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
+        Base.metadata.create_all(engine)
+        return sessionmaker(bind=engine)(), str(uuid.uuid4())
+
+    @staticmethod
+    def _row(tenant: str, run_id: str, **overrides):  # noqa: ANN003, ANN205
+        import uuid
+        from datetime import UTC, datetime
+
+        from irp_shared.concentration.models import ConcentrationResult
+
+        base = dict(
+            tenant_id=tenant,
+            calculation_run_id=run_id,
+            input_snapshot_id=str(uuid.uuid4()),
+            model_version_id=str(uuid.uuid4()),
+            portfolio_id=str(uuid.uuid4()),
+            row_kind="DETAIL",
+            dimension_kind="SECTOR_INDUSTRY",
+            metric_type="SHARE",
+            bucket_code="C",
+            issuer_id=None,
+            scheme_id=str(uuid.uuid4()),
+            basis="NOT_APPLICABLE",
+            denominator_basis="INVESTED_LONG",
+            gross_amount=_d("1"),
+            long_amount=_d("1"),
+            short_amount=_d("0"),
+            net_amount=_d("1"),
+            share_invested_long=_d("1.000000"),
+            metric_value=None,
+            coverage_ratio=None,
+            coverage_classifiable=None,
+            system_from=datetime.now(UTC),
+        )
+        base.update(overrides)
+        return ConcentrationResult(**base)
+
+    def test_duplicate_DETAIL_bucket_refused(self) -> None:
+        import uuid
+
+        from sqlalchemy.exc import IntegrityError
+
+        session, tenant = self._session()
+        run_id = str(uuid.uuid4())
+        session.add(self._row(tenant, run_id))
+        session.flush()
+        session.add(self._row(tenant, run_id))
+        with pytest.raises(IntegrityError):
+            session.flush()
+
+    def test_duplicate_UNCLASSIFIED_residual_refused(self) -> None:
+        """The specifically ratified control: the residual sentinel is a bucket_code like any
+        other, so two of them in one (run, dimension) must be refused, not silently summed."""
+        import uuid
+
+        from sqlalchemy.exc import IntegrityError
+
+        session, tenant = self._session()
+        run_id = str(uuid.uuid4())
+        session.add(self._row(tenant, run_id, bucket_code=BUCKET_UNCLASSIFIED))
+        session.flush()
+        session.add(self._row(tenant, run_id, bucket_code=BUCKET_UNCLASSIFIED))
+        with pytest.raises(IntegrityError):
+            session.flush()
+
+    def test_duplicate_SUMMARY_metric_refused(self) -> None:
+        import uuid
+
+        from sqlalchemy.exc import IntegrityError
+
+        from irp_shared.concentration.models import BUCKET_SUMMARY
+
+        session, tenant = self._session()
+        run_id = str(uuid.uuid4())
+        summary = dict(
+            row_kind="SUMMARY",
+            metric_type="HHI_SECTOR_INDUSTRY",
+            bucket_code=BUCKET_SUMMARY,
+            share_invested_long=None,
+            metric_value=_d("0.5"),
+        )
+        session.add(self._row(tenant, run_id, **summary))
+        session.flush()
+        session.add(self._row(tenant, run_id, **summary))
+        with pytest.raises(IntegrityError):
+            session.flush()
+
+    def test_a_DIFFERENT_bucket_in_the_same_run_is_allowed(self) -> None:
+        """The positive control — without it, an index that refused EVERYTHING would pass above."""
+        import uuid
+
+        session, tenant = self._session()
+        run_id = str(uuid.uuid4())
+        session.add(self._row(tenant, run_id, bucket_code="C"))
+        session.add(self._row(tenant, run_id, bucket_code="D"))
+        session.flush()
+
+
+class TestSevenBucketCRN:
+    """OQ-CON-1-21's labelled P5 mitigation: CR-N ships DEMONSTRATED-DEGENERATE in the demo, so
+    its real coverage must live in the unit tier on a seven-bucket fixture.
+
+    Every other shipped fixture has at most three classified buckets, where ``shares[:5]`` is the
+    whole set and ``CR_5 == classified total`` identically — the top-5 truncation was never once
+    executed. Here CR-5 is strictly less than the classified total, so a broken slice bound (``:4``,
+    ``:6``, or no truncation at all) changes the answer.
+
+    Hand-derived on long amounts summing to 1000: shares .30/.25/.15/.12/.08/.06/.04.
+    CR-5 = .30+.25+.15+.12+.08 = 0.900000 (NOT 1.000000). HHI = .09+.0625+.0225+.0144+.0064
+    +.0036+.0016 = 0.201000. MAX = 0.300000.
+    """
+
+    ATOMS = [
+        Atom(_d("300.000000"), "B1"),
+        Atom(_d("250.000000"), "B2"),
+        Atom(_d("150.000000"), "B3"),
+        Atom(_d("120.000000"), "B4"),
+        Atom(_d("80.000000"), "B5"),
+        Atom(_d("60.000000"), "B6"),
+        Atom(_d("40.000000"), "B7"),
+    ]
+
+    def test_cr5_truncates_at_five_of_seven(self) -> None:
+        r = compute_dimension(self.ATOMS, FLOOR)
+        assert r.gaps == ()
+        assert len([b for b in r.buckets if not b.is_residual]) == 7
+        assert r.cr_n == _d("0.900000")
+        assert r.cr_n < _d("1.000000"), "CR-5 equals the classified total — fixture is degenerate"
+        assert r.hhi == _d("0.201000")
+        assert r.max_share == _d("0.300000")
+
+
 class TestVocabularyCensus:
     """The exact ten-name census (OQ-CON-1-13) — set equality, widths measured."""
 
@@ -181,6 +334,25 @@ class TestVocabularyCensus:
 
     def test_bucket_sentinels_are_dunder(self) -> None:
         assert all(s.startswith("__") and s.endswith("__") for s in BUCKET_SENTINELS)
+
+    def test_row_kind_census_is_exact_and_matches_the_DDL_check(self) -> None:
+        """The third ratified P6 census, which shipped as a DDL CHECK with no test behind it.
+
+        A third row kind added in Python without the migration would pass every ORM-tier test and
+        then fail at the CHECK on the first PG write — the census makes the omission loud HERE."""
+        from irp_shared.concentration.models import ROW_KINDS, ConcentrationResult
+
+        assert set(ROW_KINDS) == {"DETAIL", "SUMMARY"}
+        check = next(
+            c
+            for c in ConcentrationResult.__table__.constraints
+            if getattr(c, "name", None) == "ck_concentration_result_row_kind"
+        )
+        rendered = str(check.sqltext)
+        for kind in ROW_KINDS:
+            assert (
+                f"'{kind}'" in rendered
+            ), f"{kind} is declared in Python but absent from the CHECK"
 
 
 class TestGovernancePins:

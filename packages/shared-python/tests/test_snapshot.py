@@ -1028,3 +1028,79 @@ def test_every_declared_binding_predicate_is_registered() -> None:
     }
     assert declared == set(snapshot_service._BINDING_PREDICATES)
     assert all(len(p) <= 50 for p in declared)
+
+
+def test_snapshot_component_kinds_is_an_exact_census() -> None:
+    """The P6 floor CON-1 ratified as "upgrades to set-equality HERE".
+
+    Every prior guard was a MEMBERSHIP assert (``assert "CURVE" in SNAPSHOT_COMPONENT_KINDS``),
+    which cannot notice a kind that is added, removed, or renamed. Set-equality against a literal
+    census can. When a slice adds a pinned shape, this list is the deliberate edit that records it.
+    """
+    from irp_shared.snapshot.models import SNAPSHOT_COMPONENT_KINDS
+
+    assert set(SNAPSHOT_COMPONENT_KINDS) == {
+        "PORTFOLIO",
+        "POSITION",
+        "VALUATION",
+        "FX",
+        "CURVE",
+        "EXPOSURE",
+        "FACTOR",
+        "FACTOR_RETURN",
+        "FACTOR_EXPOSURE",
+        "COVARIANCE",
+        "BENCHMARK",
+        "TRANSACTION",
+        "PORTFOLIO_RETURN",
+        "BENCHMARK_RETURN",
+        "VAR",
+        "SCENARIO",
+        "PROXY_MAPPING",
+        "DESMOOTHED_RETURN",
+        "PROXY_WEIGHT",
+        "COMMITMENT",
+        "CAPITAL_CALL",
+        "DISTRIBUTION",
+        "PURE_PRIVATE_RETURN",
+        # CON-1's three (OQ-CON-1-7/9/24 ii).
+        "ISSUER_EDGE",
+        "CLASSIFICATION",
+        "CLASSIFICATION_SCHEME",
+    }
+    assert len(SNAPSHOT_COMPONENT_KINDS) == len(set(SNAPSHOT_COMPONENT_KINDS)), "duplicate kind"
+
+
+def test_every_component_kind_has_a_reresolve_branch() -> None:
+    """A pinned shape with no ``_reresolve_content`` branch verifies VACUOUSLY — the component can
+    never drift, so ``verify_snapshot`` would report ``ok`` over a moved input. The census above
+    fixes the SET; this fixes the WIRING, so a new kind cannot ship half-connected."""
+    import inspect
+    import re
+
+    from irp_shared.snapshot import service as snapshot_service
+    from irp_shared.snapshot.models import SNAPSHOT_COMPONENT_KINDS
+
+    source = inspect.getsource(snapshot_service._reresolve_content)
+    # WORD-BOUNDED on the constant name, deliberately. A bare ``k in source`` would pass
+    # vacuously (every constant name contains its own value), and an unbounded
+    # ``COMPONENT_KIND_CLASSIFICATION`` would be satisfied by the ``_SCHEME`` branch alone.
+    #
+    # PORTFOLIO is the sole exemption: it is the FALLTHROUGH branch, dispatched by reaching the
+    # end of the function rather than by an equality test. The exemption is grounded below — if
+    # the default ever stops being portfolio_content, this test fails rather than quietly
+    # excusing a kind that genuinely lost its branch.
+    fallthrough_kind = "PORTFOLIO"
+    tail = "\n".join(source.splitlines()[-6:])
+    assert "return portfolio_content(" in tail, (
+        "PORTFOLIO is no longer the fallthrough branch of _reresolve_content — its exemption "
+        "below is no longer grounded; wire it explicitly or update this pin"
+    )
+    missing = [
+        k
+        for k in SNAPSHOT_COMPONENT_KINDS
+        if k != fallthrough_kind and not re.search(rf"\bCOMPONENT_KIND_{re.escape(k)}\b", source)
+    ]
+    assert (
+        missing == []
+    ), f"pinned kinds with no re-resolve branch (they verify vacuously): {missing}"

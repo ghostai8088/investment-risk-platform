@@ -41,6 +41,12 @@ CR_N = 5
 GAP_ZERO_INVESTED_LONG = "ZERO_INVESTED_LONG"
 GAP_ALL_UNCLASSIFIABLE = "ALL_UNCLASSIFIABLE"
 GAP_COVERAGE_BELOW_FLOOR = "COVERAGE_BELOW_FLOOR"
+#: A DEFENCE, not a computed outcome: pinned content that violates an invariant the build already
+#: enforces (a closure with no level-1 ancestor; a missing or unparseable field — the except
+#: tuple covers KeyError/TypeError as well as ValueError, the shapes corrupt JSON actually
+#: takes). Raised nowhere — the binder converts such breaches into this gap so the run commits
+#: FAILED instead of orphaning in RUNNING (the scaffold calls compute() outside its only try).
+GAP_CORRUPT_PINNED_CONTENT = "CORRUPT_PINNED_CONTENT"
 
 
 def _q6(value: Decimal) -> Decimal:

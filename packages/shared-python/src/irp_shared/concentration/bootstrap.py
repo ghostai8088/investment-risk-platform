@@ -21,6 +21,17 @@ from irp_shared.model.service import (
     resolve_or_register_version,
 )
 
+
+class ConcentrationModelParameterError(ValueError):
+    """A CLIENT-supplied model parameter is invalid (registration refuses).
+
+    A dedicated type, not bare ``ValueError``: the API error map keys on exact type, so a bare
+    ``ValueError`` there would (a) relabel any genuine server-side bug raised anywhere inside
+    registration as a client 422, and (b) re-arm the API-2 MRO trap, where a ValueError SUBCLASS
+    is caught by the isinstance-based ``except`` tuple and then dies as a KeyError 500 in the
+    exact-type mapper. Subclassing ``ValueError`` keeps existing callers' handling intact."""
+
+
 CONCENTRATION_MODEL_CODE = "concentration.dimensional"
 CONCENTRATION_MODEL_NAME = "Dimensional concentration (share / CR-N / HHI)"
 CONCENTRATION_MODEL_TYPE = "CONCENTRATION"
@@ -97,10 +108,16 @@ def register_concentration_model(
     ``ModelVersionConflictError``; a non-REGISTERED same-label twin → ``WrongModelVersionError``
     (the P3-C1 contract, the pacing registrar's tail verbatim)."""
     if not version_label or not str(version_label).strip():
-        raise ValueError("version_label must be a non-empty string")
+        raise ConcentrationModelParameterError("version_label must be a non-empty string")
     floor = Decimal(str(coverage_floor))
-    if not (Decimal("0") <= floor <= Decimal("1")):
-        raise ValueError(f"coverage_floor must be a fraction in [0, 1], got {floor}")
+    # STRICTLY positive. A zero floor is not a permissive setting, it is a broken one: an
+    # all-UNCLASSIFIED dimension has classifiable coverage 0, which clears a zero floor, so the
+    # run would COMPLETE and write MAX/HHI/CR-5 rows of 0.000000 over an EMPTY classified set —
+    # immutable IA rows whose values have no defined meaning (review).
+    if not (Decimal("0") < floor <= Decimal("1")):
+        raise ConcentrationModelParameterError(
+            f"coverage_floor must be a fraction in (0, 1], got {floor}"
+        )
 
     model = resolve_or_register_model(
         session,

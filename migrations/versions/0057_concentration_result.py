@@ -53,6 +53,7 @@ _IDENTIFIERS = (
     "ck_concentration_result_summary_shape",
     "ck_concentration_result_detail_shape",
     "ck_concentration_result_issuer_bucket",
+    "ck_concentration_result_issuer_only_on_issuer_rows",
     "ck_concentration_result_dimension_kind",
     "fk_concentration_result_calculation_run_id_calculation_run",
     "fk_concentration_result_input_snapshot_id_dataset_snapshot",
@@ -128,7 +129,7 @@ def upgrade() -> None:
         # Row-kind census (fails CLOSED for an unenumerated kind).
         sa.CheckConstraint(
             "row_kind IN ('DETAIL', 'SUMMARY')",
-            name="ck_concentration_result_row_kind",
+            name="row_kind",  # SUFFIX ONLY — the convention prepends ck_<table>_ (the 0055 note)
         ),
         # SUMMARY shape: sentinel bucket, no issuer identity, the NINE names (SHARE refused),
         # scheme echo by name (classification six NOT NULL, issuer trio NULL).
@@ -138,7 +139,7 @@ def upgrade() -> None:
             f"AND metric_type IN ({_SUMMARY_METRICS}) "
             f"AND ((metric_type IN ({_CLASSIFICATION_SUMMARY})) = (scheme_id IS NOT NULL))"
             ")",
-            name="ck_concentration_result_summary_shape",
+            name="summary_shape",  # SUFFIX ONLY (the 0055 note)
         ),
         # DETAIL shape: SHARE only; scheme echo by dimension.
         sa.CheckConstraint(
@@ -146,18 +147,24 @@ def upgrade() -> None:
             "metric_type = 'SHARE' AND bucket_code != '__SUMMARY__' "
             "AND ((dimension_kind = 'ISSUER') = (scheme_id IS NULL))"
             ")",
-            name="ck_concentration_result_detail_shape",
+            name="detail_shape",  # SUFFIX ONLY (the 0055 note)
         ),
         # A real ISSUER bucket carries its issuer FK (residual sentinels exempt).
         sa.CheckConstraint(
             "NOT (row_kind = 'DETAIL' AND dimension_kind = 'ISSUER' "
             "AND bucket_code NOT IN ('__UNCLASSIFIED__', '__UNCLASSIFIABLE__')) "
             "OR issuer_id IS NOT NULL",
-            name="ck_concentration_result_issuer_bucket",
+            name="issuer_bucket",  # SUFFIX ONLY (the 0055 note)
+        ),
+        # The DISCLOSURE fence (review): issuer identity may exist ONLY on ISSUER-dimension
+        # rows, so no non-ISSUER row can carry it past the concentration.view exclusion.
+        sa.CheckConstraint(
+            "issuer_id IS NULL OR dimension_kind = 'ISSUER'",
+            name="issuer_only_on_issuer_rows",  # SUFFIX ONLY (the 0055 note)
         ),
         sa.CheckConstraint(
             "dimension_kind IN ('ISSUER', 'SECTOR_INDUSTRY', 'COUNTRY_OF_RISK')",
-            name="ck_concentration_result_dimension_kind",
+            name="dimension_kind",  # SUFFIX ONLY (the 0055 note)
         ),
     )
     op.create_index("ix_concentration_result_tenant_id", "concentration_result", ["tenant_id"])

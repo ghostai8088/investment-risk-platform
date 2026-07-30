@@ -38,7 +38,12 @@ from irp_shared.concentration.bootstrap import (
     declared_concentration_parameters,
 )
 from irp_shared.concentration.events import RUN_TYPE_CONCENTRATION, ConcentrationActor
-from irp_shared.concentration.kernel import Atom, DimensionResult, compute_dimension
+from irp_shared.concentration.kernel import (
+    GAP_CORRUPT_PINNED_CONTENT,
+    Atom,
+    DimensionResult,
+    compute_dimension,
+)
 from irp_shared.concentration.models import (
     BUCKET_SUMMARY,
     BUCKET_UNCLASSIFIABLE,
@@ -66,7 +71,11 @@ from irp_shared.snapshot.service import (
 
 
 class ConcentrationInputError(Exception):
-    """A pre-create refusal — raised BEFORE any run/snapshot write; the whole unit rolls back."""
+    """A pre-create refusal — raised BEFORE any run/snapshot write; the whole unit rolls back.
+
+    ONE raise site sits inside the compute zone (``_level1_code``, over corrupt pinned content).
+    The binder catches it there and converts it to a ``CORRUPT_PINNED_CONTENT`` gap precisely so
+    this docstring stays true: an exception escaping compute() would orphan the run in RUNNING."""
 
 
 _COMPLETENESS_RULE_CODE = "CONCENTRATION_COMPLETENESS"
@@ -158,8 +167,27 @@ def run_concentration(
             )
 
         for dim, (scheme_id, basis) in sorted(dimensions.items()):
-            atoms = _bucket_atoms(pinned, dim)
-            result = compute_dimension(atoms, coverage_floor)
+            # The compute zone is INSIDE the run: the scaffold catches only DataQualityError and
+            # calls compute() outside its try, so ANY raise from here leaves an orphaned RUNNING
+            # run with a committed snapshot (the BT-1 orphan class). Corrupt pinned bytes are
+            # therefore reported as a GAP — a committed FAILED run with zero rows and a named
+            # reason — rather than as an exception. Reaching this requires pinned content that
+            # violates an invariant the build already enforces, so it is a defence, not a live path.
+            try:
+                atoms = _bucket_atoms(pinned, dim)
+                result = compute_dimension(atoms, coverage_floor)
+            except (
+                ConcentrationInputError,
+                ValueError,
+                ArithmeticError,
+                # KeyError/TypeError are the ARCHETYPAL corrupt-pinned-content shapes — a missing
+                # content field, Decimal(None) — and the verify pass proved the first tuple
+                # omitted them, leaving exactly the orphan path this except exists to close.
+                KeyError,
+                TypeError,
+            ) as exc:
+                gaps.append(f"{dim}: {GAP_CORRUPT_PINNED_CONTENT} ({exc})")
+                continue
             if result.gaps:
                 gaps.extend(f"{dim}: {g}" for g in result.gaps)
                 continue
@@ -222,7 +250,12 @@ def _parse_pins(components: list[Any]) -> _PinnedContent:
             pinned.assignment_by_dim_instrument[key] = content
             pinned.basis_by_dimension[content["dimension_kind"]] = content["basis"]
         elif comp.component_kind == COMPONENT_KIND_CLASSIFICATION_SCHEME:
-            pass  # the discriminator inputs; consumed by the builder's refusals
+            # EVIDENCE, not a binder input: the scheme row records WHICH taxonomy version produced
+            # the number (re-verifiable from pinned bytes). The OQ-CON-1-24 (i) mixed-VERSION
+            # refusal does NOT read it — it reads the tenant's LIVE current heads at build time,
+            # because the pinned set is scheme-filtered and can never hold the second version
+            # (the review's BLOCKING: as ratified, the discriminator was unfireable).
+            pass
     return pinned
 
 
@@ -461,6 +494,26 @@ def list_concentration_runs(
     if status is not None:
         stmt = stmt.where(CalculationRun.status == status)
     return list(session.execute(stmt).scalars().all())
+
+
+def concentration_run_head(
+    session: Session, *, acting_tenant: str, run_id: str
+) -> CalculationRun | None:
+    """ONE tenant-owned CONCENTRATION run head by id, or ``None``.
+
+    A point select, deliberately. The read surface previously resolved a run by listing the newest
+    1000 and filtering in Python, so a tenant past its 1000th run got a spurious 404 on every
+    older run — and the scheduler ticks these MONTHLY per tenant per portfolio, so that ceiling is
+    reachable rather than theoretical."""
+    from sqlalchemy import select
+
+    return session.execute(
+        select(CalculationRun).where(
+            CalculationRun.tenant_id == str(acting_tenant),
+            CalculationRun.run_type == RUN_TYPE_CONCENTRATION,
+            CalculationRun.run_id == str(run_id),
+        )
+    ).scalar_one_or_none()
 
 
 def concentration_rows_for_run(

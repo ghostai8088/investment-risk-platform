@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.classification.service import (
     ClassificationNotVisible,
+    canonical_tenant_id,
     resolve_ancestors,
     resolve_node,
     resolve_scheme,
@@ -134,6 +135,7 @@ from irp_shared.snapshot.models import (
     DatasetSnapshotComponent,
 )
 from irp_shared.snapshot.serialize import (
+    _norm_guid,
     benchmark_membership_content,
     benchmark_return_series_content,
     capital_call_content,
@@ -3905,10 +3907,15 @@ def issuer_edge_content(instrument: Any) -> dict[str, Any]:
     drifts iff the ISSUER EDGE moves, and is inert to renames/currency fixes/``is_active`` flips
     (the ``var_result_content`` field-exclusion precedent). Two mandatory controls ride the tests:
     the pin DOES drift on an issuer move, and does NOT drift on each excluded field."""
+    # _norm_guid on BOTH sides of the join key, matching exposure_content. The atoms are
+    # normalized, so a raw str() here would leave an uppercase-stored id unmatched and the
+    # instrument would silently read UNCLASSIFIABLE rather than failing loudly (review).
     return {
-        "id": str(instrument.id),
-        "tenant_id": str(instrument.tenant_id),
-        "issuer_id": str(instrument.issuer_id) if instrument.issuer_id is not None else None,
+        "id": _norm_guid(instrument.id),
+        "tenant_id": _norm_guid(instrument.tenant_id),
+        "issuer_id": (
+            _norm_guid(instrument.issuer_id) if instrument.issuer_id is not None else None
+        ),
     }
 
 
@@ -3918,11 +3925,13 @@ def classification_assignment_closure_content(assignment: Any, chain: list[Any])
     The closure hashes ``code``/``parent_node_id``/``level`` and EXCLUDES ``name``/``description``
     (REF-1's carry #3: a cosmetic rename cannot redden a historical run)."""
     return {
-        "id": str(assignment.id),
-        "tenant_id": str(assignment.tenant_id),
+        "id": _norm_guid(assignment.id),
+        "tenant_id": _norm_guid(assignment.tenant_id),
         "entity_type": assignment.entity_type,
-        "entity_id": str(assignment.entity_id),
-        "scheme_id": str(assignment.scheme_id),
+        # NORMALIZED: this is the (dimension_kind, instrument_id) join key the binder probes with
+        # the atoms' already-normalized instrument_id.
+        "entity_id": _norm_guid(assignment.entity_id),
+        "scheme_id": _norm_guid(assignment.scheme_id),
         "dimension_kind": assignment.dimension_kind,
         "node_code": assignment.node_code,
         "basis": assignment.basis,
@@ -3930,7 +3939,7 @@ def classification_assignment_closure_content(assignment: Any, chain: list[Any])
             {
                 "code": node.code,
                 "parent_node_id": (
-                    str(node.parent_node_id) if node.parent_node_id is not None else None
+                    _norm_guid(node.parent_node_id) if node.parent_node_id is not None else None
                 ),
                 "level": node.level,
             }
@@ -3940,9 +3949,10 @@ def classification_assignment_closure_content(assignment: Any, chain: list[Any])
 
 
 def classification_scheme_content(scheme: Any) -> dict[str, Any]:
-    """The scheme-row pin (OQ-CON-1-24 ii): the co-existing-scheme discriminator's inputs."""
+    """The scheme-row pin (OQ-CON-1-24 ii): WHICH taxonomy version produced the number — pinned as
+    re-verifiable evidence, NOT as the mixed-version discriminator (that reads live heads)."""
     return {
-        "id": str(scheme.id),
+        "id": _norm_guid(scheme.id),
         "scheme_family": scheme.scheme_family,
         "version_label": scheme.version_label,
     }
@@ -3962,14 +3972,15 @@ def build_concentration_snapshot(
       the IA-row pin; "latest COMPLETED" is never a selection here, Part 6b item 5);
     - one ``COMPONENT_KIND_ISSUER_EDGE`` per DISTINCT instrument carrying exposure (the narrow
       ``{id, tenant_id, issuer_id}`` pin — a NULL edge pins honestly as NULL, the residual fact);
-    - one ``COMPONENT_KIND_CLASSIFICATION`` per current-head assignment of a pinned instrument's
-      ISSUER under a REQUESTED scheme (assignment + ancestor closure, code-first semantics); and
+    - one ``COMPONENT_KIND_CLASSIFICATION`` per current-head assignment of a pinned INSTRUMENT
+      under a REQUESTED scheme (assignment + ancestor closure, code-first semantics) — REF-1's
+      assignment grain is the INSTRUMENT, not the issuer (review: the docstring said "issuer"); and
     - one ``COMPONENT_KIND_CLASSIFICATION_SCHEME`` per requested scheme row.
 
     **PRE-BUILD refusals (computable from current heads — no snapshot, no run):** a requested
     scheme id that resolves to a different ``dimension_kind`` than requested; MIXED BASIS within
-    one dimension's pinned assignments (OQ-CON-1-26); a second live scheme of the SAME
-    ``(dimension_kind, scheme_family)`` among the pinned assignments (OQ-CON-1-24 i — mixed
+    one dimension's pinned assignments (OQ-CON-1-26); a second LIVE scheme of the SAME
+    ``(dimension_kind, scheme_family)`` carried by the pinned instruments (OQ-CON-1-24 i — mixed
     VERSIONS refuse; a different family simply is not consumed); an empty atom set. The NULL-scope
     upstream-run refusal lives in the BINDER (it needs the run head, read there). Classification
     is AS-OF-BUILD (OQ-CON-1-11): current heads, declared as a model assumption."""
@@ -4022,6 +4033,34 @@ def build_concentration_snapshot(
     # the ancestor closure resolved CODE-FIRST (tenant precedence) — plus the PRE-BUILD coherence
     # refusals over the pinned set.
     for dimension_kind, scheme in sorted(schemes.items()):
+        # OQ-CON-1-24 (i) — the MIXED-VERSION refusal, computed over the LIVE book, NOT the pinned
+        # set. The ratified wording said "among the pinned assignments"; the review proved that
+        # discriminator structurally unfireable, because the pinned set is filtered to the
+        # REQUESTED ``scheme_id`` and so can never hold a second version to discriminate against
+        # (the pinned scheme rows were inert, and three docstrings + one API 409 advertised a
+        # refusal no code path could produce). The check therefore reads the tenant's LIVE
+        # current-head assignments for these instruments WITHOUT the scheme filter — a deliberate
+        # STRENGTHENING of the ratified wording, recorded as such in the decision record.
+        live_scheme_ids = _list_current_assignment_scheme_ids(
+            session,
+            entity_ids=instrument_ids,
+            dimension_kind=dimension_kind,
+            acting_tenant=acting_tenant,
+        )
+        same_family = sorted(
+            sid
+            for sid in live_scheme_ids
+            if resolve_scheme(session, scheme_id=sid, acting_tenant=acting_tenant).scheme_family
+            == scheme.scheme_family
+        )
+        if len(same_family) > 1:
+            raise ConcentrationSnapshotError(
+                f"mixed live scheme VERSIONS of family {scheme.scheme_family!r} within "
+                f"{dimension_kind}: {same_family} — aggregating one version while the other's "
+                f"assignments read UNCLASSIFIED understates concentration, so this refuses "
+                f"fail-closed (OQ-CON-1-24 i); retire one version before running. A DIFFERENT "
+                f"family co-existing stays legal and is simply not consumed (clause iii)."
+            )
         rows = _list_current_assignments(
             session,
             entity_ids=instrument_ids,
@@ -4075,8 +4114,8 @@ def _resolve_assignment_row(session: Session, assignment_id: str, *, acting_tena
 
     row = session.execute(
         select(ClassificationAssignment).where(
-            ClassificationAssignment.id == assignment_id,
-            ClassificationAssignment.tenant_id == acting_tenant,
+            ClassificationAssignment.id == str(assignment_id),
+            ClassificationAssignment.tenant_id == canonical_tenant_id(acting_tenant),
         )
     ).scalar_one_or_none()
     if row is None:
@@ -4084,6 +4123,37 @@ def _resolve_assignment_row(session: Session, assignment_id: str, *, acting_tena
             f"classification_assignment {assignment_id} is not visible to {acting_tenant}"
         )
     return row
+
+
+def _list_current_assignment_scheme_ids(
+    session: Session,
+    *,
+    entity_ids: list[str],
+    dimension_kind: str,
+    acting_tenant: str,
+) -> list[str]:
+    """The DISTINCT live scheme ids these instruments carry in one dimension — NO scheme filter.
+
+    This is OQ-CON-1-24 (i)'s discriminator input. It deliberately does NOT read the pinned set:
+    the pinned set is filtered to the requested scheme, so a second version can never appear in it
+    (the review's BLOCKING). Own-tenant only — assignments are proprietary, never hybrid."""
+    from irp_shared.classification.models import ClassificationAssignment
+
+    if not entity_ids:
+        return []
+    rows = session.execute(
+        select(ClassificationAssignment.scheme_id)
+        .where(
+            ClassificationAssignment.tenant_id == canonical_tenant_id(acting_tenant),
+            ClassificationAssignment.entity_type == "instrument",
+            ClassificationAssignment.entity_id.in_(entity_ids),
+            ClassificationAssignment.dimension_kind == dimension_kind,
+            ClassificationAssignment.valid_to.is_(None),
+            ClassificationAssignment.system_to.is_(None),
+        )
+        .distinct()
+    ).scalars()
+    return sorted({str(r) for r in rows})
 
 
 def _list_current_assignments(
@@ -4104,10 +4174,10 @@ def _list_current_assignments(
         session.execute(
             select(ClassificationAssignment)
             .where(
-                ClassificationAssignment.tenant_id == acting_tenant,
+                ClassificationAssignment.tenant_id == canonical_tenant_id(acting_tenant),
                 ClassificationAssignment.entity_type == "instrument",
                 ClassificationAssignment.entity_id.in_(entity_ids),
-                ClassificationAssignment.scheme_id == scheme_id,
+                ClassificationAssignment.scheme_id == str(scheme_id),
                 ClassificationAssignment.dimension_kind == dimension_kind,
                 ClassificationAssignment.valid_to.is_(None),
                 ClassificationAssignment.system_to.is_(None),

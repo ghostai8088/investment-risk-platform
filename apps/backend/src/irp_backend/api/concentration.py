@@ -30,12 +30,16 @@ from sqlalchemy.orm import Session
 from irp_backend.api.write_errors import raise_mapped_write
 from irp_backend.deps import get_tenant_session, require_permission
 from irp_shared.classification.service import ClassificationNotVisible
-from irp_shared.concentration.bootstrap import register_concentration_model
+from irp_shared.concentration.bootstrap import (
+    ConcentrationModelParameterError,
+    register_concentration_model,
+)
 from irp_shared.concentration.events import ConcentrationActor
 from irp_shared.concentration.models import ConcentrationResult
 from irp_shared.concentration.service import (
     ConcentrationInputError,
     concentration_rows_for_run,
+    concentration_run_head,
     latest_concentration,
     list_concentration_issuer_detail,
     list_concentration_results,
@@ -118,7 +122,12 @@ _MODEL_WRITE_ERRORS: dict[type[Exception], tuple[int, str]] = {
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "the resolved concentration model version is not usable (CTRL-003)",
     ),
-    ValueError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid concentration model parameters"),
+    # NOT bare ValueError: that would relabel any server-side bug inside registration as a client
+    # 422, and would re-arm the API-2 MRO trap (isinstance-caught, exact-type-mapped → KeyError).
+    ConcentrationModelParameterError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "invalid concentration model parameters",
+    ),
 }
 
 
@@ -414,14 +423,9 @@ def get_concentration_run(
 ) -> ConcentrationRunOut:
     """One run's rows (non-issuer — the ``.view`` payload; a FAILED run legitimately has none;
     404 on an unknown/foreign run id)."""
-    runs = [
-        r
-        for r in list_concentration_runs(db, acting_tenant=principal.tenant_id, limit=1000)
-        if str(r.run_id) == str(run_id)
-    ]
-    if not runs:
+    run = concentration_run_head(db, acting_tenant=principal.tenant_id, run_id=str(run_id))
+    if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
-    run = runs[0]
     rows = concentration_rows_for_run(db, acting_tenant=principal.tenant_id, run_id=str(run_id))
     return ConcentrationRunOut(
         run_id=str(run.run_id),
