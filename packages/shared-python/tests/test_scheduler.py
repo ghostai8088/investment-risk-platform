@@ -452,7 +452,13 @@ def test_the_schedulable_set_is_derived_from_the_registry() -> None:
 #: structural and will never shrink: ``models.py`` is the metadata aggregator (it must import every
 #: package), and ``demo`` is the orchestration layer that drives all of them.
 _RISK_IMPORTERS = frozenset({"models.py", "demo", "snapshot", "limit", "scheduling"})
-_EXPOSURE_IMPORTERS = frozenset({"models.py", "demo", "snapshot", "risk", "scheduling"})
+_EXPOSURE_IMPORTERS = frozenset(
+    # CON-1 (2026-07-30): `concentration` joined — its binder consumes an EXPLICITLY SELECTED
+    # exposure run (RUN_TYPE_EXPOSURE_AGGREGATE + the atom lister ride the import). The visible
+    # whitelist amendment is the fence's design (the OQ-CON-1-19 posture, same as the snapshot
+    # fence): set equality, so the entry shrinks with the truth if the importer ever goes away.
+    {"models.py", "demo", "snapshot", "risk", "scheduling", "concentration"}
+)
 
 
 def _inbound_importers(target: str) -> set[str]:

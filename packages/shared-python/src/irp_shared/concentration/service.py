@@ -151,8 +151,11 @@ def run_concentration(
         dimensions: dict[str, tuple[str | None, str]] = {
             DIMENSION_KIND_ISSUER: (None, BASIS_NOT_APPLICABLE)
         }
-        for dim, scheme_id in sorted(scheme_by_dimension.items()):
-            dimensions[dim] = (scheme_id, pinned.basis_by_dimension.get(dim, BASIS_NOT_APPLICABLE))
+        for dim, requested_scheme in sorted(scheme_by_dimension.items()):
+            dimensions[dim] = (
+                requested_scheme,
+                pinned.basis_by_dimension.get(dim, BASIS_NOT_APPLICABLE),
+            )
 
         for dim, (scheme_id, basis) in sorted(dimensions.items()):
             atoms = _bucket_atoms(pinned, dim)

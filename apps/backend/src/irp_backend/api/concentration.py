@@ -239,7 +239,7 @@ def register_model(
         model_version_id=str(version.id),
         model_code="concentration.dimensional",
         version_label=version.version_label,
-        status=version.status,
+        status=version.status or "REGISTERED",
     )
     db.commit()
     return response
