@@ -9,12 +9,12 @@ more ``z``. SR-1's stage-17 suite is ``stage9zzzzzzzz`` (eight), so this is ``st
 (NINE) — verified by ``ls`` on the tests directory, not read off a decision record, which is
 exactly how RM-1 discovered its own ratified name had gone stale.
 
-**This file takes the FINAL-POSITION count pin — and the numbers do NOT move.** A capture-only
-stage mints no model code, files no validation and creates no calculation run, so the pin relays at
-an UNCHANGED 25/40/133 (the CC-1 stage-8 shape). The relay still matters: the previous holder
-collates BEFORE this stage and therefore cannot see anything this stage does, which is precisely
-the arrangement that let the SCH-2 run count ship wrong (109 recorded, 110 actual). A pin's value
-is its POSITION, not its number.
+**The FINAL-POSITION count pin RELAYED ONWARD at CON-1 (stage 19, the 10-z suite): this file's
+25/40/133 is now a POSITIONAL assertion** — true at THIS point of the battery (after stage 18,
+before stage 19), while the final-position pin lives in
+``test_demo_stage9zzzzzzzzzz_con1_pg.py`` at 26/41/136. The relay discipline is unchanged: the
+previous holder collates BEFORE the newest stage and therefore cannot see anything it does (the
+SCH-2 109-vs-110 defect). A pin's value is its POSITION, not its number.
 """
 
 from __future__ import annotations
