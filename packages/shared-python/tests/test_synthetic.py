@@ -522,9 +522,10 @@ def test_no_migration_and_no_entity() -> None:
     # PR #137's drift sweep did not catch it because a stale comment leaves no diff to review. Both
     # the prose and the message are part of the fold now, not just the number.
     #
-    # NOTE (REF-1): relayed 0056 -> 0057. REF-1 legitimately took 0056 (classification), which is
+    # NOTE (CON-1): relayed 0057 -> 0058 (0057 = concentration_result).
+    # Prior relay (REF-1): 0056, which is
     # exactly the "fires on a legitimate new migration" case the SCH-2 note above describes.
-    assert not list(versions.glob("0057*")), "no 0057 migration may be added by the synthetic slice"
+    assert not list(versions.glob("0058*")), "no 0058 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -

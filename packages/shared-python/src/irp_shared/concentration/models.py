@@ -106,7 +106,7 @@ class ConcentrationResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin
         # Total-enumeration row-kind census (fails CLOSED for an unenumerated kind).
         CheckConstraint(
             "row_kind IN ('DETAIL', 'SUMMARY')",
-            name="ck_concentration_row_kind",
+            name="row_kind",  # ck_ SUFFIX only (the 0055 naming-convention note)
         ),
         # SUMMARY rows: sentinel bucket, no issuer identity, metric_type IN the NINE summary
         # names (SHARE refused on summary rows — the v6 junk-SHARE-summary hole), scheme echo
@@ -117,7 +117,7 @@ class ConcentrationResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin
             f"AND metric_type IN ({_SUMMARY_METRICS_SQL}) "
             f"AND ((metric_type IN ({_CLASSIFICATION_SUMMARY_SQL})) = (scheme_id IS NOT NULL))"
             ")",
-            name="ck_concentration_summary_shape",
+            name="summary_shape",  # ck_ SUFFIX only (the 0055 naming-convention note)
         ),
         # DETAIL rows: metric_type = SHARE; scheme echo decided BY dimension (ISSUER => NULL,
         # classification kinds => NOT NULL); a real ISSUER bucket carries its issuer FK.
@@ -126,17 +126,17 @@ class ConcentrationResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin
             "metric_type = 'SHARE' AND bucket_code != '__SUMMARY__' "
             "AND ((dimension_kind = 'ISSUER') = (scheme_id IS NULL))"
             ")",
-            name="ck_concentration_detail_shape",
+            name="detail_shape",  # ck_ SUFFIX only (the 0055 naming-convention note)
         ),
         CheckConstraint(
             "NOT (row_kind = 'DETAIL' AND dimension_kind = 'ISSUER' "
             "AND bucket_code NOT IN ('__UNCLASSIFIED__', '__UNCLASSIFIABLE__')) "
             "OR issuer_id IS NOT NULL",
-            name="ck_concentration_issuer_bucket",
+            name="issuer_bucket",  # ck_ SUFFIX only (the 0055 naming-convention note)
         ),
         CheckConstraint(
             "dimension_kind IN ('ISSUER', 'SECTOR_INDUSTRY', 'COUNTRY_OF_RISK')",
-            name="ck_concentration_dimension_kind",
+            name="dimension_kind",  # ck_ SUFFIX only (the 0055 naming-convention note)
         ),
     )
 
