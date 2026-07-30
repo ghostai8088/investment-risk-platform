@@ -919,7 +919,9 @@ def test_the_run_family_is_NEVER_a_metric_type_for_ANY_family(session: Session) 
     # metric type legitimately moves these pins; that is what a census pin is FOR (the demo-counts
     # precedent: the pin moves consciously, with the slice that moves it).
     assert len(run_types) == 18, f"run-type census moved: {len(run_types)}: {sorted(run_types)}"
-    assert len(metric_types) == 38, f"metric-type census moved: {len(metric_types)}"
+    # 38 -> 39 at CON-1: concentration.models.METRIC_TYPE_SHARE (the detail-row metric; the nine
+    # summary names live in SUMMARY_METRIC_TYPES with their own exact census — none is a run type).
+    assert len(metric_types) == 39, f"metric-type census moved: {len(metric_types)}"
 
     collisions = sorted(set(run_types) & set(metric_types))
     assert not collisions, "run_type values that are also metric_type values: " + ", ".join(

@@ -12,6 +12,7 @@ from irp_shared.classification.models import (
     ClassificationNode,
     ClassificationScheme,
 )
+from irp_shared.concentration.models import ConcentrationResult
 from irp_shared.db.base import Base
 from irp_shared.dq.models import DataQualityResult, DataQualityRule
 from irp_shared.entitlement.models import (
@@ -151,6 +152,7 @@ __all__ = [
     "BenchmarkReturn",
     "ProxyMapping",
     "ExposureAggregate",
+    "ConcentrationResult",
     "SensitivityResult",
     "FactorExposureResult",
     "CovarianceResult",
