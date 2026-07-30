@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **DRAFT v6 (2026-07-30) — READY FOR THE RATIFICATION GATE.** Four verifier passes (Part 7): the descoped form survived the full 4-lane pass (registers CLEAN 12/12; the citation lane's first execution CLEAN at the core; the OQ-CON-1-15 reversal resolved its BLOCKING structurally), and the v5 targeted pass then caught the record's own mis-measured holder sets (`ops` for `data_steward`) plus four narrow contradictions — all folded here at v6, every holder set recomputed from source. History: v1 broke 46 findings deep (5 BLOCKING, the methodology foundation refuted); the 2026-07-29 dual-share repair was itself REFUTED (47 findings, 8 BLOCKING), triggering the user-ratified stopping rule → the `share_invested_long` descope with the `denominator_basis` vocabulary (OQ-CON-1-1) |
+| Status | **RATIFIED 2026-07-30 (v6) — OQ-CON-1-1…28 ALL approved as recommended at the user gate ("proceed", no exceptions), including the OQ-CON-1-15 reversal and decision point 8 (the minimal FE read KEPT in-slice). The Part 6b in-place amendments to `wave_14_planning.md`, roadmap Part 2.18 and `current_state.md` are EXECUTED. Implementation next.** Four verifier passes (Part 7): the descoped form survived the full 4-lane pass (registers CLEAN 12/12; the citation lane's first execution CLEAN at the core; the OQ-CON-1-15 reversal resolved its BLOCKING structurally), and the v5 targeted pass then caught the record's own mis-measured holder sets (`ops` for `data_steward`) plus four narrow contradictions — all folded here at v6, every holder set recomputed from source. History: v1 broke 46 findings deep (5 BLOCKING, the methodology foundation refuted); the 2026-07-29 dual-share repair was itself REFUTED (47 findings, 8 BLOCKING), triggering the user-ratified stopping rule → the `share_invested_long` descope with the `denominator_basis` vocabulary (OQ-CON-1-1) |
 | Slice | Wave-14 slice 1 (roadmap Part 2.18) |
 | Realizes | REQ-CRD-003's **concentration half** (CAP-6.4); the spread half split to REQ-CRD-005 at REF-1 |
 | Entity | ENT-069 `concentration_result` (IA append-only, run + snapshot + model bound) |
@@ -833,11 +833,14 @@ Recorded per the SCH-2 record-reversals-at-the-gate rule. v1 narrowed ratified d
    because OQ-CON-1-17 defers schedulability. The roadmap row ratified both. `FAMILY_REGISTRY` *is*
    the schedulability registry, so deferring one drops the other. Trigger: the first operator ask for
    an unattended concentration cadence.
-2. **"Rule-7 reads + FE in-slice" is narrowed to backend-only.** REF-1 established that **rule 7 has
-   no FE clause** — but the FE obligation here comes from the **roadmap row**, not from rule 7, so it
-   **cannot be inherited away** by citing REF-1. Dropping it is a reversal of a ratified deliverable
-   and needs the user's approval; if approved, the slice that owns the concentration view must be
-   named.
+2. **"Rule-7 reads + FE in-slice" — DECIDED AT THE GATE (2026-07-30, decision point 8): the FE
+   read is KEPT, minimal.** A concentration list/detail read on the existing runs surface (the
+   FE-3 runs view pattern), summary metrics + the classification-dimension buckets; the
+   issuer-identity detail rides only behind `concentration.issuer.view`. If the slice runs long,
+   the SPLIT ORDER is fixed: the country dimension splits first (Part 4), the FE read second —
+   never the coverage gate, the basis discipline, or the REF-1 hardenings. (The earlier
+   narrowed-to-backend proposal is withdrawn; the roadmap row's FE clause stands satisfied by the
+   minimal read.)
 3. **CR-N and HHI become GOVERNED stored values rather than read-surface derivations** — that is
    the genuine content here, and it is what makes the metric table hard to re-open later. *(The
    second pass refuted v3's framing of this as a widening OF THE ROADMAP: the roadmap explicitly
