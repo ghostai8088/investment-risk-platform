@@ -36,9 +36,9 @@ from irp_shared.synthetic import (
     synthetic_id,
 )
 from irp_shared.synthetic import builder as builder_mod
-from irp_shared.synthetic import ids as ids_mod
 from irp_shared.transaction.models import Transaction
 from irp_shared.valuation import Valuation, reconstruct_valuation_as_of
+
 
 def _all_synthetic_modules() -> tuple[object, ...]:
     """EVERY module in ``irp_shared.synthetic`` — a CENSUS, not an enumeration (PERF-0).

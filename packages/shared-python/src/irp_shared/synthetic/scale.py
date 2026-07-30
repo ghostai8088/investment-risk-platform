@@ -33,7 +33,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.db.tenant import set_tenant_context
@@ -226,9 +225,10 @@ def build_perf_book(
 
     # FRESH-SCHEMA precondition (see the docstring). ONE query, before any timed write, so it
     # cannot skew a reading.
-    if session.execute(
-        select(Portfolio.id).where(Portfolio.tenant_id == PERF_TENANT_ID).limit(1)
-    ).first():
+    # ``session.get`` by the deterministic first-portfolio id, mirroring the builder's own
+    # double-run check. NOT ``session.execute(select(...))``: the package's no-raw-SQL fence
+    # forbids ``.execute`` outright, and it caught this line when it was written that way.
+    if session.get(Portfolio, synthetic_id("perf:portfolio:PERF-ACCT-0000")) is not None:
         raise PerfSeedRefused(
             "the PERF tenant already holds a seeded rung — each ladder rung needs a FRESH schema "
             "(ordinal-keyed ids mean rungs overlap by design). Reset the schema between rungs."
