@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **DRAFT v5 (2026-07-30) — READY FOR THE RATIFICATION GATE.** The descoped form survived its verifier pass (4 lanes incl. the first citation-lane execution: registers lane CLEAN 12/12, citation core CLEAN; 1 BLOCKING resolved structurally by the OQ-CON-1-15 reversal, all 26 findings folded here at v5 — Part 7 has the three-pass ledger). History: v1 broke 46 findings deep (5 BLOCKING, the methodology foundation refuted); the 2026-07-29 dual-share repair was itself REFUTED (47 findings, 8 BLOCKING), triggering the user-ratified stopping rule → the `share_invested_long` descope with the `denominator_basis` vocabulary (OQ-CON-1-1) |
+| Status | **DRAFT v6 (2026-07-30) — READY FOR THE RATIFICATION GATE.** Four verifier passes (Part 7): the descoped form survived the full 4-lane pass (registers CLEAN 12/12; the citation lane's first execution CLEAN at the core; the OQ-CON-1-15 reversal resolved its BLOCKING structurally), and the v5 targeted pass then caught the record's own mis-measured holder sets (`ops` for `data_steward`) plus four narrow contradictions — all folded here at v6, every holder set recomputed from source. History: v1 broke 46 findings deep (5 BLOCKING, the methodology foundation refuted); the 2026-07-29 dual-share repair was itself REFUTED (47 findings, 8 BLOCKING), triggering the user-ratified stopping rule → the `share_invested_long` descope with the `denominator_basis` vocabulary (OQ-CON-1-1) |
 | Slice | Wave-14 slice 1 (roadmap Part 2.18) |
 | Realizes | REQ-CRD-003's **concentration half** (CAP-6.4); the spread half split to REQ-CRD-005 at REF-1 |
 | Entity | ENT-069 `concentration_result` (IA append-only, run + snapshot + model bound) |
@@ -127,7 +127,10 @@
     assumptions state "concentration is measured over the exposure run's aggregation scope — the
     subtree rooted at `scope_portfolio_id`". A fund-level (single-book) number is obtained by
     running exposure at that portfolio; no per-child decomposition ships in v1 (trigger: the first
-    consumer needing child-level concentration inside one run).
+    consumer needing child-level concentration inside one run). **The pin is not total (v6):**
+    `scope_portfolio_id` is NULLABLE and genuinely NULL for snapshot-consume-path exposure runs
+    (the OD-API-1b-D honest NULL) — a NULL-scope upstream run is **REFUSED PRE-BUILD** (computable
+    from the run head), never guessed at.
   - Every share row carries **`denominator_basis`**, a controlled-vocabulary column with the single v1
     value `INVESTED_LONG` — so a future NAV or total-assets denominator is an ADDITIVE vocabulary value
     on new rows, never a reinterpretation of shipped ones.
@@ -431,14 +434,17 @@
     issuer-identity refusals.
   **The holder sets, ENUMERATED HERE so the gate ratifies them and the pins are written FROM this
   record (the v4 pass: deferring enumeration to a not-yet-written plan is the same silence one
-  document over). Measured from `ROLE_TEMPLATES` (seven roles; `platform_admin` holds ALL_CODES by
-  construction):**
-  - `concentration.run` = **{platform_admin, ops, risk_analyst_1l}** — the measured
+  document over). Measured from `ROLE_TEMPLATES` — SIX roles; `platform_admin` holds ALL_CODES by
+  construction. *(v6 correction: v5 enumerated these sets with `ops` where the bootstrap has
+  `data_steward` and claimed seven roles — a faulty extraction presented as "measured exactly";
+  the targeted pass recomputed every set from the source. `ops` holds ONLY `ops.audit.verify`.)*:**
+  - `concentration.run` = **{platform_admin, data_steward, risk_analyst_1l}** — the recomputed
     `risk.run`/`pacing.run` precedent exactly.
-  - `concentration.view` = **{platform_admin, ops, risk_analyst_1l, risk_manager_2l, auditor_3l}**
-    — the measured `risk.view`/`pacing.view` governed-output precedent exactly.
-  - `concentration.issuer.view` = **{platform_admin, ops, risk_analyst_1l, risk_manager_2l}** —
-    the measured `reference.issuer.view` precedent exactly (auditor_3l excluded).
+  - `concentration.view` = **{platform_admin, data_steward, risk_analyst_1l, risk_manager_2l,
+    auditor_3l}** — the recomputed `risk.view`/`pacing.view` governed-output precedent exactly.
+  - `concentration.issuer.view` = **{platform_admin, data_steward, risk_analyst_1l,
+    risk_manager_2l}** — the recomputed `reference.issuer.view` precedent exactly (auditor_3l
+    excluded).
   Each pinned `_holders(code) == {...}` in both directions, and a route-level test asserts the
   issuer-bearing endpoints demand the `.issuer.view` code (the pin alone cannot catch a mis-scoped
   route — REF-1's own finding).
@@ -502,10 +508,12 @@
   same 'pins nothing' defect the OQ accuses v1 of, one level down").** One new model code
   (`concentration.dimensional` — fixed at the gate), one INITIAL validation record, and THREE new
   COMPLETED runs: DEMO-GLOBAL's concentration run, DEMO-CONCENTRATION's exposure run, and
-  DEMO-CONCENTRATION's concentration run. DEMO-MULTIASSET's refusal is the COVERAGE floor —
-  amount-weighted, so **POST-BUILD** per OQ-CON-1-1's timing rule (v4 said pre-build/no-run, which
-  contradicted that rule): the stage asserts the run row EXISTS, is **FAILED** with the named
-  coverage gap, and that the COMPLETED count is unmoved by it. **The declared triple: 25/40/133 →
+  DEMO-CONCENTRATION's concentration run. DEMO-MULTIASSET's refusal is the **all-UNCLASSIFIABLE
+  0/0 gap** (the v6 targeted pass measured the fixture: its instruments carry NO issuer and NO
+  assignments, so classified = UNCLASSIFIED = 0 in every dimension — the OQ-CON-1-4 0/0 refusal,
+  not the coverage floor v5 named) — amount-weighted, so **POST-BUILD** per OQ-CON-1-1's timing
+  rule: the stage asserts the run row EXISTS, is **FAILED** with the named 0/0 gap, and that the
+  COMPLETED count is unmoved by it. **The declared triple: 25/40/133 →
   26/41/136** (COMPLETED runs only; the FAILED refusal run is additionally pinned by status). Per P4's binding clause this is a dated planning-time reading, RE-MEASURED against
   the merged artifact at closeout, never carried forward as a pin. The final-position pin relays to
   CON-1's suite (ten `z`, verified by `ls`, not read off this record). **Census obligations,
@@ -550,13 +558,20 @@ deliberately trivial so the hand-derivation is at-sight — the lesson of this s
 | CN-BETA | UNCLASSIFIED (issuer BETA-LLC, no assignments) | 30,000.000000 |
 | CN-CASH | UNCLASSIFIABLE (`issuer_id` NULL by design) | 10,000.000000 |
 
-Denominator Σ long = **100,000.000000**. Issuer dimension: ALPHA-CORP **0.600000**, UNCLASSIFIED
-**0.300000**, UNCLASSIFIABLE **0.100000** (sum 1.000000). `coverage_ratio` = **0.600000**;
-classifiable coverage = 0.6 ÷ (0.6 + 0.3) = **0.666667** — above a demo floor set at 0.5, so the
-run COMPLETES with visible residuals. `HHI_ISSUER` (classified only) = 0.6² = **0.360000**;
-`MAX_SHARE_ISSUER` = `CR_5_ISSUER` = **0.600000**. Sector and country dimensions mirror the same
-triple (C / US at 0.600000, both residuals identical) since the single classified instrument
-carries one node per dimension.
+Denominator Σ long = **100,000.000000**. Coverage is **PER-DIMENSION** (each dimension's summary
+rows carry that dimension's pair), and the v6 targeted pass caught the v5 literals contradicting
+the per-dimension predicates — CN-BETA carries an issuer, so in the ISSUER dimension it is
+CLASSIFIED, not residual. Re-derived under the ratified predicates:
+- **ISSUER dimension:** ALPHA-CORP **0.600000**, BETA-LLC **0.300000**, UNCLASSIFIABLE (CN-CASH)
+  **0.100000** — an UNCLASSIFIED bucket cannot exist here by construction. `coverage_ratio` =
+  **0.900000**; classifiable coverage = 0.9 ÷ (0.9 + 0) = **1.000000**. `HHI_ISSUER` = 0.36 + 0.09
+  = **0.450000**; `MAX_SHARE_ISSUER` = **0.600000**; `CR_5_ISSUER` = **0.900000**.
+- **SECTOR_INDUSTRY and COUNTRY_OF_RISK dimensions** (where the residual demonstration lives):
+  classified C / US **0.600000** (CN-ALPHA); UNCLASSIFIED **0.300000** (CN-BETA — issuer present,
+  no assignment); UNCLASSIFIABLE **0.100000** (CN-CASH — no assignment and no issuer edge).
+  `coverage_ratio` = **0.600000**; classifiable coverage = 0.6 ÷ (0.6 + 0.3) = **0.666667** —
+  above the demo floor of 0.5, so the run COMPLETES with visible residuals. `HHI` = **0.360000**;
+  `MAX_SHARE` = `CR_5` = **0.600000** per dimension.
 
 **The SHORT-BEARING distinguishing fixture (unit + PG tiers, not the demo), reference values —
 the v4 pass found the ONLY test that distinguishes the descoped denominator had no independently
@@ -611,20 +626,29 @@ dimensions REF-1 actually shipped). Two **PARTIAL unique indexes, predicates sta
 row_kind = 'DETAIL'` — **declared with BOTH `postgresql_where` and `sqlite_where`** (the shipped
 convention: REF-1's current-head index, `position`, `limit`, ~8 marketdata indexes; the v4 pass
 refuted the "SQLite is structurally blind" claim — `create_all` builds these in the unit tier
-too). Row-kind-qualified CHECKs per OQ-CON-1-23 (summary ⇒ `bucket_code = '__SUMMARY__'`, no
-issuer_id, scheme_id per the ten-name enumeration — NOT NULL for the classification six, NULL for
-the issuer trio; detail ISSUER real buckets ⇒ issuer_id NOT NULL; classification detail ⇒
-scheme_id NOT NULL). The **duplicate-refusal negative controls for BOTH row kinds including a
-duplicate `__UNCLASSIFIED__` row run in BOTH tiers with PG authoritative**, and
-`bucket_code == str(issuer_id)` is a service invariant with its own PG-tier test.
+too). Row-kind-qualified CHECKs per OQ-CON-1-23, stated as a **name-AND-dimension enumeration
+(v6 precision):** summary ⇒ `bucket_code = '__SUMMARY__'`, no issuer_id, **`metric_type` IN the
+NINE summary names** (`SHARE` is refused on summary rows — v6 closed the junk-SHARE-summary hole),
+with scheme_id NOT NULL for the classification six and NULL for the issuer trio; detail ⇒
+`metric_type = 'SHARE'` with scheme_id decided BY `dimension_kind` (ISSUER ⇒ NULL, classification
+kinds ⇒ NOT NULL) and ISSUER real buckets ⇒ issuer_id NOT NULL. The **duplicate-refusal negative
+controls for BOTH row kinds including a duplicate `__UNCLASSIFIED__` row run in BOTH tiers with
+PG authoritative**, and `bucket_code == str(issuer_id)` is a service invariant with its own
+PG-tier test.
 
 **`metric_type` vocabulary:** the exact ten-name census of OQ-CON-1-13, longest measured 25 ≤ the
 shipped `String(30)`, with the set-equality census test and its P6 floor.
 
-**New `concentration/` package** — the binder (explicit upstream-run selection, the pre-build
-refusals: mixed-scheme-version, mixed-basis, zero-denominator, sub-floor classifiable coverage),
-a DB-free kernel (shares, CR-N, HHI over pinned rows), and the bootstrap registrar with the
-declared parameters (`declared_concentration_parameters()`, exact-identity refusal).
+**New `concentration/` package** — the binder (explicit upstream-run selection; **PRE-BUILD
+refusals** = mixed scheme version / co-existing same-family schemes (OQ-10/24), mixed basis
+(OQ-26), and a **NULL-scope upstream run** (the v6 targeted pass: a snapshot-consume-path
+exposure run carries `scope_portfolio_id = NULL` by the OD-API-1b-D honest-NULL rule, so the
+ENT-069 `portfolio_id = scope_portfolio_id` identity is uncomputable — refused from the run head,
+negative-controlled; the OQ-CON-1-1 scope pin carries the same clause); **POST-BUILD `gaps`
+refusals** = zero invested-long, sub-floor classifiable coverage, the all-UNCLASSIFIABLE 0/0
+book — the OQ-CON-1-1 timing rule, now used consistently at both ends), a DB-free kernel (shares,
+CR-N, HHI over pinned rows), and the bootstrap registrar with the declared parameters
+(`declared_concentration_parameters()`, exact-identity refusal).
 
 **Snapshot legs** — ONE new PURPOSE + ONE binding predicate for the snapshot, and FOUR pinned
 shapes (the mint accounting stated precisely — per-SHAPE: serializer, resolver,
@@ -859,5 +883,19 @@ ratified registers stay false on completion).
    — the share, the grain redesign, the three-code mint, the basis discipline — SURVIVED
    refutation for the first time in three passes.
 
-*(The descoped-form record has now been verified once in full; the gate may additionally demand a
-targeted re-verify of the v5 fold diff — the deltas are material but narrow.)*
+4. **v5 targeted pass (2026-07-30, single refuter over ONLY the v5 fold diff): 1 BLOCKING, 3 HIGH,
+   2 LOW — all folded at v6 (this version).** The BLOCKING was the record's own claimed
+   measurement: the v5 holder sets substituted `ops` for the bootstrap's `data_steward` in all
+   three codes and claimed seven roles where there are six — a faulty extraction presented as
+   "measured exactly", caught by recomputation from source (the seventh-ledger discipline applied
+   to this record's own text). The HIGHs: the DEMO-CONCENTRATION issuer-dimension literals
+   contradicted the v5 per-dimension predicates (re-derived: BETA-LLC is CLASSIFIED by its issuer
+   edge; HHI_ISSUER 0.450000, CR_5 0.900000, coverage per-dimension); DEMO-MULTIASSET's refusal is
+   the 0/0 all-UNCLASSIFIABLE gap, not the coverage floor; Part 3's binder line still listed two
+   post-build refusals as pre-build; and the `portfolio_id = scope_portfolio_id` pin was not total
+   (NULL-scope snapshot-consume runs exist — now a pre-build refusal). Verified-clean by the same
+   pass: the short-bearing fixture arithmetic exact to 6dp; the OQ-CON-1-15 reversal's fail-closed
+   premise quoted from `limit/service.py`; the both-dialect index convention; the dunder-sentinel
+   non-collision; the 26/41/136 consistency.
+
+*(Four passes total; the v6 deltas are pure record edits verified against measured code state.)*

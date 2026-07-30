@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **CLOSED 2026-07-29** — merged via **PR #148** = `727f3c9`, merged-main CI run **30482058389** green all six. OQ-REF-1-1…30 ratified as recommended; migration `0056`; ENT-066/067/068; counts UNCHANGED 25/40/133; fresh-schema full-PG 2719/0. P1 verify-on-main sweep executed and clean **on artifact delivery; SCOPED 2026-07-30: five ratified-but-undelivered ratifications were subsequently found by CON-1's passes (the OQ-REF-1-23 freeze — since delivered via PR #150; the OQ-REF-1-1 guard, OQ-REF-1-29 census/teardown, OQ-REF-1-15 seeder, the OQ-REF-1-19 `run_presence_gate` claim) — dispositioned in `con_1_decision_record.md` Part 6 items 8/10–12** |
+| Status | **CLOSED 2026-07-29** — merged via **PR #148** = `727f3c9`, merged-main CI run **30482058389** green all six. OQ-REF-1-1…30 ratified as recommended; migration `0056`; ENT-066/067/068; counts UNCHANGED 25/40/133; fresh-schema full-PG 2719/0. P1 verify-on-main sweep executed and clean **on artifact delivery; SCOPED 2026-07-30: five ratified-but-undelivered ratifications were subsequently found by CON-1's passes (the OQ-REF-1-23 freeze — since delivered via PR #150; the OQ-REF-1-1 guard, OQ-REF-1-29 census/teardown, OQ-REF-1-15 seeder, the OQ-REF-1-19 `run_presence_gate` claim) — dispositioned in `con_1_decision_record.md` Part 6 items 1, 8, 10–12** |
 | Slice | Wave-14 slice 0 (`wave_14_planning.md`, roadmap Part 2.18) |
 | Entities | ENT-066 `classification_scheme`, ENT-067 `classification_node`, ENT-068 `classification_assignment` |
 | Migration | `0056` |
