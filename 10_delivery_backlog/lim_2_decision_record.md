@@ -1,15 +1,23 @@
 # LIM-2 Decision Record — concentration limits: the dimensional selector (Wave-14 slice 2)
 
-**Status: AWAITING RATIFICATION (Parts 0 and 1 written 2026-07-31). Nothing here is ratified and no
-code has been written.** Part 0 exists so the decisions in Part 1 are taken against what the
-platform *does*, not against what its records *say* it does: every fact was read out of the tree at
-`cfcce34` (`origin/main`, CI run 30585105043 green all six) and carries its `file:line` so a
-reviewer can refute it without trusting this document. Part 1 is the Tier-3 ledger for the gate —
-**eight open questions, of which OQ-LIM-2-2 and the OQ-LIM-2-8 rationale are REVERSALS of positions
-ratified one slice ago**, surfaced here rather than folded in quietly.
+**Status: RATIFIED 2026-07-31 (OQ-LIM-2-1…8, all as recommended). No code has been written.**
+Part 0 exists so the decisions in Part 1 were taken against what the platform *does*, not against
+what its records *say* it does: every fact was read out of the tree at `cfcce34` (`origin/main`, CI
+run 30585105043 green all six) and carries its `file:line` so a reviewer can refute it without
+trusting this document.
 
-**The pre-ratification verifier pass has NOT been run.** On this slice it is a P4 executed dry run
-(a migration slice), not a reading pass.
+**What the user ratified at the gate, in their own decision terms:** *full* v1 expressiveness —
+named-bucket AND named-issuer limits alongside the nine run-level metrics (OQ-LIM-2-2=B and
+OQ-LIM-2-3=B together, **accepting the reversal of CON-1's `SHARE` exclusion and the extension of
+the issuer fence to the limit/breach read surfaces**); and the staleness defect fixed
+**platform-wide** at the resolver, repairing VaR and active-risk limits in the same edit
+(OQ-LIM-2-5=A). The remaining five were taken as recommended. The OQ-LIM-2-8 rationale correction —
+that CON-1 recorded the wrong reason for deferring schedulability — rides with them.
+
+**The P4 EXECUTED dry run has NOT been run and gates implementation.** On a migration slice the
+verifier pass runs the migration in a throwaway workspace copy rather than reading it
+(`claude_operating_instructions.md:283-290`). The gate above ratified *design* choices; the
+migration mechanics in Part 3 are not ratified and the dry run is what tests them.
 
 Slice source: `delivery_roadmap.md` row Wave-14 slice 2. Inherited scope from that row —
 dimension selector columns on `limit_definition`, echo columns on `breach`, `_METRIC_MAP` /
@@ -190,11 +198,13 @@ child table.
 
 ---
 
-## Part 1 — The decision ledger (Tier-3, ratify at this gate)
+## Part 1 — The decision ledger (Tier-3) — **RATIFIED 2026-07-31, all eight as recommended**
 
 Eight open questions. Two are **reversals of positions ratified one slice ago** and are marked as
 such — the SCH-2 lesson is that a reversal recorded anywhere but AT THE GATE is a reversal nobody
-approved.
+approved. Both reversals were put to the gate explicitly and accepted; the recommendations below
+stand as ratified, and the text is left in its pre-gate voice so the reasoning that was actually
+approved is legible rather than rewritten after the fact.
 
 ### OQ-LIM-2-1 — The scheme identity in the selector: bind by FAMILY, record the AUTHORED VERSION, and surface drift. **Recommend C.**
 
@@ -346,14 +356,139 @@ column.
 
 ---
 
+## Part 2 — Independently computed reference values
+
+**None required, and the reason is not "no time".** LIM-2 introduces no kernel, no estimator and no
+new number: it thresholds values CON-1 already computes and whose reference values that slice's
+Part 2 already carries. The arithmetic this slice owns is `_breaches`, a two-line total function
+with a boundary table pinned since LIM-1 (`limit/service.py:173-180`). Adding a hand-computed
+reference set here would be theatre.
+
+**What replaces it** is the mutation proof the CON-1 fold established: each refusal added by this
+slice ships with an executed negative control — the guard is removed or inverted and the test is
+shown to fail. The one refusal that most needs it is the evaluation-time basis match (OQ-LIM-2-4),
+because with a single-value vocabulary in v1 it is trivially satisfiable and would otherwise be
+exactly the structurally-unfireable guard CON-1 shipped and had to reimplement.
+
+## Part 3 — Implementation shape
+
+### 3.1 `limit_definition` — five additive nullable columns, all FROZEN identity
+
+Frozen means simply: absent from `_UPDATABLE` (`limit/service.py:148`), so a re-target is a new
+limit and a breach's echo stays meaningful (OD-I). `limit_definition` is EV and carries no
+append-only trigger, so it has the wider option set — but the columns are nullable anyway, because
+a VaR limit has no dimension and NULL is the honest value.
+
+| column | type | meaning |
+| --- | --- | --- |
+| `dimension_kind` | `String(30)` | `ISSUER` / `SECTOR_INDUSTRY` / `COUNTRY_OF_RISK`; NULL for non-concentration limits |
+| `bucket_code` | `String(100)` | the named bucket; **NULL means a run-level (summary-metric) limit** |
+| `issuer_id` | `GUID` FK `issuer.id` | the fence predicate AND referential integrity; NOT NULL iff an issuer is named |
+| `scheme_family` | `String(50)` | the BINDING selector (OQ-LIM-2-1=C); NULL for `ISSUER` |
+| `authored_scheme_id` | `GUID`, **no FK** | the scheme VERSION the threshold was written against |
+
+`authored_scheme_id` takes no foreign key for CON-1's reason: `classification_scheme` is hybrid, and
+a PostgreSQL referential check bypasses RLS (`concentration/models.py:173-178`). `issuer_id` *does*
+take one — `issuer` is same-tenant proprietary, so the FK is legal, exactly as CON-1 reasoned for
+`concentration_result.issuer_id`.
+
+### 3.2 The first CHECK constraints these tables have ever carried (OQ-LIM-2-4)
+
+Named per the 0055/0057 convention — **suffix only**, because the naming convention prepends
+`ck_<table>_` itself. This is the defect only execution found last slice (0057's names landed
+double-prefixed and PG-truncated at 63 chars), so the migration ships with the live-catalog gate
+CON-1's fold added: a test reading `pg_constraint` and asserting set-equality against the ORM's
+declared names.
+
+1. `concentration_shape` — the dimension columns are present iff `target_run_type = 'CONCENTRATION'`.
+2. `issuer_only` — `issuer_id IS NULL OR dimension_kind = 'ISSUER'` (mirrors CON-1's
+   `issuer_only_on_issuer_rows`, and it is the disclosure fence made structural rather than
+   binder-enforced).
+3. `scheme_by_dimension` — `(dimension_kind IN ('SECTOR_INDUSTRY','COUNTRY_OF_RISK')) =
+   (scheme_family IS NOT NULL)`.
+4. `denominator_basis_vocab` — NULL, or a member of `DENOMINATOR_BASES`. **This is the
+   definition-time half of the basis discipline**: a limit declaring a `NAV` basis is refused
+   because no such value exists yet.
+5. `dimension_kind_vocab` — total enumeration, failing closed on an unenumerated kind.
+
+Every one validates clean against existing rows, which are all VAR/ACTIVE_RISK with NULL dimension
+columns — that is what makes the double-table ALTER tractable.
+
+### 3.3 `breach` — echoes what was MEASURED, not what was declared
+
+Additive-nullable, **no backfill DML**: `breach` carries the P0001 trigger, so any `UPDATE` raises
+(fact 5). Columns: `dimension_kind`, `bucket_code`, `issuer_id`, `scheme_family`,
+**`resolved_scheme_id`**, `denominator_basis`, `scope_portfolio_id`.
+
+`resolved_scheme_id` is the scheme the EVALUATED run actually used — deliberately not the limit's
+`authored_scheme_id`. The self-describing doctrine is that a breach reproduces from its own row
+(`limit/models.py:9-15`), and the pair (authored on the limit, resolved on the breach) is what makes
+a scheme-drift breach *provable* after the fact rather than merely flagged live.
+
+`scope_portfolio_id` pays the pre-existing LOW (OQ-LIM-2-7).
+
+### 3.4 The registry and its census (OQ-LIM-2-6)
+
+`LimitFamily` mirrors `ScheduledFamily`, declaring only what has a consumer: the resolver callable,
+`requires_dimension`, `requires_basis`. `requires_benchmark` stays on `MetricSpec` where it already
+lives — it is a per-metric property, not a per-family one, and duplicating it would be the false
+declaration SCH-2 removed.
+
+The gate is an **exact set-equality census** —
+`{run_type for (run_type, _) in _METRIC_MAP} == set(LIMIT_FAMILY_REGISTRY)` — plus a fail-closed
+`else: raise` replacing the dispatch's current unguarded fallthrough (fact 1). Census first, raise
+as defense in depth: P7's measured hierarchy puts exact censuses at zero recorded recurrences and
+matchers at five.
+
+### 3.5 `limit_health` — a REFINEMENT of the ratified wording, stated rather than slipped in
+
+Both OQ-LIM-2-1=C and OQ-LIM-2-5=A were ratified as adding "a distinct health state". **Implementing
+them literally would be wrong**, and the reason is worth recording: `state` is the appetite verdict,
+and a limit can be breached *and* evaluating a stale run *and* drifting across scheme versions at
+the same time. A fourth and fifth enum value would force a false choice — reporting `STALE` would
+hide a real breach, reporting `BREACHED` would hide the staleness.
+
+So the ratified INTENT is preserved exactly — never default to green, make both conditions visible —
+via two orthogonal fields on `LimitHealth` alongside the unchanged `state`:
+
+- `latest_run_failed: bool` — the newest run of the family is FAILED and this verdict is computed
+  from an older one. Costs one newest-run-any-status lookup per limit.
+- `scheme_drift: tuple[str, str] | None` — `(authored_scheme_id, resolved_scheme_id)` when they
+  differ.
+
+Flagged here because it modifies how a just-ratified decision is realized. If the gate prefers the
+literal enum, say so and it changes.
+
+### 3.6 The read fence extension (OQ-LIM-2-3=B)
+
+`list_limits` / `get_limit` / the breach reads gain the structural split
+`list_concentration_results` already ships (`concentration/service.py:391-395`): a caller holding
+`limit.view` or `breach.view` but **not** `concentration.issuer.view` does not receive rows where
+`issuer_id IS NOT NULL`. Excluded **at the query**, not filtered in the router — CON-1's finding was
+that a router-level courtesy is not a fence.
+
+Two things the review must check rather than assume: that no `failure_reason` or breach narrative
+reintroduces the issuer name in prose, and that the FE ops views degrade honestly for a caller who
+cannot see issuer-bearing rows (`LimitHealth.tsx`, `BreachQueue.tsx`, `BreachDetail.tsx`).
+
+### 3.7 Rule 7 reads
+
+The FE renders `metric_type` verbatim in three places (fact 10) and would show
+`MAX_SHARE_SECTOR_INDUSTRY` with no indication of which taxonomy produced it. The dimension, the
+bucket and the scheme family reach these components in-slice, and the drift signal surfaces where a
+limit's health is shown.
+
+---
+
 ## Part 4 — Sizing
 
-**M, consistent with the roadmap row**, on the recommended set — with two caveats the gate should
-price. OQ-LIM-2-3=B (extending the issuer fence to the limit and breach reads) and OQ-LIM-2-5=A (the
-platform-wide staleness fix) each add work the roadmap row did not contemplate. Neither is large on
-its own; together they are the difference between a comfortable M and its upper edge. If the gate
-wants the row's original size held, OQ-LIM-2-3=A is the descope that gives the most back, and it is
-fail-closed.
+**M at its upper edge**, on the ratified set. The roadmap row said M; OQ-LIM-2-3=B (extending the
+issuer fence to the limit and breach reads) and OQ-LIM-2-5=A (the platform-wide staleness fix) each
+add work that row did not contemplate, and both were ratified. Neither is large alone; together they
+are the difference between a comfortable M and its upper edge. Recorded so the closeout can measure
+the estimate rather than reverse-engineer it. If the slice runs long, OQ-LIM-2-3=A is the descope
+that gives back the most and is fail-closed — but it is a descope of a ratified decision and would
+return to the gate, not be taken unilaterally.
 
 The migration is the risk, as the roadmap says: a double-table ALTER where one table carries the
 P0001 append-only trigger and both would receive their first CHECK constraints. **P4 applies** — the
