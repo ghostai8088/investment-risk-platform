@@ -278,11 +278,14 @@ def _resolve_concentration(
     **1. The EVALUATION-TIME half of the basis discipline (OQ-LIM-2-4).** The definition-time CHECK
     only proves the declared basis is a known value. This compares it to the basis the resolved
     number was actually computed on, and REFUSES rather than thresholds on a mismatch. With one
-    value in the v1 vocabulary this cannot currently fire — which is precisely the shape CON-1
-    shipped as a structurally-unfireable guard and had to reimplement, so it is written against
-    the ROW rather than against the vocabulary, and its test forces the mismatch by writing a row
-    with a different basis directly. The day a NAV basis is added, this is what stops an
-    INVESTED_LONG threshold from silently adjudicating a NAV-denominated share.
+    value in the v1 vocabulary this cannot currently fire through any production write path —
+    precisely the shape CON-1 shipped as a structurally-unfireable guard and had to reimplement —
+    so it is written against the ROW rather than against the vocabulary. `test_limit_resolver.py`
+    forces the mismatch and is mutation-proven (disabling this branch fails exactly the two basis
+    tests). **That sentence previously asserted a test that did not exist**, which the adversarial
+    review caught as a delivery claim citing no artifact; the artifact is now real and named. The
+    day a NAV basis is added, this is what stops an INVESTED_LONG threshold from silently
+    adjudicating a NAV-denominated share.
 
     **2. A named bucket with no row resolves to ZERO, not to "nothing found".** If the run covers
     the dimension, the kernel emitted a row for every bucket carrying long exposure; a missing
@@ -336,7 +339,57 @@ def _resolve_concentration(
     ]
     if named:
         return _refused_or(named[0], Decimal(getattr(named[0], spec.result_attr)))
-    # See (2) above: the dimension WAS computed and this bucket carries no long exposure.
+
+    # --- the bucket emitted NO row. Two very different worlds, and telling them apart is the
+    # --- whole of finding D1.
+    #
+    # The kernel emits a DETAIL row only for a bucket that carries atoms, so "no row" means EITHER
+    # the book genuinely holds none of this bucket (observed zero — a real measurement) OR the
+    # selector never named anything this run could measure (a typo, a code from a different
+    # taxonomy family, a sentinel). The run's own rows cannot distinguish them: a zero-exposure
+    # bucket is absent for exactly the same reason a misspelled one is.
+    #
+    # The original code returned a fabricated `observed=0` for both. That produced a limit reading
+    # IN_APPETITE forever on a book 31% concentrated in the sector it was written about, and — on a
+    # BELOW (floor) limit, which nothing restricts — a FALSE BREACH written into the append-only,
+    # non-withdrawable lifecycle this module's own docstring says the CON-1 descope exists to
+    # prevent.
+    #
+    # So ask the TAXONOMY, which is the only source that knows whether the code is real: is
+    # `bucket_code` a node of the scheme THIS RUN used? If yes, the zero is a measurement and a
+    # floor limit rightly breaches on it. If no, refuse — the limit is thresholding something the
+    # run never evaluated, and no verdict computed from it can be honest.
+    if limit.dimension_kind == DIMENSION_KIND_ISSUER:
+        # ISSUER needs no lookup: `create_limit` re-resolves `issuer_id` tenant-filtered before the
+        # write, so a named issuer provably exists and its absence from the run IS zero exposure.
+        return _refused_or(in_dimension[0], Decimal(0))
+
+    scheme_id = next((r.scheme_id for r in in_dimension if r.scheme_id), None)
+    if scheme_id is None:
+        return Resolution(
+            refusal=(
+                f"the resolved run recorded no scheme for dimension {limit.dimension_kind!r}, so "
+                f"bucket {limit.bucket_code!r} cannot be confirmed as a real code — refusing"
+            )
+        )
+    from irp_shared.classification.service import ClassificationNotVisible, resolve_node
+
+    try:
+        resolve_node(
+            session,
+            scheme_id=str(scheme_id),
+            code=str(limit.bucket_code),
+            acting_tenant=limit.tenant_id,
+        )
+    except ClassificationNotVisible:
+        return Resolution(
+            refusal=(
+                f"bucket {limit.bucket_code!r} is not a node of the scheme the resolved run used "
+                f"({scheme_id}) — the limit names a code this run never evaluated, so neither a "
+                "breach nor an all-clear can be computed from it"
+            )
+        )
+    # A real node of the run's own scheme that emitted no row: the book holds none of it.
     return _refused_or(in_dimension[0], Decimal(0))
 
 
@@ -583,6 +636,21 @@ def _lock_limit(session: Session, limit_id: str, tenant_id: str) -> LimitDefinit
     return limit
 
 
+def _blank_to_none(value: str | None) -> str | None:
+    """Normalize an empty/whitespace selector string to None — ONE definition of "not supplied".
+
+    The DB CHECKs are written on NULL-ness; Python was testing truthiness in some places and
+    identity in others. `""` therefore satisfied "supplied" for the validator and "not supplied"
+    for the CHECK (or vice versa), which turned a summary limit into a permanently-zero named-bucket
+    limit and an ISSUER scheme_family into an HTTP 500 instead of a 422. Normalizing at the boundary
+    means every layer downstream can test `is None` and agree.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 def _validate_dimensional_config(
     *,
     target_run_type: str,
@@ -635,9 +703,9 @@ def _validate_dimensional_config(
         )
 
     is_issuer = dimension_kind == DIMENSION_KIND_ISSUER
-    if is_issuer and (scheme_family or authored_scheme_id):
+    if is_issuer and (scheme_family is not None or authored_scheme_id is not None):
         raise LimitError("the ISSUER dimension carries no classification scheme")
-    if not is_issuer and not scheme_family:
+    if not is_issuer and scheme_family is None:
         raise LimitError(f"dimension {dimension_kind} requires a scheme_family")
     if issuer_id and not is_issuer:
         # The DISCLOSURE fence at the maker boundary (0058's `issuer_only` CHECK is the engine).
@@ -651,12 +719,26 @@ def _validate_dimensional_config(
             f"metric {metric_type} does not belong to dimension {dimension_kind} — the summary "
             "metric names encode their own dimension"
         )
-    if metric_type == METRIC_TYPE_SHARE and not bucket_code:
+    if metric_type == METRIC_TYPE_SHARE and bucket_code is None:
         raise LimitError("a SHARE limit thresholds a NAMED bucket and requires bucket_code")
-    if metric_type != METRIC_TYPE_SHARE and bucket_code:
+    # `is not None`, NOT truthiness. The three predicates in this feature used to disagree about
+    # what "no bucket" means — truthiness here, truthiness at the SHARE check, `is None` in the
+    # resolver — so `bucket_code=""` passed validation on a summary metric, took the named-bucket
+    # branch at resolution, matched nothing (the column is NOT NULL and never empty on
+    # `concentration_result`) and resolved forever to zero. One definition now, shared: blank is
+    # normalized to None at the boundary (`_blank_to_none`) and every predicate tests identity.
+    if metric_type != METRIC_TYPE_SHARE and bucket_code is not None:
         raise LimitError(
             f"{metric_type} is a RUN-LEVEL metric and does not take a bucket_code "
             "(a named-bucket limit uses metric_type=SHARE)"
+        )
+    if bucket_code is not None and bucket_code.startswith("__") and bucket_code.endswith("__"):
+        # CON-1's dunder sentinels (__UNCLASSIFIED__, __UNCLASSIFIABLE__, __SUMMARY__) are not
+        # buckets anyone may threshold: 0057's `detail_shape` CHECK forbids __SUMMARY__ on a DETAIL
+        # row outright, so such a limit is structurally incapable of ever matching — an unfireable
+        # control that would read IN_APPETITE forever. Refused at authoring instead.
+        raise LimitError(
+            f"bucket_code {bucket_code!r} is a reserved sentinel, not a thresholdable bucket"
         )
     # No CHECK counterpart #2: CON-1's service invariant is `bucket_code == str(issuer_id)` on
     # ISSUER detail rows; a cross-column cast CHECK is not portable to the SQLite tier. Without
@@ -742,6 +824,12 @@ def create_limit(
     ``status=`` override: an ACTIVE-on-create seam would let the maker self-activate, the symmetric
     twin of the ``update_limit`` DRAFT bypass. ``created_by`` records the drafter for the SoD.
     """
+    # Normalize blank selector strings ONCE, before validation and before the ORM stamp, so every
+    # layer below tests `is None` and agrees with the DB CHECKs (which are written on NULL-ness).
+    dimension_kind = _blank_to_none(dimension_kind)
+    bucket_code = _blank_to_none(bucket_code)
+    scheme_family = _blank_to_none(scheme_family)
+    denominator_basis = _blank_to_none(denominator_basis)
     _validate_config(
         target_run_type=target_run_type,
         metric_type=metric_type,

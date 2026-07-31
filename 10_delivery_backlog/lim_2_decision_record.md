@@ -370,6 +370,19 @@ shown to fail. The one refusal that most needs it is the evaluation-time basis m
 because with a single-value vocabulary in v1 it is trivially satisfiable and would otherwise be
 exactly the structurally-unfireable guard CON-1 shipped and had to reimplement.
 
+> **CORRECTION (2026-07-31, adversarial review finding D6).** The paragraph above was ratified and
+> then NOT honoured. At the time the review ran, nothing in the repository executed
+> `_resolve_concentration` past its first early return: no test forced a basis mismatch, none
+> constructed a refusing `Resolution`, none asserted `HEALTH_REFUSED`. `service.py` separately
+> stated as fact that such a test existed. Two artifacts claimed a verification that did not exist
+> — the seventh ledger's exact target, a delivery claim that cites no artifact, written about my
+> own work. The commitment is now discharged by `packages/shared-python/tests/test_limit_resolver.py`
+> (10 tests), mutation-proven in both directions: disabling the basis guard fails exactly the two
+> basis tests, and disabling the node verification fails exactly the three fabricated-zero tests,
+> while the positive controls keep passing in both mutations — so the tests discriminate rather
+> than mirror. The claim is left standing above, with this correction beneath it, so the failure
+> is legible rather than edited out of history.
+
 ## Part 3 — Implementation shape
 
 ### 3.1 `limit_definition` — five additive nullable columns, all FROZEN identity
