@@ -74,7 +74,11 @@ It also says nothing about memory: `tracemalloc`/RSS instrumentation (OQ-PERF-0-
 
 ---
 
-## Reading 2 — the DAILY BATCH, per segment (2026-07-30)
+## Reading 2 — the daily batch, FOUR of six segments (2026-07-30) — SUPERSEDED by Reading 3
+
+> Kept because its degradation analysis stands and Reading 3 relies on it. Its batch
+> totals were LOWER BOUNDS (`portfolio_return` and `concentration` did not run) and are
+> superseded below.
 
 **Conditions.** As Reading 1 (M1 Max / 10 cores / 64 GB, PostgreSQL 16.14, Python 3.13.0), commit
 `2e25958`, fresh schema per rung, resets outside the timed region. 8 factors × 260 daily returns,
@@ -141,3 +145,57 @@ the 5,000 and 10,000 rungs are unmeasured, and so are two segments.
   ladder is what exposed it. Fix: invoke per portfolio.
 - **`concentration`** needs a classification scheme and assignments seeded (CON-1's inputs). Not yet
   built into the scale seed.
+
+
+---
+
+## Reading 3 — the COMPLETE daily batch, all six segments (2026-07-30)
+
+**Conditions.** M1 Max / 10 cores / 64 GB; PostgreSQL 16.14; Python 3.13.0; commit `5bf8da9`;
+fresh schema per rung, resets outside the timed region; 8 factors × 260 daily returns held constant
+across rungs; single process, single connection. Harness `scripts/perf_probe.py` driving the
+SHIPPED binders.
+
+| rung | seed | seed rows | **batch (all 6)** |
+|---:|---:|---:|---:|
+| 500 | 835.14 s | 21,090 | **76.66 s** |
+| 2,000 | 2,858.49 s | 78,096 | **269.65 s** |
+
+| segment | 500 | 2,000 | exponent | reading |
+|---|---:|---:|---:|---|
+| exposure | 32.92 s | 129.53 s | 0.988 | linear; **48% of the batch** — the dominant cost |
+| concentration | 15.86 s | 66.81 s | 1.037 | **25% of the batch** — the second cost, and the newest family |
+| factor_exposure | 6.08 s | 22.78 s | 0.953 | linear |
+| portfolio_return | 7.06 s | 25.64 s | 0.930 | linear |
+| var | 3.09 s | 14.12 s | 1.096 | mildly superlinear |
+| covariance | 11.64 s | 10.78 s | −0.055 | FLAT — correct (factors held constant) |
+| **batch total** | **76.66 s** | **269.65 s** | **0.907** | **sublinear** |
+| seed | 835.14 s | 2,858.49 s | 0.888 | sublinear |
+
+Peak `tracemalloc` never exceeded 12 MB; peak RSS 118 MB at the 2,000 rung. **Memory is not a
+constraint at this scale** and shows no growth trend across a 4× book.
+
+### Against the ratified budget (OQ-PERF-0-1: 4 clock-hours @ 10,000 positions)
+
+Extrapolated to 10,000 positions — **DERIVED, not measured**:
+
+- at the measured exponent 0.907: **~19.4 minutes (8% of budget)**
+- at a conservative linear 1.000: **~22.5 minutes (9% of budget)**
+
+**AD-003's revisit trigger has NOT fired.** The daily full-portfolio risk batch completes in roughly
+a tenth of the ratified window, and every segment is linear or sublinear except `var` (1.096) and
+`concentration` (1.037), both close enough to 1.0 that they change nothing at this scale.
+
+**The finding that matters is where the cost actually is.** It is NOT the nightly batch: it is the
+one-time SEED, ~2 h at 10,000 positions (Reading 1/2), which is ~6× the entire batch's projected
+cost and is dominated by per-row capture writes with co-transactional audit-chain appends. If
+anything about this platform's performance deserves engineering attention, the measurement points
+at INGESTION, not at risk compute. That is the opposite of what AD-003's "Python batch performance"
+risk anticipated, and it is the kind of thing only a measurement could establish.
+
+### What is still NOT measured
+
+The 5,000 and 10,000 rungs (~1 h and ~2 h of seeding respectively) — every 10k number above is an
+extrapolation from 2,000, and `var`'s and `concentration`'s slightly-superlinear exponents are
+exactly the sort that compound beyond the measured range. The probe has NOT been run under the CI
+runner's shape.
