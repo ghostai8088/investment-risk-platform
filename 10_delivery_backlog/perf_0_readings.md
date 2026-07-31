@@ -298,3 +298,74 @@ therefore a CONSERVATIVE upper bound; at the measured exponent it would be ~2.6 
 
 The 5,000 and 10,000 rungs. Every 10k figure above is extrapolated from 2,000. The probe has not
 run under the CI runner's shape (the CI smoke is a correctness gate with no timing assertion).
+
+---
+
+## Reading 5 — the 10,000-position rung, MEASURED at the ratified budget point (2026-07-31)
+
+The budget in OQ-PERF-0-1 was ratified **at 10,000 positions**, and every prior 10k figure in this
+document was extrapolated from 2,000. This is the measurement.
+
+**Conditions.** M1 Max / 10 cores / 64 GB; PostgreSQL 16.14; Python 3.13.0; commit `cd190cf`; fresh
+schema; single process, single connection; 8 factors × 260 daily returns; harness
+`scripts/perf_probe.py` driving the SHIPPED binders.
+
+**Seed 13,938.26 s (3.87 h), 382,128 governed rows. BATCH 1,281.76 s (21.4 min).**
+
+| segment | 2,000 | 10,000 | exponent | share @10k |
+|---|---:|---:|---:|---:|
+| exposure | 129.58 s | 621.55 s | 0.974 | **48.5%** |
+| concentration | 68.94 s | 316.71 s | 0.947 | **24.7%** |
+| portfolio_return | 26.92 s | 126.03 s | 0.959 | 9.8% |
+| factor_exposure | 25.96 s | 125.63 s | 0.980 | 9.8% |
+| var | 15.04 s | 81.33 s | 1.049 | 6.3% |
+| covariance | 12.27 s | 10.52 s | −0.096 | 0.8% |
+| **batch total** | **278.70 s** | **1,281.76 s** | **0.948** | — |
+| seed | 2,642.61 s | 13,938.26 s | **1.033** | — |
+
+Peak `tracemalloc` 11.8 MB; peak RSS 119.1 MB — **essentially unchanged from the 500 rung** across a
+20× book. Memory is definitively not a constraint.
+
+### The verdict, now measured
+
+**The daily full-portfolio risk batch completes in 21.4 minutes at 10,000 positions — 8.90% of the
+ratified 4-hour budget. AD-003's revisit trigger has NOT fired**, and that statement no longer rests
+on an extrapolation. Every segment is linear or sublinear; the largest exponent is `var` at 1.049.
+
+The batch extrapolation held well: predicted 20.7 min (at the measured exponent) to 23.2 min
+(linear); **actual 21.4 min**, between the two.
+
+### Where one of my own projections was WRONG
+
+Reading 4 recorded the seed's exponent as **0.808** over 500→2,000 — markedly sublinear — and I
+wrote that the ~3.7 h linear figure was therefore "a CONSERVATIVE upper bound; at the measured
+exponent it would be ~2.6 h."
+
+**That was wrong. The seed took 3.87 h.** Over 2,000→10,000 the seed's exponent is **1.033** —
+slightly SUPERlinear — and throughput fell from 29.6 to 27.4 governed rows/s (−7.2%). The
+sublinearity of the small rungs was fixed-cost amortisation, and it did not survive the 5× extension.
+**The conservative linear estimate was nearly exact; the "measured exponent" refinement was
+optimistic.**
+
+The transferable lesson: an exponent fitted over a 4× range does not license a 5× extrapolation
+beyond it, and when the two estimates disagree the CONSERVATIVE one deserves the weight — which is
+the reverse of how the more precise-looking number invites you to read it.
+
+### The finding, on measured numbers
+
+**Ingestion dominates risk compute by 10.9×.** Seeding 10,000 positions costs 3.87 h; running the
+entire six-segment daily batch over that book costs 21.4 minutes. AD-003 accepted a "Python batch
+performance" risk with a revisit trigger; the batch is comfortably inside budget while the per-row
+capture rail — ORM insert plus a co-transactional audit-chain append, ~27 rows/s — is where the
+platform's time actually goes. **The deferred risk was real and aimed at the wrong half of the
+system.** It does not get cheaper at scale: the rail is now measured as flat-to-slightly-worsening.
+
+**This is PERF-0's answer.** If performance work is ever commissioned here, the measurement points
+at ingestion throughput, not at the risk kernels.
+
+### Still not measured
+
+The 5,000 rung (skipped deliberately — the exponent is established from three rungs and 10,000 is
+the ratified budget point). The probe under the CI runner's shape. Concurrency: every reading is
+single-process, single-connection, so nothing here speaks to parallel ingestion, which is the
+obvious first question any ingestion work would ask.
