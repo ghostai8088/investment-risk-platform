@@ -8154,6 +8154,18 @@
       "LimitCreateIn": {
         "additionalProperties": false,
         "properties": {
+          "authored_scheme_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored Scheme Id"
+          },
           "benchmark_id": {
             "anyOf": [
               {
@@ -8170,9 +8182,54 @@
             "title": "Breach Direction",
             "type": "string"
           },
+          "bucket_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Code"
+          },
           "code": {
             "title": "Code",
             "type": "string"
+          },
+          "denominator_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Denominator Basis"
+          },
+          "dimension_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension Kind"
+          },
+          "issuer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer Id"
           },
           "limit_kind": {
             "title": "Limit Kind",
@@ -8185,6 +8242,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "scheme_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheme Family"
           },
           "scope_portfolio_id": {
             "format": "uuid",
@@ -8235,6 +8303,11 @@
             ],
             "title": "Latest Breach Id"
           },
+          "latest_run_failed": {
+            "default": false,
+            "title": "Latest Run Failed",
+            "type": "boolean"
+          },
           "latest_run_id": {
             "anyOf": [
               {
@@ -8250,11 +8323,45 @@
             "title": "Limit Id",
             "type": "string"
           },
+          "refusal_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refusal Reason"
+          },
+          "scheme_drift_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheme Drift From"
+          },
+          "scheme_drift_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheme Drift To"
+          },
           "state": {
             "enum": [
               "IN_APPETITE",
               "NEVER_EVALUABLE",
-              "BREACHED"
+              "BREACHED",
+              "REFUSED"
             ],
             "title": "State",
             "type": "string"
@@ -8272,6 +8379,17 @@
       },
       "LimitOut": {
         "properties": {
+          "authored_scheme_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored Scheme Id"
+          },
           "benchmark_id": {
             "anyOf": [
               {
@@ -8286,6 +8404,17 @@
           "breach_direction": {
             "title": "Breach Direction",
             "type": "string"
+          },
+          "bucket_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Code"
           },
           "code": {
             "title": "Code",
@@ -8302,9 +8431,42 @@
             ],
             "title": "Created By"
           },
+          "denominator_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Denominator Basis"
+          },
+          "dimension_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension Kind"
+          },
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "issuer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer Id"
           },
           "limit_kind": {
             "title": "Limit Kind",
@@ -8321,6 +8483,17 @@
           "record_version": {
             "title": "Record Version",
             "type": "integer"
+          },
+          "scheme_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheme Family"
           },
           "scope_portfolio_id": {
             "title": "Scope Portfolio Id",
@@ -8374,7 +8547,13 @@
           "status",
           "record_version",
           "created_by",
-          "updated_by"
+          "updated_by",
+          "dimension_kind",
+          "bucket_code",
+          "issuer_id",
+          "scheme_family",
+          "authored_scheme_id",
+          "denominator_basis"
         ],
         "title": "LimitOut",
         "type": "object"

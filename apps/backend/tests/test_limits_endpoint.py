@@ -269,6 +269,9 @@ def test_health_never_evaluable_is_not_false_green(ctx) -> None:
     lim = _create(ctx, ctx["maker"])
     _approve(ctx, lim["id"], ctx["approver"])
     health = ctx["client"].get("/limits/health", headers=_hdr(ctx["maker"], ctx["tenant"])).json()
+    # EXACT dict equality, kept deliberately: it is what makes a silently-widened health payload a
+    # failing test rather than an unnoticed contract change. LIM-2 added the three orthogonal
+    # signals below, and this assertion is where that had to be declared.
     assert health == [
         {
             "limit_id": lim["id"],
@@ -276,6 +279,12 @@ def test_health_never_evaluable_is_not_false_green(ctx) -> None:
             "state": "NEVER_EVALUABLE",
             "latest_run_id": None,
             "latest_breach_id": None,
+            # Orthogonal to `state` (LIM-2 record 3.5): a limit can be breached AND stale AND
+            # drifting at once, so these are fields rather than extra enum values.
+            "latest_run_failed": False,
+            "scheme_drift_from": None,
+            "scheme_drift_to": None,
+            "refusal_reason": None,
         }
     ]
 

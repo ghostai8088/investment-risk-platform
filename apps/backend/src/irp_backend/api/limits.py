@@ -32,7 +32,7 @@ from irp_backend.deps import (
     require_uuid_principal_id,
 )
 from irp_shared.db.integrity import is_unique_violation
-from irp_shared.entitlement.service import Principal
+from irp_shared.entitlement.service import Principal, has_permission
 from irp_shared.limit.events import LimitActor
 from irp_shared.limit.models import LimitDefinition
 from irp_shared.limit.service import (
@@ -87,7 +87,7 @@ _require_approve = require_permission("limit.approve")
 _require_view = require_permission("limit.view")
 
 _LimitStatus = Literal["DRAFT", "ACTIVE", "SUSPENDED"]
-_HealthState = Literal["IN_APPETITE", "NEVER_EVALUABLE", "BREACHED"]
+_HealthState = Literal["IN_APPETITE", "NEVER_EVALUABLE", "BREACHED", "REFUSED"]
 
 #: Fail-closed refusal -> (HTTP status, opaque detail), dispatched via ``map_refusal`` (MRO walk).
 #: ``LimitSodError`` gets its OWN key (more-derived than ``LimitError``) so the person-level SoD
@@ -123,6 +123,15 @@ class LimitCreateIn(BaseModel):
     breach_direction: str
     limit_kind: str
     benchmark_id: uuid.UUID | None = None
+    # LIM-2 dimensional selector. All optional at the DTO — the service refuses an incoherent
+    # combination with a legible 422, and 0058's CHECKs are the engine behind it. `bucket_code`
+    # NULL means a RUN-LEVEL (summary-metric) limit; set it for "tech <= 20%".
+    dimension_kind: str | None = None
+    bucket_code: str | None = None
+    issuer_id: uuid.UUID | None = None
+    scheme_family: str | None = None
+    authored_scheme_id: uuid.UUID | None = None
+    denominator_basis: str | None = None
     # NOTE: no `status` field — a limit is born DRAFT; ACTIVE happens only via approve (D3).
 
 
@@ -156,6 +165,15 @@ class LimitOut(BaseModel):
     record_version: int
     created_by: str | None
     updated_by: str | None
+    # LIM-2. `authored_scheme_id` is the taxonomy VERSION the threshold was written against —
+    # surfaced so a reader can see WHICH revision a sector limit means, which fact 2 of the
+    # decision record showed the metric name alone cannot convey.
+    dimension_kind: str | None
+    bucket_code: str | None
+    issuer_id: str | None
+    scheme_family: str | None
+    authored_scheme_id: str | None
+    denominator_basis: str | None
 
 
 class LimitHealthOut(BaseModel):
@@ -164,6 +182,13 @@ class LimitHealthOut(BaseModel):
     state: _HealthState
     latest_run_id: str | None
     latest_breach_id: str | None
+    # ORTHOGONAL to `state`, deliberately: a limit can be BREACHED *and* stale *and* drifting at
+    # once, so folding these into the enum would force a false choice where reporting staleness
+    # hides a real breach (LIM-2 record 3.5).
+    latest_run_failed: bool = False
+    scheme_drift_from: str | None = None
+    scheme_drift_to: str | None = None
+    refusal_reason: str | None = None
 
 
 def _limit_out(limit: LimitDefinition) -> LimitOut:
@@ -179,6 +204,12 @@ def _limit_out(limit: LimitDefinition) -> LimitOut:
         threshold_unit=limit.threshold_unit,
         breach_direction=limit.breach_direction,
         limit_kind=limit.limit_kind,
+        dimension_kind=limit.dimension_kind,
+        bucket_code=limit.bucket_code,
+        issuer_id=limit.issuer_id,
+        scheme_family=limit.scheme_family,
+        authored_scheme_id=limit.authored_scheme_id,
+        denominator_basis=limit.denominator_basis,
         status=cast(_LimitStatus, limit.status),
         record_version=limit.record_version,
         created_by=limit.created_by,
@@ -193,6 +224,10 @@ def _health_out(h: LimitHealth) -> LimitHealthOut:
         state=cast(_HealthState, h.state),
         latest_run_id=h.latest_run_id,
         latest_breach_id=h.latest_breach_id,
+        latest_run_failed=h.latest_run_failed,
+        scheme_drift_from=h.scheme_drift[0] if h.scheme_drift else None,
+        scheme_drift_to=h.scheme_drift[1] if h.scheme_drift else None,
+        refusal_reason=h.refusal_reason,
     )
 
 
@@ -202,9 +237,42 @@ def _refuse(db: Session, exc: LimitError) -> HTTPException:
     return HTTPException(status_code=code, detail=detail)
 
 
-def _load_or_404(db: Session, principal: Principal, limit_id: uuid.UUID) -> LimitDefinition:
-    limit = get_limit(db, acting_tenant=principal.tenant_id, limit_id=str(limit_id))
-    if limit is None:  # missing or cross-tenant — indistinguishable 404 (no existence oracle)
+def _may_see_issuer_limits(db: Session, principal: Principal) -> bool:
+    """Whether this caller may receive limits that NAME an issuer (LIM-2, OQ-LIM-2-3=B).
+
+    CON-1 minted ``concentration.issuer.view`` precisely so the auditor line could differ, and
+    ``auditor_3l`` holds ``limit.view``/``breach.view`` but NOT that code. A named-issuer limit is
+    issuer identity, so it inherits the same gate — otherwise LIM-2 would have quietly reopened a
+    fence CON-1 built twice (at the query and, after its review fold, at the engine). The
+    ``holdings.py`` ``valuation.view`` conditional-include is the shipped precedent for this shape.
+    """
+    return has_permission(db, principal, "concentration.issuer.view", principal.tenant_id)
+
+
+def _load_or_404(
+    db: Session,
+    principal: Principal,
+    limit_id: uuid.UUID,
+    *,
+    include_issuer_detail: bool,
+) -> LimitDefinition:
+    """Load one limit or 404.
+
+    ``include_issuer_detail`` is REQUIRED rather than defaulted, deliberately: the mutation paths
+    must pass ``True`` (a fenced load would make every named-issuer limit silently unapprovable and
+    uneditable — they are separately gated on ``limit.manage``/``limit.approve``), while the read
+    path passes the caller's entitlement. A default would make the wrong choice invisible at the
+    call site, and this is a disclosure boundary.
+    """
+    limit = get_limit(
+        db,
+        acting_tenant=principal.tenant_id,
+        limit_id=str(limit_id),
+        include_issuer_detail=include_issuer_detail,
+    )
+    if limit is None:
+        # Missing, cross-tenant, or issuer-fenced — ONE indistinguishable 404. A 403 on the fenced
+        # case would itself disclose that a limit exists naming an issuer the caller may not see.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="limit not found")
     return limit
 
@@ -232,6 +300,12 @@ def create(
             breach_direction=body.breach_direction,
             limit_kind=body.limit_kind,
             benchmark_id=str(body.benchmark_id) if body.benchmark_id else None,
+            dimension_kind=body.dimension_kind,
+            bucket_code=body.bucket_code,
+            issuer_id=str(body.issuer_id) if body.issuer_id else None,
+            scheme_family=body.scheme_family,
+            authored_scheme_id=(str(body.authored_scheme_id) if body.authored_scheme_id else None),
+            denominator_basis=body.denominator_basis,
             actor=_limit_actor(principal),
         )
     except LimitError as exc:
@@ -257,7 +331,7 @@ def update(
     principal: Principal = Depends(_require_manage),
     db: Session = Depends(get_tenant_session),
 ) -> LimitOut:
-    limit = _load_or_404(db, principal, limit_id)
+    limit = _load_or_404(db, principal, limit_id, include_issuer_detail=True)
     changes = body.model_dump(exclude_unset=True)
     changes.pop("status", None)  # belt-and-suspenders: `status` never rides the edit path (D3)
     if not changes:
@@ -280,7 +354,7 @@ def approve(
     principal: Principal = Depends(_require_approve),
     db: Session = Depends(get_tenant_session),
 ) -> LimitOut:
-    limit = _load_or_404(db, principal, limit_id)
+    limit = _load_or_404(db, principal, limit_id, include_issuer_detail=True)
     try:
         approved = approve_limit(
             db, limit, actor=_limit_actor(principal), approval_ref=body.approval_ref
@@ -300,7 +374,7 @@ def suspend(
     principal: Principal = Depends(_require_manage),
     db: Session = Depends(get_tenant_session),
 ) -> LimitOut:
-    limit = _load_or_404(db, principal, limit_id)
+    limit = _load_or_404(db, principal, limit_id, include_issuer_detail=True)
     try:
         out = _limit_out(suspend_limit(db, limit, actor=_limit_actor(principal)))
     except LimitError as exc:
@@ -317,7 +391,7 @@ def resume(
     principal: Principal = Depends(_require_manage),
     db: Session = Depends(get_tenant_session),
 ) -> LimitOut:
-    limit = _load_or_404(db, principal, limit_id)
+    limit = _load_or_404(db, principal, limit_id, include_issuer_detail=True)
     try:
         out = _limit_out(resume_limit(db, limit, actor=_limit_actor(principal)))
     except LimitError as exc:
@@ -346,7 +420,12 @@ def index(
     # `status=DRAFT` is the approval queue.
     return [
         _limit_out(x)
-        for x in list_limits(db, acting_tenant=principal.tenant_id, status=status_filter)
+        for x in list_limits(
+            db,
+            acting_tenant=principal.tenant_id,
+            status=status_filter,
+            include_issuer_detail=_may_see_issuer_limits(db, principal),
+        )
     ]
 
 
@@ -356,4 +435,8 @@ def show(
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> LimitOut:
-    return _limit_out(_load_or_404(db, principal, limit_id))
+    return _limit_out(
+        _load_or_404(
+            db, principal, limit_id, include_issuer_detail=_may_see_issuer_limits(db, principal)
+        )
+    )
