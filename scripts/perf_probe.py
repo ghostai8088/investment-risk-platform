@@ -158,6 +158,9 @@ def run_rung(url: str, rung: int, *, n_factors: int, n_return_days: int) -> Rung
                 # PG has the SYSTEM currency reference migrated, and the allocation
                 # model requires a CURRENCY factor to carry a currency scope.
                 factor_currency_code="USD",
+                # Seeds a minimal SECTOR_INDUSTRY taxonomy + per-instrument assignments;
+                # concentration refuses without a classification dimension and scheme.
+                classify=True,
             )
             session.commit()
         seed_reading = t.reading
@@ -229,6 +232,11 @@ def run_rung(url: str, rung: int, *, n_factors: int, n_return_days: int) -> Rung
         # so a one-date probe would leave that segment permanently unmeasured.
         exposure_run_ids: list[str] = []
         latest_run_ids: list[str] = []
+        # PER-PORTFOLIO boundary pairs: portfolio_return v1 REFUSES an atom set spanning more than
+        # one portfolio ("v1 measures a SINGLE portfolio"). Passing every portfolio's runs into one
+        # call was a harness defect the 20-position smoke could not see, because that whole book fit
+        # in a single portfolio.
+        runs_by_portfolio: dict[str, list[str]] = {}
         with _Timed("exposure") as t:
             for pid in portfolio_ids:
                 for boundary in (prior_as_of, as_of):
@@ -243,6 +251,7 @@ def run_rung(url: str, rung: int, *, n_factors: int, n_return_days: int) -> Rung
                         base_currency="USD",
                     )
                     exposure_run_ids.append(str(result.run.run_id))
+                    runs_by_portfolio.setdefault(pid, []).append(str(result.run.run_id))
                     if boundary == as_of:
                         latest_run_ids.append(str(result.run.run_id))
             session.commit()
@@ -303,15 +312,16 @@ def run_rung(url: str, rung: int, *, n_factors: int, n_return_days: int) -> Rung
 
         # --- SEGMENT 5: portfolio return ---
         with _Timed("portfolio_return") as t:
-            run_portfolio_return(
-                session,
-                acting_tenant=PERF_TENANT_ID,
-                actor=ExposureActor(actor_id=PERF_ACTOR_ID),
-                code_version=_CODE_VERSION,
-                environment_id=_ENVIRONMENT_ID,
-                model_version_id=str(ret_version.id),
-                exposure_run_ids=exposure_run_ids,
-            )
+            for pid_runs in runs_by_portfolio.values():
+                run_portfolio_return(
+                    session,
+                    acting_tenant=PERF_TENANT_ID,
+                    actor=ExposureActor(actor_id=PERF_ACTOR_ID),
+                    code_version=_CODE_VERSION,
+                    environment_id=_ENVIRONMENT_ID,
+                    model_version_id=str(ret_version.id),
+                    exposure_run_ids=pid_runs,
+                )
             session.commit()
         reading.segments.append(t.reading)
 
@@ -326,7 +336,11 @@ def run_rung(url: str, rung: int, *, n_factors: int, n_return_days: int) -> Rung
                     environment_id=_ENVIRONMENT_ID,
                     model_version_id=str(con_version.id),
                     exposure_run_id=exposure_run_id,
-                    scheme_by_dimension={},
+                    scheme_by_dimension=(
+                        {}
+                        if summary.sector_scheme_id is None
+                        else {"SECTOR_INDUSTRY": summary.sector_scheme_id}
+                    ),
                 )
             session.commit()
         reading.segments.append(t.reading)

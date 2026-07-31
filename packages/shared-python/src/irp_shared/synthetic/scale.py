@@ -35,6 +35,12 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from irp_shared.classification.service import (
+    ClassificationActor,
+    capture_assignment,
+    create_node,
+    create_scheme,
+)
 from irp_shared.db.tenant import set_tenant_context
 from irp_shared.marketdata.factor import (
     FactorActor,
@@ -201,6 +207,11 @@ class PerfSeedSummary:
     factor_returns: int
     #: The explicitly-selected measurement date (never "latest COMPLETED" — OQ-CON-1-20).
     measurement_date: datetime
+    #: The SECTOR_INDUSTRY scheme the instruments were assigned under, or None when
+    #: ``classify=False``. The concentration segment cannot run without it. Defaulted fields must
+    #: follow the non-default ones — dataclass ordering.
+    sector_scheme_id: str | None = None
+    assignments: int = 0
 
 
 def _refuse_unless_gated(*, allow_perf_seed: bool, tenant_id: str) -> None:
@@ -231,6 +242,7 @@ def build_perf_book(
     n_return_days: int = 260,
     factor_family: str = "CURRENCY",
     factor_currency_code: str | None = None,
+    classify: bool = False,
 ) -> PerfSeedSummary:
     """Seed ONE rung of the scale ladder. Caller owns the commit and owns all timing.
 
@@ -285,6 +297,37 @@ def build_perf_book(
             )
         session.flush()
 
+    # A minimal SECTOR_INDUSTRY taxonomy (root + one leaf). CON-1's concentration binder refuses
+    # without at least one classification dimension and its scheme, so a book with no taxonomy
+    # leaves that whole segment unmeasurable. Tenant-owned rather than SYSTEM: the perf tenant is
+    # self-contained and must not depend on a seeded global vocabulary.
+    cls_actor = ClassificationActor(tenant_id=PERF_TENANT_ID, actor_id=PERF_ACTOR_ID)
+    sector_scheme_id: str | None = None
+    if classify:
+        scheme = create_scheme(
+            session,
+            actor=cls_actor,
+            scheme_family="ISIC",
+            version_label="perf-probe",
+            name="Perf probe sector taxonomy",
+            dimension_kind="SECTOR_INDUSTRY",
+            authority="PERF_SEED",
+        )
+        create_node(
+            session, actor=cls_actor, scheme_id=scheme.id, code="C", name="Manufacturing", level=1
+        )
+        create_node(
+            session,
+            actor=cls_actor,
+            scheme_id=scheme.id,
+            code="C26",
+            name="Electronics",
+            level=2,
+            parent_code="C",
+        )
+        session.flush()
+        sector_scheme_id = str(scheme.id)
+
     offsets = _month_end_offsets()
     measurement_date = business_date(offsets[-1])
     t0 = business_date(0)
@@ -311,6 +354,7 @@ def build_perf_book(
 
     # --- instruments + positions + month-end valuations ---
     n_valuations = 0
+    n_assignments = 0
     ordinal = 0
     for portfolio_id in portfolio_ids:
         for _ in range(_POSITIONS_PER_PORTFOLIO):
@@ -355,6 +399,19 @@ def build_perf_book(
                     now=clock.tick(),
                 )
                 n_valuations += 1
+            if sector_scheme_id is not None:
+                capture_assignment(
+                    session,
+                    actor=cls_actor,
+                    entity_type="instrument",
+                    entity_id=str(inst.id),
+                    scheme_id=sector_scheme_id,
+                    dimension_kind="SECTOR_INDUSTRY",
+                    node_code="C26",
+                    basis="NOT_APPLICABLE",
+                    asserted_ancestor_code="C",
+                )
+                n_assignments += 1
             ordinal += 1
 
     # --- factors + DAILY factor returns (OQ-PERF-0-2: the history the chain actually needs sits
@@ -419,6 +476,8 @@ def build_perf_book(
         # ``factors=n_factors`` while creating none, which would have made the summary lie.
         factors=n_factors,
         factor_returns=n_factor_returns,
+        sector_scheme_id=sector_scheme_id,
+        assignments=n_assignments,
         measurement_date=measurement_date,
     )
     return summary

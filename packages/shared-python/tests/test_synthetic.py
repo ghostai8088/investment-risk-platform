@@ -576,6 +576,9 @@ def test_import_direction() -> None:
         "transaction",
         "reference",
         "marketdata",
+        # classification ADDED at PERF-0: the scale seed captures ASSIGNMENTS (REF-1's capture
+        # rail) so the concentration segment has inputs. Capture side, same as the others.
+        "classification",
         "db",
         "synthetic",
     }
