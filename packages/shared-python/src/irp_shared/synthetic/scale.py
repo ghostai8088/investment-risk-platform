@@ -52,7 +52,9 @@ from irp_shared.portfolio.models import Portfolio
 from irp_shared.position.position import create_position
 from irp_shared.position.service import PositionActor
 from irp_shared.reference.currency import create_currency
-from irp_shared.reference.instrument import create_instrument
+from irp_shared.reference.instrument import create_instrument, update_instrument
+from irp_shared.reference.issuer import create_issuer
+from irp_shared.reference.legal_entity import create_legal_entity
 from irp_shared.reference.service import ReferenceActor
 from irp_shared.synthetic.ids import (
     SEED_EPOCH,
@@ -172,6 +174,13 @@ _CURRENCIES: tuple[str, ...] = (
     "ZAR",
 )
 
+#: Instruments per ISSUER. Concentration ALWAYS computes an ISSUER dimension, and an
+#: instrument with no issuer is UNCLASSIFIABLE — a book of issuer-less instruments makes that
+#: dimension entirely unclassifiable, which is a GAP, which commits a FAILED run with zero rows.
+#: The chain then "runs" while measuring the failure path. Sharing issuers across instruments also
+#: makes the concentration numbers meaningful rather than one bucket per position.
+_INSTRUMENTS_PER_ISSUER = 5
+
 #: Instruments per portfolio — the book is split across portfolios so the chain exercises
 #: multi-portfolio scope rather than one giant account.
 _POSITIONS_PER_PORTFOLIO = 250
@@ -212,6 +221,7 @@ class PerfSeedSummary:
     #: follow the non-default ones — dataclass ordering.
     sector_scheme_id: str | None = None
     assignments: int = 0
+    issuers: int = 0
 
 
 def _refuse_unless_gated(*, allow_perf_seed: bool, tenant_id: str) -> None:
@@ -251,8 +261,12 @@ def build_perf_book(
     36 month-ends over three years (OQ-PERF-0-2), and ``n_factors`` factor-return series are seeded
     DAILY over ``n_return_days`` because covariance/VaR consume factor series, not position marks.
 
-    Deterministic: the same ``rung_positions`` on a FRESH schema yields byte-identical ids and
-    timestamps.
+    Deterministic for every shape that carries an ``entity_id`` hook: portfolios, instruments,
+    positions, valuations, factors and factor returns are byte-identical across runs.
+    **``legal_entity`` and ``issuer`` are the exception** — their binders mint their own ids and
+    expose no ``entity_id`` override, so those two ids differ per run. Recorded rather than
+    glossed: it does not affect any measurement (issuers are grouping keys, not inputs to a
+    number), but the seed's determinism claim is NOT universal and should not be cited as such.
 
     **Each rung requires a fresh schema, and this refuses otherwise.** Ids are keyed by ORDINAL so
     that a larger rung extends a smaller one rather than reshuffling it (the ladder must compare
@@ -355,6 +369,8 @@ def build_perf_book(
     # --- instruments + positions + month-end valuations ---
     n_valuations = 0
     n_assignments = 0
+    n_issuers = 0
+    current_issuer_id: str | None = None
     ordinal = 0
     for portfolio_id in portfolio_ids:
         for _ in range(_POSITIONS_PER_PORTFOLIO):
@@ -371,6 +387,25 @@ def build_perf_book(
                 entity_id=synthetic_id(f"perf:instrument:{code}"),
                 now=clock.tick(),
             )
+            if ordinal % _INSTRUMENTS_PER_ISSUER == 0:
+                legal_entity = create_legal_entity(
+                    session,
+                    tenant_id=PERF_TENANT_ID,
+                    code=f"PERF-LE-{ordinal:06d}",
+                    name=f"Perf probe legal entity {ordinal:06d}",
+                    jurisdiction="US",
+                    actor=ref_actor,
+                )
+                issuer = create_issuer(
+                    session,
+                    tenant_id=PERF_TENANT_ID,
+                    legal_entity_id=legal_entity.id,
+                    issuer_type="CORPORATE",
+                    actor=ref_actor,
+                )
+                current_issuer_id = str(issuer.id)
+                n_issuers += 1
+            update_instrument(session, inst, actor=ref_actor, issuer_id=current_issuer_id)
             create_position(
                 session,
                 portfolio_id=portfolio_id,
@@ -478,6 +513,7 @@ def build_perf_book(
         factor_returns=n_factor_returns,
         sector_scheme_id=sector_scheme_id,
         assignments=n_assignments,
+        issuers=n_issuers,
         measurement_date=measurement_date,
     )
     return summary

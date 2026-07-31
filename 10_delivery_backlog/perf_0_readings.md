@@ -164,7 +164,7 @@ SHIPPED binders.
 | segment | 500 | 2,000 | exponent | reading |
 |---|---:|---:|---:|---|
 | exposure | 32.92 s | 129.53 s | 0.988 | linear; **48% of the batch** — the dominant cost |
-| concentration | 15.86 s | 66.81 s | 1.037 | **25% of the batch** — the second cost, and the newest family |
+| concentration | 15.86 s | 66.81 s | 1.037 | ⚠️ **MEASURED THE FAILURE PATH — see the correction below** |
 | factor_exposure | 6.08 s | 22.78 s | 0.953 | linear |
 | portfolio_return | 7.06 s | 25.64 s | 0.930 | linear |
 | var | 3.09 s | 14.12 s | 1.096 | mildly superlinear |
@@ -199,3 +199,31 @@ The 5,000 and 10,000 rungs (~1 h and ~2 h of seeding respectively) — every 10k
 extrapolation from 2,000, and `var`'s and `concentration`'s slightly-superlinear exponents are
 exactly the sort that compound beyond the measured range. The probe has NOT been run under the CI
 runner's shape.
+
+
+### CORRECTION to Reading 3 — the concentration timings measured a FAILED run
+
+Found immediately after Reading 3 was filed, by the CI smoke's second test — the one that reads the
+DATABASE rather than trusting the harness's own account of itself.
+
+**The harness reported `concentration` as `ok`, and no COMPLETED concentration run existed.** CON-1's
+contract is that a coverage gap commits a **FAILED** run with zero rows rather than raising, so the
+harness — which records a segment as failed only when it throws — saw success. The cause: the scale
+seed created instruments with **no issuer**, and concentration ALWAYS computes an ISSUER dimension,
+so every atom was UNCLASSIFIABLE → `ALL_UNCLASSIFIABLE` gap → FAILED run.
+
+**Consequence for the numbers.** Reading 3's `concentration` figures (15.86 s / 66.81 s, exponent
+1.037, "25% of the batch") describe the FAILURE path: bucketing runs, the gap fires, rows are
+discarded. That path does real work, so the numbers are not nonsense — but they are NOT the cost of
+a completing concentration run and must not be cited as such. **The other five segments are
+unaffected**, and the batch total is now a LOWER bound for a different reason than before.
+
+**Fixed** by seeding issuers (one per 5 instruments, so the dimension is both classifiable and
+meaningful rather than one bucket per position). Both CI smoke tests now pass with a COMPLETED
+concentration run. **Reading 3's batch totals need re-measuring at 500/2,000 before they can be
+called complete.**
+
+**Why this survived to be filed at all:** every prior check asked the harness whether the segment
+ran. Only a check that asked the DATABASE what was written could see the difference between "did
+not throw" and "produced a governed number" — the same distinction that separates a fail-closed
+control from a vacuous one.
