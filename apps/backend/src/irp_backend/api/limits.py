@@ -408,7 +408,14 @@ def health(
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> list[LimitHealthOut]:
-    return [_health_out(h) for h in limit_health(db, acting_tenant=principal.tenant_id)]
+    return [
+        _health_out(h)
+        for h in limit_health(
+            db,
+            acting_tenant=principal.tenant_id,
+            include_issuer_detail=_may_see_issuer_limits(db, principal),
+        )
+    ]
 
 
 @router.get("", response_model=list[LimitOut], responses=_COLLECTION_REFUSALS)

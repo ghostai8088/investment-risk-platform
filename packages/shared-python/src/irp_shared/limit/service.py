@@ -407,22 +407,29 @@ def _spec_for(limit: LimitDefinition) -> MetricSpec:
 
 
 # --- evaluation ---------------------------------------------------------------------------
-def select_active_limits(session: Session, *, acting_tenant: str) -> list[LimitDefinition]:
+def select_active_limits(
+    session: Session, *, acting_tenant: str, include_issuer_detail: bool = True
+) -> list[LimitDefinition]:
     """Tenant-scoped: ACTIVE limits (explicit tenant predicate + RLS — belt-and-suspenders).
     Ordered by id: a DETERMINISTIC cross-tick iteration order so two concurrent same-tenant
     ticks acquire their breach-insert unique-index entries in the same sequence (4-finder fold —
     divergent heap-scan order could cycle a uq_breach_limit_run tuple-wait against the audit
-    advisory lock; benign/self-healing, but determinism removes it)."""
-    return list(
-        session.execute(
-            select(LimitDefinition)
-            .where(
-                LimitDefinition.status == LIMIT_STATUS_ACTIVE,
-                LimitDefinition.tenant_id == str(acting_tenant),
-            )
-            .order_by(LimitDefinition.id)
-        ).scalars()
+    advisory lock; benign/self-healing, but determinism removes it).
+
+    **``include_issuer_detail`` defaults to TRUE here, and the asymmetry with every other read is
+    deliberate.** This is the EVALUATION query: the tick must see every ACTIVE limit or the platform
+    silently stops enforcing the ones it cannot see — a far worse failure than a disclosure, and a
+    fail-OPEN control wearing a fail-closed default. The READ surface that reuses this
+    (``limit_health``) passes False by default instead: the fence belongs where the disclosure is,
+    not where the enforcement is.
+    """
+    stmt = select(LimitDefinition).where(
+        LimitDefinition.status == LIMIT_STATUS_ACTIVE,
+        LimitDefinition.tenant_id == str(acting_tenant),
     )
+    if not include_issuer_detail:
+        stmt = stmt.where(LimitDefinition.issuer_id.is_(None))
+    return list(session.execute(stmt.order_by(LimitDefinition.id)).scalars())
 
 
 # --- reads (API-2) ------------------------------------------------------------------------
@@ -1026,11 +1033,30 @@ def _latest_run_failed(session: Session, limit: LimitDefinition) -> bool:
     return newest == RunStatus.FAILED.value
 
 
-def limit_health(session: Session, *, acting_tenant: str) -> list[LimitHealth]:
+def limit_health(
+    session: Session, *, acting_tenant: str, include_issuer_detail: bool = False
+) -> list[LimitHealth]:
     """Report each ACTIVE limit's evaluation health — so an un-evaluable limit is never silently
-    green (OD-L). Derived on demand from ``calc/reads`` (no new mutable state)."""
+    green (OD-L). Derived on demand from ``calc/reads`` (no new mutable state).
+
+    **The issuer fence applies here too, and its absence was a real hole** (found while the LIM-2
+    adversarial review was running). This function iterates ``select_active_limits``, which is the
+    TICK's query: evaluation must see every limit, including issuer-named ones, or the platform
+    silently stops enforcing them. But ``limit_health`` is ALSO a read surface — ``GET
+    /limits/health``, gated on ``limit.view`` alone — so sharing that query handed a caller without
+    ``concentration.issuer.view`` a row per issuer-named limit, disclosing its EXISTENCE and its
+    ``code`` (which a maker would plausibly name after the issuer). The evaluation path and the read
+    path have different disclosure requirements and must not share a query.
+
+    This is the CON-1 lesson in a new place: **a query becomes a disclosure the moment a read
+    surface reuses it.** Defaults to False — fail-closed — so a future caller that forgets the
+    argument leaks nothing. ``irp_worker.breaches`` calls ``select_active_limits`` DIRECTLY and is
+    unaffected, which is why the enforcement path keeps its own default of True.
+    """
     out: list[LimitHealth] = []
-    for limit in select_active_limits(session, acting_tenant=acting_tenant):
+    for limit in select_active_limits(
+        session, acting_tenant=acting_tenant, include_issuer_detail=include_issuer_detail
+    ):
         resolution = _resolve_latest(session, limit)
         stale = _latest_run_failed(session, limit)
         if resolution.refusal is not None:

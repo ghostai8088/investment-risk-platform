@@ -27,6 +27,7 @@ from irp_shared.entitlement.models import AppUser, Permission, Role, RolePermiss
 from irp_shared.entitlement.service import Principal
 from irp_shared.models import Base
 from irp_shared.portfolio import PortfolioActor, create_portfolio
+from irp_shared.reference.models import Issuer, LegalEntity
 
 _ALL = ("limit.manage", "limit.approve", "limit.view")
 _MANAGE_ONLY = ("limit.manage", "limit.view")  # NO limit.approve
@@ -97,6 +98,7 @@ def ctx() -> Iterator[dict[str, object]]:
             "pf": str(pf.id),
             "tenant_b": tenant_b,
             "user_b": user_b.id,
+            "db": db,
         }
     finally:
         db.close()
@@ -408,3 +410,164 @@ def test_limit_non_deadlock_operational_error_is_not_swallowed(ctx) -> None:
             json={"approval_ref": "RC"},
             headers=_hdr(ctx["approver"], ctx["tenant"]),
         )
+
+
+# --- LIM-2: the issuer-identity disclosure fence, on EVERY read surface --------------------
+# CON-1 minted `concentration.issuer.view` so the auditor line could differ, and deliberately
+# excluded `auditor_3l` from it while that role DOES hold `limit.view`. LIM-2 lets a limit NAME an
+# issuer, so the fence has to follow the data onto this surface.
+#
+# Every fence assertion below carries its POSITIVE CONTROL in the same test: a caller WITH the code
+# must still receive the limit. Without that, a read that was simply broken would pass as a fence.
+_ISSUER_CODE = "concentration.issuer.view"
+_WITH_ISSUER = ("limit.manage", "limit.approve", "limit.view", _ISSUER_CODE)
+
+
+def _principals_either_side_of_the_fence(ctx) -> tuple[str, str]:  # noqa: ANN001
+    """Two principals in the acting tenant: one holding the issuer code, one without it."""
+    db: Session = ctx["db"]
+    tenant: str = ctx["tenant"]
+    holder = AppUser(tenant_id=tenant, display_name="HoldsIssuerView")
+    fenced = AppUser(tenant_id=tenant, display_name="NoIssuerView")
+    db.add_all([holder, fenced])
+    db.flush()
+    _grant(db, tenant, holder.id, _WITH_ISSUER)
+    _grant(db, tenant, fenced.id, _ALL)  # limit.view but NOT concentration.issuer.view
+    db.commit()
+    return str(holder.id), str(fenced.id)
+
+
+def _real_issuer(ctx) -> str:  # noqa: ANN001
+    """A REAL issuer in the acting tenant.
+
+    A bare uuid does not work, and that is the P3-5 guard doing its job: `create_limit` re-resolves
+    `issuer_id` tenant-filtered before the write, because a PostgreSQL FK check bypasses RLS and a
+    foreign issuer id here would be a cross-tenant identity DISCLOSURE, not merely a bad reference.
+    Discovering that from a 422 is the guard proving itself."""
+    db: Session = ctx["db"]
+    tenant: str = ctx["tenant"]
+    core = LegalEntity(
+        tenant_id=tenant, code=f"LE-{uuid.uuid4().hex[:6]}", name="Acme", is_active=True
+    )
+    db.add(core)
+    db.flush()
+    issuer = Issuer(tenant_id=tenant, legal_entity_id=core.id, is_active=True)
+    db.add(issuer)
+    db.commit()
+    return str(issuer.id)
+
+
+def _create_issuer_limit(ctx, uid: str) -> dict:  # noqa: ANN001
+    """A named-issuer concentration limit over a REAL issuer."""
+    issuer_id = _real_issuer(ctx)
+    body = {
+        "code": f"ISS-{uuid.uuid4().hex[:6]}",
+        "name": "issuer X <= 5%",
+        "target_run_type": "CONCENTRATION",
+        "metric_type": "SHARE",
+        "scope_portfolio_id": ctx["pf"],
+        "threshold_value": "0.05",
+        "threshold_unit": "FRACTION",
+        "breach_direction": "ABOVE",
+        "limit_kind": "HARD",
+        "dimension_kind": "ISSUER",
+        "bucket_code": issuer_id,
+        "issuer_id": issuer_id,
+        "denominator_basis": "INVESTED_LONG",
+    }
+    r = ctx["client"].post("/limits", json=body, headers=_hdr(uid, ctx["tenant"]))
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_the_limit_list_excludes_issuer_named_limits_from_a_fenced_caller(ctx) -> None:
+    holder, fenced = _principals_either_side_of_the_fence(ctx)
+    lim = _create_issuer_limit(ctx, holder)
+
+    seen_by_fenced = ctx["client"].get("/limits", headers=_hdr(fenced, ctx["tenant"])).json()
+    assert lim["id"] not in {x["id"] for x in seen_by_fenced}
+
+    # POSITIVE CONTROL — the holder DOES see it, so the exclusion above is a fence and not a
+    # read that returns nothing for everyone.
+    seen_by_holder = ctx["client"].get("/limits", headers=_hdr(holder, ctx["tenant"])).json()
+    assert lim["id"] in {x["id"] for x in seen_by_holder}
+
+
+def test_fetching_a_fenced_limit_is_404_not_403(ctx) -> None:
+    """A 403 would itself be the disclosure — it confirms a limit exists at that id. The fenced
+    caller must get the SAME answer as for an id that does not exist."""
+    holder, fenced = _principals_either_side_of_the_fence(ctx)
+    lim = _create_issuer_limit(ctx, holder)
+
+    fenced_get = ctx["client"].get(f"/limits/{lim['id']}", headers=_hdr(fenced, ctx["tenant"]))
+    missing_get = ctx["client"].get(f"/limits/{uuid.uuid4()}", headers=_hdr(fenced, ctx["tenant"]))
+    assert fenced_get.status_code == 404
+    assert fenced_get.status_code == missing_get.status_code
+    assert fenced_get.json() == missing_get.json()  # indistinguishable, body included
+
+    # POSITIVE CONTROL — the holder gets 200 with the issuer identity present.
+    ok = ctx["client"].get(f"/limits/{lim['id']}", headers=_hdr(holder, ctx["tenant"]))
+    assert ok.status_code == 200 and ok.json()["issuer_id"] == lim["issuer_id"]
+
+
+def test_the_health_surface_does_not_leak_issuer_named_limits(ctx) -> None:
+    """**The hole this test was written for.** `limit_health` iterates `select_active_limits` —
+    the TICK's query, which must see every limit or enforcement silently stops. Sharing it with a
+    read surface handed a fenced caller a row per issuer-named limit, disclosing its existence and
+    its `code` (which a maker would plausibly name after the issuer). The fence belongs where the
+    disclosure is, not where the enforcement is."""
+    holder, fenced = _principals_either_side_of_the_fence(ctx)
+    lim = _create_issuer_limit(ctx, holder)
+    assert _approve(ctx, lim["id"], ctx["approver"]).status_code == 200  # ACTIVE => in health
+
+    fenced_health = ctx["client"].get("/limits/health", headers=_hdr(fenced, ctx["tenant"])).json()
+    assert lim["id"] not in {h["limit_id"] for h in fenced_health}
+    assert lim["code"] not in {h["code"] for h in fenced_health}
+
+    # POSITIVE CONTROL — the holder sees the health row, so the exclusion is the fence and not
+    # `limit_health` having stopped reporting concentration limits altogether.
+    holder_health = ctx["client"].get("/limits/health", headers=_hdr(holder, ctx["tenant"])).json()
+    assert lim["id"] in {h["limit_id"] for h in holder_health}
+
+
+def test_a_non_issuer_concentration_limit_is_visible_to_everyone(ctx) -> None:
+    """The fence keys on issuer identity, NOT on the concentration family. A sector limit carries
+    no proprietary identity and must not be swept up — otherwise the fence would quietly hide the
+    slice's headline feature from most of its users."""
+    _holder, fenced = _principals_either_side_of_the_fence(ctx)
+    body = {
+        "code": f"TECH-{uuid.uuid4().hex[:6]}",
+        "name": "tech <= 20%",
+        "target_run_type": "CONCENTRATION",
+        "metric_type": "SHARE",
+        "scope_portfolio_id": ctx["pf"],
+        "threshold_value": "0.20",
+        "threshold_unit": "FRACTION",
+        "breach_direction": "ABOVE",
+        "limit_kind": "HARD",
+        "dimension_kind": "SECTOR_INDUSTRY",
+        "bucket_code": "J",
+        "scheme_family": "ISIC",
+        "authored_scheme_id": str(uuid.uuid4()),
+        "denominator_basis": "INVESTED_LONG",
+    }
+    r = ctx["client"].post("/limits", json=body, headers=_hdr(ctx["maker"], ctx["tenant"]))
+    assert r.status_code == 201, r.text
+    seen = ctx["client"].get("/limits", headers=_hdr(fenced, ctx["tenant"])).json()
+    assert r.json()["id"] in {x["id"] for x in seen}
+
+
+def test_a_fenced_limit_remains_approvable_and_editable(ctx) -> None:
+    """The mutation paths must NOT be fenced: they are separately gated on limit.manage /
+    limit.approve, and a fenced load would silently make every named-issuer limit unapprovable —
+    a control that cannot be operated is a control that does not exist."""
+    holder, _fenced = _principals_either_side_of_the_fence(ctx)
+    lim = _create_issuer_limit(ctx, holder)
+    # The approver holds _ALL — i.e. limit.approve WITHOUT concentration.issuer.view.
+    assert _approve(ctx, lim["id"], ctx["approver"]).status_code == 200
+    patched = ctx["client"].patch(
+        f"/limits/{lim['id']}",
+        json={"name": "renamed"},
+        headers=_hdr(ctx["maker"], ctx["tenant"]),
+    )
+    assert patched.status_code == 200, patched.text
