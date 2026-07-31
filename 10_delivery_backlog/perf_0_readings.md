@@ -149,7 +149,10 @@ the 5,000 and 10,000 rungs are unmeasured, and so are two segments.
 
 ---
 
-## Reading 3 — the COMPLETE daily batch, all six segments (2026-07-30)
+## Reading 3 — all six segments, but concentration on its FAILURE path (2026-07-30) — SUPERSEDED by Reading 4
+
+> Its concentration row measured a FAILED run (see the correction at the end of this section).
+> Reading 4 re-measures the same rungs with every segment COMPLETING. Kept for the record.
 
 **Conditions.** M1 Max / 10 cores / 64 GB; PostgreSQL 16.14; Python 3.13.0; commit `5bf8da9`;
 fresh schema per rung, resets outside the timed region; 8 factors × 260 daily returns held constant
@@ -227,3 +230,71 @@ called complete.**
 ran. Only a check that asked the DATABASE what was written could see the difference between "did
 not throw" and "produced a governed number" — the same distinction that separates a fail-closed
 control from a vacuous one.
+
+
+---
+
+## Reading 4 — the CORRECTED complete batch, all six segments COMPLETING (2026-07-31)
+
+**Supersedes Reading 3.** Same rungs and parameters; the difference is that the seed now creates
+issuers, so concentration's always-computed ISSUER dimension is classifiable and the segment mints a
+COMPLETED run instead of a gapped FAILED one.
+
+**Conditions.** M1 Max / 10 cores / 64 GB; PostgreSQL 16.14; Python 3.13.0; commit `435bcf8`; fresh
+schema per rung, resets outside the timed region; 8 factors × 260 daily returns held constant;
+single process, single connection; harness `scripts/perf_probe.py` driving the SHIPPED binders.
+
+| rung | seed | seed rows | **batch (all 6 COMPLETING)** |
+|---:|---:|---:|---:|
+| 500 | 862.40 s | 21,090 | **77.02 s** |
+| 2,000 | 2,642.61 s | 78,096 | **278.70 s** |
+
+| segment | 500 | 2,000 | exponent | share @2,000 |
+|---|---:|---:|---:|---:|
+| exposure | 32.31 s | 129.58 s | 1.002 | **46.5%** |
+| concentration | 16.49 s | 68.94 s | 1.032 | **24.7%** |
+| portfolio_return | 7.03 s | 26.92 s | 0.969 | 9.7% |
+| factor_exposure | 6.39 s | 25.96 s | 1.011 | 9.3% |
+| var | 3.49 s | 15.04 s | 1.054 | 5.4% |
+| covariance | 11.31 s | 12.27 s | 0.059 | 4.4% |
+| **batch total** | **77.02 s** | **278.70 s** | **0.928** | — |
+| seed | 862.40 s | 2,642.61 s | 0.808 | — |
+
+Peak `tracemalloc` ≤ 12 MB; peak RSS 119 MB at 2,000. **Memory is not a constraint** and shows no
+growth trend across a 4× book.
+
+### What changed versus Reading 3 — and what did not
+
+Concentration moved 15.86 → 16.49 s (500) and 66.81 → 68.94 s (2,000): **about 3% dearer**. The
+failure path was nearly as expensive as the success path because the gap fires only AFTER bucketing
+is complete — the work happens, then the rows are discarded. So the correction changes what the
+number MEANS far more than what it says, and every conclusion drawn from Reading 3's totals survives.
+That is a comfortable outcome, not a vindication of filing it: had the gap fired earlier the error
+would have been large, and nothing in the harness would have revealed it.
+
+### Against the ratified budget (OQ-PERF-0-1: 4 clock-hours @ 10,000 positions)
+
+DERIVED, not measured:
+
+- at the measured exponent 0.928: **~20.7 minutes (8.6% of budget)**
+- at a conservative linear 1.000: **~23.2 minutes (9.7%)**
+
+**AD-003's revisit trigger has NOT fired.** Every segment is linear or sublinear; the largest
+exponent is `var` at 1.054, which changes nothing at this scale.
+
+### The finding, now on corrected numbers
+
+**Ingestion dominates, not risk compute.** Extrapolated to 10,000 positions the seed is ~3.7 h
+against a ~20-minute batch — a **9.5× ratio**. AD-003 accepted a "Python batch performance" risk;
+the measurement says the batch is a non-issue and the cost sits in the per-row capture rail with its
+co-transactional audit-chain appends. **The deferred risk was real but pointed at the wrong half of
+the system.**
+
+Note the seed's exponent here is **0.808** — markedly sublinear, i.e. per-row cost IMPROVES with
+scale (fixed setup amortising, warm caches). The ~3.7 h figure extrapolates linearly and is
+therefore a CONSERVATIVE upper bound; at the measured exponent it would be ~2.6 h.
+
+### Still not measured
+
+The 5,000 and 10,000 rungs. Every 10k figure above is extrapolated from 2,000. The probe has not
+run under the CI runner's shape (the CI smoke is a correctness gate with no timing assertion).
