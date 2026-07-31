@@ -496,6 +496,98 @@ pre-ratification verifier pass runs the migration in a throwaway workspace copy 
 it (`claude_operating_instructions.md:283-290`), and every number that dry run produces is
 re-measured against the merged artifact at closeout rather than carried forward as a pin.
 
+## Part 5 — The P4 EXECUTED dry run (2026-07-31)
+
+Run against a throwaway database (`irp_lim2_dryrun` in the standing `irp_pg_local` container),
+migrated to `0057`, **seeded with existing `limit_definition` and `breach` rows before the ALTER** —
+a CHECK added to an empty table passes vacuously, which is the P5 trap this slice would otherwise
+have walked into. Draft migration: `0058_limit_dimension_selector`.
+
+**It found two defects, and neither was findable by reading.**
+
+### Finding 1 — the identifier asymmetry (the CON-1 0057 defect class, in reverse)
+
+The upgrade path was correct and I verified it against the live `pg_constraint` catalog: five CHECKs,
+correctly named, longest 43 of 63 allowed. **The downgrade failed**, trying to drop
+`ck_limit_definition_ck_limit_definition_dimension_kind_vocab`.
+
+Root cause, and it generalizes past this slice: **`ck` is the ONLY entry in `NAMING_CONVENTION` keyed
+on `%(constraint_name)s`** (`db/base.py:8-14`). `ix`/`uq`/`fk`/`pk` substitute column and table
+names instead. So a CHECK name is the only identifier alembic expands from what you pass — on
+`drop_constraint` exactly as on `create_check_constraint` — while FK and index operations take the
+literal catalog name. **Within one migration, three identifier kinds follow two opposite
+conventions**, and the wrong one looks *more* correct on the page, because dropping the name you can
+see in the catalog is the obvious thing to write.
+
+CON-1 hit this on create and shipped truncated names. This hit it on drop, where the doubled name
+came to 60 chars — under the limit, so nothing truncated; the constraint simply did not exist. **A
+reading lane comparing migration text to ORM text would report parity in both cases.**
+
+### Finding 2 — the downgrade creates an UN-UPGRADEABLE database (the serious one)
+
+After fixing finding 1 the downgrade succeeded — and the **re-upgrade then died** with a
+`CheckViolation` on four rows.
+
+This migration is not in the 0046 "additive column, no DML, no zero-row trap" class, and the
+difference is the CHECK. Dropping the dimension columns destroys the selector data while leaving the
+rows carrying `target_run_type = 'CONCENTRATION'`. Re-upgrade re-adds the columns as NULL, and
+`concentration_shape` rejects exactly those rows. So a *completed* downgrade leaves a database that
+cannot be upgraded again without manual data repair — discovered only because the dry run ran the
+full cycle rather than stopping at "the downgrade worked".
+
+**Fix: the downgrade REFUSES, before dropping anything**, while any `CONCENTRATION` limit rows
+exist, naming the count and the remedy. Refusing beats the alternatives: deleting governed config
+rows on the operator's behalf would destroy audited configuration silently, and weakening the CHECK
+to make the round trip survivable would trade a real guard for a reversibility nobody needs in
+production. Retiring a limit is a governed act with an audit trail; a migration should not perform
+it.
+
+### The full cycle, after both fixes
+
+Every step's exit code was printed, not inferred:
+
+| step | result |
+| --- | --- |
+| upgrade `0057` → `0058` over NON-EMPTY tables | exit 0; 5 CHECKs, longest 43 chars |
+| existing rows | 2 limits, 1 breach survived; **0 of each carries a dimension** — NULL is the honest value |
+| probe battery | **14/14** — 9 refusals fired, 5 positive controls admitted |
+| downgrade with concentration limits present | **exit 1, guard fired**, named 3 rows, head unchanged — nothing dropped |
+| downgrade after retiring them | exit 0 → `0057`; 3 limits + 2 breaches preserved |
+| re-upgrade | exit 0 → `0058`; 5 CHECKs restored |
+
+The nine refusals: the P0001 backfill on `breach` (twice — once on a pre-existing row, once on a
+freshly inserted concentration echo, so the immutability covers the new columns too); a VAR limit
+carrying a dimension; a concentration limit with no basis; **issuer identity on a
+`SECTOR_INDUSTRY` limit — the disclosure fence, structural**; an ISSUER limit carrying a scheme
+family; a classification limit missing one; a NAV-denominated (regulatory-shaped) threshold; and an
+unenumerated dimension kind.
+
+The five positive controls exist because eight refusals prove nothing on their own — a CHECK that
+rejects everything would have passed all of them. They admit: a named-issuer limit, a named-bucket
+sector limit ("tech ≤ 20%"), a run-level HHI limit, an ordinary VaR limit, and a new breach carrying
+the full echo set.
+
+### A standing rule this slice departs from, recorded rather than assumed
+
+The operating instructions' **Genericity** rule says *"type/scheme/status columns are controlled-vocab
+strings (no enum/CHECK) … new families extend by value, never a migration"*
+(`claude_operating_instructions.md:193`). Three of the five CHECKs are SHAPE constraints, which that
+rule does not reach. **Two are vocabulary CHECKs and ARE a departure**: `dimension_kind_vocab` and
+`denominator_basis_vocab`.
+
+Taken deliberately, with prior art one and four slices old — 0057's
+`ck_concentration_result_dimension_kind` and 0053's `ck_schedule_cadence_kind_vocab` — because the
+extensibility the rule protects is exactly what must not exist here: **adding a denominator basis
+changes what every threshold written against the old one MEANS.** That has to cost a migration and a
+governed decision, not a new string. Recorded per the standing requirement that a deviation is
+written down, never a silent "confirm" (`claude_operating_instructions.md:198`).
+
+**This correction belongs to Part 0 fact 3.** That fact framed "zero CHECK constraints on these two
+tables" as an inconsistency to fix. Partly it is the standing rule being correctly followed. The
+ratified recommendation does not change, but its justification does — and the justification is what
+a reviewer checks. Missing the rule on the first pass is the same class as the Wave-14 planning
+BLOCKING that recommended against an uncited Accepted ADR.
+
 ## Verification note
 
 Facts 2, 3 (the zero-CHECK half), 4 (the platform-wide scope), 7, 12 and 13 are **new to this pass**
