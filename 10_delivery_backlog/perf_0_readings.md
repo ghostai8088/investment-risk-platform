@@ -66,7 +66,78 @@ It also says nothing about memory: `tracemalloc`/RSS instrumentation (OQ-PERF-0-
 
 ## Pending readings
 
-- The daily batch, per segment, at each rung — the reading the 4-hour budget is actually about.
-- Peak `tracemalloc` and peak RSS per segment.
+- The 5,000 and 10,000 rungs (Reading 2 covers 500 and 2,000).
+- `portfolio_return` and `concentration`, once the harness defect and the classification seed are
+  fixed — until then every batch total is a LOWER BOUND.
 - The same ladder under the CI runner's shape, for the record (no timing assertion there —
   OQ-PERF-0-4).
+
+---
+
+## Reading 2 — the DAILY BATCH, per segment (2026-07-30)
+
+**Conditions.** As Reading 1 (M1 Max / 10 cores / 64 GB, PostgreSQL 16.14, Python 3.13.0), commit
+`2e25958`, fresh schema per rung, resets outside the timed region. 8 factors × 260 daily returns,
+held CONSTANT across rungs. Harness: `scripts/perf_probe.py`, driving the SHIPPED binders.
+
+| rung | seed | seed rows | **batch** | exposure | factor_exposure | covariance | var |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 500 | 746.81 s | 21,090 | **50.75 s** | 31.62 s | 4.77 s | 10.36 s | 4.00 s |
+| 2,000 | 2,604.00 s | 78,096 | **172.93 s** | 125.05 s | 22.86 s | 10.79 s | 14.23 s |
+
+Peak `tracemalloc` never exceeded 35 MB; peak RSS 164 MB at the 2,000 rung.
+
+**Only FOUR of six segments are in that batch total.** `portfolio_return` and `concentration` did
+not run (below). The batch number is therefore a LOWER BOUND, and is labelled as one wherever it
+is used.
+
+### The degradation hypothesis is REFUTED
+
+Reading 1 measured ~55 governed rows/s; this ladder's seed ran at 28.2 (rung 500) and 30.0 (rung
+2,000). I flagged the gap and named the possibility that would have mattered: **per-tenant audit
+chain appends degrading as the chain lengthens**, which would make the capture rail superlinear and
+overturn Reading 1.
+
+**It does not degrade.** Across a 4× increase in book size — and a chain 3.7× longer — throughput
+held flat and in fact improved slightly (28.2 → 30.0 rows/s); the seed's growth exponent is
+**0.901**, sublinear. The gap against Reading 1 is workload MIX and host conditions, not
+degradation: this seed additionally writes factors, factor returns and currencies, and the two
+ladders ran under different machine load. **The two ladders' rows/s are therefore NOT directly
+comparable** — but the within-ladder comparison, which is the one that tests degradation, is clean.
+
+### Growth exponents (log-log, 500 → 2,000)
+
+| segment | exponent | reading |
+|---|---:|---|
+| exposure | 0.992 | linear, and the DOMINANT cost (72% of batch at 2,000) |
+| factor_exposure | 1.130 | mildly SUPERLINEAR — the one to watch |
+| covariance | 0.029 | FLAT — as it should be (see below) |
+| var | 0.915 | linear |
+| **batch total** | **0.884** | sublinear |
+
+**Covariance being flat is a correctness signal, not an anomaly.** It consumes factor RETURN series,
+not position marks, and this ladder holds factors constant at 8 — so its cost must not move with
+book size, and it doesn't (10.36 s → 10.79 s). That is the harness demonstrating it measures what
+the record says the chain consumes (Part 0 fact 7). A book that also grew its factor count would
+move this number; that is a different probe.
+
+### Against the ratified budget (OQ-PERF-0-1: 4 clock-hours @ 10,000 positions)
+
+Linear extrapolation of the four measured segments to 10,000 positions gives **~14.4 minutes** —
+roughly 6% of the budget. **DERIVED, not measured**, and a LOWER BOUND on two counts: two segments
+are missing, and `factor_exposure`'s 1.130 exponent means it grows faster than the extrapolation
+assumes.
+
+**AD-003's revisit trigger has NOT fired.** On the evidence so far the daily batch sits far inside
+the ratified window, and the platform's cost is dominated by the one-time SEED (~2 h at 10,000
+positions, Reading 1) rather than by the nightly run. Nothing here licenses closing the question:
+the 5,000 and 10,000 rungs are unmeasured, and so are two segments.
+
+### The two segments that did not run — recorded, never skipped
+
+- **`portfolio_return`** refuses a multi-portfolio atom set: *"the pinned atoms span 2 portfolios —
+  v1 measures a SINGLE portfolio."* A HARNESS defect: it passes every portfolio's exposure runs into
+  one call. Invisible at the 20-position smoke, where the whole book fit in one portfolio — the
+  ladder is what exposed it. Fix: invoke per portfolio.
+- **`concentration`** needs a classification scheme and assignments seeded (CON-1's inputs). Not yet
+  built into the scale seed.
