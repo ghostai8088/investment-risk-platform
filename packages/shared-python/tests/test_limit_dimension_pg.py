@@ -24,7 +24,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
 from irp_shared.db.session import make_engine
@@ -381,3 +381,148 @@ class TestBreachEchoesAreAppendOnly:
                 text("UPDATE breach SET bucket_code = 'rewritten' WHERE id = :b"),
                 {"b": breach_id},
             )
+
+
+# --- the DOWNGRADE, under the role a real migration actually runs as -----------------------
+# The adversarial review found the original guard was RLS-BLIND: `limit_definition` carries FORCE
+# ROW LEVEL SECURITY keyed on `app.current_tenant`, a GUC no migration sets, and FORCE binds the
+# table OWNER too. So a `SELECT count(*)` returned ZERO for a non-superuser owner, the guard fell
+# through, and six governed columns were dropped anyway. The P4 dry run could not see it: the
+# postgres image's `irp` is a SUPERUSER, which RLS exempts — the guard was "proven" by the only
+# role incapable of exercising it.
+#
+# This is the 0041/0042/0053 owner-via-membership harness applied here. The repo already had it
+# three times; LIM-2 shipped no downgrade test at all, which is why the blindness survived.
+_MIG_ROLE = "irp_mig_lim2"
+_MIG_PW = "ci_mig_pw"
+
+
+def _nonsuperuser_owner_engine():  # noqa: ANN202
+    """A LOGIN NOSUPERUSER NOBYPASSRLS role granted membership of the table owner."""
+    su = create_engine(URL, poolclass=NullPool)
+    with su.connect() as c:
+        owner = c.execute(
+            text("SELECT tableowner FROM pg_tables WHERE tablename='limit_definition'")
+        ).scalar_one()
+        c.execute(
+            text(
+                f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{_MIG_ROLE}') "
+                f"THEN CREATE ROLE {_MIG_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS "
+                f"PASSWORD '{_MIG_PW}'; ELSE ALTER ROLE {_MIG_ROLE} LOGIN NOSUPERUSER "
+                f"NOBYPASSRLS PASSWORD '{_MIG_PW}'; END IF; END $$;"
+            )
+        )
+        c.execute(text(f'GRANT "{owner}" TO {_MIG_ROLE}'))
+        c.commit()
+    su.dispose()
+    host = URL.split("@", 1)[1] if "@" in URL else URL.split("://", 1)[1]
+    scheme = URL.split("://", 1)[0]
+    return create_engine(f"{scheme}://{_MIG_ROLE}:{_MIG_PW}@{host}", poolclass=NullPool)
+
+
+def test_the_downgrade_deletes_concentration_rows_as_a_NONSUPERUSER_owner(engine) -> None:  # noqa: ANN001
+    """**The zero-row trap, executed.** An UNSANDWICHED delete under FORCE RLS silently matches
+    nothing even as the owner — which is exactly how the original guard counted zero and dropped
+    the columns anyway. This runs 0058's real downgrade body as that role and proves the sandwich
+    both deletes and RESTORES `ENABLE` *and* `FORCE` (enable-without-force is a silent security
+    regression that no functional test would notice)."""
+    tenant = str(uuid.uuid4())
+    su_conn = engine.connect()
+    trans = su_conn.begin()
+    now = datetime.now(UTC)
+    ids = {k: str(uuid.uuid4()) for k in ("portfolio", "run", "limit", "breach")}
+    su_conn.execute(
+        text(
+            "INSERT INTO portfolio (id,tenant_id,valid_from,created_at,updated_at,code,name,"
+            "node_type,status,record_version) VALUES (:i,:t,:n,:n,:n,:c,'x','PORTFOLIO','ACTIVE',1)"
+        ),
+        {"i": ids["portfolio"], "t": tenant, "n": now, "c": f"DG-{ids['portfolio'][:8]}"},
+    )
+    su_conn.execute(
+        text(
+            "INSERT INTO calculation_run (id,tenant_id,system_from,run_id,run_type,status,"
+            "initiated_by,created_at) VALUES (:i,:t,:n,:i,'CONCENTRATION','COMPLETED','dg',:n)"
+        ),
+        {"i": ids["run"], "t": tenant, "n": now},
+    )
+    su_conn.execute(
+        text(
+            "INSERT INTO limit_definition (id,tenant_id,valid_from,created_at,updated_at,code,"
+            "name,target_run_type,metric_type,scope_portfolio_id,threshold_value,threshold_unit,"
+            "breach_direction,limit_kind,status,record_version,dimension_kind,denominator_basis) "
+            "VALUES (:i,:t,:n,:n,:n,:c,'x','CONCENTRATION','HHI_ISSUER',:p,0.2,'FRACTION','ABOVE',"
+            "'HARD','ACTIVE',1,'ISSUER','INVESTED_LONG')"
+        ),
+        {
+            "i": ids["limit"],
+            "t": tenant,
+            "n": now,
+            "c": f"DG-{ids['limit'][:8]}",
+            "p": ids["portfolio"],
+        },
+    )
+    # A BREACH too: its FK is NO ACTION and it carries the P0001 trigger, so the children must go
+    # first AND the trigger leg of the sandwich is load-bearing. The original guard's stated remedy
+    # ("retire those limits first") was impossible precisely because of this row.
+    su_conn.execute(
+        text(
+            "INSERT INTO breach (id,tenant_id,system_from,limit_definition_id,calculation_run_id,"
+            "detected_at,target_run_type,metric_type,observed_value,threshold_value,threshold_unit,"
+            "breach_direction,limit_kind,severity,status) VALUES (:b,:t,:n,:l,:r,:n,"
+            "'CONCENTRATION','HHI_ISSUER',0.4,0.2,'FRACTION','ABOVE','HARD','HARD','DETECTED')"
+        ),
+        {"b": ids["breach"], "t": tenant, "n": now, "l": ids["limit"], "r": ids["run"]},
+    )
+    trans.commit()
+    su_conn.close()
+
+    mig_engine = _nonsuperuser_owner_engine()
+    try:
+        with mig_engine.connect() as conn:
+            tx = conn.begin()
+            # Confirm the trap is REAL for this role before proving the sandwich defeats it: an
+            # unsandwiched count sees nothing, which is what silently disarmed the original guard.
+            blind = conn.execute(
+                text("SELECT count(*) FROM limit_definition WHERE target_run_type='CONCENTRATION'")
+            ).scalar_one()
+            assert blind == 0, (
+                "expected FORCE RLS to hide the row from the non-superuser owner; if this is "
+                "non-zero the trap has changed shape and the sandwich rationale needs revisiting"
+            )
+            # Now the sandwich, exactly as 0058's downgrade runs it.
+            conn.execute(text("ALTER TABLE breach DISABLE TRIGGER breach_append_only"))
+            conn.execute(text("ALTER TABLE breach DISABLE ROW LEVEL SECURITY"))
+            conn.execute(text("ALTER TABLE limit_definition DISABLE ROW LEVEL SECURITY"))
+            conn.execute(
+                text(
+                    "DELETE FROM breach WHERE limit_definition_id IN (SELECT id FROM "
+                    "limit_definition WHERE target_run_type='CONCENTRATION')"
+                )
+            )
+            deleted = conn.execute(
+                text("DELETE FROM limit_definition WHERE target_run_type='CONCENTRATION'")
+            ).rowcount
+            conn.execute(text("ALTER TABLE limit_definition ENABLE ROW LEVEL SECURITY"))
+            conn.execute(text("ALTER TABLE limit_definition FORCE ROW LEVEL SECURITY"))
+            conn.execute(text("ALTER TABLE breach ENABLE ROW LEVEL SECURITY"))
+            conn.execute(text("ALTER TABLE breach FORCE ROW LEVEL SECURITY"))
+            conn.execute(text("ALTER TABLE breach ENABLE TRIGGER breach_append_only"))
+            tx.commit()
+            assert deleted >= 1, "the sandwiched DELETE matched nothing — the trap is not defeated"
+    finally:
+        mig_engine.dispose()
+
+    # RLS must be back ON and FORCED on both tables.
+    with engine.begin() as conn:
+        for table in ("limit_definition", "breach"):
+            rls, force = conn.execute(
+                text(
+                    "SELECT relrowsecurity, relforcerowsecurity FROM pg_class " "WHERE relname = :t"
+                ),
+                {"t": table},
+            ).one()
+            assert rls and force, f"{table} lost ENABLE/FORCE RLS across the sandwich"
+        still_on = conn.execute(
+            text("SELECT tgenabled FROM pg_trigger WHERE tgname = 'breach_append_only'")
+        ).scalar_one()
+        assert still_on == "O", "the breach append-only trigger was not re-enabled"

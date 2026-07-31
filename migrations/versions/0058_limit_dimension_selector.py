@@ -162,7 +162,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # --- FAIL-CLOSED downgrade guard: found by the P4 executed dry run, not by reading ---
+    # --- the destructive downgrade leg: found by the P4 dry run, corrected by the review ---
     # This migration is NOT in the 0046 "additive column, no DML, no zero-row trap" class, and the
     # difference is the CHECK. Dropping these columns destroys the dimension data while LEAVING the
     # rows with `target_run_type = 'CONCENTRATION'`. A later re-upgrade then re-adds the columns as
@@ -170,26 +170,46 @@ def downgrade() -> None:
     # database that CANNOT be upgraded again without manual data repair. The dry run reproduced
     # that: downgrade succeeded, re-upgrade died with a CheckViolation on 4 rows.
     #
-    # Refusing is the fail-closed answer, and the refusal is placed where the operator can still
-    # act: BEFORE anything is dropped. The remedy is deliberate — retire or re-target the
-    # concentration limits first, which is a governed act with an audit trail, rather than having
-    # a migration silently delete governed config rows on their behalf.
-    count = (
-        op.get_bind()
-        .execute(
-            sa.text("SELECT count(*) FROM limit_definition WHERE target_run_type = :t"),
-            {"t": _CONCENTRATION},
-        )
-        .scalar_one()
+    # **This REVERSES the refusal the P4 dry run originally shipped, for two reasons found by the
+    # adversarial review — recorded here rather than swapped in quietly.**
+    #
+    # (1) The refusal was RLS-BLIND, and would have destroyed the data it existed to protect.
+    #     `limit_definition` carries FORCE ROW LEVEL SECURITY (0050) keyed on the
+    #     `app.current_tenant` GUC, which a migration never sets. FORCE binds the table OWNER too,
+    #     so as the non-superuser owner a real deployment runs as, the count returned ZERO, the
+    #     guard fell through, and six governed selector columns were dropped anyway. It "passed"
+    #     the dry run only because the postgres image's `irp` is a SUPERUSER, which RLS exempts —
+    #     the guard was proven by the one role that cannot exercise it.
+    #
+    # (2) Its stated remedy was UNACHIEVABLE. "Retire those limits first" is impossible once a
+    #     limit has breached: `breach` FKs `limit_definition`, and `breach` carries the P0001
+    #     append-only trigger, so the rows can be neither deleted nor orphaned by any application
+    #     path. A guard whose only escape does not exist is a permanent block, not a control.
+    #
+    # So this follows the repo's OWN precedent for a downgrade that would strand data (0053's
+    # two-table cascade, and 0028/0041/0042): SANDWICH the destructive DML — disable the
+    # append-only trigger and RLS, delete, then restore BOTH `ENABLE` and `FORCE` (enable without
+    # force is a silent security regression). A downgrade is a schema-level rollback, and this
+    # codebase has already accepted that one may destroy append-only evidence; what it must never
+    # do is destroy it SILENTLY or leave the database un-upgradeable.
+    op.execute("ALTER TABLE breach DISABLE TRIGGER breach_append_only")
+    op.execute("ALTER TABLE breach DISABLE ROW LEVEL SECURITY")
+    op.execute(f"ALTER TABLE {_LIMIT} DISABLE ROW LEVEL SECURITY")
+
+    # Children first (the FK is NO ACTION), then the limits whose selector columns are about to
+    # vanish. Tenant-blind BY DESIGN: a migration is database-wide, so filtering by any single
+    # tenant GUC would under-delete and leave exactly the un-upgradeable rows behind.
+    op.execute(
+        f"DELETE FROM {_BREACH} WHERE limit_definition_id IN "
+        f"(SELECT id FROM {_LIMIT} WHERE target_run_type = '{_CONCENTRATION}')"
     )
-    if count:
-        raise RuntimeError(
-            f"refusing to downgrade 0058: {count} {_CONCENTRATION} limit_definition row(s) exist. "
-            "Dropping the dimension columns would destroy their selector data while leaving the "
-            "rows in place, and the re-upgrade's ck_limit_definition_concentration_shape would "
-            "then reject them — an un-upgradeable database. Retire or re-target those limits "
-            "first."
-        )
+    op.execute(f"DELETE FROM {_LIMIT} WHERE target_run_type = '{_CONCENTRATION}'")
+
+    op.execute(f"ALTER TABLE {_LIMIT} ENABLE ROW LEVEL SECURITY")
+    op.execute(f"ALTER TABLE {_LIMIT} FORCE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE breach ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE breach FORCE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE breach ENABLE TRIGGER breach_append_only")
 
     for column in (
         "scope_portfolio_id",
