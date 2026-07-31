@@ -1,6 +1,6 @@
 # PERF-0 — the scale probe (Wave-14 slice 1.5)
 
-**Status: v1 — OQ-PERF-0-1 and OQ-PERF-0-2 USER-RATIFIED 2026-07-30 (both as recommended);
+**Status: IMPLEMENTED, PRE-CLOSEOUT (see Part 9 for what actually shipped). OQ-PERF-0-1 and OQ-PERF-0-2 USER-RATIFIED 2026-07-30 (both as recommended);
 OQ-3…OQ-10 stand as recommendations taken under the delivery-autonomy grant (engineering calls,
 not Tier-3 forks) and are recorded as such. NO VERIFIER PASS HAS RUN ON THIS RECORD YET — the
 ES-1 standing lesson says one runs BEFORE ratification, and this is the exception, flagged rather
@@ -215,7 +215,7 @@ without its conditions is not evidence** (the OPS-H1 "measured beats cited" less
 
 ---
 
-## Part 3 — Implementation shape (for the post-gate turn; NOT built during planning)
+## Part 3 — Implementation shape (as PLANNED; Part 9 records what SHIPPED)
 
 - A scale generator extending the synthetic package's deterministic id + seed-clock discipline
   (`uuid5`, `SeedClock`) to N positions — parameterized, never wall-clock or `random`.
@@ -238,3 +238,70 @@ NOT apply — this is not a demo stage and adds no demo counts) and **test-fence
 synthetic import fence, Part 0 fact 5). Pins verified as NOT applicable: migration-head population,
 `HYBRID_TABLES` parity, `APPEND_ONLY_TABLES`, `FAMILY_REGISTRY`, DDL identifier lengths, the
 seven-ledger sweep (no ledger-bearing artifact is minted).
+
+---
+
+## Part 9 — Execution addendum (2026-07-31, written BEFORE the pre-closeout review)
+
+What actually shipped against what was ratified. Written now so the review's record-vs-diff lane
+audits real claims rather than staleness.
+
+**Branch `perf-0-planning`, head `e9e5cbd`.** CI green at every commit. Both tiers run before every
+push after impl 5/n (see the lapse below). No governed family, no entity, no migration, no
+permission, no audit code — the sizing held.
+
+### Delivered
+
+| ratified | shipped | artifact |
+|---|---|---|
+| OQ-1 — 4 h budget @10k, set before measuring | as ratified; **MEASURED at 21.4 min = 8.90%** | Reading 5 |
+| OQ-2 — month-end marks + daily factor returns, 3 y | as ratified | `scale.py` |
+| OQ-3 — a LADDER, not a point | 500 / 2,000 / 10,000 (**5,000 skipped**, below) | Readings 1–5 |
+| OQ-4 — harness outside app code, smallest rung in CI, no timing assertion | as ratified | `scripts/perf_probe.py`, `test_perf_probe_pg.py`, `ci.yml` |
+| OQ-5 — seed time reported separately | as ratified, and it became the headline finding | all readings |
+| OQ-6 — six segments, timed individually | as ratified | Reading 4/5 tables |
+| OQ-7 — tracemalloc + peak RSS | as ratified (`ru_maxrss` branches on platform — bytes vs KB) | `_peak_rss_mb` |
+| OQ-8 — a miss RECORDS and ESCALATES | never exercised: **no miss occurred** | — |
+| OQ-9 — timing OUTSIDE the fenced seed | as ratified | harness lives in `scripts/` |
+
+### Deviations, each recorded where it happened
+
+- **OQ-10 REVERSED at first implementation contact** — reuse of the SYNTHETIC tenant would have
+  broken `test_synthetic_pg.py`'s RLS-scoped `count(Position) == 6` and destroyed the precision of a
+  guard whose value is being exact. PERF-0 got its own reserved `PERF_TENANT_ID`. Recorded in Part 1.
+- **OQ-11 ADDED mid-slice** — the AST fences iterated an ENUMERATED module tuple, so a new module
+  escaped all three. Replaced with a package census; mutation-proven.
+- **5,000 rung SKIPPED, deliberately.** Three rungs establish the exponent and 10,000 is the ratified
+  budget point. Stated rather than silently omitted (the no-silent-caps rule).
+- **Determinism is NOT universal.** `create_legal_entity`/`create_issuer` mint their own ids with no
+  `entity_id` hook, so those two shapes differ per run. Affects no measurement (issuers are grouping
+  keys, not inputs to a number) but the seed's determinism claim must not be cited unqualified.
+
+### Corrections to this slice's own outputs
+
+- **Reading 3's concentration row measured the FAILURE path.** The seed created issuer-less
+  instruments, so concentration's always-computed ISSUER dimension gapped and committed a FAILED
+  run; CON-1 commits rather than raises, and the harness only notices a throw. Found by the CI
+  smoke's database-reading test ~20 minutes after Reading 3 was filed. Fixed (issuers seeded);
+  Reading 4 supersedes. Impact was ~3% — the gap fires after bucketing completes — so the
+  conclusions survived, which was luck, not method.
+- **A seed projection of mine was wrong.** Reading 4 called ~3.7 h "conservative" and ~2.6 h the
+  better estimate from the 0.808 exponent. Measured: **3.87 h**, exponent **1.033** over
+  2,000→10,000. The conservative figure was nearly exact.
+
+### Process failures in this slice, named
+
+- **The both-tier-before-push rule lapsed once** (impl 4/n → red CI). CI's Backend job runs bare
+  `pytest` — the UNIT tier — while every battery I had run set `IRP_TEST_DATABASE_URL`. I was
+  verifying a superset and assuming it covered the subset. Countermeasure: a new pre-flight manifest
+  change class for cross-package imports, naming BOTH fence layers.
+- **Three fences fired on my own code** (raw-SQL `.execute`, the synthetic import direction, the
+  repo-wide marketdata leaf fence). Each was answered by conforming to an existing convention or by
+  amending in place with the reason AT the fence — none by widening a fence to fit new code.
+
+### What PERF-0 does NOT answer
+
+**Concurrency.** Every reading is single-process, single-connection. The finding points at ingestion
+throughput, and the first question any ingestion work would ask is what parallel writers do to
+~27 rows/s — a per-tenant hash-chained audit append is exactly the kind of thing that may not
+parallelise. That is a NEW slice's question, not a gap in this one, and it is the natural PERF-1.
