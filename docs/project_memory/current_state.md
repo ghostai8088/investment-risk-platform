@@ -1,6 +1,42 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-07-30) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-08-01) — read this block; everything below it is HISTORY
+>
+> **LIM-2 IS CLOSED (Wave-14 slice 2) — concentration limits, the dimensional selector.** Merged
+> via **PR #155** = `b4905e3`, merged-main CI observed green; the P1 sweep executed and clean
+> (seven ledgers, merged tree byte-identical to the 2,834-test-validated tree). Migration head
+> **`0058`**; next free canonical id **ENT-070** (ENT-032 stays the sole reservation); demo counts
+> **26/41/136 UNCHANGED** (the final-position pin deliberately did not move); hybrid set N = 7
+> unchanged.
+>
+> - **What shipped:** the `LimitFamily` registry + exact set-equality census over `_METRIC_MAP`;
+>   CON-1's ten metrics registered (FRACTION, no benchmark); migration `0058` — the limit tables'
+>   FIRST CHECK constraints (suffix-only names; the downgrade is a SANDWICHED destructive delete —
+>   the original refusal was RLS-BLIND, counting zero as the non-superuser owner); named-bucket,
+>   named-issuer and run-level limits with the issuer fence AT THE QUERY on limits, health and
+>   breach reads; `limit_health` REFUSED/`latest_run_failed`/`scheme_drift` as orthogonal fields;
+>   the staleness check re-keyed to the RESOLVED run platform-wide; demo stage 20 (7 limits, 3 real
+>   breaches, the NAV refusal demonstrated, entitlement teardown).
+> - **The slice's story is its TWO adversarial passes** (82 + 37 agents): four BLOCKING defects in
+>   code that had passed CI green, each behind a believed claim. The terminal lesson: **a negative
+>   control that tests the EASY wrong input proves little; a mutation proof is only as good as the
+>   input it mutates against; a stub thin enough to hide a distinction makes the proof inherit the
+>   blindness** (the 'TECH' string vs the real level-2 'C26' against level-1 bucketing).
+> - **PERF-0 status CORRECTED:** PR #154 merged only the 205-line PLANNING record. The
+>   implementation (seed, harness, tests, readings, CI smoke — 14 commits, head `104a880`) is
+>   UNMERGED on `perf-0-planning`. The Fable three-lane review adjudicated all four headline
+>   verdicts as STANDING (budget 8.90% — one-date daily ≈ 6.74%; ingestion dominates 10.9×→~14.4×;
+>   linear ~0.93–0.95, NOT the circulating "0.907"; memory a non-constraint) with the defects
+>   confined to the probe's own guard layer (the vacuous two-portfolio claim; the 3-of-6 DB
+>   census). Fold + implementation PR = the immediate next work, then CAL-1.
+> - **The operational pattern changed (2026-08-01):** `gh` installed + allowlisted
+>   (`.claude/settings.json`, checked in AT THE LIM-2 CLOSEOUT — it was user-created locally after the classifier refused to let Claude write its own allowlist, which is that control working); branch protection and required checks UNCHANGED as
+>   the machine merge gate; PRs are now created and auto-merged by Claude once auth completes —
+>   the user's button-pushing role is retired. First autonomous PR: the LIM-2 closeout.
+>
+> ---
+>
+> ### Superseded snapshot (2026-07-30) — HISTORY from here down
 >
 > **CON-1 IS CLOSED (Wave-14 slice 1) — the 23rd governed number family, dimensional
 > concentration.** Merged via **PR #152** = `19fb4f7`, merged-main CI **30581831315** green all
