@@ -148,9 +148,37 @@ def _refuse(db: Session, exc: BreachLifecycleError) -> HTTPException:
     return HTTPException(status_code=code, detail=detail)
 
 
-def _load_or_404(db: Session, principal: Principal, breach_id: uuid.UUID) -> Breach:
-    breach = get_breach(db, acting_tenant=principal.tenant_id, breach_id=str(breach_id))
-    if breach is None:  # missing or cross-tenant — indistinguishable 404 (no existence oracle)
+def _may_see_issuer_breaches(db: Session, principal: Principal) -> bool:
+    """Whether this caller may receive breaches that carry issuer identity (review D2).
+
+    The same gate ``api/limits.py`` applies, for the same reason and on stronger grounds: a
+    SHARE/ISSUER breach's ``observed_value`` IS the ISSUER-dimension share CON-1 fenced, so this
+    surface discloses the NUMBER, not merely an id. ``auditor_3l`` holds ``breach.view`` and is
+    deliberately excluded from ``concentration.issuer.view``.
+    """
+    return has_permission(db, principal, "concentration.issuer.view", principal.tenant_id)
+
+
+def _load_or_404(
+    db: Session, principal: Principal, breach_id: uuid.UUID, *, include_issuer_detail: bool
+) -> Breach:
+    """Load one breach or 404.
+
+    ``include_issuer_detail`` is REQUIRED rather than defaulted, exactly as on the limits router:
+    the mutation verbs must pass ``True`` (they are separately gated on ``breach.respond`` /
+    ``breach.review``, and a fenced load would make every issuer-bearing breach unremediable),
+    while the read paths pass the caller's entitlement. A default would hide the wrong choice at
+    the call site, and this is a disclosure boundary.
+    """
+    breach = get_breach(
+        db,
+        acting_tenant=principal.tenant_id,
+        breach_id=str(breach_id),
+        include_issuer_detail=include_issuer_detail,
+    )
+    if breach is None:
+        # Missing, cross-tenant, or issuer-fenced — ONE indistinguishable 404. A 403 on the fenced
+        # case would itself confirm that a breach exists at that id.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="breach not found")
     return breach
 
@@ -371,7 +399,12 @@ def _notification_out(n: BreachNotification) -> BreachNotificationOut:
 
 
 def _detail_out(db: Session, principal: Principal, breach_id: str) -> BreachOut:
-    item = breach_detail(db, acting_tenant=principal.tenant_id, breach_id=breach_id)
+    item = breach_detail(
+        db,
+        acting_tenant=principal.tenant_id,
+        breach_id=breach_id,
+        include_issuer_detail=_may_see_issuer_breaches(db, principal),
+    )
     if item is None:  # unreachable post-load; defensive
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="breach not found")
     return _breach_out(item)
@@ -385,7 +418,7 @@ def assign(
     principal: Principal = Depends(_require_review),
     db: Session = Depends(get_tenant_session),
 ) -> BreachOut:
-    breach = _load_or_404(db, principal, breach_id)
+    breach = _load_or_404(db, principal, breach_id, include_issuer_detail=True)
     assignee = _require_assignee_can_respond(db, principal.tenant_id, body.assigned_to)
     try:
         assign_breach(
@@ -412,7 +445,7 @@ def respond(
     principal: Principal = Depends(_require_respond),
     db: Session = Depends(get_tenant_session),
 ) -> BreachOut:
-    breach = _load_or_404(db, principal, breach_id)
+    breach = _load_or_404(db, principal, breach_id, include_issuer_detail=True)
     try:
         respond_breach(
             db,
@@ -444,7 +477,7 @@ def review(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="a REJECT review requires a narrative",
         )
-    breach = _load_or_404(db, principal, breach_id)
+    breach = _load_or_404(db, principal, breach_id, include_issuer_detail=True)
     assignee: str | None = None
     if body.assigned_to is not None:
         assignee = _require_assignee_can_respond(db, principal.tenant_id, body.assigned_to)
@@ -475,7 +508,7 @@ def close(
     principal: Principal = Depends(_require_review),
     db: Session = Depends(get_tenant_session),
 ) -> BreachOut:
-    breach = _load_or_404(db, principal, breach_id)
+    breach = _load_or_404(db, principal, breach_id, include_issuer_detail=True)
     try:
         close_breach(
             db,
@@ -517,6 +550,7 @@ def index(
         assigned_to=principal.user_id if assigned_to_me else None,
         limit=limit,
         offset=offset,
+        include_issuer_detail=_may_see_issuer_breaches(db, principal),
     )
     return [_breach_out(x) for x in items]
 
@@ -527,7 +561,9 @@ def show(
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> BreachOut:
-    _load_or_404(db, principal, breach_id)
+    _load_or_404(
+        db, principal, breach_id, include_issuer_detail=_may_see_issuer_breaches(db, principal)
+    )
     return _detail_out(db, principal, str(breach_id))
 
 
@@ -537,7 +573,9 @@ def actions(
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> list[BreachActionOut]:
-    _load_or_404(db, principal, breach_id)
+    _load_or_404(
+        db, principal, breach_id, include_issuer_detail=_may_see_issuer_breaches(db, principal)
+    )
     timeline = breach_action_timeline(
         db, acting_tenant=principal.tenant_id, breach_id=str(breach_id)
     )
@@ -558,7 +596,9 @@ def notifications(
 ) -> list[BreachNotificationOut]:
     # NOTIF-1: the alarm-attempt evidence for this breach — "who was owed an alert, with what
     # outcome". Gated `breach.view` (a notification is breach-adjacent evidence; no new permission).
-    _load_or_404(db, principal, breach_id)
+    _load_or_404(
+        db, principal, breach_id, include_issuer_detail=_may_see_issuer_breaches(db, principal)
+    )
     rows = list_breach_notifications(
         db, acting_tenant=principal.tenant_id, breach_id=str(breach_id), limit=limit, offset=offset
     )

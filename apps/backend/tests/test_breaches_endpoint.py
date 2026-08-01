@@ -19,6 +19,7 @@ from decimal import Decimal
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -721,3 +722,99 @@ def test_the_fe_alerts_page_size_mirrors_the_backend_cap() -> None:
         f"FE ALERTS_PAGE={match.group(1)} != backend cap {backend_cap} — the mirrored contract "
         "drifted"
     )
+
+
+# --- LIM-2 review D2: the issuer fence on the BREACH read surface --------------------------
+# This surface leaks the NUMBER, not merely an id: for a SHARE/ISSUER breach `observed_value` IS
+# the ISSUER-dimension `share_invested_long` CON-1 put behind `concentration.issuer.view`. A caller
+# refused the issuer LIMIT at 404 could read the same figure here. Each assertion carries its
+# positive control, or a broken read would pass as a fence.
+_ISSUER_VIEW = "concentration.issuer.view"
+
+
+def _principals_either_side(ctx) -> tuple[str, str]:  # noqa: ANN001
+    db: Session = ctx["db"]
+    tenant: str = ctx["tenant"]
+    holder = AppUser(tenant_id=tenant, display_name="HoldsIssuerView")
+    fenced = AppUser(tenant_id=tenant, display_name="NoIssuerView")
+    db.add_all([holder, fenced])
+    db.flush()
+    _grant(db, tenant, holder.id, (*_ALL, _ISSUER_VIEW))
+    _grant(db, tenant, fenced.id, _ALL)
+    db.commit()
+    return str(holder.id), str(fenced.id)
+
+
+def _make_issuer_bearing_breach(ctx) -> str:  # noqa: ANN001
+    """Stamp issuer identity onto the seeded breach and its limit, the shape LIM-2 introduced."""
+    db: Session = ctx["db"]
+    issuer_id = str(uuid.uuid4())
+    # A FULL concentration limit, not a VaR limit with a dimension bolted on: 0058's
+    # `concentration_shape` CHECK refuses the half-way row outright (which is the constraint doing
+    # exactly its job — it caught this test's first draft).
+    db.execute(
+        text(
+            "UPDATE limit_definition SET issuer_id = :i, dimension_kind = 'ISSUER', "
+            "target_run_type = 'CONCENTRATION', metric_type = 'SHARE', bucket_code = :i, "
+            "denominator_basis = 'INVESTED_LONG', threshold_unit = 'FRACTION' WHERE id = :l"
+        ),
+        {"i": issuer_id, "l": ctx["limit"]},
+    )
+    db.execute(
+        text(
+            "UPDATE breach SET issuer_id = :i, dimension_kind = 'ISSUER', "
+            "target_run_type = 'CONCENTRATION', metric_type = 'SHARE' WHERE id = :b"
+        ),
+        {"i": issuer_id, "b": ctx["breach"]},
+    )
+    db.commit()
+    return issuer_id
+
+
+def test_the_breach_list_excludes_issuer_bearing_rows_from_a_fenced_caller(ctx) -> None:
+    holder, fenced = _principals_either_side(ctx)
+    _make_issuer_bearing_breach(ctx)
+
+    seen = ctx["client"].get("/breaches", headers=_hdr(fenced, ctx["tenant"])).json()
+    assert ctx["breach"] not in {b["id"] for b in seen}
+
+    # POSITIVE CONTROL — the holder still sees it, so the exclusion is a fence.
+    seen_by_holder = ctx["client"].get("/breaches", headers=_hdr(holder, ctx["tenant"])).json()
+    assert ctx["breach"] in {b["id"] for b in seen_by_holder}
+
+
+def test_fetching_a_fenced_breach_is_404_indistinguishable_from_missing(ctx) -> None:
+    holder, fenced = _principals_either_side(ctx)
+    _make_issuer_bearing_breach(ctx)
+
+    fenced_get = ctx["client"].get(
+        f"/breaches/{ctx['breach']}", headers=_hdr(fenced, ctx["tenant"])
+    )
+    missing = ctx["client"].get(f"/breaches/{uuid.uuid4()}", headers=_hdr(fenced, ctx["tenant"]))
+    assert fenced_get.status_code == 404
+    assert fenced_get.json() == missing.json()
+
+    ok = ctx["client"].get(f"/breaches/{ctx['breach']}", headers=_hdr(holder, ctx["tenant"]))
+    assert ok.status_code == 200
+
+
+def test_the_observed_VALUE_does_not_reach_a_fenced_caller(ctx) -> None:
+    """The disclosure that matters. `observed_value` for a SHARE/ISSUER breach is the fenced
+    share itself — "this book holds 60% of one named issuer against a 30% cap"."""
+    _holder, fenced = _principals_either_side(ctx)
+    _make_issuer_bearing_breach(ctx)
+    for path in (
+        "/breaches",
+        f"/breaches/{ctx['breach']}",
+        f"/breaches/{ctx['breach']}/actions",
+    ):
+        r = ctx["client"].get(path, headers=_hdr(fenced, ctx["tenant"]))
+        assert "observed_value" not in r.text, f"{path} leaked the fenced value"
+
+
+def test_a_NON_issuer_breach_stays_visible_to_everyone(ctx) -> None:
+    """The fence keys on issuer identity, not on breaches in general — otherwise it would hide the
+    entire operations queue from most of its users."""
+    _holder, fenced = _principals_either_side(ctx)
+    seen = ctx["client"].get("/breaches", headers=_hdr(fenced, ctx["tenant"])).json()
+    assert ctx["breach"] in {b["id"] for b in seen}

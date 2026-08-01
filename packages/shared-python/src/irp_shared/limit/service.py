@@ -1091,34 +1091,49 @@ HEALTH_BREACHED = "BREACHED"
 HEALTH_REFUSED = "REFUSED"
 
 
-def _latest_run_failed(session: Session, limit: LimitDefinition) -> bool:
-    """True when the NEWEST run of this family+scope is FAILED — i.e. the verdict is being read off
-    a superseded book.
+def _superseded_by_a_failed_run(
+    session: Session, limit: LimitDefinition, resolved_run_id: str
+) -> bool:
+    """True when a FAILED run of this family+scope is NEWER than the run the verdict came from.
 
-    **This closes a shipped defect that is live for VaR and active-risk limits today, not a
-    concentration novelty (LIM-2 Part 0 fact 4).** The shared scaffold commits a FAILED run with
-    zero rows for EVERY family, and the governed reads filter to COMPLETED — so once the newest
-    attempt fails, ``_resolve_latest`` keeps returning the previous run and this surface reported
-    IN_APPETITE off it with no signal. ``calc/reads`` states the assumption in its own words
-    ("FAILED runs have zero rows, so COMPLETED-filtering hides nothing readable"), which is true
-    for a row read and false for a latest-resolver used as a CONTROL INPUT.
+    **Re-keyed after review D5.** The first version asked an independent question — "is the newest
+    run of ``(tenant, run_type, scope)`` FAILED?" — and its docstring claimed to be "scope-filtered
+    the same way the resolvers are". That was false in both directions, because ``RUN_TYPE_VAR``
+    hosts six metric flavours across four binders while ``calculation_run`` carries no metric
+    discriminator:
 
-    Scope-filtered the same way the resolvers are, so an unrelated failed run elsewhere in the
-    tenant does not raise a false staleness flag.
+    - **disarmed:** a COMPLETED sibling-metric run landing after the failure flipped the flag back
+      to False while the verdict was still read off the pre-failure book — the badge vanished
+      exactly when it mattered. A newest run merely CREATED or RUNNING did the same from the start,
+      since nothing filtered status.
+    - **false positive:** a FAILED ``ES_HISTORICAL`` run raised "stale" on a ``VAR_PARAMETRIC``
+      limit whose own number was minutes old.
+
+    Anchoring on the RESOLVED run instead makes the answer monotone in the verdict: no sibling can
+    clear it, and no run older than the verdict can raise it. It is also the honest question —
+    "has anything failed SINCE the number I am showing you?"
     """
     from irp_shared.calc.models import CalculationRun, RunStatus
 
-    newest = session.execute(
-        select(CalculationRun.status)
-        .where(
-            CalculationRun.tenant_id == str(limit.tenant_id),
-            CalculationRun.run_type == limit.target_run_type,
-            CalculationRun.scope_portfolio_id == str(limit.scope_portfolio_id),
-        )
-        .order_by(CalculationRun.system_from.desc(), CalculationRun.run_id.desc())
-        .limit(1)
+    resolved = session.execute(
+        select(CalculationRun.system_from).where(CalculationRun.run_id == str(resolved_run_id))
     ).scalar_one_or_none()
-    return newest == RunStatus.FAILED.value
+    if resolved is None:  # defensive: the resolver just read it
+        return False
+    return (
+        session.execute(
+            select(CalculationRun.run_id)
+            .where(
+                CalculationRun.tenant_id == str(limit.tenant_id),
+                CalculationRun.run_type == limit.target_run_type,
+                CalculationRun.scope_portfolio_id == str(limit.scope_portfolio_id),
+                CalculationRun.status == RunStatus.FAILED.value,
+                CalculationRun.system_from > resolved,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        is not None
+    )
 
 
 def limit_health(
@@ -1146,7 +1161,10 @@ def limit_health(
         session, acting_tenant=acting_tenant, include_issuer_detail=include_issuer_detail
     ):
         resolution = _resolve_latest(session, limit)
-        stale = _latest_run_failed(session, limit)
+        # Staleness is anchored on the RESOLVED run (review D5), so it can only be asked once a
+        # verdict exists. With no resolved run there is no "the number I am showing you" to be
+        # stale relative to — NEVER_EVALUABLE and REFUSED already say the verdict is not a
+        # measurement, and stacking a staleness flag on them would assert a comparison nobody made.
         if resolution.refusal is not None:
             out.append(
                 LimitHealth(
@@ -1155,7 +1173,6 @@ def limit_health(
                     HEALTH_REFUSED,
                     None,
                     None,
-                    latest_run_failed=stale,
                     refusal_reason=resolution.refusal,
                 )
             )
@@ -1168,13 +1185,13 @@ def limit_health(
                     HEALTH_NEVER_EVALUABLE,
                     None,
                     None,
-                    latest_run_failed=stale,
                 )
             )
             continue
         run_id = resolution.run_id
         observed = resolution.observed
         assert run_id is not None and observed is not None  # narrowed by is_resolved
+        stale = _superseded_by_a_failed_run(session, limit, run_id)
         # RECOMPUTE the predicate from the latest observed — do NOT infer state from the breach
         # table (a breaching-but-not-yet-evaluated run, or a threshold loosened after a breach,
         # would otherwise misreport; the 4-finder false-green fold). The breach row is only the

@@ -228,3 +228,45 @@ class TestNothingToEvaluate:
         rows_of["rows"] = [_row(dimension_kind="COUNTRY_OF_RISK")]
         out = _resolve(_limit(), rows_of)
         assert out.refusal is None and not out.is_resolved and out.run_id is None
+
+
+class TestStalenessIsAnchoredOnTheRESOLVEDRun:
+    """**Review D5.** The first version asked an independent question — "is the NEWEST run of this
+    (tenant, run_type, scope) FAILED?" — while the resolvers key more narrowly (VaR adds
+    ``metric_type``, active risk adds ``benchmark_id``) and ``calculation_run`` carries no metric
+    discriminator. So a COMPLETED sibling-metric run landing after a failure CLEARED the flag while
+    the verdict was still read off the pre-failure book, and a FAILED sibling RAISED it on a limit
+    whose own number was minutes old. Anchoring on the resolved run makes the answer monotone.
+    """
+
+    def _rows(self, monkeypatch, resolved_at, failures):  # noqa: ANN001, ANN202
+        """Stub the two run lookups: the resolved run's system_from, then any newer FAILED run."""
+        import irp_shared.limit.service as svc
+
+        calls = {"n": 0}
+
+        class _Result:
+            def __init__(self, value):
+                self._value = value
+
+            def scalar_one_or_none(self):  # noqa: ANN201
+                return self._value
+
+        class _Session:
+            def execute(self, *_a, **_k):  # noqa: ANN002, ANN003, ANN201
+                calls["n"] += 1
+                return _Result(resolved_at if calls["n"] == 1 else failures)
+
+        return svc._superseded_by_a_failed_run(_Session(), _limit(), "resolved-run")
+
+    def test_a_FAILED_run_newer_than_the_verdict_raises_staleness(self, monkeypatch) -> None:  # noqa: ANN001
+        assert self._rows(monkeypatch, resolved_at=1, failures="a-newer-failed-run") is True
+
+    def test_no_newer_failure_leaves_it_clear(self, monkeypatch) -> None:  # noqa: ANN001
+        """The positive control: without it, a check that always returned True would pass above."""
+        assert self._rows(monkeypatch, resolved_at=1, failures=None) is False
+
+    def test_a_missing_resolved_run_is_not_reported_stale(self, monkeypatch) -> None:  # noqa: ANN001
+        """Defensive: the resolver just read it, so None means something is deeply wrong — but
+        asserting staleness on a run we cannot date would be a fabricated signal."""
+        assert self._rows(monkeypatch, resolved_at=None, failures="anything") is False
