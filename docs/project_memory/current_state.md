@@ -22,17 +22,15 @@
 >   control that tests the EASY wrong input proves little; a mutation proof is only as good as the
 >   input it mutates against; a stub thin enough to hide a distinction makes the proof inherit the
 >   blindness** (the 'TECH' string vs the real level-2 'C26' against level-1 bucketing).
-> - **PERF-0 status CORRECTED:** PR #154 merged only the 205-line PLANNING record. The
->   implementation (seed, harness, tests, readings, CI smoke — 14 commits, head `104a880`) is
->   UNMERGED on `perf-0-planning`. The Fable three-lane review adjudicated all four headline
->   verdicts as STANDING (budget 8.90% — one-date daily ≈ 6.74%; ingestion dominates 10.9×→~14.4×;
->   linear ~0.93–0.95, NOT the circulating "0.907"; memory a non-constraint) with the defects
->   confined to the probe's own guard layer (the vacuous two-portfolio claim; the 3-of-6 DB
->   census). Fold + implementation PR = the immediate next work, then CAL-1.
+> - **PERF-0 CLOSED (2026-08-01, PR #157 = `e6ea7c0`):** the implementation #154 never carried is
+>   on main WITH the review fold (F1/F2 mutation-proven, F3/F4, Part 9 adjudication). All four
+>   headline verdicts STAND: budget 8.90% (one-date ≈ 6.74%) — AD-003's trigger NOT fired;
+>   ingestion dominates ~10.9–14.4×; linear (0.928/0.948, not "0.907"); memory flat. NEXT = CAL-1.
 > - **The operational pattern changed (2026-08-01):** `gh` installed + allowlisted
 >   (`.claude/settings.json`, checked in AT THE LIM-2 CLOSEOUT — it was user-created locally after the classifier refused to let Claude write its own allowlist, which is that control working); branch protection and required checks UNCHANGED as
 >   the machine merge gate; PRs are now created and auto-merged by Claude once auth completes —
->   the user's button-pushing role is retired. First autonomous PR: the LIM-2 closeout.
+>   the user's button-pushing role is retired — EXECUTED: #156 (16:41Z) and #157 (16:51Z) merged
+>   with no human in the loop. Root cause of every earlier auth failure: a root-owned `~/.config`.
 >
 > ---
 >
