@@ -30,7 +30,7 @@
 >   confined to the probe's own guard layer (the vacuous two-portfolio claim; the 3-of-6 DB
 >   census). Fold + implementation PR = the immediate next work, then CAL-1.
 > - **The operational pattern changed (2026-08-01):** `gh` installed + allowlisted
->   (`.claude/settings.json`, merged in #155); branch protection and required checks UNCHANGED as
+>   (`.claude/settings.json`, checked in AT THE LIM-2 CLOSEOUT — it was user-created locally after the classifier refused to let Claude write its own allowlist, which is that control working); branch protection and required checks UNCHANGED as
 >   the machine merge gate; PRs are now created and auto-merged by Claude once auth completes —
 >   the user's button-pushing role is retired. First autonomous PR: the LIM-2 closeout.
 >
