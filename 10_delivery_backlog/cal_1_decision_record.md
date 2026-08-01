@@ -683,3 +683,63 @@ the 26/41/136 pin semantics; ~30 doc citations verbatim including the roadmap ro
 "new/amended" wording and the R-10/H-05 routing; the initial past-dated load's safety (no
 runtime consumer of `CalendarHoliday` exists at the pin); and the 2026 demo boundary's
 retro-stability.
+
+---
+
+## Part 7 — CAL-1a implementation corrections + the review fold (2026-08-01, STATED not slipped)
+
+Four-lane refute-by-default review over the CAL-1a diff (dataset / verb semantics / test quality /
+claims-vs-artifacts): **1 BLOCKING, 3 HIGH, 4 MED, 8 LOW — all folded.** The dataset itself
+survived a fully independent derivation (118/118 exact agreement, dates and names) and every
+boundary attack; the fold was in the guards and the record, per the platform's pattern.
+
+**Sequencing corrections to the RATIFIED text (the LIM-2 3.5 discipline — stated, never silent):**
+
+1. **OQ-CAL-1-11's `holidays_complete_through` advance ships at CAL-1b, not CAL-1a** (HIGH, two
+   lanes). The column is migration-0059 DDL and CAL-1a is ratified no-migration — the OQ text
+   bound a CAL-1a verb to a CAL-1b column. The correction: CAL-1a's verb emits the added-dates
+   summary only; **the NAMED CAL-1b CARRY is the verb retrofit** (the explicit advance + its
+   forward-only negative control), recorded in the verb docstring, the checklist item 7, and
+   current_state — without it, OQ-4's coverage gate refuses every `BUSINESS_MONTH_END` tick.
+2. **Part 4 CAL-1a step 1's "double-add refused by UNIQUE" control is superseded by design**
+   (MED). The verb diffs additions against the existing set AND dedupes intra-call duplicates
+   first-spec-wins (a review fold — the pre-fold verb crashed mid-flush on a duplicated input
+   row), so the child UNIQUE is structurally unreachable through the verb. The operative add-only
+   negatives are: subset-deletes-nothing (full remaining-set equality), never-mutates-an-existing
+   child (now also pinning added==0/no event/no bump), and the dedupe contract test.
+3. **"Cross-tenant refused by RLS both tiers" was never satisfiable as written** (MED): SQLite has
+   no RLS and the verb (like `create_calendar`) has no application-layer tenant check — the
+   refusal is PG-tier by nature, and is now pinned TWICE there (below).
+
+**The fold's substantive findings:**
+
+- **(BLOCKING, claims lane)** The checklist's Execution 1 claimed "verified: no runtime reader of
+  `calendar_holiday` exists at `8637b67`" — **FALSE**: `GET /calendars/{calendar_id}` reads and
+  serves the table, and will expose the 118 rows to every tenant's calendar-detail response the
+  moment the seed lands. A false "verified:" claim inside a freshly-minted compliance artifact —
+  the exact ledger-7 class. Corrected in place with the consuming read named; the original
+  wording kept as history in the artifact.
+- **(HIGH, test-quality lane)** The PG cross-tenant test proved a WEAKER refusal than it claimed:
+  the verb's flush order puts the parent-head version-bump UPDATE before the child INSERT, so the
+  own-only WITH CHECK fires on `calendar` and the child statement never runs — a server-stamping
+  regression (the exact vulnerability the stamp defends) would have PASSED it. The LIM-2
+  easy-input pattern, refound in a shipped security test. Fold: the test now asserts the refused
+  TABLE by name, and a companion control isolates the child WITH CHECK (a SYSTEM-stamped child
+  inserted directly under an intruder context must be refused naming `calendar_holiday`).
+- **(MED, test-quality lane, EXECUTED)** The census alone missed 5 of 6 single-date mutations (the
+  independent-derivation test caught all 6). Fold: nine observance anchors + the exact 9-member
+  2028/2033 sets pinned; both overclaiming docstrings corrected to state the census/derivation
+  division of labor.
+- **(LOWs, all folded)** MLK styling matched to the NYSE rendering ("Martin Luther King, Jr.
+  Day"); the in-test Rule 7.2 last-calendar-day simplification documented; the refresh verb's own
+  audit-failure rollback pinned (previously inherited from the create path); empty-input,
+  second-refresh event shape, and mixed rename+addition contracts pinned; the concurrency
+  contract (no parent lock; raw IntegrityError on a concurrent overlap — bootstrap-only caller)
+  documented in the docstring; current_state's self-stale "IN FLIGHT" wording fixed.
+
+**Verified under attack and standing:** the 118 literals (independent derivation, zero
+mismatches); the Dec-31-2021 Rule 7.2 precedent; the four collision dates re-derived exhaustively;
+"first CTRL mint since P0.5" (row-count history 33→33→34); every checklist test-name citation;
+the DC-2 adjudication of the event's added_from/added_through range summary (ratified by OQ-11's
+own "added-dates summary" wording; boundary dates, not serialized child rows); the seed's every
+existing consumer (grep + green runs); the import fences.
