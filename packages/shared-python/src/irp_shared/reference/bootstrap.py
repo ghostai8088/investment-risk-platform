@@ -28,7 +28,7 @@ from irp_shared.reference.currency import create_currency
 from irp_shared.reference.models import Calendar, Currency, RatingScale
 from irp_shared.reference.rating import GradeSpec, create_rating_scale
 from irp_shared.reference.service import ReferenceActor
-from irp_shared.reference.xnys_holidays import XNYS_HOLIDAYS
+from irp_shared.reference.xnys_holidays import XNYS_COMPLETE_THROUGH, XNYS_HOLIDAYS
 
 #: Representative global currency slice: (code, name, symbol, minor_units, numeric_code).
 SYSTEM_CURRENCIES: list[tuple[str, str, str, int, str]] = [
@@ -96,6 +96,7 @@ def seed_system_reference(session: Session, *, actor_id: str = "system") -> None
         xnys,
         actor=actor,
         holidays=[HolidaySpec(holiday_date=d, name=n) for d, n in XNYS_HOLIDAYS],
+        complete_through=XNYS_COMPLETE_THROUGH,
     )
 
     create_rating_scale(

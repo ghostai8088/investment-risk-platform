@@ -102,6 +102,7 @@ def refresh_calendar_holidays(
     *,
     actor: ReferenceActor,
     holidays: Sequence[HolidaySpec],
+    complete_through: date | None = None,
 ) -> int:
     """ADD-ONLY holiday-child refresh (CAL-1a, OQ-CAL-1-11): insert the dates the calendar does
     not already carry; never delete, never mutate an existing child (an already-present date wins
@@ -120,11 +121,12 @@ def refresh_calendar_holidays(
     the SYSTEM bootstrap path); a concurrent overlapping refresh surfaces the child UNIQUE as a
     raw ``IntegrityError`` — accepted until an API verb ships (OQ-CAL-1-11 keeps that OUT).
 
-    **NAMED CAL-1b CARRY (review fold, 2026-08-01):** OQ-CAL-1-11's ratified
-    ``holidays_complete_through`` explicit advance CANNOT ship here — the column is migration-0059
-    DDL (CAL-1b) and CAL-1a is a no-migration slice. CAL-1b MUST retrofit this verb with the
-    advance (+ its forward-only negative control) when 0059 lands, or OQ-4's coverage gate refuses
-    every ``BUSINESS_MONTH_END`` tick forever on absent coverage."""
+    **The CAL-1a NAMED CARRY, PAID at CAL-1b (with migration 0059):** ``complete_through``
+    advances the calendar's DECLARED coverage horizon ``holidays_complete_through`` — FORWARD
+    ONLY (a regression is refused: shrinking a declared horizon would silently re-open the
+    coverage gate's refusal window behind existing schedules). The advance alone (no new dates)
+    is still an effective refresh: it bumps ``record_version`` and emits the event, because
+    coverage is head state a consumer refuses on (OQ-CAL-1-4)."""
     existing: set[date] = set(
         session.execute(
             select(CalendarHoliday.holiday_date).where(CalendarHoliday.calendar_id == calendar.id)
@@ -135,7 +137,18 @@ def refresh_calendar_holidays(
         if spec.holiday_date not in existing and spec.holiday_date not in fresh:
             fresh[spec.holiday_date] = spec  # first-spec-wins within one input
     additions = sorted(fresh.values(), key=lambda spec: spec.holiday_date)
-    if not additions:
+
+    advance = False
+    if complete_through is not None:
+        current = calendar.holidays_complete_through
+        if current is not None and complete_through < current:
+            raise ValueError(
+                f"holidays_complete_through may only advance: {complete_through} < the declared "
+                f"{current} (forward-only — OQ-CAL-1-4)"
+            )
+        advance = current is None or complete_through > current
+
+    if not additions and not advance:
         return 0
 
     for spec in additions:
@@ -149,6 +162,23 @@ def refresh_calendar_holidays(
                 record_version=1,
             )
         )
+    before_value: dict[str, Any] = {"holiday_count": len(existing)}
+    after_value: dict[str, Any] = {
+        "holiday_count": len(existing) + len(additions),
+        "holidays_added": len(additions),
+    }
+    if additions:
+        after_value["added_from"] = additions[0].holiday_date.isoformat()
+        after_value["added_through"] = additions[-1].holiday_date.isoformat()
+    if advance:
+        assert complete_through is not None  # narrowed by the advance flag
+        before_value["holidays_complete_through"] = (
+            calendar.holidays_complete_through.isoformat()
+            if calendar.holidays_complete_through is not None
+            else None
+        )
+        calendar.holidays_complete_through = complete_through
+        after_value["holidays_complete_through"] = complete_through.isoformat()
     calendar.record_version += 1
     session.flush()
 
@@ -156,13 +186,8 @@ def refresh_calendar_holidays(
         session,
         entity=calendar,
         entity_type=ENTITY_CALENDAR,
-        before_value={"holiday_count": len(existing)},
-        after_value={
-            "holiday_count": len(existing) + len(additions),
-            "holidays_added": len(additions),
-            "added_from": additions[0].holiday_date.isoformat(),
-            "added_through": additions[-1].holiday_date.isoformat(),
-        },
+        before_value=before_value,
+        after_value=after_value,
         actor=actor,
     )
     return len(additions)

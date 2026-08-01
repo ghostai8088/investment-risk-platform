@@ -1067,6 +1067,8 @@ def test_snapshot_component_kinds_is_an_exact_census() -> None:
         "ISSUER_EDGE",
         "CLASSIFICATION",
         "CLASSIFICATION_SCHEME",
+        # CAL-1b's holiday pin (OQ-CAL-1-6-A, AD-014).
+        "HOLIDAY_CALENDAR",
     }
     assert len(SNAPSHOT_COMPONENT_KINDS) == len(set(SNAPSHOT_COMPONENT_KINDS)), "duplicate kind"
 

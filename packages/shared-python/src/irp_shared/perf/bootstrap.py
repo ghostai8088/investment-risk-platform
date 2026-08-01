@@ -1024,3 +1024,231 @@ def register_sharpe_model(
         assumptions=SHARPE_ASSUMPTIONS,
         limitations=SHARPE_LIMITATIONS,
     )
+
+
+# --------------------------------------------------------------- CAL-1b: the v2 month-end move ---
+#: The machine literals carrying the v2 convention (OQ-CAL-1-2 — the assumption-literal pattern,
+#: NEVER label-parsed; perf-local constants, the peer-package split).
+MONTH_END_CONVENTION_ASSUMPTION_PREFIX = "month_end_convention="
+HOLIDAY_CALENDAR_ASSUMPTION_PREFIX = "holiday_calendar="
+#: The implicit v1 grandfather (absent literal) and the sole recognized v2 convention.
+MONTH_END_WEEKEND_CONVENTION = "WEEKEND"
+MONTH_END_BUSINESS_CONVENTION = "BUSINESS"
+ROLLING_RISK_V2_VERSION_LABEL = "v2"
+SHARPE_V2_VERSION_LABEL = "v2"
+#: The default holiday calendar the v2 registrars declare (the SYSTEM XNYS seed).
+DEFAULT_HOLIDAY_CALENDAR_CODE = "XNYS"
+_HOLIDAY_CALENDAR_CODE_PATTERN = re.compile(r"[A-Z0-9_\-]{1,50}")
+
+
+@dataclass(frozen=True)
+class MonthEndParameters:
+    """The version's declared month-end convention identity (CAL-1b, OQ-CAL-1-2).
+    ``convention`` is WEEKEND (the implicit v1 grandfather — absent literal) or BUSINESS;
+    ``holiday_calendar`` is the declared calendar CODE, present for BUSINESS only."""
+
+    convention: str
+    holiday_calendar: str | None
+
+
+def declared_month_end_parameters(
+    session: Session, version: ModelVersion, *, model_code: str
+) -> MonthEndParameters:
+    """Parse the version's declared month-end convention (CAL-1b) with the precedent's full
+    discipline (DS-2/RS-1): ABSENT ``month_end_convention`` (zero rows) => the implicit WEEKEND
+    v1 grandfather, on which a stray ``holiday_calendar=`` literal is a lying identity and
+    refuses; AMBIGUOUS (>1 convention row) refuses — never collapsed into the grandfather; a
+    present convention must be the recognized BUSINESS literal WITH a well-formed
+    ``holiday_calendar=`` companion. Malformed -> the fail-closed
+    :class:`WrongModelVersionError`."""
+    texts = load_assumption_texts(session, version)
+    convention_rows = [t for t in texts if t.startswith(MONTH_END_CONVENTION_ASSUMPTION_PREFIX)]
+
+    def _fail() -> WrongModelVersionError:
+        return WrongModelVersionError(str(version.id), model_code)
+
+    if len(convention_rows) > 1:
+        raise _fail()
+    has_calendar = any(t.startswith(HOLIDAY_CALENDAR_ASSUMPTION_PREFIX) for t in texts)
+    if not convention_rows:
+        if has_calendar:  # a stray calendar literal on a weekend-convention version lies
+            raise _fail()
+        return MonthEndParameters(MONTH_END_WEEKEND_CONVENTION, None)
+    convention = convention_rows[0][len(MONTH_END_CONVENTION_ASSUMPTION_PREFIX) :]
+    if convention != MONTH_END_BUSINESS_CONVENTION:
+        raise _fail()
+    calendar_code = require_declared(
+        texts,
+        HOLIDAY_CALENDAR_ASSUMPTION_PREFIX,
+        pattern=_HOLIDAY_CALENDAR_CODE_PATTERN,
+        on_invalid=_fail,
+    )
+    return MonthEndParameters(MONTH_END_BUSINESS_CONVENTION, calendar_code)
+
+
+#: The v2 additions to the v1 tuples. The v1 tuples are NEVER edited (the G21 no-edit rule) —
+#: v2 is a NEW label with NEW assumption rows; the shipped v1 rows stay byte-identical.
+_MONTH_END_V2_ASSUMPTION = (
+    "MONTH-END CONVENTION (v2): HOLIDAY-AWARE. The acceptance grid WIDENS the v1 predicate - the "
+    "calendar month end, the last WEEKDAY, or the last BUSINESS day under the declared holiday "
+    "calendar (the QS-11 'preceding' rolling convention: a month-end landing on a weekend OR a "
+    "market holiday rolls BACK to the preceding business day). Widening, never substitution: "
+    "every v1-compliant book stays compliant under v2 (GIPS 2.A.23.b's 'last business day' arm, "
+    "now honored holiday-aware). The holiday set the run used is PINNED into the run's input "
+    "snapshot as a HOLIDAY_CALENDAR component (AD-014: the compute reads only pinned content), "
+    "so every v2 reading reproduces bit-exactly from its own bindings."
+)
+_MONTH_END_V2_LIMITATION = (
+    "THE HOLIDAY SET IS REFERENCE DATA, AND ITS COVERAGE BOUNDS THE GRID. A span beyond the "
+    "calendar's DECLARED holidays_complete_through refuses pre-create (fail-closed - an "
+    "uncovered month must never silently degrade to the weekend-only answer). The calendar is "
+    "EV-mutable: an ADD-ONLY refresh that inserts a past-dated holiday inside an already-pinned "
+    "span does not change any shipped reading (the pin is the input), but verify_snapshot "
+    "honestly reports the drift and the refresh itself is audited with its full date diff."
+)
+
+ROLLING_RISK_V2_ASSUMPTIONS: tuple[str, ...] = (
+    _MONTH_END_V2_ASSUMPTION,
+    *ROLLING_RISK_ASSUMPTIONS,
+)
+ROLLING_RISK_V2_LIMITATIONS: tuple[str, ...] = (
+    _MONTH_END_V2_LIMITATION,
+    *(
+        item
+        for item in ROLLING_RISK_LIMITATIONS
+        if not item.startswith("MONTH-END CONVENTION IS HOLIDAY-FREE")
+    ),
+)
+SHARPE_V2_ASSUMPTIONS: tuple[str, ...] = (
+    _MONTH_END_V2_ASSUMPTION,
+    *SHARPE_ASSUMPTIONS,
+)
+SHARPE_V2_LIMITATIONS: tuple[str, ...] = (
+    _MONTH_END_V2_LIMITATION,
+    *SHARPE_LIMITATIONS,
+)
+
+
+def _register_perf_model_v2(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    actor_type: str,
+    model_code: str,
+    model_name: str,
+    model_type: str,
+    version_label: str,
+    methodology_ref: str,
+    description: str,
+    assumptions: tuple[str, ...],
+    limitations: tuple[str, ...],
+    holiday_calendar: str,
+) -> ModelVersion:
+    """The shared v2 mint: delegate to ``_register_perf_model`` with the convention literals
+    REGISTRAR-STAMPED into the tuple, then RE-PARSE the declared parameters as the idempotent
+    conflict check (the DS-2 discipline — ``_register_perf_model``'s own post-check verifies
+    code_version only, so a squatted same-label peer with DIFFERENT literals would pass it)."""
+    if not _HOLIDAY_CALENDAR_CODE_PATTERN.fullmatch(str(holiday_calendar)):
+        raise ValueError(f"holiday_calendar code {holiday_calendar!r} is not a valid calendar code")
+    version = _register_perf_model(
+        session,
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        code_version=code_version,
+        actor_type=actor_type,
+        model_code=model_code,
+        model_name=model_name,
+        model_type=model_type,
+        version_label=version_label,
+        methodology_ref=methodology_ref,
+        description=description,
+        assumptions=(
+            *assumptions,
+            f"{MONTH_END_CONVENTION_ASSUMPTION_PREFIX}{MONTH_END_BUSINESS_CONVENTION}",
+            f"{HOLIDAY_CALENDAR_ASSUMPTION_PREFIX}{holiday_calendar}",
+        ),
+        limitations=limitations,
+    )
+    declared = declared_month_end_parameters(session, version, model_code=model_code)
+    if declared.convention != MONTH_END_BUSINESS_CONVENTION or declared.holiday_calendar != str(
+        holiday_calendar
+    ):
+        raise ModelVersionConflictError(
+            model_code,
+            version_label,
+            f"{code_version} (month_end_convention={MONTH_END_BUSINESS_CONVENTION}, "
+            f"holiday_calendar={holiday_calendar})",
+        )
+    return version
+
+
+def register_rolling_risk_model_v2(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    holiday_calendar: str = DEFAULT_HOLIDAY_CALENDAR_CODE,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the HOLIDAY-AWARE rolling-risk version — a NEW ``v2`` label on the
+    SAME ``perf.rolling_risk`` code (OQ-CAL-1-2; the RS-1/DS-2 grandfather pattern). The v1
+    registrar and its tuples are untouched; v1 keeps binding new runs until its callers repoint
+    (nothing retires it automatically — G24)."""
+    return _register_perf_model_v2(
+        session,
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        code_version=code_version,
+        actor_type=actor_type,
+        model_code=ROLLING_RISK_MODEL_CODE,
+        model_name=ROLLING_RISK_MODEL_NAME,
+        model_type=ROLLING_RISK_MODEL_TYPE,
+        version_label=ROLLING_RISK_V2_VERSION_LABEL,
+        methodology_ref=ROLLING_RISK_METHODOLOGY_REF,
+        description=(
+            "Trailing-window rolling return, rolling volatility and maximum drawdown over the "
+            "governed portfolio-return series, on a relinked HOLIDAY-AWARE calendar-month grid "
+            "(CAL-1b v2 of RM-1/ENT-064)."
+        ),
+        assumptions=ROLLING_RISK_V2_ASSUMPTIONS,
+        limitations=ROLLING_RISK_V2_LIMITATIONS,
+        holiday_calendar=holiday_calendar,
+    )
+
+
+def register_sharpe_model_v2(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    code_version: str,
+    holiday_calendar: str = DEFAULT_HOLIDAY_CALENDAR_CODE,
+    actor_type: str = "user",
+) -> ModelVersion:
+    """Register (idempotently) the HOLIDAY-AWARE Sharpe version — a NEW ``v2`` label on the SAME
+    ``perf.sharpe`` code. SR-1 moves in LOCKSTEP with RM-1 (OQ-CAL-1-2): its rf month-key join is
+    numerically insulated from month-end DATE moves, but its grid text inherits RM-1's, so the
+    registered identity moves too."""
+    return _register_perf_model_v2(
+        session,
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        code_version=code_version,
+        actor_type=actor_type,
+        model_code=SHARPE_MODEL_CODE,
+        model_name=SHARPE_MODEL_NAME,
+        model_type=SHARPE_MODEL_TYPE,
+        version_label=SHARPE_V2_VERSION_LABEL,
+        methodology_ref=SHARPE_METHODOLOGY_REF,
+        description=(
+            "Trailing-window Sharpe ratio over the governed portfolio-return series against a "
+            "captured risk-free return series, on a relinked HOLIDAY-AWARE calendar-month grid "
+            "(CAL-1b v2 of SR-1/ENT-065)."
+        ),
+        assumptions=SHARPE_V2_ASSUMPTIONS,
+        limitations=SHARPE_V2_LIMITATIONS,
+        holiday_calendar=holiday_calendar,
+    )

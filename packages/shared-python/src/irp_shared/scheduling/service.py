@@ -21,7 +21,6 @@ here, because this module imports the risk + exposure compute stack and a read m
 
 from __future__ import annotations
 
-import calendar as _calendar
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -34,17 +33,17 @@ from sqlalchemy.orm import Session
 
 from irp_shared.audit.actions import ACTION_CREATE, ACTION_UPDATE
 from irp_shared.audit.service import record_event
+from irp_shared.calmath import NO_HOLIDAYS, last_business_day_of_month
+from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.exposure.events import ExposureActor
 from irp_shared.exposure.service import ExposureRunResult, run_exposure
 from irp_shared.model.guards import assert_model_version_in_tenant
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
+from irp_shared.reference.models import Calendar, CalendarHoliday  # models-only (guards precedent)
 from irp_shared.risk.covariance_service import latest_covariances
 from irp_shared.risk.events import VarActor
 from irp_shared.risk.factor_service import latest_factor_exposure
 from irp_shared.risk.var_service import VarRunResult, run_var
-from irp_shared.calmath import NO_HOLIDAYS, last_business_day_of_month
-from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
-from irp_shared.reference.models import Calendar, CalendarHoliday  # models-only (guards precedent)
 from irp_shared.scheduling.events import (
     CADENCE_BUSINESS_MONTH_END,
     CADENCE_CALENDAR_MONTH_END,
@@ -321,9 +320,7 @@ def _resolve_business_calendar(
         )
     dates = frozenset(
         session.execute(
-            select(CalendarHoliday.holiday_date).where(
-                CalendarHoliday.calendar_id == calendar.id
-            )
+            select(CalendarHoliday.holiday_date).where(CalendarHoliday.calendar_id == calendar.id)
         ).scalars()
     )
     return calendar, dates
@@ -364,11 +361,11 @@ def select_active_due(
             if schedule.cadence_kind == CADENCE_BUSINESS_MONTH_END:
                 calendar, holidays = _resolve_business_calendar(session, schedule)
             tick = _schedule_tick(schedule, now, holidays)
-            if calendar is not None and tick.date() > calendar.holidays_complete_through:
+            coverage = calendar.holidays_complete_through if calendar is not None else None
+            if coverage is not None and tick.date() > coverage:
                 raise ScheduleError(
-                    f"tick {tick.date()} exceeds calendar {calendar.code!r}'s declared holiday "
-                    f"coverage ({calendar.holidays_complete_through}) — refusing an uncovered "
-                    "month (OQ-CAL-1-4)"
+                    f"tick {tick.date()} exceeds the bound calendar's declared holiday "
+                    f"coverage ({coverage}) — refusing an uncovered month (OQ-CAL-1-4)"
                 )
         except ScheduleError:
             # SKIP-AND-REPORT, never raise (SCH-2, verifier B3): this loop runs in the worker's
@@ -593,7 +590,9 @@ def dispatch_one(
     run returns a row
     with ``outcome=FAILED`` + the failed run id.
     """
-    _assert_current_tick(schedule, tick, now, holidays)  # INV-SCH-1 self-enforcing at the write boundary
+    _assert_current_tick(
+        schedule, tick, now, holidays
+    )  # INV-SCH-1 self-enforcing at the write boundary
     existing = session.execute(
         select(ScheduledRun).where(
             ScheduledRun.schedule_id == schedule.id,

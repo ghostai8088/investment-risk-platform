@@ -46,7 +46,7 @@ from irp_shared.reference.events import (
     REFERENCE_STATUS_CHANGE_EVENT,
     REFERENCE_UPDATE_EVENT,
 )
-from irp_shared.reference.models import Currency
+from irp_shared.reference.models import Calendar, Currency
 
 #: ``data_source`` provenance for governed reference CRUD (value-level vocab; no schema change).
 MANUAL_SOURCE_TYPE = "MANUAL"
@@ -328,6 +328,37 @@ class CurrencyNotVisible(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(f"currency {code!r} is not visible in the current tenant context")
         self.code = code
+
+
+class CalendarNotVisible(Exception):
+    """Neither an own-tenant nor a SYSTEM_TENANT calendar exists for the code (a foreign tenant's
+    calendar, or an unknown code). Fails closed (CAL-1b)."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(f"calendar {code!r} is not visible in the current tenant context")
+        self.code = code
+
+
+def resolve_calendar(session: Session, code: str, *, acting_tenant: str) -> Calendar:
+    """Resolve a calendar ``code`` under **AD-013-R1 HYBRID** visibility (CAL-1b): own-tenant OR
+    SYSTEM row, own wins via ``dedupe_tenant_wins`` — the ``resolve_currency`` pattern verbatim
+    (the OQ-REF-1-20 precedent). Correct on SQLite (no RLS) and the RLS USING-arm on PG."""
+    rows = list(
+        session.execute(
+            select(Calendar).where(
+                Calendar.code == code,
+                or_(
+                    Calendar.tenant_id == str(acting_tenant),
+                    Calendar.tenant_id == SYSTEM_TENANT_ID,
+                ),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        raise CalendarNotVisible(code)
+    return dedupe_tenant_wins(rows, acting_tenant)[0]  # own-tenant override wins over SYSTEM
 
 
 def resolve_currency(session: Session, code: str, *, acting_tenant: str) -> Currency:

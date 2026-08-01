@@ -28,9 +28,8 @@ on the core (``parent_legal_entity_id`` self-FK); the exposure-rollup calc is de
 
 from __future__ import annotations
 
-from datetime import date as dt_date
-
 from datetime import date
+from datetime import date as dt_date
 from decimal import Decimal
 
 from sqlalchemy import (

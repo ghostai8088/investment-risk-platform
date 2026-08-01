@@ -20,7 +20,7 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -109,7 +109,9 @@ def poll_tenant_schedules(
             savepoint.rollback()
             reason = f"{type(exc).__name__}: {exc}"
 
-        results.append((schedule.id, _record_failed(session, schedule, tick, now, reason, holidays=holidays)))
+        results.append(
+            (schedule.id, _record_failed(session, schedule, tick, now, reason, holidays=holidays))
+        )
     return results
 
 

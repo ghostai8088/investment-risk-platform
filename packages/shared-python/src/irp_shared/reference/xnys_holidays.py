@@ -169,3 +169,8 @@ XNYS_HOLIDAYS: tuple[tuple[date, str], ...] = (
 #: the exchange stays OPEN. Pinned ABSENT by the census test; listed here so the next encoder
 #: sees them before "fixing" the 9-holiday years.
 XNYS_RULE_72_OPEN_FRIDAYS: tuple[date, ...] = (date(2027, 12, 31), date(2032, 12, 31))
+
+#: The dataset's DECLARED coverage horizon (OQ-CAL-1-4): the last date through which this module
+#: asserts the closure set is complete. Advanced (forward-only) by the refresh verb whenever the
+#: dataset is extended; a BUSINESS_MONTH_END tick or a v2 perf span beyond it REFUSES.
+XNYS_COMPLETE_THROUGH: date = date(2035, 12, 31)

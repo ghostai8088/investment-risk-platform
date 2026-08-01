@@ -42,12 +42,18 @@ from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_completed_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.model.service import assert_model_version_of
-from irp_shared.perf.bootstrap import ROLLING_RISK_MODEL_CODE, ROLLING_RISK_WINDOWS
+from irp_shared.perf.bootstrap import (
+    MONTH_END_BUSINESS_CONVENTION,
+    ROLLING_RISK_MODEL_CODE,
+    ROLLING_RISK_WINDOWS,
+    declared_month_end_parameters,
+)
 from irp_shared.perf.events import (
     RUN_TYPE_PORTFOLIO_RETURN,
     RUN_TYPE_ROLLING_RISK,
     RollingRiskActor,
 )
+from irp_shared.perf.holiday_binding import parse_pinned_holidays
 from irp_shared.perf.models import (
     ANNUALIZATION_GEOMETRIC_12,
     ANNUALIZATION_NONE,
@@ -144,12 +150,17 @@ def _as_date(value: Any) -> dt_date:
     return value if isinstance(value, dt_date) else dt_date.fromisoformat(str(value))
 
 
-def _adjudicate_pins(raw: list[dict[str, Any]]) -> _ParsedInput:
+def _adjudicate_pins(
+    raw: list[dict[str, Any]],
+    holidays: frozenset[dt_date] = frozenset(),
+    holidays_complete_through: dt_date | None = None,
+) -> _ParsedInput:
     """PRE-CREATE adjudication of the full pinned input. Raises :class:`RollingRiskInputError`.
 
-    Order matters: structural checks first (is this even a return run?), then the month grid, then
-    the economic precondition. Each refusal names the offending value so an operator can act on it
-    without reading the snapshot by hand.
+    Order matters: structural checks first (is this even a return run?), then the v2 coverage
+    gate (CAL-1b — a span beyond the pinned calendar's DECLARED horizon refuses before alignment
+    is even asked), then the month grid, then the economic precondition. ``holidays`` is empty
+    for v1 (byte-identical acceptance) and the PINNED set for v2.
     """
     if not raw:
         raise RollingRiskInputError(
@@ -203,8 +214,14 @@ def _adjudicate_pins(raw: list[dict[str, Any]]) -> _ParsedInput:
     # The boundary grid: d_0 is the first sub-period's START (the close of the month BEFORE the
     # first measured month), then every sub-period end.
     boundaries = [sub_periods[0].period_start] + [p.period_end for p in sub_periods]
+    if holidays_complete_through is not None and boundaries[-1] > holidays_complete_through:
+        raise RollingRiskInputError(
+            f"the series closes on {boundaries[-1]}, beyond the pinned calendar's declared "
+            f"holiday coverage ({holidays_complete_through}) — an uncovered month must refuse, "
+            "never degrade to the weekend-only answer (OQ-CAL-1-4)"
+        )
     try:
-        assert_month_aligned(boundaries)
+        assert_month_aligned(boundaries, holidays)
         months = relink_to_months(sub_periods)
         assert_above_total_loss(months)
     except RollingKernelError as exc:
@@ -285,12 +302,15 @@ def run_rolling_risk(
             "for this model version — a governed run may only use a declared window"
         )
 
-    assert_model_version_of(
+    version = assert_model_version_of(
         session,
         str(model_version_id),
         tenant_id=acting_tenant,
         expected_model_code=ROLLING_RISK_MODEL_CODE,
     )
+    # CAL-1b (OQ-CAL-1-2): the declared month-end convention — parsed from the version's
+    # assumption LITERALS (absent => the WEEKEND v1 grandfather; ambiguous/stray => fail-closed).
+    params = declared_month_end_parameters(session, version, model_code=ROLLING_RISK_MODEL_CODE)
 
     snapshot = resolve_snapshot(session, snapshot_id, acting_tenant=acting_tenant)
     if snapshot.purpose != PURPOSE_ROLLING_RISK_INPUT:
@@ -299,10 +319,20 @@ def run_rolling_risk(
             f"{PURPOSE_ROLLING_RISK_INPUT!r}"
         )
 
-    parsed = _adjudicate_pins(
-        _parse_pins(
-            list(list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant))
+    components = list(
+        list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+    )
+    holidays: frozenset[dt_date] = frozenset()
+    coverage: dt_date | None = None
+    if params.convention == MONTH_END_BUSINESS_CONVENTION:
+        assert params.holiday_calendar is not None  # the gate refused a BUSINESS row without it
+        holidays, coverage = parse_pinned_holidays(
+            components,
+            declared_code=params.holiday_calendar,
+            error=RollingRiskInputError,
         )
+    parsed = _adjudicate_pins(
+        _parse_pins(components), holidays=holidays, holidays_complete_through=coverage
     )
     # Re-resolve BOTH ids out of the PINNED content before either is stamped into a hard FK (P3-5:
     # PG FK checks bypass RLS, so the DB alone would durably admit a foreign tenant's run/book).
