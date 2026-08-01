@@ -253,20 +253,30 @@ def build_perf_book(
     factor_family: str = "CURRENCY",
     factor_currency_code: str | None = None,
     classify: bool = False,
+    positions_per_portfolio: int = _POSITIONS_PER_PORTFOLIO,
 ) -> PerfSeedSummary:
     """Seed ONE rung of the scale ladder. Caller owns the commit and owns all timing.
 
     ``rung_positions`` is the ladder point (500 / 2,000 / 5,000 / 10,000 — OQ-PERF-0-3). Positions
-    are spread across portfolios at ``_POSITIONS_PER_PORTFOLIO`` each; every position is marked at
+    are spread across portfolios at ``positions_per_portfolio`` each (default 250). The parameter
+    exists for ONE consumer: the CI smoke, whose regression guard is the multi-portfolio
+    ``portfolio_return`` shape — at the default packing its tiny rung produced exactly ONE
+    portfolio, so the guard was VACUOUS and its two-portfolio comment described a protection the
+    test did not provide (the 2026-08-01 review's F1; the LIM-2 level-trap lesson recurring inside
+    the slice that cited it). Every position is marked at
     36 month-ends over three years (OQ-PERF-0-2), and ``n_factors`` factor-return series are seeded
     DAILY over ``n_return_days`` because covariance/VaR consume factor series, not position marks.
 
-    Deterministic for every shape that carries an ``entity_id`` hook: portfolios, instruments,
-    positions, valuations, factors and factor returns are byte-identical across runs.
-    **``legal_entity`` and ``issuer`` are the exception** — their binders mint their own ids and
-    expose no ``entity_id`` override, so those two ids differ per run. Recorded rather than
-    glossed: it does not affect any measurement (issuers are grouping keys, not inputs to a
-    number), but the seed's determinism claim is NOT universal and should not be cited as such.
+    Deterministic for every shape that carries an ``entity_id`` hook: portfolios, positions,
+    valuations, factors and factor returns are byte-identical across runs.
+    **THREE shapes are the exception, not two** (the 2026-08-01 review's F3 — the caveat as first
+    recorded named only ``legal_entity`` and ``issuer``): their binders mint their own ids with no
+    ``entity_id`` override, and the per-run-random issuer id is then written INTO
+    ``instrument.issuer_id`` via ``update_instrument``, so instrument rows are not byte-identical
+    either. (Under ``classify=True`` the classification rows also sit outside the guarantee.)
+    Recorded rather than glossed: none of it affects any measurement — issuer grouping MEMBERSHIP
+    is ordinal-keyed, so concentration shapes and every timing are unchanged — but the seed's
+    determinism claim is NOT universal and must not be cited as such.
 
     **Each rung requires a fresh schema, and this refuses otherwise.** Ids are keyed by ORDINAL so
     that a larger rung extends a smaller one rather than reshuffling it (the ladder must compare
@@ -363,7 +373,7 @@ def build_perf_book(
             now=clock.tick(),
         )
         portfolio_ids.append(str(pf.id))
-        remaining -= _POSITIONS_PER_PORTFOLIO
+        remaining -= positions_per_portfolio
         pf_ordinal += 1
 
     # --- instruments + positions + month-end valuations ---
@@ -373,7 +383,7 @@ def build_perf_book(
     current_issuer_id: str | None = None
     ordinal = 0
     for portfolio_id in portfolio_ids:
-        for _ in range(_POSITIONS_PER_PORTFOLIO):
+        for _ in range(positions_per_portfolio):
             if ordinal >= rung_positions:
                 break
             code = f"PERF-INST-{ordinal:06d}"

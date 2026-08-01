@@ -246,8 +246,10 @@ seven-ledger sweep (no ledger-bearing artifact is minted).
 What actually shipped against what was ratified. Written now so the review's record-vs-diff lane
 audits real claims rather than staleness.
 
-**Branch `perf-0-planning`, head `e9e5cbd`.** CI green at every commit. Both tiers run before every
-push after impl 5/n (see the lapse below). No governed family, no entity, no migration, no
+**Branch `perf-0-planning`, head `e9e5cbd`.** CI green at head — NOT at every commit: impl 4/n
+pushed red (the two-layer marketdata fence miss, recorded below), and the earlier phrasing of this
+sentence claimed otherwise in the same document that records the red push (caught by the 2026-08-01
+review as a self-contradiction). Both tiers run before every push after impl 5/n. No governed family, no entity, no migration, no
 permission, no audit code — the sizing held.
 
 ### Delivered
@@ -257,7 +259,7 @@ permission, no audit code — the sizing held.
 | OQ-1 — 4 h budget @10k, set before measuring | as ratified; **MEASURED at 21.4 min = 8.90%** | Reading 5 |
 | OQ-2 — month-end marks + daily factor returns, 3 y | as ratified | `scale.py` |
 | OQ-3 — a LADDER, not a point | 500 / 2,000 / 10,000 (**5,000 skipped**, below) | Readings 1–5 |
-| OQ-4 — harness outside app code, smallest rung in CI, no timing assertion | as ratified | `scripts/perf_probe.py`, `test_perf_probe_pg.py`, `ci.yml` |
+| OQ-4 — harness outside app code, smallest rung in CI, no timing assertion | **DEVIATED, recorded late (review F1):** the ratified text says "CI runs the 500-position rung"; the shipped smoke runs rung THREE. The shrink was the right call (500 positions seed for minutes in CI) but went unrecorded — and it silently vacated the multi-portfolio guard, because 3 positions at 250-per-portfolio is ONE portfolio. Fixed at the fold: the seed's packing is parameterized, the smoke seeds 2-per-portfolio, and the portfolio count is ASSERTED in-test | `scripts/perf_probe.py`, `test_perf_probe_pg.py`, `ci.yml` |
 | OQ-5 — seed time reported separately | as ratified, and it became the headline finding | all readings |
 | OQ-6 — six segments, timed individually | as ratified | Reading 4/5 tables |
 | OQ-7 — tracemalloc + peak RSS | as ratified (`ru_maxrss` branches on platform — bytes vs KB) | `_peak_rss_mb` |
@@ -273,9 +275,42 @@ permission, no audit code — the sizing held.
   escaped all three. Replaced with a package census; mutation-proven.
 - **5,000 rung SKIPPED, deliberately.** Three rungs establish the exponent and 10,000 is the ratified
   budget point. Stated rather than silently omitted (the no-silent-caps rule).
-- **Determinism is NOT universal.** `create_legal_entity`/`create_issuer` mint their own ids with no
-  `entity_id` hook, so those two shapes differ per run. Affects no measurement (issuers are grouping
-  keys, not inputs to a number) but the seed's determinism claim must not be cited unqualified.
+- **Determinism is NOT universal — and the count is THREE shapes, not two** (widened at the
+  2026-08-01 review, F3). `create_legal_entity`/`create_issuer` mint their own ids with no
+  `entity_id` hook, and the per-run-random issuer id is then written INTO `instrument.issuer_id`,
+  so instrument rows are not byte-identical either (classification rows under `classify=True` also
+  sit outside the guarantee). Affects no measurement — issuer grouping MEMBERSHIP is ordinal-keyed —
+  but the caveat as first recorded was itself incomplete, which is the exact failure the caveat
+  exists to prevent.
+
+### The 2026-08-01 post-review fold (three Fable lanes, 26 findings; all four headline verdicts ADJUDICATED AS STANDING)
+
+The review's full adjudication: budget 8.90% recomputes exactly (one-date daily ≈ 6.74%);
+ingestion-dominates 10.87× (→ ~14.4× one-date); capture linear (1.005/0.974/0.990); memory flat.
+The defects were in the probe's own guard layer, and the two that mattered are the SAME classes
+this slice had already paid for once:
+
+- **F1 (HIGH): the CI smoke's two-portfolio claim was FALSE** — rung 3 at the default packing is
+  ONE portfolio, so the multi-portfolio regression guard was vacuous and its comment described a
+  protection the test did not provide. Fixed: `positions_per_portfolio` parameterized (sole
+  consumer: the smoke, at 2), and `count(portfolio) >= 2` asserted IN CODE. Mutation-proven: the
+  old packing fails exactly that assertion.
+- **F2 (HIGH): the smoke's "all six COMPLETED" docstring checked 3 of 6 run types** —
+  VAR/PORTFOLIO_RETURN/FACTOR_EXPOSURE were never status-checked while their binders document
+  commit-FAILED-and-return contracts (the Reading-3 mechanism, recreated in the slice that fixed
+  it). Fixed: an EXACT six-family run-type census + a zero-non-COMPLETED assertion, and the
+  harness now folds every returned status into `SegmentReading.ok`. Negative control executed: a
+  planted FAILED run is caught by the census query.
+- F3: the determinism caveat widened to three shapes (above). F4: the Reading-1 totals erratum
+  (in the readings). F5: **PR #154 merged only this record's planning version — the implementation
+  was never merged**; this fold rides the implementation PR itself, so the review is pre-merge
+  after all.
+
+Named PERF-1 carries (designed-in, not rediscovered): measure the audit-chain share of the
+~36 ms/row BEFORE parallelizing (within-tenant parallelism may serialize on the chain and yield
+~0); define the write-count basis in the harness (the 27.4 rows/s counts six families and excludes
+~3.5% of inserted rows); status census, never throw-based ok; every regression guard asserts its
+precondition in code.
 
 ### Corrections to this slice's own outputs
 

@@ -23,7 +23,7 @@ import pathlib
 import sys
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.pool import NullPool
 
 from irp_shared.calc.models import CalculationRun
@@ -34,10 +34,17 @@ from irp_shared.synthetic.scale import ALLOW_PERF_SEED_ENV, PERF_TENANT_ID
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
-#: Small enough to keep CI honest about time, large enough that the book spans TWO portfolios —
-#: the shape that caught the ``portfolio_return`` multi-portfolio defect a single-portfolio smoke
-#: could not see.
+#: Small enough to keep CI honest about time — and the book MUST span TWO portfolios, because the
+#: multi-portfolio ``portfolio_return`` shape is this smoke's regression subject. **The first
+#: version of this comment claimed that and was FALSE** (the 2026-08-01 review's F1): at the
+#: default 250-per-portfolio packing, rung 3 produced exactly ONE portfolio, so the guard was
+#: vacuous — the comment described a protection the test did not provide, and the 500→3 rung
+#: shrink from the ratified OQ-PERF-0-4 text was an unrecorded deviation (now recorded in the
+#: decision record's Part 9). The packing override makes the claim true, and
+#: ``test_the_chain_produced_COMPLETED_governed_runs`` now ASSERTS the portfolio count in code —
+#: a comment is not a fence.
 _RUNG = 3
+_POSITIONS_PER_PORTFOLIO = 2  # rung 3 at 2-per-portfolio => TWO portfolios, asserted below
 _FACTORS = 2
 _RETURN_DAYS = 4
 
@@ -76,7 +83,13 @@ def probe_reading():  # noqa: ANN201
     os.environ[ALLOW_PERF_SEED_ENV] = "1"
     try:
         harness = _load_harness()
-        yield harness.run_rung(URL, _RUNG, n_factors=_FACTORS, n_return_days=_RETURN_DAYS)
+        yield harness.run_rung(
+            URL,
+            _RUNG,
+            n_factors=_FACTORS,
+            n_return_days=_RETURN_DAYS,
+            positions_per_portfolio=_POSITIONS_PER_PORTFOLIO,
+        )
     finally:
         if previous is None:
             os.environ.pop(ALLOW_PERF_SEED_ENV, None)
@@ -102,6 +115,23 @@ def test_the_harness_still_drives_every_segment(probe_reading) -> None:  # noqa:
     assert reading.seed_rows > 0
 
 
+#: The SIX run types the chain mints — an EXACT census, not a sample. **The first version of this
+#: test checked three of six** while the module docstring claimed all six were verified (the
+#: 2026-08-01 review's F2): VAR, PORTFOLIO_RETURN and FACTOR_EXPOSURE were never status-checked
+#: anywhere, and all of the omitted binders document commit-FAILED-and-return contracts — the
+#: exact mechanism that produced Reading 3's wrong concentration row. An enumerated SUBSET with no
+#: census forcing it to track the segment list is the OQ-PERF-0-11 defect class, recreated in the
+#: slice that fixed it.
+_EXPECTED_RUN_TYPES = (
+    "EXPOSURE_AGGREGATE",
+    "FACTOR_EXPOSURE",
+    "COVARIANCE",
+    "VAR",
+    "PORTFOLIO_RETURN",
+    "CONCENTRATION",
+)
+
+
 def test_the_chain_produced_COMPLETED_governed_runs(probe_reading) -> None:  # noqa: ANN001
     """Segments reporting ``ok`` is the harness's own account; this reads the DATABASE. A binder
     that returned without minting a governed run would satisfy the first test and nothing else."""
@@ -111,19 +141,33 @@ def test_the_chain_produced_COMPLETED_governed_runs(probe_reading) -> None:  # n
     session = make_session_factory(engine)()
     try:
         set_tenant_context(session, PERF_TENANT_ID)
-        completed = session.execute(
-            select(CalculationRun.run_type, func.count())
-            .where(
-                CalculationRun.tenant_id == PERF_TENANT_ID,
-                CalculationRun.status == "COMPLETED",
-            )
-            .group_by(CalculationRun.run_type)
+        rows = session.execute(
+            select(CalculationRun.run_type, CalculationRun.status, func.count())
+            .where(CalculationRun.tenant_id == PERF_TENANT_ID)
+            .group_by(CalculationRun.run_type, CalculationRun.status)
         ).all()
-        by_type = {str(r[0]): r[1] for r in completed}
-        assert by_type, "the chain minted no COMPLETED runs in the PERF tenant"
-        # Each family that the chain drives must appear at least once.
-        for run_type in ("EXPOSURE_AGGREGATE", "COVARIANCE", "CONCENTRATION"):
-            assert by_type.get(run_type, 0) >= 1, f"no COMPLETED {run_type} run: {by_type}"
+        by_type_status = {(str(r[0]), str(r[1])): r[2] for r in rows}
+
+        # EXACT run-type census: every family the chain drives, no family unasserted.
+        minted_types = {t for (t, _s) in by_type_status}
+        assert minted_types == set(_EXPECTED_RUN_TYPES), (
+            f"run-type census mismatch.\nmissing: {set(_EXPECTED_RUN_TYPES) - minted_types}"
+            f"\nunexpected: {minted_types - set(_EXPECTED_RUN_TYPES)}"
+        )
+        # ZERO non-COMPLETED runs — a committed-FAILED run is a reading lying about its segment.
+        non_completed = {k: v for k, v in by_type_status.items() if k[1] != "COMPLETED"}
+        assert not non_completed, f"non-COMPLETED runs in the PERF tenant: {non_completed}"
+
+        # F1, asserted IN CODE rather than narrated: the smoke's whole reason for spanning
+        # portfolios is the multi-portfolio portfolio_return shape.
+        n_portfolios = session.execute(
+            text("SELECT count(*) FROM portfolio WHERE tenant_id = :t"),
+            {"t": PERF_TENANT_ID},
+        ).scalar_one()
+        assert n_portfolios >= 2, (
+            f"the smoke's book has {n_portfolios} portfolio(s) — the multi-portfolio regression "
+            "guard is VACUOUS below 2 (the 2026-08-01 review's F1)"
+        )
     finally:
         session.close()
         engine.dispose()

@@ -123,7 +123,26 @@ def reset_schema(url: str) -> None:
     )
 
 
-def run_rung(url: str, rung: int, *, n_factors: int, n_return_days: int) -> RungReading:
+def _fail_segment_on_non_completed(reading: SegmentReading, statuses: list[str]) -> None:
+    """F2 (the 2026-08-01 review): ``ok`` was exception-only, while every binder documents a
+    commit-FAILED-and-return contract — the EXACT mechanism behind Reading 3's wrong concentration
+    row, recreated for the segments whose statuses the harness discarded. A segment is only ``ok``
+    when every run it minted COMPLETED; a FAILED run's time is the failure path's cost, and filing
+    it as the segment's cost is how a reading lies."""
+    bad = [x for x in statuses if x != "COMPLETED"]
+    if bad and reading.ok:
+        reading.ok = False
+        reading.detail = f"{len(bad)} run(s) not COMPLETED: {sorted(set(bad))}"
+
+
+def run_rung(
+    url: str,
+    rung: int,
+    *,
+    n_factors: int,
+    n_return_days: int,
+    positions_per_portfolio: int | None = None,
+) -> RungReading:
     """Seed one rung, then drive the chain. Seed and compute are timed SEPARATELY."""
     from sqlalchemy import select
 
@@ -161,6 +180,11 @@ def run_rung(url: str, rung: int, *, n_factors: int, n_return_days: int) -> Rung
                 # Seeds a minimal SECTOR_INDUSTRY taxonomy + per-instrument assignments;
                 # concentration refuses without a classification dimension and scheme.
                 classify=True,
+                **(
+                    {"positions_per_portfolio": positions_per_portfolio}
+                    if positions_per_portfolio is not None
+                    else {}
+                ),
             )
             session.commit()
         seed_reading = t.reading
@@ -296,8 +320,9 @@ def run_rung(url: str, rung: int, *, n_factors: int, n_return_days: int) -> Rung
         with _Timed("var") as t:
             if covariance_run_id is None:
                 raise RuntimeError("covariance did not produce a run — VaR cannot bind")
+            var_statuses: list[str] = []
             for exposure_run_id in factor_exposure_run_ids:
-                run_var(
+                var_result = run_var(
                     session,
                     acting_tenant=PERF_TENANT_ID,
                     actor=ExposureActor(actor_id=PERF_ACTOR_ID),
@@ -307,13 +332,17 @@ def run_rung(url: str, rung: int, *, n_factors: int, n_return_days: int) -> Rung
                     exposure_run_id=exposure_run_id,
                     covariance_run_id=covariance_run_id,
                 )
+                var_statuses.append(str(var_result.status))
             session.commit()
+        assert t.reading is not None
+        _fail_segment_on_non_completed(t.reading, var_statuses)
         reading.segments.append(t.reading)
 
         # --- SEGMENT 5: portfolio return ---
         with _Timed("portfolio_return") as t:
+            ret_statuses: list[str] = []
             for pid_runs in runs_by_portfolio.values():
-                run_portfolio_return(
+                ret_result = run_portfolio_return(
                     session,
                     acting_tenant=PERF_TENANT_ID,
                     actor=ExposureActor(actor_id=PERF_ACTOR_ID),
@@ -322,7 +351,10 @@ def run_rung(url: str, rung: int, *, n_factors: int, n_return_days: int) -> Rung
                     model_version_id=str(ret_version.id),
                     exposure_run_ids=pid_runs,
                 )
+                ret_statuses.append(str(ret_result.status))
             session.commit()
+        assert t.reading is not None
+        _fail_segment_on_non_completed(t.reading, ret_statuses)
         reading.segments.append(t.reading)
 
         # --- SEGMENT 6: concentration (CON-1 — added because it shipped after the roadmap row) ---

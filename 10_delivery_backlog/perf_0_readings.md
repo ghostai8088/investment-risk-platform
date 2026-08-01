@@ -20,6 +20,11 @@ month-end marks per position over three years.
 | 200 | 7,200 | ~7,401 | 138.70 s | 693.5 | 55 |
 | 800 | 28,800 | ~29,604 | 535.49 s | 669.4 | 57 |
 
+> **ERRATUM (2026-08-01 review, F4).** The 200/800 totals above are INSTRUMENT-EXCLUSIVE while the
+> 50 rung's is inclusive — the consistent totals are ~7,601 and ~30,404, and the printed rows/s
+> (55/57) reproduce only from those corrected totals. Wall-clock, ms/position and every linearity
+> conclusion are unaffected (they never used the totals column).
+
 ### What it says
 
 **The capture rail is LINEAR in book size.** Log-log slope between rungs: 1.005 (50→200), 0.974
@@ -322,6 +327,22 @@ schema; single process, single connection; 8 factors × 260 daily returns; harne
 | covariance | 12.27 s | 10.52 s | −0.096 | 0.8% |
 | **batch total** | **278.70 s** | **1,281.76 s** | **0.948** | — |
 | seed | 2,642.61 s | 13,938.26 s | **1.033** | — |
+
+> **Two qualifications added at the 2026-08-01 review (the verdicts below STAND; both move the
+> number FURTHER inside the budget):**
+>
+> 1. **The measured batch includes a probe-only second exposure pass.** The exposure segment runs
+>    the full book at TWO boundary dates per portfolio solely so `portfolio_return` has a pair; a
+>    steady-state daily batch recomputes yesterday's boundary never. One-date daily ≈ 1,281.76 −
+>    310.8 ≈ **971 s = 16.2 min = 6.74% of budget**, under which exposure (~32.0%) and
+>    concentration (~32.6%) are CO-dominant — do not commission batch optimization off the 48.5%
+>    share in the table, which is a two-pass artifact.
+> 2. **The host is an M1 Max with co-located PostgreSQL**, not the "single commodity worker" the
+>    budget was ratified against. The 11.2× headroom absorbs any plausible hardware gap; recorded
+>    so the number is never quoted shorn of its machine.
+>
+> Canonical batch exponents, to stop a wrong citation from circulating: **0.928 (500→2k), 0.948
+> (2k→10k), 0.939 over the full ladder**. A "0.907" appears nowhere in this document.
 
 Peak `tracemalloc` 11.8 MB; peak RSS 119.1 MB — **essentially unchanged from the 500 rung** across a
 20× book. Memory is definitively not a constraint.
