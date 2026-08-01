@@ -95,7 +95,7 @@ _INITIAL_SCOPE = (
 )
 _INITIAL_CONDITIONS = (
     "Rolling values are NOT independent (~92% overlap between adjacent 12-month windows) and must "
-    "not be read as a re-estimate; the month-end convention is holiday-free in v1; two-stage "
+    "not be read as a re-estimate; the month-end convention is holiday-free in v1 (the holiday-aware v2 shipped at CAL-1b); two-stage "
     "linking is not bit-identical to PM-1's one-stage TWR_LINKED where a month holds two or more "
     "sub-periods; no benchmark leg, so GIPS 2.A.18.a binds only the v2."
 )

@@ -33,9 +33,17 @@
 >   refresh verb + the CTRL-034 diligence control, H-05-approved at the gate — the first CTRL
 >   mint since P0.5) → CAL-1b (the atomic convention move, migration 0059). CAL-1a landed the
 >   118-date XNYS set (2024–2035, Rule 7.2 negatives pinned) + the ADD-ONLY
->   `refresh_calendar_holidays` verb + the executed checklist. **NAMED CAL-1b CARRY: the verb
->   gains the `holidays_complete_through` explicit advance (+ forward-only control) WITH
->   migration 0059 — without it, OQ-4's coverage gate refuses every BUSINESS_MONTH_END tick.**
+>   `refresh_calendar_holidays` verb + the executed checklist.
+> - **CAL-1b SHIPPED WITH THIS PR (2026-08-01) — the atomic convention move, QS-11 DISCHARGED:**
+>   `calmath` (the pure leaf; the mirror + pin dissolved); migration `0059` (calendar FK +
+>   DECLARED coverage + the period key partial-unique + the widened cadence CHECKs; P4 executed
+>   NON-VACUOUSLY); the `BUSINESS_MONTH_END` kind end-to-end (fail-closed head/coverage
+>   resolution, resolve-once threading, the month-grain DB backstop + its own worker classifier
+>   key); **the CAL-1a coverage carry PAID** (forward-only advance); `perf.rolling_risk` v2 +
+>   `perf.sharpe` v2 (assumption-literal conventions, the HOLIDAY_CALENDAR snapshot pin,
+>   grandfather parity pinned byte-identical); demo stage 21 at the REAL 2027-05-28 Memorial-Day
+>   boundary (pause-and-recreate demonstrated; the demo calendar is a TENANT capture of the real
+>   XNYS dataset — a stated refinement: the demo session cannot lawfully write SYSTEM rows).
 >   The four-lane review fold: the checklist's 'no runtime reader' claim was FALSE (the
 >   calendar-detail endpoint reads the table — corrected, kept as history); the PG cross-tenant
 >   test proved the PARENT-head refusal, not the child WITH CHECK (both now pinned separately);

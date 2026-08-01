@@ -8,6 +8,13 @@ from irp_shared.demo.bt3_stage7 import (
     DemoBt3PrereqError,
     run_demo_bt3_stage7,
 )
+from irp_shared.demo.cal1b_stage21 import (
+    Cal1bStage21Summary,
+    DemoCal1bAlreadySeededError,
+    DemoCal1bError,
+    DemoCal1bPrereqError,
+    run_demo_cal1b_stage21,
+)
 from irp_shared.demo.campaign import (
     DEMO_TENANT_ID,
     CampaignSummary,
@@ -236,4 +243,9 @@ __all__ = [
     "DemoOpsPrereqError",
     "OpsStage14Summary",
     "run_demo_ops_stage14",
+    "Cal1bStage21Summary",
+    "DemoCal1bAlreadySeededError",
+    "DemoCal1bError",
+    "DemoCal1bPrereqError",
+    "run_demo_cal1b_stage21",
 ]

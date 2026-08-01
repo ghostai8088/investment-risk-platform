@@ -17,10 +17,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.model.service import (
+    WrongModelVersionError,
+    register_model_version,
+    resolve_or_register_model,
+)
 from irp_shared.perf.bootstrap import (
     ROLLING_RISK_MODEL_CODE,
     ROLLING_RISK_WINDOWS,
+    declared_month_end_parameters,
     register_rolling_risk_model,
+    register_rolling_risk_model_v2,
 )
 from irp_shared.perf.events import RUN_TYPE_ROLLING_RISK, RollingRiskActor
 from irp_shared.perf.models import (
@@ -50,6 +57,12 @@ from irp_shared.perf.rolling_service import (
     run_rolling_risk,
 )
 from irp_shared.portfolio import PortfolioActor, create_portfolio
+from irp_shared.reference.calendar import (
+    HolidaySpec,
+    create_calendar,
+    refresh_calendar_holidays,
+)
+from irp_shared.reference.service import ReferenceActor
 from irp_shared.snapshot import build_rolling_risk_snapshot
 from irp_shared.snapshot.events import SnapshotActor
 
@@ -718,3 +731,217 @@ def test_a_NaN_pinned_return_is_a_REFUSAL_not_an_InvalidOperation(session: Sessi
     for bad in ("NaN", "sNaN", "Infinity", "-Infinity"):
         with pytest.raises(RollingRiskInputError, match="not a finite number"):
             _adjudicate_pins([{**base, "return_value": bad}])
+
+
+# --- CAL-1b: the v2 holiday-aware convention (OQ-CAL-1-2/6) ---------------------------------------
+
+
+def _seed_xnys_calendar(session: Session, tenant: str) -> None:
+    """A tenant-owned XNYS calendar carrying Memorial Day 2027 + a declared horizon, through the
+    governed verbs (the v2 binder resolves it own-OR-SYSTEM by the DECLARED code)."""
+    cal = create_calendar(
+        session,
+        tenant_id=tenant,
+        code="XNYS",
+        name="NYSE",
+        actor=ReferenceActor(actor_id="steward"),
+    )
+    refresh_calendar_holidays(
+        session,
+        cal,
+        actor=ReferenceActor(actor_id="steward"),
+        holidays=[HolidaySpec(holiday_date=date(2027, 5, 31), name="Memorial Day")],
+        complete_through=date(2035, 12, 31),
+    )
+
+
+def _boundaries_ending_2027_05_28(count: int) -> list[date]:
+    """``count`` consecutive month-end boundaries whose LAST is Fri 2027-05-28 — the true last
+    business day before Memorial Day 2027, which the v1 predicate REFUSES."""
+    months = []
+    year, month = 2027, 5
+    for _ in range(count):
+        months.append((year, month))
+        year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+    months.reverse()
+    bounds = [last_weekday_of_month(y, m) for (y, m) in months[:-1]]
+    return [*bounds, date(2027, 5, 28)]
+
+
+def test_the_v1_convention_refuses_the_pre_holiday_business_day(session: Session) -> None:
+    """The forcing function, proven at the binder: a series closing Fri 2027-05-28 is refused by
+    the shipped v1 model — exactly the trap the wave plan recorded."""
+    tenant = str(uuid.uuid4())
+    with pytest.raises(RollingRiskInputError, match="not a month end"):
+        _run_rolling(
+            session,
+            tenant,
+            returns=["0.01"] * 13,
+            boundaries=_boundaries_ending_2027_05_28(14),
+        )
+
+
+def test_the_v2_convention_accepts_it_with_the_pinned_holiday_set(session: Session) -> None:
+    """THE SLICE'S CORE PROOF: the SAME series COMPLETES under v2 — the declared literals resolve
+    the calendar, the snapshot pins the holiday set, and the kernel computes from the PIN."""
+    tenant = str(uuid.uuid4())
+    _seed_xnys_calendar(session, tenant)
+    run, _pf = _seed_return_run(
+        session, tenant, returns=["0.01"] * 13, boundaries=_boundaries_ending_2027_05_28(14)
+    )
+    version = register_rolling_risk_model_v2(
+        session, tenant_id=tenant, actor_id="steward", code_version=_CODE_VERSION
+    )
+    snapshot = build_rolling_risk_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=run.run_id,
+        holiday_calendar_code="XNYS",
+    )
+    result = run_rolling_risk(
+        session,
+        acting_tenant=tenant,
+        actor=_ACTOR,
+        code_version=_CODE_VERSION,
+        environment_id="test",
+        model_version_id=str(version.id),
+        window_months=(12,),
+        snapshot_id=str(snapshot.id),
+    )
+    assert result.status == "COMPLETED"
+    assert result.rows  # governed rows minted under the v2 label
+    assert version.version_label == "v2"
+
+
+def test_a_v2_run_without_the_holiday_pin_is_refused(session: Session) -> None:
+    """AD-014: a v2 run over a snapshot that does not PIN its holiday set must refuse — the
+    kernel never reads calendar_holiday live."""
+    tenant = str(uuid.uuid4())
+    _seed_xnys_calendar(session, tenant)
+    run, _pf = _seed_return_run(session, tenant, returns=["0.01"] * 13)
+    version = register_rolling_risk_model_v2(
+        session, tenant_id=tenant, actor_id="steward", code_version=_CODE_VERSION
+    )
+    snapshot = build_rolling_risk_snapshot(  # NO holiday_calendar_code — a v1-shaped snapshot
+        session, acting_tenant=tenant, actor=_SNAP_ACTOR, portfolio_return_run_id=run.run_id
+    )
+    with pytest.raises(RollingRiskInputError, match="pins no HOLIDAY_CALENDAR"):
+        run_rolling_risk(
+            session,
+            acting_tenant=tenant,
+            actor=_ACTOR,
+            code_version=_CODE_VERSION,
+            environment_id="test",
+            model_version_id=str(version.id),
+            window_months=(12,),
+            snapshot_id=str(snapshot.id),
+        )
+
+
+def test_a_v2_span_beyond_the_declared_coverage_is_refused(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    cal = create_calendar(
+        session, tenant_id=tenant, code="XNYS", name="NYSE", actor=ReferenceActor(actor_id="s")
+    )
+    refresh_calendar_holidays(
+        session,
+        cal,
+        actor=ReferenceActor(actor_id="s"),
+        holidays=[HolidaySpec(holiday_date=date(2027, 5, 31))],
+        complete_through=date(2027, 3, 31),  # short of the series close
+    )
+    run, _pf = _seed_return_run(
+        session, tenant, returns=["0.01"] * 13, boundaries=_boundaries_ending_2027_05_28(14)
+    )
+    version = register_rolling_risk_model_v2(
+        session, tenant_id=tenant, actor_id="steward", code_version=_CODE_VERSION
+    )
+    snapshot = build_rolling_risk_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=run.run_id,
+        holiday_calendar_code="XNYS",
+    )
+    with pytest.raises(RollingRiskInputError, match="declared holiday coverage"):
+        run_rolling_risk(
+            session,
+            acting_tenant=tenant,
+            actor=_ACTOR,
+            code_version=_CODE_VERSION,
+            environment_id="test",
+            model_version_id=str(version.id),
+            window_months=(12,),
+            snapshot_id=str(snapshot.id),
+        )
+
+
+def test_v2_over_a_v1_compliant_book_is_grandfather_parity(session: Session) -> None:
+    """WIDENING, proven end-to-end: the SAME v1-compliant book (weekend-roll boundaries) computes
+    IDENTICAL rows under v1 and v2 — the convention move cannot move a compliant number."""
+    tenant = str(uuid.uuid4())
+    _seed_xnys_calendar(session, tenant)
+    run, _pf = _seed_return_run(session, tenant, returns=["0.01"] * 13)
+    v1 = register_rolling_risk_model(
+        session, tenant_id=tenant, actor_id="steward", code_version=_CODE_VERSION
+    )
+    v2 = register_rolling_risk_model_v2(
+        session, tenant_id=tenant, actor_id="steward", code_version=_CODE_VERSION
+    )
+    snap_v1 = build_rolling_risk_snapshot(
+        session, acting_tenant=tenant, actor=_SNAP_ACTOR, portfolio_return_run_id=run.run_id
+    )
+    snap_v2 = build_rolling_risk_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=run.run_id,
+        holiday_calendar_code="XNYS",
+    )
+    kwargs = dict(
+        acting_tenant=tenant,
+        actor=_ACTOR,
+        code_version=_CODE_VERSION,
+        environment_id="test",
+        window_months=(12,),
+    )
+    r1 = run_rolling_risk(
+        session, model_version_id=str(v1.id), snapshot_id=str(snap_v1.id), **kwargs
+    )
+    r2 = run_rolling_risk(
+        session, model_version_id=str(v2.id), snapshot_id=str(snap_v2.id), **kwargs
+    )
+    assert r1.status == r2.status == "COMPLETED"
+    key = lambda row: (row.metric_type, row.window_months, str(row.period_end))  # noqa: E731
+    v1_rows = {key(r): r.metric_value for r in r1.rows}
+    v2_rows = {key(r): r.metric_value for r in r2.rows}
+    assert v1_rows == v2_rows  # byte-identical numbers — the grandfather proof
+
+
+def test_the_declared_parameters_gate_refuses_a_stray_calendar_literal(
+    session: Session,
+) -> None:
+    """The DS-2 discipline on the new gate: a hand-registered version carrying a
+    holiday_calendar= literal WITHOUT the convention literal is a lying identity — fail-closed."""
+    tenant = str(uuid.uuid4())
+    model = resolve_or_register_model(
+        session,
+        tenant_id=tenant,
+        code=ROLLING_RISK_MODEL_CODE,
+        name="x",
+        model_type="ROLLING_RISK",
+        actor_id="steward",
+        description="x",
+    )
+    version = register_model_version(
+        session,
+        model=model,
+        version_label="v9-stray",
+        actor_id="steward",
+        code_version=_CODE_VERSION,
+        status="REGISTERED",
+        assumptions=("holiday_calendar=XNYS",),  # stray: no month_end_convention row
+    )
+    with pytest.raises(WrongModelVersionError):
+        declared_month_end_parameters(session, version, model_code=ROLLING_RISK_MODEL_CODE)

@@ -8,10 +8,9 @@ existed.
 **The filename is load-bearing** (the standing stage-ordering discipline): ELEVEN ``z`` — verified
 by ``ls`` on the tests directory (con1 = ten), never read off a decision record.
 
-**The count pin is UNCHANGED at 26/41/136 and relays here.** LIM-2 registers no model, records no
-validation, and mints no ``calculation_run``: limits and breaches are neither. So this suite takes
-the FINAL-POSITION pin with the SAME triple CON-1 left, which is a stronger statement than a new
-number would be — it asserts that adding a whole slice moved nothing it should not have moved.
+**The FINAL-POSITION count pin RELAYED ONWARD at CAL-1b (stage 21, the 12-z suite): this file's
+26/41/136 is now a POSITIONAL assertion** — true at this battery position (LIM-2 registers no
+model, records no validation, mints no ``calculation_run``), no longer the battery's last word.
 """
 
 from __future__ import annotations
