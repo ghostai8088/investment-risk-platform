@@ -23,11 +23,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
-from irp_shared.reference.calendar import HolidaySpec, create_calendar
+from irp_shared.reference.calendar import HolidaySpec, create_calendar, refresh_calendar_holidays
 from irp_shared.reference.currency import create_currency
 from irp_shared.reference.models import Calendar, Currency, RatingScale
 from irp_shared.reference.rating import GradeSpec, create_rating_scale
 from irp_shared.reference.service import ReferenceActor
+from irp_shared.reference.xnys_holidays import XNYS_HOLIDAYS
 
 #: Representative global currency slice: (code, name, symbol, minor_units, numeric_code).
 SYSTEM_CURRENCIES: list[tuple[str, str, str, int, str]] = [
@@ -78,7 +79,7 @@ def seed_system_reference(session: Session, *, actor_id: str = "system") -> None
             numeric_code=numeric_code,
         )
 
-    create_calendar(
+    xnys = create_calendar(
         session,
         tenant_id=SYSTEM_TENANT_ID,
         code=SYSTEM_CALENDAR_CODE,
@@ -86,6 +87,15 @@ def seed_system_reference(session: Session, *, actor_id: str = "system") -> None
         actor=actor,
         mic=SYSTEM_CALENDAR_CODE,
         holidays=[HolidaySpec(holiday_date=d, name=n) for d, n in SYSTEM_CALENDAR_HOLIDAYS],
+    )
+    # CAL-1a: the real 2024-2035 XNYS dataset rides the ADD-ONLY refresh verb as its FIRST
+    # execution (OQ-CAL-1-8). The two token dates above are members of the full set, so the
+    # refresh is idempotent over them; the create stays byte-compatible with every earlier pin.
+    refresh_calendar_holidays(
+        session,
+        xnys,
+        actor=actor,
+        holidays=[HolidaySpec(holiday_date=d, name=n) for d, n in XNYS_HOLIDAYS],
     )
 
     create_rating_scale(

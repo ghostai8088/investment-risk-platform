@@ -26,6 +26,22 @@
 >   on main WITH the review fold (F1/F2 mutation-proven, F3/F4, Part 9 adjudication). All four
 >   headline verdicts STAND: budget 8.90% (one-date ≈ 6.74%) — AD-003's trigger NOT fired;
 >   ingestion dominates ~10.9–14.4×; linear (0.928/0.948, not "0.907"); memory flat. NEXT = CAL-1.
+> - **CAL-1 PLANNING RATIFIED (PR #159) + CAL-1a SHIPPED WITH THIS PR (2026-08-01):** `cal_1_decision_record.md`
+>   RATIFIED (OQ-CAL-1-1…12 all as recommended; merged PR #159) — v2 as NEW version labels with
+>   assumption-literal conventions; a NEW `BUSINESS_MONTH_END` cadence kind (legacy grids never
+>   move); the `HOLIDAY_CALENDAR` snapshot pin (AD-014-conformant); the SPLIT: CAL-1a (dataset +
+>   refresh verb + the CTRL-034 diligence control, H-05-approved at the gate — the first CTRL
+>   mint since P0.5) → CAL-1b (the atomic convention move, migration 0059). CAL-1a landed the
+>   118-date XNYS set (2024–2035, Rule 7.2 negatives pinned) + the ADD-ONLY
+>   `refresh_calendar_holidays` verb + the executed checklist. **NAMED CAL-1b CARRY: the verb
+>   gains the `holidays_complete_through` explicit advance (+ forward-only control) WITH
+>   migration 0059 — without it, OQ-4's coverage gate refuses every BUSINESS_MONTH_END tick.**
+>   The four-lane review fold: the checklist's 'no runtime reader' claim was FALSE (the
+>   calendar-detail endpoint reads the table — corrected, kept as history); the PG cross-tenant
+>   test proved the PARENT-head refusal, not the child WITH CHECK (both now pinned separately);
+>   the census gained observance anchors + the exact 9-member 2028/2033 sets after an executed
+>   mutation check showed it missed 5/6 single-date perturbations alone; duplicate specs now
+>   dedupe first-spec-wins instead of crashing mid-flush.
 > - **The operational pattern changed (2026-08-01):** `gh` installed + allowlisted
 >   (`.claude/settings.json`, checked in AT THE LIM-2 CLOSEOUT — it was user-created locally after the classifier refused to let Claude write its own allowlist, which is that control working); branch protection and required checks UNCHANGED as
 >   the machine merge gate; PRs are now created and auto-merged by Claude once auth completes —

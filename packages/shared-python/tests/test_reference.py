@@ -24,8 +24,18 @@ from irp_shared.audit.service import verify_chain
 from irp_shared.entitlement.bootstrap import ALL_CODES, SYSTEM_TENANT_ID
 from irp_shared.lineage.models import DataSource, LineageEdge
 from irp_shared.lineage.service import assert_has_lineage
-from irp_shared.reference.bootstrap import count_seeded, seed_system_reference
-from irp_shared.reference.calendar import HolidaySpec, create_calendar, update_calendar
+from irp_shared.reference.bootstrap import (
+    SYSTEM_CALENDAR_CODE,
+    SYSTEM_CALENDAR_HOLIDAYS,
+    count_seeded,
+    seed_system_reference,
+)
+from irp_shared.reference.calendar import (
+    HolidaySpec,
+    create_calendar,
+    refresh_calendar_holidays,
+    update_calendar,
+)
 from irp_shared.reference.currency import create_currency, update_currency
 from irp_shared.reference.events import (
     REFERENCE_CORRECTION_EVENT,
@@ -43,6 +53,7 @@ from irp_shared.reference.models import (
 )
 from irp_shared.reference.rating import GradeSpec, create_rating_scale, update_rating_scale
 from irp_shared.reference.service import ReferenceActor, dedupe_tenant_wins
+from irp_shared.reference.xnys_holidays import XNYS_HOLIDAYS, XNYS_RULE_72_OPEN_FRIDAYS
 from irp_shared.temporal import TemporalClass
 
 
@@ -490,3 +501,408 @@ def test_audit_after_value_is_metadata_only(session: Session) -> None:
     body = json.dumps(ev.after_value)
     assert set(ev.after_value) == {"code", "name", "is_active", "mic", "holiday_count"}
     assert "2026-01-01" not in body  # no serialized child rows
+
+
+# --- CAL-1a: the ADD-ONLY holiday refresh + the XNYS dataset censuses (OQ-CAL-1-8/-11) ---
+
+
+def test_refresh_calendar_holidays_adds_the_diff_once_and_is_idempotent(session: Session) -> None:
+    tenant = _tenant()
+    cal = create_calendar(
+        session,
+        tenant_id=tenant,
+        code="XTST",
+        name="Refresh target",
+        actor=_actor(),
+        holidays=[
+            HolidaySpec(holiday_date=date(2026, 1, 1), name="NY"),
+            HolidaySpec(holiday_date=date(2026, 12, 25), name="Xmas"),
+        ],
+    )
+    version_before = cal.record_version
+    updates_before = _events(session, REFERENCE_UPDATE_EVENT)
+
+    added = refresh_calendar_holidays(
+        session,
+        cal,
+        actor=_actor(),
+        holidays=[
+            HolidaySpec(holiday_date=date(2026, 1, 1), name="NY"),  # already present
+            HolidaySpec(holiday_date=date(2026, 5, 25), name="Memorial Day"),
+            HolidaySpec(holiday_date=date(2026, 7, 3), name="Independence Day (observed)"),
+        ],
+    )
+    assert added == 2
+    dates = set(
+        session.execute(
+            select(CalendarHoliday.holiday_date).where(CalendarHoliday.calendar_id == cal.id)
+        ).scalars()
+    )
+    assert dates == {date(2026, 1, 1), date(2026, 12, 25), date(2026, 5, 25), date(2026, 7, 3)}
+    assert cal.record_version == version_before + 1
+    assert _events(session, REFERENCE_UPDATE_EVENT) == updates_before + 1
+    ev = (
+        session.execute(
+            select(AuditEvent)
+            .where(AuditEvent.event_type == REFERENCE_UPDATE_EVENT, AuditEvent.entity_id == cal.id)
+            .order_by(AuditEvent.sequence_no.desc())
+        )
+        .scalars()
+        .first()
+    )
+    assert ev is not None
+    assert ev.before_value == {"holiday_count": 2}
+    assert ev.after_value == {
+        "holiday_count": 4,
+        "holidays_added": 2,
+        "added_from": "2026-05-25",
+        "added_through": "2026-07-03",
+    }
+
+    # Idempotent re-run: nothing added, no version bump, NO event.
+    added_again = refresh_calendar_holidays(
+        session,
+        cal,
+        actor=_actor(),
+        holidays=[
+            HolidaySpec(holiday_date=date(2026, 5, 25), name="Memorial Day"),
+            HolidaySpec(holiday_date=date(2026, 7, 3), name="Independence Day (observed)"),
+        ],
+    )
+    assert added_again == 0
+    assert cal.record_version == version_before + 1
+    assert _events(session, REFERENCE_UPDATE_EVENT) == updates_before + 1
+
+
+def test_refresh_is_add_only_a_subset_input_deletes_nothing(session: Session) -> None:
+    # The negative control on the verb's central claim: absence from the input is NOT removal.
+    tenant = _tenant()
+    cal = create_calendar(
+        session,
+        tenant_id=tenant,
+        code="XSUB",
+        name="Subset target",
+        actor=_actor(),
+        holidays=[
+            HolidaySpec(holiday_date=date(2026, 1, 1), name="NY"),
+            HolidaySpec(holiday_date=date(2026, 12, 25), name="Xmas"),
+        ],
+    )
+    added = refresh_calendar_holidays(
+        session, cal, actor=_actor(), holidays=[HolidaySpec(holiday_date=date(2026, 1, 1))]
+    )
+    assert added == 0
+    remaining = set(
+        session.execute(
+            select(CalendarHoliday.holiday_date).where(CalendarHoliday.calendar_id == cal.id)
+        ).scalars()
+    )
+    assert remaining == {date(2026, 1, 1), date(2026, 12, 25)}
+
+
+def test_refresh_never_mutates_an_existing_child(session: Session) -> None:
+    # An already-present date wins AS STORED: a differing name in the input is ignored.
+    tenant = _tenant()
+    cal = create_calendar(
+        session,
+        tenant_id=tenant,
+        code="XMUT",
+        name="Mutation target",
+        actor=_actor(),
+        holidays=[HolidaySpec(holiday_date=date(2026, 1, 1), name="New Year's Day")],
+    )
+    version_before = cal.record_version
+    updates_before = _events(session, REFERENCE_UPDATE_EVENT)
+    added = refresh_calendar_holidays(
+        session,
+        cal,
+        actor=_actor(),
+        holidays=[HolidaySpec(holiday_date=date(2026, 1, 1), name="RENAMED")],
+    )
+    row = session.execute(
+        select(CalendarHoliday).where(CalendarHoliday.calendar_id == cal.id)
+    ).scalar_one()
+    assert row.name == "New Year's Day"
+    assert row.record_version == 1
+    # A rename-ignored refresh that still emitted an event would be an audit lie (review fold).
+    assert added == 0
+    assert cal.record_version == version_before
+    assert _events(session, REFERENCE_UPDATE_EVENT) == updates_before
+
+
+def test_the_xnys_dataset_census(session: Session) -> None:
+    """The DOUBLE census (OQ-CAL-1-8): structure + anchor pins AND the Rule 7.2 negatives.
+
+    The set is hand-encoded literals. This census pins per-year COUNTS, the tricky observance
+    ANCHORS, and the negatives; FULL membership is pinned by the independent rule re-derivation
+    test below — the review fold executed a mutation check proving the pair is needed (the census
+    alone missed 5 of 6 single-date perturbations; the derivation caught all 6)."""
+    dates = [d for d, _ in XNYS_HOLIDAYS]
+    dset = set(dates)
+    assert len(dates) == len(dset) == 118  # no duplicates; the full 2024-2035 count
+    per_year = {y: sum(1 for d in dates if d.year == y) for y in range(2024, 2036)}
+    # 2028 and 2033 carry NINE: Saturday New Year's unobserved (NYSE Rule 7.2).
+    assert per_year == {
+        2024: 10,
+        2025: 10,
+        2026: 10,
+        2027: 10,
+        2028: 9,
+        2029: 10,
+        2030: 10,
+        2031: 10,
+        2032: 10,
+        2033: 9,
+        2034: 10,
+        2035: 10,
+    }
+    # Every observed closure is a weekday (Sat/Sun holidays are substituted or unobserved).
+    assert all(d.weekday() < 5 for d in dates)
+    # The four last-weekday month-end collisions the scheduler's recorded limitation quantifies.
+    assert {date(2024, 3, 29), date(2027, 5, 31), date(2029, 3, 30), date(2032, 5, 31)} <= dset
+    # The Rule 7.2 NEGATIVES: these Fridays are TRADING days; a naive observance rule adds them.
+    assert XNYS_RULE_72_OPEN_FRIDAYS == (date(2027, 12, 31), date(2032, 12, 31))
+    assert dset.isdisjoint(XNYS_RULE_72_OPEN_FRIDAYS)
+    # The two token seed dates are members, so the seed's refresh is idempotent over them.
+    assert {d for d, _ in SYSTEM_CALENDAR_HOLIDAYS} <= dset
+    # Anchor pins (review fold): the observance dates a wrong rule plausibly gets wrong -- known
+    # published Good Fridays, Sat->Fri and Sun->Mon substitutions near month/year boundaries.
+    assert {
+        date(2025, 4, 18),  # Good Friday 2025 (published)
+        date(2026, 4, 3),  # Good Friday 2026 (published)
+        date(2026, 7, 3),  # Independence Day observed (Jul 4 Saturday)
+        date(2027, 7, 5),  # Independence Day observed (Jul 4 Sunday)
+        date(2027, 12, 24),  # Christmas observed (Dec 25 Saturday; NOT a month-end Friday)
+        date(2032, 6, 18),  # Juneteenth observed (Jun 19 Saturday)
+        date(2033, 6, 20),  # Juneteenth observed (Jun 19 Sunday)
+        date(2033, 12, 26),  # Christmas observed (Dec 25 Sunday; stays in-month)
+        date(2034, 1, 2),  # New Year observed (Jan 1 Sunday; stays in-year)
+    } <= dset
+    # The exact 9-member sets for the two Rule 7.2 years (New Year's Day unobserved).
+    assert {d for d in dates if d.year == 2028} == {
+        date(2028, 1, 17),
+        date(2028, 2, 21),
+        date(2028, 4, 14),
+        date(2028, 5, 29),
+        date(2028, 6, 19),
+        date(2028, 7, 4),
+        date(2028, 9, 4),
+        date(2028, 11, 23),
+        date(2028, 12, 25),
+    }
+    assert {d for d in dates if d.year == 2033} == {
+        date(2033, 1, 17),
+        date(2033, 2, 21),
+        date(2033, 4, 15),
+        date(2033, 5, 30),
+        date(2033, 6, 20),
+        date(2033, 7, 4),
+        date(2033, 9, 5),
+        date(2033, 11, 24),
+        date(2033, 12, 26),
+    }
+
+
+def test_the_xnys_dataset_agrees_with_an_independent_rule_derivation(session: Session) -> None:
+    """Cross-check the hand-encoded literals against an INDEPENDENT in-test derivation
+    (statutory definitions + observance incl. the Rule 7.2 year-end exception). Two encodings
+    agreeing is the strongest offline check available; the published-calendar citation lives in
+    the diligence checklist (Execution 1) and the decision record's Part 5."""
+    from datetime import timedelta
+
+    def easter_sunday(year: int) -> date:
+        a = year % 19
+        century, rem = divmod(year, 100)
+        d_, e_ = divmod(century, 4)
+        f_ = (century + 8) // 25
+        g_ = (century - f_ + 1) // 3
+        h_ = (19 * a + century - d_ - g_ + 15) % 30
+        i_, k_ = divmod(rem, 4)
+        l_ = (32 + 2 * e_ + 2 * i_ - h_ - k_) % 7
+        m_ = (a + 11 * h_ + 22 * l_) // 451
+        month, day = divmod(h_ + l_ - 7 * m_ + 114, 31)
+        return date(year, month, day + 1)
+
+    def nth_monday(year: int, month: int, n: int) -> date:
+        first = date(year, month, 1)
+        return first + timedelta(days=(0 - first.weekday()) % 7, weeks=n - 1)
+
+    def last_monday_of_may(year: int) -> date:
+        d = date(year, 5, 31)
+        return d - timedelta(days=(d.weekday() - 0) % 7)
+
+    def fourth_thursday_of_november(year: int) -> date:
+        first = date(year, 11, 1)
+        return first + timedelta(days=(3 - first.weekday()) % 7, weeks=3)
+
+    expected: set[date] = set()
+    for year in range(2024, 2036):
+        for nominal in (
+            date(year, 1, 1),
+            nth_monday(year, 1, 3),
+            nth_monday(year, 2, 3),
+            easter_sunday(year) - timedelta(days=2),
+            last_monday_of_may(year),
+            date(year, 6, 19),
+            date(year, 7, 4),
+            nth_monday(year, 9, 1),
+            fourth_thursday_of_november(year),
+            date(year, 12, 25),
+        ):
+            if nominal.weekday() == 5:
+                substitute = nominal - timedelta(days=1)
+                if substitute.month != (substitute + timedelta(days=1)).month:
+                    # Rule 7.2: the substitute Friday is a month-end -> exchange OPEN.
+                    # (Last-CALENDAR-day check == last-BUSINESS-day here: the only
+                    # triggering case is Saturday Jan 1, whose substitute is Dec 31.)
+                    continue
+                expected.add(substitute)
+            elif nominal.weekday() == 6:
+                expected.add(nominal + timedelta(days=1))
+            else:
+                expected.add(nominal)
+    assert {d for d, _ in XNYS_HOLIDAYS} == expected
+
+
+def test_seed_system_reference_loads_the_full_xnys_set(session: Session) -> None:
+    seed_system_reference(session, actor_id="system")
+    xnys = session.execute(
+        select(Calendar).where(
+            Calendar.tenant_id == SYSTEM_TENANT_ID, Calendar.code == SYSTEM_CALENDAR_CODE
+        )
+    ).scalar_one()
+    n = session.execute(
+        select(func.count())
+        .select_from(CalendarHoliday)
+        .where(CalendarHoliday.calendar_id == xnys.id)
+    ).scalar_one()
+    assert n == len(XNYS_HOLIDAYS) == 118
+    # Exactly ONE REFERENCE.UPDATE on the SYSTEM chain: the refresh's single parent event.
+    updates = session.execute(
+        select(func.count())
+        .select_from(AuditEvent)
+        .where(
+            AuditEvent.event_type == REFERENCE_UPDATE_EVENT,
+            AuditEvent.tenant_id == SYSTEM_TENANT_ID,
+        )
+    ).scalar_one()
+    assert updates == 1
+    assert verify_chain(session, SYSTEM_TENANT_ID).ok is True
+
+
+def test_refresh_dedupes_duplicate_specs_first_wins(session: Session) -> None:
+    """Duplicate specs for one NEW date in ONE input dedupe first-spec-wins (review fold: the
+    pre-fold verb inserted both and crashed on the child UNIQUE mid-flush)."""
+    tenant = _tenant()
+    cal = create_calendar(session, tenant_id=tenant, code="XDUP", name="Dup target", actor=_actor())
+    added = refresh_calendar_holidays(
+        session,
+        cal,
+        actor=_actor(),
+        holidays=[
+            HolidaySpec(holiday_date=date(2026, 5, 25), name="Memorial Day"),
+            HolidaySpec(holiday_date=date(2026, 5, 25), name="DUPLICATE-LOSES"),
+        ],
+    )
+    assert added == 1
+    row = session.execute(
+        select(CalendarHoliday).where(CalendarHoliday.calendar_id == cal.id)
+    ).scalar_one()
+    assert row.name == "Memorial Day"
+
+
+def test_refresh_with_an_empty_input_is_a_no_op(session: Session) -> None:
+    tenant = _tenant()
+    cal = create_calendar(
+        session, tenant_id=tenant, code="XEMP", name="Empty target", actor=_actor()
+    )
+    version_before = cal.record_version
+    updates_before = _events(session, REFERENCE_UPDATE_EVENT)
+    assert refresh_calendar_holidays(session, cal, actor=_actor(), holidays=[]) == 0
+    assert cal.record_version == version_before
+    assert _events(session, REFERENCE_UPDATE_EVENT) == updates_before
+
+
+def test_a_second_effective_refresh_recounts_and_a_mixed_input_counts_only_new(
+    session: Session,
+) -> None:
+    """The event's before/after recount from the live child set on EACH refresh, and a mixed
+    rename-plus-addition input counts ONLY the new dates (the rename stays ignored)."""
+    tenant = _tenant()
+    cal = create_calendar(
+        session,
+        tenant_id=tenant,
+        code="XSEQ",
+        name="Sequence target",
+        actor=_actor(),
+        holidays=[HolidaySpec(holiday_date=date(2026, 1, 1), name="New Year's Day")],
+    )
+    refresh_calendar_holidays(
+        session, cal, actor=_actor(), holidays=[HolidaySpec(holiday_date=date(2026, 5, 25))]
+    )
+    added = refresh_calendar_holidays(
+        session,
+        cal,
+        actor=_actor(),
+        holidays=[
+            HolidaySpec(holiday_date=date(2026, 1, 1), name="RENAMED-IGNORED"),
+            HolidaySpec(holiday_date=date(2026, 12, 25), name="Christmas Day"),
+        ],
+    )
+    assert added == 1
+    ev = (
+        session.execute(
+            select(AuditEvent)
+            .where(AuditEvent.event_type == REFERENCE_UPDATE_EVENT, AuditEvent.entity_id == cal.id)
+            .order_by(AuditEvent.sequence_no.desc())
+        )
+        .scalars()
+        .first()
+    )
+    assert ev is not None
+    assert ev.before_value == {"holiday_count": 2}
+    assert ev.after_value == {
+        "holiday_count": 3,
+        "holidays_added": 1,
+        "added_from": "2026-12-25",
+        "added_through": "2026-12-25",
+    }
+
+
+def test_refresh_rolls_back_children_and_version_when_audit_fails(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refresh verb's OWN fail-closed pin (review fold: it was inherited from the create
+    path, not pinned per-verb): an audit failure discards the children AND the version bump."""
+    import irp_shared.reference.service as reference_service
+
+    tenant = _tenant()
+    cal = create_calendar(
+        session, tenant_id=tenant, code="XAUD", name="Audit-fail target", actor=_actor()
+    )
+    version_before = cal.record_version
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("audit capture failed")
+
+    monkeypatch.setattr(reference_service, "record_event", _boom)
+    nested = session.begin_nested()  # the caller-owned rollback unit; the setup calendar survives
+    with pytest.raises(RuntimeError):
+        refresh_calendar_holidays(
+            session,
+            cal,
+            actor=_actor(),
+            holidays=[HolidaySpec(holiday_date=date(2026, 5, 25), name="Memorial Day")],
+        )
+    nested.rollback()
+    session.expire_all()
+    assert (
+        session.execute(
+            select(func.count())
+            .select_from(CalendarHoliday)
+            .where(CalendarHoliday.calendar_id == cal.id)
+        ).scalar_one()
+        == 0
+    )
+    refreshed = session.execute(select(Calendar).where(Calendar.id == cal.id)).scalar_one()
+    assert refreshed.record_version == version_before

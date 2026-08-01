@@ -24,7 +24,7 @@ import uuid
 from datetime import date
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.pool import NullPool
@@ -35,9 +35,9 @@ from irp_shared.db.tenant import set_tenant_context
 from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.lineage.service import assert_has_lineage
 from irp_shared.reference.bootstrap import seed_system_reference
-from irp_shared.reference.calendar import HolidaySpec, create_calendar
+from irp_shared.reference.calendar import HolidaySpec, create_calendar, refresh_calendar_holidays
 from irp_shared.reference.currency import create_currency
-from irp_shared.reference.models import HYBRID_TABLES, CalendarHoliday, Currency
+from irp_shared.reference.models import HYBRID_TABLES, Calendar, CalendarHoliday, Currency
 from irp_shared.reference.service import ReferenceActor
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
@@ -391,6 +391,162 @@ def test_seed_system_reference_under_system_context(app_url: str) -> None:
         a = str(uuid.uuid4())
         set_tenant_context(session, a)
         assert session.execute(text("SELECT count(*) FROM currency")).scalar_one() >= n_cur
+    finally:
+        session.close()
+        engine.dispose()
+
+
+# --- CAL-1a: the ADD-ONLY holiday refresh under real RLS (OQ-CAL-1-11) ---
+
+
+def test_refresh_calendar_holidays_under_system_context_then_tenant_read(app_url: str) -> None:
+    """SYSTEM refresh adds the diff once (idempotent on re-run), and a real tenant READS the
+    refreshed SYSTEM holidays through the hybrid USING disjunct."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    session = factory()
+    try:
+        set_tenant_context(session, SYSTEM_TENANT_ID)
+        cal = create_calendar(
+            session,
+            tenant_id=SYSTEM_TENANT_ID,
+            code="XRF1",
+            name="Refresh PG target",
+            actor=ReferenceActor(actor_id="a"),
+            holidays=[HolidaySpec(holiday_date=date(2026, 1, 1), name="NY")],
+        )
+        session.commit()
+
+        set_tenant_context(session, SYSTEM_TENANT_ID)
+        added = refresh_calendar_holidays(
+            session,
+            cal,
+            actor=ReferenceActor(actor_id="a"),
+            holidays=[
+                HolidaySpec(holiday_date=date(2026, 1, 1), name="NY"),
+                HolidaySpec(holiday_date=date(2026, 7, 3), name="Independence Day (observed)"),
+            ],
+        )
+        assert added == 1
+        session.commit()
+
+        set_tenant_context(session, SYSTEM_TENANT_ID)
+        added_again = refresh_calendar_holidays(
+            session,
+            cal,
+            actor=ReferenceActor(actor_id="a"),
+            holidays=[HolidaySpec(holiday_date=date(2026, 7, 3))],
+        )
+        assert added_again == 0
+        session.commit()
+
+        tenant = str(uuid.uuid4())
+        set_tenant_context(session, tenant)
+        visible = session.execute(
+            text("SELECT count(*) FROM calendar_holiday WHERE calendar_id = CAST(:i AS uuid)"),
+            {"i": cal.id},
+        ).scalar_one()
+        assert visible == 2
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_refresh_of_a_system_calendar_from_a_tenant_context_is_rls_refused(app_url: str) -> None:
+    """The cross-tenant negative control on the verb, stated HONESTLY (review fold): the verb's
+    flush emits the parent-head version-bump UPDATE before the child INSERT, so the refusal that
+    fires through the verb is the own-only WITH CHECK on the CALENDAR UPDATE -- asserted by table
+    name below. The child stamp's own WITH CHECK is isolated by the companion test."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    setup = factory()
+    try:
+        set_tenant_context(setup, SYSTEM_TENANT_ID)
+        create_calendar(
+            setup,
+            tenant_id=SYSTEM_TENANT_ID,
+            code="XRF2",
+            name="RLS refusal target",
+            actor=ReferenceActor(actor_id="a"),
+            holidays=[HolidaySpec(holiday_date=date(2026, 1, 1), name="NY")],
+        )
+        setup.commit()
+    finally:
+        setup.close()
+
+    tenant = str(uuid.uuid4())
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        cal = session.execute(
+            select(Calendar).where(Calendar.tenant_id == SYSTEM_TENANT_ID, Calendar.code == "XRF2")
+        ).scalar_one()  # visible under the USING disjunct -- the realistic attack surface
+        with pytest.raises(ProgrammingError) as exc:
+            refresh_calendar_holidays(
+                session,
+                cal,
+                actor=ReferenceActor(actor_id="intruder"),
+                holidays=[HolidaySpec(holiday_date=date(2026, 12, 25), name="Xmas")],
+            )
+        assert _is_rls_violation(exc.value)
+        # The refusal fires on the PARENT head (the verb's flush order puts the UPDATE first);
+        # 'for table "calendar"' with the closing quote cannot match calendar_holiday.
+        assert 'table "calendar"' in str(exc.value)
+        session.rollback()
+        # And the SYSTEM calendar is untouched: still exactly ONE holiday.
+        set_tenant_context(session, tenant)
+        n = session.execute(
+            text("SELECT count(*) FROM calendar_holiday WHERE calendar_id = CAST(:i AS uuid)"),
+            {"i": cal.id},
+        ).scalar_one()
+        assert n == 1
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_a_system_stamped_holiday_child_is_itself_rls_refused_under_a_tenant_context(
+    app_url: str,
+) -> None:
+    """Isolates the CHILD stamp's own WITH CHECK (review fold): the verb's parent-head refusal
+    fires first and would MASK a server-stamping regression -- so this control inserts a
+    SYSTEM-stamped calendar_holiday row directly under an intruder tenant context and asserts
+    the refusal names the CHILD table. If the stamp ever regressed to the session tenant, the
+    row would INSERT cleanly cross-tenant and this test would fail on the missing refusal."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    setup = factory()
+    try:
+        set_tenant_context(setup, SYSTEM_TENANT_ID)
+        target = create_calendar(
+            setup,
+            tenant_id=SYSTEM_TENANT_ID,
+            code="XRF3",
+            name="Child WITH CHECK target",
+            actor=ReferenceActor(actor_id="a"),
+        )
+        setup.commit()
+        target_id = target.id
+    finally:
+        setup.close()
+
+    session = factory()
+    try:
+        set_tenant_context(session, str(uuid.uuid4()))
+        session.add(
+            CalendarHoliday(
+                tenant_id=SYSTEM_TENANT_ID,  # the server-stamp the verb applies
+                calendar_id=target_id,
+                holiday_date=date(2026, 5, 25),
+                name="Memorial Day",
+                record_version=1,
+            )
+        )
+        with pytest.raises(ProgrammingError) as exc:
+            session.flush()
+        assert _is_rls_violation(exc.value)
+        assert 'table "calendar_holiday"' in str(exc.value)
+        session.rollback()
     finally:
         session.close()
         engine.dispose()
