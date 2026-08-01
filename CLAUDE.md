@@ -18,9 +18,16 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
   to `main` Claude's call too — via the GitHub REST API with the keychain-cached credential; branch
   protection's required status checks stay on, and the adversarial review + `make check` + full-PG +
   CI-to-green gates are the merge preconditions that replaced the human merge gate (never merge before they
-  all pass). *(Operational note, Wave-6 close 2026-07-16: the auto-mode permission classifier blocks
-  Claude's REST PR create/merge on this repo, so in practice Claude pushes the branch and hands the compare
-  link and the USER opens + merges; the grant and its quality-gate preconditions stand unchanged.)* Still surface genuine decisions (Tier-3 methodology/model/grain/entity sign-offs, design forks,
+  all pass). *(Operational note, REPLACED 2026-08-01 — the Wave-6 workaround is RETIRED, with executed
+  evidence: PRs #156 and #157 were created, check-watched and merged autonomously via the `gh` CLI.
+  The mechanics: `gh` at `~/.local/bin/gh`, authenticated via the device flow; the allowlist in the
+  checked-in `.claude/settings.json` (which the classifier correctly refused to let Claude write
+  for itself — the user created it); branch protection + required status checks UNCHANGED as the
+  machine merge gate. Auto-merge is not enabled repo-side, so the pattern is `gh pr create` →
+  `gh pr checks --watch` → `gh pr merge --merge`; a PR landing invalidates sibling PRs' contexts
+  (update the branch and re-watch). The 2026-07-16 root cause, found only at retirement: every
+  earlier auth attempt SUCCEEDED at GitHub and then failed writing the token into a root-owned
+  `~/.config` from 2021.)* Still surface genuine decisions (Tier-3 methodology/model/grain/entity sign-offs, design forks,
   scope/ambiguity) and anything hard-to-reverse or outward-facing beyond the repo itself. The next slice
   comes from the roadmap sequence by default.
 - **`packages/shared-python/src/irp_shared/audit/service.py` is FROZEN** — never modify it.
