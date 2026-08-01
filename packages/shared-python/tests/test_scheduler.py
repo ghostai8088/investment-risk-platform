@@ -16,7 +16,15 @@ from sqlalchemy.orm import Session
 from irp_shared.audit.models import AppendOnlyViolation, AuditEvent
 from irp_shared.model.models import Model, ModelVersion
 from irp_shared.portfolio.models import Portfolio
+from irp_shared.reference.calendar import (
+    HolidaySpec,
+    create_calendar,
+    refresh_calendar_holidays,
+)
+from irp_shared.reference.models import Calendar
+from irp_shared.reference.service import ReferenceActor
 from irp_shared.scheduling.events import (
+    CADENCE_BUSINESS_MONTH_END,
     CADENCE_CALENDAR_MONTH_END,
     OUTCOME_DISPATCHED,
     SCHEDULE_CREATE_EVENT,
@@ -261,7 +269,8 @@ def test_select_active_due_returns_the_current_tick_for_a_fresh_schedule(
     now = datetime(2026, 1, 20, tzinfo=UTC)
     due = select_active_due(session, now, acting_tenant=tenant)
     assert len(due) == 1
-    got_sched, got_tick = due[0]
+    got_sched, got_tick, got_holidays = due[0]
+    assert got_holidays is None  # legacy kinds carry no resolved holiday set (CAL-1b)
     assert got_sched.id == sched.id
     assert got_tick == datetime(2026, 1, 15, tzinfo=UTC)  # current tick, not the anchor
 
@@ -534,7 +543,7 @@ def test_an_unresolvable_cadence_is_skipped_not_raised(session: Session) -> None
 
     due = select_active_due(session, datetime(2026, 1, 15, tzinfo=UTC), acting_tenant=tenant)
 
-    ids = [s.id for s, _tick in due]
+    ids = [s.id for s, _tick, _hol in due]
     assert healthy.id in ids, "the healthy sibling was starved by its poisoned neighbour"
     assert poisoned.id not in ids
 
@@ -552,11 +561,11 @@ def test_a_runaway_interval_is_skipped_rather_than_killing_the_tenants_cycle(
     session.flush()
 
     due = select_active_due(session, datetime(2026, 1, 15, tzinfo=UTC), acting_tenant=tenant)
-    assert [s.id for s, _t in due] == [
-        s.id for s, _t in due if s.id in {healthy.id, runaway.id}
+    assert [s.id for s, _t, _h in due] == [
+        s.id for s, _t, _h in due if s.id in {healthy.id, runaway.id}
     ]  # sanity: only our two schedules are in play
-    assert healthy.id in [s.id for s, _t in due]
-    assert runaway.id not in [s.id for s, _t in due]
+    assert healthy.id in [s.id for s, _t, _h in due]
+    assert runaway.id not in [s.id for s, _t, _h in due]
 
 
 def test_current_tick_converts_the_overflow_into_a_clean_schedule_error() -> None:
@@ -636,3 +645,231 @@ def test_redaction_leaves_a_curated_domain_reason_untouched() -> None:
     """It must not mangle the ordinary case — the pre-create refusals raise plain sentences."""
     reason = "ScheduleError: no COMPLETED covariance run for the tenant"
     assert redact_failure_reason(reason) == reason
+
+
+# --- CAL-1b: the BUSINESS_MONTH_END cadence (OQ-CAL-1-3/4/5) --------------------------------------
+
+
+def _mk_holiday_calendar(
+    session: Session,
+    tenant: str,
+    *,
+    complete_through: dt_date | None = dt_date(2035, 12, 31),
+    holidays: tuple[dt_date, ...] = (dt_date(2027, 5, 31),),
+) -> Calendar:
+    """A tenant-owned calendar carrying Memorial Day 2027 (the forcing-function collision) and a
+    DECLARED coverage horizon, written through the governed refresh verb."""
+    cal = create_calendar(
+        session,
+        tenant_id=tenant,
+        code=f"CAL{uuid.uuid4().hex[:6].upper()}",
+        name="test calendar",
+        actor=ReferenceActor(actor_id="steward"),
+    )
+    refresh_calendar_holidays(
+        session,
+        cal,
+        actor=ReferenceActor(actor_id="steward"),
+        holidays=[HolidaySpec(holiday_date=d) for d in holidays],
+        complete_through=complete_through,
+    )
+    return cal
+
+
+def _mk_business(session: Session, tenant: str, cal: Calendar, **over: object) -> Schedule:
+    kwargs: dict[str, object] = {
+        "target_run_type": "EXPOSURE_AGGREGATE",
+        "model_version_id": None,
+        "interval_days": None,
+        "cadence_kind": CADENCE_BUSINESS_MONTH_END,
+        "calendar_id": str(cal.id),
+        "anchor_date": dt_date(2027, 1, 1),
+    }
+    kwargs.update(over)
+    return _mk(session, tenant, **kwargs)
+
+
+def test_business_month_end_tick_rolls_past_the_holiday(session: Session) -> None:
+    """THE POINT OF THE SLICE: at a June-2027 poll, the BUSINESS grid resolves Fri 2027-05-28 EOD
+    (Memorial Day Mon 2027-05-31 is the last WEEKDAY — the v1 grid would tick ON the holiday)."""
+    holidays = frozenset({dt_date(2027, 5, 31)})
+    tick = current_tick(
+        dt_date(2027, 1, 1),
+        None,
+        datetime(2027, 6, 1, 6, 5, tzinfo=UTC),
+        cadence_kind=CADENCE_BUSINESS_MONTH_END,
+        holidays=holidays,
+    )
+    assert tick.date() == dt_date(2027, 5, 28)
+    assert (tick.hour, tick.minute, tick.second) == (23, 59, 59)
+    # And the legacy kind on the same instant computes the HOLIDAY date — the trap made visible.
+    legacy = current_tick(
+        dt_date(2027, 1, 1),
+        None,
+        datetime(2027, 6, 1, 6, 5, tzinfo=UTC),
+        cadence_kind=CADENCE_CALENDAR_MONTH_END,
+    )
+    assert legacy.date() == dt_date(2027, 5, 31)
+
+
+def test_business_month_end_without_a_holiday_set_fails_closed(session: Session) -> None:
+    """A holiday-blind BUSINESS tick would be silently indistinguishable from the legacy kind —
+    refused, never degraded (the LIM-1 fail-open standard, OQ-CAL-1-4)."""
+    with pytest.raises(ScheduleError, match="resolved holiday set"):
+        current_tick(
+            dt_date(2027, 1, 1),
+            None,
+            datetime(2027, 6, 1, tzinfo=UTC),
+            cadence_kind=CADENCE_BUSINESS_MONTH_END,
+        )
+
+
+def test_validate_config_calendar_required_xor_forbidden(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="calendar_id is required"):
+        _mk(
+            session,
+            tenant,
+            target_run_type="EXPOSURE_AGGREGATE",
+            model_version_id=None,
+            interval_days=None,
+            cadence_kind=CADENCE_BUSINESS_MONTH_END,
+        )
+    with pytest.raises(ScheduleError, match="calendar_id is meaningless"):
+        _mk(session, tenant, calendar_id=str(uuid.uuid4()))  # INTERVAL + calendar
+
+
+def test_create_schedule_refuses_an_invisible_calendar(session: Session) -> None:
+    """The own-OR-SYSTEM guard (the SECOND symmetric→hybrid FK): a random/foreign calendar id is
+    refused BEFORE it is stamped (PG FK checks bypass RLS)."""
+    tenant = str(uuid.uuid4())
+    cal = _mk_holiday_calendar(session, tenant)
+    with pytest.raises(ScheduleError, match="not visible"):
+        _mk_business(session, tenant, cal, calendar_id=str(uuid.uuid4()))
+    # A cross-tenant calendar is equally refused.
+    other = str(uuid.uuid4())
+    foreign = _mk_holiday_calendar(session, other)
+    with pytest.raises(ScheduleError, match="not visible"):
+        _mk_business(session, tenant, foreign)
+
+
+def test_select_active_due_resolves_the_holiday_set_and_the_covered_tick(
+    session: Session,
+) -> None:
+    tenant = str(uuid.uuid4())
+    cal = _mk_holiday_calendar(session, tenant)
+    sched = _mk_business(session, tenant, cal)
+    due = select_active_due(session, datetime(2027, 6, 1, 6, 5, tzinfo=UTC), acting_tenant=tenant)
+    assert len(due) == 1
+    got_sched, got_tick, got_holidays = due[0]
+    assert got_sched.id == sched.id
+    assert got_tick.date() == dt_date(2027, 5, 28)  # rolled past Memorial Day
+    assert got_holidays == frozenset({dt_date(2027, 5, 31)})
+
+
+def test_an_uncovered_month_is_skipped_not_weekday_computed(session: Session) -> None:
+    """Coverage short of the tick month: SKIP-AND-REPORT (fail-closed), never a silent
+    weekday-only answer (OQ-CAL-1-4)."""
+    tenant = str(uuid.uuid4())
+    cal = _mk_holiday_calendar(session, tenant, complete_through=dt_date(2026, 12, 31))
+    _mk_business(session, tenant, cal)
+    assert select_active_due(session, datetime(2027, 6, 1, tzinfo=UTC), acting_tenant=tenant) == []
+
+
+def test_a_calendar_with_no_declared_coverage_is_skipped(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    cal = _mk_holiday_calendar(session, tenant, complete_through=None)
+    _mk_business(session, tenant, cal)
+    assert select_active_due(session, datetime(2027, 6, 1, tzinfo=UTC), acting_tenant=tenant) == []
+
+
+def test_dispatch_stamps_the_period_key_and_the_write_boundary_sees_the_polled_set(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The full poll→dispatch path for the new kind: the FAILED row (recorded through
+    record_failed_dispatch, which shares _assert_current_tick with dispatch_one) carries
+    period_key '2027-05', and the write boundary recomputes the tick against the SAME holiday
+    set the poll resolved (INV-SCH-1 under CAL-1b)."""
+    tenant = str(uuid.uuid4())
+    cal = _mk_holiday_calendar(session, tenant)
+    _mk_business(session, tenant, cal)
+    now = datetime(2027, 6, 1, 6, 5, tzinfo=UTC)
+    ((sched, tick, holidays),) = select_active_due(session, now, acting_tenant=tenant)
+    row = record_failed_dispatch(session, sched, tick, now, "boom", holidays=holidays)
+    assert row.period_key == "2027-05"
+    assert row.scheduled_for.date() == dt_date(2027, 5, 28)
+    # WITHOUT the polled set the write boundary cannot recompute the BUSINESS tick — fail-closed.
+    with pytest.raises(ScheduleError, match="resolved holiday set"):
+        record_failed_dispatch(session, sched, tick, now, "boom")
+
+
+def test_the_period_polite_layer_holds_a_served_month(session: Session) -> None:
+    """A holiday refresh that re-values an already-served month's INSTANT must not double-fire:
+    the month-grain due check finds the period occupied and skips (the DB partial unique is the
+    hard backstop for the concurrent race this read cannot close)."""
+    tenant = str(uuid.uuid4())
+    cal = _mk_holiday_calendar(session, tenant)
+    _mk_business(session, tenant, cal)
+    now = datetime(2027, 6, 1, 6, 5, tzinfo=UTC)
+    ((s0, tick, holidays),) = select_active_due(session, now, acting_tenant=tenant)
+    record_failed_dispatch(session, s0, tick, now, "boom", holidays=holidays)
+    # The month is now SERVED. Re-value the grid: add a holiday that moves the tick instant
+    # (2027-05-28 becomes a holiday too -> the business roll lands on 2027-05-27).
+    refresh_calendar_holidays(
+        session,
+        cal,
+        actor=ReferenceActor(actor_id="steward"),
+        holidays=[HolidaySpec(holiday_date=dt_date(2027, 5, 28))],
+    )
+    assert select_active_due(session, now, acting_tenant=tenant) == []  # served, not double-fired
+
+
+def test_a_month_exhausting_holiday_set_is_skipped_not_a_tenant_abort(session: Session) -> None:
+    """The review's HIGH: calmath's exhausted-month ValueError previously escaped the
+    ScheduleError-only skip-and-report and aborted ALL FOUR tick phases. Now converted at
+    current_tick — the poisoned schedule skips, the healthy sibling still polls."""
+    tenant = str(uuid.uuid4())
+    blanket = tuple(
+        date for date in (dt_date(2027, 6, d) for d in range(1, 31)) if date.weekday() < 5
+    ) + (dt_date(2027, 5, 31),)
+    cal = _mk_holiday_calendar(session, tenant, holidays=blanket)
+    _mk_business(session, tenant, cal)
+    healthy = _mk(session, tenant)  # an INTERVAL sibling
+    due = select_active_due(session, datetime(2027, 6, 15, tzinfo=UTC), acting_tenant=tenant)
+    assert [s.id for s, _t, _h in due] == [healthy.id]  # poisoned skipped, sibling survives
+
+
+def test_a_foreign_calendar_binding_is_refused_on_the_unit_tier_too(session: Session) -> None:
+    """The review's MED: the resolve read now carries the explicit own-OR-SYSTEM predicate, so
+    the fail-closed foreign-calendar refusal is enforceable WITHOUT RLS (a raw-DDL row binding a
+    foreign calendar — PG FK checks bypass RLS — must skip, never resolve)."""
+    tenant_a, tenant_b = str(uuid.uuid4()), str(uuid.uuid4())
+    foreign = _mk_holiday_calendar(session, tenant_b)
+    sched = _mk_business(session, tenant_a, _mk_holiday_calendar(session, tenant_a))
+    # Simulate the raw-DDL smuggle: re-point the binding under the ORM (no guard runs here).
+    sched.calendar_id = str(foreign.id)
+    session.flush()
+    assert (
+        select_active_due(session, datetime(2027, 6, 1, tzinfo=UTC), acting_tenant=tenant_a) == []
+    )
+
+
+def test_a_null_calendar_business_row_refuses_at_the_third_layer(session: Session) -> None:
+    """Defense-in-depth (review LOW): unreachable through governed writes (_validate_config +
+    the DB CHECK), pinned directly like the OverflowError precedent."""
+    from irp_shared.scheduling.service import _resolve_business_calendar
+
+    sched = Schedule(
+        tenant_id=str(uuid.uuid4()),
+        code="x",
+        name="x",
+        target_run_type="EXPOSURE_AGGREGATE",
+        scope_portfolio_id=str(uuid.uuid4()),
+        environment_id="x",
+        cadence_kind=CADENCE_BUSINESS_MONTH_END,
+        calendar_id=None,
+        anchor_date=dt_date(2027, 1, 1),
+        status="ACTIVE",
+    )
+    with pytest.raises(ScheduleError, match="calendar_id is NULL"):
+        _resolve_business_calendar(session, sched)

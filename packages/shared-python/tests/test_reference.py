@@ -53,7 +53,11 @@ from irp_shared.reference.models import (
 )
 from irp_shared.reference.rating import GradeSpec, create_rating_scale, update_rating_scale
 from irp_shared.reference.service import ReferenceActor, dedupe_tenant_wins
-from irp_shared.reference.xnys_holidays import XNYS_HOLIDAYS, XNYS_RULE_72_OPEN_FRIDAYS
+from irp_shared.reference.xnys_holidays import (
+    XNYS_COMPLETE_THROUGH,
+    XNYS_HOLIDAYS,
+    XNYS_RULE_72_OPEN_FRIDAYS,
+)
 from irp_shared.temporal import TemporalClass
 
 
@@ -906,3 +910,62 @@ def test_refresh_rolls_back_children_and_version_when_audit_fails(
     )
     refreshed = session.execute(select(Calendar).where(Calendar.id == cal.id)).scalar_one()
     assert refreshed.record_version == version_before
+
+
+def test_refresh_advances_the_declared_coverage_forward_only(session: Session) -> None:
+    """The CAL-1a carry, PAID (CAL-1b): the coverage advance is an effective refresh on its own
+    (event + bump, even with zero new dates), regressions are REFUSED, and an equal horizon is a
+    silent no-op."""
+    tenant = _tenant()
+    cal = create_calendar(
+        session, tenant_id=tenant, code="XCOV", name="Coverage target", actor=_actor()
+    )
+    assert cal.holidays_complete_through is None
+    updates_before = _events(session, REFERENCE_UPDATE_EVENT)
+
+    added = refresh_calendar_holidays(
+        session, cal, actor=_actor(), holidays=[], complete_through=date(2035, 12, 31)
+    )
+    assert added == 0
+    assert cal.holidays_complete_through == date(2035, 12, 31)
+    assert _events(session, REFERENCE_UPDATE_EVENT) == updates_before + 1
+    ev = (
+        session.execute(
+            select(AuditEvent)
+            .where(AuditEvent.event_type == REFERENCE_UPDATE_EVENT, AuditEvent.entity_id == cal.id)
+            .order_by(AuditEvent.sequence_no.desc())
+        )
+        .scalars()
+        .first()
+    )
+    assert ev is not None
+    assert ev.before_value["holidays_complete_through"] is None
+    assert ev.after_value["holidays_complete_through"] == "2035-12-31"
+
+    # FORWARD-ONLY: a regression is refused loudly.
+    with pytest.raises(ValueError, match="forward-only"):
+        refresh_calendar_holidays(
+            session, cal, actor=_actor(), holidays=[], complete_through=date(2030, 1, 1)
+        )
+    assert cal.holidays_complete_through == date(2035, 12, 31)
+
+    # An EQUAL horizon with no new dates is a silent no-op (no event, no bump).
+    version_before = cal.record_version
+    assert (
+        refresh_calendar_holidays(
+            session, cal, actor=_actor(), holidays=[], complete_through=date(2035, 12, 31)
+        )
+        == 0
+    )
+    assert cal.record_version == version_before
+    assert _events(session, REFERENCE_UPDATE_EVENT) == updates_before + 1
+
+
+def test_the_seed_stamps_the_declared_xnys_horizon(session: Session) -> None:
+    seed_system_reference(session, actor_id="system")
+    xnys = session.execute(
+        select(Calendar).where(
+            Calendar.tenant_id == SYSTEM_TENANT_ID, Calendar.code == SYSTEM_CALENDAR_CODE
+        )
+    ).scalar_one()
+    assert xnys.holidays_complete_through == XNYS_COMPLETE_THROUGH == date(2035, 12, 31)

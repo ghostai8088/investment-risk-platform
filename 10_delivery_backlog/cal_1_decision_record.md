@@ -743,3 +743,108 @@ mismatches); the Dec-31-2021 Rule 7.2 precedent; the four collision dates re-der
 the DC-2 adjudication of the event's added_from/added_through range summary (ratified by OQ-11's
 own "added-dates summary" wording; boundary dates, not serialized child rows); the seed's every
 existing consumer (grep + green runs); the import fences.
+
+---
+
+## Part 8 — CAL-1b implementation notes (2026-08-01; stated refinements, never slipped)
+
+Everything ratified in Parts 2/4 shipped as specified, with FOUR stated refinements and one
+executed-P4 note:
+
+1. **The demo calendar is a DEMO-TENANT capture of the real XNYS dataset, not the SYSTEM row**
+   (Part 4 step 7 said "bound to the SYSTEM XNYS calendar"). Discovered at implementation: the
+   demo suites arm the DEMO tenant context, whose own-only ``WITH CHECK`` cannot lawfully write
+   SYSTEM rows (and `seed_system_reference` has no non-test caller in the battery). The tenant
+   capture loads the SAME 118-date dataset + horizon through the governed refresh verb,
+   exercises the ratified hybrid override path, and the SYSTEM binding is proven in the
+   reference + scheduler PG suites. The demo boundary stays the REAL 2027-05-28 (no synthetic
+   holiday — the ratified Part 4 wording's substance holds).
+2. **"Retire" = PAUSED.** The platform has no RETIRED schedule status (`SCHEDULE_STATUSES` =
+   {ACTIVE, PAUSED}); the ratified pause-and-recreate transition is demonstrated with
+   `pause_schedule` + a successor under the new kind. Minting a RETIRED status was declined —
+   a vocabulary value with no behavioral difference from PAUSED for a never-resumed schedule.
+3. **The v2 methodology declaration lives as a v2 section of `rolling_risk_v1.md`** (the
+   registrar's `methodology_ref` is unchanged) rather than a new file — the QS-11 `preceding`
+   declaration appears in the registered assumption text itself (the compliance point), the
+   methodology doc, and the register discharge wording.
+4. **`schedule.calendar_id` stays OUT of the SCHEDULE.CREATE/UPDATE audit payload**, following
+   `model_version_id`'s recorded stay-out choice; the taxonomy row notes it (the declared key
+   list is the contract).
+5. **P4 executed NON-VACUOUSLY, with its own near-miss recorded:** the first staging attempt
+   failed on column names, leaving zero rows — the downgrade would have "passed" deleting
+   nothing (the exact vacuous-dry-run class the P4 rule exists for). Caught, re-staged
+   (1 BUSINESS schedule + 1 child run), and the full cycle proven: the period partial-unique
+   refused BY NAME with a real parent; the sandwich deleted exactly the staged rows; RLS
+   restored to FORCE on both tables; the trigger re-enabled; `alembic check` drift-free after
+   both upgrade cycles. Run as the container role (a superuser): unlike LIM-2's count-guard,
+   this downgrade's semantics are RLS-independent (unconditional deletes inside an explicit
+   RLS-disable sandwich), so the role does not weaken the proof — stated rather than assumed.
+
+**The v1-grandfather proof set:** `test_calmath` pins the empty-set == weekday identity over all
+144 months AND the exact four-collision divergence census under XNYS; the binder tier pins the
+2027-05-28 refusal under v1, the acceptance under v2 (from the PIN — AD-014), the no-pin/wrong-
+code/short-coverage refusals, and END-TO-END grandfather parity (byte-identical v1/v2 rows on a
+compliant book, unit tier AND the demo battery). The old conformance pin converts per OQ-7 with
+its misattribution corrected.
+
+---
+
+## Part 9 — the CAL-1b adversarial review fold (2026-08-01)
+
+Four refute-by-default lanes over the implementation diff (convention correctness with executed
+sweeps; scheduling/DDL; demo/claims; test quality with mutation checks): **1 BLOCKING, 4 HIGH,
+7 MED, 7 LOW — all folded.** The battery found the BLOCKING before the review reported it.
+
+- **(BLOCKING, demo lane / found first by the battery)** `_pm1_return_run_id` crashed with
+  `MultipleResultsFound` — the demo tenant holds TWO completed PORTFOLIO_RETURN runs (the
+  campaign's intra-month book + RM-1's), a hazard `sr1_stage17` documents and solves one file
+  away. Fold: the run is derived from the v1 `RollingRiskResult` binding (which is also what
+  makes the parity comparison meaningful), refusing loudly on an ambiguous baseline. The
+  26/43/139 pin is now genuinely MEASURED (battery green).
+- **(HIGH ×2, one root — convention + scheduling lanes, both by execution)** calmath's
+  exhausted-month `ValueError` escaped EVERY governed conversion boundary: through `current_tick`
+  it aborted all four tick phases for the tenant (the OverflowError/B3 class re-entered through
+  the holiday door), and through `is_month_end`'s third clause it surfaced a hand-built
+  blanket-pin as a raw 500. Fold: converted to `ScheduleError` at `current_tick` and the binder
+  alignment catches WIDENED to `ValueError` (RollingKernelError subclasses it); negative
+  controls at all three sites (the poisoned schedule skips while the sibling polls; the blanket
+  pin is a governed 422).
+- **(HIGH — test lane, by mutation)** Sharpe v2 had ZERO discriminating coverage: a
+  threading-deletion mutant survived the entire unit tier AND the demo (whose book never
+  diverges under holidays). Fold: the four sharpe twins (v1 refusal / v2 acceptance from the
+  pin / no-pin refusal / coverage refusal). The RM-1 side needed nothing — both prescribed
+  mutants were KILLED by the shipped tests, and the hypothesized easy-input gap did not exist.
+- **(HIGH — test lane)** the `verify_snapshot` HOLIDAY_CALENDAR branch shipped presumed-vacuous
+  while three registers cite it as a control. Fold: executed drift tests — the pinned snapshot
+  verifies ok; a post-pin holiday ADD inside the span reddens it; a coverage advance alone
+  reddens it.
+- **(MED set, all folded)** the coverage parse moved inside the malformed envelope (a non-ISO
+  string leaked a raw ValueError); the UNCONSUMED-PIN refusal added to both binders (a WEEKEND
+  run over a pin-carrying snapshot bound provenance claiming an input it never read — the rf
+  leg's every-pin-consumed principle); `_resolve_business_calendar` gained the explicit
+  own-OR-SYSTEM predicate (belt-and-suspenders — the refusal was unenforceable on the SQLite
+  tier) with unit + PG foreign-binding skip tests; the pin-parser's five refusal arms all
+  executed (`test_holiday_binding`); the period-dedup classifier arm executed in both forms;
+  the checklist's item-7 carry marked PAID (it had been left as a stale open MUST — a false
+  open obligation in a compliance artifact).
+- **(LOW set, all folded)** the explicit-WEEKEND literal refusal documented as a DELIBERATE
+  divergence from DS-2's A5 (only absence means weekend) and test-pinned with the ambiguity
+  arm; the classifier's false SQLite-fallback docstring corrected + the name-blind FAILED-insert
+  classification made log-visible; the stale CI pin comment and `test_synthetic` slot prose
+  merged; the ENT-006 row's unbalanced bold markers; the NULL-calendar third-layer arm pinned.
+
+**A process near-miss, recorded (the P6 discipline):** the first fold script aborted mid-way on
+a failed assertion and silently LOST three of its edits (the ValueError conversion, the explicit
+predicate, the coverage parse) — "folded" claims that were not on disk. Caught because the
+fold's own new tests were run immediately after (the malformed-coverage test failed against the
+supposedly-fixed code). The countermeasure is the one that worked: a fold is not folded until
+its own negative control passes — run the fold's tests in the same breath as the fold.
+
+**Confirmed under attack (the substrate):** v1 byte-identity proven by execution over 1,332
+months (1990–2100, zero mismatches, both predicates); the widening safe under the
+three-accepted-dates pathology (conditions 4/5 walked with executed examples); the grandfather
+at the due-select layer byte-identical for legacy kinds; the 0053 CHECK restoration
+byte-identical; the SQLite tier ENFORCES the partial unique (executed); no naming-convention
+trap; the coverage-comparison grain proven right by adversarial reasoning; the demo's
+paused-legacy fence non-vacuous; the count-pin arithmetic independently recomputed; every
+register discharge claim verified; all five Part-8 refinements true.

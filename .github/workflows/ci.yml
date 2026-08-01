@@ -669,14 +669,19 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzzz_con1_pg.py -q
-      # LIM-2 takes over the FINAL-POSITION count pin with the SAME triple (26/41/136): limits and
+      # LIM-2 held the pin unchanged (26/41/136); the FINAL-POSITION pin relayed to stage 21 at CAL-1b (26/43/139): limits and
       # breaches are neither model codes, validations, nor calculation runs, so a whole slice must
       # move none of them. Filename carries ELEVEN `z` (con1 = ten) per the stage-ordering rule.
-      - name: Demo stage 20 (Postgres, LIM-2 concentration limits — final-position count pin)
+      - name: Demo stage 20 (Postgres, LIM-2 concentration limits)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzzzz_lim2_pg.py -q
+      - name: Demo stage 21 (Postgres, CAL-1b holiday-aware convention — final-position count pin)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzzzzz_cal1b_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

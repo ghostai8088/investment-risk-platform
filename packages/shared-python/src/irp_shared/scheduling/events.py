@@ -42,16 +42,24 @@ SOURCE_MODULE_SCHEDULING = "scheduling"
 #: a weekend, and an exposure run struck on a non-trading day has no marks, so it FAILS — and RM-1
 #: refuses a return series with a missing interior month-end, so ONE miss poisons the downstream
 #: governed number. The weekday rule cuts that to holiday collisions only (4 of 144 months,
-#: 2.8%, over 2024-2035: 2024-03-29, 2027-05-31, 2029-03-30, 2032-05-31 — a RECORDED limitation).
-#: A full ENT-006 holiday-calendar resolution is the v2 that completes QS-11's holiday leg; it
+#: 2.8%, over 2024-2035: 2024-03-29, 2027-05-31, 2029-03-30, 2032-05-31 — a RECORDED limitation
+#: OF THIS KIND, retirable per schedule since CAL-1b: ``BUSINESS_MONTH_END`` below is the
+#: holiday-aware resolution that completes QS-11's holiday leg; it
 #: rides Wave-14 real-data onboarding, where the holiday reference data arrives.
 #:
 #: ``CALENDAR`` stays RESERVED-and-unused for a general business-day cadence (OD-SCH-1-F) — SCH-2
 #: deliberately does NOT reuse the name for the month-end kind, which is a different concept.
 CADENCE_INTERVAL = "INTERVAL"
 CADENCE_CALENDAR_MONTH_END = "CALENDAR_MONTH_END"
+#: CAL-1b: the holiday-aware last-BUSINESS-day month-end grid (QS-11 ``preceding``, full ENT-006
+#: resolution). 18 chars — inside the ``String(20)`` column ceiling. ``CALENDAR_MONTH_END`` is
+#: GRANDFATHERED (the v1/v2 label pattern): live grids never move; the transition for an existing
+#: schedule is pause-and-recreate under the new kind (OQ-CAL-1-3's named runbook path).
+CADENCE_BUSINESS_MONTH_END = "BUSINESS_MONTH_END"
 CADENCE_CALENDAR_RESERVED = "CALENDAR"
-CADENCE_KINDS = frozenset({CADENCE_INTERVAL, CADENCE_CALENDAR_MONTH_END})
+CADENCE_KINDS = frozenset(
+    {CADENCE_INTERVAL, CADENCE_CALENDAR_MONTH_END, CADENCE_BUSINESS_MONTH_END}
+)
 
 #: Schedule lifecycle status (controlled vocab). Only ACTIVE schedules are selected for dispatch.
 SCHEDULE_STATUS_ACTIVE = "ACTIVE"

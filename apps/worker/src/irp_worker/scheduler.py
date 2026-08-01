@@ -20,7 +20,7 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -56,6 +56,11 @@ OUTCOME_UNRECORDED = "UNRECORDED"
 #: of THIS constraint is the benign concurrent-double-fire dedup; any OTHER IntegrityError from the
 #: governed-run stack is a real defect that must be recorded as FAILED evidence, not masked.
 _TICK_DEDUP_CONSTRAINT = "uq_scheduled_run_schedule_tick"
+#: CAL-1b (OQ-CAL-1-5): the MONTH-grain partial unique for BUSINESS_MONTH_END rows — its OWN key
+#: in this classifier (the LIM-2 own-keys lesson: a registry/error-map entry the code path can
+#: reach needs its own key, or the collision surfaces as an opaque FAILED row instead of a benign
+#: SKIPPED_DUPLICATE). PG reports the violated unique INDEX's name in diag.constraint_name.
+_PERIOD_DEDUP_CONSTRAINT = "uq_scheduled_run_schedule_period"
 
 
 def _is_tick_dedup(exc: IntegrityError) -> bool:
@@ -65,9 +70,12 @@ def _is_tick_dedup(exc: IntegrityError) -> bool:
     (SQLite/other drivers expose it only in the text)."""
     orig = getattr(exc, "orig", None)
     diag = getattr(orig, "diag", None)
-    if getattr(diag, "constraint_name", None) == _TICK_DEDUP_CONSTRAINT:
+    if getattr(diag, "constraint_name", None) in (_TICK_DEDUP_CONSTRAINT, _PERIOD_DEDUP_CONSTRAINT):
         return True
-    return _TICK_DEDUP_CONSTRAINT in str(exc)
+    # The string fallback serves PG-like drivers without diag only — SQLite reports COLUMN
+    # names, never constraint/index names, so on the unit tier this is dead code and the benign
+    # classification arrives via _record_failed's IntegrityError catch (the CAL-1b review LOW).
+    return _TICK_DEDUP_CONSTRAINT in str(exc) or _PERIOD_DEDUP_CONSTRAINT in str(exc)
 
 
 def poll_tenant_schedules(
@@ -83,10 +91,12 @@ def poll_tenant_schedules(
     nothing escapes to abort the phases-1–2 terminal commit.
     """
     results: list[tuple[str, str]] = []
-    for schedule, tick in select_active_due(session, now, acting_tenant=acting_tenant):
+    for schedule, tick, holidays in select_active_due(session, now, acting_tenant=acting_tenant):
         savepoint = session.begin_nested()
         try:
-            row = dispatch_one(session, schedule, tick, now, code_version=code_version)
+            row = dispatch_one(
+                session, schedule, tick, now, code_version=code_version, holidays=holidays
+            )
             savepoint.commit()
             results.append((schedule.id, row.outcome))
             continue
@@ -102,23 +112,33 @@ def poll_tenant_schedules(
             savepoint.rollback()
             reason = f"{type(exc).__name__}: {exc}"
 
-        results.append((schedule.id, _record_failed(session, schedule, tick, now, reason)))
+        results.append(
+            (schedule.id, _record_failed(session, schedule, tick, now, reason, holidays=holidays))
+        )
     return results
 
 
 def _record_failed(
-    session: Session, schedule: Any, tick: datetime, now: datetime, reason: str
+    session: Session,
+    schedule: Any,
+    tick: datetime,
+    now: datetime,
+    reason: str,
+    holidays: frozenset[date] | None = None,
 ) -> str:
     """Append a FAILED ledger row in a fresh SAVEPOINT; FULLY catch-all so a failure in recording
     path itself cannot escape and unwind the tenant's other successful dispatches (the starvation
     fold). If even the record fails, the tick simply stays un-fired and retries next poll."""
     failed_sp = session.begin_nested()
     try:
-        record_failed_dispatch(session, schedule, tick, now, reason=reason)
+        record_failed_dispatch(session, schedule, tick, now, reason=reason, holidays=holidays)
         failed_sp.commit()
         return OUTCOME_FAILED
-    except IntegrityError:
-        # A concurrent poll occupied this tick between our rollback and insert — benign.
+    except IntegrityError as exc:
+        # A concurrent poll occupied this tick/period between our rollback and insert — benign.
+        # Logged because this catch is NAME-BLIND: a genuinely non-dedup violation would also
+        # land here (visible in the log, not silently swallowed — the CAL-1b review LOW).
+        log.info("FAILED-row insert classified duplicate for schedule %s: %s", schedule.id, exc)
         failed_sp.rollback()
         return OUTCOME_SKIPPED_DUPLICATE
     except Exception:  # noqa: BLE001 - the recording path must never starve sibling schedules

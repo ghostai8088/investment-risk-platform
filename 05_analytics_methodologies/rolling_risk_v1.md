@@ -41,7 +41,7 @@ All arithmetic in `Decimal` at 50-digit precision; results `quantize_HALF_UP` to
 
 The estimator-theory corroboration is carried but **explicitly demoted**: Lo (2002) Eq. 19, `Var[R_t(q)] = qσ² + 2σ²Σ_{k=1}^{q−1}(q−k)ρ_k`, gives `qσ²` at `ρ=0`, so variance scales with interval length and unequal sub-periods are heteroskedastic by construction. Three honest caveats: Eq. 16 defines the q-period return as a **sum**, "ignoring the effects of compounding for computational convenience"; applying Eq. 19 to a Dietz series posits a latent daily stationary process; and the `ρ=0` step is an i.i.d. assumption this platform's own desmoothing slices exist because it is false for its books. **And the honest limit of the fix:** calendar months are 28–31 days, so the monthly grid is itself heteroskedastic by ≈5.2% (≈7.6% on trading days). The grid is **conventionalized by the standard, not made homogeneous by mathematics** — a difference of degree, not kind.
 
-**A2 — Month-end means calendar month end OR the last business day.** GIPS 2.A.23.b, in full. This matters: 2026-01-31 is a Saturday and 2026-05-31 a Sunday, so a firm valuing on the preceding Friday is fully conforming, and a strict calendar-month-end gate would **refuse a compliant book while citing GIPS as its authority**. v1 implements the allowance holiday-free (last calendar day, or the last weekday when that falls on a weekend).
+**A2 — Month-end means calendar month end OR the last business day.** GIPS 2.A.23.b, in full. This matters: 2026-01-31 is a Saturday and 2026-05-31 a Sunday, so a firm valuing on the preceding Friday is fully conforming, and a strict calendar-month-end gate would **refuse a compliant book while citing GIPS as its authority**. v1 implements the allowance holiday-free (last calendar day, or the last weekday when that falls on a weekend) — the holiday-aware v2 shipped at CAL-1b (§v2 below).
 
 **A3 — Alignment is a FIVE-condition conjunction.** `d_0` is a month-end; `d_n` is a month-end; every interior calendar month contributes a month-end boundary; **`d_0` is the LAST boundary in its own month**; and **every measured month closes on a month-end**. Extra intra-month boundaries are fine — they relink. A partial leading or trailing month is a **refusal, never a truncation**: truncating would silently change the caller's requested span, and imputing a valuation is prohibited.
 
@@ -77,7 +77,7 @@ Grain is **four columns** — `(calculation_run_id, metric_type, window_months, 
 
 1. **Two-stage linking is not bit-identical to PM-1's.** The same `link_periods` implementation is used, so the *convention* is shared — but it quantizes to 12dp on return, so sub-periods → month → window aggregation is **not associative** with PM-1's one-stage link. A supervisor comparing RM-1's 12-month rolling return with PM-1's `TWR_LINKED` over the same span will find a 12th-decimal difference. A test pins the **non**-equality direction so nobody later "fixes" it with an equality assert.
 2. **Rolling values are not independent.** Adjacent 12-month windows share 11 of 12 observations (≈92% overlap), so a change between consecutive windows reflects the single entering and exiting month, **not** a re-estimate. This is the most likely misreading of the surface.
-3. **The month-end convention is holiday-free in v1.** A month-end landing on a market holiday is a recorded residual — no holiday substrate exists (the ENT-006 calendar tables carry no business-day logic). A holiday-aware convention is a recorded v2.
+3. **The month-end convention is holiday-free in v1** (v2, below, resolves it). A month-end landing on a market holiday is a recorded residual — no holiday substrate exists (the ENT-006 calendar tables carry no business-day logic). A holiday-aware convention is a recorded v2.
 4. **Discretisation bias.** `sup(subset) ≤ sup(superset)`, so monthly MDD ≤ daily MDD ≤ continuous MDD, always. Every row carries its sampling frequency; never compare across frequencies.
 5. **Captured-holdings book propagation.** PM-1 measures a book with no cash ledger, so uncaptured income understates the return series, and that understatement flows into every RM-1 statistic. Mitigation is operational (capture the cash), never mathematical imputation.
 6. **No benchmark leg in v1**, so GIPS 2.A.18.a (same-grid, same-methodology comparison) does not bind here — it binds the v2 benchmark leg, where it is the more demanding constraint.
@@ -106,3 +106,20 @@ Grades: **[V]** verified against a fetched primary source · **[C]** independent
 ## Reproducibility & governance
 
 Reproducible from the snapshot alone (TR-09). The registered version identity is `code_version` **plus the declared window set** `{12, 36}` — the parameter domain is part of the identity precisely because it is where GIPS 2.A.12 is enforced. Whether an RM-1 read constitutes an "advertisement" under the SEC marketing rule (including its private-fund carve-out) is a **legal determination outside this document**, flagged to compliance.
+
+## v2 — the holiday-aware month-end convention (CAL-1b, 2026-08-01)
+
+`perf.rolling_risk` **v2** (and `perf.sharpe` **v2**, whose grid inherits this one) widens the
+acceptance grid to GIPS 2.A.23.b's full form: the calendar month end, the last weekday, **or the
+last BUSINESS day under a declared holiday calendar** — the QS-11 `preceding` roll, holiday-aware.
+Widening, never substitution: every v1-compliant book stays compliant (the battery pins v1/v2
+byte-parity on the demo book), and the sole new acceptance class is the holiday-preceding business
+day (e.g. Fri 2027-05-28 before Memorial Day).
+
+The convention is carried as registrar-stamped assumption literals (`month_end_convention=BUSINESS`
++ `holiday_calendar=<code>`; absent ⇒ the implicit v1 grandfather; ambiguous or stray literals
+refuse fail-closed). The holiday set a v2 run computes under is **pinned into the run's input
+snapshot** as a `HOLIDAY_CALENDAR` component (AD-014: the compute reads only pinned content), with
+the span checked against the calendar's DECLARED `holidays_complete_through` coverage — an
+uncovered month refuses pre-create. The arithmetic lives in the leaf module `irp_shared/calmath.py`
+(shared verbatim with the scheduler's `BUSINESS_MONTH_END` grid — one implementation, no mirror).

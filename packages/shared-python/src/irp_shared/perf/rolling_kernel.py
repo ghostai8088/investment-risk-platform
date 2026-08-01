@@ -36,13 +36,13 @@ prohibited outright.
 
 from __future__ import annotations
 
-import calendar as _calendar
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date as dt_date
-from datetime import timedelta
 from decimal import Decimal, localcontext
 
+from irp_shared import calmath as _calmath
+from irp_shared.calmath import NO_HOLIDAYS
 from irp_shared.perf.return_kernel import ReturnKernelError, link_periods
 from irp_shared.perf.stats_kernel import COMPUTE_PREC, quantize_result, sample_stdev
 
@@ -58,39 +58,29 @@ class RollingKernelError(ValueError):
 
 
 # ------------------------------------------------------------------- the month-end convention ---
-def last_weekday_of_month(year: int, month: int) -> dt_date:
-    """The last Mon-Fri date of a calendar month — the QS-11 ``preceding`` roll over a WEEKEND-ONLY
-    non-business-day predicate.
-
-    **Deliberately mirrored from ``scheduling.service._last_weekday_of_month`` rather than
-    imported.** That module imports the entire risk + exposure compute stack to build its dispatch
-    registry, so ``perf`` importing it would invert the layering for three lines of calendar
-    arithmetic. Per the SCH-2 standing rule, a hand-mirrored contract carries a CONFORMANCE PIN:
-    ``test_rolling_kernel`` asserts the two implementations agree across a multi-year sweep, so the
-    duplication cannot silently diverge.
-
-    No holiday substrate exists (ENT-006 ``calendar``/``calendar_holiday`` are vocabulary tables
-    with no business-day logic), so a month-end landing on a market HOLIDAY is a recorded residual,
-    not a handled case. A full holiday-aware convention is the recorded v2.
-    """
-    day = _calendar.monthrange(year, month)[1]
-    candidate = dt_date(year, month, day)
-    while candidate.weekday() >= 5:  # 5=Sat, 6=Sun
-        candidate -= timedelta(days=1)
-    return candidate
+# CAL-1b (OQ-CAL-1-7): the month-end arithmetic is RE-HOMED onto the pure leaf module
+# ``irp_shared.calmath`` — the RM-1-era hand-mirror of ``scheduling.service._last_weekday_of_month``
+# (and its conformance pin) dissolved when the arithmetic moved somewhere both packages can import
+# without inverting the layering. The OQ-W12C-3b standing rule mandated the pin ON the mirror; the
+# wave plan pre-sanctioned the re-homing. ``last_weekday_of_month`` stays exported here because the
+# demo grid and the kernel tests consume it as fixture data.
+last_weekday_of_month = _calmath.last_weekday_of_month
 
 
-def is_month_end(day: dt_date) -> bool:
+def is_month_end(day: dt_date, holidays: frozenset[dt_date] = NO_HOLIDAYS) -> bool:
     """Is ``day`` a month-end under GIPS 2.A.23.b — *"the calendar month end **or the last business
     day of the month**"*?
 
     **The second clause is load-bearing and the draft truncated it.** 2026-01-31 is a Saturday and
     2026-05-31 a Sunday, so a firm valuing on the preceding Friday is fully GIPS-conforming; a
     strict calendar-month-end gate would REFUSE a compliant book while citing GIPS as its authority.
+
+    **The v2 convention (CAL-1b) WIDENS, never substitutes:** with the default empty ``holidays``
+    this is byte-identical to the shipped v1 predicate; a resolved holiday set ADDS the
+    holiday-preceding business day (e.g. Fri 2027-05-28 before Memorial Day Mon 2027-05-31) as a
+    third accepted date class and removes nothing — a v1-compliant book stays compliant under v2.
     """
-    return day.day == _calendar.monthrange(day.year, day.month)[1] or day == last_weekday_of_month(
-        day.year, day.month
-    )
+    return _calmath.is_month_end(day, holidays)
 
 
 def _month_key(day: dt_date) -> tuple[int, int]:
@@ -102,8 +92,14 @@ def _next_month(key: tuple[int, int]) -> tuple[int, int]:
     return (year + 1, 1) if month == 12 else (year, month + 1)
 
 
-def assert_month_aligned(boundaries: Sequence[dt_date]) -> None:
+def assert_month_aligned(
+    boundaries: Sequence[dt_date], holidays: frozenset[dt_date] = NO_HOLIDAYS
+) -> None:
     """The THREE-condition alignment criterion (OD-RM-1-F). Raises naming the offending boundary.
+
+    ``holidays`` is the v2 convention's resolved holiday set (CAL-1b): the default empty set is the
+    v1 grandfather (byte-identical acceptance); a non-empty set WIDENS ``is_month_end``'s accepted
+    date classes and nothing else — the five conditions were verified safe under widening.
 
     Over the ordered boundary dates ``d_0 .. d_n``, ALL of:
 
@@ -132,12 +128,12 @@ def assert_month_aligned(boundaries: Sequence[dt_date]) -> None:
 
     first, last = ordered[0], ordered[-1]
     # (1) and (2): a partial leading/trailing month is a REFUSAL, not a truncation.
-    if not is_month_end(first):
+    if not is_month_end(first, holidays):
         raise RollingKernelError(
             f"the series opens on {first}, which is not a month end — a partial first month would "
             "pool a short observation with whole ones (refused, never truncated)"
         )
-    if not is_month_end(last):
+    if not is_month_end(last, holidays):
         raise RollingKernelError(
             f"the series closes on {last}, which is not a month end — a partial last month would "
             "pool a short observation with whole ones (refused, never truncated)"
@@ -179,14 +175,14 @@ def assert_month_aligned(boundaries: Sequence[dt_date]) -> None:
     for day in ordered[1:]:
         last_in_month[_month_key(day)] = day
     for key, day in last_in_month.items():
-        if not is_month_end(day):
+        if not is_month_end(day, holidays):
             raise RollingKernelError(
                 f"{key[0]}-{key[1]:02d} closes on {day}, which is not a month end — a measured "
                 "month must close on a grid point"
             )
 
     # (3): every interior calendar month must contribute a month-end boundary.
-    month_ends = {_month_key(d) for d in ordered if is_month_end(d)}
+    month_ends = {_month_key(d) for d in ordered if is_month_end(d, holidays)}
     key, stop = _next_month(_month_key(first)), _month_key(last)
     while key != stop:
         if key not in month_ends:

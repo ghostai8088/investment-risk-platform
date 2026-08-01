@@ -268,6 +268,11 @@ COMPONENT_KIND_CLASSIFICATION = "CLASSIFICATION"
 #: this pin is evidence only.) Hybrid two-tenant resolver (SYSTEM rows are
 #: the normal case). ``target_entity_type='classification_scheme'``.
 COMPONENT_KIND_CLASSIFICATION_SCHEME = "CLASSIFICATION_SCHEME"
+#: CAL-1b (OQ-CAL-1-6-A, AD-014): the resolved holiday set a v2 RM-1/SR-1 run computed under —
+#: the calendar identity + its DECLARED coverage + the member dates over the pinned span, so a v2
+#: reading reproduces bit-exactly from its own bindings and a later past-dated holiday ADD
+#: honestly reddens verify_snapshot instead of silently changing a re-run.
+COMPONENT_KIND_HOLIDAY_CALENDAR = "HOLIDAY_CALENDAR"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -295,6 +300,7 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_ISSUER_EDGE,
     COMPONENT_KIND_CLASSIFICATION,
     COMPONENT_KIND_CLASSIFICATION_SCHEME,
+    COMPONENT_KIND_HOLIDAY_CALENDAR,
 )
 
 

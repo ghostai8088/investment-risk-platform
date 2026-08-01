@@ -76,6 +76,21 @@ def app_url() -> str:
             conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO irp_app"))
         conn.execute(text("GRANT SELECT, INSERT ON audit_event TO irp_app"))
         # Children first (FK order); superuser DELETE bypasses RLS to clear leftover SYSTEM rows.
+        # CAL-1b: `schedule.calendar_id` is the SECOND symmetric→hybrid FK — a demo/battery
+        # schedule bound to a calendar would otherwise block the calendar wipe (the first
+        # post-0059 battery found exactly that: fk_schedule_calendar_id_calendar). Clear the
+        # bound schedules (and their append-only children) first, calendar-bound rows ONLY.
+        # scheduled_run carries the P0001 append-only trigger, which fires for SUPERUSERS too —
+        # replica mode disables ordinary triggers for this cleanup connection only.
+        conn.execute(text("SET session_replication_role = 'replica'"))
+        conn.execute(
+            text(
+                "DELETE FROM scheduled_run WHERE schedule_id IN "
+                "(SELECT id FROM schedule WHERE calendar_id IS NOT NULL)"
+            )
+        )
+        conn.execute(text("DELETE FROM schedule WHERE calendar_id IS NOT NULL"))
+        conn.execute(text("SET session_replication_role = 'origin'"))
         for table in ("rating_grade", "calendar_holiday", "currency", "calendar", "rating_scale"):
             conn.execute(text(f"DELETE FROM {table}"))
     superuser.dispose()

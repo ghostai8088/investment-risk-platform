@@ -6,8 +6,10 @@ and asserts the governed end state against the CON-1 record's Part 2 HAND-DERIVE
 **The filename is load-bearing** (the standing stage-ordering discipline): TEN ``z`` — verified by
 ``ls`` on the tests directory (sr1 = eight, ref1 = nine), never read off a decision record.
 
-**This file takes the FINAL-POSITION count pin, relayed from the 9-z suite: 25/40/133 →
-26/41/136** (+1 ``concentration.dimensional`` model code, +1 INITIAL validation, +3 COMPLETED
+**This file's 25/40/133 → 26/41/136 is a POSITIONAL assertion (demoted at CAL-1b — the
+label went stale when LIM-2 landed, tolerable only because the triple did not move there;
+the final-position pin now lives in the 12-z suite)** (+1 ``concentration.dimensional``
+model code, +1 INITIAL validation, +3 COMPLETED
 runs; the DEMO-MULTIASSET refusal is a FAILED run and is additionally pinned BY STATUS — a
 refusal that quietly completed, or quietly vanished, would both be defects).
 """

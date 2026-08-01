@@ -66,7 +66,16 @@ def app_url() -> str:
         # `irp_app` (4-finder review, schema lens): without them this file is green in CI only by
         # GRANT LEAKAGE from ~30 earlier suites in the same job, and fails when run alone against a
         # freshly migrated database. The SCH-1 sibling suite declares the same `_DEPS` set.
-        for table in ("schedule", "scheduled_run", "portfolio", "model", "model_version"):
+        # `calendar` joined at CAL-1b: `_seed_calendar_row` INSERTs the BUSINESS_MONTH_END
+        # referent as `irp_app` (same declared-deps rule as the three originals).
+        for table in (
+            "schedule",
+            "scheduled_run",
+            "portfolio",
+            "model",
+            "model_version",
+            "calendar",
+        ):
             conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO irp_app"))
     superuser.dispose()
     return (
@@ -119,19 +128,21 @@ def _raw_insert_schedule(
     portfolio_id: str,
     cadence_kind: str = "INTERVAL",
     interval_days: int | None = 7,
+    calendar_id: str | None = None,
 ) -> None:
     """Insert a ``schedule`` row DIRECTLY — the DB is the only judge here."""
     conn.execute(
         text(
             "INSERT INTO schedule (id, tenant_id, valid_from, created_at, updated_at, code, name,"
             " target_run_type, scope_portfolio_id, model_version_id, environment_id, cadence_kind,"
-            " interval_days, anchor_date, status, record_version)"
+            " interval_days, calendar_id, anchor_date, status, record_version)"
             " VALUES (:id, :tenant, now(), now(), now(), :code, 'n', :trt, :pf, :mv, 'ci', :ck,"
-            " :iv, :anchor, 'ACTIVE', 1)"
+            " :iv, :cal, :anchor, 'ACTIVE', 1)"
         ),
         {
             "id": str(uuid.uuid4()),
             "tenant": tenant,
+            "cal": calendar_id,
             "code": f"c-{uuid.uuid4().hex[:8]}",
             "trt": target_run_type,
             "pf": portfolio_id,
@@ -570,3 +581,225 @@ def test_the_schedule_reads_are_rls_scoped_under_the_app_role(app_url: str) -> N
         session.rollback()
         session.close()
         engine.dispose()
+
+
+# --- CAL-1b: the BUSINESS_MONTH_END DDL matrix (migration 0059) -----------------------------------
+
+
+def _seed_calendar_row(conn, tenant: str) -> str:  # noqa: ANN001
+    cal = str(uuid.uuid4())
+    conn.execute(
+        text(
+            "INSERT INTO calendar (id, tenant_id, valid_from, created_at, updated_at, code, name,"
+            " is_active, record_version, holidays_complete_through)"
+            " VALUES (:id, :t, now(), now(), now(), :code, 'n', true, 1, '2035-12-31')"
+        ),
+        {"id": cal, "t": tenant, "code": f"K{uuid.uuid4().hex[:6].upper()}"},
+    )
+    return cal
+
+
+def test_business_month_end_ddl_matrix(app_url: str) -> None:
+    """The 0059 total enumerations, asked of the DATABASE (the CON-1 lesson): the widened vocab
+    ADMITS the new kind; the kind-gated calendar CHECK refuses BOTH directions BY NAME; the
+    widened interval CHECK's business arm refuses an interval."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    with engine.connect() as conn:
+        conn.begin()
+        tenant = str(uuid.uuid4())
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant})
+        portfolio_id, _mv = _seed_referents(conn, tenant)
+        calendar_id = _seed_calendar_row(conn, tenant)
+
+        # POSITIVE: a BUSINESS_MONTH_END row with a calendar and no interval INSERTS.
+        _raw_insert_schedule(
+            conn,
+            tenant=tenant,
+            target_run_type="EXPOSURE_AGGREGATE",
+            model_version_id=None,
+            portfolio_id=portfolio_id,
+            cadence_kind="BUSINESS_MONTH_END",
+            interval_days=None,
+            calendar_id=calendar_id,
+        )
+
+        # NEGATIVE 1: the new kind WITHOUT a calendar — refused by the kind-gated CHECK BY NAME.
+        with pytest.raises(IntegrityError) as caught:
+            _raw_insert_schedule(
+                conn,
+                tenant=tenant,
+                target_run_type="EXPOSURE_AGGREGATE",
+                model_version_id=None,
+                portfolio_id=portfolio_id,
+                cadence_kind="BUSINESS_MONTH_END",
+                interval_days=None,
+            )
+        assert "ck_schedule_calendar_id_by_cadence" in str(caught.value.orig)
+        conn.rollback()
+        conn.begin()
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant})
+        portfolio_id, _mv = _seed_referents(conn, tenant)
+        calendar_id = _seed_calendar_row(conn, tenant)
+
+        # NEGATIVE 2: a LEGACY kind WITH a calendar — the other direction of the enumeration.
+        with pytest.raises(IntegrityError) as caught:
+            _raw_insert_schedule(
+                conn,
+                tenant=tenant,
+                target_run_type="EXPOSURE_AGGREGATE",
+                model_version_id=None,
+                portfolio_id=portfolio_id,
+                cadence_kind="CALENDAR_MONTH_END",
+                interval_days=None,
+                calendar_id=calendar_id,
+            )
+        assert "ck_schedule_calendar_id_by_cadence" in str(caught.value.orig)
+        conn.rollback()
+        conn.begin()
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant})
+        portfolio_id, _mv = _seed_referents(conn, tenant)
+        calendar_id = _seed_calendar_row(conn, tenant)
+
+        # NEGATIVE 3: the new kind with an interval — the widened interval CHECK's business arm.
+        with pytest.raises(IntegrityError) as caught:
+            _raw_insert_schedule(
+                conn,
+                tenant=tenant,
+                target_run_type="EXPOSURE_AGGREGATE",
+                model_version_id=None,
+                portfolio_id=portfolio_id,
+                cadence_kind="BUSINESS_MONTH_END",
+                interval_days=7,
+                calendar_id=calendar_id,
+            )
+        assert "ck_schedule_interval_days_by_cadence" in str(caught.value.orig)
+        conn.rollback()
+    engine.dispose()
+
+
+def test_the_period_partial_unique_collides_by_name(app_url: str) -> None:
+    """OQ-CAL-1-5's DB backstop: two rows for one (schedule, period) collide on
+    uq_scheduled_run_schedule_period even at DIFFERENT instants — the exact race the instant uq
+    cannot close; NULL period_keys (legacy kinds) never collide."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    with engine.connect() as conn:
+        conn.begin()
+        tenant = str(uuid.uuid4())
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant})
+        portfolio_id, _mv = _seed_referents(conn, tenant)
+        calendar_id = _seed_calendar_row(conn, tenant)
+        sched = str(uuid.uuid4())
+        conn.execute(
+            text(
+                "INSERT INTO schedule (id, tenant_id, valid_from, created_at, updated_at, code,"
+                " name, target_run_type, scope_portfolio_id, environment_id, cadence_kind,"
+                " calendar_id, anchor_date, status, record_version)"
+                " VALUES (:id, :t, now(), now(), now(), :code, 'n', 'EXPOSURE_AGGREGATE', :pf,"
+                " 'ci', 'BUSINESS_MONTH_END', :cal, '2027-01-01', 'ACTIVE', 1)"
+            ),
+            {
+                "id": sched,
+                "t": tenant,
+                "code": f"c-{uuid.uuid4().hex[:8]}",
+                "pf": portfolio_id,
+                "cal": calendar_id,
+            },
+        )
+
+        def _insert_run(instant: str, period: str | None) -> None:
+            conn.execute(
+                text(
+                    "INSERT INTO scheduled_run (id, tenant_id, system_from, schedule_id,"
+                    " scheduled_for, period_key, fired_at, outcome)"
+                    " VALUES (:id, :t, now(), :s, :sf, :pk, now(), 'DISPATCHED')"
+                ),
+                {"id": str(uuid.uuid4()), "t": tenant, "s": sched, "sf": instant, "pk": period},
+            )
+
+        _insert_run("2027-05-31 23:59:59.999999+00", "2027-05")
+        with pytest.raises(IntegrityError) as caught:
+            _insert_run("2027-05-28 23:59:59.999999+00", "2027-05")  # a DIFFERENT instant
+        assert "uq_scheduled_run_schedule_period" in str(caught.value)
+        conn.rollback()
+        conn.begin()
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant})
+        portfolio_id, mv = _seed_referents(conn, tenant)
+        # NULL period keys (the legacy kinds) never collide on the partial unique.
+        sched2 = str(uuid.uuid4())
+        conn.execute(
+            text(
+                "INSERT INTO schedule (id, tenant_id, valid_from, created_at, updated_at, code,"
+                " name, target_run_type, scope_portfolio_id, model_version_id, environment_id,"
+                " cadence_kind, interval_days, anchor_date, status, record_version)"
+                " VALUES (:id, :t, now(), now(), now(), :code, 'n', 'VAR', :pf, :mv, 'ci',"
+                " 'INTERVAL', 7, '2026-01-01', 'ACTIVE', 1)"
+            ),
+            {
+                "id": sched2,
+                "t": tenant,
+                "code": f"c-{uuid.uuid4().hex[:8]}",
+                "pf": portfolio_id,
+                "mv": mv,
+            },
+        )
+        for instant in ("2026-01-08 00:00:00+00", "2026-01-15 00:00:00+00"):
+            conn.execute(
+                text(
+                    "INSERT INTO scheduled_run (id, tenant_id, system_from, schedule_id,"
+                    " scheduled_for, period_key, fired_at, outcome)"
+                    " VALUES (:id, :t, now(), :s, :sf, NULL, now(), 'DISPATCHED')"
+                ),
+                {"id": str(uuid.uuid4()), "t": tenant, "s": sched2, "sf": instant},
+            )
+        conn.rollback()
+    engine.dispose()
+
+
+def test_a_foreign_bound_business_schedule_skips_under_the_app_role(app_url: str) -> None:
+    """The review's MED: the fail-closed foreign-calendar refusal on the tier where RLS exists.
+    A raw-DDL BUSINESS row bound to ANOTHER tenant's calendar (PG FK checks bypass RLS) must be
+    SKIPPED by the poll — never resolved, never a tenant abort — while a healthy sibling polls."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    with engine.connect() as conn:
+        conn.begin()
+        tenant_a, tenant_b = str(uuid.uuid4()), str(uuid.uuid4())
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant_b})
+        foreign_cal = _seed_calendar_row(conn, tenant_b)
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant_a})
+        pf_a, _mv = _seed_referents(conn, tenant_a)
+        _raw_insert_schedule(
+            conn,
+            tenant=tenant_a,
+            target_run_type="EXPOSURE_AGGREGATE",
+            model_version_id=None,
+            portfolio_id=pf_a,
+            cadence_kind="BUSINESS_MONTH_END",
+            interval_days=None,
+            calendar_id=foreign_cal,  # the smuggle create_schedule would refuse
+        )
+        own_cal = _seed_calendar_row(conn, tenant_a)
+        _raw_insert_schedule(
+            conn,
+            tenant=tenant_a,
+            target_run_type="EXPOSURE_AGGREGATE",
+            model_version_id=None,
+            portfolio_id=pf_a,
+            cadence_kind="BUSINESS_MONTH_END",
+            interval_days=None,
+            calendar_id=own_cal,  # the healthy sibling (own calendar, declared coverage)
+        )
+        from datetime import UTC, datetime
+
+        from sqlalchemy.orm import Session as _Session
+
+        from irp_shared.scheduling.service import select_active_due
+
+        session = _Session(bind=conn)
+        due = select_active_due(
+            session, datetime(2027, 6, 1, 6, 5, tzinfo=UTC), acting_tenant=tenant_a
+        )
+        # ONLY the own-calendar sibling resolves; the foreign binding skips (fail-closed).
+        assert len(due) == 1
+        assert str(due[0][0].calendar_id) == own_cal
+        conn.rollback()
+    engine.dispose()

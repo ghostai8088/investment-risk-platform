@@ -33,11 +33,13 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     event,
+    text,
 )
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
@@ -90,8 +92,17 @@ class Schedule(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin
     #: The run-environment label pinned on every fired run (a required governed-run pin — the
     #: ``calculation_run.environment_id`` free String(100) label; NOT a security boundary).
     environment_id: Mapped[str] = mapped_column(String(100), nullable=False)
-    #: Cadence kind (controlled vocab ``CADENCE_KINDS``: ``INTERVAL`` | ``CALENDAR_MONTH_END``).
+    #: Cadence kind (controlled vocab ``CADENCE_KINDS``: ``INTERVAL`` | ``CALENDAR_MONTH_END`` |
+    #: ``BUSINESS_MONTH_END`` since CAL-1b).
     cadence_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: The bound holiday calendar (CAL-1b, OQ-CAL-1-4): REQUIRED for ``BUSINESS_MONTH_END`` and
+    #: FORBIDDEN for the legacy kinds (DB CHECK ``ck_schedule_calendar_id_by_cadence`` + the
+    #: ``_validate_config`` mirror). CREATE-ONLY (not in ``_UPDATABLE`` — the frozen-grid
+    #: doctrine); the SECOND symmetric→hybrid FK (after 0056's assignment→scheme), guarded
+    #: own-OR-SYSTEM at ``create_schedule`` because PG FK checks bypass RLS.
+    calendar_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("calendar.id"), nullable=True, index=True
+    )
     #: Interval length in calendar days — the ``INTERVAL`` grid step. NULLABLE since SCH-2: it is
     #: meaningless under ``CALENDAR_MONTH_END`` and is FORBIDDEN there (DB CHECK
     #: ``ck_schedule_interval_days_by_cadence``, which also carries the ``> 0`` rule the DB
@@ -122,11 +133,27 @@ class ScheduledRun(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base)
     __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
     __table_args__ = (
         UniqueConstraint("schedule_id", "scheduled_for", name="uq_scheduled_run_schedule_tick"),
+        # CAL-1b (OQ-CAL-1-5): the MONTH-grain idempotency backstop for ``BUSINESS_MONTH_END``
+        # rows — the exact-instant uq above cannot collide when a holiday refresh re-values the
+        # tick instant between concurrent polls; this partial unique closes that race at the DB.
+        # Declared here (not only in 0059) so the SQLite unit tier carries it too.
+        Index(
+            "uq_scheduled_run_schedule_period",
+            "schedule_id",
+            "period_key",
+            unique=True,
+            postgresql_where=text("period_key IS NOT NULL"),
+            sqlite_where=text("period_key IS NOT NULL"),
+        ),
     )
 
     schedule_id: Mapped[str] = mapped_column(
         GUID, ForeignKey("schedule.id"), nullable=False, index=True
     )
+    #: The month-grain key (``YYYY-MM``) for ``BUSINESS_MONTH_END`` rows ONLY — NULL for the
+    #: legacy kinds (the partial unique ignores NULLs). Additive-nullable (the table is IA
+    #: append-only; no backfill is possible through the trigger).
+    period_key: Mapped[str | None] = mapped_column(String(7), nullable=True)
     #: The grid tick this row fires (INV-SCH-1: the computed ``current_tick``, never a wall clock).
     scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     #: The wall-clock instant the fire actually ran (the operational fact / TR-09 evidence).

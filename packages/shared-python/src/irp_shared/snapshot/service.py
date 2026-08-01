@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from irp_shared.classification.service import (
@@ -50,6 +50,7 @@ from irp_shared.classification.service import (
 )
 from irp_shared.db.mixins import utcnow
 from irp_shared.dq.gates import ensure_presence_rule, run_presence_gate
+from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.holdings import (
     HoldingWithMark,
     attach_marks_as_of,
@@ -83,6 +84,7 @@ from irp_shared.marketdata.service import FxRateNotVisible, resolve_fx_rate
 from irp_shared.portfolio import PortfolioNotVisible, resolve_portfolio
 from irp_shared.position import PositionNotVisible, resolve_position
 from irp_shared.reference.instrument import InstrumentNotVisible, resolve_instrument
+from irp_shared.reference.service import CalendarNotVisible
 from irp_shared.snapshot.events import SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
     COMPONENT_KIND_BENCHMARK,
@@ -100,6 +102,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_FACTOR_EXPOSURE,
     COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FX,
+    COMPONENT_KIND_HOLIDAY_CALENDAR,
     COMPONENT_KIND_ISSUER_EDGE,
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_PORTFOLIO_RETURN,
@@ -1855,6 +1858,57 @@ class RollingRiskSnapshotError(Exception):
     BEFORE any write; never mints immutable governance garbage."""
 
 
+def holiday_calendar_content(calendar: Any, holiday_dates: list[Any]) -> dict[str, Any]:
+    """The HOLIDAY_CALENDAR pin content (CAL-1b, OQ-CAL-1-6-A) — NARROW by design (the ISSUER_EDGE
+    field-exclusion precedent): the calendar IDENTITY (code/mic), its DECLARED coverage horizon,
+    and the SORTED member dates. ``name``/``is_active``/``record_version`` are deliberately
+    EXCLUDED so a cosmetic head amend does not redden every historical v2 pin; a date ADD or a
+    coverage advance — the changes that alter what a v2 run would compute — honestly does."""
+    return {
+        "code": calendar.code,
+        "mic": calendar.mic,
+        "holidays_complete_through": (
+            calendar.holidays_complete_through.isoformat()
+            if calendar.holidays_complete_through is not None
+            else None
+        ),
+        "holiday_dates": sorted(
+            d.isoformat() if hasattr(d, "isoformat") else str(d) for d in holiday_dates
+        ),
+    }
+
+
+def _holiday_calendar_spec(
+    session: Session,
+    specs: list[tuple[str, str, Any, str, str]],
+    *,
+    holiday_calendar_code: str,
+    acting_tenant: str,
+    error: type[Exception],
+) -> None:
+    """Resolve the declared calendar own-OR-SYSTEM and append its HOLIDAY_CALENDAR pin (CAL-1b).
+    Refusals surface as the builder's own error class (a 409 build failure, pre-write)."""
+    from irp_shared.reference.models import CalendarHoliday
+    from irp_shared.reference.service import CalendarNotVisible, resolve_calendar
+
+    try:
+        calendar = resolve_calendar(session, holiday_calendar_code, acting_tenant=acting_tenant)
+    except CalendarNotVisible as exc:
+        raise error(str(exc)) from exc
+    dates = list(
+        session.execute(
+            select(CalendarHoliday.holiday_date).where(CalendarHoliday.calendar_id == calendar.id)
+        ).scalars()
+    )
+    _append_spec(
+        specs,
+        COMPONENT_KIND_HOLIDAY_CALENDAR,
+        "calendar",
+        calendar,
+        holiday_calendar_content(calendar, dates),
+    )
+
+
 #: The rolling-risk binding/selection rule (RM-1, OD-RM-1-E): every row of ONE return run.
 ROLLING_RISK_BINDING_PREDICATE = "v1:portfolio-return-run-rows"
 
@@ -1865,6 +1919,7 @@ def build_rolling_risk_snapshot(
     acting_tenant: str,
     actor: SnapshotActor,
     portfolio_return_run_id: str,
+    holiday_calendar_code: str | None = None,
 ) -> DatasetSnapshot:
     """Build one immutable ``ROLLING_RISK_INPUT`` snapshot (RM-1, OD-RM-1-E) pinning one
     ``COMPONENT_KIND_PORTFOLIO_RETURN`` per ``portfolio_return_result`` row of the consumed run.
@@ -1899,6 +1954,14 @@ def build_rolling_risk_snapshot(
             "portfolio_return_result",
             row,
             portfolio_return_content(row),
+        )
+    if holiday_calendar_code is not None:  # CAL-1b: the v2 pin; v1 callers stay byte-identical
+        _holiday_calendar_spec(
+            session,
+            specs,
+            holiday_calendar_code=holiday_calendar_code,
+            acting_tenant=acting_tenant,
+            error=RollingRiskSnapshotError,
         )
 
     header_row = _persist_snapshot(
@@ -1937,6 +2000,7 @@ def build_sharpe_snapshot(
     portfolio_return_run_id: str,
     risk_free_benchmark_id: str,
     rf_return_basis: str,
+    holiday_calendar_code: str | None = None,
 ) -> DatasetSnapshot:
     """Build one immutable ``SHARPE_INPUT`` snapshot (SR-1, OD-SR-1-E) pinning:
 
@@ -2043,6 +2107,14 @@ def build_sharpe_snapshot(
         benchmark,
         benchmark_return_series_content(benchmark, window),
     )
+    if holiday_calendar_code is not None:  # CAL-1b: the v2 pin; v1 callers stay byte-identical
+        _holiday_calendar_spec(
+            session,
+            specs,
+            holiday_calendar_code=holiday_calendar_code,
+            acting_tenant=acting_tenant,
+            error=SharpeSnapshotError,
+        )
 
     header_row = _persist_snapshot(
         session,
@@ -3619,6 +3691,35 @@ def _reresolve_content(
         )
         chain = resolve_ancestors(session, node=node, acting_tenant=acting_tenant)
         return classification_assignment_closure_content(assignment, [*chain, node])
+    if comp.component_kind == COMPONENT_KIND_HOLIDAY_CALENDAR:
+        # CAL-1b, RE-DERIVE flavored (the CLASSIFICATION precedent): re-read the calendar HEAD by
+        # the pinned target id under hybrid own-OR-SYSTEM visibility, then RE-DERIVE the member
+        # date set LIVE — an ADD-ONLY refresh that inserts a date (or advances the declared
+        # coverage) after the pin honestly REDDENS this component, which is exactly the drift
+        # visibility OQ-CAL-1-6-A buys; a head rename/is_active flip cannot (excluded from the
+        # narrow content).
+        from irp_shared.reference.models import Calendar as _Calendar
+        from irp_shared.reference.models import CalendarHoliday as _CalendarHoliday
+
+        cal_row = session.execute(
+            select(_Calendar).where(
+                _Calendar.id == comp.target_entity_id,
+                or_(
+                    _Calendar.tenant_id == str(acting_tenant),
+                    _Calendar.tenant_id == SYSTEM_TENANT_ID,
+                ),
+            )
+        ).scalar_one_or_none()
+        if cal_row is None:
+            raise CalendarNotVisible(str(comp.target_entity_id))
+        live_dates = list(
+            session.execute(
+                select(_CalendarHoliday.holiday_date).where(
+                    _CalendarHoliday.calendar_id == cal_row.id
+                )
+            ).scalars()
+        )
+        return holiday_calendar_content(cal_row, live_dates)
     if comp.component_kind == COMPONENT_KIND_CLASSIFICATION_SCHEME:
         # Hybrid two-tenant resolver (SYSTEM rows are the normal case — the v5-pass resolver-
         # pattern correction).
@@ -3771,6 +3872,9 @@ def verify_snapshot(session: Session, *, snapshot_id: str, acting_tenant: str) -
             InstrumentNotVisible,
             ClassificationNotVisible,
             ConcentrationSnapshotError,
+            # CAL-1b: a gone/cross-tenant calendar head behind a HOLIDAY_CALENDAR pin is failed
+            # reproduction — drift, not a 500 (the CON-1 three-shapes precedent).
+            CalendarNotVisible,
             # RD-3 OD-A: the BENCHMARK_RETURN/FACTOR_RETURN/BENCHMARK/SCENARIO branches parse
             # ``captured_content`` via ``_parsed_pin``/``_pinned_row_ids``, which raise ONLY this
             # class on a truncated/tampered/non-object/missing-key pin — never a bare

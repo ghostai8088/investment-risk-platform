@@ -51,12 +51,12 @@ def test_the_business_day_allowance_admits_a_gips_conforming_weekend_month_end()
 
 def test_the_mirrored_month_end_rule_agrees_with_the_scheduler(  # noqa: D401
 ) -> None:
-    """THE CONFORMANCE PIN for a hand-mirrored contract (the SCH-2 standing rule).
-
-    ``last_weekday_of_month`` is duplicated from ``scheduling.service`` rather than imported —
-    importing it would drag the entire risk + exposure compute stack into ``perf`` for three lines
-    of calendar arithmetic. A duplicate is only safe if it is pinned, so this sweeps every month
-    over twelve years and asserts the two implementations are identical.
+    """CONVERTED at CAL-1b (OQ-CAL-1-7): the RM-1-era hand-mirror this pin guarded DISSOLVED
+    when both sites re-homed onto ``irp_shared.calmath``. The sweep stays as the executable
+    contract that the two PUBLIC names still agree; the real v1/v2 parity now lives in
+    ``test_calmath`` (the empty-set == weekday identity and the exact four-collision divergence
+    census). Attribution corrected: the pins-on-mirrors rule is OQ-W12C-3b (the Wave-12 close),
+    not "the SCH-2 standing rule"; the wave plan pre-sanctioned the re-homing.
     """
     from irp_shared.scheduling.service import _last_weekday_of_month as scheduler_rule
 

@@ -47,12 +47,18 @@ from irp_shared.calc.runs import resolve_completed_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.marketdata.models import BENCHMARK_RETURN_BASES, RETURN_TYPE_SIMPLE
 from irp_shared.model.service import assert_model_version_of
-from irp_shared.perf.bootstrap import SHARPE_MODEL_CODE, SHARPE_WINDOWS
+from irp_shared.perf.bootstrap import (
+    MONTH_END_BUSINESS_CONVENTION,
+    SHARPE_MODEL_CODE,
+    SHARPE_WINDOWS,
+    declared_month_end_parameters,
+)
 from irp_shared.perf.events import (
     RUN_TYPE_PORTFOLIO_RETURN,
     RUN_TYPE_SHARPE,
     SharpeRatioActor,
 )
+from irp_shared.perf.holiday_binding import parse_pinned_holidays
 from irp_shared.perf.models import (
     ANNUALIZATION_NONE,
     ANNUALIZATION_SQRT_12,
@@ -82,6 +88,7 @@ from irp_shared.perf.stats_kernel import StatsKernelError
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.snapshot import (
     COMPONENT_KIND_BENCHMARK_RETURN,
+    COMPONENT_KIND_HOLIDAY_CALENDAR,
     COMPONENT_KIND_PORTFOLIO_RETURN,
     PURPOSE_SHARPE_INPUT,
     list_components,
@@ -157,6 +164,8 @@ def _as_date(value: Any) -> dt_date:
 
 def _adjudicate_portfolio_leg(
     raw: list[dict[str, Any]],
+    holidays: frozenset[dt_date] = frozenset(),
+    holidays_complete_through: dt_date | None = None,
 ) -> tuple[list[MonthlyReturn], dt_date, str, str]:
     """The RM-1 portfolio-side adjudication, applied unchanged: one run, one book, DIETZ
     sub-periods,
@@ -207,13 +216,19 @@ def _adjudicate_portfolio_leg(
     # first
     # measured month), then every sub-period end.
     boundaries = [sub_periods[0].period_start] + [p.period_end for p in sub_periods]
+    if holidays_complete_through is not None and boundaries[-1] > holidays_complete_through:
+        raise SharpeInputError(
+            f"the series closes on {boundaries[-1]}, beyond the pinned calendar's declared "
+            f"holiday coverage ({holidays_complete_through}) — refused (OQ-CAL-1-4)"
+        )
     try:
-        assert_month_aligned(boundaries)
+        assert_month_aligned(boundaries, holidays)
         months = relink_to_months(sub_periods)
         assert_above_total_loss(months)
-    except RollingKernelError as exc:
-        # Converted at the binder boundary: a caller owed a governed refusal must not receive a
-        # kernel error. The kernel's own raises stay defense-in-depth.
+    except ValueError as exc:
+        # Converted at the binder boundary (WIDENED at CAL-1b: RollingKernelError subclasses
+        # ValueError, and the wider catch also converts calmath's exhausted-month raise — the
+        # review's HIGH; one shared discipline with the RM-1 twin).
         raise SharpeInputError(str(exc)) from exc
 
     return months, boundaries[0], next(iter(run_ids)), next(iter(portfolio_ids))
@@ -295,14 +310,19 @@ def _adjudicate_risk_free_leg(
 
 
 def _adjudicate_pins(
-    portfolio_raw: list[dict[str, Any]], rf_raw: list[dict[str, Any]]
+    portfolio_raw: list[dict[str, Any]],
+    rf_raw: list[dict[str, Any]],
+    holidays: frozenset[dt_date] = frozenset(),
+    holidays_complete_through: dt_date | None = None,
 ) -> _ParsedInput:
     """PRE-CREATE adjudication of the FULL pinned input. Raises :class:`SharpeInputError`.
 
     Order matters: the portfolio leg first (it defines which months are MEASURED, and therefore what
     the risk-free leg is judged against), then the risk-free leg, then the difference.
     """
-    months, opening_boundary, run_id, portfolio_id = _adjudicate_portfolio_leg(portfolio_raw)
+    months, opening_boundary, run_id, portfolio_id = _adjudicate_portfolio_leg(
+        portfolio_raw, holidays, holidays_complete_through
+    )
     benchmark_id, rf_return_basis, by_month = _adjudicate_risk_free_leg(rf_raw, months)
     try:
         excess = build_excess_series(months, by_month)
@@ -372,12 +392,15 @@ def run_sharpe_ratio(
             "this model version — a governed run may only use a declared window"
         )
 
-    assert_model_version_of(
+    version = assert_model_version_of(
         session,
         str(model_version_id),
         tenant_id=acting_tenant,
         expected_model_code=SHARPE_MODEL_CODE,
     )
+    # CAL-1b (OQ-CAL-1-2): the declared convention — SR-1 moves in lockstep with RM-1, one
+    # shared adjudication (the convention-split hazard the Wave-13 fold recorded).
+    params = declared_month_end_parameters(session, version, model_code=SHARPE_MODEL_CODE)
 
     snapshot = resolve_snapshot(session, snapshot_id, acting_tenant=acting_tenant)
     if snapshot.purpose != PURPOSE_SHARPE_INPUT:
@@ -386,10 +409,30 @@ def run_sharpe_ratio(
             f"{PURPOSE_SHARPE_INPUT!r}"
         )
 
-    parsed = _adjudicate_pins(
-        *_parse_pins(
-            list(list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant))
+    components = list(
+        list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+    )
+    holidays: frozenset[dt_date] = frozenset()
+    coverage: dt_date | None = None
+    if params.convention != MONTH_END_BUSINESS_CONVENTION and any(
+        c.component_kind == COMPONENT_KIND_HOLIDAY_CALENDAR for c in components
+    ):
+        # The unconsumed-pin refusal (the CAL-1b review's MED, symmetric with the no-pin-under-v2
+        # arm and the rf leg's every-pin-consumed principle): a WEEKEND-convention run over a
+        # snapshot PINNING a holiday calendar would bind provenance claiming an input the run
+        # never read.
+        raise SharpeInputError(
+            "the snapshot pins a HOLIDAY_CALENDAR component but this model version declares the "
+            "WEEKEND (v1) convention — an unconsumed pin is refused; rebuild the snapshot "
+            "without holiday_calendar_code or run under a v2 version"
         )
+    if params.convention == MONTH_END_BUSINESS_CONVENTION:
+        assert params.holiday_calendar is not None  # the gate refused a BUSINESS row without it
+        holidays, coverage = parse_pinned_holidays(
+            components, declared_code=params.holiday_calendar, error=SharpeInputError
+        )
+    parsed = _adjudicate_pins(
+        *_parse_pins(components), holidays=holidays, holidays_complete_through=coverage
     )
     # Re-resolve EVERY id out of the PINNED content before any of them is stamped into a hard FK
     # (P3-5: PG FK checks bypass RLS, so the DB alone would durably admit a foreign tenant's run,
