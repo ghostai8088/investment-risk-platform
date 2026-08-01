@@ -53,13 +53,16 @@ from irp_shared.demo.campaign import DEMO_TENANT_ID
 from irp_shared.entitlement.models import AppUser, Permission, Role, RolePermission, UserRole
 from irp_shared.limit.events import (
     BREACH_ABOVE,
+    BREACH_BELOW,
     LIMIT_KIND_HARD,
     LIMIT_KIND_SOFT,
     THRESHOLD_UNIT_FRACTION,
     LimitActor,
 )
-from irp_shared.limit.models import LimitDefinition
+from irp_shared.limit.models import Breach, LimitDefinition
 from irp_shared.limit.service import (
+    HEALTH_BREACHED,
+    HEALTH_REFUSED,
     LimitError,
     approve_limit,
     create_limit,
@@ -117,6 +120,8 @@ class Lim2Stage20Summary:
     #: line above would be satisfied by a read that returned nothing at all.
     visible_to_viewer: tuple[str, ...]
     regulatory_threshold_refused: str
+    #: Limits whose selector names no node of the run's scheme — REFUSED, not silently green.
+    unverifiable_selectors_refused: tuple[str, ...] = ()
     #: role_permission rows this stage granted and then DELETED (CON-1's teardown discipline).
     role_permission_rows_torn_down: int = 0
 
@@ -239,12 +244,16 @@ def run_demo_lim2_stage20(session: Any) -> Lim2Stage20Summary:  # noqa: ANN401
     checker_actor = LimitActor(actor_id=checker)
 
     def _limit(**kwargs: Any) -> LimitDefinition:  # noqa: ANN401
+        """A concentration limit over the demo book. `breach_direction` DEFAULTS to ABOVE but is
+        overridable — the review noted every limit in the slice, the demo and both test files was a
+        ceiling, so the floor direction (where the fabricated zero wrote a FALSE breach) had no
+        coverage anywhere."""
+        kwargs.setdefault("breach_direction", BREACH_ABOVE)
         return create_limit(
             session,
             tenant_id=DEMO_TENANT_ID,
             scope_portfolio_id=str(portfolio.id),
             threshold_unit=THRESHOLD_UNIT_FRACTION,
-            breach_direction=BREACH_ABOVE,
             target_run_type=RUN_TYPE_CONCENTRATION,
             denominator_basis=DENOMINATOR_BASIS_INVESTED_LONG,
             actor=maker_actor,
@@ -389,6 +398,90 @@ def run_demo_lim2_stage20(session: Any) -> Lim2Stage20Summary:  # noqa: ANN401
     if issuer_named & {h.code for h in health}:
         raise DemoLim2Error("the health surface leaked an issuer-named limit")
 
+    # --- THE PATHS THAT WERE WRONG, RUN (adversarial review, "what the demo must actually RUN") --
+    # The happy path above proves the feature works. These prove the DEFECTS are closed — and this
+    # project's record is that execution refutes what reading endorses (SCH-2 refuted two decisions
+    # an adversarial verifier had approved; CON-1's truncated CHECK names surfaced only by running).
+    # Every one of these read IN_APPETITE, or wrote a false breach, before the review.
+    unmatched_refusals: list[str] = []
+
+    # (1) An unmatched selector on a CEILING. 'TECH' is not an ISIC code (ISIC sections are
+    #     letters), so this limit named a bucket the run never evaluated. It used to resolve to a
+    #     fabricated zero and read IN_APPETITE forever on a 60%-concentrated book.
+    typo_ceiling = _limit(
+        code="DEMO-TYPO-CEILING",
+        name="A ceiling whose bucket_code names no node (must NOT read green)",
+        metric_type=METRIC_TYPE_SHARE,
+        dimension_kind="SECTOR_INDUSTRY",
+        bucket_code="TECH",
+        scheme_family=_scheme_family(session, top_sector.scheme_id),
+        authored_scheme_id=str(top_sector.scheme_id) if top_sector.scheme_id else None,
+        threshold_value=Decimal("0.200000"),
+        limit_kind=LIMIT_KIND_HARD,
+    )
+    approve_limit(
+        session, typo_ceiling, actor=checker_actor, approval_ref="minutes://RISK-COMMITTEE-2026-07"
+    )
+    approved += 1
+    if evaluate_limit(session, typo_ceiling, now) is not None:
+        raise DemoLim2Error("an unverifiable selector produced a breach — the D1 fix is not live")
+
+    # (2) The SEVERE direction: the same unmatched selector as a FLOOR. It used to satisfy
+    #     _breaches(0, 0.05, BELOW) and write a breach into the APPEND-ONLY, non-withdrawable
+    #     lifecycle. Asserted by reading the DATABASE, not by trusting the return value.
+    typo_floor = _limit(
+        code="DEMO-TYPO-FLOOR",
+        name="A floor whose bucket_code names no node (must write NO breach)",
+        metric_type=METRIC_TYPE_SHARE,
+        dimension_kind="SECTOR_INDUSTRY",
+        bucket_code="TECH",
+        scheme_family=_scheme_family(session, top_sector.scheme_id),
+        authored_scheme_id=str(top_sector.scheme_id) if top_sector.scheme_id else None,
+        threshold_value=Decimal("0.050000"),
+        limit_kind=LIMIT_KIND_HARD,
+        breach_direction=BREACH_BELOW,
+    )
+    approve_limit(
+        session, typo_floor, actor=checker_actor, approval_ref="minutes://RISK-COMMITTEE-2026-07"
+    )
+    approved += 1
+    evaluate_limit(session, typo_floor, now)
+    session.flush()
+    false_breaches = session.execute(
+        select(Breach).where(
+            Breach.tenant_id == DEMO_TENANT_ID,
+            Breach.limit_definition_id.in_([typo_ceiling.id, typo_floor.id]),
+        )
+    ).scalars()
+    if list(false_breaches):
+        raise DemoLim2Error(
+            "a FALSE BREACH was written into the append-only lifecycle from an unverifiable "
+            "selector — the D1 fix is not live and the row cannot be withdrawn"
+        )
+
+    # (3) Both must report REFUSED with a reason — visible, not silently green and not merely
+    #     indistinguishable from a cold metric.
+    health_by_code = {
+        h.code: h
+        for h in limit_health(session, acting_tenant=DEMO_TENANT_ID, include_issuer_detail=True)
+    }
+    for code in ("DEMO-TYPO-CEILING", "DEMO-TYPO-FLOOR"):
+        entry = health_by_code.get(code)
+        if entry is None or entry.state != HEALTH_REFUSED or not entry.refusal_reason:
+            raise DemoLim2Error(
+                f"{code} reports {entry.state if entry else 'ABSENT'} rather than REFUSED with a "
+                "reason — an unverifiable limit must never read as a measurement"
+            )
+        unmatched_refusals.append(code)
+
+    # (4) The POSITIVE CONTROL for all of the above: the real sector limit still breaches. Without
+    #     it, "the refusals fire" would be satisfied by a resolver that refused everything.
+    if health_by_code[_SECTOR_CODE].state != HEALTH_BREACHED:
+        raise DemoLim2Error(
+            f"{_SECTOR_CODE} no longer reads BREACHED — the D1 refusal is over-broad and has "
+            "swallowed a genuine measurement"
+        )
+
     # --- TEAR DOWN this stage's entitlement rows (the CON-1 OQ-REF-1-29 discipline) -----------
     # Found by executing `alembic downgrade base` after the stage: the three roles minted above
     # leave `role_permission` rows, and the entitlement downgrade then dies deleting the
@@ -406,12 +499,13 @@ def run_demo_lim2_stage20(session: Any) -> Lim2Stage20Summary:  # noqa: ANN401
         measured_issuer_share=f"{measured_issuer:f}",
         measured_sector_share=f"{measured_sector:f}",
         measured_hhi=f"{measured_hhi:f}",
-        limits_created=5,
+        limits_created=7,
         limits_approved=approved,
         breaches_detected=detected,
         fenced_from_viewer=tuple(sorted(issuer_named)),
         visible_to_viewer=(_HHI_CODE, _SECTOR_CODE),
         regulatory_threshold_refused=refusal,
+        unverifiable_selectors_refused=tuple(unmatched_refusals),
         role_permission_rows_torn_down=torn_down,
     )
 

@@ -37,6 +37,11 @@ pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_D
 
 _ISSUER_NAMED = {"DEMO-ISSUER-CEIL", "DEMO-ISSUER-HEADROOM", "DEMO-ISSUER-PROPOSED"}
 _NOT_ISSUER_NAMED = {"DEMO-SECTOR-CEIL", "DEMO-HHI-CEIL"}
+#: The adversarial limits: a CEILING and a FLOOR whose bucket_code names no node of the run's
+#: scheme. Before the review both resolved to a fabricated zero — the ceiling read IN_APPETITE
+#: forever on a 60%-concentrated book, the floor wrote a FALSE breach into the append-only,
+#: non-withdrawable lifecycle. Every limit in the slice was a ceiling until this pair.
+_UNVERIFIABLE = {"DEMO-TYPO-CEILING", "DEMO-TYPO-FLOOR"}
 
 
 @pytest.fixture(scope="module")
@@ -81,7 +86,7 @@ def _limits(db) -> dict[str, LimitDefinition]:  # noqa: ANN001
 
 def test_five_concentration_limits_exist_in_the_expected_lifecycle_states(db) -> None:  # noqa: ANN001
     limits = _limits(db)
-    assert set(limits) == _ISSUER_NAMED | _NOT_ISSUER_NAMED
+    assert set(limits) == _ISSUER_NAMED | _NOT_ISSUER_NAMED | _UNVERIFIABLE
     # Four approved through the maker-checker gate; the fifth left DRAFT deliberately, because a
     # limit awaiting sign-off constrains nothing and the approval queue needs content.
     assert {c for c, x in limits.items() if x.status == "ACTIVE"} == {
@@ -89,6 +94,7 @@ def test_five_concentration_limits_exist_in_the_expected_lifecycle_states(db) ->
         "DEMO-ISSUER-HEADROOM",
         "DEMO-SECTOR-CEIL",
         "DEMO-HHI-CEIL",
+        *_UNVERIFIABLE,
     }
     assert limits["DEMO-ISSUER-PROPOSED"].status == "DRAFT"
 
@@ -225,3 +231,39 @@ def test_the_final_position_count_pin_is_UNCHANGED(db) -> None:  # noqa: ANN001
         )
     ).scalar_one()
     assert (model_codes, validations, completed) == (26, 41, 136)
+
+
+def test_an_unverifiable_selector_is_REFUSED_in_BOTH_directions(db, staged) -> None:  # noqa: ANN001
+    """**Review D1, executed end to end.** 'TECH' is not an ISIC code (sections are letters), so
+    these two limits name a bucket the run never evaluated.
+
+    Before the fix the CEILING read IN_APPETITE forever on a 60%-concentrated book, and the FLOOR
+    wrote a breach into the append-only lifecycle at observed=0 — a false positive that cannot be
+    withdrawn. The demo now RUNS both, because this project's record is that execution refutes what
+    reading endorses.
+    """
+    _factory, summary = staged
+    health = {
+        h.code: h
+        for h in limit_health(db, acting_tenant=DEMO_TENANT_ID, include_issuer_detail=True)
+    }
+    for code in _UNVERIFIABLE:
+        assert code in health, f"{code} is ACTIVE and must appear in health"
+        assert health[code].state == "REFUSED", f"{code} reports {health[code].state}"
+        assert health[code].refusal_reason, "a refusal must say WHY, or it is indistinguishable"
+
+    limits = _limits(db)
+    ids = [limits[c].id for c in _UNVERIFIABLE]
+    written = db.execute(
+        select(func.count())
+        .select_from(Breach)
+        .where(Breach.tenant_id == DEMO_TENANT_ID, Breach.limit_definition_id.in_(ids))
+    ).scalar_one()
+    assert written == 0, "a FALSE breach was written from an unverifiable selector"
+
+    # THE POSITIVE CONTROL: the genuine sector limit still breaches. Without it, "the refusals
+    # fire" would be equally satisfied by a resolver that had become over-broad and refused
+    # everything — which would be a different, quieter defect.
+    assert health["DEMO-SECTOR-CEIL"].state == "BREACHED"
+    if summary is not None:
+        assert set(summary.unverifiable_selectors_refused) == _UNVERIFIABLE

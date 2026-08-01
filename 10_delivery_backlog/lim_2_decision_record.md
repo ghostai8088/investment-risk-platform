@@ -1,6 +1,9 @@
 # LIM-2 Decision Record — concentration limits: the dimensional selector (Wave-14 slice 2)
 
-**Status: RATIFIED 2026-07-31 (OQ-LIM-2-1…8, all as recommended). No code has been written.**
+**Status: RATIFIED 2026-07-31 (OQ-LIM-2-1…8, all as recommended); IMPLEMENTED and REVIEW-FOLDED
+the same day. The six-lane adversarial review found the first implementation NOT SOUND — three
+BLOCKING defects in code that had already passed CI green — and Part 6 records what they were,
+how each was proven closed, and the one anomaly still open.**
 Part 0 exists so the decisions in Part 1 were taken against what the platform *does*, not against
 what its records *say* it does: every fact was read out of the tree at `cfcce34` (`origin/main`, CI
 run 30585105043 green all six) and carries its `file:line` so a reviewer can refute it without
@@ -14,7 +17,12 @@ the issuer fence to the limit/breach read surfaces**); and the staleness defect 
 (OQ-LIM-2-5=A). The remaining five were taken as recommended. The OQ-LIM-2-8 rationale correction —
 that CON-1 recorded the wrong reason for deferring schedulability — rides with them.
 
-**The P4 EXECUTED dry run has NOT been run and gates implementation.** On a migration slice the
+**The P4 EXECUTED dry run gated implementation and was run** (Part 5); it found two defects and
+MISSED a third — its downgrade guard was RLS-blind, and the dry run could not see it because the
+container's role is a superuser. That is recorded at Part 6 D3 as a limitation of the dry-run
+environment, not just a defect in the guard.
+
+**Original gate note:** On a migration slice the
 verifier pass runs the migration in a throwaway workspace copy rather than reading it
 (`claude_operating_instructions.md:283-290`). The gate above ratified *design* choices; the
 migration mechanics in Part 3 are not ratified and the dry run is what tests them.
@@ -600,6 +608,122 @@ tables" as an inconsistency to fix. Partly it is the standing rule being correct
 ratified recommendation does not change, but its justification does — and the justification is what
 a reviewer checks. Missing the rule on the first pass is the same class as the Wave-14 planning
 BLOCKING that recommended against an uncited Accepted ADR.
+
+## Part 6 — The adversarial review fold (2026-07-31, POST-implementation)
+
+Six independent lenses, each finding verified by three refuters voting **refute-by-default**, then
+a synthesis that re-executed every surviving claim itself. 82 agents, 25 candidate findings, 14
+survivors. **The verdict was that the slice was NOT sound: three BLOCKING defects, in code that had
+already passed CI green and that this record had already described as delivered.**
+
+The shape of the failure is worth naming before the findings. Every one of the three blockers sat
+behind a claim I had written and believed: the downgrade guard was "fail-closed", the issuer fence
+was "structural", the basis refusal was "mutation-proven". Each claim was true of something —
+just not of the thing it named.
+
+### D1 (BLOCKING) — the resolver fabricated zeros
+
+`_resolve_concentration` returned a fully-resolved `observed=0` whenever the named bucket matched
+no row, and **nothing anywhere validated `bucket_code`** — not `_validate_dimensional_config`, not
+the DTO, not a CHECK. The kernel emits a DETAIL row only for a bucket carrying atoms, so "no row"
+is ambiguous by construction: a zero-exposure bucket is absent for exactly the same reason a
+misspelled one is.
+
+- **ABOVE:** "tech ≤ 20%" written as `bucket_code='TECH'` against an ISIC book that codes it `'C'`
+  was accepted, approved, and read `IN_APPETITE` forever on a book 31% concentrated in that sector.
+- **BELOW:** a routine mandate floor — restricted nowhere — satisfied `_breaches(0, 0.05, BELOW)`
+  and wrote a **false breach into the append-only, non-withdrawable lifecycle**, the precise harm
+  the CON-1 descope exists to prevent and the one that cannot be undone.
+
+This was my own unratified design call, flagged to the gate as unratified and wrong anyway. The fix
+asks the **taxonomy**, the only source that knows whether a code is real: a genuine node of the
+resolved run's scheme that emitted no row is an honest zero (so a floor still breaches on it), while
+a code that is not a node of that scheme is REFUSED. ISSUER needs no lookup — `create_limit`
+re-resolves `issuer_id` tenant-filtered, so a named issuer provably exists.
+
+### D2 (BLOCKING) — a third of a ratified fence shipped as documentation
+
+Part 3.6 states the issuer split covers "`list_limits` / `get_limit` / **the breach reads**". Two
+shipped. The breach reads had no fence at all. And this surface discloses the **number**, not an
+id: for a SHARE/ISSUER breach `observed_value` IS the ISSUER-dimension `share_invested_long` CON-1
+fenced — so a caller refused the limit at 404 could read the same 60%-against-a-30%-cap figure from
+`GET /breaches`, beside the maker-authored `limit_code`.
+
+I had found and fixed the `limit_health` hole *by hand, during the review*, and stopped there,
+assuming the rest was done. The lesson is not "check the other surfaces"; it is that finding one
+instance of a class is evidence the class exists, not evidence it is now closed.
+
+### D3 (BLOCKING) — the downgrade guard was RLS-blind and would have destroyed what it protected
+
+`limit_definition` carries FORCE RLS keyed on `app.current_tenant`, a GUC no migration sets, and
+FORCE binds the table OWNER. As the non-superuser owner a real deployment runs as, the guard's
+count returned **zero**, fell through, and dropped six governed columns — causing exactly the
+un-upgradeable database it existed to prevent. **It passed the P4 dry run only because the postgres
+image's `irp` is a superuser, which RLS exempts: the guard was proven by the one role structurally
+incapable of exercising it.** Its stated remedy was also unachievable — "retire those limits first"
+is impossible once a limit has breached, since `breach` FKs it and is append-only.
+
+Reversed to the repo's own precedent (0053/0028/0041/0042): a sandwiched destructive delete,
+restoring both `ENABLE` and `FORCE`. Executing the CI sequence then found a second layer the review
+had not seen — my demo stage minted roles with permissions and never tore them down, so the
+*entitlement* downgrade died on a foreign key. CON-1 paid exactly that at OQ-REF-1-29, and I had
+read the code an hour earlier.
+
+### D4/D7 — three predicates, three meanings
+
+`not bucket_code`, `bucket_code` and `is None` disagreed about "no bucket". `bucket_code=""` passed
+validation on a summary metric, took the named-bucket branch and resolved forever to zero;
+`scheme_family=""` reached the DB and became a 500 instead of the 422 that layer exists to produce.
+Normalized once at the `create_limit` boundary; every predicate now tests identity, matching the DB
+CHECKs which are written on NULL-ness.
+
+### D5 — staleness keyed on the wrong thing, in both directions
+
+`run_type` is narrower and wider than the resolvers at once (`RUN_TYPE_VAR` hosts six metric
+flavours; `calculation_run` has no metric discriminator). A COMPLETED sibling-metric run landing
+after a failure **cleared** the flag while the verdict was still read off the pre-failure book; a
+FAILED sibling **raised** it on a limit whose number was minutes old. Re-keyed to the RESOLVED run —
+"has anything failed SINCE the number I am showing you?" — which is monotone in the verdict.
+
+### D6 — the false verification claims
+
+Nothing executed `_resolve_concentration` past its first early return, while `service.py` asserted
+as fact that a test forced the basis mismatch and this record's Part 2 ratified an executed negative
+control for exactly that refusal. **Two artifacts claimed a verification that did not exist — the
+seventh ledger's target, written about my own work.** Discharged by `test_limit_resolver.py` (13
+tests), mutation-proven in both directions; both claims corrected in place rather than deleted, so
+the failure stays legible.
+
+### What the fold added, and how each was proven
+
+Every guard added here ships with its negative control **executed**, and every mutation was applied
+and reverted **in place by targeted edit, never by file copy** — a procedure adopted after a
+backup/restore silently reverted a fix earlier in this session and a green suite reported on code
+that no longer existed on disk.
+
+| guard | negative control, executed |
+| --- | --- |
+| resolver node verification | disabling it fails exactly the 3 fabricated-zero tests; positive controls survive |
+| evaluation-time basis match | disabling it fails exactly the 2 basis tests; positive controls survive |
+| breach read fence | disabling both predicates fails exactly the 3 fence tests; the non-issuer control survives |
+| `limit_health` fence | disabling it fails exactly the health-leak test, showing the fenced id in the response |
+| live CHECK-name catalog gate | a planted double-prefixed name fails it by name |
+| the demo stage | **against the defective resolver the stage cannot seed at all** — it refuses |
+
+The demo now RUNS the paths that were wrong: an unmatched selector as a CEILING (must not read
+green) and as a FLOOR (must write no breach — asserted against the DATABASE), both reporting
+REFUSED with a reason, with the genuine sector limit still BREACHED as the positive control. Before
+this pair, every limit in the slice, the demo and both test files was a ceiling — the floor
+direction, where the harm was worst, had no coverage anywhere.
+
+### Still open, recorded rather than closed
+
+- **`test_limit_registry::test_only_concentration_is_dimensional_and_basis_bearing` failed twice
+  under the full battery with `requires_basis=False`, contradicting its own source line, and did
+  not reproduce standalone or in any bisect.** A stale-bytecode hypothesis fits (the same class bit
+  this session once, provably) but is unproven. Recorded as an open anomaly rather than declared
+  fixed; it has not recurred in the last four full-battery runs.
+- The breach DTO still does not carry the dimension echoes (a stated scope call, not an omission).
 
 ## Verification note
 
