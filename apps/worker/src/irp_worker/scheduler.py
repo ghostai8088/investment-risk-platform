@@ -72,6 +72,9 @@ def _is_tick_dedup(exc: IntegrityError) -> bool:
     diag = getattr(orig, "diag", None)
     if getattr(diag, "constraint_name", None) in (_TICK_DEDUP_CONSTRAINT, _PERIOD_DEDUP_CONSTRAINT):
         return True
+    # The string fallback serves PG-like drivers without diag only — SQLite reports COLUMN
+    # names, never constraint/index names, so on the unit tier this is dead code and the benign
+    # classification arrives via _record_failed's IntegrityError catch (the CAL-1b review LOW).
     return _TICK_DEDUP_CONSTRAINT in str(exc) or _PERIOD_DEDUP_CONSTRAINT in str(exc)
 
 
@@ -131,8 +134,11 @@ def _record_failed(
         record_failed_dispatch(session, schedule, tick, now, reason=reason, holidays=holidays)
         failed_sp.commit()
         return OUTCOME_FAILED
-    except IntegrityError:
-        # A concurrent poll occupied this tick between our rollback and insert — benign.
+    except IntegrityError as exc:
+        # A concurrent poll occupied this tick/period between our rollback and insert — benign.
+        # Logged because this catch is NAME-BLIND: a genuinely non-dedup violation would also
+        # land here (visible in the log, not silently swallowed — the CAL-1b review LOW).
+        log.info("FAILED-row insert classified duplicate for schedule %s: %s", schedule.id, exc)
         failed_sp.rollback()
         return OUTCOME_SKIPPED_DUPLICATE
     except Exception:  # noqa: BLE001 - the recording path must never starve sibling schedules

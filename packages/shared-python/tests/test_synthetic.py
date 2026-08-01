@@ -538,9 +538,9 @@ def test_no_migration_and_no_entity() -> None:
     # MG-2 owns 0051_breach_action; NOTIF-1 owns 0052_breach_notification; SCH-2 owns
     # 0053_schedule_cadence_family; RM-1 owns 0054_rolling_risk_result; SR-1 owns
     # 0055_sharpe_ratio_result; REF-1 owns 0056_classification; CON-1 owns
-    # 0057_concentration_result; LIM-2 owns 0058_limit_dimension_selector; the synthetic slice
-    # CAL-1b owns 0059 (BUSINESS_MONTH_END); the next free slot is 0060.
-    # still adds no migration, so the next free slot (0059+) must remain empty.
+    # 0057_concentration_result; LIM-2 owns 0058_limit_dimension_selector; CAL-1b owns
+    # 0059_business_month_end; the synthetic slice
+    # still adds no migration, so the next free slot (0060+) must remain empty.
     #
     # NOTE (SCH-2): this next-free-slot glob is a hand-maintained proxy — it must be bumped by
     # EVERY migration slice, and it fires on a legitimate new migration rather than on the thing it

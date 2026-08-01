@@ -1076,6 +1076,10 @@ def declared_month_end_parameters(
         return MonthEndParameters(MONTH_END_WEEKEND_CONVENTION, None)
     convention = convention_rows[0][len(MONTH_END_CONVENTION_ASSUMPTION_PREFIX) :]
     if convention != MONTH_END_BUSINESS_CONVENTION:
+        # DELIBERATE divergence from DS-2's A5 (which accepts the explicitly-spelled grandfather):
+        # only ABSENCE means WEEKEND here. No registrar stamps an explicit WEEKEND literal, so a
+        # present one is a hand-registered anomaly — refusing costs a legitimate caller nothing
+        # and keeps the vocabulary single-valued. Recorded + test-pinned (the CAL-1b review LOW).
         raise _fail()
     calendar_code = require_declared(
         texts,

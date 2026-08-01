@@ -68,7 +68,14 @@ def app_url() -> str:
         # freshly migrated database. The SCH-1 sibling suite declares the same `_DEPS` set.
         # `calendar` joined at CAL-1b: `_seed_calendar_row` INSERTs the BUSINESS_MONTH_END
         # referent as `irp_app` (same declared-deps rule as the three originals).
-        for table in ("schedule", "scheduled_run", "portfolio", "model", "model_version", "calendar"):
+        for table in (
+            "schedule",
+            "scheduled_run",
+            "portfolio",
+            "model",
+            "model_version",
+            "calendar",
+        ):
             conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO irp_app"))
     superuser.dispose()
     return (
@@ -744,5 +751,55 @@ def test_the_period_partial_unique_collides_by_name(app_url: str) -> None:
                 ),
                 {"id": str(uuid.uuid4()), "t": tenant, "s": sched2, "sf": instant},
             )
+        conn.rollback()
+    engine.dispose()
+
+
+def test_a_foreign_bound_business_schedule_skips_under_the_app_role(app_url: str) -> None:
+    """The review's MED: the fail-closed foreign-calendar refusal on the tier where RLS exists.
+    A raw-DDL BUSINESS row bound to ANOTHER tenant's calendar (PG FK checks bypass RLS) must be
+    SKIPPED by the poll — never resolved, never a tenant abort — while a healthy sibling polls."""
+    engine = make_engine(app_url, poolclass=NullPool)
+    with engine.connect() as conn:
+        conn.begin()
+        tenant_a, tenant_b = str(uuid.uuid4()), str(uuid.uuid4())
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant_b})
+        foreign_cal = _seed_calendar_row(conn, tenant_b)
+        conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant_a})
+        pf_a, _mv = _seed_referents(conn, tenant_a)
+        _raw_insert_schedule(
+            conn,
+            tenant=tenant_a,
+            target_run_type="EXPOSURE_AGGREGATE",
+            model_version_id=None,
+            portfolio_id=pf_a,
+            cadence_kind="BUSINESS_MONTH_END",
+            interval_days=None,
+            calendar_id=foreign_cal,  # the smuggle create_schedule would refuse
+        )
+        own_cal = _seed_calendar_row(conn, tenant_a)
+        _raw_insert_schedule(
+            conn,
+            tenant=tenant_a,
+            target_run_type="EXPOSURE_AGGREGATE",
+            model_version_id=None,
+            portfolio_id=pf_a,
+            cadence_kind="BUSINESS_MONTH_END",
+            interval_days=None,
+            calendar_id=own_cal,  # the healthy sibling (own calendar, declared coverage)
+        )
+        from datetime import UTC, datetime
+
+        from sqlalchemy.orm import Session as _Session
+
+        from irp_shared.scheduling.service import select_active_due
+
+        session = _Session(bind=conn)
+        due = select_active_due(
+            session, datetime(2027, 6, 1, 6, 5, tzinfo=UTC), acting_tenant=tenant_a
+        )
+        # ONLY the own-calendar sibling resolves; the foreign binding skips (fail-closed).
+        assert len(due) == 1
+        assert str(due[0][0].calendar_id) == own_cal
         conn.rollback()
     engine.dispose()

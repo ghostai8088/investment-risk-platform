@@ -65,6 +65,8 @@ from irp_shared.reference.calendar import (
 from irp_shared.reference.service import ReferenceActor
 from irp_shared.snapshot import build_rolling_risk_snapshot
 from irp_shared.snapshot.events import SnapshotActor
+from irp_shared.snapshot.models import DatasetSnapshotComponent
+from irp_shared.snapshot.service import verify_snapshot
 
 _ACTOR = RollingRiskActor(actor_id="analyst-1")
 _SNAP_ACTOR = SnapshotActor(actor_id="analyst-1")
@@ -945,3 +947,189 @@ def test_the_declared_parameters_gate_refuses_a_stray_calendar_literal(
     )
     with pytest.raises(WrongModelVersionError):
         declared_month_end_parameters(session, version, model_code=ROLLING_RISK_MODEL_CODE)
+
+
+def test_verify_snapshot_reddens_on_a_post_pin_holiday_add_and_coverage_advance(
+    session: Session,
+) -> None:
+    """The review's HIGH: the HOLIDAY_CALENDAR reresolve branch shipped presumed-vacuous while
+    THREE registers cite it as a control. Executed here: the pinned snapshot verifies ok; an
+    ADD-ONLY refresh inside the span reddens it (drift, not a raise); a coverage advance alone
+    reddens it too (both are content the narrow serializer includes)."""
+    tenant = str(uuid.uuid4())
+    cal = create_calendar(
+        session, tenant_id=tenant, code="XNYS", name="NYSE", actor=ReferenceActor(actor_id="s")
+    )
+    refresh_calendar_holidays(
+        session,
+        cal,
+        actor=ReferenceActor(actor_id="s"),
+        holidays=[HolidaySpec(holiday_date=date(2027, 5, 31))],
+        complete_through=date(2030, 12, 31),
+    )
+    run, _pf = _seed_return_run(session, tenant, returns=["0.01"] * 13)
+    snapshot = build_rolling_risk_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=run.run_id,
+        holiday_calendar_code="XNYS",
+    )
+    ok, drifted = _verify(session, snapshot.id, tenant)
+    assert ok and not drifted
+
+    refresh_calendar_holidays(  # a date INSIDE the pinned span — honest drift by design
+        session,
+        cal,
+        actor=ReferenceActor(actor_id="s"),
+        holidays=[HolidaySpec(holiday_date=date(2024, 3, 29))],
+    )
+    ok, drifted = _verify(session, snapshot.id, tenant)
+    assert not ok and "HOLIDAY_CALENDAR" in drifted
+
+    # Rebuild a fresh pin, then advance ONLY the coverage — the horizon is pinned content too.
+    snapshot2 = build_rolling_risk_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=run.run_id,
+        holiday_calendar_code="XNYS",
+    )
+    ok, _ = _verify(session, snapshot2.id, tenant)
+    assert ok
+    refresh_calendar_holidays(
+        session,
+        cal,
+        actor=ReferenceActor(actor_id="s"),
+        holidays=[],
+        complete_through=date(2035, 12, 31),
+    )
+    ok, drifted = _verify(session, snapshot2.id, tenant)
+    assert not ok and "HOLIDAY_CALENDAR" in drifted
+
+
+def _verify(session: Session, snapshot_id: str, tenant: str) -> tuple[bool, str]:
+    report = verify_snapshot(session, snapshot_id=str(snapshot_id), acting_tenant=tenant)
+    # drifted_components carries component IDS; map them to kinds for the assertion.
+    kinds = ""
+    if report.drifted_components:
+        rows = session.execute(
+            select(DatasetSnapshotComponent.component_kind).where(
+                DatasetSnapshotComponent.id.in_(report.drifted_components)
+            )
+        ).scalars()
+        kinds = ",".join(rows)
+    return report.ok, kinds
+
+
+def test_a_month_exhausting_pin_is_a_governed_422_not_a_500(session: Session) -> None:
+    """The review's HIGH, binder side: a hand-built pin whose dates blanket a boundary month
+    reached calmath's exhausted-month ValueError as a RAW 500 past the RollingKernelError-only
+    catch. The widened catch converts it."""
+    tenant = str(uuid.uuid4())
+    cal = create_calendar(
+        session, tenant_id=tenant, code="XNYS", name="NYSE", actor=ReferenceActor(actor_id="s")
+    )
+    blanket = [date(2027, 5, d) for d in range(1, 32) if date(2027, 5, d).weekday() < 5]
+    refresh_calendar_holidays(
+        session,
+        cal,
+        actor=ReferenceActor(actor_id="s"),
+        holidays=[HolidaySpec(holiday_date=d) for d in blanket],
+        complete_through=date(2035, 12, 31),
+    )
+    run, _pf = _seed_return_run(
+        session, tenant, returns=["0.01"] * 13, boundaries=_boundaries_ending_2027_05_28(14)
+    )
+    version = register_rolling_risk_model_v2(
+        session, tenant_id=tenant, actor_id="steward", code_version=_CODE_VERSION
+    )
+    snapshot = build_rolling_risk_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=run.run_id,
+        holiday_calendar_code="XNYS",
+    )
+    with pytest.raises(RollingRiskInputError, match="no business day"):
+        run_rolling_risk(
+            session,
+            acting_tenant=tenant,
+            actor=_ACTOR,
+            code_version=_CODE_VERSION,
+            environment_id="test",
+            model_version_id=str(version.id),
+            window_months=(12,),
+            snapshot_id=str(snapshot.id),
+        )
+
+
+def test_a_v1_run_over_a_pin_carrying_snapshot_is_refused(session: Session) -> None:
+    """The unconsumed-pin refusal (review MED): a WEEKEND-convention run must not bind provenance
+    claiming a holiday input it never read."""
+    tenant = str(uuid.uuid4())
+    _seed_xnys_calendar(session, tenant)
+    run, _pf = _seed_return_run(session, tenant, returns=["0.01"] * 13)
+    v1 = register_rolling_risk_model(
+        session, tenant_id=tenant, actor_id="steward", code_version=_CODE_VERSION
+    )
+    snapshot = build_rolling_risk_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=run.run_id,
+        holiday_calendar_code="XNYS",  # the pin a v1 run cannot consume
+    )
+    with pytest.raises(RollingRiskInputError, match="unconsumed pin"):
+        run_rolling_risk(
+            session,
+            acting_tenant=tenant,
+            actor=_ACTOR,
+            code_version=_CODE_VERSION,
+            environment_id="test",
+            model_version_id=str(v1.id),
+            window_months=(12,),
+            snapshot_id=str(snapshot.id),
+        )
+
+
+def test_the_gate_refuses_ambiguity_and_the_explicit_weekend_literal(session: Session) -> None:
+    """The remaining truth-table arms (review LOWs): duplicated convention rows refuse; the
+    EXPLICIT WEEKEND literal refuses (deliberate divergence from DS-2's A5 — only absence means
+    weekend; documented in the gate)."""
+    tenant = str(uuid.uuid4())
+    model = resolve_or_register_model(
+        session,
+        tenant_id=tenant,
+        code=ROLLING_RISK_MODEL_CODE,
+        name="x",
+        model_type="ROLLING_RISK",
+        actor_id="steward",
+        description="x",
+    )
+    ambiguous = register_model_version(
+        session,
+        model=model,
+        version_label="v9-ambiguous",
+        actor_id="steward",
+        code_version=_CODE_VERSION,
+        status="REGISTERED",
+        assumptions=(
+            "month_end_convention=BUSINESS",
+            "month_end_convention=BUSINESS",
+            "holiday_calendar=XNYS",
+        ),
+    )
+    with pytest.raises(WrongModelVersionError):
+        declared_month_end_parameters(session, ambiguous, model_code=ROLLING_RISK_MODEL_CODE)
+    explicit_weekend = register_model_version(
+        session,
+        model=model,
+        version_label="v9-weekend",
+        actor_id="steward",
+        code_version=_CODE_VERSION,
+        status="REGISTERED",
+        assumptions=("month_end_convention=WEEKEND",),
+    )
+    with pytest.raises(WrongModelVersionError):
+        declared_month_end_parameters(session, explicit_weekend, model_code=ROLLING_RISK_MODEL_CODE)

@@ -39,7 +39,6 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.calc.models import CalculationRun
 from irp_shared.demo.campaign import DEMO_TENANT_ID
 from irp_shared.marketdata import FxRateActor, capture_fx_rate
 from irp_shared.marketdata.models import RETURN_BASIS_TOTAL

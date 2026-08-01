@@ -80,6 +80,7 @@ from irp_shared.perf.rolling_kernel import (
 from irp_shared.perf.stats_kernel import StatsKernelError
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.snapshot import (
+    COMPONENT_KIND_HOLIDAY_CALENDAR,
     COMPONENT_KIND_PORTFOLIO_RETURN,
     PURPOSE_ROLLING_RISK_INPUT,
     list_components,
@@ -224,9 +225,12 @@ def _adjudicate_pins(
         assert_month_aligned(boundaries, holidays)
         months = relink_to_months(sub_periods)
         assert_above_total_loss(months)
-    except RollingKernelError as exc:
+    except ValueError as exc:
         # Converted at the binder boundary: a caller owed a governed refusal must not receive a
-        # kernel error. The kernel's own raises stay defense-in-depth.
+        # kernel error. ``RollingKernelError`` subclasses ValueError, and the WIDER catch also
+        # converts calmath's exhausted-month raise (a hand-built pin whose dates blanket a
+        # boundary month reached it as a raw 500 — the CAL-1b review's HIGH). The kernel's own
+        # raises stay defense-in-depth.
         raise RollingRiskInputError(str(exc)) from exc
 
     return _ParsedInput(
@@ -324,6 +328,18 @@ def run_rolling_risk(
     )
     holidays: frozenset[dt_date] = frozenset()
     coverage: dt_date | None = None
+    if params.convention != MONTH_END_BUSINESS_CONVENTION and any(
+        c.component_kind == COMPONENT_KIND_HOLIDAY_CALENDAR for c in components
+    ):
+        # The unconsumed-pin refusal (the CAL-1b review's MED, symmetric with the no-pin-under-v2
+        # arm and the rf leg's every-pin-consumed principle): a WEEKEND-convention run over a
+        # snapshot PINNING a holiday calendar would bind provenance claiming an input the run
+        # never read.
+        raise RollingRiskInputError(
+            "the snapshot pins a HOLIDAY_CALENDAR component but this model version declares the "
+            "WEEKEND (v1) convention — an unconsumed pin is refused; rebuild the snapshot "
+            "without holiday_calendar_code or run under a v2 version"
+        )
     if params.convention == MONTH_END_BUSINESS_CONVENTION:
         assert params.holiday_calendar is not None  # the gate refused a BUSINESS row without it
         holidays, coverage = parse_pinned_holidays(

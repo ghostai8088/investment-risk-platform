@@ -47,6 +47,10 @@ def parse_pinned_holidays(
         raw_dates = content["holiday_dates"]
         raw_coverage = content["holidays_complete_through"]
         dates = frozenset(dt_date.fromisoformat(str(d)) for d in raw_dates)
+        # Parsed INSIDE the malformed envelope (the CAL-1b review's MED: a non-ISO coverage
+        # string previously leaked a raw ValueError past the governed refusal from the return
+        # line). None survives to the explicit refusal below.
+        coverage = None if raw_coverage is None else dt_date.fromisoformat(str(raw_coverage))
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise error(f"the pinned HOLIDAY_CALENDAR component is malformed: {exc}") from exc
     if code != declared_code:
@@ -55,9 +59,9 @@ def parse_pinned_holidays(
             f"holiday_calendar={declared_code!r} — a v2 run must compute under its declared "
             "calendar (rebuild the snapshot)"
         )
-    if raw_coverage is None:
+    if coverage is None:
         raise error(
             f"the pinned calendar {code!r} declares no holiday coverage "
             "(holidays_complete_through is NULL) — a declared horizon is required (OQ-CAL-1-4)"
         )
-    return dates, dt_date.fromisoformat(str(raw_coverage))
+    return dates, coverage

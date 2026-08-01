@@ -265,3 +265,27 @@ def test_record_failed_reports_failed_on_the_ordinary_path() -> None:
         sched_mod.record_failed_dispatch = original  # type: ignore[assignment]
 
     assert outcome == sched_mod.OUTCOME_FAILED
+
+
+def test_the_period_dedup_key_classifies_benign() -> None:
+    """The CAL-1b review's MED: the classifier's new period-key arm, EXECUTED in both forms
+    (diag name and string fallback) plus the neither-name negative."""
+    from sqlalchemy.exc import IntegrityError
+
+    from irp_worker.scheduler import _is_tick_dedup
+
+    class _Diag:
+        def __init__(self, name: str | None) -> None:
+            self.constraint_name = name
+
+    class _Orig(Exception):
+        def __init__(self, name: str | None) -> None:
+            self.diag = _Diag(name)
+
+    def _exc(name: str | None, text: str) -> IntegrityError:
+        return IntegrityError(text, {}, _Orig(name))
+
+    assert _is_tick_dedup(_exc("uq_scheduled_run_schedule_period", "x")) is True
+    assert _is_tick_dedup(_exc("uq_scheduled_run_schedule_tick", "x")) is True
+    assert _is_tick_dedup(_exc(None, "... uq_scheduled_run_schedule_period ...")) is True
+    assert _is_tick_dedup(_exc(None, "some other constraint entirely")) is False

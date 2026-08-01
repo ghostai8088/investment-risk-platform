@@ -822,3 +822,54 @@ def test_the_period_polite_layer_holds_a_served_month(session: Session) -> None:
         holidays=[HolidaySpec(holiday_date=dt_date(2027, 5, 28))],
     )
     assert select_active_due(session, now, acting_tenant=tenant) == []  # served, not double-fired
+
+
+def test_a_month_exhausting_holiday_set_is_skipped_not_a_tenant_abort(session: Session) -> None:
+    """The review's HIGH: calmath's exhausted-month ValueError previously escaped the
+    ScheduleError-only skip-and-report and aborted ALL FOUR tick phases. Now converted at
+    current_tick — the poisoned schedule skips, the healthy sibling still polls."""
+    tenant = str(uuid.uuid4())
+    blanket = tuple(
+        date for date in (dt_date(2027, 6, d) for d in range(1, 31)) if date.weekday() < 5
+    ) + (dt_date(2027, 5, 31),)
+    cal = _mk_holiday_calendar(session, tenant, holidays=blanket)
+    _mk_business(session, tenant, cal)
+    healthy = _mk(session, tenant)  # an INTERVAL sibling
+    due = select_active_due(session, datetime(2027, 6, 15, tzinfo=UTC), acting_tenant=tenant)
+    assert [s.id for s, _t, _h in due] == [healthy.id]  # poisoned skipped, sibling survives
+
+
+def test_a_foreign_calendar_binding_is_refused_on_the_unit_tier_too(session: Session) -> None:
+    """The review's MED: the resolve read now carries the explicit own-OR-SYSTEM predicate, so
+    the fail-closed foreign-calendar refusal is enforceable WITHOUT RLS (a raw-DDL row binding a
+    foreign calendar — PG FK checks bypass RLS — must skip, never resolve)."""
+    tenant_a, tenant_b = str(uuid.uuid4()), str(uuid.uuid4())
+    foreign = _mk_holiday_calendar(session, tenant_b)
+    sched = _mk_business(session, tenant_a, _mk_holiday_calendar(session, tenant_a))
+    # Simulate the raw-DDL smuggle: re-point the binding under the ORM (no guard runs here).
+    sched.calendar_id = str(foreign.id)
+    session.flush()
+    assert (
+        select_active_due(session, datetime(2027, 6, 1, tzinfo=UTC), acting_tenant=tenant_a) == []
+    )
+
+
+def test_a_null_calendar_business_row_refuses_at_the_third_layer(session: Session) -> None:
+    """Defense-in-depth (review LOW): unreachable through governed writes (_validate_config +
+    the DB CHECK), pinned directly like the OverflowError precedent."""
+    from irp_shared.scheduling.service import _resolve_business_calendar
+
+    sched = Schedule(
+        tenant_id=str(uuid.uuid4()),
+        code="x",
+        name="x",
+        target_run_type="EXPOSURE_AGGREGATE",
+        scope_portfolio_id=str(uuid.uuid4()),
+        environment_id="x",
+        cadence_kind=CADENCE_BUSINESS_MONTH_END,
+        calendar_id=None,
+        anchor_date=dt_date(2027, 1, 1),
+        status="ACTIVE",
+    )
+    with pytest.raises(ScheduleError, match="calendar_id is NULL"):
+        _resolve_business_calendar(session, sched)

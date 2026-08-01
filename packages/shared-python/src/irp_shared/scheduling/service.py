@@ -179,7 +179,16 @@ def current_tick(
             raise ScheduleError(
                 "BUSINESS_MONTH_END requires a resolved holiday set — refusing a holiday-blind tick"
             )
-        return _month_end_tick_at_or_before(now, holidays)
+        try:
+            return _month_end_tick_at_or_before(now, holidays)
+        except ValueError as exc:
+            # calmath's exhausted-month floor raises a RAW ValueError; unconverted it escapes the
+            # poll loop's ScheduleError-only skip-and-report and aborts ALL FOUR tick phases for
+            # the tenant (the OverflowError/B3 class, re-entered through the holiday door — the
+            # CAL-1b review's HIGH). Every exit from here must be a clean ScheduleError.
+            raise ScheduleError(
+                f"the resolved holiday set is corrupt for this grid: {exc}"
+            ) from exc
     if cadence_kind != CADENCE_INTERVAL:
         raise ScheduleError(f"unknown cadence_kind {cadence_kind!r} — cannot compute a grid tick")
     if interval_days is None:
@@ -305,7 +314,16 @@ def _resolve_business_calendar(
             "BUSINESS_MONTH_END requires a bound calendar (calendar_id is NULL) — refusing"
         )
     calendar = session.execute(
-        select(Calendar).where(Calendar.id == schedule.calendar_id)
+        select(Calendar).where(
+            Calendar.id == schedule.calendar_id,
+            # Belt-and-suspenders (the CAL-1b review's MED): the explicit own-OR-SYSTEM predicate
+            # the platform's pattern demands — RLS alone leaves the foreign-calendar refusal
+            # unenforceable on the SQLite tier and in superuser PG contexts (the REF-1 lesson).
+            or_(
+                Calendar.tenant_id == str(schedule.tenant_id),
+                Calendar.tenant_id == SYSTEM_TENANT_ID,
+            ),
+        )
     ).scalar_one_or_none()
     if calendar is None:
         raise ScheduleError(
@@ -320,7 +338,13 @@ def _resolve_business_calendar(
         )
     dates = frozenset(
         session.execute(
-            select(CalendarHoliday.holiday_date).where(CalendarHoliday.calendar_id == calendar.id)
+            select(CalendarHoliday.holiday_date).where(
+                CalendarHoliday.calendar_id == calendar.id,
+                or_(
+                    CalendarHoliday.tenant_id == str(schedule.tenant_id),
+                    CalendarHoliday.tenant_id == SYSTEM_TENANT_ID,
+                ),
+            )
         ).scalars()
     )
     return calendar, dates

@@ -786,3 +786,65 @@ executed-P4 note:
 code/short-coverage refusals, and END-TO-END grandfather parity (byte-identical v1/v2 rows on a
 compliant book, unit tier AND the demo battery). The old conformance pin converts per OQ-7 with
 its misattribution corrected.
+
+---
+
+## Part 9 — the CAL-1b adversarial review fold (2026-08-01)
+
+Four refute-by-default lanes over the implementation diff (convention correctness with executed
+sweeps; scheduling/DDL; demo/claims; test quality with mutation checks): **1 BLOCKING, 4 HIGH,
+7 MED, 7 LOW — all folded.** The battery found the BLOCKING before the review reported it.
+
+- **(BLOCKING, demo lane / found first by the battery)** `_pm1_return_run_id` crashed with
+  `MultipleResultsFound` — the demo tenant holds TWO completed PORTFOLIO_RETURN runs (the
+  campaign's intra-month book + RM-1's), a hazard `sr1_stage17` documents and solves one file
+  away. Fold: the run is derived from the v1 `RollingRiskResult` binding (which is also what
+  makes the parity comparison meaningful), refusing loudly on an ambiguous baseline. The
+  26/43/139 pin is now genuinely MEASURED (battery green).
+- **(HIGH ×2, one root — convention + scheduling lanes, both by execution)** calmath's
+  exhausted-month `ValueError` escaped EVERY governed conversion boundary: through `current_tick`
+  it aborted all four tick phases for the tenant (the OverflowError/B3 class re-entered through
+  the holiday door), and through `is_month_end`'s third clause it surfaced a hand-built
+  blanket-pin as a raw 500. Fold: converted to `ScheduleError` at `current_tick` and the binder
+  alignment catches WIDENED to `ValueError` (RollingKernelError subclasses it); negative
+  controls at all three sites (the poisoned schedule skips while the sibling polls; the blanket
+  pin is a governed 422).
+- **(HIGH — test lane, by mutation)** Sharpe v2 had ZERO discriminating coverage: a
+  threading-deletion mutant survived the entire unit tier AND the demo (whose book never
+  diverges under holidays). Fold: the four sharpe twins (v1 refusal / v2 acceptance from the
+  pin / no-pin refusal / coverage refusal). The RM-1 side needed nothing — both prescribed
+  mutants were KILLED by the shipped tests, and the hypothesized easy-input gap did not exist.
+- **(HIGH — test lane)** the `verify_snapshot` HOLIDAY_CALENDAR branch shipped presumed-vacuous
+  while three registers cite it as a control. Fold: executed drift tests — the pinned snapshot
+  verifies ok; a post-pin holiday ADD inside the span reddens it; a coverage advance alone
+  reddens it.
+- **(MED set, all folded)** the coverage parse moved inside the malformed envelope (a non-ISO
+  string leaked a raw ValueError); the UNCONSUMED-PIN refusal added to both binders (a WEEKEND
+  run over a pin-carrying snapshot bound provenance claiming an input it never read — the rf
+  leg's every-pin-consumed principle); `_resolve_business_calendar` gained the explicit
+  own-OR-SYSTEM predicate (belt-and-suspenders — the refusal was unenforceable on the SQLite
+  tier) with unit + PG foreign-binding skip tests; the pin-parser's five refusal arms all
+  executed (`test_holiday_binding`); the period-dedup classifier arm executed in both forms;
+  the checklist's item-7 carry marked PAID (it had been left as a stale open MUST — a false
+  open obligation in a compliance artifact).
+- **(LOW set, all folded)** the explicit-WEEKEND literal refusal documented as a DELIBERATE
+  divergence from DS-2's A5 (only absence means weekend) and test-pinned with the ambiguity
+  arm; the classifier's false SQLite-fallback docstring corrected + the name-blind FAILED-insert
+  classification made log-visible; the stale CI pin comment and `test_synthetic` slot prose
+  merged; the ENT-006 row's unbalanced bold markers; the NULL-calendar third-layer arm pinned.
+
+**A process near-miss, recorded (the P6 discipline):** the first fold script aborted mid-way on
+a failed assertion and silently LOST three of its edits (the ValueError conversion, the explicit
+predicate, the coverage parse) — "folded" claims that were not on disk. Caught because the
+fold's own new tests were run immediately after (the malformed-coverage test failed against the
+supposedly-fixed code). The countermeasure is the one that worked: a fold is not folded until
+its own negative control passes — run the fold's tests in the same breath as the fold.
+
+**Confirmed under attack (the substrate):** v1 byte-identity proven by execution over 1,332
+months (1990–2100, zero mismatches, both predicates); the widening safe under the
+three-accepted-dates pathology (conditions 4/5 walked with executed examples); the grandfather
+at the due-select layer byte-identical for legacy kinds; the 0053 CHECK restoration
+byte-identical; the SQLite tier ENFORCES the partial unique (executed); no naming-convention
+trap; the coverage-comparison grain proven right by adversarial reasoning; the demo's
+paused-legacy fence non-vacuous; the count-pin arithmetic independently recomputed; every
+register discharge claim verified; all five Part-8 refinements true.

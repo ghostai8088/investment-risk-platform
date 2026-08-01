@@ -32,6 +32,7 @@ from irp_shared.perf.bootstrap import (
     SHARPE_WINDOWS,
     register_rolling_risk_model,
     register_sharpe_model,
+    register_sharpe_model_v2,
 )
 from irp_shared.perf.events import RUN_TYPE_SHARPE, SharpeRatioActor
 from irp_shared.perf.models import (
@@ -58,7 +59,13 @@ from irp_shared.perf.sharpe_service import (
     run_sharpe_ratio,
 )
 from irp_shared.portfolio import PortfolioActor, create_portfolio
+from irp_shared.reference.calendar import (
+    HolidaySpec,
+    create_calendar,
+    refresh_calendar_holidays,
+)
 from irp_shared.reference.models import Currency
+from irp_shared.reference.service import ReferenceActor
 from irp_shared.snapshot import (
     PURPOSE_ROLLING_RISK_INPUT,
     build_rolling_risk_snapshot,
@@ -1041,3 +1048,101 @@ def test_a_NaN_pinned_return_is_refused_by_the_strict_parse(session: Session) ->
     for bad in ("NaN", "sNaN", "Infinity", "-Infinity"):
         with pytest.raises(SharpeInputError, match="not a finite number"):
             _adjudicate_portfolio_leg([{**base, "return_value": bad}])
+
+
+# --- CAL-1b: the v2 holiday-aware convention, the SHARPE twins (the review's HIGH: sharpe v2 had
+# zero discriminating coverage — the lockstep move needs its own proofs) ---------------------------
+
+
+def _seed_xnys_calendar(session: Session, tenant: str) -> None:
+    cal = create_calendar(
+        session, tenant_id=tenant, code="XNYS", name="NYSE", actor=ReferenceActor(actor_id="s")
+    )
+    refresh_calendar_holidays(
+        session,
+        cal,
+        actor=ReferenceActor(actor_id="s"),
+        holidays=[HolidaySpec(holiday_date=date(2027, 5, 31), name="Memorial Day")],
+        complete_through=date(2035, 12, 31),
+    )
+
+
+def _boundaries_ending_2027_05_28(count: int) -> list[date]:
+    months = []
+    year, month = 2027, 5
+    for _ in range(count):
+        months.append((year, month))
+        year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+    months.reverse()
+    bounds = [last_weekday_of_month(y, m) for (y, m) in months[:-1]]
+    return [*bounds, date(2027, 5, 28)]
+
+
+def _run_sharpe_v2(session: Session, tenant: str, *, with_pin: bool = True):  # noqa: ANN202
+    bounds = _boundaries_ending_2027_05_28(14)
+    run, _pf, bounds = _seed_return_run(session, tenant, returns=["0.01"] * 13, boundaries=bounds)
+    head = _seed_risk_free(session, tenant, dates=bounds[1:], values=["0.004"] * 13)
+    version = register_sharpe_model_v2(
+        session, tenant_id=tenant, actor_id="steward", code_version=_CODE_VERSION
+    )
+    snapshot = build_sharpe_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=_SNAP_ACTOR,
+        portfolio_return_run_id=run.run_id,
+        risk_free_benchmark_id=head.id,
+        rf_return_basis=RETURN_BASIS_TOTAL,
+        holiday_calendar_code="XNYS" if with_pin else None,
+    )
+    return run_sharpe_ratio(
+        session,
+        acting_tenant=tenant,
+        actor=_ACTOR,
+        code_version=_CODE_VERSION,
+        environment_id="test",
+        model_version_id=str(version.id),
+        window_months=(12,),
+        snapshot_id=snapshot.id,
+    )
+
+
+def test_sharpe_v1_refuses_the_pre_holiday_business_day(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    with pytest.raises(SharpeInputError, match="not a month end"):
+        _run_sharpe(
+            session,
+            tenant,
+            returns=["0.01"] * 13,
+            boundaries=_boundaries_ending_2027_05_28(14),
+        )
+
+
+def test_sharpe_v2_accepts_it_with_the_pinned_holiday_set(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    _seed_xnys_calendar(session, tenant)
+    result = _run_sharpe_v2(session, tenant)
+    assert result.status == "COMPLETED"
+    assert result.rows
+
+
+def test_sharpe_v2_without_the_pin_is_refused(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    _seed_xnys_calendar(session, tenant)
+    with pytest.raises(SharpeInputError, match="pins no HOLIDAY_CALENDAR"):
+        _run_sharpe_v2(session, tenant, with_pin=False)
+
+
+def test_sharpe_v2_span_beyond_the_declared_coverage_is_refused(session: Session) -> None:
+    tenant = str(uuid.uuid4())
+    cal = create_calendar(
+        session, tenant_id=tenant, code="XNYS", name="NYSE", actor=ReferenceActor(actor_id="s")
+    )
+    refresh_calendar_holidays(
+        session,
+        cal,
+        actor=ReferenceActor(actor_id="s"),
+        holidays=[HolidaySpec(holiday_date=date(2027, 5, 31))],
+        complete_through=date(2027, 3, 31),  # short of the series close
+    )
+    with pytest.raises(SharpeInputError, match="declared holiday coverage"):
+        _run_sharpe_v2(session, tenant)
