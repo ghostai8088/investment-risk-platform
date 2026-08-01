@@ -786,6 +786,24 @@ to be there. The migration is tenant-blind *by design* (a migration is database-
 does the same destroys its neighbours' fixtures. Now scoped to its own tenant, with the distinction
 stated at the call site.
 
+### Gate ratification of the carries (2026-08-01)
+
+The user accepted BOTH open items as recorded deferrals rather than in-slice builds:
+
+1. **The classification-basis selector** (Part 7 R2). `limit_definition` gains no declared
+   classification `basis`; a COUNTRY_OF_RISK threshold is adjudicated against whichever single
+   basis the resolved run pinned. Guarded today by the snapshot builder's fail-closed mixed-basis
+   refusal and by every result row recording its basis. **Trigger to build:** the first tenant
+   operating two bases for one dimension across runs, or the first operator ask for a basis-drift
+   signal — build then follows OQ-LIM-2-1=C's shape (declare + surface drift, do not refuse).
+2. **The breach DTO dimension echoes** (Part 6, the stated scope call). `BreachOut` stays
+   unwidened; a concentration breach identifies itself via `limit_code` + `metric_type` and the
+   row carries the full echo set. **Trigger:** the first consumer that needs the bucket/scheme
+   over the wire (the natural candidate is RPT-1, Wave-15).
+
+LIM-2 merges as is. Both carries go to the close-review OPEN-and-legitimate register with these
+triggers.
+
 ## Verification note
 
 Facts 2, 3 (the zero-CHECK half), 4 (the platform-wide scope), 7, 12 and 13 are **new to this pass**
