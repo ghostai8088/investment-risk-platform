@@ -29,6 +29,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -60,6 +61,54 @@ class LimitDefinition(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, Timesta
     __temporal_class__ = TemporalClass.EFFECTIVE_DATED
     __table_args__ = (
         UniqueConstraint("tenant_id", "code", name="uq_limit_definition_tenant_code"),
+        # --- LIM-2: this table's FIRST CHECK constraints (migration 0058) ---
+        # Names are SUFFIX-ONLY: `ck` is the only NAMING_CONVENTION entry keyed on
+        # %(constraint_name)s, so it expands `ck_limit_definition_<name>` itself. Passing an
+        # expanded name here yields `ck_limit_definition_ck_limit_definition_<name>` — the CON-1
+        # 0057 defect. `test_limit_constraint_names_match_the_ORM_exactly` reads the LIVE
+        # pg_constraint catalog rather than comparing this text to the migration's text, because
+        # text-vs-text comparison is exactly what missed it three times.
+        #
+        # The dimension columns exist iff this is a concentration limit — total enumeration in
+        # BOTH directions, so no other family can carry a stray dimension.
+        CheckConstraint(
+            "(target_run_type = 'CONCENTRATION' AND dimension_kind IS NOT NULL"
+            " AND denominator_basis IS NOT NULL)"
+            " OR (target_run_type <> 'CONCENTRATION' AND dimension_kind IS NULL"
+            " AND bucket_code IS NULL AND issuer_id IS NULL AND scheme_family IS NULL"
+            " AND authored_scheme_id IS NULL AND denominator_basis IS NULL)",
+            name="concentration_shape",
+        ),
+        # The DISCLOSURE fence, structural. Issuer identity may live ONLY on an ISSUER-dimension
+        # row — which is what makes the read fence enforceable, since the limit and breach reads
+        # exclude on `issuer_id IS NOT NULL` for a caller without `concentration.issuer.view`.
+        # CON-1 learned this shape the hard way: only binder discipline kept the analogous row
+        # class nonexistent on `concentration_result` until its review fold made it structural.
+        CheckConstraint(
+            "issuer_id IS NULL OR dimension_kind = 'ISSUER'",
+            name="issuer_only",
+        ),
+        # A classification dimension carries its scheme family; ISSUER never does.
+        CheckConstraint(
+            "dimension_kind IS NULL"
+            " OR ((dimension_kind IN ('SECTOR_INDUSTRY', 'COUNTRY_OF_RISK'))"
+            " = (scheme_family IS NOT NULL))",
+            name="scheme_by_dimension",
+        ),
+        # VOCABULARY (a recorded Genericity departure — see the 0058 docstring): the
+        # DEFINITION-TIME half of the basis discipline. A limit declaring a NAV basis is refused
+        # because no such value exists; the EVALUATION-TIME half (the resolved row's basis must
+        # equal this one) lives in the resolver, because a run does not exist at definition time.
+        CheckConstraint(
+            "denominator_basis IS NULL OR denominator_basis IN ('INVESTED_LONG')",
+            name="denominator_basis_vocab",
+        ),
+        # VOCABULARY (same departure): total enumeration, failing CLOSED on an unenumerated kind.
+        CheckConstraint(
+            "dimension_kind IS NULL"
+            " OR dimension_kind IN ('ISSUER', 'SECTOR_INDUSTRY', 'COUNTRY_OF_RISK')",
+            name="dimension_kind_vocab",
+        ),
     )
 
     code: Mapped[str] = mapped_column(String(150), nullable=False)
@@ -89,6 +138,34 @@ class LimitDefinition(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, Timesta
     #: Lifecycle status (only ACTIVE is evaluated).
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    # --- LIM-2: the dimensional selector (migration 0058). All FROZEN identity — absent from
+    # `_UPDATABLE`, so a re-target is a NEW limit and a breach's echo stays meaningful (OD-I).
+    # All nullable: a VaR limit has no dimension, and NULL is the honest value for it.
+    #: ISSUER | SECTOR_INDUSTRY | COUNTRY_OF_RISK; NULL for a non-concentration limit.
+    dimension_kind: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    #: The named bucket this limit thresholds. **NULL means a RUN-LEVEL (summary-metric) limit** —
+    #: the distinction between "tech <= 20%" and "max sector share <= 20%".
+    bucket_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    #: The named issuer, when one is named. Doubles as the disclosure-fence predicate (the reads
+    #: exclude on `issuer_id IS NOT NULL`). A hard FK is legal here because `issuer` is same-tenant
+    #: proprietary — the `concentration_result.issuer_id` reasoning.
+    issuer_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("issuer.id"), nullable=True, index=True
+    )
+    #: The BINDING selector (OQ-LIM-2-1=C): the taxonomy FAMILY, not a version. A scheme revision
+    #: mints a new `scheme_id`, so binding to one would silently decommission every sector limit
+    #: the day a tenant adopts the next revision.
+    scheme_family: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    #: The scheme VERSION the threshold was authored against — recorded, never bound. When the
+    #: resolved run's scheme differs, `limit_health` reports drift instead of either silently
+    #: re-anchoring the threshold or silently ceasing to evaluate. **No FK**:
+    #: `classification_scheme` is hybrid and a PG referential check bypasses RLS, so an FK would
+    #: let this proprietary row reference a scheme its own USING clause cannot see (OQ-CON-1-14).
+    authored_scheme_id: Mapped[str | None] = mapped_column(GUID, nullable=True)
+    #: The denominator the threshold was WRITTEN AGAINST. Half of the basis discipline; the other
+    #: half is the resolver's equality check against the row actually resolved.
+    denominator_basis: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
 class Breach(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
@@ -123,6 +200,26 @@ class Breach(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     severity: Mapped[str] = mapped_column(String(10), nullable=False)
     #: Breach lifecycle status (v1 = DETECTED; the lifecycle states are MG-2).
     status: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    # --- LIM-2 echoes (migration 0058). Additive-nullable with NO backfill: `breach` carries the
+    # P0001 append-only trigger, so any UPDATE raises. Pre-LIM-2 rows keep NULL, which is the
+    # HONEST value — they are VAR/ACTIVE_RISK breaches and have no dimension. The `var_result`
+    # precedent (0038/0040/0048) is the same discipline on the same trigger.
+    dimension_kind: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    bucket_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    #: No FK: `breach` is IA append-only evidence and echoes identity rather than referencing it
+    #: (the `benchmark_id` echo precedent two fields up).
+    issuer_id: Mapped[str | None] = mapped_column(GUID, nullable=True)
+    scheme_family: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    #: The scheme the EVALUATED run actually used — deliberately NOT the limit's
+    #: `authored_scheme_id`. The pair is what makes a scheme-drift breach PROVABLE from the rows
+    #: alone, rather than only flagged live in `limit_health`.
+    resolved_scheme_id: Mapped[str | None] = mapped_column(GUID, nullable=True)
+    denominator_basis: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    #: The portfolio the limit was scoped to. Pays a pre-existing gap (wave-14 planning fact 4):
+    #: `breach` echoed the metric identity but never the scope, so the row was not fully
+    #: self-describing against the doctrine this module's docstring states.
+    scope_portfolio_id: Mapped[str | None] = mapped_column(GUID, nullable=True)
 
 
 class BreachAction(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):

@@ -7754,18 +7754,30 @@ export interface components {
         };
         /** LimitCreateIn */
         LimitCreateIn: {
+            /** Authored Scheme Id */
+            authored_scheme_id?: string | null;
             /** Benchmark Id */
             benchmark_id?: string | null;
             /** Breach Direction */
             breach_direction: string;
+            /** Bucket Code */
+            bucket_code?: string | null;
             /** Code */
             code: string;
+            /** Denominator Basis */
+            denominator_basis?: string | null;
+            /** Dimension Kind */
+            dimension_kind?: string | null;
+            /** Issuer Id */
+            issuer_id?: string | null;
             /** Limit Kind */
             limit_kind: string;
             /** Metric Type */
             metric_type: string;
             /** Name */
             name: string;
+            /** Scheme Family */
+            scheme_family?: string | null;
             /**
              * Scope Portfolio Id
              * Format: uuid
@@ -7784,28 +7796,49 @@ export interface components {
             code: string;
             /** Latest Breach Id */
             latest_breach_id: string | null;
+            /**
+             * Latest Run Failed
+             * @default false
+             */
+            latest_run_failed: boolean;
             /** Latest Run Id */
             latest_run_id: string | null;
             /** Limit Id */
             limit_id: string;
+            /** Refusal Reason */
+            refusal_reason?: string | null;
+            /** Scheme Drift From */
+            scheme_drift_from?: string | null;
+            /** Scheme Drift To */
+            scheme_drift_to?: string | null;
             /**
              * State
              * @enum {string}
              */
-            state: "IN_APPETITE" | "NEVER_EVALUABLE" | "BREACHED";
+            state: "IN_APPETITE" | "NEVER_EVALUABLE" | "BREACHED" | "REFUSED";
         };
         /** LimitOut */
         LimitOut: {
+            /** Authored Scheme Id */
+            authored_scheme_id: string | null;
             /** Benchmark Id */
             benchmark_id: string | null;
             /** Breach Direction */
             breach_direction: string;
+            /** Bucket Code */
+            bucket_code: string | null;
             /** Code */
             code: string;
             /** Created By */
             created_by: string | null;
+            /** Denominator Basis */
+            denominator_basis: string | null;
+            /** Dimension Kind */
+            dimension_kind: string | null;
             /** Id */
             id: string;
+            /** Issuer Id */
+            issuer_id: string | null;
             /** Limit Kind */
             limit_kind: string;
             /** Metric Type */
@@ -7814,6 +7847,8 @@ export interface components {
             name: string;
             /** Record Version */
             record_version: number;
+            /** Scheme Family */
+            scheme_family: string | null;
             /** Scope Portfolio Id */
             scope_portfolio_id: string;
             /**

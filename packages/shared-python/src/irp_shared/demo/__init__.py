@@ -57,6 +57,13 @@ from irp_shared.demo.hg1_private import (
     Hg1PrivateSummary,
     run_demo_hg1_private,
 )
+from irp_shared.demo.lim2_stage20 import (
+    DemoLim2AlreadySeededError,
+    DemoLim2Error,
+    DemoLim2PrereqError,
+    Lim2Stage20Summary,
+    run_demo_lim2_stage20,
+)
 from irp_shared.demo.multifamily import (
     DemoMultifamilyAlreadySeededError,
     DemoMultifamilyError,
@@ -143,6 +150,11 @@ __all__ = [
     "DemoCon1AlreadySeededError",
     "DemoCon1Error",
     "run_demo_con1_stage19",
+    "run_demo_lim2_stage20",
+    "DemoLim2AlreadySeededError",
+    "DemoLim2Error",
+    "DemoLim2PrereqError",
+    "Lim2Stage20Summary",
     "DemoRef1Error",
     "DemoRef1AlreadySeededError",
     "Ref1Stage18Summary",

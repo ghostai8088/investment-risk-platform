@@ -264,6 +264,108 @@ describe("LimitHealth", () => {
     updated_by: null,
   };
 
+  const CONCENTRATION_LIMIT = {
+    ...ACTIVE_LIMIT,
+    id: "l-c",
+    code: "TECH-20",
+    name: "tech <= 20%",
+    target_run_type: "CONCENTRATION",
+    metric_type: "SHARE",
+    threshold_value: "0.200000",
+    threshold_unit: "FRACTION",
+    dimension_kind: "SECTOR_INDUSTRY",
+    bucket_code: "J",
+    issuer_id: null,
+    scheme_family: "ISIC",
+    authored_scheme_id: "scheme-rev4",
+    denominator_basis: "INVESTED_LONG",
+  };
+
+  it("shows WHICH taxonomy a concentration limit means (the metric name alone cannot)", async () => {
+    // LIM-2 fact 2: `MAX_SHARE_SECTOR_INDUSTRY` / `SHARE` does not say which scheme partitioned the
+    // sectors, and two schemes partition them differently. Rule 7 requires the selector on screen.
+    routeFetch({
+      "/limits/health": [
+        {
+          limit_id: "l-c",
+          code: "TECH-20",
+          state: "IN_APPETITE",
+          latest_run_id: "run-9",
+          latest_breach_id: null,
+          latest_run_failed: false,
+          scheme_drift_from: null,
+          scheme_drift_to: null,
+          refusal_reason: null,
+        },
+      ],
+      "/limits": [CONCENTRATION_LIMIT],
+    });
+    render(
+      <MemoryRouter>
+        <LimitHealth session={SESSION} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("TECH-20")).toBeTruthy();
+    expect(screen.getByText(/SECTOR_INDUSTRY/)).toBeTruthy();
+    expect(screen.getByText(/ISIC/)).toBeTruthy();
+  });
+
+  it("shows staleness and scheme drift ALONGSIDE a breach, never instead of it", async () => {
+    // The reason these are orthogonal fields and not extra enum values (LIM-2 record 3.5): a
+    // staleness badge that REPLACED the verdict would hide a real breach. All three must render.
+    routeFetch({
+      "/limits/health": [
+        {
+          limit_id: "l-c",
+          code: "TECH-20",
+          state: "BREACHED",
+          latest_run_id: "run-9",
+          latest_breach_id: "b-9",
+          latest_run_failed: true,
+          scheme_drift_from: "scheme-rev4",
+          scheme_drift_to: "scheme-rev5",
+          refusal_reason: null,
+        },
+      ],
+      "/limits": [CONCENTRATION_LIMIT],
+    });
+    render(
+      <MemoryRouter>
+        <LimitHealth session={SESSION} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("BREACHED")).toBeTruthy();
+    expect(screen.getByText(/newest run failed/i)).toBeTruthy();
+    expect(screen.getByText(/scheme version drift/i)).toBeTruthy();
+  });
+
+  it("says a refused limit was NOT compared, rather than showing it as green", async () => {
+    routeFetch({
+      "/limits/health": [
+        {
+          limit_id: "l-c",
+          code: "TECH-20",
+          state: "REFUSED",
+          latest_run_id: null,
+          latest_breach_id: null,
+          latest_run_failed: false,
+          scheme_drift_from: null,
+          scheme_drift_to: null,
+          refusal_reason: "basis mismatch: the limit was written against 'INVESTED_LONG'",
+        },
+      ],
+      "/limits": [CONCENTRATION_LIMIT],
+    });
+    render(
+      <MemoryRouter>
+        <LimitHealth session={SESSION} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("REFUSED")).toBeTruthy();
+    expect(screen.getByText(/not compared/i)).toBeTruthy();
+    expect(screen.queryByText("IN_APPETITE")).toBeNull();
+  });
+
   it("never renders a SUSPENDED limit as healthy (it has no health row at all)", async () => {
     routeFetch({
       "/limits/health": [], // health only covers ACTIVE limits

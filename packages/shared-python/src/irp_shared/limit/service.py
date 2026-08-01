@@ -18,6 +18,7 @@ Layers:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -34,6 +35,15 @@ from irp_shared.audit.actions import (
 )
 from irp_shared.audit.payload import json_safe
 from irp_shared.audit.service import record_event
+from irp_shared.concentration.events import RUN_TYPE_CONCENTRATION
+from irp_shared.concentration.models import (
+    CONCENTRATION_DIMENSION_KINDS,
+    CONCENTRATION_METRIC_TYPES,
+    DENOMINATOR_BASES,
+    DIMENSION_KIND_ISSUER,
+    METRIC_TYPE_SHARE,
+    ROW_KIND_DETAIL,
+)
 from irp_shared.limit.events import (
     BREACH_ABOVE,
     BREACH_BELOW,
@@ -140,6 +150,24 @@ _METRIC_MAP: dict[tuple[str, str], MetricSpec] = {
     (RUN_TYPE_ACTIVE_RISK, METRIC_TYPE_TRACKING_ERROR): MetricSpec(
         "te_value", THRESHOLD_UNIT_FRACTION, True
     ),
+    # LIM-2 registers CON-1's family (the OQ-CON-1-15 deferral discharged). DERIVED from
+    # ``CONCENTRATION_METRIC_TYPES`` rather than retyped, so the map can never drift from the
+    # metric vocabulary it thresholds; `test_metric_map_concentration_census` then pins the
+    # EXPECTED ten names literally, so adding a metric to CON-1 fails HERE and forces a decision
+    # about whether it should be limit-bindable, instead of silently becoming so.
+    #
+    # Every concentration metric is a dimensionless ratio in [0,1] — `max_share` and `cr_n` are
+    # sums of fractional shares, `hhi` a sum of their squares — so FRACTION covers the family and
+    # no threshold unit is minted. DETAIL rows carry the value in ``share_invested_long`` and
+    # SUMMARY rows in ``metric_value``; that per-metric split is exactly what MetricSpec is for.
+    **{
+        (RUN_TYPE_CONCENTRATION, metric): MetricSpec(
+            "share_invested_long" if metric == METRIC_TYPE_SHARE else "metric_value",
+            THRESHOLD_UNIT_FRACTION,
+            False,
+        )
+        for metric in CONCENTRATION_METRIC_TYPES
+    },
 }
 
 #: In-place editable head attributes (OD-I): the config knobs. The IDENTITY fields
@@ -181,10 +209,256 @@ def _breaches(observed: Decimal, threshold: Decimal, breach_direction: str) -> b
 
 
 # --- discovery ----------------------------------------------------------------------------
-def _resolve_latest(session: Session, limit: LimitDefinition) -> tuple[str, Decimal] | None:
-    """Resolve the latest COMPLETED result for the limit's ``(run_type, scope, metric[, bmk])``
-    and return ``(calculation_run_id, observed_value)`` — or None when no matching run exists (the
-    NEVER-EVALUABLE / metric-cold case). Discovery is ``calculation_run``-driven (demand #1)."""
+@dataclass(frozen=True)
+class Resolution:
+    """What a family resolver found — richer than the ``(run_id, value)`` tuple it replaces.
+
+    Three outcomes are now distinguishable, and conflating any two of them was a real defect:
+
+    - **resolved** (``run_id`` + ``observed``): compare it.
+    - **nothing to evaluate** (all fields None): no COMPLETED run covers this selector — the
+      metric-cold / NEVER_EVALUABLE case.
+    - **REFUSED** (``refusal`` set): a run WAS found and the resolver declined to compare against
+      it. Distinct from "nothing found" on purpose: a refusal means a governed number exists and
+      is being deliberately not-thresholded, which an operator must see rather than read as a cold
+      metric.
+
+    ``resolved_scheme_id`` carries the taxonomy VERSION the resolved run actually used, so
+    ``limit_health`` can report drift against the limit's ``authored_scheme_id`` (OQ-LIM-2-1=C).
+    """
+
+    run_id: str | None = None
+    observed: Decimal | None = None
+    resolved_scheme_id: str | None = None
+    refusal: str | None = None
+
+    @property
+    def is_resolved(self) -> bool:
+        return self.run_id is not None and self.observed is not None and self.refusal is None
+
+
+def _resolve_var(session: Session, limit: LimitDefinition, spec: MetricSpec) -> Resolution:
+    rows = latest_var_for_portfolio(
+        session,
+        acting_tenant=limit.tenant_id,
+        portfolio_id=limit.scope_portfolio_id,
+        metric_type=limit.metric_type,
+    )
+    return _first_matching(rows, limit, spec)
+
+
+def _resolve_active_risk(session: Session, limit: LimitDefinition, spec: MetricSpec) -> Resolution:
+    rows = latest_active_risk_for_portfolio(
+        session,
+        acting_tenant=limit.tenant_id,
+        portfolio_id=limit.scope_portfolio_id,
+        benchmark_id=limit.benchmark_id,
+    )
+    return _first_matching(rows, limit, spec)
+
+
+def _first_matching(rows: list[Any], limit: LimitDefinition, spec: MetricSpec) -> Resolution:
+    """The shared body of the two non-dimensional families: one row per metric per run."""
+    matching = [r for r in rows if r.metric_type == limit.metric_type]
+    if not matching:
+        return Resolution()
+    row = matching[0]
+    return Resolution(
+        run_id=str(row.calculation_run_id), observed=Decimal(getattr(row, spec.result_attr))
+    )
+
+
+def _resolve_concentration(
+    session: Session, limit: LimitDefinition, spec: MetricSpec
+) -> Resolution:
+    """Resolve a concentration limit against the latest COMPLETED run for its scope.
+
+    Two behaviors here are load-bearing and neither is obvious:
+
+    **1. The EVALUATION-TIME half of the basis discipline (OQ-LIM-2-4).** The definition-time CHECK
+    only proves the declared basis is a known value. This compares it to the basis the resolved
+    number was actually computed on, and REFUSES rather than thresholds on a mismatch. With one
+    value in the v1 vocabulary this cannot currently fire through any production write path —
+    precisely the shape CON-1 shipped as a structurally-unfireable guard and had to reimplement —
+    so it is written against the ROW rather than against the vocabulary. `test_limit_resolver.py`
+    forces the mismatch and is mutation-proven (disabling this branch fails exactly the two basis
+    tests). **That sentence previously asserted a test that did not exist**, which the adversarial
+    review caught as a delivery claim citing no artifact; the artifact is now real and named. The
+    day a NAV basis is added, this is what stops an INVESTED_LONG threshold from silently
+    adjudicating a NAV-denominated share.
+
+    **2. A named bucket with no row resolves to ZERO, not to "nothing found".** If the run covers
+    the dimension, the kernel emitted a row for every bucket carrying long exposure; a missing
+    bucket therefore means the book holds none of it. That is an OBSERVED zero, not an absent
+    number. Reporting NEVER_EVALUABLE instead would make "tech <= 20%" cry wolf on precisely the
+    healthiest possible book — and a control that alarms when nothing is wrong gets ignored, which
+    is the same end state as one that stays silent when something is. The distinction the resolver
+    still refuses to guess: if the run covers the dimension NOT AT ALL, nothing is resolved.
+    """
+    from irp_shared.concentration.service import latest_concentration
+
+    rows = latest_concentration(
+        session,
+        acting_tenant=limit.tenant_id,
+        portfolio_id=limit.scope_portfolio_id,
+        # The EVALUATION path, deliberately unfenced: the issuer split is a READ-SURFACE control
+        # over what a human caller receives, not a restriction on what the tick may adjudicate. A
+        # fenced evaluation would silently stop enforcing every issuer limit.
+        include_issuer_detail=True,
+    )
+    in_dimension = [r for r in rows if r.dimension_kind == limit.dimension_kind]
+    if not in_dimension:
+        return Resolution()  # no COMPLETED run covers this dimension — genuinely nothing to compare
+
+    def _refused_or(row: Any, observed: Decimal) -> Resolution:
+        if row.denominator_basis != limit.denominator_basis:
+            return Resolution(
+                refusal=(
+                    f"basis mismatch: the limit was written against "
+                    f"{limit.denominator_basis!r} but run {row.calculation_run_id} computed "
+                    f"{row.denominator_basis!r} — refusing to compare"
+                )
+            )
+        return Resolution(
+            run_id=str(row.calculation_run_id),
+            observed=observed,
+            resolved_scheme_id=str(row.scheme_id) if row.scheme_id else None,
+        )
+
+    if limit.bucket_code is None:
+        # A run-level (summary-metric) limit: exactly one row per metric per run.
+        summary = [r for r in in_dimension if r.metric_type == limit.metric_type]
+        if not summary:
+            return Resolution()
+        return _refused_or(summary[0], Decimal(getattr(summary[0], spec.result_attr)))
+
+    named = [
+        r
+        for r in in_dimension
+        if r.row_kind == ROW_KIND_DETAIL and r.bucket_code == limit.bucket_code
+    ]
+    if named:
+        return _refused_or(named[0], Decimal(getattr(named[0], spec.result_attr)))
+
+    # --- the bucket emitted NO row. Two very different worlds, and telling them apart is the
+    # --- whole of finding D1.
+    #
+    # The kernel emits a DETAIL row only for a bucket that carries atoms, so "no row" means EITHER
+    # the book genuinely holds none of this bucket (observed zero — a real measurement) OR the
+    # selector never named anything this run could measure (a typo, a code from a different
+    # taxonomy family, a sentinel). The run's own rows cannot distinguish them: a zero-exposure
+    # bucket is absent for exactly the same reason a misspelled one is.
+    #
+    # The original code returned a fabricated `observed=0` for both. That produced a limit reading
+    # IN_APPETITE forever on a book 31% concentrated in the sector it was written about, and — on a
+    # BELOW (floor) limit, which nothing restricts — a FALSE BREACH written into the append-only,
+    # non-withdrawable lifecycle this module's own docstring says the CON-1 descope exists to
+    # prevent.
+    #
+    # So ask the TAXONOMY, which is the only source that knows whether the code is real: is
+    # `bucket_code` a node of the scheme THIS RUN used? If yes, the zero is a measurement and a
+    # floor limit rightly breaches on it. If no, refuse — the limit is thresholding something the
+    # run never evaluated, and no verdict computed from it can be honest.
+    if limit.dimension_kind == DIMENSION_KIND_ISSUER:
+        # ISSUER needs no lookup: `create_limit` re-resolves `issuer_id` tenant-filtered before the
+        # write, so a named issuer provably exists and its absence from the run IS zero exposure.
+        return _refused_or(in_dimension[0], Decimal(0))
+
+    scheme_id = next((r.scheme_id for r in in_dimension if r.scheme_id), None)
+    if scheme_id is None:
+        return Resolution(
+            refusal=(
+                f"the resolved run recorded no scheme for dimension {limit.dimension_kind!r}, so "
+                f"bucket {limit.bucket_code!r} cannot be confirmed as a real code — refusing"
+            )
+        )
+    from irp_shared.classification.service import (
+        ClassificationNotVisible,
+        resolve_ancestors,
+        resolve_node,
+    )
+
+    try:
+        node = resolve_node(
+            session,
+            scheme_id=str(scheme_id),
+            code=str(limit.bucket_code),
+            acting_tenant=limit.tenant_id,
+        )
+    except ClassificationNotVisible:
+        return Resolution(
+            refusal=(
+                f"bucket {limit.bucket_code!r} is not a node of the scheme the resolved run used "
+                f"({scheme_id}) — the limit names a code this run never evaluated, so neither a "
+                "breach nor an all-clear can be computed from it"
+            )
+        )
+    # **Being a real node is NOT enough, and the first version of this guard stopped there.**
+    # The kernel buckets at LEVEL 1 ONLY (`concentration/service.py::_level1_code` walks each
+    # assignment's pinned closure to its level-1 ancestor), so a run emits section-grain buckets
+    # and nothing else. A level-2+ code is therefore a real node that can never match a row — and
+    # it is the code a maker is MOST likely to write, because it is what the classification screen
+    # shows and what the assignments themselves carry (the demo's issuers are assigned to C26 /
+    # C28 / K64, all level 2). The first repair caught only strings that were not nodes at all,
+    # which is the rarer and more obvious mistake; the likely one still fabricated a zero.
+    if node.level != 1:
+        ancestor = next(
+            (
+                a.code
+                for a in resolve_ancestors(session, node=node, acting_tenant=limit.tenant_id)
+                if a.level == 1
+            ),
+            None,
+        )
+        hint = f" — did you mean {ancestor!r}?" if ancestor else ""
+        return Resolution(
+            refusal=(
+                f"bucket {limit.bucket_code!r} is a level-{node.level} node, but concentration "
+                f"buckets at level 1 only, so no run can ever measure it{hint}"
+            )
+        )
+    # A LEVEL-1 node of the run's own scheme that emitted no row: the book holds none of it.
+    return _refused_or(in_dimension[0], Decimal(0))
+
+
+@dataclass(frozen=True)
+class LimitFamily:
+    """One thresholdable family (OQ-LIM-2-6), mirroring SCH-2's ``ScheduledFamily``.
+
+    Declares ONLY what has a consumer. ``requires_benchmark`` deliberately stays on ``MetricSpec``
+    where it already lives — it is a per-METRIC property, not a per-family one, and SCH-2 removed
+    ``produces_run_on_failure`` on the finding that *a false declaration with no consumer is worse
+    than no declaration*.
+    """
+
+    target_run_type: str
+    resolve: Callable[[Session, LimitDefinition, MetricSpec], Resolution]
+    #: The family's metrics are selected by a dimension/bucket, so a limit MUST carry one.
+    requires_dimension: bool
+    #: The family's numbers carry a ``denominator_basis`` a limit must declare and match.
+    requires_basis: bool
+
+
+#: The dispatch registry. Before LIM-2 this was a two-branch ``if/else`` whose ``else`` asserted
+#: "the only other admitted family" in a COMMENT — while ``_METRIC_MAP``, edited in a different
+#: place, is what actually admits families. Registering concentration there without touching the
+#: dispatch would have routed it into the active-risk resolver, which accepts ``benchmark_id=None``
+#: happily and returns no matching rows: a SILENT false NEVER_EVALUABLE, not a crash.
+#: ``test_every_metric_map_family_has_a_resolver`` makes that divergence impossible by set equality.
+LIMIT_FAMILY_REGISTRY: dict[str, LimitFamily] = {
+    RUN_TYPE_VAR: LimitFamily(RUN_TYPE_VAR, _resolve_var, False, False),
+    RUN_TYPE_ACTIVE_RISK: LimitFamily(RUN_TYPE_ACTIVE_RISK, _resolve_active_risk, False, False),
+    RUN_TYPE_CONCENTRATION: LimitFamily(RUN_TYPE_CONCENTRATION, _resolve_concentration, True, True),
+}
+
+#: DERIVED from the registry — never a hand-maintained second list (the SCH-2 pattern).
+LIMITABLE_RUN_TYPES = frozenset(LIMIT_FAMILY_REGISTRY)
+
+
+def _resolve_latest(session: Session, limit: LimitDefinition) -> Resolution:
+    """Resolve the latest COMPLETED result for the limit's selector. Discovery is
+    ``calculation_run``-driven (demand #1), so a MANUAL run is limit-checked like a scheduled
+    one — which is load-bearing for concentration, whose family is not schedulable (OQ-CON-1-17)."""
     spec = _spec_for(limit)
     if spec.unit != limit.threshold_unit:
         # Defense-in-depth (identity is frozen, so the create-time guard normally holds): a
@@ -192,28 +466,16 @@ def _resolve_latest(session: Session, limit: LimitDefinition) -> tuple[str, Deci
         raise LimitError(
             f"unit drift: threshold_unit {limit.threshold_unit!r} != metric unit {spec.unit!r}"
         )
-    tenant = limit.tenant_id
-    rows: list[Any]
-    if limit.target_run_type == RUN_TYPE_VAR:
-        rows = latest_var_for_portfolio(
-            session,
-            acting_tenant=tenant,
-            portfolio_id=limit.scope_portfolio_id,
-            metric_type=limit.metric_type,
+    family = LIMIT_FAMILY_REGISTRY.get(limit.target_run_type)
+    if family is None:
+        # FAIL-CLOSED, replacing the comment that used to stand here. Defense in depth behind the
+        # set-equality census: if both were ever wrong at once, refusing beats adjudicating a
+        # governed threshold through some other family's resolver.
+        raise LimitError(
+            f"no resolver is registered for family {limit.target_run_type!r} — refusing to "
+            "evaluate (a registered metric with no resolver is a configuration error)"
         )
-    else:  # RUN_TYPE_ACTIVE_RISK (the only other admitted family)
-        rows = latest_active_risk_for_portfolio(
-            session,
-            acting_tenant=tenant,
-            portfolio_id=limit.scope_portfolio_id,
-            benchmark_id=limit.benchmark_id,
-        )
-    matching = [r for r in rows if r.metric_type == limit.metric_type]
-    if not matching:
-        return None
-    row = matching[0]
-    observed = getattr(row, spec.result_attr)
-    return str(row.calculation_run_id), Decimal(observed)
+    return family.resolve(session, limit, spec)
 
 
 def _spec_for(limit: LimitDefinition) -> MetricSpec:
@@ -226,50 +488,90 @@ def _spec_for(limit: LimitDefinition) -> MetricSpec:
 
 
 # --- evaluation ---------------------------------------------------------------------------
-def select_active_limits(session: Session, *, acting_tenant: str) -> list[LimitDefinition]:
+def select_active_limits(
+    session: Session, *, acting_tenant: str, include_issuer_detail: bool = True
+) -> list[LimitDefinition]:
     """Tenant-scoped: ACTIVE limits (explicit tenant predicate + RLS — belt-and-suspenders).
     Ordered by id: a DETERMINISTIC cross-tick iteration order so two concurrent same-tenant
     ticks acquire their breach-insert unique-index entries in the same sequence (4-finder fold —
     divergent heap-scan order could cycle a uq_breach_limit_run tuple-wait against the audit
-    advisory lock; benign/self-healing, but determinism removes it)."""
-    return list(
-        session.execute(
-            select(LimitDefinition)
-            .where(
-                LimitDefinition.status == LIMIT_STATUS_ACTIVE,
-                LimitDefinition.tenant_id == str(acting_tenant),
-            )
-            .order_by(LimitDefinition.id)
-        ).scalars()
+    advisory lock; benign/self-healing, but determinism removes it).
+
+    **``include_issuer_detail`` defaults to TRUE here, and the asymmetry with every other read is
+    deliberate.** This is the EVALUATION query: the tick must see every ACTIVE limit or the platform
+    silently stops enforcing the ones it cannot see — a far worse failure than a disclosure, and a
+    fail-OPEN control wearing a fail-closed default. The READ surface that reuses this
+    (``limit_health``) passes False by default instead: the fence belongs where the disclosure is,
+    not where the enforcement is.
+    """
+    stmt = select(LimitDefinition).where(
+        LimitDefinition.status == LIMIT_STATUS_ACTIVE,
+        LimitDefinition.tenant_id == str(acting_tenant),
     )
+    if not include_issuer_detail:
+        stmt = stmt.where(LimitDefinition.issuer_id.is_(None))
+    return list(session.execute(stmt.order_by(LimitDefinition.id)).scalars())
 
 
 # --- reads (API-2) ------------------------------------------------------------------------
 def list_limits(
-    session: Session, *, acting_tenant: str, status: str | None = None
+    session: Session,
+    *,
+    acting_tenant: str,
+    status: str | None = None,
+    include_issuer_detail: bool = False,
 ) -> list[LimitDefinition]:
     """Tenant-scoped limit list, optionally filtered by status (``status=DRAFT`` = the approval
     queue). Explicit tenant predicate atop RLS (belt-and-suspenders, the ``select_active_limits``
-    pattern). Ordered by code for a stable read surface."""
+    pattern). Ordered by code for a stable read surface.
+
+    **The issuer-identity split is STRUCTURAL here, not a router courtesy (OQ-LIM-2-3=B).** With
+    ``include_issuer_detail=False`` — the plain ``limit.view`` shape — limits naming an ISSUER are
+    excluded AT THE QUERY. This extends CON-1's fence to a surface its own scope did not cover:
+    ``auditor_3l`` holds ``limit.view`` and ``breach.view`` but is DELIBERATELY excluded from
+    ``concentration.issuer.view``, so a named-issuer limit would otherwise route fenced identity
+    to exactly the role the fence exists to exclude. The predicate is ``issuer_id IS NOT NULL``,
+    which 0058's ``issuer_only`` CHECK makes reliable: identity cannot exist on any other row.
+    """
     if status is not None and status not in LIMIT_STATUSES:
         raise LimitError(f"status {status!r} is invalid")
     stmt = select(LimitDefinition).where(LimitDefinition.tenant_id == str(acting_tenant))
     if status is not None:
         stmt = stmt.where(LimitDefinition.status == status)
+    if not include_issuer_detail:
+        stmt = stmt.where(LimitDefinition.issuer_id.is_(None))
     return list(session.execute(stmt.order_by(LimitDefinition.code)).scalars())
 
 
-def get_limit(session: Session, *, acting_tenant: str, limit_id: str) -> LimitDefinition | None:
+def get_limit(
+    session: Session,
+    *,
+    acting_tenant: str,
+    limit_id: str,
+    include_issuer_detail: bool = False,
+) -> LimitDefinition | None:
     """Read ONE limit by id, tenant-filtered atop RLS (the P3-5 doctrine: PG FK checks bypass RLS,
     so an explicit tenant predicate is load-bearing for a caller-supplied id). Returns None on a
     missing/cross-tenant id (the API maps that to an indistinguishable 404). Doubles as the
-    load-for-mutation step (``update_limit``/``approve_limit`` take the object, not an id)."""
-    return session.execute(
-        select(LimitDefinition).where(
-            LimitDefinition.id == str(limit_id),
-            LimitDefinition.tenant_id == str(acting_tenant),
-        )
-    ).scalar_one_or_none()
+    load-for-mutation step (``update_limit``/``approve_limit`` take the object, not an id).
+
+    The issuer fence applies here too and returns None — the SAME answer as a missing id, so a
+    caller without ``concentration.issuer.view`` cannot distinguish "no such limit" from "a limit
+    exists and names an issuer you may not see". A 403 here would itself be the disclosure.
+
+    ``include_issuer_detail=True`` is REQUIRED for the mutation paths: ``update_limit`` and
+    ``approve_limit`` take the loaded object, and a fenced load would silently make every
+    named-issuer limit unapprovable and uneditable. The router passes the caller's entitlement for
+    reads and ``True`` for the maker/checker verbs, which are separately gated on
+    ``limit.manage``/``limit.approve``.
+    """
+    stmt = select(LimitDefinition).where(
+        LimitDefinition.id == str(limit_id),
+        LimitDefinition.tenant_id == str(acting_tenant),
+    )
+    if not include_issuer_detail:
+        stmt = stmt.where(LimitDefinition.issuer_id.is_(None))
+    return session.execute(stmt).scalar_one_or_none()
 
 
 def evaluate_limit(session: Session, limit: LimitDefinition, now: datetime) -> Breach | None:
@@ -281,10 +583,17 @@ def evaluate_limit(session: Session, limit: LimitDefinition, now: datetime) -> B
         # callers already pre-filter via `select_active_limits`, but a DRAFT/SUSPENDED limit handed
         # here directly must NOT record a breach against an un-approved/suspended config.
         return None
-    resolved = _resolve_latest(session, limit)
-    if resolved is None:
-        return None  # no matching COMPLETED run — nothing to evaluate this tick
-    run_id, observed = resolved
+    resolution = _resolve_latest(session, limit)
+    if not resolution.is_resolved:
+        # Covers BOTH "no matching COMPLETED run" and a REFUSAL (e.g. a basis mismatch). A refusal
+        # must never fall through to a comparison: writing a breach off a number the resolver
+        # declined to threshold is the false-breach harm into an append-only, non-withdrawable
+        # lifecycle that the CON-1 descope exists to prevent. `limit_health` surfaces the refusal
+        # so it is visible rather than silently indistinguishable from a cold metric.
+        return None
+    run_id = resolution.run_id
+    observed = resolution.observed
+    assert run_id is not None and observed is not None  # narrowed by is_resolved
     if not _breaches(observed, Decimal(limit.threshold_value), limit.breach_direction):
         return None  # within appetite
 
@@ -312,6 +621,16 @@ def evaluate_limit(session: Session, limit: LimitDefinition, now: datetime) -> B
         limit_kind=limit.limit_kind,
         severity=limit.limit_kind,
         status=BREACH_STATUS_DETECTED,
+        # LIM-2 echoes. `resolved_scheme_id` is what the EVALUATED run used, deliberately not the
+        # limit's `authored_scheme_id`: the pair makes a scheme-drift breach provable from the two
+        # rows alone, months later, rather than only flagged live in `limit_health`.
+        dimension_kind=limit.dimension_kind,
+        bucket_code=limit.bucket_code,
+        issuer_id=limit.issuer_id,
+        scheme_family=limit.scheme_family,
+        resolved_scheme_id=resolution.resolved_scheme_id,
+        denominator_basis=limit.denominator_basis,
+        scope_portfolio_id=limit.scope_portfolio_id,
     )
     session.add(breach)
     session.flush()
@@ -345,6 +664,117 @@ def _lock_limit(session: Session, limit_id: str, tenant_id: str) -> LimitDefinit
     return limit
 
 
+def _blank_to_none(value: str | None) -> str | None:
+    """Normalize an empty/whitespace selector string to None — ONE definition of "not supplied".
+
+    The DB CHECKs are written on NULL-ness; Python was testing truthiness in some places and
+    identity in others. `""` therefore satisfied "supplied" for the validator and "not supplied"
+    for the CHECK (or vice versa), which turned a summary limit into a permanently-zero named-bucket
+    limit and an ISSUER scheme_family into an HTTP 500 instead of a 422. Normalizing at the boundary
+    means every layer downstream can test `is None` and agree.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _validate_dimensional_config(
+    *,
+    target_run_type: str,
+    metric_type: str,
+    dimension_kind: str | None,
+    bucket_code: str | None,
+    issuer_id: str | None,
+    scheme_family: str | None,
+    authored_scheme_id: str | None,
+    denominator_basis: str | None,
+) -> None:
+    """The dimensional selector's definition-time rules (LIM-2).
+
+    These MIRROR migration 0058's CHECK constraints rather than replacing them: the DB is the
+    engine that cannot be bypassed, and this layer exists to turn a 23514 into a legible 422 for
+    the maker. Two rules here have NO CHECK counterpart, because a CHECK cannot express them:
+    the metric-vs-dimension agreement, and the issuer bucket_code identity.
+    """
+    family = LIMIT_FAMILY_REGISTRY.get(target_run_type)
+    dimensional = family is not None and family.requires_dimension
+    if not dimensional:
+        stray = {
+            "dimension_kind": dimension_kind,
+            "bucket_code": bucket_code,
+            "issuer_id": issuer_id,
+            "scheme_family": scheme_family,
+            "authored_scheme_id": authored_scheme_id,
+            "denominator_basis": denominator_basis,
+        }
+        supplied = sorted(k for k, v in stray.items() if v is not None)
+        if supplied:
+            raise LimitError(
+                f"{target_run_type} is not a dimensional family; it does not take {supplied}"
+            )
+        return
+
+    if dimension_kind not in CONCENTRATION_DIMENSION_KINDS:
+        raise LimitError(
+            f"dimension_kind {dimension_kind!r} is invalid for {target_run_type} "
+            f"(expected one of {sorted(CONCENTRATION_DIMENSION_KINDS)})"
+        )
+    if denominator_basis not in DENOMINATOR_BASES:
+        # The DEFINITION-TIME half of the basis discipline: this is what refuses a
+        # regulatory-shaped threshold today. No NAV/total-assets denominator is computable on this
+        # schema, so a limit declaring one cannot be written at all (CON-1 descope).
+        raise LimitError(
+            f"denominator_basis {denominator_basis!r} is not a computable basis "
+            f"(expected one of {sorted(DENOMINATOR_BASES)}); a threshold written against a "
+            "denominator this platform cannot compute is refused rather than approximated"
+        )
+
+    is_issuer = dimension_kind == DIMENSION_KIND_ISSUER
+    if is_issuer and (scheme_family is not None or authored_scheme_id is not None):
+        raise LimitError("the ISSUER dimension carries no classification scheme")
+    if not is_issuer and scheme_family is None:
+        raise LimitError(f"dimension {dimension_kind} requires a scheme_family")
+    if issuer_id and not is_issuer:
+        # The DISCLOSURE fence at the maker boundary (0058's `issuer_only` CHECK is the engine).
+        raise LimitError("issuer_id may only be set on an ISSUER-dimension limit")
+
+    # No CHECK counterpart #1: the summary metric names ENCODE their dimension, so a limit pairing
+    # HHI_SECTOR_INDUSTRY with dimension ISSUER would resolve nothing and read as a permanently
+    # cold metric. Fail closed at definition instead of shipping a limit that can never fire.
+    if metric_type != METRIC_TYPE_SHARE and not metric_type.endswith(str(dimension_kind)):
+        raise LimitError(
+            f"metric {metric_type} does not belong to dimension {dimension_kind} — the summary "
+            "metric names encode their own dimension"
+        )
+    if metric_type == METRIC_TYPE_SHARE and bucket_code is None:
+        raise LimitError("a SHARE limit thresholds a NAMED bucket and requires bucket_code")
+    # `is not None`, NOT truthiness. The three predicates in this feature used to disagree about
+    # what "no bucket" means — truthiness here, truthiness at the SHARE check, `is None` in the
+    # resolver — so `bucket_code=""` passed validation on a summary metric, took the named-bucket
+    # branch at resolution, matched nothing (the column is NOT NULL and never empty on
+    # `concentration_result`) and resolved forever to zero. One definition now, shared: blank is
+    # normalized to None at the boundary (`_blank_to_none`) and every predicate tests identity.
+    if metric_type != METRIC_TYPE_SHARE and bucket_code is not None:
+        raise LimitError(
+            f"{metric_type} is a RUN-LEVEL metric and does not take a bucket_code "
+            "(a named-bucket limit uses metric_type=SHARE)"
+        )
+    if bucket_code is not None and bucket_code.startswith("__") and bucket_code.endswith("__"):
+        # CON-1's dunder sentinels (__UNCLASSIFIED__, __UNCLASSIFIABLE__, __SUMMARY__) are not
+        # buckets anyone may threshold: 0057's `detail_shape` CHECK forbids __SUMMARY__ on a DETAIL
+        # row outright, so such a limit is structurally incapable of ever matching — an unfireable
+        # control that would read IN_APPETITE forever. Refused at authoring instead.
+        raise LimitError(
+            f"bucket_code {bucket_code!r} is a reserved sentinel, not a thresholdable bucket"
+        )
+    # No CHECK counterpart #2: CON-1's service invariant is `bucket_code == str(issuer_id)` on
+    # ISSUER detail rows; a cross-column cast CHECK is not portable to the SQLite tier. Without
+    # this, a named-issuer limit could carry a bucket_code that resolves a DIFFERENT issuer's row.
+    if is_issuer and bucket_code and str(issuer_id) != str(bucket_code):
+        raise LimitError("an ISSUER limit's bucket_code is the issuer id; it must equal issuer_id")
+
+
 def _validate_config(
     *,
     target_run_type: str,
@@ -355,10 +785,26 @@ def _validate_config(
     breach_direction: str,
     limit_kind: str,
     status: str,
+    dimension_kind: str | None = None,
+    bucket_code: str | None = None,
+    issuer_id: str | None = None,
+    scheme_family: str | None = None,
+    authored_scheme_id: str | None = None,
+    denominator_basis: str | None = None,
 ) -> None:
     spec = _METRIC_MAP.get((target_run_type, metric_type))
     if spec is None:
         raise LimitError(f"({target_run_type}, {metric_type}) is not a v1 metric selector")
+    _validate_dimensional_config(
+        target_run_type=target_run_type,
+        metric_type=metric_type,
+        dimension_kind=dimension_kind,
+        bucket_code=bucket_code,
+        issuer_id=issuer_id,
+        scheme_family=scheme_family,
+        authored_scheme_id=authored_scheme_id,
+        denominator_basis=denominator_basis,
+    )
     if threshold_unit != spec.unit:
         raise LimitError(
             f"threshold_unit {threshold_unit!r} != the {metric_type} metric unit {spec.unit!r}"
@@ -392,6 +838,12 @@ def create_limit(
     limit_kind: str,
     actor: LimitActor,
     benchmark_id: str | None = None,
+    dimension_kind: str | None = None,
+    bucket_code: str | None = None,
+    issuer_id: str | None = None,
+    scheme_family: str | None = None,
+    authored_scheme_id: str | None = None,
+    denominator_basis: str | None = None,
 ) -> LimitDefinition:
     """Create a limit (2L-maker function); emit ``LIMIT.DEFINE`` (governed R-07).
 
@@ -400,6 +852,12 @@ def create_limit(
     ``status=`` override: an ACTIVE-on-create seam would let the maker self-activate, the symmetric
     twin of the ``update_limit`` DRAFT bypass. ``created_by`` records the drafter for the SoD.
     """
+    # Normalize blank selector strings ONCE, before validation and before the ORM stamp, so every
+    # layer below tests `is None` and agrees with the DB CHECKs (which are written on NULL-ness).
+    dimension_kind = _blank_to_none(dimension_kind)
+    bucket_code = _blank_to_none(bucket_code)
+    scheme_family = _blank_to_none(scheme_family)
+    denominator_basis = _blank_to_none(denominator_basis)
     _validate_config(
         target_run_type=target_run_type,
         metric_type=metric_type,
@@ -409,6 +867,12 @@ def create_limit(
         breach_direction=breach_direction,
         limit_kind=limit_kind,
         status=LIMIT_STATUS_DRAFT,
+        dimension_kind=dimension_kind,
+        bucket_code=bucket_code,
+        issuer_id=issuer_id,
+        scheme_family=scheme_family,
+        authored_scheme_id=authored_scheme_id,
+        denominator_basis=denominator_basis,
     )
     # Re-resolve the FK targets tenant-filtered BEFORE the write (the P3-5 doctrine — PG FK checks
     # BYPASS RLS, so a caller-supplied FOREIGN scope/benchmark id must be refused, not stamped).
@@ -425,6 +889,17 @@ def create_limit(
         is None
     ):
         raise LimitError(f"benchmark {benchmark_id} is not visible in the tenant")
+    if issuer_id and (
+        # The same P3-5 guard for the issuer FK: PG referential checks BYPASS RLS, so a
+        # caller-supplied FOREIGN issuer id would otherwise be accepted and stamped onto a governed
+        # limit — and here that is a cross-tenant identity DISCLOSURE, not merely a bad reference.
+        session.execute(
+            text("SELECT 1 FROM issuer WHERE id = :id AND tenant_id = :t"),
+            {"id": str(issuer_id), "t": str(tenant_id)},
+        ).first()
+        is None
+    ):
+        raise LimitError(f"issuer {issuer_id} is not visible in the tenant")
     # Refuse a duplicate (tenant, code) with a clean domain error (not a raw IntegrityError/500).
     if session.execute(
         select(LimitDefinition.id).where(
@@ -447,6 +922,12 @@ def create_limit(
         status=LIMIT_STATUS_DRAFT,
         created_by=actor.actor_id,
         record_version=1,
+        dimension_kind=dimension_kind,
+        bucket_code=bucket_code,
+        issuer_id=str(issuer_id) if issuer_id else None,
+        scheme_family=scheme_family,
+        authored_scheme_id=str(authored_scheme_id) if authored_scheme_id else None,
+        denominator_basis=denominator_basis,
     )
     session.add(limit)
     session.flush()
@@ -604,30 +1085,141 @@ def resume_limit(session: Session, limit: LimitDefinition, *, actor: LimitActor)
 # --- limit health -------------------------------------------------------------------------
 @dataclass(frozen=True)
 class LimitHealth:
-    """Per-limit evaluation health (OD-L) — distinguishes green from un-evaluable."""
+    """Per-limit evaluation health (OD-L) — distinguishes green from un-evaluable.
+
+    **``state`` is the APPETITE VERDICT; staleness and drift are ORTHOGONAL fields, deliberately.**
+    OQ-LIM-2-1=C and OQ-LIM-2-5=A were both ratified as "a distinct health state", and implementing
+    that literally would have been wrong: a limit can be breached AND evaluating a stale run AND
+    drifting across scheme versions simultaneously, so a fourth enum value forces a false choice
+    where reporting STALE hides a real breach. The ratified INTENT — never default to green, make
+    both conditions visible — is preserved; only the shape differs, and it is recorded here rather
+    than slipped in (LIM-2 record 3.5).
+    """
 
     limit_id: str
     code: str
-    state: str  # IN_APPETITE | NEVER_EVALUABLE | BREACHED
+    state: str  # IN_APPETITE | NEVER_EVALUABLE | BREACHED | REFUSED
     latest_run_id: str | None
     latest_breach_id: str | None
+    #: The newest run of this family+scope FAILED and the verdict above is computed from an older
+    #: COMPLETED one. Platform-wide, not concentration-specific (OQ-LIM-2-5=A).
+    latest_run_failed: bool = False
+    #: ``(authored_scheme_id, resolved_scheme_id)`` when the resolved run used a different taxonomy
+    #: VERSION than the threshold was written against (OQ-LIM-2-1=C).
+    scheme_drift: tuple[str, str] | None = None
+    #: Why the resolver declined to compare, when ``state`` is REFUSED.
+    refusal_reason: str | None = None
 
 
 HEALTH_IN_APPETITE = "IN_APPETITE"
 HEALTH_NEVER_EVALUABLE = "NEVER_EVALUABLE"
 HEALTH_BREACHED = "BREACHED"
+#: A governed number EXISTS and the resolver declined to threshold it (today: a basis mismatch).
+#: Distinct from NEVER_EVALUABLE, which means nothing was found at all.
+HEALTH_REFUSED = "REFUSED"
 
 
-def limit_health(session: Session, *, acting_tenant: str) -> list[LimitHealth]:
+def _superseded_by_a_failed_run(
+    session: Session, limit: LimitDefinition, resolved_run_id: str
+) -> bool:
+    """True when a FAILED run of this family+scope is NEWER than the run the verdict came from.
+
+    **Re-keyed after review D5.** The first version asked an independent question — "is the newest
+    run of ``(tenant, run_type, scope)`` FAILED?" — and its docstring claimed to be "scope-filtered
+    the same way the resolvers are". That was false in both directions, because ``RUN_TYPE_VAR``
+    hosts six metric flavours across four binders while ``calculation_run`` carries no metric
+    discriminator:
+
+    - **disarmed:** a COMPLETED sibling-metric run landing after the failure flipped the flag back
+      to False while the verdict was still read off the pre-failure book — the badge vanished
+      exactly when it mattered. A newest run merely CREATED or RUNNING did the same from the start,
+      since nothing filtered status.
+    - **false positive:** a FAILED ``ES_HISTORICAL`` run raised "stale" on a ``VAR_PARAMETRIC``
+      limit whose own number was minutes old.
+
+    Anchoring on the RESOLVED run instead makes the answer monotone in the verdict: no sibling can
+    clear it, and no run older than the verdict can raise it. It is also the honest question —
+    "has anything failed SINCE the number I am showing you?"
+    """
+    from irp_shared.calc.models import CalculationRun, RunStatus
+
+    resolved = session.execute(
+        select(CalculationRun.system_from).where(CalculationRun.run_id == str(resolved_run_id))
+    ).scalar_one_or_none()
+    if resolved is None:  # defensive: the resolver just read it
+        return False
+    return (
+        session.execute(
+            select(CalculationRun.run_id)
+            .where(
+                CalculationRun.tenant_id == str(limit.tenant_id),
+                CalculationRun.run_type == limit.target_run_type,
+                CalculationRun.scope_portfolio_id == str(limit.scope_portfolio_id),
+                CalculationRun.status == RunStatus.FAILED.value,
+                CalculationRun.system_from > resolved,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def limit_health(
+    session: Session, *, acting_tenant: str, include_issuer_detail: bool = False
+) -> list[LimitHealth]:
     """Report each ACTIVE limit's evaluation health — so an un-evaluable limit is never silently
-    green (OD-L). Derived on demand from ``calc/reads`` (no new mutable state)."""
+    green (OD-L). Derived on demand from ``calc/reads`` (no new mutable state).
+
+    **The issuer fence applies here too, and its absence was a real hole** (found while the LIM-2
+    adversarial review was running). This function iterates ``select_active_limits``, which is the
+    TICK's query: evaluation must see every limit, including issuer-named ones, or the platform
+    silently stops enforcing them. But ``limit_health`` is ALSO a read surface — ``GET
+    /limits/health``, gated on ``limit.view`` alone — so sharing that query handed a caller without
+    ``concentration.issuer.view`` a row per issuer-named limit, disclosing its EXISTENCE and its
+    ``code`` (which a maker would plausibly name after the issuer). The evaluation path and the read
+    path have different disclosure requirements and must not share a query.
+
+    This is the CON-1 lesson in a new place: **a query becomes a disclosure the moment a read
+    surface reuses it.** Defaults to False — fail-closed — so a future caller that forgets the
+    argument leaks nothing. ``irp_worker.breaches`` calls ``select_active_limits`` DIRECTLY and is
+    unaffected, which is why the enforcement path keeps its own default of True.
+    """
     out: list[LimitHealth] = []
-    for limit in select_active_limits(session, acting_tenant=acting_tenant):
-        resolved = _resolve_latest(session, limit)
-        if resolved is None:
-            out.append(LimitHealth(limit.id, limit.code, HEALTH_NEVER_EVALUABLE, None, None))
+    for limit in select_active_limits(
+        session, acting_tenant=acting_tenant, include_issuer_detail=include_issuer_detail
+    ):
+        resolution = _resolve_latest(session, limit)
+        # Staleness is anchored on the RESOLVED run (review D5), so it can only be asked once a
+        # verdict exists. With no resolved run there is no "the number I am showing you" to be
+        # stale relative to — NEVER_EVALUABLE and REFUSED already say the verdict is not a
+        # measurement, and stacking a staleness flag on them would assert a comparison nobody made.
+        if resolution.refusal is not None:
+            out.append(
+                LimitHealth(
+                    limit.id,
+                    limit.code,
+                    HEALTH_REFUSED,
+                    None,
+                    None,
+                    refusal_reason=resolution.refusal,
+                )
+            )
             continue
-        run_id, observed = resolved
+        if not resolution.is_resolved:
+            out.append(
+                LimitHealth(
+                    limit.id,
+                    limit.code,
+                    HEALTH_NEVER_EVALUABLE,
+                    None,
+                    None,
+                )
+            )
+            continue
+        run_id = resolution.run_id
+        observed = resolution.observed
+        assert run_id is not None and observed is not None  # narrowed by is_resolved
+        stale = _superseded_by_a_failed_run(session, limit, run_id)
         # RECOMPUTE the predicate from the latest observed — do NOT infer state from the breach
         # table (a breaching-but-not-yet-evaluated run, or a threshold loosened after a breach,
         # would otherwise misreport; the 4-finder false-green fold). The breach row is only the
@@ -640,7 +1232,24 @@ def limit_health(session: Session, *, acting_tenant: str) -> list[LimitHealth]:
             )
         ).scalar_one_or_none()
         state = HEALTH_BREACHED if breaching else HEALTH_IN_APPETITE
-        out.append(LimitHealth(limit.id, limit.code, state, run_id, breach.id if breach else None))
+        drift: tuple[str, str] | None = None
+        if (
+            limit.authored_scheme_id
+            and resolution.resolved_scheme_id
+            and str(limit.authored_scheme_id) != resolution.resolved_scheme_id
+        ):
+            drift = (str(limit.authored_scheme_id), resolution.resolved_scheme_id)
+        out.append(
+            LimitHealth(
+                limit.id,
+                limit.code,
+                state,
+                run_id,
+                breach.id if breach else None,
+                latest_run_failed=stale,
+                scheme_drift=drift,
+            )
+        )
     return out
 
 
@@ -659,6 +1268,16 @@ def _limit_metadata(limit: LimitDefinition) -> dict[str, Any]:
         "limit_kind": limit.limit_kind,
         "status": limit.status,
         "record_version": limit.record_version,
+        # LIM-2 selector fields. `issuer_id` is DC-2 identifying vocabulary here, which is
+        # consistent with the payload already carrying `scope_portfolio_id` and `benchmark_id`:
+        # the audit log records WHAT was governed. The disclosure fence governs the limit/breach
+        # READ surfaces, not the immutable record of a maker's act.
+        "dimension_kind": limit.dimension_kind,
+        "bucket_code": limit.bucket_code,
+        "issuer_id": str(limit.issuer_id) if limit.issuer_id else None,
+        "scheme_family": limit.scheme_family,
+        "authored_scheme_id": (str(limit.authored_scheme_id) if limit.authored_scheme_id else None),
+        "denominator_basis": limit.denominator_basis,
     }
 
 

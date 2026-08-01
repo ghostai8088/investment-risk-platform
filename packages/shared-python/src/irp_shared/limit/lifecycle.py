@@ -556,12 +556,33 @@ def escalate_overdue_breach(session: Session, breach: Breach, now: datetime) -> 
 # --- API-2b reads (D9/C-F2: the batched greatest-n-per-group; one module owns the recency rule) ---
 
 
-def get_breach(session: Session, *, acting_tenant: str, breach_id: str) -> Breach | None:
+def get_breach(
+    session: Session,
+    *,
+    acting_tenant: str,
+    breach_id: str,
+    include_issuer_detail: bool = False,
+) -> Breach | None:
     """One breach, tenant-filtered atop RLS (mirrors ``get_limit`` — missing/cross-tenant → None,
-    an indistinguishable 404 at the API). Doubles as the transition endpoints' load step."""
-    return session.execute(
-        select(Breach).where(Breach.id == breach_id, Breach.tenant_id == acting_tenant)
-    ).scalar_one_or_none()
+    an indistinguishable 404 at the API). Doubles as the transition endpoints' load step.
+
+    **The issuer fence applies here, and its absence was BLOCKING (review D2).** OQ-LIM-2-3=B
+    ratified extending CON-1's issuer fence to "``list_limits`` / ``get_limit`` / the breach
+    reads"; the first two shipped and this one shipped as documentation. The leak is not
+    hypothetical and not merely an id: for a SHARE/ISSUER breach, ``observed_value`` IS the
+    ISSUER-dimension ``share_invested_long`` that CON-1 put behind ``concentration.issuer.view``.
+    A caller refused the limit at 404 could read the same 60%-against-a-30%-cap figure here,
+    alongside the maker-authored ``limit_code`` — the exact naming vector cited when the
+    ``limit_health`` hole was closed.
+
+    Defaults to False (fail-closed). The lifecycle write verbs must pass True: they are
+    separately gated on ``breach.respond``/``breach.review``, and a fenced load would make
+    every issuer-bearing breach unremediable — a control nobody can operate is not a control.
+    """
+    stmt = select(Breach).where(Breach.id == breach_id, Breach.tenant_id == acting_tenant)
+    if not include_issuer_detail:
+        stmt = stmt.where(Breach.issuer_id.is_(None))
+    return session.execute(stmt).scalar_one_or_none()
 
 
 def breach_action_timeline(
@@ -611,11 +632,22 @@ class BreachQueueItem:
 
 
 def breach_detail(
-    session: Session, *, acting_tenant: str, breach_id: str
+    session: Session,
+    *,
+    acting_tenant: str,
+    breach_id: str,
+    include_issuer_detail: bool = False,
 ) -> BreachQueueItem | None:
     """One breach's queue view (state + owner + deadline + the limit echo). Per-breach queries are
-    fine at single-entity scale — the batched form exists for LIST scale (D9)."""
-    breach = get_breach(session, acting_tenant=acting_tenant, breach_id=breach_id)
+    fine at single-entity scale — the batched form exists for LIST scale (D9).
+
+    Fenced through ``get_breach`` (review D2) — the same fail-closed default."""
+    breach = get_breach(
+        session,
+        acting_tenant=acting_tenant,
+        breach_id=breach_id,
+        include_issuer_detail=include_issuer_detail,
+    )
     if breach is None:
         return None
     state = current_breach_state(session, breach.id, acting_tenant=acting_tenant)
@@ -651,6 +683,7 @@ def list_breaches(
     assigned_to: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    include_issuer_detail: bool = False,
 ) -> list[BreachQueueItem]:
     """The batched breach-queue read — ONE statement, portable PG+SQLite (plain GROUP-BY joins;
     no ``DISTINCT ON``/window), never the ``select_overdue_breaches`` N+1 (D9).
@@ -665,6 +698,11 @@ def list_breaches(
     """
     if state is not None and state not in BREACH_STATES:
         raise BreachLifecycleError(f"unknown breach state {state!r}")
+
+    # The issuer fence, AT THE QUERY (review D2) — not filtered out of the result list afterwards,
+    # because a router-level courtesy is not a fence (CON-1's finding). `issuer_id IS NOT NULL` is
+    # a reliable discriminator: 0058's `issuer_only` CHECK confines identity to ISSUER rows.
+    issuer_fence = Breach.issuer_id.is_(None) if not include_issuer_detail else None
 
     latest_seq = (
         select(BreachAction.breach_id, func.max(BreachAction.seq).label("max_seq"))
@@ -723,6 +761,8 @@ def list_breaches(
         )
         .where(Breach.tenant_id == acting_tenant)
     )
+    if issuer_fence is not None:
+        stmt = stmt.where(issuer_fence)
     if state is not None:
         stmt = stmt.where(derived_state == state)
     if open_only:
