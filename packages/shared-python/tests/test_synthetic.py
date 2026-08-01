@@ -36,11 +36,40 @@ from irp_shared.synthetic import (
     synthetic_id,
 )
 from irp_shared.synthetic import builder as builder_mod
-from irp_shared.synthetic import ids as ids_mod
 from irp_shared.transaction.models import Transaction
 from irp_shared.valuation import Valuation, reconstruct_valuation_as_of
 
-_SYN_MODULES = (ids_mod, builder_mod)
+
+def _all_synthetic_modules() -> tuple[object, ...]:
+    """EVERY module in ``irp_shared.synthetic`` — a CENSUS, not an enumeration (PERF-0).
+
+    This was ``(ids_mod, builder_mod)``: a hand-listed tuple. The three AST fences below iterate it,
+    so a module ADDED to the package silently escaped all of them — no wall-clock fence, no
+    no-compute fence, no raw-SQL/BYPASSRLS fence. PERF-0 added exactly such a module (``scale.py``),
+    which is what surfaced it. The enumerate-vs-census failure is the CON-1
+    ``SNAPSHOT_COMPONENT_KINDS`` lesson in a new place: a guard that lists its members cannot see a
+    new one. Globbing the package means the NEXT module is fenced on arrival, with no edit here.
+    """
+    import importlib
+    import pkgutil
+
+    import irp_shared.synthetic as pkg
+
+    mods = []
+    for info in pkgutil.iter_modules(pkg.__path__):
+        mods.append(importlib.import_module(f"{pkg.__name__}.{info.name}"))
+    assert mods, "the synthetic package census found NO modules — the glob is broken"
+    return tuple(mods)
+
+
+_SYN_MODULES = _all_synthetic_modules()
+
+
+def test_the_fence_census_covers_every_module_in_the_package() -> None:
+    """The census must actually see the package's modules — including the ones added after it was
+    written. A fence list that silently shrinks to nothing would make every fence below vacuous."""
+    names = {m.__name__.rsplit(".", 1)[-1] for m in _SYN_MODULES}
+    assert {"ids", "builder", "scale"} <= names, f"census missed modules: {names}"
 
 
 @pytest.fixture(autouse=True)
@@ -536,7 +565,26 @@ def test_no_migration_and_no_entity() -> None:
 
 def test_import_direction() -> None:
     pkg = pathlib.Path(builder_mod.__file__).parent
-    allowed = {"portfolio", "position", "valuation", "transaction", "reference", "db", "synthetic"}
+    # ``marketdata`` ADDED at PERF-0, with its reason recorded at the fence rather than the fence
+    # quietly widened: the scale seed captures FACTOR RETURNS, which the covariance/VaR segments of
+    # the chain consume (they pin factor series, not position marks — see the PERF-0 record's
+    # Part 0 fact 7). A factor return is captured market data of exactly the same kind as a
+    # valuation, so it belongs on the CAPTURE side of this package's one-way rule. The rule's real
+    # purpose is unchanged and still enforced: no ``irp_backend``, no ``irp_shared.models``, and
+    # nothing on the COMPUTE side (calc, risk, perf, snapshot) — a seed still computes nothing.
+    allowed = {
+        "portfolio",
+        "position",
+        "valuation",
+        "transaction",
+        "reference",
+        "marketdata",
+        # classification ADDED at PERF-0: the scale seed captures ASSIGNMENTS (REF-1's capture
+        # rail) so the concentration segment has inputs. Capture side, same as the others.
+        "classification",
+        "db",
+        "synthetic",
+    }
     forbidden_roots = {"irp_backend", "irp_shared.models"}
     for py in pkg.glob("*.py"):
         for line in py.read_text().splitlines():

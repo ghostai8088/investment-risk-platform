@@ -1,6 +1,6 @@
 # PERF-0 — the scale probe (Wave-14 slice 1.5)
 
-**Status: v1 — OQ-PERF-0-1 and OQ-PERF-0-2 USER-RATIFIED 2026-07-30 (both as recommended);
+**Status: IMPLEMENTED, PRE-CLOSEOUT (see Part 9 for what actually shipped). OQ-PERF-0-1 and OQ-PERF-0-2 USER-RATIFIED 2026-07-30 (both as recommended);
 OQ-3…OQ-10 stand as recommendations taken under the delivery-autonomy grant (engineering calls,
 not Tier-3 forks) and are recorded as such. NO VERIFIER PASS HAS RUN ON THIS RECORD YET — the
 ES-1 standing lesson says one runs BEFORE ratification, and this is the exception, flagged rather
@@ -159,15 +159,50 @@ A naive harness would put `perf_counter()` inside the seeder and break that guar
 therefore **wraps** the seed calls and times them from outside; the fenced modules stay
 wall-clock-free. This is a real trap, named here so the implementation cannot walk into it.
 
-### OQ-PERF-0-10 — Reuse the SYNTHETIC tenant, and record the change in what it holds
+### OQ-PERF-0-10 — PERF-0 gets its OWN reserved tenant. **REVERSED at first implementation contact.**
 
-**Recommend: reuse `SYNTHETIC_TENANT_ID`; do NOT mint a second reserved tenant.**
+**Originally recommended: reuse `SYNTHETIC_TENANT_ID`. REVERSED 2026-07-30 — reuse would corrupt a
+shipped guard.**
 
-It already exists, is already env-gated, already refuses to write elsewhere, and "its own tenant"
-(the roadmap's words) is satisfied. **But state the consequence honestly:** the synthetic package's
-contract is that *the BUILDER* computes nothing, and PERF-0 runs governed COMPUTE over that
-tenant's data. That does not violate the builder's contract, but it does change what the SYNTHETIC
-tenant CONTAINS (governed runs, snapshots, result rows). Recorded here rather than discovered later.
+`test_synthetic_pg.py` connects as the constrained `irp_app` role (NOSUPERUSER, **NOBYPASSRLS**)
+with the tenant context set to `SYNTHETIC_TENANT_ID`, then asserts
+`count(Position) == 6`. That count is **RLS-SCOPED to the synthetic tenant** — it is not a global
+count that happens to be small. Seeding 500–10,000 perf positions into that tenant turns 6 into
+506…10,006 and breaks the assertion; "fixing" it by relaxing the number would permanently destroy
+the precision of the synthetic dataset's exact-count guards, which are valuable *because* they are
+exact.
+
+Reading matters here: the roadmap's own words are *"in its own tenant"*, which I had over-read as
+"any non-production tenant". It means what it says.
+
+**RESOLVED: a second reserved tenant, `PERF_TENANT_ID = synthetic_id("tenant:perf-probe")`**, with
+the same discipline as the synthetic one — deterministic `uuid5`, the fixed `SeedClock`, an explicit
+confirmation argument, a non-production env gate, and an EXACT-tenant refusal so the perf seed can
+never write to the synthetic tenant (or any other) and the synthetic seed can never write to the
+perf tenant. The two seeds are mutually exclusive by construction, so neither can pollute the
+other's counts.
+
+**Consequent contract change, recorded rather than discovered later:** the `synthetic` package's
+docstring states it *"can only ever write to the SYNTHETIC tenant"*. Hosting the perf generator
+there makes the package **deterministic seed tooling with TWO reserved tenants, each refusing the
+other's**. The package docstring and `build_synthetic_dataset`'s docstring are amended to say
+exactly that.
+
+### OQ-PERF-0-11 — The AST fences must become a package CENSUS (found in the same pass)
+
+**Recommend: replace the enumerated `_SYN_MODULES` with a census over the package.**
+
+`test_synthetic.py:43` reads `_SYN_MODULES = (ids_mod, builder_mod)` — an ENUMERATED tuple. All
+three AST fences (no wall-clock/`random`, no arithmetic, no raw SQL / BYPASSRLS) iterate it, so **a
+new module added to `irp_shared/synthetic/` silently escapes every one of them.** PERF-0 is about to
+add exactly such a module. Enumerate-vs-census is the CON-1 lesson (`SNAPSHOT_COMPONENT_KINDS`
+membership asserts could not see an added kind); the fix is the same shape: glob the package's
+modules and fence whatever is found, so the NEXT module cannot escape either.
+
+The scale generator is written to PASS the existing fences unchanged — in particular **no
+multiplication**, which the no-compute fence forbids outright. Deterministic quantities and marks
+come from fixed value tables indexed by position, never from `i * step`. The fence stays a real
+constraint rather than being widened to accommodate new code.
 
 ---
 
@@ -180,7 +215,7 @@ without its conditions is not evidence** (the OPS-H1 "measured beats cited" less
 
 ---
 
-## Part 3 — Implementation shape (for the post-gate turn; NOT built during planning)
+## Part 3 — Implementation shape (as PLANNED; Part 9 records what SHIPPED)
 
 - A scale generator extending the synthetic package's deterministic id + seed-clock discipline
   (`uuid5`, `SeedClock`) to N positions — parameterized, never wall-clock or `random`.
@@ -203,3 +238,105 @@ NOT apply — this is not a demo stage and adds no demo counts) and **test-fence
 synthetic import fence, Part 0 fact 5). Pins verified as NOT applicable: migration-head population,
 `HYBRID_TABLES` parity, `APPEND_ONLY_TABLES`, `FAMILY_REGISTRY`, DDL identifier lengths, the
 seven-ledger sweep (no ledger-bearing artifact is minted).
+
+---
+
+## Part 9 — Execution addendum (2026-07-31, written BEFORE the pre-closeout review)
+
+What actually shipped against what was ratified. Written now so the review's record-vs-diff lane
+audits real claims rather than staleness.
+
+**Branch `perf-0-planning`, head `e9e5cbd`.** CI green at head — NOT at every commit: impl 4/n
+pushed red (the two-layer marketdata fence miss, recorded below), and the earlier phrasing of this
+sentence claimed otherwise in the same document that records the red push (caught by the 2026-08-01
+review as a self-contradiction). Both tiers run before every push after impl 5/n. No governed family, no entity, no migration, no
+permission, no audit code — the sizing held.
+
+### Delivered
+
+| ratified | shipped | artifact |
+|---|---|---|
+| OQ-1 — 4 h budget @10k, set before measuring | as ratified; **MEASURED at 21.4 min = 8.90%** | Reading 5 |
+| OQ-2 — month-end marks + daily factor returns, 3 y | as ratified | `scale.py` |
+| OQ-3 — a LADDER, not a point | 500 / 2,000 / 10,000 (**5,000 skipped**, below) | Readings 1–5 |
+| OQ-4 — harness outside app code, smallest rung in CI, no timing assertion | **DEVIATED, recorded late (review F1):** the ratified text says "CI runs the 500-position rung"; the shipped smoke runs rung THREE. The shrink was the right call (500 positions seed for minutes in CI) but went unrecorded — and it silently vacated the multi-portfolio guard, because 3 positions at 250-per-portfolio is ONE portfolio. Fixed at the fold: the seed's packing is parameterized, the smoke seeds 2-per-portfolio, and the portfolio count is ASSERTED in-test | `scripts/perf_probe.py`, `test_perf_probe_pg.py`, `ci.yml` |
+| OQ-5 — seed time reported separately | as ratified, and it became the headline finding | all readings |
+| OQ-6 — six segments, timed individually | as ratified | Reading 4/5 tables |
+| OQ-7 — tracemalloc + peak RSS | as ratified (`ru_maxrss` branches on platform — bytes vs KB) | `_peak_rss_mb` |
+| OQ-8 — a miss RECORDS and ESCALATES | never exercised: **no miss occurred** | — |
+| OQ-9 — timing OUTSIDE the fenced seed | as ratified | harness lives in `scripts/` |
+
+### Deviations, each recorded where it happened
+
+- **OQ-10 REVERSED at first implementation contact** — reuse of the SYNTHETIC tenant would have
+  broken `test_synthetic_pg.py`'s RLS-scoped `count(Position) == 6` and destroyed the precision of a
+  guard whose value is being exact. PERF-0 got its own reserved `PERF_TENANT_ID`. Recorded in Part 1.
+- **OQ-11 ADDED mid-slice** — the AST fences iterated an ENUMERATED module tuple, so a new module
+  escaped all three. Replaced with a package census; mutation-proven.
+- **5,000 rung SKIPPED, deliberately.** Three rungs establish the exponent and 10,000 is the ratified
+  budget point. Stated rather than silently omitted (the no-silent-caps rule).
+- **Determinism is NOT universal — and the count is THREE shapes, not two** (widened at the
+  2026-08-01 review, F3). `create_legal_entity`/`create_issuer` mint their own ids with no
+  `entity_id` hook, and the per-run-random issuer id is then written INTO `instrument.issuer_id`,
+  so instrument rows are not byte-identical either (classification rows under `classify=True` also
+  sit outside the guarantee). Affects no measurement — issuer grouping MEMBERSHIP is ordinal-keyed —
+  but the caveat as first recorded was itself incomplete, which is the exact failure the caveat
+  exists to prevent.
+
+### The 2026-08-01 post-review fold (three Fable lanes, 26 findings; all four headline verdicts ADJUDICATED AS STANDING)
+
+The review's full adjudication: budget 8.90% recomputes exactly (one-date daily ≈ 6.74%);
+ingestion-dominates 10.87× (→ ~14.4× one-date); capture linear (1.005/0.974/0.990); memory flat.
+The defects were in the probe's own guard layer, and the two that mattered are the SAME classes
+this slice had already paid for once:
+
+- **F1 (HIGH): the CI smoke's two-portfolio claim was FALSE** — rung 3 at the default packing is
+  ONE portfolio, so the multi-portfolio regression guard was vacuous and its comment described a
+  protection the test did not provide. Fixed: `positions_per_portfolio` parameterized (sole
+  consumer: the smoke, at 2), and `count(portfolio) >= 2` asserted IN CODE. Mutation-proven: the
+  old packing fails exactly that assertion.
+- **F2 (HIGH): the smoke's "all six COMPLETED" docstring checked 3 of 6 run types** —
+  VAR/PORTFOLIO_RETURN/FACTOR_EXPOSURE were never status-checked while their binders document
+  commit-FAILED-and-return contracts (the Reading-3 mechanism, recreated in the slice that fixed
+  it). Fixed: an EXACT six-family run-type census + a zero-non-COMPLETED assertion, and the
+  harness now folds every returned status into `SegmentReading.ok`. Negative control executed: a
+  planted FAILED run is caught by the census query.
+- F3: the determinism caveat widened to three shapes (above). F4: the Reading-1 totals erratum
+  (in the readings). F5: **PR #154 merged only this record's planning version — the implementation
+  was never merged**; this fold rides the implementation PR itself, so the review is pre-merge
+  after all.
+
+Named PERF-1 carries (designed-in, not rediscovered): measure the audit-chain share of the
+~36 ms/row BEFORE parallelizing (within-tenant parallelism may serialize on the chain and yield
+~0); define the write-count basis in the harness (the 27.4 rows/s counts six families and excludes
+~3.5% of inserted rows); status census, never throw-based ok; every regression guard asserts its
+precondition in code.
+
+### Corrections to this slice's own outputs
+
+- **Reading 3's concentration row measured the FAILURE path.** The seed created issuer-less
+  instruments, so concentration's always-computed ISSUER dimension gapped and committed a FAILED
+  run; CON-1 commits rather than raises, and the harness only notices a throw. Found by the CI
+  smoke's database-reading test ~20 minutes after Reading 3 was filed. Fixed (issuers seeded);
+  Reading 4 supersedes. Impact was ~3% — the gap fires after bucketing completes — so the
+  conclusions survived, which was luck, not method.
+- **A seed projection of mine was wrong.** Reading 4 called ~3.7 h "conservative" and ~2.6 h the
+  better estimate from the 0.808 exponent. Measured: **3.87 h**, exponent **1.033** over
+  2,000→10,000. The conservative figure was nearly exact.
+
+### Process failures in this slice, named
+
+- **The both-tier-before-push rule lapsed once** (impl 4/n → red CI). CI's Backend job runs bare
+  `pytest` — the UNIT tier — while every battery I had run set `IRP_TEST_DATABASE_URL`. I was
+  verifying a superset and assuming it covered the subset. Countermeasure: a new pre-flight manifest
+  change class for cross-package imports, naming BOTH fence layers.
+- **Three fences fired on my own code** (raw-SQL `.execute`, the synthetic import direction, the
+  repo-wide marketdata leaf fence). Each was answered by conforming to an existing convention or by
+  amending in place with the reason AT the fence — none by widening a fence to fit new code.
+
+### What PERF-0 does NOT answer
+
+**Concurrency.** Every reading is single-process, single-connection. The finding points at ingestion
+throughput, and the first question any ingestion work would ask is what parallel writers do to
+~27 rows/s — a per-tenant hash-chained audit append is exactly the kind of thing that may not
+parallelise. That is a NEW slice's question, not a gap in this one, and it is the natural PERF-1.

@@ -522,7 +522,10 @@ def test_nothing_imports_marketdata() -> None:
     (P3-1 consumes the curve ``value_type`` constants for the sensitivity dispatch) + ``perf`` (PM-1
     converts external flows via the composite-rate helper) + ``demo`` (MG-1: the campaign runner is
     an ORCHESTRATOR above every domain — it drives the real capture/run services like the apps
-    layer does, and nothing imports it). ``marketdata`` still imports none — one-way."""
+    layer does, and nothing imports it) + ``synthetic`` (PERF-0: seed tooling of exactly the
+    ``demo`` class — it drives the real capture services, NOTHING imports it, its own fences forbid
+    from computing anything; the scale seed captures FACTOR RETURNS because covariance/VaR pin
+    factor series rather than position marks). ``marketdata`` still imports none — one-way."""
     root = pathlib.Path(fx_service.__file__).parents[1]
     for path in root.rglob("*.py"):
         if (
@@ -532,6 +535,7 @@ def test_nothing_imports_marketdata() -> None:
             or "risk" in path.parts
             or "perf" in path.parts
             or "demo" in path.parts
+            or "synthetic" in path.parts
             or path.name == "models.py"
         ):
             continue
