@@ -29,7 +29,7 @@ from datetime import UTC, datetime, timedelta
 from datetime import date as dt_date
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.actions import ACTION_CREATE, ACTION_UPDATE
@@ -42,7 +42,11 @@ from irp_shared.risk.covariance_service import latest_covariances
 from irp_shared.risk.events import VarActor
 from irp_shared.risk.factor_service import latest_factor_exposure
 from irp_shared.risk.var_service import VarRunResult, run_var
+from irp_shared.calmath import NO_HOLIDAYS, last_business_day_of_month
+from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
+from irp_shared.reference.models import Calendar, CalendarHoliday  # models-only (guards precedent)
 from irp_shared.scheduling.events import (
+    CADENCE_BUSINESS_MONTH_END,
     CADENCE_CALENDAR_MONTH_END,
     CADENCE_INTERVAL,
     CADENCE_KINDS,
@@ -106,17 +110,17 @@ def _require_aware(now: datetime) -> None:
 
 def _last_weekday_of_month(year: int, month: int) -> dt_date:
     """The last Mon–Fri date of a calendar month — the QS-11 ``preceding`` roll over a WEEKEND-ONLY
-    non-business-day predicate (SCH-2, OD-SCH-2-C). Pure arithmetic: no holiday substrate exists
-    (ENT-006 ``calendar``/``calendar_holiday`` are vocabulary tables with no business-day logic),
-    so a month-end landing on a market HOLIDAY is a recorded residual, not a handled case."""
-    day = _calendar.monthrange(year, month)[1]
-    candidate = dt_date(year, month, day)
-    while candidate.weekday() >= 5:  # 5=Sat, 6=Sun
-        candidate -= timedelta(days=1)
-    return candidate
+    non-business-day predicate (SCH-2, OD-SCH-2-C; the ``CALENDAR_MONTH_END`` grandfather).
+
+    CAL-1b re-homed the arithmetic onto the pure leaf ``irp_shared.calmath`` (OQ-CAL-1-7) — the
+    RM-1-era hand-mirror in ``perf.rolling_kernel`` and its conformance pin dissolved with it.
+    Equal by construction to ``last_business_day_of_month(year, month, NO_HOLIDAYS)``."""
+    return last_business_day_of_month(year, month, NO_HOLIDAYS)
 
 
-def _month_end_tick_at_or_before(now: datetime) -> datetime:
+def _month_end_tick_at_or_before(
+    now: datetime, holidays: frozenset[dt_date] = NO_HOLIDAYS
+) -> datetime:
     """The most recent CALENDAR_MONTH_END grid point ``<= now``, as an END-OF-DAY instant.
 
     **The instant is end-of-day, and that is load-bearing** (OD-SCH-2-C): the tick becomes the
@@ -127,12 +131,12 @@ def _month_end_tick_at_or_before(now: datetime) -> datetime:
     capture, ``tick.date()`` is still ``T`` (so RM-1's month-alignment is satisfied), and trades
     booked on ``T`` are included.
     """
-    candidate = _end_of_day(_last_weekday_of_month(now.year, now.month))
+    candidate = _end_of_day(last_business_day_of_month(now.year, now.month, holidays))
     if candidate <= now:
         return candidate
     # Still before this month's grid point — roll back to the previous month.
     year, month = (now.year - 1, 12) if now.month == 1 else (now.year, now.month - 1)
-    return _end_of_day(_last_weekday_of_month(year, month))
+    return _end_of_day(last_business_day_of_month(year, month, holidays))
 
 
 def _end_of_day(day: dt_date) -> datetime:
@@ -146,13 +150,18 @@ def current_tick(
     now: datetime,
     *,
     cadence_kind: str = CADENCE_INTERVAL,
+    holidays: frozenset[dt_date] | None = None,
 ) -> datetime:
     """The most recent grid point at or before ``now`` (INV-SCH-1 — a PURE grid value).
 
-    Two cadences (SCH-2): ``INTERVAL`` = ``anchor_midnight_utc + k·interval_days``, clamped to the
-    anchor; ``CALENDAR_MONTH_END`` = the end of the last weekday of the calendar month. Depends ONLY
-    on ``(anchor, interval, cadence, now)`` — never on the ledger or a wall clock — so two
-    concurrent polls compute the identical bucket and collide on the unique constraint.
+    Three cadences (SCH-2 + CAL-1b): ``INTERVAL`` = ``anchor_midnight_utc + k·interval_days``,
+    clamped to the anchor; ``CALENDAR_MONTH_END`` = the end of the last WEEKDAY of the calendar
+    month (the grandfathered v1 grid — it never consults holidays); ``BUSINESS_MONTH_END`` = the
+    end of the last BUSINESS day under the caller-resolved ``holidays`` set. Depends ONLY on
+    ``(anchor, interval, cadence, now, holidays)`` — the holiday set is a PASSED-IN frozenset
+    resolved once per poll cycle by the caller (OQ-CAL-1-5), NEVER a ledger/DB read here — so two
+    polls holding the same inputs compute the identical bucket; the cross-refresh race is closed at
+    the DB by the period key, not here.
 
     **Fails CLOSED on an unresolvable cadence** (SCH-2, verifier B3). This function runs on the POLL
     path, and ``select_active_due`` is evaluated in the worker's ``for`` header — OUTSIDE the
@@ -163,7 +172,15 @@ def current_tick(
     _require_aware(now)
     now = now.astimezone(UTC)  # the month-end branch reads calendar fields; normalize explicitly
     if cadence_kind == CADENCE_CALENDAR_MONTH_END:
-        return _month_end_tick_at_or_before(now)
+        return _month_end_tick_at_or_before(now)  # grandfathered: NEVER holiday-aware
+    if cadence_kind == CADENCE_BUSINESS_MONTH_END:
+        if holidays is None:
+            # Fail-closed (the LIM-1 standard, OQ-CAL-1-4): a holiday-blind tick would be silently
+            # indistinguishable from the legacy kind — refuse, never degrade to weekday-only.
+            raise ScheduleError(
+                "BUSINESS_MONTH_END requires a resolved holiday set — refusing a holiday-blind tick"
+            )
+        return _month_end_tick_at_or_before(now, holidays)
     if cadence_kind != CADENCE_INTERVAL:
         raise ScheduleError(f"unknown cadence_kind {cadence_kind!r} — cannot compute a grid tick")
     if interval_days is None:
@@ -187,13 +204,19 @@ def current_tick(
         ) from exc
 
 
-def _schedule_tick(schedule: Schedule, now: datetime) -> datetime:
-    """``current_tick`` for a schedule row (its cadence, interval and anchor)."""
+def _schedule_tick(
+    schedule: Schedule, now: datetime, holidays: frozenset[dt_date] | None = None
+) -> datetime:
+    """``current_tick`` for a schedule row (its cadence, interval and anchor).
+
+    ``holidays`` is required (non-None) for a ``BUSINESS_MONTH_END`` row — ``current_tick``
+    refuses fail-closed otherwise — and ignored by the legacy kinds."""
     return current_tick(
         schedule.anchor_date,
         schedule.interval_days,
         now,
         cadence_kind=schedule.cadence_kind,
+        holidays=holidays,
     )
 
 
@@ -217,13 +240,18 @@ def _outside_start_boundary(schedule: Schedule, tick: datetime, now: datetime) -
     return tick < anchor or now < anchor
 
 
-def _assert_current_tick(schedule: Schedule, tick: datetime, now: datetime) -> None:
+def _assert_current_tick(
+    schedule: Schedule,
+    tick: datetime,
+    now: datetime,
+    holidays: frozenset[dt_date] | None = None,
+) -> None:
     """Self-enforce INV-SCH-1 at the write boundary: ``tick`` MUST be the current grid tick for
     ``now`` AND must be at/after the anchor. Guards a mis-caller passing an arbitrary ``tick``
     (e.g. a wall clock), which would violate the invariant AND split the idempotency bucket so
     ``uq(schedule_id, scheduled_for)`` no longer collides (a silent double-fire)."""
     _require_aware(now)
-    expected = _schedule_tick(schedule, now)
+    expected = _schedule_tick(schedule, now, holidays)
     if tick != expected:
         raise ScheduleError(f"tick {tick} is not the current grid tick {expected} (INV-SCH-1)")
     if _outside_start_boundary(schedule, tick, now):
@@ -233,7 +261,12 @@ def _assert_current_tick(schedule: Schedule, tick: datetime, now: datetime) -> N
         )
 
 
-def is_due(schedule: Schedule, now: datetime, fired_ticks: set[datetime]) -> bool:
+def is_due(
+    schedule: Schedule,
+    now: datetime,
+    fired_ticks: set[datetime],
+    holidays: frozenset[dt_date] | None = None,
+) -> bool:
     """Pure predicate: an ACTIVE schedule whose CURRENT grid tick has not already fired.
 
     No backfill: only the current tick is ever considered — missed grid points are honest gaps.
@@ -241,17 +274,69 @@ def is_due(schedule: Schedule, now: datetime, fired_ticks: set[datetime]) -> boo
     _require_aware(now)
     if schedule.status != SCHEDULE_STATUS_ACTIVE:
         return False
-    tick = _schedule_tick(schedule, now)
+    tick = _schedule_tick(schedule, now, holidays)
     if _outside_start_boundary(schedule, tick, now):
         return False
     return tick not in fired_ticks
 
 
+def _period_key(tick: datetime) -> str:
+    """The month-grain idempotency key for ``BUSINESS_MONTH_END`` rows (OQ-CAL-1-5), e.g.
+    ``2027-05`` — stored on ``scheduled_run.period_key`` under the partial unique
+    ``uq_scheduled_run_schedule_period`` so one economic month fires at most once even when a
+    holiday refresh re-values the tick INSTANT between concurrent polls (the exact-instant uq
+    cannot collide across distinct instants; the period key is the DB-grain backstop)."""
+    return f"{tick.year:04d}-{tick.month:02d}"
+
+
+def _resolve_business_calendar(
+    session: Session, schedule: Schedule
+) -> tuple[Calendar, frozenset[dt_date]]:
+    """Resolve a ``BUSINESS_MONTH_END`` schedule's bound calendar + holiday set, FAIL-CLOSED
+    (OQ-CAL-1-4: the LIM-1 standard — an empty/invisible set must refuse, never silently compute
+    weekday-only answers indistinguishable from the legacy kind).
+
+    Called ONCE per schedule per poll cycle; the returned set threads poll→write so INV-SCH-1's
+    write-boundary recompute provably sees the SAME set (G27). Every refusal is a ``ScheduleError``
+    (the B3 skip-and-report discipline). The read runs under the worker's tenant session — the
+    hybrid RLS USING serves own-tenant OR SYSTEM calendars; an RLS-invisible id resolves to None
+    and refuses here rather than degrading."""
+    if not schedule.calendar_id:
+        raise ScheduleError(
+            "BUSINESS_MONTH_END requires a bound calendar (calendar_id is NULL) — refusing"
+        )
+    calendar = session.execute(
+        select(Calendar).where(Calendar.id == schedule.calendar_id)
+    ).scalar_one_or_none()
+    if calendar is None:
+        raise ScheduleError(
+            f"calendar {schedule.calendar_id} is not visible to this tenant — refusing a "
+            "holiday-blind tick"
+        )
+    if calendar.holidays_complete_through is None:
+        raise ScheduleError(
+            f"calendar {calendar.code!r} declares no holiday coverage "
+            "(holidays_complete_through is NULL) — a DECLARED horizon is required (OQ-CAL-1-4; "
+            "a derived MAX cannot represent a gap)"
+        )
+    dates = frozenset(
+        session.execute(
+            select(CalendarHoliday.holiday_date).where(
+                CalendarHoliday.calendar_id == calendar.id
+            )
+        ).scalars()
+    )
+    return calendar, dates
+
+
 # ------------------------------------------------------------------------------- DB due-select ---
 def select_active_due(
     session: Session, now: datetime, *, acting_tenant: str
-) -> list[tuple[Schedule, datetime]]:
-    """Tenant-scoped: ACTIVE schedules whose current grid tick has no ``scheduled_run`` yet.
+) -> list[tuple[Schedule, datetime, frozenset[dt_date] | None]]:
+    """Tenant-scoped: ACTIVE schedules whose current grid tick has no ``scheduled_run`` yet,
+    each with its per-cycle resolved holiday set (``None`` for the legacy kinds) — the caller
+    threads that set to ``dispatch_one``/``record_failed_dispatch`` so the write boundary sees
+    exactly what the poll saw (INV-SCH-1 under CAL-1b).
 
     Reads ONLY the two scheduling tables. Under OQ-SCH-1-1=B this runs inside ONE tenant's
     non-BYPASSRLS session, so RLS already shows only that tenant's rows — the explicit
@@ -271,10 +356,20 @@ def select_active_due(
             .order_by(Schedule.id)
         ).scalars()
     )
-    due: list[tuple[Schedule, datetime]] = []
+    due: list[tuple[Schedule, datetime, frozenset[dt_date] | None]] = []
     for schedule in schedules:
         try:
-            tick = _schedule_tick(schedule, now)
+            holidays: frozenset[dt_date] | None = None
+            calendar: Calendar | None = None
+            if schedule.cadence_kind == CADENCE_BUSINESS_MONTH_END:
+                calendar, holidays = _resolve_business_calendar(session, schedule)
+            tick = _schedule_tick(schedule, now, holidays)
+            if calendar is not None and tick.date() > calendar.holidays_complete_through:
+                raise ScheduleError(
+                    f"tick {tick.date()} exceeds calendar {calendar.code!r}'s declared holiday "
+                    f"coverage ({calendar.holidays_complete_through}) — refusing an uncovered "
+                    "month (OQ-CAL-1-4)"
+                )
         except ScheduleError:
             # SKIP-AND-REPORT, never raise (SCH-2, verifier B3): this loop runs in the worker's
             # `for` HEADER, outside the per-schedule SAVEPOINT, so a raise here would abort ALL
@@ -293,8 +388,22 @@ def select_active_due(
                 ScheduledRun.scheduled_for == tick,
             )
         ).first()
-        if already is None:
-            due.append((schedule, tick))
+        if already is not None:
+            continue
+        if schedule.cadence_kind == CADENCE_BUSINESS_MONTH_END:
+            # The month-grain polite layer (OQ-CAL-1-5): a holiday refresh that re-values an
+            # already-SERVED month's instant finds the month occupied and no-ops here; the DB
+            # partial unique is the hard backstop for the concurrent-poll race this read cannot
+            # close (READ COMMITTED — two polls straddling a refresh commit).
+            served = session.execute(
+                select(ScheduledRun.id).where(
+                    ScheduledRun.schedule_id == schedule.id,
+                    ScheduledRun.period_key == _period_key(tick),
+                )
+            ).first()
+            if served is not None:
+                continue
+        due.append((schedule, tick, holidays))
     return due
 
 
@@ -473,6 +582,7 @@ def dispatch_one(
     now: datetime,
     *,
     code_version: str,
+    holidays: frozenset[dt_date] | None = None,
 ) -> ScheduledRun:
     """Fire ONE grid tick: resolve upstream, run the family binder, append the ledger row.
 
@@ -483,7 +593,7 @@ def dispatch_one(
     run returns a row
     with ``outcome=FAILED`` + the failed run id.
     """
-    _assert_current_tick(schedule, tick, now)  # INV-SCH-1 self-enforcing at the write boundary
+    _assert_current_tick(schedule, tick, now, holidays)  # INV-SCH-1 self-enforcing at the write boundary
     existing = session.execute(
         select(ScheduledRun).where(
             ScheduledRun.schedule_id == schedule.id,
@@ -514,6 +624,9 @@ def dispatch_one(
         tenant_id=schedule.tenant_id,
         schedule_id=schedule.id,
         scheduled_for=tick,
+        period_key=(
+            _period_key(tick) if schedule.cadence_kind == CADENCE_BUSINESS_MONTH_END else None
+        ),
         fired_at=now,
         calculation_run_id=result.run_id,
         resolved_exposure_run_id=result.resolved_exposure_run_id,
@@ -562,6 +675,7 @@ def record_failed_dispatch(
     tick: datetime,
     now: datetime,
     reason: str,
+    holidays: frozenset[dt_date] | None = None,
 ) -> ScheduledRun:
     """Append a FAILED ledger row for a dispatch that RAISED before a run was created.
 
@@ -569,11 +683,14 @@ def record_failed_dispatch(
     OD-SCH-1-J — the NEXT grid tick is the retry, not this one). ``calculation_run_id`` is NULL.
     ``reason`` is REDACTED before it is persisted — see ``redact_failure_reason``.
     """
-    _assert_current_tick(schedule, tick, now)  # INV-SCH-1 — the FAILED row uses the grid tick too
+    _assert_current_tick(schedule, tick, now, holidays)  # INV-SCH-1: FAILED rows use the grid tick
     row = ScheduledRun(
         tenant_id=schedule.tenant_id,
         schedule_id=schedule.id,
         scheduled_for=tick,
+        period_key=(
+            _period_key(tick) if schedule.cadence_kind == CADENCE_BUSINESS_MONTH_END else None
+        ),
         fired_at=now,
         calculation_run_id=None,
         outcome=OUTCOME_FAILED,
@@ -593,6 +710,7 @@ def _validate_config(
     interval_days: int | None,
     environment_id: str,
     model_version_id: str | None,
+    calendar_id: str | None = None,
 ) -> None:
     """Fail-closed config validation, driven by the registry and mirroring the DB CHECKs in BOTH
     directions (SCH-2, verifier B4).
@@ -610,6 +728,17 @@ def _validate_config(
         raise ScheduleError(f"cadence_kind {cadence_kind!r} is not a supported cadence")
     if status not in SCHEDULE_STATUSES:
         raise ScheduleError(f"status {status!r} is not a valid schedule status")
+
+    # calendar: required XOR forbidden by cadence kind (CAL-1b, OQ-CAL-1-4 — mirrors the
+    # ck_schedule_calendar_id_by_cadence total enumeration; SQLite carries no CHECKs, so this
+    # service mirror is the unit tier's only enforcement).
+    if cadence_kind == CADENCE_BUSINESS_MONTH_END and not calendar_id:
+        raise ScheduleError(
+            "calendar_id is required for the BUSINESS_MONTH_END cadence (the holiday-aware grid "
+            "must name its calendar — OQ-CAL-1-4)"
+        )
+    if cadence_kind != CADENCE_BUSINESS_MONTH_END and calendar_id is not None:
+        raise ScheduleError(f"calendar_id is meaningless under {cadence_kind} — omit it")
 
     # model_version: required XOR forbidden, per the registry DECLARATION (never per the value).
     if family.requires_model_version and not model_version_id:
@@ -651,6 +780,7 @@ def create_schedule(
     interval_days: int | None = None,
     cadence_kind: str = CADENCE_INTERVAL,
     status: str = SCHEDULE_STATUS_ACTIVE,
+    calendar_id: str | None = None,
 ) -> Schedule:
     """Create an ACTIVE (by default) schedule head; emit ``SCHEDULE.CREATE`` (governed R-07).
 
@@ -665,6 +795,7 @@ def create_schedule(
         interval_days=interval_days,
         environment_id=environment_id,
         model_version_id=model_version_id,
+        calendar_id=calendar_id,
     )
     # P3-5 cross-tenant FK guard (OQ-W11C-2): re-resolve the HARD FKs under the acting tenant
     # BEFORE they are stamped into FK columns — PG FK checks bypass RLS, so the DB alone would
@@ -686,6 +817,26 @@ def create_schedule(
         assert_model_version_in_tenant(
             session, model_version_id, acting_tenant=tenant_id, error=ScheduleError
         )
+    # The calendar FK guard (CAL-1b, OQ-CAL-1-4): the SECOND symmetric→hybrid FK (after 0056's
+    # assignment→scheme), so the P3-5 own-tenant-only pattern would REFUSE the SYSTEM XNYS
+    # calendar — this is the own-OR-SYSTEM variant (the resolve_currency/OQ-REF-1-20 precedent).
+    # Gated on the CADENCE declaration, never on the value: `_validate_config` above already
+    # refused a falsy calendar_id for BUSINESS_MONTH_END and a present one for the legacy kinds.
+    if cadence_kind == CADENCE_BUSINESS_MONTH_END and calendar_id is not None:
+        visible = session.execute(
+            select(Calendar.id).where(
+                Calendar.id == str(calendar_id),
+                or_(
+                    Calendar.tenant_id == str(tenant_id),
+                    Calendar.tenant_id == SYSTEM_TENANT_ID,
+                ),
+            )
+        ).first()
+        if visible is None:
+            raise ScheduleError(
+                f"calendar {calendar_id} is not visible to tenant {tenant_id} (own-OR-SYSTEM) — "
+                "refusing a cross-tenant calendar binding (PG FK checks bypass RLS)"
+            )
     schedule = Schedule(
         tenant_id=str(tenant_id),
         code=code,
@@ -699,6 +850,7 @@ def create_schedule(
         environment_id=environment_id,
         cadence_kind=cadence_kind,
         interval_days=interval_days,
+        calendar_id=str(calendar_id) if calendar_id is not None else None,
         anchor_date=anchor_date,
         status=status,
         record_version=1,

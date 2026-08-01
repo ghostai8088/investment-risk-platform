@@ -28,6 +28,8 @@ on the core (``parent_legal_entity_id`` self-FK); the exposure-rollup calc is de
 
 from __future__ import annotations
 
+from datetime import date as dt_date
+
 from datetime import date
 from decimal import Decimal
 
@@ -122,6 +124,12 @@ class Calendar(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin
         String(10), nullable=True
     )  # ISO-10383 MIC, plain string
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: The DECLARED holiday-coverage horizon (CAL-1b, OQ-CAL-1-4): set EXPLICITLY by
+    #: ``refresh_calendar_holidays`` (forward-only), never derived from the child rows — a
+    #: derived MAX cannot represent a gap (the NOTIF-1 lesson). A ``BUSINESS_MONTH_END`` tick or
+    #: a v2 perf run whose span exceeds this refuses fail-closed rather than computing
+    #: weekday-only answers indistinguishable from the legacy convention (the LIM-1 standard).
+    holidays_complete_through: Mapped[dt_date | None] = mapped_column(Date, nullable=True)
     record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 

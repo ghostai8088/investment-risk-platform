@@ -261,7 +261,8 @@ def test_select_active_due_returns_the_current_tick_for_a_fresh_schedule(
     now = datetime(2026, 1, 20, tzinfo=UTC)
     due = select_active_due(session, now, acting_tenant=tenant)
     assert len(due) == 1
-    got_sched, got_tick = due[0]
+    got_sched, got_tick, got_holidays = due[0]
+    assert got_holidays is None  # legacy kinds carry no resolved holiday set (CAL-1b)
     assert got_sched.id == sched.id
     assert got_tick == datetime(2026, 1, 15, tzinfo=UTC)  # current tick, not the anchor
 
@@ -534,7 +535,7 @@ def test_an_unresolvable_cadence_is_skipped_not_raised(session: Session) -> None
 
     due = select_active_due(session, datetime(2026, 1, 15, tzinfo=UTC), acting_tenant=tenant)
 
-    ids = [s.id for s, _tick in due]
+    ids = [s.id for s, _tick, _hol in due]
     assert healthy.id in ids, "the healthy sibling was starved by its poisoned neighbour"
     assert poisoned.id not in ids
 
@@ -552,11 +553,11 @@ def test_a_runaway_interval_is_skipped_rather_than_killing_the_tenants_cycle(
     session.flush()
 
     due = select_active_due(session, datetime(2026, 1, 15, tzinfo=UTC), acting_tenant=tenant)
-    assert [s.id for s, _t in due] == [
-        s.id for s, _t in due if s.id in {healthy.id, runaway.id}
+    assert [s.id for s, _t, _h in due] == [
+        s.id for s, _t, _h in due if s.id in {healthy.id, runaway.id}
     ]  # sanity: only our two schedules are in play
-    assert healthy.id in [s.id for s, _t in due]
-    assert runaway.id not in [s.id for s, _t in due]
+    assert healthy.id in [s.id for s, _t, _h in due]
+    assert runaway.id not in [s.id for s, _t, _h in due]
 
 
 def test_current_tick_converts_the_overflow_into_a_clean_schedule_error() -> None:

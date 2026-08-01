@@ -5,7 +5,7 @@
 > **LIM-2 IS CLOSED (Wave-14 slice 2) — concentration limits, the dimensional selector.** Merged
 > via **PR #155** = `b4905e3`, merged-main CI observed green; the P1 sweep executed and clean
 > (seven ledgers, merged tree byte-identical to the 2,834-test-validated tree). Migration head
-> **`0058`**; next free canonical id **ENT-070** (ENT-032 stays the sole reservation); demo counts
+> **`0059`** (CAL-1b `0059_business_month_end`; was `0058`); next free canonical id **ENT-070** (ENT-032 stays the sole reservation); demo counts
 > **26/41/136 UNCHANGED** (the final-position pin deliberately did not move); hybrid set N = 7
 > unchanged.
 >
