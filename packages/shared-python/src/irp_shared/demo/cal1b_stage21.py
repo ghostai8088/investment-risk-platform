@@ -202,16 +202,26 @@ def _instrument_ids(session: Session) -> dict[str, str]:
 
 
 def _pm1_return_run_id(session: Session) -> str:
-    row = session.execute(
-        select(CalculationRun.run_id).where(
-            CalculationRun.tenant_id == DEMO_TENANT_ID,
-            CalculationRun.run_type == "PORTFOLIO_RETURN",
-            CalculationRun.status == "COMPLETED",
+    """The return run the SHIPPED v1 rolling rows bind — derived from RollingRiskResult, not from
+    'any COMPLETED PORTFOLIO_RETURN run' (there are several in the demo tenant: PM-1's own stage
+    plus RM-1's; the first battery run found exactly that with MultipleResultsFound). Using the
+    v1-bound run is also what makes the grandfather-parity comparison meaningful: v2 must run
+    over the SAME book v1 did."""
+    rows = list(
+        session.execute(
+            select(RollingRiskResult.portfolio_return_run_id)
+            .where(RollingRiskResult.tenant_id == DEMO_TENANT_ID)
+            .distinct()
+        ).scalars()
+    )
+    if not rows:
+        raise DemoCal1bPrereqError("the RM-1 rolling rows are not seeded (stage 16 missing)")
+    if len(rows) > 1:
+        raise DemoCal1bPrereqError(
+            f"expected ONE v1-bound return run, found {len(rows)} — the parity baseline is "
+            "ambiguous; refusing"
         )
-    ).scalar_one_or_none()
-    if row is None:
-        raise DemoCal1bPrereqError("the RM-1 governed return run is not seeded (stage 16 missing)")
-    return str(row)
+    return str(rows[0])
 
 
 def _rf_benchmark_id(session: Session) -> str:

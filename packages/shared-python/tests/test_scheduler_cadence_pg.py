@@ -66,7 +66,9 @@ def app_url() -> str:
         # `irp_app` (4-finder review, schema lens): without them this file is green in CI only by
         # GRANT LEAKAGE from ~30 earlier suites in the same job, and fails when run alone against a
         # freshly migrated database. The SCH-1 sibling suite declares the same `_DEPS` set.
-        for table in ("schedule", "scheduled_run", "portfolio", "model", "model_version"):
+        # `calendar` joined at CAL-1b: `_seed_calendar_row` INSERTs the BUSINESS_MONTH_END
+        # referent as `irp_app` (same declared-deps rule as the three originals).
+        for table in ("schedule", "scheduled_run", "portfolio", "model", "model_version", "calendar"):
             conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO irp_app"))
     superuser.dispose()
     return (
