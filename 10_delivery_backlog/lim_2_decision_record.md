@@ -725,6 +725,67 @@ direction, where the harm was worst, had no coverage anywhere.
   fixed; it has not recurred in the last four full-battery runs.
 - The breach DTO still does not carry the dimension echoes (a stated scope call, not an omission).
 
+## Part 7 — The REPAIR review (2026-07-31, second adversarial pass)
+
+The fold above was itself reviewed — four lenses, two refute-by-default voters per finding,
+37 agents, 16 candidates, 11 survivors. **It found a BLOCKING defect in the D1 repair**, and the
+finding is the sharpest lesson of the slice.
+
+### R1 (BLOCKING) — the D1 repair caught the easy case and missed the likely one
+
+The repair asked `resolve_node`: *"is `bucket_code` a node of the scheme this run used?"* and
+stopped there. But the concentration kernel buckets at **level 1 only** —
+`concentration/service.py::_level1_code` walks each assignment's pinned closure to its level-1
+ancestor — while `resolve_node` has no level predicate. So every level-2+ node passed the check and
+fell straight back into the fabricated zero.
+
+That is not an exotic input. It is *the most likely one*: the demo's own issuers are assigned to
+`C26` / `C28` / `K64`, all level 2, and those are the codes the classification surface displays and
+the assignments carry. A maker writing the industry code in front of them created a limit that read
+`IN_APPETITE` forever on a book 60% concentrated in the section containing it — or, as a floor,
+wrote a false breach into the append-only lifecycle. Both harms the repair's own docstring claimed
+to prevent.
+
+The reviewer executed it against the REAL `resolve_node` on a real seeded scheme:
+
+```
+CEILING  refusal=None  resolved=True  observed=0
+FLOOR    refusal=None  resolved=True  observed=0
+```
+
+**Why my own proof missed it: the negative control tested the easy case.** I chose `'TECH'` — a
+string that is not a node at all — because it was the obvious wrong input, and my mutation proof
+faithfully confirmed the guard caught *that*. A stubbed `resolve_node` returning only `code` made
+the level distinction literally invisible to the test, and the mutation proof inherited the same
+blindness. A mutation proof is only ever as good as the input it mutates against.
+
+**Fixed:** the resolver now requires a level-1 node and, when it refuses, names the level-1 ancestor
+so the refusal is actionable ("did you mean 'C'?"). Mutation-proven, and the tests now use the REAL
+resolver against a REAL two-level scheme rather than a stub — with the thin stub's role in hiding
+this recorded at its definition. The demo's adversarial limits were re-pointed from `'TECH'` to a
+level-2 division **resolved from the database**, so the demo keeps testing the real hazard even if
+the taxonomy moves.
+
+### R2 (MEDIUM, recorded not built) — the classification `basis` is not a limit selector
+
+`ConcentrationResult.basis` carries four live values for `COUNTRY_OF_RISK`, and `limit_definition`
+has no column to declare one, so the same threshold can be adjudicated against successive runs using
+different conventions. One refuter refuted this convincingly and I agree with the refutation: the
+snapshot builder already refuses *mixed* bases within a run fail-closed, every row records its
+basis, and the ratified doctrine for exactly this hazard class (OQ-LIM-2-1=C, scheme-version drift)
+is **surface the drift, do not refuse**. So this is a missing feature, not a broken guard. Recorded
+as a named carry rather than built unratified — the same discipline that should have applied to the
+zero-resolution call in the first place.
+
+### A defect I found while verifying the repair
+
+The new non-superuser downgrade test disabled RLS and then deleted **tenant-blind**, silently wiping
+the demo tenant's concentration limits mid-battery. The suites still passed — the demo runs first
+alphabetically — so nothing went red; I caught it only by querying the database for state I expected
+to be there. The migration is tenant-blind *by design* (a migration is database-wide); a **test** that
+does the same destroys its neighbours' fixtures. Now scoped to its own tenant, with the distinction
+stated at the call site.
+
 ## Verification note
 
 Facts 2, 3 (the zero-CHECK half), 4 (the platform-wide scope), 7, 12 and 13 are **new to this pass**

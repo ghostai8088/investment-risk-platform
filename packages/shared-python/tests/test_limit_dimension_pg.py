@@ -483,7 +483,11 @@ def test_the_downgrade_deletes_concentration_rows_as_a_NONSUPERUSER_owner(engine
             # Confirm the trap is REAL for this role before proving the sandwich defeats it: an
             # unsandwiched count sees nothing, which is what silently disarmed the original guard.
             blind = conn.execute(
-                text("SELECT count(*) FROM limit_definition WHERE target_run_type='CONCENTRATION'")
+                text(
+                    "SELECT count(*) FROM limit_definition WHERE target_run_type='CONCENTRATION' "
+                    "AND tenant_id = :t"
+                ),
+                {"t": tenant},
             ).scalar_one()
             assert blind == 0, (
                 "expected FORCE RLS to hide the row from the non-superuser owner; if this is "
@@ -493,14 +497,25 @@ def test_the_downgrade_deletes_concentration_rows_as_a_NONSUPERUSER_owner(engine
             conn.execute(text("ALTER TABLE breach DISABLE TRIGGER breach_append_only"))
             conn.execute(text("ALTER TABLE breach DISABLE ROW LEVEL SECURITY"))
             conn.execute(text("ALTER TABLE limit_definition DISABLE ROW LEVEL SECURITY"))
+            # TENANT-SCOPED here, unlike the migration itself — and the difference is the point.
+            # 0058's downgrade is deliberately tenant-BLIND (a migration is database-wide), but a
+            # TEST that disables RLS and then deletes tenant-blind destroys every other suite's
+            # fixtures: this one silently wiped the demo tenant's concentration limits, which is
+            # how it was caught. The sandwich mechanics being proven are identical; only the
+            # predicate is narrowed, so the proof still covers what the migration does.
             conn.execute(
                 text(
                     "DELETE FROM breach WHERE limit_definition_id IN (SELECT id FROM "
-                    "limit_definition WHERE target_run_type='CONCENTRATION')"
-                )
+                    "limit_definition WHERE target_run_type='CONCENTRATION' AND tenant_id = :t)"
+                ),
+                {"t": tenant},
             )
             deleted = conn.execute(
-                text("DELETE FROM limit_definition WHERE target_run_type='CONCENTRATION'")
+                text(
+                    "DELETE FROM limit_definition WHERE target_run_type='CONCENTRATION' "
+                    "AND tenant_id = :t"
+                ),
+                {"t": tenant},
             ).rowcount
             conn.execute(text("ALTER TABLE limit_definition ENABLE ROW LEVEL SECURITY"))
             conn.execute(text("ALTER TABLE limit_definition FORCE ROW LEVEL SECURITY"))

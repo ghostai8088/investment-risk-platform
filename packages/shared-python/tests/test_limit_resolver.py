@@ -95,7 +95,11 @@ def rows_of(monkeypatch):  # noqa: ANN001, ANN201
     def _fake_resolve_node(session, *, scheme_id, code, acting_tenant):  # noqa: ANN001, ARG001
         if code not in state["known_codes"]:
             raise cls_service.ClassificationNotVisible(f"no node {code!r}")
-        return SimpleNamespace(code=code)
+        # `level` is on the stub because the resolver reads it — and the THINNESS of this stub is
+        # itself a recorded hazard: the first version returned only `code`, which is exactly how
+        # the level-1 bucketing rule stayed invisible to these tests AND to their mutation proof.
+        # `TestTheLevelTrap` therefore uses the REAL resolver against a REAL seeded scheme.
+        return SimpleNamespace(code=code, level=1)
 
     monkeypatch.setattr(cls_service, "resolve_node", _fake_resolve_node)
     return state
@@ -103,6 +107,70 @@ def rows_of(monkeypatch):  # noqa: ANN001, ANN201
 
 def _resolve(limit, state):  # noqa: ANN001, ANN202
     return _resolve_concentration(None, limit, _spec_for(limit))
+
+
+@pytest.fixture()
+def sqlite_scheme():  # noqa: ANN201
+    """A REAL scheme with a real two-level hierarchy, on a real (SQLite) session.
+
+    Deliberately not stubbed: the level distinction is invisible to a stub, which is precisely how
+    it survived the first repair AND its mutation proof.
+    """
+    from sqlalchemy.pool import StaticPool
+
+    from irp_shared.classification.service import ClassificationActor, create_node, create_scheme
+    from irp_shared.db.session import make_engine, make_session_factory
+    from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
+    from irp_shared.models import Base
+
+    engine = make_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session = make_session_factory(engine)()
+    actor = ClassificationActor(tenant_id=SYSTEM_TENANT_ID, actor_id="test")
+    scheme = create_scheme(
+        session,
+        scheme_family="ISIC",
+        version_label="Rev. 5",
+        name="ISIC",
+        dimension_kind="SECTOR_INDUSTRY",
+        actor=actor,
+    )
+    create_node(
+        session,
+        scheme_id=str(scheme.id),
+        code="C",
+        name="Manufacturing",
+        level=1,
+        actor=actor,
+    )
+    create_node(
+        session,
+        scheme_id=str(scheme.id),
+        code="K",
+        name="Finance",
+        level=1,
+        actor=actor,
+    )
+    # The level-2 division the demo's own issuers are assigned to — the code a maker would copy.
+    create_node(
+        session,
+        scheme_id=str(scheme.id),
+        code="C26",
+        name="Computer and electronic products",
+        level=2,
+        parent_code="C",
+        actor=actor,
+    )
+    session.commit()
+    try:
+        yield session, str(scheme.id)
+    finally:
+        session.close()
+        engine.dispose()
 
 
 class TestTheBasisDiscipline:
@@ -270,3 +338,63 @@ class TestStalenessIsAnchoredOnTheRESOLVEDRun:
         """Defensive: the resolver just read it, so None means something is deeply wrong — but
         asserting staleness on a run we cannot date would be a fabricated signal."""
         assert self._rows(monkeypatch, resolved_at=None, failures="anything") is False
+
+
+class TestTheLevelTrap:
+    """**The repair review's BLOCKING finding, and the sharpest lesson of the slice.**
+
+    The first D1 repair asked "is this a node of the run's scheme?" and stopped. But the kernel
+    buckets at LEVEL 1 ONLY (``concentration/service.py::_level1_code`` walks each assignment's
+    pinned closure to its level-1 ancestor), so a run emits section-grain buckets and nothing else.
+    A level-2 code is a REAL node that can never match a row — and it is the code a maker is most
+    likely to write, because it is what the classification screen shows and what the assignments
+    carry: the demo's own issuers are assigned to C26 / C28 / K64, every one of them level 2.
+
+    So the first repair caught ``'TECH'`` — a string that is not a node at all, the rarer and more
+    obvious mistake — while the likely input still fabricated a zero and read green on a
+    60%-concentrated book. **My negative control had tested the easy case.** These tests use the
+    REAL ``resolve_node`` against a REAL seeded scheme, because a stub is what let the level
+    distinction stay invisible.
+    """
+
+    def test_a_level_2_node_is_REFUSED_and_the_refusal_names_the_level_1_ancestor(
+        self, sqlite_scheme
+    ) -> None:  # noqa: ANN001
+        session, scheme_id = sqlite_scheme
+        rows = [_row(scheme_id=scheme_id, bucket_code="C", share_invested_long=Decimal("0.60"))]
+        import irp_shared.concentration.service as conc
+
+        conc.latest_concentration = lambda s, **k: rows  # noqa: ARG005
+        out = _resolve_concentration(
+            session, _limit(bucket_code="C26", authored_scheme_id=scheme_id), _spec_for(_limit())
+        )
+        assert out.refusal is not None, "a level-2 bucket must not resolve"
+        assert "level-2" in out.refusal
+        assert "'C'" in out.refusal, "the refusal must name the level-1 ancestor to be actionable"
+        assert not out.is_resolved
+
+    def test_the_LEVEL_1_ancestor_itself_still_resolves(self, sqlite_scheme) -> None:  # noqa: ANN001
+        """The positive control: the code the run DOES bucket at must still measure normally, or
+        the level check would have replaced a silent-green with a blanket refusal."""
+        session, scheme_id = sqlite_scheme
+        rows = [_row(scheme_id=scheme_id, bucket_code="C", share_invested_long=Decimal("0.60"))]
+        import irp_shared.concentration.service as conc
+
+        conc.latest_concentration = lambda s, **k: rows  # noqa: ARG005
+        out = _resolve_concentration(
+            session, _limit(bucket_code="C", authored_scheme_id=scheme_id), _spec_for(_limit())
+        )
+        assert out.refusal is None and out.observed == Decimal("0.60")
+
+    def test_a_level_1_node_with_no_row_is_STILL_an_honest_zero(self, sqlite_scheme) -> None:  # noqa: ANN001
+        """And the other control: the empty-but-real case must survive the level check, or a floor
+        limit would stop breaching on a book that genuinely holds none of that section."""
+        session, scheme_id = sqlite_scheme
+        rows = [_row(scheme_id=scheme_id, bucket_code="C", share_invested_long=Decimal("0.60"))]
+        import irp_shared.concentration.service as conc
+
+        conc.latest_concentration = lambda s, **k: rows  # noqa: ARG005
+        out = _resolve_concentration(
+            session, _limit(bucket_code="K", authored_scheme_id=scheme_id), _spec_for(_limit())
+        )
+        assert out.refusal is None and out.observed == Decimal(0)

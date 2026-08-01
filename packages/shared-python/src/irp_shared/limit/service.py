@@ -372,10 +372,14 @@ def _resolve_concentration(
                 f"bucket {limit.bucket_code!r} cannot be confirmed as a real code — refusing"
             )
         )
-    from irp_shared.classification.service import ClassificationNotVisible, resolve_node
+    from irp_shared.classification.service import (
+        ClassificationNotVisible,
+        resolve_ancestors,
+        resolve_node,
+    )
 
     try:
-        resolve_node(
+        node = resolve_node(
             session,
             scheme_id=str(scheme_id),
             code=str(limit.bucket_code),
@@ -389,7 +393,31 @@ def _resolve_concentration(
                 "breach nor an all-clear can be computed from it"
             )
         )
-    # A real node of the run's own scheme that emitted no row: the book holds none of it.
+    # **Being a real node is NOT enough, and the first version of this guard stopped there.**
+    # The kernel buckets at LEVEL 1 ONLY (`concentration/service.py::_level1_code` walks each
+    # assignment's pinned closure to its level-1 ancestor), so a run emits section-grain buckets
+    # and nothing else. A level-2+ code is therefore a real node that can never match a row — and
+    # it is the code a maker is MOST likely to write, because it is what the classification screen
+    # shows and what the assignments themselves carry (the demo's issuers are assigned to C26 /
+    # C28 / K64, all level 2). The first repair caught only strings that were not nodes at all,
+    # which is the rarer and more obvious mistake; the likely one still fabricated a zero.
+    if node.level != 1:
+        ancestor = next(
+            (
+                a.code
+                for a in resolve_ancestors(session, node=node, acting_tenant=limit.tenant_id)
+                if a.level == 1
+            ),
+            None,
+        )
+        hint = f" — did you mean {ancestor!r}?" if ancestor else ""
+        return Resolution(
+            refusal=(
+                f"bucket {limit.bucket_code!r} is a level-{node.level} node, but concentration "
+                f"buckets at level 1 only, so no run can ever measure it{hint}"
+            )
+        )
+    # A LEVEL-1 node of the run's own scheme that emitted no row: the book holds none of it.
     return _refused_or(in_dimension[0], Decimal(0))
 
 

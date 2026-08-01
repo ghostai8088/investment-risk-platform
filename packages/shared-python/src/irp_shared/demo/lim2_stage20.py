@@ -405,15 +405,18 @@ def run_demo_lim2_stage20(session: Any) -> Lim2Stage20Summary:  # noqa: ANN401
     # Every one of these read IN_APPETITE, or wrote a false breach, before the review.
     unmatched_refusals: list[str] = []
 
-    # (1) An unmatched selector on a CEILING. 'TECH' is not an ISIC code (ISIC sections are
-    #     letters), so this limit named a bucket the run never evaluated. It used to resolve to a
-    #     fabricated zero and read IN_APPETITE forever on a 60%-concentrated book.
+    # (1) An unmatched selector on a CEILING. **The bucket is a REAL level-2 ISIC division the
+    #     demo's own issuers are assigned to** — not a nonsense string. That distinction is the
+    #     repair review's BLOCKING finding: the first fix only refused codes that were not nodes
+    #     AT ALL, while a genuine division (the code the classification screen shows, and the one a
+    #     maker would copy) still fabricated a zero, because the kernel buckets at level 1 only.
+    #     The easy case is kept below as (1b); this is the one that was actually shipping wrong.
     typo_ceiling = _limit(
         code="DEMO-TYPO-CEILING",
         name="A ceiling whose bucket_code names no node (must NOT read green)",
         metric_type=METRIC_TYPE_SHARE,
         dimension_kind="SECTOR_INDUSTRY",
-        bucket_code="TECH",
+        bucket_code=_a_level2_division(session, top_sector.scheme_id),
         scheme_family=_scheme_family(session, top_sector.scheme_id),
         authored_scheme_id=str(top_sector.scheme_id) if top_sector.scheme_id else None,
         threshold_value=Decimal("0.200000"),
@@ -434,7 +437,7 @@ def run_demo_lim2_stage20(session: Any) -> Lim2Stage20Summary:  # noqa: ANN401
         name="A floor whose bucket_code names no node (must write NO breach)",
         metric_type=METRIC_TYPE_SHARE,
         dimension_kind="SECTOR_INDUSTRY",
-        bucket_code="TECH",
+        bucket_code=_a_level2_division(session, top_sector.scheme_id),
         scheme_family=_scheme_family(session, top_sector.scheme_id),
         authored_scheme_id=str(top_sector.scheme_id) if top_sector.scheme_id else None,
         threshold_value=Decimal("0.050000"),
@@ -508,6 +511,33 @@ def run_demo_lim2_stage20(session: Any) -> Lim2Stage20Summary:  # noqa: ANN401
         unverifiable_selectors_refused=tuple(unmatched_refusals),
         role_permission_rows_torn_down=torn_down,
     )
+
+
+def _a_level2_division(session: Any, scheme_id: Any) -> str:  # noqa: ANN401
+    """A REAL level-2 node of the run's scheme — the code a maker is most likely to write.
+
+    The demo's issuers are assigned to ISIC divisions (C26 / C28 / K64), all level 2, while the
+    concentration kernel buckets at level 1. So this code is genuine, visible on the classification
+    screen, and unmeasurable — the exact input the first D1 repair let through. Resolved from the
+    database rather than hardcoded, so the demo keeps testing the real hazard if the taxonomy moves.
+    """
+    from irp_shared.classification.models import ClassificationNode
+
+    node = (
+        session.execute(
+            select(ClassificationNode)
+            .where(ClassificationNode.scheme_id == str(scheme_id), ClassificationNode.level == 2)
+            .order_by(ClassificationNode.code)
+        )
+        .scalars()
+        .first()
+    )
+    if node is None:
+        raise DemoLim2PrereqError(
+            "the demo scheme has no level-2 node — the level trap cannot be demonstrated; "
+            "re-derive this stage rather than weakening it to a nonsense string"
+        )
+    return str(node.code)
 
 
 def _teardown_roles(session: Any, role_codes: tuple[str, ...]) -> int:  # noqa: ANN401
