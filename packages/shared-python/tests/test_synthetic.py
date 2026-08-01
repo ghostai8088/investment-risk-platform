@@ -537,8 +537,9 @@ def test_no_migration_and_no_entity() -> None:
     # 0048_var_private_variance; SCH-1 owns 0049_scheduling; LIM-1 owns 0050_limit_breach;
     # MG-2 owns 0051_breach_action; NOTIF-1 owns 0052_breach_notification; SCH-2 owns
     # 0053_schedule_cadence_family; RM-1 owns 0054_rolling_risk_result; SR-1 owns
-    # 0055_sharpe_ratio_result; the synthetic slice still adds no migration, so the next free slot
-    # (0056+) must remain empty.
+    # 0055_sharpe_ratio_result; REF-1 owns 0056_classification; CON-1 owns
+    # 0057_concentration_result; LIM-2 owns 0058_limit_dimension_selector; the synthetic slice
+    # still adds no migration, so the next free slot (0059+) must remain empty.
     #
     # NOTE (SCH-2): this next-free-slot glob is a hand-maintained proxy — it must be bumped by
     # EVERY migration slice, and it fires on a legitimate new migration rather than on the thing it
@@ -551,10 +552,12 @@ def test_no_migration_and_no_entity() -> None:
     # PR #137's drift sweep did not catch it because a stale comment leaves no diff to review. Both
     # the prose and the message are part of the fold now, not just the number.
     #
-    # NOTE (CON-1): relayed 0057 -> 0058 (0057 = concentration_result).
-    # Prior relay (REF-1): 0056, which is
-    # exactly the "fires on a legitimate new migration" case the SCH-2 note above describes.
-    assert not list(versions.glob("0058*")), "no 0058 migration may be added by the synthetic slice"
+    # NOTE (LIM-2): relayed 0058 -> 0059 (0058 = limit_dimension_selector, the dimensional limit
+    # selector). Prior relays: CON-1 0057 -> 0058 (0057 = concentration_result); REF-1 0056. Three
+    # consecutive slices have now paid this relay, each of them the "fires on a legitimate new
+    # migration" case the SCH-2 note above describes — the guard has never once fired on the thing
+    # it guards.
+    assert not list(versions.glob("0059*")), "no 0059 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -

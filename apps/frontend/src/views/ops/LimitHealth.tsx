@@ -184,6 +184,17 @@ export function LimitHealth({ session }: { session: Session }): ReactElement {
                     <th scope="row">
                       {verbatim(l.code)}
                       <span className="cell-sub">{verbatim(l.metric_type)}</span>
+                      {/* Rule 7 + LIM-2 fact 2: `MAX_SHARE_SECTOR_INDUSTRY` alone does not say
+                          WHICH taxonomy produced it, and two schemes partition sectors
+                          differently. The selector is shown so the number on screen has a
+                          determinable meaning. */}
+                      {l.dimension_kind ? (
+                        <span className="cell-sub">
+                          {verbatim(l.dimension_kind)}
+                          {l.bucket_code ? ` · ${verbatim(l.bucket_code)}` : ""}
+                          {l.scheme_family ? ` · ${verbatim(l.scheme_family)}` : ""}
+                        </span>
+                      ) : null}
                     </th>
                     <td>{verbatim(l.status)}</td>
                     <td className="mono num">
@@ -191,6 +202,31 @@ export function LimitHealth({ session }: { session: Session }): ReactElement {
                     </td>
                     <td>
                       <span className={stateClass(state)}>{state}</span>
+                      {/* ORTHOGONAL signals, rendered ALONGSIDE the verdict rather than replacing
+                          it — a limit can be breached AND stale AND drifting at once, and a
+                          staleness badge that hid a real breach would be worse than no badge
+                          (LIM-2 record 3.5). */}
+                      {h?.latest_run_failed ? (
+                        <span
+                          className="cell-sub"
+                          title="The newest run FAILED; this verdict is computed from an older completed one."
+                        >
+                          stale — newest run failed
+                        </span>
+                      ) : null}
+                      {h?.scheme_drift_from && h?.scheme_drift_to ? (
+                        <span
+                          className="cell-sub"
+                          title={`Authored against ${h.scheme_drift_from}; evaluated against ${h.scheme_drift_to}.`}
+                        >
+                          scheme version drift
+                        </span>
+                      ) : null}
+                      {h?.refusal_reason ? (
+                        <span className="cell-sub" title={h.refusal_reason}>
+                          refused — not compared
+                        </span>
+                      ) : null}
                     </td>
                     <td className="mono">{h?.latest_run_id ? verbatim(h.latest_run_id) : "—"}</td>
                   </tr>
