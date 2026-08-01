@@ -1,6 +1,9 @@
 # CAL-1 Decision Record — ENT-006 holiday-calendar resolution (Wave-14 slice 3)
 
-**Status: VERIFIER-FOLDED DRAFT — PENDING RATIFICATION.** Grounding pinned at `main = 8637b67`
+**Status: RATIFIED 2026-08-01 — OQ-CAL-1-1…12 ALL approved as recommended** (user: "proceed" on
+the briefed gate). The ratification includes the **CTRL-034 mint approved at H-05** (OQ-9 — the
+first control mint since P0.5, R-10-routed, approved at this gate) and the **CAL-1a/1b split**
+(OQ-12) — CAL-1a is the operative next implementation. Grounding pinned at `main = 8637b67`
 (2026-08-01). Method (the ratified per-slice discipline): six-lane recon fan-out against code at
 the pin (185 facts) → single-threaded draft → a four-lane refute-by-default verifier pass with an
 independent citation lane (2 BLOCKING, 6 HIGH, 5 MED, 8 LOW — ALL folded; Part 6 is the fold
