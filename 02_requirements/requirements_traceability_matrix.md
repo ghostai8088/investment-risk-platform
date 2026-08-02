@@ -67,8 +67,8 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-CPT-002 | 7.2 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018/020 | FW-RUN, DEP-MREG, CAP-3 | Draft |
 | REQ-CPT-003 | 7.4 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-10 | Draft |
 | REQ-CPT-004 | 7.5 | P-RA,P-MV | 2L | P3 | BX-AUD | BX-ENT | — | **Y** | CTRL-014 | BX-LIM (placeholder maturity) | Draft |
-| REQ-LIQ-001 | 8.1 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-1/2 | Draft |
-| REQ-LIQ-002 | 8.2 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-9 | Draft |
+| REQ-LIQ-001 | 8.1 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-1/2 | **Implemented (LQ-1, 2026-08-02; mirrored from the backbone). ModelGov = Y HELD: the ratified OQ-LQ-1-4 landed model-bound (`risk.liquidity_tiers` v1), so the §3 count of 28 model-governed requirements is UNCHANGED and no re-measurement is owed.** |
+| REQ-LIQ-002 | 8.2 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-9 | **Deferred with an event trigger (mirrored from the backbone at LQ-1, OQ-LQ-1-12).** |
 | REQ-LIQ-003 | 8.3/8.4 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-9 | Draft |
 | REQ-LIQ-004 | 8.5 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-4 | Draft |
 | REQ-SCN-001 | 9.1/9.2 | P-RA,P-RM | 1L/2L | P5 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-008 | FW-TMP(IA), DEP-LIN | **In-Progress (P3-6, Wave 2, mig `0035`, ENT-029/030):** versioned scenarios shipped, LINEAR FACTOR shocks only *(status stale ~11 waves; re-synced at the Wave-14 planning gate)* |
