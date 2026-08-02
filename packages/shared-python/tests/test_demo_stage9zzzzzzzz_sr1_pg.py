@@ -258,7 +258,9 @@ def test_a_second_seed_refuses_rather_than_silently_skipping(db) -> None:  # noq
 
 
 def test_the_demo_tenant_counts_are_pinned_where_they_are_actually_FINAL(db) -> None:  # noqa: ANN001
-    """THE FINAL-POSITION COUNT PIN, relayed from the 7-z suite.
+    """POSITIONAL pin (the FINAL-POSITION label has since moved on; at LQ-1 it lives in the 14-z suite). Each prior slice demoted only its IMMEDIATE predecessor, so three suites were left actively claiming a label that had moved past them — swept here. The pin below is still a real assertion about this stage's position in the chain.
+
+    Relayed from the 7-z suite.
 
     Measured on a fresh-schema battery, never derived:
 

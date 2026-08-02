@@ -77,6 +77,12 @@ from irp_shared.demo.lim2_stage20 import (
     Lim2Stage20Summary,
     run_demo_lim2_stage20,
 )
+from irp_shared.demo.lq1_stage23 import (
+    DemoLq1AlreadySeededError,
+    DemoLq1Error,
+    Lq1Stage23Summary,
+    run_demo_lq1_stage23,
+)
 from irp_shared.demo.multifamily import (
     DemoMultifamilyAlreadySeededError,
     DemoMultifamilyError,
@@ -258,4 +264,8 @@ __all__ = [
     "DemoData1AlreadySeededError",
     "DemoData1Error",
     "run_demo_data1_stage22",
+    "run_demo_lq1_stage23",
+    "DemoLq1AlreadySeededError",
+    "DemoLq1Error",
+    "Lq1Stage23Summary",
 ]

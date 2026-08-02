@@ -5,9 +5,10 @@ relay precedent) so it sees the FULL demo tenant: the campaign, RM-1/SR-1, CON-1
 stage 21 — and proves stage 22 adds the real TB3MS series WITHOUT minting a single governed
 number.
 
-**THE FINAL-POSITION COUNT PIN RELAYS HERE, UNCHANGED: 26/43/139** (MEASURED on a fresh-schema
-battery — a captured input binds no model, no validation, no calculation_run; the pin NOT moving
-is the assertion).
+**The count pin here is POSITIONAL (LQ-1 relayed the FINAL-POSITION label to the 14-z suite —
+exactly one file carries it).** It stays 26/43/139 and remains meaningful: a captured input binds
+no model, no validation and no calculation_run, so the pin NOT moving at DATA-1 is still the
+assertion this suite makes.
 """
 
 from __future__ import annotations
@@ -151,10 +152,11 @@ def test_no_derived_monthly_return_row_exists_for_the_real_series(db) -> None:  
     assert derived == 0
 
 
-def test_the_final_position_count_pin(db) -> None:  # noqa: ANN001
-    """THE FINAL-POSITION PIN, relayed from the 12-z suite: **26/43/139 UNCHANGED** (MEASURED on
-    the fresh battery — never derived). A captured INPUT minting zero codes, zero validations and
-    zero runs IS the assertion (the CLAUDE.md pattern invariant, exercised on real data)."""
+def test_the_positional_count_pin(db) -> None:  # noqa: ANN001
+    """POSITIONAL pin — 26/43/139 (LQ-1 demoted this from FINAL-POSITION; the label moved to the
+    14-z suite so exactly ONE file carries it). MEASURED on the fresh battery, never derived. A
+    captured INPUT minting zero codes, zero validations and zero runs IS the assertion this suite
+    makes (the CLAUDE.md pattern invariant, exercised on real data)."""
     model_codes = db.execute(
         select(func.count(func.distinct(Model.code))).where(Model.tenant_id == DEMO_TENANT_ID)
     ).scalar_one()

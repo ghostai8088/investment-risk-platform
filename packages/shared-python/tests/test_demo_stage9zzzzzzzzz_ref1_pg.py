@@ -201,7 +201,9 @@ def test_the_sector_of_a_leaf_resolves_through_the_ancestor_walk(db) -> None:  #
 
 
 def test_demo_counts_are_UNCHANGED_at_the_final_position(db) -> None:  # noqa: ANN001
-    """THE FINAL-POSITION PIN, relayed to this suite — and asserting the numbers did NOT move.
+    """POSITIONAL pin (the FINAL-POSITION label has since moved on; at LQ-1 it lives in the 14-z suite). Each prior slice demoted only its IMMEDIATE predecessor, so three suites were left actively claiming a label that had moved past them — swept here. The pin below is still a real assertion about this stage's position in the chain.
+
+    Relayed to this suite — and asserting the numbers did NOT move.
 
     A capture-only stage registers no model code, files no validation and creates no run (the CC-1
     stage-8 precedent). The pin still had to MOVE here: the previous holder collates before this
