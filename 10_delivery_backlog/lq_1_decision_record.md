@@ -499,4 +499,45 @@ a quotation with an unexplained ellipsis is treated as unverified.**
 
 ---
 
-*Part 9 (the ratification record) is appended at the gate.*
+## Part 9 — the ratification record (2026-08-02)
+
+**RATIFIED by the user at the Tier-3 gate — "proceed" on the briefed gate, ALL as recommended.**
+The briefing named twelve decisions and invited pushback specifically on the two sharpest (grain and
+denominator); none was given, and the record was briefed with its own refutation in the open rather
+than as a clean plan.
+
+| OQ | Decision | Tier |
+|---|---|---|
+| OQ-LQ-1-1 | **Instrument grain**, on ENGINEERING grounds only. REQ-LIQ-001's acceptance clause is AMENDED in-slice (backbone → RTM); the (b)(1)(ii)(B) position-size gap is a REGISTERED LIMITATION and the named trigger for a future position-grain slice | 3 |
+| OQ-LQ-1-2 | **Ride `classification_assignment`**; `list_`/`reconstruct_as_of` added in-slice (REF-1's gap PAID); the inherited mixed-VERSION refusal computed over LIVE heads and **mutation-proven**, plus the mixed-basis refusal | 3 |
+| OQ-LQ-1-15 | **The four 22e-4(b)(1)(ii) codes** — `HIGHLY_LIQUID / MODERATELY_LIQUID / LESS_LIQUID / ILLIQUID`, ordinal, day thresholds as declared scheme semantics; illiquid partition = `{ILLIQUID}`. AIFMD Annex IV's seven day-buckets recorded as an additive `scheme_family` behind the trigger *"the first EU/AIFMD-reporting tenant"* | 3 |
+| OQ-LQ-1-16 | **SYSTEM-seeded ladder.** The closed 7-table hybrid set is UNCHANGED — `classification_scheme`/`classification_node` are existing members; nothing joins the set | 3 |
+| OQ-LQ-1-17 | **Mint `PURPOSE_LIQUIDITY_INPUT` + `LIQUIDITY_BINDING_PREDICATE` + `build_liquidity_snapshot`**; both set-equality censuses amended in-slice WITH negative controls. This is the discharge of CAL-1's mandate (`cal_1_decision_record.md:437`). Re-scoped OQ-3: the serializer content shape is reused **unchanged** | 3 |
+| OQ-LQ-1-4 | **Model-bound** — registered `model_version`, assumption literals parse-back-enforced. Resolves the RTM's existing `ModelGov = Y`; no register goes stale | 3 |
+| OQ-LQ-1-5 | **Adopt `INVESTED_LONG`**, metric named **`illiquid_share_invested_long`** — the name IS the control. Registered limitation states the error direction is **INDETERMINATE** | 3 |
+| OQ-LQ-1-6 | **Bucket vector** on DETAIL/SUMMARY `row_kind` | 3 |
+| OQ-LQ-1-19 | **UNCLASSIFIED**, not UNCLASSIFIABLE — the residual counts in the classifiable-coverage denominator and CAN trip the floor. Floor is a declared parse-back-enforced parameter; below it the run commits **FAILED with zero rows** | 3 |
+| OQ-LQ-1-9 | **BUILD-time heads + a staleness refusal** (arm C), phrased against 22e-4's at-least-monthly review clause | 3 |
+| OQ-LQ-1-18 | **Never mutate a COMPLETED run**; remedy is a NEW run pinning the new head; no restatement trail in v1 (trigger: *first operator ask*); a correction arriving between snapshot build and compute is **refused fail-closed** | 3-adj |
+| OQ-LQ-1-13 | **Reuse `reference.classification_assignment.view`** for the captured read; **mint `liquidity.run` / `liquidity.view`** with auditor_3l INCLUDED. No code spans both sides of the auditor line | 3 |
+| OQ-LQ-1-7 | **Defer limit-bindability**, grounded in the sign-indeterminate denominator. Trigger: *a NAV/net-assets entity exists, OR an operator asks for a liquidity threshold*. CON-1's already-fired deferral recorded | C |
+| OQ-LQ-1-8 | **Ship the FE entry**; the limitation is surfaced on run detail bound to the run's `model_version` — a limitation no screen renders is not a control | C |
+| OQ-LQ-1-10 | **One slice, declared split line** at the captured-half merge | C |
+| OQ-LQ-1-11 | **Ride** CAP-8.1's third sub-item as a second SUMMARY metric; LQ-1 ships the coverage NUMBER only, never (b)(1)(iii)'s regime | C |
+| OQ-LQ-1-12 | **Write REQ-LIQ-002's ratified deferral into both registers** | C |
+| OQ-LQ-1-14 | **One ENT id** (ENT-071, the result table). Two paper-only reservations, not one; `canonical_data_model_standard.md:97`'s self-contradiction fixed in-slice as a ledger-1 correction. Namespace re-measured at drafting | 3 |
+| OQ-LQ-1-20 | **Wave-14 close is a SEPARATE activity** after LQ-1 closes, on the Wave-13 pattern | C |
+
+### Binding at the gate
+
+- The **P4 commitment**: migration `0061` gets an executed non-vacuous up/down dry run before
+  implementation is trusted.
+- The **count triple is MEASURED on a fresh battery, never derived** — every arithmetic candidate in the
+  recon is inferred and must not reach a suite.
+- The **demo coverage question stays OPEN** and is the count pin's largest uncertainty: below the floor
+  the flagship run commits FAILED with zero rows, which moves the pin the other way from every estimate.
+- **ILPA and GIPS were never opened.** No "no industry standard applies" claim may be recorded.
+
+---
+
+*Part 10 (the implementation log) is appended as the slice advances.*
