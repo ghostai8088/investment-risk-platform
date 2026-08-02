@@ -859,4 +859,97 @@ ISOLATED worktree.
 
 ---
 
-*Parts 9+ (close) are appended as the slice advances.*
+## Part 9 — the close (2026-08-02)
+
+**Merged: PR #165 = `0d5eb4a`** (the tenth autonomous merge). Pre-merge checks: all six contexts
+green on both runs of the branch. Merged-main CI: **run 30757419834 — OBSERVED GREEN, all six jobs**
+(Backend (Python), DB migration (Postgres), Frontend (TypeScript), API type drift, Documentation
+check, Secret scan).
+
+### The gates, as observed
+
+| Gate | Observed |
+|---|---|
+| `make check` (lint + types + unit) | green |
+| P4 migration dry run (up/down, throwaway workspace) | executed, non-vacuous |
+| FE typecheck + tests | green, 207 tests |
+| Full-PG battery, fresh schema, quiescent tree | **2,950 passed / 0 failed**, `PYTEST_EXIT=0` |
+| PR checks | 6/6 green |
+| Merged-main CI | **all six jobs success**, run 30757419834 |
+
+The battery number is the **third** run. Run 1 was VOIDED under P2 (a mutation lane held the
+shared tree). Run 2 was **RED** — and the failure was in a test the review fold had itself just
+added: it committed and then read in the SAME session, but `set_tenant_context` is
+TRANSACTION-LOCAL and auto-clears at COMMIT, so RLS correctly returned zero rows. That is the
+MD-H1 annex-4 trap this repo already documents in `persistent_tenant_context`'s own docstring.
+The fix (verify in a FRESH session) is strictly stronger than the original: it also proves the
+correction is DURABLE rather than merely flushed.
+
+### The P1 seven-ledger sweep + verify-on-main (run AFTER the merge, on `origin/main`)
+
+| # | Ledger | Result |
+|---|---|---|
+| 1 | `canonical_data_model_standard.md` | ENT-070 row present; next-free pointer reads **ENT-071** |
+| 2 | `audit_event_taxonomy.md` | `MARKET.BENCHMARK_RATE_*` activation row present (the R-07 record) |
+| 3 | `control_matrix_skeleton.md` | CTRL-034 touched — Implemented → **Operational**, with the residual carried |
+| 4 | `current_state.md` | CURRENT TRUTH block dated 2026-08-02; head `0060`; NEXT = LQ-1 |
+| 5 | `02_requirements/` backbone + RTM | both halves carry the four-evaluator REQ-DQR-001 and the RE-POINTED REQ-PRF-002 |
+| 6 | Counts | **26/43/139 MEASURED** on the fresh battery; the 13-z suite holds FINAL-POSITION, the 12-z demoted to POSITIONAL (exactly one file carries the label) |
+| 7 | The record's own delivery claims | all eleven Part-3 deliverables traced to artifacts on the merged tree |
+
+**Verify-on-main:** all five slice commits (`567d2a4`, `12ae033`, `4522908`, `ebdab88`,
+`83b54dc`) confirmed ancestors of `origin/main`; the merged tree is **byte-identical**
+(`65b43ca`) to the tree the 2,950-test battery validated. This is the clause that exists because
+RM-1's sweep commit was authored and never merged — a sweep on the branch measures intent.
+
+Ledger 7 is worth one note on method. The claim I expected to be soft — deliverable 6's
+"`assert_passed_quality_checks`: first capture-rail caller" — turned out to be a real call at
+`demo/data1_stage22.py:128`, not a docstring mention. The claim I nearly mis-reported as MISSING
+was `ci.yml` plus the six register files: a `git diff --stat | tail -50` over a 57-line output
+had silently cut the alphabetically-first rows. **A truncating pipe is not a census** — the same
+family as the P2 `.pyc` lesson (an artifact of the measuring apparatus read as a fact about the
+subject).
+
+### What DATA-1 actually delivered, stated plainly
+
+The platform now holds **genuinely external market data on the governed rails** — 30 monthly
+TB3MS observations from the Federal Reserve H.15 series, captured verbatim, RLS-scoped,
+audit-evented, DQ-gated, reconstructible on both time axes, and readable over the API. That
+converts Wave 14's "real data" claim from taxonomy seed rows into an actual vendor dataset.
+
+It deliberately feeds **no governed number**. That is the ratified capture-first position, and it
+is the slice's most important decision: the rf leg admits vendor-published RETURNS only, and
+converting an annualized yield to a period return is METHODOLOGY, not units. Deriving one
+quietly would have put an unregistered model under a shipped Sharpe ratio.
+
+### Open at the close
+
+1. **UNDISCHARGED — the independent re-verification of the 30 TB3MS literals** (Execution 2
+   item 6, ratified at the gate). Three extraction passes ran, but all three went through the
+   SAME render-proxy channel (FRED and the Board's DDP CSV both refuse anonymous access from
+   this environment), which is a recorded **common-mode residual**, not independent
+   confirmation. The census pins both endpoints and four interior anchors; the remaining
+   interior values rest on provenance. Discharging this needs an independent channel or a human
+   pass. **This is a user-facing item, carried in the open in the control matrix.**
+2. **Carry (OQ-DATA-1-1a):** the yield → period-return registered model + the Sharpe re-source.
+   Trigger: *the first governed consumer that binds the real rf series.*
+3. **Carry (OQ-DATA-1-5):** the P3-8 trading-calendar wiring, re-deferred IN FULL a third time
+   as an explicit ratified decision. Trigger: *the first captured DAILY benchmark series.*
+   REQ-PRF-002 is RE-POINTED, not discharged.
+4. **Recorded limitations (Part 4):** the `assert_passed_quality_checks` gate latches on ANY
+   historical FAIL; the month census is SET-based, so a duplicate observation inside an
+   already-complete month passes.
+
+### The lesson, as an act (P7)
+
+Two of the three defects found in this slice were in **my own fail-closed path** — the half I had
+already claimed was proven — and both were found by RUNNING the code, not by reading it. The
+third was found by the battery, in a test the fold had just written. The mechanical form:
+**every fold that touches a refusal path ships a hostile-caller negative control that executes
+the refusal and asserts the absence of state** — not an assertion that the refusal was raised.
+`test_horizon_before_series_start_refuses_with_NOTHING_persisted` (catch → COMMIT → zero rows,
+horizon None, zero events) is the pattern to copy.
+
+---
+
+*Parts 10+ are appended if the slice reopens.*
