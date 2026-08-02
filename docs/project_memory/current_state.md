@@ -2,14 +2,17 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-08-01) — read this block; everything below it is HISTORY
 >
-> **LIM-2 IS CLOSED (Wave-14 slice 2) — concentration limits, the dimensional selector.** Merged
-> via **PR #155** = `b4905e3`, merged-main CI observed green; the P1 sweep executed and clean
-> (seven ledgers, merged tree byte-identical to the 2,834-test-validated tree). Migration head
-> **`0059`** (CAL-1b `0059_business_month_end`; was `0058`); next free canonical id **ENT-070** (ENT-032 stays the sole reservation); demo counts
-> **26/41/136 UNCHANGED** (the final-position pin deliberately did not move); hybrid set N = 7
-> unchanged.
+> **CAL-1b IS CLOSED (Wave-14 slice 3, second half of the ratified split — CAL-1 COMPLETE) — the
+> atomic BUSINESS month-end convention move.** Merged via **PR #162** = `33aca0d` (the EIGHTH
+> autonomous merge), merged-main CI observed green (run 30720860960); the P1 sweep executed and
+> clean (seven ledgers; all five slice commits ancestors of main; merged tree byte-identical to
+> the 2,909-test-validated tree). Migration head **`0059`** (`0059_business_month_end`); next
+> free canonical id **ENT-070** (ENT-032 stays the sole reservation); demo counts **26/43/139**
+> (the FINAL-POSITION pin moved from 26/41/136 with stage 21's three governed runs, MEASURED by
+> the 12-z suite on the fresh battery); hybrid set N = 7 unchanged. NEXT = DATA-1.
 >
-> - **What shipped:** the `LimitFamily` registry + exact set-equality census over `_METRIC_MAP`;
+> - **LIM-2 CLOSED (2026-08-01, merged PR #155 = `b4905e3`; 2,834-test full-PG; P1 sweep clean).
+>   What shipped:** the `LimitFamily` registry + exact set-equality census over `_METRIC_MAP`;
 >   CON-1's ten metrics registered (FRACTION, no benchmark); migration `0058` — the limit tables'
 >   FIRST CHECK constraints (suffix-only names; the downgrade is a SANDWICHED destructive delete —
 >   the original refusal was RLS-BLIND, counting zero as the non-superuser owner); named-bucket,
@@ -34,7 +37,8 @@
 >   mint since P0.5) → CAL-1b (the atomic convention move, migration 0059). CAL-1a landed the
 >   118-date XNYS set (2024–2035, Rule 7.2 negatives pinned) + the ADD-ONLY
 >   `refresh_calendar_holidays` verb + the executed checklist.
-> - **CAL-1b SHIPPED WITH THIS PR (2026-08-01) — the atomic convention move, QS-11 DISCHARGED:**
+> - **CAL-1b SHIPPED + CLOSED (2026-08-01, merged PR #162 = `33aca0d`) — the atomic convention
+>   move, QS-11 DISCHARGED:**
 >   `calmath` (the pure leaf; the mirror + pin dissolved); migration `0059` (calendar FK +
 >   DECLARED coverage + the period key partial-unique + the widened cadence CHECKs; P4 executed
 >   NON-VACUOUSLY); the `BUSINESS_MONTH_END` kind end-to-end (fail-closed head/coverage
@@ -44,12 +48,19 @@
 >   grandfather parity pinned byte-identical); demo stage 21 at the REAL 2027-05-28 Memorial-Day
 >   boundary (pause-and-recreate demonstrated; the demo calendar is a TENANT capture of the real
 >   XNYS dataset — a stated refinement: the demo session cannot lawfully write SYSTEM rows).
->   The four-lane review fold: the checklist's 'no runtime reader' claim was FALSE (the
->   calendar-detail endpoint reads the table — corrected, kept as history); the PG cross-tenant
->   test proved the PARENT-head refusal, not the child WITH CHECK (both now pinned separately);
->   the census gained observance anchors + the exact 9-member 2028/2033 sets after an executed
->   mutation check showed it missed 5/6 single-date perturbations alone; duplicate specs now
->   dedupe first-spec-wins instead of crashing mid-flush.
+>   The CAL-1b four-lane review fold (record Part 9): **1 BLOCKING / 4 HIGH / 7 MED / 7 LOW, ALL
+>   folded with executed negative controls** — the BLOCKING: the demo stage CRASHED on the very
+>   battery DB it targets (TWO completed PORTFOLIO_RETURN runs → `MultipleResultsFound`;
+>   re-derived from the v1 `RollingRiskResult` binding, loud on ambiguity); the HIGHs: the
+>   exhausted-month raw ValueError now converts at every governed boundary (the poll loop AND
+>   both binders), Sharpe v2 gained its four discriminating twins (a prescribed mutant had
+>   survived EVERY sharpe test), the snapshot-verify HOLIDAY_CALENDAR branch is EXECUTED, not
+>   presumed; plus the aborted-fold-script near-miss (a mid-script assertion silently LOST three
+>   already-reported edits — caught by the fold's own negative control; a fold is not folded
+>   until its own test passes). Post-fold battery **2,909/0**. *(The fold notes previously
+>   summarized under this bullet were CAL-1a's — Part 7, rode PR #160: the checklist 'no runtime
+>   reader' false claim, the parent-vs-child WITH CHECK pin split, the census anchors, dedupe
+>   first-spec-wins.)*
 > - **The operational pattern changed (2026-08-01):** `gh` installed + allowlisted
 >   (`.claude/settings.json`, checked in AT THE LIM-2 CLOSEOUT — it was user-created locally after the classifier refused to let Claude write its own allowlist, which is that control working); branch protection and required checks UNCHANGED as
 >   the machine merge gate; PRs are now created and auto-merged by Claude once auth completes —
