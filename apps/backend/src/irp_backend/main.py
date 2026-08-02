@@ -23,6 +23,7 @@ from irp_backend.api.holdings import router as holdings_router
 from irp_backend.api.ingest import router as ingest_router
 from irp_backend.api.limits import router as limits_router
 from irp_backend.api.lineage import router as lineage_router
+from irp_backend.api.liquidity import router as liquidity_router
 from irp_backend.api.marketdata import benchmark_router as marketdata_benchmark_router
 from irp_backend.api.marketdata import curve_router as marketdata_curve_router
 from irp_backend.api.marketdata import factor_router as marketdata_factor_router
@@ -95,6 +96,7 @@ app.include_router(risk_router)
 app.include_router(perf_router)
 app.include_router(pacing_router)
 app.include_router(concentration_router)
+app.include_router(liquidity_router)
 app.include_router(limits_router)
 app.include_router(breaches_router)
 app.include_router(schedules_router)

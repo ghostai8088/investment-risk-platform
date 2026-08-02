@@ -260,3 +260,127 @@ def run_liquidity(
         format_reason=format_reason,
         scope_portfolio_id=str(portfolio_id),
     )
+
+
+# --- Rule-7 reads (every governed number ships entity/time reads in-slice) ---
+
+
+def list_liquidity_results(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str | None = None,
+    row_kind: str | None = None,
+    metric_type: str | None = None,
+    bucket_code: str | None = None,
+    as_of: datetime | None = None,
+) -> list[LiquidityResult]:
+    """Entity/time-centric read across COMPLETED liquidity runs. Silent-empty on a foreign id.
+
+    No structural exclusion applies here, unlike concentration's issuer split: no column on this
+    table carries an identity that a narrower permission withholds. The whole row set is
+    ``liquidity.view`` content.
+    """
+    from irp_shared.calc.reads import list_governed_results
+
+    return list_governed_results(
+        session,
+        LiquidityResult,
+        acting_tenant=acting_tenant,
+        filters=[
+            (LiquidityResult.portfolio_id, portfolio_id),
+            (LiquidityResult.row_kind, row_kind),
+            (LiquidityResult.metric_type, metric_type),
+            (LiquidityResult.bucket_code, bucket_code),
+        ],
+        run_type=RUN_TYPE_LIQUIDITY,
+        as_of=as_of,
+        order_by=(
+            LiquidityResult.row_kind,
+            LiquidityResult.metric_type,
+            LiquidityResult.bucket_code,
+        ),
+    )
+
+
+def latest_liquidity(
+    session: Session, *, acting_tenant: str, portfolio_id: str | None = None
+) -> list[LiquidityResult]:
+    """The latest COMPLETED run's rows (the latest-resolver; empty when none)."""
+    from irp_shared.calc.reads import latest_run_rows
+
+    return latest_run_rows(
+        list_liquidity_results(session, acting_tenant=acting_tenant, portfolio_id=portfolio_id)
+    )
+
+
+def list_liquidity_runs(
+    session: Session,
+    *,
+    acting_tenant: str,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[Any]:
+    """The tenant's LIQUIDITY runs, newest first."""
+    from sqlalchemy import select
+
+    from irp_shared.calc.models import CalculationRun
+
+    stmt = (
+        select(CalculationRun)
+        .where(
+            CalculationRun.tenant_id == str(acting_tenant),
+            CalculationRun.run_type == RUN_TYPE_LIQUIDITY,
+        )
+        .order_by(CalculationRun.created_at.desc(), CalculationRun.run_id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if status is not None:
+        stmt = stmt.where(CalculationRun.status == status)
+    return list(session.execute(stmt).scalars().all())
+
+
+def liquidity_run_head(session: Session, *, acting_tenant: str, run_id: str) -> Any | None:
+    """ONE tenant-owned LIQUIDITY run head by id, or ``None``.
+
+    A POINT SELECT, deliberately — CON-1's read surface once resolved a run by listing the newest
+    1000 and filtering in Python, so a tenant past its 1000th run got a spurious 404 on every
+    older run. These are scheduled per tenant per portfolio, so that ceiling is reachable.
+    """
+    from sqlalchemy import select
+
+    from irp_shared.calc.models import CalculationRun
+
+    return session.execute(
+        select(CalculationRun).where(
+            CalculationRun.tenant_id == str(acting_tenant),
+            CalculationRun.run_type == RUN_TYPE_LIQUIDITY,
+            CalculationRun.run_id == str(run_id),
+        )
+    ).scalar_one_or_none()
+
+
+def liquidity_rows_for_run(
+    session: Session, *, acting_tenant: str, run_id: str
+) -> list[LiquidityResult]:
+    """Every row of ONE run, tenant-scoped. The run-detail read."""
+    from sqlalchemy import select
+
+    return list(
+        session.execute(
+            select(LiquidityResult)
+            .where(
+                LiquidityResult.tenant_id == str(acting_tenant),
+                LiquidityResult.calculation_run_id == str(run_id),
+            )
+            .order_by(
+                LiquidityResult.row_kind,
+                LiquidityResult.metric_type,
+                LiquidityResult.bucket_code,
+            )
+        )
+        .scalars()
+        .all()
+    )
