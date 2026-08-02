@@ -1607,6 +1607,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/liquidity/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Results
+         * @description Entity/time-centric list across COMPLETED runs (silent-empty on a foreign id).
+         */
+        get: operations["list_results_liquidity_results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/liquidity/results/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest Results
+         * @description The latest COMPLETED run's rows (404 when none).
+         */
+        get: operations["latest_results_liquidity_results_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/liquidity/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Liquidity Runs
+         * @description List the tenant's liquidity runs, newest first (the runs-surface source for the FE).
+         */
+        get: operations["get_liquidity_runs_liquidity_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/liquidity/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Liquidity Run
+         * @description One run's rows plus the registered limitations (a FAILED run legitimately has no rows;
+         *     404 on an unknown/foreign run id).
+         *
+         *     The limitations are returned even on a FAILED run: a reader looking at a refusal needs the
+         *     same context as a reader looking at a number.
+         */
+        get: operations["get_liquidity_run_liquidity_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/models": {
         parameters: {
             query?: never;
@@ -7951,6 +8035,85 @@ export interface components {
             /** Target Entity Type */
             target_entity_type: string;
         };
+        /** LiquidityListOut */
+        LiquidityListOut: {
+            /** Rows */
+            rows: components["schemas"]["LiquidityRowOut"][];
+        };
+        /** LiquidityRowOut */
+        LiquidityRowOut: {
+            /** Bucket Code */
+            bucket_code: string;
+            /** Coverage Classifiable */
+            coverage_classifiable: string | null;
+            /** Coverage Ratio */
+            coverage_ratio: string | null;
+            /** Denominator Basis */
+            denominator_basis: string;
+            /** Input Snapshot Id */
+            input_snapshot_id: string;
+            /** Long Amount */
+            long_amount: string;
+            /** Metric Type */
+            metric_type: string;
+            /** Metric Value */
+            metric_value: string | null;
+            /** Model Version Id */
+            model_version_id: string;
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Row Kind */
+            row_kind: string;
+            /** Run Id */
+            run_id: string;
+            /** Tier Share */
+            tier_share: string | null;
+            /** Untiered Instrument Count */
+            untiered_instrument_count: number | null;
+        };
+        /** LiquidityRunListOut */
+        LiquidityRunListOut: {
+            /** Items */
+            items: components["schemas"]["LiquidityRunSummaryOut"][];
+        };
+        /** LiquidityRunOut */
+        LiquidityRunOut: {
+            /** Failure Reason */
+            failure_reason: string | null;
+            /** Limitations */
+            limitations: string[];
+            /** Rows */
+            rows: components["schemas"]["LiquidityRowOut"][];
+            /** Run Id */
+            run_id: string;
+            /** Status */
+            status: string;
+        };
+        /** LiquidityRunSummaryOut */
+        LiquidityRunSummaryOut: {
+            /** Code Version */
+            code_version: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Environment Id */
+            environment_id: string | null;
+            /** Failure Reason */
+            failure_reason: string | null;
+            /** Initiated By */
+            initiated_by: string | null;
+            /** Input Snapshot Id */
+            input_snapshot_id: string | null;
+            /** Model Version Id */
+            model_version_id: string | null;
+            /** Run Id */
+            run_id: string;
+            /** Run Type */
+            run_type: string;
+            /** Status */
+            status: string;
+        };
         /**
          * MarkOut
          * @description Display-only captured mark (present only when ``include_marks=true`` and a mark exists).
@@ -14077,6 +14240,152 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LineageEdgeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_results_liquidity_results_get: {
+        parameters: {
+            query?: {
+                portfolio_id?: string | null;
+                row_kind?: string | null;
+                metric_type?: string | null;
+                bucket_code?: string | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiquidityListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_results_liquidity_results_latest_get: {
+        parameters: {
+            query?: {
+                portfolio_id?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiquidityListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_liquidity_runs_liquidity_runs_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiquidityRunListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_liquidity_run_liquidity_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiquidityRunOut"];
                 };
             };
             /** @description Validation Error */
