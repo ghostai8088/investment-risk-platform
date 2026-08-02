@@ -120,6 +120,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_DESMOOTHING_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
+    PURPOSE_LIQUIDITY_INPUT,
     PURPOSE_PACING_INPUT,
     PURPOSE_PRIVATE_COVARIANCE_INPUT,
     PURPOSE_PRIVATE_FACTOR_RETURN_INPUT,
@@ -4002,6 +4003,10 @@ class ConcentrationSnapshotError(Exception):
 
 #: CON-1 (OQ-CON-1-6…10): atoms + issuer edges + assignments/closures + scheme rows. ≤ 50 chars.
 CONCENTRATION_BINDING_PREDICATE = "v1:exposure-atoms+issuer-edges+classification"
+#: LQ-1: the liquidity run's predicate. NO issuer edge — liquidity does not aggregate by issuer, so
+#: pinning one would be an unconsumed component, and an unconsumed pin is the shape that verifies
+#: VACUOUSLY (nothing re-resolves it, so nothing can report drift on it).
+LIQUIDITY_BINDING_PREDICATE = "v1:exposure-atoms+liquidity-tier-assignments"
 
 
 def issuer_edge_content(instrument: Any) -> dict[str, Any]:
@@ -4210,6 +4215,148 @@ def build_concentration_snapshot(
     return header_row
 
 
+class LiquiditySnapshotError(Exception):
+    """A liquidity snapshot cannot be built from the current heads (LQ-1, PRE-BUILD)."""
+
+
+def build_liquidity_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    exposure_run_id: str,
+    scheme_id: str,
+) -> DatasetSnapshot:
+    """Build one immutable ``LIQUIDITY_INPUT`` snapshot (LQ-1) pinning THREE shapes:
+
+    - one ``COMPONENT_KIND_EXPOSURE`` per atom of the EXPLICITLY SELECTED exposure run;
+    - one ``COMPONENT_KIND_CLASSIFICATION`` per current-head ``LIQUIDITY_TIER`` assignment of a
+      pinned instrument, with its ancestor closure (the kind is REUSED unchanged — LQ-1 mints no
+      new component kind, only its own PURPOSE and predicate);
+    - the referenced ``classification_scheme`` row.
+
+    No issuer edge is pinned: liquidity does not aggregate by issuer, and an unconsumed pin
+    verifies VACUOUSLY because nothing re-resolves it.
+
+    **The untiered instrument is pinned by ABSENCE, deliberately.** A pinned instrument with no
+    current-head tier simply has no CLASSIFICATION component, and the kernel reads that as
+    UNCLASSIFIED. The alternative — a sentinel component asserting "no tier" — would make the
+    snapshot claim something the book never said.
+
+    **PRE-BUILD refusals (computable from current heads — no snapshot, no run):**
+
+    1. *Wrong dimension.* A ``scheme_id`` resolving to a dimension other than ``LIQUIDITY_TIER``.
+    2. *Mixed live scheme VERSIONS* of the same family (inherited from OQ-CON-1-24 i). Computed
+       over the tenant's LIVE current-head assignments WITHOUT the scheme filter — NOT over the
+       pinned set. CON-1's ratified wording said "among the pinned assignments" and its review
+       proved that discriminator structurally UNFIREABLE, because the pinned set is already
+       filtered to the requested scheme and so can never hold a second version to discriminate
+       against. Repeating the ratified wording here would have re-shipped a refusal no code path
+       could produce, which is why this reads the live book.
+    3. *Mixed basis* within the dimension (inherited from OQ-CON-1-26).
+    4. *An empty atom set.*
+
+    Tier resolution is AS-OF-BUILD (ratified OQ-LQ-1-9), declared as a model assumption; the
+    staleness bound that accompanies it is enforced in the BINDER, which is where the run's own
+    clock lives.
+    """
+    from irp_shared.classification.models import DIMENSION_KIND_LIQUIDITY_TIER
+
+    now = utcnow()
+    valid_at = known = now
+
+    atoms = _list_exposure_atoms(session, exposure_run_id, acting_tenant=acting_tenant)
+    if not atoms:
+        raise LiquiditySnapshotError(f"exposure run {exposure_run_id} has no visible atoms to pin")
+
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for atom in atoms:
+        _append_spec(
+            specs, COMPONENT_KIND_EXPOSURE, "exposure_aggregate", atom, exposure_content(atom)
+        )
+
+    instrument_ids = sorted({str(a.instrument_id) for a in atoms})
+
+    scheme = resolve_scheme(session, scheme_id=scheme_id, acting_tenant=acting_tenant)
+    if scheme.dimension_kind != DIMENSION_KIND_LIQUIDITY_TIER:
+        raise LiquiditySnapshotError(
+            f"scheme {scheme_id} serves dimension {scheme.dimension_kind!r}, not "
+            f"{DIMENSION_KIND_LIQUIDITY_TIER!r} — refusing to pin a ladder that is not a ladder"
+        )
+    _append_spec(
+        specs,
+        COMPONENT_KIND_CLASSIFICATION_SCHEME,
+        "classification_scheme",
+        scheme,
+        classification_scheme_content(scheme),
+    )
+
+    # Refusal 2 — over the LIVE book, not the pinned set (see the docstring).
+    live_scheme_ids = _list_current_assignment_scheme_ids(
+        session,
+        entity_ids=instrument_ids,
+        dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+        acting_tenant=acting_tenant,
+    )
+    same_family = sorted(
+        sid
+        for sid in live_scheme_ids
+        if resolve_scheme(session, scheme_id=sid, acting_tenant=acting_tenant).scheme_family
+        == scheme.scheme_family
+    )
+    if len(same_family) > 1:
+        raise LiquiditySnapshotError(
+            f"mixed live scheme VERSIONS of family {scheme.scheme_family!r} within "
+            f"{DIMENSION_KIND_LIQUIDITY_TIER}: {same_family} — tiering one version while the "
+            f"other's assignments read UNCLASSIFIED understates coverage and can silently move "
+            f"the illiquid share, so this refuses fail-closed; retire one version before running"
+        )
+
+    rows = _list_current_assignments(
+        session,
+        entity_ids=instrument_ids,
+        scheme_id=str(scheme.id),
+        dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+        acting_tenant=acting_tenant,
+    )
+    bases = sorted({r.basis for r in rows})
+    if len(bases) > 1:
+        raise LiquiditySnapshotError(
+            f"mixed basis within {DIMENSION_KIND_LIQUIDITY_TIER}: {bases} — mixed-basis "
+            f"aggregation is refused fail-closed; capture a single basis per dimension"
+        )
+    for row in rows:
+        node = resolve_node(
+            session,
+            scheme_id=str(row.scheme_id),
+            code=row.node_code,
+            acting_tenant=acting_tenant,
+        )
+        chain = resolve_ancestors(session, node=node, acting_tenant=acting_tenant)
+        _append_spec(
+            specs,
+            COMPONENT_KIND_CLASSIFICATION,
+            "classification_assignment",
+            row,
+            classification_assignment_closure_content(row, [*chain, node]),
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_LIQUIDITY_INPUT,
+        as_of_valid_at=valid_at,
+        as_of_known_at=known,
+        as_of_valuation_date=valid_at.date(),
+        binding_predicate_version=LIQUIDITY_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
 def _resolve_assignment_row(session: Session, assignment_id: str, *, acting_tenant: str) -> Any:
     """The pinned assignment's PHYSICAL row by surrogate id, own-tenant only (proprietary
     symmetric). FR: the row's fields are immutable (a supersede is a NEW row), so this re-read is
@@ -4296,6 +4443,7 @@ def _list_current_assignments(
 #: opaque PG ``StringDataRightTruncation`` on the build path (review). Enforce the ceiling at import
 #: time so the failure is a loud, unit-tier import error at the site of the offending constant.
 _BINDING_PREDICATES = (
+    LIQUIDITY_BINDING_PREDICATE,
     DEFAULT_BINDING_PREDICATE,
     FACTOR_EXPOSURE_BINDING_PREDICATE,
     FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE,
