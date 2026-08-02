@@ -43,6 +43,12 @@ from irp_shared.demo.con1_stage19 import (
     DemoCon1Error,
     run_demo_con1_stage19,
 )
+from irp_shared.demo.data1_stage22 import (
+    Data1Stage22Summary,
+    DemoData1AlreadySeededError,
+    DemoData1Error,
+    run_demo_data1_stage22,
+)
 from irp_shared.demo.ds2_stage6 import (
     DemoDs2AlreadySeededError,
     DemoDs2Error,
@@ -248,4 +254,8 @@ __all__ = [
     "DemoCal1bError",
     "DemoCal1bPrereqError",
     "run_demo_cal1b_stage21",
+    "Data1Stage22Summary",
+    "DemoData1AlreadySeededError",
+    "DemoData1Error",
+    "run_demo_data1_stage22",
 ]

@@ -214,6 +214,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/benchmarks/{benchmark_id}/rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Benchmark Rates Endpoint
+         * @description The current-head captured published-rate series for a benchmark (tenant-scoped).
+         */
+        get: operations["list_benchmark_rates_endpoint_benchmarks__benchmark_id__rates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/benchmarks/{benchmark_id}/returns": {
         parameters: {
             query?: never;
@@ -5438,6 +5458,44 @@ export interface components {
             /** Vendor Code */
             vendor_code: string | null;
         };
+        /** BenchmarkRateOut */
+        BenchmarkRateOut: {
+            /** Benchmark Id */
+            benchmark_id: string;
+            /** Id */
+            id: string;
+            /** Observation Convention */
+            observation_convention: string;
+            /** Quote Basis */
+            quote_basis: string;
+            /**
+             * Rate Date
+             * Format: date
+             */
+            rate_date: string;
+            /** Rate Type */
+            rate_type: string;
+            /** Rate Value */
+            rate_value: string;
+            /** Record Version */
+            record_version: number;
+            /** Supersedes Id */
+            supersedes_id: string | null;
+            /**
+             * System From
+             * Format: date-time
+             */
+            system_from: string;
+            /** System To */
+            system_to: string | null;
+            /**
+             * Valid From
+             * Format: date-time
+             */
+            valid_from: string;
+            /** Valid To */
+            valid_to: string | null;
+        };
         /** BenchmarkRelativeModelIn */
         BenchmarkRelativeModelIn: {
             /** Code Version */
@@ -10616,6 +10674,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MembershipOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_benchmark_rates_endpoint_benchmarks__benchmark_id__rates_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                benchmark_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BenchmarkRateOut"][];
                 };
             };
             /** @description Validation Error */

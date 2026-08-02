@@ -1036,6 +1036,105 @@
         "title": "BenchmarkOut",
         "type": "object"
       },
+      "BenchmarkRateOut": {
+        "properties": {
+          "benchmark_id": {
+            "title": "Benchmark Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "observation_convention": {
+            "title": "Observation Convention",
+            "type": "string"
+          },
+          "quote_basis": {
+            "title": "Quote Basis",
+            "type": "string"
+          },
+          "rate_date": {
+            "format": "date",
+            "title": "Rate Date",
+            "type": "string"
+          },
+          "rate_type": {
+            "title": "Rate Type",
+            "type": "string"
+          },
+          "rate_value": {
+            "title": "Rate Value",
+            "type": "string"
+          },
+          "record_version": {
+            "title": "Record Version",
+            "type": "integer"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "system_from": {
+            "format": "date-time",
+            "title": "System From",
+            "type": "string"
+          },
+          "system_to": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System To"
+          },
+          "valid_from": {
+            "format": "date-time",
+            "title": "Valid From",
+            "type": "string"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
+          }
+        },
+        "required": [
+          "id",
+          "benchmark_id",
+          "rate_date",
+          "rate_type",
+          "quote_basis",
+          "observation_convention",
+          "rate_value",
+          "valid_from",
+          "valid_to",
+          "system_from",
+          "system_to",
+          "supersedes_id",
+          "record_version"
+        ],
+        "title": "BenchmarkRateOut",
+        "type": "object"
+      },
       "BenchmarkRelativeModelIn": {
         "properties": {
           "code_version": {
@@ -17218,6 +17317,101 @@
           }
         },
         "summary": "Supersede Membership Endpoint",
+        "tags": [
+          "marketdata"
+        ]
+      }
+    },
+    "/benchmarks/{benchmark_id}/rates": {
+      "get": {
+        "description": "The current-head captured published-rate series for a benchmark (tenant-scoped).",
+        "operationId": "list_benchmark_rates_endpoint_benchmarks__benchmark_id__rates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "benchmark_id",
+            "required": true,
+            "schema": {
+              "title": "Benchmark Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BenchmarkRateOut"
+                  },
+                  "title": "Response List Benchmark Rates Endpoint Benchmarks  Benchmark Id  Rates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Benchmark Rates Endpoint",
         "tags": [
           "marketdata"
         ]

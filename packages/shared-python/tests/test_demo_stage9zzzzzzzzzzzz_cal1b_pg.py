@@ -188,9 +188,11 @@ def test_grandfather_parity_v2_rows_equal_v1_rows(db) -> None:  # noqa: ANN001
 
 
 def test_the_final_position_count_pin(db) -> None:  # noqa: ANN001
-    """THE FINAL-POSITION PIN, relayed from the 11-z suite: 26/41/136 → **26/43/139** (MEASURED
-    on the fresh battery — never derived). The code count HOLDING at 26 while two new versions
-    land is itself the assertion: a convention move mints labels, not codes."""
+    """POSITIONAL pin (DATA-1 demoted this from FINAL-POSITION — the label relayed to the 13-z
+    DATA-1 suite, where the SAME 26/43/139 holds because a captured input mints nothing): after
+    stage 21, 26/41/136 → **26/43/139** (MEASURED on the fresh battery — never derived). The code
+    count HOLDING at 26 while two new versions land is itself the assertion: a convention move
+    mints labels, not codes."""
     model_codes = db.execute(
         select(func.count(func.distinct(Model.code))).where(Model.tenant_id == DEMO_TENANT_ID)
     ).scalar_one()
