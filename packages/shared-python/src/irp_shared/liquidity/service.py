@@ -45,7 +45,6 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_CLASSIFICATION,
     COMPONENT_KIND_EXPOSURE,
     PURPOSE_LIQUIDITY_INPUT,
-    DatasetSnapshot,
 )
 
 RESULT_ENTITY_TYPE = "liquidity_result"
@@ -160,24 +159,51 @@ def run_liquidity(
     acting_tenant: str,
     actor_id: str,
     actor_type: str,
-    snapshot: DatasetSnapshot,
+    exposure_run_id: str,
+    scheme_id: str,
     model_version: ModelVersion,
     code_version: str,
     environment_id: str,
     portfolio_id: str,
-    scheme_id: str | None = None,
 ) -> GovernedRunOutcome:
-    """Compute the liquidity tier distribution from a pinned ``LIQUIDITY_INPUT`` snapshot."""
-    if snapshot.purpose != PURPOSE_LIQUIDITY_INPUT:
-        # PRE-CREATE: a wrong-purpose snapshot must never reach a run head. Refusing here rather
-        # than inside compute() keeps it an exception the caller sees, not a FAILED run that looks
-        # like a data problem.
+    """Run a governed liquidity calculation: build the ``LIQUIDITY_INPUT`` snapshot over the
+    EXPLICITLY SELECTED exposure run, then compute from the pinned content.
+
+    The entry shape matches ``run_concentration`` deliberately — one call builds and computes. An
+    earlier draft took a pre-built snapshot, which pushed snapshot construction onto every caller
+    and made it possible to hand this verb another family's pins.
+    """
+    from irp_shared.snapshot.events import SnapshotActor
+    from irp_shared.snapshot.service import build_liquidity_snapshot
+
+    # --- Pre-create prerequisite gate (raise BEFORE any write => zero run, zero snapshot) ---
+    if not code_version:
+        raise LiquidityInputError("code_version is required (FW-RUN/TR-15)")
+    if not environment_id:
+        raise LiquidityInputError("environment_id is required (FW-RUN/TR-15)")
+    if not actor_id:
+        raise LiquidityInputError("initiator is required (FW-RUN/TR-15)")
+    if model_version is None:
+        raise LiquidityInputError("model_version is required (CTRL-003)")
+    if not scheme_id:
+        raise LiquidityInputError("a liquidity-tier scheme is required")
+
+    # Parsed BEFORE the snapshot is built: an edited or unregistered model version must refuse
+    # without leaving a committed snapshot behind.
+    coverage_floor, tier_max_age_days = declared_liquidity_parameters(session, model_version)
+
+    snapshot = build_liquidity_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=SnapshotActor(actor_id=actor_id, actor_type=actor_type),
+        exposure_run_id=str(exposure_run_id),
+        scheme_id=str(scheme_id),
+    )
+    if snapshot.purpose != PURPOSE_LIQUIDITY_INPUT:  # pragma: no cover - defence in depth
         raise LiquidityInputError(
             f"snapshot {snapshot.id} has purpose {snapshot.purpose!r}, expected "
-            f"{PURPOSE_LIQUIDITY_INPUT!r} — refusing to compute liquidity from another "
-            f"family's pins"
+            f"{PURPOSE_LIQUIDITY_INPUT!r}"
         )
-    coverage_floor, tier_max_age_days = declared_liquidity_parameters(session, model_version)
 
     def compute(run: Any) -> tuple[list[Any], list[str]]:
         gaps: list[str] = []
