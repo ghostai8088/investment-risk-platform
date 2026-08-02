@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.actions import ACTION_CORRECT, ACTION_CREATE, ACTION_UPDATE
@@ -862,3 +862,119 @@ def correct_assignment(
         now=now,
     )
     return corrected
+
+
+# --- The read verbs (LQ-1: REF-1's gap PAID, not copied) ---
+#
+# REF-1 shipped capture/supersede/correct and stopped. Every consumer since has had to hand-roll a
+# select over ``valid_to IS NULL AND system_to IS NULL``, which is how a bitemporal table quietly
+# grows N slightly-different notions of "current". LQ-1 needs both a list (the read surface, Rule 7)
+# and an as-of reconstruction (the governed binder pins heads, and OQ-LQ-1-9 ratified a staleness
+# refusal that has to ASK how old a head is). Adding them here rather than in ``liquidity/`` keeps
+# one definition of current-head for every dimension kind.
+
+
+def list_assignments(
+    session: Session,
+    *,
+    acting_tenant: str,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    scheme_id: str | None = None,
+    dimension_kind: str | None = None,
+    as_of: datetime | None = None,
+) -> list[ClassificationAssignment]:
+    """Current-head assignments for the acting tenant, narrowed by any supplied filter.
+
+    ``as_of`` reconstructs the AS-KNOWN state at that instant (the system axis) rather than today's
+    heads — ``None`` means "as known now". The valid axis is deliberately NOT exposed here: a list
+    read answers "what does the book say", and mixing both axes in one filter set is how REF-1's
+    ancestor walk acquired its two incompatible readings of ``as_of``. Point-in-time on the valid
+    axis is ``reconstruct_assignment_as_of``, which requires the full logical key and so cannot be
+    confused with a listing.
+    """
+    tenant = canonical_tenant_id(acting_tenant)
+    stmt = select(ClassificationAssignment).where(ClassificationAssignment.tenant_id == tenant)
+
+    if entity_type is not None:
+        validate_entity_type(entity_type)
+        stmt = stmt.where(ClassificationAssignment.entity_type == entity_type)
+    if entity_id is not None:
+        stmt = stmt.where(ClassificationAssignment.entity_id == str(entity_id))
+    if scheme_id is not None:
+        stmt = stmt.where(ClassificationAssignment.scheme_id == str(scheme_id))
+    if dimension_kind is not None:
+        validate_dimension_kind(dimension_kind)
+        stmt = stmt.where(ClassificationAssignment.dimension_kind == dimension_kind)
+
+    if as_of is None:
+        stmt = stmt.where(ClassificationAssignment.system_to.is_(None))
+    else:
+        stmt = stmt.where(
+            ClassificationAssignment.system_from <= as_of,
+            or_(
+                ClassificationAssignment.system_to.is_(None),
+                ClassificationAssignment.system_to > as_of,
+            ),
+        )
+    # Open on the valid axis in BOTH branches: a closed-out version is history, never a head.
+    stmt = stmt.where(ClassificationAssignment.valid_to.is_(None))
+
+    return list(
+        session.execute(
+            stmt.order_by(
+                ClassificationAssignment.entity_id,
+                ClassificationAssignment.dimension_kind,
+                ClassificationAssignment.node_code,
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+def reconstruct_assignment_as_of(
+    session: Session,
+    *,
+    acting_tenant: str,
+    entity_type: str,
+    entity_id: str,
+    scheme_id: str,
+    dimension_kind: str,
+    valid_at: datetime,
+    known_at: datetime | None = None,
+) -> ClassificationAssignment | None:
+    """The version in force on the VALID axis at ``valid_at``, as KNOWN at ``known_at``.
+
+    Both axes, which is what makes it a reconstruction rather than a lookup: ``valid_at`` asks what
+    the classification WAS, ``known_at`` asks what we BELIEVED it was at that time. A correction
+    issued later is invisible to a read pinned before it — which is the property a governed run's
+    reproducibility rests on.
+    """
+    validate_entity_type(entity_type)
+    validate_dimension_kind(dimension_kind)
+    tenant = canonical_tenant_id(acting_tenant)
+
+    stmt = select(ClassificationAssignment).where(
+        ClassificationAssignment.tenant_id == tenant,
+        ClassificationAssignment.entity_type == entity_type,
+        ClassificationAssignment.entity_id == str(entity_id),
+        ClassificationAssignment.scheme_id == str(scheme_id),
+        ClassificationAssignment.dimension_kind == dimension_kind,
+        ClassificationAssignment.valid_from <= valid_at,
+        or_(
+            ClassificationAssignment.valid_to.is_(None),
+            ClassificationAssignment.valid_to > valid_at,
+        ),
+    )
+    if known_at is None:
+        stmt = stmt.where(ClassificationAssignment.system_to.is_(None))
+    else:
+        stmt = stmt.where(
+            ClassificationAssignment.system_from <= known_at,
+            or_(
+                ClassificationAssignment.system_to.is_(None),
+                ClassificationAssignment.system_to > known_at,
+            ),
+        )
+    return session.execute(stmt).scalar_one_or_none()
