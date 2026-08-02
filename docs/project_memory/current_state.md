@@ -2,19 +2,26 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-08-02) — read this block; everything below it is HISTORY
 >
-> **CAL-1b IS CLOSED (Wave-14 slice 3, second half of the ratified split — CAL-1 COMPLETE) — the
-> atomic BUSINESS month-end convention move.** Merged via **PR #162** = `33aca0d` (the EIGHTH
-> autonomous merge), merged-main CI observed green (run 30720860960); the P1 sweep executed and
-> clean (seven ledgers; all five slice commits ancestors of main; merged tree byte-identical to
-> the 2,909-test-validated tree). Migration head **`0060`** (DATA-1 `0060_benchmark_rate`; was
-> `0059`); next free canonical id **ENT-071** (ENT-070 `benchmark_rate` minted at DATA-1;
-> ENT-032 stays the sole reservation); demo counts **26/43/139** (the FINAL-POSITION label
-> relayed to the 13-z DATA-1 suite, where the pin NOT moving is the assertion — a captured input
-> mints nothing); hybrid set N = 7 unchanged. NEXT = LQ-1 (after the
-> DATA-1 close).
+> **DATA-1 IS CLOSED (Wave-14 slice 3.5) — the first genuinely EXTERNAL dataset on the governed
+> rails.** Merged via **PR #165** = `0d5eb4a` (the TENTH autonomous merge), merged-main CI
+> observed green on all six jobs (run 30757419834); the P1 seven-ledger sweep executed and clean
+> (all five slice commits ancestors of main; merged tree byte-identical `65b43ca` to the
+> 2,950-test-validated tree). Migration head **`0060`** (`0060_benchmark_rate`; was `0059`); next free canonical id
+> **ENT-071** (ENT-070 `benchmark_rate` minted at DATA-1; ENT-032 stays the sole reservation);
+> demo counts **26/43/139** (the FINAL-POSITION label relayed to the 13-z DATA-1 suite, where the
+> pin NOT moving is the assertion — a captured input mints nothing); hybrid set N = 7 unchanged.
+> **Wave 14 has ONE slice left: NEXT = LQ-1.**
 >
-> - **DATA-1 SHIPPED WITH THIS PR (2026-08-02) — the first genuinely EXTERNAL dataset,
->   capture-first (planning RATIFIED same day, merged PR #164 = `de20d4b`; OQ-DATA-1-1…12):**
+> - **THE ONE OPEN ITEM THAT NEEDS A HUMAN:** the ratified independent re-verification of the
+>   30 TB3MS literals is **UNDISCHARGED**. Three extraction passes ran, but ALL THREE went
+>   through the SAME render-proxy channel (FRED and the Board's DDP CSV both refuse anonymous
+>   access from this environment) — a recorded **common-mode residual**, not independent
+>   confirmation. The census pins both endpoints and four interior anchors; the remaining
+>   interior values rest on provenance. Discharging it needs an independent channel or a human
+>   pass. Carried in the open in the control matrix (CTRL-034).
+>
+> - **DATA-1, capture-first (planning RATIFIED same day, merged PR #164 = `de20d4b`;
+>   OQ-DATA-1-1…12):**
 >   ENT-070 `benchmark_rate` (migration `0060`; the third series-observation table under the
 >   benchmark header; `quote_basis` IN the key; `observation_convention` ON the row — the
 >   OQ-CAL-1-9 convention-field option PAID-BY-DESIGN); the 30 hand-verified TB3MS literals
@@ -25,9 +32,11 @@
 >   correct verb, ONE series per head, idempotent-silent no-op) with the DATA-1-minted
 >   **`RULE_TYPE_COMPLETENESS`** (fourth generic evaluator; expected key set IN the persisted
 >   rule — REF-1's trigger fired; savepoint-preserved FAIL evidence, negative-controlled on
->   BOTH engines (the PG twin incl. the audit-row unwind pins)); `GET /benchmarks/{id}/rates`; demo stage 22 + the 13-z suite; CTRL-034
->   **Execution 2** + the H-05-approved item-3 clarifying amendment (Operational stamps at the
->   observed close, OQ-DATA-1-9);
+>   BOTH engines (the PG twin incl. the audit-row unwind pins)); `GET /benchmarks/{id}/rates`;
+>   demo stage 22 + the 13-z suite; CTRL-034 **Execution 2** + the H-05-approved item-3
+>   clarifying amendment — and the control **MOVED Implemented → Operational** at this close on
+>   observed operation (OQ-DATA-1-9; stage 22 executed the named acceptance censuses on the
+>   fresh-schema battery and again on CI);
 >   `MARKET.BENCHMARK_RATE_*` minted (taxonomy row = the R-07 record). **Feeds NO governed
 >   number** — the yield→period-return registered model + Sharpe re-source is the named
 >   OQ-DATA-1-1a carry; the P3-8 trading-calendar wiring re-deferred IN FULL (ratified
