@@ -6,10 +6,29 @@
 > atomic BUSINESS month-end convention move.** Merged via **PR #162** = `33aca0d` (the EIGHTH
 > autonomous merge), merged-main CI observed green (run 30720860960); the P1 sweep executed and
 > clean (seven ledgers; all five slice commits ancestors of main; merged tree byte-identical to
-> the 2,909-test-validated tree). Migration head **`0059`** (`0059_business_month_end`); next
-> free canonical id **ENT-070** (ENT-032 stays the sole reservation); demo counts **26/43/139**
-> (the FINAL-POSITION pin moved from 26/41/136 with stage 21's three governed runs, MEASURED by
-> the 12-z suite on the fresh battery); hybrid set N = 7 unchanged. NEXT = DATA-1.
+> the 2,909-test-validated tree). Migration head **`0060`** (DATA-1 `0060_benchmark_rate`; was
+> `0059`); next free canonical id **ENT-071** (ENT-070 `benchmark_rate` minted at DATA-1;
+> ENT-032 stays the sole reservation); demo counts **26/43/139** (the FINAL-POSITION label
+> relayed to the 13-z DATA-1 suite, where the pin NOT moving is the assertion — a captured input
+> mints nothing); hybrid set N = 7 unchanged.
+>
+> - **DATA-1 SHIPPED WITH THIS PR (2026-08-02) — the first genuinely EXTERNAL dataset,
+>   capture-first (planning RATIFIED same day, merged PR #164 = `de20d4b`; OQ-DATA-1-1…12):**
+>   ENT-070 `benchmark_rate` (migration `0060`; the third series-observation table under the
+>   benchmark header; `quote_basis` IN the key; `observation_convention` ON the row — the
+>   OQ-CAL-1-9 convention-field option PAID-BY-DESIGN); the 30 hand-verified TB3MS literals
+>   (Board/H.15 origin, public domain; FRED the attributed access channel; a THIRD independent
+>   extraction at implementation agreed on all 30); `refresh_benchmark_rates` (ADD-ONLY,
+>   forward-only horizon that may not outrun the data, differing-value refusal naming the
+>   correct verb, ONE series per head, idempotent-silent no-op) with the DATA-1-minted
+>   **`RULE_TYPE_COMPLETENESS`** (fourth generic evaluator; expected key set IN the persisted
+>   rule — REF-1's trigger fired; savepoint-preserved FAIL evidence, negative-controlled on
+>   BOTH engines); `GET /benchmarks/{id}/rates`; demo stage 22 + the 13-z suite; CTRL-034
+>   **Execution 2** + the H-05-approved item-3 clarifying amendment + Status → **Operational**;
+>   `MARKET.BENCHMARK_RATE_*` minted (taxonomy row = the R-07 record). **Feeds NO governed
+>   number** — the yield→period-return registered model + Sharpe re-source is the named
+>   OQ-DATA-1-1a carry; the P3-8 trading-calendar wiring re-deferred IN FULL (ratified
+>   explicitly, trigger: the first captured DAILY benchmark series; REQ-PRF-002 RE-POINTED).
 >
 > - **LIM-2 CLOSED (2026-08-01, merged PR #155 = `b4905e3`; 2,834-test full-PG; P1 sweep clean).
 >   What shipped:** the `LimitFamily` registry + exact set-equality census over `_METRIC_MAP`;

@@ -731,4 +731,47 @@ this ratification executes, each of which was an explicit item in the ask:
 
 ---
 
-*Parts 7+ (implementation log, review fold, close) are appended as the slice advances.*
+## Part 7 — the implementation log (2026-08-02, branch `data-1` off `de20d4b`)
+
+Implemented single-threaded in three commits (`567d2a4` core + tests; `12ae033` demo/PG/CI/FE;
+batch 3 = the governance artifacts + this part). Everything the ratified Part 3 inventory names
+shipped; the decisions TAKEN IN-IMPLEMENTATION, recorded per the gate-reversal discipline:
+
+1. **The differing-value refresh refusal (new, fail-closed):** the ratified ADD-ONLY semantic
+   left a hole — a refresh re-supplying a captured date with a DIFFERENT value would have
+   silently no-opped, hiding a vendor revision (G47's real class). The verb REFUSES loudly,
+   naming `correct_benchmark_rate`. First-spec-wins stays intra-call only.
+2. **Additions beyond the horizon require the matching `complete_through` in the same call:**
+   the both-directions census makes a captured month beyond the declared horizon an UNEXPECTED
+   key ⇒ completeness FAIL ⇒ the refresh refuses — declare-what-you-have, structurally. Not a
+   defect; recorded so nobody reads the refusal as a bug.
+3. **The `_SeriesSpec` union widened** (`benchmark_series.py` now admits `BenchmarkRate`) — one
+   generic FR core, three series tables, zero copied protocol code; `observation_convention`
+   rides the spec's key tuple for row construction/queries while the DB unique index stays on
+   the ratified four-key grain (stricter; a convention mismatch surfaces as a loud unique
+   violation).
+4. **The coherence map is tested NON-VACUOUSLY** via monkeypatch-minting the reserved
+   `INVESTMENT_365` basis (with one rate_type × one basis in the live vocab the branch could
+   never fire — the vacuous-guard class caught at authoring, not review).
+5. **The third extraction pass:** the 30 literals were re-retrieved fresh at implementation
+   (proxy-rendered FRED data page; all 30 values + both anchors + the update timestamp agree
+   with the two recon passes). The Board's DDP CSV was attempted first and is not reachable
+   anonymously from this environment — recorded; FRED-with-attribution stands as the access
+   channel (Execution 2 item 3).
+6. **Two guards fired during implementation, each on exactly the thing it guards:** the DQ
+   registry set-equality pin (three suites — updated to the four-member set with the mint), and
+   `test_ci_pg_coverage` (the new PG suite had no CI step; one added). The 21 head pins relayed
+   `0059 → 0060`; the synthetic next-free glob relayed to `0061` with its NOTE.
+7. **Savepoint semantics verified on BOTH engines:** the unit negative control (SQLite) and the
+   PG twin (`test_completeness_fail_savepoint_semantics_on_real_pg`) both pin: gappy refresh ⇒
+   `DataQualityError`, ZERO rate rows, horizon unmoved, NO head event, ONE persisted FAIL
+   result naming the missing month.
+8. **Registers written:** the ENT-070 row + next-free → ENT-071; the taxonomy
+   `MARKET.BENCHMARK_RATE_*` activation sentence (the R-07 mint record); CTRL-034 Execution 2 +
+   the item-3 amendment + the Execution-1 stale-citation re-point + Status → Operational;
+   REQ-DQR-001 (four evaluators; the completeness half of its named gap closed) and
+   REQ-PRF-002 RE-POINTED to the OQ-5 trigger in BOTH registers; current_state CURRENT TRUTH.
+
+---
+
+*Parts 8+ (review fold, close) are appended as the slice advances.*
