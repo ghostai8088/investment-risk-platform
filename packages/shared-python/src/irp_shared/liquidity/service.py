@@ -174,7 +174,7 @@ def run_liquidity(
     and made it possible to hand this verb another family's pins.
     """
     from irp_shared.snapshot.events import SnapshotActor
-    from irp_shared.snapshot.service import build_liquidity_snapshot
+    from irp_shared.snapshot.service import build_liquidity_snapshot, list_components
 
     # --- Pre-create prerequisite gate (raise BEFORE any write => zero run, zero snapshot) ---
     if not code_version:
@@ -205,6 +205,13 @@ def run_liquidity(
             f"{PURPOSE_LIQUIDITY_INPUT!r}"
         )
 
+    # Pins are read and parsed OUTSIDE the compute zone, matching the shipped concentration
+    # binder. Parsing inside would mislabel a DATABASE error as "corrupt pinned content" and turn
+    # it into a committed FAILED run, when it is neither the data's fault nor a governed outcome.
+    pinned = _parse_pins(
+        list(list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant))
+    )
+
     def compute(run: Any) -> tuple[list[Any], list[str]]:
         gaps: list[str] = []
         # The compute zone is INSIDE the run: the scaffold calls compute() outside its only try,
@@ -213,7 +220,6 @@ def run_liquidity(
         # with zero rows and a named reason — never as an exception. KeyError/TypeError are the
         # archetypal corrupt-content shapes (a missing content field, Decimal(None)).
         try:
-            pinned = _parse_pins(list(snapshot.components))
             atoms = tuple(
                 Atom(
                     instrument_id=str(a["instrument_id"]),

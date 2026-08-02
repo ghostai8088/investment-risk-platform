@@ -34,7 +34,7 @@ from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
 from irp_shared.audit.models import AppendOnlyViolation
 from irp_shared.db.base import Base
-from irp_shared.db.mixins import PrimaryKeyMixin, TenantMixin, TimestampMixin
+from irp_shared.db.mixins import ImmutableAppendOnlyMixin, PrimaryKeyMixin, TenantMixin
 from irp_shared.db.types import GUID, PreciseDecimal
 from irp_shared.temporal import TemporalClass
 
@@ -77,7 +77,7 @@ RUN_TYPE_LIQUIDITY = "LIQUIDITY"
 DENOMINATOR_BASIS_INVESTED_LONG = "INVESTED_LONG"
 
 
-class LiquidityResult(PrimaryKeyMixin, TenantMixin, TimestampMixin, Base):
+class LiquidityResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
     """IA append-only, run-bound, snapshot-gated, model-bound (AD-018 + AD-014).
 
     All three governance FKs are NOT NULL at the DB, not merely in the binder: a row that cannot

@@ -122,12 +122,14 @@ def compute_liquidity(atoms: tuple[Atom, ...]) -> LiquidityBreakdown:
     def _share(code: str) -> Decimal:
         return next(b.tier_share for b in buckets if b.bucket_code == code)
 
+    # NOTE, deliberately NOT a gap. An untiered instrument is a NORMAL state of the book — it is
+    # the entire reason the UNCLASSIFIED residual and the coverage ratio exist. An earlier draft
+    # returned it as a gap, and because the binder refuses on ANY gap, every book containing a
+    # single unassessed holding FAILED: the coverage floor became unreachable and the residual
+    # bucket became dead code. Found by running the demo stage, which is exactly the book this
+    # would break. The count and the coverage ratio already carry the information; refusal is the
+    # FLOOR's job, and the floor is a declared, versioned parameter rather than a hidden absolute.
     gaps: list[str] = []
-    if untiered_ids:
-        gaps.append(
-            f"{len(untiered_ids)} pinned instrument(s) carry no current-head liquidity tier; "
-            f"their exposure is UNCLASSIFIED and remains in the denominator"
-        )
 
     return LiquidityBreakdown(
         buckets=buckets,

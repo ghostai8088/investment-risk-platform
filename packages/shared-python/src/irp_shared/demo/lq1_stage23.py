@@ -26,7 +26,7 @@ Three demonstrations on real reachable data:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -55,6 +55,12 @@ from irp_shared.liquidity.bootstrap import (
 )
 from irp_shared.liquidity.service import run_liquidity
 from irp_shared.model.models import VALIDATION_TYPE_INITIAL
+from irp_shared.model.validation import (
+    ModelValidationActor,
+    RecordValidationRequest,
+    ValidationEvidenceInput,
+    record_validation,
+)
 from irp_shared.portfolio import PortfolioActor, create_portfolio
 from irp_shared.portfolio.models import Portfolio
 from irp_shared.position import create_position
@@ -68,12 +74,15 @@ DEMO_ACTOR_ID = "demo_data_steward"
 _CODE_VERSION = "demo-lq1"
 _ENVIRONMENT_ID = "demo"
 _SCHEME_VERSION = "2024"
-#: 0.5 — the flagship book's coverage is 0.75, so the floor is genuinely CLEARED rather than
+#: 0.5 — the flagship book's coverage is 0.9, so the floor is genuinely CLEARED rather than
 #: trivially satisfied. A floor no book could fail would demonstrate nothing.
 _COVERAGE_FLOOR = Decimal("0.5")
-#: The refusal control's floor: ABOVE the book's real coverage, so the refusal fires on data
-#: rather than on a contrived empty book.
-_REFUSAL_FLOOR = Decimal("0.9")
+#: The refusal control's floor: STRICTLY ABOVE the book's real coverage of 0.9, so the refusal
+#: fires on real data rather than on a contrived empty book. It was first set to 0.9 exactly and
+#: did NOT trip — the binder's test is `coverage < floor`, so an equal floor is a cleared floor.
+#: Caught by running the stage; a refusal control that does not refuse proves the opposite of
+#: what it claims.
+_REFUSAL_FLOOR = Decimal("0.95")
 _T0 = datetime(2026, 1, 1, tzinfo=UTC)
 _BOOK_AS_OF = datetime(2026, 5, 18, tzinfo=UTC)
 _MARK_DATE = _BOOK_AS_OF.date()
@@ -299,6 +308,39 @@ def run_demo_lq1_stage23(session: Session) -> Lq1Stage23Summary:
         raise DemoLq1Error(
             f"the FAILED run wrote {len(refused.rows)} rows — a refused run must write NONE"
         )
+
+    # --- 5. The INITIAL validation (+1), evidenced by the completed demo runs ---
+    #
+    # This was MISSING from the first draft: the stage claimed "+1 INITIAL validation" in its
+    # docstring and its summary dataclass while recording none. Measured on PG as (1, 0, 2) — the
+    # zero is what exposed it. A governed family shipping without a recorded validation would have
+    # left CTRL-003's evidence chain broken for the one number this slice exists to produce.
+    record_validation(
+        session,
+        acting_tenant=DEMO_TENANT_ID,
+        actor=ModelValidationActor(actor_id="demo_validator", actor_type="user"),
+        request=RecordValidationRequest(
+            model_version_id=str(version.id),
+            validation_type=VALIDATION_TYPE_INITIAL,
+            outcome="APPROVED",
+            scope_summary=(
+                f"{LIQUIDITY_MODEL_CODE} v1: tier shares and coverage reproduced against the "
+                "LQ-1 record's hand-derived literals on the DEMO-LIQUIDITY book (illiquid 0.3, "
+                "highly liquid 0.4, coverage 0.9); the sub-floor refusal exercised on the same "
+                "book against a stricter declared floor. NOT the Rule 22e-4 15% test, and "
+                "instrument-grain rather than position-grain (both registered limitations). "
+                "Validator independence is a demo simplification."
+            ),
+            report_ref="10_delivery_backlog/lq_1_decision_record.md",
+            next_review_due=datetime.now(UTC).date() + timedelta(days=365),
+            evidence=(
+                ValidationEvidenceInput(
+                    evidence_type="CALCULATION_RUN", run_id=str(outcome.run.run_id)
+                ),
+            ),
+        ),
+    )
+    session.flush()
 
     return Lq1Stage23Summary(
         model_version_id=str(version.id),

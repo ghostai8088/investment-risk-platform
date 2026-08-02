@@ -16,10 +16,11 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import make_url, text
 from sqlalchemy.pool import NullPool
 
 from irp_shared.db.session import make_engine, make_session_factory
+from irp_shared.db.tenant import set_tenant_context
 from irp_shared.liquidity.models import LiquidityResult
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
@@ -30,8 +31,40 @@ TENANT_B = "bbbbbbbb-1111-2222-3333-444444444444"
 
 
 @pytest.fixture(scope="module")
-def factory():  # noqa: ANN201
-    engine = make_engine(URL, poolclass=NullPool)
+def app_url() -> str:
+    """The constrained ``irp_app`` role (NOSUPERUSER NOBYPASSRLS).
+
+    The RLS assertions MUST run as this role. The default ``irp`` connection is a superuser with
+    BYPASSRLS, and FORCE RLS does not apply to a BYPASSRLS role — so a cross-tenant test run as
+    ``irp`` proves nothing about isolation. My first draft did exactly that and reported "RLS did
+    not isolate the tenant", which is the honest outcome of a test asking the wrong role.
+    """
+    superuser = make_engine(URL, poolclass=NullPool)
+    with superuser.begin() as conn:
+        conn.execute(
+            text(
+                "DO $$ BEGIN "
+                "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'irp_app') "
+                "THEN CREATE ROLE irp_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD 'ci_app_pw'; "
+                "ELSE ALTER ROLE irp_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD 'ci_app_pw'; "
+                "END IF; END $$"
+            )
+        )
+        conn.execute(text("GRANT USAGE ON SCHEMA public TO irp_app"))
+        for table in ("liquidity_result", "model", "model_version", "calculation_run",
+                      "dataset_snapshot"):
+            conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO irp_app"))
+    superuser.dispose()
+    return (
+        make_url(URL)
+        .set(username="irp_app", password="ci_app_pw")
+        .render_as_string(hide_password=False)
+    )
+
+
+@pytest.fixture(scope="module")
+def factory(app_url):  # noqa: ANN001, ANN201
+    engine = make_engine(app_url, poolclass=NullPool)
     yield make_session_factory(engine)
     engine.dispose()
 
@@ -144,7 +177,7 @@ def test_a_tenant_cannot_read_another_tenants_rows(factory) -> None:  # noqa: AN
     """Cross-tenant negative, asserted BY TABLE NAME on the child (the CAL-1a lesson)."""
     session = factory()
     try:
-        session.execute(text("SET LOCAL app.current_tenant = :t"), {"t": TENANT_A})
+        set_tenant_context(session, TENANT_A)
         ids = _seed_parents(session.connection(), TENANT_A)
         ids["portfolio"] = str(uuid.uuid4())
         _insert_detail(session.connection(), TENANT_A, ids)
@@ -156,14 +189,14 @@ def test_a_tenant_cannot_read_another_tenants_rows(factory) -> None:  # noqa: AN
     try:
         # A FRESH session: set_tenant_context is TRANSACTION-LOCAL and clears at COMMIT (the
         # MD-H1 annex-4 trap that turned a DATA-1 fold red).
-        verify.execute(text("SET LOCAL app.current_tenant = :t"), {"t": TENANT_A})
+        set_tenant_context(verify, TENANT_A)
         assert verify.query(LiquidityResult).count() >= 1
     finally:
         verify.close()
 
     other = factory()
     try:
-        other.execute(text("SET LOCAL app.current_tenant = :t"), {"t": TENANT_B})
+        set_tenant_context(other, TENANT_B)
         assert other.query(LiquidityResult).count() == 0, "RLS did not isolate the tenant"
     finally:
         other.close()
@@ -172,13 +205,13 @@ def test_a_tenant_cannot_read_another_tenants_rows(factory) -> None:  # noqa: AN
 def test_the_append_only_trigger_refuses_update_and_delete(factory) -> None:  # noqa: ANN001
     session = factory()
     try:
-        session.execute(text("SET LOCAL app.current_tenant = :t"), {"t": TENANT_A})
+        set_tenant_context(session, TENANT_A)
         ids = _seed_parents(session.connection(), TENANT_A)
         ids["portfolio"] = str(uuid.uuid4())
         _insert_detail(session.connection(), TENANT_A, ids)
         session.commit()
 
-        session.execute(text("SET LOCAL app.current_tenant = :t"), {"t": TENANT_A})
+        set_tenant_context(session, TENANT_A)
         with pytest.raises(Exception, match="append-only"):
             session.execute(
                 text("UPDATE liquidity_result SET tier_share = 0.99 WHERE portfolio_id = :p"),
@@ -186,7 +219,7 @@ def test_the_append_only_trigger_refuses_update_and_delete(factory) -> None:  # 
             )
         session.rollback()
 
-        session.execute(text("SET LOCAL app.current_tenant = :t"), {"t": TENANT_A})
+        set_tenant_context(session, TENANT_A)
         with pytest.raises(Exception, match="append-only"):
             session.execute(
                 text("DELETE FROM liquidity_result WHERE portfolio_id = :p"),
@@ -202,7 +235,7 @@ def test_the_detail_partial_unique_binds_per_portfolio(factory) -> None:  # noqa
     single portfolio may not hold it twice."""
     session = factory()
     try:
-        session.execute(text("SET LOCAL app.current_tenant = :t"), {"t": TENANT_A})
+        set_tenant_context(session, TENANT_A)
         ids = _seed_parents(session.connection(), TENANT_A)
         ids["portfolio"] = str(uuid.uuid4())
         _insert_detail(session.connection(), TENANT_A, ids)
@@ -211,7 +244,7 @@ def test_the_detail_partial_unique_binds_per_portfolio(factory) -> None:  # noqa
         _insert_detail(session.connection(), TENANT_A, second, p=second["portfolio"])
         session.commit()
 
-        session.execute(text("SET LOCAL app.current_tenant = :t"), {"t": TENANT_A})
+        set_tenant_context(session, TENANT_A)
         with pytest.raises(Exception, match="uq_liquidity_result_detail"):
             _insert_detail(session.connection(), TENANT_A, ids)
             session.flush()

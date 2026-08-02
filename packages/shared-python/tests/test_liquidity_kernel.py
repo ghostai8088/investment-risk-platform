@@ -68,7 +68,10 @@ def test_untiered_exposure_stays_in_the_denominator() -> None:
     assert r.illiquid_share == _d("0.500000")
     assert r.coverage_ratio == _d("0.500000")
     assert r.untiered_instrument_count == 1
-    assert r.gaps
+    # NOT a gap: an untiered holding is a normal state of the book. Refusal is the declared
+    # coverage FLOOR's job, enforced in the binder. An earlier draft returned a gap here, and
+    # because the binder refuses on ANY gap, every book with one unassessed holding FAILED.
+    assert r.gaps == ()
 
 
 def test_a_fully_untiered_book_reports_zero_coverage_and_does_not_divide_by_zero() -> None:
@@ -78,7 +81,10 @@ def test_a_fully_untiered_book_reports_zero_coverage_and_does_not_divide_by_zero
     assert r.coverage_ratio == _d("0.000000")
     assert r.illiquid_share == _d("0.000000")
     assert r.untiered_instrument_count == 2
-    assert r.gaps
+    # Still not a gap even at zero coverage — the binder's floor is what refuses this book, and
+    # it must be able to SEE coverage 0.0 in order to do so.
+    assert r.gaps == ()
+    assert r.coverage_ratio == _d("0.000000")
 
 
 def test_an_empty_or_wholly_short_book_is_a_structured_gap_not_a_division() -> None:
