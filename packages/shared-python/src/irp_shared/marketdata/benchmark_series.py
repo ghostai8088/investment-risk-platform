@@ -63,6 +63,7 @@ from irp_shared.marketdata.models import (
     RETURN_TYPE_SIMPLE,
     Benchmark,
     BenchmarkLevel,
+    BenchmarkRate,
     BenchmarkReturn,
 )
 
@@ -104,9 +105,10 @@ class NoCurrentBenchmarkSeries(Exception):
 
 @dataclass(frozen=True)
 class _SeriesSpec:
-    # A union of the two model types so mypy resolves the shared FR/tenant column access in the
-    # generic core (both carry tenant_id/benchmark_id/valid_*/system_* via the mixins + FK).
-    table: type[BenchmarkLevel] | type[BenchmarkReturn]
+    # A union of the series model types so mypy resolves the shared FR/tenant column access in the
+    # generic core (all carry tenant_id/benchmark_id/valid_*/system_* via the mixins + FK).
+    # DATA-1 added BenchmarkRate (ENT-070) as the third member — same protocol, own vocab/value.
+    table: type[BenchmarkLevel] | type[BenchmarkReturn] | type[BenchmarkRate]
     entity_type: str
     value_attr: str  # "level_value" / "return_value"
     key_attrs: tuple[str, ...]  # logical-key cols beyond benchmark_id (ORDER = the row key order)

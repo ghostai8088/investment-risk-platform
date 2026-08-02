@@ -39,6 +39,7 @@ from irp_shared.marketdata import (
     BenchmarkConstituent,
     BenchmarkLevel,
     BenchmarkNotVisible,
+    BenchmarkRate,
     BenchmarkReturn,
     BenchmarkSeriesValueError,
     BenchmarkValueError,
@@ -88,6 +89,7 @@ from irp_shared.marketdata import (
     correct_membership,
     correct_price,
     list_benchmark_levels,
+    list_benchmark_rates,
     list_benchmark_returns,
     list_benchmarks,
     list_curve_points,
@@ -2191,6 +2193,67 @@ def list_benchmark_returns_endpoint(
     return [
         _benchmark_return_out(row)
         for row in list_benchmark_returns(
+            db, acting_tenant=principal.tenant_id, benchmark_id=benchmark_id
+        )
+    ]
+
+
+# ---------- DATA-1: benchmark_rate (ENT-070; captured published-rate series, READ-ONLY) ----------
+# The captured series' minimal tenant-scoped read (OQ-DATA-1-11 — a captured series must not be a
+# write-only field; the SCH-2 disclosure lesson). Writes ride the governed verbs (the demo/seed
+# path); NO HTTP write endpoint ships in DATA-1.
+
+
+class BenchmarkRateOut(BaseModel):
+    id: str
+    benchmark_id: str
+    rate_date: date
+    rate_type: str
+    quote_basis: str
+    observation_convention: str
+    rate_value: str
+    valid_from: datetime
+    valid_to: datetime | None
+    system_from: datetime
+    system_to: datetime | None
+    supersedes_id: str | None
+    record_version: int
+
+
+def _benchmark_rate_out(row: BenchmarkRate) -> BenchmarkRateOut:
+    return BenchmarkRateOut(
+        id=row.id,
+        benchmark_id=row.benchmark_id,
+        rate_date=row.rate_date,
+        rate_type=row.rate_type,
+        quote_basis=row.quote_basis,
+        observation_convention=row.observation_convention,
+        rate_value=str(row.rate_value),  # byte-for-byte captured fraction (never a float)
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        system_from=row.system_from,
+        system_to=row.system_to,
+        supersedes_id=row.supersedes_id,
+        record_version=row.record_version,
+    )
+
+
+@benchmark_router.get("/{benchmark_id}/rates", response_model=list[BenchmarkRateOut])
+def list_benchmark_rates_endpoint(
+    benchmark_id: str,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[BenchmarkRateOut]:
+    """The current-head captured published-rate series for a benchmark (tenant-scoped)."""
+    try:
+        resolve_benchmark(db, benchmark_id, acting_tenant=principal.tenant_id)
+    except BenchmarkNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="benchmark not found"
+        ) from None
+    return [
+        _benchmark_rate_out(row)
+        for row in list_benchmark_rates(
             db, acting_tenant=principal.tenant_id, benchmark_id=benchmark_id
         )
     ]

@@ -23,6 +23,7 @@ from irp_shared.dq.models import DataQualityResult
 from irp_shared.dq.rules import (
     REGISTRY,
     RULE_TYPE_ALLOWED_VALUES,
+    RULE_TYPE_COMPLETENESS,
     RULE_TYPE_NOT_NULL,
     RULE_TYPE_RANGE,
 )
@@ -524,9 +525,15 @@ def test_scope_fence_generic_only(session: Session) -> None:
     batch_fks = {fk.column.table.name for fk in IngestionBatch.__table__.foreign_keys}
     staged_fks = {fk.column.table.name for fk in IngestionStagedRecord.__table__.foreign_keys}
     assert batch_fks == {"data_source"} and staged_fks == {"ingestion_batch"}
-    # The DQ engine is reused, not extended by ingestion: the three generic evaluators (RANGE added
-    # P2-2 for FX, not by ingestion) and no domain evaluators.
-    assert set(REGISTRY) == {RULE_TYPE_NOT_NULL, RULE_TYPE_ALLOWED_VALUES, RULE_TYPE_RANGE}
+    # The DQ engine is reused, not extended by ingestion: the four generic evaluators (RANGE added
+    # P2-2 for FX; COMPLETENESS minted at DATA-1 for the captured-rate rail, not by ingestion) and
+    # no domain evaluators.
+    assert set(REGISTRY) == {
+        RULE_TYPE_NOT_NULL,
+        RULE_TYPE_ALLOWED_VALUES,
+        RULE_TYPE_RANGE,
+        RULE_TYPE_COMPLETENESS,
+    }
     # No reserved P7 codes emitted on the ingest path.
     tenant = _tenant()
     source_id = _source(session, tenant)

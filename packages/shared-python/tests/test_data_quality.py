@@ -22,8 +22,10 @@ from irp_shared.dq.models import DataQualityResult, DataQualityRule
 from irp_shared.dq.rules import (
     REGISTRY,
     RULE_TYPE_ALLOWED_VALUES,
+    RULE_TYPE_COMPLETENESS,
     RULE_TYPE_NOT_NULL,
     RULE_TYPE_RANGE,
+    evaluate_completeness,
 )
 from irp_shared.dq.service import (
     DQ_RULE_DEFINE_EVENT,
@@ -362,8 +364,84 @@ def test_scope_fence_no_reserved_codes_or_columns(session: Session) -> None:
         assert not any(
             forbidden in c for c in cols
         ), f"unexpected workflow column matching {forbidden}"
-    # exactly three generic evaluators (RANGE added P2-2 for strictly-positive FX rates)
-    assert set(REGISTRY) == {RULE_TYPE_NOT_NULL, RULE_TYPE_ALLOWED_VALUES, RULE_TYPE_RANGE}
+    # exactly four generic evaluators (RANGE added P2-2; COMPLETENESS minted at DATA-1 — the
+    # REF-1-deferred rule kind whose params carry the expected key set)
+    assert set(REGISTRY) == {
+        RULE_TYPE_NOT_NULL,
+        RULE_TYPE_ALLOWED_VALUES,
+        RULE_TYPE_RANGE,
+        RULE_TYPE_COMPLETENESS,
+    }
+
+
+# --- DATA-1: the COMPLETENESS evaluator (the REF-1-deferred mint; both-directions set equality) —
+
+
+def test_completeness_passes_on_exact_key_set() -> None:
+    params = {"key_column": "month", "expected": ["2024-01", "2024-02", "2024-03"]}
+    dataset = [{"month": "2024-02"}, {"month": "2024-01"}, {"month": "2024-03"}]
+    evaluation = evaluate_completeness(params, dataset)
+    assert evaluation.passed and evaluation.evaluated_count == 3
+
+
+def test_completeness_fails_on_missing_interior_key() -> None:
+    params = {"key_column": "month", "expected": ["2024-01", "2024-02", "2024-03"]}
+    evaluation = evaluate_completeness(params, [{"month": "2024-01"}, {"month": "2024-03"}])
+    assert not evaluation.passed
+    assert evaluation.failed_count == 1
+    assert "2024-02" in (evaluation.detail or "")
+
+
+def test_completeness_fails_on_missing_FIRST_key_the_declared_start_boundary() -> None:
+    # The boundary a data-derived start could never represent (OQ-DATA-1-4): the FIRST expected
+    # key absent while everything later is present.
+    params = {"key_column": "month", "expected": ["2024-01", "2024-02", "2024-03"]}
+    evaluation = evaluate_completeness(params, [{"month": "2024-02"}, {"month": "2024-03"}])
+    assert not evaluation.passed
+    assert "2024-01" in (evaluation.detail or "")
+
+
+def test_completeness_fails_on_unexpected_key_both_directions() -> None:
+    params = {"key_column": "month", "expected": ["2024-01"]}
+    evaluation = evaluate_completeness(params, [{"month": "2024-01"}, {"month": "2031-12"}])
+    assert not evaluation.passed
+    assert "UNEXPECTED" in (evaluation.detail or "")
+    assert evaluation.failed_count == 1
+
+
+def test_completeness_missing_and_unexpected_are_both_counted() -> None:
+    params = {"key_column": "month", "expected": ["2024-01", "2024-02"]}
+    evaluation = evaluate_completeness(params, [{"month": "2024-01"}, {"month": "2030-01"}])
+    assert not evaluation.passed
+    assert evaluation.failed_count == 2  # one missing + one unexpected
+
+
+def test_completeness_malformed_params_raise() -> None:
+    with pytest.raises(ValueError):
+        evaluate_completeness({"expected": ["2024-01"]}, [])  # no key_column
+    with pytest.raises(ValueError):
+        evaluate_completeness({"key_column": "month"}, [])  # no expected list
+    with pytest.raises(ValueError):
+        evaluate_completeness({"key_column": "month", "expected": "2024-01"}, [])  # not a list
+
+
+def test_completeness_error_severity_persists_FAIL_and_raises(session: Session) -> None:
+    # The governed round-trip: a COMPLETENESS rule through run_quality_check — the FAIL result
+    # persists (no-silent-failure) and DataQualityError propagates.
+    tenant = _tenant()
+    rule = _rule(
+        session,
+        tenant,
+        code="C1",
+        rule_type=RULE_TYPE_COMPLETENESS,
+        params={"key_column": "month", "expected": ["2024-01", "2024-02"]},
+    )
+    with pytest.raises(DataQualityError):
+        run_quality_check(session, rule=rule, dataset=[{"month": "2024-01"}], actor_id="a")
+    result = session.execute(
+        select(DataQualityResult).where(DataQualityResult.rule_id == rule.id)
+    ).scalar_one()
+    assert result.outcome == "FAIL"
 
 
 def test_dq_package_has_no_forbidden_imports() -> None:

@@ -224,6 +224,29 @@ BENCHMARK_RETURN_BASES = (RETURN_BASIS_PRICE, RETURN_BASIS_TOTAL, RETURN_BASIS_N
 #: ``benchmark_return.return_type`` reuses the ENT-025 vocabulary (SIMPLE v1; LOG reserved).
 BENCHMARK_RETURN_TYPES = (RETURN_TYPE_SIMPLE,)
 
+# --- benchmark published RATE series (DATA-1, ENT-070) — captured verbatim, NEVER re-expressed ---
+#: ``benchmark_rate.rate_type`` — WHAT published rate the observation is (extend by value — MG-01).
+#: v1 = the H.15 Treasury bill secondary-market discount-basis yield (OQ-DATA-1-3).
+RATE_TYPE_BILL_DISCOUNT_YIELD = "BILL_DISCOUNT_YIELD"
+BENCHMARK_RATE_TYPES = (RATE_TYPE_BILL_DISCOUNT_YIELD,)
+#: ``benchmark_rate.quote_basis`` — the day-count/quotation convention the published percent is
+#: annualized on. v1 = DISCOUNT_360 (the H.15 bill convention); INVESTMENT_365 (the
+#: coupon-equivalent basis) is reserved-by-value, NOT minted — the ~15bp discount-vs-investment gap
+#: is why the basis is IN the logical key (G44).
+QUOTE_BASIS_DISCOUNT_360 = "DISCOUNT_360"
+BENCHMARK_RATE_QUOTE_BASES = (QUOTE_BASIS_DISCOUNT_360,)
+#: ``benchmark_rate.observation_convention`` — HOW the vendor forms the dated observation.
+#: v1 = the H.15 monthly average over business days; a month-end SAMPLED series would be a NEW
+#: value, never a silent re-reading (OQ-DATA-1-1's observation-form disposition).
+OBSERVATION_CONVENTION_MONTHLY_AVG_BUSINESS_DAYS = "MONTHLY_AVG_BUSINESS_DAYS"
+BENCHMARK_RATE_OBSERVATION_CONVENTIONS = (OBSERVATION_CONVENTION_MONTHLY_AVG_BUSINESS_DAYS,)
+#: The coherence map (OQ-DATA-1-3): a ``rate_type`` admits only its own quotation bases —
+#: BILL_DISCOUNT_YIELD is definitionally discount-360, so an incoherent
+#: BILL_DISCOUNT_YIELD × INVESTMENT_365 head refuses at capture when the reserved basis activates.
+RATE_TYPE_ALLOWED_QUOTE_BASES: dict[str, tuple[str, ...]] = {
+    RATE_TYPE_BILL_DISCOUNT_YIELD: (QUOTE_BASIS_DISCOUNT_360,),
+}
+
 # --- private-asset proxy mapping (PA-0, ENT-019) — captured private→public factor proxies ---
 #: ``proxy_mapping.mapping_method`` — HOW the proxy weight was derived (recorded provenance, NOT a
 #: computation in v1). ``MANUAL`` = a captured governance judgment call; ``PEER_GROUP`` /
@@ -540,6 +563,11 @@ class Benchmark(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixi
     # Inert captured metadata — NO methodology engine consumes it (the interpolation_method
     # precedent).
     methodology_label: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    # DATA-1 (ENT-070): the DECLARED coverage horizon of this head's captured RATE series —
+    # forward-only via ``refresh_benchmark_rates`` (a derived MAX cannot represent a gap,
+    # OQ-CAL-1-4's standard). ONE horizon per head: a second (rate_type, quote_basis) series on a
+    # horizon-carrying head REFUSES in v1 (the recorded coverage-grain limitation, OQ-DATA-1-3).
+    rates_complete_through: Mapped[date | None] = mapped_column(Date, nullable=True)
     record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
@@ -844,9 +872,76 @@ class BenchmarkReturn(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, Times
     record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
-# NOTE: benchmark_level + benchmark_return (both FR, ENT-052) are NOT append-only — the
-# factor_return/benchmark precedent (FR requires close-out UPDATEs). Content-immutability is
-# binder-enforced + tested.
+class BenchmarkRate(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):
+    """Captured PUBLISHED RATE observation (DATA-1, **ENT-070**, FR bitemporal) — the vendor's
+    annualized rate/yield captured VERBATIM under the ENT-009 ``benchmark`` EV header; the
+    ``factor_return`` single-row FR protocol; the third series-observation table of the ENT-052
+    kind (level / return / rate).
+
+    **Captured verbatim, NEVER re-expressed into a return** (the twice-ratified ENT-052 never-
+    derive doctrine extended to rates at OQ-DATA-1-1: an annualized→period conversion is a
+    METHODOLOGY choice needing a registered ``model_version`` — the named DATA-1 carry; the ONLY
+    transformation at capture is the pure units change percent→fraction, ``0.0366`` = 3.66%).
+    No analytics, no ``calculation_run``/``model_version``/snapshot pin. PROPRIETARY/symmetric;
+    NEVER hybrid (per-tenant capture of even a public-domain series — the ratified OQ-DATA-1-2
+    tenancy: the item-3 SYSTEM arm presumes a hybrid-capable reference table). **NOT append-only**.
+    Logical key ``(benchmark_id, rate_date, rate_type, quote_basis)``:
+
+    - **``rate_date``:** a separate immutable logical-key ``Date`` (the ``return_date`` precedent;
+      for the H.15 monthly series: the FIRST of the observation month, the vendor's own dating —
+      conforming with the declared INSIDE-the-month convention at the observation grain).
+    - **``rate_type``:** controlled-vocab (``BENCHMARK_RATE_TYPES``) — WHAT published rate.
+    - **``quote_basis``:** controlled-vocab (``BENCHMARK_RATE_QUOTE_BASES``) — the annualization/
+      day-count convention; a NOT-NULL key (the ~15bp discount-vs-investment gap is a real
+      same-date collision the key must separate), coherence-mapped per ``rate_type``.
+    - **``observation_convention``:** controlled-vocab
+      (``BENCHMARK_RATE_OBSERVATION_CONVENTIONS``) — HOW the vendor forms the observation
+      (v1: monthly average over business days). Carried ON the row: the OQ-CAL-1-9 capture-time
+      convention-field option, PAID-BY-DESIGN here (OQ-DATA-1-10).
+    - **``rate_value``:** the published rate as a canonical DECIMAL fraction (``0.01`` = 1%, the
+      ENT-025 convention), ``PreciseDecimal(20, 12)``; inert. A binder finiteness guard rejects
+      NaN/±Inf; a ``> -1`` DQ RANGE (loose house-pattern inheritance — recorded, OQ-DATA-1-3).
+
+    Current-head partial-unique ``(tenant_id, benchmark_id, rate_date, rate_type, quote_basis)
+    WHERE valid_to IS NULL AND system_to IS NULL``. Coverage is DECLARED on the header
+    (``benchmark.rates_complete_through``, forward-only).
+    """
+
+    __tablename__ = "benchmark_rate"
+    __temporal_class__ = TemporalClass.FULL_REPRODUCIBLE
+    __table_args__ = (
+        Index(
+            "uq_benchmark_rate_current",
+            "tenant_id",
+            "benchmark_id",
+            "rate_date",
+            "rate_type",
+            "quote_basis",
+            unique=True,
+            postgresql_where=text("valid_to IS NULL AND system_to IS NULL"),
+            sqlite_where=text("valid_to IS NULL AND system_to IS NULL"),
+        ),
+    )
+
+    benchmark_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("benchmark.id"), nullable=False, index=True
+    )
+    rate_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    rate_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    quote_basis: Mapped[str] = mapped_column(String(20), nullable=False)
+    observation_convention: Mapped[str] = mapped_column(String(40), nullable=False)
+    # The published rate as a canonical DECIMAL fraction (0.01 = 1%); inert (NEVER re-expressed).
+    rate_value: Mapped[Decimal] = mapped_column(PreciseDecimal(20, 12), nullable=False)
+    restatement_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("benchmark_rate.id"), nullable=True
+    )
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+# NOTE: benchmark_level + benchmark_return (both FR, ENT-052) + benchmark_rate (FR, ENT-070) are
+# NOT append-only — the factor_return/benchmark precedent (FR requires close-out UPDATEs).
+# Content-immutability is binder-enforced + tested.
 
 
 class ProxyMapping(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMixin, Base):
