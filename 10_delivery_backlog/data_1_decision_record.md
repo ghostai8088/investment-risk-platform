@@ -1,11 +1,12 @@
 # DATA-1 — the first genuinely external dataset (decision record)
 
-**Status: VERIFIER-FOLDED, PENDING RATIFICATION (2026-08-02).** Wave-14 slice 3.5 (INSERTED
-2026-07-30, user-ratified). Planning branch `data-1-planning` off `e3253a9` (the CAL-1b closeout
-merge). Grounding recon: six independent lanes at pinned HEAD `e3253a9`, 193 facts; the curated
-fact base is Part 0. The four-lane refute-by-default verifier ran BEFORE ratification (the ES-1
-standing lesson); its 28 findings (1 BLOCKING / 5 HIGH / 10 MED / 10 LOW) are ALL folded — Part 5
-is the fold record.
+**Status: RATIFIED 2026-08-02 — OQ-DATA-1-1…12 ALL as recommended ("Proceed" on the briefed
+gate).** Wave-14 slice 3.5 (INSERTED 2026-07-30, user-ratified). Planning branch
+`data-1-planning` off `e3253a9` (the CAL-1b closeout merge). Grounding recon: six independent
+lanes at pinned HEAD `e3253a9`, 193 facts; the curated fact base is Part 0. The four-lane
+refute-by-default verifier ran BEFORE ratification (the ES-1 standing lesson); its 28 findings
+(1 BLOCKING / 5 HIGH / 10 MED / 10 LOW) are ALL folded — Part 5 is the fold record; Part 6 is the
+ratification record.
 
 The ratified slice text (`delivery_roadmap.md:269`, quoted in full at G1) commits: **ONE
 authoritative public dataset — candidate: a U.S. Treasury bill monthly yield series (source +
@@ -695,4 +696,39 @@ reserved routed autonomously); and the G7/G8 baselines re-executed clean.
 
 ---
 
-*Parts 6+ (ratification record, implementation log, close) are appended as the slice advances.*
+## Part 6 — the ratification record (2026-08-02)
+
+The user ratified **OQ-DATA-1-1…12 ALL as recommended** ("Proceed" on the plain-language gate
+briefing, which named OQ-1 and OQ-5 as the decisions with the most real alternatives). The acts
+this ratification executes, each of which was an explicit item in the ask:
+
+- **OQ-1a — capture-first ratified.** TB3MS lands verbatim as a captured dataset; the
+  yield→period-return registered model + the Sharpe re-source (new version labels) is a NAMED
+  CARRY, trigger: *the first governed consumer that binds the real rf series*. The maturity
+  (3-month vs 1-month) and observation-form dispositions stand as recorded.
+- **OQ-2 — per-tenant tenancy ratified; the CTRL-034 item-3 clarifying amendment is
+  H-05-APPROVED** (the SYSTEM arm applies where the landing table is hybrid-capable; a time
+  series lands per-tenant regardless of license openness). No AD-013-R3; invariants byte-unchanged.
+- **OQ-3 — the ENT-070 `benchmark_rate` mint APPROVED** (migration `0060`, the ratified grain,
+  vocabularies, second-series refusal, v1 limitation).
+- **The `MARKET.BENCHMARK_RATE_CREATE/_UPDATE/_CORRECTION` audit triple is R-07-APPROVED at this
+  gate** — the taxonomy row written at implementation IS the mint record (the P2-7/SCH-1 pattern).
+- **OQ-4/OQ-6 — `RULE_TYPE_COMPLETENESS` mint ratified** with the declared-boundaries expected
+  set, params-advance mechanics, effective-only firing, and savepoint-preserved FAIL evidence.
+- **OQ-5 — the THIRD deferral of the trading-calendar wiring is EXPLICITLY RATIFIED** with
+  trigger: *the first captured DAILY benchmark series*; REQ-PRF-002 will be recorded RE-POINTED,
+  not discharged; the divergence from the roadmap pointer's literal text is ratified with it.
+- **OQ-7/OQ-8 — the delivery path and the licensing position are H-05-APPROVED as recorded**
+  (Board/H.15 public-domain origin; FRED as attributed access channel; the true acquisition path
+  stated; all 30 literals hand re-verified before implementation ships).
+- **OQ-9 — CTRL-034 Execution 2 ratified; the Implemented→Operational status move is APPROVED,
+  to be stamped at close.**
+- **OQ-10 — the OQ-CAL-1-9 convention-field option is PAID-BY-DESIGN on the new entity;** the
+  `benchmark_return` retrofit stays untaken with its re-recorded trigger.
+- **OQ-11 — the read endpoint, demo stage 22, and the 13-z FINAL-POSITION relay ratified.**
+- **OQ-12 — sized M/L; the DATA-1a/1b split line is PRE-RATIFIED** (usable mid-slice without a
+  new gate); the register footprint as recorded.
+
+---
+
+*Parts 7+ (implementation log, review fold, close) are appended as the slice advances.*
