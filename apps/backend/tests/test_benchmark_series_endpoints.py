@@ -271,3 +271,63 @@ def test_no_put_patch_delete(ctx) -> None:  # noqa: ANN001
     bid = _create_benchmark(client, p)
     for method in (client.put, client.patch, client.delete):
         assert method(f"/benchmarks/{bid}/levels", headers=_h(p)).status_code == 405
+
+
+# ---------- DATA-1: the benchmark_rate read endpoint (review-fold delivery of Part 3 item 7) ----
+
+
+def _seed_rate_row(db, p, bid) -> None:  # noqa: ANN001
+    """Capture one rate row through the governed verb (no HTTP write endpoint ships in DATA-1)."""
+    from decimal import Decimal
+
+    from irp_shared.marketdata import (
+        BenchmarkActor,
+        capture_benchmark_rate,
+        resolve_benchmark,
+    )
+    from irp_shared.marketdata.models import (
+        OBSERVATION_CONVENTION_MONTHLY_AVG_BUSINESS_DAYS,
+        QUOTE_BASIS_DISCOUNT_360,
+        RATE_TYPE_BILL_DISCOUNT_YIELD,
+    )
+
+    bm = resolve_benchmark(db, bid, acting_tenant=p.tenant_id)
+    capture_benchmark_rate(
+        db,
+        bm,
+        rate_date=date(2026, 6, 1),
+        rate_type=RATE_TYPE_BILL_DISCOUNT_YIELD,
+        quote_basis=QUOTE_BASIS_DISCOUNT_360,
+        observation_convention=OBSERVATION_CONVENTION_MONTHLY_AVG_BUSINESS_DAYS,
+        rate_value=Decimal("0.0366"),
+        acting_tenant=p.tenant_id,
+        actor=BenchmarkActor(actor_id=p.user_id),
+    )
+    db.commit()
+
+
+def test_rates_list_happy_path_decimal_is_string(ctx) -> None:  # noqa: ANN001
+    client, p, db = ctx
+    bid = _create_benchmark(client, p)
+    _seed_rate_row(db, p, bid)
+    resp = client.get(f"/benchmarks/{bid}/rates", headers=_h(p))
+    assert resp.status_code == 200, resp.text
+    (row,) = resp.json()
+    assert row["rate_type"] == "BILL_DISCOUNT_YIELD" and row["quote_basis"] == "DISCOUNT_360"
+    assert row["observation_convention"] == "MONTHLY_AVG_BUSINESS_DAYS"
+    # the persisted canonical NUMERIC(20,12) form, byte-for-byte as a STRING (never a float)
+    assert isinstance(row["rate_value"], str) and row["rate_value"] == "0.036600000000"
+
+
+def test_rates_list_without_view_403(ctx) -> None:  # noqa: ANN001
+    client, p, _ = ctx
+    bid = _create_benchmark(client, p)
+    resp = client.get(f"/benchmarks/{bid}/rates", headers=_no_perm(p))
+    assert resp.status_code == 403  # deny-by-default: no marketdata.view -> refused
+
+
+def test_rates_list_unknown_benchmark_404(ctx) -> None:  # noqa: ANN001
+    client, p, _ = ctx
+    resp = client.get(f"/benchmarks/{uuid.uuid4()}/rates", headers=_h(p))
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "benchmark not found"

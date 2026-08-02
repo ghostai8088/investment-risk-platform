@@ -539,8 +539,8 @@ def test_no_migration_and_no_entity() -> None:
     # 0053_schedule_cadence_family; RM-1 owns 0054_rolling_risk_result; SR-1 owns
     # 0055_sharpe_ratio_result; REF-1 owns 0056_classification; CON-1 owns
     # 0057_concentration_result; LIM-2 owns 0058_limit_dimension_selector; CAL-1b owns
-    # 0059_business_month_end; the synthetic slice
-    # still adds no migration, so the next free slot (0060+) must remain empty.
+    # 0059_business_month_end; DATA-1 owns 0060_benchmark_rate; the synthetic slice
+    # still adds no migration, so the next free slot (0061+) must remain empty.
     #
     # NOTE (SCH-2): this next-free-slot glob is a hand-maintained proxy — it must be bumped by
     # EVERY migration slice, and it fires on a legitimate new migration rather than on the thing it
@@ -558,7 +558,10 @@ def test_no_migration_and_no_entity() -> None:
     # consecutive slices have now paid this relay, each of them the "fires on a legitimate new
     # migration" case the SCH-2 note above describes — the guard has never once fired on the thing
     # it guards.
-    assert not list(versions.glob("0060*")), "no 0060 migration may be added by the synthetic slice"
+    #
+    # NOTE (DATA-1): relayed 0060 -> 0061 (0060 = benchmark_rate, the captured published-rate
+    # series). The guard has still never fired on the thing it guards.
+    assert not list(versions.glob("0061*")), "no 0061 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -

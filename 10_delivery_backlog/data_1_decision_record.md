@@ -632,6 +632,16 @@ registry census pin moves (G24).
   `(rate_type, quote_basis)` series on the same head REFUSES in v1 (OQ-3).
 - A historical `data_quality_result` does not pin the rule params/`record_version` it evaluated
   under — recoverable only via the DQ-rule audit trail (OQ-4).
+- **The gate latch (review fold):** `assert_passed_quality_checks` blocks on ANY historical FAIL
+  over the append-only results — a once-failed series stays gate-latched even after remediation
+  (the operational read is the LATEST result per rule; a latest-scoped gate mode is the recorded
+  follow-on, the LIM-1 recompute-from-source doctrine).
+- **Duplicate-month blindness (review fold):** the month census is SET-based — a second
+  observation inside an already-complete month passes "monthly completeness" (a MIS-dated row is
+  still caught by the missing direction); an optional uniqueness param is the recorded follow-on.
+- **FAIL-evidence caller contract (review fold):** the evidence survives only if the caller
+  catches `DataQualityError` and COMMITS; a rollback-on-error caller discards it (the PG
+  savepoint test is the executed pattern).
 
 ---
 
@@ -720,7 +730,9 @@ this ratification executes, each of which was an explicit item in the ask:
   not discharged; the divergence from the roadmap pointer's literal text is ratified with it.
 - **OQ-7/OQ-8 — the delivery path and the licensing position are H-05-APPROVED as recorded**
   (Board/H.15 public-domain origin; FRED as attributed access channel; the true acquisition path
-  stated; all 30 literals hand re-verified before implementation ships).
+  stated; all 30 literals re-verified before implementation ships — *corrected at the review
+  fold: the verification was a third full extraction pass via the SAME proxy channel, not an
+  independent-channel hand pass; recorded honestly in Part 8*).
 - **OQ-9 — CTRL-034 Execution 2 ratified; the Implemented→Operational status move is APPROVED,
   to be stamped at close.**
 - **OQ-10 — the OQ-CAL-1-9 convention-field option is PAID-BY-DESIGN on the new entity;** the
@@ -731,4 +743,120 @@ this ratification executes, each of which was an explicit item in the ask:
 
 ---
 
-*Parts 7+ (implementation log, review fold, close) are appended as the slice advances.*
+## Part 7 — the implementation log (2026-08-02, branch `data-1` off `de20d4b`)
+
+Implemented single-threaded in three commits (`567d2a4` core + tests; `12ae033` demo/PG/CI/FE;
+batch 3 = the governance artifacts + this part). *(Part-8 correction: the draft of this part
+claimed the FULL Part 3 inventory had shipped — the review refuted it: the endpoint's
+permission-negative tests were missing, delivered at the fold.)* The decisions TAKEN
+IN-IMPLEMENTATION, recorded per the gate-reversal discipline:
+
+1. **The differing-value refresh refusal (new, fail-closed):** the ratified ADD-ONLY semantic
+   left a hole — a refresh re-supplying a captured date with a DIFFERENT value would have
+   silently no-opped, hiding a vendor revision (G47's real class). The verb REFUSES loudly,
+   naming `correct_benchmark_rate`. First-spec-wins stays intra-call only.
+2. **Additions beyond the horizon require the matching `complete_through` in the same call:**
+   the both-directions census makes a captured month beyond the declared horizon an UNEXPECTED
+   key ⇒ completeness FAIL ⇒ the refresh refuses — declare-what-you-have, structurally. Not a
+   defect; recorded so nobody reads the refusal as a bug.
+3. **The `_SeriesSpec` union widened** (`benchmark_series.py` now admits `BenchmarkRate`) — one
+   generic FR core, three series tables, zero copied protocol code; `observation_convention`
+   rides the spec's key tuple for row construction/queries while the DB unique index stays on
+   the ratified four-key grain (stricter; a convention mismatch surfaces as a loud unique
+   violation).
+4. **The coherence map is tested NON-VACUOUSLY** via monkeypatch-minting the reserved
+   `INVESTMENT_365` basis (with one rate_type × one basis in the live vocab the branch could
+   never fire — the vacuous-guard class caught at authoring, not review).
+5. **The third extraction pass:** the 30 literals were re-retrieved fresh at implementation
+   (proxy-rendered FRED data page; all 30 values + both anchors + the update timestamp agree
+   with the two recon passes). The Board's DDP CSV was attempted first and is not reachable
+   anonymously from this environment — recorded; FRED-with-attribution stands as the access
+   channel (Execution 2 item 3).
+6. **Two guards fired during implementation, each on exactly the thing it guards:** the DQ
+   registry set-equality pin (three suites — updated to the four-member set with the mint), and
+   `test_ci_pg_coverage` (the new PG suite had no CI step; one added). The 21 head pins relayed
+   `0059 → 0060`; the synthetic next-free glob relayed to `0061` with its NOTE.
+7. **Savepoint semantics verified on BOTH engines:** the unit negative control (SQLite) and the
+   PG twin (`test_completeness_fail_savepoint_semantics_on_real_pg`) both pin: gappy refresh ⇒
+   `DataQualityError`, ZERO rate rows, horizon unmoved, ONE persisted FAIL result naming the
+   missing month — and, folded from the review, the PG twin now ALSO pins the audit-row unwind
+   (zero `MARKET.BENCHMARK_RATE_CREATE`, zero `REFERENCE.UPDATE`) on the authoritative engine
+   *(the draft claimed the head-event pin on both engines while it existed only on SQLite)*.
+8. **Registers written:** the ENT-070 row + next-free → ENT-071; the taxonomy
+   `MARKET.BENCHMARK_RATE_*` activation sentence (the R-07 mint record); CTRL-034 Execution 2 +
+   the item-3 amendment + the Execution-1 stale-citation re-point + Status → Operational;
+   REQ-DQR-001 (four evaluators; the completeness half of its named gap closed) and
+   REQ-PRF-002 RE-POINTED to the OQ-5 trigger in BOTH registers; current_state CURRENT TRUTH.
+
+---
+
+## Part 8 — the review fold (2026-08-02)
+
+Four fresh-context adversarial lanes over the full diff (quant+mutation / security-RLS /
+claims-vs-diff / demo-battery-integration). Verdicts: security SOUND-WITH-FINDINGS, the other
+three REFUTED-IN-PART. **24 findings — 1 BLOCKING (procedural), 7 HIGH, 9 MED, 7 LOW — ALL
+folded**, the load-bearing ones with executed negative controls:
+
+- **BLOCKING (procedural, lane D):** the first full-PG battery ran while the quant lane was
+  mutation-testing IN THE SHARED TREE (a live mutant was observed in `dq/rules.py` mid-run) —
+  the P2 shared-tree class. Disposition: that battery is VOID as evidence; the tree was verified
+  reverted (zero mutation markers in tree or diff), `__pycache__` purged, and the battery
+  RE-RUN on the quiescent tree — the re-run below is the evidence of record. Standing lesson
+  sharpened: never overlap a mutation lane with a gate battery on one tree.
+- **HIGH (quant, proven by execution):** the `series_start`-precedes-horizon refusal fired AFTER
+  `begin_nested()`, leaving the savepoint DANGLING — a catch-and-commit caller persisted the
+  refused batch UNGATED (rate rows + horizon + head event, completeness never run), refuting the
+  verb's own "fail-closed BEFORE any surviving write" contract. FOLDED: the expected set is
+  computed pre-savepoint;
+  `test_horizon_before_series_start_refuses_with_NOTHING_persisted` is the hostile-caller
+  negative control (catch → COMMIT → zero rows, horizon None, zero events).
+- **HIGH (three lanes independently):** the ratified endpoint permission-negative tests did not
+  exist (Part 7 claimed full delivery). FOLDED: 403/404/happy-path serialization tests in
+  `apps/backend/tests/test_benchmark_series_endpoints.py`; Part 7 corrected in place.
+- **HIGH (security):** the PG savepoint twin never pinned the audit-row unwind (claimed on both
+  engines, true on one). FOLDED: zero-CREATE + zero-REFERENCE.UPDATE pins added on PG.
+- **HIGH (claims):** CTRL-034 was stamped Operational at implementation time against the
+  ratified "stamps at close, after observed operation". FOLDED: reverted to Implemented with the
+  approval noted; stamps at the observed close.
+- **HIGH (claims):** three artifacts asserted battery execution as fact pre-observation. FOLDED:
+  reworded; the close records the OBSERVED re-run (the P6 standard).
+- **MED (quant, proven):** a WARNING-downgrade of the persisted rule made a failed refresh
+  return a fabricated success dict over rolled-back data. FOLDED: the refusal raise is now
+  severity-INDEPENDENT; `test_severity_downgrade_cannot_fabricate_success` executes the
+  downgrade and proves the refusal + unwind.
+- **MED (quant, proven):** the committed-FAIL-evidence design × the gate's ANY-FAIL-forever scan
+  latch permanently. FOLDED as a recorded limitation (Part 4 + Execution 2 item 7) with the
+  latest-scoped follow-on named.
+- **MED (security):** the completeness rule was tenant-scoped while claiming series scope — a
+  second rate-bearing head would clobber the expected-set params. FOLDED: the rule is
+  HEAD-scoped (`completeness_rule_code_for`, the head id in the code).
+- **MED (claims/provenance):** "THREE independent extraction passes" overstated — two full + one
+  sampled, ALL via one proxy channel; the ratified independent hand re-verification remains
+  UNDISCHARGED and moves to the close gate (the census gained four interior anchors; interior
+  values otherwise rest on provenance, now stated everywhere honestly).
+- **MED (claims):** stage 22 dropped the ratified supersede-as-correction exercise silently.
+  FOLDED: the correction verb runs on the authoritative engine in the PG suite (a test tenant —
+  fabricating a correction on the REAL series in the demo tenant would violate data realism);
+  the narrowing recorded here.
+- **MED (claims):** current_state lost its NEXT pointer and kept a stale header date. FOLDED
+  (NEXT = LQ-1 after the DATA-1 close; 2026-08-02).
+- **The LOWs:** the observation-convention mismatch silently absorbed by the refresh diff (now a
+  loud refusal + test); the beyond-horizon-without-complete_through semantic pinned at the
+  refresh level; the duplicate-month set-semantics limitation recorded; the FAIL-evidence caller
+  contract stated in the docstring + item 7; the 12-z module docstring demoted (exactly one file
+  carries FINAL-POSITION); the 13-z "runs last in the battery" scoped to the demo suites; the
+  stage summary's horizon now taken from the verb's return, not the module constant.
+
+**What survived attack (abbreviated):** all 30 fractions verified value-by-value against the
+recon percent list (/100 exact); `evaluate_completeness` mutation-hardened (four mutants, all
+killed); `_expected_months` boundary-correct; every OTHER pre-write refusal genuinely fires
+pre-savepoint; the idempotent no-op truly silent; migration 0060 byte-parallel with 0029; the
+forged-tenant test proves the CHILD's WITH CHECK; the grants fixture complete; DC-2 payloads
+carry no rate value at any emit site; the frozen-file/mint invariants hold; count-pin neutrality
+on every code path; the CAL-1b crash class does NOT recur (EV single-row probe; USD seeded
+before the 13-z suite in both orderings); the quantize comparison exact; unit tier green from an
+ISOLATED worktree.
+
+---
+
+*Parts 9+ (close) are appended as the slice advances.*

@@ -7,7 +7,8 @@ tenant and asserts the governed end state by READING THE DATABASE, never the sta
 **The filename is load-bearing** (the standing stage-ordering discipline): TWELVE ``z`` —
 verified by ``ls`` on the tests directory (lim2 = eleven), never read off a decision record.
 
-**THE FINAL-POSITION COUNT PIN RELAYS HERE: 26/41/136 → 26/43/139** (MEASURED on a fresh-schema
+**The count pin here is POSITIONAL (DATA-1 relayed the FINAL-POSITION label to the 13-z
+suite): 26/41/136 → 26/43/139** (MEASURED on a fresh-schema
 battery, never derived). The two v2 mints are new VERSIONS of EXISTING codes, so the code count
 does NOT move (the RS-1 precedent); +2 INITIAL validations (one per v2 version); +3 COMPLETED
 runs (the scheduled BUSINESS_MONTH_END exposure tick + the v2 rolling run + the v2 sharpe run).
@@ -188,9 +189,11 @@ def test_grandfather_parity_v2_rows_equal_v1_rows(db) -> None:  # noqa: ANN001
 
 
 def test_the_final_position_count_pin(db) -> None:  # noqa: ANN001
-    """THE FINAL-POSITION PIN, relayed from the 11-z suite: 26/41/136 → **26/43/139** (MEASURED
-    on the fresh battery — never derived). The code count HOLDING at 26 while two new versions
-    land is itself the assertion: a convention move mints labels, not codes."""
+    """POSITIONAL pin (DATA-1 demoted this from FINAL-POSITION — the label relayed to the 13-z
+    DATA-1 suite, where the SAME 26/43/139 holds because a captured input mints nothing): after
+    stage 21, 26/41/136 → **26/43/139** (MEASURED on the fresh battery — never derived). The code
+    count HOLDING at 26 while two new versions land is itself the assertion: a convention move
+    mints labels, not codes."""
     model_codes = db.execute(
         select(func.count(func.distinct(Model.code))).where(Model.tenant_id == DEMO_TENANT_ID)
     ).scalar_one()

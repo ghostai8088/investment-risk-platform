@@ -327,12 +327,19 @@ def test_range_in_registry_does_not_regress_shipped_evaluators() -> None:
     from irp_shared.dq.rules import (
         REGISTRY,
         RULE_TYPE_ALLOWED_VALUES,
+        RULE_TYPE_COMPLETENESS,
         RULE_TYPE_NOT_NULL,
         evaluate_allowed_values,
         evaluate_not_null,
     )
 
-    assert set(REGISTRY) == {RULE_TYPE_NOT_NULL, RULE_TYPE_ALLOWED_VALUES, RULE_TYPE_RANGE}
+    # four generic evaluators (COMPLETENESS minted at DATA-1)
+    assert set(REGISTRY) == {
+        RULE_TYPE_NOT_NULL,
+        RULE_TYPE_ALLOWED_VALUES,
+        RULE_TYPE_RANGE,
+        RULE_TYPE_COMPLETENESS,
+    }
     # shipped evaluators' OUTPUTS unchanged
     assert evaluate_not_null({"column": "c"}, [{"c": 1}, {"c": None}]).failed_count == 1
     assert evaluate_allowed_values({"column": "c", "allowed": ["A"]}, [{"c": "B"}]).passed is False

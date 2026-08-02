@@ -4,7 +4,10 @@
   audit event (``DATA.DQ_RULE_DEFINE`` / ``DATA.DQ_RULE_UPDATE``) in the **same transaction**.
 - ``run_quality_check`` — evaluate a rule over a dataset, persist an immutable
   ``data_quality_result`` and emit ``DATA.VALIDATE``, co-transactionally; applies no-silent-failure.
-- ``assert_passed_quality_checks`` — the gate a **future** P1A-4 ingestion calls (none here).
+- ``assert_passed_quality_checks`` — the fail-closed gate; called by the P1A-4 ingestion finalize
+  (``ingestion/service.py``, ``stage_upload``) and by the DATA-1 capture-rail battery assertion.
+  *(Docstring corrected at DATA-1 — it had still said "a future P1A-4 ingestion calls (none
+  here)" long after the live caller shipped, and a planning record inherited the false claim.)*
 
 No-silent-failure (CTRL-029 / QS-15/16/06 / BR-14): a failure ALWAYS persists a flagged result;
 ``severity=ERROR`` additionally **raises** ``DataQualityError``; ``WARNING`` flags-only; an

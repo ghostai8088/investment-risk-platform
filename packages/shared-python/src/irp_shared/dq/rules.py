@@ -3,9 +3,11 @@
 A ``DQEvaluator`` is the ``DQRule.evaluate()`` interface: ``(params, dataset) -> DQEvaluation``. The
 ``REGISTRY`` maps a controlled-vocab ``rule_type`` string to an evaluator, so new GENERIC rule kinds
 register by value + a function, never a schema migration (the genericity contract, MG-01 analog).
-Exactly three generic evaluators are registered: ``not_null``, ``allowed_values``, and ``range``
-(the
-last added P2-2 for strictly-positive FX rates). No domain rules.
+Exactly four generic evaluators are registered: ``not_null``, ``allowed_values``, ``range`` (P2-2,
+strictly-positive FX rates), and ``completeness`` (DATA-1 — the REF-1-deferred rule kind whose
+persisted params carry the EXPECTED KEY SET, so the rule itself says what was expected; the
+dominant vendor-file failure mode — a file silently missing a key — finally fails loudly). No
+domain rules.
 
 ``evaluate()` ALWAYS returns a structured ``DQEvaluation`` (never None) so a failure is structurally
 un-swallowable; a malformed rule (unknown type / bad params) raises — the caller audits + reraises.
@@ -21,6 +23,8 @@ from typing import Any, Protocol
 RULE_TYPE_NOT_NULL = "NOT_NULL"
 RULE_TYPE_ALLOWED_VALUES = "ALLOWED_VALUES"
 RULE_TYPE_RANGE = "RANGE"  # P2-2: numeric bound check (e.g. strictly-positive FX rate)
+#: DATA-1 (OQ-DATA-1-4; the REF-1 trigger fired): exact expected-key-set equality, BOTH directions.
+RULE_TYPE_COMPLETENESS = "COMPLETENESS"
 
 Dataset = Sequence[Mapping[str, Any]]
 
@@ -121,11 +125,46 @@ def evaluate_range(params: Mapping[str, Any], dataset: Dataset) -> DQEvaluation:
     )
 
 
-#: The evaluator registry — exactly the three GENERIC rules (no domain-specific evaluators).
+def evaluate_completeness(params: Mapping[str, Any], dataset: Dataset) -> DQEvaluation:
+    """Generic: the dataset's ``params['key_column']`` values must equal ``params['expected']``
+    EXACTLY — both directions (a missing expected key fails; an unexpected observed key fails —
+    the census-both-directions standard). The persisted rule's params carry the expected key set
+    LITERALLY, so the rule itself says what was expected (the REF-1 trigger wording). The caller
+    computes the expected set from DECLARATIONS (never from the data being checked — a data-derived
+    boundary cannot represent a missing edge) and advances the persisted params as the declared
+    horizon moves."""
+    key_column = params.get("key_column")
+    if not isinstance(key_column, str) or not key_column:
+        raise ValueError("completeness rule params must include a non-empty string 'key_column'")
+    expected = params.get("expected")
+    if not isinstance(expected, list | tuple):
+        raise ValueError("completeness rule params must include an 'expected' key list")
+    expected_set = set(expected)
+    observed_set = {row.get(key_column) for row in dataset}
+    missing = sorted(str(k) for k in expected_set - observed_set)
+    unexpected = sorted(str(k) for k in observed_set - expected_set)
+    if not missing and not unexpected:
+        return DQEvaluation(passed=True, evaluated_count=len(dataset))
+    parts: list[str] = []
+    if missing:
+        parts.append(f"{len(missing)} expected key(s) MISSING (first: {missing[0]})")
+    if unexpected:
+        parts.append(f"{len(unexpected)} UNEXPECTED key(s) (first: {unexpected[0]})")
+    return DQEvaluation(
+        passed=False,
+        observed_value=(missing or unexpected)[0][:500],
+        detail=f"key set mismatch in column {key_column!r}: " + "; ".join(parts),
+        evaluated_count=len(dataset),
+        failed_count=len(missing) + len(unexpected),
+    )
+
+
+#: The evaluator registry — exactly the four GENERIC rules (no domain-specific evaluators).
 REGISTRY: dict[str, DQEvaluator] = {
     RULE_TYPE_NOT_NULL: evaluate_not_null,
     RULE_TYPE_ALLOWED_VALUES: evaluate_allowed_values,
     RULE_TYPE_RANGE: evaluate_range,
+    RULE_TYPE_COMPLETENESS: evaluate_completeness,
 }
 
 
