@@ -7,7 +7,8 @@ tenant and asserts the governed end state by READING THE DATABASE, never the sta
 **The filename is load-bearing** (the standing stage-ordering discipline): TWELVE ``z`` —
 verified by ``ls`` on the tests directory (lim2 = eleven), never read off a decision record.
 
-**THE FINAL-POSITION COUNT PIN RELAYS HERE: 26/41/136 → 26/43/139** (MEASURED on a fresh-schema
+**The count pin here is POSITIONAL (DATA-1 relayed the FINAL-POSITION label to the 13-z
+suite): 26/41/136 → 26/43/139** (MEASURED on a fresh-schema
 battery, never derived). The two v2 mints are new VERSIONS of EXISTING codes, so the code count
 does NOT move (the RS-1 precedent); +2 INITIAL validations (one per v2 version); +3 COMPLETED
 runs (the scheduled BUSINESS_MONTH_END exposure tick + the v2 rolling run + the v2 sharpe run).

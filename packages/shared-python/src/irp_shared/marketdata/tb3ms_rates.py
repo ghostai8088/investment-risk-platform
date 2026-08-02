@@ -11,8 +11,11 @@ Federal Reserve System, H.15 Selected Interest Rates (U.S. public domain at orig
 §105 + the Board's disclaimer; cite the Board). Access channel = FRED (series TB3MS,
 https://fred.stlouisfed.org/series/TB3MS — attribution given per its ToU). Values were read from
 proxy-rendered single-page views (fred.stlouisfed.org refuses this environment's direct fetcher)
-and verified by THREE independent extraction passes agreeing on all 30 values (two at recon, one
-at implementation, 2026-08-02), cross-checked against the Board's live H.15 daily release
+and verified by TWO full-coverage extraction passes plus ONE sampled pass (recon pass 1 full;
+recon pass 2 sampled 7 of 30; implementation pass full, 2026-08-02) — all three via the SAME
+render-proxy channel, a recorded common-mode residual (review fold: the earlier 'THREE
+independent passes' wording overstated channel independence) — cross-checked against the Board's
+live H.15 daily release
 (late-July dailies 3.69–3.82 sit 3–16bp above the June average — plausibility only). The series
 is REVISABLE (the Board's historical-correction page, selected 2002–2005 dates): a published
 correction goes through ``correct_benchmark_rate``, never a re-encode.

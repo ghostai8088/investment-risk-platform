@@ -1,7 +1,7 @@
 """The DATA-1 demo-stage suite (stage 22) — the first genuinely EXTERNAL dataset, live on PG.
 
-Runs LAST in the battery (the 13-z name sorts after every earlier demo suite; the CAL-1b relay
-precedent) so it sees the FULL demo tenant: the campaign, RM-1/SR-1, CON-1, LIM-2, CAL-1b's
+Runs last AMONG THE DEMO SUITES (the 13-z name sorts after every earlier demo suite; the CAL-1b
+relay precedent) so it sees the FULL demo tenant: the campaign, RM-1/SR-1, CON-1, LIM-2, CAL-1b's
 stage 21 — and proves stage 22 adds the real TB3MS series WITHOUT minting a single governed
 number.
 
@@ -116,7 +116,7 @@ def test_the_completeness_rule_says_what_was_expected_and_passed(db) -> None:  #
     rule = db.execute(
         select(DataQualityRule).where(
             DataQualityRule.tenant_id == DEMO_TENANT_ID,
-            DataQualityRule.code == COMPLETENESS_RULE_CODE,
+            DataQualityRule.code.like(COMPLETENESS_RULE_CODE + ".%"),
         )
     ).scalar_one()
     assert rule.rule_type == "COMPLETENESS"

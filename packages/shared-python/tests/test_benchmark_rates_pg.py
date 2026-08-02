@@ -18,7 +18,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.pool import NullPool
@@ -272,12 +272,72 @@ def test_completeness_fail_savepoint_semantics_on_real_pg(app_url: str) -> None:
         head = verify.execute(select(Benchmark)).scalars().one()
         assert head.rates_complete_through is None
         rule = verify.execute(
-            select(DataQualityRule).where(DataQualityRule.code == COMPLETENESS_RULE_CODE)
+            select(DataQualityRule).where(DataQualityRule.code.like(COMPLETENESS_RULE_CODE + ".%"))
         ).scalar_one()
         result = verify.execute(
             select(DataQualityResult).where(DataQualityResult.rule_id == rule.id)
         ).scalar_one()
         assert result.outcome == "FAIL" and "2025-03" in (result.detail or "")
+        # (Review fold, HIGH) the audit-row unwind pinned ON THE AUTHORITATIVE ENGINE too:
+        # zero per-row CREATEs and zero head REFERENCE.UPDATEs survived the savepoint rollback.
+        from irp_shared.audit.models import AuditEvent
+
+        for gone in ("MARKET.BENCHMARK_RATE_CREATE", "REFERENCE.UPDATE"):
+            count = verify.execute(
+                select(func.count())
+                .select_from(AuditEvent)
+                .where(AuditEvent.tenant_id == tenant, AuditEvent.event_type == gone)
+            ).scalar_one()
+            assert count == 0, f"{gone} survived the savepoint rollback"
+    finally:
+        verify.close()
+        engine.dispose()
+
+
+def test_correction_verb_on_the_authoritative_engine(app_url: str) -> None:
+    """The G47 revisability path (review fold, MED — ratified as demo content, exercised HERE
+    instead: fabricating a correction on the REAL series in the demo tenant would violate
+    test-data realism; a test tenant is the honest home). An H.15-style correction restates the
+    captured value as-known, prior content immutable."""
+    from irp_shared.marketdata import correct_benchmark_rate
+
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    _seed_usd(factory)
+    tenant = str(uuid.uuid4())
+    bm_id = _seed_rate(factory, tenant)  # captures 2026-06-01 @ 0.0366
+    session = factory()
+    try:
+        set_tenant_context(session, tenant)
+        bm = resolve_benchmark(session, bm_id, acting_tenant=tenant)
+        corrected = correct_benchmark_rate(
+            session,
+            bm,
+            rate_date=date(2026, 6, 1),
+            rate_value=Decimal("0.0367"),
+            restatement_reason="H.15 historical data correction (test fixture)",
+            acting_tenant=tenant,
+            actor=_ACT,
+            **_SERIES_KW,
+        )
+        assert corrected.record_version == 2
+        session.commit()
+    finally:
+        session.close()
+    # Verify in a FRESH session: `set_tenant_context` is TRANSACTION-LOCAL and auto-clears at
+    # COMMIT (the documented MD-H1 annex-4 trap — reading post-commit in the same session returns
+    # zero rows under RLS, which is exactly how the battery caught this test's first draft). The
+    # fresh read also proves the correction is DURABLE, not just flushed.
+    verify = factory()
+    try:
+        set_tenant_context(verify, tenant)
+        rows = {r.record_version: r for r in verify.execute(select(BenchmarkRate)).scalars().all()}
+        assert set(rows) == {1, 2}
+        assert rows[1].rate_value == Decimal("0.036600000000")  # prior content NEVER mutated
+        assert rows[1].system_to is not None  # only the system axis closed
+        assert rows[2].rate_value == Decimal("0.036700000000")
+        assert rows[2].restatement_reason == "H.15 historical data correction (test fixture)"
+        assert rows[2].supersedes_id == rows[1].id
     finally:
         verify.close()
         engine.dispose()

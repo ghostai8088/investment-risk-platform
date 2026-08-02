@@ -24,11 +24,18 @@ pattern on the marketdata rail, OQ-DATA-1-6/7):
   set derives from TWO DECLARATIONS (``series_start`` → the horizon; never from the data), the
   persisted ``COMPLETENESS`` rule's params are advanced first (``update_dq_rule``, so the rule
   always says what was last expected), and the check runs through ``run_quality_check``.
-- **FAIL evidence COMMITS while the data rolls back** (OQ-DATA-1-6): the batch's writes live in a
-  ``begin_nested()`` savepoint; a completeness FAIL rolls the savepoint back (zero rate rows,
+- **FAIL evidence survives while the data rolls back** (OQ-DATA-1-6): the batch's writes live in
+  a ``begin_nested()`` savepoint; a completeness FAIL rolls the savepoint back (zero rate rows,
   horizon unmoved, the head's ``REFERENCE.UPDATE`` unwound) and the FAIL
   ``data_quality_result`` + ``DATA.VALIDATE`` audit persist OUTSIDE it before
   ``DataQualityError`` propagates — the gate's ANY-FAIL arm is reachable, not vacuous.
+  **The caller contract (review fold): the evidence sits PENDING in the outer transaction — the
+  caller must catch ``DataQualityError`` and COMMIT for it to survive; a rollback-on-error
+  caller discards it** (the PG suite's savepoint test is the executed pattern). A refresh with
+  NO declared horizon commits its data WITHOUT a completeness check (nothing to gate against —
+  the un-gated state is downstream-refused by ``assert_passed_quality_checks`` finding zero
+  recorded checks). The refusal raise is severity-INDEPENDENT: a WARNING-downgraded rule cannot
+  make a failed refresh return success.
 
 Audit grain: per-row ``MARKET.BENCHMARK_RATE_*`` (capture=1 CREATE; supersede=2; correct=2 — the
 ENT-052 grain) + ONE ``REFERENCE.UPDATE`` on the ``benchmark`` head per effective refresh (the
@@ -79,11 +86,20 @@ MARKET_BENCHMARK_RATE_CORRECTION_EVENT = "MARKET.BENCHMARK_RATE_CORRECTION"
 
 ENTITY_BENCHMARK_RATE = "benchmark_rate"
 
-#: The series-scoped completeness rule (RULE_TYPE_COMPLETENESS, DATA-1). Params carry the expected
-#: month-key set LITERALLY (the REF-1 trigger wording) and advance with the declared horizon.
+#: The completeness rule-code PREFIX (RULE_TYPE_COMPLETENESS, DATA-1). The persisted rule is
+#: HEAD-scoped — one rule per benchmark head, keyed by the head's id (review fold, MED: a single
+#: per-tenant code would clobber the expected-set params last-writer-wins across heads, degrading
+#: the REF-1 "the rule says what was expected" record). Params carry the expected month-key set
+#: LITERALLY and advance with the declared horizon.
 COMPLETENESS_RULE_CODE = "benchmark_rate.monthly_completeness"
 COMPLETENESS_RULE_NAME = "Benchmark rate series monthly completeness (declared start → horizon)"
 _COMPLETENESS_KEY_COLUMN = "month"
+
+
+def completeness_rule_code_for(benchmark: Benchmark) -> str:
+    """The head-scoped completeness rule code (fits ``data_quality_rule.code`` String(150):
+    36-char prefix + '.' + 36-char UUID)."""
+    return f"{COMPLETENESS_RULE_CODE}.{benchmark.id}"
 
 
 def _validate_rate_keys(
@@ -393,6 +409,15 @@ def refresh_benchmark_rates(
                 f"({head.rate_value} vs supplied {value}) — a vendor revision goes through "
                 "correct_benchmark_rate with a restatement reason, never a silent refresh"
             )
+        elif head.observation_convention != observation_convention:
+            # (Review fold, LOW) a convention mismatch on a captured date must not be absorbed
+            # as a silent no-op — the direct-capture path would hit the unique index; this path
+            # never captures, so it refuses explicitly.
+            raise BenchmarkSeriesValueError(
+                f"rate for {day} is already captured under observation_convention "
+                f"{head.observation_convention!r} (supplied {observation_convention!r}) — a "
+                "convention change re-executes the CTRL-034 checklist, never a silent refresh"
+            )
 
     # FORWARD-ONLY horizon; may not outrun the data (OQ-DATA-1-6).
     prior_horizon = benchmark.rates_complete_through
@@ -423,6 +448,16 @@ def refresh_benchmark_rates(
             "added": 0,
             "rates_complete_through": prior_horizon,
             "completeness_ran": False,
+        }
+
+    # The expected set is computed BEFORE the savepoint opens (review fold, HIGH: computed after,
+    # the series_start-precedes-horizon refusal escaped the except and left the savepoint DANGLING
+    # — a catch-and-commit caller then persisted the refused batch ungated).
+    params: dict[str, Any] | None = None
+    if new_horizon is not None:
+        params = {
+            "key_column": _COMPLETENESS_KEY_COLUMN,
+            "expected": _expected_months(series_start, new_horizon),
         }
 
     # --- the DATA savepoint: rate rows + the horizon advance + the head event live and die
@@ -473,7 +508,7 @@ def refresh_benchmark_rates(
         savepoint.rollback()
         raise
 
-    if new_horizon is None:
+    if params is None:
         # No declared horizon → nothing to gate against (the un-gated state is downstream-refused
         # exactly like a NULL calendar coverage). The data commits.
         savepoint.commit()
@@ -483,10 +518,6 @@ def refresh_benchmark_rates(
             "completeness_ran": False,
         }
 
-    params = {
-        "key_column": _COMPLETENESS_KEY_COLUMN,
-        "expected": _expected_months(series_start, new_horizon),
-    }
     evaluation = evaluate_rule(RULE_TYPE_COMPLETENESS, params, month_rows)  # pure pre-check
     if evaluation.passed:
         savepoint.commit()
@@ -498,14 +529,14 @@ def refresh_benchmark_rates(
         tenant_id=acting_tenant,
         actor=actor,
         entity_type=ENTITY_BENCHMARK_RATE,
-        code=COMPLETENESS_RULE_CODE,
+        code=completeness_rule_code_for(benchmark),
         name=COMPLETENESS_RULE_NAME,
         rule_type=RULE_TYPE_COMPLETENESS,
         params=params,
     )
     if rule.params != params:  # advance the persisted expected set (the rule says what was
         update_dq_rule(session, rule, actor_id=actor.actor_id, params=params)  # last expected)
-    run_quality_check(  # persists PASS or FAIL evidence + DATA.VALIDATE; raises on FAIL
+    run_quality_check(  # persists PASS or FAIL evidence + DATA.VALIDATE; raises on ERROR-FAIL
         session,
         rule=rule,
         dataset=month_rows,
@@ -514,6 +545,15 @@ def refresh_benchmark_rates(
         target_entity_id=str(benchmark.id),
         actor_type=actor.actor_type,
     )
+    if not evaluation.passed:
+        # (Review fold, MED) the refresh contract must NOT delegate to the rule's MUTABLE
+        # severity: a WARNING-downgraded rule makes run_quality_check return WARN without
+        # raising, and the verb would have returned a fabricated success over rolled-back data.
+        # run_quality_check normally raises first (ERROR severity); this arm is the backstop.
+        raise BenchmarkSeriesValueError(
+            "completeness failed but the persisted rule did not raise (its severity has been "
+            "downgraded below ERROR) — the refresh refuses regardless; the batch was rolled back"
+        )
     return {
         "added": len(additions),
         "rates_complete_through": new_horizon,
@@ -528,6 +568,7 @@ __all__ = [
     "MARKET_BENCHMARK_RATE_UPDATE_EVENT",
     "MARKET_BENCHMARK_RATE_CORRECTION_EVENT",
     "COMPLETENESS_RULE_CODE",
+    "completeness_rule_code_for",
     "capture_benchmark_rate",
     "supersede_benchmark_rate",
     "correct_benchmark_rate",

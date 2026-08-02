@@ -1,6 +1,6 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-08-01) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-08-02) — read this block; everything below it is HISTORY
 >
 > **CAL-1b IS CLOSED (Wave-14 slice 3, second half of the ratified split — CAL-1 COMPLETE) — the
 > atomic BUSINESS month-end convention move.** Merged via **PR #162** = `33aca0d` (the EIGHTH
@@ -10,21 +10,24 @@
 > `0059`); next free canonical id **ENT-071** (ENT-070 `benchmark_rate` minted at DATA-1;
 > ENT-032 stays the sole reservation); demo counts **26/43/139** (the FINAL-POSITION label
 > relayed to the 13-z DATA-1 suite, where the pin NOT moving is the assertion — a captured input
-> mints nothing); hybrid set N = 7 unchanged.
+> mints nothing); hybrid set N = 7 unchanged. NEXT = LQ-1 (after the
+> DATA-1 close).
 >
 > - **DATA-1 SHIPPED WITH THIS PR (2026-08-02) — the first genuinely EXTERNAL dataset,
 >   capture-first (planning RATIFIED same day, merged PR #164 = `de20d4b`; OQ-DATA-1-1…12):**
 >   ENT-070 `benchmark_rate` (migration `0060`; the third series-observation table under the
 >   benchmark header; `quote_basis` IN the key; `observation_convention` ON the row — the
 >   OQ-CAL-1-9 convention-field option PAID-BY-DESIGN); the 30 hand-verified TB3MS literals
->   (Board/H.15 origin, public domain; FRED the attributed access channel; a THIRD independent
->   extraction at implementation agreed on all 30); `refresh_benchmark_rates` (ADD-ONLY,
+>   (Board/H.15 origin, public domain; FRED the attributed access channel; two full-coverage
+>   extraction passes + one sampled, ALL via the same render proxy — the census pins endpoints +
+>   four interior anchors; interior assurance rests on provenance, recorded honestly); `refresh_benchmark_rates` (ADD-ONLY,
 >   forward-only horizon that may not outrun the data, differing-value refusal naming the
 >   correct verb, ONE series per head, idempotent-silent no-op) with the DATA-1-minted
 >   **`RULE_TYPE_COMPLETENESS`** (fourth generic evaluator; expected key set IN the persisted
 >   rule — REF-1's trigger fired; savepoint-preserved FAIL evidence, negative-controlled on
->   BOTH engines); `GET /benchmarks/{id}/rates`; demo stage 22 + the 13-z suite; CTRL-034
->   **Execution 2** + the H-05-approved item-3 clarifying amendment + Status → **Operational**;
+>   BOTH engines (the PG twin incl. the audit-row unwind pins)); `GET /benchmarks/{id}/rates`; demo stage 22 + the 13-z suite; CTRL-034
+>   **Execution 2** + the H-05-approved item-3 clarifying amendment (Operational stamps at the
+>   observed close, OQ-DATA-1-9);
 >   `MARKET.BENCHMARK_RATE_*` minted (taxonomy row = the R-07 record). **Feeds NO governed
 >   number** — the yield→period-return registered model + Sharpe re-source is the named
 >   OQ-DATA-1-1a carry; the P3-8 trading-calendar wiring re-deferred IN FULL (ratified

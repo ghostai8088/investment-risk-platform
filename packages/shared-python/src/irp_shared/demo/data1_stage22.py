@@ -134,9 +134,12 @@ def run_demo_data1_stage22(session: Session) -> Data1Stage22Summary:
     if rerun["added"] != 0 or rerun["completeness_ran"]:
         raise DemoData1Error(f"the identical re-run was not a silent no-op: {rerun}")
 
+    declared = first["rates_complete_through"]
+    if not isinstance(declared, date):  # the verb's own declaration, never the module constant
+        raise DemoData1Error(f"the refresh declared no horizon: {first}")
     return Data1Stage22Summary(
         benchmark_id=str(benchmark.id),
         added=int(first["added"]),
-        rates_complete_through=TB3MS_COMPLETE_THROUGH,
+        rates_complete_through=declared,
         rerun_added=int(rerun["added"]),
     )

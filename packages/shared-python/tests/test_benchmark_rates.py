@@ -32,7 +32,6 @@ from irp_shared.dq.models import DataQualityResult, DataQualityRule
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.marketdata import (
-    COMPLETENESS_RULE_CODE,
     MARKET_BENCHMARK_RATE_CORRECTION_EVENT,
     MARKET_BENCHMARK_RATE_CREATE_EVENT,
     MARKET_BENCHMARK_RATE_UPDATE_EVENT,
@@ -41,6 +40,7 @@ from irp_shared.marketdata import (
     BenchmarkSeriesValueError,
     capture_benchmark,
     capture_benchmark_rate,
+    completeness_rule_code_for,
     correct_benchmark_rate,
     list_benchmark_rates,
     reconstruct_benchmark_rate_as_of,
@@ -148,9 +148,16 @@ def test_the_tb3ms_dataset_census() -> None:
         expected.add(date(year, month, 1))
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
     assert set(dates) == expected
-    # POSITIVE anchors: the published endpoints (5.22% and 3.66% as fractions)
+    # POSITIVE anchors: the published endpoints (5.22% and 3.66% as fractions) plus four
+    # INTERIOR anchors (review fold: the census pins regression-guard interior values too —
+    # noting honestly that hand-coded anchors validate future edits, not birth transcription,
+    # which rests on the recorded provenance passes)
     assert TB3MS_RATES[0] == (date(2024, 1, 1), Decimal("0.0522"))
     assert TB3MS_RATES[-1] == (date(2026, 6, 1), Decimal("0.0366"))
+    assert dict(TB3MS_RATES)[date(2024, 9, 1)] == Decimal("0.0472")
+    assert dict(TB3MS_RATES)[date(2024, 12, 1)] == Decimal("0.0427")
+    assert dict(TB3MS_RATES)[date(2025, 6, 1)] == Decimal("0.0423")
+    assert dict(TB3MS_RATES)[date(2025, 12, 1)] == Decimal("0.0359")
     # units: FRACTIONS, never percent (a 5.22 literal would be a percent-scale transcription slip)
     assert all(Decimal("0.03") < v < Decimal("0.055") for v in values)
     # the easing path: the 2024 average sits above the 2026 average
@@ -324,7 +331,8 @@ def test_first_refresh_captures_the_full_series_and_passes_completeness(
     # the persisted rule literally says what was expected (the REF-1 trigger)
     rule = session.execute(
         select(DataQualityRule).where(
-            DataQualityRule.tenant_id == tenant, DataQualityRule.code == COMPLETENESS_RULE_CODE
+            DataQualityRule.tenant_id == tenant,
+            DataQualityRule.code == completeness_rule_code_for(bm),
         )
     ).scalar_one()
     assert rule.params["expected"][0] == "2024-01" and rule.params["expected"][-1] == "2026-06"
@@ -361,7 +369,8 @@ def test_add_only_extension_advances_horizon_and_reruns_completeness(session: Se
     assert out["added"] == 1 and out["completeness_ran"] is True
     rule = session.execute(
         select(DataQualityRule).where(
-            DataQualityRule.tenant_id == tenant, DataQualityRule.code == COMPLETENESS_RULE_CODE
+            DataQualityRule.tenant_id == tenant,
+            DataQualityRule.code == completeness_rule_code_for(bm),
         )
     ).scalar_one()
     assert len(rule.params["expected"]) == 31 and rule.params["expected"][-1] == "2026-07"
@@ -415,10 +424,15 @@ def test_horizon_may_not_outrun_the_data(session: Session) -> None:
         _refresh(session, bm, tenant, complete_through=date(2026, 7, 31))
 
 
-def test_horizon_before_series_start_refuses(session: Session) -> None:
+def test_horizon_before_series_start_refuses_with_NOTHING_persisted(session: Session) -> None:
+    """The dangling-savepoint negative control (review fold, HIGH): the refusal fired AFTER
+    begin_nested() in the first implementation, so a catch-and-commit caller persisted the refused
+    batch ungated. Now the refusal fires pre-savepoint: after catch + COMMIT, zero rows, horizon
+    None, zero head events."""
     tenant = str(uuid.uuid4())
     _ccy(session)
     bm = _benchmark(session, tenant)
+    events_before = session.execute(select(func.count()).select_from(AuditEvent)).scalar_one()
     with pytest.raises(BenchmarkSeriesValueError, match="precedes series_start"):
         _refresh(
             session,
@@ -428,6 +442,80 @@ def test_horizon_before_series_start_refuses(session: Session) -> None:
             series_start=date(2024, 2, 1),
             complete_through=date(2024, 1, 31),
         )
+    session.commit()  # the hostile caller: catch, then commit the session anyway
+    assert list_benchmark_rates(session, acting_tenant=tenant, benchmark_id=bm.id) == []
+    assert bm.rates_complete_through is None
+    events_after = session.execute(select(func.count()).select_from(AuditEvent)).scalar_one()
+    assert events_after == events_before  # no head event, no per-row event survived
+
+
+def test_severity_downgrade_cannot_fabricate_success(session: Session) -> None:
+    """The severity-downgrade negative control (review fold, MED): with the persisted rule
+    downgraded to WARNING via the governed update verb, a gappy refresh must STILL refuse —
+    never return a success dict over rolled-back data."""
+    from irp_shared.dq.service import update_dq_rule
+
+    tenant = str(uuid.uuid4())
+    _ccy(session)
+    bm = _benchmark(session, tenant)
+    _refresh(session, bm, tenant)  # clean series; the head-scoped rule now exists
+    rule = session.execute(
+        select(DataQualityRule).where(
+            DataQualityRule.tenant_id == tenant,
+            DataQualityRule.code == completeness_rule_code_for(bm),
+        )
+    ).scalar_one()
+    update_dq_rule(session, rule, actor_id="steward", severity="WARNING")
+    july_gap = dict(TB3MS_RATES) | {date(2026, 8, 1): Decimal("0.0371")}  # skips 2026-07
+    with pytest.raises(BenchmarkSeriesValueError, match="severity"):
+        _refresh(session, bm, tenant, rates=july_gap, complete_through=date(2026, 8, 31))
+    rows = list_benchmark_rates(session, acting_tenant=tenant, benchmark_id=bm.id)
+    assert len(rows) == 30 and bm.rates_complete_through == TB3MS_COMPLETE_THROUGH  # unwound
+
+
+def test_observation_convention_mismatch_refuses_not_absorbed(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review fold (LOW): re-supplying a captured date under a DIFFERENT observation_convention
+    must refuse loudly, not absorb as a no-op."""
+    tenant = str(uuid.uuid4())
+    _ccy(session)
+    bm = _benchmark(session, tenant)
+    _refresh(session, bm, tenant)
+    monkeypatch.setattr(
+        br_mod,
+        "BENCHMARK_RATE_OBSERVATION_CONVENTIONS",
+        (OBSERVATION_CONVENTION_MONTHLY_AVG_BUSINESS_DAYS, "MONTH_END_SAMPLED"),
+    )
+    with pytest.raises(BenchmarkSeriesValueError, match="observation_convention"):
+        _refresh(session, bm, tenant, observation_convention="MONTH_END_SAMPLED")
+
+
+def test_beyond_horizon_addition_without_matching_complete_through_refuses(
+    session: Session,
+) -> None:
+    """The Part-7-item-2 semantic, pinned at the REFRESH level (review fold, LOW): a 31st month
+    supplied WITHOUT the matching complete_through is an UNEXPECTED key -> completeness FAIL ->
+    the whole batch unwinds."""
+    tenant = str(uuid.uuid4())
+    _ccy(session)
+    bm = _benchmark(session, tenant)
+    _refresh(session, bm, tenant)
+    july = dict(TB3MS_RATES) | {date(2026, 7, 1): Decimal("0.0371")}
+    with pytest.raises(DataQualityError):
+        _refresh(session, bm, tenant, rates=july)  # complete_through stays 2026-06-30
+    rows = list_benchmark_rates(session, acting_tenant=tenant, benchmark_id=bm.id)
+    assert len(rows) == 30  # the July row unwound
+    fails = (
+        session.execute(
+            select(DataQualityResult).where(
+                DataQualityResult.tenant_id == tenant, DataQualityResult.outcome == "FAIL"
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(fails) == 1 and "2026-07" in (fails[0].detail or "")
 
 
 def test_completeness_FAIL_unwinds_the_batch_but_keeps_the_FAIL_evidence(
@@ -447,7 +535,8 @@ def test_completeness_FAIL_unwinds_the_batch_but_keeps_the_FAIL_evidence(
     assert _events(session, MARKET_BENCHMARK_RATE_CREATE_EVENT) == 0
     rule = session.execute(
         select(DataQualityRule).where(
-            DataQualityRule.tenant_id == tenant, DataQualityRule.code == COMPLETENESS_RULE_CODE
+            DataQualityRule.tenant_id == tenant,
+            DataQualityRule.code == completeness_rule_code_for(bm),
         )
     ).scalar_one()
     result = session.execute(
