@@ -898,7 +898,7 @@ def test_nothing_imports_snapshot() -> None:
     its pinned commitment/call/distribution/mark components) — which read the bound snapshot's
     pinned components + build their input snapshot (the AD-014 single-bind) — and ``demo`` (MG-1:
     the campaign runner orchestrates the real consume-existing paths from ABOVE every domain, like
-    the apps layer; nothing imports it). ``concentration`` joined at CON-1 (OQ-CON-1-19: the NEW
+    the apps layer; nothing imports it). ``liquidity`` joined at LQ-1 on identical grounds. ``concentration`` joined at CON-1 (OQ-CON-1-19: the NEW
     package amends this allow-list as THE VISIBLE ACT that keeps the fence honest — the ratified
     reason concentration was not buried in ``risk/`` where it would inherit the exemption
     silently; its binder builds the CONCENTRATION_INPUT snapshot + reads its pinned components,
@@ -913,6 +913,11 @@ def test_nothing_imports_snapshot() -> None:
             or "pacing" in path.parts
             or "demo" in path.parts
             or "concentration" in path.parts
+            # LQ-1: the liquidity binder joins on IDENTICAL grounds to concentration — it builds
+            # the LIQUIDITY_INPUT snapshot and reads its pinned components (the AD-014 single
+            # bind). Admitted by name rather than by loosening the rule: the fence's value is that
+            # each member had to be argued for, and a wildcard would end that.
+            or "liquidity" in path.parts
             or path.name == "models.py"
         ):
             continue

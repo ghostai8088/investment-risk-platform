@@ -66,6 +66,12 @@ SUMMARY_METRIC_TYPES: tuple[str, ...] = (
 )
 LIQUIDITY_METRIC_TYPES: tuple[str, ...] = (METRIC_TYPE_TIER_SHARE, *SUMMARY_METRIC_TYPES)
 
+#: The run family. Declared HERE rather than in ``service.py`` deliberately: the GS2 census
+#: (``test_the_run_family_is_NEVER_a_metric_type_for_ANY_family``) discovers constants by walking
+#: ``*.events`` and ``*.models`` modules, so a RUN_TYPE_* declared in a service module escapes the
+#: very guard that exists to catch a run family colliding with a metric name. Found by running it.
+RUN_TYPE_LIQUIDITY = "LIQUIDITY"
+
 #: The denominator, adopted from CON-1 unchanged (ratified OQ-LQ-1-5). Echoed on every row so a
 #: reader never has to infer which book a share was taken against.
 DENOMINATOR_BASIS_INVESTED_LONG = "INVESTED_LONG"

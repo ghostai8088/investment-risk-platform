@@ -1488,7 +1488,7 @@ def test_migration_chain_0038(session: Session) -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0060_benchmark_rate"  # DATA-1
+    assert script.get_current_head() == "0061_liquidity_result"  # LQ-1
     assert (
         script.get_revision("0038_var_residual_variance").down_revision
         == "0037_proxy_weight_estimate"
