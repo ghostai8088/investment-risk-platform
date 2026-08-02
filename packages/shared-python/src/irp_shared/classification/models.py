@@ -72,9 +72,16 @@ HYBRID_CLASSIFICATION_TABLES: tuple[str, ...] = tuple(
 #: migration). SECTOR_INDUSTRY is ONE hierarchical dimension (OQ-REF-1-1).
 DIMENSION_KIND_SECTOR_INDUSTRY = "SECTOR_INDUSTRY"
 DIMENSION_KIND_COUNTRY_OF_RISK = "COUNTRY_OF_RISK"
+#: LQ-1 (ratified OQ-LQ-1-2): the liquidity tier rides this rail rather than minting a table — it is
+#: a curated code assigned to an instrument on a dimension, structurally identical to sector and
+#: country. **A kind added HERE and nowhere else compiles, imports and passes every census, then
+#: refuses EVERY capture at runtime** — ``BASIS_BY_DIMENSION_KIND`` below is the second mandatory
+#: declaration site (LQ-1 trap T4; only an EXECUTED capture reaches it).
+DIMENSION_KIND_LIQUIDITY_TIER = "LIQUIDITY_TIER"
 DIMENSION_KINDS: tuple[str, ...] = (
     DIMENSION_KIND_SECTOR_INDUSTRY,
     DIMENSION_KIND_COUNTRY_OF_RISK,
+    DIMENSION_KIND_LIQUIDITY_TIER,
 )
 
 #: ``basis`` controlled vocabulary. NOT NULL with a sentinel for kinds that do not carry one — the
@@ -100,6 +107,16 @@ BASES: tuple[str, ...] = (BASIS_NOT_APPLICABLE, *COUNTRY_OF_RISK_BASES)
 BASIS_BY_DIMENSION_KIND: dict[str, tuple[str, ...]] = {
     DIMENSION_KIND_SECTOR_INDUSTRY: (BASIS_NOT_APPLICABLE,),
     DIMENSION_KIND_COUNTRY_OF_RISK: COUNTRY_OF_RISK_BASES,
+    # LQ-1: the sentinel ONLY. The ladder's semantics (the day thresholds) are declared on the
+    # SCHEME, not carried as a basis — so a liquidity row has no convention to disambiguate. The
+    # guard is NOT vacuous even at one admissible value: it is what refuses a liquidity row that
+    # arrives carrying a stray COUNTRY_OF_RISK basis.
+    #
+    # RECORDED, NOT IMPLEMENTED: 22e-4(b)(1)(ii) permits classification at the ASSET-CLASS level as
+    # well as the investment level ("portfolio investments or asset classes (as applicable)"). That
+    # is a genuine future basis distinction; v1 captures investment-level only, and admitting an
+    # asset-class basis is an additive value here — deliberately NOT ratified at the LQ-1 gate.
+    DIMENSION_KIND_LIQUIDITY_TIER: (BASIS_NOT_APPLICABLE,),
 }
 
 #: Polymorphic assignment target (the ``identifier_xref`` P1B-3 posture: no domain FK, one
@@ -111,6 +128,40 @@ ASSIGNMENT_ENTITY_TYPES: tuple[str, ...] = (ENTITY_TYPE_INSTRUMENT,)
 #: Scheme families seeded or admitted in v1 (MG-01 plain strings).
 SCHEME_FAMILY_ISIC = "ISIC"
 SCHEME_FAMILY_ISO_3166_1 = "ISO_3166_1"
+#: LQ-1 (ratified OQ-LQ-1-15): the liquidity ladder is the FOUR categories 17 CFR 270.22e-4(b)(1)(ii)
+#: NAMES — the rule supplies the vocabulary, so this is a transcription, not a design.
+SCHEME_FAMILY_SEC_22E4 = "SEC_22E4"
+
+#: The four 22e-4(b)(1)(ii) codes, IN ORDINAL ORDER (most → least liquid). Verbatim from the
+#: govinfo edition ``CFR-2024-title17-vol5-sec270-22e-4.xml``: "classify each of the fund's
+#: portfolio investments (including each of the fund's derivatives transactions) as a highly liquid
+#: investment, moderately liquid investment, less liquid investment, or illiquid investment."
+#:
+#: The ordinal lives HERE as a declared tuple rather than as a column: ``classification_node.level``
+#: is tree DEPTH, not severity, and the only shipped ordinal-in-a-vocabulary precedent
+#: (``rating_grade.rank``) is on a different table. Nothing in LQ-1 v1 needs to compare two tiers —
+#: the illiquid partition is a SINGLE named category, not a threshold on the ladder — so a column
+#: would be unused weight.
+TIER_HIGHLY_LIQUID = "HIGHLY_LIQUID"
+TIER_MODERATELY_LIQUID = "MODERATELY_LIQUID"
+TIER_LESS_LIQUID = "LESS_LIQUID"
+TIER_ILLIQUID = "ILLIQUID"
+LIQUIDITY_TIER_CODES: tuple[str, ...] = (
+    TIER_HIGHLY_LIQUID,
+    TIER_MODERATELY_LIQUID,
+    TIER_LESS_LIQUID,
+    TIER_ILLIQUID,
+)
+
+#: The day thresholds the rule attaches to each category, as the SCHEME's declared semantics. Held
+#: as descriptive text on the seeded nodes; the platform never computes from them (the tier is a
+#: captured judgment, per 22e-4(a)(8) "any investment that the fund reasonably expects…").
+LIQUIDITY_TIER_SEMANTICS: dict[str, str] = {
+    TIER_HIGHLY_LIQUID: "convertible to cash within 3 business days without significant price impact",
+    TIER_MODERATELY_LIQUID: "convertible to cash in more than 3 but 7 calendar days or less",
+    TIER_LESS_LIQUID: "saleable within 7 calendar days but settlement expected to take longer",
+    TIER_ILLIQUID: "not saleable within 7 calendar days without significantly changing market value",
+}
 
 
 class ClassificationScheme(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin, Base):
