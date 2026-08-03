@@ -78,3 +78,41 @@ def test_migrations_directory_is_discovered() -> None:
     # Guard the guard: a wrong parents[] depth would make the sweep vacuously pass on zero files.
     assert _MIGRATIONS.is_dir()
     assert any(_MIGRATIONS.glob("*.py")), "no migration files found — the sweep would be vacuous"
+
+
+def test_every_orm_model_is_reachable_from_the_aggregator() -> None:
+    """Every mapped table must be in ``Base.metadata`` via ``irp_shared.models``.
+
+    LQ-1 shipped ``liquidity_result`` without registering it, so ``Base.metadata`` was short one
+    table and ``alembic check`` — CI's schema-drift gate — emitted ``remove_table`` plus seven
+    ``remove_index`` operations for the new governed table. Autogenerate would have proposed
+    DROPPING an IA append-only governed-evidence table.
+
+    This is the SECOND omission of its kind, which is why it becomes a census rather than a note:
+    importing the aggregator alone cannot prove completeness, so this walks every ``*models*``
+    module in the package and asserts each mapped table is present in the aggregated metadata.
+    """
+    import importlib
+    import pkgutil
+
+    import irp_shared
+    import irp_shared.models  # noqa: F401  - populate the aggregate first
+    from irp_shared.db.base import Base
+
+    aggregated = set(Base.metadata.tables)
+    discovered: dict[str, str] = {}
+    for info in pkgutil.walk_packages(irp_shared.__path__, prefix="irp_shared."):
+        if "models" not in info.name.rsplit(".", 1)[-1]:
+            continue
+        module = importlib.import_module(info.name)
+        for obj in vars(module).values():
+            table = getattr(obj, "__tablename__", None)
+            if isinstance(table, str) and isinstance(obj, type) and issubclass(obj, Base):
+                discovered[table] = info.name
+
+    missing = sorted(t for t in discovered if t not in aggregated)
+    assert not missing, (
+        f"mapped tables absent from irp_shared.models (alembic would propose DROPPING them): "
+        f"{ {t: discovered[t] for t in missing} }"
+    )
+    assert len(discovered) > 50, "the census scanned suspiciously few models — the walk is broken"

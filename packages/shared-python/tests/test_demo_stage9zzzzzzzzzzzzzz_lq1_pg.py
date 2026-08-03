@@ -13,6 +13,7 @@ it can never be mistaken for a completed one.
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -177,14 +178,10 @@ def test_the_model_is_registered_with_its_limitations(db) -> None:  # noqa: ANN0
     from irp_shared.model.models import ModelLimitation, ModelVersion
 
     model = db.execute(
-        select(Model).where(
-            Model.tenant_id == DEMO_TENANT_ID, Model.code == LIQUIDITY_MODEL_CODE
-        )
+        select(Model).where(Model.tenant_id == DEMO_TENANT_ID, Model.code == LIQUIDITY_MODEL_CODE)
     ).scalar_one()
     versions = list(
-        db.execute(
-            select(ModelVersion).where(ModelVersion.model_id == model.id)
-        ).scalars()
+        db.execute(select(ModelVersion).where(ModelVersion.model_id == model.id)).scalars()
     )
     assert versions
     texts = [

@@ -128,7 +128,8 @@ ASSIGNMENT_ENTITY_TYPES: tuple[str, ...] = (ENTITY_TYPE_INSTRUMENT,)
 #: Scheme families seeded or admitted in v1 (MG-01 plain strings).
 SCHEME_FAMILY_ISIC = "ISIC"
 SCHEME_FAMILY_ISO_3166_1 = "ISO_3166_1"
-#: LQ-1 (ratified OQ-LQ-1-15): the liquidity ladder is the FOUR categories 17 CFR 270.22e-4(b)(1)(ii)
+#: LQ-1 (ratified OQ-LQ-1-15): the liquidity ladder is the FOUR categories 17 CFR
+#: 270.22e-4(b)(1)(ii)
 #: NAMES — the rule supplies the vocabulary, so this is a transcription, not a design.
 SCHEME_FAMILY_SEC_22E4 = "SEC_22E4"
 
@@ -157,10 +158,14 @@ LIQUIDITY_TIER_CODES: tuple[str, ...] = (
 #: as descriptive text on the seeded nodes; the platform never computes from them (the tier is a
 #: captured judgment, per 22e-4(a)(8) "any investment that the fund reasonably expects…").
 LIQUIDITY_TIER_SEMANTICS: dict[str, str] = {
-    TIER_HIGHLY_LIQUID: "convertible to cash within 3 business days without significant price impact",
+    TIER_HIGHLY_LIQUID: (
+        "convertible to cash within 3 business days without significant price impact"
+    ),
     TIER_MODERATELY_LIQUID: "convertible to cash in more than 3 but 7 calendar days or less",
     TIER_LESS_LIQUID: "saleable within 7 calendar days but settlement expected to take longer",
-    TIER_ILLIQUID: "not saleable within 7 calendar days without significantly changing market value",
+    TIER_ILLIQUID: (
+        "not saleable within 7 calendar days without significantly changing market value"
+    ),
 }
 
 

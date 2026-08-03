@@ -26,6 +26,7 @@ from irp_shared.exposure.models import ExposureAggregate
 from irp_shared.ingestion.models import IngestionBatch, IngestionStagedRecord
 from irp_shared.limit.models import Breach, LimitDefinition
 from irp_shared.lineage.models import DataSource, LineageEdge
+from irp_shared.liquidity.models import LiquidityResult
 from irp_shared.marketdata.models import (
     BenchmarkLevel,
     BenchmarkReturn,
@@ -153,6 +154,7 @@ __all__ = [
     "ProxyMapping",
     "ExposureAggregate",
     "ConcentrationResult",
+    "LiquidityResult",
     "SensitivityResult",
     "FactorExposureResult",
     "CovarianceResult",

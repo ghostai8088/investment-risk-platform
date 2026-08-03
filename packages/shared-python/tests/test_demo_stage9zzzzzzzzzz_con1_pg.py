@@ -256,7 +256,10 @@ def test_the_view_read_never_returns_issuer_identity(summary, db) -> None:  # no
 
 
 def test_demo_counts_moved_to_the_declared_triple_at_final_position(db) -> None:  # noqa: ANN001
-    """POSITIONAL pin (the FINAL-POSITION label has since moved on; at LQ-1 it lives in the 14-z suite). Each prior slice demoted only its IMMEDIATE predecessor, so three suites were left actively claiming a label that had moved past them — swept here. The pin below is still a real assertion about this stage's position in the chain.
+    """POSITIONAL pin (the FINAL-POSITION label has since moved on; at LQ-1 it lives in the 14-z
+    suite). Each prior slice demoted only its IMMEDIATE predecessor, so three suites were left
+    actively claiming a label that had moved past them — swept here. The pin below is still a
+    real assertion about this stage's position in the chain.
 
     Relayed from the 9-z suite: 25/40/133 → **26/41/136** (OQ-CON-1-22,
     re-measured here on the fresh battery — never derived)."""

@@ -51,8 +51,13 @@ def app_url() -> str:
             )
         )
         conn.execute(text("GRANT USAGE ON SCHEMA public TO irp_app"))
-        for table in ("liquidity_result", "model", "model_version", "calculation_run",
-                      "dataset_snapshot"):
+        for table in (
+            "liquidity_result",
+            "model",
+            "model_version",
+            "calculation_run",
+            "dataset_snapshot",
+        ):
             conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO irp_app"))
     superuser.dispose()
     return (

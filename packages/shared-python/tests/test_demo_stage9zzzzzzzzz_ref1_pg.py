@@ -201,7 +201,10 @@ def test_the_sector_of_a_leaf_resolves_through_the_ancestor_walk(db) -> None:  #
 
 
 def test_demo_counts_are_UNCHANGED_at_the_final_position(db) -> None:  # noqa: ANN001
-    """POSITIONAL pin (the FINAL-POSITION label has since moved on; at LQ-1 it lives in the 14-z suite). Each prior slice demoted only its IMMEDIATE predecessor, so three suites were left actively claiming a label that had moved past them — swept here. The pin below is still a real assertion about this stage's position in the chain.
+    """POSITIONAL pin (the FINAL-POSITION label has since moved on; at LQ-1 it lives in the 14-z
+    suite). Each prior slice demoted only its IMMEDIATE predecessor, so three suites were left
+    actively claiming a label that had moved past them — swept here. The pin below is still a
+    real assertion about this stage's position in the chain.
 
     Relayed to this suite — and asserting the numbers did NOT move.
 

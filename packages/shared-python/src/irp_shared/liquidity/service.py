@@ -64,9 +64,11 @@ class LiquidityInputError(ValueError):
 class _PinnedContent:
     atoms: list[dict[str, Any]] = field(default_factory=list)
     tier_by_instrument: dict[str, str] = field(default_factory=dict)
-    #: The newest ``system_from`` across pinned assignments — the staleness probe's input.
-    newest_assignment_at: datetime | None = None
+    #: The OLDEST pinned assignment clock — the staleness probe's input. (An earlier draft also
+    #: tracked the newest and never read it; a field nothing consumes is a claim nothing checks.)
     oldest_assignment_at: datetime | None = None
+    #: Pinned assignments carrying no clock at all. Non-zero refuses: unknown age is not fresh.
+    undateable_assignments: int = 0
 
 
 def _parse_pins(components: list[Any]) -> _PinnedContent:
@@ -77,13 +79,25 @@ def _parse_pins(components: list[Any]) -> _PinnedContent:
             pinned.atoms.append(content)
         elif comp.component_kind == COMPONENT_KIND_CLASSIFICATION:
             pinned.tier_by_instrument[content["entity_id"]] = _level1_code(content)
-            stamped = content.get("system_from")
-            if stamped:
-                when = datetime.fromisoformat(str(stamped))
-                if when.tzinfo is None:
-                    when = when.replace(tzinfo=UTC)
-                if pinned.newest_assignment_at is None or when > pinned.newest_assignment_at:
-                    pinned.newest_assignment_at = when
+            # The tier's age comes from the COMPONENT COLUMN, not from the captured JSON.
+            #
+            # The first version read content["system_from"], which the assignment serializer does
+            # NOT emit — it emits exactly nine keys and that is not one of them. So
+            # oldest_assignment_at was always None, the staleness guard never entered its body, and
+            # the ratified OQ-LQ-1-9 refusal was STRUCTURALLY UNFIREABLE while a registered model
+            # limitation told every reader the platform would refuse a stale ladder. Four review
+            # lanes found it independently; an end-to-end probe ran a 3,650-day-old ladder against
+            # a declared 31-day bound and the run COMPLETED.
+            #
+            # pinned_system_from is populated for every one of these components and is NOT an input
+            # to content_hash/manifest_hash, so reading it here moves no historical pin.
+            stamped = getattr(comp, "pinned_system_from", None)
+            if stamped is None:
+                # A component with no clock cannot be aged. Fail CLOSED: record it so the binder
+                # refuses, rather than silently treating "unknown age" as "fresh".
+                pinned.undateable_assignments += 1
+            else:
+                when = stamped if stamped.tzinfo else stamped.replace(tzinfo=UTC)
                 if pinned.oldest_assignment_at is None or when < pinned.oldest_assignment_at:
                     pinned.oldest_assignment_at = when
     return pinned
@@ -233,6 +247,12 @@ def run_liquidity(
             return [], [f"{GAP_CORRUPT_PINNED_CONTENT} ({exc})"]
 
         # Staleness: enforced against the run's clock, which is why it lives here and not at build.
+        if pinned.undateable_assignments:
+            gaps.append(
+                f"{GAP_STALE_TIERS}: {pinned.undateable_assignments} pinned tier assignment(s) "
+                f"carry no system clock, so their age cannot be established — refusing rather "
+                f"than treating unknown age as fresh"
+            )
         if pinned.oldest_assignment_at is not None:
             age = datetime.now(UTC) - pinned.oldest_assignment_at
             if age > timedelta(days=tier_max_age_days):

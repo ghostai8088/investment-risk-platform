@@ -118,3 +118,69 @@ def test_shares_round_half_up_at_six_places(amount: str, expected: str) -> None:
         (Atom("a", _d(amount), "ILLIQUID"), Atom("b", _d(str(3 - int(amount))), "HIGHLY_LIQUID"))
     )
     assert r.illiquid_share == _d(expected)
+
+
+# --- the staleness refusal (ratified OQ-LQ-1-9 arm C) ---
+
+
+class _StubComponent:
+    """A pinned component with only what ``_parse_pins`` reads."""
+
+    def __init__(self, kind: str, content: str, stamped: object) -> None:
+        self.component_kind = kind
+        self.captured_content = content
+        self.pinned_system_from = stamped
+
+
+def _assignment_content(instrument: str, tier: str) -> str:
+    import json
+
+    return json.dumps(
+        {
+            "id": "x",
+            "entity_id": instrument,
+            "entity_type": "instrument",
+            "dimension_kind": "LIQUIDITY_TIER",
+            "basis": "NOT_APPLICABLE",
+            "node_code": tier,
+            "scheme_id": "s",
+            "tenant_id": "t",
+            "closure": [{"code": tier, "level": 1}],
+        }
+    )
+
+
+def test_the_staleness_probe_reads_the_component_column_not_the_json() -> None:
+    """The defect four review lanes found INDEPENDENTLY.
+
+    The first implementation read ``content["system_from"]``. The assignment serializer emits nine
+    keys and that is not one of them, so ``oldest_assignment_at`` was always None, the guard never
+    entered its body, and the ratified staleness refusal was STRUCTURALLY UNFIREABLE — while a
+    registered model limitation told every reader the platform would refuse a stale ladder. An
+    end-to-end probe ran a 3,650-day-old ladder against a declared 31-day bound and it COMPLETED.
+
+    This asserts the parse reads ``pinned_system_from``, which is a COLUMN on the component and is
+    not an input to the content hash — so reading it moves no historical pin.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from irp_shared.liquidity.service import _parse_pins
+
+    old = datetime.now(UTC) - timedelta(days=400)
+    pinned = _parse_pins(
+        [_StubComponent("CLASSIFICATION", _assignment_content("i1", "ILLIQUID"), old)]
+    )
+    assert pinned.oldest_assignment_at == old, "the probe read nothing — the refusal is dead again"
+    assert pinned.tier_by_instrument == {"i1": "ILLIQUID"}
+    assert pinned.undateable_assignments == 0
+
+
+def test_a_component_with_no_clock_REFUSES_rather_than_reading_as_fresh() -> None:
+    """Unknown age is not freshness. A component carrying no clock must make the binder refuse."""
+    from irp_shared.liquidity.service import _parse_pins
+
+    pinned = _parse_pins(
+        [_StubComponent("CLASSIFICATION", _assignment_content("i1", "ILLIQUID"), None)]
+    )
+    assert pinned.undateable_assignments == 1
+    assert pinned.oldest_assignment_at is None
