@@ -105,6 +105,21 @@ export function RunDetail({ session }: { session: Session }): ReactElement {
             </div>
           ) : null}
 
+          {run.limitations && run.limitations.length > 0 ? (
+            <div className="limitations" role="note">
+              {/* The Wave-14 close (re-adjudicated MED): the API returned these and NO screen on
+                  the ratified surface rendered them. The first one is the one that matters — this
+                  number is NOT the Rule 22e-4 15% test, and a reader of the run page must see
+                  that NEXT TO the number, not in a registry pane elsewhere. */}
+              <strong>Registered model limitations</strong>
+              <ul>
+                {run.limitations.map((text, i) => (
+                  <li key={i}>{text}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <h3>Provenance</h3>
           <table className="provenance">
             <tbody>
