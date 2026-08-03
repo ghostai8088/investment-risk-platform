@@ -2,15 +2,43 @@
 
 > ## ⚠️ CURRENT TRUTH (2026-08-02) — read this block; everything below it is HISTORY
 >
-> **DATA-1 IS CLOSED (Wave-14 slice 3.5) — the first genuinely EXTERNAL dataset on the governed
-> rails.** Merged via **PR #165** = `0d5eb4a` (the TENTH autonomous merge), merged-main CI
-> observed green on all six jobs (run 30757419834); the P1 seven-ledger sweep executed and clean
-> (all five slice commits ancestors of main; merged tree byte-identical `65b43ca` to the
-> 2,950-test-validated tree). Migration head **`0060`** (`0060_benchmark_rate`; was `0059`); next free canonical id
-> **ENT-071** (ENT-070 `benchmark_rate` minted at DATA-1; ENT-032 stays the sole reservation);
-> demo counts **26/43/139** (the FINAL-POSITION label relayed to the 13-z DATA-1 suite, where the
-> pin NOT moving is the assertion — a captured input mints nothing); hybrid set N = 7 unchanged.
-> **Wave 14 has ONE slice left: NEXT = LQ-1.**
+> **LQ-1 IS CLOSED — and WAVE 14 IS COMPLETE.** The 24th governed number family: liquidity
+> tiers as a captured judgment, and the illiquid share of the invested-long book as a governed
+> number. Merged via **PR #168** = `28f76ca` (the ELEVENTH autonomous merge); the P1 seven-ledger
+> sweep executed and clean (all fifteen slice commits ancestors of main; merged tree
+> byte-identical to the 2,954-test-validated tree). Migration head **`0061`**
+> (`0061_liquidity_result`; was `0060`); next free canonical id **ENT-072** (ENT-071
+> `liquidity_result` minted at LQ-1; **TWO** paper-only reservations remain — ENT-032 AND ENT-058,
+> a ledger-1 self-contradiction corrected here); demo counts **27/44/141 MEASURED**; hybrid set
+> N = 7 unchanged. **NEXT = the Wave-14 close review, a SEPARATE activity** (ratified OQ-LQ-1-20,
+> on the Wave-13 pattern that produced P1–P7), then the Wave-15 openers DEP-1 + RPT-1.
+>
+> - **LQ-1 (2026-08-02):** the captured half mints NO entity — tier assignment rides REF-1's
+>   `classification_assignment` as `dimension_kind = LIQUIDITY_TIER`, with the SEC Rule
+>   22e-4(b)(1)(ii) ladder (the four categories the RULE names) SYSTEM-seeded on the existing
+>   hybrid vocabulary. ENT-071 is IA append-only, run-bound + snapshot-gated + model-bound with
+>   its OWN snapshot PURPOSE and builder. **This number is NOT the Rule 22e-4 15% test** — the
+>   denominator is the invested-long book, not net assets, and the error direction is
+>   **INDETERMINATE**; the metric is named `illiquid_share_invested_long`, and limits are REFUSED
+>   until a NAV entity exists. Tier assignment is INSTRUMENT-grain and cannot reflect the
+>   fund-specific position-size determination 22e-4(b)(1)(ii)(B) requires — a ratified deliberate
+>   simplification, and the trigger for a future position-grain slice.
+> - **TWELVE defects, ALL found by EXECUTION, none by reading.** Six while building; six by a
+>   five-lane adversarial review (31/35 findings survived independent verification). **THREE of
+>   them were controls that were WRITTEN, BELIEVED AND INERT** — the staleness refusal (which
+>   lived in an immutable model-limitation row and in no code path; four lanes found it
+>   independently), the sub-floor demo control (floor equal to coverage, strict `<`), and the
+>   author's own kernel tests (which asserted the implementation rather than the requirement).
+>   **Two were gates reported green that had never been run**: `make check` was red on the branch,
+>   and `liquidity_result` was absent from the ORM aggregator so `alembic check` would have
+>   proposed DROPPING governed evidence. Standing lesson, now in the record: *a refusal is not
+>   implemented until a test has made it FIRE, and a control is not a control until the fix that
+>   would break it has been executed against it.*
+>
+> - **DATA-1 CLOSED (2026-08-02, PR #165 = `0d5eb4a`)** — the first genuinely EXTERNAL dataset,
+>   capture-first. **Its open item is UNCHANGED and still needs a human:** the ratified independent
+>   re-verification of the 30 TB3MS literals is UNDISCHARGED (all three extraction passes shared
+>   ONE render-proxy channel — a common-mode residual, not confirmation).
 >
 > - **THE ONE OPEN ITEM THAT NEEDS A HUMAN:** the ratified independent re-verification of the
 >   30 TB3MS literals is **UNDISCHARGED**. Three extraction passes ran, but ALL THREE went
