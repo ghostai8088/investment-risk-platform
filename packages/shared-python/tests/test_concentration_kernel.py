@@ -386,12 +386,40 @@ class TestGovernancePins:
         }, "auditor_3l must NEVER hold the issuer-identity read (the three-mint precedent)"
 
     def test_issuer_is_not_an_assignment_dimension(self) -> None:
-        """ISSUER is CON-1-owned: no classification assignment may carry it (OQ-CON-1-23)."""
-        from irp_shared.classification.models import DIMENSION_KINDS
+        """ISSUER is CON-1-owned: no classification assignment may carry it (OQ-CON-1-23).
+
+        AMENDED AT LQ-1, deliberately and with the reason recorded. The original form asserted
+        ``set(CONCENTRATION_DIMENSION_KINDS) == set(DIMENSION_KINDS) | {ISSUER}`` — an EQUALITY that
+        silently required the two vocabularies to move together forever. LQ-1 adds LIQUIDITY_TIER to
+        the assignment vocabulary, which turned this red and applied exactly the pressure the LQ-1
+        record named as trap T5: the cheap "fix" is to add LIQUIDITY_TIER to CON-1's tuple, which
+        would make liquidity a CONCENTRATION BUCKET, force a migration amending
+        ``ck_concentration_dimension_kind``, and quietly re-scope a shipped governed family.
+
+        What the test was actually FOR is the one-directional claim: CON-1 owns ISSUER, and no
+        classification assignment may carry it. That claim is preserved and strengthened below —
+        the containment direction is asserted explicitly, so a future assignment kind added WITHOUT
+        a concentration decision no longer breaks this test, while an assignment kind that leaks
+        into the concentration vocabulary without ISSUER's exemption still does.
+        """
+        from irp_shared.classification.models import (
+            DIMENSION_KIND_LIQUIDITY_TIER,
+            DIMENSION_KINDS,
+        )
         from irp_shared.concentration.models import (
             CONCENTRATION_DIMENSION_KINDS,
             DIMENSION_KIND_ISSUER,
         )
 
+        # The load-bearing claim, unchanged: ISSUER is CON-1-owned and never assignable.
         assert DIMENSION_KIND_ISSUER not in DIMENSION_KINDS
-        assert set(CONCENTRATION_DIMENSION_KINDS) == set(DIMENSION_KINDS) | {DIMENSION_KIND_ISSUER}
+        assert DIMENSION_KIND_ISSUER in CONCENTRATION_DIMENSION_KINDS
+
+        # Every concentration kind other than ISSUER must be a real assignment kind — this is what
+        # stops a bucket being invented that no assignment can populate.
+        assert set(CONCENTRATION_DIMENSION_KINDS) - {DIMENSION_KIND_ISSUER} <= set(DIMENSION_KINDS)
+
+        # And LQ-1's own pin, stated as a NEGATIVE so the amendment above cannot be undone quietly:
+        # the liquidity tier is an assignment dimension and is NOT a concentration bucket.
+        assert DIMENSION_KIND_LIQUIDITY_TIER in DIMENSION_KINDS
+        assert DIMENSION_KIND_LIQUIDITY_TIER not in CONCENTRATION_DIMENSION_KINDS

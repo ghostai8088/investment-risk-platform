@@ -14,7 +14,7 @@ structurally blind to both.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
@@ -25,7 +25,11 @@ from irp_shared.classification.models import (
     BASIS_NOT_APPLICABLE,
     BASIS_ULTIMATE_RISK,
     DIMENSION_KIND_COUNTRY_OF_RISK,
+    DIMENSION_KIND_LIQUIDITY_TIER,
     DIMENSION_KIND_SECTOR_INDUSTRY,
+    LIQUIDITY_TIER_CODES,
+    LIQUIDITY_TIER_SEMANTICS,
+    SCHEME_FAMILY_SEC_22E4,
     ClassificationAssignment,
     ClassificationNode,
 )
@@ -39,6 +43,8 @@ from irp_shared.classification.service import (
     correct_assignment,
     create_node,
     create_scheme,
+    list_assignments,
+    reconstruct_assignment_as_of,
     resolve_ancestors,
     resolve_node,
     supersede_assignment,
@@ -604,3 +610,208 @@ def test_resolve_ancestors_refuses_an_invisible_parent(session: Session) -> None
     # POSITIVE control: a fully visible chain still resolves.
     visible = resolve_node(session, scheme_id=scheme.id, code="C", acting_tenant=TENANT)
     assert resolve_ancestors(session, node=visible, acting_tenant=TENANT) == []
+
+
+# --------------------------------------------------------------------------------------------
+# The read verbs (LQ-1: REF-1's gap PAID)
+# --------------------------------------------------------------------------------------------
+
+
+def _tier_scheme(session: Session, actor: ClassificationActor):  # noqa: ANN202
+    """The SEC 22e-4 ladder: four codes the RULE names, seeded as one flat level."""
+    scheme = create_scheme(
+        session,
+        actor=actor,
+        scheme_family=SCHEME_FAMILY_SEC_22E4,
+        version_label="2024",
+        name="SEC Rule 22e-4 liquidity categories",
+        dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+        authority="SEC",
+    )
+    for code in LIQUIDITY_TIER_CODES:
+        create_node(
+            session,
+            actor=actor,
+            scheme_id=scheme.id,
+            code=code,
+            name=code.replace("_", " ").title(),
+            level=1,
+            description=LIQUIDITY_TIER_SEMANTICS[code],
+        )
+    return scheme
+
+
+def test_list_assignments_returns_only_current_heads(session: Session) -> None:
+    actor = _actor()
+    scheme = _tier_scheme(session, actor)
+    entity = str(uuid.uuid4())
+    capture_assignment(
+        session,
+        actor=actor,
+        entity_type="instrument",
+        entity_id=entity,
+        scheme_id=scheme.id,
+        dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+        node_code="HIGHLY_LIQUID",
+    )
+    supersede_assignment(
+        session,
+        actor=actor,
+        entity_type="instrument",
+        entity_id=entity,
+        scheme_id=scheme.id,
+        dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+        node_code="LESS_LIQUID",
+    )
+    session.flush()
+
+    rows = list_assignments(session, acting_tenant=TENANT, entity_id=entity)
+    assert [r.node_code for r in rows] == ["LESS_LIQUID"], "a superseded version is not a head"
+
+
+def test_list_assignments_narrows_by_dimension_kind(session: Session) -> None:
+    """Two kinds on ONE instrument must not bleed into each other's listing."""
+    actor = _actor()
+    tiers = _tier_scheme(session, actor)
+    sectors = _isic(session, actor)
+    create_node(session, actor=actor, scheme_id=sectors.id, code="C", name="Manufacturing", level=1)
+    entity = str(uuid.uuid4())
+    for scheme_id, kind, code in (
+        (tiers.id, DIMENSION_KIND_LIQUIDITY_TIER, "ILLIQUID"),
+        (sectors.id, DIMENSION_KIND_SECTOR_INDUSTRY, "C"),
+    ):
+        capture_assignment(
+            session,
+            actor=actor,
+            entity_type="instrument",
+            entity_id=entity,
+            scheme_id=scheme_id,
+            dimension_kind=kind,
+            node_code=code,
+        )
+    session.flush()
+
+    assert len(list_assignments(session, acting_tenant=TENANT, entity_id=entity)) == 2
+    tier_only = list_assignments(
+        session,
+        acting_tenant=TENANT,
+        entity_id=entity,
+        dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+    )
+    assert [r.node_code for r in tier_only] == ["ILLIQUID"]
+
+
+def test_list_assignments_refuses_an_unknown_dimension_kind(session: Session) -> None:
+    """A typo'd filter must REFUSE, never silently return the empty list.
+
+    A filter that validates nothing turns 'no such kind' into 'no rows', which reads as a clean
+    book. This is the vacuous-read class, not a convenience.
+    """
+    with pytest.raises(ClassificationValueError, match="dimension_kind"):
+        list_assignments(session, acting_tenant=TENANT, dimension_kind="LIQUIDTY_TIER")
+
+
+def test_list_assignments_is_tenant_scoped(session: Session) -> None:
+    actor = _actor()
+    scheme = _tier_scheme(session, actor)
+    entity = str(uuid.uuid4())
+    capture_assignment(
+        session,
+        actor=actor,
+        entity_type="instrument",
+        entity_id=entity,
+        scheme_id=scheme.id,
+        dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+        node_code="ILLIQUID",
+    )
+    session.flush()
+
+    assert list_assignments(session, acting_tenant=TENANT, entity_id=entity)
+    assert list_assignments(session, acting_tenant=OTHER_TENANT, entity_id=entity) == []
+
+
+def test_reconstruct_is_blind_to_a_correction_issued_after_known_at(session: Session) -> None:
+    """THE property the governed half's reproducibility rests on.
+
+    A run pinned before a correction must keep reading what the book said AT THAT TIME. If a later
+    correction leaked backwards, a re-run of a historical liquidity number would silently change —
+    which is the whole thing AD-014 exists to prevent.
+    """
+    actor = _actor()
+    scheme = _tier_scheme(session, actor)
+    entity = str(uuid.uuid4())
+    original = capture_assignment(
+        session,
+        actor=actor,
+        entity_type="instrument",
+        entity_id=entity,
+        scheme_id=scheme.id,
+        dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+        node_code="MODERATELY_LIQUID",
+    )
+    session.flush()
+    before_correction = datetime.now(UTC)
+
+    correct_assignment(
+        session,
+        actor=actor,
+        entity_type="instrument",
+        entity_id=entity,
+        scheme_id=scheme.id,
+        dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+        node_code="ILLIQUID",
+        restatement_reason="the vendor restated the classification",
+    )
+    session.flush()
+
+    keys = {
+        "entity_type": "instrument",
+        "entity_id": entity,
+        "scheme_id": scheme.id,
+        "dimension_kind": DIMENSION_KIND_LIQUIDITY_TIER,
+    }
+    as_known_then = reconstruct_assignment_as_of(
+        session,
+        acting_tenant=TENANT,
+        valid_at=original.valid_from,
+        known_at=before_correction,
+        **keys,
+    )
+    assert as_known_then is not None
+    assert as_known_then.node_code == "MODERATELY_LIQUID", "the correction leaked backwards"
+
+    as_known_now = reconstruct_assignment_as_of(
+        session, acting_tenant=TENANT, valid_at=original.valid_from, **keys
+    )
+    assert as_known_now is not None
+    assert as_known_now.node_code == "ILLIQUID", "today's read must see the correction"
+
+
+def test_reconstruct_before_the_valid_interval_returns_none(session: Session) -> None:
+    """An instrument had NO tier before it was ever assigned one — that is not 'highly liquid'."""
+    actor = _actor()
+    scheme = _tier_scheme(session, actor)
+    entity = str(uuid.uuid4())
+    row = capture_assignment(
+        session,
+        actor=actor,
+        entity_type="instrument",
+        entity_id=entity,
+        scheme_id=scheme.id,
+        dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+        node_code="HIGHLY_LIQUID",
+    )
+    session.flush()
+
+    assert (
+        reconstruct_assignment_as_of(
+            session,
+            acting_tenant=TENANT,
+            entity_type="instrument",
+            entity_id=entity,
+            scheme_id=scheme.id,
+            dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
+            valid_at=row.valid_from - timedelta(days=1),
+        )
+        is None
+    )

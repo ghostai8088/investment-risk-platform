@@ -466,7 +466,12 @@ _EXPOSURE_IMPORTERS = frozenset(
     # exposure run (RUN_TYPE_EXPOSURE_AGGREGATE + the atom lister ride the import). The visible
     # whitelist amendment is the fence's design (the OQ-CON-1-19 posture, same as the snapshot
     # fence): set equality, so the entry shrinks with the truth if the importer ever goes away.
-    {"models.py", "demo", "snapshot", "risk", "scheduling", "concentration"}
+    # LQ-1 (2026-08-02): `liquidity` joined on IDENTICAL grounds — its binder resolves the
+    # EXPLICITLY SELECTED upstream exposure run to DERIVE the run's portfolio scope, rather than
+    # accepting a caller-supplied portfolio_id it never verified (the review's H1). The import is
+    # the cost of that fix and is admitted BY NAME; widening the fence would have been the cheaper
+    # and wrong move.
+    {"models.py", "demo", "snapshot", "risk", "scheduling", "concentration", "liquidity"}
 )
 
 

@@ -53,7 +53,12 @@ type CountKey =
   // the four-column grain, an integer. `n_observations` is already listed above.
   | "window_months"
   // NOTIF-1 (breach notification): the source audit-event cursor position, an integer.
-  | "source_sequence_no";
+  | "source_sequence_no"
+  // LQ-1 (ENT-071): the number of pinned instruments carrying no liquidity tier — a count of
+  // NAMES, not money. It sits beside coverage_ratio deliberately: the ratio alone cannot tell one
+  // large untiered holding from many small ones, and those are different data-quality stories.
+  // Every monetary and share field on LiquidityRowOut is a string, as the contract requires.
+  | "untiered_instrument_count";
 
 /** Keys of `T` whose value can be a `number`. A governed decimal is `string`, so it never qualifies
  * — unless it regressed to `number` or `number | string`. (`-?` strips optionality so nullable

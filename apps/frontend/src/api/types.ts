@@ -96,6 +96,14 @@ export const FAMILIES = {
     label: "Concentration",
     permissionFamily: "concentration",
   },
+  // LQ-1 (ratified OQ-LQ-1-8): its own permission family. liquidity.view gates the whole surface
+  // — unlike concentration there is no narrower identity read to split off, because nothing in
+  // the payload carries a proprietary identity.
+  liquidity: {
+    runType: "LIQUIDITY",
+    label: "Liquidity tiers",
+    permissionFamily: "liquidity",
+  },
 } as const;
 
 export type Family = keyof typeof FAMILIES;
@@ -114,6 +122,7 @@ export const RUN_TYPE_TO_FAMILY: Record<string, Family> = {
   DESMOOTHED_RETURN: "desmoothed-returns",
   PROXY_WEIGHT_ESTIMATE: "proxy-weight-estimates",
   CONCENTRATION: "concentration",
+  LIQUIDITY: "liquidity",
 };
 
 /** The run-detail fetch URL for a family: exposure and the perf families have their own endpoint
@@ -129,6 +138,7 @@ export function runDetailUrl(family: Family, runId: string): string {
   // collides with /risk/scenarios/{scenario_id} (the definition + its shocks).
   if (family === "scenarios") return `/risk/scenario-runs/${id}`;
   if (family === "concentration") return `/concentration/runs/${id}`;
+  if (family === "liquidity") return `/liquidity/runs/${id}`;
   return `/risk/${family}/runs/${id}`;
 }
 
@@ -151,6 +161,7 @@ type FamilyRowOut = {
   "desmoothed-returns": Schemas["DesmoothedReturnRowOut"];
   "proxy-weight-estimates": Schemas["ProxyWeightRowOut"];
   concentration: Schemas["ConcentrationRowOut"];
+  liquidity: Schemas["LiquidityRowOut"];
 };
 
 /** A display column whose `key` MUST be a field on family F's generated row DTO. This is the FE-2
@@ -316,6 +327,21 @@ export const FAMILY_ROW_COLUMNS: { [F in Family]: FamilyColumn<F>[] } = {
     { key: "metric_value", label: "Value" },
     { key: "coverage_ratio", label: "Coverage" },
     { key: "coverage_classifiable", label: "Classifiable cov." },
+    { key: "denominator_basis", label: "Denominator basis" },
+  ],
+  // LQ-1. The denominator basis is shown on EVERY row, not tucked away: the column is what stops
+  // "Illiquid share" being read as the Rule 22e-4 15% test, whose denominator is net assets.
+  // untiered_instrument_count sits beside coverage because the ratio alone cannot distinguish one
+  // large untiered holding from many small ones.
+  liquidity: [
+    { key: "row_kind", label: "Kind" },
+    { key: "bucket_code", label: "Tier" },
+    { key: "metric_type", label: "Metric" },
+    { key: "tier_share", label: "Tier share" },
+    { key: "metric_value", label: "Value" },
+    { key: "long_amount", label: "Long amount" },
+    { key: "coverage_ratio", label: "Coverage" },
+    { key: "untiered_instrument_count", label: "Untiered names" },
     { key: "denominator_basis", label: "Denominator basis" },
   ],
 };

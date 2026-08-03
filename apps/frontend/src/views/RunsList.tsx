@@ -64,10 +64,12 @@ export function RunsList({ session }: { session: Session }): ReactElement {
     const isPerf = permissionFamily === "perf";
     if (runType && !isExposure) params.set("run_type", runType);
     const isConcentration = permissionFamily === "concentration";
+    const isLiquidity = permissionFamily === "liquidity";
     let base = "/risk/runs";
     if (isExposure) base = "/exposure/runs";
     else if (isPerf) base = "/perf/runs";
     else if (isConcentration) base = "/concentration/runs";
+    else if (isLiquidity) base = "/liquidity/runs";
     const url = `${base}?${params.toString()}`;
     setItems(null);
     setError(null);

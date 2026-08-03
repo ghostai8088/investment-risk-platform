@@ -163,6 +163,15 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("concentration.run", "Run governed dimensional-concentration calculations"),
     ("concentration.view", "View concentration results (no issuer identity)"),
     ("concentration.issuer.view", "View ISSUER-dimension concentration detail (issuer identity)"),
+    # LQ-1 (ratified OQ-LQ-1-13) — a governed R-07 mint. TWO codes, and deliberately NOT three:
+    # nothing in the liquidity payload carries a proprietary identity, so there is no narrower
+    # read to split off. auditor_3l HOLDS liquidity.view because it is a governed OUTPUT (the
+    # concentration.view placement); the CAPTURED tier assignments are read through
+    # reference.classification_assignment.view, which EXCLUDES auditor_3l. The two sit on opposite
+    # sides of the auditor line, which is why one combined code was refused — SoD pins are
+    # per-code, so a route on the wrong guard would pass every shipped test (REF-1's BLOCKING).
+    ("liquidity.run", "Run governed liquidity-tier calculations"),
+    ("liquidity.view", "View liquidity tier distribution results"),
     # SCH-1 scheduling (ENT-061 schedule / ENT-062 scheduled_run, Wave-11 slice 1) — a governed
     # R-07 mint (OD-SCH-1-G, ratified 2026-07-23). BOTH codes NEW — a schedule is a control-plane
     # config object that DRIVES governed-number production; neither a risk nor a performance verb
@@ -303,6 +312,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "concentration.run",
         "concentration.view",
         "concentration.issuer.view",
+        # LQ-1: steward is a maker — run + view (the concentration.run placement).
+        "liquidity.run",
+        "liquidity.view",
         # SCH-1 scheduling: steward is an ops maker — manage + view (the pacing.run precedent).
         "schedule.manage",
         "schedule.view",
@@ -354,6 +366,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # CON-1: the 1L analyst RUNS concentration (maker) + both view codes.
         "concentration.run",
         "concentration.view",
+        "liquidity.run",
+        "liquidity.view",
         "concentration.issuer.view",
         # SCH-1 scheduling: the 1L analyst is the risk maker — manages + views schedules.
         "schedule.manage",
@@ -410,6 +424,7 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "pacing.view",
         # CON-1: 2L view-only, BOTH codes (concentration.run is maker/admin-only).
         "concentration.view",
+        "liquidity.view",
         "concentration.issuer.view",
         # SCH-1 scheduling: 2L view-only (schedule.manage is maker/admin-only).
         "schedule.view",
@@ -464,6 +479,7 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # class three prior mints refused the auditor (reference.issuer/legal_entity/
         # classification_assignment.view), and this split exists precisely so this line can differ.
         "concentration.view",
+        "liquidity.view",
         # SCH-1 scheduling: the 3L auditor VIEWS schedules + the scheduled_run ledger — a governed
         # control-plane object is 3L-oversight scope (the pacing.view precedent).
         "schedule.view",

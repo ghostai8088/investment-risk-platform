@@ -561,7 +561,16 @@ def test_no_migration_and_no_entity() -> None:
     #
     # NOTE (DATA-1): relayed 0060 -> 0061 (0060 = benchmark_rate, the captured published-rate
     # series). The guard has still never fired on the thing it guards.
-    assert not list(versions.glob("0061*")), "no 0061 migration may be added by the synthetic slice"
+    #
+    # NOTE (LQ-1): relayed 0061 -> 0062 (0061 = liquidity_result, ENT-071). FIVE consecutive slices
+    # have now paid this relay without the guard once firing on a synthetic-slice migration. That
+    # is worth stating plainly rather than relaying a sixth time in silence: a guard whose only
+    # observed behaviour is obstructing legitimate work is a candidate for re-expression — the
+    # honest form is "the synthetic package declares no migration", asserted against the synthetic
+    # module's own surface, not against whatever number happens to be next. Recorded as a carry
+    # with a trigger (the next slice that pays this relay), NOT changed here: re-expressing a
+    # guard in the same commit that trips it is how a real fence gets quietly softened.
+    assert not list(versions.glob("0062*")), "no 0062 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -

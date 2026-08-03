@@ -113,6 +113,17 @@ PURPOSE_SHARPE_INPUT = "SHARPE_INPUT"
 #: classification assignments (incl. ``basis``) + ancestor closure, and the referenced
 #: ``classification_scheme`` rows (the OQ-CON-1-24 discriminator inputs).
 PURPOSE_CONCENTRATION_INPUT = "CONCENTRATION_INPUT"
+#: LQ-1 (ratified OQ-LQ-1-17, ENT-071): pins the THREE shapes a liquidity run consumes — the
+#: exposure atoms (the existing EXPOSURE kind), the current-head LIQUIDITY_TIER assignments, and
+#: the referenced ``classification_scheme`` rows (the mixed-VERSION discriminator's inputs).
+#:
+#: This is minted rather than reusing ``CONCENTRATION_INPUT`` for a reason worth stating: reusing
+#: another family's PURPOSE would not merely be untidy, it would be INERT. ``_persist_snapshot``
+#: gates on the purpose allow-list and every builder is hard-bound to its own purpose + binding
+#: predicate, so "reuse COMPONENT_KIND_CLASSIFICATION" buys nothing on its own — the component KIND
+#: is reused unchanged (no new kind is minted), but the PURPOSE, the predicate and the builder are
+#: the artifacts that actually bind, and they are LQ-1's own.
+PURPOSE_LIQUIDITY_INPUT = "LIQUIDITY_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 
@@ -126,6 +137,7 @@ PURPOSE_TEST = "TEST"
 #: tuple at the shared tail would have made every PA-3 and RS-1 snapshot build fail closed. The
 #: change is additive in the only direction that matters — nothing previously accepted is refused.
 SNAPSHOT_PURPOSES = (
+    PURPOSE_LIQUIDITY_INPUT,
     PURPOSE_EXPOSURE_INPUT,
     PURPOSE_SENSITIVITY_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
