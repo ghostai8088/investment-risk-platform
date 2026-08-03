@@ -882,16 +882,23 @@ def list_assignments(
     entity_id: str | None = None,
     scheme_id: str | None = None,
     dimension_kind: str | None = None,
-    as_of: datetime | None = None,
+    known_at: datetime | None = None,
 ) -> list[ClassificationAssignment]:
     """Current-head assignments for the acting tenant, narrowed by any supplied filter.
 
-    ``as_of`` reconstructs the AS-KNOWN state at that instant (the system axis) rather than today's
-    heads — ``None`` means "as known now". The valid axis is deliberately NOT exposed here: a list
-    read answers "what does the book say", and mixing both axes in one filter set is how REF-1's
-    ancestor walk acquired its two incompatible readings of ``as_of``. Point-in-time on the valid
-    axis is ``reconstruct_assignment_as_of``, which requires the full logical key and so cannot be
-    confused with a listing.
+    ``known_at`` reconstructs the AS-KNOWN state at that instant (the SYSTEM axis) rather than
+    today's heads — ``None`` means "as known now". The parameter is named ``known_at`` and not
+    ``as_of`` deliberately: it moves ONE axis, and the review found that the earlier name invited
+    exactly the wrong reading.
+
+    **The valid-axis filter differs by branch, and that is the point.** With ``known_at=None`` a
+    head is ``valid_to IS NULL``. With ``known_at`` supplied, forcing ``valid_to IS NULL`` would
+    return SILENT EMPTY for every entity superseded since — the row that was open at
+    ``known_at`` has a closed valid axis TODAY, so the natural-looking filter asks a question about
+    now while claiming to ask one about then. The as-known branch therefore reconstructs the valid
+    interval as it stood at ``known_at``.
+
+    Point-in-time on the valid axis with a full logical key is ``reconstruct_assignment_as_of``.
     """
     tenant = canonical_tenant_id(acting_tenant)
     stmt = select(ClassificationAssignment).where(ClassificationAssignment.tenant_id == tenant)
@@ -907,18 +914,27 @@ def list_assignments(
         validate_dimension_kind(dimension_kind)
         stmt = stmt.where(ClassificationAssignment.dimension_kind == dimension_kind)
 
-    if as_of is None:
-        stmt = stmt.where(ClassificationAssignment.system_to.is_(None))
-    else:
+    if known_at is None:
+        # Today's heads: open on both axes.
         stmt = stmt.where(
-            ClassificationAssignment.system_from <= as_of,
+            ClassificationAssignment.system_to.is_(None),
+            ClassificationAssignment.valid_to.is_(None),
+        )
+    else:
+        # As KNOWN at that instant, and valid AT that instant — the valid interval is
+        # reconstructed rather than forced open, so a since-superseded entity still appears.
+        stmt = stmt.where(
+            ClassificationAssignment.system_from <= known_at,
             or_(
                 ClassificationAssignment.system_to.is_(None),
-                ClassificationAssignment.system_to > as_of,
+                ClassificationAssignment.system_to > known_at,
+            ),
+            ClassificationAssignment.valid_from <= known_at,
+            or_(
+                ClassificationAssignment.valid_to.is_(None),
+                ClassificationAssignment.valid_to > known_at,
             ),
         )
-    # Open on the valid axis in BOTH branches: a closed-out version is history, never a head.
-    stmt = stmt.where(ClassificationAssignment.valid_to.is_(None))
 
     return list(
         session.execute(

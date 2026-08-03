@@ -178,7 +178,6 @@ def run_liquidity(
     model_version: ModelVersion,
     code_version: str,
     environment_id: str,
-    portfolio_id: str,
 ) -> GovernedRunOutcome:
     """Run a governed liquidity calculation: build the ``LIQUIDITY_INPUT`` snapshot over the
     EXPLICITLY SELECTED exposure run, then compute from the pinned content.
@@ -187,6 +186,8 @@ def run_liquidity(
     earlier draft took a pre-built snapshot, which pushed snapshot construction onto every caller
     and made it possible to hand this verb another family's pins.
     """
+    from irp_shared.calc.runs import resolve_completed_run_of_type
+    from irp_shared.exposure.events import RUN_TYPE_EXPOSURE_AGGREGATE
     from irp_shared.snapshot.events import SnapshotActor
     from irp_shared.snapshot.service import build_liquidity_snapshot, list_components
 
@@ -201,6 +202,27 @@ def run_liquidity(
         raise LiquidityInputError("model_version is required (CTRL-003)")
     if not scheme_id:
         raise LiquidityInputError("a liquidity-tier scheme is required")
+
+    # The SCOPE IS DERIVED, never supplied. An earlier draft took portfolio_id as a free parameter
+    # and stamped it onto immutable governed rows and onto calculation_run.scope_portfolio_id
+    # without ever resolving the upstream run — so a caller could label a run with a portfolio it
+    # did not compute over, in an append-only table, and every downstream read filtering by
+    # portfolio would silently return another book's number. Four review lanes found it. CON-1's
+    # shape is adopted verbatim: resolve the upstream run, refuse a NULL scope, derive from it.
+    upstream = resolve_completed_run_of_type(
+        session,
+        str(exposure_run_id),
+        acting_tenant=acting_tenant,
+        run_type=RUN_TYPE_EXPOSURE_AGGREGATE,
+        label="exposure",
+        error=LiquidityInputError,
+    )
+    if not upstream.scope_portfolio_id:
+        raise LiquidityInputError(
+            f"exposure run {exposure_run_id} has a NULL scope_portfolio_id — a liquidity result "
+            f"cannot honestly name a portfolio the upstream run did not scope to"
+        )
+    portfolio_id = str(upstream.scope_portfolio_id)
 
     # Parsed BEFORE the snapshot is built: an edited or unregistered model version must refuse
     # without leaving a committed snapshot behind.

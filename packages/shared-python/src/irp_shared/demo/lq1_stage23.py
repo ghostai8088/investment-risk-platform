@@ -265,7 +265,6 @@ def run_demo_lq1_stage23(session: Session) -> Lq1Stage23Summary:
         model_version=version,
         code_version=_CODE_VERSION,
         environment_id=_ENVIRONMENT_ID,
-        portfolio_id=str(pf),
     )
     if outcome.status != "COMPLETED":
         raise DemoLq1Error(f"the flagship liquidity run FAILED ({outcome.failure_reason})")
@@ -298,7 +297,6 @@ def run_demo_lq1_stage23(session: Session) -> Lq1Stage23Summary:
         model_version=strict,
         code_version=_CODE_VERSION,
         environment_id=_ENVIRONMENT_ID,
-        portfolio_id=str(pf),
     )
     if refused.status != "FAILED":
         raise DemoLq1Error(

@@ -33,6 +33,9 @@ from irp_shared.classification.models import (
 )
 from irp_shared.liquidity.models import BUCKET_UNCLASSIFIED
 
+#: The only bucket codes the emitted vector carries. Anything else is off-vocabulary.
+_KNOWN_BUCKETS: frozenset[str] = frozenset({*LIQUIDITY_TIER_CODES, BUCKET_UNCLASSIFIED})
+
 _ZERO = Decimal("0")
 _Q6 = Decimal("0.000001")
 
@@ -95,9 +98,19 @@ def compute_liquidity(atoms: tuple[Atom, ...]) -> LiquidityBreakdown:
             gaps=("no invested-long exposure: every liquidity share would be 0/0",),
         )
 
+    # An OFF-VOCABULARY tier code must never silently vanish. The emitted vector is fixed to the
+    # declared ladder plus the residual, so a code outside that set would be summed into a bucket
+    # nothing emits — deleting real long money from the vector while total_long still counted it,
+    # so the shares would no longer sum to 1 and the illiquid share would be understated. Unknown
+    # codes fold into UNCLASSIFIED (they are, by definition, not a tier this model knows) AND
+    # raise a gap, so the run refuses rather than reporting a quietly wrong number.
     by_bucket: dict[str, Decimal] = {}
+    off_vocabulary: set[str] = set()
     for atom in longs:
         code = atom.tier if atom.tier is not None else BUCKET_UNCLASSIFIED
+        if code not in _KNOWN_BUCKETS:
+            off_vocabulary.add(code)
+            code = BUCKET_UNCLASSIFIED
         by_bucket[code] = by_bucket.get(code, _ZERO) + atom.exposure_amount
 
     # Every declared tier is emitted even at zero, so a reader can tell "no illiquid holdings" from
@@ -112,6 +125,16 @@ def compute_liquidity(atoms: tuple[Atom, ...]) -> LiquidityBreakdown:
         )
         for code in ordered
     )
+
+    # POST-CONDITION: every long unit is in exactly one bucket. This is the invariant the
+    # off-vocabulary defect broke, asserted structurally rather than trusted.
+    bucketed = sum((b.long_amount for b in buckets), _ZERO)
+    if bucketed != _q6(total_long):
+        gaps_prefix = (
+            f"bucket vector lost long money: bucketed {bucketed} != total {_q6(total_long)}"
+        )
+    else:
+        gaps_prefix = ""
 
     tiered_long = sum(
         (b.long_amount for b in buckets if not b.is_residual),
@@ -130,6 +153,15 @@ def compute_liquidity(atoms: tuple[Atom, ...]) -> LiquidityBreakdown:
     # would break. The count and the coverage ratio already carry the information; refusal is the
     # FLOOR's job, and the floor is a declared, versioned parameter rather than a hidden absolute.
     gaps: list[str] = []
+    if off_vocabulary:
+        gaps.append(
+            f"pinned tier code(s) outside the declared ladder: {sorted(off_vocabulary)} — folded "
+            f"into UNCLASSIFIED and refusing, because a code this model does not know cannot be "
+            f"scored against a partition it is not in"
+        )
+
+    if gaps_prefix:
+        gaps.insert(0, gaps_prefix)
 
     return LiquidityBreakdown(
         buckets=buckets,

@@ -13,7 +13,6 @@ it can never be mistaken for a completed one.
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
