@@ -540,4 +540,88 @@ than as a clean plan.
 
 ---
 
-*Part 10 (the implementation log) is appended as the slice advances.*
+## Part 10 — the implementation log (2026-08-02, branch `lq-1`)
+
+Fourteen commits. What is worth recording is not the inventory — that is the diff — but the
+defects, because every one of them was found by EXECUTION and none by reading.
+
+### Six found while building (commits 1–12)
+
+The binder had never run until the demo stage ran it. In order of how badly each would have shipped:
+
+1. **Untiered instruments were returned as a GAP**, and the binder refuses on any gap — so EVERY
+   book containing a single unassessed holding would have FAILED. That inverts the ratified
+   OQ-LQ-1-19 semantics entirely: the residual exists so untiered exposure stays in the denominator
+   and trips a DECLARED floor, and instead the family refused unconditionally on a hidden absolute.
+   **My own kernel tests asserted the buggy behaviour** — written against the implementation rather
+   than the requirement, which is why the unit tier was green while the behaviour was wrong.
+2. **The refusal control did not refuse.** Floor 0.9 against coverage of exactly 0.9, tested with a
+   strict `<`. A control that passes without exercising what it controls proves the opposite of
+   what it claims, and it would have shipped as evidence of fail-closed behaviour.
+3. **The stage claimed "+1 INITIAL validation" and recorded none** — exposed by the measured
+   `(1, 0, 2)`. A governed family with no recorded validation leaves CTRL-003's evidence chain
+   broken for the one number the slice exists to produce.
+4. `snapshot.components` — an attribute I invented. Every run crashed on it.
+5. `TimestampMixin` where the shipped families use `ImmutableAppendOnlyMixin`.
+6. `run_liquidity` took a pre-built snapshot instead of an exposure run, breaking the "one call
+   builds and computes" contract every other family holds.
+
+### Six more found by the adversarial review (commits 13–14)
+
+Five lanes over the 57-file diff, every finding adversarially verified before it could survive:
+**31 of 35 stood; 3 BLOCKING, 3 HIGH.**
+
+**B1 — the staleness refusal was STRUCTURALLY UNFIREABLE.** Found INDEPENDENTLY BY FOUR LANES.
+`_parse_pins` read `content["system_from"]`; the assignment serializer emits nine keys and that is
+not one. So the guard never entered its body — while `register_liquidity_model` writes an
+**immutable model_limitation row** telling every reader the platform refuses a stale ladder, and
+OQ-LQ-1-8 requires that text be rendered beside the number. A verifier ran a 3,650-day-old ladder
+against a declared 31-day bound: COMPLETED, seven rows. **This is the platform's recorded failure
+class exactly — a refusal that exists in prose and in a limitation row and in no code path.** No
+test anywhere referenced `GAP_STALE_TIERS`, `tier_max_age_days` or `oldest_assignment_at`.
+Fixed by reading `pinned_system_from` (a COLUMN, not an input to the content hash, so no historical
+pin moves — widening the serializer would have falsified every already-pinned CON-1 component).
+An undateable component now refuses: unknown age is not freshness.
+
+**B2 — `liquidity_result` was never registered in the ORM aggregator**, so `alembic check` emitted
+`remove_table` plus seven `remove_index` operations. Autogenerate would have proposed DROPPING an
+append-only governed-evidence table. Second omission of its kind ⇒ now a mutation-proven census.
+
+**B3 — `make check` was RED on this branch and I had reported it green.** Nine ruff errors, mostly
+my own lines, off a clean `main`. I had been running individual pytest invocations and calling that
+the gate. **A gate you did not run is not a gate you passed.**
+
+**H1 — the run's portfolio scope was caller-supplied and never verified**, stamped onto immutable
+rows and onto `scope_portfolio_id` while the upstream run was never resolved. Fixed by deriving it;
+the parameter is gone from the signature, because a scope that cannot be supplied cannot be
+supplied wrongly.
+
+**H2 — an off-vocabulary tier code silently DELETED long money** from the vector: the shares no
+longer summed to 1 and the illiquid share was UNDERSTATED — wrong in the unsafe direction, in an
+append-only table. Now folded into UNCLASSIFIED with a refusal, plus a structural post-condition
+that every long unit is in exactly one bucket.
+
+**H3 — `list_assignments(as_of=…)` returned silent empty for any superseded entity.** The filter
+asked a question about NOW while claiming to ask one about THEN. Branch corrected, parameter
+renamed `known_at`.
+
+### The lesson, as an act (P7)
+
+Three separate controls in this slice were **written, believed, and inert**: the staleness refusal,
+the sub-floor demo control, and my own kernel tests. Each looked like evidence and was not.
+
+**The mechanical form: a refusal is not implemented until a test has made it FIRE, and a control is
+not a control until the fix that would break it has been executed against it.** Every refusal path
+in LQ-1 now carries a control that has been mutation-proven — reverting the defect fails the test.
+That is the only form of the rule that would have caught B1, whose entire failure mode was that
+nothing ever asked it to refuse.
+
+### Gates
+
+`make check` green end to end (2,394 passed); P4 migration dry run executed non-vacuously with rows
+STAGED; FE typecheck clean and 207 FE tests green; the count triple **MEASURED at 27/44/141** on a
+fresh-schema full-PG battery, never derived.
+
+---
+
+*Part 11 (the close) is appended at the closeout.*
