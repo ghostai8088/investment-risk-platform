@@ -624,4 +624,66 @@ fresh-schema full-PG battery, never derived.
 
 ---
 
-*Part 11 (the close) is appended at the closeout.*
+## Part 11 — the close (2026-08-02)
+
+**Merged: PR #168 = `28f76ca`** (the eleventh autonomous merge). **Wave 14 is COMPLETE.**
+
+### The P1 seven-ledger sweep, run AFTER the merge against `origin/main`
+
+| # | Ledger | Result |
+|---|---|---|
+| 1 | `canonical_data_model_standard.md` | ENT-071 row present; next-free **ENT-072**; the "sole reservation" self-contradiction corrected (TWO paper-only: ENT-032 AND ENT-058) |
+| 2 | `audit_event_taxonomy.md` | **Deliberately mints nothing — recorded as a sentence, not left as silence.** The captured half rides REF-1's `REFERENCE.*` events; the governed half rides the standard governed-run chain. A liquidity tier is a classification assignment, not a new audit subject |
+| 3 | `control_matrix_skeleton.md` | CTRL-018 dispositioned **NO CONTROL MOVED**, explicitly — REQ-LIQ-001 maps to CTRL-002/018, so silence would be the omission this sweep exists to catch. Third consecutive non-movement, itself the signal it needs a slice. CTRL-002 EXERCISED, not moved |
+| 4 | `current_state.md` | CURRENT TRUTH rewritten; head `0061`; NEXT = the Wave-14 close review |
+| 5 | `02_requirements/` backbone + RTM | REQ-LIQ-001 acceptance AMENDED with the reason; REQ-LIQ-002's ratified deferral written into both; ModelGov = Y HELD and the §3 count re-measured at 28 |
+| 6 | Counts | **27/44/141 MEASURED** on a fresh-schema battery; exactly one file carries FINAL-POSITION (three stale claims swept) |
+| 7 | The record's own delivery claims | verified against the merged diff |
+
+**Verify-on-main:** all fifteen slice commits confirmed ancestors of `origin/main`; the merged tree
+is **byte-identical** to the tree the 2,954-test battery validated.
+
+### What LQ-1 delivered
+
+The platform can now say what fraction of a book is illiquid, as a governed number: reproducible,
+snapshot-pinned, model-bound, and refusable. The captured half mints no entity — a liquidity tier is
+a curated code on an instrument, which is structurally what REF-1's rail already carries. The
+vocabulary is the regulation's own four categories, transcribed.
+
+It deliberately does **not** claim to be the Rule 22e-4 15% test, and the machinery to prevent that
+misreading is the slice's most deliberate work: the metric is named `illiquid_share_invested_long`,
+the denominator basis is stamped on every row and every FE column, the limitation rides the
+run-detail payload, and limits are refused entirely until a NAV entity exists.
+
+### The close's own finding
+
+**Three separate controls in this slice were written, believed, and inert.** The staleness refusal
+existed in an immutable `model_limitation` row promising readers the platform refuses a stale ladder
+— and in no code path at all. The sub-floor demo control had a floor exactly equal to the book's
+coverage under a strict `<`, so it never refused while standing as evidence of fail-closed
+behaviour. And the kernel tests asserted the implementation rather than the requirement, which is
+why the unit tier stayed green while the residual semantics were inverted.
+
+**Two gates were reported green having never been run**: `make check` was red on the branch (nine
+lint errors off a clean `main`), and `liquidity_result` was absent from the ORM aggregator, so
+`alembic check` would have proposed `DROP TABLE` on an append-only governed-evidence table.
+
+Both classes are the same failure: **an artifact that looks like evidence, accepted without being
+exercised.** That is what the standing lesson now addresses mechanically.
+
+### Open at the close
+
+1. **Limit-bindability** — deferred. Trigger: *a NAV/net-assets entity exists, OR an operator asks
+   for a liquidity threshold.* The sign-indeterminate denominator is the reason.
+2. **The restatement trail** — deferred. Trigger: *the first operator ask.*
+3. **Position-grain tiers** — deferred. Trigger: the 22e-4(b)(1)(ii)(B) gap becoming operationally
+   material. Recorded in the requirement, the model limitations and the entity row.
+4. **AIFMD's seven day-buckets** as an additive `scheme_family`. Trigger: *the first
+   EU/AIFMD-reporting tenant.*
+5. **CTRL-018's scheduled reproduction job** — three consecutive non-movements.
+6. **Carried from DATA-1, and belonging to the user:** the independent re-verification of the 30
+   TB3MS literals is UNDISCHARGED.
+
+---
+
+*LQ-1 CLOSED. Wave 14 COMPLETE. Next: the Wave-14 close review (ratified OQ-LQ-1-20).*
