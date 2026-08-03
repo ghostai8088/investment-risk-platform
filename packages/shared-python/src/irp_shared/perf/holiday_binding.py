@@ -65,3 +65,53 @@ def parse_pinned_holidays(
             "(holidays_complete_through is NULL) — a declared horizon is required (OQ-CAL-1-4)"
         )
     return dates, coverage
+
+
+def assert_boundaries_covered(
+    boundaries: list[dt_date],
+    *,
+    holidays: frozenset[dt_date],
+    holidays_complete_through: dt_date,
+    error: type[Exception],
+) -> None:
+    """BOTH sides of the coverage gate, in one shared site (P10: the class, not the site).
+
+    The end side is the original OQ-CAL-1-4 refusal: a series closing beyond the DECLARED
+    ``holidays_complete_through`` must refuse, never degrade to the weekend-only answer.
+
+    The start side is the Wave-14 close's HIGH, absent from the first shipment: nothing compared
+    the series START against where the calendar begins, so a v2 window opening before the
+    dataset's first covered year (XNYS starts 2024) rolled those months WEEKEND-ONLY — a silently
+    wrong governed boundary, the exact degradation the end side exists to refuse. Both binders
+    carried the end-side check inline and identically; the fold moves the pair HERE so a third
+    v2 consumer inherits both sides rather than re-forgetting one.
+
+    The start bound is DERIVED (January 1 of the earliest pinned holiday's year) because the
+    calendar declares only forward coverage — there is no ``holidays_complete_from`` column. The
+    derivation's error direction is REFUSAL: a partially-loaded first year moves the derived
+    start LATER and refuses more, never less. Interior gaps are the refresh verb's declared
+    forward-only-advance contract, not this gate's. A DECLARED start bound is the named carry
+    (trigger: the next calendar-touching slice); an EMPTY pinned set refuses outright, because a
+    coverage window with no holidays cannot anchor a derived start and no real exchange calendar
+    is holiday-free.
+    """
+    if not holidays:
+        raise error(
+            "the pinned HOLIDAY_CALENDAR set is EMPTY — a derived coverage start cannot be "
+            "anchored, so the run refuses rather than rolling weekend-only (the Wave-14 close's "
+            "start-side gate; a DECLARED holidays_complete_from is the named carry)"
+        )
+    if boundaries[-1] > holidays_complete_through:
+        raise error(
+            f"the series closes on {boundaries[-1]}, beyond the pinned calendar's declared "
+            f"holiday coverage ({holidays_complete_through}) — an uncovered month must refuse, "
+            "never degrade to the weekend-only answer (OQ-CAL-1-4)"
+        )
+    derived_start = dt_date(min(holidays).year, 1, 1)
+    if boundaries[0] < derived_start:
+        raise error(
+            f"the series opens on {boundaries[0]}, before the pinned calendar's earliest covered "
+            f"year (derived start {derived_start}) — months before the dataset begins would roll "
+            "WEEKEND-ONLY and produce silently wrong BUSINESS boundaries (the Wave-14 close's "
+            "start-side gate, symmetric with OQ-CAL-1-4's end side)"
+        )

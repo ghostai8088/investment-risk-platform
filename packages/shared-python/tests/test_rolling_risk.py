@@ -752,7 +752,14 @@ def _seed_xnys_calendar(session: Session, tenant: str) -> None:
         session,
         cal,
         actor=ReferenceActor(actor_id="steward"),
-        holidays=[HolidaySpec(holiday_date=date(2027, 5, 31), name="Memorial Day")],
+        holidays=[
+            # New Year's Day of the OPENING year anchors the derived coverage start (the Wave-14
+            # close's start-side gate; 2024 covers every book these fixtures open). A Jan-1 holiday can never move a BUSINESS month-END, so no
+            # asserted boundary literal shifts. The single-2027 set this fixture previously pinned
+            # was itself the degradation the gate refuses: months before 2027 rolled weekend-only.
+            HolidaySpec(holiday_date=date(2024, 1, 1), name="New Year's Day"),
+            HolidaySpec(holiday_date=date(2027, 5, 31), name="Memorial Day"),
+        ],
         complete_through=date(2035, 12, 31),
     )
 
@@ -850,7 +857,14 @@ def test_a_v2_span_beyond_the_declared_coverage_is_refused(session: Session) -> 
         session,
         cal,
         actor=ReferenceActor(actor_id="s"),
-        holidays=[HolidaySpec(holiday_date=date(2027, 5, 31))],
+        holidays=[
+            # New Year's Day of the OPENING year anchors the derived coverage start (the Wave-14
+            # close's start-side gate; 2024 covers every book these fixtures open). A Jan-1 holiday can never move a BUSINESS month-END, so no
+            # asserted boundary literal shifts. The single-2027 set this fixture previously pinned
+            # was itself the degradation the gate refuses: months before 2027 rolled weekend-only.
+            HolidaySpec(holiday_date=date(2024, 1, 1), name="New Year's Day"),
+            HolidaySpec(holiday_date=date(2027, 5, 31), name="Memorial Day"),
+        ],
         complete_through=date(2027, 3, 31),  # short of the series close
     )
     run, _pf = _seed_return_run(
@@ -964,7 +978,14 @@ def test_verify_snapshot_reddens_on_a_post_pin_holiday_add_and_coverage_advance(
         session,
         cal,
         actor=ReferenceActor(actor_id="s"),
-        holidays=[HolidaySpec(holiday_date=date(2027, 5, 31))],
+        holidays=[
+            # New Year's Day of the OPENING year anchors the derived coverage start (the Wave-14
+            # close's start-side gate; 2024 covers every book these fixtures open). A Jan-1 holiday can never move a BUSINESS month-END, so no
+            # asserted boundary literal shifts. The single-2027 set this fixture previously pinned
+            # was itself the degradation the gate refuses: months before 2027 rolled weekend-only.
+            HolidaySpec(holiday_date=date(2024, 1, 1), name="New Year's Day"),
+            HolidaySpec(holiday_date=date(2027, 5, 31), name="Memorial Day"),
+        ],
         complete_through=date(2030, 12, 31),
     )
     run, _pf = _seed_return_run(session, tenant, returns=["0.01"] * 13)
@@ -1035,7 +1056,13 @@ def test_a_month_exhausting_pin_is_a_governed_422_not_a_500(session: Session) ->
         session,
         cal,
         actor=ReferenceActor(actor_id="s"),
-        holidays=[HolidaySpec(holiday_date=d) for d in blanket],
+        # The 2024 New Year anchor keeps the start-side coverage gate (the Wave-14 close fold)
+        # satisfied, so the run reaches the EXHAUSTED-MONTH condition this test exists to prove —
+        # without it the start gate fires first and masks the refusal under test.
+        holidays=[
+            HolidaySpec(holiday_date=date(2024, 1, 1)),
+            *(HolidaySpec(holiday_date=d) for d in blanket),
+        ],
         complete_through=date(2035, 12, 31),
     )
     run, _pf = _seed_return_run(
