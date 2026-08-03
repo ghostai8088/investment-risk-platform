@@ -506,8 +506,7 @@ def test_every_governed_binder_calls_the_model_version_gate() -> None:
     missing = sorted(
         rel
         for rel in binders
-        if rel not in exceptions
-        and "assert_model_version_of" not in (root / rel).read_text()
+        if rel not in exceptions and "assert_model_version_of" not in (root / rel).read_text()
     )
     assert not missing, (
         f"governed binder(s) with NO model-version gate (a REJECTED version would bind and write "

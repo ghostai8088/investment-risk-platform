@@ -1,4 +1,16 @@
-"""The XNYS (NYSE) full-day scheduled holiday set, 2024-2035 (CAL-1a, OQ-CAL-1-8).
+"""The XNYS (NYSE) full-day scheduled holiday set, 2023-2035 (CAL-1a, OQ-CAL-1-8).
+
+BACKWARD EXTENSION (Wave-14 close): the set originally opened at 2024, and that was an OFF-BY-ONE
+against its own consumers. A BUSINESS_MONTH_END grid's opening boundary d_0 is the close of the
+month BEFORE the first measured month, so ANY v2 run whose first measured month is January 2024 --
+the earliest month the 2024-anchored set could serve -- adjudicates d_0 = 2023-12-29 against a
+calendar that knows nothing about 2023. The shipped RM-1/SR-1 demo did exactly that and rolled its
+opening boundary WEEKEND-ONLY; nothing detected it until the close's start-side coverage gate
+(``holiday_binding.assert_boundaries_covered``) was added and the demo refused. The dataset, not
+the gate, was wrong: a month-end calendar must cover one year further back than the earliest month
+it is meant to serve. Adding 2023 moved NO governed boundary literal (December 2023's last weekday
+is Friday the 29th with or without holiday knowledge -- Christmas fell on the Monday), which is
+what makes this an extension rather than a restatement of shipped numbers.
 
 HAND-ENCODED LITERALS, never derived at runtime (the ratified rule: the runtime set must not be
 computed from an observance rule -- a naive "Saturday holiday => preceding Friday observed"
@@ -10,6 +22,13 @@ the exact 9-member 2028/2033 sets); an INDEPENDENTLY-implemented rule cross-chec
 
 Provenance (the diligence checklist's Execution 1 records the walk-through):
 
+- **2023: the NYSE published holiday schedule as it stood IN 2023**, recovered from the Wayback
+  Machine's 2023-03-05 capture of nyse.com/markets/hours-calendars (a contemporaneous three-year
+  2023|2024|2025 table). The capture's 2024 and 2025 columns were checked against the literals
+  ALREADY shipped here and agree date-for-date -- which is what establishes that the 2023 column
+  was read from the right position rather than merely looking plausible. The early-close markers
+  in that table (July 3, the Friday after Thanksgiving) are half-days, hence TRADING days, and are
+  excluded on the same rule as every other year.
 - **2024-2028: the NYSE published holiday schedule** (nyse.com "Holidays and Trading Hours" --
   the exchange publishes roughly three years ahead; 2024-2025 verified against the archived
   pages). Scheduled FULL-DAY closures only: early-close half-days (e.g. July 3 2025,
@@ -33,6 +52,17 @@ from datetime import date
 
 #: (holiday_date, name) -- full-day scheduled XNYS closures, 2024-2035 inclusive.
 XNYS_HOLIDAYS: tuple[tuple[date, str], ...] = (
+    # --- 2023 (published; added at the Wave-14 close — see the BACKWARD EXTENSION note above) ---
+    (date(2023, 1, 2), "New Year's Day"),  # observed: 2023-01-01 was a Sunday
+    (date(2023, 1, 16), "Martin Luther King, Jr. Day"),
+    (date(2023, 2, 20), "Washington's Birthday"),
+    (date(2023, 4, 7), "Good Friday"),
+    (date(2023, 5, 29), "Memorial Day"),
+    (date(2023, 6, 19), "Juneteenth National Independence Day"),
+    (date(2023, 7, 4), "Independence Day"),
+    (date(2023, 9, 4), "Labor Day"),
+    (date(2023, 11, 23), "Thanksgiving Day"),
+    (date(2023, 12, 25), "Christmas Day"),
     # --- 2024 (published) ---
     (date(2024, 1, 1), "New Year's Day"),
     (date(2024, 1, 15), "Martin Luther King, Jr. Day"),

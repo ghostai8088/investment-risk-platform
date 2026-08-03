@@ -381,9 +381,7 @@ describe("RunDetail", () => {
       rows: [],
     } as unknown as RunDetailBase);
     renderDetail("liquidity", "33333333-3333-3333-3333-333333333333");
-    expect(
-      await screen.findByText(/NOT the SEC Rule 22e-4 15% test/),
-    ).toBeTruthy();
+    expect(await screen.findByText(/NOT the SEC Rule 22e-4 15% test/)).toBeTruthy();
     expect(screen.getByText("Registered model limitations")).toBeTruthy();
     expect(screen.getByText(/INSTRUMENT-grain/)).toBeTruthy();
   });

@@ -75,9 +75,7 @@ def ctx() -> Iterator[tuple[TestClient, Principal, Session, str]]:
         dimension_kind=DIMENSION_KIND_LIQUIDITY_TIER,
         authority="SEC",
     )
-    create_node(
-        db, actor=actor, scheme_id=scheme.id, code="ILLIQUID", name="Illiquid", level=1
-    )
+    create_node(db, actor=actor, scheme_id=scheme.id, code="ILLIQUID", name="Illiquid", level=1)
     instrument = str(uuid.uuid4())
     capture_assignment(
         db,

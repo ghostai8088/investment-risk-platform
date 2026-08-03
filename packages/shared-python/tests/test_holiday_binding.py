@@ -154,6 +154,6 @@ def test_both_v2_binders_delegate_to_the_shared_gate() -> None:
     for svc in ("rolling_service.py", "sharpe_service.py"):
         text = (root / svc).read_text()
         assert "assert_boundaries_covered(" in text, f"{svc} no longer calls the shared gate"
-        assert "boundaries[-1] > holidays_complete_through" not in text, (
-            f"{svc} re-inlined the end-side check — the class fix has been undone"
-        )
+        assert (
+            "boundaries[-1] > holidays_complete_through" not in text
+        ), f"{svc} re-inlined the end-side check — the class fix has been undone"

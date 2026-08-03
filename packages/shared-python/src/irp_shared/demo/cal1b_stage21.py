@@ -18,7 +18,7 @@ the REAL 2027-05 boundary (Memorial Day, the recorded forcing function).
    rolling v2 rows are asserted BYTE-IDENTICAL to v1's — the grandfather-parity proof on real demo
    data (the book's weekend-roll grid is v1-compliant, and widening cannot move it).
 
-**The calendar is a DEMO-TENANT capture of the real XNYS dataset** (the 118 shipped dates + the
+**The calendar is a DEMO-TENANT capture of the real XNYS dataset** (the 128 shipped dates + the
 declared 2035-12-31 horizon, loaded through the governed refresh verb). A stated refinement of the
 ratified "bound to the SYSTEM XNYS calendar" wording (recorded in the CAL-1 record's close): the
 demo suites arm the DEMO tenant context, whose own-only ``WITH CHECK`` cannot lawfully write
@@ -246,7 +246,7 @@ def run_demo_cal1b_stage21(session: Session) -> Cal1bStage21Summary:
     rf_benchmark_id = _rf_benchmark_id(session)
 
     # 1. The demo tenant CAPTURES the real XNYS dataset through the governed verbs (the hybrid
-    #    tenant-override path; the 118 shipped dates + the declared horizon).
+    #    tenant-override path; the 128 shipped dates + the declared horizon).
     calendar = create_calendar(
         session,
         tenant_id=DEMO_TENANT_ID,

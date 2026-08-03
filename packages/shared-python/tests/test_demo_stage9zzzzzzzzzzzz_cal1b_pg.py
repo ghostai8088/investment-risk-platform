@@ -77,7 +77,7 @@ def test_the_demo_tenant_captured_the_real_xnys_dataset(db) -> None:  # noqa: AN
         .select_from(CalendarHoliday)
         .where(CalendarHoliday.calendar_id == cal.id)
     ).scalar_one()
-    assert n == 118  # the full shipped dataset, through the governed refresh verb
+    assert n == 128  # the full shipped dataset, through the governed refresh verb
     dates = set(
         db.execute(
             select(CalendarHoliday.holiday_date).where(CalendarHoliday.calendar_id == cal.id)

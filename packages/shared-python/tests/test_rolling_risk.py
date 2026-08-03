@@ -754,7 +754,8 @@ def _seed_xnys_calendar(session: Session, tenant: str) -> None:
         actor=ReferenceActor(actor_id="steward"),
         holidays=[
             # New Year's Day of the OPENING year anchors the derived coverage start (the Wave-14
-            # close's start-side gate; 2024 covers every book these fixtures open). A Jan-1 holiday can never move a BUSINESS month-END, so no
+            # close's start-side gate; 2024 covers every book these fixtures open). A Jan-1
+            # holiday can never move a BUSINESS month-END, so no
             # asserted boundary literal shifts. The single-2027 set this fixture previously pinned
             # was itself the degradation the gate refuses: months before 2027 rolled weekend-only.
             HolidaySpec(holiday_date=date(2024, 1, 1), name="New Year's Day"),
@@ -859,7 +860,8 @@ def test_a_v2_span_beyond_the_declared_coverage_is_refused(session: Session) -> 
         actor=ReferenceActor(actor_id="s"),
         holidays=[
             # New Year's Day of the OPENING year anchors the derived coverage start (the Wave-14
-            # close's start-side gate; 2024 covers every book these fixtures open). A Jan-1 holiday can never move a BUSINESS month-END, so no
+            # close's start-side gate; 2024 covers every book these fixtures open). A Jan-1
+            # holiday can never move a BUSINESS month-END, so no
             # asserted boundary literal shifts. The single-2027 set this fixture previously pinned
             # was itself the degradation the gate refuses: months before 2027 rolled weekend-only.
             HolidaySpec(holiday_date=date(2024, 1, 1), name="New Year's Day"),
@@ -980,7 +982,8 @@ def test_verify_snapshot_reddens_on_a_post_pin_holiday_add_and_coverage_advance(
         actor=ReferenceActor(actor_id="s"),
         holidays=[
             # New Year's Day of the OPENING year anchors the derived coverage start (the Wave-14
-            # close's start-side gate; 2024 covers every book these fixtures open). A Jan-1 holiday can never move a BUSINESS month-END, so no
+            # close's start-side gate; 2024 covers every book these fixtures open). A Jan-1
+            # holiday can never move a BUSINESS month-END, so no
             # asserted boundary literal shifts. The single-2027 set this fixture previously pinned
             # was itself the degradation the gate refuses: months before 2027 rolled weekend-only.
             HolidaySpec(holiday_date=date(2024, 1, 1), name="New Year's Day"),

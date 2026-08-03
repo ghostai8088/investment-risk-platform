@@ -287,11 +287,14 @@ def list_assignments(
         stmt = stmt.where(ClassificationAssignment.dimension_kind == dimension_kind)
     stmt = stmt.where(
         ClassificationAssignment.valid_from <= as_of,
-        (ClassificationAssignment.valid_to.is_(None))
-        | (ClassificationAssignment.valid_to > as_of),
+        (ClassificationAssignment.valid_to.is_(None)) | (ClassificationAssignment.valid_to > as_of),
     )
-    rows = db.execute(stmt).scalars().all()
-    return [_assignment_out(a) for a in rows]
+    # A distinct name, not a rebind: the current-heads branch above binds ``rows`` to the service
+    # verb's ``list[...]``, and .scalars().all() is a ``Sequence[...]`` — narrower. mypy reads the
+    # first binding as the declared type, so reusing the name is an error, and the honest fix is
+    # two names rather than a widening annotation that pretends the branches share a type.
+    as_of_rows = db.execute(stmt).scalars().all()
+    return [_assignment_out(a) for a in as_of_rows]
 
 
 @router.post("/assignments", response_model=AssignmentOut, status_code=status.HTTP_201_CREATED)
