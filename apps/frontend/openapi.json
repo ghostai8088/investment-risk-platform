@@ -2266,6 +2266,18 @@
             "title": "Holidays",
             "type": "array"
           },
+          "holidays_complete_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holidays Complete Through"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -7512,6 +7524,32 @@
           "recurrence"
         ],
         "title": "HolidayOut",
+        "type": "object"
+      },
+      "HolidayRefreshIn": {
+        "description": "ADD-ONLY refresh input. Absent ``complete_through`` leaves the declared horizon untouched;\na value that REGRESSES it is refused 422 (forward-only, OQ-CAL-1-4).",
+        "properties": {
+          "complete_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complete Through"
+          },
+          "holidays": {
+            "items": {
+              "$ref": "#/components/schemas/HolidayIn"
+            },
+            "title": "Holidays",
+            "type": "array"
+          }
+        },
+        "title": "HolidayRefreshIn",
         "type": "object"
       },
       "HsVarModelIn": {
@@ -33932,6 +33970,108 @@
           }
         },
         "summary": "Get Calendar",
+        "tags": [
+          "reference"
+        ]
+      }
+    },
+    "/reference/calendars/{calendar_id}/holidays": {
+      "post": {
+        "description": "ADD-ONLY holiday refresh + declared-horizon advance \u2014 DEP-1 (OQ-W15P-5), closing F3.\n\nThe gap: only ``refresh_calendar_holidays`` could set ``holidays_complete_through`` and it had\nNO HTTP route, so a calendar created through this API could never reach a state where a\n``BUSINESS_MONTH_END`` schedule ticks. Invisible to the whole test suite, because tests call the\nservice verb directly \u2014 which is exactly the class of gap a real deployment exists to surface.\n\n**The tenant fence is explicit, not delegated to RLS.** A SYSTEM-tenant calendar is VISIBLE\nto every tenant under the hybrid policy, so a plain ``db.get`` would resolve one and the write\nwould then fail deep in the flush on the parent head's own-only ``WITH CHECK`` \u2014 a 500 where\nthe caller is owed a refusal. Refusing here makes it a 404, indistinguishable from an unknown\nid, which is also the non-disclosure behaviour the rest of this module already uses.",
+        "operationId": "refresh_calendar_holidays_endpoint_reference_calendars__calendar_id__holidays_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "calendar_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Calendar Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HolidayRefreshIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Calendar Holidays Endpoint",
         "tags": [
           "reference"
         ]

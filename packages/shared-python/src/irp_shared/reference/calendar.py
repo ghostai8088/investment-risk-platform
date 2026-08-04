@@ -117,9 +117,20 @@ def refresh_calendar_holidays(
     (the ``create_calendar`` precedent); under the hybrid policy a cross-tenant caller is refused
     by PG at flush — the parent-head version bump refuses FIRST (own-only ``WITH CHECK`` on the
     UPDATE), and the child stamp's own ``WITH CHECK`` is independently pinned in
-    ``test_reference_pg``. Concurrency contract: no parent row lock is taken (the only caller is
-    the SYSTEM bootstrap path); a concurrent overlapping refresh surfaces the child UNIQUE as a
-    raw ``IntegrityError`` — accepted until an API verb ships (OQ-CAL-1-11 keeps that OUT).
+    ``test_reference_pg``.
+
+    **Concurrency contract — CHANGED at DEP-1 (Wave-15, OQ-W15P-5), because its own precondition
+    expired.** CAL-1a recorded: *"no parent row lock is taken (the only caller is the SYSTEM
+    bootstrap path); a concurrent overlapping refresh surfaces the child UNIQUE as a raw
+    IntegrityError — **accepted until an API verb ships** (OQ-CAL-1-11 keeps that OUT)."* DEP-1
+    ships that API verb, so the condition the acceptance rested on is gone and the acceptance goes
+    with it. The parent head is now re-resolved **`with_for_update`**, serializing overlapping
+    refreshes on the calendar — the `limit/lifecycle.py::_lock_breach` pattern. On SQLite the lock
+    is a no-op, but SQLite serializes writes globally, so the invariant holds cross-tier.
+
+    This is deliberately recorded rather than quietly done: a recorded acceptance with a stated
+    expiry condition is a promise, and shipping the thing that expires it without paying is how
+    "accepted until X" becomes permanent by accident.
 
     **The CAL-1a NAMED CARRY, PAID at CAL-1b (with migration 0059):** ``complete_through``
     advances the calendar's DECLARED coverage horizon ``holidays_complete_through`` — FORWARD
@@ -127,6 +138,13 @@ def refresh_calendar_holidays(
     coverage gate's refusal window behind existing schedules). The advance alone (no new dates)
     is still an effective refresh: it bumps ``record_version`` and emits the event, because
     coverage is head state a consumer refuses on (OQ-CAL-1-4)."""
+    # Serialize overlapping refreshes on this calendar BEFORE reading the existing child set —
+    # reading first would compute the add-set against a snapshot another writer is already
+    # extending, which is exactly how the child UNIQUE surfaces as a raw IntegrityError.
+    session.execute(
+        select(Calendar.id).where(Calendar.id == calendar.id).with_for_update()
+    ).scalar_one_or_none()
+
     existing: set[date] = set(
         session.execute(
             select(CalendarHoliday.holiday_date).where(CalendarHoliday.calendar_id == calendar.id)

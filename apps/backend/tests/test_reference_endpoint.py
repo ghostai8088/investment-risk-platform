@@ -211,6 +211,167 @@ def test_create_calendar_requires_edit(ctx: tuple[TestClient, Principal, Session
     assert resp.status_code == 403
 
 
+# --- DEP-1 (OQ-W15P-5): the holiday refresh route — the F3 gap, closed and pinned ---
+
+
+def _make_calendar(client: TestClient, principal: Principal) -> str:
+    resp = client.post(
+        "/reference/calendars",
+        json={"code": "XLON", "name": "LSE", "mic": "XLON", "holidays": []},
+        headers=_headers(principal),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def test_the_horizon_is_reachable_through_the_API_at_all(
+    ctx: tuple[TestClient, Principal, Session],
+) -> None:
+    """The F3 gap itself. Before DEP-1 nothing could set ``holidays_complete_through`` over HTTP,
+    so a calendar created through this API could never reach a state where a BUSINESS_MONTH_END
+    schedule ticks — it refused at every tick, fail-closed and unfixable from outside.
+
+    The `is None` assertion on the freshly created calendar is the half that matters: it pins that
+    the create path still does NOT set a horizon, so this route is genuinely the only way there.
+    """
+    client, principal, _ = ctx
+    cal_id = _make_calendar(client, principal)
+    before = client.get(f"/reference/calendars/{cal_id}", headers=_headers(principal))
+    assert before.json()["holidays_complete_through"] is None
+
+    resp = client.post(
+        f"/reference/calendars/{cal_id}/holidays",
+        json={
+            "holidays": [{"holiday_date": "2027-01-01", "name": "New Year"}],
+            "complete_through": "2027-12-31",
+        },
+        headers=_headers(principal),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["holidays_complete_through"] == "2027-12-31"
+    assert len(resp.json()["holidays"]) == 1
+
+
+def test_a_REGRESSING_horizon_is_REFUSED_422(ctx: tuple[TestClient, Principal, Session]) -> None:
+    """OQ-CAL-1-4's forward-only rule, made to FIRE through the route (P9).
+
+    Shrinking a declared horizon would silently re-open the coverage gate's refusal window behind
+    schedules that already trust it — so it is refused, and refused as a governed 422 rather than
+    escaping as a 500.
+    """
+    client, principal, _ = ctx
+    cal_id = _make_calendar(client, principal)
+    client.post(
+        f"/reference/calendars/{cal_id}/holidays",
+        json={"holidays": [], "complete_through": "2030-12-31"},
+        headers=_headers(principal),
+    )
+    resp = client.post(
+        f"/reference/calendars/{cal_id}/holidays",
+        json={"holidays": [], "complete_through": "2029-12-31"},
+        headers=_headers(principal),
+    )
+    assert resp.status_code == 422, resp.text
+    assert "forward-only" in resp.json()["detail"]
+    # The refusal left the declared horizon UNMOVED — a refusal that half-applied would be worse
+    # than none, because the schedule's refusal window would have silently widened.
+    after = client.get(f"/reference/calendars/{cal_id}", headers=_headers(principal))
+    assert after.json()["holidays_complete_through"] == "2030-12-31"
+
+
+def test_the_refresh_is_ADD_ONLY_and_idempotent(
+    ctx: tuple[TestClient, Principal, Session],
+) -> None:
+    """Removal is structurally impossible through this route: re-posting a SUBSET does not delete
+    the dates omitted from it. That property is what makes a child-write exception acceptable at
+    all, so it is pinned rather than assumed."""
+    client, principal, db = ctx
+    cal_id = _make_calendar(client, principal)
+    client.post(
+        f"/reference/calendars/{cal_id}/holidays",
+        json={
+            "holidays": [
+                {"holiday_date": "2027-01-01", "name": "A"},
+                {"holiday_date": "2027-12-25", "name": "B"},
+            ]
+        },
+        headers=_headers(principal),
+    )
+    resp = client.post(  # a SUBSET — the omitted date must survive
+        f"/reference/calendars/{cal_id}/holidays",
+        json={"holidays": [{"holiday_date": "2027-01-01", "name": "A"}]},
+        headers=_headers(principal),
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["holidays"]) == 2, "the refresh DELETED a date — it is not add-only"
+
+
+def test_the_refresh_requires_edit(ctx: tuple[TestClient, Principal, Session]) -> None:
+    client, principal, _ = ctx
+    cal_id = _make_calendar(client, principal)
+    resp = client.post(
+        f"/reference/calendars/{cal_id}/holidays",
+        json={"holidays": []},
+        headers=_no_perm_headers(principal),
+    )
+    assert resp.status_code == 403
+
+
+def test_an_unknown_calendar_is_a_404_not_a_500(
+    ctx: tuple[TestClient, Principal, Session],
+) -> None:
+    client, principal, _ = ctx
+    resp = client.post(
+        f"/reference/calendars/{uuid.uuid4()}/holidays",
+        json={"holidays": []},
+        headers=_headers(principal),
+    )
+    assert resp.status_code == 404
+
+
+def test_ANOTHER_TENANTS_calendar_is_refused_404(
+    ctx: tuple[TestClient, Principal, Session],
+) -> None:
+    """The tenant fence, against the LIKELY hostile input rather than the easy one.
+
+    Written second, because the first version of this control used a random UUID and was VACUOUS:
+    removing the tenant filter from the endpoint killed no test at all. A nonexistent id 404s
+    whether or not the fence exists — the input that discriminates is a REAL calendar owned by
+    SOMEONE ELSE. (The LIM-2 lesson: mutate against the likely input, not the easy one.)
+
+    This matters beyond tidiness. A SYSTEM-tenant calendar is VISIBLE to every tenant under the
+    hybrid policy, so without the explicit filter the endpoint resolves a foreign row and the
+    refusal lands deep in the flush as a 500 — or, on a tier without RLS, does not land at all.
+    """
+    client, principal, db = ctx
+    foreign = Calendar(
+        tenant_id=str(uuid.uuid4()),  # a real row, a real id, a DIFFERENT owner
+        code="XFOR",
+        name="Foreign Exchange Calendar",
+        mic="XFOR",
+        record_version=1,
+    )
+    db.add(foreign)
+    db.commit()
+
+    resp = client.post(
+        f"/reference/calendars/{foreign.id}/holidays",
+        json={"holidays": [{"holiday_date": "2027-01-01"}], "complete_through": "2027-12-31"},
+        headers=_headers(principal),
+    )
+    assert resp.status_code == 404, resp.text
+    db.refresh(foreign)
+    assert foreign.holidays_complete_through is None, "a foreign calendar's horizon was MOVED"
+    assert (
+        db.execute(
+            select(func.count())
+            .select_from(CalendarHoliday)
+            .where(CalendarHoliday.calendar_id == foreign.id)
+        ).scalar_one()
+        == 0
+    ), "dates were written into another tenant's calendar"
+
+
 # --- rating_scale (children via parent write) ---
 
 

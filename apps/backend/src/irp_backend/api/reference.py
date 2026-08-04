@@ -6,8 +6,15 @@ from the principal (never the body — a forged value is ignored, backstopped by
 a single end-of-request ``db.commit()`` honours the one-transaction invariant. List reads apply the
 application-layer ``dedupe_tenant_wins``: a tenant override shadows the SYSTEM_TENANT global of the
 same ``code`` (precedence lives here, NOT in RLS). A cross-tenant/unknown id is an indistinguishable
-404; a malformed UUID path is a 422 before any DB hit. Child rows (holidays/grades) are written
-through the parent POST only — there is NO PUT/DELETE/bulk/search/standalone-child surface.
+404; a malformed UUID path is a 422 before any DB hit.
+
+Child rows are written through the parent POST only, with **exactly one exception, added at DEP-1**
+(Wave-15, OQ-W15P-5): ``POST /reference/calendars/{id}/holidays`` rides the ADD-ONLY
+``refresh_calendar_holidays`` verb. There is still NO PUT/DELETE/bulk/search surface, and removal
+remains structurally impossible through the API — the exception is add-only by construction, not by
+convention. It exists because ``holidays_complete_through`` had **no HTTP write path at all**, so a
+deployed tenant that created a calendar through this API got a ``BUSINESS_MONTH_END`` schedule that
+refused at every tick: fail-closed and loud, but with no way to reach the working state.
 """
 
 from __future__ import annotations
@@ -22,7 +29,11 @@ from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, require_permission
 from irp_shared.entitlement.service import Principal
-from irp_shared.reference.calendar import HolidaySpec, create_calendar
+from irp_shared.reference.calendar import (
+    HolidaySpec,
+    create_calendar,
+    refresh_calendar_holidays,
+)
 from irp_shared.reference.currency import create_currency
 from irp_shared.reference.models import (
     Calendar,
@@ -158,6 +169,18 @@ class CalendarOut(BaseModel):
 
 class CalendarDetailOut(CalendarOut):
     holidays: list[HolidayOut]
+    #: DEP-1: the DECLARED coverage horizon. Exposed because a BUSINESS_MONTH_END schedule REFUSES
+    #: beyond it (OQ-CAL-1-4) — an operator who cannot read it cannot tell a working calendar from
+    #: one that will refuse at the next tick, which made the F3 gap invisible from outside.
+    holidays_complete_through: date | None = None
+
+
+class HolidayRefreshIn(BaseModel):
+    """ADD-ONLY refresh input. Absent ``complete_through`` leaves the declared horizon untouched;
+    a value that REGRESSES it is refused 422 (forward-only, OQ-CAL-1-4)."""
+
+    holidays: list[HolidayIn] = Field(default_factory=list)
+    complete_through: date | None = None
 
 
 def _calendar_out(c: Calendar) -> CalendarOut:
@@ -208,6 +231,53 @@ def get_calendar(
     return _calendar_detail(db, calendar)
 
 
+@router.post("/calendars/{calendar_id}/holidays", response_model=CalendarDetailOut)
+def refresh_calendar_holidays_endpoint(
+    calendar_id: uuid.UUID,
+    body: HolidayRefreshIn,
+    principal: Principal = Depends(_require_calendar_edit),
+    db: Session = Depends(get_tenant_session),
+) -> CalendarDetailOut:
+    """ADD-ONLY holiday refresh + declared-horizon advance — DEP-1 (OQ-W15P-5), closing F3.
+
+    The gap: only ``refresh_calendar_holidays`` could set ``holidays_complete_through`` and it had
+    NO HTTP route, so a calendar created through this API could never reach a state where a
+    ``BUSINESS_MONTH_END`` schedule ticks. Invisible to the whole test suite, because tests call the
+    service verb directly — which is exactly the class of gap a real deployment exists to surface.
+
+    **The tenant fence is explicit, not delegated to RLS.** A SYSTEM-tenant calendar is VISIBLE
+    to every tenant under the hybrid policy, so a plain ``db.get`` would resolve one and the write
+    would then fail deep in the flush on the parent head's own-only ``WITH CHECK`` — a 500 where
+    the caller is owed a refusal. Refusing here makes it a 404, indistinguishable from an unknown
+    id, which is also the non-disclosure behaviour the rest of this module already uses.
+    """
+    calendar = db.execute(
+        select(Calendar).where(
+            Calendar.id == str(calendar_id), Calendar.tenant_id == principal.tenant_id
+        )
+    ).scalar_one_or_none()
+    if calendar is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="calendar not found")
+    try:
+        refresh_calendar_holidays(
+            db,
+            calendar,
+            actor=_actor(principal),
+            holidays=[
+                HolidaySpec(holiday_date=h.holiday_date, name=h.name, recurrence=h.recurrence)
+                for h in body.holidays
+            ],
+            complete_through=body.complete_through,
+        )
+    except ValueError as exc:
+        # The forward-only horizon refusal, surfaced as the governed 422 rather than a 500.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    db.commit()
+    return _calendar_detail(db, calendar)
+
+
 def _calendar_detail(db: Session, calendar: Calendar) -> CalendarDetailOut:
     holidays = (
         db.execute(
@@ -228,6 +298,7 @@ def _calendar_detail(db: Session, calendar: Calendar) -> CalendarDetailOut:
             HolidayOut(holiday_date=h.holiday_date, name=h.name, recurrence=h.recurrence)
             for h in holidays
         ],
+        holidays_complete_through=calendar.holidays_complete_through,
     )
 
 
