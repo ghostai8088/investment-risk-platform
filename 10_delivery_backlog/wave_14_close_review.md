@@ -8,7 +8,7 @@
 >
 > **§§0–7 are preserved exactly as first written — including the sentences §8 refutes.** When they
 > say "nothing is folded yet," that was true at the time of writing and is no longer: **§8 records
-> eight fold commits, the re-adjudication of the seventeen 2-of-3 kills (fourteen overturned), eight
+> TEN fold commits, the re-adjudication of the seventeen 2-of-3 kills (fourteen overturned), eight
 > record corrections, and the close's OWN false-green episode** — six consecutive red CI runs
 > reported as green, caught by the user rather than by me. Migration head is now `0062`. Read §8
 > before treating any statement in §§0–7 as current.
@@ -592,7 +592,7 @@ flagged in §7 as carrying uncontradicted executed reproductions — `denominato
 evidence for **P13 (PROPOSED)**: kills are reserved for factual refutation, and an executed,
 uncontradicted reproduction may be DOWNGRADED but never discarded on severity votes.
 
-### 8.2 The code fold — eight commits on `wave-14-close-fold`
+### 8.2 The code fold — ten commits on `wave-14-close-fold`, merged as PR #170 (`73452d3`)
 
 | # | Commit | What |
 |---|---|---|
@@ -604,6 +604,8 @@ uncontradicted reproduction may be DOWNGRADED but never discarded on severity vo
 | 6 | `71d9f38` | The four `build_liquidity_snapshot` pre-build refusals, each made to FIRE (**P9**) |
 | 7 | `15cd418` | Three CI gates + the XNYS coverage-start defect (§8.3) |
 | 8 | `a9fc582` | `cryptography` 49.0.0 → 50.0.0, clearing CVE-2026-69247 |
+| 9 | `31b9a75` | The constitutional chunk: P8–P14, eight record corrections, this document |
+| 10 | `ebbb9d7` | The LOW bucket: four folded and mutation-proven, six recorded with triggers (§9) |
 
 ### 8.3 The fold's own false-green — the wave's pattern, committed by the close itself
 
@@ -661,10 +663,11 @@ whether the set STARTED early enough.** A control's existence was verified; its 
 
 | Gate | Evidence |
 |---|---|
-| `make check` | **2,410 passed, `MAKE_CHECK_EXIT=0`** (captured log, no pipe in the capture path) |
-| Full-PG battery | **2,970 outcome characters, all dots — 0 failed, `PYTEST_EXIT=0`**, fresh schema at head `0062` |
+| `make check` | **2,412 passed, `MAKE_CHECK_EXIT=0`** (captured log, no pipe in the capture path) |
+| Full-PG battery | **2,972 outcome characters, all dots — 0 failed, `PYTEST_EXIT=0`**, fresh schema at head `0062` |
 | `pip-audit` | "No known vulnerabilities found, 1 ignored" on the **upgraded** tree |
-| CI | run **30859961988** = `success`, all six jobs green. Backend **7m40s** vs 31–43s on every red run — the visible proof the suite now executes |
+| CI | PR **#170** — all twelve checks pass (push + pull_request runs). Backend **8m11s / 8m13s** vs 31–43s on every red run — the visible proof the suite now executes |
+| verify-on-main | all TEN fold commits confirmed ancestors of `origin/main`; merged tree **byte-identical** to the validated tree |
 
 ### 8.7 Still open at this addendum
 
