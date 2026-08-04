@@ -357,4 +357,32 @@ describe("RunDetail", () => {
       "/risk/proxy-weight-estimates/runs/22222222-2222-2222-2222-222222222222",
     );
   });
+
+  it("renders registered model limitations on the run page (OQ-LQ-1-8 — the ratified surface)", async () => {
+    // The Wave-14 close's re-adjudicated MED: the liquidity API returned these and the run-detail
+    // screen — the surface the gate ratified — rendered nothing. The governance walk rendering
+    // them ELSEWHERE does not satisfy "next to the number". The first limitation is the one that
+    // matters: this number must not be read as the Rule 22e-4 15% test.
+    stubDetail({
+      run_id: "33333333-3333-3333-3333-333333333333",
+      status: "COMPLETED",
+      failure_reason: null,
+      input_snapshot_id: "s-1",
+      model_version_id: "m-1",
+      code_version: "v",
+      environment_id: "e",
+      initiated_by: "t",
+      created_at: null,
+      completed_at: null,
+      limitations: [
+        "This is NOT the SEC Rule 22e-4 15% test. The denominator is the invested-long book.",
+        "Tier assignment is INSTRUMENT-grain.",
+      ],
+      rows: [],
+    } as unknown as RunDetailBase);
+    renderDetail("liquidity", "33333333-3333-3333-3333-333333333333");
+    expect(await screen.findByText(/NOT the SEC Rule 22e-4 15% test/)).toBeTruthy();
+    expect(screen.getByText("Registered model limitations")).toBeTruthy();
+    expect(screen.getByText(/INSTRUMENT-grain/)).toBeTruthy();
+  });
 });

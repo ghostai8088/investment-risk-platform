@@ -148,6 +148,15 @@ class ConcentrationResult(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin
             "dimension_kind IN ('ISSUER', 'SECTOR_INDUSTRY', 'COUNTRY_OF_RISK')",
             name="dimension_kind",  # ck_ SUFFIX only (the 0055 naming-convention note)
         ),
+        # Wave-14 close fold (migration 0062): the "controlled vocabulary" claim finally gets its
+        # constraint. CON-1 shipped denominator_basis as prose-controlled while BOTH sibling
+        # tables minted in the same wave constrain theirs (0058's limit_definition, 0061's
+        # liquidity_result) — the close's reproduction inserted 'TOTAL_ASSETS_BOGUS' cleanly.
+        # Single-valued by ratified design (OQ-CON-1); widening it is a migration, deliberately.
+        CheckConstraint(
+            "denominator_basis IN ('INVESTED_LONG')",
+            name="denominator_basis",  # ck_ SUFFIX only (the 0055 note)
+        ),
     )
 
     # Run-bound + snapshot-gated + model-bound (all NOT NULL — AD-014 at the DB).

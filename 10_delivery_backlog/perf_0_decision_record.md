@@ -239,6 +239,22 @@ synthetic import fence, Part 0 fact 5). Pins verified as NOT applicable: migrati
 `HYBRID_TABLES` parity, `APPEND_ONLY_TABLES`, `FAMILY_REGISTRY`, DDL identifier lengths, the
 seven-ledger sweep (no ledger-bearing artifact is minted).
 
+> **CORRECTED at the Wave-14 close (2026-08-03).** Dismissing the **whole** seven-ledger sweep on
+> the grounds that "no ledger-bearing artifact is minted" is wrong, and the reasoning only ever
+> covered ledgers **1–3** (ENT registry, audit taxonomy, control matrix). Ledgers **4–7** are not
+> artifact-gated: (4) `current_state.md` CURRENT TRUTH, (5) the requirements backbone + RTM, (6)
+> MEASURED counts, and above all **(7) the record's OWN delivery claims — every "shipped /
+> enforced / delivered / implemented" claim verified against the MERGED diff and cited to its
+> artifact.** Ledger 7 applies to EVERY slice that makes delivery claims, which is every slice.
+>
+> This is not a technicality: the Wave-14 close found **exactly the defects ledger 7 exists to
+> catch** in this slice's own record — the Reading-1 erratum that corrected a number and then
+> asserted nothing depended on it (see the erratum-to-the-erratum in `perf_0_readings.md`), and
+> F2's fix, whose record sentence quantified over six segments while the fix touched two, the
+> erratum's own segment among the four omitted (now standing rule **P10**). A slice that mints no
+> entity can still ship a false record, and the sweep was declared inapplicable precisely where it
+> would have bitten.
+
 ---
 
 ## Part 9 — Execution addendum (2026-07-31, written BEFORE the pre-closeout review)

@@ -24,6 +24,8 @@ from irp_shared.audit.service import verify_chain
 from irp_shared.entitlement.bootstrap import ALL_CODES, SYSTEM_TENANT_ID
 from irp_shared.lineage.models import DataSource, LineageEdge
 from irp_shared.lineage.service import assert_has_lineage
+from irp_shared.perf.holiday_binding import assert_boundaries_covered
+from irp_shared.perf.rolling_kernel import last_weekday_of_month
 from irp_shared.reference.bootstrap import (
     SYSTEM_CALENDAR_CODE,
     SYSTEM_CALENDAR_HOLIDAYS,
@@ -643,10 +645,11 @@ def test_the_xnys_dataset_census(session: Session) -> None:
     alone missed 5 of 6 single-date perturbations; the derivation caught all 6)."""
     dates = [d for d, _ in XNYS_HOLIDAYS]
     dset = set(dates)
-    assert len(dates) == len(dset) == 118  # no duplicates; the full 2024-2035 count
-    per_year = {y: sum(1 for d in dates if d.year == y) for y in range(2024, 2036)}
+    assert len(dates) == len(dset) == 128  # no duplicates; the full 2023-2035 count
+    per_year = {y: sum(1 for d in dates if d.year == y) for y in range(2023, 2036)}
     # 2028 and 2033 carry NINE: Saturday New Year's unobserved (NYSE Rule 7.2).
     assert per_year == {
+        2023: 10,
         2024: 10,
         2025: 10,
         2026: 10,
@@ -740,7 +743,7 @@ def test_the_xnys_dataset_agrees_with_an_independent_rule_derivation(session: Se
         return first + timedelta(days=(3 - first.weekday()) % 7, weeks=3)
 
     expected: set[date] = set()
-    for year in range(2024, 2036):
+    for year in range(2023, 2036):
         for nominal in (
             date(year, 1, 1),
             nth_monday(year, 1, 3),
@@ -768,6 +771,38 @@ def test_the_xnys_dataset_agrees_with_an_independent_rule_derivation(session: Se
     assert {d for d, _ in XNYS_HOLIDAYS} == expected
 
 
+def test_the_shipped_set_covers_the_opening_boundary_of_its_earliest_servable_grid() -> None:
+    """The Wave-14 close's DATASET defect, reproduced as a permanent control with both arms.
+
+    A BUSINESS_MONTH_END grid's opening boundary d_0 is the close of the month BEFORE the first
+    measured month. So a grid whose first measured month is January 2024 opens at 2023-12-29 —
+    and the set as originally shipped began in 2024, meaning it could not serve the earliest month
+    it existed to serve. The shipped demo did exactly this and rolled d_0 weekend-only.
+
+    The positive arm pins the extension. The NEGATIVE arm re-truncates the set to 2024 and proves
+    the gate refuses — so this control cannot pass vacuously if someone later trims the dataset
+    back, and it fails loudly rather than silently returning to the weekend-only answer.
+    """
+    full = frozenset(d for d, _ in XNYS_HOLIDAYS)
+    grid = [
+        last_weekday_of_month(2023, 12),  # d_0 — the close of the month BEFORE January 2024
+        last_weekday_of_month(2024, 1),
+        last_weekday_of_month(2024, 2),
+    ]
+    assert grid[0] == date(2023, 12, 29)
+    assert_boundaries_covered(
+        grid, holidays=full, holidays_complete_through=XNYS_COMPLETE_THROUGH, error=ValueError
+    )
+    truncated = frozenset(d for d in full if d.year >= 2024)
+    with pytest.raises(ValueError, match="before the pinned calendar's earliest covered year"):
+        assert_boundaries_covered(
+            grid,
+            holidays=truncated,
+            holidays_complete_through=XNYS_COMPLETE_THROUGH,
+            error=ValueError,
+        )
+
+
 def test_seed_system_reference_loads_the_full_xnys_set(session: Session) -> None:
     seed_system_reference(session, actor_id="system")
     xnys = session.execute(
@@ -780,7 +815,7 @@ def test_seed_system_reference_loads_the_full_xnys_set(session: Session) -> None
         .select_from(CalendarHoliday)
         .where(CalendarHoliday.calendar_id == xnys.id)
     ).scalar_one()
-    assert n == len(XNYS_HOLIDAYS) == 118
+    assert n == len(XNYS_HOLIDAYS) == 128
     # Exactly ONE REFERENCE.UPDATE on the SYSTEM chain: the refresh's single parent event.
     updates = session.execute(
         select(func.count())

@@ -58,7 +58,7 @@ from irp_shared.perf.events import (
     RUN_TYPE_SHARPE,
     SharpeRatioActor,
 )
-from irp_shared.perf.holiday_binding import parse_pinned_holidays
+from irp_shared.perf.holiday_binding import assert_boundaries_covered, parse_pinned_holidays
 from irp_shared.perf.models import (
     ANNUALIZATION_NONE,
     ANNUALIZATION_SQRT_12,
@@ -216,10 +216,16 @@ def _adjudicate_portfolio_leg(
     # first
     # measured month), then every sub-period end.
     boundaries = [sub_periods[0].period_start] + [p.period_end for p in sub_periods]
-    if holidays_complete_through is not None and boundaries[-1] > holidays_complete_through:
-        raise SharpeInputError(
-            f"the series closes on {boundaries[-1]}, beyond the pinned calendar's declared "
-            f"holiday coverage ({holidays_complete_through}) — refused (OQ-CAL-1-4)"
+    if holidays_complete_through is not None:
+        # BOTH coverage sides, shared (holiday_binding.assert_boundaries_covered): the end side is
+        # OQ-CAL-1-4; the start side is the Wave-14 close's HIGH — the first shipment checked only
+        # boundaries[-1], so a window opening before the dataset's first covered year rolled
+        # weekend-only, silently.
+        assert_boundaries_covered(
+            boundaries,
+            holidays=holidays,
+            holidays_complete_through=holidays_complete_through,
+            error=SharpeInputError,
         )
     try:
         assert_month_aligned(boundaries, holidays)

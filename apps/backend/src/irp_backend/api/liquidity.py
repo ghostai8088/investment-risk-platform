@@ -46,7 +46,14 @@ from irp_shared.liquidity.service import (
 router = APIRouter(prefix="/liquidity", tags=["liquidity"])
 
 #: Module-level guard singletons (deny-by-default; built once, not in argument defaults).
-_require_run = require_permission("liquidity.run")
+#
+# Forward-gate (close-review L1, folded): `liquidity.run` is Tier-3 RATIFIED and deliberately
+# MINTED, but LQ-1's Part 3 names FOUR READS and no write endpoint — so the guard singleton it
+# would need does not exist yet, and shipping an unratified POST to give it a consumer is not the
+# fix. When a run endpoint lands it MUST carry `require_permission("liquidity.run")`, the
+# schedule.manage / limit.manage pattern in `entitlement/bootstrap.py`. The permission mint stays;
+# the dead singleton goes, because a bound-but-unused guard reads as "this route is protected"
+# to the next reader and nothing enforces that it ever becomes true.
 _require_view = require_permission("liquidity.view")
 
 

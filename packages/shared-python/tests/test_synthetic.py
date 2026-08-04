@@ -570,7 +570,9 @@ def test_no_migration_and_no_entity() -> None:
     # module's own surface, not against whatever number happens to be next. Recorded as a carry
     # with a trigger (the next slice that pays this relay), NOT changed here: re-expressing a
     # guard in the same commit that trips it is how a real fence gets quietly softened.
-    assert not list(versions.glob("0062*")), "no 0062 migration may be added by the synthetic slice"
+    # NOTE (Wave-14 close): relayed 0062 -> 0063 (0062 = concentration_denom_check, the close
+    # fold's CHECK). SIX consecutive relays now; the carry recorded at the LQ-1 relay stands.
+    assert not list(versions.glob("0063*")), "no 0063 migration may be added by the synthetic slice"
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -

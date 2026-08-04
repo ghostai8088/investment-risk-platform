@@ -667,14 +667,18 @@ jobs:
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_limit_dimension_pg.py -q
       # Filename ``stage9zzzzzzzzzz`` (TEN ``z``, one more than REF-1's stage 18, verified by
-      # ``ls``) — the standing stage-ordering discipline; this suite takes the FINAL-POSITION
-      # count pin forward at 26/41/136, with REF-1's demoted to POSITIONAL.
-      - name: Demo stage 19 (Postgres, CON-1 concentration — final-position count pin)
+      # ``ls``) — the standing stage-ordering discipline. This suite TOOK the FINAL-POSITION
+      # count pin at 26/41/136 when CON-1 shipped; the baton has since relayed onward and the
+      # FINAL-POSITION pin now lives in stage 23 (LQ-1, 27/44/141). Close-review L8, folded:
+      # the present-tense claim and the STEP NAME below both still said final-position, and a
+      # step name is visible in the CI UI — a stale relay baton read as the live one.
+      - name: Demo stage 19 (Postgres, CON-1 concentration — intermediate count pin)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzzz_con1_pg.py -q
-      # LIM-2 held the pin unchanged (26/41/136); the FINAL-POSITION pin relayed to stage 21 at CAL-1b (26/43/139): limits and
+      # LIM-2 held the pin unchanged (26/41/136); the pin relayed onward at CAL-1b (26/43/139) and
+      # now rests at stage 23 (LQ-1, 27/44/141): limits and
       # breaches are neither model codes, validations, nor calculation runs, so a whole slice must
       # move none of them. Filename carries ELEVEN `z` (con1 = ten) per the stage-ordering rule.
       - name: Demo stage 20 (Postgres, LIM-2 concentration limits)

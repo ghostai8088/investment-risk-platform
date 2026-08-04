@@ -203,6 +203,22 @@ def run_liquidity(
     if not scheme_id:
         raise LiquidityInputError("a liquidity-tier scheme is required")
 
+    # CTRL-003 with model-identity — the gate the ratified record required (Part 3 item 4) and the
+    # first implementation OMITTED. The Wave-14 close found it by execution: a REJECTED model
+    # version bound and wrote seven immutable rows, because the parse-back below checks the
+    # assumption TEXTS and never the version's STATUS. LQ-1 was the only one of twenty-four
+    # governed families missing this call — which is why P8 (the governed-binder conformance
+    # census) now exists. Placed BEFORE the parse-back and BEFORE any write, matching every other
+    # binder's pre-create gate.
+    from irp_shared.model.service import assert_model_version_of
+
+    assert_model_version_of(
+        session,
+        str(model_version.id),
+        tenant_id=acting_tenant,
+        expected_model_code=LIQUIDITY_MODEL_CODE,
+    )
+
     # The SCOPE IS DERIVED, never supplied. An earlier draft took portfolio_id as a free parameter
     # and stamped it onto immutable governed rows and onto calculation_run.scope_portfolio_id
     # without ever resolving the upstream run — so a caller could label a run with a portfolio it

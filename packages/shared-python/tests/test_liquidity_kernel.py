@@ -39,6 +39,57 @@ def test_shares_are_taken_against_the_long_book_and_sum_to_one() -> None:
     assert sum(b.tier_share for b in r.buckets) == _d("1.000000")
 
 
+def test_coverage_classifiable_is_an_AMOUNT_not_a_second_ratio() -> None:
+    """Close-review L1, folded: mutation M9 (`coverage_classifiable = coverage_ratio`) left the
+    whole kernel suite GREEN — nothing anywhere asserted the field's UNITS.
+
+    The field is money on this dimension precisely because `coverage_ratio` already carries the
+    ratio (CON-1's second coverage figure has no distinct meaning here), so a silent swap to the
+    ratio would be a units error that reads as a plausible number. Chosen so the two can never
+    coincide: tiered long = 900, total long = 1000 ⇒ amount 900.000000, ratio 0.900000.
+    """
+    r = compute_liquidity(
+        (
+            Atom("a", _d("600"), "HIGHLY_LIQUID"),
+            Atom("b", _d("300"), "ILLIQUID"),
+            Atom("c", _d("100"), None),
+        )
+    )
+    assert r.coverage_classifiable == _d("900.000000")
+    assert r.coverage_ratio == _d("0.900000")
+    assert r.coverage_classifiable != r.coverage_ratio
+
+
+def test_a_ZERO_amount_atom_is_not_LONG() -> None:
+    """Close-review L2, folded: the LONG predicate boundary (`exposure_amount > 0`) was unpinned —
+    the `>=` mutant survived the kernel suite.
+
+    Measured blast radius: `untiered_instrument_count` only; every share and the coverage ratio are
+    identical either way, which is exactly why no share assertion could ever catch it. A zero-amount
+    atom is not a position, so it must not be counted as an untiered one.
+    """
+    r = compute_liquidity(
+        (
+            Atom("a", _d("100"), "ILLIQUID"),
+            Atom("zero-untiered", _d("0"), None),
+        )
+    )
+    assert r.untiered_instrument_count == 0, "a zero-amount atom is not LONG and cannot be untiered"
+    assert r.total_long == _d("100.000000")
+    assert r.coverage_ratio == _d("1.000000")
+
+    # The negative-side twin: a zero-amount atom that DOES carry a tier is equally not-LONG, so it
+    # cannot move a share either.
+    r2 = compute_liquidity(
+        (
+            Atom("a", _d("100"), "ILLIQUID"),
+            Atom("zero-tiered", _d("0"), "HIGHLY_LIQUID"),
+        )
+    )
+    assert r2.illiquid_share == _d("1.000000")
+    assert r2.highly_liquid_share == _d("0.000000")
+
+
 def test_a_short_position_never_reduces_the_illiquid_share() -> None:
     """The LONG predicate is by VALUE SIGN. Netting a short against a long would let a book hide
     illiquidity by adding shorts — so the short must be invisible, not subtracted."""

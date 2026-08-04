@@ -28,6 +28,11 @@ export type RiskRunList = Schemas["RiskRunListOut"];
  * in `decimal-contract.ts`. */
 export type RunDetailBase = Omit<Schemas["SensitivityRunOut"], "rows"> & {
   rows: Record<string, string | number | null>[];
+  /** Registered model limitations, when the family's run payload carries them (LQ-1 first:
+   * the ratified OQ-LQ-1-8 — "a limitation no screen renders is not a control". Optional so
+   * every family's payload remains assignable; any future family that adds the field renders
+   * automatically rather than re-forgetting the surface). */
+  limitations?: string[];
 };
 
 /** The FE-3 governance-walk read DTOs — aliased to the generated schemas (OD-FE-3-D), so a

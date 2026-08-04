@@ -464,3 +464,54 @@ def test_assign_model_tier_refusals(session: Session) -> None:
     with pytest.raises(ModelNotVisible):  # cross-tenant / unknown head fails closed
         assign_model_tier(session, **{**good, "model_id": str(uuid.uuid4())})
     assert model.tier is None  # nothing stamped by any refusal
+
+
+def test_every_governed_binder_calls_the_model_version_gate() -> None:
+    """P8 — the governed-binder conformance census (RATIFIED at the Wave-14 close).
+
+    Every module that calls ``execute_governed_run`` must call ``assert_model_version_of`` in the
+    same module, or sit on the exception list with a written reason. Exact set equality in both
+    directions: a new binder that skips the gate fails here, and a stale exception row fails here.
+
+    Grounded in the close's BLOCKING: LQ-1 shipped the 24th governed family as the ONLY one of
+    twenty-four missing the gate — a REJECTED model version bound and wrote seven immutable rows,
+    and no per-slice gate noticed for a full slice plus its adversarial review. A per-family
+    convention with 23 correct instances and one wrong one is exactly what a census is for.
+    """
+    import pathlib
+
+    import irp_shared
+
+    root = pathlib.Path(irp_shared.__file__).parent
+
+    #: Modules allowed to run governed calculations WITHOUT a model gate, each with its reason.
+    exceptions = {
+        "exposure/service.py": (
+            "model-less by ratified design — EXPOSURE_AGGREGATE binds no model_version "
+            "(the captured-aggregation class; AD-018)"
+        ),
+    }
+
+    binders: set[str] = set()
+    for path in root.rglob("*.py"):
+        rel = str(path.relative_to(root))
+        if rel == "calc/scaffold.py":
+            continue  # the definition site, not a caller
+        text = path.read_text()
+        if "execute_governed_run(" in text:
+            binders.add(rel)
+
+    assert len(binders) > 20, "the census scanned suspiciously few binders — the walk is broken"
+
+    missing = sorted(
+        rel
+        for rel in binders
+        if rel not in exceptions and "assert_model_version_of" not in (root / rel).read_text()
+    )
+    assert not missing, (
+        f"governed binder(s) with NO model-version gate (a REJECTED version would bind and write "
+        f"immutable rows): {missing}"
+    )
+
+    stale = sorted(e for e in exceptions if e not in binders)
+    assert not stale, f"exception rows for modules that no longer run governed calcs: {stale}"

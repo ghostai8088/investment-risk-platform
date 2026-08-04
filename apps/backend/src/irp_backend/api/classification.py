@@ -45,6 +45,7 @@ from irp_shared.classification.service import (
     resolve_ancestors,
     supersede_assignment,
 )
+from irp_shared.classification.service import list_assignments as service_list_assignments
 from irp_shared.entitlement.service import Principal
 from irp_shared.reference.service import dedupe_tenant_wins
 
@@ -243,7 +244,7 @@ def list_assignments(
     scheme_id: uuid.UUID | None = Query(default=None),
     dimension_kind: str | None = Query(default=None),
     as_of: datetime | None = Query(default=None),
-    _: Principal = Depends(_require_assignment_view),
+    principal: Principal = Depends(_require_assignment_view),
     db: Session = Depends(get_tenant_session),
 ) -> list[AssignmentOut]:
     """Entity- and time-filtered list (rule 7's captured-input clause).
@@ -253,6 +254,30 @@ def list_assignments(
     timestamp), which is why their binds are pinned in the PG tier — SQLite's affinity makes the
     unit tier structurally blind to a mistyped bind.
     """
+    if as_of is None:
+        # The current-heads path rides the SERVICE verb (Wave-14 close fold: LQ-1 shipped
+        # list_assignments to "pay REF-1's gap" and nothing in production ever called it — the
+        # payment was unconsumed). Beyond de-duplication, the verb REFUSES an unknown
+        # dimension_kind where this endpoint's hand-rolled filter silently returned [] on a typo:
+        # "no such kind" read as "a clean book", the vacuous-read class.
+        try:
+            rows = service_list_assignments(
+                db,
+                acting_tenant=principal.tenant_id,
+                entity_id=str(entity_id) if entity_id else None,
+                scheme_id=str(scheme_id) if scheme_id else None,
+                dimension_kind=dimension_kind,
+            )
+        except ClassificationValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+        return [_assignment_out(a) for a in rows]
+
+    # The as_of branch keeps its OWN query deliberately: this endpoint's ratified contract is
+    # "versions in force at that VALID instant on the current system view" — a different axis
+    # pairing from the service verb's known_at (system-axis reconstruction). Wiring one to the
+    # other would silently change a shipped read's meaning.
     stmt = select(ClassificationAssignment).where(ClassificationAssignment.system_to.is_(None))
     if entity_id is not None:
         stmt = stmt.where(ClassificationAssignment.entity_id == str(entity_id))
@@ -260,16 +285,16 @@ def list_assignments(
         stmt = stmt.where(ClassificationAssignment.scheme_id == str(scheme_id))
     if dimension_kind is not None:
         stmt = stmt.where(ClassificationAssignment.dimension_kind == dimension_kind)
-    if as_of is not None:
-        stmt = stmt.where(
-            ClassificationAssignment.valid_from <= as_of,
-            (ClassificationAssignment.valid_to.is_(None))
-            | (ClassificationAssignment.valid_to > as_of),
-        )
-    else:
-        stmt = stmt.where(ClassificationAssignment.valid_to.is_(None))
-    rows = db.execute(stmt).scalars().all()
-    return [_assignment_out(a) for a in rows]
+    stmt = stmt.where(
+        ClassificationAssignment.valid_from <= as_of,
+        (ClassificationAssignment.valid_to.is_(None)) | (ClassificationAssignment.valid_to > as_of),
+    )
+    # A distinct name, not a rebind: the current-heads branch above binds ``rows`` to the service
+    # verb's ``list[...]``, and .scalars().all() is a ``Sequence[...]`` — narrower. mypy reads the
+    # first binding as the declared type, so reusing the name is an error, and the honest fix is
+    # two names rather than a widening annotation that pretends the branches share a type.
+    as_of_rows = db.execute(stmt).scalars().all()
+    return [_assignment_out(a) for a in as_of_rows]
 
 
 @router.post("/assignments", response_model=AssignmentOut, status_code=status.HTTP_201_CREATED)

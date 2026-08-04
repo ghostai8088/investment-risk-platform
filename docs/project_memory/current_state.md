@@ -10,8 +10,17 @@
 > (`0061_liquidity_result`; was `0060`); next free canonical id **ENT-072** (ENT-071
 > `liquidity_result` minted at LQ-1; **TWO** paper-only reservations remain — ENT-032 AND ENT-058,
 > a ledger-1 self-contradiction corrected here); demo counts **27/44/141 MEASURED**; hybrid set
-> N = 7 unchanged. **NEXT = the Wave-14 close review, a SEPARATE activity** (ratified OQ-LQ-1-20,
-> on the Wave-13 pattern that produced P1–P7), then the Wave-15 openers DEP-1 + RPT-1.
+> N = 7 unchanged.
+>
+> **THE WAVE-14 CLOSE REVIEW HAS RUN** (`10_delivery_backlog/wave_14_close_review.md`,
+> §§0–7 pending ratification, §8 the execution addendum). It found **1 BLOCKING** (LQ-1 was the
+> only one of 24 governed families missing `assert_model_version_of`) plus 16 further distinct
+> defects, and a wave-wide pattern: **a control's EXISTENCE was verified; its DISCRIMINATING POWER
+> was not.** Folded in eight commits on `wave-14-close-fold`; **migration head is now `0062`**
+> (`0062_concentration_denom_check`). Standing rules **P8–P12 RATIFIED**; **P13 + P14 PROPOSED**.
+> The XNYS set is now **128 dates, 2023–2035** — the 2024 start was an off-by-one (a BUSINESS
+> month-end grid's opening boundary falls in the PRIOR month). TB3MS residual **DISCHARGED**
+> (30/30 against live FRED). **NEXT = the Wave-15 openers DEP-1 + RPT-1.**
 >
 > - **LQ-1 (2026-08-02):** the captured half mints NO entity — tier assignment rides REF-1's
 >   `classification_assignment` as `dimension_kind = LIQUIDITY_TIER`, with the SEC Rule
@@ -94,7 +103,8 @@
 >   move); the `HOLIDAY_CALENDAR` snapshot pin (AD-014-conformant); the SPLIT: CAL-1a (dataset +
 >   refresh verb + the CTRL-034 diligence control, H-05-approved at the gate — the first CTRL
 >   mint since P0.5) → CAL-1b (the atomic convention move, migration 0059). CAL-1a landed the
->   118-date XNYS set (2024–2035, Rule 7.2 negatives pinned) + the ADD-ONLY
+>   118-date XNYS set (2024–2035, Rule 7.2 negatives pinned; **EXTENDED at the Wave-14 close to
+>   128 dates, 2023–2035 — see the coverage-start erratum**) + the ADD-ONLY
 >   `refresh_calendar_holidays` verb + the executed checklist.
 > - **CAL-1b SHIPPED + CLOSED (2026-08-01, merged PR #162 = `33aca0d`) — the atomic convention
 >   move, QS-11 DISCHARGED:**
