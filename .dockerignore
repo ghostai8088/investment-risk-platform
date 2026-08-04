@@ -1,0 +1,51 @@
+# DEP-1: the build context sent to `docker build`.
+#
+# Found by EXECUTION, not by reading the Dockerfile: with no .dockerignore, the shipped backend
+# image carried **34 `__pycache__` directories** copied straight off the build machine, plus both
+# test suites. Two distinct problems, and the first is the serious one:
+#
+#   1. STALE LOCAL BYTECODE IN A PRODUCTION ARTIFACT. `__pycache__` is the project's known hazard
+#      class (the shared-tree mutation memory: "purge __pycache__ before trusting any gate"). A
+#      `.pyc` compiled against a different working tree has no business inside a deployed image —
+#      whether or not a given entrypoint happens to import from that path today. It is
+#      non-deterministic input to a artifact whose whole purpose is reproducibility.
+#   2. TEST CODE SHIPPED TO PRODUCTION. Fixtures, hostile-caller controls and demo seeders are not
+#      production surface, and they enlarge both the image and its attack surface for nothing.
+#
+# CI never built these images, so nothing could have caught either (the F1 asymmetry DEP-1 closes).
+
+# --- version control / CI ---
+.git
+.gitignore
+.github
+
+# --- Python build + test residue ---
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/tests
+.venv
+venv
+
+# --- Node ---
+**/node_modules
+**/dist
+**/.vite
+
+# --- local tooling / environments (BR-10: never bake secrets or local env into an image) ---
+.env
+.env.*
+*.log
+.claude
+CC-Session-Logs
+
+# --- documentation and delivery records: not runtime surface ---
+0*_*/
+1*_*/
+docs
+infra/k8s
+README.md
+Makefile
