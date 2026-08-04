@@ -162,3 +162,70 @@ HERE at the latest, before anything internet-facing."* That converts DEP-1 from 
 DEP-1 + SSO-2, roughly doubling it. **This is the single largest scope consequence in the wave and
 it is entirely determined by OQ-W15P-3.** Recommendation (a) is chosen partly to keep that trigger
 unfired until it is deliberately chosen.
+
+---
+
+## Part 6 — Gate outcome (2026-08-04)
+
+The user directed "proceed" against Part 3 without amending any recommendation. Each OQ below is
+therefore taken **as recommended**, with the operating assumption stated so a wrong assumption is
+visible rather than buried. **Anything here can be reversed by saying so — none of it is expensive
+to undo, which is part of why proceeding was the right call rather than blocking.**
+
+| OQ | Outcome | Operating assumption made explicit |
+|---|---|---|
+| **OQ-W15P-1** | **DEP-1 → RPT-1** | That the near-term goal is a **defensible platform**, not a demo. If a demo is imminent, this flips |
+| **OQ-W15P-2** | **Both limbs** — write the three missing methodology docs; replace the 14 hand-copied per-family doc tests with ONE census that FAILS on a non-resolving path | That OD-P3-0-C ("a methodology doc is MANDATORY before any risk method ships") still means what it says. If prose refs are in fact acceptable, this is the moment to reword CTRL-002 instead |
+| **OQ-W15P-3** | **(a) a LOCAL-BUT-REAL target** — a VM / second machine / rootless container host | **The load-bearing one.** Chosen because it costs **nothing**, is **not internet-facing**, and therefore does **not** fire RTM-P9's ratified "replace the dev header shim before anything internet-facing" constraint. A cloud target remains available as its own later slice with its own gate and its own spend decision. **If a cloud deploy is actually wanted now, say so — it roughly doubles DEP-1 by pulling SSO-2 in, and I will not make that call silently** |
+| **OQ-W15P-4** | **Pay `seed_system_reference` idempotency IN-SLICE**, with a negative control proving a SECOND call mints nothing and emits no duplicate audit event | That REF-1's trigger means what it says. No deploy script whose first step is "must be a fresh database" |
+| **OQ-W15P-5** | **Minimal governed write path for `holidays_complete_through`** | That the goal is a reachable production path, NOT an endpoint design exercise. Smallest thing that works |
+| **OQ-W15P-6** | **All three carries re-evaluated at RPT-1's gate**, each with a recorded fires / does-not-fire | That the LIM-2 lapse corrected this session ("PAID if (C) taken; else recorded" — neither branch ever ran) is not to be repeated |
+| **OQ-W15P-7** | **Each escalation gets a host or an explicit acceptance at RPT-1's gate at the latest** | That three recorded non-movements of CTRL-018 is itself the signal, not an accident |
+| **OQ-W15P-8** | **P13 RATIFIED. P14 stays PROPOSED — see below** | — |
+| **OQ-W15P-9** | **RATIFIED** — a full-PG run requires exclusive use of its database, or its own container | — |
+
+### On P14, specifically
+
+**P13 is ratified**: kills are reserved for factual refutation, grounded in 14 of 17 close calls
+overturned on re-adjudication.
+
+**P14 is deliberately NOT ratified here, and the reason is the rule itself.** P14 says a gate is not
+green until its exit code is quoted. It exists because six consecutive red CI runs were reported as
+green and **the user caught it, not me**. A rule whose entire purpose is to constrain my reporting
+of my own work is not something I should enact for myself on an ambiguous "proceed" — self-ratifying
+an accountability rule is the same move as a control that verifies its own existence, which is the
+defect class this whole wave was about.
+
+**It therefore stays PROPOSED, and I follow it anyway.** Every gate claim in Wave 15 quotes its
+captured exit code and its CI run conclusion regardless of ratification status. Ratification decides
+whether it binds the *project*; it does not decide whether I do it. **A one-word "ratify P14" at any
+point makes it law.**
+
+---
+
+## Part 7 — DEP-1 slice definition (derived from Part 6, opens immediately)
+
+**Goal:** the platform runs somewhere that is not the development checkout, and a restore from
+backup is proven by execution rather than asserted.
+
+**In scope, in dependency order:**
+
+1. **CI builds all three images** (`infra/docker/{backend,frontend,worker}.Dockerfile`). Closes F1 —
+   the asymmetry where CI tests source it never builds. Build only; publishing is not in scope.
+2. **`seed_system_reference` made idempotent** (OQ-W15P-4) — REF-1's trigger, paid not rediscovered.
+3. **`holidays_complete_through` gains a governed write path** (OQ-W15P-5) — closes F3, the
+   convention move's missing production path.
+4. **One scripted deploy** to the OQ-W15P-3(a) target, executed, with its output recorded.
+5. **A PostgreSQL backup AND restore, PROVEN** — and per **P9**, the restore path ships a negative
+   control: a **truncated or corrupted archive must FAIL the restore**. A backup that has never
+   failed to restore is not a proven backup.
+6. **The NotificationSink wired to one real delivery channel** (a webhook counts) — F5 says this is
+   an adapter behind the existing Protocol, not a redesign.
+
+**Out of scope, explicitly:** image publishing to a registry; cloud infrastructure; SSO replacing the
+dev header (fires only under OQ-W15P-3 (b)/(c), not taken); dashboards; any new governed family,
+entity, permission, or migration unless items 2–3 demand one.
+
+**The honest qualifier this slice retires:** until DEP-1 ships, every "operational" claim in every
+governed record carries an implicit dev-only qualifier — including CTRL-034's *Operational* status,
+which rests on evidence from a laptop container.
