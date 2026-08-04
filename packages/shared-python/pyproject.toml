@@ -11,5 +11,12 @@ dependencies = [
   "sqlalchemy>=2.0",
 ]
 
+# DEP-1: the deployment prepare step (migrate + seed) needs alembic. Declared as an EXTRA,
+# not a runtime dependency — `irp_shared` is imported by every app and test, and only the
+# deploy container ever takes that path. The import in `irp_shared.deploy.prepare` is lazy
+# to match, so a tree without this extra installed is unaffected until it calls the verb.
+[project.optional-dependencies]
+deploy = ["alembic>=1.13"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/irp_shared"]
