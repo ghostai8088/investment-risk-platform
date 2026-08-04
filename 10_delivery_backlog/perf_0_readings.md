@@ -23,7 +23,25 @@ month-end marks per position over three years.
 > **ERRATUM (2026-08-01 review, F4).** The 200/800 totals above are INSTRUMENT-EXCLUSIVE while the
 > 50 rung's is inclusive — the consistent totals are ~7,601 and ~30,404, and the printed rows/s
 > (55/57) reproduce only from those corrected totals. Wall-clock, ms/position and every linearity
-> conclusion are unaffected (they never used the totals column).
+> conclusion are unaffected — those rest on the ms/position column.
+>
+> **ERRATUM TO THE ERRATUM (Wave-14 close, 2026-08-03).** The original closing parenthetical read
+> *"(they never used the totals column)"*, and that was **self-refuting**: the rows/s column is
+> derived FROM the totals column, it is the very figure the erratum had just corrected, and
+> *"Throughput is flat at ~55–57 governed rows per second"* below is a headline conclusion resting
+> on it. An erratum that corrects a number and then asserts nothing depended on that number is
+> exactly the claim-about-verification class this wave kept finding. Re-executed 2026-08-03:
+>
+> | rung | printed total | rows/s from printed | corrected total | rows/s from corrected |
+> |---:|---:|---:|---:|---:|
+> | 50 | 1,901 | 55.2 | 1,901 | 55.2 |
+> | 200 | 7,401 | 53.4 | 7,601 | 54.8 |
+> | 800 | 29,604 | 55.3 | 30,404 | 56.8 |
+>
+> The printed 55/57 reproduce from the CORRECTED totals (54.8→55, 56.8→57) and NOT from the printed
+> ones (53.4, 55.3) — so the erratum's substantive claim stands and only its scope sentence was
+> wrong. What is genuinely unaffected: wall-clock, ms/position, the log-log slopes, and every
+> linearity conclusion. What WAS affected and is now stated plainly: the throughput constant.
 
 ### What it says
 

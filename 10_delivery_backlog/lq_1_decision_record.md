@@ -405,11 +405,27 @@ LQ-1 closes**, following the Wave-13 pattern that produced P1–P7 — not folde
 | CON-1 | limit registration deferral | **ALREADY FIRED** — record it |
 | CON-1 | issuer-edge unpinned hop | Adjacent |
 | LIM-2 | classification-basis selector | **Possibly** — first two-basis tenant |
-| LIM-2 | `requires_basis` dead hook | **PAID at OQ-5(C)** if (C) taken; else recorded |
+| LIM-2 | `requires_basis` dead hook | **NOT PAID — (C) was NOT taken.** OQ-5 ratified **(A)**, so the hook stays dead. See the correction below |
 | CAL-1 | COMPONENT_KIND for pinned tiers | **FIRES — discharged at OQ-17** |
 | DATA-1 | yield→return model | Does not fire |
 | DATA-1 | trading-calendar wiring | Does not fire (no daily series) |
 | RM-1 / SR-1 / SCH-2 / OPS-H1 | — | Do not fire |
+
+> **CORRECTION — the LIM-2 `requires_basis` carry LAPSED (Wave-14 close, 2026-08-03).** The row above
+> was written as a conditional and then never resolved: OQ-LQ-1-5 ratified **(A)**, not (C), so the
+> hook was NOT wired and the "else recorded" branch was never actually executed. Measured on the
+> tree at the Wave-14 close: `grep -n "requires_basis" packages/shared-python/src/irp_shared/limit/`
+> returns **exactly one hit** — `service.py:439`, the `LimitFamily` dataclass field declaration.
+> **No production consumer, no test, no reader.** The basis vocabulary remains hard-coded at the
+> validation site, which is precisely the inconsistency LIM-2 recorded and LQ-1 offered to pay.
+>
+> **Re-recorded as a live carry with a trigger** (P7 form (b), replacing the conditional that
+> silently lapsed): *wire `LimitFamily.requires_basis` to a real consumer, or delete the field.*
+> **Trigger: the next slice that adds a `denominator_basis` value or a second basis-bearing limit
+> family** — i.e. the same trigger as LIM-2's classification-basis selector, which is the honest
+> pairing since both wait on the first two-basis tenant. Until then this is an accepted dead field,
+> stated as such rather than left as a promise. **A carry written as "X if Y else Z" is not a carry
+> — nobody ever comes back to evaluate the condition**; that is the lesson this row now carries.
 
 **Sizing: L.** P4 commitment: migration `0061` gets an **executed non-vacuous up/down dry run** in a
 throwaway workspace before ratification is acted on.
@@ -611,10 +627,23 @@ Three separate controls in this slice were **written, believed, and inert**: the
 the sub-floor demo control, and my own kernel tests. Each looked like evidence and was not.
 
 **The mechanical form: a refusal is not implemented until a test has made it FIRE, and a control is
-not a control until the fix that would break it has been executed against it.** Every refusal path
-in LQ-1 now carries a control that has been mutation-proven — reverting the defect fails the test.
-That is the only form of the rule that would have caught B1, whose entire failure mode was that
-nothing ever asked it to refuse.
+not a control until the fix that would break it has been executed against it.**
+
+**CORRECTED at the Wave-14 close (2026-08-03).** This paragraph originally read: *"Every refusal
+path in LQ-1 now carries a control that has been mutation-proven — reverting the defect fails the
+test."* **That sentence was false when written**, and it is the same defect class the section is
+about — a claim ABOUT verification standing in for verification. The close review found the
+`build_liquidity_snapshot` builder declaring four refusals (wrong-dimension scheme, mixed live
+scheme VERSIONS, mixed basis, empty atoms) with **no test anywhere referencing any of them**, plus
+`GAP_STALE_TIERS` and `GAP_CORRUPT_PINNED_CONTENT` likewise unreferenced. "Every refusal path"
+quantified over the paths I had fixed, not over the paths that exist — which is exactly what P10
+now forbids.
+
+The honest statement: the refusal paths repaired DURING the slice carry mutation-proven controls.
+The refusal paths the slice SHIPPED UNTESTED were found by the close review and are now covered by
+`test_liquidity_snapshot.py`, each executed against real staged state and each asserting that
+NOTHING was persisted. This entry is the grounding evidence for **P9** (a refusal is not shipped
+until a test has made it fire) and for **P10** (a fold applies to the class, not the site).
 
 ### Gates
 

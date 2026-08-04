@@ -360,6 +360,77 @@ of drafting is a manifest gap to fix in the same fold). Seeded 2026-07-30 from t
 - **Dependency/toolchain change:** the P4 executed dry run; the audit gate re-run on the ACTUAL proposed
   tree; dry-run numbers re-measured at closeout, never carried as pins.
 
+## The governed-binder conformance census (standing, RATIFIED at the Wave-14 close 2026-08-02, P8)
+One test enumerates every module registering a governed family and asserts, **by exact set equality**, that
+each calls `assert_model_version_of` — or is on an explicitly declared exception list carrying a written
+reason (`exposure/service.py` is model-less by design). Evidence: LQ-1's BLOCKING — the 24th family was the
+only one of twenty-four missing the call, and no gate noticed for a full slice PLUS a close review.
+**A per-family convention with 23 correct instances and one wrong one is precisely what a census is for**;
+23 correct instances are also exactly what makes the 24th invisible to reading. In-tree: the census lives in
+`test_model_registry.py` with a `len(binders) > 20` floor (P6), so the population collapsing fails loudly.
+
+## A refusal is not shipped until a test has made it FIRE (standing, RATIFIED at the Wave-14 close 2026-08-02, P9)
+**Mechanical limb:** a census asserting that every declared refusal constant, and every custom `*Error`
+raised in a governed binder or snapshot builder, is named in at least one test that asserts it FIRES.
+**Procedural limb, bound to the fold moment:** *a fold is not folded until its own negative control has been
+executed against the pre-fold code and shown to fail.* Evidence: LQ-1 shipped four `LiquiditySnapshotError`
+refusals plus `GAP_STALE_TIERS` and `GAP_CORRUPT_PINNED_CONTENT` with **zero test references** anywhere; the
+project had already shipped a structurally UNFIREABLE refusal at CON-1. **LQ-1 wrote this rule itself, in
+its own Part 10, and its own slice violated it six times over** — which is why it is a census and not a
+sentence. Corollary, and the reason "the refusal exists in the source" is never evidence: a refusal that
+cannot fire and a refusal that never fires are indistinguishable from the diff.
+
+## A fold applies to the CLASS, not the site (standing, RATIFIED at the Wave-14 close 2026-08-02, P10)
+When a review fold repairs a defect at a call site, its **closing step** greps the symbol, enumerates every
+sibling site, and records **per site**: fixed, or not-fixed-because. The fold's record sentence may quantify
+over **only the sites it enumerated**. Evidence: PERF-0 F2 fixed 2 of 6 — and the erratum's own segment was
+one of the four omitted; CAL-1b's unconsumed pin fixed 1 of 2 binders; LQ-1 B1 fixed the parse and left the
+consumer untested. In-tree exemplar: `holiday_binding.assert_boundaries_covered`, which exists because the
+CAL-1b coverage check was carried inline and identically by two binders and the fold moved the pair to one
+site so a third consumer inherits both sides rather than re-forgetting one.
+
+## A permission mint needs its holder-set pin, route census, and SoD row (standing, RATIFIED at the Wave-14 close 2026-08-02, P11)
+Best form is data-driven: a declared expected holder map in `test_entitlement_bootstrap.py` compared by
+**exact set equality**, so a newly minted code with no pin fails by construction; plus one platform-wide
+route→code census walking every router mounted in `main.py`. Evidence: LQ-1's two codes were
+mutation-proven blind in BOTH directions, with no route census and no `entitlement_sod_model.md` row, one
+slice after CON-1 pinned all three of its own; and four pre-existing unrouted codes nobody had ever counted.
+**Implementation warning (measured, not theorised):** a naive `app.routes` walk yields `_IncludedRouter`
+wrappers with no `.methods` and produces a **green census over zero routes** — one such vacuous instance
+already exists at `test_schedules_endpoint.py:346`. Recurse through `original_router.routes`, or build from
+`app.openapi()`.
+
+## Execute the plainest alternative client before recording an impossibility (standing, RATIFIED at the Wave-14 close 2026-08-02, P12)
+No governed record may state that a resource is unreachable, a check is impossible, or a residual must be
+carried for environmental reasons, **until the plainest alternative has been executed and its output
+pasted**. A tool's refusal is evidence about the tool. Evidence: DATA-1's TB3MS residual — a user-facing
+standing residual in the control matrix, resting on a single WebFetch 403, discharged by `curl` in under
+three minutes with all 30 literals exact against the publisher of record. Re-executed at the Wave-14 close
+fold: the archived NYSE 2023 calendar, likewise reached by plain `curl` after the live page proved useless.
+
+## PROPOSED — kills are reserved for factual refutation (P13, drafted 2026-08-02, NOT yet ratified)
+In an adversarial review, a finding may be killed only by a **factual refutation** — a demonstration that
+the claim is untrue of the code as it stands. An **executed, uncontradicted reproduction may not be killed
+on severity votes**: if the reproduction stands and only its importance is disputed, the finding is
+DOWNGRADED with the dispute recorded, never discarded. *Grounded:* the Wave-14 close's 2-of-3 refutation
+rule overturned 14 of 17 close calls on re-adjudication — about 53% of kills wrong at fold-relevant
+severity, comparable to Wave 13's 3-of-6. The failure mode is specific: a majority of judges finding a real
+defect *unimportant* reads identically, in the tally, to a majority finding it *unreal*. **Status: PROPOSED
+— requires user ratification before it binds.**
+
+## PROPOSED — a gate is not green until its exit code is quoted (P14, drafted 2026-08-03, NOT yet ratified)
+**Procedural prose, bound to the moment of writing any completion or status claim.** No message may state
+that a gate passed unless it quotes that gate's **captured exit code from a log written in the same
+session**; no message may state that CI is green unless it quotes the **run conclusion for the branch head
+SHA**. Pipes are not permitted in the capture path — a truncating pipe drops the summary AND masks the exit
+code (already recorded at DATA-1, and it recurred). *Grounded:* the third recurrence in a single wave of *a
+gate reported green having never been run*. At LQ-1 two gates were reported green unrun; at the Wave-14
+close fold the branch was reported "both tiers green" while **all six pushes were red in CI from fold 1** —
+`ruff format` sits ahead of lint, mypy and pytest in the Backend job, so a cosmetic failure silently made
+four gates non-executing, and running `make check` honestly then surfaced two further failures that had
+been invisible behind it. The available tell was ignored: a Backend job finishing in 31 seconds cannot have
+run 2,400 tests. **Status: PROPOSED — requires user ratification before it binds.**
+
 ## Prohibited behavior
 - Committing/pushing without explicit approval; starting the next slice unprompted.
 - Writing application code during a planning/decision turn.

@@ -924,13 +924,40 @@ quietly would have put an unregistered model under a shipped Sharpe ratio.
 
 ### Open at the close
 
-1. **UNDISCHARGED — the independent re-verification of the 30 TB3MS literals** (Execution 2
-   item 6, ratified at the gate). Three extraction passes ran, but all three went through the
-   SAME render-proxy channel (FRED and the Board's DDP CSV both refuse anonymous access from
-   this environment), which is a recorded **common-mode residual**, not independent
-   confirmation. The census pins both endpoints and four interior anchors; the remaining
-   interior values rest on provenance. Discharging this needs an independent channel or a human
-   pass. **This is a user-facing item, carried in the open in the control matrix.**
+1. **DISCHARGED 2026-08-02, re-confirmed 2026-08-03 — the independent re-verification of the 30
+   TB3MS literals** (Execution 2 item 6, ratified at the gate).
+
+   **The original entry is kept below verbatim because it was FALSE, and the falsehood is the
+   lesson** (corrected in place, not edited away — the LIM-2 precedent):
+
+   > Three extraction passes ran, but all three went through the SAME render-proxy channel (FRED
+   > and the Board's DDP CSV both refuse anonymous access from this environment), which is a
+   > recorded **common-mode residual**, not independent confirmation. The census pins both
+   > endpoints and four interior anchors; the remaining interior values rest on provenance.
+   > Discharging this needs an independent channel or a human pass. **This is a user-facing item,
+   > carried in the open in the control matrix.**
+
+   The parenthetical was never tested. FRED does NOT refuse anonymous access from this
+   environment; **one tool** did, and its 403 was recorded as a fact about the world. Plain
+   `curl` reaches the publisher of record directly, first attempt, no credentials:
+
+   ```text
+   curl "https://fred.stlouisfed.org/graph/fredgraph.csv?id=TB3MS"   ->  HTTP=200 bytes=17833
+   header: ['observation_date', 'TB3MS']   total observations in file: 1111
+   repo literals: 30      MISMATCHES: 0
+   first: 2024-01-01  0.0522  | FRED: 5.22
+   last : 2026-06-01  0.0366  | FRED: 3.66
+   ```
+
+   All 30 literals verified against the live series, percent→fraction, **zero mismatches**. The
+   common-mode residual is dissolved: this channel is independent of the render proxy the three
+   original passes shared. Re-executed 2026-08-03 at the Wave-14 close fold, which is the output
+   quoted above.
+
+   **Standing re-verification path** for any future TB3MS check: the FRED CSV endpoint above, or
+   the Board's H.15 package. **This item is the grounding evidence for P12** — a tool's refusal is
+   evidence about the tool, and a user-facing residual sat open for two slices on the strength of
+   one unexamined 403.
 2. **Carry (OQ-DATA-1-1a):** the yield → period-return registered model + the Sharpe re-source.
    Trigger: *the first governed consumer that binds the real rf series.*
 3. **Carry (OQ-DATA-1-5):** the P3-8 trading-calendar wiring, re-deferred IN FULL a third time

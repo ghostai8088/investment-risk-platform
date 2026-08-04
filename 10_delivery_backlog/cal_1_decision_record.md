@@ -737,8 +737,38 @@ boundary attack; the fold was in the guards and the record, per the platform's p
   contract (no parent lock; raw IntegrityError on a concurrent overlap — bootstrap-only caller)
   documented in the docstring; current_state's self-stale "IN FLIGHT" wording fixed.
 
+> **ERRATUM — the dataset's COVERAGE START was off by one year (Wave-14 close, 2026-08-03).**
+> Every check above interrogated whether the 118 encoded dates were the RIGHT dates. **Nothing
+> asked whether the set STARTED early enough**, and it did not. A `BUSINESS_MONTH_END` grid's
+> opening boundary d_0 is the close of the month BEFORE the first measured month, so a v2 run whose
+> first measured month is **January 2024 — the earliest month a 2024-anchored set could serve** —
+> adjudicates d_0 = 2023-12-29 against a calendar that knows nothing about 2023. The shipped
+> RM-1/SR-1 demo did exactly that and rolled its opening boundary WEEKEND-ONLY. **The dataset could
+> not serve the earliest month it existed to serve**, and the defect was invisible for two slices
+> because no check compared the series START to coverage — the end side (OQ-CAL-1-4) had one, the
+> start side had none.
+>
+> Detected only when the Wave-14 close's start-side gate
+> (`holiday_binding.assert_boundaries_covered`) was added and the demo REFUSED. Fixed by extending
+> the set back to **2023 (10 dates, total 118 → 128)**, not by moving the demo forward, which would
+> have concealed the limitation. Provenance: the Wayback Machine's 2023-03-05 capture of
+> nyse.com/markets/hours-calendars — a contemporaneous 2023|2024|2025 table whose **2024 and 2025
+> columns agree date-for-date with the literals already shipped here**, which is what establishes
+> the 2023 column was read from the right position; plus the repo's independently-implemented Rule
+> 7.2 derivation, now extended to 2023 as a second and genuinely different channel.
+>
+> **No governed boundary literal moved**: December 2023's last weekday is Friday the 29th with or
+> without holiday knowledge, because Christmas 2023 fell on the Monday. That is what makes this an
+> extension rather than a restatement of shipped numbers. Pinned by
+> `test_the_shipped_set_covers_the_opening_boundary_of_its_earliest_servable_grid`, which carries a
+> negative arm (re-truncate to 2024 ⇒ the gate refuses) and was mutation-proven by deleting the
+> 2023 block. **The general rule, now explicit: a month-end calendar must cover one year further
+> back than the earliest month it is meant to serve.**
+
 **Verified under attack and standing:** the 118 literals (independent derivation, zero
-mismatches); the Dec-31-2021 Rule 7.2 precedent; the four collision dates re-derived exhaustively;
+mismatches — but see the coverage-start ERRATUM immediately above: "the right dates" and "enough
+dates" are different questions, and only the first was asked); the Dec-31-2021 Rule 7.2 precedent;
+the four collision dates re-derived exhaustively;
 "first CTRL mint since P0.5" (row-count history 33→33→34); every checklist test-name citation;
 the DC-2 adjudication of the event's added_from/added_through range summary (ratified by OQ-11's
 own "added-dates summary" wording; boundary dates, not serialized child rows); the seed's every
