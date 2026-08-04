@@ -170,6 +170,11 @@ PERMISSIONS: list[tuple[str, str]] = [
     # reference.classification_assignment.view, which EXCLUDES auditor_3l. The two sit on opposite
     # sides of the auditor line, which is why one combined code was refused — SoD pins are
     # per-code, so a route on the wrong guard would pass every shipped test (REF-1's BLOCKING).
+    # Forward-gate (close-review L9, folded): `liquidity.run` has NO route today — LQ-1's Part 3
+    # names four READS and no write endpoint. The code is Tier-3 ratified and stays minted; when a
+    # run endpoint lands it MUST carry require_permission("liquidity.run") (the schedule.manage /
+    # limit.manage pattern above). The dead guard singleton that used to sit in `api/liquidity.py`
+    # was REMOVED rather than kept as a placeholder — an unused bound guard reads as protection.
     ("liquidity.run", "Run governed liquidity-tier calculations"),
     ("liquidity.view", "View liquidity tier distribution results"),
     # SCH-1 scheduling (ENT-061 schedule / ENT-062 scheduled_run, Wave-11 slice 1) — a governed

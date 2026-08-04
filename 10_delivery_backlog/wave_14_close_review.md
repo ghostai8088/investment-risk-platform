@@ -675,3 +675,33 @@ whether the set STARTED early enough.** A control's existence was verified; its 
    than counted as REF-1's gap paid.
 3. **P13 and P14 are PROPOSED, not ratified** — they do not bind until the user ratifies them.
 4. This addendum's own claims are subject to ledger 7: each is cited to its artifact above.
+
+---
+
+## 9. The LOW bucket — enumerated and dispositioned (2026-08-03)
+
+§0.3 recorded 24 unrefuted LOWs as "a deliberate cost bound, not a verification," and §7 left their
+disposition to the gate. **A bucket recorded only in a scratchpad lane artifact is not recorded** —
+it evaporates with the session, and the next wave rediscovers it. The LQ-1 lane's eleven are
+enumerated here with a per-item disposition. **The remaining LOWs from the CON-1 / PERF-0 / LIM-2 /
+CAL-1 / DATA-1 lanes were not recovered into this document — that is a stated gap, not a claim of
+completeness** (§3 and §2 already carry the substantive ones from those lanes).
+
+| # | Finding | Disposition |
+|---|---|---|
+| **L1** | `coverage_classifiable` is money in LQ-1 and a ratio in CON-1. Harm claim REFUTED (separate DTOs, no shared reader, FE omits it). What survives: mutation M9 (`coverage_classifiable = coverage_ratio`) left the whole kernel suite GREEN — **the field's UNITS were unasserted** | **FOLDED** — `test_coverage_classifiable_is_an_AMOUNT_not_a_second_ratio`, built so the two can never coincide (900.000000 vs 0.900000). **M9 executed against it: FAILS** |
+| **L2** | The LONG predicate boundary (`exposure_amount > 0`) unpinned; the `>=` mutant survives. Blast radius measured: `untiered_instrument_count` only — every share and the coverage ratio are identical either way, which is why no share assertion could catch it | **FOLDED** — `test_a_ZERO_amount_atom_is_not_LONG`, with a tiered/untiered twin pair. **The `>=` mutant executed against it: FAILS** |
+| **L3** | "Tier shares sum to exactly 1" is not an invariant (a thirds book sums to `0.999999`); both asserting tests use books where it happens to hold. Money IS conserved. The proposed replacement is *also* not unconditional | **RECORDED, not folded.** Family-consistent with CON-1, and the replacement invariant is itself conditional on ≤6dp inputs — folding it would trade one over-strong claim for another. Trigger: any slice that makes the sum load-bearing |
+| **L4** | `coverage_ratio` can exceed 1 (measured `2.000000`) — quantized numerator over raw denominator. Unreachable through the DB (3,000-trial fuzz, zero cases) | **RECORDED.** An unstated precondition on an exported pure function, not a live defect. Trigger: the first non-DB caller |
+| **L5** | Corrupt pinned CLASSIFICATION content raises out of `run_liquidity` instead of the documented committed-FAILED run. Scoped down hard: the escapes are **inherited verbatim from the shipped CON-1 binder**; the only LQ-1 divergence is unreachable | **RECORDED** as a comment-accuracy item: `service.py:208-210`'s "matching the shipped concentration binder" is false for that raise site. Deliberately NOT folded as a behaviour change — the class is CON-1's and P10 says fix the class, which is out of this fold's scope |
+| **L6** | No range CHECKs on `tier_share` / `metric_value` / `coverage_ratio` — executed: `-3.0`, `42.0`, `99.9` all ACCEPTED, with a passing negative control proving the probe carried the real constraints | **RECORDED as an accepted family-wide omission** (P7 form (c)). `concentration_result` is identical, so this is a family convention, not an LQ-1 lapse; adding it to one table only would be worse than not adding it. Trigger: the next governed-result family, where it should be decided family-wide |
+| **L7** | REQ-LIQ-001's amended clause ("Each INSTRUMENT carrying exposure **has** a liquidity tier") asserts a universal the residual + floor design exists to relax — falsified by the slice's own accepted flagship demo | **RECORDED — a real requirement defect.** Grain was fixed at the amendment; the quantifier was not. Trigger: the next REQ-LIQ touch |
+| **L8** | "Exactly one file carries FINAL-POSITION" is false — `ci.yml` still claimed it in present tense at three comments, and `:672` was a **step name visible in the CI UI** | **FOLDED** — stage 19's step name is now "intermediate count pin" and the stale present-tense claims are rewritten. Verified: exactly one FINAL-POSITION step name remains (stage 23) |
+| **L9** | `_require_run` is dead code in `api/liquidity.py` with no forward-gate comment, unlike `schedule.manage` / `limit.manage` | **FOLDED** — singleton deleted, forward-gate notes added at BOTH sites (the API module and the `bootstrap.py` mint). **The mint is NOT dropped** (Tier-3 ratified) and no unratified POST was shipped to manufacture a consumer |
+| **L10** | `grep build_liquidity_snapshot .../tests/` → nothing. OQ-LQ-1-2 required both inherited refusals implemented "with executed negative controls"; LQ-1 shipped none | **ALREADY FOLDED** at fold 6 (`71d9f38`) — `test_liquidity_snapshot.py`, four refusals each made to FIRE, each asserting nothing was persisted |
+| **L11** | `_q6` raises `decimal.InvalidOperation` on column-max magnitudes — two atoms of `9999999999999999999999.999999` crash at `kernel.py:136`, inside a zone `service.py:217-221` promises never raises for data reasons | **RECORDED, adjacent/out-of-band.** Real, and the promise is genuinely overstated. Not folded here because the fix is a kernel-wide overflow policy, not a local guard. Trigger: the next kernel touching `_q6` |
+
+**Tally: four folded (L1, L2, L8, L9), one already folded (L10), six recorded with triggers.** The
+recorded six are recorded in the P7 sense — each has a trigger moment or an explicit acceptance,
+not a bare "remember this." **None of the six is claimed to be verified**; they carry the lanes'
+evidence and the lanes' limits.
