@@ -126,6 +126,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_PRIVATE_COVARIANCE_INPUT,
     PURPOSE_PRIVATE_FACTOR_RETURN_INPUT,
     PURPOSE_PROXY_WEIGHT_INPUT,
+    PURPOSE_REPORT_INPUT,
     PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
     PURPOSE_RETURN_INPUT,
     PURPOSE_ROLLING_RISK_INPUT,
@@ -4032,6 +4033,9 @@ CONCENTRATION_BINDING_PREDICATE = "v1:exposure-atoms+issuer-edges+classification
 #: pinning one would be an unconsumed component, and an unconsumed pin is the shape that verifies
 #: VACUOUSLY (nothing re-resolves it, so nothing can report drift on it).
 LIQUIDITY_BINDING_PREDICATE = "v1:exposure-atoms+liquidity-tier-assignments"
+#: RPT-1: the report pins one GOVERNED_VALUE component per family, each carrying that family's
+#: values AND provenance. 30 chars — well inside the String(50) ceiling enforced at import below.
+REPORT_BINDING_PREDICATE = "v1:governed-values-by-family"
 
 
 def issuer_edge_content(instrument: Any) -> dict[str, Any]:
@@ -4382,6 +4386,73 @@ def build_liquidity_snapshot(
     return header_row
 
 
+def build_report_input_snapshot(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor: SnapshotActor,
+    family_runs: dict[str, str],
+    as_of_valuation_date: date,
+) -> DatasetSnapshot:
+    """Build one immutable ``REPORT_INPUT`` snapshot (RPT-1) pinning the family VALUES a report
+    renders — one ``COMPONENT_KIND_GOVERNED_VALUE`` per bound family.
+
+    The refusals live in ``report.service.build_report_snapshot`` and run BEFORE anything is
+    persisted: an unknown family, a run that is missing / not COMPLETED / of the wrong run_type /
+    another tenant's, and — the load-bearing one — a family whose run yields ZERO values. A report
+    section rendering "no data" is indistinguishable from one whose family silently returned
+    nothing, and a board-facing artifact must not be able to show the second while meaning the
+    first.
+
+    The component's ``target_entity_id`` is the SOURCE RUN, not the report: that is what
+    ``_reresolve_content`` re-derives from, and pointing it at the report would make verification
+    circular.
+    """
+    from irp_shared.report.service import build_report_snapshot
+
+    pinned = build_report_snapshot(session, acting_tenant=acting_tenant, family_runs=family_runs)
+    now = datetime.now(UTC)
+    specs: list[tuple[str, str, Any, str, str]] = []
+    for _family_key, content in pinned:
+        captured = serialize_content(content)
+        specs.append(
+            (
+                COMPONENT_KIND_GOVERNED_VALUE,
+                "calculation_run",
+                _RunTarget(str(content["source_run_id"])),
+                captured,
+                content_hash(captured),
+            )
+        )
+
+    header_row = _persist_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        actor=actor,
+        specs=specs,
+        label="",
+        purpose=PURPOSE_REPORT_INPUT,
+        as_of_valid_at=now,
+        as_of_known_at=now,
+        as_of_valuation_date=as_of_valuation_date,
+        binding_predicate_version=REPORT_BINDING_PREDICATE,
+    )
+    record_snapshot_create(session, header=header_row, actor=actor)
+    return header_row
+
+
+@dataclass(frozen=True)
+class _RunTarget:
+    """The minimal shape ``_persist_snapshot`` needs from a pinned target: its id.
+
+    A thin adapter rather than passing the ``CalculationRun`` itself — the run has already been
+    resolved and validated by ``build_report_snapshot``, and re-passing the ORM object would invite
+    a second, unvalidated read at the persistence tail.
+    """
+
+    id: str
+
+
 def _resolve_assignment_row(session: Session, assignment_id: str, *, acting_tenant: str) -> Any:
     """The pinned assignment's PHYSICAL row by surrogate id, own-tenant only (proprietary
     symmetric). FR: the row's fields are immutable (a supersede is a NEW row), so this re-read is
@@ -4469,6 +4540,7 @@ def _list_current_assignments(
 #: time so the failure is a loud, unit-tier import error at the site of the offending constant.
 _BINDING_PREDICATES = (
     LIQUIDITY_BINDING_PREDICATE,
+    REPORT_BINDING_PREDICATE,
     DEFAULT_BINDING_PREDICATE,
     FACTOR_EXPOSURE_BINDING_PREDICATE,
     FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE,

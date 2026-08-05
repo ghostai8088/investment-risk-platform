@@ -55,6 +55,29 @@ class ReportFamily:
     read_values: Callable[[Session, str, str], list[tuple[str, str]]]
 
 
+def _pair(row: object, detail_value: object) -> tuple[str, str]:
+    """One (metric, value) pair, taking the value from the column the ROW KIND actually populates.
+
+    **The bug this exists because of.** Both bucket-vector families split their value across two
+    NULLABLE columns: DETAIL rows carry ``share_invested_long`` / ``tier_share`` and leave
+    ``metric_value`` NULL; SUMMARY rows do the reverse. The first version of these readers took
+    ``metric_value`` unconditionally, so every DETAIL row would have rendered the string "None" in
+    a board-facing report — a governed number replaced by a placeholder, silently. It was found by
+    building the end-to-end test, not by reading the code.
+
+    A NULL from BOTH columns raises rather than rendering "None": a value the schema permits to be
+    absent must never reach a reader as text.
+    """
+    kind = getattr(row, "row_kind", None)
+    value = detail_value if kind == "DETAIL" else getattr(row, "metric_value", None)
+    if value is None:
+        raise ValueError(
+            f"row {getattr(row, 'id', '?')} ({kind}, {getattr(row, 'metric_type', '?')}) carries "
+            "no value in either column — refusing to render a placeholder for a governed number"
+        )
+    return (f"{getattr(row, 'metric_type', '?')}:{getattr(row, 'bucket_code', '?')}", str(value))
+
+
 def _read_concentration(session: Session, run_id: str, acting_tenant: str) -> list[tuple[str, str]]:
     rows = (
         session.execute(
@@ -68,7 +91,7 @@ def _read_concentration(session: Session, run_id: str, acting_tenant: str) -> li
         .scalars()
         .all()
     )
-    return [(f"{r.metric_type}:{r.bucket_code}", str(r.metric_value)) for r in rows]
+    return [_pair(r, r.share_invested_long) for r in rows]
 
 
 def _read_liquidity(session: Session, run_id: str, acting_tenant: str) -> list[tuple[str, str]]:
@@ -84,7 +107,7 @@ def _read_liquidity(session: Session, run_id: str, acting_tenant: str) -> list[t
         .scalars()
         .all()
     )
-    return [(f"{r.metric_type}:{r.bucket_code}", str(r.metric_value)) for r in rows]
+    return [_pair(r, r.tier_share) for r in rows]
 
 
 def _read_rolling_risk(session: Session, run_id: str, acting_tenant: str) -> list[tuple[str, str]]:

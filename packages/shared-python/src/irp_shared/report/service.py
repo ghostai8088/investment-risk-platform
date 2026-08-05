@@ -17,20 +17,23 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from html import escape
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.calc.models import RunStatus
 from irp_shared.calc.runs import resolve_completed_run_of_type
+from irp_shared.calc.service import create_run, update_run_status
 from irp_shared.classification.service import canonical_tenant_id
 from irp_shared.report.families import REPORT_FAMILIES, family_for
 from irp_shared.report.models import (
     RENDER_FORMAT_HTML,
     REPORT_CODE_RISK_SUMMARY,
     REPORT_VERSION_LABEL_V1,
+    RUN_TYPE_REPORT,
     ReportGeneration,
 )
 from irp_shared.snapshot.models import (
@@ -260,6 +263,85 @@ def _pinned_sections(
     return sections
 
 
+def generate_report(
+    session: Session,
+    *,
+    acting_tenant: str,
+    actor_id: str,
+    portfolio_id: str,
+    portfolio_code: str,
+    as_of_date: date,
+    family_runs: dict[str, str],
+    generated_at: datetime,
+) -> tuple[ReportGeneration, RenderedReport]:
+    """Generate one governed report: pin the inputs, render, and record the artifact.
+
+    **No ``model_version_id``, and that is by design rather than omission.** A report registers no
+    model: it renders numbers OTHER families produced under THEIR registered versions, and each
+    rendered section carries its own family's ``model_code`` and ``methodology_ref``. Inventing a
+    "report model" would add a governance object that asserts nothing — the methodology that
+    matters is the one behind each number, and that is already pinned. This is recorded on the P8
+    census exception list rather than left for a reader to infer.
+
+    Ordering is deliberate: the snapshot is built (and every refusal fires) BEFORE the report row
+    exists, so a refused generation leaves no run, no snapshot and no row — the pattern DATA-1
+    learned the hard way when a refusal fired after ``begin_nested()`` and left a dangling
+    savepoint.
+    """
+    tenant = canonical_tenant_id(acting_tenant)
+    from irp_shared.snapshot.events import SnapshotActor
+    from irp_shared.snapshot.service import build_report_input_snapshot
+
+    snapshot = build_report_input_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=SnapshotActor(actor_id=actor_id, actor_type="user"),
+        family_runs=family_runs,
+        as_of_valuation_date=as_of_date,
+    )
+    sections = _pinned_sections(session, snapshot_id=str(snapshot.id), acting_tenant=tenant)
+    rendered = render_report_html(
+        portfolio_code=portfolio_code, as_of=as_of_date, sections=sections
+    )
+
+    # THE GOVERNED RUN RAIL, not a hand-rolled row. The first draft of this verb constructed
+    # `CalculationRun(...)` directly and emitted NO audit event at all — a governed evidence
+    # artifact with no record of its own creation. `create_run` + `update_run_status` emit
+    # CALC.RUN_CREATE and CALC.RUN_STATUS_CHANGE against the FROZEN `record_event`.
+    #
+    # RPT-1 therefore mints NO audit code, following CON-1's recorded precedent verbatim: the run
+    # lifecycle rides the existing CALC events and the snapshot rides `record_snapshot_create`.
+    # `REPORT.GENERATE` (EVT-090) stays GENESIS-RESERVED — activating it is an R-07 act, and there
+    # is nothing for it to say that the CALC pair does not already say.
+    run = create_run(
+        session,
+        tenant_id=tenant,
+        run_type=RUN_TYPE_REPORT,
+        initiated_by=actor_id,
+        input_snapshot_id=str(snapshot.id),
+        scope_portfolio_id=str(portfolio_id),
+    )
+    session.flush()
+
+    row = ReportGeneration(
+        tenant_id=tenant,
+        calculation_run_id=run.run_id,
+        input_snapshot_id=snapshot.id,
+        portfolio_id=str(portfolio_id),
+        report_code=REPORT_CODE_RISK_SUMMARY,
+        report_version_label=REPORT_VERSION_LABEL_V1,
+        render_format=RENDER_FORMAT_HTML,
+        as_of_date=as_of_date,
+        content_hash=rendered.content_hash,
+        generated_at=generated_at,
+        generated_by=actor_id,
+    )
+    session.add(row)
+    session.flush()
+    update_run_status(session, run, RunStatus.COMPLETED, actor_id=actor_id)
+    return row, rendered
+
+
 def regenerate_report(
     session: Session, *, report_id: str, acting_tenant: str, portfolio_code: str
 ) -> RenderedReport:
@@ -315,6 +397,7 @@ __all__ = [
     "ReportIdentityError",
     "ReportInputError",
     "build_report_snapshot",
+    "generate_report",
     "governed_value_content",
     "regenerate_report",
     "render_report_html",
