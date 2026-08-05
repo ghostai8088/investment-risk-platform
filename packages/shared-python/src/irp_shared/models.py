@@ -73,6 +73,7 @@ from irp_shared.reference.models import (
     RatingGrade,
     RatingScale,
 )
+from irp_shared.report.models import ReportGeneration
 from irp_shared.risk.models import (
     ActiveRiskResult,
     CovarianceResult,
@@ -165,6 +166,7 @@ __all__ = [
     "ScenarioShock",
     "ScenarioResult",
     "PortfolioReturnResult",
+    "ReportGeneration",
     "RollingRiskResult",
     "SharpeRatioResult",
     "BenchmarkRelativeResult",

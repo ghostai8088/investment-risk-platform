@@ -102,6 +102,7 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_FACTOR_EXPOSURE,
     COMPONENT_KIND_FACTOR_RETURN,
     COMPONENT_KIND_FX,
+    COMPONENT_KIND_GOVERNED_VALUE,
     COMPONENT_KIND_HOLIDAY_CALENDAR,
     COMPONENT_KIND_ISSUER_EDGE,
     COMPONENT_KIND_PORTFOLIO,
@@ -3692,6 +3693,30 @@ def _reresolve_content(
         )
         chain = resolve_ancestors(session, node=node, acting_tenant=acting_tenant)
         return classification_assignment_closure_content(assignment, [*chain, node])
+    if comp.component_kind == COMPONENT_KIND_GOVERNED_VALUE:
+        # RPT-1 (ENT-072): RE-DERIVE the family's values LIVE from the pinned source run, so a
+        # report component honestly REDDENS if its family's rows ever move.
+        #
+        # It is tempting to return the pinned content unchanged here and call the component
+        # "immutable by construction" — the source rows ARE IA append-only. That was refused: it is
+        # exactly the vacuous verification this census exists to prevent (a kind with no real
+        # branch makes ``verify_snapshot`` report ``ok`` over anything). Re-deriving means the
+        # check has something to actually compare, and it also catches the case immutability does
+        # NOT cover — the run becoming invisible to this tenant.
+        from irp_shared.report.families import family_for
+        from irp_shared.report.service import governed_value_content
+
+        pinned = json.loads(comp.captured_content)
+        family = family_for(str(pinned["family"]))
+        values = family.read_values(session, str(pinned["source_run_id"]), acting_tenant)
+        return governed_value_content(
+            family_key=family.key,
+            section_title=family.section_title,
+            model_code=family.model_code,
+            methodology_ref=family.methodology_ref,
+            run_id=str(pinned["source_run_id"]),
+            values=values,
+        )
     if comp.component_kind == COMPONENT_KIND_HOLIDAY_CALENDAR:
         # CAL-1b, RE-DERIVE flavored (the CLASSIFICATION precedent): re-read the calendar HEAD by
         # the pinned target id under hybrid own-OR-SYSTEM visibility, then RE-DERIVE the member
