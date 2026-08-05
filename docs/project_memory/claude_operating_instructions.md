@@ -418,7 +418,7 @@ severity, comparable to Wave 13's 3-of-6. The failure mode is specific: a majori
 defect *unimportant* reads identically, in the tally, to a majority finding it *unreal*. **Status: PROPOSED
 — requires user ratification before it binds.**
 
-## PROPOSED — a gate is not green until its exit code is quoted (P14, drafted 2026-08-03, NOT yet ratified)
+## A gate is not green until its exit code is quoted (standing, RATIFIED 2026-08-05, P14)
 **Procedural prose, bound to the moment of writing any completion or status claim.** No message may state
 that a gate passed unless it quotes that gate's **captured exit code from a log written in the same
 session**; no message may state that CI is green unless it quotes the **run conclusion for the branch head
@@ -429,7 +429,13 @@ close fold the branch was reported "both tiers green" while **all six pushes wer
 `ruff format` sits ahead of lint, mypy and pytest in the Backend job, so a cosmetic failure silently made
 four gates non-executing, and running `make check` honestly then surfaced two further failures that had
 been invisible behind it. The available tell was ignored: a Backend job finishing in 31 seconds cannot have
-run 2,400 tests. **Status: PROPOSED — requires user ratification before it binds.**
+run 2,400 tests. **RATIFIED 2026-08-05 by the user.** Deliberately NOT self-ratified when drafted:
+a rule whose whole purpose is to constrain how the builder reports its own work is not one the
+builder should enact for itself — that is structurally the same move as a control that verifies its
+own existence, the defect class this rule exists to prevent. **Corollary now binding: an
+implausibly fast gate is itself a signal.** A job that finishes far too quickly for the work it
+claims has not done the work; read WHICH STEP failed before diagnosing, because everything after a
+failing step never ran at all.
 
 ## Prohibited behavior
 - Committing/pushing without explicit approval; starting the next slice unprompted.

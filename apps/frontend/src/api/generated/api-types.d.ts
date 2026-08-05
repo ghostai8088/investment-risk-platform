@@ -2936,6 +2936,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reference/calendars/{calendar_id}/holidays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Calendar Holidays Endpoint
+         * @description ADD-ONLY holiday refresh + declared-horizon advance — DEP-1 (OQ-W15P-5), closing F3.
+         *
+         *     The gap: only ``refresh_calendar_holidays`` could set ``holidays_complete_through`` and it had
+         *     NO HTTP route, so a calendar created through this API could never reach a state where a
+         *     ``BUSINESS_MONTH_END`` schedule ticks. Invisible to the whole test suite, because tests call the
+         *     service verb directly — which is exactly the class of gap a real deployment exists to surface.
+         *
+         *     **The tenant fence is explicit, not delegated to RLS.** A SYSTEM-tenant calendar is VISIBLE
+         *     to every tenant under the hybrid policy, so a plain ``db.get`` would resolve one and the write
+         *     would then fail deep in the flush on the parent head's own-only ``WITH CHECK`` — a 500 where
+         *     the caller is owed a refusal. Refusing here makes it a 404, indistinguishable from an unknown
+         *     id, which is also the non-disclosure behaviour the rest of this module already uses.
+         */
+        post: operations["refresh_calendar_holidays_endpoint_reference_calendars__calendar_id__holidays_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/reference/corporate-actions": {
         parameters: {
             query?: never;
@@ -5970,6 +6001,8 @@ export interface components {
             code: string;
             /** Holidays */
             holidays: components["schemas"]["HolidayOut"][];
+            /** Holidays Complete Through */
+            holidays_complete_through?: string | null;
             /** Id */
             id: string;
             /** Is Active */
@@ -7652,6 +7685,17 @@ export interface components {
             name: string | null;
             /** Recurrence */
             recurrence: string | null;
+        };
+        /**
+         * HolidayRefreshIn
+         * @description ADD-ONLY refresh input. Absent ``complete_through`` leaves the declared horizon untouched;
+         *     a value that REGRESSES it is refused 422 (forward-only, OQ-CAL-1-4).
+         */
+        HolidayRefreshIn: {
+            /** Complete Through */
+            complete_through?: string | null;
+            /** Holidays */
+            holidays?: components["schemas"]["HolidayIn"][];
         };
         /** HsVarModelIn */
         HsVarModelIn: {
@@ -16811,6 +16855,45 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_calendar_holidays_endpoint_reference_calendars__calendar_id__holidays_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                calendar_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HolidayRefreshIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

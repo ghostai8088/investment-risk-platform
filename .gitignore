@@ -23,3 +23,6 @@ packages/shared-ts/dist/
 .DS_Store
 .idea/
 .vscode/
+
+# DEP-1: the deploy script regenerates this from .env.example every run; never commit it (BR-10).
+infra/deploy/.env.deploy

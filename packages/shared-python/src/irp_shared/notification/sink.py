@@ -48,6 +48,78 @@ class NotificationSink(Protocol):
     def deliver(self, message: NotificationMessage) -> DeliveryResult: ...
 
 
+class WebhookNotificationSink:
+    """DEP-1 (Wave-15): the first REAL delivery channel — an HTTP POST behind the same Protocol.
+
+    Design constraints, each inherited from a recorded decision rather than invented here:
+
+    - **Never raises from ``deliver``** (the Protocol contract): every network/HTTP failure returns
+      ``DeliveryResult(ok=False, detail=...)`` so the caller records a durable FAILED row. A
+      construction-time misconfiguration (empty URL, non-HTTP scheme) DOES raise — that is a config
+      error owed to the operator at startup, not a delivery outcome owed a row.
+    - **The URL never appears in ``detail``.** Webhook URLs routinely EMBED a secret token in the
+      path (the Slack pattern), and ``detail`` lands in the durable ``failure_reason`` column —
+      BR-10 forbids secrets at rest, so every detail string is redacted against the configured URL
+      before it is returned.
+    - **Short timeout (default 5s), stdlib ``urllib`` only.** ``irp_shared`` declares exactly one
+      runtime dependency and a notification channel is not the reason to grow that; and although
+      NOTIF-1's phase-A/phase-B split means no sink runs under the audit advisory lock, delivery
+      still runs inside the caller's transaction, so an unbounded hang would hold a transaction
+      open — the API-2b lock-across-I/O anti-pattern one layer down.
+    """
+
+    channel = "WEBHOOK"
+
+    def __init__(self, url: str, *, timeout_seconds: float = 5.0) -> None:
+        if not url:
+            raise ValueError("WebhookNotificationSink requires a non-empty URL")
+        if not url.startswith(("http://", "https://")):
+            raise ValueError(
+                "WebhookNotificationSink requires an http(s) URL — refusing a scheme that could "
+                "reach the filesystem or an arbitrary handler"
+            )
+        self._url = url
+        self._timeout = timeout_seconds
+
+    def _redact(self, text: str) -> str:
+        return text.replace(self._url, "<webhook-url>")
+
+    def deliver(self, message: NotificationMessage) -> DeliveryResult:
+        import json
+        import urllib.error
+        import urllib.request
+
+        payload = json.dumps(
+            {
+                "type": "breach-alert",
+                "tenant_id": message.tenant_id,
+                "recipient_id": message.recipient_id,
+                "breach_id": message.breach_id,
+                "source_event_type": message.source_event_type,
+                "severity": message.severity,
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            self._url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+                status = response.status
+                if 200 <= status < 300:
+                    return DeliveryResult(ok=True)
+                return DeliveryResult(ok=False, detail=f"webhook returned HTTP {status}")
+        except urllib.error.HTTPError as exc:
+            return DeliveryResult(ok=False, detail=f"webhook returned HTTP {exc.code}")
+        except Exception as exc:  # noqa: BLE001 - the Protocol forbids raising for delivery failures
+            return DeliveryResult(
+                ok=False,
+                detail=self._redact(f"webhook unreachable: {type(exc).__name__}: {exc}"),
+            )
+
+
 class LoggingNotificationSink:
     """v1 record-first sink: emit a structured log line (the DB row is the SoR, not the log)."""
 

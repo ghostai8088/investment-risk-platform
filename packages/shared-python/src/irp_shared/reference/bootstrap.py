@@ -59,15 +59,44 @@ SYSTEM_RATING_GRADES: list[tuple[str, int]] = [
 ]
 
 
+def _existing_code(
+    session: Session, model: type[Currency] | type[Calendar] | type[RatingScale], code: str
+):  # noqa: ANN202,E501
+    """The SYSTEM-tenant row for ``code``, or None. The idempotency probe — one query per code."""
+    return session.execute(
+        select(model).where(model.tenant_id == SYSTEM_TENANT_ID, model.code == code)
+    ).scalar_one_or_none()
+
+
 def seed_system_reference(session: Session, *, actor_id: str = "system") -> None:
     """Seed the representative global slice under SYSTEM context (caller sets context + commits).
 
     Governed path only: each create roots a MANUAL-source origin edge and emits ``REFERENCE.CREATE``
-    on the SYSTEM chain (``chain_id = SYSTEM_TENANT_ID``). Not idempotent — call once on a
-    fresh database (re-seeding would violate ``UNIQUE(tenant_id, code)``)."""
+    on the SYSTEM chain (``chain_id = SYSTEM_TENANT_ID``).
+
+    **IDEMPOTENT since DEP-1 (Wave-15, OQ-W15P-4) — this is REF-1's ratified trigger, paid here
+    rather than rediscovered.** It previously said *"Not idempotent — call once on a fresh
+    database"*, and it had **no non-test caller anywhere**, so nothing had ever exercised the
+    second call. A deployment script whose first step is "must be a fresh database" is not a
+    deployment script: it cannot re-run after a partial failure, and it cannot pick up a dataset
+    extension.
+
+    The shape is per-code get-or-create, NOT try/except on the unique constraint — a caught
+    IntegrityError would poison the caller's transaction and lose the rows that had already
+    committed. Each existing row is left **untouched**: this verb seeds, it does not reconcile, so
+    a tenant-side correction to a SYSTEM row is never silently reverted by a re-run.
+
+    The one deliberate exception is the holiday refresh, which ALWAYS runs. It is the ADD-ONLY
+    ``refresh_calendar_holidays`` verb — a silent no-op when the dataset is unchanged, and the path
+    by which an extended dataset reaches an existing deployment. That is not hypothetical: the
+    Wave-14 close extended XNYS from 118 dates to 128, and re-running the seed is how a deployed
+    environment would take that up.
+    """
     actor = ReferenceActor(actor_id=actor_id)
 
     for code, name, symbol, minor_units, numeric_code in SYSTEM_CURRENCIES:
+        if _existing_code(session, Currency, code) is not None:
+            continue
         create_currency(
             session,
             tenant_id=SYSTEM_TENANT_ID,
@@ -79,15 +108,17 @@ def seed_system_reference(session: Session, *, actor_id: str = "system") -> None
             numeric_code=numeric_code,
         )
 
-    xnys = create_calendar(
-        session,
-        tenant_id=SYSTEM_TENANT_ID,
-        code=SYSTEM_CALENDAR_CODE,
-        name="New York Stock Exchange",
-        actor=actor,
-        mic=SYSTEM_CALENDAR_CODE,
-        holidays=[HolidaySpec(holiday_date=d, name=n) for d, n in SYSTEM_CALENDAR_HOLIDAYS],
-    )
+    xnys = _existing_code(session, Calendar, SYSTEM_CALENDAR_CODE)
+    if xnys is None:
+        xnys = create_calendar(
+            session,
+            tenant_id=SYSTEM_TENANT_ID,
+            code=SYSTEM_CALENDAR_CODE,
+            name="New York Stock Exchange",
+            actor=actor,
+            mic=SYSTEM_CALENDAR_CODE,
+            holidays=[HolidaySpec(holiday_date=d, name=n) for d, n in SYSTEM_CALENDAR_HOLIDAYS],
+        )
     # CAL-1a: the real 2024-2035 XNYS dataset rides the ADD-ONLY refresh verb as its FIRST
     # execution (OQ-CAL-1-8). The two token dates above are members of the full set, so the
     # refresh is idempotent over them; the create stays byte-compatible with every earlier pin.
@@ -99,15 +130,16 @@ def seed_system_reference(session: Session, *, actor_id: str = "system") -> None
         complete_through=XNYS_COMPLETE_THROUGH,
     )
 
-    create_rating_scale(
-        session,
-        tenant_id=SYSTEM_TENANT_ID,
-        code=SYSTEM_RATING_SCALE_CODE,
-        name="S&P Long-Term Issuer Rating",
-        actor=actor,
-        agency="SP",
-        grades=[GradeSpec(code=c, rank=r) for c, r in SYSTEM_RATING_GRADES],
-    )
+    if _existing_code(session, RatingScale, SYSTEM_RATING_SCALE_CODE) is None:
+        create_rating_scale(
+            session,
+            tenant_id=SYSTEM_TENANT_ID,
+            code=SYSTEM_RATING_SCALE_CODE,
+            name="S&P Long-Term Issuer Rating",
+            actor=actor,
+            agency="SP",
+            grades=[GradeSpec(code=c, rank=r) for c, r in SYSTEM_RATING_GRADES],
+        )
 
 
 def count_seeded(session: Session) -> dict[str, int]:

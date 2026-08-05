@@ -803,6 +803,62 @@ def test_the_shipped_set_covers_the_opening_boundary_of_its_earliest_servable_gr
         )
 
 
+def test_seeding_TWICE_mints_nothing_new_and_emits_no_duplicate_event(session: Session) -> None:
+    """DEP-1 / OQ-W15P-4: the seeder is IDEMPOTENT — REF-1's ratified trigger, paid at DEP-1.
+
+    It previously declared itself *"not idempotent — call once on a fresh database"* and had **no
+    non-test caller anywhere**, so the second call had never been executed by anything. A deploy
+    script that cannot re-run after a partial failure is not a deploy script.
+
+    The assertion that matters is not "it didn't crash" — a caught IntegrityError would also not
+    crash while poisoning the transaction. This asserts the SECOND call is a genuine no-op:
+    identical row counts, and **zero additional REFERENCE.CREATE events on the SYSTEM chain**. The
+    audit count is the discriminating half; row counts alone would pass for a seeder that
+    re-created and re-deleted.
+    """
+    seed_system_reference(session, actor_id="system")
+    session.flush()
+    first_counts = count_seeded(session)
+    first_creates = _events(session, REFERENCE_CREATE_EVENT)
+    first_holidays = session.execute(select(func.count()).select_from(CalendarHoliday)).scalar_one()
+
+    seed_system_reference(session, actor_id="system")
+    session.flush()
+
+    assert count_seeded(session) == first_counts, "the second seed minted rows"
+    assert (
+        _events(session, REFERENCE_CREATE_EVENT) == first_creates
+    ), "the second seed emitted a REFERENCE.CREATE — it is re-creating, not skipping"
+    assert (
+        session.execute(select(func.count()).select_from(CalendarHoliday)).scalar_one()
+        == first_holidays
+    ), "the add-only holiday refresh duplicated dates on the second call"
+    # The chain must still verify — a duplicate-suppressing seeder that broke the hash chain would
+    # satisfy every count above.
+    assert verify_chain(session, SYSTEM_TENANT_ID).ok is True
+
+
+def test_a_tenant_correction_to_a_SYSTEM_row_survives_a_re_seed(session: Session) -> None:
+    """The other half of idempotency, and the one a naive upsert would get wrong.
+
+    This verb SEEDS; it does not RECONCILE. If a re-run silently reverted an edited SYSTEM row it
+    would be a data-loss path disguised as a no-op — so the existing row is left untouched rather
+    than refreshed to the catalog literal.
+    """
+    seed_system_reference(session, actor_id="system")
+    session.flush()
+    usd = session.execute(
+        select(Currency).where(Currency.tenant_id == SYSTEM_TENANT_ID, Currency.code == "USD")
+    ).scalar_one()
+    update_currency(session, usd, actor=_actor(), name="United States Dollar (corrected)")
+    session.flush()
+
+    seed_system_reference(session, actor_id="system")
+    session.flush()
+
+    assert usd.name == "United States Dollar (corrected)", "the re-seed reverted a correction"
+
+
 def test_seed_system_reference_loads_the_full_xnys_set(session: Session) -> None:
     seed_system_reference(session, actor_id="system")
     xnys = session.execute(

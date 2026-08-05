@@ -732,3 +732,107 @@ jobs:
           python-version: "3.12"
       - name: Documentation consistency (placeholder)
         run: python scripts/check_docs.py
+
+  # DEP-1 (Wave-15, OQ-W15P-1): CI BUILDS the three images it has always only tested the source of.
+  #
+  # The gap this closes (planning F1): three Dockerfiles and a compose file have shipped since the
+  # scaffold and CI built NONE of them — measured 0 hits for `docker build` in this file. That is
+  # the asymmetry that let an EOL `node:20-slim` base ship unnoticed until FE-M1 caught it by
+  # READING, and `frontend.Dockerfile` says so in its own comment: "none of which CI can surface on
+  # its own — CI never builds this image."
+  #
+  # Deliberately MORE than `docker build`. A build proves the Dockerfile parses and its layers run;
+  # it does NOT prove the artifact works. This wave's predecessor closed on exactly that distinction
+  # — a control's EXISTENCE was verified and its DISCRIMINATING POWER was not — so each image is
+  # also made to DO something, and the build-context hygiene finding ships as a permanent control.
+  #
+  # Build only; publishing to a registry is deliberately out of DEP-1's scope.
+  images:
+    name: Container images (build + smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build backend image
+        run: docker build -f infra/docker/backend.Dockerfile -t irp-backend:ci .
+      - name: Build worker image
+        run: docker build -f infra/docker/worker.Dockerfile -t irp-worker:ci .
+      - name: Build frontend image
+        run: docker build -f infra/docker/frontend.Dockerfile -t irp-frontend:ci .
+
+      # The discriminating half: a built image that cannot import its own entrypoint is a green
+      # build and a broken deploy. Each check exercises the thing the CMD would actually do.
+      - name: Smoke — each image can do its job
+        run: |
+          set -euo pipefail
+          docker run --rm irp-backend:ci python -c "import irp_backend.main"
+          docker run --rm irp-worker:ci python -c "import irp_worker.supervisor"
+          docker run --rm irp-frontend:ci test -s /usr/share/nginx/html/index.html
+          echo "all three images import / serve"
+
+      # The DEP-1 build-context finding, as a permanent control (P9: a refusal is not shipped until
+      # a test has made it FIRE — deleting .dockerignore makes this step fail).
+      #
+      # Found by EXECUTION at DEP-1: with no .dockerignore the backend image carried 34 __pycache__
+      # directories off the build machine plus both test suites. Stale local bytecode inside an
+      # artifact whose entire purpose is reproducibility is the project's known hazard class.
+      - name: Build-context hygiene — no local bytecode, no tests in a production image
+        run: |
+          set -euo pipefail
+          fail=0
+          for img in irp-backend:ci irp-worker:ci; do
+            pyc=$(docker run --rm "$img" sh -c "find /app -name '__pycache__' -type d 2>/dev/null | wc -l" | tr -d '[:space:]')
+            tst=$(docker run --rm "$img" sh -c "find /app -type d -name tests 2>/dev/null | wc -l" | tr -d '[:space:]')
+            echo "$img: __pycache__=$pyc tests=$tst"
+            if [ "$pyc" != "0" ]; then echo "::error::$img ships $pyc __pycache__ dir(s) — stale build-machine bytecode in a production image (check .dockerignore)"; fail=1; fi
+            if [ "$tst" != "0" ]; then echo "::error::$img ships $tst test dir(s) — test code is not production surface (check .dockerignore)"; fail=1; fi
+          done
+          exit $fail
+
+  # DEP-1 (Wave-15): RUN THE STACK. Not build it — run it.
+  #
+  # This job exists because of a measured result, not a principle. DEP-1 found ELEVEN defects across
+  # five items, and TEN of them were pre-existing: no migration step anywhere in the stack, no
+  # container able to run one, a DATABASE_URL unusable from inside a container, the backend racing
+  # both Postgres and the migration, the frontend dying because nginx resolves upstreams once at
+  # startup, a port collision with the dev database, a header comment stale since migration 0001.
+  #
+  # A 2,980-test suite caught NONE of them, and no larger suite would have. Every one lived in the
+  # space BETWEEN components — image build vs. runtime, container DNS, compose ordering, env
+  # resolution — and tests exercise code paths without ever starting the system. The compose file
+  # drifted from migration 0001 to 0062 carrying a header claiming the app has no schema, because
+  # nothing ran it.
+  #
+  # Both scripts are executable and were, until this job, MANUAL — the exact kind of thing that
+  # rots. They are self-contained by construction: each generates its env from the committed
+  # `.env.example` (so no CI secret is needed and no developer `.env` can leak in), and each uses
+  # its own compose project and host port, so they cannot collide with each other.
+  stack-proof:
+    name: Stack proof (deploy + backup/restore)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain
+        run: docker compose version
+
+      # Builds the images through compose, starts an EMPTY database, migrates + seeds through the
+      # governed prepare step (twice — idempotency is a deployment property or it is nothing), then
+      # verifies by READING DEPLOYED DATABASE STATE and reaching the running services. It does not
+      # report success because its last command exited 0.
+      - name: Deploy to a clean stack, and verify the deployment
+        run: bash infra/deploy/deploy.sh
+
+      # Both arms. The NEGATIVE one is the point: a truncated archive must be REFUSED, and the
+      # target database must be UNCHANGED afterwards. A restore that "succeeds" on a damaged dump
+      # converts a recoverable outage into confident data loss; a restore that fails HALFWAY has
+      # already dropped what it was replacing. The proof asserts the refusal lands before the
+      # target is touched (P9: a refusal is not shipped until a test has made it FIRE).
+      - name: Prove backup AND restore — including the refusal
+        run: bash infra/deploy/prove_backup_restore.sh
+
+      - name: Leave nothing behind
+        if: always()
+        run: |
+          docker compose -p irp-dep1 down -v --remove-orphans 2>/dev/null || true
+          docker compose -p irp-dep1-br down -v --remove-orphans 2>/dev/null || true

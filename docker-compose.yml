@@ -1,16 +1,60 @@
-# Local development composition — scaffold. No production secrets.
+# The deployable composition. No production secrets.
 # Copy .env.example to .env and set local-only values before running (BR-10).
-# Note: the database service is provided for future local development only; in Step 1D
-# the application defines no schema and does not connect to it.
+#
+# DEP-1 (Wave-15) CORRECTED THREE THINGS HERE, all of which meant this stack could never have
+# produced a working deployment — and none of which anything could have caught, because CI never
+# built or ran the stack (planning fact F1):
+#   1. There was NO migration step and no container able to run one, so `up` produced a backend
+#      pointed at an EMPTY database. The one-shot `migrate` service is that step.
+#   2. `backend` had no `depends_on`, so it raced Postgres AND the migration.
+#   3. The header said "in Step 1D the application defines no schema and does not connect to it."
+#      That has been false since migration 0001; the head is now 0062.
 
 services:
+  # One-shot: alembic upgrade head + the idempotent SYSTEM reference seed, then exits.
+  # Everything that touches the database waits for this to COMPLETE, not merely to start.
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/docker/migrate.Dockerfile
+    env_file: ${IRP_ENV_FILE:-.env}
+    environment:
+      # DEP-1: .env's DATABASE_URL is HOST-oriented (localhost:5432) so host tooling — a local
+      # `alembic upgrade`, the test battery — keeps working. Inside a container `localhost` is the
+      # CONTAINER, so every DB-touching service gets the service-name URL explicitly here. This was
+      # a real footgun: the shipped .env.example could not have worked for a containerized backend,
+      # and nothing would have said so except a connection refusal at runtime.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
   backend:
     build:
       context: .
       dockerfile: infra/docker/backend.Dockerfile
-    env_file: .env
+    env_file: ${IRP_ENV_FILE:-.env}
+    environment:
+      # DEP-1: .env's DATABASE_URL is HOST-oriented (localhost:5432) so host tooling — a local
+      # `alembic upgrade`, the test battery — keeps working. Inside a container `localhost` is the
+      # CONTAINER, so every DB-touching service gets the service-name URL explicitly here. This was
+      # a real footgun: the shipped .env.example could not have worked for a containerized backend,
+      # and nothing would have said so except a connection refusal at runtime.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     ports:
       - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # DEP-1: a real readiness signal, not just "the process started". The frontend's nginx depends
+    # on this being HEALTHY — see the frontend service for why that is load-bearing.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
 
   worker:
     build:
@@ -18,10 +62,20 @@ services:
       dockerfile: infra/docker/worker.Dockerfile
     # CAD-1: the supervisor ticks each tenant in IRP_TENANT_IDS every IRP_TICK_INTERVAL_SECONDS.
     # Set these in .env (see .env.example); an empty IRP_TENANT_IDS fails closed at startup.
-    env_file: .env
+    env_file: ${IRP_ENV_FILE:-.env}
+    environment:
+      # DEP-1: .env's DATABASE_URL is HOST-oriented (localhost:5432) so host tooling — a local
+      # `alembic upgrade`, the test battery — keeps working. Inside a container `localhost` is the
+      # CONTAINER, so every DB-touching service gets the service-name URL explicitly here. This was
+      # a real footgun: the shipped .env.example could not have worked for a containerized backend,
+      # and nothing would have said so except a connection refusal at runtime.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     depends_on:
-      db:
-        condition: service_healthy  # wait for PG to accept connections (avoids spurious first-cycle errors)
+      # DEP-1: was `db: service_healthy` — waiting for PG to accept connections is NOT the same as
+      # waiting for the schema to exist. The worker ticks against governed tables from its first
+      # cycle, so it waits for the prepare step to COMPLETE.
+      migrate:
+        condition: service_completed_successfully
 
   frontend:
     build:
@@ -36,6 +90,13 @@ services:
         VITE_OIDC_REDIRECT_URI: ${VITE_OIDC_REDIRECT_URI:-}
     ports:
       - "5173:80"
+    # DEP-1, found by EXECUTION: nginx resolves upstream hostnames ONCE, at startup, and EXITS if
+    # they do not resolve — "[emerg] host not found in upstream 'backend'". With no depends_on the
+    # frontend raced the backend and the container died, so a plain `docker compose up` could leave
+    # a DEAD frontend purely on timing. Nothing could have caught this: CI never ran the stack.
+    depends_on:
+      backend:
+        condition: service_healthy
 
   db:
     image: postgres:16
@@ -44,7 +105,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      # DEP-1: the HOST publish port is env-driven and the container port is not. The deploy
+      # script sets POSTGRES_PUBLISH_PORT so a deployment can run ALONGSIDE the development
+      # database instead of demanding you stop it — the first execution of infra/deploy/deploy.sh
+      # failed exactly here ("Bind for 0.0.0.0:5432 failed: port is already allocated"), which is
+      # the kind of thing only running the stack can tell you. Services reach the database over
+      # the compose network on 5432 regardless; publishing is a convenience, not a requirement.
+      - "${POSTGRES_PUBLISH_PORT:-5432}:5432"
     volumes:
       - irp_pgdata:/var/lib/postgresql/data
     healthcheck:
