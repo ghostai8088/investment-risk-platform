@@ -29,6 +29,7 @@ from irp_shared.notification.sink import (
     LoggingNotificationSink,
     NotificationMessage,
     NotificationSink,
+    WebhookNotificationSink,
 )
 
 __all__ = [
@@ -44,6 +45,7 @@ __all__ = [
     "LoggingNotificationSink",
     "NotificationMessage",
     "NotificationSink",
+    "WebhookNotificationSink",
     "default_sink",
     "list_breach_notifications",
     "notify_for_event",

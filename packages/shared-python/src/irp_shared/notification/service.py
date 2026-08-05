@@ -41,7 +41,6 @@ from irp_shared.notification.events import (
     ENTITY_BREACH_NOTIFICATION,
     NO_RECIPIENT_SENTINEL,
     NOTIFY_ALARM_EVENT_TYPES,
-    NOTIFY_CHANNEL_LOG,
     NOTIFY_DISPATCH_EVENT,
     NOTIFY_OUTCOME_FAILED,
     NOTIFY_OUTCOME_SENT,
@@ -54,6 +53,7 @@ from irp_shared.notification.sink import (
     LoggingNotificationSink,
     NotificationMessage,
     NotificationSink,
+    WebhookNotificationSink,
 )
 
 
@@ -178,7 +178,10 @@ def notify_for_event(
                 breach_id=breach_id,
                 recipient_id=NO_RECIPIENT_SENTINEL,
                 recipient_reason=NOTIFY_RECIPIENT_PERMISSION,
-                channel=NOTIFY_CHANNEL_LOG,
+                # DEP-1: the SINK's channel, not a LOG literal — the delivered rows already recorded
+                # sink.channel, and a SUPPRESSED row claiming LOG under a webhook sink would be a
+                # false record in a durable evidence table.
+                channel=sink.channel,
                 outcome=NOTIFY_OUTCOME_SUPPRESSED,
                 failure_reason=None,
                 now=now,
@@ -225,7 +228,18 @@ def notify_for_event(
 
 
 def default_sink() -> NotificationSink:
-    """The v1 record-first sink (OQ-1=A). A real EMAIL/WEBHOOK adapter replaces this later."""
+    """The configured sink: WEBHOOK when ``IRP_NOTIFY_WEBHOOK_URL`` is set, else the v1 LOG sink.
+
+    DEP-1 (Wave-15): the promised "real EMAIL/WEBHOOK adapter behind the same Protocol" —
+    config-driven exactly as the sink module predicted, no schema change. The URL comes from the
+    ENVIRONMENT (BR-10: a webhook URL routinely embeds a secret token, so it never lands in
+    source); unset or empty means the LOG sink, so every existing environment is unchanged.
+    """
+    import os
+
+    url = os.environ.get("IRP_NOTIFY_WEBHOOK_URL", "").strip()
+    if url:
+        return WebhookNotificationSink(url)
     return LoggingNotificationSink()
 
 
