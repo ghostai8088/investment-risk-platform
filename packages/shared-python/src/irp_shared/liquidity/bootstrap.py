@@ -42,7 +42,10 @@ LIQUIDITY_MODEL_CODE = "risk.liquidity_tiers"
 LIQUIDITY_MODEL_NAME = "Liquidity tier distribution (illiquid / highly-liquid share)"
 LIQUIDITY_MODEL_TYPE = "LIQUIDITY"
 LIQUIDITY_VERSION_LABEL = "v1"
-LIQUIDITY_METHODOLOGY_REF = "docs: LQ-1 decision record Parts 1-2 (OQ-LQ-1-1..20)"
+#: RPT-1 (2026-08-05): was the PROSE string "docs: LQ-1 decision record Parts 1-2
+#: (OQ-LQ-1-1..20)". Now a resolving path — a report renders this ref, and the census in
+#: test_methodology_refs.py fails on any non-resolving one.
+LIQUIDITY_METHODOLOGY_REF = "05_analytics_methodologies/liquidity_tiers_v1.md"
 
 #: Assumption prefixes (the CON-1 / pacing convention: prefix + canonical value, one row each).
 DENOMINATOR_BASIS_PREFIX = "liquidity.denominator_basis="
