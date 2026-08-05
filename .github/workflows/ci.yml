@@ -836,8 +836,16 @@ jobs:
       - name: Prove backup AND restore — including the refusal
         run: bash infra/deploy/prove_backup_restore.sh
 
+      # RPT-1, I2's restore-cycle arm. The unit tier proves generate -> regenerate is byte-identical
+      # inside one process; this proves it ACROSS a pg_dump round-trip, a destroyed schema, a
+      # restore and a fresh interpreter — and compares against a hash captured before the archive
+      # existed, so a backup that faithfully preserved a wrong value cannot satisfy it.
+      - name: Prove a governed report regenerates identically after a restore (I2)
+        run: bash infra/deploy/prove_report_identity.sh
+
       - name: Leave nothing behind
         if: always()
         run: |
           docker compose -p irp-dep1 down -v --remove-orphans 2>/dev/null || true
           docker compose -p irp-dep1-br down -v --remove-orphans 2>/dev/null || true
+          docker compose -p irp-rpt1-id down -v --remove-orphans 2>/dev/null || true

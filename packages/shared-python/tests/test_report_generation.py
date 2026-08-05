@@ -17,8 +17,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.models import AuditEvent
+from irp_shared.concentration.bootstrap import (
+    CONCENTRATION_METHODOLOGY_REF,
+    CONCENTRATION_MODEL_CODE,
+)
 from irp_shared.concentration.events import RUN_TYPE_CONCENTRATION
 from irp_shared.concentration.models import ConcentrationResult
+from irp_shared.model.models import Model, ModelVersion
+from irp_shared.perf.bootstrap import (
+    ROLLING_RISK_METHODOLOGY_REF,
+    ROLLING_RISK_MODEL_CODE,
+)
+from irp_shared.perf.events import RUN_TYPE_ROLLING_RISK
+from irp_shared.report.families import VAR_REGISTERED_METHODOLOGIES, ReportProvenanceError
 from irp_shared.report.models import ReportGeneration
 from irp_shared.report.service import (
     ReportIdentityError,
@@ -26,6 +37,13 @@ from irp_shared.report.service import (
     generate_report,
     regenerate_report,
 )
+from irp_shared.risk.bootstrap import (
+    VAR_METHODOLOGY_REF,
+    VAR_UNIFIED_METHODOLOGY_REF,
+    VAR_UNIFIED_MODEL_CODE,
+)
+from irp_shared.risk.events import RUN_TYPE_VAR
+from irp_shared.risk.models import VarResult
 from irp_shared.snapshot.models import DatasetSnapshot
 
 TENANT = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -34,14 +52,66 @@ _AS_OF = date(2026, 6, 30)
 _NOW = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
 
 
+def _seed_model_version(session: Session, *, tenant: str, code: str, ref: str | None) -> str:
+    """A REAL registered model + version, because provenance is resolved from the row.
+
+    The first version of this helper did not exist: the fixture stamped ``model_version_id=uuid4()``
+    on the result rows, so no model version was bound at all. Under the old registry that was
+    invisible — the section's methodology came from a static constant, so a report over a run whose
+    model version DID NOT EXIST rendered a full, plausible provenance line. Resolving provenance
+    from the row turned that into a refusal, and this fixture into a requirement.
+    """
+    # Resolve-or-create: `uq_model_tenant_code` is real, and the I3 proof seeds a SECOND run of the
+    # same family in the same tenant. A helper that always INSERTed made that test fail on a
+    # constraint violation rather than on what it was testing.
+    model = session.execute(
+        select(Model).where(Model.tenant_id == tenant, Model.code == code)
+    ).scalar_one_or_none()
+    if model is None:
+        model = Model(
+            tenant_id=tenant,
+            code=code,
+            name="seeded",
+            model_type="RISK",
+            is_active=True,
+        )
+        session.add(model)
+        session.flush()
+    version = session.execute(
+        select(ModelVersion).where(
+            ModelVersion.tenant_id == tenant,
+            ModelVersion.model_id == str(model.id),
+            ModelVersion.version_label == "v1",
+        )
+    ).scalar_one_or_none()
+    if version is None:
+        version = ModelVersion(
+            tenant_id=tenant,
+            model_id=str(model.id),
+            version_label="v1",
+            methodology_ref=ref,
+            status="REGISTERED",
+        )
+        session.add(version)
+        session.flush()
+    return str(version.id)
+
+
 def _seed_concentration_run(
-    session: Session, *, tenant: str = TENANT, portfolio_id: str | None = None
+    session: Session,
+    *,
+    tenant: str = TENANT,
+    portfolio_id: str | None = None,
+    methodology_ref: str | None = CONCENTRATION_METHODOLOGY_REF,
 ) -> tuple[str, str]:
     """A COMPLETED concentration run with real result rows. Returns (run_id, portfolio_id)."""
     from irp_shared.calc.models import RunStatus
     from irp_shared.calc.service import create_run, update_run_status
 
     pf = portfolio_id or str(uuid.uuid4())
+    version_id = _seed_model_version(
+        session, tenant=tenant, code=CONCENTRATION_MODEL_CODE, ref=methodology_ref
+    )
     snap = DatasetSnapshot(
         tenant_id=tenant,
         label="src",
@@ -76,7 +146,7 @@ def _seed_concentration_run(
                 tenant_id=tenant,
                 calculation_run_id=run.run_id,
                 input_snapshot_id=snap.id,
-                model_version_id=str(uuid.uuid4()),
+                model_version_id=version_id,
                 portfolio_id=pf,
                 row_kind="DETAIL" if bucket != "__SUMMARY__" else "SUMMARY",
                 dimension_kind="SECTOR_INDUSTRY",
@@ -339,3 +409,397 @@ def test_a_row_with_NO_VALUE_IN_EITHER_COLUMN_is_REFUSED_not_rendered_as_None(
             family_runs={"concentration": str(run.run_id)},
             generated_at=_NOW,
         )
+
+
+# --- I5: provenance resolved FROM THE BOUND RUN, and the allowlist that makes it non-forgeable ----
+
+
+def _seed_var_run(
+    session: Session,
+    *,
+    tenant: str = TENANT,
+    model_code: str = VAR_UNIFIED_MODEL_CODE,
+    methodology_ref: str | None = VAR_UNIFIED_METHODOLOGY_REF,
+    portfolio_id: str | None = None,
+) -> tuple[str, str]:
+    """A COMPLETED VaR run with one real ``var_result`` row. Returns (run_id, portfolio_id)."""
+    from irp_shared.calc.models import RunStatus
+    from irp_shared.calc.service import create_run, update_run_status
+
+    pf = portfolio_id or str(uuid.uuid4())
+    version_id = _seed_model_version(session, tenant=tenant, code=model_code, ref=methodology_ref)
+    snap = DatasetSnapshot(
+        tenant_id=tenant,
+        label="src",
+        purpose="VAR_INPUT",
+        as_of_valid_at=_NOW,
+        as_of_known_at=_NOW,
+        as_of_valuation_date=_AS_OF,
+        binding_predicate_version="v1",
+        component_count=0,
+        manifest_hash="h",
+    )
+    session.add(snap)
+    session.flush()
+    upstream = create_run(
+        session, tenant_id=tenant, run_type="FACTOR_EXPOSURE", initiated_by="analyst"
+    )
+    run = create_run(
+        session,
+        tenant_id=tenant,
+        run_type=RUN_TYPE_VAR,
+        initiated_by="analyst",
+        input_snapshot_id=str(snap.id),
+        scope_portfolio_id=pf,
+    )
+    session.flush()
+    session.add(
+        VarResult(
+            tenant_id=tenant,
+            calculation_run_id=run.run_id,
+            input_snapshot_id=snap.id,
+            model_version_id=version_id,
+            exposure_run_id=upstream.run_id,
+            covariance_run_id=upstream.run_id,
+            metric_type="VAR_PARAMETRIC_UNIFIED",
+            base_currency="USD",
+            confidence_level=Decimal("0.9750"),
+            horizon_days=1,
+            z_score=Decimal("1.959963984540"),
+            sigma=Decimal("1250000.000000"),
+            var_value=Decimal("2449954.980675"),
+            n_factors=6,
+            n_observations=252,
+            window_start=date(2025, 7, 1),
+            window_end=_AS_OF,
+        )
+    )
+    update_run_status(session, run, RunStatus.COMPLETED, actor_id="analyst")
+    session.flush()
+    return str(run.run_id), pf
+
+
+def test_the_VAR_family_cites_the_model_ITS_OWN_RUN_bound(session: Session) -> None:
+    """The test the static-pair design could not have passed.
+
+    Seven registered models write into ``var_result`` under the single ``VAR`` run_type. A registry
+    declaring one ``methodology_ref`` for the family would have cited the PLAIN parametric document
+    on a UNIFIED run — a false provenance line on a governed number, rendered with full confidence.
+    """
+    run_id, pf = _seed_var_run(session)
+    _row, rendered = generate_report(
+        session,
+        acting_tenant=TENANT,
+        actor_id="analyst",
+        portfolio_id=pf,
+        portfolio_code="P-RPT",
+        as_of_date=_AS_OF,
+        family_runs={"var": run_id},
+        generated_at=_NOW,
+    )
+    assert VAR_UNIFIED_MODEL_CODE in rendered.body
+    assert VAR_UNIFIED_METHODOLOGY_REF in rendered.body
+    assert (
+        VAR_METHODOLOGY_REF not in rendered.body
+    ), "cited the PLAIN parametric doc on a unified run"
+    # The metric key names WHICH VaR and in what currency — "VaR: 2,449,954" alone is a disclosure
+    # defect when one table holds parametric, total, unified, historical and both ES families.
+    assert "VAR_PARAMETRIC_UNIFIED:USD" in rendered.body
+    assert "2449954.980675" in rendered.body
+
+
+def test_a_TENANT_STAMPED_methodology_ref_is_REFUSED_not_cited(session: Session) -> None:
+    """``model_version.methodology_ref`` is tenant-supplied — ``POST /models`` can stamp any string.
+
+    Without the registered-reference check, a tenant could make a board report cite a document of
+    their own choosing while the number itself stayed genuine. The refusal fires on a REGISTERED
+    model code with a SUBSTITUTED reference, which is the input that discriminates: an unregistered
+    code is refused by a different branch entirely.
+    """
+    run_id, pf = _seed_var_run(
+        session, methodology_ref="05_analytics_methodologies/chosen_by_the_tenant.md"
+    )
+    with pytest.raises(ReportProvenanceError, match="registered reference"):
+        generate_report(
+            session,
+            acting_tenant=TENANT,
+            actor_id="analyst",
+            portfolio_id=pf,
+            portfolio_code="P-RPT",
+            as_of_date=_AS_OF,
+            family_runs={"var": run_id},
+            generated_at=_NOW,
+        )
+    assert session.query(ReportGeneration).count() == 0
+
+
+def test_an_UNREGISTERED_model_is_REFUSED(session: Session) -> None:
+    """A VaR run bound to a model the report registry does not know. Fail-closed: a new VaR family
+    must be added to the allowlist DELIBERATELY before a report can cite it."""
+    run_id, pf = _seed_var_run(
+        session,
+        model_code="risk.var.experimental",
+        methodology_ref="05_analytics_methodologies/x.md",
+    )
+    with pytest.raises(ReportProvenanceError, match="UNREGISTERED model"):
+        generate_report(
+            session,
+            acting_tenant=TENANT,
+            actor_id="analyst",
+            portfolio_id=pf,
+            portfolio_code="P-RPT",
+            as_of_date=_AS_OF,
+            family_runs={"var": run_id},
+            generated_at=_NOW,
+        )
+    assert session.query(ReportGeneration).count() == 0
+
+
+def test_a_run_binding_NO_RESOLVABLE_MODEL_VERSION_is_REFUSED(session: Session) -> None:
+    """The defect this suite's own fixture carried until provenance moved onto the row.
+
+    The result rows stamped a ``model_version_id`` that resolved to nothing. Under the static-pair
+    registry that was INVISIBLE — the methodology came from a constant, so the report rendered a
+    complete, plausible provenance line for a number whose model version did not exist.
+    """
+    run_id, pf = _seed_var_run(session)
+    session.query(VarResult).filter(VarResult.calculation_run_id == run_id).update(
+        {"model_version_id": str(uuid.uuid4())}
+    )
+    session.flush()
+    with pytest.raises(ReportProvenanceError, match="no resolvable model version"):
+        generate_report(
+            session,
+            acting_tenant=TENANT,
+            actor_id="analyst",
+            portfolio_id=pf,
+            portfolio_code="P-RPT",
+            as_of_date=_AS_OF,
+            family_runs={"var": run_id},
+            generated_at=_NOW,
+        )
+    assert session.query(ReportGeneration).count() == 0
+
+
+def test_a_NON_VAR_run_cannot_be_bound_to_the_VAR_family(session: Session) -> None:
+    """The run_type filter (the PPF-2 defect class): ``var_result`` is shared across run families,
+    so a read that does not fence the run_type activates every other family's rows."""
+    run_id, pf = _seed_concentration_run(session)
+    with pytest.raises(ReportInputError, match="not a visible VAR run"):
+        generate_report(
+            session,
+            acting_tenant=TENANT,
+            actor_id="analyst",
+            portfolio_id=pf,
+            portfolio_code="P-RPT",
+            as_of_date=_AS_OF,
+            family_runs={"var": run_id},
+            generated_at=_NOW,
+        )
+    assert session.query(ReportGeneration).count() == 0
+
+
+def test_the_VAR_ALLOWLIST_covers_EVERY_registered_var_model(session: Session) -> None:
+    """A census, not an enumeration: discovered from the risk bootstrap's own source.
+
+    The allowlist is what stops a report citing a tenant-chosen document — which makes it exactly
+    the kind of hand-written list that goes stale the moment an eighth VaR family ships. Discovery
+    means the NEXT VaR model fails this test on the day it lands, instead of being silently
+    un-reportable (fail-closed, but silently) or silently mis-cited.
+
+    ``risk.var.`` with the trailing dot is deliberate: ``risk.var_backtest`` is a different family
+    that does not write into ``var_result``, and a prefix without the dot would have swept it in.
+    """
+    import pathlib
+    import re
+
+    src = (
+        pathlib.Path(__file__).resolve().parents[1] / "src" / "irp_shared" / "risk" / "bootstrap.py"
+    ).read_text(encoding="utf8")
+    discovered = set(re.findall(r'^[A-Z_]+_MODEL_CODE = "(risk\.var\.[a-z_]+)"', src, re.MULTILINE))
+    assert discovered, "the discovery regex matched nothing — it has gone stale, not the allowlist"
+    assert set(VAR_REGISTERED_METHODOLOGIES) == discovered, (
+        "the report's VaR allowlist and the registered risk.var.* models have diverged: "
+        f"missing {sorted(discovered - set(VAR_REGISTERED_METHODOLOGIES))}, "
+        f"extra {sorted(set(VAR_REGISTERED_METHODOLOGIES) - discovered)}"
+    )
+
+
+def test_a_SUPPRESSED_rolling_risk_window_renders_its_SUPPRESSION_not_None(
+    session: Session,
+) -> None:
+    """The third instance of the render-None defect, found by reading the schema rather than by a
+    failing test.
+
+    ``rolling_risk_result`` suppresses a window with too few observations and carries NULL. The
+    reader's first version called ``str(metric_value)`` unconditionally, so a board reader would
+    have seen "None" where the platform meant "deliberately not computed, and here is why".
+    """
+    from irp_shared.calc.models import RunStatus
+    from irp_shared.calc.service import create_run, update_run_status
+    from irp_shared.perf.models import RollingRiskResult
+    from irp_shared.report.families import _read_rolling_risk
+
+    pf = str(uuid.uuid4())
+    version_id = _seed_model_version(
+        session, tenant=TENANT, code=ROLLING_RISK_MODEL_CODE, ref=ROLLING_RISK_METHODOLOGY_REF
+    )
+    snap = DatasetSnapshot(
+        tenant_id=TENANT,
+        label="src",
+        purpose="ROLLING_RISK_INPUT",
+        as_of_valid_at=_NOW,
+        as_of_known_at=_NOW,
+        as_of_valuation_date=_AS_OF,
+        binding_predicate_version="v1",
+        component_count=0,
+        manifest_hash="h",
+    )
+    session.add(snap)
+    session.flush()
+    upstream = create_run(
+        session, tenant_id=TENANT, run_type="PORTFOLIO_RETURN", initiated_by="analyst"
+    )
+    run = create_run(
+        session,
+        tenant_id=TENANT,
+        run_type=RUN_TYPE_ROLLING_RISK,
+        initiated_by="analyst",
+        input_snapshot_id=str(snap.id),
+        scope_portfolio_id=pf,
+    )
+    session.flush()
+    for months, value, suppressed, reason in (
+        (12, Decimal("0.142300000000"), False, None),
+        (36, None, True, "insufficient observations"),
+    ):
+        session.add(
+            RollingRiskResult(
+                tenant_id=TENANT,
+                calculation_run_id=run.run_id,
+                input_snapshot_id=snap.id,
+                model_version_id=version_id,
+                portfolio_id=pf,
+                portfolio_return_run_id=upstream.run_id,
+                metric_type="VOLATILITY",
+                window_months=months,
+                period_start=date(2025, 7, 1),
+                period_end=_AS_OF,
+                metric_value=value,
+                suppressed=suppressed,
+                suppression_reason=reason,
+                annualization_basis="MONTHLY_12",
+                sampling_frequency="MONTHLY",
+                n_observations=None if suppressed else months,
+            )
+        )
+    update_run_status(session, run, RunStatus.COMPLETED, actor_id="analyst")
+    session.flush()
+
+    values = dict(_read_rolling_risk(session, str(run.run_id), TENANT))
+    assert values["VOLATILITY:12m:2026-06-30"] == "0.142300000000"
+    suppressed_value = values["VOLATILITY:36m:2026-06-30"]
+    assert "None" not in suppressed_value, "a suppressed window rendered as the string None"
+    assert "SUPPRESSED" in suppressed_value
+    assert "insufficient observations" in suppressed_value
+
+
+# --- I3: a superseded input regenerates the ORIGINAL, and the report SAYS as-of-when -------------
+
+
+def test_a_SUPERSEDING_correction_does_not_reach_a_historical_report(session: Session) -> None:
+    """I3, executed rather than argued from the append-only property.
+
+    **What a "correction" actually is here, stated because the honest answer is not obvious.** NO
+    governed result family on this platform has an in-place correction path — every result table is
+    IMMUTABLE_APPEND_ONLY, so a corrected number is a NEW COMPLETED run that supersedes the old one.
+    That is what this test applies, and it is the only correction shape the platform admits.
+
+    The report survives it because it pins VALUES, not run ids. Had it pinned only "which runs this
+    bound" and re-read at render time — which looks sufficient, since those tables are append-only —
+    the superseding run would not have reached it either, but only until the first family gained a
+    correction path. Pinning the value makes the property STRUCTURAL rather than inherited.
+    """
+    run_id, pf = _seed_concentration_run(session)
+    row, original_hash = _generate(session, run_id, pf)
+    session.flush()
+
+    # The correction: a SECOND completed run for the same portfolio, carrying a different number.
+    corrected_run_id, _ = _seed_concentration_run(session, portfolio_id=pf)
+    session.query(ConcentrationResult).filter(
+        ConcentrationResult.calculation_run_id == corrected_run_id,
+        ConcentrationResult.row_kind == "SUMMARY",
+    ).update({"metric_value": Decimal("0.987600")})
+    session.flush()
+    assert corrected_run_id != run_id
+
+    again = regenerate_report(
+        session, report_id=str(row.id), acting_tenant=TENANT, portfolio_code="P-RPT"
+    )
+    assert again.content_hash == original_hash, "a later correction changed a historical report"
+    assert "0.412300" in again.body, "the ORIGINAL value is no longer rendered"
+    assert "0.987600" not in again.body, "the corrected value leaked into a historical report"
+
+
+def test_the_report_SAYS_as_of_when_its_inputs_were_KNOWN(session: Session) -> None:
+    """I3's second half — "and SAYS so".
+
+    Byte-identical regeneration of a historical report is only honest if the reader can tell it IS
+    historical. The as-of date says what period the numbers describe; the knowledge time says when
+    they were known. A report carrying only the first is indistinguishable, on the page, from a
+    current view of the same period.
+    """
+    run_id, pf = _seed_concentration_run(session)
+    _row, rendered = generate_report(
+        session,
+        acting_tenant=TENANT,
+        actor_id="analyst",
+        portfolio_id=pf,
+        portfolio_code="P-RPT",
+        as_of_date=_AS_OF,
+        family_runs={"concentration": run_id},
+        generated_at=_NOW,
+    )
+    assert "As of 2026-06-30" in rendered.body, "the economic as-of is missing"
+    assert "as known at" in rendered.body, "the KNOWLEDGE time is missing — I3 is not stated"
+    assert _NOW.isoformat() in rendered.body
+
+
+def test_the_report_does_NOT_RE_READ_the_source_rows_even_if_they_MOVE(session: Session) -> None:
+    """I1's discriminating control — and it exists because the obvious I3 test did NOT discriminate.
+
+    Mutation N10 replaced the renderer's pinned read with a LIVE re-read of the bound run, and
+    ``test_a_SUPERSEDING_correction_does_not_reach_a_historical_report`` did not notice: a
+    supersession creates a NEW run, so a live re-read of the ORIGINAL run still returns the original
+    numbers. The supersession test proves the realistic correction path and nothing about where the
+    renderer gets its values.
+
+    The input that discriminates is the source rows of the BOUND run moving. That is something the
+    schema forbids — ``concentration_result`` is IA append-only — and it is applied here through a
+    bulk UPDATE that bypasses the ORM guards ON PURPOSE. The point is not that the rows can move; it
+    is that the report's reproducibility must not DEPEND on their not moving, because that guarantee
+    lives in a different table's constraints and a restore, a migration or a future correction path
+    could each put it in question.
+    """
+    run_id, pf = _seed_concentration_run(session)
+    row, original_hash = _generate(session, run_id, pf)
+    session.flush()
+
+    moved = (
+        session.query(ConcentrationResult)
+        .filter(
+            ConcentrationResult.calculation_run_id == run_id,
+            ConcentrationResult.row_kind == "SUMMARY",
+        )
+        .update({"metric_value": Decimal("0.999900")}, synchronize_session=False)
+    )
+    session.flush()
+    session.expire_all()
+    assert moved == 1, "the mutation did not land — this control would pass vacuously"
+
+    again = regenerate_report(
+        session, report_id=str(row.id), acting_tenant=TENANT, portfolio_code="P-RPT"
+    )
+    assert again.content_hash == original_hash, "the renderer re-read the live source rows"
+    assert "0.412300" in again.body
+    assert "0.999900" not in again.body, "a moved source row reached a pinned report"

@@ -3709,13 +3709,25 @@ def _reresolve_content(
 
         pinned = json.loads(comp.captured_content)
         family = family_for(str(pinned["family"]))
-        values = family.read_values(session, str(pinned["source_run_id"]), acting_tenant)
+        run_id = str(pinned["source_run_id"])
+        values = family.read_values(session, run_id, acting_tenant)
+        # Provenance is re-resolved LIVE too, not copied from the pin. Copying it would make the
+        # verification blind to the failure that matters most here: a model version re-pointed at a
+        # different methodology document after the report was generated. The re-derived value is
+        # compared against the pin by the caller, so a moved citation REDDENS.
+        prov = family.read_provenance(session, run_id, acting_tenant)
         return governed_value_content(
             family_key=family.key,
             section_title=family.section_title,
-            model_code=family.model_code,
-            methodology_ref=family.methodology_ref,
-            run_id=str(pinned["source_run_id"]),
+            model_code=prov.model_code,
+            methodology_ref=prov.methodology_ref,
+            model_version_id=prov.model_version_id,
+            run_id=run_id,
+            source_snapshot_id=str(pinned["source_snapshot_id"]),
+            # The knowledge time is a property of the PINNED source snapshot, which is IA
+            # append-only — so carrying it forward from the pin is not a shortcut, it is the
+            # only definition. Re-reading it live would just re-read the same immutable row.
+            source_known_at=str(pinned["source_known_at"]),
             values=values,
         )
     if comp.component_kind == COMPONENT_KIND_HOLIDAY_CALENDAR:

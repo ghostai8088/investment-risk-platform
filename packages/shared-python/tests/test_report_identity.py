@@ -11,7 +11,7 @@ input that discriminates is a REAL object owned by someone else).
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
@@ -19,6 +19,7 @@ from irp_shared.report.families import REPORT_FAMILIES, family_for
 from irp_shared.report.service import (
     RENDERER_VERSION,
     ReportInputError,
+    canonical_known_at,
     render_report_html,
 )
 
@@ -26,15 +27,27 @@ _AS_OF = date(2026, 6, 30)
 
 
 def _section(
-    family_key: str = "concentration", values: list[tuple[str, str]] | None = None
+    family_key: str = "concentration",
+    values: list[tuple[str, str]] | None = None,
+    model_code: str | None = None,
 ) -> dict:
+    """One PINNED section, shaped exactly as ``governed_value_content`` produces it.
+
+    ``model_code`` defaults to the family's first registered model. It is a parameter because the
+    VaR family registers SEVEN, and a helper that silently picked one would let a test claim
+    "every family renders its methodology" while exercising a seventh of the VaR family.
+    """
     fam = family_for(family_key)
+    code = model_code or sorted(fam.registered_methodologies)[0]
     return {
         "family": fam.key,
         "section_title": fam.section_title,
-        "model_code": fam.model_code,
-        "methodology_ref": fam.methodology_ref,
+        "model_code": code,
+        "methodology_ref": fam.registered_methodologies[code],
+        "model_version_id": "22222222-2222-2222-2222-222222222222",
         "source_run_id": "11111111-1111-1111-1111-111111111111",
+        "source_snapshot_id": "33333333-3333-3333-3333-333333333333",
+        "source_known_at": "2026-07-01T12:00:00+00:00",
         "renderer_version": RENDERER_VERSION,
         "values": [
             {"metric": m, "value": v}
@@ -100,28 +113,41 @@ def test_the_VALUE_IS_RENDERED_VERBATIM_never_reformatted() -> None:
 
 
 def test_every_section_renders_its_model_run_and_methodology() -> None:
-    """I5: a number without its provenance is not a governed number. The methodology ref rendered
-    here is the one the RPT-1 census guarantees RESOLVES — which is why the pre-work had to land
-    before the report could render it."""
-    fam = family_for("liquidity")
+    """I5 in full: model CODE, model VERSION, run, input snapshot, methodology.
+
+    The version id is asserted because a code alone cannot tell a reader WHICH registration produced
+    the number, and MG-10's change-means-a-new-version rule guarantees there will be more than one.
+    """
     body = render_report_html(
         portfolio_code="P-1", as_of=_AS_OF, sections=[_section("liquidity")]
     ).body
-    assert fam.model_code in body
-    assert fam.methodology_ref in body
-    assert "11111111-1111-1111-1111-111111111111" in body
+    fam = family_for("liquidity")
+    code = sorted(fam.registered_methodologies)[0]
+    assert code in body
+    assert fam.registered_methodologies[code] in body
+    assert "11111111-1111-1111-1111-111111111111" in body, "the source run is not rendered"
+    assert "22222222-2222-2222-2222-222222222222" in body, "the model VERSION is not rendered"
+    assert "33333333-3333-3333-3333-333333333333" in body, "the input snapshot is not rendered"
 
 
 def test_the_rendered_methodology_refs_are_the_REGISTERED_ones() -> None:
-    """Guards against the report inventing a plausible-looking path. Every family's rendered ref is
-    the constant the model registration uses, so the census over those constants transitively
-    covers the report."""
+    """Guards against the report inventing a plausible-looking path.
+
+    EVERY registered model of every family, not one per family: the VaR family declares seven, and
+    a loop over families alone would have exercised one of them and reported full coverage.
+    """
+    seen = 0
     for fam in REPORT_FAMILIES:
-        body = render_report_html(
-            portfolio_code="P-1", as_of=_AS_OF, sections=[_section(fam.key)]
-        ).body
-        assert fam.methodology_ref in body
-        assert fam.methodology_ref.endswith(".md")
+        for code, ref in fam.registered_methodologies.items():
+            body = render_report_html(
+                portfolio_code="P-1", as_of=_AS_OF, sections=[_section(fam.key, model_code=code)]
+            ).body
+            assert ref in body
+            assert ref.endswith(".md")
+            assert code in body
+            seen += 1
+    # Non-vacuity floor: four families, seven VaR models plus one each.
+    assert seen >= 10, f"only {seen} (family, model) pairs rendered — the registry went thin"
 
 
 # --- refusals (P9: each made to FIRE) ------------------------------------------------------------
@@ -162,3 +188,23 @@ def test_ReportInputError_is_a_ValueError_subclass_for_the_422_map() -> None:
     """The API error map keys on exact type; a bare ValueError would relabel a genuine server bug as
     a client 422 (the API-2 MRO trap). Subclassing keeps existing handlers intact."""
     assert issubclass(ReportInputError, ValueError)
+
+
+def test_the_KNOWN_AT_string_is_ENGINE_INDEPENDENT() -> None:
+    """The portability defect that made the identity claim engine-dependent.
+
+    PostgreSQL hands back ``as_of_known_at`` tz-AWARE; SQLite hands back the same instant NAIVE. The
+    first version rendered ``.isoformat()`` directly, so one engine produced
+    ``...T12:00:00+00:00`` and the other ``...T12:00:00`` — different BYTES, and the content hash is
+    over the bytes. Found by running the I3 test, not by reading the renderer.
+
+    Both spellings of the same instant must canonicalize to one string, and a DIFFERENT instant must
+    still differ — otherwise "canonical" could be satisfied by returning a constant.
+    """
+    naive = datetime(2026, 7, 1, 12, 0)
+    aware = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
+    offset = datetime(2026, 7, 1, 8, 0, tzinfo=timezone(timedelta(hours=-4)))  # the same instant
+    assert canonical_known_at(naive) == canonical_known_at(aware)
+    assert canonical_known_at(offset) == canonical_known_at(aware)
+    later = datetime(2026, 7, 1, 12, 0, 1, tzinfo=UTC)
+    assert canonical_known_at(later) != canonical_known_at(aware), "a different instant collapsed"

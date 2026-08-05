@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from html import escape
 from typing import Any
 
@@ -75,27 +75,62 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def canonical_known_at(value: datetime) -> str:
+    """The knowledge time as ONE string, whatever the driver handed back.
+
+    **A portability defect caught by execution, not by reading.** PostgreSQL returns
+    ``as_of_known_at`` as a tz-AWARE datetime; SQLite returns the same instant NAIVE, because the
+    driver has nowhere to keep the offset. Rendering ``.isoformat()`` directly therefore produced
+    ``2026-07-01T12:00:00+00:00`` on one engine and ``2026-07-01T12:00:00`` on the other — different
+    BYTES for the same report, and the content hash is over the bytes. The identity claim would have
+    been quietly engine-dependent.
+
+    A naive value is treated as UTC, which is what the platform stores everywhere; an aware value is
+    converted. Both render in the same canonical form.
+    """
+    aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return aware.isoformat()
+
+
 def governed_value_content(
     *,
     family_key: str,
     section_title: str,
     model_code: str,
     methodology_ref: str,
+    model_version_id: str,
     run_id: str,
+    source_snapshot_id: str,
+    source_known_at: str,
     values: list[tuple[str, str]],
 ) -> dict[str, Any]:
-    """The pinned content for one family section — the values AND their provenance.
+    """The pinned content for one family section — the values AND their full provenance.
 
     Values are carried as STRINGS, verbatim from the source rows' Decimal repr. Round-tripping
     them through float for JSON would change the number a governed report shows, which is the one
     thing a governed report may never do.
+
+    ``model_version_id`` and ``source_snapshot_id`` are pinned rather than merely the model CODE:
+    I5 names "run ID, snapshot verification, model version, methodology ref", and a code without a
+    version cannot tell a reader WHICH registration produced the number — two versions of one model
+    are exactly what MG-10's change-means-new-version rule creates.
+
+    ``source_known_at`` is I3's half. The report's ``as_of`` says WHEN the numbers speak
+    about; the knowledge time says AS OF WHEN THEY WERE KNOWN. A regenerated historical report
+    is byte-identical to the original precisely because it re-renders what was known then — and
+    a reader who cannot see the knowledge time has no way to tell a stale report from a current
+    one. It comes from the PINNED source snapshot, which is IA append-only, so rendering it
+    costs nothing in determinism.
     """
     return {
         "family": family_key,
         "section_title": section_title,
         "model_code": model_code,
         "methodology_ref": methodology_ref,
+        "model_version_id": str(model_version_id),
         "source_run_id": str(run_id),
+        "source_snapshot_id": str(source_snapshot_id),
+        "source_known_at": str(source_known_at),
         "renderer_version": RENDERER_VERSION,
         "values": [{"metric": m, "value": v} for m, v in values],
     }
@@ -153,15 +188,37 @@ def build_report_snapshot(
                 f"family {family.key!r} run {run_id} yielded ZERO values — refusing rather than "
                 "rendering an empty section, which a reader cannot distinguish from 'no risk'"
             )
+        # Resolved from the run's OWN rows and checked against the registered allowlist, never
+        # declared by this module — see the families docstring for why a static pair was wrong.
+        prov = family.read_provenance(session, str(run.run_id), tenant)
+        if run.input_snapshot_id is None:
+            raise ReportInputError(
+                f"family {family.key!r} run {run_id} pins no input snapshot — a governed number "
+                "whose inputs are unnamed cannot be cited in a report"
+            )
+        source_snapshot = session.execute(
+            select(DatasetSnapshot).where(
+                DatasetSnapshot.id == str(run.input_snapshot_id),
+                DatasetSnapshot.tenant_id == tenant,
+            )
+        ).scalar_one_or_none()
+        if source_snapshot is None:
+            raise ReportInputError(
+                f"family {family.key!r} run {run_id} pins snapshot {run.input_snapshot_id}, which "
+                "is not visible to this tenant — refusing to cite inputs the report cannot name"
+            )
         pinned.append(
             (
                 family.key,
                 governed_value_content(
                     family_key=family.key,
                     section_title=family.section_title,
-                    model_code=family.model_code,
-                    methodology_ref=family.methodology_ref,
+                    model_code=prov.model_code,
+                    methodology_ref=prov.methodology_ref,
+                    model_version_id=prov.model_version_id,
                     run_id=str(run.run_id),
+                    source_snapshot_id=str(run.input_snapshot_id),
+                    source_known_at=canonical_known_at(source_snapshot.as_of_known_at),
                     values=values,
                 ),
             )
@@ -179,8 +236,13 @@ def _run_type_for(family_key: str) -> str:
     from irp_shared.concentration.events import RUN_TYPE_CONCENTRATION
     from irp_shared.liquidity.models import RUN_TYPE_LIQUIDITY
     from irp_shared.perf.events import RUN_TYPE_ROLLING_RISK
+    from irp_shared.risk.events import RUN_TYPE_VAR
 
     mapping = {
+        # All seven VaR/ES models run under ONE run_type; metric_type is the discriminator, and
+        # events.py states that run_type must never equal metric_type. So this filter fences out
+        # a non-VaR run, and the metric key rendered by _read_var says which VaR it is.
+        "var": RUN_TYPE_VAR,
         "concentration": RUN_TYPE_CONCENTRATION,
         "liquidity": RUN_TYPE_LIQUIDITY,
         "rolling_risk": RUN_TYPE_ROLLING_RISK,
@@ -210,10 +272,19 @@ def render_report_html(
     for section in sections:
         parts.append(f"<section data-family='{escape(str(section['family']))}'>")
         parts.append(f"<h2>{escape(str(section['section_title']))}</h2>")
+        # I3: the knowledge time, per section. A regenerated historical report is byte-identical
+        # because it re-renders what was KNOWN THEN; without this line the reader cannot tell that
+        # from a current view, which is the half of I3 that says the report must SAY so.
+        parts.append(
+            f"<p class='known-at'>Inputs as known at "
+            f"{escape(str(section['source_known_at']))}</p>"
+        )
         parts.append(
             "<p class='provenance'>"
-            f"model <code>{escape(str(section['model_code']))}</code> · "
+            f"model <code>{escape(str(section['model_code']))}</code> "
+            f"version <code>{escape(str(section['model_version_id']))}</code> · "
             f"run <code>{escape(str(section['source_run_id']))}</code> · "
+            f"inputs <code>{escape(str(section['source_snapshot_id']))}</code> · "
             f"methodology <code>{escape(str(section['methodology_ref']))}</code>"
             "</p>"
         )
