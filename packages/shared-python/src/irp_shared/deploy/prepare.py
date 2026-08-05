@@ -56,7 +56,12 @@ def prepare_database(
     log.info("applying migrations to head")
     cfg = Config(alembic_ini)
     cfg.set_main_option("sqlalchemy.url", url)
-    command.upgrade(cfg, "head")
+    # TEMPORARY DELIBERATE BREAK — reverted in the very next commit.
+    # P9 verification of the stack-proof CI job: "base" leaves the database with NO schema, which
+    # re-creates the exact defect class DEP-1 found (nothing applies migrations) and asks whether
+    # CI notices. Kept lint-clean on purpose so CI fails at the STACK PROOF and not at the Backend
+    # job — a red run for the wrong reason would prove nothing.
+    command.upgrade(cfg, "base")
 
     log.info("seeding the SYSTEM reference slice (idempotent)")
     engine = make_engine(url)
