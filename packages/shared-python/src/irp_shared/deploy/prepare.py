@@ -56,12 +56,12 @@ def prepare_database(
     log.info("applying migrations to head")
     cfg = Config(alembic_ini)
     cfg.set_main_option("sqlalchemy.url", url)
-    # TEMPORARY DELIBERATE BREAK — reverted in the very next commit.
-    # P9 verification of the stack-proof CI job: "base" leaves the database with NO schema, which
-    # re-creates the exact defect class DEP-1 found (nothing applies migrations) and asks whether
-    # CI notices. Kept lint-clean on purpose so CI fails at the STACK PROOF and not at the Backend
-    # job — a red run for the wrong reason would prove nothing.
-    command.upgrade(cfg, "base")
+    # The stack-proof CI job is MUTATION-PROVEN against this exact line. At `0c0fdc3` this read
+    # `command.upgrade(cfg, "base")` — leaving the database with no schema, re-creating the defect
+    # class DEP-1 found. CI run 31023628263: the Stack-proof job FAILED with
+    # `relation "currency" does not exist` while ALL SEVEN other jobs stayed green. The job is a
+    # control, not an assertion that one exists (P9).
+    command.upgrade(cfg, "head")
 
     log.info("seeding the SYSTEM reference slice (idempotent)")
     engine = make_engine(url)
