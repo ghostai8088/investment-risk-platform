@@ -150,6 +150,15 @@ def _provenance_reader(
             .where(
                 result_cls.calculation_run_id == run_id,
                 result_cls.tenant_id == acting_tenant,
+                # The MODEL's tenant, checked explicitly rather than left to RLS. Found by making
+                # the refusal test use a REAL model version owned by ANOTHER TENANT instead of a
+                # random UUID (the LIM-2 lesson): the reader resolved it happily, so a report could
+                # have cited a model somebody else registered. PostgreSQL's row-level security
+                # would have hidden it in production — which is precisely the argument for putting
+                # the check here too, since a control that only works on one engine is a control
+                # whose absence no unit test can see.
+                ModelVersion.tenant_id == acting_tenant,
+                Model.tenant_id == acting_tenant,
             )
             .distinct()
         ).all()

@@ -9,12 +9,14 @@ non-deterministic PIN would still fail BR-9, and only this level can see it.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from irp_shared.audit.models import AuditEvent
 from irp_shared.concentration.bootstrap import (
@@ -23,7 +25,9 @@ from irp_shared.concentration.bootstrap import (
 )
 from irp_shared.concentration.events import RUN_TYPE_CONCENTRATION
 from irp_shared.concentration.models import ConcentrationResult
+from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.model.models import Model, ModelVersion
+from irp_shared.models import Base
 from irp_shared.perf.bootstrap import (
     ROLLING_RISK_METHODOLOGY_REF,
     ROLLING_RISK_MODEL_CODE,
@@ -46,10 +50,77 @@ from irp_shared.risk.events import RUN_TYPE_VAR
 from irp_shared.risk.models import VarResult
 from irp_shared.snapshot.models import DatasetSnapshot
 
+
+@pytest.fixture
+def session() -> Iterator[Session]:
+    """This suite's OWN engine, with SQLite foreign keys ENFORCED.
+
+    **Why this suite overrides the shared fixture.** The shared unit engine leaves SQLite's
+    ``PRAGMA foreign_keys`` at its default OFF, so an INSERT naming a parent that does not exist
+    succeeds silently. That is how eighteen tests here spent a slice generating reports against a
+    ``portfolio_id`` resolving to nothing — found not by any test but by the FIRST run of the
+    restore-cycle proof, where PostgreSQL refused it immediately.
+
+    Turning the pragma on GLOBALLY reddens 115 tests across 12 suites (measured, RPT-1: sharpe 29,
+    rolling_risk 28, breach_lifecycle 25, and this suite's 12). That is a slice of its own and is
+    CARRIED with the number rather than smuggled in here. What is not deferred is this suite: a
+    report binds four foreign keys and its whole claim is that the binding is real, so it enforces
+    them locally and its fixtures seed genuine parents.
+    """
+    engine = make_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enforce_foreign_keys(dbapi_conn: object, _record: object) -> None:
+        cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    factory = make_session_factory(engine)
+    db = factory()
+    try:
+        yield db
+    finally:
+        db.close()
+        engine.dispose()
+
+
 TENANT = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 OTHER_TENANT = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
 _AS_OF = date(2026, 6, 30)
 _NOW = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
+
+
+def _seed_portfolio(session: Session, *, tenant: str, portfolio_id: str | None = None) -> str:
+    """A REAL portfolio row, resolve-or-create.
+
+    ``report_generation.portfolio_id`` carries an FK to ``portfolio``. With the shared fixture's
+    foreign keys OFF this was invisible; with them ON (see the ``session`` fixture) it is the
+    difference between a report bound to a book and a report bound to a UUID nobody issued.
+    """
+    from irp_shared.portfolio.models import Portfolio
+
+    if portfolio_id is not None:
+        existing = session.get(Portfolio, portfolio_id)
+        if existing is not None:
+            return str(existing.id)
+    pf = Portfolio(
+        tenant_id=tenant,
+        code=f"PF-{uuid.uuid4().hex[:8]}",
+        name="Report fixture book",
+        node_type="ACCOUNT",
+        status="ACTIVE",
+        record_version=1,
+    )
+    if portfolio_id is not None:
+        pf.id = portfolio_id
+    session.add(pf)
+    session.flush()
+    return str(pf.id)
 
 
 def _seed_model_version(session: Session, *, tenant: str, code: str, ref: str | None) -> str:
@@ -108,7 +179,7 @@ def _seed_concentration_run(
     from irp_shared.calc.models import RunStatus
     from irp_shared.calc.service import create_run, update_run_status
 
-    pf = portfolio_id or str(uuid.uuid4())
+    pf = _seed_portfolio(session, tenant=tenant, portfolio_id=portfolio_id)
     version_id = _seed_model_version(
         session, tenant=tenant, code=CONCENTRATION_MODEL_CODE, ref=methodology_ref
     )
@@ -350,7 +421,10 @@ def test_a_row_with_NO_VALUE_IN_EITHER_COLUMN_is_REFUSED_not_rendered_as_None(
     from irp_shared.calc.models import RunStatus
     from irp_shared.calc.service import create_run, update_run_status
 
-    pf = str(uuid.uuid4())
+    pf = _seed_portfolio(session, tenant=TENANT)
+    version_id = _seed_model_version(
+        session, tenant=TENANT, code=CONCENTRATION_MODEL_CODE, ref=CONCENTRATION_METHODOLOGY_REF
+    )
     snap = DatasetSnapshot(
         tenant_id=TENANT,
         label="src",
@@ -378,7 +452,7 @@ def test_a_row_with_NO_VALUE_IN_EITHER_COLUMN_is_REFUSED_not_rendered_as_None(
             tenant_id=TENANT,
             calculation_run_id=run.run_id,
             input_snapshot_id=snap.id,
-            model_version_id=str(uuid.uuid4()),
+            model_version_id=version_id,
             portfolio_id=pf,
             row_kind="DETAIL",
             dimension_kind="SECTOR_INDUSTRY",
@@ -426,7 +500,7 @@ def _seed_var_run(
     from irp_shared.calc.models import RunStatus
     from irp_shared.calc.service import create_run, update_run_status
 
-    pf = portfolio_id or str(uuid.uuid4())
+    pf = _seed_portfolio(session, tenant=tenant, portfolio_id=portfolio_id)
     version_id = _seed_model_version(session, tenant=tenant, code=model_code, ref=methodology_ref)
     snap = DatasetSnapshot(
         tenant_id=tenant,
@@ -556,15 +630,32 @@ def test_an_UNREGISTERED_model_is_REFUSED(session: Session) -> None:
 
 
 def test_a_run_binding_NO_RESOLVABLE_MODEL_VERSION_is_REFUSED(session: Session) -> None:
-    """The defect this suite's own fixture carried until provenance moved onto the row.
+    """The defect this suite's own fixture carried until provenance moved onto the row — and then a
+    SECOND defect, which only the stronger version of this test could see.
 
     The result rows stamped a ``model_version_id`` that resolved to nothing. Under the static-pair
-    registry that was INVISIBLE — the methodology came from a constant, so the report rendered a
+    registry that was INVISIBLE: the methodology came from a constant, so the report rendered a
     complete, plausible provenance line for a number whose model version did not exist.
+
+    Rewriting the input from a random UUID to a REAL model version owned by ANOTHER TENANT then
+    showed the reader resolving it happily — a report could have cited a model somebody else
+    registered. PostgreSQL's RLS would have hidden it in production, which is exactly why the tenant
+    check now lives in the query: a control that only works on one engine is a control whose absence
+    no unit test can see.
     """
     run_id, pf = _seed_var_run(session)
+    # A REAL model version owned by ANOTHER TENANT, not a random UUID. Two reasons, and the second
+    # is the one that matters: the FK refuses a dangling id outright now that this suite enforces
+    # foreign keys, and — the LIM-2 lesson — a nonexistent id is refused whether or not a tenant
+    # fence exists, so it discriminates nothing. A real foreign-owned row is the input that does.
+    foreign_version = _seed_model_version(
+        session,
+        tenant=OTHER_TENANT,
+        code=VAR_UNIFIED_MODEL_CODE,
+        ref=VAR_UNIFIED_METHODOLOGY_REF,
+    )
     session.query(VarResult).filter(VarResult.calculation_run_id == run_id).update(
-        {"model_version_id": str(uuid.uuid4())}
+        {"model_version_id": foreign_version}
     )
     session.flush()
     with pytest.raises(ReportProvenanceError, match="no resolvable model version"):
@@ -640,7 +731,7 @@ def test_a_SUPPRESSED_rolling_risk_window_renders_its_SUPPRESSION_not_None(
     from irp_shared.perf.models import RollingRiskResult
     from irp_shared.report.families import _read_rolling_risk
 
-    pf = str(uuid.uuid4())
+    pf = _seed_portfolio(session, tenant=TENANT)
     version_id = _seed_model_version(
         session, tenant=TENANT, code=ROLLING_RISK_MODEL_CODE, ref=ROLLING_RISK_METHODOLOGY_REF
     )
