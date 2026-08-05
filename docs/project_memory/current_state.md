@@ -20,7 +20,24 @@
 > (`0062_concentration_denom_check`). Standing rules **P8–P12 RATIFIED**; **P13 + P14 PROPOSED**.
 > The XNYS set is now **128 dates, 2023–2035** — the 2024 start was an off-by-one (a BUSINESS
 > month-end grid's opening boundary falls in the PRIOR month). TB3MS residual **DISCHARGED**
-> (30/30 against live FRED). **NEXT = the Wave-15 openers DEP-1 + RPT-1.**
+> (30/30 against live FRED).
+>
+> **WAVE 15 IS OPEN AND DEP-1 (the deployment floor) IS BUILT** (planning + gate outcome merged as
+> PR #172 = `181a5fb`; slice branch `dep-1-deployment-floor`). **P13 AND P14 ARE NOW BOTH
+> RATIFIED** (P14 by the user 2026-08-05 — a gate is not green until its exit code is quoted).
+> DEP-1's six items, every one proven by EXECUTION: (1) CI builds + smoke-tests + hygiene-checks
+> all images; (2) `seed_system_reference` idempotent (REF-1's trigger PAID); (3) the calendar
+> horizon gained its HTTP write path and the CAL-1a no-lock acceptance was PAID when its stated
+> condition expired; (4) one scripted deploy — four failed attempts, EIGHT stack defects, then
+> `DEPLOY_EXIT=0` with deployed-database-state verification and the WORKER proven to fail closed;
+> (5) backup/restore proven BOTH arms — a truncated archive is REFUSED with the target UNCHANGED;
+> (6) the webhook NotificationSink (never-raise, URL-redacting, env-configured). Plus the process
+> fold: `make check-all` (both tiers + gen-api-check, one command) and the **`stack-proof` CI job,
+> the repo's only MUTATION-PROVEN gate** (deliberately broken at `0c0fdc3`, CI went red for the
+> predicted reason with all seven other jobs green, reverted). **The operating model changed
+> 2026-08-05**: remits define outcomes + proofs (never step-by-step instructions); a fresh-context
+> audit runs per slice BEFORE merge — its first outing found two real gaps in minutes.
+> **NEXT = the DEP-1 close (PR, merge, P1 sweep), then RPT-1.**
 >
 > - **LQ-1 (2026-08-02):** the captured half mints NO entity — tier assignment rides REF-1's
 >   `classification_assignment` as `dimension_kind = LIQUIDITY_TIER`, with the SEC Rule
