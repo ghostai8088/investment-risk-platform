@@ -1,4 +1,4 @@
-.PHONY: help setup lint format typecheck test secret-scan docs-check dep-audit check fe-setup fe-check fe-audit gen-api gen-api-check
+.PHONY: help setup lint format typecheck test secret-scan docs-check dep-audit check check-all fe-setup fe-check fe-audit gen-api gen-api-check
 
 PY := .venv/bin/python
 PIP := .venv/bin/pip
@@ -19,6 +19,8 @@ help:
 	@echo "  make fe-setup    - npm ci (lockfile-reproducible, as CI does)"
 	@echo "  make fe-check    - lint, format, typecheck, test, build, runtime audit"
 	@echo "  make fe-audit    - scripts/check_frontend_audit.mjs (mirrors the CI runtime audit)"
+	@echo "Both tiers:"
+	@echo "  make check-all   - check + fe-check (THE local gate; one command, both tiers)"
 
 setup:
 	python3 -m venv .venv
@@ -55,6 +57,20 @@ dep-audit:
 	$(VENV_BIN)/pip-audit --ignore-vuln PYSEC-2026-1845
 
 check: lint typecheck test secret-scan docs-check
+
+# BOTH tiers in one command (DEP-1 / Wave-15 process fold). `check` covers Python only and
+# `fe-check` has to be REMEMBERED — and the six-consecutive-red-push episode of 2026-08-03 began
+# with a FRONTEND formatting failure that nothing local was running. A gate you have to remember to
+# run is not a gate; it is a habit, and habits are exactly what P14 exists because of.
+#
+# Additive on purpose: `check` and `fe-check` are unchanged, so existing muscle memory, the CI job
+# definitions and every doc that names them keep working. This target composes them, and the
+# ordering is deliberate — `check` is the faster of the two, so a Python-tier failure surfaces
+# before ~2 minutes of npm work.
+#
+# Per P14, quote this target's EXIT CODE, not its last line of output:
+#   (make check-all > /tmp/gate.log 2>&1; echo "EXIT=$$?" >> /tmp/gate.log)
+check-all: check fe-check
 
 # CI installs with `npm ci` (lockfile-reproducible, fails on a package.json/lock mismatch); using
 # `npm install` here meant the lockfile was never enforced locally and could be silently mutated —

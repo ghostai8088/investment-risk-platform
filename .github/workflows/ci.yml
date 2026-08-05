@@ -788,3 +788,51 @@ jobs:
             if [ "$tst" != "0" ]; then echo "::error::$img ships $tst test dir(s) — test code is not production surface (check .dockerignore)"; fail=1; fi
           done
           exit $fail
+
+  # DEP-1 (Wave-15): RUN THE STACK. Not build it — run it.
+  #
+  # This job exists because of a measured result, not a principle. DEP-1 found ELEVEN defects across
+  # five items, and TEN of them were pre-existing: no migration step anywhere in the stack, no
+  # container able to run one, a DATABASE_URL unusable from inside a container, the backend racing
+  # both Postgres and the migration, the frontend dying because nginx resolves upstreams once at
+  # startup, a port collision with the dev database, a header comment stale since migration 0001.
+  #
+  # A 2,980-test suite caught NONE of them, and no larger suite would have. Every one lived in the
+  # space BETWEEN components — image build vs. runtime, container DNS, compose ordering, env
+  # resolution — and tests exercise code paths without ever starting the system. The compose file
+  # drifted from migration 0001 to 0062 carrying a header claiming the app has no schema, because
+  # nothing ran it.
+  #
+  # Both scripts are executable and were, until this job, MANUAL — the exact kind of thing that
+  # rots. They are self-contained by construction: each generates its env from the committed
+  # `.env.example` (so no CI secret is needed and no developer `.env` can leak in), and each uses
+  # its own compose project and host port, so they cannot collide with each other.
+  stack-proof:
+    name: Stack proof (deploy + backup/restore)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain
+        run: docker compose version
+
+      # Builds the images through compose, starts an EMPTY database, migrates + seeds through the
+      # governed prepare step (twice — idempotency is a deployment property or it is nothing), then
+      # verifies by READING DEPLOYED DATABASE STATE and reaching the running services. It does not
+      # report success because its last command exited 0.
+      - name: Deploy to a clean stack, and verify the deployment
+        run: bash infra/deploy/deploy.sh
+
+      # Both arms. The NEGATIVE one is the point: a truncated archive must be REFUSED, and the
+      # target database must be UNCHANGED afterwards. A restore that "succeeds" on a damaged dump
+      # converts a recoverable outage into confident data loss; a restore that fails HALFWAY has
+      # already dropped what it was replacing. The proof asserts the refusal lands before the
+      # target is touched (P9: a refusal is not shipped until a test has made it FIRE).
+      - name: Prove backup AND restore — including the refusal
+        run: bash infra/deploy/prove_backup_restore.sh
+
+      - name: Leave nothing behind
+        if: always()
+        run: |
+          docker compose -p irp-dep1 down -v --remove-orphans 2>/dev/null || true
+          docker compose -p irp-dep1-br down -v --remove-orphans 2>/dev/null || true
