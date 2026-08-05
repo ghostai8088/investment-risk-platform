@@ -1,6 +1,11 @@
 # RPT-1 Remit — the first reproducible risk report
 
-> **Status: PENDING RATIFICATION** (Tier-3 gate). Wave-15 opener 2, sequenced after DEP-1
+> **Status: RATIFIED 2026-08-05 — OQ-RPT-1-1…4 ALL as recommended** ("proceed" on the briefed
+> gate): v1 content = the §2.1 spine (total VaR + ES, concentration, liquidity, rolling
+> risk/Sharpe); HTML print-clean, no PDF pipeline; the three OQ-W15P-6 carries each recorded
+> **evaluated / does-not-fire** with triggers carried forward (breach echoes → breaches in report
+> content; alpha-3/M49 → a regulatory-format section; effective-number → a concentration detail
+> view); the report record mints **ENT-072** with its canonical registry row. Wave-15 opener 2, sequenced after DEP-1
 > (CLOSED 2026-08-05, PRs #173/#174) by ratified OQ-W15P-1 — deliberately, because DEP-1 is what
 > makes this slice's central claim *testable*: "regenerates identically" can now be proven across a
 > real process boundary, including from a restored backup.
