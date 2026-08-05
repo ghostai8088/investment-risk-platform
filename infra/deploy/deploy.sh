@@ -126,5 +126,35 @@ else
   exit 1
 fi
 
+# Wave-15 process-fold audit finding 1: the original deploy started backend+frontend and said
+# "DEPLOY VERIFIED" — while the WORKER, the engine's tick loop, never ran at all. The claim
+# quantified over more than it exercised (the P10 class). The deploy env deliberately ships
+# IRP_TENANT_IDS empty (no tenant exists yet), and the worker's RATIFIED behaviour on that input
+# is to FAIL CLOSED at startup rather than idle silently (CAD-1 FOLD-2). So that is what gets
+# proven: the worker must start, refuse LOUDLY with the documented message, and exit non-zero.
+# A worker that comes up green here would be the defect.
+log "8. the worker: with no tenants configured it must FAIL CLOSED, not idle"
+set +e
+wout=$($COMPOSE run --rm --no-deps worker 2>&1)
+wrc=$?
+set -e
+if [ "$wrc" -eq 0 ]; then
+  log "FAILED: the worker STARTED with no tenants configured — a silently-idle engine is the exact failure CAD-1 refuses"
+  exit 1
+fi
+# The worker has TWO fail-closed layers and the FIRST execution of this step proved I had asserted
+# the wrong one: the entrypoint (main) refuses at env-parse with EXIT 2 and "no valid tenants",
+# BEFORE run_supervisor's "refusing to start a silently-idle engine" (defence-in-depth for
+# programmatic callers) can ever fire. The assertion was written from READING the supervisor module;
+# EXECUTING the container corrected it. Exit code 2 is pinned deliberately — a crash tracebacks out
+# with exit 1, so 2 discriminates the governed refusal from an ordinary death.
+if [ "$wrc" -ne 2 ] || ! printf '%s' "$wout" | grep -q "no valid tenants"; then
+  log "FAILED: the worker exited (${wrc}) but NOT via the documented env-parse refusal — it died for some other reason"
+  printf '%s\n' "$wout" | tail -15
+  exit 1
+fi
+echo "   worker refused loudly (exit ${wrc}, the documented no-valid-tenants refusal)"
+
 log "DEPLOY VERIFIED — images built from source, empty database migrated and seeded through the
-    governed prepare step (twice, proving idempotency), API and frontend both reachable."
+    governed prepare step (twice, proving idempotency), API and frontend both reachable, and the
+    worker PROVEN to fail closed rather than idle on an unconfigured tenant list."

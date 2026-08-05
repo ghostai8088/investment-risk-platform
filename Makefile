@@ -20,7 +20,7 @@ help:
 	@echo "  make fe-check    - lint, format, typecheck, test, build, runtime audit"
 	@echo "  make fe-audit    - scripts/check_frontend_audit.mjs (mirrors the CI runtime audit)"
 	@echo "Both tiers:"
-	@echo "  make check-all   - check + fe-check (THE local gate; one command, both tiers)"
+	@echo "  make check-all   - check + fe-check + gen-api-check (THE local gate, both tiers)"
 
 setup:
 	python3 -m venv .venv
@@ -70,7 +70,13 @@ check: lint typecheck test secret-scan docs-check
 #
 # Per P14, quote this target's EXIT CODE, not its last line of output:
 #   (make check-all > /tmp/gate.log 2>&1; echo "EXIT=$$?" >> /tmp/gate.log)
-check-all: check fe-check
+# gen-api-check ADDED by the process-fold audit (Fable, 2026-08-05): item 3 of DEP-1 drifted
+# openapi.json by 140 lines and was caught only because the builder REMEMBERED to regenerate —
+# the mechanical catch existed as a target and was not in the gate. It runs LAST because it
+# needs node_modules, which fe-check's fe-setup has installed by then. (dep-audit stays out
+# deliberately: it can flip red on an advisory-service blip with no tree change; CI owns that
+# verdict with its retry.)
+check-all: check fe-check gen-api-check
 
 # CI installs with `npm ci` (lockfile-reproducible, fails on a package.json/lock mismatch); using
 # `npm install` here meant the lockfile was never enforced locally and could be silently mutated —
