@@ -95,6 +95,32 @@ _AS_OF = date(2026, 6, 30)
 _NOW = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
 
 
+def _assert_nothing_persisted(session: Session) -> None:
+    """N1 (audit): a refusal leaves NO report row, NO REPORT run, NO REPORT_INPUT snapshot.
+
+    The original assertions checked only ``ReportGeneration.count() == 0``. The remit demands "the
+    absence of state", and `generate_report` creates a snapshot and a run BEFORE the report row —
+    so counting only the last of the three artifacts is exactly the vacuity that would let a
+    half-completed generation pass as a clean refusal.
+    """
+    from irp_shared.calc.models import CalculationRun
+    from irp_shared.report.models import RUN_TYPE_REPORT
+
+    assert session.query(ReportGeneration).count() == 0, "a report row survived a refusal"
+    runs = (
+        session.execute(select(CalculationRun).where(CalculationRun.run_type == RUN_TYPE_REPORT))
+        .scalars()
+        .all()
+    )
+    assert not runs, f"a refusal left {len(runs)} REPORT run(s) behind"
+    snaps = (
+        session.execute(select(DatasetSnapshot).where(DatasetSnapshot.purpose == "REPORT_INPUT"))
+        .scalars()
+        .all()
+    )
+    assert not snaps, f"a refusal left {len(snaps)} REPORT_INPUT snapshot(s) behind"
+
+
 def _seed_portfolio(session: Session, *, tenant: str, portfolio_id: str | None = None) -> str:
     """A REAL portfolio row, resolve-or-create.
 
@@ -263,9 +289,7 @@ def test_generate_then_regenerate_is_BYTE_IDENTICAL(session: Session) -> None:
     row, first_hash = _generate(session, run_id, pf)
     session.flush()
 
-    again = regenerate_report(
-        session, report_id=str(row.id), acting_tenant=TENANT, portfolio_code="P-RPT"
-    )
+    again = regenerate_report(session, report_id=str(row.id), acting_tenant=TENANT)
     assert again.content_hash == first_hash
     assert again.content_hash == row.content_hash
 
@@ -320,9 +344,7 @@ def test_a_TAMPERED_stored_hash_makes_regeneration_REFUSE(session: Session) -> N
     )
     session.expire_all()
     with pytest.raises(ReportIdentityError, match="did not regenerate identically"):
-        regenerate_report(
-            session, report_id=str(row.id), acting_tenant=TENANT, portfolio_code="P-RPT"
-        )
+        regenerate_report(session, report_id=str(row.id), acting_tenant=TENANT)
 
 
 def test_ANOTHER_TENANTS_report_is_refused(session: Session) -> None:
@@ -332,9 +354,7 @@ def test_ANOTHER_TENANTS_report_is_refused(session: Session) -> None:
     row, _ = _generate(session, run_id, pf)
     session.flush()
     with pytest.raises(ReportInputError, match="not visible"):
-        regenerate_report(
-            session, report_id=str(row.id), acting_tenant=OTHER_TENANT, portfolio_code="P-RPT"
-        )
+        regenerate_report(session, report_id=str(row.id), acting_tenant=OTHER_TENANT)
 
 
 def test_a_run_from_ANOTHER_TENANT_cannot_be_bound(session: Session) -> None:
@@ -604,7 +624,7 @@ def test_a_TENANT_STAMPED_methodology_ref_is_REFUSED_not_cited(session: Session)
             family_runs={"var": run_id},
             generated_at=_NOW,
         )
-    assert session.query(ReportGeneration).count() == 0
+    _assert_nothing_persisted(session)
 
 
 def test_an_UNREGISTERED_model_is_REFUSED(session: Session) -> None:
@@ -626,7 +646,7 @@ def test_an_UNREGISTERED_model_is_REFUSED(session: Session) -> None:
             family_runs={"var": run_id},
             generated_at=_NOW,
         )
-    assert session.query(ReportGeneration).count() == 0
+    _assert_nothing_persisted(session)
 
 
 def test_a_run_binding_NO_RESOLVABLE_MODEL_VERSION_is_REFUSED(session: Session) -> None:
@@ -669,7 +689,7 @@ def test_a_run_binding_NO_RESOLVABLE_MODEL_VERSION_is_REFUSED(session: Session) 
             family_runs={"var": run_id},
             generated_at=_NOW,
         )
-    assert session.query(ReportGeneration).count() == 0
+    _assert_nothing_persisted(session)
 
 
 def test_a_NON_VAR_run_cannot_be_bound_to_the_VAR_family(session: Session) -> None:
@@ -687,7 +707,7 @@ def test_a_NON_VAR_run_cannot_be_bound_to_the_VAR_family(session: Session) -> No
             family_runs={"var": run_id},
             generated_at=_NOW,
         )
-    assert session.query(ReportGeneration).count() == 0
+    _assert_nothing_persisted(session)
 
 
 def test_the_VAR_ALLOWLIST_covers_EVERY_registered_var_model(session: Session) -> None:
@@ -824,9 +844,7 @@ def test_a_SUPERSEDING_correction_does_not_reach_a_historical_report(session: Se
     session.flush()
     assert corrected_run_id != run_id
 
-    again = regenerate_report(
-        session, report_id=str(row.id), acting_tenant=TENANT, portfolio_code="P-RPT"
-    )
+    again = regenerate_report(session, report_id=str(row.id), acting_tenant=TENANT)
     assert again.content_hash == original_hash, "a later correction changed a historical report"
     assert "0.412300" in again.body, "the ORIGINAL value is no longer rendered"
     assert "0.987600" not in again.body, "the corrected value leaked into a historical report"
@@ -888,9 +906,107 @@ def test_the_report_does_NOT_RE_READ_the_source_rows_even_if_they_MOVE(session: 
     session.expire_all()
     assert moved == 1, "the mutation did not land — this control would pass vacuously"
 
-    again = regenerate_report(
-        session, report_id=str(row.id), acting_tenant=TENANT, portfolio_code="P-RPT"
-    )
+    again = regenerate_report(session, report_id=str(row.id), acting_tenant=TENANT)
     assert again.content_hash == original_hash, "the renderer re-read the live source rows"
     assert "0.412300" in again.body
     assert "0.999900" not in again.body, "a moved source row reached a pinned report"
+
+
+# --- B1 (pre-merge audit): the report regenerates from the REPORT ID ALONE ------------------------
+
+
+def test_regeneration_takes_NO_caller_supplied_render_input(session: Session) -> None:
+    """The audit finding, made mechanical: `regenerate_report` accepts only ids.
+
+    Asserted against the SIGNATURE rather than by passing a bad value, because the defect was not a
+    wrong value — it was the parameter EXISTING. Anything a caller can vary is something the stored
+    artifact does not pin, and every such parameter is a way for two "identical" regenerations to
+    differ.
+    """
+    import inspect
+
+    params = set(inspect.signature(regenerate_report).parameters)
+    assert params == {"session", "report_id", "acting_tenant"}, (
+        f"regenerate_report accepts caller-supplied render input: {sorted(params)} — every "
+        "parameter beyond the ids is an unpinned degree of freedom in a reproducibility claim"
+    )
+
+
+def test_a_RENAMED_portfolio_still_regenerates_its_HISTORICAL_report(session: Session) -> None:
+    """The input that DISCRIMINATES, which the original I2 proof could not reach.
+
+    `portfolio.code` is effective-dated and mutable. It is rendered into the `<h1>` and therefore
+    into the hashed bytes. While the code was a regeneration PARAMETER, a report stayed reproducible
+    only for a caller who remembered the string the book had at generation time — so a rename made
+    every historical report of that book unreproducible in practice, and the failure surfaced as a
+    hash mismatch blamed on "a RENDERER change".
+
+    Neither the unit proof nor the deployed restore proof could see it: both re-supplied the same
+    constant. Renaming the book between generation and regeneration is what tells the two designs
+    apart.
+    """
+    from irp_shared.portfolio.models import Portfolio
+
+    run_id, pf = _seed_concentration_run(session)
+    row, first_hash = _generate(session, run_id, pf)
+    session.flush()
+
+    book = session.get(Portfolio, pf)
+    assert book is not None
+    assert book.code != "RENAMED-AFTER-THE-FACT"
+    book.code = "RENAMED-AFTER-THE-FACT"
+    session.flush()
+
+    again = regenerate_report(session, report_id=str(row.id), acting_tenant=TENANT)
+    assert again.content_hash == first_hash, "a portfolio rename broke a historical report"
+    assert row.portfolio_code in again.body, "the report did not render its PINNED code"
+    assert (
+        "RENAMED-AFTER-THE-FACT" not in again.body
+    ), "the live code leaked into a historical report — the value is being re-read, not pinned"
+
+
+# --- N2 (pre-merge audit): the GOVERNED_VALUE verify branch, BOTH arms ----------------------------
+
+
+def test_verify_snapshot_REDDENS_when_a_report_s_source_rows_MOVE(session: Session) -> None:
+    """The branch's stated purpose, executed — and it had no committed test until the audit.
+
+    `_reresolve_content`'s GOVERNED_VALUE arm re-derives each family's values LIVE precisely so that
+    `verify_snapshot` has something to compare against. The tempting implementation returns the
+    pinned content unchanged and calls the component "immutable by construction" — which is the
+    vacuous verification the component-kind census exists to prevent, because a branch that returns
+    its input can never disagree with it.
+
+    Both arms are asserted. Arm 1 alone would pass for a branch that always reports ``ok``; arm 2
+    alone would pass for one that always reports drift. Only the pair shows discrimination.
+
+    Note this does NOT weaken I1: the REPORT still regenerates byte-identically after such a move
+    (`test_the_report_does_NOT_RE_READ_the_source_rows_even_if_they_MOVE`). The two are different
+    questions — "is this artifact reproducible?" and "have its inputs been disturbed since?" — and a
+    governed platform owes an honest answer to both.
+    """
+    from irp_shared.snapshot.service import verify_snapshot
+
+    run_id, pf = _seed_concentration_run(session)
+    row, _ = _generate(session, run_id, pf)
+    session.flush()
+
+    before = verify_snapshot(session, snapshot_id=str(row.input_snapshot_id), acting_tenant=TENANT)
+    assert before.ok is True, f"an untouched report snapshot did not verify: {before}"
+    assert before.component_count >= 1, "the snapshot pinned nothing — the check is vacuous"
+
+    moved = (
+        session.query(ConcentrationResult)
+        .filter(
+            ConcentrationResult.calculation_run_id == run_id,
+            ConcentrationResult.row_kind == "SUMMARY",
+        )
+        .update({"metric_value": Decimal("0.999999")}, synchronize_session=False)
+    )
+    assert moved == 1, "the mutation did not land — arm 2 would pass vacuously"
+    session.flush()
+    session.expire_all()
+
+    after = verify_snapshot(session, snapshot_id=str(row.input_snapshot_id), acting_tenant=TENANT)
+    assert after.ok is False, "a MOVED source row did not redden the snapshot — the branch is blind"
+    assert after.drifted_components, "reported not-ok while naming no drifted component"

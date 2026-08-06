@@ -399,6 +399,9 @@ def generate_report(
         calculation_run_id=run.run_id,
         input_snapshot_id=snapshot.id,
         portfolio_id=str(portfolio_id),
+        # PINNED, not re-supplied at regeneration (pre-merge audit B1) — it is inside the hashed
+        # bytes, and `portfolio.code` is mutable.
+        portfolio_code=portfolio_code,
         report_code=REPORT_CODE_RISK_SUMMARY,
         report_version_label=REPORT_VERSION_LABEL_V1,
         render_format=RENDER_FORMAT_HTML,
@@ -413,14 +416,19 @@ def generate_report(
     return row, rendered
 
 
-def regenerate_report(
-    session: Session, *, report_id: str, acting_tenant: str, portfolio_code: str
-) -> RenderedReport:
-    """Re-render a stored report from its pinned snapshot and REFUSE on any hash divergence.
+def regenerate_report(session: Session, *, report_id: str, acting_tenant: str) -> RenderedReport:
+    """Re-render a stored report **from the report id alone** and REFUSE on any hash divergence.
 
-    This is BR-9's proof, executed rather than asserted. It reads only pinned content, so a
-    divergence means the RENDERER changed — which is exactly what a reader needs to be told, loudly,
-    rather than served a silently different artifact under the same report id.
+    This is BR-9's proof, executed rather than asserted. Every input to the render comes from the
+    stored row and its pinned snapshot — nothing is supplied by the caller.
+
+    **``portfolio_code`` used to be a parameter here, and that was the defect the pre-merge audit
+    found (B1).** It is rendered into the ``<h1>`` and therefore into the hashed bytes, so a caller
+    who passed a different string got a hash mismatch reported as a RENDERER change; and since
+    ``portfolio.code`` is a mutable effective-dated field, a renamed book made its own historical
+    reports unreproducible by anyone who did not remember the old string. The asymmetry was visible
+    all along — ``as_of_date``, the other report-level rendered value, was already read from the
+    row. A reproducibility claim that depends on the caller's memory is not a reproducibility claim.
     """
     tenant = canonical_tenant_id(acting_tenant)
     row = session.execute(
@@ -435,13 +443,14 @@ def regenerate_report(
         session, snapshot_id=str(row.input_snapshot_id), acting_tenant=tenant
     )
     rendered = render_report_html(
-        portfolio_code=portfolio_code, as_of=row.as_of_date, sections=sections
+        portfolio_code=row.portfolio_code, as_of=row.as_of_date, sections=sections
     )
     if rendered.content_hash != row.content_hash:
         raise ReportIdentityError(
             f"report {report_id} did not regenerate identically: stored "
-            f"{row.content_hash} != regenerated {rendered.content_hash}. The pinned inputs are "
-            "immutable, so this is a RENDERER change, not an input change."
+            f"{row.content_hash} != regenerated {rendered.content_hash}. Every render input is "
+            "pinned and immutable, so this is a RENDERER change or a TAMPERED stored hash — never "
+            "an input change."
         )
     return rendered
 

@@ -93,6 +93,16 @@ class ReportGeneration(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, B
         GUID, ForeignKey("portfolio.id"), nullable=False, index=True
     )
 
+    #: The portfolio code AS RENDERED, pinned at generation (RPT-1 pre-merge audit, B1).
+    #:
+    #: The first version left this to the caller at BOTH generate and regenerate, and stored it
+    #: nowhere. It is rendered into the ``<h1>`` and therefore into the hashed bytes, so a report
+    #: was reproducible only by a caller who remembered the exact string — and ``portfolio.code`` is
+    #: an effective-dated, MUTABLE field, so after a rename nobody could. The asymmetry was the
+    #: tell: ``as_of_date``, the other report-level rendered value, was already read back here.
+    #: Everything the bytes depend on is pinned, or the identity claim is conditional on memory.
+    portfolio_code: Mapped[str] = mapped_column(String(150), nullable=False)
+
     report_code: Mapped[str] = mapped_column(String(100), nullable=False)
     report_version_label: Mapped[str] = mapped_column(String(50), nullable=False)
     render_format: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -104,6 +114,16 @@ class ReportGeneration(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, B
     #: SHA-256 over the rendered bytes. The identity proof's stored side (see the module docstring).
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
+    #: When the report was produced, as ASSERTED BY THE CALLER (pre-merge audit, N3).
+    #:
+    #: Deliberately a parameter, so a batch regenerating last quarter's pack can state the economic
+    #: production time rather than the wall clock of the backfill. The honest consequence, recorded
+    #: rather than left for a reader to discover: on a governed evidence artifact this field is a
+    #: CLAIM, not a measurement. The DB-stamped ``system_from`` from ``ImmutableAppendOnlyMixin`` is
+    #: the knowledge time nobody can assert, and the two are separate columns precisely so a
+    #: disagreement between them is visible. **Before any API exposes this verb, decide whether an
+    #: external caller may set it at all** — an HTTP client asserting when its own evidence was
+    #: created is a different trust posture from an in-process batch doing so.
     generated_at: Mapped[datetime] = mapped_column(nullable=False)
     generated_by: Mapped[str] = mapped_column(String(200), nullable=False)
 

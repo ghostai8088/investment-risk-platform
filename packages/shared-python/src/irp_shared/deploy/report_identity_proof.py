@@ -185,12 +185,7 @@ def verify_after_restore(session: Session, *, report_id: str, expected_hash: str
     """
     from irp_shared.report.service import regenerate_report
 
-    rendered = regenerate_report(
-        session,
-        report_id=report_id,
-        acting_tenant=PROOF_TENANT,
-        portfolio_code=PROOF_PORTFOLIO_CODE,
-    )
+    rendered = regenerate_report(session, report_id=report_id, acting_tenant=PROOF_TENANT)
     if rendered.content_hash != expected_hash:
         raise RuntimeError(
             f"RESTORE-CYCLE IDENTITY FAILED: regenerated {rendered.content_hash} but the hash "

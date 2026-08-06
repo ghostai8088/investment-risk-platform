@@ -49,6 +49,11 @@ def upgrade() -> None:
         sa.Column(
             "portfolio_id", sa.Uuid(), sa.ForeignKey("portfolio.id"), nullable=False, index=True
         ),
+        # The rendered portfolio code, pinned (pre-merge audit B1). It is inside the hashed bytes,
+        # so leaving it to the caller made reproducibility depend on someone remembering a MUTABLE
+        # effective-dated field. Amended in 0063 itself rather than added by a follow-on migration:
+        # 0063 is unmerged, so there is no deployed schema to migrate FROM.
+        sa.Column("portfolio_code", sa.String(length=150), nullable=False),
         sa.Column("report_code", sa.String(length=100), nullable=False),
         sa.Column("report_version_label", sa.String(length=50), nullable=False),
         sa.Column("render_format", sa.String(length=20), nullable=False),

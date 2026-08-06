@@ -1,12 +1,13 @@
 # RPT-1 slice record — the first reproducible risk report
 
-**Status:** built, gated, awaiting the pre-merge fresh-context audit.
-**Branch:** `rpt-1-methodology-prework` · **Head:** `8985967`
+**Status:** built, gated, **audited** — the pre-merge fresh-context audit ran and its 2 blocking
++ 3 non-blocking findings are folded (§9).
+**Branch:** `rpt-1-methodology-prework`
 **Entity:** ENT-072 `report_generation` · **Migration:** `0063_report_generation`
 
 This is the slice record the operating model asks for: what the remit specified, what was
-delivered, where the build DEVIATED, and what it found. The audit checks the proofs below, not
-step-compliance.
+delivered, where the build DEVIATED, what it found — and what the audit found that the build
+could not. The audit checked the proofs below, not step-compliance.
 
 ---
 
@@ -15,9 +16,9 @@ step-compliance.
 | # | Invariant | Proof, by name | State |
 |---|---|---|---|
 | I1 | Bound at generation, never re-derived at render | `test_the_report_does_NOT_RE_READ_the_source_rows_even_if_they_MOVE` — mutation **N10** | PROVEN |
-| I2 | Byte-identical regeneration | `test_generate_then_regenerate_is_BYTE_IDENTICAL` **and** `infra/deploy/prove_report_identity.sh` in CI's `stack-proof` job | PROVEN, both tiers |
+| I2 | Byte-identical regeneration **from the report id alone** | `test_generate_then_regenerate_is_BYTE_IDENTICAL`, `test_a_RENAMED_portfolio_still_regenerates_its_HISTORICAL_report`, `test_regeneration_takes_NO_caller_supplied_render_input`, **and** `infra/deploy/prove_report_identity.sh` in CI's `stack-proof` job | PROVEN, both tiers — **after the pre-merge audit corrected an overstatement**, see §9 |
 | I3 | A superseded input regenerates the ORIGINAL — and SAYS so | `test_a_SUPERSEDING_correction_does_not_reach_a_historical_report` + `test_the_report_SAYS_as_of_when_its_inputs_were_KNOWN` — mutations **N8/N10** | PROVEN |
-| I4 | Hostile inputs REFUSED with nothing persisted | six refusal tests, each asserting the absence of state; cross-tenant arms use REAL foreign-owned objects | PROVEN |
+| I4 | Hostile inputs REFUSED with nothing persisted | six refusal tests, each asserting the absence of **all three** artifacts via `_assert_nothing_persisted` (report row, `REPORT` run, `REPORT_INPUT` snapshot); cross-tenant arms use REAL foreign-owned objects | PROVEN — the assertions were **widened at the audit**, see §9 |
 | I5 | Every number carries its provenance; every `methodology_ref` resolves | provenance resolved FROM THE BOUND RUN; allowlist census; `test_the_rendered_methodology_refs_are_the_REGISTERED_ones` — mutations **N1/N2/N3/N6/N7/N11** | PROVEN, after a redesign — see §3 |
 | I6 | IA append-only on the governed rails | `test_report_pg.py` — 7 controls, mutations **M1–M6** against the LIVE schema | PROVEN |
 
@@ -116,3 +117,54 @@ merely local.
 | LIM-2 breach DTO echoes | **DOES NOT FIRE** — breaches are not in v1 report content (OQ-RPT-1-1 ratified the §2.1 spine). |
 | REF-1 alpha-3 / M49 | **DOES NOT FIRE** — no regulatory-format section in v1, as recommended and ratified. |
 | CON-1 effective-number 1/HHI | **DOES NOT FIRE as a blocker** — the concentration section renders the pinned `(metric, value)` pairs the family already produces, including its `MAX_SHARE_*` summary; it does not add a detail view that would need the effective-number metric. Re-evaluate when a report gains a concentration DETAIL breakdown. |
+
+
+---
+
+## 9. The pre-merge fresh-context audit, and what it changed
+
+The audit ran on `f34361f` against this record, by execution, using probes this build never wrote.
+It returned **2 blocking + 3 non-blocking**, all folded below. Two of my claims in §1 were
+**overstated**, and are corrected above rather than quietly amended.
+
+**B1 — I2 was overstated, and the overstatement was structural.** `portfolio_code` is rendered into
+the `<h1>` and therefore into the hashed bytes, but it was a *parameter* of `regenerate_report`,
+stored nowhere. So the claim "regenerates byte-identically from its bound IDs" was really
+"regenerates byte-identically for a caller who re-supplies the same string" — and `portfolio.code`
+is a MUTABLE effective-dated field, so a renamed book made its own historical reports
+unreproducible in practice, surfacing as a hash mismatch the error message blamed on "a RENDERER
+change". Neither the unit proof nor the deployed restore proof could see it: **both re-supplied the
+same constant**. The asymmetry was visible the whole time — `as_of_date`, the other report-level
+rendered value, was already read back from the row.
+
+*Fixed:* `portfolio_code` is a NOT NULL column on ENT-072 (amended into `0063` itself, which is
+unmerged, so there is no deployed schema to migrate from); `generate_report` stamps it;
+`regenerate_report` no longer accepts it. Two controls, both mutation-proven (F1): a **renamed**
+portfolio still regenerates identically, and the signature is asserted to accept ids only — because
+the defect was not a wrong value, it was the parameter existing.
+
+**B2 — ENT-072 had no canonical registry row.** Written, and the stale "next free id is ENT-072"
+claim in the ENT-019 row retired to ENT-073. This is the ledger-omission class P1 exists for: the
+entity was minted, migrated, tested and CI-green while the register that names it said nothing.
+
+**N1 —** the four refusal tests asserted only `ReportGeneration.count() == 0`. `generate_report`
+creates a snapshot and a run *before* the report row, so checking the last of three artifacts was
+exactly the vacuity that would let a half-completed generation pass as a clean refusal. Now
+`_assert_nothing_persisted` checks all three. (The audit's own probe confirmed the *behaviour* was
+already correct — the gap was in what the tests could see.)
+
+**N2 —** `verify_snapshot`'s GOVERNED_VALUE branch had no committed test. Now a two-arm test:
+untouched → `ok`, source rows moved → `not ok` with the component named. Mutation F2 (return the
+pin unchanged — the vacuous implementation the census exists to prevent) kills it.
+
+**N3 —** `generated_at` is caller-asserted. Recorded on the column itself as a CLAIM rather than a
+measurement, with the DB-stamped `system_from` as the knowledge time nobody can assert, and an
+explicit instruction to decide the trust posture **before** an API exposes the verb.
+
+### What this says about the process
+
+Four of the nine defects in §5 were found by execution, three by mutation — all by the builder. The
+audit then found **two more that the builder's own harness structurally could not**, because both
+proofs shared an assumption the auditor did not: that the caller re-supplies the same
+`portfolio_code`. A fresh context is not a second opinion on the same evidence; it is the only way
+to notice evidence that was never gathered.
