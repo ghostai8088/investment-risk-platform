@@ -133,6 +133,10 @@ def _insert_report(conn, tenant: str, ids: dict[str, str], **over: object) -> st
         "r": ids["run"],
         "s": ids["snapshot"],
         "p": ids["portfolio"],
+        # The rendered code, pinned on the row since the pre-merge audit (B1). Added here because
+        # the full-PG battery — not `make check-all`, which skips this suite without a database —
+        # caught the raw INSERT still writing the pre-audit column list.
+        "pc": "PF-PG-PROOF",
         "h": hashlib.sha256(row_id.encode()).hexdigest(),
         "d": datetime.now(UTC).date(),
         **over,
@@ -140,9 +144,10 @@ def _insert_report(conn, tenant: str, ids: dict[str, str], **over: object) -> st
     conn.execute(
         text(
             "INSERT INTO report_generation (id, tenant_id, system_from, calculation_run_id,"
-            " input_snapshot_id, portfolio_id, report_code, report_version_label, render_format,"
-            " as_of_date, content_hash, generated_at, generated_by) VALUES"
-            " (:i, :t, now(), :r, :s, :p, 'report.risk_summary', 'v1', 'HTML', :d, :h, now(), 'pg')"
+            " input_snapshot_id, portfolio_id, portfolio_code, report_code, report_version_label,"
+            " render_format, as_of_date, content_hash, generated_at, generated_by) VALUES"
+            " (:i, :t, now(), :r, :s, :p, :pc, 'report.risk_summary', 'v1', 'HTML', :d, :h,"
+            " now(), 'pg')"
         ),
         params,
     )
