@@ -99,3 +99,23 @@ sink notifies operators, it does not deliver reports); any new snapshot componen
 ---
 
 *Gate: present Part 3 to the user. Nothing proceeds until ratified.*
+
+---
+
+## Part 6 — Gate outcome (2026-08-07)
+
+The user ratified **"approved. proceed"** against Part 3 without amending any recommendation. Each
+OQ is taken **as recommended**, operating assumptions stated per the standing precedent:
+
+| OQ | Outcome | Operating assumption made explicit |
+|---|---|---|
+| **OQ-W16P-1** | **RPT-2 → REPRO-1 → FK-1** | That reachability outranks continuous verification by days, not months — REPRO-1 follows immediately |
+| **OQ-W16P-2** | **Server-stamped `generated_at` for HTTP callers**; the in-process parameter remains for batch | That an HTTP client may never assert evidence time on a governed artifact. If a backfill-over-HTTP need appears, it gets its own gate |
+| **OQ-W16P-3** | **RPT-2 includes the FE report view** | That "a human outside the team" means a browser, not `curl` |
+| **OQ-W16P-4** | **FE toolchain majors PAID as RPT-2 slice 0** (TS→7, eslint→10, jsdom→30, the six untypechecked root guards) — EXECUTED dry-run style, the FE-M1 lesson | That the debt is paid before the feature lands on it, not after |
+| **OQ-W16P-5** | **REPRO-1 rides the existing scheduler**; CTRL-018 moves only on the first OBSERVED scheduled green | That the census extension is a conscious act (the run-type census moves WITH the slice) |
+| **OQ-W16P-6** | **FK-1 acceptance exact: 115 → 0, pragma ON globally, per-suite count pinned** | No sampling, no allowlist — the measured number is the contract |
+| **OQ-W16P-7** | **Nothing outward-facing this wave** | That no external demo is imminent. Say so if that changes — it flips this and possibly OQ-1 |
+
+**NEXT = the RPT-2 remit** (outcome + proofs, carrying the FIRST "inherited gate commitments"
+section per Part 4's P7 fix), then the build.
