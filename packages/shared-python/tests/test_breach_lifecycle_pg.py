@@ -73,6 +73,12 @@ _RAILS = (
     "permission",
     "role_permission",
     "user_role",
+    # REPRO-1: the operational tick gained a FIFTH phase that reads this table, so a tick driven by
+    # the constrained `irp_app` role now touches it on every run. Found by the full-PG battery, and
+    # worth stating plainly: this list is the closest thing the repo has to a written record of the
+    # privileges a non-owner app role actually needs, so a new table read by the tick belongs here
+    # the moment the phase does.
+    "reproduction_check",
 )
 _LIMIT_ACTOR = LimitActor(actor_id="risk-mgr-2l")
 _ANALYST = BreachActor(actor_id="analyst-1l")
