@@ -408,15 +408,16 @@ standing residual in the control matrix, resting on a single WebFetch 403, disch
 three minutes with all 30 literals exact against the publisher of record. Re-executed at the Wave-14 close
 fold: the archived NYSE 2023 calendar, likewise reached by plain `curl` after the live page proved useless.
 
-## PROPOSED — kills are reserved for factual refutation (P13, drafted 2026-08-02, NOT yet ratified)
+## Kills are reserved for factual refutation (standing, drafted 2026-08-02, RATIFIED at the Wave-15 planning gate 2026-08-04, P13)
 In an adversarial review, a finding may be killed only by a **factual refutation** — a demonstration that
 the claim is untrue of the code as it stands. An **executed, uncontradicted reproduction may not be killed
 on severity votes**: if the reproduction stands and only its importance is disputed, the finding is
 DOWNGRADED with the dispute recorded, never discarded. *Grounded:* the Wave-14 close's 2-of-3 refutation
 rule overturned 14 of 17 close calls on re-adjudication — about 53% of kills wrong at fold-relevant
 severity, comparable to Wave 13's 3-of-6. The failure mode is specific: a majority of judges finding a real
-defect *unimportant* reads identically, in the tally, to a majority finding it *unreal*. **Status: PROPOSED
-— requires user ratification before it binds.**
+defect *unimportant* reads identically, in the tally, to a majority finding it *unreal*. **RATIFIED at the
+Wave-15 planning gate (OQ-W15P-8, 2026-08-04). This header stayed "PROPOSED" for three days after
+ratification — caught at the Wave-16 planning fold, the same stale-row class as the Part-6 P14 note.**
 
 ## A gate is not green until its exit code is quoted (standing, RATIFIED 2026-08-05, P14)
 **Procedural prose, bound to the moment of writing any completion or status claim.** No message may state
@@ -436,6 +437,23 @@ own existence, the defect class this rule exists to prevent. **Corollary now bin
 implausibly fast gate is itself a signal.** A job that finishes far too quickly for the work it
 claims has not done the work; read WHICH STEP failed before diagnosing, because everything after a
 failing step never ran at all.
+
+## Two proofs sharing an assumption count as one proof (standing, RATIFIED 2026-08-07, P15)
+When a claim matters, at least one proof must be constructed under **different assumptions** than the
+implementation — a different engine, a different process, a different author, or a fresh context.
+Redundant evidence is not independent evidence: adding more proofs helps only if they do not share the
+assumption that is wrong. *Grounded, twice in one wave:* RPT-1's blocking B1 (`portfolio_code` unpinned)
+was invisible to BOTH its proof tiers because the unit test and the deployed restore proof each re-supplied
+the same constant — no quantity of additional testing of either kind could have found it; and the SQLite
+FK gap (115 tests writing dangling foreign keys, all green) was every suite sharing the assumption that
+the parent existed, found only when PostgreSQL — a different engine — refused. Application is judgement,
+not ceremony: the per-slice fresh-context audit and the full-PG battery both already satisfy this for
+their domains; the rule exists so that a NEW claim's evidence plan is checked for shared assumptions
+before the evidence is trusted, not after an audit finds the blind spot. **RATIFIED 2026-08-07 by the
+user ("proceed" on the Wave-15 close review §5-E, wording as proposed in §3). Deliberately not
+self-enacted when drafted:** proposed at the close review as an explicit ratification item, on the P14
+precedent that an evidence-sufficiency rule for the builder's own claims should not be enacted by the
+builder on its own authority.
 
 ## Prohibited behavior
 - Committing/pushing without explicit approval; starting the next slice unprompted.

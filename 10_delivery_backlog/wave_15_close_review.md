@@ -156,3 +156,20 @@ The wave's one defect is procedural — a ratified gate commitment (OQ-W15P-7) t
 and its remedy is §5-A/B/C, which converts the omission into dispositions you ratify rather than a
 citation that rolls forward again. The operating model introduced mid-wave has earned its keep on
 the evidence of its first two outings and is recommended unchanged.
+
+---
+
+## §7 — Gate outcome (2026-08-07)
+
+The user directed **"proceed"** against §5 without amending any recommendation. Per the Wave-15
+Part-6 precedent, each item is taken **as recommended**, with the operating assumption stated so a
+wrong assumption is visible rather than buried. Any of these is cheap to reverse by saying so.
+
+| Item | Outcome | Operating assumption made explicit |
+|---|---|---|
+| **A** | **CTRL-018 gets a slice — REPRO-1, hosted in Wave 16 with a date at its planning gate** (a scheduled job re-running historical runs and diffing results) | That four citations-without-host means the platform's core "reproducible" promise deserves a machine that checks it, not another deferral. If on-demand-only is actually acceptable, say so and the CTRL-018 row is reworded instead |
+| **B** | **PERF-0's four carries bound to the trigger** *"before any parallelization or grain-level performance work"*, recorded in the roadmap | That the binding makes the next perf-touching slice inherit them mechanically — no re-litigation |
+| **C** | **FE toolchain debt decided at the Wave-16 planning gate** | The debt is concrete (TS→7, eslint→10, jsdom→30, + the six untypechecked root guard tests). NOTE: if RPT-2 ships an FE report view, the debt's ORIGINAL trigger ("first FE feature slice") fires anyway — the Wave-16 gate decides it either way |
+| **D** | **Report generate/read endpoints = an early Wave-16 item (RPT-2)**, incl. the N3 `generated_at` trust decision | That "a human outside the team can read it" means REACH it, not merely that it exists. The N3 decision is a gate OQ, not a builder default |
+| **E** | **P15 RATIFIED** — *"Two proofs sharing an assumption count as one proof; when a claim matters, at least one proof must be constructed under different assumptions than the implementation (a different engine, a different process, a different author, or a fresh context)."* Added to the standing rules | That "proceed" ratifies the §3 wording as recommended. P15 is an evidence-sufficiency standard (the P9/P13 class), not a reporting-accountability rule (the P14 class), so taking it on "proceed" follows the precedent — P14's self-ratification bar does not apply. If you meant to withhold E, one word reverses it |
+| **F** | **The FK hardening slice (103 measured failures) sequenced at the Wave-16 planning gate** as a named candidate | That measured, broken-down work is scheduled — not started cold, not re-worried |
