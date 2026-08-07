@@ -181,7 +181,7 @@ to undo, which is part of why proceeding was the right call rather than blocking
 | **OQ-W15P-5** | **Minimal governed write path for `holidays_complete_through`** | That the goal is a reachable production path, NOT an endpoint design exercise. Smallest thing that works |
 | **OQ-W15P-6** | **All three carries re-evaluated at RPT-1's gate**, each with a recorded fires / does-not-fire | That the LIM-2 lapse corrected this session ("PAID if (C) taken; else recorded" — neither branch ever ran) is not to be repeated |
 | **OQ-W15P-7** | **Each escalation gets a host or an explicit acceptance at RPT-1's gate at the latest** | That three recorded non-movements of CTRL-018 is itself the signal, not an accident |
-| **OQ-W15P-8** | **P13 RATIFIED. P14 stays PROPOSED — see below** | — |
+| **OQ-W15P-8** | **P13 RATIFIED. P14 stays PROPOSED — see below** *(SUPERSEDED 2026-08-05: the user ratified P14 via plan approval at DEP-1's process fold; the standing rule in `claude_operating_instructions.md` records it. This row kept as written — the gate's refusal to self-ratify was the point — amended by this dated note at the Wave-15 close rather than edited away.)* | — |
 | **OQ-W15P-9** | **RATIFIED** — a full-PG run requires exclusive use of its database, or its own container | — |
 
 ### On P14, specifically
