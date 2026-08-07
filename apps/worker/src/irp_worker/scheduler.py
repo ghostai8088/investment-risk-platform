@@ -41,6 +41,7 @@ from irp_shared.scheduling.service import (
 from irp_worker.breaches import poll_tenant_breaches
 from irp_worker.deadlines import poll_tenant_breach_deadlines
 from irp_worker.notifications import poll_tenant_notifications
+from irp_worker.reproduction_alarms import poll_tenant_reproduction_alarms
 from irp_worker.tenants import TenantIdError, canonical_tenant_id
 
 log = logging.getLogger(__name__)
@@ -218,11 +219,19 @@ def run_operational_tick_for_tenant(
             # Phase 4 (NOTIF-1): notify unnotified alarm events — runs LAST because it consumes the
             # BREACH.DETECT/ESCALATE audit events that phases 2-3 just committed (same tick).
             notified = poll_tenant_notifications(session, tick_now, acting_tenant=tenant_id)
+            # Phase 5 (REPRO-1): alarm any reproduction verdict that diverged or could not be run.
+            # It CANNOT live in phase 1 beside the sweep that produces the verdicts: phase 1 holds
+            # the per-tenant audit advisory lock to commit, and a sink call there would hold it
+            # across I/O — the same anti-pattern that split phase 3 off in the first place.
+            repro_alarmed = poll_tenant_reproduction_alarms(
+                session, tick_now, acting_tenant=tenant_id
+            )
             return {
                 "scheduled": scheduled,
                 "breached": breached,
                 "escalated": escalated,
                 "notified": notified,
+                "repro_alarmed": repro_alarmed,
             }
         finally:
             detach()
@@ -268,9 +277,11 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin entry
     n_breach = sum(1 for _limit_id, breach_id in results["breached"] if breach_id is not None)
     n_escalated = len(results["escalated"])
     n_notified = len(results["notified"])
+    n_repro = len(results["repro_alarmed"])
     print(
         f"irp-worker: tenant={tenant} fired={n_sched} "
-        f"breaches={n_breach} escalated={n_escalated} notified={n_notified}"
+        f"breaches={n_breach} escalated={n_escalated} notified={n_notified} "
+        f"repro_alarmed={n_repro}"
     )
     return 0
 

@@ -77,12 +77,16 @@ def run_tick_cycle(
         # never convert an already-committed successful tick into a reported failure.
         summary[tenant_id] = result
         log.info(
-            "tick tenant=%s fired=%d breaches=%d escalated=%d notified=%d",
+            "tick tenant=%s fired=%d breaches=%d escalated=%d notified=%d repro_alarmed=%d",
             tenant_id,
             len(result["scheduled"]),
             sum(1 for _lim, breach_id in result["breached"] if breach_id is not None),
             len(result["escalated"]),
             len(result["notified"]),
+            # REPRO-1's phase 5. `.get` rather than `[...]`: this log line is book-keeping OUTSIDE
+            # the per-tenant isolation try, and a KeyError here would turn an already-committed
+            # successful tick into a reported failure (the L3 rule this block already carries).
+            len(result.get("repro_alarmed", ())),
         )
     return summary
 

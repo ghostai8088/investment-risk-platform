@@ -31,9 +31,7 @@ VERDICT_DIVERGED = "DIVERGED"
 #: the identity-failure-versus-ordinary-500 mistake RPT-2 had to unpick.
 VERDICT_UNREPRODUCIBLE = "UNREPRODUCIBLE"
 
-VERDICTS: frozenset[str] = frozenset(
-    {VERDICT_MATCH, VERDICT_DIVERGED, VERDICT_UNREPRODUCIBLE}
-)
+VERDICTS: frozenset[str] = frozenset({VERDICT_MATCH, VERDICT_DIVERGED, VERDICT_UNREPRODUCIBLE})
 
 #: The verdicts that must raise an operator alarm. MATCH is silence by design; UNREPRODUCIBLE is
 #: included because a check that has silently stopped being able to run is indistinguishable, from

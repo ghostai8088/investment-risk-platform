@@ -29,7 +29,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -41,21 +40,21 @@ from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.calc.service import create_run, update_run_status
 from irp_shared.classification.service import canonical_tenant_id
 from irp_shared.notification.events import (
+    NO_RECIPIENT_SENTINEL,
     NOTIFY_DISPATCH_EVENT,
     NOTIFY_OUTCOME_FAILED,
     NOTIFY_OUTCOME_SENT,
     NOTIFY_OUTCOME_SUPPRESSED,
-    NO_RECIPIENT_SENTINEL,
     SOURCE_MODULE_NOTIFICATION,
 )
 from irp_shared.notification.sink import (
     ALERT_TYPE_REPRODUCTION,
-    NotificationSink,
     NotificationMessage,
+    NotificationSink,
 )
 from irp_shared.reproduction.events import (
-    ALARMING_VERDICTS,
     ALARM_RECIPIENT_PERMISSION,
+    ALARMING_VERDICTS,
     ENTITY_REPRODUCTION_CHECK,
     VERDICT_DIVERGED,
     VERDICT_MATCH,
@@ -148,7 +147,9 @@ def compare_rows(
         label = "/".join(key)
         if left is None:
             diverged += 1
-            first = first or f"{label} :: row PRESENT in the recompute but absent from the stored run"
+            first = (
+                first or f"{label} :: row PRESENT in the recompute but absent from the stored run"
+            )
             continue
         if right is None:
             diverged += 1
@@ -275,6 +276,39 @@ def run_reproduction_sweep(
         session.add(row)
         checks.append(row)
     session.flush()
+
+    # A sweep that checked NOTHING is not a healthy night, and it must not be recorded as one.
+    #
+    # This is the strongest thing REPRO-1's deployed proof found. The first run produced a
+    # perfectly green tick — schedule fired, DISPATCHED, no errors — over a tenant whose subjects
+    # were invisible to it. Zero verdicts, and every operational surface said fine. That is the
+    # LQ-1 inert-control shape exactly: a control that is running, believed, and checking nothing.
+    #
+    # So it fails CLOSED. The run is FAILED and the ledger row carries the reason, which is honest
+    # in both directions: a tenant with genuinely nothing to reproduce SHOULD be visible as such
+    # rather than quietly counted among the reproducible ones.
+    if not checks:
+        reason = (
+            "the reproduction sweep checked NOTHING: no registered family had a COMPLETED run to "
+            f"reproduce (families with a reproducer: {', '.join(sorted(REPRODUCIBLE_FAMILIES))}). "
+            "A sweep with zero verdicts proves nothing and is not recorded as a pass."
+        )
+        update_run_status(
+            session,
+            run,
+            RunStatus.FAILED,
+            actor_id=actor_id,
+            outcome="failure",
+            failure_reason=reason,
+        )
+        return ReproductionOutcome(
+            run_id=run.run_id,
+            status=RunStatus.FAILED.value,
+            failure_reason=reason,
+            checks=[],
+            skipped=skipped,
+        )
+
     update_run_status(session, run, RunStatus.COMPLETED, actor_id=actor_id)
     return ReproductionOutcome(
         run_id=run.run_id,
@@ -390,8 +424,10 @@ def alarm_for_verdict(
             detail=detail,
             now=now,
         )
-    return NOTIFY_OUTCOME_SENT if any(o == NOTIFY_OUTCOME_SENT for _, o, _ in attempts) else (
-        NOTIFY_OUTCOME_FAILED
+    return (
+        NOTIFY_OUTCOME_SENT
+        if any(o == NOTIFY_OUTCOME_SENT for _, o, _ in attempts)
+        else (NOTIFY_OUTCOME_FAILED)
     )
 
 

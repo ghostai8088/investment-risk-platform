@@ -75,6 +75,12 @@ def app_url() -> str:
             "model",
             "model_version",
             "calendar",
+            # REPRO-1: added because this suite READS calendar_holiday (the holiday-aware grid
+            # resolution) but never granted it — so it passed only because an earlier CI step in
+            # the same un-reset database happened to. Found by running the suites against a
+            # freshly reset schema in a different order; a suite that depends on another suite's
+            # grants is green by coincidence.
+            "calendar_holiday",
         ):
             conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO irp_app"))
     superuser.dispose()
@@ -125,7 +131,7 @@ def _raw_insert_schedule(
     tenant: str,
     target_run_type: str,
     model_version_id: str | None,
-    portfolio_id: str,
+    portfolio_id: str | None,
     cadence_kind: str = "INTERVAL",
     interval_days: int | None = 7,
     calendar_id: str | None = None,
@@ -155,36 +161,45 @@ def _raw_insert_schedule(
 
 
 def _run_family_matrix(conn) -> None:  # noqa: ANN001
-    """Drive the registry's OWN declaration through the DB, both directions, every family.
+    """Drive the registry's OWN declarations through the DB, both directions, every family.
 
     Raises ``AssertionError`` if the DB disagrees with the registry — which is what the negative
     control below proves this helper can actually detect.
+
+    REPRO-1 made this a 2x2x2: ``requires_portfolio_scope`` joined ``requires_model_version`` as a
+    per-family declaration with its own total-enumeration CHECK, and a matrix that drove only the
+    model-version axis would have passed while the portfolio CHECK was missing entirely.
     """
     tenant = str(uuid.uuid4())
     conn.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": tenant})
     portfolio_id, model_version_id = _seed_referents(conn, tenant)
     for family, spec in FAMILY_REGISTRY.items():
         for supply_mv in (True, False):
-            expected_ok = supply_mv == spec.requires_model_version
-            sp = conn.begin_nested()
-            try:
-                _raw_insert_schedule(
-                    conn,
-                    tenant=tenant,
-                    target_run_type=family,
-                    model_version_id=model_version_id if supply_mv else None,
-                    portfolio_id=portfolio_id,
+            for supply_pf in (True, False):
+                expected_ok = (
+                    supply_mv == spec.requires_model_version
+                    and supply_pf == spec.requires_portfolio_scope
                 )
-                accepted, why = True, ""
-            except IntegrityError as exc:
-                accepted, why = False, str(exc.orig).splitlines()[0]
-            finally:
-                sp.rollback()
-            assert accepted == expected_ok, (
-                f"{family} with model_version={'set' if supply_mv else 'NULL'}: "
-                f"DB {'accepted' if accepted else 'rejected'}, registry expects "
-                f"{'accept' if expected_ok else 'reject'}{f' — {why}' if why else ''}"
-            )
+                sp = conn.begin_nested()
+                try:
+                    _raw_insert_schedule(
+                        conn,
+                        tenant=tenant,
+                        target_run_type=family,
+                        model_version_id=model_version_id if supply_mv else None,
+                        portfolio_id=portfolio_id if supply_pf else None,
+                    )
+                    accepted, why = True, ""
+                except IntegrityError as exc:
+                    accepted, why = False, str(exc.orig).splitlines()[0]
+                finally:
+                    sp.rollback()
+                assert accepted == expected_ok, (
+                    f"{family} with model_version={'set' if supply_mv else 'NULL'} and "
+                    f"scope_portfolio={'set' if supply_pf else 'NULL'}: "
+                    f"DB {'accepted' if accepted else 'rejected'}, registry expects "
+                    f"{'accept' if expected_ok else 'reject'}{f' — {why}' if why else ''}"
+                )
 
 
 def test_the_family_check_agrees_with_the_registry(app_url: str) -> None:  # noqa: F811
@@ -210,6 +225,25 @@ def test_the_family_matrix_actually_observes_the_constraint() -> None:
     with engine.connect() as conn:
         trans = conn.begin()
         conn.execute(text(f"ALTER TABLE schedule DROP CONSTRAINT {_CHECK_FAMILY}"))
+        with pytest.raises(AssertionError):
+            _run_family_matrix(conn)
+        trans.rollback()
+    engine.dispose()
+
+
+def test_the_family_matrix_also_observes_the_PORTFOLIO_SCOPE_constraint() -> None:
+    """REPRO-1's own executed negative control, for the CHECK the slice added.
+
+    The matrix above gained a portfolio axis; this proves that axis is load-bearing. Without it,
+    ``ck_schedule_portfolio_scope_by_family`` could be absent from a live database — exactly what
+    migration 0065 exists to install — and the matrix would still report a pass.
+    """
+    engine = make_engine(URL, poolclass=NullPool)
+    with engine.connect() as conn:
+        trans = conn.begin()
+        conn.execute(
+            text("ALTER TABLE schedule DROP CONSTRAINT ck_schedule_portfolio_scope_by_family")
+        )
         with pytest.raises(AssertionError):
             _run_family_matrix(conn)
         trans.rollback()

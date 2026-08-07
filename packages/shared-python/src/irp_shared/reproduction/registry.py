@@ -133,9 +133,7 @@ def _resolve_model_code(session: Session, run: CalculationRun, *, acting_tenant:
         select(Model).where(Model.id == str(version.model_id), Model.tenant_id == acting_tenant)
     ).scalar_one_or_none()
     if model is None:
-        raise ReproductionUnsupported(
-            f"model {version.model_id} is not visible to this tenant"
-        )
+        raise ReproductionUnsupported(f"model {version.model_id} is not visible to this tenant")
     return str(model.code)
 
 
@@ -423,19 +421,33 @@ UNREPRODUCIBLE_FAMILIES: dict[str, str] = {
         "refusal and therefore a model-identity question, not a reproduction-slice decision"
     ),
     "COVARIANCE": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "COVARIANCE_PRIVATE": "not yet adapted (shares covariance_result; needs binder resolution by model code)",
+    "COVARIANCE_PRIVATE": (
+        "not yet adapted (shares covariance_result with COVARIANCE; needs binder resolution "
+        "by model code)"
+    ),
     "FACTOR_EXPOSURE": "not yet adapted (has a consume path; needs its key/field declaration)",
     "SENSITIVITY": "not yet adapted (has a consume path; needs its key/field declaration)",
     "SCENARIO": "not yet adapted (has a consume path; needs its key/field declaration)",
     "ACTIVE_RISK": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "VAR_BACKTEST": "not yet adapted (shares var_backtest_result with ES_BACKTEST; needs binder resolution by model code)",
-    "ES_BACKTEST": "not yet adapted (shares var_backtest_result with VAR_BACKTEST; needs binder resolution by model code)",
+    "VAR_BACKTEST": (
+        "not yet adapted (shares var_backtest_result with ES_BACKTEST; needs binder "
+        "resolution by model code)"
+    ),
+    "ES_BACKTEST": (
+        "not yet adapted (shares var_backtest_result with VAR_BACKTEST; needs binder "
+        "resolution by model code)"
+    ),
     "PORTFOLIO_RETURN": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "BENCHMARK_RELATIVE": "not yet adapted (needs return_basis + benchmark_id read back off the stored rows)",
+    "BENCHMARK_RELATIVE": (
+        "not yet adapted (needs return_basis + benchmark_id read back off the stored rows)"
+    ),
     "DESMOOTHED_RETURN": "not yet adapted (has a consume path; needs its key/field declaration)",
     "ROLLING_RISK": "not yet adapted (needs window_months read back off rolling_risk_result)",
     "SHARPE": "not yet adapted (needs window_months read back off sharpe_ratio_result)",
-    "PROXY_WEIGHT_ESTIMATE": "not yet adapted (two binders — proxy_weight vs residual_shrinkage; needs binder resolution by model code)",
+    "PROXY_WEIGHT_ESTIMATE": (
+        "not yet adapted (two binders — proxy_weight vs residual_shrinkage; needs binder "
+        "resolution by model code)"
+    ),
     "PURE_PRIVATE_FACTOR": "not yet adapted (has a consume path; needs its key/field declaration)",
     "PACING_PROJECTION": "not yet adapted (has a consume path; needs its key/field declaration)",
 }

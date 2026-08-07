@@ -3,9 +3,9 @@
 **What this row is, and what it deliberately is not.** It is CONTROL-PLANE EVIDENCE about an
 already-audited governed run: "on this night, we re-executed run X over its own pinned snapshot and
 the numbers came back the same." It binds no ``dataset_snapshot`` and no ``model_version`` of its
-own, exactly as ``breach`` / ``breach_action`` do — those reference the already-``CALC.RUN_*``-audited
-run rather than re-pinning its inputs. A verdict is not a governed derived number, so it does not
-carry the three-way bind that AD-014 requires of one.
+own, exactly as ``breach`` / ``breach_action`` do — those reference the already-audited
+``CALC.RUN_*`` run rather than re-pinning its inputs. A verdict is not a governed derived number,
+so it does not carry the three-way bind that AD-014 requires of one.
 
 It DOES bind a ``calculation_run`` of run type ``REPRODUCTION`` — the reproduction sweep itself is a
 computation with a ``code_version`` and an ``environment_id``, and the scheduler's ratified
@@ -91,7 +91,8 @@ class ReproductionCheck(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     rows_compared: Mapped[int] = mapped_column(Integer, nullable=False)
     rows_diverged: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    #: The first disagreement, as ``<natural key> :: <field>`` — never the values (module docstring).
+    #: The first disagreement, as ``<natural key> :: <field>`` — never the values (see the
+    #: module docstring).
     #: On UNREPRODUCIBLE this carries the REASON the recompute could not run, redacted like
     #: ``scheduling.service.redact_failure_reason`` does for the same class of operator-facing text.
     first_divergence: Mapped[str | None] = mapped_column(Text, nullable=True)

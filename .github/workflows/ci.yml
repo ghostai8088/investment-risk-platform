@@ -711,6 +711,11 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_report_pg.py -q
+      - name: Reproduction check RLS + append-only + unique-key non-vacuity (Postgres, REPRO-1)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_reproduction_pg.py -q
       - name: Revert migrations (downgrade smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
@@ -847,9 +852,19 @@ jobs:
       - name: Prove a governed report regenerates identically after a restore (I2) + serves over HTTP (I6)
         run: bash infra/deploy/prove_report_identity.sh
 
+      # REPRO-1: CTRL-018's OBSERVED scheduled green — and the first execution ANYWHERE of the
+      # deployed worker's database path (RPT-2 carry b: deploy.sh only ever proved the worker's
+      # fail-closed refusal, because IRP_TENANT_IDS ships empty). A real tick, through the real
+      # scheduler, re-derives a governed report from its pinned inputs. Both arms go through the
+      # worker: the second schedule exists so a PLANTED divergence gets its own tick bucket and the
+      # failure path is executed rather than assumed.
+      - name: Prove a scheduled reproduction detects a planted divergence (CTRL-018)
+        run: bash infra/deploy/prove_reproduction.sh
+
       - name: Leave nothing behind
         if: always()
         run: |
           docker compose -p irp-dep1 down -v --remove-orphans 2>/dev/null || true
           docker compose -p irp-dep1-br down -v --remove-orphans 2>/dev/null || true
           docker compose -p irp-rpt1-id down -v --remove-orphans 2>/dev/null || true
+          docker compose -p irp-repro1 down -v --remove-orphans 2>/dev/null || true

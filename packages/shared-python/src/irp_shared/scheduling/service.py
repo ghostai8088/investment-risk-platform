@@ -511,10 +511,20 @@ def _dispatch_var(
             f"schedule {schedule.id} targets {schedule.target_run_type} but carries no "
             "model_version_id — refusing to fire an unbound governed run (CTRL-003)"
         )
+    # REPRO-1: the same REAL guard, for the column that became nullable at 0065. VAR declares
+    # `requires_portfolio_scope=True`, and three layers should already have refused a VAR schedule
+    # without a scope (the DB CHECK, `_validate_config`, the registry-gated FK guard) — if a row
+    # reaches dispatch with NULL anyway, every one of them has failed, and resolving "the latest
+    # exposure run for scope None" would silently compute a DIFFERENT book's number. Refuse
+    # PRE-create; the caller records FAILED.
+    scope_portfolio_id = schedule.scope_portfolio_id
+    if scope_portfolio_id is None:
+        raise ScheduleError(
+            f"schedule {schedule.id} targets {schedule.target_run_type} but carries no "
+            "scope_portfolio_id — refusing to resolve an unscoped upstream exposure run"
+        )
     tenant = schedule.tenant_id
-    fx_rows = latest_factor_exposure(
-        session, acting_tenant=tenant, portfolio_id=schedule.scope_portfolio_id
-    )
+    fx_rows = latest_factor_exposure(session, acting_tenant=tenant, portfolio_id=scope_portfolio_id)
     if not fx_rows:
         raise ScheduleError("no COMPLETED factor-exposure run for the schedule scope")
     exposure_run_id = fx_rows[0].calculation_run_id

@@ -21,10 +21,14 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+from test_var import _run, _seed_upstream_runs, _var_model
 
-from irp_shared.audit.models import AuditEvent, AppendOnlyViolation
+from irp_shared.audit.models import AppendOnlyViolation, AuditEvent
 from irp_shared.audit.service import verify_chain
 from irp_shared.calc.models import CalculationRun, RunStatus
+from irp_shared.db.base import Base
+from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.notification.events import (
     NOTIFY_DISPATCH_EVENT,
     NOTIFY_OUTCOME_FAILED,
@@ -35,10 +39,10 @@ from irp_shared.notification.sink import DeliveryResult, NotificationMessage
 from irp_shared.reproduction.events import (
     ALARM_RECIPIENT_PERMISSION,
     ENTITY_REPRODUCTION_CHECK,
-    VERDICTS,
     VERDICT_DIVERGED,
     VERDICT_MATCH,
     VERDICT_UNREPRODUCIBLE,
+    VERDICTS,
 )
 from irp_shared.reproduction.models import RUN_TYPE_REPRODUCTION, ReproductionCheck
 from irp_shared.reproduction.registry import (
@@ -55,14 +59,31 @@ from irp_shared.reproduction.service import (
     unalarmed_verdicts,
 )
 from irp_shared.risk.models import VarResult
-from test_var import (  # noqa: F401 - `session` is the shared in-memory-SQLite fixture
-    _run,
-    _seed_upstream_runs,
-    _var_model,
-    session,
-)
 
 _CODE_VERSION = "risk-v1"
+
+
+@pytest.fixture
+def session() -> Session:
+    """This suite's own engine, rather than importing ``test_var``'s fixture.
+
+    Importing it would shadow the name in every test signature (ruff F811) and, more to the point,
+    couple two suites' lifecycles for no benefit. The HELPERS are worth reusing — building a real
+    VaR chain by hand here would duplicate 400 lines and drift from the thing it is meant to
+    reproduce — but the fixture is three lines.
+    """
+    engine = make_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    db = make_session_factory(engine)()
+    try:
+        yield db
+    finally:
+        db.close()
+        engine.dispose()
 
 
 def _seed_var_run(db: Session, tenant: str):  # noqa: ANN202
@@ -173,15 +194,21 @@ def test_positive_control_the_recompute_really_does_write_when_not_rolled_back(
     before = _counts(session, tenant)
 
     savepoint = session.begin_nested()
-    _run(session, tenant, first.rows[0].model_version_id, None, None,
-         snapshot_id=first.run.input_snapshot_id)
+    _run(
+        session,
+        tenant,
+        first.rows[0].model_version_id,
+        None,
+        None,
+        snapshot_id=first.run.input_snapshot_id,
+    )
     savepoint.commit()
 
     runs, results, events = _counts(session, tenant)
     assert runs > before[0] and results > before[1] and events > before[2]
 
 
-# ------------------------------------------------------- I2: a planted divergence is made to FIRE --
+# ------------------------------------------------ I2: a planted divergence is made to FIRE ------
 def test_a_planted_divergence_is_DIVERGED_and_names_the_field(session: Session) -> None:
     """I2 + P9. The alarm is not implemented until a test has made it fire.
 
@@ -262,7 +289,7 @@ def test_compare_treats_decimal_scale_as_representation_not_divergence() -> None
 def test_a_family_that_cannot_be_recomputed_is_UNREPRODUCIBLE_not_MATCH(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """"We could not check" and "we checked and it is fine" must never be the same verdict."""
+    """ "We could not check" and "we checked and it is fine" must never be the same verdict."""
     tenant = str(uuid.uuid4())
     _seed_var_run(session, tenant)
     session.commit()
@@ -319,6 +346,28 @@ def test_a_family_with_no_completed_run_is_reported_as_skipped_not_checked(
     assert "REPORT" in outcome.skipped
     assert checked | set(outcome.skipped) == set(REPRODUCIBLE_FAMILIES)
     assert not (checked & set(outcome.skipped))
+
+
+def test_a_sweep_that_checked_NOTHING_fails_closed(session: Session) -> None:
+    """The deployed proof's best finding, promoted to a unit test.
+
+    Its first run produced a perfectly green tick — schedule fired, DISPATCHED, no errors — over a
+    tenant whose subjects were invisible to the sweep. Zero verdicts, and every operational surface
+    said fine. A control that is running, believed and checking nothing is the LQ-1 shape, so a
+    sweep with no verdicts is now a FAILED run carrying the reason.
+    """
+    tenant = str(uuid.uuid4())  # no runs at all for this tenant
+    outcome = _sweep(session, tenant)
+    assert outcome.status == RunStatus.FAILED.value
+    assert outcome.checks == []
+    assert "checked NOTHING" in (outcome.failure_reason or "")
+    stored = session.execute(
+        select(CalculationRun).where(
+            CalculationRun.tenant_id == tenant, CalculationRun.run_type == "REPRODUCTION"
+        )
+    ).scalar_one()
+    assert stored.status == RunStatus.FAILED.value
+    assert "checked NOTHING" in (stored.failure_reason or "")
 
 
 def test_latest_completed_run_ignores_a_FAILED_run(session: Session) -> None:
@@ -381,9 +430,10 @@ def test_a_divergence_reaches_the_sink_with_a_payload_that_names_itself_honestly
         lambda *_a, **_k: ["reviewer-1"],
     )
     sink = _RecordingSink()
-    assert alarm_for_verdict(
-        session, check=check, sink=sink, acting_tenant=tenant
-    ) == NOTIFY_OUTCOME_SENT
+    assert (
+        alarm_for_verdict(session, check=check, sink=sink, acting_tenant=tenant)
+        == NOTIFY_OUTCOME_SENT
+    )
     assert len(sink.messages) == 1
     message = sink.messages[0]
     assert message.alert_type == "reproduction-divergence"
@@ -402,9 +452,10 @@ def test_a_sink_that_RAISES_still_leaves_durable_evidence(
         "irp_shared.entitlement.service.holders_of_permission",
         lambda *_a, **_k: ["reviewer-1"],
     )
-    assert alarm_for_verdict(
-        session, check=check, sink=_ExplodingSink(), acting_tenant=tenant
-    ) == NOTIFY_OUTCOME_FAILED
+    assert (
+        alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+        == NOTIFY_OUTCOME_FAILED
+    )
     events = _dispatch_events(session, tenant)
     assert len(events) == 1, "an exploding sink lost the alarm entirely"
 
@@ -412,7 +463,7 @@ def test_a_sink_that_RAISES_still_leaves_durable_evidence(
 def test_a_tenant_with_no_recipient_records_SUPPRESSED_rather_than_nothing(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """"Nobody was configured to hear this" is a fact an operator needs. Silence here would be
+    """ "Nobody was configured to hear this" is a fact an operator needs. Silence here would be
     indistinguishable from a healthy night — the LQ-1 inert-control shape."""
     tenant = str(uuid.uuid4())
     check = _diverged_check(session, tenant)
@@ -420,9 +471,10 @@ def test_a_tenant_with_no_recipient_records_SUPPRESSED_rather_than_nothing(
         "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: []
     )
     sink = _RecordingSink()
-    assert alarm_for_verdict(
-        session, check=check, sink=sink, acting_tenant=tenant
-    ) == NOTIFY_OUTCOME_SUPPRESSED
+    assert (
+        alarm_for_verdict(session, check=check, sink=sink, acting_tenant=tenant)
+        == NOTIFY_OUTCOME_SUPPRESSED
+    )
     assert sink.messages == []
     assert len(_dispatch_events(session, tenant)) == 1
 
