@@ -1,6 +1,38 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-08-02) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-08-07) — read this block; everything below it is HISTORY
+>
+> **RPT-1 IS CLOSED. The platform can now produce a governed report that regenerates
+> byte-identically — including across a database restore.** ENT-072 `report_generation`
+> (migration `0063`), the first artifact a buyer or examiner asks for, previously wholly unowned
+> across 24 governed families. Merged via **PR #176** = `4eab7e0` (the FOURTEENTH autonomous
+> merge); the P1 seven-ledger sweep executed on `main` and clean (all nine slice commits
+> ancestors; merged tree byte-identical to the CI-validated tree `31787c5`; the delivery claims
+> re-checked against the MERGED diff, not the branch). Migration head **`0063`**; next free
+> canonical id **ENT-073**; the report renders FOUR families (var / concentration / liquidity /
+> rolling_risk). **CTRL-009 Planned → Implemented** on OBSERVED evidence; NOT *Operational* — no
+> report is scheduled, which stays CTRL-018/TR-13's territory.
+>
+> **THE SLICE'S LESSON, and it is about proofs rather than code.** The pre-merge fresh-context
+> audit found that I2 was OVERSTATED: `portfolio_code` was rendered into the hashed bytes but was
+> a *parameter* of `regenerate_report`, stored nowhere — so "regenerates from its bound IDs" really
+> meant "for a caller who re-supplies the same string", and `portfolio.code` is MUTABLE, so a
+> renamed book made its own historical reports unreproducible. **Neither of my two proofs could see
+> it: the unit test and the deployed restore proof BOTH re-supply the same constant.** A second
+> tier buys nothing against an assumption both tiers share. That is the argument for a fresh
+> context, stated as a fact rather than a preference. (Full record:
+> `10_delivery_backlog/rpt_1_slice_record.md` §9.)
+>
+> **Nine defects in-slice, seven found by EXECUTION or MUTATION**, plus two the audit found that
+> the build structurally could not. Carried with a MEASURED number: the shared unit engine leaves
+> SQLite `PRAGMA foreign_keys` OFF — **115 failures across 12 suites** when enabled; RPT-1's own 12
+> are PAID (its suite now enforces FKs locally), the remaining **103 are a slice of their own**.
+>
+> **NEXT = the Wave-15 sequence continues from `10_delivery_backlog/delivery_roadmap.md`.**
+>
+> ---
+>
+> ## Previous truth (2026-08-02) — LQ-1 / Wave 14
 >
 > **LQ-1 IS CLOSED — and WAVE 14 IS COMPLETE.** The 24th governed number family: liquidity
 > tiers as a captured judgment, and the illiquid share of the invested-long book as a governed
