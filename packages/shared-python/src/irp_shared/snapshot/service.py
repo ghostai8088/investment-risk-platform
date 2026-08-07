@@ -4403,6 +4403,7 @@ def build_report_input_snapshot(
     *,
     acting_tenant: str,
     actor: SnapshotActor,
+    portfolio_id: str,
     family_runs: dict[str, str],
     as_of_valuation_date: date,
 ) -> DatasetSnapshot:
@@ -4411,10 +4412,11 @@ def build_report_input_snapshot(
 
     The refusals live in ``report.service.build_report_snapshot`` and run BEFORE anything is
     persisted: an unknown family, a run that is missing / not COMPLETED / of the wrong run_type /
-    another tenant's, and — the load-bearing one — a family whose run yields ZERO values. A report
-    section rendering "no data" is indistinguishable from one whose family silently returned
-    nothing, and a board-facing artifact must not be able to show the second while meaning the
-    first.
+    another tenant's, a run computed for a DIFFERENT portfolio than the report names (the RPT-2
+    review's attribution fence — hence the REQUIRED ``portfolio_id`` here), and — the load-bearing
+    one — a family whose run yields ZERO values. A report section rendering "no data" is
+    indistinguishable from one whose family silently returned nothing, and a board-facing artifact
+    must not be able to show the second while meaning the first.
 
     The component's ``target_entity_id`` is the SOURCE RUN, not the report: that is what
     ``_reresolve_content`` re-derives from, and pointing it at the report would make verification
@@ -4422,7 +4424,13 @@ def build_report_input_snapshot(
     """
     from irp_shared.report.service import build_report_snapshot
 
-    pinned = build_report_snapshot(session, acting_tenant=acting_tenant, family_runs=family_runs)
+    pinned = build_report_snapshot(
+        session,
+        acting_tenant=acting_tenant,
+        portfolio_id=portfolio_id,
+        as_of_date=as_of_valuation_date,
+        family_runs=family_runs,
+    )
     now = datetime.now(UTC)
     specs: list[tuple[str, str, Any, str, str]] = []
     for _family_key, content in pinned:

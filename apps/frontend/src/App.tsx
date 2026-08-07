@@ -12,6 +12,7 @@ import type { Session } from "./session";
 import { BreachDetail } from "./views/ops/BreachDetail";
 import { BreachQueue } from "./views/ops/BreachQueue";
 import { LimitHealth } from "./views/ops/LimitHealth";
+import { Reports } from "./views/reports/Reports";
 import { RunDetail } from "./views/RunDetail";
 import { RunsList } from "./views/RunsList";
 import { WalkOverview } from "./views/walk/WalkOverview";
@@ -122,6 +123,13 @@ export function App(): ReactElement {
           <Route path="ops/breaches" element={<BreachQueue session={session} />} />
           <Route path="ops/breaches/:breachId" element={<BreachDetail session={session} />} />
           <Route path="ops/limits" element={<LimitHealth session={session} />} />
+          {/* RPT-2: the governed report becomes reachable in a browser (remit I4).
+              NAMESPACED under ops/ deliberately (review finding): the API prefix `/reports` is
+              proxied by nginx AND the vite dev server, and its regex matches the BARE path —
+              so a client route at `/reports` is shadowed, and a deep link, refresh or bookmark
+              returns 401 JSON instead of the SPA. Every other client route is already
+              namespaced away from the API surface (`ops/limits`, not `/limits`). */}
+          <Route path="ops/reports" element={<Reports session={session} />} />
           <Route path="walk" element={<WalkOverview />} />
           <Route path="walk/:step" element={<WalkStep session={session} />} />
           <Route path="runs" element={<RunsList session={session} />} />

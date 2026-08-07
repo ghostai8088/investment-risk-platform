@@ -110,7 +110,9 @@ export async function request<T>(
 
   if (!response.ok) {
     // Read the body for `detail` BEFORE throwing: the UI cannot explain a refusal it never saw.
-    let detail = "";
+    // (Declared unassigned — both branches below assign, and eslint 10's `no-useless-assignment`,
+    // new to `recommended`, rightly flagged the old `= ""` initializer as dead. RPT-2 slice 0.)
+    let detail: string;
     try {
       detail = flattenDetail(await response.json());
     } catch {
@@ -141,4 +143,50 @@ export async function request<T>(
 
 export async function apiGet<T>(path: string, session: Session | null): Promise<T> {
   return request<T>(path, session, "GET");
+}
+
+/** GET a **text/html** endpoint (RPT-2: `/reports/{id}/html` is the platform's first non-JSON
+ * read). A separate verb rather than a content-type switch inside `request()`: the JSON guard
+ * above exists to catch a proxy/SPA fallback answering HTML where JSON belongs, and teaching
+ * `request()` to accept HTML would blunt that guard for every other endpoint. Here the inversion
+ * holds — an HTML endpoint answering JSON is the shape error.
+ *
+ * The returned string is REPORT MARKUP and must only ever be rendered inside the sandboxed
+ * iframe (`Reports.tsx`) — never `dangerouslySetInnerHTML` into the app's own DOM. The server
+ * escapes tenant strings (mutation-proven at RPT-1), and the sandbox is the defense in depth
+ * that survives a future renderer defect.
+ */
+export async function apiGetHtml(path: string, session: Session | null): Promise<string> {
+  if (!session) {
+    throw new ApiError("no-session", "no session — sign in to make requests");
+  }
+  let response: Response;
+  try {
+    response = await fetch(path, { method: "GET", headers: identityHeaders(session) });
+  } catch {
+    throw new ApiError("network", "the API is unreachable (is the backend running?)");
+  }
+  if (!response.ok) {
+    let detail: string;
+    try {
+      detail = flattenDetail(await response.json());
+    } catch {
+      detail = "";
+    }
+    throw new ApiError(
+      kindFor(response.status),
+      detail || `request failed (${String(response.status)})`,
+      response.status,
+      detail,
+    );
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/html")) {
+    throw new ApiError(
+      "server",
+      `expected a text/html report body, got ${contentType || "no content-type"}`,
+      response.status,
+    );
+  }
+  return response.text();
 }

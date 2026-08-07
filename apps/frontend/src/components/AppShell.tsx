@@ -71,6 +71,13 @@ export function AppShell({
           >
             Limits &amp; approvals
           </NavLink>
+          {/* RPT-2: governed reports, regenerated (and re-proven) on every read. */}
+          <NavLink
+            to="/ops/reports"
+            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+          >
+            Reports
+          </NavLink>
 
           <p className="nav-heading">The walk</p>
           <ol className="nav-steps">

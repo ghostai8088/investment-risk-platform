@@ -840,7 +840,11 @@ jobs:
       # inside one process; this proves it ACROSS a pg_dump round-trip, a destroyed schema, a
       # restore and a fresh interpreter — and compares against a hash captured before the archive
       # existed, so a backup that faithfully preserved a wrong value cannot satisfy it.
-      - name: Prove a governed report regenerates identically after a restore (I2)
+      # RPT-2 extends the same proof with the HTTP arm (remit I6/P15): the restored stack SERVES
+      # the report over the wire byte-identically, the entitlement fence holds live (401/403/the
+      # view-cannot-generate split), and the wire cannot assert evidence time (422). One script,
+      # one stack, both invariant families.
+      - name: Prove a governed report regenerates identically after a restore (I2) + serves over HTTP (I6)
         run: bash infra/deploy/prove_report_identity.sh
 
       - name: Leave nothing behind

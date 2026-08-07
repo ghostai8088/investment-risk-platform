@@ -222,6 +222,29 @@ PERMISSIONS: list[tuple[str, str]] = [
     # dual-hat. A future breach-action API endpoint MUST carry the matching require_permission.
     ("breach.respond", "File a 1L remediation response on a breach (1L)"),
     ("breach.review", "Assign, review, escalate and close a breach (2L)"),
+    # RPT-2 (Wave-16) — a governed R-07 mint. TWO codes, split by
+    # **RATIFICATION STATUS, corrected at the pre-merge audit: the Wave-16 gate (OQ-W16P-1..7)
+    # asked NO permission question and enumerated NO holder set.** An earlier version of this
+    # comment cited it as ratifying these holders; it does not. The split below is the BUILDER's
+    # application of the standing doctrine (governed-output reads include auditor_3l; write verbs
+    # exclude it) — defensible, consistent with every prior mint, and NOT user-ratified. The
+    # holder sets are carried to the Wave-16 close as an explicit Tier-3 item; every prior mint
+    # (OQ-CON-1-25, OQ-LQ-1-13) had its sets enumerated to the user, and this one must too.
+    # The split is by
+    # VERB CLASS on the auditor line: `report.view` gates a governed OUTPUT artifact — the rendered
+    # report IS the governed numbers, with provenance — so auditor_3l HOLDS it (the exposure.view →
+    # ... → liquidity.view chain, unbroken). `report.generate` is a WRITE verb (it mints a REPORT
+    # calculation_run, a REPORT_INPUT snapshot and an IA ENT-072 row), so auditor_3l does NOT — 3L
+    # observes evidence, it never creates it (the snapshot.create / *.run exclusion class).
+    # Holders for .generate mirror liquidity.run/concentration.run: the 1L maker + the data_steward
+    # ops maker (+ admin). NOT 2L: generating a report is running the numbers, not approving them.
+    # SOD-08 ("Generate a report | Approve/publish a board report") stays HALF-RESERVED: generate is
+    # minted HERE; approve/publish is NOT minted — no publish verb ships in RPT-2, and minting the
+    # checker half without its workflow would be a dead guard (the liquidity.run forward-gate
+    # lesson, inverted). ROLE-RC "Report Consumer" (entitlement_sod_model.md §4) is NOT minted as a
+    # template role — a role is under the same R-07 freeze as a code, and no ratification names it.
+    ("report.generate", "Generate a governed report (mints a run + snapshot + ENT-072 row)"),
+    ("report.view", "View governed reports: metadata, listings and the rendered artifact"),
 ]
 
 #: All permission codes, in catalog order.
@@ -320,6 +343,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # LQ-1: steward is a maker — run + view (the concentration.run placement).
         "liquidity.run",
         "liquidity.view",
+        # RPT-2: steward is a maker — generate + view (the liquidity.run placement).
+        "report.generate",
+        "report.view",
         # SCH-1 scheduling: steward is an ops maker — manage + view (the pacing.run precedent).
         "schedule.manage",
         "schedule.view",
@@ -373,6 +399,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "concentration.view",
         "liquidity.run",
         "liquidity.view",
+        # RPT-2: the 1L maker generates + reads reports (the liquidity.run placement).
+        "report.generate",
+        "report.view",
         "concentration.issuer.view",
         # SCH-1 scheduling: the 1L analyst is the risk maker — manages + views schedules.
         "schedule.manage",
@@ -430,6 +459,8 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # CON-1: 2L view-only, BOTH codes (concentration.run is maker/admin-only).
         "concentration.view",
         "liquidity.view",
+        # RPT-2: 2L reads reports; generate is a 1L/ops maker verb (the *.run split).
+        "report.view",
         "concentration.issuer.view",
         # SCH-1 scheduling: 2L view-only (schedule.manage is maker/admin-only).
         "schedule.view",
@@ -485,6 +516,10 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # classification_assignment.view), and this split exists precisely so this line can differ.
         "concentration.view",
         "liquidity.view",
+        # RPT-2: a governed-output artifact read — the unbroken 3L chain (exposure.view →
+        # risk.view → perf.view → pacing.view → concentration.view → liquidity.view).
+        # NEVER report.generate: 3L observes evidence, it never creates it.
+        "report.view",
         # SCH-1 scheduling: the 3L auditor VIEWS schedules + the scheduled_run ledger — a governed
         # control-plane object is 3L-oversight scope (the pacing.view precedent).
         "schedule.view",
