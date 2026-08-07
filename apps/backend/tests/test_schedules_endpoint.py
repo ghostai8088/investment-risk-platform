@@ -341,8 +341,24 @@ def test_a_malformed_schedule_id_is_a_422_before_any_db_hit(ctx) -> None:
 
 def test_the_read_surface_exposes_no_write_verb(ctx) -> None:
     """SCH-2 ships reads ONLY — ``schedule.manage`` has no HTTP consumer yet, and a create/pause API
-    is its own slice with its own maker-checker question."""
+    is its own slice with its own maker-checker question.
+
+    RPT-2 fold (P10 — the fold applies to the class): the original walk filtered on
+    ``hasattr(r, "methods")``, which the ``_IncludedRouter`` wrappers fail — so it censused ZERO
+    routes and passed vacuously from the day it shipped. The platform census
+    (``test_route_permission_census.py``) measured the trap; this walker now recurses and asserts
+    it actually saw the schedules surface."""
+    from fastapi.routing import APIRoute
+
+    def _walk(routes):  # noqa: ANN001, ANN202
+        for r in routes:
+            if isinstance(r, APIRoute):
+                yield r
+            elif hasattr(r, "original_router"):
+                yield from _walk(r.original_router.routes)
+
     methods = {
-        (r.path, m) for r in ctx["client"].app.routes if hasattr(r, "methods") for m in r.methods
+        (r.path, m) for r in _walk(ctx["client"].app.routes) for m in r.methods if m != "HEAD"
     }
-    assert all(m in {"GET", "HEAD", "OPTIONS"} for _, m in methods), sorted(methods)
+    assert methods, "the walker censused ZERO routes — the vacuous-pass trap, again"
+    assert all(m in {"GET", "OPTIONS"} for _, m in methods), sorted(methods)

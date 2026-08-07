@@ -437,3 +437,54 @@ def test_limit_approve_grants_as_ratified() -> None:
     # LIM-1 shipped no such assertion for limit.manage.
     assert _holders("limit.manage") == {"risk_manager_2l", "platform_admin"}
     assert _holders("limit.approve") == {"risk_manager_2l", "platform_admin"}
+
+
+def test_report_grants_as_ratified() -> None:
+    """RPT-2 (remit I3, ratified OQ-W16P-1..7): the report pair, pinned BOTH directions.
+
+    The split is by VERB CLASS on the auditor line: `report.view` is a governed-OUTPUT read — the
+    rendered report IS the governed numbers with provenance — so auditor_3l HOLDS it (the unbroken
+    exposure.view → … → liquidity.view chain). `report.generate` WRITES (a run, a snapshot, an IA
+    ENT-072 row), so the auditor does NOT — 3L observes evidence, it never creates it. Makers
+    mirror liquidity.run: the 1L analyst + the data_steward ops maker, NOT 2L (generating a report
+    is running the numbers, not approving them; SOD-08's approve half stays unminted with no
+    publish verb).
+    """
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    assert "report.view" in ALL_CODES and "report.generate" in ALL_CODES
+    assert _holders("report.view") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "risk_manager_2l",
+        "auditor_3l",
+        "platform_admin",
+    }
+    assert _holders("report.generate") == {"data_steward", "risk_analyst_1l", "platform_admin"}
+    # The auditor line, asserted by NAME in the direction that matters (the REF-1 class):
+    assert "auditor_3l" not in _holders("report.generate")
+
+
+def test_liquidity_grants_as_ratified() -> None:
+    """LQ-1's UNPAID P11 debt, paid at RPT-2 (P10: the fold applies to the class).
+
+    These two codes shipped 2026-08-02 with NO holder pin anywhere — the P11 evidence clause
+    records they were mutation-proven blind in both directions. Ratified holders per OQ-LQ-1-13:
+    `.view` is the governed-output read (auditor included); `.run` is maker/admin-only and still
+    UNROUTED (the forward-gate list in test_route_permission_census.py carries the record).
+    """
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    assert _holders("liquidity.view") == {
+        "data_steward",
+        "risk_analyst_1l",
+        "risk_manager_2l",
+        "auditor_3l",
+        "platform_admin",
+    }
+    assert _holders("liquidity.run") == {"data_steward", "risk_analyst_1l", "platform_admin"}
+    assert "auditor_3l" not in _holders("liquidity.run")
