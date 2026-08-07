@@ -76,8 +76,18 @@ class Schedule(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, TimestampMixin
     target_run_type: Mapped[str] = mapped_column(String(100), nullable=False)
     #: The WITHIN-TENANT portfolio scope the fired number is computed for (a hard FK — a schedule
     #: targets a real book; exposure resolution is scope-filtered). NOT a security boundary.
-    scope_portfolio_id: Mapped[str] = mapped_column(
-        GUID, ForeignKey("portfolio.id"), nullable=False, index=True
+    #:
+    #: **NULLABLE since REPRO-1 (migration 0065)**, for the same reason ``model_version_id`` became
+    #: nullable at SCH-2: it is required for some families and FORBIDDEN for others. VAR and
+    #: EXPOSURE_AGGREGATE compute a specific book's number; the REPRODUCTION sweep is tenant-wide
+    #: and re-executes families that are not all portfolio-scoped (covariance is tenant-global), so
+    #: naming a book there would stamp a scope into a governed config row that is not true — and
+    #: the ops UI renders that row. Which is which is declared ONCE in
+    #: ``service.FAMILY_REGISTRY.requires_portfolio_scope`` and enforced three ways: a DB CHECK
+    #: (``ck_schedule_portfolio_scope_by_family``), ``_validate_config`` in both directions, and the
+    #: registry-gated cross-tenant FK guard. Never treat "a value was supplied" as the rule.
+    scope_portfolio_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("portfolio.id"), nullable=True, index=True
     )
     #: The REGISTERED model version the fired run binds (CTRL-003 inventory-before-use). NULLABLE
     #: since SCH-2 because it is required for SOME families and FORBIDDEN for others: the EXPOSURE

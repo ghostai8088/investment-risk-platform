@@ -40,6 +40,8 @@ from irp_shared.exposure.service import ExposureRunResult, run_exposure
 from irp_shared.model.guards import assert_model_version_in_tenant
 from irp_shared.portfolio.guards import assert_portfolio_in_tenant
 from irp_shared.reference.models import Calendar, CalendarHoliday  # models-only (guards precedent)
+from irp_shared.reproduction.models import RUN_TYPE_REPRODUCTION
+from irp_shared.reproduction.service import run_reproduction_sweep
 from irp_shared.risk.covariance_service import latest_covariances
 from irp_shared.risk.events import VarActor
 from irp_shared.risk.factor_service import latest_factor_exposure
@@ -475,6 +477,15 @@ class ScheduledFamily:
     target_run_type: str
     requires_model_version: bool
     dispatch: Callable[..., DispatchOutcome]
+    #: REPRO-1: whether this family's schedule names a PORTFOLIO. Modelled exactly like
+    #: ``requires_model_version`` and for the same reason — VAR and EXPOSURE_AGGREGATE compute a
+    #: specific book's number, while the REPRODUCTION sweep is tenant-wide and re-executes families
+    #: that are not all portfolio-scoped at all (covariance is tenant-global). Naming a book on a
+    #: reproduction schedule would stamp a false scope into a governed config row that the ops UI
+    #: renders. Declared here so the DB CHECK, ``_validate_config`` and the cross-tenant FK guard
+    #: all read ONE source; never inferred from whether a caller happened to supply a value, which
+    #: is the CTRL-003 fail-open shape.
+    requires_portfolio_scope: bool = True
 
 
 def _dispatch_var(
@@ -569,6 +580,40 @@ def _dispatch_exposure(
     )
 
 
+def _dispatch_reproduction(
+    session: Session, schedule: Schedule, tick: datetime, *, code_version: str
+) -> DispatchOutcome:
+    """REPRODUCTION (REPRO-1): re-execute every registered family's most recent COMPLETED run over
+    that run's OWN pinned snapshot, and record a verdict per subject.
+
+    Unlike the other two families this one resolves NO upstream run and computes no new governed
+    number — it re-derives numbers that already exist and judges whether they came back the same.
+    It is tenant-wide, so ``schedule.scope_portfolio_id`` is NULL here by declaration.
+
+    ``run_reproduction_sweep`` is resolved from the MODULE GLOBAL at call time, matching the
+    ``run_var`` convention above: the dispatch tests patch ``scheduling.service.*``, and capturing
+    the function object in the registry would make that patch invisible.
+
+    **No alarm is delivered from here.** This runs inside the tick's phases-1-2 transaction, which
+    holds the per-tenant audit advisory lock to COMMIT; a sink call under that lock is the API-2b
+    lock-across-I/O anti-pattern. Delivery is its own later phase.
+    """
+    outcome = run_reproduction_sweep(
+        session,
+        acting_tenant=schedule.tenant_id,
+        actor_id=f"scheduler:{schedule.id}",
+        actor_type="SYSTEM",
+        code_version=code_version,
+        environment_id=schedule.environment_id,
+        scope_portfolio_id=schedule.scope_portfolio_id,
+    )
+    return DispatchOutcome(
+        run_id=outcome.run_id,
+        status=outcome.status,
+        failure_reason=outcome.failure_reason,
+    )
+
+
 #: The dispatch registry — the SINGLE source for which families are schedulable (OD-SCH-2-F). It
 #: lives here, not in ``events``: the registry must import the family binders, and ``events`` is a
 #: leaf vocabulary module that ``irp_worker`` imports for two string constants — the dispatch
@@ -587,6 +632,16 @@ FAMILY_REGISTRY: dict[str, ScheduledFamily] = {
         target_run_type=TARGET_RUN_TYPE_EXPOSURE_AGGREGATE,
         requires_model_version=False,
         dispatch=_dispatch_exposure,
+    ),
+    # REPRO-1: the THIRD family, and the first that is neither portfolio-scoped nor model-bound.
+    # Admitting it required migration 0065 — 0053's two family CHECKs are TOTAL ENUMERATIONS that
+    # PostgreSQL enforces, and 0053's docstring records that as deliberate ("admitting family 3
+    # requires a migration"). Note the whole SQLite unit tier would have gone green without it.
+    RUN_TYPE_REPRODUCTION: ScheduledFamily(
+        target_run_type=RUN_TYPE_REPRODUCTION,
+        requires_model_version=False,
+        dispatch=_dispatch_reproduction,
+        requires_portfolio_scope=False,
     ),
 }
 
@@ -734,6 +789,7 @@ def _validate_config(
     environment_id: str,
     model_version_id: str | None,
     calendar_id: str | None = None,
+    scope_portfolio_id: str | None = None,
 ) -> None:
     """Fail-closed config validation, driven by the registry and mirroring the DB CHECKs in BOTH
     directions (SCH-2, verifier B4).
@@ -772,6 +828,21 @@ def _validate_config(
     if not family.requires_model_version and model_version_id is not None:
         raise ScheduleError(f"{target_run_type} is model-less — model_version_id must be omitted")
 
+    # scope_portfolio_id: required XOR forbidden, per the registry DECLARATION (REPRO-1, mirroring
+    # ck_schedule_portfolio_scope_by_family). SQLite carries no CHECKs, so this mirror is the unit
+    # tier's ONLY enforcement of the rule — without it the entire unit suite would admit what
+    # PostgreSQL rejects at flush with an opaque IntegrityError the worker records as FAILED.
+    if family.requires_portfolio_scope and not scope_portfolio_id:
+        raise ScheduleError(
+            f"scope_portfolio_id is required for the {target_run_type} family — it computes a "
+            "specific book's number"
+        )
+    if not family.requires_portfolio_scope and scope_portfolio_id is not None:
+        raise ScheduleError(
+            f"{target_run_type} is tenant-wide — scope_portfolio_id must be omitted rather than "
+            "naming a book the sweep does not actually scope to"
+        )
+
     # interval_days: required-and-positive for INTERVAL, forbidden otherwise.
     if cadence_kind == CADENCE_INTERVAL:
         if interval_days is None or interval_days <= 0:
@@ -795,7 +866,7 @@ def create_schedule(
     code: str,
     name: str,
     target_run_type: str,
-    scope_portfolio_id: str,
+    scope_portfolio_id: str | None = None,
     environment_id: str,
     anchor_date: dt_date,
     actor: SchedulingActor,
@@ -819,14 +890,21 @@ def create_schedule(
         environment_id=environment_id,
         model_version_id=model_version_id,
         calendar_id=calendar_id,
+        scope_portfolio_id=scope_portfolio_id,
     )
     # P3-5 cross-tenant FK guard (OQ-W11C-2): re-resolve the HARD FKs under the acting tenant
     # BEFORE they are stamped into FK columns — PG FK checks bypass RLS, so the DB alone would
     # durably admit a foreign portfolio/model_version. ``environment_id`` is a free label
     # (``calculation_run.environment_id``; NOT a security boundary) and correctly needs no guard.
-    assert_portfolio_in_tenant(
-        session, scope_portfolio_id, acting_tenant=tenant_id, error=ScheduleError
-    )
+    #
+    # REPRO-1 gated this on the registry DECLARATION, matching the model_version guard immediately
+    # below. The `is not None` leg is TYPE narrowing, not a second gate: `_validate_config` has
+    # already refused a falsy value for a scoping family, so it can never be why the guard is
+    # skipped.
+    if FAMILY_REGISTRY[target_run_type].requires_portfolio_scope and scope_portfolio_id is not None:
+        assert_portfolio_in_tenant(
+            session, scope_portfolio_id, acting_tenant=tenant_id, error=ScheduleError
+        )
     # Gated on the registry DECLARATION, never on the value (SCH-2, verifier B5). `if
     # model_version_id:` would look equivalent and would be a CTRL-003 FAIL-OPEN: a VAR schedule
     # created with None/"" would skip inventory-before-use entirely. `_validate_config` has already

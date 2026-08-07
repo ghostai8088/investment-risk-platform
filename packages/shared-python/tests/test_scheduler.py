@@ -438,9 +438,22 @@ def test_the_schedulable_set_is_derived_from_the_registry() -> None:
     """One source for the family gate (SCH-2): `events` no longer defines a second list, and the
     schedule's family key IS the real `calculation_run.run_type` (OQ-SCH-2-8)."""
     assert SCHEDULABLE_RUN_TYPES == frozenset(FAMILY_REGISTRY)
-    assert SCHEDULABLE_RUN_TYPES == {"VAR", "EXPOSURE_AGGREGATE"}
+    # REPRO-1 (2026-08-07): 2 -> 3. The census pin moving IS the conscious act OQ-W16P-5 asked for
+    # ("a new schedulable run family, the census consciously extended"). Note that this assertion
+    # is NOT what protects the database: `ck_schedule_model_version_by_family` is a PostgreSQL
+    # total enumeration, so admitting a family here without migration 0065 leaves the whole SQLite
+    # unit tier green and fails only in the full-PG battery.
+    assert SCHEDULABLE_RUN_TYPES == {"VAR", "EXPOSURE_AGGREGATE", "REPRODUCTION"}
     assert FAMILY_REGISTRY["VAR"].requires_model_version is True
     assert FAMILY_REGISTRY["EXPOSURE_AGGREGATE"].requires_model_version is False
+    assert FAMILY_REGISTRY["REPRODUCTION"].requires_model_version is False
+    # REPRO-1's second declaration, enforced in both directions by `_validate_config` and by
+    # `ck_schedule_portfolio_scope_by_family`. Pinned per family rather than as a bare "the field
+    # exists": a declaration with no consumer is worse than no declaration (the deleted
+    # `produces_run_on_failure`), and these three values ARE the DDL's arms.
+    assert FAMILY_REGISTRY["VAR"].requires_portfolio_scope is True
+    assert FAMILY_REGISTRY["EXPOSURE_AGGREGATE"].requires_portfolio_scope is True
+    assert FAMILY_REGISTRY["REPRODUCTION"].requires_portfolio_scope is False
     # Wave-13 close fold: `target_run_type` was a declaration with NO consumer — written at both
     # entries, read by nothing, so a registry entry whose key and field disagreed would have been
     # accepted silently. That is the same shape the slice itself removed `produces_run_on_failure`
@@ -466,7 +479,15 @@ def test_the_schedulable_set_is_derived_from_the_registry() -> None:
 #: so a report that declared a single static methodology would cite the WRONG document for six of
 #: them. Admitted BY NAME here, visibly, on CON-1's ratified grounds (OQ-CON-1-19): a new package
 #: earns its exemption by an explicit edit someone reviews, never by widening the fence.
-_RISK_IMPORTERS = frozenset({"models.py", "demo", "snapshot", "limit", "scheduling", "report"})
+#: REPRO-1 (2026-08-07): ``reproduction`` joined BOTH fences, and the grounds are the strongest a
+#: new entry has had — the reproduction engine's entire job is to re-execute other families'
+#: binders, so importing them is not incidental coupling, it is the deliverable. The alternative
+#: (widening the fence, or hiding the imports behind a lazy indirection) would have removed the
+#: review step this whitelist exists to force. Admitted BY NAME, on CON-1's ratified OQ-CON-1-19
+#: posture: a new package earns its exemption by an explicit edit someone reads.
+_RISK_IMPORTERS = frozenset(
+    {"models.py", "demo", "snapshot", "limit", "scheduling", "report", "reproduction"}
+)
 _EXPOSURE_IMPORTERS = frozenset(
     # CON-1 (2026-07-30): `concentration` joined — its binder consumes an EXPLICITLY SELECTED
     # exposure run (RUN_TYPE_EXPOSURE_AGGREGATE + the atom lister ride the import). The visible
@@ -477,7 +498,17 @@ _EXPOSURE_IMPORTERS = frozenset(
     # accepting a caller-supplied portfolio_id it never verified (the review's H1). The import is
     # the cost of that fix and is admitted BY NAME; widening the fence would have been the cheaper
     # and wrong move.
-    {"models.py", "demo", "snapshot", "risk", "scheduling", "concentration", "liquidity"}
+    # REPRO-1 (2026-08-07): `reproduction` joined — see the note above _RISK_IMPORTERS.
+    {
+        "models.py",
+        "demo",
+        "snapshot",
+        "risk",
+        "scheduling",
+        "concentration",
+        "liquidity",
+        "reproduction",
+    }
 )
 
 
