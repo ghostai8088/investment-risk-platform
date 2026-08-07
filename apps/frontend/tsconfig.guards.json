@@ -1,0 +1,28 @@
+{
+  "//": "RPT-2 slice 0 (OQ-W16P-4): the SIX root guard tests, typechecked. A SEPARATE program, deliberately: they are NODE tests (node:fs, process, the programmatic ESLint API) and the app tsconfig types a BROWSER program — admitting @types/node there would make `process` 'exist' in src/ and mask real errors. Two honest programs beat one polluted one. `make fe-check` runs both via the typecheck script.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "api-prefixes.test.ts",
+    "audit-gate.test.ts",
+    "dependency-fence.test.ts",
+    "openapi-contract.test.ts",
+    "router-fence.test.ts",
+    "write-fence.test.ts",
+    "api-prefixes.ts"
+  ]
+}

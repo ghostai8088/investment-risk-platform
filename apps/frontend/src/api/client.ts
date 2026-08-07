@@ -110,7 +110,9 @@ export async function request<T>(
 
   if (!response.ok) {
     // Read the body for `detail` BEFORE throwing: the UI cannot explain a refusal it never saw.
-    let detail = "";
+    // (Declared unassigned — both branches below assign, and eslint 10's `no-useless-assignment`,
+    // new to `recommended`, rightly flagged the old `= ""` initializer as dead. RPT-2 slice 0.)
+    let detail: string;
     try {
       detail = flattenDetail(await response.json());
     } catch {
