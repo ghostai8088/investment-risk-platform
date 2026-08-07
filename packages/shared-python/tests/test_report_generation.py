@@ -394,12 +394,17 @@ def test_a_family_with_ZERO_values_is_REFUSED_with_nothing_persisted(session: Se
     )
     session.add(snap)
     session.flush()
+    # SCOPED to the portfolio the report will name: the RPT-2 attribution fence runs BEFORE the
+    # zero-values check (an unscoped or mismatched run is refused earlier), so an unscoped fixture
+    # would make this test pass on the WRONG refusal — the vacuity class, one layer up.
+    zero_pf = _seed_portfolio(session, tenant=TENANT)
     empty = create_run(
         session,
         tenant_id=TENANT,
         run_type=RUN_TYPE_CONCENTRATION,
         initiated_by="analyst",
         input_snapshot_id=str(snap.id),
+        scope_portfolio_id=zero_pf,
     )
     update_run_status(session, empty, RunStatus.COMPLETED, actor_id="analyst")
     session.flush()
@@ -413,7 +418,7 @@ def test_a_family_with_ZERO_values_is_REFUSED_with_nothing_persisted(session: Se
             session,
             acting_tenant=TENANT,
             actor_id="analyst",
-            portfolio_id=str(uuid.uuid4()),
+            portfolio_id=zero_pf,
             portfolio_code="P-RPT",
             as_of_date=_AS_OF,
             family_runs={"concentration": str(empty.run_id)},
@@ -1010,3 +1015,76 @@ def test_verify_snapshot_REDDENS_when_a_report_s_source_rows_MOVE(session: Sessi
     after = verify_snapshot(session, snapshot_id=str(row.input_snapshot_id), acting_tenant=TENANT)
     assert after.ok is False, "a MOVED source row did not redden the snapshot — the branch is blind"
     assert after.drifted_components, "reported not-ok while naming no drifted component"
+
+
+def test_a_run_for_ANOTHER_PORTFOLIO_is_refused_by_NAME(session: Session) -> None:
+    """The attribution fence's message, asserted where it is raised (the HTTP layer's detail is
+    deliberately opaque, so the specific refusal belongs here).
+
+    Found by the RPT-2 adversarial review, and it is the defect the whole review earned its cost
+    on: the portfolio was tenant-fenced, each run was tenant-and-type fenced, and NOTHING related
+    the two. Same tenant throughout — no cross-tenant control could ever have fired.
+    """
+    named_run, named_pf = _seed_concentration_run(session)
+    other_pf = _seed_portfolio(session, tenant=TENANT)
+    other_run, _ = _seed_concentration_run(session, portfolio_id=other_pf)
+    assert named_pf != other_pf
+
+    with pytest.raises(ReportInputError, match="was computed for portfolio"):
+        generate_report(
+            session,
+            acting_tenant=TENANT,
+            actor_id="analyst",
+            portfolio_id=named_pf,
+            portfolio_code="P-RPT",
+            as_of_date=_AS_OF,
+            family_runs={"concentration": other_run},
+            generated_at=_NOW,
+        )
+    _assert_nothing_persisted(session)
+    assert named_run != other_run
+
+
+def test_an_UNSCOPED_run_is_refused_rather_than_admitted(session: Session) -> None:
+    """ "Unscoped" is not "matches". A run with no `scope_portfolio_id` cannot be shown to belong to
+    the book the report names, and admitting it would leave the fence open to exactly the runs
+    whose provenance is weakest."""
+    from irp_shared.calc.models import RunStatus
+    from irp_shared.calc.service import create_run, update_run_status
+
+    pf = _seed_portfolio(session, tenant=TENANT)
+    snap = DatasetSnapshot(
+        tenant_id=TENANT,
+        label="src",
+        purpose="CONCENTRATION_INPUT",
+        as_of_valid_at=_NOW,
+        as_of_known_at=_NOW,
+        as_of_valuation_date=_AS_OF,
+        binding_predicate_version="v1",
+        component_count=0,
+        manifest_hash="h",
+    )
+    session.add(snap)
+    session.flush()
+    unscoped = create_run(
+        session,
+        tenant_id=TENANT,
+        run_type=RUN_TYPE_CONCENTRATION,
+        initiated_by="analyst",
+        input_snapshot_id=str(snap.id),
+    )
+    update_run_status(session, unscoped, RunStatus.COMPLETED, actor_id="analyst")
+    session.flush()
+
+    with pytest.raises(ReportInputError, match="was computed for portfolio"):
+        generate_report(
+            session,
+            acting_tenant=TENANT,
+            actor_id="analyst",
+            portfolio_id=pf,
+            portfolio_code="P-RPT",
+            as_of_date=_AS_OF,
+            family_runs={"concentration": str(unscoped.run_id)},
+            generated_at=_NOW,
+        )
+    _assert_nothing_persisted(session)

@@ -143,15 +143,23 @@ def _seed_concentration_run(db: Session, tenant: str, portfolio_id: str) -> str:
         )
         db.add(model)
         db.flush()
-    version = ModelVersion(
-        tenant_id=tenant,
-        model_id=str(model.id),
-        version_label="v1",
-        methodology_ref=CONCENTRATION_METHODOLOGY_REF,
-        status="REGISTERED",
-    )
-    db.add(version)
-    db.flush()
+    version = db.execute(
+        select(ModelVersion).where(
+            ModelVersion.tenant_id == tenant,
+            ModelVersion.model_id == str(model.id),
+            ModelVersion.version_label == "v1",
+        )
+    ).scalar_one_or_none()
+    if version is None:
+        version = ModelVersion(
+            tenant_id=tenant,
+            model_id=str(model.id),
+            version_label="v1",
+            methodology_ref=CONCENTRATION_METHODOLOGY_REF,
+            status="REGISTERED",
+        )
+        db.add(version)
+        db.flush()
     snap = DatasetSnapshot(
         tenant_id=tenant,
         label="src",
@@ -431,3 +439,109 @@ def test_a_TAMPERED_stored_hash_makes_the_html_read_a_500_not_a_4xx(ctx) -> None
     resp = client.get(f"/reports/{rid}/html", headers=_hdr(ids["viewer_a"], ids["tenant_a"]))
     assert resp.status_code == 500
     assert "identity" in resp.json()["detail"]
+
+
+# --- the fences the RPT-2 review found MUTATION-BLIND ---------------------------------------------
+
+
+def test_the_LIST_route_is_tenant_fenced(ctx) -> None:  # noqa: ANN001
+    """The review's finding: deleting `tenant_id` from the list query left all 18 tests green.
+
+    Every other test seeded reports for ONE tenant only, so a list that returned every tenant's
+    rows was indistinguishable from a correctly fenced one. The discriminating fixture is two
+    tenants that BOTH have a report — then an unfenced list returns two rows where one is correct.
+    """
+    client, _db, ids = ctx
+    a = client.post(
+        "/reports", json=_generate_payload(ids), headers=_hdr(ids["maker_a"], ids["tenant_a"])
+    )
+    assert a.status_code == 201
+    b_payload = {
+        "portfolio_id": ids["pf_b"],
+        "as_of_date": _AS_OF.isoformat(),
+        "family_runs": {"concentration": ids["run_b"]},
+    }
+    b = client.post("/reports", json=b_payload, headers=_hdr(ids["maker_b"], ids["tenant_b"]))
+    assert b.status_code == 201, b.text
+
+    seen_a = client.get("/reports", headers=_hdr(ids["viewer_a"], ids["tenant_a"])).json()["items"]
+    assert [i["id"] for i in seen_a] == [
+        a.json()["id"]
+    ], "tenant A's list is not fenced — it can see another tenant's governed report"
+    seen_b = client.get("/reports", headers=_hdr(ids["maker_b"], ids["tenant_b"])).json()["items"]
+    assert [i["id"] for i in seen_b] == [b.json()["id"]]
+
+
+def test_a_MALFORMED_id_is_a_422_not_a_500(ctx) -> None:  # noqa: ANN001
+    """The review's BLOCKING finding: the ids reach a PostgreSQL `uuid` column, where a malformed
+    value raises `invalid input syntax for type uuid` — a 500. SQLite stores GUID as CHAR(36),
+    matches nothing, and proved a tidy 404 production never exhibits. Typing the params as
+    `uuid.UUID` makes FastAPI refuse BEFORE any query, so both engines agree."""
+    client, _db, ids = ctx
+    hdr = _hdr(ids["viewer_a"], ids["tenant_a"])
+    assert client.get("/reports/not-a-uuid", headers=hdr).status_code == 422
+    assert client.get("/reports/not-a-uuid/html", headers=hdr).status_code == 422
+    assert (
+        client.get("/reports", params={"portfolio_id": "not-a-uuid"}, headers=hdr).status_code
+        == 422
+    )
+    bad = _generate_payload(ids) | {"portfolio_id": "not-a-uuid"}
+    assert (
+        client.post("/reports", json=bad, headers=_hdr(ids["maker_a"], ids["tenant_a"])).status_code
+        == 422
+    )
+
+
+def test_a_run_computed_for_ANOTHER_PORTFOLIO_cannot_be_attributed_to_this_one(ctx) -> None:  # noqa: ANN001
+    """The review's HIGH finding, and the one that mattered most.
+
+    Both halves were individually correct — the portfolio was tenant-fenced, each run was
+    tenant-and-type fenced — and NOTHING related them. A `report.generate` holder with one
+    legitimate portfolio and one legitimate run could mint an IA append-only, byte-identically
+    reproducible board artifact headed with book A's name carrying book B's numbers, complete with
+    a real hash, a real snapshot and a real audit trail. Same tenant throughout: no cross-tenant
+    fence would ever have fired.
+    """
+    client, db, ids = ctx
+    other_pf = _seed_portfolio(db, ids["tenant_a"])
+    other_run = _seed_concentration_run(db, ids["tenant_a"], other_pf)
+    db.commit()
+
+    payload = {
+        "portfolio_id": ids["pf_a"],  # the book the report will NAME
+        "as_of_date": _AS_OF.isoformat(),
+        "family_runs": {"concentration": other_run},  # numbers from a DIFFERENT book
+    }
+    r = client.post("/reports", json=payload, headers=_hdr(ids["maker_a"], ids["tenant_a"]))
+    assert r.status_code == 422, "a report attributed another book's numbers to this one"
+    # The HTTP detail stays OPAQUE by house pattern (the error map's generic string); the specific
+    # refusal message is asserted at the layer that raises it, in test_report_generation.py.
+    _assert_nothing_persisted(db)
+
+
+def test_the_artifact_carries_its_OWN_boundary_headers(ctx) -> None:  # noqa: ANN001
+    """The review's HIGH finding: the FE's `sandbox=""` iframe protects the APP, and does nothing
+    for a viewer who navigates directly to the artifact URL — which nginx proxies on the SPA's own
+    origin, where the same bytes would run with full script capability and read
+    `sessionStorage["irp.session"]` (the OIDC bearer token).
+
+    So the RESPONSE carries its own restriction. Added with a test because the first version of
+    this fix shipped WITHOUT one and mutation G5 (drop the headers) killed nothing — a security
+    header nobody asserts is a comment.
+    """
+    client, _db, ids = ctx
+    r = client.post(
+        "/reports", json=_generate_payload(ids), headers=_hdr(ids["maker_a"], ids["tenant_a"])
+    )
+    html = client.get(
+        f"/reports/{r.json()['id']}/html", headers=_hdr(ids["viewer_a"], ids["tenant_a"])
+    )
+    assert html.status_code == 200
+    csp = html.headers.get("content-security-policy", "")
+    assert "sandbox" in csp, "no CSP sandbox — a directly-navigated artifact runs in the app origin"
+    assert "default-src 'none'" in csp
+    assert (
+        "script-src" not in csp
+    ), "an explicit script-src would widen what default-src 'none' shut"
+    assert html.headers.get("x-content-type-options") == "nosniff"
+    assert html.headers.get("referrer-policy") == "no-referrer"

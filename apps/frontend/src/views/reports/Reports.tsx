@@ -36,6 +36,7 @@ type ReportListOut = components["schemas"]["ReportListOut"];
 function useReportHtml(
   reportId: string | null,
   session: Session,
+  reloadKey: number,
 ): { html: string | null; error: ApiError | null; loading: boolean } {
   const [state, setState] = useState<{
     html: string | null;
@@ -64,15 +65,20 @@ function useReportHtml(
     return () => {
       stale = true;
     };
-  }, [reportId, session]);
+    // `reloadKey` is in the dependency list because RELOAD MUST RE-FETCH: each read of the
+    // artifact re-renders it from the pinned snapshot server-side, so a re-read is a FRESH
+    // reproduction proof. Without this the button re-rendered cached state and the screen's
+    // central promise was decorative (review finding).
+  }, [reportId, session, reloadKey]);
 
   return state;
 }
 
 export function Reports({ session }: { session: Session }): ReactElement {
   const [selected, setSelected] = useState<string | null>(null);
-  const reports = useApiGet<ReportListOut>("/reports", session, 0);
-  const artifact = useReportHtml(selected, session);
+  const [reload, setReload] = useState(0);
+  const reports = useApiGet<ReportListOut>("/reports", session, reload);
+  const artifact = useReportHtml(selected, session, reload);
 
   const items = reports.data?.items ?? [];
   const current = items.find((r) => r.id === selected) ?? null;
@@ -126,7 +132,15 @@ export function Reports({ session }: { session: Session }): ReactElement {
                       and independent checking is the entire value of showing it. */}
                   <td className="mono">{verbatim(r.content_hash)}</td>
                   <td>
-                    <button type="button" onClick={() => setSelected(r.id)}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelected(r.id);
+                        // Bump on re-click: re-selecting the SAME id must still re-fetch, because
+                        // the re-fetch IS the proof.
+                        if (selected === r.id) setReload((n) => n + 1);
+                      }}
+                    >
                       {selected === r.id ? "Reload" : "Open"}
                     </button>
                   </td>
@@ -148,7 +162,11 @@ export function Reports({ session }: { session: Session }): ReactElement {
           {artifact.loading ? <p className="state">Regenerating from the pinned inputs…</p> : null}
           {artifact.error ? (
             <p className="state error" role="alert">
-              {artifact.error.status === 500
+              {/* Only a REAL identity failure may be announced as one. Any 500 was previously
+                  rendered as an integrity alarm, so a transient server error would have told an
+                  operator the platform had failed its reproducibility claim when it had not
+                  (review finding). The server's detail names this failure explicitly. */}
+              {artifact.error.status === 500 && artifact.error.detail.includes("identity failure")
                 ? "REPORT IDENTITY FAILURE — regeneration diverged from the recorded artifact. " +
                   "This is the platform failing its own reproducibility claim, not a display " +
                   "problem; the divergence detail has been recorded server-side."

@@ -140,6 +140,7 @@ def build_report_snapshot(
     session: Session,
     *,
     acting_tenant: str,
+    portfolio_id: str,
     family_runs: dict[str, str],
 ) -> list[tuple[str, dict[str, Any]]]:
     """Resolve each family's COMPLETED run and read its values — the pinned specs, pre-persist.
@@ -158,6 +159,14 @@ def build_report_snapshot(
       rendering "no data" is indistinguishable from a report section whose family silently returned
       nothing, and a board-facing artifact must not be able to show the second while meaning the
       first.
+    - **a run computed for a DIFFERENT portfolio than the one the report names.** Found by the
+      RPT-2 adversarial review: every run was fenced to the tenant and to its run_type, and the
+      report's portfolio was fenced to the tenant, but NOTHING related the two — so a caller with
+      one legitimate portfolio and one legitimate run could mint an IA append-only, byte-identically
+      reproducible board artifact headed with book A's name carrying book B's risk numbers. Both
+      halves were individually correct; the relation between them did not exist. `portfolio_id` is
+      REQUIRED here (not optional-with-a-default) precisely so no caller can reach the old
+      behaviour by omission.
     """
     if not family_runs:
         raise ReportInputError("a report must bind at least one family run")
@@ -182,6 +191,17 @@ def build_report_snapshot(
             label=f"{family.key} report input",
             error=ReportInputError,
         )
+        # THE ATTRIBUTION FENCE. A run's scope_portfolio_id is the book it was computed for; the
+        # report names a book in its heading. If they differ, the artifact would attribute one
+        # book's governed numbers to another — with a real hash, a real snapshot and a real audit
+        # trail. A run with NO scope is refused too: "unscoped" is not "matches", and admitting it
+        # would leave the fence open to exactly the runs whose provenance is weakest.
+        if str(run.scope_portfolio_id) != str(portfolio_id):
+            raise ReportInputError(
+                f"family {family.key!r} run {run_id} was computed for portfolio "
+                f"{run.scope_portfolio_id!r}, but this report names {portfolio_id!r} — refusing to "
+                "attribute one book's governed numbers to another"
+            )
         values = family.read_values(session, str(run.run_id), tenant)
         if not values:
             raise ReportInputError(
@@ -367,6 +387,7 @@ def generate_report(
         session,
         acting_tenant=tenant,
         actor=SnapshotActor(actor_id=actor_id, actor_type="user"),
+        portfolio_id=str(portfolio_id),
         family_runs=family_runs,
         as_of_valuation_date=as_of_date,
     )

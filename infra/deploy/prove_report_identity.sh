@@ -132,12 +132,23 @@ printf '%s\n' "$neg_out" | grep -q "RESTORE-CYCLE IDENTITY FAILED" \
 echo "   a one-character hash change was REFUSED, naming the mismatch"
 
 log "6. THE HTTP SURFACE ON THE RESTORED STACK (RPT-2, remit I6 / P15)"
+# The backend publishes host port 8000 UNCONDITIONALLY (docker-compose.yml, unlike the parametrised
+# POSTGRES_PUBLISH_PORT). A local dev backend on 8000 makes `up -d backend` fail, and every probe
+# below would then hit the DEV backend and could pass against the wrong stack. Say so up front.
+if lsof -nP -iTCP:8000 -sTCP:LISTEN >/dev/null 2>&1; then
+  holder=$(lsof -nP -iTCP:8000 -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')
+  die "host port 8000 is already listening: ${holder}. The HTTP arm would probe THAT process, not
+    this proof's stack. Stop it and re-run."
+fi
 # The unit tier proves the endpoints against SQLite in-process; THIS arm proves them where none of
 # those assumptions hold — a restored PostgreSQL, the real entitlement join, dev-header identity
 # over the wire, nginx-adjacent port publishing. The proof tenant's principals were seeded by the
 # ARMED harness (see seed_principals' docstring for why that honors deploy.sh's no-invented-users
 # rule rather than superseding it).
-$COMPOSE up -d backend >/dev/null 2>&1
+$COMPOSE up -d backend >/tmp/irp_backend_up.log 2>&1 || {
+  cat /tmp/irp_backend_up.log >&2
+  die 'backend failed to start — output above (previously suppressed by 2>&1 to /dev/null)'
+}
 for i in $(seq 1 30); do
   curl -fsS http://localhost:8000/health >/dev/null 2>&1 && break
   [ "$i" = 30 ] && die "backend did not come up for the HTTP arm"
@@ -186,6 +197,14 @@ NEW_HASH=$(printf '%s' "$gen" | sed -n 's/.*"content_hash":"\([^"]*\)".*/\1/p')
 served2=$(curl -fsS "${hdr_m[@]}" "http://localhost:8000/reports/${NEW_ID}/html" | shasum -a 256 | cut -d' ' -f1)
 [ "$served2" = "$NEW_HASH" ] || die "the HTTP-generated report does not re-serve byte-identically"
 echo "   generate-over-HTTP then re-read: byte-identical (${served2})"
+
+# CROSS-GENERATION IDENTITY, now ASSERTED rather than merely observed. The RPT-2 review caught the
+# commit message claiming this property while the script only compared each report to itself. Two
+# INDEPENDENT generations over the same pinned inputs — one before the backup, one over HTTP after
+# the restore — must produce the same bytes, or "reproducible" means only "self-consistent".
+[ "$served2" = "$CONTENT_HASH" ] || die "two independent generations over the SAME pinned inputs
+    differ: pre-backup ${CONTENT_HASH} vs post-restore-over-HTTP ${served2}"
+echo "   cross-generation identity: two independent generations agree (${served2})"
 
 log "RESTORE-CYCLE IDENTITY PROVEN (I2)
     report ${REPORT_ID}

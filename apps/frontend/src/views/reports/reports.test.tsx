@@ -44,13 +44,13 @@ const REPORT = {
   generated_by: "analyst",
 };
 
-function stubFetch(htmlBody: string, htmlStatus = 200): void {
+function stubFetch(htmlBody: string, htmlStatus = 200, detail = "boom"): void {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/html")) {
-        return new Response(htmlStatus === 200 ? htmlBody : JSON.stringify({ detail: "boom" }), {
+        return new Response(htmlStatus === 200 ? htmlBody : JSON.stringify({ detail }), {
           status: htmlStatus,
           headers: {
             "content-type": htmlStatus === 200 ? "text/html; charset=utf-8" : "application/json",
@@ -139,12 +139,71 @@ describe("the sandbox (remit I4 — the mechanism, not the happy render)", () =>
     expect(document.title).not.toBe("owned");
   });
 
-  it("renders the 500 identity failure as the integrity event it is, not as noise", async () => {
-    stubFetch("", 500);
+  it("renders a REAL identity failure as the integrity event it is", async () => {
+    stubFetch("", 500, "report identity failure — regeneration diverged from the stored hash");
     renderView();
     (await screen.findByText("Open")).click();
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("IDENTITY FAILURE");
     expect(alert.textContent).toContain("reproducibility");
+  });
+
+  it("does NOT cry integrity failure at an ordinary 500 (review finding)", async () => {
+    // Previously ANY 500 was announced as the platform failing its reproducibility claim, so a
+    // transient server error would have told an operator something false about the platform's
+    // core promise — the most expensive kind of wrong alarm this screen could raise.
+    stubFetch("", 500, "database connection lost");
+    renderView();
+    (await screen.findByText("Open")).click();
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toContain("IDENTITY FAILURE");
+    expect(alert.textContent).toBeTruthy();
+  });
+});
+
+describe("apiGetHtml's content-type refusal (review finding: it had never fired)", () => {
+  it("refuses a 200 whose body is NOT text/html", async () => {
+    // The SPA-fallback class, inverted: nginx answering an unproxied API path with 200 + index.html
+    // is the documented phantom-outage failure. For the ARTIFACT endpoint the same shape means the
+    // report is not what was served — and rendering a fallback page inside the report frame would
+    // look like a successful, empty report.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/html")) {
+          return new Response("<!doctype html><title>SPA</title>", {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ items: [REPORT] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+    renderView();
+    (await screen.findByText("Open")).click();
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBeTruthy();
+    expect(screen.queryByTitle("Governed report (sandboxed)")).toBeNull();
+  });
+});
+
+describe("Reload re-fetches (review finding: it was a no-op)", () => {
+  it("re-requests the artifact, because the re-read IS the reproduction proof", async () => {
+    stubFetch(HOSTILE_HTML);
+    renderView();
+    (await screen.findByText("Open")).click();
+    await screen.findByTitle("Governed report (sandboxed)");
+    const htmlCalls = () =>
+      (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter((c) =>
+        String(c[0]).endsWith("/html"),
+      ).length;
+    expect(htmlCalls()).toBe(1);
+    (await screen.findByText("Reload")).click();
+    await screen.findByTitle("Governed report (sandboxed)");
+    expect(htmlCalls()).toBe(2);
   });
 });

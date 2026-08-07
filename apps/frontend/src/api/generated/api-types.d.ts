@@ -9191,7 +9191,10 @@ export interface components {
             family_runs: {
                 [key: string]: string;
             };
-            /** Portfolio Id */
+            /**
+             * Portfolio Id
+             * Format: uuid
+             */
             portfolio_id: string;
         };
         /** ReportListOut */

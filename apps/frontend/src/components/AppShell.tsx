@@ -73,7 +73,7 @@ export function AppShell({
           </NavLink>
           {/* RPT-2: governed reports, regenerated (and re-proven) on every read. */}
           <NavLink
-            to="/reports"
+            to="/ops/reports"
             className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
           >
             Reports

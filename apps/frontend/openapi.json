@@ -12228,12 +12228,14 @@
           },
           "family_runs": {
             "additionalProperties": {
+              "format": "uuid",
               "type": "string"
             },
             "title": "Family Runs",
             "type": "object"
           },
           "portfolio_id": {
+            "format": "uuid",
             "title": "Portfolio Id",
             "type": "string"
           }
@@ -36675,6 +36677,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "format": "uuid",
                   "type": "string"
                 },
                 {
@@ -36882,6 +36885,7 @@
             "name": "report_id",
             "required": true,
             "schema": {
+              "format": "uuid",
               "title": "Report Id",
               "type": "string"
             }
@@ -36973,6 +36977,7 @@
             "name": "report_id",
             "required": true,
             "schema": {
+              "format": "uuid",
               "title": "Report Id",
               "type": "string"
             }

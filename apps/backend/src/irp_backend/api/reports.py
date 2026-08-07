@@ -29,6 +29,7 @@ mapped refusals. There is no PUT/PATCH/DELETE — ENT-072 is append-only.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -78,11 +79,16 @@ class ReportGenerateIn(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    portfolio_id: str
+    #: Typed ``uuid.UUID``, not ``str`` (RPT-2 review, BLOCKING): these values reach a
+    #: PostgreSQL ``uuid`` column, where a malformed string raises `invalid input syntax for type
+    #: uuid` and surfaces as a **500** — while the SQLite unit tier stores GUID as CHAR(36),
+    #: matches nothing, and proves a tidy 404 that production never exhibits. Typing them here
+    #: makes FastAPI refuse a malformed id with a 422 before any query runs, on BOTH engines.
+    portfolio_id: uuid.UUID
     as_of_date: date
     #: family key -> COMPLETED run id. Any non-empty subset of the registered families is valid BY
     #: DESIGN (a var-only report is a report); the empty dict is refused by the service.
-    family_runs: dict[str, str]
+    family_runs: dict[str, uuid.UUID]
 
 
 class ReportOut(BaseModel):
@@ -150,7 +156,7 @@ def generate(
     # governed artifact for a book they can see but did not name correctly.
     portfolio = db.execute(
         select(Portfolio).where(
-            Portfolio.id == body.portfolio_id, Portfolio.tenant_id == principal.tenant_id
+            Portfolio.id == str(body.portfolio_id), Portfolio.tenant_id == principal.tenant_id
         )
     ).scalar_one_or_none()
     if portfolio is None:
@@ -164,7 +170,7 @@ def generate(
             portfolio_id=str(portfolio.id),
             portfolio_code=portfolio.code,
             as_of_date=body.as_of_date,
-            family_runs=body.family_runs,
+            family_runs={k: str(v) for k, v in body.family_runs.items()},
             # Remit I2 (ratified OQ-W16P-2): SERVER-stamped. The wire has no way to assert this.
             generated_at=datetime.now(UTC),
         )
@@ -177,7 +183,7 @@ def generate(
 
 @router.get("", response_model=ReportListOut)
 def list_reports(
-    portfolio_id: str | None = Query(default=None),
+    portfolio_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     principal: Principal = Depends(_require_view),
@@ -185,7 +191,7 @@ def list_reports(
 ) -> ReportListOut:
     stmt = select(ReportGeneration).where(ReportGeneration.tenant_id == principal.tenant_id)
     if portfolio_id is not None:
-        stmt = stmt.where(ReportGeneration.portfolio_id == portfolio_id)
+        stmt = stmt.where(ReportGeneration.portfolio_id == str(portfolio_id))
     # as_of_date leads the ordering because it leads the shipped index (tenant, report_code,
     # as_of_date); id breaks ties deterministically. generated_at is NOT the sort key — it has no
     # index and, being caller-asserted on the batch path, no total-order guarantee.
@@ -200,16 +206,16 @@ def list_reports(
 
 @router.get("/{report_id}", response_model=ReportOut)
 def get_report(
-    report_id: str,
+    report_id: uuid.UUID,
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> ReportOut:
-    return _out(_visible_report(db, report_id, principal.tenant_id))
+    return _out(_visible_report(db, str(report_id), principal.tenant_id))
 
 
 @router.get("/{report_id}/html", response_class=HTMLResponse)
 def get_report_html(
-    report_id: str,
+    report_id: uuid.UUID,
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> HTMLResponse:
@@ -219,9 +225,11 @@ def get_report_html(
     the request fails. A 404 covers missing/foreign ids; a 500 covers the one failure that is
     genuinely the platform's — regeneration diverging from the recorded identity.
     """
-    _visible_report(db, report_id, principal.tenant_id)  # 404 before any work
+    _visible_report(db, str(report_id), principal.tenant_id)  # 404 before any work
     try:
-        rendered = regenerate_report(db, report_id=report_id, acting_tenant=principal.tenant_id)
+        rendered = regenerate_report(
+            db, report_id=str(report_id), acting_tenant=principal.tenant_id
+        )
     except ReportIdentityError as exc:
         # The platform failing its own BR-9 claim. NEVER a 4xx: the client did nothing wrong, and
         # a client-shaped status would bury an integrity failure in request-error noise.
@@ -233,4 +241,25 @@ def get_report_html(
         # The row passed the visibility probe above but the snapshot read refused (a race, or a
         # partially restored database). Same opaque 404 as the probe — not a distinct signal.
         raise HTTPException(status_code=404, detail="report not found") from exc
-    return HTMLResponse(content=rendered.body)
+    # THE ARTIFACT'S OWN BOUNDARY (RPT-2 review, HIGH). The FE renders this in a
+    # `sandbox=""` iframe — but nginx proxies `/reports/...` on the SPA's OWN ORIGIN, so a viewer
+    # who navigates, bookmarks or is redirected to this URL renders the same bytes with full
+    # script capability and read access to `sessionStorage["irp.session"]` (which holds the OIDC
+    # bearer token). The iframe sandbox protects the app; it does nothing for direct navigation.
+    # These headers make the RESPONSE carry its own restriction, so the artifact is inert wherever
+    # it is opened — the property the view's docstring claims, now true of the bytes themselves.
+    #
+    # `sandbox` in CSP puts even a directly-navigated document in a null origin; `default-src
+    # 'none'` with `style-src 'unsafe-inline'` admits exactly what a print-clean report needs
+    # (its inline <style>) and nothing else — no scripts, no images, no fetch, no frames.
+    # `nosniff` stops a content-type disagreement from becoming a rendering decision.
+    return HTMLResponse(
+        content=rendered.body,
+        headers={
+            "Content-Security-Policy": (
+                "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+            ),
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+        },
+    )

@@ -721,7 +721,7 @@ def test_migration_head_is_sensitivity() -> None:
     cfg = Config(str(_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(_ROOT / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0063_report_generation"  # DATA-1
+    assert script.get_current_head() == "0064_entitlement_sync"  # DATA-1
     assert script.get_revision("0022_sensitivity").down_revision == "0021_benchmark"
 
 
