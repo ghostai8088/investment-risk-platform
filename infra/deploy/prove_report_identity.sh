@@ -63,7 +63,10 @@ fi
 
 log "0. a migrated stack"
 $COMPOSE down -v --remove-orphans >/dev/null 2>&1 || true
-$COMPOSE build migrate >/dev/null
+# backend is built HERE, not lazily at `up`: compose reuses an existing project image, and a
+# stale backend (the exact psycopg-less image this proof's first run caught) would smoke a build
+# that no longer exists.
+$COMPOSE build migrate backend >/dev/null
 $COMPOSE up -d db >/dev/null
 $COMPOSE up --exit-code-from migrate migrate >/dev/null
 echo "   alembic_version=$(psql_q 'SELECT version_num FROM alembic_version')"
@@ -76,6 +79,14 @@ seed_out=$($COMPOSE run --rm -e IRP_ALLOW_PROOF_SEED=1 --entrypoint python migra
 echo "$seed_out"
 REPORT_ID=$(printf '%s\n' "$seed_out" | sed -n 's/^REPORT_ID=//p' | tr -d '[:space:]')
 CONTENT_HASH=$(printf '%s\n' "$seed_out" | sed -n 's/^CONTENT_HASH=//p' | tr -d '[:space:]')
+MAKER_ID=$(printf '%s\n' "$seed_out" | sed -n 's/^MAKER_ID=//p' | tr -d '[:space:]')
+VIEWER_ID=$(printf '%s\n' "$seed_out" | sed -n 's/^VIEWER_ID=//p' | tr -d '[:space:]')
+NOBODY_ID=$(printf '%s\n' "$seed_out" | sed -n 's/^NOBODY_ID=//p' | tr -d '[:space:]')
+RUN_ID=$(printf '%s\n' "$seed_out" | sed -n 's/^RUN_ID=//p' | tr -d '[:space:]')
+PORTFOLIO_ID=$(printf '%s\n' "$seed_out" | sed -n 's/^PORTFOLIO_ID=//p' | tr -d '[:space:]')
+for v in MAKER_ID VIEWER_ID NOBODY_ID RUN_ID PORTFOLIO_ID; do
+  [ -n "$(eval "printf '%s' \"\$$v\"")" ] || die "seed did not emit $v"
+done
 [ -n "$REPORT_ID" ] || die "no REPORT_ID captured"
 [ ${#CONTENT_HASH} -eq 64 ] || die "CONTENT_HASH is not a sha256 (${#CONTENT_HASH} chars)"
 
@@ -119,6 +130,62 @@ fi
 printf '%s\n' "$neg_out" | grep -q "RESTORE-CYCLE IDENTITY FAILED" \
   || die "the refusal fired for the wrong reason: ${neg_out}"
 echo "   a one-character hash change was REFUSED, naming the mismatch"
+
+log "6. THE HTTP SURFACE ON THE RESTORED STACK (RPT-2, remit I6 / P15)"
+# The unit tier proves the endpoints against SQLite in-process; THIS arm proves them where none of
+# those assumptions hold — a restored PostgreSQL, the real entitlement join, dev-header identity
+# over the wire, nginx-adjacent port publishing. The proof tenant's principals were seeded by the
+# ARMED harness (see seed_principals' docstring for why that honors deploy.sh's no-invented-users
+# rule rather than superseding it).
+$COMPOSE up -d backend >/dev/null 2>&1
+for i in $(seq 1 30); do
+  curl -fsS http://localhost:8000/health >/dev/null 2>&1 && break
+  [ "$i" = 30 ] && die "backend did not come up for the HTTP arm"
+  sleep 2
+done
+PT="9f000000-0000-4000-8000-000000000001"
+hdr_v=(-H "X-User-Id: ${VIEWER_ID}" -H "X-Tenant-Id: ${PT}")
+hdr_m=(-H "X-User-Id: ${MAKER_ID}" -H "X-Tenant-Id: ${PT}")
+hdr_n=(-H "X-User-Id: ${NOBODY_ID}" -H "X-Tenant-Id: ${PT}")
+
+code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8000/reports")
+[ "$code" = "401" ] || die "unauthenticated list was $code, expected 401"
+echo "   401 without a principal"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' "${hdr_n[@]}" "http://localhost:8000/reports")
+[ "$code" = "403" ] || die "unentitled list was $code, expected 403"
+echo "   403 for a principal with no report code"
+
+curl -fsS "${hdr_v[@]}" "http://localhost:8000/reports" | grep -q "$REPORT_ID" \
+  || die "the viewer's list does not contain the restored report"
+echo "   the restored report is listed for the viewer"
+
+served=$(curl -fsS "${hdr_v[@]}" "http://localhost:8000/reports/${REPORT_ID}/html" | shasum -a 256 | cut -d' ' -f1)
+[ "$served" = "$CONTENT_HASH" ] \
+  || die "HTTP-served bytes hash ${served} != recorded ${CONTENT_HASH} — I1 fails OVER THE WIRE"
+echo "   GET /html bytes hash to the recorded identity ACROSS the restore: ${served}"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${hdr_v[@]}" -H 'Content-Type: application/json' \
+  -d "{\"portfolio_id\":\"${PORTFOLIO_ID}\",\"as_of_date\":\"2026-06-30\",\"family_runs\":{\"concentration\":\"${RUN_ID}\"}}" \
+  "http://localhost:8000/reports")
+[ "$code" = "403" ] || die "the VIEW code reached the generate verb over HTTP ($code) — the split failed live"
+echo "   403: view cannot generate, on the deployed stack"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${hdr_m[@]}" -H 'Content-Type: application/json' \
+  -d "{\"portfolio_id\":\"${PORTFOLIO_ID}\",\"as_of_date\":\"2026-06-30\",\"family_runs\":{\"concentration\":\"${RUN_ID}\"},\"generated_at\":\"1999-01-01T00:00:00Z\"}" \
+  "http://localhost:8000/reports")
+[ "$code" = "422" ] || die "a caller-supplied generated_at was $code, expected a 422 refusal (remit I2)"
+echo "   422: the wire cannot assert evidence time"
+
+gen=$(curl -fsS -X POST "${hdr_m[@]}" -H 'Content-Type: application/json' \
+  -d "{\"portfolio_id\":\"${PORTFOLIO_ID}\",\"as_of_date\":\"2026-06-30\",\"family_runs\":{\"concentration\":\"${RUN_ID}\"}}" \
+  "http://localhost:8000/reports") || die "the maker's generate failed over HTTP"
+NEW_ID=$(printf '%s' "$gen" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+NEW_HASH=$(printf '%s' "$gen" | sed -n 's/.*"content_hash":"\([^"]*\)".*/\1/p')
+[ ${#NEW_HASH} -eq 64 ] || die "generate returned no sha256"
+served2=$(curl -fsS "${hdr_m[@]}" "http://localhost:8000/reports/${NEW_ID}/html" | shasum -a 256 | cut -d' ' -f1)
+[ "$served2" = "$NEW_HASH" ] || die "the HTTP-generated report does not re-serve byte-identically"
+echo "   generate-over-HTTP then re-read: byte-identical (${served2})"
 
 log "RESTORE-CYCLE IDENTITY PROVEN (I2)
     report ${REPORT_ID}

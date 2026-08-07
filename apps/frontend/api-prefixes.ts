@@ -30,4 +30,6 @@ export const API_PREFIXES = [
   // OPS-1: the operations UI reads/writes the limit + breach surfaces (API-2 / API-2b / NOTIF-1).
   "/limits",
   "/breaches",
+  // RPT-2: the report read/generate surface (ENT-072 reachable).
+  "/reports",
 ] as const;

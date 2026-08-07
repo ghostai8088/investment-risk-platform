@@ -172,7 +172,62 @@ def seed_and_generate(session: Session) -> tuple[str, str]:
         family_runs={"concentration": str(run.run_id)},
         generated_at=_KNOWN_AT,
     )
+    print(f"RUN_ID={run.run_id}")
+    print(f"PORTFOLIO_ID={portfolio_id}")
     return str(row.id), rendered.content_hash
+
+
+def seed_principals(session: Session) -> dict[str, str]:
+    """Three principals for the HTTP arm (RPT-2, remit I6): a maker, a viewer, and a stranger.
+
+    **This honors — not supersedes — deploy.sh's "no invented users" precedent.** That rule
+    governs DEPLOYMENT VERIFICATION: a deploy probe that manufactures an entitled user is
+    manufacturing its own evidence. This module is the PROOF HARNESS, already gated behind
+    ``IRP_ALLOW_PROOF_SEED`` and already writing governed rows; a proof of the entitlement fence
+    needs principals on both sides of it, and seeding them here is the harness doing its stated
+    job. The deploy script's verify step remains principal-free.
+
+    The permission rows themselves are NOT created here — they must already exist from the 0002
+    entitlement seed (which live-imports the catalog on ``alembic upgrade head``). Asserting that
+    is itself part of the proof: a fresh deploy whose catalog is missing ``report.*`` means the
+    mint never reached the database.
+    """
+    from sqlalchemy import select as _select
+
+    from irp_shared.entitlement.models import (
+        AppUser,
+        Permission,
+        Role,
+        RolePermission,
+        UserRole,
+    )
+
+    def _code(code: str) -> Permission:
+        perm = session.execute(
+            _select(Permission).where(Permission.code == code)
+        ).scalar_one_or_none()
+        if perm is None:
+            raise RuntimeError(
+                f"permission {code!r} is ABSENT from the deployed catalog — the 0002 entitlement "
+                "seed did not carry the RPT-2 mint; a fresh `alembic upgrade head` should have"
+            )
+        return perm
+
+    view = _code("report.view")
+    generate = _code("report.generate")
+
+    out: dict[str, str] = {}
+    for name, perms in (("maker", [generate, view]), ("viewer", [view]), ("nobody", [])):
+        user = AppUser(tenant_id=PROOF_TENANT, display_name=f"proof-{name}")
+        role = Role(tenant_id=PROOF_TENANT, code=f"proof-{name}", name=name)
+        session.add_all([user, role])
+        session.flush()
+        for perm in perms:
+            session.add(RolePermission(role_id=role.id, permission_id=perm.id))
+        session.add(UserRole(tenant_id=PROOF_TENANT, user_id=user.id, role_id=role.id))
+        session.flush()
+        out[name] = str(user.id)
+    return out
 
 
 def verify_after_restore(session: Session, *, report_id: str, expected_hash: str) -> str:
@@ -210,9 +265,13 @@ def main(argv: list[str]) -> int:
                 )
             set_tenant_context(session, PROOF_TENANT)
             report_id, content_hash = seed_and_generate(session)
+            principals = seed_principals(session)
             session.commit()
             print(f"REPORT_ID={report_id}")
             print(f"CONTENT_HASH={content_hash}")
+            print(f"MAKER_ID={principals['maker']}")
+            print(f"VIEWER_ID={principals['viewer']}")
+            print(f"NOBODY_ID={principals['nobody']}")
             return 0
         if command == "verify":
             if len(argv) != 4:
