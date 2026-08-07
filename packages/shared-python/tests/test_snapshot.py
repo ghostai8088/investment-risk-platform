@@ -899,7 +899,13 @@ def test_nothing_imports_snapshot() -> None:
     pinned components + build their input snapshot (the AD-014 single-bind) — and ``demo`` (MG-1:
     the campaign runner orchestrates the real consume-existing paths from ABOVE every domain, like
     the apps layer; nothing imports it). ``liquidity`` joined at LQ-1 on identical
-    grounds. ``concentration`` joined at CON-1 (OQ-CON-1-19: the NEW
+    grounds. ``report`` joined at RPT-1 (ENT-072): its binder builds the REPORT_INPUT snapshot and
+    RENDERS from the pinned components — reading pinned content rather than the live families is
+    precisely what makes the report reproducible, so the dependency is the design, not a
+    shortcut. ``deploy`` joined at RPT-1 too, on ``demo``'s grounds — it orchestrates from above
+    every domain and nothing imports it — because I2's restore-cycle proof must seed a real
+    governed run on a DEPLOYED stack, a boundary the unit tier cannot reach. ``concentration``
+    joined at CON-1 (OQ-CON-1-19: the NEW
     package amends this allow-list as THE VISIBLE ACT that keeps the fence honest — the ratified
     reason concentration was not buried in ``risk/`` where it would inherit the exemption
     silently; its binder builds the CONCENTRATION_INPUT snapshot + reads its pinned components,
@@ -913,6 +919,20 @@ def test_nothing_imports_snapshot() -> None:
             or "perf" in path.parts
             or "pacing" in path.parts
             or "demo" in path.parts
+            # RPT-1 (ENT-072): the report binder builds the REPORT_INPUT snapshot and renders from
+            # its pinned components — the same AD-014 single-bind class as perf/pacing/liquidity/
+            # concentration. Amended HERE, visibly, on CON-1's ratified grounds (OQ-CON-1-19): a new
+            # package earns its exemption by an explicit edit someone reviews, never by being
+            # placed inside a package that already has one.
+            or "report" in path.parts
+            # RPT-1 (ENT-072), I2's restore-cycle arm: `deploy` joins on the SAME grounds as `demo`
+            # — it is the orchestration layer ABOVE every domain (nothing imports it), and
+            # `report_identity_proof` has to seed a real governed run on a DEPLOYED stack in order
+            # to prove a report regenerates byte-identically after a backup/restore. That proof
+            # cannot live at the unit tier by construction: its whole subject is the boundary the
+            # unit tier never crosses. Admitted by name rather than by placing the module inside a
+            # package that already holds an exemption, which is the move OQ-CON-1-19 forbids.
+            or "deploy" in path.parts
             or "concentration" in path.parts
             # LQ-1: the liquidity binder joins on IDENTICAL grounds to concentration — it builds
             # the LIQUIDITY_INPUT snapshot and reads its pinned components (the AD-014 single
@@ -1075,6 +1095,8 @@ def test_snapshot_component_kinds_is_an_exact_census() -> None:
         "CLASSIFICATION_SCHEME",
         # CAL-1b's holiday pin (OQ-CAL-1-6-A, AD-014).
         "HOLIDAY_CALENDAR",
+        # RPT-1 (ENT-072): one governed number as RENDERED, with full provenance.
+        "GOVERNED_VALUE",
     }
     assert len(SNAPSHOT_COMPONENT_KINDS) == len(set(SNAPSHOT_COMPONENT_KINDS)), "duplicate kind"
 

@@ -36,7 +36,10 @@ CONCENTRATION_MODEL_CODE = "concentration.dimensional"
 CONCENTRATION_MODEL_NAME = "Dimensional concentration (share / CR-N / HHI)"
 CONCENTRATION_MODEL_TYPE = "CONCENTRATION"
 CONCENTRATION_VERSION_LABEL = "v1"
-CONCENTRATION_METHODOLOGY_REF = "docs: CON-1 decision record Parts 1-2 (OQ-CON-1-1..28)"
+#: RPT-1 (2026-08-05): was the PROSE string "docs: CON-1 decision record Parts 1-2
+#: (OQ-CON-1-1..28)" — a pointer no reader can follow and no report can render, against the
+#: ratified OD-P3-0-C standard. Now a resolving path, enforced by test_methodology_refs.py.
+CONCENTRATION_METHODOLOGY_REF = "05_analytics_methodologies/concentration_dimensional_v1.md"
 
 #: The assumption prefixes (the pacing convention: prefix + canonical value, one row each).
 DENOMINATOR_BASIS_PREFIX = "concentration.denominator_basis="

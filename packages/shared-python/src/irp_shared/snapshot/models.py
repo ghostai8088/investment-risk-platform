@@ -124,6 +124,15 @@ PURPOSE_CONCENTRATION_INPUT = "CONCENTRATION_INPUT"
 #: is reused unchanged (no new kind is minted), but the PURPOSE, the predicate and the builder are
 #: the artifacts that actually bind, and they are LQ-1's own.
 PURPOSE_LIQUIDITY_INPUT = "LIQUIDITY_INPUT"
+#: RPT-1 (ratified OQ-RPT-1-1, ENT-072): pins the family RESULTS a report renders, one component per
+#: result row across the §2.1 spine (total VaR + ES, concentration, liquidity, rolling risk/Sharpe).
+#:
+#: This is the first purpose whose components are OUTPUTS of other governed runs rather than inputs
+#: to a calculation — and that is exactly what makes the report reproducible. Pinning the results
+#: (not re-reading the families at render time) is what gives RPT-1 its I1 invariant, and because
+#: snapshot components are immutable, a later correction upstream structurally cannot reach a
+#: historical report (I3). The report does not recompute anything; it renders what was pinned.
+PURPOSE_REPORT_INPUT = "REPORT_INPUT"
 PURPOSE_ADHOC = "ADHOC"
 PURPOSE_TEST = "TEST"
 
@@ -156,6 +165,7 @@ SNAPSHOT_PURPOSES = (
     PURPOSE_ROLLING_RISK_INPUT,
     PURPOSE_SHARPE_INPUT,
     PURPOSE_CONCENTRATION_INPUT,
+    PURPOSE_REPORT_INPUT,
     # Added by SR-1 (see the note above) — their builders always passed them; only the tuple lagged.
     PURPOSE_PROXY_WEIGHT_INPUT,
     PURPOSE_RESIDUAL_SHRINKAGE_INPUT,
@@ -285,6 +295,16 @@ COMPONENT_KIND_CLASSIFICATION_SCHEME = "CLASSIFICATION_SCHEME"
 #: reading reproduces bit-exactly from its own bindings and a later past-dated holiday ADD
 #: honestly reddens verify_snapshot instead of silently changing a re-run.
 COMPONENT_KIND_HOLIDAY_CALENDAR = "HOLIDAY_CALENDAR"
+#: RPT-1 (ENT-072): ONE governed number as it was RENDERED, with its full provenance — the value
+#: verbatim, plus run / snapshot / model-version / methodology / code version.
+#:
+#: **Why the VALUE is pinned and not just the run id.** Pinning "which runs this report bound" and
+#: re-reading them at render time would look sufficient — those result tables are IA append-only, so
+#: a re-read is byte-stable. It was refused anyway: it makes the report's reproducibility depend on
+#: a property of OTHER tables rather than on the report's own pinned content, and the first family
+#: that ever gains a correction path would silently break every historical report. Pinning the
+#: rendered value makes I1 (never re-derived at render time) structural instead of inherited.
+COMPONENT_KIND_GOVERNED_VALUE = "GOVERNED_VALUE"
 SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
@@ -313,6 +333,7 @@ SNAPSHOT_COMPONENT_KINDS = (
     COMPONENT_KIND_CLASSIFICATION,
     COMPONENT_KIND_CLASSIFICATION_SCHEME,
     COMPONENT_KIND_HOLIDAY_CALENDAR,
+    COMPONENT_KIND_GOVERNED_VALUE,
 )
 
 

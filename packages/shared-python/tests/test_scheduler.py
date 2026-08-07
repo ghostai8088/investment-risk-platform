@@ -460,7 +460,13 @@ def test_the_schedulable_set_is_derived_from_the_registry() -> None:
 #: verifier refuted it, and an AST scan of the tree confirmed the true set below. Two entries are
 #: structural and will never shrink: ``models.py`` is the metadata aggregator (it must import every
 #: package), and ``demo`` is the orchestration layer that drives all of them.
-_RISK_IMPORTERS = frozenset({"models.py", "demo", "snapshot", "limit", "scheduling"})
+#: RPT-1 (2026-08-05): ``report`` joined. The v1 report renders the VaR/ES family, and the registry
+#: entry needs both the ``var_result`` model and the seven registered VaR model codes with their
+#: methodology references — because SEVEN models write into that one table under a single run_type,
+#: so a report that declared a single static methodology would cite the WRONG document for six of
+#: them. Admitted BY NAME here, visibly, on CON-1's ratified grounds (OQ-CON-1-19): a new package
+#: earns its exemption by an explicit edit someone reviews, never by widening the fence.
+_RISK_IMPORTERS = frozenset({"models.py", "demo", "snapshot", "limit", "scheduling", "report"})
 _EXPOSURE_IMPORTERS = frozenset(
     # CON-1 (2026-07-30): `concentration` joined — its binder consumes an EXPLICITLY SELECTED
     # exposure run (RUN_TYPE_EXPOSURE_AGGREGATE + the atom lister ride the import). The visible

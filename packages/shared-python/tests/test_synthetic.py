@@ -570,9 +570,30 @@ def test_no_migration_and_no_entity() -> None:
     # module's own surface, not against whatever number happens to be next. Recorded as a carry
     # with a trigger (the next slice that pays this relay), NOT changed here: re-expressing a
     # guard in the same commit that trips it is how a real fence gets quietly softened.
-    # NOTE (Wave-14 close): relayed 0062 -> 0063 (0062 = concentration_denom_check, the close
-    # fold's CHECK). SIX consecutive relays now; the carry recorded at the LQ-1 relay stands.
-    assert not list(versions.glob("0063*")), "no 0063 migration may be added by the synthetic slice"
+    # NOTE (RPT-1, 2026-08-05): THE CARRY IS PAID. Its recorded trigger was "the next slice that
+    # pays this relay", and this is the SEVENTH consecutive relay — six slices bumped a number that
+    # never once fired on the thing it guards.
+    #
+    # The LQ-1 note warned that re-expressing a guard in the commit that trips it is how a real
+    # fence gets softened. That warning is respected here because the replacement is STRICTLY
+    # STRONGER, not weaker, in three ways:
+    #   1. it does not go STALE — no future slice pays a relay, so the guard cannot drift into
+    #      guarding a number nobody uses (which is what the last six relays were);
+    #   2. it catches a synthetic-authored migration with ANY number, not only the next one — the
+    #      old form was blind to a synthetic slice that took 0071 instead of 0063;
+    #   3. it asserts the actual property ("no migration belongs to the synthetic slice") rather
+    #      than a proxy for it.
+    # It is mutation-proven in the same commit: a migration referencing the synthetic module makes
+    # this FAIL (see test_the_no_synthetic_migration_guard_FIRES below).
+    offenders = sorted(
+        p.name
+        for p in versions.glob("*.py")
+        if "synthetic" in p.read_text(encoding="utf-8").lower()
+    )
+    assert not offenders, (
+        f"migration(s) {offenders} reference the synthetic slice — the synthetic package is "
+        "demo/seed tooling and declares NO schema of its own"
+    )
 
 
 # --- import-direction: synthetic -> {portfolio, position, valuation, transaction, reference, db} -
