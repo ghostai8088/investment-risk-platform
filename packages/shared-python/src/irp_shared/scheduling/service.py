@@ -1029,11 +1029,23 @@ def resume_schedule(session: Session, schedule: Schedule, *, actor: SchedulingAc
 
 
 def _schedule_metadata(schedule: Schedule) -> dict[str, Any]:
-    """DC-2 metadata payload for a ``SCHEDULE.*`` event — identifying/vocab fields only."""
+    """DC-2 metadata payload for a ``SCHEDULE.*`` event — identifying/vocab fields only.
+
+    ``scope_portfolio_id`` is emitted as JSON null when the column is NULL, not as the string
+    ``"None"``. The unconditional ``str()`` was a REPRO-1 defect found at the adversarial review:
+    once the column became legitimately nullable for the tenant-wide REPRODUCTION family, every
+    such schedule's ``SCHEDULE.CREATE`` event recorded the literal ``"None"`` as its portfolio
+    scope — in an IMMUTABLE, HASH-CHAINED ledger, so the false value could never be corrected, only
+    superseded. This is the same None-stringification trap the sibling column carried at SCH-2,
+    surfacing a second time one layer up: the first instance corrupted a bind parameter, this one
+    corrupted the audit record.
+    """
     return {
         "code": schedule.code,
         "target_run_type": schedule.target_run_type,
-        "scope_portfolio_id": str(schedule.scope_portfolio_id),
+        "scope_portfolio_id": (
+            str(schedule.scope_portfolio_id) if schedule.scope_portfolio_id is not None else None
+        ),
         "cadence_kind": schedule.cadence_kind,
         "interval_days": schedule.interval_days,
         "status": schedule.status,

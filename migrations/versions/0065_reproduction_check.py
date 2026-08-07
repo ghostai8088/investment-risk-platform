@@ -187,12 +187,38 @@ def downgrade() -> None:
     op.drop_table("reproduction_check")
 
     op.drop_constraint(_CHECK_PORTFOLIO_SCOPE, "schedule", type_="check")
-    # The children first (FK NO ACTION), then the heads the restored NOT NULL cannot represent.
+    # The children first (FK NO ACTION), then the heads the restored NOT NULL cannot represent —
+    # SANDWICHED exactly as 0059 does for the identical two-table cascade.
+    #
+    # **The first draft omitted this sandwich and the downgrade was unrunnable on any database
+    # where a reproduction schedule had ever fired.** Both legs were reproduced by execution at the
+    # adversarial review, and they are not alternatives — every role fails, for a different reason:
+    #
+    #   * a BYPASSRLS/superuser role dies at the CHILD delete, because PostgreSQL fires row
+    #     triggers for superusers too and 0049's `scheduled_run_append_only` raises
+    #     "append-only table is immutable (AUD-01)";
+    #   * a NOSUPERUSER owner-by-membership role (the production-shaped one) gets PAST the child
+    #     delete and dies at the re-tighten, because `schedule` carries FORCE RLS and
+    #     `app.current_tenant` is unset during a migration — so `USING (tenant_id::text =
+    #     current_setting(...))` evaluates NULL, the head DELETE silently matches ZERO rows, and
+    #     `SET NOT NULL` then hits the row it was supposed to have removed.
+    #
+    # The silent-zero-match leg is the more dangerous of the two: it fails LOUDLY here only because
+    # the re-tighten happens to follow it. A DELETE that quietly matches nothing under forced RLS
+    # is the same fail-open shape as an un-re-armed tick reading zero rows.
+    op.execute("ALTER TABLE scheduled_run DISABLE TRIGGER scheduled_run_append_only")
+    op.execute("ALTER TABLE scheduled_run DISABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE schedule DISABLE ROW LEVEL SECURITY")
     op.execute(
         "DELETE FROM scheduled_run WHERE schedule_id IN "
         f"(SELECT id FROM schedule WHERE target_run_type = '{_REPRODUCTION}')"
     )
     op.execute(f"DELETE FROM schedule WHERE target_run_type = '{_REPRODUCTION}'")
+    op.execute("ALTER TABLE schedule ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE schedule FORCE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE scheduled_run ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE scheduled_run FORCE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE scheduled_run ENABLE TRIGGER scheduled_run_append_only")
     op.alter_column(
         "schedule",
         "scope_portfolio_id",

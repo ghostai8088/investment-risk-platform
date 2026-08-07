@@ -74,6 +74,16 @@ from irp_shared.reproduction.registry import (
 _REASON_MAX = 2000
 
 
+class _Discard(Exception):
+    """Raised to unwind ``begin_nested()`` so the recompute is ALWAYS rolled back.
+
+    A ``with session.begin_nested():`` block that returns normally COMMITS its savepoint, which
+    would persist exactly the phantom run and result rows invariant I1 exists to prevent. Raising
+    is how the context manager is told to discard — and it makes the discard structural: there is
+    no code path out of that block that commits.
+    """
+
+
 @dataclass(frozen=True)
 class ReproductionOutcome:
     """What one sweep did. ``skipped`` names families that HAVE a reproducer but no COMPLETED run
@@ -135,6 +145,19 @@ def compare_rows(
     ``first_divergence`` names the key and the FIELD, never the two values — see the ENT-073 module
     docstring for why governed numbers do not belong in a control-plane evidence column.
     """
+    # A duplicate key would COLLAPSE rows into one dict entry and produce a confident MATCH over a
+    # single survivor (the review's MEDIUM). Registering a multi-row family with too narrow a key
+    # is the obvious next-slice mistake — eight of the eighteen unregistered families have
+    # multi-row grains — so it fails LOUDLY here rather than passing quietly.
+    for label, rows in (("stored", stored), ("recomputed", recomputed)):
+        keys = [row.key for row in rows]
+        if len(keys) != len(set(keys)):
+            duplicated = sorted({k for k in keys if keys.count(k) > 1})
+            raise ValueError(
+                f"family {family.family_key!r}: the declared natural key {family.key_fields} does "
+                f"not uniquely identify a {label} row within a run — duplicates {duplicated}. "
+                "Comparing would collapse them and report a pass over one survivor."
+            )
     stored_by_key = {row.key: row for row in stored}
     recomputed_by_key = {row.key: row for row in recomputed}
     compared = 0
@@ -179,9 +202,35 @@ def check_one_family(
     """
     stored = family.read_stored(session, acting_tenant, subject)
     recomputed: list[ComparableRow] = []
-    savepoint = session.begin_nested()
+    # The rollback is UNCONDITIONAL, and the first draft's `if savepoint.is_active:` guard was a
+    # BLOCKING defect found at the adversarial review and reproduced by execution.
+    #
+    # When a `session.flush()` inside the recompute raises — a 40P01 deadlock (which the tick's own
+    # docstring documents as reachable in phases 1-2, and which this slice materially widens by
+    # running full binders there), a lock timeout, an FK violation, a dropped connection —
+    # SQLAlchemy DEACTIVATES the savepoint but leaves the Session poisoned. The guard then skipped
+    # the rollback, and the sweep's next statement raised `PendingRollbackError`, which the
+    # per-schedule SAVEPOINT in `poll_tenant_schedules` rolled back: **the night's ENTIRE sweep was
+    # lost, including verdicts for families computed minutes earlier — a DIVERGED among them if the
+    # platform's promise really had broken.** Executed both ways: bombing the first family and
+    # bombing the last both produced `PendingRollbackError` and zero persisted verdicts; removing
+    # the guard produced the correct two verdicts and a clean COMMIT.
+    #
+    # The comment that justified the guard claimed calling `rollback()` on an inactive SAVEPOINT is
+    # an error. **That was simply wrong** — and the proof was already in this repository:
+    # `dq/gates.ensure_presence_rule` and `db/integrity.resolve_or_insert` use
+    # `with session.begin_nested():`, whose `__exit__` calls `rollback()` unconditionally, which is
+    # exactly why neither has this bug. The context-manager form is used here for the same reason:
+    # it makes the unconditional rollback structural rather than a thing a later edit can re-guard.
     try:
-        recomputed = family.recompute(session, acting_tenant, subject, code_version)
+        with session.begin_nested():
+            recomputed = family.recompute(session, acting_tenant, subject, code_version)
+            # Raised to force the rollback — the recompute must NEVER be committed, and returning
+            # normally from this block would commit the savepoint. `_Discard` is caught immediately
+            # below and is not an error condition.
+            raise _Discard
+    except _Discard:
+        pass
     except ReproductionUnsupported as exc:
         return VERDICT_UNREPRODUCIBLE, 0, 0, _redact(str(exc))
     except Exception as exc:  # noqa: BLE001 - a family's own refusal is a verdict, not an outage
@@ -191,12 +240,6 @@ def check_one_family(
             0,
             _redact(f"{type(exc).__name__}: {exc}"),
         )
-    finally:
-        # SQLAlchemy rolls a nested transaction back automatically when its block raises, so the
-        # guard is not belt-and-braces — calling rollback() on an already-inactive SAVEPOINT is an
-        # error. What matters is that there is NO path on which it stays open.
-        if savepoint.is_active:
-            savepoint.rollback()
 
     compared, diverged, first = compare_rows(stored, recomputed, family)
     if compared == 0:

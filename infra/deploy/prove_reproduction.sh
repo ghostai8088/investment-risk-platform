@@ -128,14 +128,23 @@ after2=$($COMPOSE run --rm --entrypoint python migrate \
 echo "$after2"
 verdicts2=$(field VERDICTS "$after2")
 alarms=$(field ALARM_EVENTS "$after2")
-trigger=$(field TRIGGER_PRESENT "$after2")
+outcomes_alarm=$(field ALARM_OUTCOMES "$after2")
+trigger=$(field TRIGGER_ENABLED "$after2")
 printf '%s' "$verdicts2" | grep -q "REPORT:DIVERGED" \
   || die "A PLANTED DIVERGENCE WENT UNDETECTED — this control cannot fail, so it proves nothing.
     verdicts: ${verdicts2}"
 [ "$alarms" -ge 1 ] 2>/dev/null \
   || die "the divergence was recorded but phase 5 raised NO alarm (ALARM_EVENTS=${alarms})"
-[ "$trigger" = "1" ] || die "the append-only trigger was not restored after the plant"
-echo "   the divergence was DETECTED, ALARMED, and the append-only fence is back"
+# SENT, not merely "an event exists". The review's HIGH: with no `breach.review` holder the alarm
+# short-circuits to SUPPRESSED before touching the sink, so the old ALARM_EVENTS>=1 assertion was
+# satisfied by the no-recipient sentinel — the arm passed while the DELIVERY path never ran.
+printf '%s' "$outcomes_alarm" | grep -q "SENT" \
+  || die "the alarm was RECORDED but never DELIVERED — outcomes: ${outcomes_alarm}.
+    A SUPPRESSED-only result means no recipient existed and the sink was never called."
+# tgenabled='O', not "a pg_trigger row exists": a DISABLED trigger still has a catalog row, so the
+# old count(*) could not fail for the condition it existed to detect.
+[ "$trigger" = "1" ] || die "the append-only trigger is not ENABLED after the plant (tgenabled != 'O')"
+echo "   the divergence was DETECTED, DELIVERED (${outcomes_alarm}), and the fence is back"
 
 log "REPRODUCTION PROVEN ON THE DEPLOYED STACK — a scheduled worker tick re-derived a governed
     artifact from its pinned inputs and reported MATCH; a planted divergence made the same

@@ -93,17 +93,57 @@ def _create_repro_schedule(session: Session, code: str) -> str:
 
 def seed(session: Session) -> dict[str, str]:
     """Seed a governed REPORT run plus the nightly schedule that will re-verify it."""
-    from irp_shared.deploy.report_identity_proof import seed_and_generate
+    from irp_shared.deploy.report_identity_proof import seed_and_generate, seed_principals
 
     set_tenant_context(session, PROOF_TENANT)
     report_id, content_hash = seed_and_generate(session)
+    # **A REAL recipient, and the review found out why.** Without one,
+    # `holders_of_permission("breach.review")` returns [] and `alarm_for_verdict` short-circuits to
+    # SUPPRESSED before touching the sink — so the proof's "the alarm fires" arm passed while the
+    # DELIVERY path had never executed. `ALARM_EVENTS >= 1` was satisfied by the no-recipient
+    # sentinel row, which is the opposite of what the arm claims to show.
+    seed_principals(session)
+    recipient_id = _seed_alarm_recipient(session)
     schedule_id = _create_repro_schedule(session, "repro-nightly-a")
     session.commit()
     return {
         "REPORT_ID": report_id,
         "CONTENT_HASH": content_hash,
         "SCHEDULE_A": schedule_id,
+        "ALARM_RECIPIENT_ID": recipient_id,
     }
+
+
+def _seed_alarm_recipient(session: Session) -> str:
+    """One in-tenant principal holding ``breach.review`` — the reproduction alarm's audience.
+
+    ``seed_principals`` grants ``report.*`` and nothing else, so on its own the proof tenant has NO
+    holder of the alarm permission and ``alarm_for_verdict`` short-circuits to SUPPRESSED before it
+    ever touches the sink. The review caught the arm passing on exactly that: ``ALARM_EVENTS >= 1``
+    was satisfied by the no-recipient sentinel row, so the DELIVERY path — the thing the arm claims
+    to prove — had never executed on the deployed stack.
+    """
+    from sqlalchemy import select as _select
+
+    from irp_shared.entitlement.models import AppUser, Permission, Role, RolePermission, UserRole
+    from irp_shared.reproduction.events import ALARM_RECIPIENT_PERMISSION
+
+    perm = session.execute(
+        _select(Permission).where(Permission.code == ALARM_RECIPIENT_PERMISSION)
+    ).scalar_one_or_none()
+    if perm is None:
+        raise RuntimeError(
+            f"permission {ALARM_RECIPIENT_PERMISSION!r} is ABSENT from the deployed catalog — the "
+            "reproduction alarm would have nobody to address and the proof would be vacuous"
+        )
+    user = AppUser(tenant_id=PROOF_TENANT, display_name="proof-repro-reviewer")
+    role = Role(tenant_id=PROOF_TENANT, code="proof-repro-reviewer", name="repro reviewer")
+    session.add_all([user, role])
+    session.flush()
+    session.add(RolePermission(role_id=role.id, permission_id=perm.id))
+    session.add(UserRole(tenant_id=PROOF_TENANT, user_id=user.id, role_id=role.id))
+    session.flush()
+    return str(user.id)
 
 
 def plant_divergence(session: Session) -> dict[str, str]:
@@ -121,23 +161,66 @@ def plant_divergence(session: Session) -> dict[str, str]:
     refuses the UPDATE and so does the P0001 trigger. The trigger is suspended for the duration —
     which is that control working, and the reason this lives in a proof harness and not in an
     application path. The script asserts the trigger is back afterwards.
+
+    **The UPDATE is TENANT-QUALIFIED, and the review found out why that matters.** The first draft
+    ran `UPDATE report_generation SET content_hash = '000…'` with NO predicate, relying on RLS to
+    fence it — but this harness connects as the migrate role, which is a superuser, and RLS does
+    not apply to a BYPASSRLS role. Pointed at a shared database (a staging host, or a `.env` whose
+    DATABASE_URL was never repointed — the mistake this module's own docstring anticipates) it
+    would have silently corrupted the stored hash of EVERY tenant's every report, with the
+    append-only trigger disabled at the time. A proof harness that can destroy governed evidence in
+    tenants it was never pointed at is not a proof harness.
     """
     set_tenant_context(session, PROOF_TENANT)
     session.execute(
         text("ALTER TABLE report_generation DISABLE TRIGGER report_generation_append_only")
     )
-    session.execute(
-        text(
-            "UPDATE report_generation SET content_hash = "
-            "'0000000000000000000000000000000000000000000000000000000000000000'"
+    try:
+        result = session.execute(
+            text(
+                "UPDATE report_generation SET content_hash = "
+                "'0000000000000000000000000000000000000000000000000000000000000000' "
+                "WHERE tenant_id = CAST(:t AS uuid) "
+                "RETURNING id"
+            ).bindparams(t=PROOF_TENANT)
         )
-    )
-    session.execute(
-        text("ALTER TABLE report_generation ENABLE TRIGGER report_generation_append_only")
-    )
+        # RETURNING rather than `.rowcount`: the typed Result has no rowcount attribute (mypy
+        # caught it), and counting the returned ids is the more direct statement of the fact the
+        # assertion below needs.
+        updated = len(result.fetchall())
+    finally:
+        # ALWAYS restore the fence, including on the failure path. Leaving a governed evidence
+        # table freely mutable because an UPDATE raised would be the worse outcome by far.
+        session.execute(
+            text("ALTER TABLE report_generation ENABLE TRIGGER report_generation_append_only")
+        )
+    if updated != 1:
+        raise RuntimeError(
+            f"the plant touched {updated} rows, expected exactly 1 — the negative arm would be "
+            "vacuous (nothing corrupted) or over-broad (something else corrupted)"
+        )
     schedule_id = _create_repro_schedule(session, "repro-nightly-b")
     session.commit()
-    return {"PLANT": "PLANTED", "SCHEDULE_B": schedule_id}
+    return {"PLANT": "PLANTED", "PLANTED_ROWS": str(updated), "SCHEDULE_B": schedule_id}
+
+
+def _json_outcome(value: object) -> str:
+    """The ``outcome`` out of a NOTIFY.DISPATCH ``after_value``, whatever shape the driver returns.
+
+    SENT vs SUPPRESSED is the distinction the proof's alarm arm rests on, so it is read explicitly
+    rather than inferred from a row count — a count cannot tell "delivered to a human" from
+    "recorded that nobody was listening".
+    """
+    import json
+
+    if value is None:
+        return "NONE"
+    if isinstance(value, str):
+        try:
+            return str(json.loads(value).get("outcome"))
+        except (ValueError, AttributeError):
+            return "UNPARSEABLE"
+    return "UNKNOWN"
 
 
 def report(session: Session) -> dict[str, str]:
@@ -199,6 +282,24 @@ def report(session: Session) -> dict[str, str]:
         # Phase 5's own evidence. The proof tenant has no `breach.review` holder, so a delivered
         # alarm records SUPPRESSED — which is the point: "nobody was configured to hear this" is a
         # durable fact, and its ABSENCE would mean the alarm phase never ran at all.
+        "ALARM_OUTCOMES": ",".join(
+            sorted(
+                {
+                    str((e.after_value or {}).get("outcome"))
+                    if isinstance(e.after_value, dict)
+                    else _json_outcome(e.after_value)
+                    for e in session.execute(
+                        select(AuditEvent).where(
+                            AuditEvent.chain_id == PROOF_TENANT,
+                            AuditEvent.event_type == "NOTIFY.DISPATCH",
+                            AuditEvent.entity_type == "reproduction_check",
+                        )
+                    )
+                    .scalars()
+                    .all()
+                }
+            )
+        ),
         "ALARM_EVENTS": str(
             session.execute(
                 select(func.count())
@@ -210,11 +311,16 @@ def report(session: Session) -> dict[str, str]:
                 )
             ).scalar_one()
         ),
-        "TRIGGER_PRESENT": str(
+        # `tgenabled = 'O'` (origin), NOT merely "a row exists in pg_trigger". The review's HIGH:
+        # a DISABLED trigger still has a catalog row, so the first draft's count(*) would have
+        # returned 1 for a table left permanently mutable — the assertion could not fail for the
+        # condition it existed to detect. 'D' (disabled) and 'R' (replica-only, which does not fire
+        # for ordinary sessions) both read as "not fencing".
+        "TRIGGER_ENABLED": str(
             session.execute(
                 text(
                     "SELECT count(*) FROM pg_trigger WHERE tgname = "
-                    "'report_generation_append_only' AND NOT tgisinternal"
+                    "'report_generation_append_only' AND NOT tgisinternal AND tgenabled = 'O'"
                 )
             ).scalar_one()
         ),

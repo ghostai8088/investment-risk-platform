@@ -17,8 +17,6 @@ from __future__ import annotations
 #: The ENT-073 entity name, for audit ``entity_type`` and error messages.
 ENTITY_REPRODUCTION_CHECK = "reproduction_check"
 
-SOURCE_MODULE_REPRODUCTION = "reproduction"
-
 # ------------------------------------------------------------------------------- verdict vocab ---
 #: The recompute reproduced every compared value. The platform's claim held for this run.
 VERDICT_MATCH = "MATCH"
@@ -49,16 +47,17 @@ ALARMING_VERDICTS: frozenset[str] = frozenset({VERDICT_DIVERGED, VERDICT_UNREPRO
 #: the alarm is recorded on every attempt, so reuse is visible rather than assumed.
 ALARM_RECIPIENT_PERMISSION = "breach.review"
 
-#: The webhook payload's self-description. The shipped sink hard-coded ``"breach-alert"``; a
-#: reproduction alarm carrying that string would POST a payload that lies about its own class.
-ALARM_TYPE_REPRODUCTION = "reproduction-divergence"
+# NOTE: the alert's wire name deliberately does NOT live here. It is
+# ``notification.sink.ALERT_TYPE_REPRODUCTION``, next to the payload that emits it, because the
+# transport owns its own vocabulary. A duplicate constant here would be a second source someone
+# would eventually edit while the wire kept using the first — a declaration with no consumer,
+# which this codebase has twice deleted rather than kept (`produces_run_on_failure`,
+# `target_run_type`). Found at the adversarial review, before it could drift.
 
 __all__ = [
     "ALARMING_VERDICTS",
     "ALARM_RECIPIENT_PERMISSION",
-    "ALARM_TYPE_REPRODUCTION",
     "ENTITY_REPRODUCTION_CHECK",
-    "SOURCE_MODULE_REPRODUCTION",
     "VERDICTS",
     "VERDICT_DIVERGED",
     "VERDICT_MATCH",

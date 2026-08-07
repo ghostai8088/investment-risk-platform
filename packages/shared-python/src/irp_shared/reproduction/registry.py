@@ -78,9 +78,21 @@ class ReproducibleFamily:
 
     ``compared_fields`` is declared rather than derived from the model, because "every column"
     would sweep in the id, the timestamps and the run FKs, and a comparison that quietly dropped
-    them would be doing this selection anyway — undeclared. Declaring it makes the choice
-    reviewable and makes a newly-added result column a visible decision rather than a silent
-    omission.
+    them would be doing this selection anyway — undeclared.
+
+    **The first draft made that claim and nothing backed it, which the adversarial review proved by
+    execution.** ``_VAR_COMPARED`` silently omitted `z_score`, `n_factors`, `residual_variance`,
+    `private_variance` and `estimate_age_days`; ``_EXPOSURE_COMPARED`` omitted `fx_legs`. A planted
+    change to `n_factors` produced `verdict=MATCH, rows_diverged=0` — the durable ENT-073 row, the
+    artifact CTRL-018 cites as evidence, recording a pass for a stored governed row that
+    demonstrably did not reproduce. The module's own header says "unenumerated partial coverage is
+    a control that lies about its own reach", and the field level was exactly that.
+
+    So the tuples now cover every column, and ``model`` + ``uncompared`` make the split
+    MECHANICALLY CHECKED: a census asserts ``key_fields | compared_fields | uncompared`` equals the
+    model's full column set, so a newly-added result column fails the suite until someone decides
+    which side it belongs on. That is what "a visible decision rather than a silent omission"
+    has to mean if it is to mean anything.
     """
 
     family_key: str
@@ -88,6 +100,13 @@ class ReproducibleFamily:
     compared_fields: tuple[str, ...]
     read_stored: Callable[[Session, str, CalculationRun], list[ComparableRow]]
     recompute: Callable[[Session, str, CalculationRun, str], list[ComparableRow]]
+    #: The ORM model whose columns the census partitions. Declared so the census cannot drift into
+    #: agreeing with whatever the reader happens to select.
+    model: Any = None
+    #: Columns DELIBERATELY not compared, with the reason carried in the census test. These are the
+    #: ones that differ by construction on any re-execution: the row id, the knowledge timestamp,
+    #: and the FKs naming the run/snapshot/model this execution used.
+    uncompared: tuple[str, ...] = ()
 
 
 def _rows_of(
@@ -139,6 +158,11 @@ def _resolve_model_code(session: Session, run: CalculationRun, *, acting_tenant:
 
 # --------------------------------------------------------------------------------- VAR family ----
 _VAR_KEY = ("metric_type",)
+#: EVERY governed column on `var_result`, not a hand-picked subset. The five that were missing —
+#: `z_score`, `n_factors`, `residual_variance`, `private_variance`, `estimate_age_days` — are each
+#: a real reproduction signal: `residual_variance`/`private_variance` are PPF-3's decomposition
+#: evidence, so a regression that repartitions variance between them while leaving `sigma` intact
+#: is invisible without them; `estimate_age_days` is BT-2's staleness evidence.
 _VAR_COMPARED = (
     "sigma",
     "var_value",
@@ -148,6 +172,24 @@ _VAR_COMPARED = (
     "n_observations",
     "window_start",
     "window_end",
+    "z_score",
+    "n_factors",
+    "residual_variance",
+    "private_variance",
+    "estimate_age_days",
+)
+#: Differ by construction on any re-execution — the row identity, the knowledge time, and the FKs
+#: naming THIS execution's run/snapshot/model rather than the arithmetic.
+_VAR_UNCOMPARED = (
+    "id",
+    "tenant_id",
+    "system_from",
+    "calculation_run_id",
+    "input_snapshot_id",
+    "model_version_id",
+    "exposure_run_id",
+    "covariance_run_id",
+    "private_covariance_run_id",
 )
 
 
@@ -217,6 +259,9 @@ def _recompute_var(
 
 # ------------------------------------------------------------------- EXPOSURE_AGGREGATE family ---
 _EXPOSURE_KEY = ("portfolio_id", "instrument_id", "base_currency")
+#: `fx_legs` joined at the review fold: it is the ORDERED pinned conversion path, so a change in
+#: leg selection or ordering that lands on the same composite rate is a real behavioural change
+#: the row records and the comparison must see.
 _EXPOSURE_COMPARED = (
     "signed_quantity",
     "mark_value",
@@ -224,7 +269,9 @@ _EXPOSURE_COMPARED = (
     "exposure_amount",
     "mark_currency",
     "exposure_type",
+    "fx_legs",
 )
+_EXPOSURE_UNCOMPARED = ("id", "tenant_id", "system_from", "calculation_run_id", "input_snapshot_id")
 
 
 def _stored_exposure_rows(
@@ -300,7 +347,31 @@ def _recompute_exposure(
 
 # ------------------------------------------------------------------------------ REPORT family ----
 _REPORT_KEY = ("portfolio_id",)
+#: The hash is over the RENDERED BYTES, so it already covers every rendered value. It is the ONLY
+#: recomputed quantity for this family, and that is a real asymmetry with the other two.
 _REPORT_COMPARED = ("content_hash",)
+#: Everything else on the row is an INPUT that ``regenerate_report`` READS FROM THE ROW in order to
+#: re-render — `report_code`, `render_format`, `as_of_date`, `portfolio_code` and the version label
+#: are what make the regeneration parameter-free (RPT-1's B1 fix). Comparing them would compare a
+#: value against ITSELF and always pass: vacuous by construction, which is precisely the shape this
+#: slice keeps removing. The review fold briefly added them to `compared`, and the deployed proof
+#: caught it within one run — the recompute does not carry them, so every report diverged.
+#: `generated_at`/`generated_by` describe the GENERATION EVENT rather than the artifact, and a
+#: re-render is a different event by definition.
+_REPORT_UNCOMPARED = (
+    "id",
+    "tenant_id",
+    "system_from",
+    "calculation_run_id",
+    "input_snapshot_id",
+    "generated_at",
+    "generated_by",
+    "report_code",
+    "report_version_label",
+    "render_format",
+    "as_of_date",
+    "portfolio_code",
+)
 
 
 def _read_stored_report(
@@ -378,6 +449,8 @@ REPRODUCIBLE_FAMILIES: dict[str, ReproducibleFamily] = {
         compared_fields=_VAR_COMPARED,
         read_stored=_read_stored_var,
         recompute=_recompute_var,
+        model=VarResult,
+        uncompared=_VAR_UNCOMPARED,
     ),
     RUN_TYPE_EXPOSURE_AGGREGATE: ReproducibleFamily(
         family_key=RUN_TYPE_EXPOSURE_AGGREGATE,
@@ -385,6 +458,8 @@ REPRODUCIBLE_FAMILIES: dict[str, ReproducibleFamily] = {
         compared_fields=_EXPOSURE_COMPARED,
         read_stored=_read_stored_exposure,
         recompute=_recompute_exposure,
+        model=ExposureAggregate,
+        uncompared=_EXPOSURE_UNCOMPARED,
     ),
     RUN_TYPE_REPORT: ReproducibleFamily(
         family_key=RUN_TYPE_REPORT,
@@ -392,6 +467,8 @@ REPRODUCIBLE_FAMILIES: dict[str, ReproducibleFamily] = {
         compared_fields=_REPORT_COMPARED,
         read_stored=_read_stored_report,
         recompute=_recompute_report,
+        model=ReportGeneration,
+        uncompared=_REPORT_UNCOMPARED,
     ),
 }
 

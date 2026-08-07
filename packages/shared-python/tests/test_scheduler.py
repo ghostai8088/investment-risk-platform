@@ -455,6 +455,43 @@ def test_reproduction_family_creates_with_no_portfolio_and_no_model(session: Ses
     assert schedule.model_version_id is None
 
 
+def test_the_audit_event_records_a_NULL_scope_as_null_not_the_string_None(
+    session: Session,
+) -> None:
+    """REPRO-1 review finding. The payload builder used an unconditional ``str()``, so a
+    tenant-wide schedule recorded the literal ``"None"`` as its portfolio scope — in an IMMUTABLE,
+    HASH-CHAINED ledger, where a false value can never be corrected, only superseded.
+
+    The same None-stringification trap the sibling column carried at SCH-2, one layer up: there it
+    corrupted a bind parameter, here it corrupted the audit record.
+    """
+    import json
+
+    from irp_shared.audit.models import AuditEvent
+
+    tenant = str(uuid.uuid4())
+    schedule = _mk(
+        session,
+        tenant,
+        target_run_type="REPRODUCTION",
+        model_version_id=None,
+        scope_portfolio_id=None,
+        interval_days=1,
+    )
+    session.flush()
+    event = session.execute(
+        select(AuditEvent).where(
+            AuditEvent.chain_id == tenant, AuditEvent.entity_id == str(schedule.id)
+        )
+    ).scalar_one()
+    payload = (
+        json.loads(event.after_value) if isinstance(event.after_value, str) else (event.after_value)
+    )
+    assert (
+        payload["scope_portfolio_id"] is None
+    ), f"the ledger recorded {payload['scope_portfolio_id']!r} as the portfolio scope"
+
+
 def test_scoping_families_still_require_a_portfolio(session: Session) -> None:
     """The other direction of the same declaration — relaxing the column must not have quietly made
     the scope optional for the families that genuinely need it."""

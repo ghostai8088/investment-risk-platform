@@ -308,6 +308,79 @@ def test_a_family_that_cannot_be_recomputed_is_UNREPRODUCIBLE_not_MATCH(
     assert check.rows_compared == 0
     assert "binder is unavailable" in (check.first_divergence or "")
 
+    # AND the sweep carried on. A failed recompute rolls back a SAVEPOINT while the outer
+    # transaction stays open, and if that left the session unusable the FIRST family to fail would
+    # silently truncate the night's whole sweep — every later family unchecked, with a verdict row
+    # for the failure making it look deliberate. The fixture seeds an EXPOSURE_AGGREGATE run
+    # upstream, so there is a real second family to prove it on.
+    others = [c for c in outcome.checks if c.family_key != "VAR"]
+    assert others, "no second family was checked — the sweep may have stopped at the failure"
+    assert all(c.verdict == VERDICT_MATCH for c in others), (
+        "a family AFTER the failed one did not reproduce — the failed SAVEPOINT poisoned the "
+        f"session: {[(c.family_key, c.verdict, c.first_divergence) for c in others]}"
+    )
+
+
+def test_a_recompute_that_fails_DURING_A_FLUSH_does_not_destroy_the_sweep(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The BLOCKING defect the adversarial review found, promoted to a test.
+
+    The test above raises in plain Python, and that is NOT the dangerous case: SQLAlchemy leaves
+    the Session usable. When the exception comes from a ``session.flush()`` — a 40P01 deadlock, a
+    lock timeout, an FK violation, a dropped connection, all reachable inside the real binders the
+    recompute calls — SQLAlchemy DEACTIVATES the savepoint and POISONS the Session. The first
+    draft's ``if savepoint.is_active:`` guard then skipped the rollback, the sweep's next statement
+    raised ``PendingRollbackError``, and the per-schedule SAVEPOINT in ``poll_tenant_schedules``
+    discarded **the entire night's sweep** — including verdicts for families computed earlier, a
+    DIVERGED among them if the platform's promise really had broken.
+
+    So the bomb here goes off inside a flush, and it goes off on the LAST family in sort order, so
+    that an earlier family's verdict exists to be lost.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+
+    def _bomb_during_flush(db: Session, *_a: object, **_k: object) -> list[ComparableRow]:
+        # A real flush that really fails: a ReproductionCheck with a NULL non-nullable column.
+        db.add(
+            ReproductionCheck(
+                tenant_id=tenant,
+                calculation_run_id=None,
+                subject_run_id=None,
+                family_key="VAR",
+                verdict=VERDICT_MATCH,
+                rows_compared=1,
+                rows_diverged=0,
+            )
+        )
+        db.flush()
+        raise AssertionError("the flush should have raised")
+
+    monkeypatch.setitem(
+        REPRODUCIBLE_FAMILIES,
+        "VAR",  # sorts last of the three, so EXPOSURE_AGGREGATE is checked before the bomb
+        replace(REPRODUCIBLE_FAMILIES["VAR"], recompute=_bomb_during_flush),
+    )
+    outcome = _sweep(session, tenant)
+    session.commit()
+
+    # The sweep SURVIVED: the poisoned family is a verdict, and the earlier family's verdict is
+    # still here. Under the guarded rollback this line was never reached — the sweep raised.
+    by_family = {c.family_key: c.verdict for c in outcome.checks}
+    assert by_family.get("VAR") == VERDICT_UNREPRODUCIBLE
+    assert by_family.get("EXPOSURE_AGGREGATE") == VERDICT_MATCH
+
+    persisted = (
+        session.execute(select(ReproductionCheck).where(ReproductionCheck.tenant_id == tenant))
+        .scalars()
+        .all()
+    )
+    assert (
+        len(persisted) == len(outcome.checks) >= 2
+    ), "verdicts computed before the failing family were discarded — the whole sweep was lost"
+
 
 def test_an_empty_comparison_is_never_reported_as_a_pass(
     session: Session, monkeypatch: pytest.MonkeyPatch
@@ -546,6 +619,92 @@ def test_coverage_is_a_census_over_every_governed_family() -> None:
         "unclassified": sorted(run_types - {RUN_TYPE_REPRODUCTION} - registered - unregistered),
         "stale": sorted((registered | unregistered) - run_types),
     }
+
+
+def test_a_divergence_is_a_DISPATCHED_fire_not_a_FAILED_one(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """I3, which the review correctly found had NO test — the invariant was asserted in the remit
+    and nowhere in code.
+
+    A divergence means the check RAN and the platform's promise broke. Infrastructure failure means
+    the check could not run. `dispatch_one` maps `status != COMPLETED` to `OUTCOME_FAILED`, so a
+    natural "make a divergence louder" edit — returning FAILED from the sweep when any verdict
+    diverges — would put the platform's most important alarm into the same operator feed as a
+    database hiccup, and burn the tick bucket so it is not re-checked until the next grid point.
+    """
+    tenant = str(uuid.uuid4())
+    subject = _seed_var_run(session, tenant)
+    sigma = str(subject.rows[0].sigma)
+    session.commit()
+    _plant_sigma(session, subject.run.run_id, str(Decimal(sigma) + Decimal("1")))
+
+    outcome = _sweep(session, tenant)
+    assert any(c.verdict == VERDICT_DIVERGED for c in outcome.checks), "the plant did not diverge"
+    # The SWEEP completed. This is what `dispatch_one` reads to choose the ledger outcome, so
+    # asserting it here is asserting the operator-visible disposition.
+    assert outcome.status == RunStatus.COMPLETED.value, (
+        "a DIVERGED verdict turned the sweep into a FAILED run — the divergence alarm is now "
+        "indistinguishable from an infrastructure failure in the operator feed"
+    )
+    assert outcome.failure_reason is None
+
+
+def test_every_column_of_every_reproduced_model_is_classified() -> None:
+    """The FIELD-level census — the adversarial review's HIGH, mechanized.
+
+    The first draft declared `compared_fields` by hand and claimed that made a newly-added column
+    "a visible decision rather than a silent omission". Nothing backed that: `_VAR_COMPARED` omitted
+    five governed columns and `_EXPOSURE_COMPARED` omitted one, and a planted change to `n_factors`
+    produced a MATCH verdict — the durable evidence row asserting a pass for a stored governed row
+    that demonstrably had not reproduced.
+
+    So the partition is now checked against the MODEL, not against the reader's intent: every
+    column is in exactly one of key / compared / explicitly-uncompared, and a new column fails here
+    until someone chooses a side.
+    """
+    for key, family in REPRODUCIBLE_FAMILIES.items():
+        assert family.model is not None, f"{key} declares no model — the census cannot check it"
+        columns = {c.name for c in family.model.__table__.columns}
+        classified = set(family.key_fields) | set(family.compared_fields) | set(family.uncompared)
+        assert classified == columns, {
+            "family": key,
+            "unclassified (add to compared_fields or uncompared, with a reason)": sorted(
+                columns - classified
+            ),
+            "declared but not on the model": sorted(classified - columns),
+        }
+        overlap = set(family.compared_fields) & set(family.uncompared)
+        assert not overlap, f"{key} both compares and excludes {sorted(overlap)}"
+
+
+def test_the_comparison_actually_reads_every_declared_field() -> None:
+    """A declaration with no consumer is worse than no declaration (the deleted
+    `produces_run_on_failure`). This proves `compared_fields` is what `compare_rows` iterates: a
+    field declared but never read would let the census above pass while the comparison stayed
+    narrow."""
+    fam = REPRODUCIBLE_FAMILIES["VAR"]
+    for field in fam.compared_fields:
+        stored = [ComparableRow(key=("K",), values=dict.fromkeys(fam.compared_fields, "same"))]
+        fresh = [ComparableRow(key=("K",), values=dict.fromkeys(fam.compared_fields, "same"))]
+        fresh[0].values[field] = "DIFFERENT"
+        _compared, diverged, first = compare_rows(stored, fresh, fam)
+        assert diverged == 1, f"a change to {field!r} was invisible to compare_rows"
+        assert (first or "").endswith(f":: {field}")
+
+
+def test_duplicate_natural_keys_are_refused_rather_than_silently_collapsed() -> None:
+    """The review's MEDIUM: `compare_rows` builds dicts keyed by the natural key, so a family whose
+    key does not uniquely identify a row within a run would silently collapse N rows to one and
+    report a confident MATCH over a single survivor. Eight of the eighteen unregistered families
+    have multi-row grains, so this is the next slice's foot-gun, not a hypothetical."""
+    fam = REPRODUCIBLE_FAMILIES["VAR"]
+    dupes = [
+        ComparableRow(key=("K",), values=dict.fromkeys(fam.compared_fields, "a")),
+        ComparableRow(key=("K",), values=dict.fromkeys(fam.compared_fields, "b")),
+    ]
+    with pytest.raises(ValueError, match="natural key"):
+        compare_rows(dupes, dupes, fam)
 
 
 def test_every_exclusion_carries_a_real_reason() -> None:
