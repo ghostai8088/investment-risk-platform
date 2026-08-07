@@ -106,14 +106,19 @@ class ReproducibleFamily:
     #: Columns DELIBERATELY not compared, **each mapped to the REASON it is excluded**.
     #:
     #: A mapping rather than a tuple, because the pre-merge audit proved the tuple form tolerated
-    #: SHRINKAGE: moving ``sigma`` out of ``compared_fields`` into the exclusions kept every test
-    #: green while making every nightly VaR reproduction report MATCH for a run whose sigma had
-    #: changed — the same false-pass defect the review fold was folding, reached from the other
-    #: direction. The census now requires a substantive reason per exclusion (the
-    #: ``UNREPRODUCIBLE_FAMILIES`` precedent one level up), so removing a column from the
-    #: comparison costs someone a sentence they have to defend. This project's own words for the
-    #: shape that was here before: "a census that tolerates shrinkage is a floor wearing a
-    #: census's name".
+    #: SHRINKAGE. **The precise claim, corrected after the re-audit refuted a looser earlier
+    #: wording** — this is what was actually executed: moving ``sigma`` out does NOT go unnoticed
+    #: (eight tests fail, because the plant helper targets that exact column), but moving
+    #: ``z_score``, ``n_factors``, ``residual_variance``, ``private_variance`` and
+    #: ``estimate_age_days`` out DID keep every test green — and those five are precisely what the
+    #: review's HIGH was about.
+    #:
+    #: The reason floor alone does not close it either: the ``_WHY_*`` constants below are
+    #: module-level and reusable, so an exclusion can be added without writing anything. What
+    #: actually closes it is the ``_MUST_COMPARE`` pin in the test suite, which names the governed
+    #: columns so a REMOVAL fails loudly. This census covers additions; that pin covers removals.
+    #: The project's own words for what was here before: "a census that tolerates shrinkage is a
+    #: floor wearing a census's name".
     uncompared: dict[str, str] = field(default_factory=dict)
 
 

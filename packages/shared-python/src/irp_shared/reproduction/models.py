@@ -14,8 +14,13 @@ parallel vocabulary. That reproduction run's ``input_snapshot_id`` is NULL and h
 sweep consumes many subject runs' snapshots, and each one is named on its own verdict row via
 ``subject_run_id`` rather than smeared into a single binding.
 
-**Why the divergence detail names fields and keys but never VALUES.** ``first_divergence`` records
-WHICH row and WHICH field disagreed, never the two numbers. The moment a read surface is added over
+**Why the divergence detail names fields and keys but never VALUES — on the DIVERGED path.**
+``first_divergence`` records WHICH row and WHICH field disagreed, never the two numbers.
+**The UNREPRODUCIBLE path is a stated exception, not an oversight:** there the field carries a
+binder's own refusal text, and some binder messages interpolate row identifiers, so
+``_redact`` bounds it (statement/parameters/DETAIL stripped, 2000-char cap) without
+guaranteeing the absence of every identifier. That residual is bound to the moment a read
+surface is added over this table. The moment a read surface is added over
 this table it will be gated by some permission — and the obvious candidate, ``schedule.view``, is
 held by ``auditor_3l``, which holds no ``valuation.view`` / ``position.view`` / ``marketdata.view``.
 Writing governed values into a control-plane table now would plant exactly the disclosure RPT-2's

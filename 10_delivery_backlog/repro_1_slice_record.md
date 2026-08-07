@@ -23,7 +23,7 @@ are alarmed in a **separate tick phase**.
 | `REPRODUCTION` schedulable family | `scheduling/service.py` (`_dispatch_reproduction`, `FAMILY_REGISTRY`) |
 | Tick phase 5 (alarm delivery) | `apps/worker/src/irp_worker/reproduction_alarms.py`, wired in `irp_worker/scheduler.py` |
 | Deployed proof, both arms | `infra/deploy/prove_reproduction.sh` + `irp_shared/deploy/reproduction_proof.py` |
-| Unit + PG suites (34 tests) | `tests/test_reproduction.py`, `tests/test_reproduction_pg.py` |
+| Unit + PG suites (37 tests) | `tests/test_reproduction.py`, `tests/test_reproduction_pg.py` |
 
 ## 2. Gates, with captured exit codes (P14)
 
@@ -37,7 +37,7 @@ was re-taken.
 | `make check-all` (both tiers) | **`CHECK_ALL_EXIT=0`** |
 | Full-PG battery, schema reset then migrated to head | **`PYTEST_EXIT=0`** |
 | Deployed-stack proof, both arms | **`PROOF_EXIT=0`**, with `ALARM_OUTCOMES=SENT` and `PLANTED_ROWS=1` |
-| Mutation battery, **15** controls | **`MUTATION_EXIT=0`** — all killed |
+| Mutation battery, **19** controls | **`MUTATION_EXIT=0`** — all killed |
 | CTRL-018's observed evidence | CI run **`31210543828`** (head `ef899a6`, the POST-fold harness), `stack-proof` step *"Prove a scheduled reproduction detects a planted divergence (CTRL-018)"* → **`success`** |
 
 **The earlier run `31204168002` (head `5fafd00`) is deliberately not the citation.** At that commit
@@ -48,8 +48,8 @@ claims is the one over the post-fold harness. Four audit lenses independently fl
 citation; it appeared in this record, the control matrix, the ENT-073 registry row and the roadmap,
 and has been corrected in all four.
 
-Counts **MEASURED** on a fresh collect at the merge head: **3,125** collected platform-wide;
-**34** in this slice's two suites.
+Counts **MEASURED** on a fresh collect at the merge head: **3,128** collected platform-wide;
+**37** in this slice's two suites.
 
 ## 3. The Tier-3 forks, and why they existed
 
@@ -76,7 +76,7 @@ three families registered with the rest census-pinned; reuse `breach.review` as 
 ## 4. What EXECUTION found that reading did not (in-build)
 
 Seven defects found while building, before any review. **Not one was visible to reading, to the
-type checker, or to a green test run.** The review's thirteen and the audit's findings are §4b.
+type checker, or to a green test run.** The review's thirteen, the audit's thirty-five and the re-audit's are summarised in §7.
 
 1. **My own planted-divergence test was VACUOUS and reported MATCH.** `make_session_factory` sets
    `expire_on_commit=False`, so after the raw `UPDATE` the session kept serving the pre-plant object
@@ -122,7 +122,7 @@ type checker, or to a green test run.** The review's thirteen and the audit's fi
   EXISTENCE test per verdict, not a derived `MAX` cursor — NOTIF-1's lesson that a cursor cannot
   represent a gap. Unlike phase 4 it does **not** head-of-line block: with an existence queue there
   is no cursor to corrupt, so one poison verdict must not silence the night's other divergences.
-- **`first_divergence` names the row key and the field, never the VALUES.** The moment a read
+- **`first_divergence` names the row key and the field, never the VALUES on the DIVERGED path** (mutation-proven). The UNREPRODUCIBLE path is a stated exception — its reason is a binder's own refusal text, which `_redact` bounds without guaranteeing no identifier appears; carry (n). The moment a read
   surface is added it will be gated by some permission, and the obvious candidate `schedule.view` is
   held by `auditor_3l`, which holds no `valuation.view`/`position.view`/`marketdata.view`. This is
   RPT-2's confirmed disclosure class, pre-empted rather than re-found. Mutation M9 proves the guard.
@@ -153,6 +153,7 @@ type checker, or to a green test run.** The review's thirteen and the audit's fi
 | (l) | **A sweep that checked NOTHING is invisible to the ALARM channel.** It fails closed in the run ledger (a FAILED run + reason) but writes no verdict row, so phase 5 has nothing to alarm on — an operator watching only notifications cannot tell it from a clean night | An operational-alerting slice |
 | (m) | **No demo or deploy path creates a REPRODUCTION schedule** — only the proof harness does. A deployed tenant gets the engine and the family but no nightly sweep until someone creates one, and there is no schedule WRITE API. **This was IN the remit's scope ("a nightly schedule the demo/deploy path creates") and was not built; the deviation is recorded here rather than left silent** | The next scheduling or demo slice |
 | (n) | **`first_divergence` can carry governed VALUES on the UNREPRODUCIBLE path.** The DIVERGED path names field+key only (mutation-proven), but an UNREPRODUCIBLE reason embeds a binder's exception text, and some binder messages interpolate row identifiers. `_redact` strips SQL/params but not message bodies | Before any read surface is added over ENT-073 |
+| (o) | **A divergence detected while no principal holds `breach.review` is NOT re-alarmed when one is provisioned later.** The ratified trade-off (2026-08-07): a SUPPRESSED attempt is terminal because re-POSTing it every 300s tells nobody anything new. The verdict row and the operational surface remain | A tenant-onboarding/provisioning slice |
 | (h) | **RPT-1's claim that `report/service.py` is "recorded on the P8 census exception list" is false as written** — the exception dict contains only `exposure/service.py`, and the census scans for a literal `execute_governed_run(` that `report/service.py` never calls. REPRO-1's binder is in the same position and this record says so plainly rather than repeating the claim | Recorded for the Wave-16 close |
 
 ## 7. Scrutiny actually applied, and what each stage found
@@ -166,13 +167,14 @@ caught it, which is a fair illustration of why the sentence was wrong.
 | In-build execution | 7 defects (§4) |
 | 5-lens adversarial review, each finding attacked by an independent skeptic | **13 verified findings, 2 BLOCKING** — both reproduced verbatim by the skeptics before anything was changed |
 | Fresh-context pre-merge audit, weighted at the review's own fold | **35 findings, 2 of 4 lenses returning DO_NOT_MERGE** — including a regression the review fold itself introduced, and a false evidence citation in four documents |
+| Focused re-audit of THAT fold (user-requested) | **33 findings, 4 of 4 lenses returning DO_NOT_MERGE.** The audit fold had introduced a HIGH of its own — filtering the alarm queue on SENT-only turned an un-deliverable verdict into an unbounded 300-second retry loop, ~288 hash-chained audit rows per verdict per day — and two of its stated fixes were false: the census's reason floor was satisfiable by copying an existing constant, and the RTM table fix removed the blockquote but left the blank line, so 47 rows still did not render |
 
 **The audit's decisive finding was about this slice's own records, not its code:** CTRL-018 had been
 moved to Implemented citing a CI run of the PRE-FOLD proof harness — the run whose alarm arm and
 trigger arm the fold's own commit message documented as unable to fail. The control's status rested
 on evidence the builder had already written down as insufficient.
 
-**And the review's fold introduced a defect the audit caught:** the new duplicate-natural-key
+**Each fold introduced a defect the next stage caught — twice, in a row.** The review's fold: the new duplicate-natural-key
 refusal was raised OUTSIDE `check_one_family`'s guard, re-creating the exact blast radius the
 BLOCKING savepoint fix had just removed — a ValueError escaping the sweep and discarding the
 night's other verdicts. Three lenses found it independently. The mutation battery then caught that

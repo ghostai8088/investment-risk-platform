@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.actions import ACTION_RECORD
@@ -73,6 +73,15 @@ from irp_shared.reproduction.registry import (
 #: so a driver's multi-kilobyte error cannot fill a governed evidence column.
 _REASON_MAX = 2000
 
+#: How many times a FAILED delivery is re-attempted before the verdict is left alone.
+#:
+#: Bounded on purpose. Unbounded retry was a HIGH the re-audit executed: at the supervisor's 300s
+#: cadence an un-deliverable verdict wrote ~288 hash-chained audit rows a day, forever. Five
+#: attempts spans roughly 25 minutes of ticking, which covers a transient outage; past that the
+#: five durable FAILED attempts ARE the evidence an operator needs, and continuing to POST adds
+#: nothing but volume.
+MAX_ALARM_ATTEMPTS = 5
+
 
 class _Discard(Exception):
     """Raised to unwind ``begin_nested()`` so the recompute is ALWAYS rolled back.
@@ -95,6 +104,10 @@ class ReproductionOutcome:
     failure_reason: str | None = None
     checks: list[ReproductionCheck] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    #: Families whose SUBJECT could not even be resolved (the lookup itself failed). Distinct from
+    #: ``skipped``, which means "nothing to reproduce yet" — a distinction an operator needs,
+    #: because one is a quiet tenant and the other is a broken read.
+    unresolved: list[str] = field(default_factory=list)
 
 
 def _redact(text: str) -> str:
@@ -201,7 +214,16 @@ def check_one_family(
     ``finally`` and deliberately no guard, because the guarded form was the BLOCKING defect the
     adversarial review found (see the comment on the block itself).
     """
-    stored = family.read_stored(session, acting_tenant, subject)
+    # GUARDED too. The previous fold moved only the `compare_rows` call inside a guard, because
+    # that was the call the audit named — and the re-audit correctly pointed out that fixing the
+    # reported instance is not fixing the class. `read_stored` runs arbitrary per-family SQL and can
+    # raise for exactly the reasons the recompute can; if it escapes, the night's other verdicts go
+    # with it. Every per-family call in this function is now inside a guard that turns a family's
+    # failure into that family's verdict.
+    try:
+        stored = family.read_stored(session, acting_tenant, subject)
+    except Exception as exc:  # noqa: BLE001 - a family's own failure is a verdict, not an outage
+        return VERDICT_UNREPRODUCIBLE, 0, 0, _redact(f"{type(exc).__name__}: {exc}")
     recomputed: list[ComparableRow] = []
     # The rollback is UNCONDITIONAL, and the first draft's `if savepoint.is_active:` guard was a
     # BLOCKING defect found at the adversarial review and reproduced by execution.
@@ -303,9 +325,19 @@ def run_reproduction_sweep(
 
     checks: list[ReproductionCheck] = []
     skipped: list[str] = []
+    unresolved: list[str] = []
     for family_key in sorted(REPRODUCIBLE_FAMILIES):
         family = REPRODUCIBLE_FAMILIES[family_key]
-        subject = latest_completed_run(session, acting_tenant=tenant, run_type=family_key)
+        try:
+            subject = latest_completed_run(session, acting_tenant=tenant, run_type=family_key)
+        except Exception as exc:  # noqa: BLE001 - one family's lookup must not end the sweep
+            # NO verdict row: `subject_run_id` is a NOT NULL FK and there is no subject to bind
+            # one to, so a verdict here would be a claim about a run we could not identify. It is
+            # reported as UNRESOLVED instead — visible in the outcome and distinct from `skipped`,
+            # which means "this family has nothing to reproduce yet" rather than "we could not
+            # find out".
+            unresolved.append(f"{family_key}: {_redact(f'{type(exc).__name__}: {exc}')}")
+            continue
         if subject is None:
             skipped.append(family_key)
             continue
@@ -360,6 +392,7 @@ def run_reproduction_sweep(
             failure_reason=reason,
             checks=[],
             skipped=skipped,
+            unresolved=unresolved,
         )
 
     update_run_status(session, run, RunStatus.COMPLETED, actor_id=actor_id)
@@ -368,6 +401,7 @@ def run_reproduction_sweep(
         status=RunStatus.COMPLETED.value,
         checks=checks,
         skipped=skipped,
+        unresolved=unresolved,
     )
 
 
@@ -375,38 +409,60 @@ def run_reproduction_sweep(
 def unalarmed_verdicts(session: Session, *, acting_tenant: str) -> list[ReproductionCheck]:
     """Alarming verdicts with no ``NOTIFY.DISPATCH`` audit event yet.
 
-    Deliberately an EXISTENCE test per verdict, not a high-water cursor over a sequence. NOTIF-1
-    learned the difference the hard way: a derived ``MAX`` cursor cannot represent a gap, so one
-    row that jumps ahead permanently hides every earlier unalarmed one. Existence has no such
-    failure mode, and the population here is a handful of rows per night.
+    Deliberately a per-verdict EVENT question, not a high-water cursor over a sequence. NOTIF-1
+    learned that difference the hard way: a derived ``MAX`` cursor cannot represent a gap, so one
+    row that jumps ahead permanently hides every earlier unalarmed one.
+
+    A verdict leaves the queue when its alarm CONCLUDED (SENT, or SUPPRESSED — nobody to tell is a
+    durable fact, not a transient one) or when its bounded FAILED retries are exhausted. Both of
+    the simpler rules were wrong and both were executed: any-event-retires drops real alarms,
+    SENT-only never terminates.
     """
     tenant = canonical_tenant_id(acting_tenant)
-    # DELIVERED, not merely "an attempt was recorded". The pre-merge audit found two ways the old
-    # existence-of-any-event test dropped real alarms permanently:
+    # **Retry the wire, not the audience** (ratified 2026-08-07), and the history behind that
+    # sentence is worth keeping because both naive answers are wrong:
     #
-    #   * a webhook host down for ONE night recorded a FAILED attempt, and the verdict then left
-    #     the queue forever — the platform's most important alarm lost to a transient network
-    #     failure, while this module's own docstring promised it would be retried;
-    #   * a tenant with no `breach.review` holder recorded a SUPPRESSED sentinel, so a genuine
-    #     divergence detected BEFORE entitlement provisioning was never re-alarmed after it. Since
-    #     there is no tenant-onboarding clone of ROLE_TEMPLATES, that is the state a newly
-    #     onboarded tenant is actually in.
+    #   * retiring on ANY recorded attempt drops real alarms — a webhook down for one night, or a
+    #     tenant not yet provisioned with a `breach.review` holder, loses a genuine divergence
+    #     forever. That was the pre-merge audit's finding;
+    #   * retiring only on SENT never terminates. The re-audit executed it: an un-deliverable
+    #     verdict re-fires on EVERY 300s tick, ~288 hash-chained audit rows per verdict per day,
+    #     growing nightly, with an HTTP POST each time if a webhook is configured. That was a
+    #     defect the previous fold INTRODUCED while fixing the first one.
     #
-    # So only `SENT` retires a verdict. FAILED and SUPPRESSED stay queued and are re-attempted,
-    # which is the fail-closed direction: a repeated attempt is noise, a dropped divergence is the
-    # thing this control exists to prevent.
-    alarmed = set(
+    # The distinction that resolves it is between a transient failure and a durable fact. A
+    # SUPPRESSED attempt concluded CORRECTLY — it established, and recorded, that nobody in this
+    # tenant holds the alarm permission. Re-POSTing that every five minutes tells nobody anything
+    # new; the verdict row and the operational surface remain, and provisioning is a config act
+    # with its own visibility. A FAILED attempt is the wire breaking, which is worth retrying — but
+    # a bounded number of times, after which the durable FAILED attempts ARE the evidence.
+    concluded = set(
         session.execute(
             select(AuditEvent.entity_id).where(
                 AuditEvent.chain_id == tenant,
                 AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
                 AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
-                AuditEvent.outcome == "success",  # `_emit_dispatch` maps SENT -> success
+                AuditEvent.outcome == "success",  # SENT or SUPPRESSED — the attempt concluded
             )
         )
         .scalars()
         .all()
     )
+    exhausted = {
+        entity_id
+        for entity_id, attempts in session.execute(
+            select(AuditEvent.entity_id, func.count())
+            .where(
+                AuditEvent.chain_id == tenant,
+                AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
+                AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
+                AuditEvent.outcome == "failure",
+            )
+            .group_by(AuditEvent.entity_id)
+        ).all()
+        if attempts >= MAX_ALARM_ATTEMPTS
+    }
+    alarmed = concluded | exhausted
     rows = (
         session.execute(
             select(ReproductionCheck)
@@ -532,7 +588,11 @@ def _emit_dispatch(
         actor_type="SYSTEM",
         source_module=SOURCE_MODULE_NOTIFICATION,
         severity="warning",
-        outcome="success" if outcome == NOTIFY_OUTCOME_SENT else "failure",
+        # "success" means THE ATTEMPT CONCLUDED CORRECTLY, not "a human read it". A SUPPRESSED
+        # dispatch concluded correctly: it determined, durably, that nobody in the tenant holds the
+        # alarm permission. Only a FAILED delivery — the wire broke — is a failure, and only that
+        # is worth retrying. Ratified 2026-08-07: retry the wire, not the audience.
+        outcome="failure" if outcome == NOTIFY_OUTCOME_FAILED else "success",
         after_value={
             "verdict": check.verdict,
             "family_key": check.family_key,

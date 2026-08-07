@@ -7,11 +7,14 @@ top-level COMMIT). Delivering to a network sink there would hold that lock acros
 anti-pattern NOTIF-1's phase-A/phase-B split exists to prevent. So the sweep records and stops, and
 this phase alarms.
 
-**The queue is an EXISTENCE test, not a cursor.** ``unalarmed_verdicts`` asks, per verdict, whether
-a ``NOTIFY.DISPATCH`` audit event already names it. NOTIF-1 learned the alternative the hard way: a
-derived ``MAX(sequence)`` high-water cannot represent a GAP, so one row jumping ahead permanently
-hides every earlier unalarmed one. Existence has no such failure mode, and the population is a
-handful of rows per night.
+**The queue is a per-verdict EVENT question, not a cursor.** ``unalarmed_verdicts`` asks, per
+verdict, whether a ``NOTIFY.DISPATCH`` event records that the attempt CONCLUDED (SENT or
+SUPPRESSED) or that the bounded FAILED retries are exhausted — not merely whether any event
+exists, which was the shape that dropped alarms, nor SENT-only, which never terminated.
+
+NOTIF-1 learned the cursor half the hard way: a derived ``MAX(sequence)`` high-water cannot
+represent a GAP, so one row jumping ahead permanently hides every earlier unalarmed one. A
+per-verdict question has no such failure mode, and the population is a handful of rows per night.
 
 **Per-verdict top-level transactions, fail-CLOSED on error.** A verdict whose alarm transaction
 fails is left un-alarmed and is retried next tick — it stays in the queue precisely because the

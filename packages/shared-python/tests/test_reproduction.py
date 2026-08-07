@@ -52,6 +52,7 @@ from irp_shared.reproduction.registry import (
     ReproductionUnsupported,
 )
 from irp_shared.reproduction.service import (
+    MAX_ALARM_ATTEMPTS,
     alarm_for_verdict,
     compare_rows,
     latest_completed_run,
@@ -382,6 +383,34 @@ def test_a_recompute_that_fails_DURING_A_FLUSH_does_not_destroy_the_sweep(
     ), "verdicts computed before the failing family were discarded — the whole sweep was lost"
 
 
+def test_a_read_stored_failure_is_a_verdict_not_an_outage(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The re-audit's point that the previous fold fixed the reported instance, not the class.
+
+    Only the `compare_rows` call had been guarded, because that was the call the audit named.
+    `read_stored` runs arbitrary per-family SQL and can raise for the same reasons — and if it
+    escapes, the night's other verdicts go with it, which is the blast radius the BLOCKING savepoint
+    fix removed. Every per-family call is now guarded; this proves it for the one that was missed.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+
+    def _boom(*_a: object, **_k: object) -> list[ComparableRow]:
+        raise RuntimeError("the per-family read blew up")
+
+    monkeypatch.setitem(
+        REPRODUCIBLE_FAMILIES, "VAR", replace(REPRODUCIBLE_FAMILIES["VAR"], read_stored=_boom)
+    )
+    outcome = _sweep(session, tenant)  # must NOT raise
+    by_family = {c.family_key: c.verdict for c in outcome.checks}
+    assert by_family.get("VAR") == VERDICT_UNREPRODUCIBLE
+    assert (
+        by_family.get("EXPOSURE_AGGREGATE") == VERDICT_MATCH
+    ), "a read_stored failure took the night's other verdicts with it"
+
+
 def test_an_empty_comparison_is_never_reported_as_a_pass(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -569,8 +598,9 @@ def _dispatch_events(db: Session, tenant: str) -> list[AuditEvent]:
 def test_an_alarmed_verdict_is_not_alarmed_twice(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The queue is an EXISTENCE test per verdict, not a high-water cursor — NOTIF-1's lesson that
-    a derived MAX cannot represent a gap."""
+    """The queue is a per-verdict EVENT question, not a high-water cursor — NOTIF-1's lesson that a
+    derived MAX cannot represent a gap. A CONCLUDED attempt (SENT or SUPPRESSED) retires the
+    verdict; see the two tests below for the bounded-retry and terminal-suppression halves."""
     tenant = str(uuid.uuid4())
     check = _diverged_check(session, tenant)
     monkeypatch.setattr(
@@ -611,14 +641,21 @@ def test_an_alarm_that_was_NOT_delivered_stays_queued(
     assert unalarmed_verdicts(session, acting_tenant=tenant) == []
 
 
-def test_a_divergence_with_no_recipient_is_re_alarmed_once_someone_can_hear_it(
+def test_a_suppressed_alarm_is_TERMINAL_not_retried_forever(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Pre-merge audit finding, and the more dangerous half. There is no tenant-onboarding clone of
-    ROLE_TEMPLATES, so a newly onboarded tenant has NO `breach.review` holder — which is exactly
-    when its first divergence is most likely to go unheard. Under the old queue the SUPPRESSED
-    sentinel retired the verdict permanently, so provisioning a reviewer the next day would never
-    surface the divergence that had already been detected."""
+    """Ratified 2026-08-07: retry the wire, not the audience.
+
+    A SUPPRESSED attempt CONCLUDED CORRECTLY — it established, and durably recorded, that nobody in
+    this tenant holds the alarm permission. Re-POSTing that every 300-second tick tells nobody
+    anything new, and the re-audit executed what it costs: ~288 hash-chained audit rows per verdict
+    per day, forever, plus an HTTP POST each time if a webhook is configured. So it is terminal.
+
+    **The accepted trade-off, stated rather than buried:** a divergence detected before anyone is
+    provisioned is not re-alarmed when a reviewer appears later. It remains in the verdict row and
+    the operational surface; provisioning is a config act with its own visibility. That is carry
+    (o).
+    """
     tenant = str(uuid.uuid4())
     check = _diverged_check(session, tenant)
     monkeypatch.setattr(
@@ -629,22 +666,42 @@ def test_a_divergence_with_no_recipient_is_re_alarmed_once_someone_can_hear_it(
         == NOTIFY_OUTCOME_SUPPRESSED
     )
     session.flush()
-    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [
-        check.id
-    ], "a divergence nobody could hear was dequeued — provisioning a reviewer later never alarms it"
+    assert (
+        unalarmed_verdicts(session, acting_tenant=tenant) == []
+    ), "a suppressed alarm stayed queued — it will re-fire on every tick, forever"
 
+
+def test_a_failed_delivery_is_retried_but_only_a_BOUNDED_number_of_times(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the ratified decision, and the defect the previous fold introduced.
+
+    A broken wire IS transient and worth retrying — but retrying forever is what the re-audit
+    executed and called a HIGH. After ``MAX_ALARM_ATTEMPTS`` the durable FAILED attempts ARE the
+    evidence, and continuing adds volume rather than information.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
     monkeypatch.setattr(
         "irp_shared.entitlement.service.holders_of_permission",
         lambda *_a, **_k: ["reviewer-1"],
     )
-    sink = _RecordingSink()
-    assert (
-        alarm_for_verdict(session, check=check, sink=sink, acting_tenant=tenant)
-        == NOTIFY_OUTCOME_SENT
-    )
-    assert len(sink.messages) == 1
-    session.flush()
-    assert unalarmed_verdicts(session, acting_tenant=tenant) == []
+    for attempt in range(1, MAX_ALARM_ATTEMPTS + 1):
+        assert (
+            alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+            == NOTIFY_OUTCOME_FAILED
+        )
+        session.flush()
+        queued = unalarmed_verdicts(session, acting_tenant=tenant)
+        if attempt < MAX_ALARM_ATTEMPTS:
+            assert [c.id for c in queued] == [
+                check.id
+            ], f"attempt {attempt} of {MAX_ALARM_ATTEMPTS} dropped the alarm early"
+        else:
+            assert queued == [], (
+                f"the alarm is still queued after {MAX_ALARM_ATTEMPTS} failed attempts — this is "
+                "the unbounded retry loop the re-audit found"
+            )
 
 
 def test_a_MATCH_verdict_is_never_queued_for_an_alarm(session: Session) -> None:
@@ -721,7 +778,8 @@ def test_every_column_of_every_reproduced_model_is_classified() -> None:
     "a visible decision rather than a silent omission". Nothing backed that: `_VAR_COMPARED` omitted
     five governed columns and `_EXPOSURE_COMPARED` omitted one, and a planted change to `n_factors`
     produced a MATCH verdict — the durable evidence row asserting a pass for a stored governed row
-    that demonstrably had not reproduced.
+    that demonstrably had not reproduced. This census covers ADDITIONS; `_MUST_COMPARE` below
+    covers REMOVALS, which the re-audit proved this test alone did not.
 
     So the partition is now checked against the MODEL, not against the reader's intent: every
     column is in exactly one of key / compared / explicitly-uncompared, and a new column fails here
@@ -740,16 +798,65 @@ def test_every_column_of_every_reproduced_model_is_classified() -> None:
         }
         overlap = set(family.compared_fields) & set(family.uncompared)
         assert not overlap, f"{key} both compares and excludes {sorted(overlap)}"
-        # The census must not tolerate SHRINKAGE — the pre-merge audit's HIGH. With a bare tuple,
-        # moving `sigma` out of the comparison kept every test green while making every nightly
-        # VaR reproduction report MATCH for a run whose sigma had changed. Requiring a substantive
-        # reason per exclusion is what makes removing a column a decision someone has to defend
-        # (the UNREPRODUCIBLE_FAMILIES precedent one level up).
         for column, reason in family.uncompared.items():
             assert len(reason) >= 40, (
                 f"{key}.{column} is excluded from the comparison with a placeholder reason: "
                 f"{reason!r}"
             )
+
+
+#: The columns that MUST be compared, per family — a PIN, not a floor.
+#:
+#: The re-audit executed why a reason-length check is not enough: the four `_WHY_*` constants are
+#: module-level and reusable, so a maintainer can move the five governed VaR columns out of the
+#: comparison, map each to an existing constant, and every test stays green — reaching the exact
+#: false-MATCH defect the review's HIGH was about. A length check measures prose, not intent.
+#:
+#: So the governed value columns are pinned by NAME. Removing one fails HERE, loudly, and the pin
+#: moves only with a slice that means to move it — the run-type-census discipline this project
+#: already uses ("a census that tolerates shrinkage is a floor wearing a census's name").
+_MUST_COMPARE = {
+    "VAR": {
+        "sigma",
+        "var_value",
+        "confidence_level",
+        "horizon_days",
+        "base_currency",
+        "n_observations",
+        "window_start",
+        "window_end",
+        "z_score",
+        "n_factors",
+        "residual_variance",
+        "private_variance",
+        "estimate_age_days",
+    },
+    "EXPOSURE_AGGREGATE": {
+        "signed_quantity",
+        "mark_value",
+        "fx_rate",
+        "exposure_amount",
+        "mark_currency",
+        "exposure_type",
+        "fx_legs",
+    },
+    "REPORT": {"content_hash"},
+}
+
+
+def test_no_governed_column_can_be_dropped_from_the_comparison() -> None:
+    """The re-audit's HIGH: the reason floor was satisfiable by copying an existing constant, so
+    the five columns that WERE the original defect could be removed with all tests green. This pins
+    them by name — shrinkage now fails, and the pin can only move deliberately."""
+    assert set(_MUST_COMPARE) == set(
+        REPRODUCIBLE_FAMILIES
+    ), "a registered family has no must-compare pin — it could shrink silently"
+    for key, required in _MUST_COMPARE.items():
+        missing = required - set(REPRODUCIBLE_FAMILIES[key].compared_fields)
+        assert not missing, (
+            f"{key} no longer compares {sorted(missing)} — a governed column left the comparison, "
+            "so a divergence confined to it would be reported as MATCH"
+        )
 
 
 def test_the_comparison_actually_reads_every_declared_field() -> None:
