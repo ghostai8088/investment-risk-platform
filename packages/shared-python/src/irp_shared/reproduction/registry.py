@@ -23,7 +23,7 @@ re-deriving a second one that can drift from it.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
@@ -103,10 +103,18 @@ class ReproducibleFamily:
     #: The ORM model whose columns the census partitions. Declared so the census cannot drift into
     #: agreeing with whatever the reader happens to select.
     model: Any = None
-    #: Columns DELIBERATELY not compared, with the reason carried in the census test. These are the
-    #: ones that differ by construction on any re-execution: the row id, the knowledge timestamp,
-    #: and the FKs naming the run/snapshot/model this execution used.
-    uncompared: tuple[str, ...] = ()
+    #: Columns DELIBERATELY not compared, **each mapped to the REASON it is excluded**.
+    #:
+    #: A mapping rather than a tuple, because the pre-merge audit proved the tuple form tolerated
+    #: SHRINKAGE: moving ``sigma`` out of ``compared_fields`` into the exclusions kept every test
+    #: green while making every nightly VaR reproduction report MATCH for a run whose sigma had
+    #: changed — the same false-pass defect the review fold was folding, reached from the other
+    #: direction. The census now requires a substantive reason per exclusion (the
+    #: ``UNREPRODUCIBLE_FAMILIES`` precedent one level up), so removing a column from the
+    #: comparison costs someone a sentence they have to defend. This project's own words for the
+    #: shape that was here before: "a census that tolerates shrinkage is a floor wearing a
+    #: census's name".
+    uncompared: dict[str, str] = field(default_factory=dict)
 
 
 def _rows_of(
@@ -156,6 +164,27 @@ def _resolve_model_code(session: Session, run: CalculationRun, *, acting_tenant:
     return str(model.code)
 
 
+#: The three reasons a column is legitimately outside the comparison. Named constants rather than
+#: repeated literals so the census's reason check stays substantive without 170-character lines,
+#: and so a new exclusion has to pick one of these or write a genuinely new justification.
+_WHY_ROW_IDENTITY = (
+    "differs by construction on any re-execution: this is the row's own identity / knowledge time, "
+    "not the arithmetic it recorded"
+)
+_WHY_EXECUTION_FK = (
+    "differs by construction on any re-execution: it names THIS execution's run, snapshot or model "
+    "version rather than the values that were computed"
+)
+_WHY_RENDER_INPUT = (
+    "an INPUT that regenerate_report reads FROM THE ROW in order to re-render, so comparing it "
+    "would compare a value against itself and always pass — vacuous by construction"
+)
+_WHY_GENERATION_EVENT = (
+    "describes the GENERATION EVENT rather than the artifact's content; a re-render is a different "
+    "event by definition, so comparing it would diverge on every single run"
+)
+
+
 # --------------------------------------------------------------------------------- VAR family ----
 _VAR_KEY = ("metric_type",)
 #: EVERY governed column on `var_result`, not a hand-picked subset. The five that were missing —
@@ -178,19 +207,17 @@ _VAR_COMPARED = (
     "private_variance",
     "estimate_age_days",
 )
-#: Differ by construction on any re-execution — the row identity, the knowledge time, and the FKs
-#: naming THIS execution's run/snapshot/model rather than the arithmetic.
-_VAR_UNCOMPARED = (
-    "id",
-    "tenant_id",
-    "system_from",
-    "calculation_run_id",
-    "input_snapshot_id",
-    "model_version_id",
-    "exposure_run_id",
-    "covariance_run_id",
-    "private_covariance_run_id",
-)
+_VAR_UNCOMPARED = {
+    "id": _WHY_ROW_IDENTITY,
+    "tenant_id": _WHY_ROW_IDENTITY,
+    "system_from": _WHY_ROW_IDENTITY,
+    "calculation_run_id": _WHY_EXECUTION_FK,
+    "input_snapshot_id": _WHY_EXECUTION_FK,
+    "model_version_id": _WHY_EXECUTION_FK,
+    "exposure_run_id": _WHY_EXECUTION_FK,
+    "covariance_run_id": _WHY_EXECUTION_FK,
+    "private_covariance_run_id": _WHY_EXECUTION_FK,
+}
 
 
 def _read_stored_var(
@@ -271,7 +298,13 @@ _EXPOSURE_COMPARED = (
     "exposure_type",
     "fx_legs",
 )
-_EXPOSURE_UNCOMPARED = ("id", "tenant_id", "system_from", "calculation_run_id", "input_snapshot_id")
+_EXPOSURE_UNCOMPARED = {
+    "id": _WHY_ROW_IDENTITY,
+    "tenant_id": _WHY_ROW_IDENTITY,
+    "system_from": _WHY_ROW_IDENTITY,
+    "calculation_run_id": _WHY_EXECUTION_FK,
+    "input_snapshot_id": _WHY_EXECUTION_FK,
+}
 
 
 def _stored_exposure_rows(
@@ -358,20 +391,20 @@ _REPORT_COMPARED = ("content_hash",)
 #: caught it within one run — the recompute does not carry them, so every report diverged.
 #: `generated_at`/`generated_by` describe the GENERATION EVENT rather than the artifact, and a
 #: re-render is a different event by definition.
-_REPORT_UNCOMPARED = (
-    "id",
-    "tenant_id",
-    "system_from",
-    "calculation_run_id",
-    "input_snapshot_id",
-    "generated_at",
-    "generated_by",
-    "report_code",
-    "report_version_label",
-    "render_format",
-    "as_of_date",
-    "portfolio_code",
-)
+_REPORT_UNCOMPARED = {
+    "id": _WHY_ROW_IDENTITY,
+    "tenant_id": _WHY_ROW_IDENTITY,
+    "system_from": _WHY_ROW_IDENTITY,
+    "calculation_run_id": _WHY_EXECUTION_FK,
+    "input_snapshot_id": _WHY_EXECUTION_FK,
+    "generated_at": _WHY_GENERATION_EVENT,
+    "generated_by": _WHY_GENERATION_EVENT,
+    "report_code": _WHY_RENDER_INPUT,
+    "report_version_label": _WHY_RENDER_INPUT,
+    "render_format": _WHY_RENDER_INPUT,
+    "as_of_date": _WHY_RENDER_INPUT,
+    "portfolio_code": _WHY_RENDER_INPUT,
+}
 
 
 def _read_stored_report(

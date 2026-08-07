@@ -279,9 +279,11 @@ def report(session: Session) -> dict[str, str]:
         "SWEEP_RUN_COUNT": str(sweeps),
         "VERDICTS": ",".join(f"{c.family_key}:{c.verdict}" for c in checks),
         "OUTCOMES": ",".join(r.outcome for r in runs),
-        # Phase 5's own evidence. The proof tenant has no `breach.review` holder, so a delivered
-        # alarm records SUPPRESSED — which is the point: "nobody was configured to hear this" is a
-        # durable fact, and its ABSENCE would mean the alarm phase never ran at all.
+        # Phase 5's own evidence. The proof tenant NOW HAS a `breach.review` holder (seeded by
+        # `_seed_alarm_recipient`), so a delivered alarm records SENT and the script REQUIRES that.
+        # This comment previously described the opposite as intended doctrine — a leftover from
+        # before the fold, and exactly the kind of stale note that would talk a maintainer out of a
+        # correct red run.
         "ALARM_OUTCOMES": ",".join(
             sorted(
                 {

@@ -61,8 +61,6 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-CRD-001 | 6.1 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/003/018 | FW-RUN, DEP-MREG, DEP-MGW, CAP-2/3 | Draft |
 | REQ-CRD-002 | 6.2 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-9, CAP-2/3 | Draft |
 
-> **REPRO-1 (2026-08-07) — CTRL-018 sweep note, recorded here because the RTM's CTRL-018 citations span many REQ rows and none of them closes on this slice.** Every row above citing CTRL-018 asserts that its family's results are reproducible from their bound run. That assertion is now MACHINE-CHECKED nightly for exactly three families (VAR, EXPOSURE_AGGREGATE, REPORT) and remains an unchecked assertion for the other eighteen, which are pinned in `irp_shared.reproduction.registry.UNREPRODUCIBLE_FAMILIES` with a written reason each. **No REQ row changes status on this slice** — REPRO-1 verifies existing claims rather than delivering a new family. Two exclusions are substantive rather than pending: CONCENTRATION re-pins current-head classifications (so a legitimate edit would read as a divergence) and LIQUIDITY has a wall clock in its compute (so a once-fresh run legitimately stops reproducing). Both are named on the CTRL-018 control-matrix row.
-
 | REQ-CRD-003 | 6.3/6.4 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-2/3 | **Done (concentration half; 2026-08-01)** — realized at CON-1 (ENT-069/0057), BOUND at LIM-2 (PR #155): ten metrics registered, the basis discipline enforced at definition (DB CHECK) AND evaluation (the row-level match), named-bucket/issuer/summary limits demo'd BREACHING through the real evaluator; spread half = REQ-CRD-005 |
 | REQ-CRD-005 | 6.3 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-2/3 | Draft — MINTED at REF-1 (2026-07-29) by splitting REQ-CRD-003 (OQ-W14P-4); CRD-004 was already taken by Internal/shadow ratings. Trigger: real curve feeds land |
 | REQ-CRD-004 | 6.5 | P-RA,P-MV | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/007/022 | FW-RUN, DEP-MGW, CAP-2/4 | Draft |
@@ -146,3 +144,9 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 
 This RTM depends on the backbone (requirement definitions), the control matrix (CTRL IDs), the personas doc (persona codes), and
 the build sequence (phase IDs). It must be re-synced whenever any requirement's status changes.
+
+## REPRO-1 (2026-08-07) — CTRL-018 sweep note
+
+Recorded as its own section rather than inline, because the first draft placed this blockquote in the MIDDLE of the RTM table and a blockquote terminates a GFM table — 44 REQ rows stopped rendering as a table and appeared as raw pipe text. Found at the pre-merge audit.
+
+Every row above citing CTRL-018 asserts that its family's results are reproducible from their bound run. That assertion is now MACHINE-CHECKED nightly for exactly three families (VAR, EXPOSURE_AGGREGATE, REPORT) and remains an unchecked assertion for the other eighteen, which are pinned in `irp_shared.reproduction.registry.UNREPRODUCIBLE_FAMILIES` with a written reason each. **No REQ row changes status on this slice** — REPRO-1 verifies existing claims rather than delivering a new family. Two exclusions are substantive rather than pending: CONCENTRATION re-pins current-head classifications (so a legitimate edit would read as a divergence) and LIQUIDITY has a wall clock in its compute (so a once-fresh run legitimately stops reproducing). Both are named on the CTRL-018 control-matrix row.

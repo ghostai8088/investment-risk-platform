@@ -583,6 +583,70 @@ def test_an_alarmed_verdict_is_not_alarmed_twice(
     assert unalarmed_verdicts(session, acting_tenant=tenant) == []
 
 
+def test_an_alarm_that_was_NOT_delivered_stays_queued(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pre-merge audit finding. A FAILED delivery recorded an attempt, and the old
+    existence-of-any-event queue then retired the verdict FOREVER — the platform's most important
+    alarm dropped for the cost of one transient network failure, while the phase's own docstring
+    promised a retry."""
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission",
+        lambda *_a, **_k: ["reviewer-1"],
+    )
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id]
+    assert (
+        alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+        == NOTIFY_OUTCOME_FAILED
+    )
+    session.flush()
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [
+        check.id
+    ], "an undelivered alarm left the queue — it will never be retried"
+    # And a successful delivery DOES retire it, so the queue is not merely never-draining.
+    alarm_for_verdict(session, check=check, sink=_RecordingSink(), acting_tenant=tenant)
+    session.flush()
+    assert unalarmed_verdicts(session, acting_tenant=tenant) == []
+
+
+def test_a_divergence_with_no_recipient_is_re_alarmed_once_someone_can_hear_it(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pre-merge audit finding, and the more dangerous half. There is no tenant-onboarding clone of
+    ROLE_TEMPLATES, so a newly onboarded tenant has NO `breach.review` holder — which is exactly
+    when its first divergence is most likely to go unheard. Under the old queue the SUPPRESSED
+    sentinel retired the verdict permanently, so provisioning a reviewer the next day would never
+    surface the divergence that had already been detected."""
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: []
+    )
+    assert (
+        alarm_for_verdict(session, check=check, sink=_RecordingSink(), acting_tenant=tenant)
+        == NOTIFY_OUTCOME_SUPPRESSED
+    )
+    session.flush()
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [
+        check.id
+    ], "a divergence nobody could hear was dequeued — provisioning a reviewer later never alarms it"
+
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission",
+        lambda *_a, **_k: ["reviewer-1"],
+    )
+    sink = _RecordingSink()
+    assert (
+        alarm_for_verdict(session, check=check, sink=sink, acting_tenant=tenant)
+        == NOTIFY_OUTCOME_SENT
+    )
+    assert len(sink.messages) == 1
+    session.flush()
+    assert unalarmed_verdicts(session, acting_tenant=tenant) == []
+
+
 def test_a_MATCH_verdict_is_never_queued_for_an_alarm(session: Session) -> None:
     tenant = str(uuid.uuid4())
     _seed_var_run(session, tenant)
@@ -676,6 +740,16 @@ def test_every_column_of_every_reproduced_model_is_classified() -> None:
         }
         overlap = set(family.compared_fields) & set(family.uncompared)
         assert not overlap, f"{key} both compares and excludes {sorted(overlap)}"
+        # The census must not tolerate SHRINKAGE — the pre-merge audit's HIGH. With a bare tuple,
+        # moving `sigma` out of the comparison kept every test green while making every nightly
+        # VaR reproduction report MATCH for a run whose sigma had changed. Requiring a substantive
+        # reason per exclusion is what makes removing a column a decision someone has to defend
+        # (the UNREPRODUCIBLE_FAMILIES precedent one level up).
+        for column, reason in family.uncompared.items():
+            assert len(reason) >= 40, (
+                f"{key}.{column} is excluded from the comparison with a placeholder reason: "
+                f"{reason!r}"
+            )
 
 
 def test_the_comparison_actually_reads_every_declared_field() -> None:
@@ -705,6 +779,42 @@ def test_duplicate_natural_keys_are_refused_rather_than_silently_collapsed() -> 
     ]
     with pytest.raises(ValueError, match="natural key"):
         compare_rows(dupes, dupes, fam)
+
+
+def test_a_duplicate_key_refusal_is_a_VERDICT_not_an_outage(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fix for the audit's blast-radius finding, exercised through the SWEEP.
+
+    The direct-call test above proves `compare_rows` refuses. It does NOT prove the refusal is
+    CONTAINED — and the mutation battery caught exactly that: removing the guard in
+    `check_one_family` left that test green. A ValueError escaping the sweep rolls back the
+    per-schedule SAVEPOINT and discards the night's other verdicts, which is the precise blast
+    radius the BLOCKING savepoint fix removed and the fold accidentally re-created one line over.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+
+    def _dupes(*_a: object, **_k: object) -> list[ComparableRow]:
+        fam = REPRODUCIBLE_FAMILIES["VAR"]
+        row = ComparableRow(key=("SAME",), values=dict.fromkeys(fam.compared_fields, "x"))
+        return [row, row]
+
+    monkeypatch.setitem(
+        REPRODUCIBLE_FAMILIES,
+        "VAR",
+        replace(REPRODUCIBLE_FAMILIES["VAR"], read_stored=_dupes, recompute=_dupes),
+    )
+    outcome = _sweep(session, tenant)  # must NOT raise
+    by_family = {c.family_key: c.verdict for c in outcome.checks}
+    assert by_family.get("VAR") == VERDICT_UNREPRODUCIBLE
+    assert "natural key" in (
+        next(c.first_divergence or "" for c in outcome.checks if c.family_key == "VAR")
+    )
+    assert (
+        by_family.get("EXPOSURE_AGGREGATE") == VERDICT_MATCH
+    ), "the duplicate-key refusal took the night's other verdicts with it"
 
 
 def test_every_exclusion_carries_a_real_reason() -> None:

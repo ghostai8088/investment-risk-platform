@@ -95,7 +95,7 @@ requirement is not Done unless its inherited BX are satisfied.
 | BX-ENT | Every access is entitlement-checked, deny-by-default, tenant-scoped | BR-11, BR-17 | CTRL-011 | FW-ENT |
 | BX-LIN | Every governed output binds source→run lineage | BR-6, BR-13 | CTRL-006, CTRL-013 | DEP-LIN |
 | BX-TMP | Every persisted entity declares a temporal class (FR/IA/EV) | BR-19 | CTRL-017 | FW-TMP |
-| BX-REPRO | Every calculation result is reproducible from its bound run | BR-6, BR-9 | CTRL-018 | FW-RUN | **CTRL-018 has code as of REPRO-1 (2026-08-07): a scheduled per-tenant sweep re-executes each registered family's most recent COMPLETED run over that run's own pinned snapshot and records a MATCH/DIVERGED/UNREPRODUCIBLE verdict (ENT-073). Coverage is PARTIAL and enumerated by census — three families registered, eighteen excluded with a written reason each — so this backbone invariant is now MACHINE-CHECKED for the registered three and remains an assertion for the rest.** |
+| BX-REPRO | Every calculation result is reproducible from its bound run — **MACHINE-CHECKED nightly for three families since REPRO-1 (2026-08-07), an assertion for the other eighteen; coverage is enumerated by census, not implied** | BR-6, BR-9 | CTRL-018 | FW-RUN |
 | BX-TEST | No requirement is Done without tests | BR-1 | CTRL-001 | — |
 | BX-DOC | Calcs have methodology docs; models inventoried; fields in dictionary | BR-2, BR-3, BR-4 | CTRL-002/003/004 | DEP-MREG, DEP-DQF |
 | BX-LIM | Known limitations explicitly documented | BR-14 | CTRL-014 | — |

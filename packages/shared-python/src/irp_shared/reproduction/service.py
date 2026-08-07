@@ -196,9 +196,10 @@ def check_one_family(
 ) -> tuple[str, int, int, str | None]:
     """Re-execute one family and judge it. Returns ``(verdict, compared, diverged, detail)``.
 
-    The nested transaction is rolled back on EVERY path, including the exception paths — the
-    ``finally`` is the whole point, and a rollback that only happened on success would leave a
-    phantom run committed by the caller's next flush.
+    The recompute is discarded on EVERY path. That is enforced STRUCTURALLY by the
+    ``with session.begin_nested():`` block plus the ``_Discard`` unwind below — there is no
+    ``finally`` and deliberately no guard, because the guarded form was the BLOCKING defect the
+    adversarial review found (see the comment on the block itself).
     """
     stored = family.read_stored(session, acting_tenant, subject)
     recomputed: list[ComparableRow] = []
@@ -241,7 +242,16 @@ def check_one_family(
             _redact(f"{type(exc).__name__}: {exc}"),
         )
 
-    compared, diverged, first = compare_rows(stored, recomputed, family)
+    # INSIDE its own guard, because the fold that added `compare_rows`'s duplicate-key refusal put
+    # the call AFTER the try above — and the pre-merge audit found (three lenses independently)
+    # that this re-created the exact blast radius the BLOCKING savepoint fix had just removed: a
+    # ValueError here escaped the sweep entirely, the per-schedule SAVEPOINT rolled back, and the
+    # night's other verdicts were discarded. A comparison that cannot be performed is this family's
+    # verdict, not the tenant's outage — the same doctrine as the recompute guard.
+    try:
+        compared, diverged, first = compare_rows(stored, recomputed, family)
+    except Exception as exc:  # noqa: BLE001 - a comparison refusal is a verdict, not an outage
+        return VERDICT_UNREPRODUCIBLE, 0, 0, _redact(f"{type(exc).__name__}: {exc}")
     if compared == 0:
         # A comparison that compared nothing has proven nothing. Reporting it as MATCH is precisely
         # how a control becomes decorative — the empty-set-passes-vacuously shape MG-2 had to fix.
@@ -371,12 +381,27 @@ def unalarmed_verdicts(session: Session, *, acting_tenant: str) -> list[Reproduc
     failure mode, and the population here is a handful of rows per night.
     """
     tenant = canonical_tenant_id(acting_tenant)
+    # DELIVERED, not merely "an attempt was recorded". The pre-merge audit found two ways the old
+    # existence-of-any-event test dropped real alarms permanently:
+    #
+    #   * a webhook host down for ONE night recorded a FAILED attempt, and the verdict then left
+    #     the queue forever — the platform's most important alarm lost to a transient network
+    #     failure, while this module's own docstring promised it would be retried;
+    #   * a tenant with no `breach.review` holder recorded a SUPPRESSED sentinel, so a genuine
+    #     divergence detected BEFORE entitlement provisioning was never re-alarmed after it. Since
+    #     there is no tenant-onboarding clone of ROLE_TEMPLATES, that is the state a newly
+    #     onboarded tenant is actually in.
+    #
+    # So only `SENT` retires a verdict. FAILED and SUPPRESSED stay queued and are re-attempted,
+    # which is the fail-closed direction: a repeated attempt is noise, a dropped divergence is the
+    # thing this control exists to prevent.
     alarmed = set(
         session.execute(
             select(AuditEvent.entity_id).where(
                 AuditEvent.chain_id == tenant,
                 AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
                 AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
+                AuditEvent.outcome == "success",  # `_emit_dispatch` maps SENT -> success
             )
         )
         .scalars()
