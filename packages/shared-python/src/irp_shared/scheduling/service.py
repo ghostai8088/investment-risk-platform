@@ -943,7 +943,13 @@ def create_schedule(
         code=code,
         name=name,
         target_run_type=target_run_type,
-        scope_portfolio_id=str(scope_portfolio_id),
+        # REPRO-1: the same None-stringification trap the line below has carried since SCH-2 now
+        # applies here too, because the column became legitimately NULL for the tenant-wide
+        # REPRODUCTION family. Caught by EXECUTION, not by reading: SQLite stored the literal
+        # 'None' happily and the unit tier would have shipped it; PostgreSQL rejects it as
+        # `invalid input syntax for type uuid`, so it would have surfaced first on the deployed
+        # stack. The warning was already written, one line down, about the sibling column.
+        scope_portfolio_id=str(scope_portfolio_id) if scope_portfolio_id is not None else None,
         # NOT `str(...)` — that stringifies None to the literal "None", which PG then rejects as
         # `invalid input syntax for type uuid`. The column is legitimately NULL for a model-less
         # family (SCH-2), so the None must survive to the bind parameter.

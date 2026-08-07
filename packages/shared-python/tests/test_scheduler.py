@@ -418,6 +418,51 @@ def test_month_end_schedule_forbids_interval_days_and_model_version(session: Ses
         _mk_month_end(session, tenant, model_version_id=_seed_model_version(session, tenant))
 
 
+def test_reproduction_family_forbids_a_portfolio_scope(session: Session) -> None:
+    """REPRO-1: the sweep is tenant-wide, so naming a book would stamp a scope into a governed
+    config row that is not true — and the OPS-1 UI renders that row to operators.
+
+    Gated on the registry DECLARATION, never on whether a value was supplied. This is the SQLite
+    tier's ONLY enforcement of the rule: ``ck_schedule_portfolio_scope_by_family`` exists on
+    PostgreSQL alone, so without the service mirror the whole unit suite would admit what the
+    database rejects at flush.
+    """
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="tenant-wide"):
+        _mk(
+            session,
+            tenant,
+            target_run_type="REPRODUCTION",
+            model_version_id=None,
+            scope_portfolio_id=_seed_portfolio(session, tenant),
+        )
+
+
+def test_reproduction_family_creates_with_no_portfolio_and_no_model(session: Session) -> None:
+    """The positive control for the two refusals: the FORBIDDEN-direction guards above must not be
+    passing merely because the family cannot be created at all."""
+    tenant = str(uuid.uuid4())
+    schedule = _mk(
+        session,
+        tenant,
+        target_run_type="REPRODUCTION",
+        model_version_id=None,
+        scope_portfolio_id=None,
+        interval_days=1,
+    )
+    assert schedule.target_run_type == "REPRODUCTION"
+    assert schedule.scope_portfolio_id is None
+    assert schedule.model_version_id is None
+
+
+def test_scoping_families_still_require_a_portfolio(session: Session) -> None:
+    """The other direction of the same declaration — relaxing the column must not have quietly made
+    the scope optional for the families that genuinely need it."""
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="scope_portfolio_id is required"):
+        _mk(session, tenant, scope_portfolio_id=None)
+
+
 def test_var_family_still_requires_a_model_version(session: Session) -> None:
     """The CTRL-003 inventory-before-use rule is gated on the registry DECLARATION, never on
     whether the caller supplied a value — `if model_version_id:` would be a fail-open."""
