@@ -1,6 +1,47 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-08-07) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-08-07, later) — read this block; everything below it is HISTORY
+>
+> **RPT-2 IS CLOSED — the governed report is now REACHABLE.** A human outside the team can generate
+> a report in a browser and read it, and **every read re-proves the reproducibility claim** (ENT-072
+> stores the hash, deliberately not the body, so the HTML endpoint re-renders from the pin and
+> refuses on divergence with a 500). Merged via **PR #181** = `c4019d5` (the SEVENTEENTH autonomous
+> merge); P1 seven-ledger sweep executed on `main` and clean — all six slice commits ancestors, the
+> merged tree byte-identical to the CI-validated `11dac62`, and ledger 7 re-verified BY IMPORTING
+> FROM MAIN rather than re-reading the PR body. Migration head **`0064_entitlement_sync`**; next free
+> canonical id **ENT-073** (RPT-2 mints no entity). Wave-16 slice 1 of 3 (RPT-2 → REPRO-1 → FK-1).
+>
+> **THE SLICE'S LESSON IS ABOUT LAYERED SCRUTINY, and it is now measured.** Three independent
+> stages, each finding what the previous structurally could not:
+>   1. the **deployed smoke** (the first HTTP request ever made to a governed read) found that the
+>      backend AND worker images had **never installed the PostgreSQL driver** — since DEP-1. The
+>      deployed backend had never served one governed read, with every gate green;
+>   2. the **5-lens adversarial review** found a report could **attribute one book's numbers to
+>      another** (same tenant — no isolation control could fire) and that the permission mint could
+>      **never reach an existing database** (platform-wide since P0.5: `alembic upgrade head` on a
+>      live DB delivers ZERO new codes, and deny-by-default would 403 every holder);
+>   3. the **fresh-context audit** found an **issuer-identity disclosure the review missed**
+>      (`report.view`, held by auditor_3l, served the ISSUER rows `concentration.issuer.view` exists
+>      to withhold — the REF-1 blocking class through a new door), **a regression the review's own
+>      fold introduced**, the same defect class still open on the DATE axis, and a false
+>      "user-ratified" claim in two of the builder's own records.
+>
+> **AND TWICE IN ONE SLICE a security fix shipped with no test** — G5 (the artifact's CSP headers)
+> and H1 (the issuer exclusion) each killed NOTHING under mutation until a test was written. Both
+> caught only by mutating the fixes rather than trusting green. *A fix written and believed is not
+> a control.*
+>
+> **OWED TO THE USER AT THE WAVE-16 CLOSE (not ratified, do not treat as settled):**
+> (a) the `report.*` **holder sets** were never put to the user — every prior mint enumerated them
+> first, and two records wrongly claimed ratification (corrected); (b) **the mint-reachability
+> rule** — appending to `bootstrap.py` is NOT sufficient for a live deployment — proposed as
+> standing. Full carries (a)-(i) in `10_delivery_backlog/rpt_2_slice_record.md` §5.
+>
+> **NEXT = REPRO-1** (the CTRL-018 reproduction job, hosted at the Wave-16 gate), then FK-1.
+>
+> ---
+>
+> ## Previous truth (2026-08-07, earlier) — RPT-1 / Wave-15 close
 >
 > **RPT-1 IS CLOSED. The platform can now produce a governed report that regenerates
 > byte-identically — including across a database restore.** ENT-072 `report_generation`
