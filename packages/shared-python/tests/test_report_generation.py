@@ -361,7 +361,12 @@ def test_a_run_from_ANOTHER_TENANT_cannot_be_bound(session: Session) -> None:
     """PostgreSQL FK checks bypass RLS, so a caller-supplied cross-tenant run id would otherwise be
     durably referenced by a governed artifact (the P3-5 doctrine). Refused pre-persist."""
     foreign_run, _ = _seed_concentration_run(session, tenant=OTHER_TENANT)
-    with pytest.raises(ReportInputError):
+    # ATTRIBUTED, not just raised (pre-merge audit): build_report_snapshot now raises the SAME
+    # ReportInputError from THREE consecutive fences (tenant+run_type, attribution, zero
+    # values), so a bare-class assertion passes whichever one fires — and the cross-tenant
+    # leg is precisely the one test_report_pg.py says lives in the application. Match the
+    # message so the test proves WHICH fence refused.
+    with pytest.raises(ReportInputError, match="not a visible"):
         generate_report(
             session,
             acting_tenant=TENANT,
@@ -1076,7 +1081,10 @@ def test_an_UNSCOPED_run_is_refused_rather_than_admitted(session: Session) -> No
     update_run_status(session, unscoped, RunStatus.COMPLETED, actor_id="analyst")
     session.flush()
 
-    with pytest.raises(ReportInputError, match="was computed for portfolio"):
+    # Its OWN message, not the mismatch one: the pre-merge audit found the two conflated, and a
+    # caller told "computed for portfolio None" learns nothing about the real cause (a root
+    # exposure run built through the snapshot-consume path, which records an honest NULL scope).
+    with pytest.raises(ReportInputError, match="is UNSCOPED"):
         generate_report(
             session,
             acting_tenant=TENANT,
@@ -1088,3 +1096,147 @@ def test_an_UNSCOPED_run_is_refused_rather_than_admitted(session: Session) -> No
             generated_at=_NOW,
         )
     _assert_nothing_persisted(session)
+
+
+def test_a_run_valued_at_ANOTHER_DATE_cannot_be_dated_as_this_one(session: Session) -> None:
+    """The DATE half of the attribution class (pre-merge audit).
+
+    The review's fold closed the run↔PORTFOLIO relation and left run↔DATE open: `as_of_date` is
+    caller-asserted and renders as "As of {date}" at the head of a board artifact, while the bound
+    run carries its own economic date on the snapshot it pinned. A report headed with one quarter's
+    date carrying another quarter's numbers is the same misattribution one axis over — equally
+    hashed, equally reproducible, equally audited, and equally wrong.
+    """
+    run_id, pf = _seed_concentration_run(session)  # its snapshot is valued at _AS_OF
+
+    with pytest.raises(ReportInputError, match="refusing to date one period"):
+        generate_report(
+            session,
+            acting_tenant=TENANT,
+            actor_id="analyst",
+            portfolio_id=pf,
+            portfolio_code="P-RPT",
+            as_of_date=date(2025, 12, 31),  # a DIFFERENT quarter
+            family_runs={"concentration": run_id},
+            generated_at=_NOW,
+        )
+    _assert_nothing_persisted(session)
+
+
+def test_ISSUER_identity_rows_NEVER_reach_the_report(session: Session) -> None:
+    """The pre-merge audit's CONFIRMED disclosure, closed and made to FIRE.
+
+    `concentration.issuer.view` exists solely to withhold issuer identity from auditor_3l — the
+    split three prior mints made and REF-1 shipped a BLOCKING defect by collapsing. `report.view`
+    IS held by auditor_3l, so a reader taking every row of a concentration run handed the 3L
+    auditor exactly that read through a new door, with every per-code holder pin still passing.
+
+    Mutation H1 (delete the exclusion) killed NOTHING until this test existed — the same shape as
+    G5 in the review fold, one layer up: the fix was written and believed, and nothing made it fire.
+    """
+    from irp_shared.calc.models import RunStatus
+    from irp_shared.calc.service import create_run, update_run_status
+    from irp_shared.concentration.models import DIMENSION_KIND_ISSUER
+    from irp_shared.reference.models import Issuer, LegalEntity
+
+    # A REAL issuer behind a REAL legal entity: `concentration_result.issuer_id` carries an FK and
+    # this suite enforces foreign keys (the RPT-1 lesson), so a random UUID would fail the INSERT
+    # for the wrong reason and the test would never reach what it is testing.
+    le = LegalEntity(
+        tenant_id=TENANT, code=f"LE-{uuid.uuid4().hex[:8]}", name="Acme Holdings", is_active=True
+    )
+    session.add(le)
+    session.flush()
+    issuer = Issuer(tenant_id=TENANT, legal_entity_id=str(le.id), is_active=True)
+    session.add(issuer)
+    session.flush()
+
+    pf = _seed_portfolio(session, tenant=TENANT)
+    version_id = _seed_model_version(
+        session, tenant=TENANT, code=CONCENTRATION_MODEL_CODE, ref=CONCENTRATION_METHODOLOGY_REF
+    )
+    snap = DatasetSnapshot(
+        tenant_id=TENANT,
+        label="src",
+        purpose="CONCENTRATION_INPUT",
+        as_of_valid_at=_NOW,
+        as_of_known_at=_NOW,
+        as_of_valuation_date=_AS_OF,
+        binding_predicate_version="v1",
+        component_count=0,
+        manifest_hash="h",
+    )
+    session.add(snap)
+    session.flush()
+    run = create_run(
+        session,
+        tenant_id=TENANT,
+        run_type=RUN_TYPE_CONCENTRATION,
+        initiated_by="analyst",
+        input_snapshot_id=str(snap.id),
+        scope_portfolio_id=pf,
+    )
+    session.flush()
+    issuer_uuid = str(issuer.id)
+    # A SUMMARY row (reportable) and an ISSUER DETAIL row (must never render).
+    session.add(
+        ConcentrationResult(
+            tenant_id=TENANT,
+            calculation_run_id=run.run_id,
+            input_snapshot_id=snap.id,
+            model_version_id=version_id,
+            portfolio_id=pf,
+            row_kind="SUMMARY",
+            dimension_kind="SECTOR_INDUSTRY",
+            bucket_code="__SUMMARY__",
+            metric_type="MAX_SHARE_SECTOR_INDUSTRY",
+            metric_value=Decimal("0.412300"),
+            share_invested_long=None,
+            scheme_id=str(uuid.uuid4()),
+            basis="NOT_APPLICABLE",
+            gross_amount=Decimal("1000.000000"),
+            long_amount=Decimal("1000.000000"),
+            short_amount=Decimal("0.000000"),
+            net_amount=Decimal("1000.000000"),
+            denominator_basis="INVESTED_LONG",
+        )
+    )
+    session.add(
+        ConcentrationResult(
+            tenant_id=TENANT,
+            calculation_run_id=run.run_id,
+            input_snapshot_id=snap.id,
+            model_version_id=version_id,
+            portfolio_id=pf,
+            row_kind="DETAIL",
+            dimension_kind=DIMENSION_KIND_ISSUER,
+            bucket_code="ACME-CORP-ISSUER",
+            metric_type="SHARE",
+            share_invested_long=Decimal("0.777700"),
+            metric_value=None,
+            issuer_id=issuer_uuid,
+            basis="NOT_APPLICABLE",
+            gross_amount=Decimal("1000.000000"),
+            long_amount=Decimal("1000.000000"),
+            short_amount=Decimal("0.000000"),
+            net_amount=Decimal("1000.000000"),
+            denominator_basis="INVESTED_LONG",
+        )
+    )
+    update_run_status(session, run, RunStatus.COMPLETED, actor_id="analyst")
+    session.flush()
+
+    _row, rendered = generate_report(
+        session,
+        acting_tenant=TENANT,
+        actor_id="analyst",
+        portfolio_id=pf,
+        portfolio_code="P-RPT",
+        as_of_date=_AS_OF,
+        family_runs={"concentration": str(run.run_id)},
+        generated_at=_NOW,
+    )
+    assert "0.412300" in rendered.body, "the reportable summary metric did not render"
+    assert "ACME-CORP-ISSUER" not in rendered.body, "an ISSUER bucket reached the report"
+    assert issuer_uuid not in rendered.body, "issuer IDENTITY reached the report"
+    assert "0.777700" not in rendered.body, "the issuer row's share reached the report"

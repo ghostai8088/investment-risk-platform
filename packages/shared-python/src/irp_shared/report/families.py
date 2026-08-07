@@ -43,6 +43,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy import and_ as sa_and
+from sqlalchemy import not_ as sa_not
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -50,7 +52,11 @@ from irp_shared.concentration.bootstrap import (
     CONCENTRATION_METHODOLOGY_REF,
     CONCENTRATION_MODEL_CODE,
 )
-from irp_shared.concentration.models import ConcentrationResult
+from irp_shared.concentration.models import (
+    DIMENSION_KIND_ISSUER,
+    ROW_KIND_DETAIL,
+    ConcentrationResult,
+)
 from irp_shared.liquidity.bootstrap import LIQUIDITY_METHODOLOGY_REF, LIQUIDITY_MODEL_CODE
 from irp_shared.liquidity.models import LiquidityResult
 from irp_shared.model.models import Model, ModelVersion
@@ -197,12 +203,40 @@ def _provenance_reader(
 
 
 def _read_concentration(session: Session, run_id: str, acting_tenant: str) -> list[tuple[str, str]]:
+    """Concentration values for the report — **ISSUER-dimension DETAIL rows EXCLUDED at the query.**
+
+    **The disclosure this closes (RPT-2 pre-merge audit, CONFIRMED by two independent lenses).**
+    ``concentration.issuer.view`` exists solely to withhold issuer identity from ``auditor_3l``,
+    which is the split three prior mints made (``reference.issuer.view`` / ``legal_entity.view`` /
+    ``classification_assignment.view``) and the one REF-1 shipped a BLOCKING defect by collapsing.
+    ``report.view`` IS held by ``auditor_3l`` — correctly, a rendered report is a governed output —
+    so a reader that took every row of a concentration run would have handed the 3L auditor exactly
+    the issuer-identity read those four mints refused, through a new door, with every per-code
+    holder pin still passing.
+
+    The exclusion is the SAME predicate ``list_concentration_results(include_issuer_detail=False)``
+    applies (service.py) — deliberately identical, so the report can never render a payload class
+    broader than the ``concentration.view`` code permits. Expressed at the QUERY, not by filtering
+    afterwards, for the reason CON-1 recorded: a mis-scoped caller must not receive issuer identity
+    by accident, and a post-filter is one refactor away from being dropped.
+
+    A report over a run whose ONLY rows are issuer detail therefore yields zero values and is
+    refused by the zero-values guard — the honest outcome: that run's content is not reportable
+    under this permission.
+    """
     rows = (
         session.execute(
             select(ConcentrationResult)
             .where(
                 ConcentrationResult.calculation_run_id == run_id,
                 ConcentrationResult.tenant_id == acting_tenant,
+                # NOT (ISSUER and DETAIL) — the issuer-identity rows, and only those.
+                sa_not(
+                    sa_and(
+                        ConcentrationResult.dimension_kind == DIMENSION_KIND_ISSUER,
+                        ConcentrationResult.row_kind == ROW_KIND_DETAIL,
+                    )
+                ),
             )
             .order_by(ConcentrationResult.metric_type, ConcentrationResult.bucket_code)
         )

@@ -141,6 +141,7 @@ def build_report_snapshot(
     *,
     acting_tenant: str,
     portfolio_id: str,
+    as_of_date: date,
     family_runs: dict[str, str],
 ) -> list[tuple[str, dict[str, Any]]]:
     """Resolve each family's COMPLETED run and read its values — the pinned specs, pre-persist.
@@ -196,6 +197,23 @@ def build_report_snapshot(
         # book's governed numbers to another — with a real hash, a real snapshot and a real audit
         # trail. A run with NO scope is refused too: "unscoped" is not "matches", and admitting it
         # would leave the fence open to exactly the runs whose provenance is weakest.
+        if run.scope_portfolio_id is None:
+            # NOT the same failure as a mismatch, and it deserves its own message (the pre-merge
+            # audit found the two conflated and the consequence undisclosed). A run reaches here
+            # unscoped when its ROOT exposure run was built through the snapshot-CONSUME path,
+            # which records an honest NULL (OD-API-1b-D) that factor-exposure and VaR then copy
+            # forward — and `var_result` carries no `portfolio_id` of its own (var_service.py's
+            # own note: "the scope lives on the run"). So for such a run there is NO evidence
+            # anywhere tying the number to a book, and admitting it would re-open exactly the
+            # defect this fence closes. Refused, with the remedy named.
+            raise ReportInputError(
+                f"family {family.key!r} run {run_id} is UNSCOPED (no scope_portfolio_id), so "
+                "nothing ties its numbers to any book. This happens when the root exposure run was "
+                "built through the snapshot-consume path, which records a NULL scope that the "
+                "downstream binders copy forward. Bind a run whose root exposure run carries a "
+                "portfolio scope, or propagate the scope upstream — a report may not assert an "
+                "attribution the platform cannot evidence"
+            )
         if str(run.scope_portfolio_id) != str(portfolio_id):
             raise ReportInputError(
                 f"family {family.key!r} run {run_id} was computed for portfolio "
@@ -226,6 +244,18 @@ def build_report_snapshot(
             raise ReportInputError(
                 f"family {family.key!r} run {run_id} pins snapshot {run.input_snapshot_id}, which "
                 "is not visible to this tenant — refusing to cite inputs the report cannot name"
+            )
+        # THE DATE HALF OF THE SAME CLASS (pre-merge audit). The fold closed the run↔PORTFOLIO
+        # relation and left the run↔DATE relation open: the report's `as_of_date` is caller-asserted
+        # and is rendered as "As of {date}" at the top of a board artifact, while the bound runs
+        # carry their own economic date on the snapshot they pinned. A report headed with one
+        # quarter's date carrying another quarter's numbers is the same misattribution, one axis
+        # over — and it would be equally reproducible, equally hashed, equally audited.
+        if source_snapshot.as_of_valuation_date != as_of_date:
+            raise ReportInputError(
+                f"family {family.key!r} run {run_id} is valued at "
+                f"{source_snapshot.as_of_valuation_date}, but this report is headed "
+                f"'As of {as_of_date}' — refusing to date one period's governed numbers as another"
             )
         pinned.append(
             (

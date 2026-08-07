@@ -4428,6 +4428,7 @@ def build_report_input_snapshot(
         session,
         acting_tenant=acting_tenant,
         portfolio_id=portfolio_id,
+        as_of_date=as_of_valuation_date,
         family_runs=family_runs,
     )
     now = datetime.now(UTC)

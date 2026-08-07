@@ -222,7 +222,15 @@ PERMISSIONS: list[tuple[str, str]] = [
     # dual-hat. A future breach-action API endpoint MUST carry the matching require_permission.
     ("breach.respond", "File a 1L remediation response on a breach (1L)"),
     ("breach.review", "Assign, review, escalate and close a breach (2L)"),
-    # RPT-2 (Wave-16, ratified OQ-W16P-1..7 + remit I3) — a governed R-07 mint. TWO codes, split by
+    # RPT-2 (Wave-16) — a governed R-07 mint. TWO codes, split by
+    # **RATIFICATION STATUS, corrected at the pre-merge audit: the Wave-16 gate (OQ-W16P-1..7)
+    # asked NO permission question and enumerated NO holder set.** An earlier version of this
+    # comment cited it as ratifying these holders; it does not. The split below is the BUILDER's
+    # application of the standing doctrine (governed-output reads include auditor_3l; write verbs
+    # exclude it) — defensible, consistent with every prior mint, and NOT user-ratified. The
+    # holder sets are carried to the Wave-16 close as an explicit Tier-3 item; every prior mint
+    # (OQ-CON-1-25, OQ-LQ-1-13) had its sets enumerated to the user, and this one must too.
+    # The split is by
     # VERB CLASS on the auditor line: `report.view` gates a governed OUTPUT artifact — the rendered
     # report IS the governed numbers, with provenance — so auditor_3l HOLDS it (the exposure.view →
     # ... → liquidity.view chain, unbroken). `report.generate` is a WRITE verb (it mints a REPORT

@@ -1,6 +1,6 @@
 # RPT-2 slice record — the report becomes reachable
 
-**Status:** built, reviewed adversarially, folded; awaiting the pre-merge fresh-context audit.
+**Status:** built, adversarially reviewed, **fresh-context audited**, both folds applied.
 **Branch:** `rpt-2-report-access` · **Migration head:** `0064_entitlement_sync`
 **Wave:** 16 slice 1 (gate ratified 2026-08-07, OQ-W16P-1…7 all as recommended).
 
@@ -13,10 +13,10 @@ here; the fresh-context audit checks the proofs before merge.
 
 | # | Invariant | Proof | State |
 |---|---|---|---|
-| I1 | Every HTML read is a reproduction check; divergence is 5xx | `test_generate_then_fetch_html_and_the_BYTES_HASH_TO_THE_STORED_HASH`, `test_a_TAMPERED_stored_hash_makes_the_html_read_a_500_not_a_4xx`, and the deployed smoke's byte-hash arm | PROVEN, both tiers |
+| I1 | Every HTML read is a reproduction check; divergence is 5xx | POSITIVE both tiers (unit + the deployed smoke's byte-hash arm); the REFUSAL arm is unit-tier only (`test_a_TAMPERED_stored_hash_makes_the_html_read_a_500_not_a_4xx`) | PROVEN — **corrected at the audit**: the earlier "PROVEN, both tiers" overstated it, the deployed tier proves only the positive direction (carry §5-g) |
 | I2 | The wire cannot assert `generated_at` | `test_a_caller_supplied_generated_at_is_REFUSED_not_ignored`, `test_generated_at_is_SERVER_stamped`, + the smoke's live 422 | PROVEN |
-| I3 | Entitlement-fenced, P11-complete, hostile inputs refused with nothing persisted | route census + `test_report_grants_as_ratified` + SoD row + 8 hostile-caller tests + the smoke's live 401/403 | PROVEN |
-| I4 | The FE renders the artifact safely; provenance verbatim | 8 FE tests incl. the sandbox mechanism; mutations F1/F2 | PROVEN **with a recorded limit** — see §5 carry (c) |
+| I3 | Entitlement-fenced, P11-complete, hostile inputs refused with nothing persisted | route census + `test_report_grants_as_ratified` + SoD row + hostile-caller tests (the cross-tenant leg now asserts WHICH fence fired) + the smoke's live 401/403 | PROVEN — **corrected at the audit**: three fences raise one error class, so bare-class assertions could not attribute the refusal; the cross-tenant test now matches the message |
+| I4 | The FE renders the artifact safely; provenance verbatim | 10 FE tests incl. the sandbox mechanism; mutations F1/F2; the artifact's own CSP asserted server-side | PROVEN **with two recorded limits** — jsdom cannot see sandbox semantics (§5-c), and the remit's literal wording asked for a hostile string through the REAL pipeline, which was built as two layer-local proofs with a stubbed fetch between them (§5-h) |
 | I5 | Slice 0 lands both FE gates green at the new majors | `LINT_EXIT=0 FMT_EXIT=0 TYPECHECK_EXIT=0 TEST_EXIT=0`; the six root guards now typechecked | PROVEN, **with the TS7 deviation** — §3 |
 | I6 | The deployed stack serves the endpoints — a proof not sharing the unit tier's assumptions (P15) | `prove_report_identity.sh` HTTP arm, in CI's `stack-proof` | PROVEN — and it found §4-A |
 
@@ -25,9 +25,9 @@ here; the fresh-context audit checks the proofs before merge.
 | Proof | Evidence |
 |---|---|
 | `make check-all` | `CHECK_ALL_EXIT=0` — 2490 passed / 593 skipped, FE 216, mypy 287 files |
-| Full-PG fresh-schema battery | `PYTEST_EXIT=0`, census **3,077 marks all passing**, cross-checked `2484 + 593 = 3077` (pre-fold run; re-run post-fold at close) |
+| Full-PG fresh-schema battery | `PYTEST_EXIT=0`, census **3,083 marks all passing**, cross-checked `2490 + 593 = 3083` (post-review-fold); re-run again after the AUDIT fold — see §7 |
 | Deployed smoke | `SMOKE_EXIT=0`, every arm echoed |
-| CI | `success` on `250cdd8`, incl. the extended stack-proof step |
+| CI | `success` on `250cdd8` AND on the review-fold head `a487a07` (all eight jobs), incl. the extended stack-proof step; the audit-fold head is quoted in §7 |
 | Migration `0064` | on a simulated live DB: `0 → 2` report codes, `8` grants, `UPGRADE_EXIT=0`; re-run idempotent |
 
 ## 3. Deviations from the ratified gate, recorded
@@ -85,9 +85,65 @@ comment. Test added; G1–G5 now all killed by their intended tests.
 | **(b) The deployed WORKER's DB path** | The psycopg fix is proven for the BACKEND by the HTTP smoke. The worker's only deployed proof still exits fail-closed *before* connecting, so its database path remains unproven by execution | A slice touching the worker, or a scheduled-tick proof (REPRO-1 is the natural host) |
 | **(c) jsdom cannot see sandbox semantics** | jsdom neither executes `srcdoc` nor models `sandbox`, so two of the four FE sandbox assertions cannot fail. The attribute is pinned and the CSP is now server-asserted; a REAL browser check is the only thing that would close it | A browser-based E2E capability, or the first real-browser test harness |
 | **(d) Duplicate generate is unbounded** | Each POST mints a new run, so the `(run, portfolio)` unique key can never fire from this route. Intended (a re-generation is a new governed act) but **recorded**, since the key reads as a dedup control | A slice that wants generate idempotency |
+| **(f) VaR is unbindable via the snapshot-consume path** | The root exposure run records a NULL scope that propagates to VaR, and `var_result` has no `portfolio_id`, so nothing evidences the attribution. Refusing is correct; the FIX is upstream scope propagation | The next slice touching the exposure/factor/VaR binders — or a report that needs VaR over a consumed snapshot |
+| **(g) I1's refusal arm is unit-tier only** | The deployed smoke proves the POSITIVE (served bytes hash to the record); the 5xx-on-divergence arm exists only in SQLite. The smoke has no negative control for identity, unlike its RPT-1 half | The next slice touching the smoke |
+| **(h) I4's remit wording vs what was built** | The remit asked for a hostile string through the REAL pipeline to the view; what exists is two layer-local proofs with a stubbed fetch between them. Honest, and not what the remit's letter said | A real-browser harness (same trigger as (c)) |
+| **(i) Durable template-grant revocation** | `0064` re-inserts a revoked template grant — it cannot distinguish "never delivered" from "revoked". Accepted with the consequence documented; a real mechanism (a revocation ledger the sync consults) is a governed design decision | An operator needing durable template-level revocation |
 | **(e) The 103-test SQLite FK gap** | Unchanged from RPT-1; FK-1 is sequenced in Wave 16 | Wave-16 planning gate (already scheduled) |
 
-## 6. Honesty corrections to my own commit messages
+## 6. The fresh-context pre-merge audit (4 lenses) — what it found
+
+The audit ran on the review-folded head and made **12 blocking claims; all 12 survived adversarial
+cross-check** (2 CONFIRMED, 10 DOWNGRADED to real-but-not-merge-blocking). It also listed **14
+overstatements in my own records**. Every one is folded or recorded.
+
+### CONFIRMED — a real disclosure the review missed
+
+**`report.view` served ISSUER-dimension concentration rows.** `concentration.issuer.view` exists
+solely to withhold issuer identity from `auditor_3l` — the split three prior mints made and REF-1
+shipped a BLOCKING defect by collapsing. `auditor_3l` HOLDS `report.view` (correctly: a rendered
+report is a governed output), so the report handed the 3L auditor exactly the read those four mints
+refused, **through a new door, with every per-code holder pin still passing**. Closed at the QUERY
+with the same predicate `list_concentration_results(include_issuer_detail=False)` uses, so the
+report can never render a payload class broader than the `concentration.view` code permits.
+
+**The mint's holder sets were never put to the user, and two records claimed they were.** The
+Wave-16 gate asked no permission question and enumerated no holder set. `bootstrap.py`'s catalog
+comment and the SoD row both said "user-ratified". Corrected in both places; the holder sets are
+carried to the Wave-16 close as an explicit Tier-3 item — every prior mint had its sets enumerated
+to the user before shipping and this one has not.
+
+### The regression MY OWN review fold introduced
+
+The attribution fence refuses an unscoped run. A VaR run reaches the report unscoped whenever its
+ROOT exposure run was built through the snapshot-CONSUME path, which records an honest NULL
+(OD-API-1b-D) that factor-exposure and VaR copy forward — and `var_result` carries no
+`portfolio_id` of its own. So the report's LEAD family became unbindable on that path.
+
+**Kept the refusal.** For such a run there is genuinely no evidence anywhere tying the number to a
+book, and admitting it re-opens B1 exactly. What changed: the unscoped case now has its OWN message
+naming the upstream cause and the remedy (the two failures were conflated), and the consequence is
+carry (f) rather than a silent narrowing.
+
+### The same defect class, still open on the DATE axis — now closed
+
+The review's fold closed run↔PORTFOLIO and left run↔DATE open: `as_of_date` was caller-asserted and
+rendered as "As of {date}" at the head of a board artifact while the bound run carried its own
+economic date. A report headed with one quarter's date carrying another quarter's numbers is the
+same misattribution one axis over. Fenced against the pinned snapshot's `as_of_valuation_date`.
+
+### And the fold's own controls, mutation-proven — one survived again
+
+H1 (delete the issuer exclusion) killed NOTHING until a test was written for it — the **same shape
+as G5 one fold earlier**: the fix was written, believed, and nothing made it fire. Twice in one
+slice. H1/H2/H3 now all killed against a green baseline.
+
+## 7. Post-audit-fold gate evidence
+
+Re-run after this fold and quoted at the close: `make check-all`, the full-PG battery, the deployed
+smoke, and CI on the audit-fold head. (§2's numbers are the review-fold head's.)
+
+## 8. Honesty corrections to my own commit messages and records
 
 - Commit `250cdd8` claimed the smoke asserted **cross-generation byte-identity**. It did not — it
   compared each report to itself. The property was true empirically; the assertion did not exist.

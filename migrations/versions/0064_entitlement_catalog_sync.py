@@ -24,11 +24,25 @@ WHOLE role-template grant set, so every code minted since P0.5 lands wherever it
 
 **Idempotent by construction, and additive only.** Every id is a deterministic ``uuid5``
 (``permission_id`` / ``role_id`` / ``role_permission_id``), so "insert what is absent" needs no
-bookkeeping and re-running changes nothing. It NEVER updates or deletes: a description edited in a
-live database stays edited, and a grant an operator revoked deliberately is NOT silently restored —
-this migration can add a missing grant, never re-add a removed one is beyond its knowledge, so it
-adds only rows whose deterministic id is absent entirely. Revoking a template grant is an
-operational act that lives in the database; this migration must not fight it.
+bookkeeping and re-running changes nothing on an unmodified database. It never UPDATES and never
+DELETES: a description edited in a live database stays edited.
+
+**What it CANNOT distinguish, stated plainly because an earlier draft of this docstring claimed
+the opposite and the pre-merge audit refuted it by execution.** A grant an operator revoked
+deliberately has the SAME deterministic id as a grant that was never seeded — the id is a function
+of (role, code) alone. This migration therefore **DOES re-insert a revoked template grant**
+(reproduced: revoke → downgrade → upgrade → the grant is back, ``UPGRADE_EXIT=0``). That is a real
+consequence and it is accepted here for one reason: without it the migration cannot do its job at
+all, because "missing because it was never delivered" and "missing because it was revoked" are the
+same database state.
+
+**The operational consequence, so nobody is surprised by it:** revoking a TEMPLATE grant by
+deleting the ``role_permission`` row is not durable across a catalog sync. A durable revocation
+belongs in the tenant's own role assignments (``user_role`` / a tenant role that does not carry the
+code), not in the SYSTEM-tenant template. The RPT-2 slice record carries this as a ratification
+item: if durable template-level revocation is wanted, it needs a real mechanism (a revocation
+ledger the sync consults), which is a governed design decision and not something a data migration
+should invent.
 
 **The standing consequence, recorded so the next mint does not re-learn it:** appending to
 ``bootstrap.py`` is NOT sufficient for a live deployment. A mint needs either its own sync
