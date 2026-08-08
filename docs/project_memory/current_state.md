@@ -1,6 +1,59 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-08-08, later) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-08-08, latest) — read this block; everything below it is HISTORY
+>
+> **THE WAVE-16 CLOSE REVIEW HAS RUN AND ITS GATE IS RATIFIED; THE CLOSE FOLD IS BUILT AND AWAITING
+> ITS GATES.** Branch `wave-16-close`. The review ran fresh-context over the whole wave and found
+> what neither the slices nor their reviews could:
+>
+> - **A BLOCKING product gap nobody had recorded: the platform has no way to create a tenant, a
+>   user or a role.** 251 API paths, 291 RBAC-protected operations, **zero provisioning routes** —
+>   every deployment is seeded by a demo script. Spot-checked independently. ⇒ **ONBOARD-1 is
+>   ratified as Wave-17 slice 0.**
+> - **It refuted one of my own headlines by execution.** FK-1 claimed "every SQLite engine";
+>   `create_engine` directly reports `0`, `make_engine` reports `1`, and four tests were writing
+>   dangling foreign keys and passing. A census measured THROUGH the mechanism it audits cannot see
+>   what bypasses the mechanism.
+> - **And a count: 2554 vs main's 2557** — an "after" figure taken before the slice's own tests
+>   existed.
+>
+> **Gate outcome (user, AskUserQuestion, all four as recommended):** ONBOARD-1 as Wave-17 slice 0 ·
+> `report.*` holder sets ratified as shipped · the mint-reachability rule ratified **with a
+> mechanical gate + the revocation fix** (now **P17**) · the alarm fail-open fixed in a close fold.
+>
+> **The close fold, five items, all built and mutation-proven (`MUTATION_EXIT=0`, 12/12):**
+> the alarm fail-open (row-scoped, fails CLOSED toward alarming, plus `alarm_channel_health`
+> recomputed from source) · FK universality (three suites routed through the factory, four fixtures
+> given genuine parents, a SOURCE-level bypass census with its own floor) · **P17 built as a
+> mechanical gate** (`test_entitlement_mint_delivery.py`: every bootstrap code must be named by a
+> literal `DELIVERS` tuple in some migration) **plus the revocation ledger** (`role_permission_
+> revocation`, migration **`0066`**; the sync extracted to ONE implementation that consults it and
+> skips + logs; `0064` amended to route through it, behaviour-identical where no revocation exists,
+> proven by differential execution) · four record corrections · the false P8-census claim in
+> production source, with the census population WIDENED to both doors into a governed run.
+>
+> **Two of my own controls were survivors on the battery's first run** — a floor that carried a
+> second copy of the matcher it was meant to protect, and a test that looked like the poison-row
+> proof and passed for an unrelated reason. Both closed; both are why the battery is now a
+> **committed artifact** (`scripts/mutation_battery.py` + `scripts/mutants.toml`), which the review
+> required: four Wave-16 batteries were cited with no artifact in the repository at all, and
+> REPRO-1's unreconstructable "14/14" headline is **RETRACTED** rather than re-derived.
+>
+> **REGISTERED at this close: TS→7 is UNPAID.** The Wave-16 gate ratified "TS→7 paid as RPT-2
+> slice 0"; eslint→10 ✓ and jsdom→30 ✓ landed, `typescript` is still `^5.9.3`. The refusal is
+> sound (neither `typescript-eslint` nor `openapi-typescript` had declared TS 7 support) but it
+> appeared in no carries table, no register and not here — a ratified gate outcome, unpaid and
+> invisible. New trigger: pay it when BOTH declare support. Monitor, do not force.
+>
+> **Migration head `0065` → `0066`.** Next free canonical id **ENT-074**.
+>
+> **NEXT: the close fold's gates at a frozen tree, then a Fable review, then PR/CI/merge, then the
+> Wave-17 planning gate** (ONBOARD-1 slice 0, then ALERT-1, REPRO-2, RPT-3, TS→7; D5 homeless
+> carries and D6 three process rules to ratify at that gate).
+>
+> ---
+>
+> ## Previous truth (2026-08-08, earlier) — FK-1's close
 >
 > **FK-1 IS CLOSED — WAVE 16'S BUILD SLICES ARE COMPLETE; NEXT = the WAVE-16 CLOSE REVIEW.**
 > Foreign keys are now TRUE on the unit tier: `make_engine` installs `PRAGMA foreign_keys=ON` on

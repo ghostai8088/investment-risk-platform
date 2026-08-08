@@ -401,8 +401,17 @@ def generate_report(
     model: it renders numbers OTHER families produced under THEIR registered versions, and each
     rendered section carries its own family's ``model_code`` and ``methodology_ref``. Inventing a
     "report model" would add a governance object that asserts nothing — the methodology that
-    matters is the one behind each number, and that is already pinned. This is recorded on the P8
-    census exception list rather than left for a reader to infer.
+    matters is the one behind each number, and that is already pinned.
+
+    **This paragraph used to end "…is recorded on the P8 census exception list rather than left for
+    a reader to infer", and that sentence was FALSE from the day it was written** (RPT-1; found at
+    REPRO-1, carry (h); fixed at the Wave-16 close). The exception dict held one entry,
+    ``exposure/service.py``, and this module was not in the census POPULATION either: P8 scanned for
+    ``execute_governed_run(``, which this module never calls — it mints its run with ``create_run``.
+    So the reassuring sentence pointed at a record that did not exist, about a census that could not
+    have seen this file. Both halves are now true: the census population is every module that mints
+    a governed run by either door, and ``report/service.py`` carries a real exception row stating
+    the reason above.
 
     Ordering is deliberate: the snapshot is built (and every refusal fires) BEFORE the report row
     exists, so a refused generation leaves no run, no snapshot and no row — the pattern DATA-1

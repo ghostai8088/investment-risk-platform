@@ -7,7 +7,9 @@ user-role assignments. Users/roles/permissions are effective-dated reference/con
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from irp_shared.db.base import Base
@@ -62,6 +64,40 @@ class RolePermission(PrimaryKeyMixin, Base):
     permission_id: Mapped[str] = mapped_column(
         ForeignKey("permission.id"), nullable=False, index=True
     )
+
+
+class RolePermissionRevocation(PrimaryKeyMixin, TimestampMixin, Base):
+    """A template grant an administrator REVOKED deliberately (P17, Wave-16 close).
+
+    The catalog sync (``entitlement.sync.sync_catalog``) is additive and id-deterministic, so it
+    cannot tell "never delivered" from "revoked on purpose" by looking at ``role_permission``
+    alone — both are the same absence. This table is the missing bit: it records the revocation as
+    a fact, and the sync consults it and SKIPS. Without it a governance action is transient, which
+    is what the Wave-16 close review called institutionalising the resurrection.
+
+    Global (no ``tenant_id``), mirroring ``role_permission`` exactly — the pair it shadows.
+
+    **Convention, NOT an enforced invariant, and the distinction is deliberate:** the row is a
+    record of an act, so the intended way to restore a grant is to grant it (an administrative
+    write against ``role_permission``), not to delete the evidence. Nothing here stops a DELETE —
+    no append-only trigger is fitted, because the platform's IA machinery is for governed business
+    records and this is entitlement config. Saying so plainly beats documenting a guarantee that no
+    test could make fire.
+    """
+
+    __tablename__ = "role_permission_revocation"
+    __temporal_class__ = TemporalClass.EFFECTIVE_DATED
+    __table_args__ = (
+        UniqueConstraint("role_id", "permission_id", name="uq_role_permission_revocation_role_id"),
+    )
+
+    role_id: Mapped[str] = mapped_column(ForeignKey("role.id"), nullable=False, index=True)
+    permission_id: Mapped[str] = mapped_column(
+        ForeignKey("permission.id"), nullable=False, index=True
+    )
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class UserRole(PrimaryKeyMixin, TenantMixin, EffectiveDatedMixin, Base):

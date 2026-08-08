@@ -215,3 +215,46 @@ FK-1's own two carries need no slice — their triggers will fire on their own.
 ## 5. THE HONEST ASSESSMENT
 
 Wave 16 shipped three genuinely valuable things and the process was **not proportionate** — but the diagnosis in the records is wrong. REPRO-1 took sixteen commits and nine review stages, and 41% of its production code was written *after* the first adversarial review; the folds were not corrections, they were new 300-line changes shipped under the word "fold" and reviewed once. "Five consecutive folds each introduced a defect the next one caught" is the arithmetically expected result of that, not evidence of thoroughness — and the scrutiny was spent on a control that no deployed tenant can currently start, for three of twenty-one families. The honest lever is scope, not stages: cap the fold, split the discovery work from the build work, merge earlier on less. Meanwhile FK-1, the one slice that got *neither* an adversarial review nor a fresh-context audit, merged with its headline claim refutable in a single grep and its measurement taken from the wrong tree — so the scrutiny is doing real work when it runs; it is the allocation that is wrong. **The single biggest risk carried into Wave 17 is not any of the process findings: it is that the platform has 24 governed families and 291 RBAC-protected operations and no way whatsoever to create the tenant, user, or role that every one of them requires.** The records describe a deployable multi-tenant product; the code describes a very well-governed engine with no ignition. That gap is discoverable by an outside reader in minutes, and it is currently written down nowhere except in two source-code comments that say so in passing.
+---
+
+## 6. THE CLOSE FOLD — what was actually built (2026-08-08, branch `wave-16-close`)
+
+All six items above are done. Written after the work, with the exit codes quoted (P14), not before
+it — this record's own §7-equivalent lesson from REPRO-1.
+
+| # | Item | What shipped | Proof |
+|---|---|---|---|
+| 4 | Alarm fail-open (D4) | An unreadable `NOTIFY.DISPATCH` payload is scoped to its OWN row, cannot raise, and fails **CLOSED toward alarming**; a verdict whose delivery history contains an unparseable row stays QUEUED. `alarm_channel_health()` added so an operator can tell "quiet night" from "channel broken" — recomputed from source, never inferred from an evidence row's presence (LIM-1's standing lesson) | M-A1/A2/A3 KILLED. The test that had asserted the fail-open **as expected behaviour** is replaced by three that catch it, including the review's own scenario: a poison row about an UNRELATED entity, then a live divergence created afterwards, which must still be delivered |
+| 3 | FK universality | Three suites routed through `make_engine`; the four `TestUnitTierGrain` fixtures given genuine parents; a **source-level** bypass census (reads the import list, not prose) with a floor asserting it still detects known bypasses | M-B1/B2 KILLED |
+| — | P17, both clauses | `test_entitlement_mint_delivery.py` — every code in `bootstrap.PERMISSIONS` must be named by a literal `DELIVERS` tuple in some migration, read from the AST so a computed value cannot satisfy it. **And the revocation ledger**: `role_permission_revocation` (migration `0066`), the sync extracted to ONE implementation (`entitlement/sync.py`) that consults it and skips + LOGS, `0064` amended to route through it | M-C1…C5 KILLED. `0064`'s amendment is justified by execution, not argument: both ledger states run against identical fixtures and are compared (`test_the_additive_behaviour_is_unchanged_where_no_revocation_is_recorded`) |
+| 6 | The mutation harness | `scripts/mutation_battery.py` + `scripts/mutants.toml`. It **never mutates the working tree** — everything runs in a scratch clone, which structurally forecloses FK-1's own worst defect — and an unmatched anchor is reported as a SURVIVOR, never a pass | `MUTATION_EXIT=0`, **12/12** |
+| 1 | Record corrections | CTRL-009 re-cited (run `31273847072`, head `00993e1b`, with the renamed step title); FK-1's `2554` → `2557`; REPRO-1's unreconstructable "14/14" **RETRACTED** and the control matrix's contradicting "11/11" removed rather than replaced | Each quoted against the artifact it cites |
+| 5 | TS→7 registered | Roadmap standing-deferrals, RPT-2 carry (j), `current_state.md`. New trigger: both `typescript-eslint` and `openapi-typescript` declaring TS 7 support | — |
+| — | The false P8 claim | `report/service.py` claimed to be "recorded on the P8 census exception list"; it was not, and it was not even in the census POPULATION — P8 scanned for `execute_governed_run(`, which that module never calls. **Population widened to both doors into a governed run**, and two shipped families (`report`, `reproduction`) plus the report proof harness now carry real exception rows | M-D1/D2 KILLED |
+
+**Two of the fold's own controls were SURVIVORS on the battery's first run, and both were real.**
+The bypass census's floor carried a *second copy* of the matcher it was meant to protect, so
+neutering the census left the floor green — two copies of one property, the shape FK-1 had just
+retired one wave earlier, reintroduced by the test written to prevent it. And
+`test_a_verdict_with_an_unreadable_row_stays_QUEUED_rather_than_retiring` looked exactly like the
+poison-row proof and was not: with the poison row as the verdict's only row, the entity never
+enters the attempt map at all, so it stays queued whether or not the guard exists. The guard only
+bites on a MIXED history, which nothing tested. Both are now closed, and both are the argument for
+running the battery rather than reasoning about coverage: reading found neither.
+
+**Two things the fold's own gates found, recorded because both are about how proofs get read.**
+
+`make check-all` returned **21 failures** on a tree the mutation battery had just certified 12/12
+green. Every one was a hand-mirrored `assert script.get_current_head() == "0065_reproduction_check"`
+in a suite no mutant targeted — migration `0066` moved the head, and **21 independently-maintained
+copies of one global fact** all went stale at once. That is the REF-1 lesson (31 hand-mirrored
+copies of an expected value ARE the drift surface a census exists to detect) still present in the
+test tree, and it is now recorded as a candidate for a single shared head assertion rather than
+fixed in a close fold. The 21 were repointed mechanically with a per-file `count == 1` assertion,
+because a blanket string replace is how this fold's own predecessor corrupted a record it was
+correcting.
+
+More importantly: **a green battery is not a green tree.** The harness runs only the suites its
+mutants name — deliberately, or it would be too slow to use during a fold — so its baseline says
+the declared controls fire and says nothing about anything else. That caveat is now in the
+harness's own docstring, next to the number a reader would otherwise over-read.

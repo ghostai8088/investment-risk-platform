@@ -32,7 +32,7 @@ confirming existing ones (N10, M2, N11).
 |---|---|
 | `make check-all` | `CHECK_ALL_EXIT=0` — ruff format 562 clean, ruff `All checks passed!`, mypy `no issues found in 286 source files`, pytest **2461 passed / 593 skipped**, FE **208 passed** |
 | Full-PG fresh-schema battery | see §7 — reset + `alembic upgrade head` to `0063`, `PYTEST_EXIT` quoted |
-| Restore-cycle identity (I2) | `RESTORE_PROOF_EXIT=0` locally; in CI run `31048172308`, step *"Prove a governed report regenerates identically after a restore (I2)"* → `success` |
+| Restore-cycle identity (I2) | `RESTORE_PROOF_EXIT=0` locally; in CI run `31048172308`, step *"Prove a governed report regenerates identically after a restore (I2)"* → `success`. **The step was RENAMED afterwards** (RPT-2 added the HTTP arm; it now reads *"…after a restore (I2) + serves over HTTP (I6)"*), so this historical citation names a title that no longer exists in the workflow — noted rather than rewritten, because this row records what was measured at THIS slice's head. The live citation for CTRL-009 was re-taken at the Wave-16 close: run `31273847072`, head `00993e1b` |
 | CI on the head SHA | see §7 |
 
 ## 3. The finding that reshaped the slice

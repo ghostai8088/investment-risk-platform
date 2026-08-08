@@ -792,6 +792,53 @@ def run_reproduction_sweep(
     return outcome
 
 
+@dataclass(frozen=True)
+class AlarmChannelHealth:
+    """Whether the reproduction alarm channel is WORKING, recomputed from source.
+
+    **Why this exists at all.** Phase 5 returns an empty list both when there is nothing to alarm
+    and when it could not read the queue, and every programmatic consumer reads the two identically.
+    That is how a tenant-wide permanent silence stayed invisible: the control was *Implemented*, the
+    tick was green, and nothing anywhere said the alarm channel had stopped working.
+
+    LIM-1's standing lesson, verbatim and applying here: **a fail-open control's health surface must
+    RECOMPUTE from source, never infer from an evidence row's presence.** So this counts what is
+    actually owed and what is actually broken, rather than reporting "fine" because nothing was
+    delivered.
+    """
+
+    queued: int
+    unreadable_rows: int
+
+    @property
+    def healthy(self) -> bool:
+        """False if ANY delivery row is unparseable — not "false if nothing was delivered".
+
+        A quiet night and a broken channel are different facts and this is the field that tells
+        them apart.
+        """
+        return self.unreadable_rows == 0
+
+
+def alarm_channel_health(session: Session, *, acting_tenant: str) -> AlarmChannelHealth:
+    """Recompute the alarm channel's health for one tenant, from the rows themselves."""
+    tenant = canonical_tenant_id(acting_tenant)
+    unreadable = 0
+    for (payload,) in session.execute(
+        select(AuditEvent.after_value).where(
+            AuditEvent.chain_id == tenant,
+            AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
+            AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
+        )
+    ).all():
+        if not isinstance(payload, dict):
+            unreadable += 1
+    return AlarmChannelHealth(
+        queued=len(unalarmed_verdicts(session, acting_tenant=tenant)),
+        unreadable_rows=unreadable,
+    )
+
+
 # ------------------------------------------------------------------------------ the alarm phase ---
 def unalarmed_verdicts(session: Session, *, acting_tenant: str) -> list[ReproductionCheck]:
     """Alarming verdicts still owed a delivery attempt.
@@ -832,6 +879,7 @@ def unalarmed_verdicts(session: Session, *, acting_tenant: str) -> list[Reproduc
     """
     tenant = canonical_tenant_id(acting_tenant)
     attempts_by_entity: dict[str, dict[str, list[tuple[int, str]]]] = {}
+    unreadable_rows: list[str] = []
     for entity_id, outcome_value, payload, seq in session.execute(
         select(
             AuditEvent.entity_id,
@@ -867,13 +915,38 @@ def unalarmed_verdicts(session: Session, *, acting_tenant: str) -> list[Reproduc
         # unit — and a mixed history can never masquerade as an all-success latest attempt. Narrowly
         # reachable (only a deployment holding live un-retired rows at upgrade, and no production
         # deployment exists), fixed anyway: a load-bearing comment that is false is itself a defect.
-        attempt = str((payload or {}).get("attempt_id") or _PRE_ATTEMPT_ID_HISTORY)
+        # A row whose payload cannot be read RETIRES NOTHING, and cannot raise.
+        #
+        # This fold reads a JSON column, and the FROZEN `record_event` will persist a bare string
+        # there for any buggy caller. The first shape let that raise: the exception escaped the
+        # fold, the worker caught it one level up, and phase 5 returned an empty list — which every
+        # consumer reads as "nothing to alarm". ONE malformed row, about ANY entity, then silenced
+        # the whole tenant's alarm channel on every subsequent tick, permanently, with a log line as
+        # the only trace. The Wave-16 close review reproduced it with a poison row about an
+        # UNRELATED entity and watched a genuine divergence created afterwards go unalarmed across
+        # five consecutive ticks.
+        #
+        # Two properties, and the second is the one that matters for a DETECTIVE control:
+        #   * the failure is scoped to the ROW — a payload we cannot parse tells us nothing about
+        #     any other verdict, so it must not affect any other verdict;
+        #   * the direction is FAIL-CLOSED TOWARD ALARMING. If we cannot tell whether a verdict was
+        #     delivered, we assume it was NOT and leave it queued. A repeated alarm is noise; a
+        #     divergence nobody hears is the thing this control exists to prevent.
+        if not isinstance(payload, dict):
+            unreadable_rows.append(str(entity_id))
+            continue
+        attempt = str(payload.get("attempt_id") or _PRE_ATTEMPT_ID_HISTORY)
         attempts_by_entity.setdefault(str(entity_id), {}).setdefault(attempt, []).append(
             (int(seq), str(outcome_value))
         )
 
     alarmed: set[str] = set()
+    poisoned = set(unreadable_rows)
     for entity_id, attempts in attempts_by_entity.items():
+        if entity_id in poisoned:
+            # Some row for THIS verdict was unparseable, so its delivery history is incomplete and
+            # no conclusion drawn from the rest of it is trustworthy. Stay queued.
+            continue
         if len(attempts) >= MAX_ALARM_ATTEMPTS:
             alarmed.add(entity_id)
             continue
@@ -1057,6 +1130,7 @@ def _emit_dispatch(
 
 
 __all__ = [
+    "AlarmChannelHealth",
     "DISPOSITIONS",
     "DISPOSITION_RECORDED",
     "DISPOSITION_SKIPPED",
@@ -1067,6 +1141,7 @@ __all__ = [
     "MAX_ALARM_ATTEMPTS",
     "ReproductionInfrastructureFailure",
     "ReproductionOutcome",
+    "alarm_channel_health",
     "alarm_for_verdict",
     "check_one_family",
     "compare_rows",

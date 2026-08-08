@@ -448,7 +448,7 @@ def test_migration_chain_breach_action() -> None:
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0065_reproduction_check"  # DATA-1
+    assert script.get_current_head() == "0066_entitlement_revocation"  # DATA-1
     assert script.get_revision("0051_breach_action").down_revision == "0050_limit_breach"
 
 
