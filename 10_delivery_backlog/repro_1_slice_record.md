@@ -116,12 +116,25 @@ run BEFORE the citation commit, so it returned EMPTY at that moment and does NOT
 committed head, where it names the five record files the citation commit touched. That is a P14
 problem in a record about P14: evidence must be quoted from the state a reader can reproduce, or the
 state must be named alongside it. The rule's actual test — records only, no production file — passes
-in both readings. `git diff --name-only 0e1de85..<citation commit>` returned EMPTY, with
-the only working-tree change being this record set. So the citation is CI run **`31231894079`**,
-head **`0e1de85`**, `stack-proof` job → `success`, step *"Prove a scheduled reproduction detects a
-planted divergence (CTRL-018)"* → **`success`**, verified at the STEP level rather than inferred
-from the run-level conclusion. All 8 jobs green; the sibling run `31231890888` on the same head is
-also green.
+in both readings. `git diff --name-only 0e1de85..<that citation commit>` returned EMPTY.
+
+**Then the fifth pass changed the code again, and the rule fired for the first time in anger.** The
+fourth fold's citation (run `31231894079`, head `0e1de85`) named a run of code that the fifth fold
+altered in `reproduction/service.py` and `scheduling/service.py`, so P16 forbade it. Rather than
+quietly keep it, the control-matrix row was marked **RE-CITE PENDING** in its own evidence column
+and the proof was re-run.
+
+**The citation, third and current:** CI run **`31237359327`**, head **`c9df15f`**, `stack-proof`
+job → `success`, step *"Prove a scheduled reproduction detects a planted divergence (CTRL-018)"* →
+**`success`** — verified at the STEP level rather than inferred from the run-level conclusion. All
+8 jobs green. `git diff --name-only c9df15f..HEAD` names no production file.
+
+**The re-citation was applied by TARGETED edit, not by blanket replacement.** The previous one used
+a string replace across four documents and rewrote the historical bullet describing the mistake, so
+the record briefly claimed the current citation was the wrong one. Three of the four documents hold
+the head SHA exactly once, but this one holds it twice — once historically (the sentence above) and
+once as the live citation — and a replace-all cannot tell them apart. Noted because it is the
+mechanism, not the care, that has to be different next time.
 
 Counts **MEASURED** on a fresh collect at the merge head: **3,148** collected platform-wide;
 **56** in this slice's two suites (48 unit + 8 PostgreSQL). The fourth fold added thirteen: the
