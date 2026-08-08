@@ -79,14 +79,36 @@ rule rather than another correction.
   changed 486 lines across 13 files, including `reproduction/service.py`, `registry.py`,
   `reproduction_alarms.py` and the proof harness itself. An auditor following the citation from any
   of the four documents that carry it landed on a green run of code that no longer existed.
+* **A third near-miss, in the act of fixing the second.** The re-citation was applied by a blanket
+  string replacement of the old run id across all four documents — which also rewrote THIS bullet,
+  the historical record of the mistake, so the paragraph briefly said the current citation was the
+  wrong one. Caught by reading the result rather than trusting the replace. Worth one line because
+  it is the same shape as everything else here: a mechanical fix applied to prose that included its
+  own history, with no test that could have noticed.
 
 **The rule, bound to a trigger moment (P7).** A control-status citation names a CI run, and *the
-last act before opening the PR* is to confirm that run's head SHA equals the branch tip — not that
-it is an ancestor of it, which it always will be. If code changed, the proof re-runs and the
-citation moves. Four documents carry this citation (this record, `control_matrix_skeleton.md`,
-`canonical_data_model_standard.md`'s ENT-073 row, `delivery_roadmap.md`), so the check is over all
-four. It is written into `claude_operating_instructions.md` as a standing step rather than left here
-as a lesson, because "remember to re-cite" is exactly the bare-instruction shape P7 forbids.
+last act before opening the PR* is to run `git diff --name-only <cited-sha>..HEAD` and confirm it
+names no production file — no source, no migration, no proof harness; records only. Not "is the
+cited SHA an ancestor of the tip", which it always will be, and which is why the weak check never
+fires. If anything else appears, the proof re-runs on the new head and the citation moves in all
+four documents that carry it (this record, `control_matrix_skeleton.md`,
+`canonical_data_model_standard.md`'s ENT-073 row, `delivery_roadmap.md`). It is written into
+`claude_operating_instructions.md` as P16 rather than left here as a lesson, because "remember to
+re-cite" is exactly the bare-instruction shape P7 forbids.
+
+**The rule was wrong on first use, and applying it is what showed that.** P16 was drafted as "the
+cited run's head SHA equals the branch tip" — which is unsatisfiable by construction, because the
+commit that WRITES the citation moves the tip, so the rule fails on its own act. The property that
+matters is that no code the cited step exercises has changed since the evidence was produced, which
+is a diff and not an equality. Corrected before the first application rather than after, but only
+because it was applied rather than re-read.
+
+**Applied here, with the check quoted.** `git diff --name-only 0e1de85..HEAD` returned EMPTY, with
+the only working-tree change being this record set. So the citation is CI run **`31231894079`**,
+head **`0e1de85`**, `stack-proof` job → `success`, step *"Prove a scheduled reproduction detects a
+planted divergence (CTRL-018)"* → **`success`**, verified at the STEP level rather than inferred
+from the run-level conclusion. All 8 jobs green; the sibling run `31231890888` on the same head is
+also green.
 
 Counts **MEASURED** on a fresh collect at the merge head: **3,141** collected platform-wide;
 **50** in this slice's two suites (42 unit + 8 PostgreSQL). The fourth fold added thirteen: the

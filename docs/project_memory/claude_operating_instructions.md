@@ -457,12 +457,20 @@ builder on its own authority.
 
 ## A control-status citation is re-verified against the branch tip before the PR (standing, drafted 2026-08-07, P16 — PROPOSED, awaiting ratification)
 A control matrix row that moves a control to *Implemented* or *Operational* on OBSERVED evidence cites a
-CI run. **The last act before opening or updating the PR is to confirm that run's head SHA equals the
-branch tip** — not that it is an *ancestor* of the tip, which it always will be and which is why the
-weaker check never fires. If any production code the cited step exercises has changed since, the proof
-re-runs and the citation moves, in **every** document that carries it (a citation is typically repeated
+CI run. **The last act before opening or updating the PR is to run
+`git diff --name-only <cited-sha>..HEAD` and confirm it names NO production file** — no source, no
+migration, no proof harness; records only. Not "is the cited SHA an ancestor of the tip", which it always
+will be, and which is why the weak check never fires. If anything else appears, the proof re-runs on the
+new head and the citation moves, in **every** document that carries it (a citation is typically repeated
 across the slice record, the control matrix, the canonical entity row and the roadmap — REPRO-1's was in
 four).
+
+*The check is a diff, not an equality, and the first draft of this rule got that wrong.* "The cited run's
+head SHA equals the branch tip" is unsatisfiable by construction: the commit that WRITES the citation
+moves the tip, so the rule would fail on its own act. The property that actually matters is that no code
+the cited step exercises has changed since the evidence was produced — which a records-only diff
+establishes and an equality test cannot. Caught by trying to apply the rule rather than by re-reading it,
+which is the same lesson as everything else in this slice.
 
 *Grounded, twice in one slice, one generation apart.* CTRL-018 first cited a run whose alarm arm was
 satisfied by a no-recipient sentinel and whose trigger arm counted `pg_trigger` rows that exist for
