@@ -1,6 +1,50 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-08-07, later) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-08-08) — read this block; everything below it is HISTORY
+>
+> **REPRO-1 IS CLOSED — CTRL-018 has code, and the code survived NINE scrutiny stages.** The
+> reproducibility claim every governed family carries is now a nightly machine verdict: a per-tenant
+> sweep rides the scheduler as the third schedulable family, re-executes each registered family's
+> most recent COMPLETED run over that run's OWN pinned snapshot inside an always-rolled-back nested
+> transaction, and records MATCH/DIVERGED/UNREPRODUCIBLE (ENT-073 `reproduction_check`, migration
+> head **`0065_reproduction_check`**; next free canonical id **ENT-074**). Merged via **PR #183**
+> (16 commits, head `50b5d14`) = **`11d0d92`** on main (the EIGHTEENTH autonomous merge);
+> `git merge-base --is-ancestor` quoted at exit 0. Coverage is a CENSUS: 3 families registered
+> (VAR / EXPOSURE_AGGREGATE / REPORT), 18 pinned unregistered with a written reason each, union
+> asserted equal to the run-type vocabulary. CTRL-018 Planned → **Implemented** on step-level
+> CI evidence (run `31264940869`, head `e7ae526`), re-cited FOUR times under P16 — the last two
+> caught by the rule at its trigger moment rather than by an audit, which is the P7 shape working.
+>
+> **THE SLICE'S LESSON IS THE STRONGEST VERSION YET OF LAYERED SCRUTINY: the missing ingredient was
+> a DIFFERENT ENGINE, not more passes on the same one.** Five Opus adversarial passes each found
+> real defects — and EACH FOLD INTRODUCED A DEFECT THE NEXT PASS CAUGHT, six for six, every one
+> found by EXECUTION and none by reading. Two Fable reviews then changed the curve: the sixth
+> BLOCKING (the v5 alarm-retirement rule could not TERMINATE — a recipient leaving the holder set
+> froze a per-recipient state no tick could advance) found in ONE pass; the state-space
+> simplification proven behaviour-IDENTICAL by differential execution (`ANY_DIFF: False` over 13
+> disposition combinations) rather than by a suite passing; and the fix's own fallback defect caught
+> on the send-back. The final confirmation: **no seventh defect**. Model provenance
+> transcript-verified (100% `claude-fable-5`). The alarm queue's SIXTH rule — retire when the LATEST
+> ATTEMPT concluded for everyone it tried, or after `MAX_ALARM_ATTEMPTS` attempts — is the first
+> whose termination an adversarial reviewer could not break: per-recipient state is hostage to the
+> holder set, which the function does not own; an ATTEMPT is something the system DID.
+>
+> **Sweep dispositions are STRUCTURAL now**: one `FamilyOutcome` per family (RECORDED / SKIPPED /
+> UNCHECKABLE / UNRECORDED), `verdict is not None` iff judged, validated on every construction —
+> after two BLOCKINGs lived in parallel lists that could disagree about whether a family had been
+> judged. Infrastructure failure is a ratified NON-alarming disposition (2026-08-07): fails the
+> sweep loudly on the ledger, pages nobody. A DIVERGED verdict COMPLETES the run (I3).
+>
+> **OWED TO THE USER (not ratified, do not treat as settled):** P14, P15, **P16** (the
+> citation-freshness rule — drafted, corrected on first use, fired successfully twice) all await
+> ratification; plus the Wave-16-close items carried from RPT-2 (`report.*` holder sets, the
+> mint-reachability rule). Carries (a)–(t) in `repro_1_slice_record.md` §6, each with a named host.
+>
+> **NEXT = FK-1** (the 103 dangling-FK tests), the last Wave-16 slice.
+>
+> ---
+>
+> ## Previous truth (2026-08-07, later) — RPT-2
 >
 > **RPT-2 IS CLOSED — the governed report is now REACHABLE.** A human outside the team can generate
 > a report in a browser and read it, and **every read re-proves the reproducibility claim** (ENT-072
