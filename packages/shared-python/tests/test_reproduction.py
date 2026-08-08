@@ -1271,20 +1271,42 @@ def test_an_unreadable_alarm_QUEUE_costs_the_phase_not_the_TICK(
     tenant tick with it. No current writer can produce that payload — this guards a latent path —
     but the blast radius is the entire argument for the per-verdict isolation one line below.
     """
-    from irp_worker import reproduction_alarms
+    from irp_shared.audit.actions import ACTION_RECORD
+    from irp_shared.audit.service import record_event
+    from irp_worker.reproduction_alarms import poll_tenant_reproduction_alarms
 
     tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    # NO monkeypatch. The first version of this test patched `unalarmed_verdicts` itself, which
+    # proved only that a `try` surrounds the call site — a test of the patch, which is the shape
+    # this slice has spent six passes learning to distrust. The independent review then showed the
+    # fault is constructible for real: the FROZEN `record_event` will persist a bare string into the
+    # JSON `after_value` column, and the real fold then raises the real AttributeError.
+    record_event(
+        session,
+        tenant_id=tenant,
+        event_type=NOTIFY_DISPATCH_EVENT,
+        action=ACTION_RECORD,
+        entity_type=ENTITY_REPRODUCTION_CHECK,
+        entity_id=str(check.id),
+        actor_id="some-buggy-caller",
+        actor_type="SYSTEM",
+        source_module="notification",
+        severity="warning",
+        outcome="failure",
+        after_value="i am not a dict",  # type: ignore[arg-type]
+    )
+    session.flush()
 
-    def _boom(*_a: object, **_k: object) -> list[ReproductionCheck]:
-        raise AttributeError("'str' object has no attribute 'get'")
-
-    monkeypatch.setattr(reproduction_alarms, "unalarmed_verdicts", _boom)
     assert (
-        reproduction_alarms.poll_tenant_reproduction_alarms(
+        poll_tenant_reproduction_alarms(
             session, datetime(2026, 8, 8, tzinfo=UTC), acting_tenant=tenant, sink=_RecordingSink()
         )
         == []
     ), "an unreadable queue escaped phase 5 and would take the tenant's whole tick with it"
+    # And the session survives: the guard's rollback must leave it serviceable, or one malformed row
+    # would poison every later phase in the same tick.
+    assert session.execute(select(func.count()).select_from(ReproductionCheck)).scalar_one() >= 1
 
 
 def _legacy_dispatch_row(db: Session, tenant: str, check_id: str, outcome: str) -> None:
@@ -1341,6 +1363,15 @@ def test_pre_attempt_id_rows_cannot_spend_the_retry_budget_at_the_UPGRADE_BOUNDA
         alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
     session.flush()
     assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id]
+    # The BOUNDARY, which the assertion above alone cannot see: it holds whether the collapsed
+    # bucket costs one budget unit or zero, and those are different rules. One more keyed attempt
+    # must retire it — bucket(1) + 4 keyed == MAX_ALARM_ATTEMPTS.
+    alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+    session.flush()
+    assert unalarmed_verdicts(session, acting_tenant=tenant) == [], (
+        "the collapsed legacy bucket cost NOTHING — it must cost exactly one attempt, or the "
+        "budget silently grows by one for every verdict that predates the key"
+    )
 
 
 def test_a_pre_attempt_id_PARTIAL_tick_is_not_retired_by_row_ORDER(session: Session) -> None:

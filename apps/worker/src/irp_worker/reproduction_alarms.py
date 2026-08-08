@@ -66,9 +66,11 @@ def poll_tenant_reproduction_alarms(
     # review pointed out what that costs: `unalarmed_verdicts` folds a JSON payload in Python, so a
     # malformed `after_value` raises here rather than inside the loop, and the exception would leave
     # this function, leave `run_operational_tick_for_tenant`, and take the tenant's whole tick with
-    # it. No current writer can produce that payload — this is hardening a latent path, not fixing a
-    # live defect — but the blast radius was the argument for the per-verdict try in the first
-    # place, and a queue that cannot be READ should cost the phase, never the tick.
+    # it. Reproduction's own writer cannot produce that payload — but the FROZEN `record_event` will
+    # persist a bare string into the JSON column for any buggy caller, which the review demonstrated
+    # and which the test below now constructs WITHOUT a monkeypatch. So this is not hardening a
+    # hypothetical: the blast radius was the argument for the per-verdict try one line down, and a
+    # queue that cannot be READ should cost the phase, never the tick.
     try:
         pending = [
             (str(check.id), check)
