@@ -124,10 +124,16 @@ altered in `reproduction/service.py` and `scheduling/service.py`, so P16 forbade
 quietly keep it, the control-matrix row was marked **RE-CITE PENDING** in its own evidence column
 and the proof was re-run.
 
-**The citation, third and current:** CI run **`31237359327`**, head **`c9df15f`**, `stack-proof`
+**The third citation** was CI run `31237359327` (head `c9df15f`) — superseded when the sixth and
+seventh folds (the different-engine reviews' fixes and the confirmation pass's residuals) changed
+`reproduction/service.py` and `reproduction_alarms.py` after that head. P16 fired at its trigger
+moment both times.
+
+**The citation, fourth and current:** CI run **`31264940869`**, head **`e7ae526`**, `stack-proof`
 job → `success`, step *"Prove a scheduled reproduction detects a planted divergence (CTRL-018)"* →
 **`success`** — verified at the STEP level rather than inferred from the run-level conclusion. All
-8 jobs green. `git diff --name-only c9df15f..HEAD` names no production file.
+8 jobs green. `git diff --name-only e7ae526..HEAD` names no production file; the working tree holds
+only this record set.
 
 **The re-citation was applied by TARGETED edit, not by blanket replacement.** The previous one used
 a string replace across four documents and rewrote the historical bullet describing the mistake, so
