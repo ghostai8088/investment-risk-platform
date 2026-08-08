@@ -1,6 +1,44 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-08-08) — read this block; everything below it is HISTORY
+> ## ⚠️ CURRENT TRUTH (2026-08-08, later) — read this block; everything below it is HISTORY
+>
+> **FK-1 IS CLOSED — WAVE 16'S BUILD SLICES ARE COMPLETE; NEXT = the WAVE-16 CLOSE REVIEW.**
+> Foreign keys are now TRUE on the unit tier: `make_engine` installs `PRAGMA foreign_keys=ON` on
+> every SQLite engine it builds (dialect-guarded; PG untouched), after a platform lifetime in which
+> the unit tier silently accepted INSERTs naming parents that do not exist. Merged via **PR #185**
+> = **`a28e56a`** on main (the NINETEENTH autonomous merge; `git merge-base --is-ancestor` quoted at
+> exit 0). **The carried 103 was STALE — re-measuring at the head found 151 across 14 suites**
+> (suites born after RPT-1's census inherited the blind engine; the decay is the argument for the
+> factory fix). All 151 fixtures seed GENUINE parents; RPT-1's interim listener RETIRED; pinned by
+> `test_db_foreign_keys.py` — a negative control matched on the FOREIGN KEY message (its own first
+> draft passed on a NOT NULL error, the wrong reason, caught by the match clause), a positive
+> control differing by exactly the dangling run, and a factory-property test. Migration head
+> unchanged at **`0065`**; next free canonical id **ENT-074**; collected count **3,159**.
+>
+> **THE SLICE'S LESSON: the worst defect was in its own verification harness.** The mutation
+> battery's suite-revert arm restored a file from GIT — which restores a COMMITTED state, and the
+> fixes under test were uncommitted — silently destroying the sharpe fix while reporting 4/4
+> KILLED over the tree it had corrupted. Both full gates went RED (P14 doing its job) and the fix
+> was recovered BYTE-IDENTICALLY from the fix agent's transcript. Two mechanical rules now recorded:
+> a battery may only restore the exact bytes it displaced (file backups, never git), and tree
+> censuses never go through `head` (the DATA-1 truncating-pipe defect, recurred). Also this slice:
+> the workflow's own doctrine auditor returned mid-run and its report was DISCARDED — an audit that
+> did not finish is not an audit; its steps were re-executed in full.
+>
+> **P16 RATIFIED 2026-08-08** (the citation-freshness rule — corrected on first use, then fired
+> correctly at its trigger moment on four consecutive re-citations). P14/P15 were already standing;
+> the earlier block wrongly listing them as open is corrected in place below.
+>
+> **OWED AT THE WAVE-16 CLOSE (user decisions, not settled):** the `report.*` holder-set
+> ratification and the mint-reachability rule (both carried from RPT-2). FK-1 carries (a)-(b) in
+> `fk_1_slice_record.md` §5; REPRO-1 carries (a)-(t) in `repro_1_slice_record.md` §6.
+>
+> **NEXT = the Wave-16 close review** (fresh-context, per the standing close pattern), then the
+> Wave-17 planning gate.
+>
+> ---
+>
+> ## Previous truth (2026-08-08, earlier) — REPRO-1
 >
 > **REPRO-1 IS CLOSED — CTRL-018 has code, and the code survived NINE scrutiny stages.** The
 > reproducibility claim every governed family carries is now a nightly machine verdict: a per-tenant
