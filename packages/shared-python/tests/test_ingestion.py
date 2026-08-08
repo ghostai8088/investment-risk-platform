@@ -70,6 +70,21 @@ def _source(session: Session, tenant: str) -> str:
     return src.id
 
 
+def _batch(session: Session, tenant: str, *, status: str = "RECEIVED") -> IngestionBatch:
+    """Seed a genuine parent batch (with its own genuine data_source parent)."""
+    batch = IngestionBatch(
+        tenant_id=tenant,
+        data_source_id=_source(session, tenant),
+        filename="positions_2026-06-30.csv",
+        content_type="text/csv",
+        byte_size=2048,
+        status=status,
+    )
+    session.add(batch)
+    session.flush()
+    return batch
+
+
 def _rule(
     session: Session,
     tenant: str,
@@ -453,7 +468,7 @@ def test_cross_tenant_or_unknown_source_fails_closed(session: Session) -> None:
 def test_staged_record_is_append_only(session: Session) -> None:
     tenant = _tenant()
     rec = IngestionStagedRecord(
-        tenant_id=tenant, batch_id=str(uuid.uuid4()), row_number=0, payload={"a": 1}
+        tenant_id=tenant, batch_id=_batch(session, tenant).id, row_number=0, payload={"a": 1}
     )
     session.add(rec)
     session.commit()
@@ -472,9 +487,9 @@ def test_batch_status_is_mutable(session: Session) -> None:
     tenant = _tenant()
     batch = IngestionBatch(
         tenant_id=tenant,
-        data_source_id=str(uuid.uuid4()),
-        filename="m.csv",
-        byte_size=3,
+        data_source_id=_source(session, tenant),
+        filename="monthly_returns.csv",
+        byte_size=512,
         status="RECEIVED",
     )
     session.add(batch)

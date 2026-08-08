@@ -35,10 +35,12 @@
 > judged. Infrastructure failure is a ratified NON-alarming disposition (2026-08-07): fails the
 > sweep loudly on the ledger, pages nobody. A DIVERGED verdict COMPLETES the run (I3).
 >
-> **OWED TO THE USER (not ratified, do not treat as settled):** P14, P15, **P16** (the
-> citation-freshness rule — drafted, corrected on first use, fired successfully twice) all await
-> ratification; plus the Wave-16-close items carried from RPT-2 (`report.*` holder sets, the
-> mint-reachability rule). Carries (a)–(t) in `repro_1_slice_record.md` §6, each with a named host.
+> **RATIFICATION STATE (corrected 2026-08-08 — the previous wording of this block wrongly listed
+> P14 and P15 as open):** P14 was ratified 2026-08-05, P15 at the Wave-15 close 2026-08-07, and
+> **P16 was ratified 2026-08-08** (AskUserQuestion, "Ratify as written") after firing correctly at
+> its trigger moment on four consecutive re-citations. Still genuinely owed at the Wave-16 close:
+> the RPT-2 items (`report.*` holder sets, the mint-reachability rule). Carries (a)–(t) in
+> `repro_1_slice_record.md` §6, each with a named host.
 >
 > **NEXT = FK-1** (the 103 dangling-FK tests), the last Wave-16 slice.
 >

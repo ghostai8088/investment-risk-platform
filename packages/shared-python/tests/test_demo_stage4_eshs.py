@@ -49,11 +49,45 @@ def test_latest_flagship_hs_row_tie_break_is_time_ordered_not_uuid(session) -> N
     from datetime import UTC, date, datetime
     from decimal import Decimal
 
+    from irp_shared.calc.models import CalculationRun
     from irp_shared.demo.campaign import DEMO_TENANT_ID
     from irp_shared.demo.eshs_stage4 import _latest_flagship_hs_row
     from irp_shared.model.models import Model, ModelVersion
     from irp_shared.risk.bootstrap import VAR_HS_MODEL_CODE
     from irp_shared.risk.models import VarResult
+    from irp_shared.snapshot.models import DatasetSnapshot
+
+    # Genuine parents for the two flagship rows: the run ids stay the CHOSEN literals (their
+    # ordering vs. the uuid draw is the point of the test), so the calculation_run parents are
+    # seeded with exactly those run_ids; ditto the shared snapshot and the exposure run.
+    snapshot = DatasetSnapshot(
+        id="11111111-1111-1111-1111-111111111111",
+        tenant_id=DEMO_TENANT_ID,
+        label="hs-flagship-input",
+        purpose="VAR_INPUT",
+        as_of_valid_at=datetime(2026, 6, 19, 21, 0, 0, tzinfo=UTC),
+        as_of_known_at=datetime(2026, 6, 19, 21, 0, 0, tzinfo=UTC),
+        as_of_valuation_date=date(2026, 6, 19),
+        binding_predicate_version="v1",
+        component_count=0,
+        manifest_hash="a" * 64,
+    )
+    session.add(snapshot)
+    for parent_run_id, run_type in (
+        ("22222222-2222-2222-2222-222222222222", "FACTOR_EXPOSURE"),
+        ("ffffffff-ffff-ffff-ffff-ffffffffffff", "VAR"),
+        ("00000000-0000-0000-0000-000000000001", "VAR"),
+    ):
+        session.add(
+            CalculationRun(
+                tenant_id=DEMO_TENANT_ID,
+                run_id=parent_run_id,
+                run_type=run_type,
+                status="COMPLETED",
+                initiated_by="demo",
+            )
+        )
+    session.flush()
 
     model = Model(tenant_id=DEMO_TENANT_ID, code=VAR_HS_MODEL_CODE, name="hs", model_type="RISK")
     session.add(model)

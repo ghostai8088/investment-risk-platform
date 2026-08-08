@@ -231,11 +231,29 @@ def test_post_create_failed_run_is_recorded_with_its_run_id(session: Session, mo
 
     tenant, portfolio_id, var_mv = _var_ready_tenant(session)
     sched = _schedule(session, tenant, portfolio_id, var_mv, "will-fail")
+    created_run_ids: list[str] = []
 
     def _fake_run_var(*_args, **_kwargs):
+        # Mimic the real run_var post-create failure faithfully: a GENUINE calculation_run row
+        # IS created (then marked FAILED) before the failure is reported — the ledger row's
+        # calculation_run_id FK must point at a real parent (SQLite now enforces FKs).
+        failed_run = CalculationRun(
+            tenant_id=tenant,
+            run_type="VAR",
+            status="FAILED",
+            initiated_by=f"scheduler:{sched.id}",
+            model_version_id=var_mv,
+            environment_id="ci",
+            code_version="risk-v1",
+            scope_portfolio_id=portfolio_id,
+            failure_reason="radicand negative",
+        )
+        session.add(failed_run)
+        session.flush()
+        created_run_ids.append(str(failed_run.run_id))
         return SimpleNamespace(
             status="FAILED",
-            run=SimpleNamespace(run_id="00000000-0000-0000-0000-0000000000ff"),
+            run=SimpleNamespace(run_id=failed_run.run_id),
             failure_reason="radicand negative",
             rows=[],
         )
@@ -246,5 +264,5 @@ def test_post_create_failed_run_is_recorded_with_its_run_id(session: Session, mo
     assert res == [(sched.id, OUTCOME_FAILED)]
     row = _ledger(session, sched.id)[0]
     assert row.outcome == OUTCOME_FAILED
-    assert row.calculation_run_id == "00000000-0000-0000-0000-0000000000ff"
+    assert created_run_ids and row.calculation_run_id == created_run_ids[0]
     assert row.failure_reason == "radicand negative"

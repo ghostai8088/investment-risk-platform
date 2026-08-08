@@ -394,18 +394,56 @@ def _mint_es_substrate(session, n_pairs: int, *, breach_at: frozenset[int] = fro
     PORTFOLIO_RETURN run with n_pairs contiguous daily DIETZ rows + TWR_LINKED, one COMPLETED
     VAR-type run per leg carrying per-as-of VAR_HISTORICAL / ES_HISTORICAL rows (siblings share
     per-as-of input_snapshot_id), the portfolio, and per-leg factor-exposure identity rows.
-    SQLite enforces no FKs — bare GUIDs stand in for unrelated parents (the house unit-tier
-    pattern)."""
-    from datetime import date, timedelta
+    SQLite now ENFORCES FKs (the shared-factory pragma) — every referenced parent (snapshot,
+    model version) is a genuine seeded row."""
+    import hashlib
+    from datetime import UTC, date, datetime, timedelta
     from decimal import Decimal as D
 
     from irp_shared.calc.models import CalculationRun
     from irp_shared.db.mixins import new_uuid
+    from irp_shared.model.models import Model, ModelVersion
     from irp_shared.perf.models import PortfolioReturnResult
     from irp_shared.portfolio.models import Portfolio
     from irp_shared.risk.models import FactorExposureResult, VarResult
+    from irp_shared.snapshot.models import DatasetSnapshot
 
     tenant = "11111111-1111-1111-1111-111111111111"
+
+    def _seed_snapshot(label: str, valuation: date) -> str:
+        """A genuine dataset_snapshot header — the FK parent for input_snapshot_id."""
+        known = datetime(valuation.year, valuation.month, valuation.day, 18, 0, tzinfo=UTC)
+        snap = DatasetSnapshot(
+            tenant_id=tenant,
+            label=label,
+            purpose="RISK_INPUT",
+            as_of_valid_at=known,
+            as_of_known_at=known,
+            as_of_valuation_date=valuation,
+            binding_predicate_version="v1",
+            component_count=0,
+            manifest_hash=hashlib.sha256(label.encode()).hexdigest(),
+        )
+        session.add(snap)
+        session.flush()
+        return str(snap.id)
+
+    def _seed_model_version(code: str) -> str:
+        """A genuine registered model + version — the FK parent for model_version_id."""
+        model = Model(tenant_id=tenant, code=code, name=code, model_type="RISK", is_active=True)
+        session.add(model)
+        session.flush()
+        version = ModelVersion(
+            tenant_id=tenant,
+            model_id=str(model.id),
+            version_label="v1",
+            methodology_ref=f"docs/methodology/{code.lower()}.md",
+            status="REGISTERED",
+        )
+        session.add(version)
+        session.flush()
+        return str(version.id)
+
     pf = new_uuid()
     session.add(
         Portfolio(
@@ -431,15 +469,19 @@ def _mint_es_substrate(session, n_pairs: int, *, breach_at: frozenset[int] = fro
     # T-day series is T sibling RUN pairs (the record's Grounding fact, confirmed by the schema).
     var_runs: list[str] = []
     es_runs: list[str] = []
-    ret_snap = new_uuid()
-    var_mv, es_mv = new_uuid(), new_uuid()
+    start = date(2026, 6, 2)
+    ret_snap = _seed_snapshot("es-bt-portfolio-returns", start)
+    ret_mv = _seed_model_version("PERF_DIETZ_TWR")
+    var_mv = _seed_model_version("VAR_HISTORICAL_SIM")
+    es_mv = _seed_model_version("ES_HISTORICAL_SIM")
+    exp_mv = _seed_model_version("FACTOR_EXPOSURE_IDENTITY")
     exp_run = _completed_run("FACTOR_EXPOSURE")
     session.add(
         FactorExposureResult(
             tenant_id=tenant,
             calculation_run_id=exp_run,
-            input_snapshot_id=new_uuid(),
-            model_version_id=new_uuid(),
+            input_snapshot_id=_seed_snapshot("es-bt-exposure-inputs", start),
+            model_version_id=exp_mv,
             portfolio_id=pf,
             instrument_id=new_uuid(),
             factor_id=new_uuid(),
@@ -452,7 +494,6 @@ def _mint_es_substrate(session, n_pairs: int, *, breach_at: frozenset[int] = fro
         )
     )
 
-    start = date(2026, 6, 2)
     mv0 = D("70000.000000")
     for i in range(n_pairs):
         s, e = start + timedelta(days=i), start + timedelta(days=i + 1)
@@ -462,7 +503,7 @@ def _mint_es_substrate(session, n_pairs: int, *, breach_at: frozenset[int] = fro
                 tenant_id=tenant,
                 calculation_run_id=ret_run,
                 input_snapshot_id=ret_snap,
-                model_version_id=new_uuid(),
+                model_version_id=ret_mv,
                 portfolio_id=pf,
                 metric_type="DIETZ_PERIOD",
                 period_start=s,
@@ -476,7 +517,7 @@ def _mint_es_substrate(session, n_pairs: int, *, breach_at: frozenset[int] = fro
                 base_currency="USD",
             )
         )
-        shared_snap = new_uuid()
+        shared_snap = _seed_snapshot(f"es-bt-var-inputs-{s.isoformat()}", s)
         pair_var_run = _completed_run("VAR")
         pair_es_run = _completed_run("VAR")
         var_runs.append(pair_var_run)
@@ -509,7 +550,7 @@ def _mint_es_substrate(session, n_pairs: int, *, breach_at: frozenset[int] = fro
             tenant_id=tenant,
             calculation_run_id=ret_run,
             input_snapshot_id=ret_snap,
-            model_version_id=new_uuid(),
+            model_version_id=ret_mv,
             portfolio_id=pf,
             metric_type="TWR_LINKED",
             period_start=start,

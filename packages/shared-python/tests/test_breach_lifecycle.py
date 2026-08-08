@@ -2,8 +2,9 @@
 
 Covers the transition table, the person-level SoD (all-responders set), recency-by-seq determinism,
 the human-actor + evidence + narrative guards, and the deadline auto-escalation phase (idempotency +
-recovery re-escalation). A ``breach`` row is seeded directly (SQLite: no FK/RLS enforcement) — the
-lifecycle needs only a persisted breach with a ``limit_kind`` (the SLA source)."""
+recovery re-escalation). A ``breach`` row is seeded directly, with GENUINE parents (SQLite now
+enforces FKs via the shared factory's pragma): a real portfolio-scoped ``limit_definition`` and a
+real ``calculation_run`` back every seeded breach."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.models import AuditEvent
+from irp_shared.calc.models import CalculationRun
 from irp_shared.entitlement.models import AppUser
 from irp_shared.limit.events import (
     BREACH_1L_RESPONSE_EVENT,
@@ -47,12 +49,57 @@ from irp_shared.limit.lifecycle import (
     review_breach,
     select_overdue_breaches,
 )
-from irp_shared.limit.models import Breach, BreachAction
+from irp_shared.limit.models import Breach, BreachAction, LimitDefinition
+from irp_shared.portfolio.models import Portfolio
 from irp_worker.deadlines import poll_tenant_breach_deadlines  # noqa: E402
 
 _T0 = datetime(2026, 1, 1, tzinfo=UTC)
 _ANALYST = BreachActor(actor_id="analyst-1l")
 _MANAGER = BreachActor(actor_id="manager-2l")
+
+
+def _seed_run(session: Session, tenant: str) -> str:
+    """A real ``calculation_run`` parent for the breach's ``calculation_run_id`` FK."""
+    run = CalculationRun(
+        tenant_id=tenant,
+        run_type="VAR",
+        status="COMPLETED",
+        initiated_by="risk-engine",
+    )
+    session.add(run)
+    session.flush()
+    return run.run_id
+
+
+def _seed_limit(session: Session, tenant: str, *, limit_kind: str = LIMIT_KIND_HARD) -> str:
+    """A real ACTIVE ``limit_definition`` (on a real portfolio) for the breach's limit FK."""
+    pf = Portfolio(
+        tenant_id=tenant,
+        code=f"ACCT-{uuid.uuid4().hex[:6]}",
+        name="growth sleeve",
+        node_type="ACCOUNT",
+        status="ACTIVE",
+        record_version=1,
+    )
+    session.add(pf)
+    session.flush()
+    limit = LimitDefinition(
+        tenant_id=tenant,
+        code=f"var-ceiling-{uuid.uuid4().hex[:6]}",
+        name="Parametric VaR ceiling",
+        target_run_type="VAR",
+        metric_type="VAR_PARAMETRIC",
+        scope_portfolio_id=pf.id,
+        threshold_value=Decimal("50"),
+        threshold_unit="CURRENCY",
+        breach_direction="ABOVE",
+        limit_kind=limit_kind,
+        status="ACTIVE",
+        record_version=1,
+    )
+    session.add(limit)
+    session.flush()
+    return limit.id
 
 
 def _seed_breach(
@@ -64,8 +111,9 @@ def _seed_breach(
 ) -> Breach:
     breach = Breach(
         tenant_id=tenant,
-        limit_definition_id=limit_definition_id or str(uuid.uuid4()),
-        calculation_run_id=str(uuid.uuid4()),
+        limit_definition_id=limit_definition_id
+        or _seed_limit(session, tenant, limit_kind=limit_kind),
+        calculation_run_id=_seed_run(session, tenant),
         detected_at=_T0,
         target_run_type="VAR",
         metric_type="VAR_PARAMETRIC",

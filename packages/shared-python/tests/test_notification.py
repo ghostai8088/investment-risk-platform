@@ -84,11 +84,55 @@ def _mk_reviewer(session: Session, tenant: str, *, active: bool = True) -> str:
     return user.id
 
 
+def _seed_limit_and_run(session: Session, tenant: str) -> tuple[str, str]:
+    """GENUINE parents for a breach: a real ACTIVE limit_definition (on a real portfolio)
+    plus a real calculation_run — the FK-enforced tier refuses dangling ids."""
+    from irp_shared.calc.models import CalculationRun
+    from irp_shared.limit.models import LimitDefinition
+    from irp_shared.portfolio.models import Portfolio
+
+    portfolio = Portfolio(
+        tenant_id=tenant,
+        code=f"ACCT-{uuid.uuid4().hex[:6]}",
+        name="Balanced Growth Fund",
+        node_type="ACCOUNT",
+        status="ACTIVE",
+        record_version=1,
+    )
+    session.add(portfolio)
+    session.flush()
+    limit = LimitDefinition(
+        tenant_id=tenant,
+        code=f"lim-{uuid.uuid4().hex[:8]}",
+        name="VaR ceiling",
+        target_run_type="VAR",
+        metric_type="VAR_PARAMETRIC",
+        scope_portfolio_id=portfolio.id,
+        threshold_value=Decimal("1000000"),
+        threshold_unit=THRESHOLD_UNIT_CURRENCY,
+        breach_direction=BREACH_ABOVE,
+        limit_kind=LIMIT_KIND_HARD,
+        status="ACTIVE",
+        record_version=1,
+    )
+    run = CalculationRun(
+        tenant_id=tenant,
+        run_type="VAR",
+        status="COMPLETED",
+        initiated_by="limit-eval:x",
+        scope_portfolio_id=portfolio.id,
+    )
+    session.add_all([limit, run])
+    session.flush()
+    return limit.id, run.run_id
+
+
 def _seed_breach(session: Session, tenant: str) -> Breach:
+    limit_id, run_id = _seed_limit_and_run(session, tenant)
     breach = Breach(
         tenant_id=tenant,
-        limit_definition_id=str(uuid.uuid4()),
-        calculation_run_id=str(uuid.uuid4()),
+        limit_definition_id=limit_id,
+        calculation_run_id=run_id,
         detected_at=_T0,
         target_run_type="VAR",
         metric_type="VAR_PARAMETRIC",

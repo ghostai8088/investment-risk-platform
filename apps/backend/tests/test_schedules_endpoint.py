@@ -27,6 +27,7 @@ from sqlalchemy.pool import StaticPool
 
 from irp_backend.api.schedules import router as schedules_router
 from irp_backend.deps import get_db
+from irp_shared.calc.models import CalculationRun
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.entitlement.models import AppUser, Permission, Role, RolePermission, UserRole
 from irp_shared.model.models import Model, ModelVersion
@@ -77,6 +78,21 @@ def _seed_portfolio(db: Session, tenant: str) -> str:
     return str(p.id)
 
 
+def _seed_calculation_run(db: Session, tenant: str, run_type: str) -> str:
+    """A genuine parent for ``scheduled_run.calculation_run_id`` (FK → calculation_run.run_id)."""
+    run = CalculationRun(
+        tenant_id=tenant,
+        run_type=run_type,
+        status="SUCCEEDED",
+        initiated_by="scheduler",
+        code_version="v1",
+        environment_id="ci",
+    )
+    db.add(run)
+    db.flush()
+    return str(run.run_id)
+
+
 def _seed_model_version(db: Session, tenant: str) -> str:
     m = Model(tenant_id=tenant, code=f"m-{uuid.uuid4().hex[:8]}", name="VaR", model_type="RISK")
     db.add(m)
@@ -125,7 +141,9 @@ def ctx() -> Iterator[dict[str, object]]:
             schedule_id=fired.id,
             scheduled_for=_APR_TICK,
             fired_at=datetime(2026, 5, 1, 6, 5, tzinfo=UTC),
-            calculation_run_id=str(uuid.uuid4()),
+            calculation_run_id=_seed_calculation_run(
+                db, tenant, TARGET_RUN_TYPE_EXPOSURE_AGGREGATE
+            ),
             outcome=OUTCOME_DISPATCHED,
         )
     )
@@ -182,7 +200,9 @@ def ctx() -> Iterator[dict[str, object]]:
             schedule_id=other.id,
             scheduled_for=_MAY_TICK,
             fired_at=datetime(2026, 6, 1, 6, 5, tzinfo=UTC),
-            calculation_run_id=str(uuid.uuid4()),
+            calculation_run_id=_seed_calculation_run(
+                db, tenant_b, TARGET_RUN_TYPE_EXPOSURE_AGGREGATE
+            ),
             outcome=OUTCOME_DISPATCHED,
         )
     )
