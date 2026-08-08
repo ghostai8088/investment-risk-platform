@@ -487,6 +487,29 @@ corrected on first use and had then fired correctly at its trigger moment on fou
 re-citations.** Like P14 and P15, it constrains how the builder evidences its own claims, so it was
 proposed rather than self-enacted; it was followed as practice from the moment it was drafted.
 
+## A permission is not MINTED until a migration delivers it to running databases (standing, RATIFIED 2026-08-08, P17)
+Permissions live in a Python constant (`entitlement/bootstrap.py`) that seeds a **new** database. A
+database already running never sees a newly-added code. So **appending to that constant is not a
+mint** — it is a mint for future deployments only, and deny-by-default then 403s every holder in
+production while every from-empty test passes. That was true of every permission minted between P0.5
+and RPT-2's migration `0064`, across many waves, and nothing caught it: the defect is invisible to
+exactly the tests a new permission ships with.
+
+**The mechanical gate (this is the rule, not the prose):** a test asserts that every code in the
+bootstrap constant is also named by some migration. It fires on the next mint, by construction,
+whether or not anyone remembers this paragraph.
+
+**And the sync must not resurrect revoked grants.** A catalog-sync migration cannot distinguish
+"never delivered" from "deliberately revoked by an administrator", so a naive sync silently restores
+an entitlement someone removed on purpose — turning a governance action into a transient one. The
+sync consults a revocation record, or at minimum logs and skips previously-revoked grants.
+Ratifying the sync without this would institutionalise the resurrection, which is why the two
+clauses are one rule.
+
+**RATIFIED 2026-08-08 by the user at the Wave-16 close gate (option A + the revocation fix),** on
+the close review's finding that ratifying the sync alone "institutionalises that behaviour" and is
+"the difference between deny-by-default with governed mints being true and being aspirational".
+
 ## Prohibited behavior
 - Committing/pushing without explicit approval; starting the next slice unprompted.
 - Writing application code during a planning/decision turn.
