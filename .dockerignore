@@ -41,6 +41,12 @@ venv
 *.log
 .claude
 CC-Session-Logs
+# Mutation batteries back a source file up IN PLACE before mutating it and restore it in a
+# `finally`. An interrupted run therefore leaves a `.bak` sitting inside the package source tree,
+# which would otherwise be COPYed into an image — shipping a pre-mutation (or mutated) copy of a
+# governed module beside the real one. Flagged by an independent reviewer that happened to observe
+# one mid-run. Cheap to exclude, and the exclusion does not depend on the harness behaving.
+*.bak
 
 # --- documentation and delivery records: not runtime surface ---
 0*_*/

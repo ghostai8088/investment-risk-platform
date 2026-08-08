@@ -418,6 +418,88 @@ def test_month_end_schedule_forbids_interval_days_and_model_version(session: Ses
         _mk_month_end(session, tenant, model_version_id=_seed_model_version(session, tenant))
 
 
+def test_reproduction_family_forbids_a_portfolio_scope(session: Session) -> None:
+    """REPRO-1: the sweep is tenant-wide, so naming a book would stamp a scope into a governed
+    config row that is not true — and the OPS-1 UI renders that row to operators.
+
+    Gated on the registry DECLARATION, never on whether a value was supplied. This is the SQLite
+    tier's ONLY enforcement of the rule: ``ck_schedule_portfolio_scope_by_family`` exists on
+    PostgreSQL alone, so without the service mirror the whole unit suite would admit what the
+    database rejects at flush.
+    """
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="tenant-wide"):
+        _mk(
+            session,
+            tenant,
+            target_run_type="REPRODUCTION",
+            model_version_id=None,
+            scope_portfolio_id=_seed_portfolio(session, tenant),
+        )
+
+
+def test_reproduction_family_creates_with_no_portfolio_and_no_model(session: Session) -> None:
+    """The positive control for the two refusals: the FORBIDDEN-direction guards above must not be
+    passing merely because the family cannot be created at all."""
+    tenant = str(uuid.uuid4())
+    schedule = _mk(
+        session,
+        tenant,
+        target_run_type="REPRODUCTION",
+        model_version_id=None,
+        scope_portfolio_id=None,
+        interval_days=1,
+    )
+    assert schedule.target_run_type == "REPRODUCTION"
+    assert schedule.scope_portfolio_id is None
+    assert schedule.model_version_id is None
+
+
+def test_the_audit_event_records_a_NULL_scope_as_null_not_the_string_None(
+    session: Session,
+) -> None:
+    """REPRO-1 review finding. The payload builder used an unconditional ``str()``, so a
+    tenant-wide schedule recorded the literal ``"None"`` as its portfolio scope — in an IMMUTABLE,
+    HASH-CHAINED ledger, where a false value can never be corrected, only superseded.
+
+    The same None-stringification trap the sibling column carried at SCH-2, one layer up: there it
+    corrupted a bind parameter, here it corrupted the audit record.
+    """
+    import json
+
+    from irp_shared.audit.models import AuditEvent
+
+    tenant = str(uuid.uuid4())
+    schedule = _mk(
+        session,
+        tenant,
+        target_run_type="REPRODUCTION",
+        model_version_id=None,
+        scope_portfolio_id=None,
+        interval_days=1,
+    )
+    session.flush()
+    event = session.execute(
+        select(AuditEvent).where(
+            AuditEvent.chain_id == tenant, AuditEvent.entity_id == str(schedule.id)
+        )
+    ).scalar_one()
+    payload = (
+        json.loads(event.after_value) if isinstance(event.after_value, str) else (event.after_value)
+    )
+    assert (
+        payload["scope_portfolio_id"] is None
+    ), f"the ledger recorded {payload['scope_portfolio_id']!r} as the portfolio scope"
+
+
+def test_scoping_families_still_require_a_portfolio(session: Session) -> None:
+    """The other direction of the same declaration — relaxing the column must not have quietly made
+    the scope optional for the families that genuinely need it."""
+    tenant = str(uuid.uuid4())
+    with pytest.raises(ScheduleError, match="scope_portfolio_id is required"):
+        _mk(session, tenant, scope_portfolio_id=None)
+
+
 def test_var_family_still_requires_a_model_version(session: Session) -> None:
     """The CTRL-003 inventory-before-use rule is gated on the registry DECLARATION, never on
     whether the caller supplied a value — `if model_version_id:` would be a fail-open."""
@@ -438,9 +520,22 @@ def test_the_schedulable_set_is_derived_from_the_registry() -> None:
     """One source for the family gate (SCH-2): `events` no longer defines a second list, and the
     schedule's family key IS the real `calculation_run.run_type` (OQ-SCH-2-8)."""
     assert SCHEDULABLE_RUN_TYPES == frozenset(FAMILY_REGISTRY)
-    assert SCHEDULABLE_RUN_TYPES == {"VAR", "EXPOSURE_AGGREGATE"}
+    # REPRO-1 (2026-08-07): 2 -> 3. The census pin moving IS the conscious act OQ-W16P-5 asked for
+    # ("a new schedulable run family, the census consciously extended"). Note that this assertion
+    # is NOT what protects the database: `ck_schedule_model_version_by_family` is a PostgreSQL
+    # total enumeration, so admitting a family here without migration 0065 leaves the whole SQLite
+    # unit tier green and fails only in the full-PG battery.
+    assert SCHEDULABLE_RUN_TYPES == {"VAR", "EXPOSURE_AGGREGATE", "REPRODUCTION"}
     assert FAMILY_REGISTRY["VAR"].requires_model_version is True
     assert FAMILY_REGISTRY["EXPOSURE_AGGREGATE"].requires_model_version is False
+    assert FAMILY_REGISTRY["REPRODUCTION"].requires_model_version is False
+    # REPRO-1's second declaration, enforced in both directions by `_validate_config` and by
+    # `ck_schedule_portfolio_scope_by_family`. Pinned per family rather than as a bare "the field
+    # exists": a declaration with no consumer is worse than no declaration (the deleted
+    # `produces_run_on_failure`), and these three values ARE the DDL's arms.
+    assert FAMILY_REGISTRY["VAR"].requires_portfolio_scope is True
+    assert FAMILY_REGISTRY["EXPOSURE_AGGREGATE"].requires_portfolio_scope is True
+    assert FAMILY_REGISTRY["REPRODUCTION"].requires_portfolio_scope is False
     # Wave-13 close fold: `target_run_type` was a declaration with NO consumer — written at both
     # entries, read by nothing, so a registry entry whose key and field disagreed would have been
     # accepted silently. That is the same shape the slice itself removed `produces_run_on_failure`
@@ -466,7 +561,15 @@ def test_the_schedulable_set_is_derived_from_the_registry() -> None:
 #: so a report that declared a single static methodology would cite the WRONG document for six of
 #: them. Admitted BY NAME here, visibly, on CON-1's ratified grounds (OQ-CON-1-19): a new package
 #: earns its exemption by an explicit edit someone reviews, never by widening the fence.
-_RISK_IMPORTERS = frozenset({"models.py", "demo", "snapshot", "limit", "scheduling", "report"})
+#: REPRO-1 (2026-08-07): ``reproduction`` joined BOTH fences, and the grounds are the strongest a
+#: new entry has had — the reproduction engine's entire job is to re-execute other families'
+#: binders, so importing them is not incidental coupling, it is the deliverable. The alternative
+#: (widening the fence, or hiding the imports behind a lazy indirection) would have removed the
+#: review step this whitelist exists to force. Admitted BY NAME, on CON-1's ratified OQ-CON-1-19
+#: posture: a new package earns its exemption by an explicit edit someone reads.
+_RISK_IMPORTERS = frozenset(
+    {"models.py", "demo", "snapshot", "limit", "scheduling", "report", "reproduction"}
+)
 _EXPOSURE_IMPORTERS = frozenset(
     # CON-1 (2026-07-30): `concentration` joined — its binder consumes an EXPLICITLY SELECTED
     # exposure run (RUN_TYPE_EXPOSURE_AGGREGATE + the atom lister ride the import). The visible
@@ -477,7 +580,17 @@ _EXPOSURE_IMPORTERS = frozenset(
     # accepting a caller-supplied portfolio_id it never verified (the review's H1). The import is
     # the cost of that fix and is admitted BY NAME; widening the fence would have been the cheaper
     # and wrong move.
-    {"models.py", "demo", "snapshot", "risk", "scheduling", "concentration", "liquidity"}
+    # REPRO-1 (2026-08-07): `reproduction` joined — see the note above _RISK_IMPORTERS.
+    {
+        "models.py",
+        "demo",
+        "snapshot",
+        "risk",
+        "scheduling",
+        "concentration",
+        "liquidity",
+        "reproduction",
+    }
 )
 
 
@@ -650,6 +763,39 @@ def test_redaction_is_applied_at_the_write_boundary_not_left_to_callers(session:
     assert row.failure_reason is not None
     assert "1234567.89" not in row.failure_reason
     assert "[SQL:" not in row.failure_reason
+
+
+#: A REAL psycopg diagnostic, captured from the live driver rather than hand-written.
+#:
+#: The fixture above was hand-written, and that is exactly why it could not see this: it has no
+#: ``LINE n:`` block, because a human writing an example from memory does not think to include one.
+#: psycopg puts that block BEFORE ``[SQL:``, so cutting at ``[SQL:`` removes nothing upstream of it
+#: and the statement text — with any inlined literals — survived into a column served over HTTP to
+#: ``auditor_3l``. A fixture that shares its subject's blind spot proves nothing about it (P15).
+_REAL_PG_LINE_REASON = (
+    'ProgrammingError: (psycopg.errors.UndefinedTable) relation "no_such_table" does not exist\n'
+    "LINE 1: SELECT * FROM no_such_table WHERE account = 'ACME-PENSION-001'\n"
+    "                      ^\n"
+    "[SQL: SELECT * FROM no_such_table WHERE account = 'ACME-PENSION-001']"
+)
+
+
+def test_redaction_strips_psycopgs_LINE_caret_which_quotes_the_STATEMENT() -> None:
+    """Found in the sibling redactor by EXECUTION, and fixed here only after a review asked whether
+    the fix had been applied to the CLASS or just to the instance (P10).
+
+    REPRO-1's fourth fold hit this leak in `reproduction.service._redact`, executed it against
+    PostgreSQL, and patched the redactor it was standing in. This one — the redactor with the
+    SHIPPED HTTP reader — kept the old four-marker list for another fold.
+    """
+    out = redact_failure_reason(_REAL_PG_LINE_REASON)
+    assert out.startswith("ProgrammingError: (psycopg.errors.UndefinedTable)")
+    assert "no_such_table" in out, "the actionable diagnosis was thrown away with the statement"
+    for leaked in ("LINE 1", "SELECT *", "ACME-PENSION-001"):
+        assert leaked not in out, (
+            f"{leaked!r} survived redaction — the failing statement reaches GET /schedules/runs, "
+            "which auditor_3l can read while holding no valuation/position/marketdata view"
+        )
 
 
 def test_redaction_leaves_a_curated_domain_reason_untouched() -> None:

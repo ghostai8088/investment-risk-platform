@@ -920,14 +920,21 @@ def test_the_run_family_is_NEVER_a_metric_type_for_ANY_family(session: Session) 
     assert {"irp_shared.perf.events", "irp_shared.perf.models"} <= set(scanned)
     assert {"irp_shared.risk.events", "irp_shared.risk.models"} <= set(scanned)
     assert {"irp_shared.exposure.events", "irp_shared.pacing.events"} <= set(scanned)
+    # REPRO-1: the reproduction family's declaring module joins the membership pin, so a package
+    # move or rename empties the scan LOUDLY instead of silently shrinking the census.
+    assert {"irp_shared.reproduction.models"} <= set(scanned)
     # Exact census, not a floor (Wave-13 close: the floors sat at 15/30 against true totals of
     # 18/38, so up to 3 run types and 8 metric types could vanish from the scan without failing —
     # a census that tolerates shrinkage is a floor wearing a census's name). Adding a run type or
     # metric type legitimately moves these pins; that is what a census pin is FOR (the demo-counts
     # precedent: the pin moves consciously, with the slice that moves it).
     # 18 -> 19 at CON-1: concentration.events.RUN_TYPE_CONCENTRATION (no metric carries it).
+    # REPRO-1: +REPRODUCTION (reproduction.models.RUN_TYPE_REPRODUCTION). Declared in `models`, not
+    # in the service module, precisely so THIS census can see it — a RUN_TYPE_* declared in a
+    # service module escapes the scan that exists to catch a run family colliding with a metric
+    # name, which RPT-1 found by executing it.
     assert (
-        len(run_types) == 21
+        len(run_types) == 22
     ), f"run-type census moved: {len(run_types)}: {sorted(run_types)}"  # RPT-1: +REPORT
     # 38 -> 39 at CON-1: concentration.models.METRIC_TYPE_SHARE (the detail-row metric; the nine
     # summary names live in SUMMARY_METRIC_TYPES with their own exact census — none is a run type).

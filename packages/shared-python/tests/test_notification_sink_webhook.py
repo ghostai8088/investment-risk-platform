@@ -27,7 +27,10 @@ from irp_shared.notification.sink import (
 _MSG = NotificationMessage(
     tenant_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     recipient_id="reviewer-1",
-    breach_id="breach-42",
+    # REPRO-1 renamed ``breach_id`` -> ``subject_id`` and made ``alert_type`` explicit, because the
+    # transport now carries two alert classes. ``alert_type`` is omitted here on purpose: the
+    # default IS the breach class, and this message is the breach path's fixture.
+    subject_id="breach-42",
     source_event_type="BREACH.DETECT",
     severity="ERROR",
 )
@@ -78,10 +81,45 @@ def test_a_2xx_delivers_and_the_server_received_the_real_payload(server: HTTPSer
         "type": "breach-alert",
         "tenant_id": _MSG.tenant_id,
         "recipient_id": _MSG.recipient_id,
-        "breach_id": _MSG.breach_id,
+        "subject_id": _MSG.subject_id,
         "source_event_type": _MSG.source_event_type,
         "severity": _MSG.severity,
     }
+
+
+def test_a_reproduction_alarm_does_not_POST_a_payload_calling_itself_a_breach() -> None:
+    """REPRO-1: the payload's ``type`` is the message's DECLARED class, not a constant.
+
+    Exact-dict equality above is what forced this to be a conscious change rather than an
+    accidental one — and it is the assertion that matters, because a divergence alarm POSTed as
+    ``"breach-alert"`` carrying a ``reproduction_check`` id in a field named ``breach_id`` would be
+    a record that lies about itself. This test exists so a well-meaning revert to the old constant
+    fails here rather than shipping a wrong wire contract.
+    """
+    from irp_shared.notification.sink import ALERT_TYPE_REPRODUCTION
+
+    _Handler.status = 200
+    _Handler.received = []
+    httpd = HTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        message = NotificationMessage(
+            tenant_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            recipient_id="reviewer-1",
+            subject_id="check-7",
+            source_event_type="REPRODUCTION.DIVERGED",
+            severity="warning",
+            alert_type=ALERT_TYPE_REPRODUCTION,
+        )
+        assert WebhookNotificationSink(_url(httpd)).deliver(message).ok is True
+    finally:
+        httpd.shutdown()
+        thread.join(timeout=5)
+    body = json.loads(_Handler.received[0]["body"])
+    assert body["type"] == "reproduction-divergence"
+    assert body["subject_id"] == "check-7"
+    assert "breach_id" not in body
 
 
 def test_an_http_500_is_a_FAILED_result_not_a_raise(server: HTTPServer) -> None:

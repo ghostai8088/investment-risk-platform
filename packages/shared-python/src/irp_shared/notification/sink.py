@@ -17,16 +17,36 @@ from typing import Protocol
 
 _LOGGER = logging.getLogger("irp_shared.notification")
 
+#: The alert classes this transport can carry. NOTIF-1 shipped exactly one and hard-coded its name
+#: into the payload; REPRO-1 added the second and had to generalize, because a reproduction
+#: divergence POSTed as ``"breach-alert"`` with a non-breach id in a field called ``breach_id``
+#: would be a payload that lies about its own class — the same false-record shape
+#: ``notification/service.py`` explicitly refuses when it declines to invent a recipient.
+ALERT_TYPE_BREACH = "breach-alert"
+ALERT_TYPE_REPRODUCTION = "reproduction-divergence"
+
 
 @dataclass(frozen=True)
 class NotificationMessage:
-    """The assembled alert handed to a sink (all fields already tenant-scoped + resolved)."""
+    """The assembled alert handed to a sink (all fields already tenant-scoped + resolved).
+
+    ``subject_id`` was called ``breach_id`` until REPRO-1. The rename is deliberate and not
+    back-compatible: this transport now carries two alert classes, and a field named for one of
+    them would force the other to lie. The wire payload key changed with it (``breach_id`` →
+    ``subject_id``, plus ``type`` becoming the declared ``alert_type`` rather than a constant).
+    That is a wire-format change to a channel with no external consumer — the webhook URL is unset
+    by default and the sink shipped one wave ago — and it is recorded in the slice record rather
+    than softened with a compatibility alias nobody would ever remove.
+    """
 
     tenant_id: str
     recipient_id: str
-    breach_id: str
+    #: The alarm's subject: a ``breach.id`` for a breach alert, a ``reproduction_check.id`` for a
+    #: reproduction divergence.
+    subject_id: str
     source_event_type: str
     severity: str
+    alert_type: str = ALERT_TYPE_BREACH
 
 
 @dataclass(frozen=True)
@@ -91,10 +111,10 @@ class WebhookNotificationSink:
 
         payload = json.dumps(
             {
-                "type": "breach-alert",
+                "type": message.alert_type,
                 "tenant_id": message.tenant_id,
                 "recipient_id": message.recipient_id,
-                "breach_id": message.breach_id,
+                "subject_id": message.subject_id,
                 "source_event_type": message.source_event_type,
                 "severity": message.severity,
             }
@@ -127,10 +147,11 @@ class LoggingNotificationSink:
 
     def deliver(self, message: NotificationMessage) -> DeliveryResult:
         _LOGGER.info(
-            "breach-alert tenant=%s recipient=%s breach=%s event=%s severity=%s",
+            "%s tenant=%s recipient=%s subject=%s event=%s severity=%s",
+            message.alert_type,
             message.tenant_id,
             message.recipient_id,
-            message.breach_id,
+            message.subject_id,
             message.source_event_type,
             message.severity,
         )

@@ -13454,7 +13454,7 @@
         "type": "object"
       },
       "ScheduleOut": {
-        "description": "A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable\nsince SCH-2 (each is required for some cadences/families and forbidden for others), so the DTO\nmirrors the column nullability rather than inventing a placeholder.",
+        "description": "A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable\nsince SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some\ncadences/families and forbidden for others), so the DTO mirrors the column nullability rather\nthan inventing a placeholder.",
         "properties": {
           "anchor_date": {
             "title": "Anchor Date",
@@ -13553,8 +13553,15 @@
             "type": "integer"
           },
           "scope_portfolio_id": {
-            "title": "Scope Portfolio Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Portfolio Id"
           },
           "status": {
             "title": "Status",

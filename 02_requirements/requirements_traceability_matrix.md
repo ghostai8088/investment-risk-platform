@@ -143,3 +143,9 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 
 This RTM depends on the backbone (requirement definitions), the control matrix (CTRL IDs), the personas doc (persona codes), and
 the build sequence (phase IDs). It must be re-synced whenever any requirement's status changes.
+
+## REPRO-1 (2026-08-07) — CTRL-018 sweep note
+
+Recorded as its own section rather than inline, because the first draft placed this blockquote in the MIDDLE of the RTM table and a blockquote terminates a GFM table — 44 REQ rows stopped rendering as a table and appeared as raw pipe text. The blockquote was found at the pre-merge audit; the BLANK LINE it left behind, which terminates a table just as effectively, was found at the re-audit one fold later, so the same 44 rows were broken twice. Every markdown table in the six records this slice touched has since been censused for early terminators by script rather than by reading: zero remain.
+
+Every row above citing CTRL-018 asserts that its family's results are reproducible from their bound run. That assertion is now MACHINE-CHECKABLE for exactly three families (VAR, EXPOSURE_AGGREGATE, REPORT) — the sweep is proven to run and to detect on a schedule, though nothing outside the proof harness creates a schedule yet (carry m) — and remains an unchecked assertion for the other eighteen, which are pinned in `irp_shared.reproduction.registry.UNREPRODUCIBLE_FAMILIES` with a written reason each. **No REQ row changes status on this slice** — REPRO-1 verifies existing claims rather than delivering a new family. Two exclusions are substantive rather than pending: CONCENTRATION re-pins current-head classifications (so a legitimate edit would read as a divergence) and LIQUIDITY has a wall clock in its compute (so a once-fresh run legitimately stops reproducing). Both are named on the CTRL-018 control-matrix row.

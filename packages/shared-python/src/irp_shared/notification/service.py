@@ -197,7 +197,9 @@ def notify_for_event(
         message = NotificationMessage(
             tenant_id=event.tenant_id,
             recipient_id=recipient_id,
-            breach_id=breach_id,
+            # REPRO-1 renamed this field ``breach_id`` -> ``subject_id`` when the transport gained
+            # a second alert class. The breach path's subject IS the breach; nothing else changed.
+            subject_id=breach_id,
             source_event_type=event.event_type,
             severity=event.severity,
         )

@@ -9604,8 +9604,9 @@ export interface components {
         /**
          * ScheduleOut
          * @description A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable
-         *     since SCH-2 (each is required for some cadences/families and forbidden for others), so the DTO
-         *     mirrors the column nullability rather than inventing a placeholder.
+         *     since SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some
+         *     cadences/families and forbidden for others), so the DTO mirrors the column nullability rather
+         *     than inventing a placeholder.
          */
         ScheduleOut: {
             /** Anchor Date */
@@ -9635,7 +9636,7 @@ export interface components {
             /** Record Version */
             record_version: number;
             /** Scope Portfolio Id */
-            scope_portfolio_id: string;
+            scope_portfolio_id: string | null;
             /** Status */
             status: string;
             /** Target Run Type */

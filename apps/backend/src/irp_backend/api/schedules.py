@@ -69,14 +69,21 @@ def _utc(value: datetime | None) -> datetime | None:
 
 class ScheduleOut(BaseModel):
     """A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable
-    since SCH-2 (each is required for some cadences/families and forbidden for others), so the DTO
-    mirrors the column nullability rather than inventing a placeholder."""
+    since SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some
+    cadences/families and forbidden for others), so the DTO mirrors the column nullability rather
+    than inventing a placeholder."""
+
+    # Why mirroring matters, kept OUT of the docstring because this class's docstring is published
+    # as the OpenAPI schema description and generated into the frontend types: a DTO field narrower
+    # than its column turns the FIRST row using the new shape into a 500 for the WHOLE page rather
+    # than a per-row degradation. `mypy` caught this one when scope_portfolio_id became nullable;
+    # nothing would have caught it at runtime until a tenant-wide reproduction schedule existed.
 
     id: str
     code: str
     name: str
     target_run_type: str
-    scope_portfolio_id: str
+    scope_portfolio_id: str | None
     model_version_id: str | None
     environment_id: str
     cadence_kind: str
