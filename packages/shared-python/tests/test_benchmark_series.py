@@ -599,6 +599,10 @@ def test_dq_band_rejects_return_below_minus_one(session: Session) -> None:
         )
     session.rollback()
     assert _count(session, "benchmark_return") == 0
+    # The rollback discarded the un-committed parents too — re-seed the genuine currency and
+    # benchmark before the next write (FK enforcement refuses a dangling benchmark_id).
+    _ccy(session, "USD")
+    bm = _benchmark(session, tenant)
     # EXACT BOUNDARY (review fold E1): the band is strict ``> -1`` (min_inclusive=False), so a
     # -100% return (exactly -1) is REJECTED — a min_inclusive True regression would let it through.
     with pytest.raises(DataQualityError):
@@ -612,6 +616,9 @@ def test_dq_band_rejects_return_below_minus_one(session: Session) -> None:
             actor=ACTOR,
         )
     session.rollback()
+    # Re-seed after the second rollback for the same reason.
+    _ccy(session, "USD")
+    bm = _benchmark(session, tenant)
     # ...but a just-inside value (a -99% crash — plausible tail) is ACCEPTED.
     row = capture_benchmark_return(
         session,

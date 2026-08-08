@@ -124,6 +124,28 @@ def _seed_currency(db: Session, code: str) -> None:
     db.flush()
 
 
+def _seed_return_input_snapshot(session: Session, tenant: str) -> str:
+    """A genuine RETURN_INPUT ``dataset_snapshot`` for the hand-seeded PM-1 rows to bind — the
+    result rows carry a hard FK to it, so a made-up UUID is an insert PG (and now SQLite, pragma
+    enforced) refuses."""
+    from irp_shared.snapshot.models import PURPOSE_RETURN_INPUT, DatasetSnapshot
+
+    snap = DatasetSnapshot(
+        tenant_id=tenant,
+        label="pm1-seed",
+        purpose=PURPOSE_RETURN_INPUT,
+        as_of_valid_at=_T0,
+        as_of_known_at=_T0,
+        as_of_valuation_date=date(2023, 1, 1),
+        binding_predicate_version="v1",
+        component_count=0,
+        manifest_hash="seed",
+    )
+    session.add(snap)
+    session.flush()
+    return str(snap.id)
+
+
 def _seed_return_run(
     session: Session,
     tenant: str,
@@ -133,6 +155,8 @@ def _seed_return_run(
 ) -> tuple[CalculationRun, str, list[date]]:
     """A COMPLETED PM-1 run shaped exactly as PM-1 writes it, so the pin serializer SR-1 reuses
     produces real content. Hand-seeded on purpose: driving PM-1 here would test PM-1."""
+    from irp_shared.perf.bootstrap import register_portfolio_return_model
+
     portfolio = create_portfolio(
         session,
         tenant_id=tenant,
@@ -153,6 +177,13 @@ def _seed_return_run(
     session.add(run)
     session.flush()
 
+    # GENUINE parents for the two hard FKs the result rows carry: the real PM-1 model version
+    # (the idempotent production registrar) and a real RETURN_INPUT snapshot.
+    pm1_version = register_portfolio_return_model(
+        session, tenant_id=tenant, actor_id="steward", code_version="pm1"
+    )
+    input_snapshot_id = _seed_return_input_snapshot(session, tenant)
+
     bounds = boundaries if boundaries is not None else _month_ends(len(returns) + 1)
     assert len(bounds) == len(returns) + 1, "one more boundary than sub-periods"
 
@@ -161,8 +192,8 @@ def _seed_return_run(
             PortfolioReturnResult(
                 tenant_id=tenant,
                 calculation_run_id=run.run_id,
-                input_snapshot_id=str(uuid.uuid4()),
-                model_version_id=str(uuid.uuid4()),
+                input_snapshot_id=input_snapshot_id,
+                model_version_id=str(pm1_version.id),
                 portfolio_id=str(portfolio.id),
                 metric_type=metric,
                 period_start=start,

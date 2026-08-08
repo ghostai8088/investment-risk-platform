@@ -43,16 +43,96 @@ def test_run_type_distinct() -> None:
     assert RUN_TYPE_PACING_PROJECTION == "PACING_PROJECTION"
 
 
+def _seed_pacing_parents(session: Session, tenant: str) -> dict[str, str]:
+    """REAL parents for a pacing result row (run/snapshot/model version/portfolio/fund).
+
+    With SQLite FK enforcement ON (the shared ``make_engine`` pragma), a result row stamped with
+    ``uuid4()`` parents is refused exactly as PostgreSQL always refused it — so the append-only
+    guard test needs a genuinely bound row, same as production writes one.
+    """
+    from datetime import UTC, datetime
+
+    from irp_shared.calc.service import create_run
+    from irp_shared.model.models import Model, ModelVersion
+    from irp_shared.portfolio.models import Portfolio
+    from irp_shared.reference.models import Instrument
+    from irp_shared.snapshot.models import DatasetSnapshot
+
+    now = datetime(2026, 6, 30, 12, 0, 0, tzinfo=UTC)
+    pf = Portfolio(
+        tenant_id=tenant,
+        code=f"PF-{uuid.uuid4().hex[:8]}",
+        name="Private markets book",
+        node_type="ACCOUNT",
+        status="ACTIVE",
+        record_version=1,
+    )
+    inst = Instrument(
+        tenant_id=tenant,
+        code=f"PE-FUND-{uuid.uuid4().hex[:6].upper()}",
+        name="Buyout Fund IV",
+        asset_class="PRIVATE_EQUITY",
+        instrument_type="FUND",
+        currency_code="USD",
+        valid_from=now,
+        record_version=1,
+    )
+    model = Model(
+        tenant_id=tenant,
+        code="PACING_TA",
+        name="Takahashi-Alexander pacing",
+        model_type="RISK",
+        is_active=True,
+    )
+    session.add_all([pf, inst, model])
+    session.flush()
+    version = ModelVersion(
+        tenant_id=tenant,
+        model_id=str(model.id),
+        version_label="v1",
+        methodology_ref="pacing/takahashi_alexander_v1",
+        status="REGISTERED",
+    )
+    snap = DatasetSnapshot(
+        tenant_id=tenant,
+        label="pacing-input",
+        purpose="PACING_INPUT",
+        as_of_valid_at=now,
+        as_of_known_at=now,
+        as_of_valuation_date=date(2026, 6, 30),
+        binding_predicate_version="v1",
+        component_count=0,
+        manifest_hash="h",
+    )
+    session.add_all([version, snap])
+    session.flush()
+    run = create_run(
+        session,
+        tenant_id=tenant,
+        run_type=RUN_TYPE_PACING_PROJECTION,
+        initiated_by="analyst",
+        input_snapshot_id=str(snap.id),
+        model_version_id=str(version.id),
+        scope_portfolio_id=str(pf.id),
+    )
+    session.flush()
+    return {
+        "calculation_run_id": str(run.run_id),
+        "input_snapshot_id": str(snap.id),
+        "model_version_id": str(version.id),
+        "portfolio_id": str(pf.id),
+        "instrument_id": str(inst.id),
+    }
+
+
 def test_orm_guard_blocks_update_and_delete(session: Session) -> None:
     from irp_shared.calc.models import CalculationRun  # noqa: F401 (metadata already loaded)
 
+    tenant = str(uuid.uuid4())
+    parents = _seed_pacing_parents(session, tenant)
     row = PacingProjectionResult(
-        tenant_id=str(uuid.uuid4()),
-        calculation_run_id=str(uuid.uuid4()),
-        input_snapshot_id=str(uuid.uuid4()),
-        model_version_id=str(uuid.uuid4()),
-        portfolio_id=str(uuid.uuid4()),
-        instrument_id=str(uuid.uuid4()),
+        tenant_id=tenant,
+        **parents,
         period_index=1,
         period_start=date(2026, 6, 30),
         period_end=date(2027, 6, 30),

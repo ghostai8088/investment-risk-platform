@@ -25,6 +25,7 @@ from sqlalchemy.pool import StaticPool
 
 from irp_backend.api.breaches import router as breaches_router
 from irp_backend.deps import get_db
+from irp_shared.calc.models import CalculationRun
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.entitlement.models import AppUser, Permission, Role, RolePermission, UserRole
 from irp_shared.limit.events import LIMIT_KIND_HARD, THRESHOLD_UNIT_CURRENCY, LimitActor
@@ -34,6 +35,7 @@ from irp_shared.limit.models import Breach
 from irp_shared.limit.service import create_limit
 from irp_shared.models import Base
 from irp_shared.portfolio import PortfolioActor, create_portfolio
+from irp_shared.reference.models import Issuer, LegalEntity
 
 _RESPOND = ("breach.respond", "breach.view")
 _REVIEW = ("breach.review", "breach.view")
@@ -63,11 +65,26 @@ def _mk_user(db: Session, tenant: str, name: str, codes: tuple[str, ...]) -> str
     return user.id
 
 
+def _seed_run(db: Session, tenant: str) -> str:
+    """A genuine VAR calculation_run parent for the breach's FK (run_id, not the row pk)."""
+    run = CalculationRun(
+        tenant_id=tenant,
+        run_type="VAR",
+        status="COMPLETED",
+        initiated_by="risk-engine",
+        code_version="v1",
+        environment_id="test",
+    )
+    db.add(run)
+    db.flush()
+    return str(run.run_id)
+
+
 def _seed_breach(db: Session, tenant: str, limit_id: str, *, code_suffix: str = "") -> str:
     breach = Breach(
         tenant_id=tenant,
         limit_definition_id=limit_id,
-        calculation_run_id=str(uuid.uuid4()),
+        calculation_run_id=_seed_run(db, tenant),
         detected_at=datetime(2026, 1, 1, tzinfo=UTC),
         target_run_type="VAR",
         metric_type="VAR_PARAMETRIC",
@@ -748,7 +765,17 @@ def _principals_either_side(ctx) -> tuple[str, str]:  # noqa: ANN001
 def _make_issuer_bearing_breach(ctx) -> str:  # noqa: ANN001
     """Stamp issuer identity onto the seeded breach and its limit, the shape LIM-2 introduced."""
     db: Session = ctx["db"]
-    issuer_id = str(uuid.uuid4())
+    # A GENUINE issuer (legal_entity core + issuer role): both UPDATEd columns are FKs to
+    # issuer.id, so a bare uuid is refused once SQLite enforces foreign keys.
+    core = LegalEntity(
+        tenant_id=ctx["tenant"], code=f"LE-{uuid.uuid4().hex[:6]}", name="Acme Corp", is_active=True
+    )
+    db.add(core)
+    db.flush()
+    issuer = Issuer(tenant_id=ctx["tenant"], legal_entity_id=core.id, is_active=True)
+    db.add(issuer)
+    db.flush()
+    issuer_id = str(issuer.id)
     # A FULL concentration limit, not a VaR limit with a dimension bolted on: 0058's
     # `concentration_shape` CHECK refuses the half-way row outright (which is the constraint doing
     # exactly its job — it caught this test's first draft).

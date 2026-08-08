@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import event, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -53,32 +53,22 @@ from irp_shared.snapshot.models import DatasetSnapshot
 
 @pytest.fixture
 def session() -> Iterator[Session]:
-    """This suite's OWN engine, with SQLite foreign keys ENFORCED.
+    """This suite's engine — FK enforcement now comes from the FACTORY, not from here.
 
-    **Why this suite overrides the shared fixture.** The shared unit engine leaves SQLite's
-    ``PRAGMA foreign_keys`` at its default OFF, so an INSERT naming a parent that does not exist
-    succeeds silently. That is how eighteen tests here spent a slice generating reports against a
-    ``portfolio_id`` resolving to nothing — found not by any test but by the FIRST run of the
-    restore-cycle proof, where PostgreSQL refused it immediately.
-
-    Turning the pragma on GLOBALLY reddens 115 tests across 12 suites (measured, RPT-1: sharpe 29,
-    rolling_risk 28, breach_lifecycle 25, and this suite's 12). That is a slice of its own and is
-    CARRIED with the number rather than smuggled in here. What is not deferred is this suite: a
-    report binds four foreign keys and its whole claim is that the binding is real, so it enforces
-    them locally and its fixtures seed genuine parents.
+    This fixture used to carry its own ``PRAGMA foreign_keys=ON`` listener, installed at RPT-1 when
+    the restore-cycle proof caught eighteen tests generating reports against a ``portfolio_id``
+    resolving to nothing, and the global flip was carried as a measured 115-failure slice of its
+    own. FK-1 paid that carry: ``make_engine`` enforces the pragma on every SQLite engine it
+    builds, so the local listener became a SECOND mechanism for the same property — and two
+    mechanisms is how the next reader trusts the wrong one (removing the factory's would have left
+    this suite green while every other suite went blind again). Retired here; the enforcement is
+    pinned by ``test_db_foreign_keys.py`` against the factory itself.
     """
     engine = make_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-
-    @event.listens_for(engine, "connect")
-    def _enforce_foreign_keys(dbapi_conn: object, _record: object) -> None:
-        cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
     Base.metadata.create_all(engine)
     factory = make_session_factory(engine)
     db = factory()

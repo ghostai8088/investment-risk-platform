@@ -455,7 +455,7 @@ self-enacted when drafted:** proposed at the close review as an explicit ratific
 precedent that an evidence-sufficiency rule for the builder's own claims should not be enacted by the
 builder on its own authority.
 
-## A control-status citation is re-verified against the branch tip before the PR (standing, drafted 2026-08-07, P16 — PROPOSED, awaiting ratification)
+## A control-status citation is re-verified against the branch tip before the PR (standing, drafted 2026-08-07, RATIFIED 2026-08-08, P16)
 A control matrix row that moves a control to *Implemented* or *Operational* on OBSERVED evidence cites a
 CI run. **The last act before opening or updating the PR is to run
 `git diff --name-only <cited-sha>..HEAD` and confirm it names NO production file** — no source, no
@@ -482,9 +482,10 @@ carefully is not the control. **The trigger moment is what makes it mechanical**
 fresh", which is the bare-instruction shape P7 forbids, but a named check at a named moment with a
 named comparison.
 
-**Drafted, not self-enacted.** Like P14 and P15, this constrains how the builder evidences its own
-claims, so it is proposed for ratification rather than adopted on the builder's own authority. It is
-being followed from the moment it was drafted; ratification makes it standing.
+**RATIFIED 2026-08-08 by the user (AskUserQuestion, "Ratify as written"), after the rule had been
+corrected on first use and had then fired correctly at its trigger moment on four consecutive
+re-citations.** Like P14 and P15, it constrains how the builder evidences its own claims, so it was
+proposed rather than self-enacted; it was followed as practice from the moment it was drafted.
 
 ## Prohibited behavior
 - Committing/pushing without explicit approval; starting the next slice unprompted.

@@ -83,6 +83,51 @@ def _month_ends(count: int, *, start_year: int = 2024, start_month: int = 1) -> 
     return out
 
 
+def _seed_pm1_provenance(session: Session, tenant: str) -> tuple[str, str]:
+    """A REAL RETURN_INPUT snapshot header + a REAL registered PM-1 model version.
+
+    The first version of this fixture stamped ``input_snapshot_id`` and ``model_version_id`` as
+    bare ``uuid4()`` literals — dangling parents that SQLite accepted only because its FK pragma
+    shipped OFF while PostgreSQL refused them. Both columns are hard FKs on
+    ``portfolio_return_result``, so the seeded PM-1 rows now bind provenance rows that exist,
+    exactly as PM-1 itself writes them. Returns ``(snapshot_id, model_version_id)``.
+    """
+    from irp_shared.model.models import Model, ModelVersion
+    from irp_shared.snapshot.models import PURPOSE_RETURN_INPUT, DatasetSnapshot
+
+    snap = DatasetSnapshot(
+        tenant_id=tenant,
+        label="pm1-src",
+        purpose=PURPOSE_RETURN_INPUT,
+        as_of_valid_at=datetime(2026, 1, 1, tzinfo=UTC),
+        as_of_known_at=datetime(2026, 1, 1, tzinfo=UTC),
+        as_of_valuation_date=date(2026, 1, 1),
+        binding_predicate_version="v1:test",
+        component_count=0,
+        manifest_hash="0" * 64,
+    )
+    session.add(snap)
+    model = Model(
+        tenant_id=tenant,
+        code="perf.portfolio_return",
+        name="Portfolio return (PM-1 seed)",
+        model_type="PORTFOLIO_RETURN",
+        is_active=True,
+    )
+    session.add(model)
+    session.flush()
+    version = ModelVersion(
+        tenant_id=tenant,
+        model_id=str(model.id),
+        version_label="v1",
+        code_version="pm1",
+        status="REGISTERED",
+    )
+    session.add(version)
+    session.flush()
+    return str(snap.id), str(version.id)
+
+
 def _seed_return_run(
     session: Session,
     tenant: str,
@@ -115,6 +160,7 @@ def _seed_return_run(
     )
     session.add(run)
     session.flush()
+    snapshot_id, model_version_id = _seed_pm1_provenance(session, tenant)
 
     bounds = boundaries if boundaries is not None else _month_ends(len(returns) + 1)
     assert len(bounds) == len(returns) + 1, "one more boundary than sub-periods"
@@ -124,8 +170,8 @@ def _seed_return_run(
             PortfolioReturnResult(
                 tenant_id=tenant,
                 calculation_run_id=run.run_id,
-                input_snapshot_id=str(uuid.uuid4()),
-                model_version_id=str(uuid.uuid4()),
+                input_snapshot_id=snapshot_id,
+                model_version_id=model_version_id,
                 portfolio_id=str(portfolio.id),
                 metric_type=metric,
                 period_start=start,

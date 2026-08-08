@@ -125,20 +125,21 @@ def test_migration_head_and_chain() -> None:
 
 
 def _minimal_call(session: Session) -> CapitalCall:
+    # SQLite now enforces FKs (the shared factory arms the pragma), so seed the
+    # genuine portfolio/instrument parents; commitment_version_id is deliberately
+    # NOT an FK (provenance echo only), so a bare uuid remains correct there.
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant, suffix="-GUARD")
     row = CapitalCall(
-        tenant_id=str(uuid.uuid4()),
-        portfolio_id=None,  # replaced below; FKs unenforced default-off on SQLite
-        instrument_id=None,
+        tenant_id=tenant,
+        portfolio_id=pf,
+        instrument_id=fund,
         commitment_version_id=str(uuid.uuid4()),
         event_date=date(2026, 3, 2),
         amount=Decimal("1000000.000000"),
         currency_code="USD",
         call_type="DRAWDOWN",
     )
-    # SQLite in these unit tests doesn't enforce FKs; the service layer (steps 4-5)
-    # resolves them fail-closed — here we only exercise the ORM guard mechanics.
-    row.portfolio_id = str(uuid.uuid4())
-    row.instrument_id = str(uuid.uuid4())
     session.add(row)
     session.flush()
     return row
@@ -161,10 +162,12 @@ def test_orm_guard_blocks_delete(session: Session) -> None:
 
 
 def test_distribution_orm_guard_blocks_update(session: Session) -> None:
+    tenant = _tenant()
+    pf, fund = _seed_pf_fund(session, tenant, suffix="-DGRD")
     row = Distribution(
-        tenant_id=str(uuid.uuid4()),
-        portfolio_id=str(uuid.uuid4()),
-        instrument_id=str(uuid.uuid4()),
+        tenant_id=tenant,
+        portfolio_id=pf,
+        instrument_id=fund,
         commitment_version_id=str(uuid.uuid4()),
         event_date=date(2026, 3, 2),
         amount=Decimal("500000.000000"),

@@ -66,6 +66,22 @@ def _portfolio(session: Session, tenant: str) -> str:
     return str(pf.id)
 
 
+def _run(session: Session, tenant: str) -> str:
+    """A real ``calculation_run`` parent for the breach's ``calculation_run_id`` FK
+    (the ``test_breach_lifecycle._seed_run`` pattern)."""
+    from irp_shared.calc.models import CalculationRun
+
+    run = CalculationRun(
+        tenant_id=tenant,
+        run_type="VAR",
+        status="COMPLETED",
+        initiated_by="risk-engine",
+    )
+    session.add(run)
+    session.flush()
+    return str(run.run_id)
+
+
 def _mk(session: Session, tenant: str, **over: object) -> LimitDefinition:
     kwargs: dict[str, object] = {
         "tenant_id": tenant,
@@ -202,7 +218,7 @@ def test_breach_is_append_only(session: Session) -> None:
     breach = Breach(
         tenant_id=tenant,
         limit_definition_id=limit.id,
-        calculation_run_id=str(uuid.uuid4()),
+        calculation_run_id=_run(session, tenant),
         detected_at=datetime(2026, 1, 5, tzinfo=UTC),
         target_run_type="VAR",
         metric_type="VAR_PARAMETRIC",
