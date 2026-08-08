@@ -55,7 +55,12 @@ from irp_shared.reproduction.registry import (
     ReproductionUnsupported,
 )
 from irp_shared.reproduction.service import (
+    DISPOSITION_RECORDED,
+    DISPOSITION_UNCHECKABLE,
+    DISPOSITION_UNRECORDED,
+    DISPOSITIONS,
     MAX_ALARM_ATTEMPTS,
+    FamilyOutcome,
     alarm_for_verdict,
     compare_rows,
     latest_completed_run,
@@ -545,6 +550,76 @@ def test_a_verdict_ROW_that_cannot_be_written_does_not_take_the_others_with_it(
         .all()
     )
     assert len(persisted) == 1
+
+
+def test_every_family_gets_EXACTLY_ONE_disposition(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The structural property the four parallel lists could not express.
+
+    Both recent BLOCKING defects were a family counted in two categories at once, or in the wrong
+    one: a family that HAD been judged appended to the list meaning "never judged". Neither was
+    visible to a test that drove ONE disposition — which is every test that existed, because a test
+    naturally exercises one path.
+
+    This drives THREE dispositions in a single sweep and asserts the partition directly: each
+    registered family appears exactly once, and the projections are disjoint by construction rather
+    than by the code happening to append correctly.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+
+    def _db_boom(*_a: object, **_k: object) -> list[ComparableRow]:
+        raise OperationalError("SELECT 1", {}, Exception("lock timeout"))
+
+    monkeypatch.setitem(
+        REPRODUCIBLE_FAMILIES,
+        "EXPOSURE_AGGREGATE",
+        replace(REPRODUCIBLE_FAMILIES["EXPOSURE_AGGREGATE"], read_stored=_db_boom),
+    )
+    outcome = _sweep(session, tenant)
+
+    keys = [f.family_key for f in outcome.families]
+    assert sorted(keys) == sorted(REPRODUCIBLE_FAMILIES), (
+        "a registered family is missing from the outcome, or appears twice — the partition is not "
+        "a partition"
+    )
+    assert len(keys) == len(set(keys))
+    assert {f.disposition for f in outcome.families} <= DISPOSITIONS
+
+    # The projections partition the same set: every family lands in exactly one of them.
+    projected = (
+        [str(c.family_key) for c in outcome.checks]
+        + outcome.skipped
+        + [u.split(":")[0] for u in outcome.unresolved]
+        + [u.split(":")[0] for u in outcome.unrecorded]
+    )
+    assert sorted(projected) == sorted(
+        keys
+    ), "the derived views do not partition the families — one is double-counted or dropped"
+
+
+def test_a_judgement_and_its_disposition_can_never_disagree() -> None:
+    """`verdict is not None` iff the family was judged — checked on every construction.
+
+    The states below are precisely the two BLOCKING defects, expressed directly: a family reported
+    as unjudged while carrying a verdict, and a family reported as judged while carrying none. Both
+    were reachable before; both are now unconstructable.
+    """
+    with pytest.raises(ValueError, match="disagree about whether a judgement was reached"):
+        FamilyOutcome(
+            family_key="VAR", disposition=DISPOSITION_UNCHECKABLE, verdict=VERDICT_DIVERGED
+        )
+    with pytest.raises(ValueError, match="disagree about whether a judgement was reached"):
+        FamilyOutcome(family_key="VAR", disposition=DISPOSITION_RECORDED, verdict=None)
+    with pytest.raises(ValueError, match="unknown disposition"):
+        FamilyOutcome(family_key="VAR", disposition="PROBABLY_FINE")
+    # And the positive control, so the guard is not merely a thing that raises.
+    ok = FamilyOutcome(
+        family_key="VAR", disposition=DISPOSITION_UNRECORDED, verdict=VERDICT_DIVERGED
+    )
+    assert ok.verdict == VERDICT_DIVERGED and ok.row is None
 
 
 def test_a_DIVERGED_verdict_that_cannot_be_WRITTEN_is_reported_as_a_LOST_ALARM(
@@ -1141,6 +1216,241 @@ def test_every_recipient_succeeding_retires_the_verdict_at_once(
     assert (
         unalarmed_verdicts(session, acting_tenant=tenant) == []
     ), "every recipient was told and the verdict stayed queued — it will re-page them forever"
+
+
+def test_tick_phase_5_alarms_the_queue_and_isolates_a_poison_verdict(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`poll_tenant_reproduction_alarms` — the PRODUCTION path — had no test at all.
+
+    Every alarm test until now drove the library functions directly. The worker phase that actually
+    delivers in a deployed tick was exercised by nothing on any tier, which the fifth pass flagged
+    and this fold owed. Two properties, and the second is the one the module's docstring argues for
+    at length: a failing verdict must NOT stop the batch, because one poison verdict silencing the
+    night's other divergences is exactly what phase 4's cursor semantics force and this queue was
+    designed to avoid.
+    """
+    from irp_worker.reproduction_alarms import poll_tenant_reproduction_alarms
+
+    tenant = str(uuid.uuid4())
+    first = _diverged_check(session, tenant)
+    second = _diverged_check(session, tenant)
+    session.commit()
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: ["reviewer-1"]
+    )
+
+    exploding = {str(first.id)}
+    real = alarm_for_verdict
+
+    def _selective(db: Session, *, check, sink, acting_tenant, now=None):  # noqa: ANN001, ANN202
+        if str(check.id) in exploding:
+            raise RuntimeError("this verdict's alarm transaction blew up")
+        return real(db, check=check, sink=sink, acting_tenant=acting_tenant, now=now)
+
+    monkeypatch.setattr("irp_worker.reproduction_alarms.alarm_for_verdict", _selective)
+    delivered = poll_tenant_reproduction_alarms(
+        session, datetime(2026, 8, 8, tzinfo=UTC), acting_tenant=tenant, sink=_RecordingSink()
+    )
+    assert [d[0] for d in delivered] == [
+        str(second.id)
+    ], "one poison verdict stopped the batch — the night's other divergences went undelivered"
+    assert str(first.id) in {
+        str(c.id) for c in unalarmed_verdicts(session, acting_tenant=tenant)
+    }, "the failed verdict left the queue despite recording no attempt"
+
+
+def test_an_unreadable_alarm_QUEUE_costs_the_phase_not_the_TICK(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The queue read sits OUTSIDE the per-verdict guard, so its failure had the widest blast
+    radius.
+
+    `unalarmed_verdicts` folds a JSON payload in Python; a malformed `after_value` raises there, and
+    the exception would leave phase 5, leave `run_operational_tick_for_tenant`, and take the whole
+    tenant tick with it. No current writer can produce that payload — this guards a latent path —
+    but the blast radius is the entire argument for the per-verdict isolation one line below.
+    """
+    from irp_worker import reproduction_alarms
+
+    tenant = str(uuid.uuid4())
+
+    def _boom(*_a: object, **_k: object) -> list[ReproductionCheck]:
+        raise AttributeError("'str' object has no attribute 'get'")
+
+    monkeypatch.setattr(reproduction_alarms, "unalarmed_verdicts", _boom)
+    assert (
+        reproduction_alarms.poll_tenant_reproduction_alarms(
+            session, datetime(2026, 8, 8, tzinfo=UTC), acting_tenant=tenant, sink=_RecordingSink()
+        )
+        == []
+    ), "an unreadable queue escaped phase 5 and would take the tenant's whole tick with it"
+
+
+def _legacy_dispatch_row(db: Session, tenant: str, check_id: str, outcome: str) -> None:
+    """A `NOTIFY.DISPATCH` row in the PRE-`attempt_id` format — exactly what v5 wrote.
+
+    Written through the real `record_event` so the chain, sequence and payload shape are genuine;
+    the payload simply lacks the key that did not exist yet.
+    """
+    from irp_shared.audit.actions import ACTION_RECORD
+    from irp_shared.audit.service import record_event
+
+    record_event(
+        db,
+        tenant_id=tenant,
+        event_type=NOTIFY_DISPATCH_EVENT,
+        action=ACTION_RECORD,
+        entity_type=ENTITY_REPRODUCTION_CHECK,
+        entity_id=check_id,
+        actor_id="reproduction-alarm",
+        actor_type="SYSTEM",
+        source_module="notification",
+        severity="warning",
+        outcome=outcome,
+        after_value={"verdict": VERDICT_DIVERGED, "recipient_id": "legacy-reviewer"},
+    )
+
+
+def test_pre_attempt_id_rows_cannot_spend_the_retry_budget_at_the_UPGRADE_BOUNDARY(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The upgrade boundary resurrected the BLOCKING defect the rule exists to kill.
+
+    One pre-upgrade FAILED tick to five recipients is five rows. Giving each unkeyed row its own
+    attempt made that five spent attempts, so the verdict retired the moment this code deployed —
+    with zero retries ever taken. That is v3's zero-retry shape reached through a migration rather
+    than through the rule, and the comment that justified it called counting up "the safe
+    direction": true for audit volume, exactly backwards for an alarm queue, which drops deliveries.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    for _ in range(5):
+        _legacy_dispatch_row(session, tenant, str(check.id), "failure")
+    session.flush()
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id], (
+        "legacy rows from ONE failed tick spent the whole retry budget — the verdict retired on "
+        "upgrade having never been retried"
+    )
+    # And the budget is genuinely intact: the collapsed history costs ONE unit, so four more
+    # attempts remain before the backstop fires.
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: ["reviewer-1"]
+    )
+    for _ in range(MAX_ALARM_ATTEMPTS - 2):
+        alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+    session.flush()
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id]
+
+
+def test_a_pre_attempt_id_PARTIAL_tick_is_not_retired_by_row_ORDER(session: Session) -> None:
+    """The same fallback made retirement depend on which row happened to be written last.
+
+    A pre-upgrade partial tick — one delivered, one failed — retired the verdict when the success
+    row carried the higher sequence_no, because that lone row looked like a singleton all-success
+    "latest attempt". The unreached recipient was silenced by an ordering accident. Collapsing the
+    legacy rows into one attempt makes a mixed history mixed, whatever order it was written in.
+    """
+    for order in (("failure", "success"), ("success", "failure")):
+        tenant = str(uuid.uuid4())
+        check = _diverged_check(session, tenant)
+        for outcome in order:
+            _legacy_dispatch_row(session, tenant, str(check.id), outcome)
+        session.flush()
+        assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id], (
+            f"a partial legacy tick written in order {order} retired the verdict — the recipient "
+            "that was never reached is silenced by which row happened to land last"
+        )
+
+
+def test_a_departed_recipient_cannot_freeze_the_queue_while_the_survivor_SUCCEEDS(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sixth BLOCKING, found by an independent model on a different engine.
+
+    The previous rule retired a verdict when every recipient was done OR the most-tried recipient
+    hit the budget. A recipient who leaves the holder set at `failed=2` satisfies neither and can
+    never advance: nothing attempts it again, so `every_recipient_done` stays false, and the
+    most-tried backstop only moves while someone CURRENTLY attempted keeps failing.
+
+    The test that existed kept the survivor FAILING — the one sub-case the backstop covers. Here the
+    survivor SUCCEEDS, which is the production-normal recovery, and the old rule then re-paged that
+    live human every 300-second tick indefinitely: 25 ticks, 25 duplicate pages, unbounded.
+
+    Counting ATTEMPTS rather than recipients is what makes this terminate, because an attempt is a
+    thing the system did rather than a fact about a population that moves.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission",
+        lambda *_a, **_k: ["survivor", "departing"],
+    )
+    for _ in range(2):
+        alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+    session.flush()
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id]
+
+    # `departing` loses the permission at failed=2 and is never attempted again. The survivor's
+    # wire recovers, which under the old rule meant nothing could ever advance.
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: ["survivor"]
+    )
+    sink = _RecordingSink()
+    assert (
+        alarm_for_verdict(session, check=check, sink=sink, acting_tenant=tenant)
+        == NOTIFY_OUTCOME_SENT
+    )
+    session.flush()
+    assert unalarmed_verdicts(session, acting_tenant=tenant) == [], (
+        "a departed recipient's frozen state held the verdict in the queue — the surviving "
+        "reviewer is re-paged on every tick, forever, for an alarm already delivered"
+    )
+    assert len(sink.messages) == 1, "the survivor was paged more than once after delivery succeeded"
+
+
+def test_a_FAILED_tick_then_an_EMPTY_TENANT_still_terminates(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second manifestation, and it falsified a USER-RATIFIED rule.
+
+    "A SUPPRESSED attempt is terminal" (retry the wire, not the audience) was ratified — but on the
+    ordering "one FAILED tick, then the tenant has no holders at all", the previous rule appended a
+    fresh SUPPRESSED sentinel row on every tick forever, because the failed recipient's state was
+    frozen below budget and the sentinel could not retire the verdict alone. The ratified semantics
+    were not implemented for that ordering; they only held when SUPPRESSED came first.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: ["reviewer-1"]
+    )
+    assert (
+        alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+        == NOTIFY_OUTCOME_FAILED
+    )
+    session.flush()
+
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: []
+    )
+    assert (
+        alarm_for_verdict(session, check=check, sink=_RecordingSink(), acting_tenant=tenant)
+        == NOTIFY_OUTCOME_SUPPRESSED
+    )
+    session.flush()
+    assert unalarmed_verdicts(session, acting_tenant=tenant) == [], (
+        "a SUPPRESSED attempt after a FAILED one did not conclude the verdict — a sentinel row is "
+        "appended every tick, forever, and the ratified terminal-SUPPRESSED rule is not implemented"
+    )
+    before = len(_dispatch_events(session, tenant))
+    for _ in range(3):
+        if unalarmed_verdicts(session, acting_tenant=tenant):
+            alarm_for_verdict(session, check=check, sink=_RecordingSink(), acting_tenant=tenant)
+    session.flush()
+    assert (
+        len(_dispatch_events(session, tenant)) == before
+    ), "rows kept accumulating after the queue emptied"
 
 
 def test_a_recipient_who_DISAPPEARS_cannot_pin_the_retry_loop_open_forever(

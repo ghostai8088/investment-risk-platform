@@ -61,9 +61,28 @@ def poll_tenant_reproduction_alarms(
     alarmed: list[tuple[str, str]] = []
     # Snapshot the ids alongside the instances: each commit expires the objects, and the plain
     # string is what survives for the return value (the phase-4 precedent).
-    pending = [
-        (str(check.id), check) for check in unalarmed_verdicts(session, acting_tenant=acting_tenant)
-    ]
+    #
+    # GUARDED, because this call sits OUTSIDE the per-verdict isolation below and an independent
+    # review pointed out what that costs: `unalarmed_verdicts` folds a JSON payload in Python, so a
+    # malformed `after_value` raises here rather than inside the loop, and the exception would leave
+    # this function, leave `run_operational_tick_for_tenant`, and take the tenant's whole tick with
+    # it. No current writer can produce that payload — this is hardening a latent path, not fixing a
+    # live defect — but the blast radius was the argument for the per-verdict try in the first
+    # place, and a queue that cannot be READ should cost the phase, never the tick.
+    try:
+        pending = [
+            (str(check.id), check)
+            for check in unalarmed_verdicts(session, acting_tenant=acting_tenant)
+        ]
+    except Exception as exc:  # noqa: BLE001 - an unreadable queue is this phase's failure, not the tick's
+        session.rollback()
+        _LOGGER.error(
+            "reproduction alarm queue could not be read for tenant %s; phase 5 is skipped this "
+            "tick and every verdict stays queued: %s",
+            acting_tenant,
+            exc,
+        )
+        return alarmed
     for check_id, check in pending:
         try:
             outcome = alarm_for_verdict(

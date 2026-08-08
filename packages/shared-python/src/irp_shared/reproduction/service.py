@@ -27,8 +27,9 @@ anti-pattern NOTIF-1 restructured itself to avoid. So the sweep records verdicts
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace
 from datetime import datetime
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -93,6 +94,11 @@ _REASON_MAX = 2000
 #: which rows and attempts coincide. Executed at N=5: retired after one tick.
 MAX_ALARM_ATTEMPTS = 5
 
+#: The single synthetic attempt that every `NOTIFY.DISPATCH` row predating `attempt_id`
+#: collapses into, per verdict. One bucket, so an upgrade cannot turn a handful of legacy rows
+#: into a handful of spent retries.
+_PRE_ATTEMPT_ID_HISTORY = "pre-attempt-id-history"
+
 
 class ReproductionInfrastructureFailure(Exception):
     """The DATABASE failed under a per-family read — the sweep could not CHECK, it did not JUDGE.
@@ -131,39 +137,165 @@ class _Discard(Exception):
     """
 
 
+#: The four mutually exclusive things that can happen to one family in one sweep.
+#:
+#: Exhaustive and disjoint ON PURPOSE. The invariant that matters is pinned by a test rather than
+#: left to reading: ``verdict is not None`` **iff** the family was judged, which is true for exactly
+#: RECORDED and UNRECORDED. Everything the sweep reports — the run status, the operator-facing
+#: reason, the alarm queue's inputs — is a fold over these, so a family cannot be counted as both
+#: judged and unjudged, which is the shape both recent BLOCKING defects took.
+DISPOSITION_RECORDED = "RECORDED"  # judged, and the verdict row was written
+DISPOSITION_SKIPPED = "SKIPPED"  # nothing to reproduce yet — a quiet tenant
+DISPOSITION_UNCHECKABLE = "UNCHECKABLE"  # the database failed under it; NO judgement was reached
+DISPOSITION_UNRECORDED = "UNRECORDED"  # judged, but the verdict row could not be written
+DISPOSITIONS = frozenset(
+    {
+        DISPOSITION_RECORDED,
+        DISPOSITION_SKIPPED,
+        DISPOSITION_UNCHECKABLE,
+        DISPOSITION_UNRECORDED,
+    }
+)
+#: The dispositions that mean "this sweep did not do its whole job" — the ones that FAIL the run.
+#: A DIVERGED verdict is deliberately NOT among them: the sweep did its job and the finding is the
+#: point (invariant I3 — a divergence is a DISPATCHED fire, not a FAILED one).
+FAILING_DISPOSITIONS = frozenset({DISPOSITION_UNCHECKABLE, DISPOSITION_UNRECORDED})
+
+
+@dataclass(frozen=True)
+class FamilyOutcome:
+    """What happened to ONE family in ONE sweep — the single record everything else is derived from.
+
+    ``verdict`` is non-None **iff a judgement was reached**. That single fact replaces an inference
+    from which of four parallel lists a family had been appended to, and it is the fact both recent
+    BLOCKING defects got wrong in opposite directions.
+    """
+
+    family_key: str
+    disposition: str
+    verdict: str | None = None
+    detail: str | None = None
+    row: ReproductionCheck | None = None
+
+    def __post_init__(self) -> None:
+        # A cheap structural check, run on every construction rather than asserted in one test.
+        # The two invariants are the ones the parallel lists could not express.
+        if self.disposition not in DISPOSITIONS:
+            raise ValueError(f"unknown disposition {self.disposition!r}")
+        judged = self.disposition in (DISPOSITION_RECORDED, DISPOSITION_UNRECORDED)
+        if judged != (self.verdict is not None):
+            raise ValueError(
+                f"{self.family_key}: disposition {self.disposition!r} and verdict "
+                f"{self.verdict!r} disagree about whether a judgement was reached"
+            )
+        if (self.row is not None) != (self.disposition == DISPOSITION_RECORDED):
+            raise ValueError(
+                f"{self.family_key}: a verdict row exists iff the disposition is RECORDED"
+            )
+
+
 @dataclass(frozen=True)
 class ReproductionOutcome:
-    """What one sweep did. ``skipped`` names families that HAVE a reproducer but no COMPLETED run
-    to reproduce — reported rather than silently absent, because "nothing to check" and "checked
-    and fine" look identical from a verdict count alone."""
+    """What one sweep did — ONE record per family, and every other view is derived from it.
+
+    **Why this shape, and what it replaced.** For two folds the sweep tracked four PARALLEL LISTS —
+    ``checks``, ``skipped``, ``unresolved``, ``unrecorded`` — plus a fifth (``lost_alarms``) that
+    was
+    a subset of one of them, with the run status and the operator-facing reason computed from all
+    five. Nothing structural said a family belonged to exactly one, or that "was this family
+    judged?" had a single answer; those were properties of the code that happened to append. Both of
+    the last two BLOCKING defects lived in exactly that gap:
+
+    * a family that HAD been judged was appended to the list meaning "never judged", so a DIVERGED
+      verdict became a governed record denying a divergence had been found;
+    * a reason assembled from a branch that could not see the other lists asserted "no alarm was
+      raised" on a night when phase 5 was raising one.
+
+    Neither was carelessness and neither was visible to a test that drove ONE disposition — which is
+    every test that existed, because a test naturally exercises one path. They were COMBINATIONS.
+    Five successive adversarial passes each found a defect of this class in the previous pass's fix,
+    so the fix here is not another correction: it is removing the ability to express the wrong
+    state.
+
+    Now each family produces exactly one :class:`FamilyOutcome` whose ``disposition`` is one of four
+    mutually exclusive values, and whose ``verdict`` is non-None **iff a judgement was reached**.
+    The
+    parallel lists survive as read-only projections so every existing caller and test is unchanged,
+    but they can no longer disagree with each other, because there is only one place to disagree
+    with. ``status`` and ``failure_reason`` are folds over the same list.
+
+    **What this does NOT make unrepresentable**, named rather than left for a reader to assume from
+    the paragraph above — an independent review pointed out that "removes the ability to express the
+    wrong state" is true of the two defect shapes it was written about and not of everything:
+    a duplicate ``family_key`` in ``families`` is prevented by the loop and a test, not by the type;
+    ``verdict`` is not validated against ``VERDICTS``; nothing checks that a RECORDED family's
+    ``verdict``/``family_key`` agree with its ``row``'s (the reason fold reads the dataclass, the
+    alarm phase reads the DB row, and a future edit could desynchronise them); and ``status`` and
+    ``failure_reason`` are ordinary fields, so "folds over the same list" is a property of the one
+    call site that builds them rather than of this type. Each is a real residual, not a
+    hypothetical.
+    """
 
     run_id: str
     status: str
     failure_reason: str | None = None
-    checks: list[ReproductionCheck] = field(default_factory=list)
-    skipped: list[str] = field(default_factory=list)
-    #: Families the sweep could not CHECK because the DATABASE failed under it — a lock timeout, a
-    #: statement timeout, a half-applied migration. Distinct from ``skipped`` ("nothing to reproduce
-    #: yet", a quiet tenant) and deliberately NOT a verdict.
-    #:
-    #: **This is the ratified disposition for infrastructure failure (2026-08-07)** and it is not
-    #: decoration: a non-empty ``unresolved`` FAILS the sweep and its reason reaches the
-    #: ``scheduled_run`` ledger through ``_dispatch_reproduction``, so the night is loudly not-green
-    #: on an operational surface — but it does NOT page the risk desk, because an unreadable
-    #: database is a claim about the DATABASE and a divergence alarm is a claim about a RUN.
-    unresolved: list[str] = field(default_factory=list)
-    #: Families the sweep DID judge but whose verdict row could not be WRITTEN.
-    #:
-    #: Deliberately NOT folded into ``unresolved``, and the separation is a BLOCKING defect's fix.
-    #: The two look alike and are opposites: ``unresolved`` means no claim was made, while here a
-    #: claim was made and lost. Merging them let a DIVERGED verdict disappear into a reason stating
-    #: that no claim had been made — the governed evidence column asserting the negation of what the
-    #: sweep had just measured, with the risk desk unpaged.
-    unrecorded: list[str] = field(default_factory=list)
-    #: The subset of ``unrecorded`` whose lost verdict was ALARMING. Named separately because it is
-    #: the one thing on this object an operator must act on immediately: a divergence was detected
-    #: and its alarm can never fire, because nothing downstream will ever see the row.
-    lost_alarms: list[str] = field(default_factory=list)
+    families: tuple[FamilyOutcome, ...] = ()
+
+    @property
+    def checks(self) -> list[ReproductionCheck]:
+        """The verdict rows that were durably WRITTEN. Not "judged" — see ``lost_alarms``."""
+        return [f.row for f in self.families if f.row is not None]
+
+    @property
+    def skipped(self) -> list[str]:
+        """Families with a reproducer but no COMPLETED run to reproduce — a quiet tenant.
+
+        Reported rather than silently absent, because "nothing to check" and "checked and fine"
+        look identical from a verdict count alone.
+        """
+        return [f.family_key for f in self.families if f.disposition == DISPOSITION_SKIPPED]
+
+    @property
+    def unresolved(self) -> list[str]:
+        """Families the sweep could not CHECK — the database failed under it.
+
+        The ratified disposition for infrastructure failure (2026-08-07): it FAILS the sweep and the
+        reason reaches the ``scheduled_run`` ledger, so the night is loudly not-green on an
+        operational surface — but it does NOT page the risk desk, because an unreadable database is
+        a claim about the DATABASE and a divergence alarm is a claim about a RUN.
+        """
+        return [
+            f"{f.family_key}: {f.detail}"
+            for f in self.families
+            if f.disposition == DISPOSITION_UNCHECKABLE
+        ]
+
+    @property
+    def unrecorded(self) -> list[str]:
+        """Families the sweep DID judge but whose verdict row could not be WRITTEN.
+
+        The opposite of ``unresolved`` however similar it looks: there no claim was made, here a
+        claim was made and lost.
+        """
+        return [
+            f"{f.family_key}: {f.detail}"
+            for f in self.families
+            if f.disposition == DISPOSITION_UNRECORDED
+        ]
+
+    @property
+    def lost_alarms(self) -> list[str]:
+        """The judged-but-unwritten families whose lost verdict was ALARMING.
+
+        The one thing here an operator must act on immediately: a divergence was detected and its
+        alarm can never fire, because nothing downstream will ever see the row. Derived rather than
+        tracked, so it cannot drift from the verdict it describes.
+        """
+        return [
+            f"{f.family_key} ({f.verdict})"
+            for f in self.families
+            if f.disposition == DISPOSITION_UNRECORDED and f.verdict in ALARMING_VERDICTS
+        ]
 
 
 def _redact(text: str) -> str:
@@ -438,11 +570,9 @@ def run_reproduction_sweep(
     )
     update_run_status(session, run, RunStatus.RUNNING, actor_id=actor_id)
 
-    checks: list[ReproductionCheck] = []
-    skipped: list[str] = []
-    unresolved: list[str] = []
-    unrecorded: list[str] = []
-    lost_alarms: list[str] = []
+    # ONE record per family. The four parallel lists this replaced could disagree with each other
+    # about whether a family had been judged, and both recent BLOCKING defects lived in that gap.
+    families: list[FamilyOutcome] = []
     for family_key in sorted(REPRODUCIBLE_FAMILIES):
         family = REPRODUCIBLE_FAMILIES[family_key]
         # Savepointed inside `resolve_subject` for the same reason as `read_stored` — a failed
@@ -457,10 +587,16 @@ def run_reproduction_sweep(
             # NO verdict row, and not merely because the disposition is nicer: `subject_run_id` is
             # a NOT NULL FK and there is no subject to bind one to. A verdict here would be a claim
             # about a run we could not identify.
-            unresolved.append(f"{family_key}: {lookup_failure}")
+            families.append(
+                FamilyOutcome(
+                    family_key=family_key,
+                    disposition=DISPOSITION_UNCHECKABLE,
+                    detail=lookup_failure,
+                )
+            )
             continue
         if subject is None:
-            skipped.append(family_key)
+            families.append(FamilyOutcome(family_key=family_key, disposition=DISPOSITION_SKIPPED))
             continue
         try:
             verdict, compared, diverged, detail = check_one_family(
@@ -471,7 +607,13 @@ def run_reproduction_sweep(
                 code_version=code_version,
             )
         except ReproductionInfrastructureFailure as exc:
-            unresolved.append(f"{family_key}: {exc}")
+            families.append(
+                FamilyOutcome(
+                    family_key=family_key,
+                    disposition=DISPOSITION_UNCHECKABLE,
+                    detail=str(exc),
+                )
+            )
             continue
         row = ReproductionCheck(
             tenant_id=tenant,
@@ -515,14 +657,27 @@ def run_reproduction_sweep(
             # is "a claim about the DATABASE, not about the run" — and a failed verdict WRITE is the
             # one member of the SQLAlchemyError family where that justification does not hold,
             # because the judgement already exists.
-            unrecorded.append(
-                f"{family_key}: the {verdict} verdict was computed but could NOT be recorded: "
-                f"{_redact(f'{type(exc).__name__}: {exc}')}"
+            families.append(
+                FamilyOutcome(
+                    family_key=family_key,
+                    disposition=DISPOSITION_UNRECORDED,
+                    verdict=verdict,
+                    detail=(
+                        f"the {verdict} verdict was computed but could NOT be recorded: "
+                        f"{_redact(f'{type(exc).__name__}: {exc}')}"
+                    ),
+                )
             )
-            if verdict in ALARMING_VERDICTS:
-                lost_alarms.append(f"{family_key} ({verdict})")
             continue
-        checks.append(row)
+        families.append(
+            FamilyOutcome(
+                family_key=family_key,
+                disposition=DISPOSITION_RECORDED,
+                verdict=verdict,
+                detail=detail,
+                row=row,
+            )
+        )
 
     # A sweep that checked NOTHING is not a healthy night, and it must not be recorded as one.
     #
@@ -559,56 +714,67 @@ def run_reproduction_sweep(
     # universal claim assembled at a branch that does not know the whole state. Every clause below
     # is conditioned on a value computed above it, and the alarming clauses come FIRST, because the
     # first line is what an operator reads at 02:00.
-    # STATUS FIRST, then the text — so the two can never disagree.
+    # STATUS FIRST, then the text — so the two can never disagree. BOTH are folds over `families`,
+    # so neither can be assembled from a branch that cannot see the whole state, which is exactly
+    # how the previous shape produced a governed reason denying a divergence it had just measured.
     #
     # A sweep FAILS when something it was supposed to do did not happen: a family it could not
     # check, a verdict it could not record, or nothing checked at all. A DIVERGED verdict is NOT
     # one of those: the sweep did its job and the finding is the point. That is invariant I3 — a
     # divergence is a DISPATCHED fire, not a FAILED one — and it exists so the platform's most
     # important alarm stays distinguishable from an infrastructure failure in the operator feed.
-    failed = bool(unresolved or unrecorded or not checks)
-    alarming = [c for c in checks if c.verdict in ALARMING_VERDICTS]
+    outcome = ReproductionOutcome(
+        run_id=run.run_id,
+        status=RunStatus.COMPLETED.value,
+        families=tuple(families),
+    )
+    recorded = [f for f in families if f.disposition == DISPOSITION_RECORDED]
+    failing = [f for f in families if f.disposition in FAILING_DISPOSITIONS]
+    failed = bool(failing or not recorded)
 
     reason: str | None = None
     if failed:
         parts: list[str] = []
+        alarming = [f for f in recorded if f.verdict in ALARMING_VERDICTS]
         # Alarming material LEADS, because the first clause is what a woken operator reads.
-        if lost_alarms:
+        if outcome.lost_alarms:
             parts.append(
-                f"ALARM LOST — {len(lost_alarms)} alarming verdict(s) were computed but could NOT "
-                f"be recorded, so they were never delivered: {', '.join(lost_alarms)}. Investigate "
-                "these FIRST: the sweep judged these families and the judgement did not survive "
-                "the write."
+                f"ALARM LOST — {len(outcome.lost_alarms)} alarming verdict(s) were computed but "
+                f"could NOT be recorded, so they were never delivered: "
+                f"{', '.join(outcome.lost_alarms)}. Investigate these FIRST: the sweep judged "
+                "these "
+                "families and the judgement did not survive the write."
             )
         if alarming:
             parts.append(
                 f"{len(alarming)} ALARMING verdict(s) WERE recorded and ARE queued for "
-                f"delivery: {', '.join(sorted(f'{c.family_key} ({c.verdict})' for c in alarming))}"
+                f"delivery: {', '.join(sorted(f'{f.family_key} ({f.verdict})' for f in alarming))}"
                 " — this run FAILED for a separate reason, below; the alarm is real."
             )
-        if unrecorded:
+        if outcome.unrecorded:
             parts.append(
-                f"{len(unrecorded)} verdict(s) could not be written: {'; '.join(unrecorded)}."
+                f"{len(outcome.unrecorded)} verdict(s) could not be written: "
+                f"{'; '.join(outcome.unrecorded)}."
             )
-        if unresolved:
+        if outcome.unresolved:
             # Note what this does NOT say: "the database failed". `resolve_subject` catches bare
             # `Exception`, so a plain code bug in the lookup lands here too, and a governed evidence
             # column must not name a cause the code has not established. The exception type is in
             # the text; the operator can read it.
             parts.append(
-                f"the sweep could not CHECK {len(unresolved)} of {len(REPRODUCIBLE_FAMILIES)} "
-                "registered families, so it makes NO claim about whether those families reproduce: "
-                f"{'; '.join(unresolved)}."
+                f"the sweep could not CHECK {len(outcome.unresolved)} of "
+                f"{len(REPRODUCIBLE_FAMILIES)} registered families, so it makes NO claim about "
+                f"whether those families reproduce: {'; '.join(outcome.unresolved)}."
             )
-        if not checks and not unresolved and not unrecorded:
+        if not failing:
             parts.append(
                 "the reproduction sweep checked NOTHING: no registered family had a COMPLETED run "
                 f"to reproduce (families with a reproducer: "
                 f"{', '.join(sorted(REPRODUCIBLE_FAMILIES))}). A sweep with zero verdicts proves "
                 "nothing and is not recorded as a pass."
             )
-        elif checks and not alarming and not lost_alarms:
-            parts.append(f"{len(checks)} verdict(s) were recorded and stand, none alarming.")
+        elif recorded and not alarming and not outcome.lost_alarms:
+            parts.append(f"{len(recorded)} verdict(s) were recorded and stand, none alarming.")
         reason = " ".join(parts)
 
     if reason is not None:
@@ -620,115 +786,105 @@ def run_reproduction_sweep(
             outcome="failure",
             failure_reason=reason,
         )
-        return ReproductionOutcome(
-            run_id=run.run_id,
-            status=RunStatus.FAILED.value,
-            failure_reason=reason,
-            checks=checks,
-            skipped=skipped,
-            unresolved=unresolved,
-            unrecorded=unrecorded,
-            lost_alarms=lost_alarms,
-        )
+        return replace(outcome, status=RunStatus.FAILED.value, failure_reason=reason)
 
     update_run_status(session, run, RunStatus.COMPLETED, actor_id=actor_id)
-    return ReproductionOutcome(
-        run_id=run.run_id,
-        status=RunStatus.COMPLETED.value,
-        checks=checks,
-        skipped=skipped,
-        unresolved=unresolved,
-        unrecorded=unrecorded,
-        lost_alarms=lost_alarms,
-    )
+    return outcome
 
 
 # ------------------------------------------------------------------------------ the alarm phase ---
 def unalarmed_verdicts(session: Session, *, acting_tenant: str) -> list[ReproductionCheck]:
-    """Alarming verdicts with no ``NOTIFY.DISPATCH`` audit event yet.
+    """Alarming verdicts still owed a delivery attempt.
 
-    Deliberately a per-verdict EVENT question, not a high-water cursor over a sequence. NOTIF-1
-    learned that difference the hard way: a derived ``MAX`` cursor cannot represent a gap, so one
-    row that jumps ahead permanently hides every earlier unalarmed one.
+    **The rule, sixth and simplest version: a verdict is retired when its LATEST ATTEMPT concluded
+    for everyone it tried, or when it has been ATTEMPTED ``MAX_ALARM_ATTEMPTS`` times.** Nothing
+    else. Two conditions over one grouping, and the second guarantees termination unconditionally.
 
-    A verdict leaves the queue when its alarm CONCLUDED (SENT, or SUPPRESSED — nobody to tell is a
-    durable fact, not a transient one) or when its bounded FAILED retries are exhausted. Both of
-    the simpler rules were wrong and both were executed: any-event-retires drops real alarms,
-    SENT-only never terminates.
+    Five earlier rules were each wrong, and the sequence is worth keeping because every one of them
+    read as obviously right when written:
+
+    * ANY recorded event retires it — dropped real alarms; one bad night lost a divergence forever.
+    * Only ``SENT`` retires it — never terminated; ~288 audit rows per verdict per day, growing.
+    * Exhaustion = COUNT of failure ROWS >= 5 — but one attempt emits one row PER RECIPIENT, so
+      five ``breach.review`` holders spent the whole budget in a single tick. Zero retries.
+    * Exhaustion per RECIPIENT (max) — but CONCLUSION stayed per verdict, so one good address
+      retired the verdict and the other four holders were never told.
+    * Conclusion AND exhaustion both per recipient — and it still did not terminate. A recipient
+      who leaves the holder set at ``failed=2`` freezes a pair-state that no later tick can advance:
+      ``every_recipient_done`` never becomes true, and the most-tried backstop only moves while
+      someone currently attempted keeps FAILING. Executed by an independent model on a different
+      engine: 25 ticks after the departure the verdict was still queued, re-paging the surviving
+      reviewer every one of them; and in the ordering "one failure, then the tenant empties", a
+      SUPPRESSED sentinel row was appended every tick forever, falsifying the ratified rule that a
+      SUPPRESSED attempt is terminal.
+
+    The lesson underneath all five: **per-recipient state is hostage to the holder set, which this
+    function does not own.** Recipients appear and disappear (a role edit, a ``UserRole.valid_to``
+    expiry — no admin action required), and any rule that must reach a per-recipient terminal state
+    can be frozen by a recipient who simply stops being attempted. Counting ATTEMPTS instead is
+    immune: an attempt is a thing this system did, not a thing about a population that moves.
+
+    So the grouping key is ``attempt_id`` — one uuid per ``alarm_for_verdict`` call, stamped into
+    every row that call emits. Note what is no longer read: ``recipient_id``. The fold does not
+    depend on the payload's recipient shape at all, which also closes the brittleness the same
+    review flagged (a future second writer omitting the key would have pooled every recipient into
+    one bucket and silently restored the count-the-rows defect).
     """
     tenant = canonical_tenant_id(acting_tenant)
-    # **Retry the wire, not the audience** (ratified 2026-08-07), and the history behind that
-    # sentence is worth keeping because both naive answers are wrong:
-    #
-    #   * retiring on ANY recorded attempt drops real alarms — a webhook down for one night, or a
-    #     tenant not yet provisioned with a `breach.review` holder, loses a genuine divergence
-    #     forever. That was the pre-merge audit's finding;
-    #   * retiring only on SENT never terminates. The re-audit executed it: an un-deliverable
-    #     verdict re-fires on EVERY 300s tick, ~288 hash-chained audit rows per verdict per day,
-    #     growing nightly, with an HTTP POST each time if a webhook is configured. That was a
-    #     defect the previous fold INTRODUCED while fixing the first one.
-    #
-    # The distinction that resolves it is between a transient failure and a durable fact. A
-    # SUPPRESSED attempt concluded CORRECTLY — it established, and recorded, that nobody in this
-    # tenant holds the alarm permission. Re-POSTing that every five minutes tells nobody anything
-    # new; the verdict row and the operational surface remain, and provisioning is a config act
-    # with its own visibility. A FAILED attempt is the wire breaking, which is worth retrying — but
-    # a bounded number of times, after which the durable FAILED attempts ARE the evidence.
-    # **CONCLUSION IS PER RECIPIENT TOO, and that symmetry was missing for one commit.** The fold
-    # that made EXHAUSTION per-recipient left CONCLUSION as "any success row retires the verdict" —
-    # so on a partial-delivery tick (one good address, four dead webhook endpoints; the ordinary
-    # shape) the single success retired the verdict and the other four holders of `breach.review`
-    # were NEVER told about a live divergence and never retried. Executed: five holders, one sink
-    # succeeding, `QUEUED AFTER ONE PARTIAL TICK: []`. The entire per-recipient apparatus below was
-    # dead on every tick where anyone succeeded; it only ever operated in the all-fail corner.
-    #
-    # The fold's own BLOCKING sentence — "a count of rows is a count of recipient-attempts" —
-    # applied verbatim to the query one above the one it fixed. Both halves are now derived from the
-    # same per-(verdict, recipient) state.
-    rows_by_pair: dict[tuple[str, str], dict[str, int]] = {}
-    for entity_id, outcome_value, payload in session.execute(
-        select(AuditEvent.entity_id, AuditEvent.outcome, AuditEvent.after_value).where(
+    attempts_by_entity: dict[str, dict[str, list[tuple[int, str]]]] = {}
+    for entity_id, outcome_value, payload, seq in session.execute(
+        select(
+            AuditEvent.entity_id,
+            AuditEvent.outcome,
+            AuditEvent.after_value,
+            AuditEvent.sequence_no,
+        ).where(
             AuditEvent.chain_id == tenant,
             AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
             AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
         )
     ).all():
-        recipient = str((payload or {}).get("recipient_id", NO_RECIPIENT_SENTINEL))
-        state = rows_by_pair.setdefault((str(entity_id), recipient), {"ok": 0, "failed": 0})
-        state["ok" if outcome_value == "success" else "failed"] += 1
+        # Rows written before `attempt_id` existed collapse into ONE synthetic attempt per verdict.
+        #
+        # The first draft gave each unkeyed row its own attempt, with a comment calling that
+        # "conservative in the safe direction (it counts UP, toward termination)". **That comment
+        # was backwards, and the independent review executed why.** Counting up is the safe
+        # direction for
+        # AUDIT VOLUME; for an ALARM QUEUE it DROPS DELIVERIES, and it resurrected both of the
+        # defects this rule exists to kill, at the upgrade boundary:
+        #
+        #   * one pre-upgrade FAILED tick with five recipients is five rows — five "attempts" — so
+        #     the verdict retired the instant v6 deployed, with zero retries ever taken. That is
+        #     v3's
+        #     BLOCKING zero-retry shape, reached through a migration rather than through the rule.
+        #   * a pre-upgrade PARTIAL tick retired or not depending on which row happened to be
+        #     written
+        #     last: a lone success row with the higher sequence_no is a singleton "latest attempt",
+        #     all-success, so the same real tick's unreached recipient was silenced. That is v4,
+        #     order-dependent.
+        #
+        # Collapsing instead is a bounded UNDERCOUNT — the whole pre-v6 history costs one budget
+        # unit — and a mixed history can never masquerade as an all-success latest attempt. Narrowly
+        # reachable (only a deployment holding live un-retired rows at upgrade, and no production
+        # deployment exists), fixed anyway: a load-bearing comment that is false is itself a defect.
+        attempt = str((payload or {}).get("attempt_id") or _PRE_ATTEMPT_ID_HISTORY)
+        attempts_by_entity.setdefault(str(entity_id), {}).setdefault(attempt, []).append(
+            (int(seq), str(outcome_value))
+        )
 
-    by_entity: dict[str, list[dict[str, int]]] = {}
-    for (entity_id, _recipient), state in rows_by_pair.items():
-        by_entity.setdefault(entity_id, []).append(state)
-
-    # A verdict is retired when EVERY recipient it has ever been attempted for is DONE — has an
-    # attempt that concluded (SENT or SUPPRESSED), or has exhausted its own FAILED budget — OR when
-    # the most-tried recipient has hit the budget, which is the termination backstop.
-    #
-    # The backstop is not optional. Without it a recipient who is de-provisioned after two failed
-    # ticks leaves a pair-state stuck below the budget that no later tick can advance, so "every
-    # recipient is done" never becomes true and the queue is unbounded again — the MIN defect,
-    # reached through the conclusion half instead of the exhaustion half.
     alarmed: set[str] = set()
-    for entity_id, states in by_entity.items():
-        every_recipient_done = all(s["ok"] > 0 or s["failed"] >= MAX_ALARM_ATTEMPTS for s in states)
-        most_tried = max(s["failed"] for s in states)
-        if every_recipient_done or most_tried >= MAX_ALARM_ATTEMPTS:
+    for entity_id, attempts in attempts_by_entity.items():
+        if len(attempts) >= MAX_ALARM_ATTEMPTS:
             alarmed.add(entity_id)
-    # EXHAUSTION IS COUNTED PER RECIPIENT, NOT PER ROW, and the difference is the whole of a
-    # BLOCKING defect. `alarm_for_verdict` emits one `NOTIFY.DISPATCH` per RECIPIENT per attempt, so
-    # a `GROUP BY entity_id` count of ROWS is a count of recipient-attempts. With the five holders a
-    # 2L risk desk normally has, one failed tick wrote five rows, tripped a bound meant for five
-    # TICKS, and retired the platform's most important alarm after zero retries. Executed: N=2
-    # dropped it at attempt 3, N=5 at attempt 1.
-    #
-    # The MIN across recipients — "every recipient has had their five" — reads as the generous
-    # choice and does not TERMINATE on its own, which is why the backstop above is a MAX. Both were
-    # written before this shape and both were wrong on their own; the pair is what works.
-    #
-    # `recipient_id` lives inside the DC-2 `after_value` payload rather than in a column, so the
-    # grouping is done in Python. The population is a handful of rows per night (carry (k) already
-    # accepts the scan), and correctness here is worth more than a GROUP BY.
+            continue
+        # The LATEST attempt, by the audit chain's own monotonic ordering rather than by wall clock.
+        latest = max(attempts.values(), key=lambda rows: max(seq for seq, _ in rows))
+        if all(outcome_value == "success" for _, outcome_value in latest):
+            # Everyone that attempt tried concluded — SENT, or SUPPRESSED because there was nobody
+            # to tell. A partial delivery does NOT retire it: the holders who were not reached are
+            # exactly the point of retrying.
+            alarmed.add(entity_id)
+
     rows = (
         session.execute(
             select(ReproductionCheck)
@@ -766,6 +922,13 @@ def alarm_for_verdict(
     from irp_shared.entitlement.service import holders_of_permission
 
     tenant = canonical_tenant_id(acting_tenant)
+    # ONE id for this ATTEMPT, stamped onto every row this call emits — the grouping key
+    # `unalarmed_verdicts` counts. It is minted here, at the call boundary, precisely because an
+    # "attempt" is one invocation of this function: whatever the holder set happens to be, whatever
+    # succeeds and whatever fails, it is one thing this system did. Deriving that grouping from the
+    # rows afterwards is what five previous versions of the queue tried, and the recipient
+    # population moves underneath any such derivation.
+    attempt_id = str(uuid4())
     recipients = holders_of_permission(
         session, permission_code=ALARM_RECIPIENT_PERMISSION, acting_tenant=tenant
     )
@@ -779,6 +942,7 @@ def alarm_for_verdict(
             channel=sink.channel,
             detail=f"no in-tenant holder of {ALARM_RECIPIENT_PERMISSION}",
             now=now,
+            attempt_id=attempt_id,
         )
         return NOTIFY_OUTCOME_SUPPRESSED
 
@@ -813,6 +977,7 @@ def alarm_for_verdict(
             channel=sink.channel,
             detail=detail,
             now=now,
+            attempt_id=attempt_id,
         )
     return (
         NOTIFY_OUTCOME_SENT
@@ -831,6 +996,7 @@ def _emit_dispatch(
     channel: str,
     detail: str | None,
     now: datetime | None,
+    attempt_id: str,
 ) -> None:
     """One ``NOTIFY.DISPATCH`` per attempt, against ``entity_type='reproduction_check'``.
 
@@ -879,12 +1045,25 @@ def _emit_dispatch(
             "channel": channel,
             "outcome": outcome,
             "detail": detail,
+            # The grouping key for the retry bound: every row from one `alarm_for_verdict` call
+            # shares it. DC-2 metadata like the rest — an opaque identifier for a control-plane
+            # event, carrying no governed value. The NOTIFY.DISPATCH taxonomy row enumerates this
+            # key set and is amended in the same commit, because an unamended mint record that no
+            # longer describes the payload is a false record no test would catch.
+            "attempt_id": attempt_id,
         },
         event_time=now,
     )
 
 
 __all__ = [
+    "DISPOSITIONS",
+    "DISPOSITION_RECORDED",
+    "DISPOSITION_SKIPPED",
+    "DISPOSITION_UNCHECKABLE",
+    "DISPOSITION_UNRECORDED",
+    "FAILING_DISPOSITIONS",
+    "FamilyOutcome",
     "MAX_ALARM_ATTEMPTS",
     "ReproductionInfrastructureFailure",
     "ReproductionOutcome",
