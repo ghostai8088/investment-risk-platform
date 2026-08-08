@@ -14,6 +14,16 @@ assertion asks the LIVE database, via ``pg_attribute``, whether every key column
 **The RLS assertions run as ``irp_app``, never as the default superuser.** FORCE RLS does not apply
 to a BYPASSRLS role, so a cross-tenant test run as the superuser proves nothing about isolation —
 the LQ-1 lesson, and REF-1's before it.
+
+**And the engine-behaviour half, added after a BLOCKING defect survived three scrutiny stages.**
+Everything above is about the SCHEMA. The defect was about the ENGINE: PostgreSQL aborts the whole
+transaction when a statement fails, SQLite does not, so a guard that catches a DBAPI error and
+carries on is correct on the unit tier and inert on the authoritative one. The sweep built a correct
+verdict and then died on the next statement, losing the night. Three stages of review read that code
+and its unit test was green throughout — because the unit test raised a plain ``RuntimeError``, and
+the difference between the two tiers is exactly the difference the test could not express. The last
+two tests in this file are that missing coverage, and one of them asserts the mechanism itself so
+the reason for the shape survives the next edit.
 """
 
 from __future__ import annotations
@@ -24,9 +34,17 @@ import uuid
 import pytest
 from sqlalchemy import make_url, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
+from irp_shared.calc.models import CalculationRun
 from irp_shared.db.session import make_engine, make_session_factory
+from irp_shared.reproduction.registry import ComparableRow, ReproducibleFamily
+from irp_shared.reproduction.service import (
+    ReproductionInfrastructureFailure,
+    check_one_family,
+    resolve_subject,
+)
 
 URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
@@ -212,4 +230,145 @@ def test_one_sweep_cannot_record_two_verdicts_about_the_same_run(factory) -> Non
             _insert_check(session.connection(), TENANT_A, sweep, subject, v="DIVERGED")
         session.rollback()
     finally:
+        session.close()
+
+
+def _exploding_family(statement: str) -> ReproducibleFamily:
+    """A family whose stored-read runs SQL that really fails on the real engine."""
+
+    def _bad_read(db: Session, _tenant: str, _subject: CalculationRun) -> list[ComparableRow]:
+        db.execute(text(statement))
+        raise AssertionError("the statement should have raised")
+
+    def _unused(*_a: object, **_k: object) -> list[ComparableRow]:
+        raise AssertionError("the recompute must never be reached")
+
+    return ReproducibleFamily(
+        family_key="VAR",
+        key_fields=("k",),
+        compared_fields=("v",),
+        read_stored=_bad_read,
+        recompute=_unused,
+        model=None,
+        uncompared={},
+    )
+
+
+def test_a_database_failure_in_a_family_read_leaves_the_SESSION_USABLE(factory) -> None:  # noqa: ANN001
+    """The BLOCKING defect, pinned on the only tier that can see it.
+
+    ``check_one_family`` catches a failing per-family read. On SQLite that is the end of the story.
+    On PostgreSQL the backend transaction is ABORTED by the failed statement, and a bare
+    ``try/except`` — which is what shipped for one commit — leaves it that way: the caught error
+    produced a correct verdict and the sweep then died on its next statement with
+    ``InFailedSqlTransaction``, discarding every other family's verdict. Measured on this engine
+    before the fix: zero verdict rows persisted.
+
+    The discriminating assertion is the LAST one. Catching is not recovering; the savepoint is what
+    recovers, because ROLLBACK TO SAVEPOINT clears the aborted state.
+
+    It also pins the redaction, which is PostgreSQL-only for the same reason: psycopg quotes the
+    failing statement under a ``LINE n:`` caret that the other markers do not cover, and a real
+    statement reached this governed evidence column before ``_redact`` learned about it.
+    """
+    session = factory()
+    try:
+        session.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": TENANT_A})
+        subject = CalculationRun(
+            run_id=str(uuid.uuid4()),
+            tenant_id=TENANT_A,
+            run_type="VAR",
+            status="COMPLETED",
+            initiated_by="test",
+            code_version="v",
+            environment_id="test",
+        )
+        with pytest.raises(ReproductionInfrastructureFailure) as caught:
+            check_one_family(
+                session,
+                acting_tenant=TENANT_A,
+                family=_exploding_family("SELECT * FROM a_table_that_does_not_exist"),
+                subject=subject,
+                code_version="v",
+            )
+        reason = str(caught.value)
+        assert "a_table_that_does_not_exist" in reason, "the reason lost the useful part"
+        assert "SELECT *" not in reason, (
+            "the failing STATEMENT reached an operator-facing reason that will be persisted into a "
+            "governed column — _redact does not cover psycopg's LINE n: caret"
+        )
+        assert (
+            session.execute(text("SELECT 1")).scalar_one() == 1
+        ), "the session is still poisoned after the guard — catching is not recovering"
+    finally:
+        session.rollback()
+        session.close()
+
+
+def test_a_database_failure_in_the_SUBJECT_LOOKUP_leaves_the_session_usable(  # noqa: ANN001
+    factory, monkeypatch
+) -> None:
+    """The sibling guard, on the tier that can see it — and it SURVIVED its first mutation.
+
+    Deleting this savepoint left the whole battery green, because the only test that reached the
+    guard raised a hand-constructed ``OperationalError``: a Python object, never a failing
+    statement, so no transaction was ever aborted. That is the same defect the guard exists to
+    prevent, dressed as its proof.
+
+    Here the lookup fails the way a lookup actually fails — a real statement against a real engine.
+    The last assertion is the one that discriminates: without the savepoint, the sweep's fail-closed
+    ``UPDATE calculation_run SET status='FAILED'`` cannot run either, so the night ends with no
+    ledger row and no reason at all.
+    """
+    session = factory()
+    try:
+        session.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": TENANT_A})
+
+        def _bad_lookup(db: Session, **_k: object) -> None:
+            db.execute(text("SELECT * FROM another_table_that_does_not_exist"))
+            raise AssertionError("the statement should have raised")
+
+        monkeypatch.setattr("irp_shared.reproduction.service.latest_completed_run", _bad_lookup)
+        subject, failure = resolve_subject(session, acting_tenant=TENANT_A, run_type="VAR")
+        assert subject is None
+        assert failure is not None and "another_table_that_does_not_exist" in failure
+        assert "SELECT *" not in failure, "the failing statement reached an operator-facing reason"
+        assert (
+            session.execute(text("SELECT 1")).scalar_one() == 1
+        ), "the session is still poisoned — the sweep's own fail-closed write would die next"
+    finally:
+        session.rollback()
+        session.close()
+
+
+def test_the_negative_control_a_bare_catch_really_does_leave_it_poisoned(factory) -> None:  # noqa: ANN001
+    """Prove the mechanism, so the reason for the savepoint survives the next edit.
+
+    Without this arm the test above passes for a shape that never needed a savepoint, and a later
+    maintainer looking at a plain ``try/except`` has no evidence it was ever wrong. Here the same
+    failing statement is caught WITHOUT a savepoint and the session is demonstrably unusable —
+    which is precisely what shipped, and precisely what SQLite cannot show.
+    """
+    session = factory()
+    try:
+        session.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": TENANT_A})
+        try:
+            session.execute(text("SELECT * FROM a_table_that_does_not_exist"))
+        except DBAPIError:
+            pass
+        with pytest.raises(DBAPIError):
+            session.execute(text("SELECT 1"))
+
+        session.rollback()
+        session.execute(text("SELECT set_config('app.current_tenant', :t, true)"), {"t": TENANT_A})
+        try:
+            with session.begin_nested():
+                session.execute(text("SELECT * FROM a_table_that_does_not_exist"))
+        except DBAPIError:
+            pass
+        assert (
+            session.execute(text("SELECT 1")).scalar_one() == 1
+        ), "the savepoint form did not recover either — the fix does not work"
+    finally:
+        session.rollback()
         session.close()

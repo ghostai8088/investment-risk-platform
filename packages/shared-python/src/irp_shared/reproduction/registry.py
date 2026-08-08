@@ -106,19 +106,23 @@ class ReproducibleFamily:
     #: Columns DELIBERATELY not compared, **each mapped to the REASON it is excluded**.
     #:
     #: A mapping rather than a tuple, because the pre-merge audit proved the tuple form tolerated
-    #: SHRINKAGE. **The precise claim, corrected after the re-audit refuted a looser earlier
-    #: wording** — this is what was actually executed: moving ``sigma`` out does NOT go unnoticed
-    #: (eight tests fail, because the plant helper targets that exact column), but moving
-    #: ``z_score``, ``n_factors``, ``residual_variance``, ``private_variance`` and
-    #: ``estimate_age_days`` out DID keep every test green — and those five are precisely what the
-    #: review's HIGH was about.
+    #: SHRINKAGE. **The history, stated in the past tense it belongs in** — at the commit that
+    #: introduced this mapping, moving ``sigma`` out of the comparison was caught (the plant helper
+    #: targets that exact column) but moving ``z_score``, ``n_factors``, ``residual_variance``,
+    #: ``private_variance`` and ``estimate_age_days`` out kept every test green. Those five were
+    #: what the review's HIGH was about, and none of them is removable now: the ``_MUST_COMPARE``
+    #: pin in the test suite names them.
     #:
-    #: The reason floor alone does not close it either: the ``_WHY_*`` constants below are
-    #: module-level and reusable, so an exclusion can be added without writing anything. What
-    #: actually closes it is the ``_MUST_COMPARE`` pin in the test suite, which names the governed
-    #: columns so a REMOVAL fails loudly. This census covers additions; that pin covers removals.
-    #: The project's own words for what was here before: "a census that tolerates shrinkage is a
-    #: floor wearing a census's name".
+    #: The reason floor alone does not close it: the ``_WHY_*`` constants below are module-level and
+    #: reusable, so an exclusion can be added without writing anything. **Nor does the floor make an
+    #: exclusion TRUE** — three REPORT columns carried a 168-character reason that was simply false
+    #: about what ``regenerate_report`` reads, and a tampered value still reported MATCH. A floor
+    #: measures prose. What closes REMOVAL is the pin; what closes UNTRUTH is reading the consuming
+    #: code, which is why ``_WHY_NOT_REDERIVED`` exists.
+    #:
+    #: So: this census covers additions, the pin covers removals, and neither covers a reason that
+    #: is well-written and wrong. The project's own words for what was here before: "a census that
+    #: tolerates shrinkage is a floor wearing a census's name".
     uncompared: dict[str, str] = field(default_factory=dict)
 
 
@@ -183,6 +187,26 @@ _WHY_EXECUTION_FK = (
 _WHY_RENDER_INPUT = (
     "an INPUT that regenerate_report reads FROM THE ROW in order to re-render, so comparing it "
     "would compare a value against itself and always pass — vacuous by construction"
+)
+#: The honest reason for the three REPORT columns that ``_WHY_RENDER_INPUT`` used to claim falsely.
+#:
+#: ``regenerate_report`` takes a report id and reads exactly three fields off the row —
+#: ``input_snapshot_id``, ``portfolio_code``, ``as_of_date`` — then re-renders and compares
+#: ``content_hash``. It never reads ``report_code``, ``report_version_label`` or ``render_format``.
+#: So the vacuity claim was wrong for those three, and the consequence was measured, not argued:
+#: tampering the stored ``render_format`` from 'HTML' to 'PDF' produced a durable ENT-073 verdict of
+#: MATCH with ``rows_diverged=0`` — a permanent evidence row asserting reproduction for a row whose
+#: stored declaration no longer describes its artifact.
+#:
+#: Comparing them is not available either, because the recompute genuinely does not produce them;
+#: adding them to ``compared_fields`` makes every report DIVERGE, which the review fold already
+#: tried and the deployed proof caught within one run. So this is a REAL and NAMED coverage gap
+#: rather than a design choice, and it is carried as such. Nothing here silently passes any more:
+#: the exclusion says what it actually is.
+_WHY_NOT_REDERIVED = (
+    "a stored DECLARATION that regenerate_report does not re-derive and does not read (it reads "
+    "only input_snapshot_id, portfolio_code and as_of_date), so reproduction cannot check it in "
+    "either direction — a NAMED coverage gap, not a vacuous comparison; see carry (p)"
 )
 _WHY_GENERATION_EVENT = (
     "describes the GENERATION EVENT rather than the artifact's content; a re-render is a different "
@@ -388,12 +412,20 @@ _REPORT_KEY = ("portfolio_id",)
 #: The hash is over the RENDERED BYTES, so it already covers every rendered value. It is the ONLY
 #: recomputed quantity for this family, and that is a real asymmetry with the other two.
 _REPORT_COMPARED = ("content_hash",)
-#: Everything else on the row is an INPUT that ``regenerate_report`` READS FROM THE ROW in order to
-#: re-render — `report_code`, `render_format`, `as_of_date`, `portfolio_code` and the version label
-#: are what make the regeneration parameter-free (RPT-1's B1 fix). Comparing them would compare a
-#: value against ITSELF and always pass: vacuous by construction, which is precisely the shape this
-#: slice keeps removing. The review fold briefly added them to `compared`, and the deployed proof
-#: caught it within one run — the recompute does not carry them, so every report diverged.
+#: `as_of_date` and `portfolio_code` are genuine RENDER INPUTS — `regenerate_report` reads them off
+#: the row in order to re-render, which is what makes the regeneration parameter-free (RPT-1's B1
+#: fix), so comparing them would compare a value against ITSELF. The review fold briefly added them
+#: to `compared` and the deployed proof caught it within one run: the recompute does not carry them,
+#: so every report diverged.
+#:
+#: **`report_code`, `report_version_label` and `render_format` carried that same reason and it was
+#: FALSE** — `regenerate_report` never reads them. The pass that found it proved the cost by
+#: execution: a tampered `render_format` still produced a MATCH verdict. They are now excluded under
+#: `_WHY_NOT_REDERIVED`, which says the true thing, and the gap is carried. Every existing guard
+#: passed over this: the column census passes (they ARE classified), the 40-character reason floor
+#: passes (the constant is 168 characters), and the `_MUST_COMPARE` pin holds only `content_hash` —
+#: the one column that structurally cannot diverge. A reason floor measures prose, not truth.
+#:
 #: `generated_at`/`generated_by` describe the GENERATION EVENT rather than the artifact, and a
 #: re-render is a different event by definition.
 _REPORT_UNCOMPARED = {
@@ -404,9 +436,9 @@ _REPORT_UNCOMPARED = {
     "input_snapshot_id": _WHY_EXECUTION_FK,
     "generated_at": _WHY_GENERATION_EVENT,
     "generated_by": _WHY_GENERATION_EVENT,
-    "report_code": _WHY_RENDER_INPUT,
-    "report_version_label": _WHY_RENDER_INPUT,
-    "render_format": _WHY_RENDER_INPUT,
+    "report_code": _WHY_NOT_REDERIVED,
+    "report_version_label": _WHY_NOT_REDERIVED,
+    "render_format": _WHY_NOT_REDERIVED,
     "as_of_date": _WHY_RENDER_INPUT,
     "portfolio_code": _WHY_RENDER_INPUT,
 }

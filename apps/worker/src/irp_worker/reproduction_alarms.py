@@ -17,10 +17,17 @@ represent a GAP, so one row jumping ahead permanently hides every earlier unalar
 per-verdict question has no such failure mode, and the population is a handful of rows per night.
 
 **Per-verdict top-level transactions, fail-CLOSED on error.** A verdict whose alarm transaction
-fails is left un-alarmed and is retried next tick — it stays in the queue precisely because the
-queue is defined by the absence of its event. A failure does NOT stop the batch (unlike phase 4,
-whose cursor semantics force head-of-line blocking): with an existence queue there is no cursor to
-corrupt, so one poison verdict must not silence the others.
+fails is left un-alarmed and is retried next tick — the transaction rolled back, so no attempt was
+recorded, so the verdict is still in the queue by the queue's own rule. A failure does NOT stop the
+batch (unlike phase 4, whose cursor semantics force head-of-line blocking): a per-verdict question
+has no cursor to corrupt, so one poison verdict must not silence the others.
+
+**Note the one path the retry bound does NOT bound**, stated here rather than left to be
+rediscovered: ``MAX_ALARM_ATTEMPTS`` counts durably-recorded FAILED attempts, and a verdict whose
+alarm TRANSACTION raises records nothing at all. That path retries every tick indefinitely. It is
+carried (see carry (q) in the slice record) rather than fixed here, because recording a failure
+durably inside the transaction that just failed is not available — the honest fix is an operational
+signal on repeated rollback, which belongs to an alerting slice.
 """
 
 from __future__ import annotations
@@ -67,9 +74,9 @@ def poll_tenant_reproduction_alarms(
         except Exception as exc:  # noqa: BLE001 - per-verdict isolation, fail CLOSED
             session.rollback()
             # NOT a `break`. Phase 4 stops the batch because its cursor is a derived MAX that a
-            # later commit would advance past a failed earlier event. This queue is an existence
-            # test, so a failed verdict simply stays in it — and stopping would let one poison
-            # verdict silence every other divergence that night.
+            # later commit would advance past a failed earlier event. Here the rollback means no
+            # attempt was recorded, so the verdict is still queued by the queue's own rule — and
+            # stopping would let one poison verdict silence every other divergence that night.
             _LOGGER.error(
                 "reproduction alarm failed for verdict %s; it stays queued for the next tick: %s",
                 check_id,

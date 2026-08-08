@@ -20,6 +20,7 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 from test_var import _run, _seed_upstream_runs, _var_model
@@ -34,6 +35,7 @@ from irp_shared.notification.events import (
     NOTIFY_OUTCOME_FAILED,
     NOTIFY_OUTCOME_SENT,
     NOTIFY_OUTCOME_SUPPRESSED,
+    NOTIFY_OUTCOMES,
 )
 from irp_shared.notification.sink import DeliveryResult, NotificationMessage
 from irp_shared.reproduction.events import (
@@ -338,6 +340,12 @@ def test_a_recompute_that_fails_DURING_A_FLUSH_does_not_destroy_the_sweep(
 
     So the bomb here goes off inside a flush, and it goes off on the LAST family in sort order, so
     that an earlier family's verdict exists to be lost.
+
+    **The DISPOSITION changed at the 2026-08-07 ratification and the survival property did not.** A
+    flush failure is a ``SQLAlchemyError``, so it is now infrastructure: no verdict row, no alarm,
+    the family named in ``unresolved`` and the run FAILED. What this test exists to prove is
+    unchanged and is the second half below — the earlier family's verdict SURVIVES. Under the
+    guarded-rollback defect neither disposition was reachable, because the sweep raised.
     """
     tenant = str(uuid.uuid4())
     _seed_var_run(session, tenant)
@@ -367,11 +375,14 @@ def test_a_recompute_that_fails_DURING_A_FLUSH_does_not_destroy_the_sweep(
     outcome = _sweep(session, tenant)
     session.commit()
 
-    # The sweep SURVIVED: the poisoned family is a verdict, and the earlier family's verdict is
-    # still here. Under the guarded rollback this line was never reached — the sweep raised.
+    # The sweep SURVIVED. Under the guarded rollback this line was never reached — the sweep raised.
     by_family = {c.family_key: c.verdict for c in outcome.checks}
-    assert by_family.get("VAR") == VERDICT_UNREPRODUCIBLE
-    assert by_family.get("EXPOSURE_AGGREGATE") == VERDICT_MATCH
+    assert (
+        by_family.get("EXPOSURE_AGGREGATE") == VERDICT_MATCH
+    ), "the family checked BEFORE the failing one lost its verdict — the whole sweep went with it"
+    assert "VAR" not in by_family, "a database failure minted a verdict about a run"
+    assert outcome.unresolved and outcome.unresolved[0].startswith("VAR: ")
+    assert outcome.status == RunStatus.FAILED.value
 
     persisted = (
         session.execute(select(ReproductionCheck).where(ReproductionCheck.tenant_id == tenant))
@@ -379,19 +390,20 @@ def test_a_recompute_that_fails_DURING_A_FLUSH_does_not_destroy_the_sweep(
         .all()
     )
     assert (
-        len(persisted) == len(outcome.checks) >= 2
+        len(persisted) == len(outcome.checks) >= 1
     ), "verdicts computed before the failing family were discarded — the whole sweep was lost"
 
 
-def test_a_read_stored_failure_is_a_verdict_not_an_outage(
+def test_a_read_stored_failure_that_is_NOT_the_database_is_a_verdict(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The re-audit's point that the previous fold fixed the reported instance, not the class.
+    """A family's own code failing is that family's verdict, and does not end the night.
 
-    Only the `compare_rows` call had been guarded, because that was the call the audit named.
-    `read_stored` runs arbitrary per-family SQL and can raise for the same reasons — and if it
-    escapes, the night's other verdicts go with it, which is the blast radius the BLOCKING savepoint
-    fix removed. Every per-family call is now guarded; this proves it for the one that was missed.
+    Note what this test canNOT prove, because believing it could was a BLOCKING defect for one
+    commit: `RuntimeError` is pure Python and leaves the transaction healthy, so a bare `try/except`
+    passes this test just as well as the savepoint-wrapped form. The DATABASE half is
+    `test_a_read_stored_DATABASE_failure_does_not_poison_the_sweep` below, and it is the one that
+    discriminates — on PostgreSQL only.
     """
     tenant = str(uuid.uuid4())
     _seed_var_run(session, tenant)
@@ -409,6 +421,157 @@ def test_a_read_stored_failure_is_a_verdict_not_an_outage(
     assert (
         by_family.get("EXPOSURE_AGGREGATE") == VERDICT_MATCH
     ), "a read_stored failure took the night's other verdicts with it"
+
+
+def test_a_DATABASE_failure_is_not_a_verdict_and_does_not_alarm(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ratified disposition (2026-08-07): infrastructure failure is loud, but not an alarm.
+
+    Before this, any exception inside a per-family read minted an UNREPRODUCIBLE verdict — and
+    UNREPRODUCIBLE is in `ALARMING_VERDICTS`, so a lock storm wrote permanent, undeletable rows
+    claiming named runs had not reproduced AND paged every `breach.review` holder about a divergence
+    that never happened. A claim about the DATABASE is not a claim about the RUN.
+
+    So: no verdict row, the sweep FAILS, the reason names the family, and phase 5 has nothing to
+    deliver. All four are asserted, because three of them would each individually make the
+    disposition decorative.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+
+    def _db_boom(*_a: object, **_k: object) -> list[ComparableRow]:
+        raise OperationalError("SELECT 1", {}, Exception("canceling statement due to lock timeout"))
+
+    monkeypatch.setitem(
+        REPRODUCIBLE_FAMILIES, "VAR", replace(REPRODUCIBLE_FAMILIES["VAR"], read_stored=_db_boom)
+    )
+    outcome = _sweep(session, tenant)  # must NOT raise
+
+    assert [c.family_key for c in outcome.checks] == [
+        "EXPOSURE_AGGREGATE"
+    ], "a database failure minted a verdict — it is not a judgement about the run"
+    assert outcome.status == RunStatus.FAILED.value, (
+        "a sweep that could not check a governed family reported a clean night — the ratified "
+        "disposition is non-alarming, not invisible"
+    )
+    assert outcome.unresolved and outcome.unresolved[0].startswith("VAR: ")
+    assert outcome.failure_reason is not None
+    assert "VAR" in outcome.failure_reason and "could not CHECK" in outcome.failure_reason
+    assert (
+        "no registered family had a COMPLETED run" not in outcome.failure_reason
+    ), "the fail-closed reason asserted a cause the code had no basis for"
+    assert (
+        unalarmed_verdicts(session, acting_tenant=tenant) == []
+    ), "an infrastructure failure reached the alarm queue and would have paged the risk desk"
+
+
+def test_a_broken_SUBJECT_LOOKUP_is_unresolved_and_does_not_end_the_sweep(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sibling guard, which shipped with no test at all — deleting it left everything green.
+
+    A lookup failure cannot become a verdict even in principle: `subject_run_id` is a NOT NULL FK
+    and there is no subject to bind one to, so a verdict here would be a claim about a run the sweep
+    could not identify. It is unresolved, the sweep continues, and the run FAILS.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+
+    real = latest_completed_run
+
+    def _selective(db: Session, *, acting_tenant: str, run_type: str):  # noqa: ANN202
+        if run_type == "VAR":
+            raise OperationalError("SELECT 1", {}, Exception("canceling statement due to conflict"))
+        return real(db, acting_tenant=acting_tenant, run_type=run_type)
+
+    monkeypatch.setattr("irp_shared.reproduction.service.latest_completed_run", _selective)
+    outcome = _sweep(session, tenant)  # must NOT raise
+
+    assert [c.family_key for c in outcome.checks] == ["EXPOSURE_AGGREGATE"], (
+        "a failing subject lookup took the night's other verdicts with it, or minted a verdict "
+        "about a run it could not identify"
+    )
+    assert outcome.unresolved and outcome.unresolved[0].startswith("VAR: ")
+    assert outcome.status == RunStatus.FAILED.value
+    assert unalarmed_verdicts(session, acting_tenant=tenant) == []
+
+
+def test_a_verdict_ROW_that_cannot_be_written_does_not_take_the_others_with_it(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The last shared statement in the sweep, and the one the executor's probe actually died on.
+
+    Every read is now per-family guarded, but for one commit all the verdicts were still written by
+    a SINGLE `session.flush()` after the loop — one point where they all die together. Forced here
+    rather than argued: two families are made to resolve the SAME subject run, which collides on
+    `uq_reproduction_check_sweep_subject`, so the second family's INSERT really fails. The first
+    family's verdict must survive, and the collision must be reported rather than swallowed.
+
+    That mis-registration is not far-fetched — it is what registering a family against the wrong
+    `run_type` looks like, and eighteen unregistered families are waiting to be registered.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+
+    var_subject = latest_completed_run(session, acting_tenant=tenant, run_type="VAR")
+    assert var_subject is not None
+
+    def _always_the_var_run(db: Session, *, acting_tenant: str, run_type: str):  # noqa: ANN202, ARG001
+        return var_subject
+
+    monkeypatch.setattr("irp_shared.reproduction.service.latest_completed_run", _always_the_var_run)
+    outcome = _sweep(session, tenant)  # must NOT raise
+
+    assert len(outcome.checks) == 1, (
+        "a colliding verdict row took the other families' verdicts with it — the shared flush is "
+        "back, and it is the single statement where the whole night dies"
+    )
+    assert any("recording the" in u for u in outcome.unresolved), (
+        "the verdict that could not be written vanished silently — it must be reported, not "
+        "swallowed"
+    )
+    persisted = (
+        session.execute(select(ReproductionCheck).where(ReproductionCheck.tenant_id == tenant))
+        .scalars()
+        .all()
+    )
+    assert len(persisted) == 1
+
+
+def test_the_fail_closed_reason_reaches_the_scheduled_run_ledger(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`unresolved` must have a CONSUMER, or it is the `produces_run_on_failure` anti-pattern again.
+
+    It was written and read by nothing for one commit — five grep hits, all in one file — while the
+    sweep returned a clean COMPLETED with a governed family silently unchecked. Its consumer is the
+    run status and the reason, which `_dispatch_reproduction` carries onto the ledger row an
+    operator actually looks at. This asserts the DURABLE end of that chain, not the dataclass.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+
+    def _db_boom(*_a: object, **_k: object) -> list[ComparableRow]:
+        raise OperationalError("SELECT 1", {}, Exception("server closed the connection"))
+
+    monkeypatch.setitem(
+        REPRODUCIBLE_FAMILIES, "VAR", replace(REPRODUCIBLE_FAMILIES["VAR"], read_stored=_db_boom)
+    )
+    outcome = _sweep(session, tenant)
+    session.flush()
+    stored = session.execute(
+        select(CalculationRun).where(CalculationRun.run_id == outcome.run_id)
+    ).scalar_one()
+    assert stored.status == RunStatus.FAILED.value
+    assert stored.failure_reason is not None and "VAR" in stored.failure_reason, (
+        "the family the sweep could not check is absent from the durable ledger row — an operator "
+        "reading the run learns nothing about it"
+    )
 
 
 def test_an_empty_comparison_is_never_reported_as_a_pass(
@@ -671,14 +834,97 @@ def test_a_suppressed_alarm_is_TERMINAL_not_retried_forever(
     ), "a suppressed alarm stayed queued — it will re-fire on every tick, forever"
 
 
-def test_a_failed_delivery_is_retried_but_only_a_BOUNDED_number_of_times(
+@pytest.mark.parametrize("n_recipients", [1, 2, 5])
+def test_a_failed_delivery_is_retried_a_bounded_number_of_TICKS_whatever_the_audience(
+    session: Session, monkeypatch: pytest.MonkeyPatch, n_recipients: int
+) -> None:
+    """The bound is per TICK, not per audit ROW — and the parametrize IS the test.
+
+    A broken wire is transient and worth retrying; retrying forever is not. But the first bound
+    counted ``NOTIFY.DISPATCH`` rows, and one attempt emits one row PER RECIPIENT — so the budget
+    was consumed N times faster than documented, and at N >= MAX_ALARM_ATTEMPTS a SINGLE failed tick
+    retired the platform's most important alarm with zero retries.
+
+    That defect was invisible because the test pinned exactly one recipient, the only value at which
+    rows and ticks coincide. ``breach.review`` is a 2L ROLE permission, so N > 1 is the ordinary
+    production shape and N == 1 is the special case. Hence 1, 2 and 5: at 2 the old code dropped the
+    alarm at tick 3, at 5 it dropped it at tick 1, and both are quoted numbers from the run that
+    found this.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission",
+        lambda *_a, **_k: [f"reviewer-{i}" for i in range(n_recipients)],
+    )
+    for tick in range(1, MAX_ALARM_ATTEMPTS + 1):
+        assert (
+            alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+            == NOTIFY_OUTCOME_FAILED
+        )
+        session.flush()
+        queued = unalarmed_verdicts(session, acting_tenant=tenant)
+        if tick < MAX_ALARM_ATTEMPTS:
+            assert [c.id for c in queued] == [check.id], (
+                f"tick {tick} of {MAX_ALARM_ATTEMPTS} dropped the alarm early with {n_recipients} "
+                "recipient(s) — the bound is counting rows, not attempts"
+            )
+        else:
+            assert queued == [], (
+                f"the alarm is still queued after {MAX_ALARM_ATTEMPTS} failed ticks — this is the "
+                "unbounded retry loop"
+            )
+    # The row count is asserted separately so the two quantities can never be conflated again: five
+    # ticks to five recipients is twenty-five durable attempts, and the bound is FIVE.
+    failures = [e for e in _dispatch_events(session, tenant) if e.outcome == "failure"]
+    assert len(failures) == MAX_ALARM_ATTEMPTS * n_recipients
+
+
+def test_a_recipient_who_DISAPPEARS_cannot_pin_the_retry_loop_open_forever(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The other half of the ratified decision, and the defect the previous fold introduced.
+    """The negative control for the rule that reads generously and does not terminate.
 
-    A broken wire IS transient and worth retrying — but retrying forever is what the re-audit
-    executed and called a HIGH. After ``MAX_ALARM_ATTEMPTS`` the durable FAILED attempts ARE the
-    evidence, and continuing adds volume rather than information.
+    Exhaustion is the MAX across recipients. The obvious alternative — MIN, "every recipient has
+    had their five" — was written first and executed: a reviewer who loses `breach.review` after two
+    failed ticks leaves a stale count of two that no later tick can ever raise, so the minimum stays
+    below the bound forever and the retry loop is unbounded again. That is the exact defect
+    MAX_ALARM_ATTEMPTS exists to close, so the generous-sounding rule is not the safe one.
+
+    Two recipients for two ticks, then one of them is de-provisioned. Under MIN this verdict never
+    leaves the queue.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission",
+        lambda *_a, **_k: ["reviewer-1", "departing-reviewer"],
+    )
+    for _ in range(2):
+        alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+    session.flush()
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id]
+
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission",
+        lambda *_a, **_k: ["reviewer-1"],
+    )
+    for _ in range(MAX_ALARM_ATTEMPTS - 2):
+        alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+    session.flush()
+    assert unalarmed_verdicts(session, acting_tenant=tenant) == [], (
+        "the departed recipient's stale attempt count held the verdict in the queue — it will "
+        "re-fire on every tick forever, which is the unbounded loop the bound exists to close"
+    )
+
+
+def test_a_FAILED_run_of_attempts_ending_in_SENT_retires_the_verdict(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A MIXED sequence — the state machine was only ever proven on uniform ones.
+
+    Four failures then a success is the ordinary shape of a transient outage that recovers, and it
+    must retire the verdict without waiting out the remaining budget.
     """
     tenant = str(uuid.uuid4())
     check = _diverged_check(session, tenant)
@@ -686,22 +932,38 @@ def test_a_failed_delivery_is_retried_but_only_a_BOUNDED_number_of_times(
         "irp_shared.entitlement.service.holders_of_permission",
         lambda *_a, **_k: ["reviewer-1"],
     )
-    for attempt in range(1, MAX_ALARM_ATTEMPTS + 1):
-        assert (
-            alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
-            == NOTIFY_OUTCOME_FAILED
-        )
-        session.flush()
-        queued = unalarmed_verdicts(session, acting_tenant=tenant)
-        if attempt < MAX_ALARM_ATTEMPTS:
-            assert [c.id for c in queued] == [
-                check.id
-            ], f"attempt {attempt} of {MAX_ALARM_ATTEMPTS} dropped the alarm early"
-        else:
-            assert queued == [], (
-                f"the alarm is still queued after {MAX_ALARM_ATTEMPTS} failed attempts — this is "
-                "the unbounded retry loop the re-audit found"
-            )
+    for _ in range(MAX_ALARM_ATTEMPTS - 1):
+        alarm_for_verdict(session, check=check, sink=_ExplodingSink(), acting_tenant=tenant)
+    session.flush()
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id]
+
+    assert (
+        alarm_for_verdict(session, check=check, sink=_RecordingSink(), acting_tenant=tenant)
+        == NOTIFY_OUTCOME_SENT
+    )
+    session.flush()
+    assert (
+        unalarmed_verdicts(session, acting_tenant=tenant) == []
+    ), "a delivery that finally SUCCEEDED did not retire the verdict"
+
+
+def test_the_audit_outcome_mapping_is_TOTAL_over_the_notify_vocabulary() -> None:
+    """The mapping must fail CLOSED on a value it does not recognise.
+
+    `success` is the TERMINAL branch — one such row retires a verdict permanently — so a mapping
+    written as "not FAILED" defaults an unknown outcome to terminal. This family has already grown
+    a SUPPRESSED sentinel once; the next addition must not silently retire divergences. Pinned
+    against the declared vocabulary rather than against a hand-written list, so minting a fourth
+    outcome fails HERE until someone decides which way it maps.
+    """
+    assert NOTIFY_OUTCOMES == {
+        NOTIFY_OUTCOME_SENT,
+        NOTIFY_OUTCOME_FAILED,
+        NOTIFY_OUTCOME_SUPPRESSED,
+    }, (
+        "a NOTIFY outcome was minted without deciding whether it CONCLUDES an alarm — see "
+        "_emit_dispatch, where an unrecognised value now maps to 'failure' and keeps retrying"
+    )
 
 
 def test_a_MATCH_verdict_is_never_queued_for_an_alarm(session: Session) -> None:
@@ -857,6 +1119,42 @@ def test_no_governed_column_can_be_dropped_from_the_comparison() -> None:
             f"{key} no longer compares {sorted(missing)} — a governed column left the comparison, "
             "so a divergence confined to it would be reported as MATCH"
         )
+
+
+#: The REPORT columns that `regenerate_report` does NOT read — measured against its source, not
+#: asserted from memory. Pinned because the reason attached to them was WRONG for one commit and
+#: every existing guard passed over it: the column census passed (they were classified), the
+#: 40-character reason floor passed (the constant was 168 characters), and `_MUST_COMPARE["REPORT"]`
+#: holds only `content_hash`, the one column that structurally cannot diverge. A floor measures
+#: prose, not truth.
+_REPORT_NOT_REDERIVED = ("report_code", "report_version_label", "render_format")
+
+
+def test_the_report_columns_regeneration_never_reads_say_so_honestly() -> None:
+    """`_WHY_RENDER_INPUT` claimed these three were compared-against-themselves. They are not.
+
+    `regenerate_report` takes a report id and reads exactly `input_snapshot_id`, `portfolio_code`
+    and `as_of_date`. It never reads `report_code`, `report_version_label` or `render_format` — so
+    the vacuity claim was false, and the cost was measured rather than argued: tampering the stored
+    `render_format` produced a durable MATCH verdict with `rows_diverged=0`.
+
+    They still cannot be compared (the recompute genuinely does not produce them — the review fold
+    tried, and every report diverged), so this is a NAMED coverage gap. This pins the distinction
+    so a later edit cannot quietly fold them back under the vacuity reason and re-acquire a claim
+    that is well-written and false.
+    """
+    report = REPRODUCIBLE_FAMILIES["REPORT"]
+    for column in _REPORT_NOT_REDERIVED:
+        reason = report.uncompared[column]
+        assert "does not re-derive and does not read" in reason, (
+            f"{column} is excluded with a reason that claims a vacuous comparison; regeneration "
+            "never reads it, so the exclusion is a coverage GAP and must say so"
+        )
+        assert column not in report.compared_fields
+    # And the two that genuinely ARE read back keep the vacuity reason — the distinction is the
+    # point, so a blanket rename of all five would fail here too.
+    for column in ("as_of_date", "portfolio_code"):
+        assert "reads FROM THE ROW" in report.uncompared[column]
 
 
 def test_the_comparison_actually_reads_every_declared_field() -> None:

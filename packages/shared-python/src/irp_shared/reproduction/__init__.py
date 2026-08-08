@@ -21,6 +21,8 @@ from irp_shared.reproduction.registry import (
     ReproductionUnsupported,
 )
 from irp_shared.reproduction.service import (
+    MAX_ALARM_ATTEMPTS,
+    ReproductionInfrastructureFailure,
     ReproductionOutcome,
     alarm_for_verdict,
     run_reproduction_sweep,
@@ -31,9 +33,11 @@ __all__ = [
     "ALARMING_VERDICTS",
     "ALARM_RECIPIENT_PERMISSION",
     "ENTITY_REPRODUCTION_CHECK",
+    "MAX_ALARM_ATTEMPTS",
     "REPRODUCIBLE_FAMILIES",
     "RUN_TYPE_REPRODUCTION",
     "ReproductionCheck",
+    "ReproductionInfrastructureFailure",
     "ReproductionOutcome",
     "ReproductionUnsupported",
     "UNREPRODUCIBLE_FAMILIES",

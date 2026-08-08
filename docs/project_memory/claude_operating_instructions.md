@@ -455,6 +455,29 @@ self-enacted when drafted:** proposed at the close review as an explicit ratific
 precedent that an evidence-sufficiency rule for the builder's own claims should not be enacted by the
 builder on its own authority.
 
+## A control-status citation is re-verified against the branch tip before the PR (standing, drafted 2026-08-07, P16 — PROPOSED, awaiting ratification)
+A control matrix row that moves a control to *Implemented* or *Operational* on OBSERVED evidence cites a
+CI run. **The last act before opening or updating the PR is to confirm that run's head SHA equals the
+branch tip** — not that it is an *ancestor* of the tip, which it always will be and which is why the
+weaker check never fires. If any production code the cited step exercises has changed since, the proof
+re-runs and the citation moves, in **every** document that carries it (a citation is typically repeated
+across the slice record, the control matrix, the canonical entity row and the roadmap — REPRO-1's was in
+four).
+
+*Grounded, twice in one slice, one generation apart.* CTRL-018 first cited a run whose alarm arm was
+satisfied by a no-recipient sentinel and whose trigger arm counted `pg_trigger` rows that exist for
+DISABLED triggers — both arms incapable of failing, as the builder's own commit message had already
+recorded. The fold that corrected it then cited a run that two further folds left 486 lines behind,
+across every module the cited step exercises. The second occurrence is the reason this is a rule: the
+first was a mistake, the second was the same mistake made by the correction, which means reading the row
+carefully is not the control. **The trigger moment is what makes it mechanical** — not "keep citations
+fresh", which is the bare-instruction shape P7 forbids, but a named check at a named moment with a
+named comparison.
+
+**Drafted, not self-enacted.** Like P14 and P15, this constrains how the builder evidences its own
+claims, so it is proposed for ratification rather than adopted on the builder's own authority. It is
+being followed from the moment it was drafted; ratification makes it standing.
+
 ## Prohibited behavior
 - Committing/pushing without explicit approval; starting the next slice unprompted.
 - Writing application code during a planning/decision turn.

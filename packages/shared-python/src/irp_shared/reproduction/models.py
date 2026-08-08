@@ -17,11 +17,15 @@ sweep consumes many subject runs' snapshots, and each one is named on its own ve
 **Why the divergence detail names fields and keys but never VALUES — on the DIVERGED path.**
 ``first_divergence`` records WHICH row and WHICH field disagreed, never the two numbers.
 **The UNREPRODUCIBLE path is a stated exception, not an oversight:** there the field carries a
-binder's own refusal text, and some binder messages interpolate row identifiers, so
-``_redact`` bounds it (statement/parameters/DETAIL stripped, 2000-char cap) without
-guaranteeing the absence of every identifier. That residual is bound to the moment a read
-surface is added over this table. The moment a read surface is added over
-this table it will be gated by some permission — and the obvious candidate, ``schedule.view``, is
+binder's own refusal text, and some binder messages interpolate row identifiers, so ``_redact``
+bounds it (the ``[SQL:``, ``[parameters:``, ``DETAIL:``, ``CONTEXT:`` and ``LINE n:`` dumps cut, a
+2000-character cap) without guaranteeing the absence of every identifier. The enumeration is written
+out because a shorter version of it was WRONG here for one commit: it claimed statements were
+stripped while psycopg's ``LINE n:`` caret — which quotes the failing statement verbatim — was not
+in the marker list, and a real statement reached the governed column. Found by execution against
+PostgreSQL; SQLite emits no such marker, so no unit test could have seen it. That residual is bound
+to the moment a read surface is added over this table, which is when it will be gated by some
+permission — and the obvious candidate, ``schedule.view``, is
 held by ``auditor_3l``, which holds no ``valuation.view`` / ``position.view`` / ``marketdata.view``.
 Writing governed values into a control-plane table now would plant exactly the disclosure RPT-2's
 pre-merge audit found through a different door (a report surface serving issuer rows that
@@ -110,9 +114,11 @@ class ReproductionCheck(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     # API-2b lock-across-I/O anti-pattern that NOTIF-1's phase-A/phase-B split exists to prevent.
     # So alarm delivery is its own tick phase, after the phases-1-2 commit, and its durable
     # evidence is a ``NOTIFY.DISPATCH`` audit event against ``entity_type='reproduction_check'``.
-    # "Has this verdict been alarmed?" is then answered by that event's EXISTENCE — a per-row
-    # question with no cursor to get wrong (NOTIF-1's own lesson: a derived MAX cursor cannot
-    # represent a gap).
+    # "Has this verdict been alarmed?" is then answered by asking what those events SAY about it —
+    # did an attempt CONCLUDE (SENT or SUPPRESSED), or are its bounded FAILED retries exhausted — a
+    # per-row question with no cursor to get wrong (NOTIF-1's own lesson: a derived MAX cursor
+    # cannot represent a gap). Bare EXISTENCE was the first rule tried and it dropped real alarms:
+    # one recorded failure retired the verdict forever.
 
 
 @event.listens_for(ReproductionCheck, "before_update", propagate=True)

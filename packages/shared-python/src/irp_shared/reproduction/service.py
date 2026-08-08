@@ -27,10 +27,12 @@ anti-pattern NOTIF-1 restructured itself to avoid. So the sweep records verdicts
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.actions import ACTION_RECORD
@@ -73,14 +75,51 @@ from irp_shared.reproduction.registry import (
 #: so a driver's multi-kilobyte error cannot fill a governed evidence column.
 _REASON_MAX = 2000
 
-#: How many times a FAILED delivery is re-attempted before the verdict is left alone.
+#: How many times a FAILED delivery is re-attempted, **per recipient**, before the verdict is left
+#: alone.
 #:
 #: Bounded on purpose. Unbounded retry was a HIGH the re-audit executed: at the supervisor's 300s
 #: cadence an un-deliverable verdict wrote ~288 hash-chained audit rows a day, forever. Five
 #: attempts spans roughly 25 minutes of ticking, which covers a transient outage; past that the
 #: five durable FAILED attempts ARE the evidence an operator needs, and continuing to POST adds
 #: nothing but volume.
+#:
+#: **"Per recipient" is the whole correction, and it was a BLOCKING defect for one commit.** The
+#: first draft of this bound counted ``NOTIFY.DISPATCH`` ROWS, and ``alarm_for_verdict`` emits one
+#: row per RECIPIENT per attempt — so a tenant with five ``breach.review`` holders exhausted the
+#: entire budget in a SINGLE tick and dropped the divergence forever, which is precisely the
+#: "retiring on any recorded attempt drops real alarms" failure the bound was written to avoid,
+#: reached from the other side. ``breach.review`` is a 2L ROLE permission, so N > 1 is the
+#: production-normal shape and N == 1 — the only value the first test used — is the single value at
+#: which rows and attempts coincide. Executed at N=5: retired after one tick.
 MAX_ALARM_ATTEMPTS = 5
+
+
+class ReproductionInfrastructureFailure(Exception):
+    """The DATABASE failed under a per-family read — the sweep could not CHECK, it did not JUDGE.
+
+    **The ratified disposition (2026-08-07): a distinct, non-alarming one.** A lock timeout, a
+    statement timeout or a half-applied migration says nothing whatever about whether a governed
+    number reproduces, so it must not mint an ``UNREPRODUCIBLE`` verdict. Two reasons, and the
+    second is the one that decided it:
+
+    * ENT-073 is IA append-only with a DB trigger refusing DELETE. A verdict row is a permanent,
+      unretractable claim that a NAMED ``subject_run_id`` did not reproduce. A lock storm would
+      write one of those per family per night, about runs that are very likely fine.
+    * ``ALARMING_VERDICTS`` contains ``UNREPRODUCIBLE``, so every such row pages every
+      ``breach.review`` holder with ``alert_type='reproduction-divergence'`` — waking the risk desk
+      about a divergence that did not occur, with ``rows_compared=0`` as the only clue.
+
+    So it fails LOUDLY but on the OPERATIONAL surface, not the alarm channel: the sweep's
+    ``calculation_run`` is FAILED, the reason names the families, and ``_dispatch_reproduction``
+    carries both onto the ``scheduled_run`` ledger row. Nothing is silent; nobody is paged.
+
+    The discriminator is ``SQLAlchemyError``. A binder's own refusal, a ``ReproductionUnsupported``,
+    or ``compare_rows``'s duplicate-key refusal are all statements ABOUT THE RUN and keep their
+    ``UNREPRODUCIBLE`` verdict — they alarm, and should. An ``IntegrityError`` from inside a
+    recompute is the genuinely ambiguous case and is deliberately classed as infrastructure: the
+    fail-closed direction for an ambiguous signal is the visible-but-not-paging one.
+    """
 
 
 class _Discard(Exception):
@@ -104,9 +143,15 @@ class ReproductionOutcome:
     failure_reason: str | None = None
     checks: list[ReproductionCheck] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
-    #: Families whose SUBJECT could not even be resolved (the lookup itself failed). Distinct from
-    #: ``skipped``, which means "nothing to reproduce yet" — a distinction an operator needs,
-    #: because one is a quiet tenant and the other is a broken read.
+    #: Families the sweep could not CHECK because the DATABASE failed under it — a lock timeout, a
+    #: statement timeout, a half-applied migration. Distinct from ``skipped`` ("nothing to reproduce
+    #: yet", a quiet tenant) and deliberately NOT a verdict.
+    #:
+    #: **This is the ratified disposition for infrastructure failure (2026-08-07)** and it is not
+    #: decoration: a non-empty ``unresolved`` FAILS the sweep and its reason reaches the
+    #: ``scheduled_run`` ledger through ``_dispatch_reproduction``, so the night is loudly not-green
+    #: on an operational surface — but it does NOT page the risk desk, because an unreadable
+    #: database is a claim about the DATABASE and a divergence alarm is a claim about a RUN.
     unresolved: list[str] = field(default_factory=list)
 
 
@@ -116,9 +161,16 @@ def _redact(text: str) -> str:
     Mirrors ``scheduling.service.redact_failure_reason``: a DBAPI error string carries the failing
     statement AND its bound parameters, and PostgreSQL appends a ``DETAIL:`` line quoting the
     failing row's values — governed data that has no business in a control-plane evidence column.
+
+    ``\\nLINE `` is in the marker list because psycopg quotes the failing statement under a
+    ``LINE n:`` caret, which the other four markers do not cover. That was found by EXECUTION, not
+    by reading: a guarded failure on PostgreSQL persisted ``relation "..." does not exist / LINE 1:
+    SELECT * FROM ...`` into the governed evidence column this function exists to keep statements
+    out of. It became reachable in the same commit that first routed DBAPI errors through here, and
+    the enumeration two files away already claimed statements were stripped.
     """
     cut = text
-    for marker in ("\n[SQL:", "\n[parameters:", "\nDETAIL:", "\nCONTEXT:"):
+    for marker in ("\n[SQL:", "\n[parameters:", "\nDETAIL:", "\nCONTEXT:", "\nLINE "):
         head = cut.split(marker, 1)[0]
         cut = head
     return cut[:_REASON_MAX]
@@ -143,6 +195,28 @@ def latest_completed_run(
         .order_by(CalculationRun.created_at.desc(), CalculationRun.run_id.desc())
         .limit(1)
     ).scalar_one_or_none()
+
+
+def resolve_subject(
+    session: Session, *, acting_tenant: str, run_type: str
+) -> tuple[CalculationRun | None, str | None]:
+    """The subject lookup, savepointed. Returns ``(subject, unresolved_reason)`` — never both.
+
+    A named function rather than four lines inline in the sweep, because the savepoint is a CONTROL
+    and an inline control cannot be tested on the tier that can see it. The PostgreSQL tier has no
+    grants to run a whole sweep, so with this guard inline the only available test monkeypatched
+    ``latest_completed_run`` to raise a hand-constructed ``OperationalError`` — which never touches
+    the database and therefore never aborts a transaction. Deleting the savepoint left that test
+    green. It was the same defect it was written to prevent, one call site over: a proof that shares
+    the code's assumption (P15).
+    """
+    try:
+        with session.begin_nested():
+            return latest_completed_run(
+                session, acting_tenant=acting_tenant, run_type=run_type
+            ), None
+    except Exception as exc:  # noqa: BLE001 - one family's lookup must not end the sweep
+        return None, _redact(f"{type(exc).__name__}: {exc}")
 
 
 def compare_rows(
@@ -209,19 +283,41 @@ def check_one_family(
 ) -> tuple[str, int, int, str | None]:
     """Re-execute one family and judge it. Returns ``(verdict, compared, diverged, detail)``.
 
+    **Raises ``ReproductionInfrastructureFailure``** when the DATABASE failed under the read or the
+    recompute, rather than returning a verdict. That is the one path on which this function declines
+    to judge: see that exception's docstring for why an unreadable database must not mint an
+    append-only row claiming a named run did not reproduce, nor page the risk desk. The sole caller
+    handles it by reporting the family as unresolved and FAILING the sweep.
+
     The recompute is discarded on EVERY path. That is enforced STRUCTURALLY by the
     ``with session.begin_nested():`` block plus the ``_Discard`` unwind below — there is no
     ``finally`` and deliberately no guard, because the guarded form was the BLOCKING defect the
     adversarial review found (see the comment on the block itself).
     """
-    # GUARDED too. The previous fold moved only the `compare_rows` call inside a guard, because
-    # that was the call the audit named — and the re-audit correctly pointed out that fixing the
-    # reported instance is not fixing the class. `read_stored` runs arbitrary per-family SQL and can
-    # raise for exactly the reasons the recompute can; if it escapes, the night's other verdicts go
-    # with it. Every per-family call in this function is now inside a guard that turns a family's
-    # failure into that family's verdict.
+    # GUARDED, and guarded INSIDE A SAVEPOINT — the two are not the same thing, and believing they
+    # were was a BLOCKING defect that survived three scrutiny stages.
+    #
+    # The previous fold put a bare `try/except` here, on the correct reasoning that `read_stored`
+    # runs arbitrary per-family SQL and can raise for the same reasons the recompute can. But
+    # catching a DBAPI error does not UNDO it: on PostgreSQL the backend transaction is left
+    # ABORTED, and every subsequent statement raises `InFailedSqlTransaction` — so the sweep built a
+    # correct UNREPRODUCIBLE verdict and then died on the next flush, discarding the night exactly
+    # as before. EXECUTED against a real PostgreSQL: `PERSISTED reproduction_check ROWS: 0`. The
+    # `begin_nested()` wrapper is what makes the catch mean something, because ROLLBACK TO SAVEPOINT
+    # clears the aborted state; with it, the same probe returned COMPLETED with both verdicts.
+    #
+    # And the reason nobody saw it for three stages is worth keeping: the test written to prove
+    # this guard raised a plain `RuntimeError` from monkeypatched Python. SQLite does not poison a
+    # session on a failed statement and PostgreSQL does, so the test was green with the bug AND
+    # green with the fix. It never discriminated. That is P15 — a proof sharing its code's
+    # assumption.
     try:
-        stored = family.read_stored(session, acting_tenant, subject)
+        with session.begin_nested():
+            stored = family.read_stored(session, acting_tenant, subject)
+    except SQLAlchemyError as exc:
+        raise ReproductionInfrastructureFailure(
+            _redact(f"reading the stored rows failed: {type(exc).__name__}: {exc}")
+        ) from exc
     except Exception as exc:  # noqa: BLE001 - a family's own failure is a verdict, not an outage
         return VERDICT_UNREPRODUCIBLE, 0, 0, _redact(f"{type(exc).__name__}: {exc}")
     recomputed: list[ComparableRow] = []
@@ -256,6 +352,14 @@ def check_one_family(
         pass
     except ReproductionUnsupported as exc:
         return VERDICT_UNREPRODUCIBLE, 0, 0, _redact(str(exc))
+    except SQLAlchemyError as exc:
+        # The DATABASE failed under the recompute — not the binder refusing. See
+        # `ReproductionInfrastructureFailure` for why that is a different disposition and not a
+        # verdict. The savepoint has already rolled back by the time this arm runs, so the session
+        # is usable and the sweep's next family proceeds normally.
+        raise ReproductionInfrastructureFailure(
+            _redact(f"the recompute failed: {type(exc).__name__}: {exc}")
+        ) from exc
     except Exception as exc:  # noqa: BLE001 - a family's own refusal is a verdict, not an outage
         return (
             VERDICT_UNREPRODUCIBLE,
@@ -328,26 +432,34 @@ def run_reproduction_sweep(
     unresolved: list[str] = []
     for family_key in sorted(REPRODUCIBLE_FAMILIES):
         family = REPRODUCIBLE_FAMILIES[family_key]
-        try:
-            subject = latest_completed_run(session, acting_tenant=tenant, run_type=family_key)
-        except Exception as exc:  # noqa: BLE001 - one family's lookup must not end the sweep
-            # NO verdict row: `subject_run_id` is a NOT NULL FK and there is no subject to bind
-            # one to, so a verdict here would be a claim about a run we could not identify. It is
-            # reported as UNRESOLVED instead — visible in the outcome and distinct from `skipped`,
-            # which means "this family has nothing to reproduce yet" rather than "we could not
-            # find out".
-            unresolved.append(f"{family_key}: {_redact(f'{type(exc).__name__}: {exc}')}")
+        # Savepointed inside `resolve_subject` for the same reason as `read_stored` — a failed
+        # lookup on PostgreSQL aborts the transaction, and the previous fold's bare catch then died
+        # on the fail-closed write ITSELF. Executed: `UPDATE calculation_run SET status='FAILED'`
+        # raising `InFailedSqlTransaction`, so the sweep produced no FAILED ledger row and no reason
+        # at all — the strongest control this slice built, unreachable on the authoritative engine.
+        subject, lookup_failure = resolve_subject(
+            session, acting_tenant=tenant, run_type=family_key
+        )
+        if lookup_failure is not None:
+            # NO verdict row, and not merely because the disposition is nicer: `subject_run_id` is
+            # a NOT NULL FK and there is no subject to bind one to. A verdict here would be a claim
+            # about a run we could not identify.
+            unresolved.append(f"{family_key}: {lookup_failure}")
             continue
         if subject is None:
             skipped.append(family_key)
             continue
-        verdict, compared, diverged, detail = check_one_family(
-            session,
-            acting_tenant=tenant,
-            family=family,
-            subject=subject,
-            code_version=code_version,
-        )
+        try:
+            verdict, compared, diverged, detail = check_one_family(
+                session,
+                acting_tenant=tenant,
+                family=family,
+                subject=subject,
+                code_version=code_version,
+            )
+        except ReproductionInfrastructureFailure as exc:
+            unresolved.append(f"{family_key}: {exc}")
+            continue
         row = ReproductionCheck(
             tenant_id=tenant,
             calculation_run_id=run.run_id,
@@ -358,9 +470,25 @@ def run_reproduction_sweep(
             rows_diverged=diverged,
             first_divergence=detail,
         )
-        session.add(row)
+        # Flushed PER FAMILY, inside a savepoint, instead of once for all of them after the loop.
+        # The single shared flush was the one statement where every family's verdict died together
+        # — it is where the executor's probe actually raised — and a per-family write is the same
+        # doctrine this function already applies to reads: one family's failure is one family's
+        # problem. On failure the savepoint takes the INSERT back out and the object is expunged so
+        # the enclosing transaction does not re-attempt it at commit.
+        try:
+            with session.begin_nested():
+                session.add(row)
+                session.flush()
+        except SQLAlchemyError as exc:
+            if row in session:
+                session.expunge(row)
+            unresolved.append(
+                f"{family_key}: recording the {verdict} verdict failed: "
+                f"{_redact(f'{type(exc).__name__}: {exc}')}"
+            )
+            continue
         checks.append(row)
-    session.flush()
 
     # A sweep that checked NOTHING is not a healthy night, and it must not be recorded as one.
     #
@@ -372,12 +500,35 @@ def run_reproduction_sweep(
     # So it fails CLOSED. The run is FAILED and the ledger row carries the reason, which is honest
     # in both directions: a tenant with genuinely nothing to reproduce SHOULD be visible as such
     # rather than quietly counted among the reproducible ones.
-    if not checks:
+    # `unresolved` is checked FIRST, and that ordering is the fix for a reason that was durably
+    # FALSE. The previous fold could reach the "checked NOTHING" text below with three broken
+    # lookups behind it, writing into a governed `calculation_run.failure_reason` the specific
+    # assertion "no registered family had a COMPLETED run to reproduce" — when the truth was that
+    # the sweep could not find out. A fail-closed reason that states the wrong cause sends an
+    # operator to the wrong place.
+    #
+    # This branch is also what gives `unresolved` a CONSUMER. The field was added in the previous
+    # fold and read by nothing — five grep hits, all in this file — while the sweep returned a clean
+    # COMPLETED with a governed family silently unchecked. A declaration with no consumer is worse
+    # than no declaration (the deleted `produces_run_on_failure`), and here it was worse still: it
+    # made the omission look handled.
+    reason: str | None = None
+    if unresolved:
+        reason = (
+            f"the reproduction sweep could not CHECK {len(unresolved)} of "
+            f"{len(REPRODUCIBLE_FAMILIES)} registered families — the database failed under it: "
+            f"{'; '.join(unresolved)}. "
+            f"{len(checks)} verdict(s) were recorded and stand. This is NOT a divergence: no claim "
+            "is made about whether those families reproduce, which is why no alarm was raised."
+        )
+    elif not checks:
         reason = (
             "the reproduction sweep checked NOTHING: no registered family had a COMPLETED run to "
             f"reproduce (families with a reproducer: {', '.join(sorted(REPRODUCIBLE_FAMILIES))}). "
             "A sweep with zero verdicts proves nothing and is not recorded as a pass."
         )
+
+    if reason is not None:
         update_run_status(
             session,
             run,
@@ -390,7 +541,7 @@ def run_reproduction_sweep(
             run_id=run.run_id,
             status=RunStatus.FAILED.value,
             failure_reason=reason,
-            checks=[],
+            checks=checks,
             skipped=skipped,
             unresolved=unresolved,
         )
@@ -448,19 +599,52 @@ def unalarmed_verdicts(session: Session, *, acting_tenant: str) -> list[Reproduc
         .scalars()
         .all()
     )
+    # EXHAUSTION IS COUNTED PER RECIPIENT, NOT PER ROW, and the difference is the whole of a
+    # BLOCKING defect. `alarm_for_verdict` emits one `NOTIFY.DISPATCH` per RECIPIENT per attempt, so
+    # a `GROUP BY entity_id` count of rows is a count of recipient-attempts. With the five holders a
+    # 2L risk desk normally has, one failed tick wrote five rows, tripped a bound meant for five
+    # TICKS, and retired the platform's most important alarm after zero retries. Executed: N=2
+    # dropped it at attempt 3, N=5 at attempt 1.
+    #
+    # A verdict is exhausted when the MOST-TRIED recipient has failed `MAX_ALARM_ATTEMPTS` times —
+    # the MAX across recipients, not the total and not the min. Each of the three was written and
+    # the other two are wrong:
+    #
+    #   * the TOTAL (a plain row count) is the BLOCKING defect above: N recipients spend the budget
+    #     N times faster than ticks pass;
+    #   * the MIN — "every recipient has had their five" — reads as the generous choice and does not
+    #     TERMINATE. A recipient who loses `breach.review` after two failed ticks leaves a stale
+    #     count of two that no later tick can raise, so the min is pinned below the bound forever
+    #     and the retry loop is unbounded again. That is the failure this whole constant exists to
+    #     prevent, so a rule that reintroduces it is not the fail-closed one however it reads.
+    #
+    # MAX terminates under every holder-set change, and it cannot trip early because a recipient
+    # accrues at most one row per tick. A recipient provisioned late gets fewer than five attempts;
+    # that is the accepted consequence and it is the same trade-off already ratified for SUPPRESSED
+    # (retry the wire, not the audience — carry (o)).
+    #
+    # `recipient_id` lives inside the DC-2 `after_value` payload rather than in a column, so the
+    # grouping is done in Python. The population is a handful of rows per night (carry (k) already
+    # accepts the scan), and correctness here is worth more than a GROUP BY.
+    failures = session.execute(
+        select(AuditEvent.entity_id, AuditEvent.after_value).where(
+            AuditEvent.chain_id == tenant,
+            AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
+            AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
+            AuditEvent.outcome == "failure",
+        )
+    ).all()
+    per_recipient: Counter[tuple[str, str]] = Counter()
+    for entity_id, payload in failures:
+        recipient = str((payload or {}).get("recipient_id", NO_RECIPIENT_SENTINEL))
+        per_recipient[(str(entity_id), recipient)] += 1
+    attempts_by_entity: dict[str, list[int]] = {}
+    for (entity_id, _recipient), count in per_recipient.items():
+        attempts_by_entity.setdefault(entity_id, []).append(count)
     exhausted = {
         entity_id
-        for entity_id, attempts in session.execute(
-            select(AuditEvent.entity_id, func.count())
-            .where(
-                AuditEvent.chain_id == tenant,
-                AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
-                AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
-                AuditEvent.outcome == "failure",
-            )
-            .group_by(AuditEvent.entity_id)
-        ).all()
-        if attempts >= MAX_ALARM_ATTEMPTS
+        for entity_id, counts in attempts_by_entity.items()
+        if max(counts) >= MAX_ALARM_ATTEMPTS
     }
     alarmed = concluded | exhausted
     rows = (
@@ -592,7 +776,16 @@ def _emit_dispatch(
         # dispatch concluded correctly: it determined, durably, that nobody in the tenant holds the
         # alarm permission. Only a FAILED delivery — the wire broke — is a failure, and only that
         # is worth retrying. Ratified 2026-08-07: retry the wire, not the audience.
-        outcome="failure" if outcome == NOTIFY_OUTCOME_FAILED else "success",
+        #
+        # Written as a TOTAL mapping over the two concluding values rather than as "not FAILED",
+        # because `success` is now the TERMINAL branch: `unalarmed_verdicts` retires a verdict the
+        # instant one such row exists. The negated form defaulted an unrecognised outcome to
+        # `success`, so the first time a fourth NOTIFY outcome is minted — this family has already
+        # grown a SUPPRESSED sentinel once — it would have silently and permanently retired every
+        # divergence it touched, with no test failing. This form fails CLOSED on an unknown value.
+        outcome=(
+            "success" if outcome in (NOTIFY_OUTCOME_SENT, NOTIFY_OUTCOME_SUPPRESSED) else "failure"
+        ),
         after_value={
             "verdict": check.verdict,
             "family_key": check.family_key,
@@ -610,11 +803,14 @@ def _emit_dispatch(
 
 
 __all__ = [
+    "MAX_ALARM_ATTEMPTS",
+    "ReproductionInfrastructureFailure",
     "ReproductionOutcome",
     "alarm_for_verdict",
     "check_one_family",
     "compare_rows",
     "latest_completed_run",
+    "resolve_subject",
     "run_reproduction_sweep",
     "unalarmed_verdicts",
 ]
