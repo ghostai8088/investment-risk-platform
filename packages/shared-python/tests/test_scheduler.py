@@ -765,6 +765,39 @@ def test_redaction_is_applied_at_the_write_boundary_not_left_to_callers(session:
     assert "[SQL:" not in row.failure_reason
 
 
+#: A REAL psycopg diagnostic, captured from the live driver rather than hand-written.
+#:
+#: The fixture above was hand-written, and that is exactly why it could not see this: it has no
+#: ``LINE n:`` block, because a human writing an example from memory does not think to include one.
+#: psycopg puts that block BEFORE ``[SQL:``, so cutting at ``[SQL:`` removes nothing upstream of it
+#: and the statement text — with any inlined literals — survived into a column served over HTTP to
+#: ``auditor_3l``. A fixture that shares its subject's blind spot proves nothing about it (P15).
+_REAL_PG_LINE_REASON = (
+    'ProgrammingError: (psycopg.errors.UndefinedTable) relation "no_such_table" does not exist\n'
+    "LINE 1: SELECT * FROM no_such_table WHERE account = 'ACME-PENSION-001'\n"
+    "                      ^\n"
+    "[SQL: SELECT * FROM no_such_table WHERE account = 'ACME-PENSION-001']"
+)
+
+
+def test_redaction_strips_psycopgs_LINE_caret_which_quotes_the_STATEMENT() -> None:
+    """Found in the sibling redactor by EXECUTION, and fixed here only after a review asked whether
+    the fix had been applied to the CLASS or just to the instance (P10).
+
+    REPRO-1's fourth fold hit this leak in `reproduction.service._redact`, executed it against
+    PostgreSQL, and patched the redactor it was standing in. This one — the redactor with the
+    SHIPPED HTTP reader — kept the old four-marker list for another fold.
+    """
+    out = redact_failure_reason(_REAL_PG_LINE_REASON)
+    assert out.startswith("ProgrammingError: (psycopg.errors.UndefinedTable)")
+    assert "no_such_table" in out, "the actionable diagnosis was thrown away with the statement"
+    for leaked in ("LINE 1", "SELECT *", "ACME-PENSION-001"):
+        assert leaked not in out, (
+            f"{leaked!r} survived redaction — the failing statement reaches GET /schedules/runs, "
+            "which auditor_3l can read while holding no valuation/position/marketdata view"
+        )
+
+
 def test_redaction_leaves_a_curated_domain_reason_untouched() -> None:
     """It must not mangle the ordinary case — the pre-create refusals raise plain sentences."""
     reason = "ScheduleError: no COMPLETED covariance run for the tenant"

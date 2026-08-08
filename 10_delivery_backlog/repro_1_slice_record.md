@@ -23,12 +23,13 @@ are alarmed in a **separate tick phase**.
 | `REPRODUCTION` schedulable family | `scheduling/service.py` (`_dispatch_reproduction`, `FAMILY_REGISTRY`) |
 | Tick phase 5 (alarm delivery) | `apps/worker/src/irp_worker/reproduction_alarms.py`, wired in `irp_worker/scheduler.py` |
 | Deployed proof, both arms | `infra/deploy/prove_reproduction.sh` + `irp_shared/deploy/reproduction_proof.py` |
-| Unit + PG suites (50 tests) | `tests/test_reproduction.py`, `tests/test_reproduction_pg.py` |
+| Unit + PG suites (56 tests) | `tests/test_reproduction.py`, `tests/test_reproduction_pg.py` |
 
 ## 2. Gates, with captured exit codes (P14)
 
-**Measured at the MERGE HEAD, after ALL FOUR folds — the review fold, the audit fold, the
-re-audit's fold, and the fourth pass's fold — not carried forward from an earlier commit.**
+**Measured at the MERGE HEAD, after ALL FIVE folds — the review fold, the audit fold, the
+re-audit's fold, the fourth pass's fold and the fifth pass's fold — not carried forward from an
+earlier commit.**
 
 That sentence has now been wrong once, and the correction is worth more than the sentence. At the
 third fold it read "after the review fold and the audit fold", claimed every figure had been
@@ -44,16 +45,23 @@ diff made false. **Every row below was re-run at this head.**
 | `make check-all` (both tiers) | **`CHECK_ALL_EXIT=0`** |
 | Full-PG battery, schema reset then migrated to head | **`PG_PYTEST_EXIT=0`** |
 | Deployed-stack proof, both arms | **`PROOF_EXIT=0`**, with `ALARM_OUTCOMES=SENT` and `PLANTED_ROWS=1` |
-| Mutation battery, **11** controls of the fourth fold | **`MUTATION_EXIT=0`** — see the note below; the first run had TWO survivors |
+| Mutation battery, **10** controls of the fifth fold | **`MUTATION_EXIT=0`** — 10/10; the fourth fold's battery was 11/11 after two first-run survivors |
 | CTRL-018's observed evidence | see §2b — re-cited at the final head |
 
-**The mutation claim, stated so it can be checked rather than believed.** The battery is 11 mutants
-against the controls THIS fold introduced, and its first run returned `MUTATION_EXIT=1` with two
-survivors: the savepoint could be deleted from the subject-lookup guard, and the per-family verdict
-flush could be collapsed back into one shared statement, both with every test still green. Both were
-real gaps in the fold, both were closed (the guard extracted into `resolve_subject` so the PG tier
-could reach it; a forced unique-key collision to make the flush guard fire), and the re-run returned
-`MUTATION_EXIT=0`, 11/11.
+**The mutation claim, stated so it can be checked rather than believed.** Each fold gets its own
+battery against the controls IT introduced. The fifth fold's is 10 mutants, `MUTATION_EXIT=0`, all
+killed on the first run — including a de-`.distinct()` of `holders_of_permission`, a revert of
+per-recipient CONCLUSION to any-success, and removal of the termination backstop.
+
+The fourth fold's was 11, and its first run returned `MUTATION_EXIT=1` with two survivors: the
+savepoint could be deleted from the subject-lookup guard, and the per-family verdict flush could be
+collapsed back into one shared statement, both with every test still green. Both were real gaps,
+both were closed, and the re-run returned 11/11.
+
+One mutant in the fifth battery was reported `SKIP ... ANCHOR NOT UNIQUE — NOT TESTED` after a
+reformat moved its anchor, and the harness counts that as a SURVIVOR rather than a pass. That is
+deliberate: a mutation that did not run is not a mutation that was killed, and a battery that
+reports otherwise is the same false-green this slice keeps finding.
 
 The wording matters because the previous fold replaced a bounded historical claim — "eleven mutations
 were each killed by their intended test" — with the present-tense universal "**every** mutation
@@ -103,15 +111,20 @@ matters is that no code the cited step exercises has changed since the evidence 
 is a diff and not an equality. Corrected before the first application rather than after, but only
 because it was applied rather than re-read.
 
-**Applied here, with the check quoted.** `git diff --name-only 0e1de85..HEAD` returned EMPTY, with
+**Applied here, with the check quoted — and the quote itself needed a correction.** The command was
+run BEFORE the citation commit, so it returned EMPTY at that moment and does NOT reproduce at the
+committed head, where it names the five record files the citation commit touched. That is a P14
+problem in a record about P14: evidence must be quoted from the state a reader can reproduce, or the
+state must be named alongside it. The rule's actual test — records only, no production file — passes
+in both readings. `git diff --name-only 0e1de85..<citation commit>` returned EMPTY, with
 the only working-tree change being this record set. So the citation is CI run **`31231894079`**,
 head **`0e1de85`**, `stack-proof` job → `success`, step *"Prove a scheduled reproduction detects a
 planted divergence (CTRL-018)"* → **`success`**, verified at the STEP level rather than inferred
 from the run-level conclusion. All 8 jobs green; the sibling run `31231890888` on the same head is
 also green.
 
-Counts **MEASURED** on a fresh collect at the merge head: **3,141** collected platform-wide;
-**50** in this slice's two suites (42 unit + 8 PostgreSQL). The fourth fold added thirteen: the
+Counts **MEASURED** on a fresh collect at the merge head: **3,148** collected platform-wide;
+**56** in this slice's two suites (48 unit + 8 PostgreSQL). The fourth fold added thirteen: the
 infrastructure disposition and its ledger consumer, the subject-lookup guard that had none, a forced
 verdict-row collision, the retry bound parameterised over 1/2/5 recipients, the departed-recipient
 negative control, a mixed FAILED-then-SENT sequence, the NOTIFY vocabulary pin, the REPORT reason
@@ -186,8 +199,11 @@ type checker, or to a green test run.** The review's thirteen, the audit's thirt
   `calculation_run`, because OQ-SCH-2-8 requires a schedule's family key to be a real run type.
 - **Phase 5 is separate from the sweep**, because phase 1 holds the per-tenant audit advisory lock
   to COMMIT and a sink call there is the API-2b lock-across-I/O anti-pattern. Its queue is an
-  EXISTENCE test per verdict, not a derived `MAX` cursor — NOTIF-1's lesson that a cursor cannot
-  represent a gap. Unlike phase 4 it does **not** head-of-line block: with an existence queue there
+  per-verdict EVENT QUESTION, not a derived `MAX` cursor — NOTIF-1's lesson that a cursor cannot
+  represent a gap. (Bare EXISTENCE was the first rule tried and dropped real alarms; the rule is now
+  per-recipient on BOTH halves — an attempt CONCLUDED, or its own FAILED budget spent — with a
+  most-tried backstop for termination.) Unlike phase 4 it does **not** head-of-line block: with a
+  per-verdict question there
   is no cursor to corrupt, so one poison verdict must not silence the night's other divergences.
 - **`first_divergence` names the row key and the field, never the VALUES on the DIVERGED path** (mutation-proven). The UNREPRODUCIBLE path is a stated exception — its reason is a binder's own refusal text, which `_redact` bounds without guaranteeing no identifier appears; carry (n). The moment a read
   surface is added it will be gated by some permission, and the obvious candidate `schedule.view` is
@@ -238,6 +254,7 @@ caught it, which is a fair illustration of why the sentence was wrong.
 | Fresh-context pre-merge audit, weighted at the review's own fold | **35 findings, 2 of 4 lenses returning DO_NOT_MERGE** — including a regression the review fold itself introduced, and a false evidence citation in four documents |
 | Focused re-audit of THAT fold (user-requested) | **33 findings, 4 of 4 lenses returning DO_NOT_MERGE.** The audit fold had introduced a HIGH of its own — filtering the alarm queue on SENT-only turned an un-deliverable verdict into an unbounded 300-second retry loop, ~288 hash-chained audit rows per verdict per day — and two of its stated fixes were false: the census's reason floor was satisfiable by copying an existing constant, and the RTM table fix removed the blockquote but left the blank line, so **44** rows still did not render (the number is measured — this row said 47 for one commit while the RTM's own note three lines away said 44, which is two governed records disagreeing about the same defect) |
 | **Fourth focused pass** over the re-audit's fold (user-requested), 5 lenses + a serialised executor + a records verifier + a completeness critic | **TWO BLOCKING, both confirmed by EXECUTION against a real PostgreSQL, plus a HIGH four lenses had all walked past.** (1) The fold's two new `except` guards had no savepoint, so on PostgreSQL they caught the error and left the transaction ABORTED — the sweep built a correct verdict and died on the next flush, `PERSISTED ROWS: 0`, and the fail-closed FAILED write was itself unreachable. Its unit test raised a plain `RuntimeError` and was green with the bug AND with the fix. (2) `MAX_ALARM_ATTEMPTS` counted audit ROWS while one attempt emits one row per RECIPIENT, so at the five holders a 2L desk normally has, a single failed tick retired the alarm forever — v1's dropped-alarm defect re-created by v2's fix, invisible because the test pinned exactly one recipient. (3) Three of the five REPORT exclusions carried a reason that was factually false about what `regenerate_report` reads: a tampered `render_format` produced a durable MATCH. Every existing guard passed over it — the column census, the 40-character reason floor, and a `_MUST_COMPARE` pin holding only the one column that cannot diverge |
+| **Fifth focused pass** over the fourth fold (user-requested), same 5-lens + serialised-executor + records + critic shape | **ONE BLOCKING and four HIGHs, and the BLOCKING was introduced BY THE FOURTH FOLD.** (1) A verdict COMPUTED as DIVERGED whose row failed to INSERT was routed into the non-alarming `unresolved` bucket, so the risk desk was never paged — and the governed `failure_reason` then read *"This is NOT a divergence ... which is why no alarm was raised"*, the evidence column asserting the negation of what the sweep had just measured. (2) That same sentence was UNCONDITIONAL, so it also fired on a night where another family genuinely diverged and phase 5 WAS paging: an operator woken at 02:00 had documentary grounds to dismiss the alarm. (3) Giving `unresolved` a consumer made any per-family infrastructure failure fail the WHOLE sweep, so a divergence + one lock timeout reported as an infrastructure failure — violating I3, whose own test predates the change and drives a clean sweep. (4) The `LINE` redaction fix had been applied to the reproduction redactor only; the SIBLING `scheduling.service.redact_failure_reason` — the one with a SHIPPED HTTP reader on `GET /schedules/runs`, gated on `schedule.view`, held by `auditor_3l` — still served verbatim SQL. Fixing the instance, not the class (P10). (5) EXHAUSTION had been rebuilt per-recipient while CONCLUSION stayed per-verdict, so one recipient's success retired the verdict for everyone: five holders, one good address, and four are never told about a live divergence and never retried. |
 
 **The audit's decisive finding was about this slice's own records, not its code:** CTRL-018 had been
 moved to Implemented citing a CI run of the PRE-FOLD proof harness — the run whose alarm arm and

@@ -729,7 +729,21 @@ def dispatch_one(
 
 #: Everything from here on in a SQLAlchemy ``DBAPIError`` string is the statement and its BOUND
 #: PARAMETERS; PG additionally appends a ``DETAIL:`` line quoting the failing row's values.
-_REASON_CUTS = ("\n[SQL:", "\n[parameters:", "\nDETAIL:", "\nCONTEXT:")
+#:
+#: ``\nLINE `` was MISSING here for the whole life of this function, and its absence was not
+#: theoretical: psycopg quotes the failing statement under a ``LINE n:`` caret that appears BEFORE
+#: the ``[SQL:`` block, so cutting at ``[SQL:`` removes nothing upstream of it and the statement
+#: text survives into a column served over HTTP. Executed against PostgreSQL:
+#: ``relation "..." does not exist\nLINE 1: SELECT * FROM ... WHERE a = 'secret-value-42'`` passed
+#: through the old four-marker list returned the LINE block intact.
+#:
+#: **How it was found is the point.** REPRO-1's fourth fold hit this leak in the reproduction
+#: module, executed it on PostgreSQL, and fixed the redactor it was standing in — the reported
+#: INSTANCE, not the CLASS (P10). The sibling was two modules away and, unlike ENT-073, already had
+#: a shipped reader. The test that should have caught it here builds its input as a hand-written
+#: Python string with no ``LINE`` marker: a fixture sharing its subject's blind spot (P15), which is
+#: why only execution against a real driver ever surfaces this marker class.
+_REASON_CUTS = ("\n[SQL:", "\n[parameters:", "\nDETAIL:", "\nCONTEXT:", "\nLINE ")
 
 
 def redact_failure_reason(reason: str) -> str:

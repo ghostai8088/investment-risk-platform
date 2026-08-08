@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import replace
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -530,9 +531,13 @@ def test_a_verdict_ROW_that_cannot_be_written_does_not_take_the_others_with_it(
         "a colliding verdict row took the other families' verdicts with it — the shared flush is "
         "back, and it is the single statement where the whole night dies"
     )
-    assert any("recording the" in u for u in outcome.unresolved), (
+    assert any("could NOT be recorded" in u for u in outcome.unrecorded), (
         "the verdict that could not be written vanished silently — it must be reported, not "
         "swallowed"
+    )
+    assert not outcome.unresolved, (
+        "an unwritable verdict was reported as UNRESOLVED — those two are opposites: unresolved "
+        "means no claim was made, and here a claim was made and lost"
     )
     persisted = (
         session.execute(select(ReproductionCheck).where(ReproductionCheck.tenant_id == tenant))
@@ -540,6 +545,112 @@ def test_a_verdict_ROW_that_cannot_be_written_does_not_take_the_others_with_it(
         .all()
     )
     assert len(persisted) == 1
+
+
+def test_a_DIVERGED_verdict_that_cannot_be_WRITTEN_is_reported_as_a_LOST_ALARM(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The BLOCKING defect of the fourth fold, pinned.
+
+    A verdict is COMPUTED as DIVERGED and its row then fails to INSERT. The previous shape swept it
+    into `unresolved` — the non-alarming bucket — so the risk desk was never paged AND the durable
+    `failure_reason` read "This is NOT a divergence: no claim is made about whether those families
+    reproduce, which is why no alarm was raised." Both halves were false: the sweep DID check it,
+    and a claim WAS made.
+
+    Two assertions matter and they are different. The verdict must be reported as a LOST ALARM, and
+    the governed reason must not deny the divergence — because the reason is what an operator has
+    in front of them when deciding whether the night was fine.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+    var_subject = latest_completed_run(session, acting_tenant=tenant, run_type="VAR")
+    assert var_subject is not None
+    _plant_sigma(session, str(var_subject.run_id), "0.99999")
+
+    def _always_the_var_run(db: Session, *, acting_tenant: str, run_type: str):  # noqa: ANN202, ARG001
+        return var_subject
+
+    monkeypatch.setattr("irp_shared.reproduction.service.latest_completed_run", _always_the_var_run)
+    outcome = _sweep(session, tenant)
+
+    assert outcome.lost_alarms and any(
+        "VAR" in x and VERDICT_DIVERGED in x for x in outcome.lost_alarms
+    ), (
+        "a DIVERGED verdict was computed, could not be recorded, and was not reported as a lost "
+        "alarm — nothing downstream will ever raise it"
+    )
+    assert outcome.failure_reason is not None
+    assert "ALARM LOST" in outcome.failure_reason
+    assert (
+        "is NOT a divergence" not in outcome.failure_reason
+    ), "the governed reason DENIES a divergence the sweep actually measured"
+
+
+def test_a_divergence_alongside_an_infrastructure_failure_is_not_denied(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The night both controls exist for: one family times out, another genuinely diverges.
+
+    The reason text must not assert "no alarm was raised" while phase 5 is queueing one. An operator
+    paged at 02:00 opens the run, and a governed record contradicting the page is documentary
+    grounds to dismiss the platform's most important alarm as spurious.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+    var_run = latest_completed_run(session, acting_tenant=tenant, run_type="VAR")
+    assert var_run is not None
+    _plant_sigma(session, str(var_run.run_id), "0.4242")
+
+    def _db_boom(*_a: object, **_k: object) -> list[ComparableRow]:
+        raise OperationalError("SELECT 1", {}, Exception("canceling statement due to lock timeout"))
+
+    monkeypatch.setitem(
+        REPRODUCIBLE_FAMILIES,
+        "EXPOSURE_AGGREGATE",
+        replace(REPRODUCIBLE_FAMILIES["EXPOSURE_AGGREGATE"], read_stored=_db_boom),
+    )
+    outcome = _sweep(session, tenant)
+    session.flush()
+
+    queued = unalarmed_verdicts(session, acting_tenant=tenant)
+    assert [c.verdict for c in queued] == [VERDICT_DIVERGED], "the divergence was not queued"
+    assert outcome.failure_reason is not None
+    assert (
+        "no alarm was raised" not in outcome.failure_reason
+    ), "the ledger row denies an alarm that phase 5 is about to deliver"
+    assert outcome.failure_reason.startswith(
+        "1 ALARMING verdict"
+    ), "the alarming verdict is not the FIRST thing an operator reads on this run"
+
+
+def test_a_clean_sweep_with_a_DIVERGENCE_still_COMPLETES(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invariant I3: a divergence is a DISPATCHED fire, not a FAILED one.
+
+    The fourth fold broke this by failing the run on any `unresolved` — but the plain case matters
+    just as much and had no guard of its own here: a sweep that judged everything and recorded
+    everything COMPLETES, even when what it recorded is the worst possible news. Otherwise the
+    platform's most important alarm is indistinguishable from an infrastructure failure in the
+    operator feed, which is the harm `test_a_divergence_is_a_DISPATCHED_fire_not_a_FAILED_one`
+    names one level up.
+    """
+    tenant = str(uuid.uuid4())
+    _seed_var_run(session, tenant)
+    session.commit()
+    var_run = latest_completed_run(session, acting_tenant=tenant, run_type="VAR")
+    assert var_run is not None
+    _plant_sigma(session, str(var_run.run_id), "0.31337")
+
+    outcome = _sweep(session, tenant)
+    assert VERDICT_DIVERGED in [c.verdict for c in outcome.checks]
+    assert (
+        outcome.status == RunStatus.COMPLETED.value
+    ), "a sweep that did its job and found a divergence was recorded as FAILED — I3"
+    assert outcome.failure_reason is None
 
 
 def test_the_fail_closed_reason_reaches_the_scheduled_run_ledger(
@@ -878,6 +989,158 @@ def test_a_failed_delivery_is_retried_a_bounded_number_of_TICKS_whatever_the_aud
     # ticks to five recipients is twenty-five durable attempts, and the bound is FIVE.
     failures = [e for e in _dispatch_events(session, tenant) if e.outcome == "failure"]
     assert len(failures) == MAX_ALARM_ATTEMPTS * n_recipients
+
+
+def _seed_reviewer_with_two_roles(db: Session, tenant: str) -> str:
+    """ONE active user granted `breach.review` through TWO distinct roles.
+
+    The multiplicity case no fixture in the repository produced: `_mk_reviewer` in
+    `test_notification.py` gives every user exactly one role, so the join could fan out
+    across the whole suite and no test would notice.
+    """
+    from irp_shared.entitlement.models import (
+        AppUser,
+        Permission,
+        Role,
+        RolePermission,
+        UserRole,
+    )
+
+    user = AppUser(tenant_id=tenant, display_name="two-hatted reviewer", is_active=True)
+    db.add(user)
+    db.flush()
+    perm = db.query(Permission).filter_by(
+        code=ALARM_RECIPIENT_PERMISSION
+    ).one_or_none() or Permission(code=ALARM_RECIPIENT_PERMISSION, description="d")
+    db.add(perm)
+    db.flush()
+    for label in ("risk-manager", "duty-officer"):
+        role = Role(tenant_id=tenant, code=f"{label}-{uuid.uuid4().hex[:6]}", name=label)
+        db.add(role)
+        db.flush()
+        db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+        db.add(
+            UserRole(
+                tenant_id=tenant,
+                user_id=user.id,
+                role_id=role.id,
+                valid_from=datetime(2020, 1, 1, tzinfo=UTC),
+            )
+        )
+    db.flush()
+    return str(user.id)
+
+
+def test_a_holder_reached_by_TWO_roles_is_ONE_recipient(session: Session) -> None:
+    """The invariant the retry bound silently depends on, one call site upstream.
+
+    The bound's safety rests on "a recipient accrues at most one row per tick", which is true only
+    because `holders_of_permission` applies `.distinct()`. Nothing in the repository pinned that:
+    every reproduction alarm test monkeypatches the function away with a hand-written list, and the
+    two tests of the real query build each reviewer with exactly ONE role — so no test anywhere
+    seeded the multiplicity case, and deleting `.distinct()` left both batteries green.
+
+    A user holding `breach.review` through two roles is ordinary (it is a 2L ROLE permission). If
+    the duplicate reaches `alarm_for_verdict`, one human produces N rows per tick and the BLOCKING
+    zero-retry defect is restored — with everything passing. So the dependency is pinned HERE,
+    where the bound lives, rather than left hostage to another module's query shape.
+    """
+    from irp_shared.entitlement.service import holders_of_permission
+
+    tenant = str(uuid.uuid4())
+    user_id = _seed_reviewer_with_two_roles(session, tenant)
+    session.flush()
+    holders = holders_of_permission(
+        session, permission_code=ALARM_RECIPIENT_PERMISSION, acting_tenant=tenant
+    )
+    assert holders == [user_id], (
+        "one human holding the alarm permission through two roles was returned twice — "
+        "alarm_for_verdict would emit two rows per tick for one person and the per-recipient "
+        "retry bound would trip in half the ticks it documents"
+    )
+
+
+class _PartialSink:
+    """Succeeds for exactly one recipient and fails for the rest — one good address, four dead
+    webhook endpoints. The ordinary shape of a partial outage, and the shape no sink in this suite
+    could produce until it was the subject of a defect."""
+
+    channel = "recording"
+
+    def __init__(self, succeeds_for: str) -> None:
+        self.succeeds_for = succeeds_for
+
+    def deliver(self, message: NotificationMessage) -> DeliveryResult:
+        if message.recipient_id == self.succeeds_for:
+            return DeliveryResult(ok=True, detail=None)
+        return DeliveryResult(ok=False, detail="endpoint gone")
+
+
+def test_one_recipients_SUCCESS_does_not_retire_the_verdict_for_the_others(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CONCLUSION is per recipient, exactly as EXHAUSTION is. They were asymmetric for one commit.
+
+    The fold that made exhaustion per-recipient left conclusion as "any success row retires the
+    verdict", so a partial-delivery tick retired it on the strength of ONE delivery and the other
+    four holders of `breach.review` were never told about a live divergence and never retried —
+    zero retries, not five. Executed before the fix: `QUEUED AFTER ONE PARTIAL TICK: []`.
+
+    The whole per-recipient apparatus was therefore dead on every tick where anyone succeeded; it
+    only ever operated in the all-fail corner. This is the test that distinguishes the two rules.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    recipients = [f"reviewer-{i}" for i in range(5)]
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: recipients
+    )
+
+    assert (
+        alarm_for_verdict(
+            session, check=check, sink=_PartialSink("reviewer-0"), acting_tenant=tenant
+        )
+        == NOTIFY_OUTCOME_SENT
+    )
+    session.flush()
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id], (
+        "one recipient's success retired the verdict for everyone — four holders of the alarm "
+        "permission are never told about a live divergence and never retried"
+    )
+
+    # And it still TERMINATES: keep failing the four, and the backstop must eventually retire it.
+    for _ in range(MAX_ALARM_ATTEMPTS):
+        alarm_for_verdict(
+            session, check=check, sink=_PartialSink("reviewer-0"), acting_tenant=tenant
+        )
+    session.flush()
+    assert (
+        unalarmed_verdicts(session, acting_tenant=tenant) == []
+    ), "the partial-delivery case never terminates — the backstop did not fire"
+
+
+def test_every_recipient_succeeding_retires_the_verdict_at_once(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The positive control for the test above: when everyone IS told, nobody is re-told.
+
+    Without this, 'per-recipient conclusion' could be satisfied by a rule that simply never retires
+    on success at all — which would re-create the unbounded loop from the other direction.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission",
+        lambda *_a, **_k: ["reviewer-0", "reviewer-1", "reviewer-2"],
+    )
+    assert (
+        alarm_for_verdict(session, check=check, sink=_RecordingSink(), acting_tenant=tenant)
+        == NOTIFY_OUTCOME_SENT
+    )
+    session.flush()
+    assert (
+        unalarmed_verdicts(session, acting_tenant=tenant) == []
+    ), "every recipient was told and the verdict stayed queued — it will re-page them forever"
 
 
 def test_a_recipient_who_DISAPPEARS_cannot_pin_the_retry_loop_open_forever(
