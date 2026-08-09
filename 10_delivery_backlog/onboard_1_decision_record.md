@@ -6,7 +6,13 @@ deliberately anonymous (`/health`, `/version`) — and no way to create the tena
 any of them requires.** Every deployment that has ever existed was seeded by a demo or proof
 script.
 
-**Status: v3, awaiting the OQ gate.** Two verifier passes ran (P15's different-context bar):
+**Status: RATIFIED 2026-08-09 (AskUserQuestion, four questions, ALL as recommended):**
+OQ-1A + OQ-2A (registry + operator, the three-part invariant amendment + SYSTEM-router fence);
+OQ-9A (four-eyes maker-checker with the bootstrap window — CTRL-025's implementation); OQ-6 as
+recommended (DB-sourced clones; customer tenants get the four business templates + `tenant_admin`,
+NOT `ops`, NOT `platform_admin`); OQ-8 split (ONBOARD-1a/1b under this one gate) + OQ-3/4/5/7/10
+as recommended. The CLAUDE.md invariant amendment executed at this gate (the REF-1 precedent).
+**NEXT = the ONBOARD-1a implementation plan.** Two verifier passes ran (P15's different-context bar):
 pass 1 (5 lanes, 40 agents) broke v1 at `7a61303` **11-BLOCKING deep** — including a structural
 trap FIVE lanes converged on independently (v1's own recommendations, composed, handed
 `tenant.create` to every customer tenant). Pass 2 (3 lanes, 23 agents) over v2 at `2b4296b`

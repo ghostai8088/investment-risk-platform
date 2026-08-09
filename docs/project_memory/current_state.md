@@ -81,9 +81,23 @@
 > merges every PR" text were BOTH still standing and are reconciled to the operative grant; the
 > full rule set is now enumerated in an index (P1–P19 + twelve named conventions).
 >
-> **NEXT = ONBOARD-1 planning** (Wave-17 slice 0): tenant/user/role provisioning — the missing
-> ignition. Tier-3 forks to surface at its gate: the admin bootstrap identity and tenant-creation
-> authority. The full mint discipline applies (R-07, P11, P17's DELIVERS migration).
+> **ONBOARD-1 IS RATIFIED (2026-08-09, OQ-ONB-1…10 ALL as recommended)** after TWO adversarial
+> verifier passes (40 + 23 agents): pass 1 broke v1 **11-BLOCKING deep** (five lanes independently
+> converged on the composed-recommendations trap that handed `tenant.create` to every customer
+> tenant); pass 2 confirmed the structural folds HELD and caught 2 BLOCKING in the new machinery
+> (admin deactivation escaping four-eyes; the exists-check tier story stated backwards). The
+> ratified shape: ENT-074 `tenant` (platform-global, three-arm status, backfill with exclusions);
+> the separate PLATFORM catalog + never-cloned `platform_operator` + fence + censuses; four-eyes
+> maker-checker with the bootstrap window = **CTRL-025's implementation** (ENT-075,
+> `role.approve`); DB-sourced clones, customers get four business templates + `tenant_admin`
+> (NOT `ops`/`platform_admin`); **split ONBOARD-1a/1b under one gate**; auditor excluded from
+> `user.view`. **The CLAUDE.md invariant carries the three-part ONBOARD-1 clause as of this gate**
+> (hybrid table set unchanged at seven). Record: `onboard_1_decision_record.md` v3 = `47bc563` +
+> the ratification stamp.
+>
+> **NEXT = the ONBOARD-1a implementation plan** (the platform half: registry + operator +
+> onboarding act + clones + migration `0067` + the deployed ignition proof through "first admin
+> resolves").
 >
 > ---
 >
