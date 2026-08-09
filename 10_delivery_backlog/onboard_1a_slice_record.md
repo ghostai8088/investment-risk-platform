@@ -118,3 +118,35 @@ constrained `irp_app` role, and that assertion stays as the floor.
 No tenant-local admin verbs; no `tenant.suspend` setter (status enforced, setter deferred); no
 tenant deletion; no self-service signup/SCIM/MFA; no OIDC verifier change; the hybrid 7-table set
 unchanged; **no BYPASSRLS anywhere** — asserted by a test that fails if the connection has it.
+
+
+## 7. The different-engine review fold (Fable, 2026-08-09)
+
+The build was gated, committed (`9ba9dc5`) and STOPPED per the standing pattern. The review found
+**one BLOCKING-class record gap and three unpaid promises**, all folded here:
+
+1. **BLOCKING — the build paid the code and skipped the LEDGERS.** The commit minted ENT-074, two
+   audit codes, a platform permission and a role, and touched ZERO governance documents: no
+   canonical-registry row (the exact RPT-1 pre-merge BLOCKING — "ENT-072 had no canonical registry
+   row" — recurring one entity later), no SoD row (P11 requires it AT the mint), no audit-taxonomy
+   mint record, no control-matrix rows, and the mint checklist the gate ratified into existence
+   did not exist. All landed in this fold: the ENT-074 row (+ ENT-075 reserved), the SoD mint row
+   + ROLE-ADM realization + §5C the mint checklist (CREATED), the `TENANT`/`USER` taxonomy family
+   row with the split-chain design stated, CTRL-035/036 **Implemented** on OBSERVED evidence and
+   CTRL-037 **Planned, hosted at ONBOARD-1b**, CTRL-025 hosted note.
+2. **Remit outcome 11 was unpaid**: operator seeding. Now in the deploy PREPARE step
+   (`seed_platform_operator`, idempotent, env-driven, loud no-op when unset) with its unit test.
+3. **Carry (d) was unpaid**: the deployed ignition proof. Now `infra/deploy/prove_onboarding.sh`
+   + a `stack-proof` CI step — **executed locally first: `IGNITION_EXIT=0`**, every arm green:
+   tenant created over HTTP by the env-seeded operator; the first admin RESOLVES (403 =
+   permission-refused, not boundary-refused — the correct 1a expectation, asserted as such);
+   unregistered-tenant 401; the SYSTEM fence 401; the tenant-admin escalation 403; five roles
+   cloned in the DATABASE with `ops`/`platform_admin` absent.
+4. **The promised fence CENSUS did not exist** (the remit's proof list named it; only two
+   example-based tests shipped). Now `test_system_fence_census.py`: the allowed surface is
+   EXACTLY the provisioning router, every prefix matches a real route (dead scope fails), and the
+   walker carries its P6 floor.
+
+One incidental: the proof's first run failed on `auth0|`-style subjects — the `|` breaks the
+dot-sourced env file. Subjects in deploy env vars are pipe-free by convention now, noted in the
+proof script.

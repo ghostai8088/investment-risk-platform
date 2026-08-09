@@ -408,3 +408,26 @@ def test_both_audit_chains_are_written(catalog: Session) -> None:
         result.tenant_id,
         USER_PROVISION_EVENT,
     ) in by_chain, "the first admin's provisioning is not recorded in the new tenant's own chain"
+
+
+# ------------------------------------------------------------------ the operator seed (prepare)
+def test_the_operator_seed_is_idempotent_and_grants_the_platform_role(catalog: Session) -> None:
+    """Outcome 11: the operator is seeded by the deploy PREPARE step, never a migration.
+
+    Idempotency is the deploy bar (`seed_system_reference`'s): a re-run after a partial failure
+    must change nothing. And the grant must be the PLATFORM role — an operator seeded without it
+    would be an identity that can log in and do nothing, which reads as a broken deployment.
+    """
+    from irp_shared.deploy.prepare import seed_platform_operator
+    from irp_shared.entitlement.platform_catalog import PLATFORM_OPERATOR_ROLE, platform_role_id
+
+    first = seed_platform_operator(catalog, subject="op@platform")
+    second = seed_platform_operator(catalog, subject="op@platform")
+    assert (
+        first == second
+    ), "re-seeding minted a SECOND operator — the prepare step is not re-runnable"
+
+    grants = catalog.execute(select(UserRole).where(UserRole.user_id == first)).scalars().all()
+    assert [g.role_id for g in grants] == [platform_role_id(PLATFORM_OPERATOR_ROLE)]
+    user = catalog.execute(select(AppUser).where(AppUser.id == first)).scalar_one()
+    assert user.tenant_id == SYSTEM_TENANT_ID

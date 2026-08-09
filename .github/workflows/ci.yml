@@ -867,6 +867,8 @@ jobs:
       # scheduler, re-derives a governed report from its pinned inputs. Both arms go through the
       # worker: the second schedule exists so a PLANTED divergence gets its own tick bucket and the
       # failure path is executed rather than assumed.
+      - name: Prove the IGNITION — a tenant created over HTTP, its first admin resolves (ONBOARD-1a)
+        run: ./infra/deploy/prove_onboarding.sh
       - name: Prove a scheduled reproduction detects a planted divergence (CTRL-018)
         run: bash infra/deploy/prove_reproduction.sh
 
