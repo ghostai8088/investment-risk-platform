@@ -14337,6 +14337,108 @@
         "title": "SnapshotOut",
         "type": "object"
       },
+      "TenantCreateIn": {
+        "additionalProperties": false,
+        "description": "``extra='forbid'``: an unexpected field is REFUSED, not ignored.\n\nThe RPT-2 precedent, and it matters more here \u2014 a caller who thinks they supplied a\n``status`` or a ``tenant_id`` and had it silently dropped would believe they provisioned\nsomething other than what exists.",
+        "properties": {
+          "admin_display_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Admin Display Name",
+            "type": "string"
+          },
+          "admin_external_subject": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Admin External Subject",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "display_name",
+          "admin_external_subject",
+          "admin_display_name"
+        ],
+        "title": "TenantCreateIn",
+        "type": "object"
+      },
+      "TenantCreateOut": {
+        "properties": {
+          "admin_role": {
+            "title": "Admin Role",
+            "type": "string"
+          },
+          "admin_user_id": {
+            "title": "Admin User Id",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "grants_cloned": {
+            "title": "Grants Cloned",
+            "type": "integer"
+          },
+          "operator_followup": {
+            "title": "Operator Followup",
+            "type": "string"
+          },
+          "roles_cloned": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles Cloned",
+            "type": "array"
+          },
+          "roles_skipped": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles Skipped",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "code",
+          "display_name",
+          "status",
+          "admin_user_id",
+          "admin_role",
+          "roles_cloned",
+          "grants_cloned",
+          "roles_skipped",
+          "operator_followup"
+        ],
+        "title": "TenantCreateOut",
+        "type": "object"
+      },
       "TermsIn": {
         "properties": {
           "coupon_frequency": {
@@ -45471,6 +45573,98 @@
         "summary": "Verify Snapshot Endpoint",
         "tags": [
           "snapshots"
+        ]
+      }
+    },
+    "/tenants": {
+      "post": {
+        "description": "Create a tenant, clone its roles, seed its first administrator. One transaction.\n\nThe dependency arms the CALLER's context (the SYSTEM tenant, for the platform operator) and\nchecks ``tenant.create`` there \u2014 deny-by-default, like every other route.\n``onboard_tenant`` then re-arms to the new tenant partway through, which is ratified behaviour\nand explicitly permitted by ``get_tenant_session``'s contract.",
+        "operationId": "create_tenant_tenants_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantCreateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Tenant",
+        "tags": [
+          "tenants"
         ]
       }
     },

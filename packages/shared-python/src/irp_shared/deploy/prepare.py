@@ -22,6 +22,10 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import set_tenant_context
@@ -29,6 +33,55 @@ from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.reference.bootstrap import count_seeded, seed_system_reference
 
 log = logging.getLogger(__name__)
+
+#: The deploy-time env var naming the platform operator's OIDC subject (ONBOARD-1a, ratified
+#: OQ-ONB-2 sub-fork (a)). Absent = a LOUD no-op, never an error: most deployments are not
+#: provisioning deployments, and an aborting prepare step would wedge `upgrade head` for all of
+#: them — which is why this lives HERE and not in an alembic revision (the verifier pass's B5).
+OPERATOR_SUBJECT_ENV = "IRP_PLATFORM_OPERATOR_SUBJECT"
+
+
+def seed_platform_operator(session: Session, *, subject: str) -> str:
+    """Idempotently seed the platform operator: one SYSTEM-tenant user + its role grant.
+
+    Returns the operator's ``app_user.id``. Re-running with the same subject changes nothing
+    (the `seed_system_reference` idempotency bar: a deploy must be re-runnable after a partial
+    failure). The ROLE and its permission rows are migration `0067`'s delivery — this seeds only
+    the identity, which is deployment-specific and therefore cannot live in a migration.
+    """
+    from irp_shared.entitlement.models import AppUser, UserRole
+    from irp_shared.entitlement.platform_catalog import (
+        PLATFORM_OPERATOR_ROLE,
+        platform_role_id,
+    )
+
+    existing = session.execute(
+        select(AppUser).where(
+            AppUser.tenant_id == SYSTEM_TENANT_ID,
+            AppUser.external_subject == subject,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing.id
+    operator = AppUser(
+        id=str(uuid.uuid4()),
+        tenant_id=SYSTEM_TENANT_ID,
+        external_subject=subject,
+        display_name="Platform Operator",
+        is_active=True,
+    )
+    session.add(operator)
+    session.flush()
+    session.add(
+        UserRole(
+            id=str(uuid.uuid4()),
+            tenant_id=SYSTEM_TENANT_ID,
+            user_id=operator.id,
+            role_id=platform_role_id(PLATFORM_OPERATOR_ROLE),
+        )
+    )
+    session.flush()
+    return operator.id
 
 
 def prepare_database(
@@ -78,6 +131,23 @@ def prepare_database(
             counts = count_seeded(session)
             session.commit()
             log.info("seed complete: %s", counts)
+            # ONBOARD-1a: the platform operator, seeded from the deploy env — never a migration
+            # (an env-dependent migration is irreproducible, and an aborting one wedges every
+            # non-provisioning deploy). Absent var = a LOUD no-op: the line below prints either
+            # way, so a deploy log always says which case this was.
+            subject = os.environ.get(OPERATOR_SUBJECT_ENV, "").strip()
+            if subject:
+                set_tenant_context(session, SYSTEM_TENANT_ID)
+                operator_id = seed_platform_operator(session, subject=subject)
+                session.commit()
+                counts["platform_operator"] = 1
+                log.info("platform operator seeded: subject=%s id=%s", subject, operator_id)
+            else:
+                log.info(
+                    "platform operator NOT seeded (%s unset) — this deployment cannot create "
+                    "tenants over HTTP until it is",
+                    OPERATOR_SUBJECT_ENV,
+                )
             return counts
         finally:
             session.close()

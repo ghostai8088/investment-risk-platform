@@ -47,6 +47,7 @@ from irp_backend.api.risk import router as risk_router
 from irp_backend.api.schedules import router as schedules_router
 from irp_backend.api.snapshots import router as snapshots_router
 from irp_backend.api.system import router as system_router
+from irp_backend.api.tenants import router as tenants_router
 from irp_backend.api.transactions import router as transactions_router
 from irp_backend.api.valuations import router as valuations_router
 from irp_backend.config import settings, validate_auth_config
@@ -103,3 +104,4 @@ app.include_router(breaches_router)
 app.include_router(schedules_router)
 # RPT-2: the governed report becomes reachable (ENT-072's first HTTP surface).
 app.include_router(reports_router)
+app.include_router(tenants_router)

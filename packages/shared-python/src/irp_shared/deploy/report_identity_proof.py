@@ -58,8 +58,41 @@ def _session_factory():  # noqa: ANN202
     return make_session_factory(make_engine(url))
 
 
+def register_proof_tenant(session: Session) -> None:
+    """Register PROOF_TENANT in the ENT-074 registry (ONBOARD-1a). Idempotent.
+
+    The 0067 backfill DELIBERATELY excludes the proof literal — residue from an old proof run must
+    not become a registered tenant by accident. But the boundary check now refuses unregistered
+    tenants on the deployed stack (both auth modes), so a proof that authenticates over HTTP must
+    register its tenant as an EXPLICIT ACT here in its own gated seed step. The distinction the
+    exclusion preserves: registration-by-decision (this function, running under
+    IRP_ALLOW_PROOF_SEED=1) versus registration-by-inference (the backfill). Found the only way a
+    deployed-only interaction can be: both stack-proof runs went red on 'unentitled list was 401,
+    expected 403' — the boundary refusing the proof's own principals one layer before the
+    permission gate the assertion was about.
+    """
+    from irp_shared.tenancy.models import (
+        PROVENANCE_ONBOARDED,
+        TENANT_STATUS_ACTIVE,
+        Tenant,
+    )
+
+    if session.get(Tenant, PROOF_TENANT) is None:
+        session.add(
+            Tenant(
+                id=PROOF_TENANT,
+                code="proof-tenant",
+                display_name="Deploy proof tenant",
+                status=TENANT_STATUS_ACTIVE,
+                provenance=PROVENANCE_ONBOARDED,
+            )
+        )
+        session.flush()
+
+
 def seed_and_generate(session: Session) -> tuple[str, str]:
     """Seed a governed concentration run and generate one report. Returns (report_id, hash)."""
+    register_proof_tenant(session)
     from irp_shared.calc.models import RunStatus
     from irp_shared.calc.service import create_run, update_run_status
     from irp_shared.concentration.bootstrap import (

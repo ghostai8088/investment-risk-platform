@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from pg_tenant_registry import register_test_tenant
 from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
@@ -79,6 +80,15 @@ _RAILS = (
     # privileges a non-owner app role actually needs, so a new table read by the tick belongs here
     # the moment the phase does.
     "reproduction_check",
+    # ONBOARD-1a: the tenant-boundary check reads this table on EVERY authenticated request (it
+    # sits behind `get_principal`, both auth modes), so any constrained-role path that
+    # authenticates now touches it. Found the same way REPRO-1's entry was — by the full-PG
+    # battery, with `permission denied for table tenant` — which is twice now that this list has
+    # been extended by a failure rather than by foresight. The pattern worth naming: a table read
+    # on a UNIVERSAL path (the tick, the auth boundary) enters this list the moment that path
+    # reads it, and the only reliable detector is running the constrained role against the whole
+    # suite.
+    "tenant",
 )
 _LIMIT_ACTOR = LimitActor(actor_id="risk-mgr-2l")
 _ANALYST = BreachActor(actor_id="analyst-1l")
@@ -755,6 +765,11 @@ def test_case_variance_self_review_refused_through_http_on_pg(app_url: str) -> N
             prov.add(RolePermission(role_id=role.id, permission_id=perm.id))
         prov.add(UserRole(tenant_id=tenant, user_id=dual.id, role_id=role.id))
         prov.add(UserRole(tenant_id=tenant, user_id=reviewer.id, role_id=role.id))
+        # ONBOARD-1a: this is the one PG suite that authenticates over HTTP, so it is the one the
+        # tenant-boundary check refuses without a registry row. The 401 it produced is the check
+        # WORKING — a tenant that exists everywhere except the registry is exactly what it exists
+        # to stop — so the fix is to register the tenant, never to weaken the check.
+        register_test_tenant(prov, tenant)
         prov.commit()
         dual_id, reviewer_id = dual.id, reviewer.id
     finally:

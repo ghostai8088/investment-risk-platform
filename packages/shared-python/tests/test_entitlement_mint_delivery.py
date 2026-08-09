@@ -25,8 +25,14 @@ import ast
 import pathlib
 
 from irp_shared.entitlement.bootstrap import ALL_CODES
+from irp_shared.entitlement.platform_catalog import PLATFORM_CODES
 
 _MIGRATIONS = pathlib.Path(__file__).resolve().parents[3] / "migrations" / "versions"
+
+
+def _declared_platform_deliveries() -> dict[str, tuple[str, ...]]:
+    """The platform arm of the same reader (ONBOARD-1a). Same AST rules, different tuple name."""
+    return _declared(name="DELIVERS_PLATFORM")
 
 
 def _declared_deliveries() -> dict[str, tuple[str, ...]]:
@@ -36,6 +42,10 @@ def _declared_deliveries() -> dict[str, tuple[str, ...]]:
     an alembic context it does not have, and a literal read cannot be satisfied by a computed value
     — which is precisely the vacuity this gate is guarding against.
     """
+    return _declared(name="DELIVERS")
+
+
+def _declared(*, name: str) -> dict[str, tuple[str, ...]]:
     declared: dict[str, tuple[str, ...]] = {}
     for path in sorted(_MIGRATIONS.glob("*.py")):
         tree = ast.parse(path.read_text(), filename=str(path))
@@ -43,7 +53,7 @@ def _declared_deliveries() -> dict[str, tuple[str, ...]]:
             targets = (
                 [node.target] if isinstance(node, ast.AnnAssign) else getattr(node, "targets", [])
             )
-            if not any(isinstance(t, ast.Name) and t.id == "DELIVERS" for t in targets):
+            if not any(isinstance(t, ast.Name) and t.id == name for t in targets):
                 continue
             value = node.value
             if not isinstance(value, ast.Tuple | ast.List):
@@ -55,7 +65,7 @@ def _declared_deliveries() -> dict[str, tuple[str, ...]]:
             )
             if len(codes) != len(value.elts):
                 raise AssertionError(
-                    f"{path.name}: DELIVERS must be a tuple of STRING LITERALS — a computed or "
+                    f"{path.name}: {name} must be a tuple of STRING LITERALS — a computed or "
                     "imported element makes the gate vacuous (see this module's docstring)"
                 )
             declared[path.name] = codes
@@ -121,3 +131,53 @@ def test_no_migration_declares_a_code_twice_within_itself() -> None:
         if len(set(codes)) != len(codes)
     }
     assert not dupes, f"DELIVERS tuples contain duplicate codes: {dupes}"
+
+
+def test_every_PLATFORM_permission_is_delivered_by_a_migration() -> None:
+    """The same gate for the SECOND catalog — ONBOARD-1a, and it is not a formality.
+
+    ``PLATFORM_PERMISSIONS`` exists precisely because a code in ``PERMISSIONS`` reaches every
+    tenant's cloned ``platform_admin`` role. The consequence nobody would have noticed: the gate
+    above walks ``ALL_CODES``, which is derived from ``PERMISSIONS``, so a platform code is
+    **invisible to it** — measured by execution while building this slice, not reasoned. A mint
+    discipline that silently exempts the most privileged catalog on the platform is worse than no
+    discipline, because the record would say the gate covers everything.
+
+    Platform codes are declared in a separate ``DELIVERS_PLATFORM`` tuple for the same reason the
+    catalogs are separate: a single tuple would have to be checked against a single population,
+    and the whole point is that there are two.
+    """
+    declared = _declared_platform_deliveries()
+    delivered = {code for codes in declared.values() for code in codes}
+    undelivered = sorted(set(PLATFORM_CODES) - delivered)
+    assert not undelivered, (
+        "PLATFORM permission codes exist in entitlement/platform_catalog.py but NO migration "
+        "declares delivering them (P17). Ship a migration declaring them in a literal "
+        f"DELIVERS_PLATFORM tuple: {undelivered}"
+    )
+
+
+def test_the_two_catalogs_are_DISJOINT() -> None:
+    """The structural guarantee the platform catalog exists to provide.
+
+    If a code ever appears in both, it enters ``ALL_CODES`` → the ``platform_admin`` template →
+    every tenant's clones, and the separation that keeps ``tenant.create`` out of customer tenants
+    silently stops existing. Five independent verifier lanes converged on that composition in the
+    slice's first design draft; this is the assertion that makes the fix structural rather than
+    remembered.
+    """
+    overlap = sorted(set(ALL_CODES) & set(PLATFORM_CODES))
+    assert not overlap, (
+        f"codes appear in BOTH catalogs: {overlap}. A platform code in PERMISSIONS reaches every "
+        "tenant through the platform_admin template clone — the exact escalation the split "
+        "prevents."
+    )
+
+
+def test_platform_declarations_are_non_vacuous() -> None:
+    """P6 floor for the platform arm: a reader finding nothing makes its gate pass over nothing."""
+    declared = _declared_platform_deliveries()
+    assert (
+        declared
+    ), "no migration declares a DELIVERS_PLATFORM tuple — the platform gate is unpopulated"
+    assert set(PLATFORM_CODES), "the platform catalog is empty — the gate above is vacuous"

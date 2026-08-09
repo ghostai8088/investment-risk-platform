@@ -482,6 +482,15 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "dq.result.view",
         "lineage.view",
     ],
+    # ONBOARD-1a: the SEVENTH template, realizing ROLE-ADM ("User/role admin; cannot approve own
+    # entitlement requests or edit audit", entitlement_sod_model.md §4) — described since P0.5,
+    # never minted. **Deliberately EMPTY in ONBOARD-1a.** The ROLE must exist here because tenant
+    # onboarding's seed grant needs something to grant; its VERBS (`user.manage`, `role.assign`,
+    # `user.view`, and OQ-9's `role.approve`) are ONBOARD-1b's mint and land with the routes that
+    # enforce them. A role with codes but no routes would be a dead guard; a role with routes but
+    # no codes cannot exist. Empty-until-1b is the honest ordering, and 1b is a sequenced slice
+    # (P19), not a hope.
+    "tenant_admin": [],
     "auditor_3l": [
         "lineage.view",
         "model.inventory.view",
@@ -528,6 +537,44 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "breach.view",
     ],
 }
+
+
+#: The templates a CUSTOMER tenant receives at onboarding (ratified OQ-ONB-6, 2026-08-09).
+#:
+#: `ops` and `platform_admin` are deliberately EXCLUDED, and the reasons are different:
+#:
+#: * `ops` holds exactly `ops.audit.verify`, whose only consumer is the BYPASSRLS ops CLI — no HTTP
+#:   route enforces it. Cloning it hands a tenant admin a grantable code for a tool tenants never
+#:   run: authority with no surface, which reads as protection.
+#: * `platform_admin` is `list(ALL_CODES)`. Inside a customer tenant that single role collapses
+#:   every SoD partition the matrix builds — register/validate (SOD-03), respond/review (SOD-02),
+#:   manage/approve (MG-3) — because one person holding it is on both sides of all three. A tenant
+#:   that wants a super-user grants several roles explicitly, where the matrix can see it.
+#:
+#: The SYSTEM tenant keeps both, unchanged: they are the templates, and the ops CLI is a platform
+#: tool. A census asserts no CLONED role is one of these two.
+CLONED_TEMPLATES: tuple[str, ...] = (
+    "data_steward",
+    "risk_analyst_1l",
+    "risk_manager_2l",
+    "auditor_3l",
+    "tenant_admin",
+)
+
+
+#: The tenant-role derivations ONBOARD-1a adds, and the reason they are NEW functions.
+#:
+#: `role_id(name)` below hardcodes ``SYSTEM_TENANT_ID`` and takes no tenant argument, and
+#: `role_permission_id(role, code)` carries no tenant component at all. The first draft of the
+#: ONBOARD-1 record claimed "the existing uuid5 derivation already namespaces by tenant"; the
+#: verifier pass executed both helpers and refuted it. Reusing either for clones would give every
+#: tenant the SAME role id — a collision, not a namespace.
+def tenant_role_id(tenant_id: str, name: str) -> str:
+    return str(uuid.uuid5(_NS, f"role:{tenant_id}:{name}"))
+
+
+def tenant_role_permission_id(tenant_id: str, role: str, code: str) -> str:
+    return str(uuid.uuid5(_NS, f"role_permission:{tenant_id}:{role}:{code}"))
 
 
 def permission_id(code: str) -> str:
