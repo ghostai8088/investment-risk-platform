@@ -57,9 +57,21 @@
 > AST. Pinned by a walk-the-ceiling test + mutant M-A4; battery now **13/13**. Fourth consecutive
 > time the second engine broke a green-looking surface.
 >
-> **NEXT: re-gate, review-fold commit, then PR/CI/merge, then the Wave-17 planning gate**
-> (ONBOARD-1 slice 0, then ALERT-1, REPRO-2, RPT-3, TS→7; D5 homeless carries and D6 three process
-> rules to ratify at that gate).
+> **MERGED — WAVE 16 IS CLOSED.** PR **#187** = **`9257514`** on main (the TWENTIETH autonomous
+> merge; `git merge-base --is-ancestor` quoted at exit 0; verify-on-main confirmed all three
+> load-bearing facts from the MERGED tree: ceiling-before-poisoned, the derived head, mutant M-A4).
+> Three commits: the fold (`55f7cd6`), the different-engine review fold (`5ac834a`), and a THIRD
+> found by CI itself (`d65cf2c`): **the deploy proof hand-pinned the expected migration head**, so
+> this PR's own `0066` turned both stack-proof runs red in 95 seconds — the same
+> hand-mirrored-global-fact class as the 21 test pins, living in infra where only the deployed gate
+> could see it. Class-fixed: the expected head is now DERIVED from `alembic heads` with an
+> exactly-one-head floor. Second CI pass: all jobs green on both runs, `CHECKS_EXIT=0`, stack-proof
+> 2m06s vs main's green 2m08s (duration cross-checked against the implausibly-fast red flag).
+>
+> **NEXT = the WAVE-17 PLANNING GATE** (a user decision point): ONBOARD-1 slice 0 (ratified at the
+> Wave-16 close — tenant/user/role provisioning; the platform currently has NO ignition), then
+> ALERT-1, REPRO-2, RPT-3, TS→7 on its trigger; D5 (homeless carries) and D6 (three process rules)
+> to ratify at that gate.
 >
 > ---
 >
