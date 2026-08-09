@@ -118,8 +118,8 @@ id = "M-C5"
 group = "w16-close"
 why = "the DELIVERS reader finds nothing, so the mint gate passes over an empty delivered set"
 file = "packages/shared-python/tests/test_entitlement_mint_delivery.py"
-find = """isinstance(t, ast.Name) and t.id == "DELIVERS\""""
-replace = """isinstance(t, ast.Name) and t.id == "NEVER_MATCHES\""""
+find = """            if not any(isinstance(t, ast.Name) and t.id == name for t in targets):"""
+replace = """            if not any(isinstance(t, ast.Name) and t.id == "NEVER_MATCHES" for t in targets):"""
 tests = ["packages/shared-python/tests/test_entitlement_mint_delivery.py"]
 
 [[mutant]]
@@ -152,3 +152,138 @@ replace = """        if entity_id not in poisoned and len(attempts) >= MAX_ALARM
             alarmed.add(entity_id)
             continue"""
 tests = ["packages/shared-python/tests/test_reproduction.py"]
+
+# ---------------------------------------------------------------------------------------------
+# ONBOARD-1a. The platform's ignition: the tenant registry, the platform catalog that must never
+# reach a tenant, the SYSTEM-router fence, and the two-context onboarding transaction.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "N-A1"
+group = "onboard-1a"
+why = "tenant.create joins the tenant catalog — it reaches ALL_CODES, platform_admin, and every tenant's clones (the escalation five verifier lanes found)"
+file = "packages/shared-python/src/irp_shared/entitlement/bootstrap.py"
+find = """    ("report.generate", "Generate a governed report (mints a run + snapshot + ENT-072 row)"),"""
+replace = """    ("tenant.create", "MUTANT: platform authority in the tenant catalog"),
+    ("report.generate", "Generate a governed report (mints a run + snapshot + ENT-072 row)"),"""
+tests = ["packages/shared-python/tests/test_entitlement_mint_delivery.py"]
+
+[[mutant]]
+id = "N-A2"
+group = "onboard-1a"
+why = "platform_admin is cloned into customer tenants — one role puts one person on both sides of every SoD partition"
+file = "packages/shared-python/src/irp_shared/entitlement/bootstrap.py"
+find = """CLONED_TEMPLATES: tuple[str, ...] = (
+    "data_steward","""
+replace = """CLONED_TEMPLATES: tuple[str, ...] = (
+    "platform_admin",
+    "data_steward","""
+tests = ["packages/shared-python/tests/test_tenancy.py"]
+
+[[mutant]]
+id = "N-A3"
+group = "onboard-1a"
+why = "the clone reads ROLE_TEMPLATES again — a revoked SYSTEM template grant is resurrected into every new tenant (the 0066 class, second door)"
+file = "packages/shared-python/src/irp_shared/tenancy/service.py"
+find = """    templates = _system_templates(session)"""
+replace = """    from irp_shared.entitlement.bootstrap import ROLE_TEMPLATES as _RT
+    from irp_shared.entitlement.bootstrap import permission_id as _pid
+
+    templates = {n: [_pid(c) for c in _RT[n]] for n in CLONED_TEMPLATES if n in _RT}"""
+tests = ["packages/shared-python/tests/test_tenancy.py"]
+
+[[mutant]]
+id = "N-A4"
+group = "onboard-1a"
+why = "the collision rule is dropped — onboarding a backfilled tenant collides on uq_role_tenant_id or rewrites somebody's ad-hoc roles"
+file = "packages/shared-python/src/irp_shared/tenancy/service.py"
+find = """        if name in existing_codes:"""
+replace = """        if False:"""
+tests = ["packages/shared-python/tests/test_tenancy.py"]
+
+[[mutant]]
+id = "N-A5"
+group = "onboard-1a"
+why = "the duplicate-code refusal is removed — a second tenant with the same code, or an IntegrityError that poisons the request session"
+file = "packages/shared-python/src/irp_shared/tenancy/service.py"
+find = """    if existing is not None:
+        raise TenantOnboardingError(f"tenant code {code!r} already exists")"""
+replace = """    if False:
+        raise TenantOnboardingError(f"tenant code {code!r} already exists")"""
+tests = ["packages/shared-python/tests/test_tenancy.py"]
+
+[[mutant]]
+id = "N-A6"
+group = "onboard-1a"
+why = "a tenant is born with NO administrator instead of failing closed — a tenant nobody can ever enter"
+file = "packages/shared-python/src/irp_shared/tenancy/service.py"
+find = """        raise TenantOnboardingError(
+            f"the {FIRST_ADMIN_ROLE!r} template is absent from the SYSTEM catalog — "
+            "the tenant would have no administrator"
+        )"""
+replace = """        pass"""
+tests = ["packages/shared-python/tests/test_tenancy.py"]
+
+[[mutant]]
+id = "N-B1"
+group = "onboard-1a"
+why = "the boundary admits an unregistered tenant — any well-formed UUID arms a context again"
+file = "packages/shared-python/src/irp_shared/tenancy/boundary.py"
+find = """    if status is None:
+        raise TenantNotAdmitted(tenant_id, "not registered")"""
+replace = """    if status is None:
+        return"""
+tests = ["packages/shared-python/tests/test_tenancy_pg.py"]
+needs_pg = true
+
+[[mutant]]
+id = "N-B2"
+group = "onboard-1a"
+why = "a SUSPENDED tenant's principals are admitted — the status becomes a comment"
+file = "packages/shared-python/src/irp_shared/tenancy/models.py"
+find = """ADMITTED_TENANT_STATUSES: frozenset[str] = frozenset({TENANT_STATUS_SYSTEM, TENANT_STATUS_ACTIVE})"""
+replace = """ADMITTED_TENANT_STATUSES: frozenset[str] = frozenset(TENANT_STATUSES)"""
+tests = ["packages/shared-python/tests/test_tenancy_pg.py"]
+needs_pg = true
+
+[[mutant]]
+id = "N-B3"
+group = "onboard-1a"
+why = "the SYSTEM templates are read AFTER the re-arm — on PostgreSQL FORCE-RLS returns nothing and the tenant is born with no roles, silently"
+file = "packages/shared-python/src/irp_shared/tenancy/service.py"
+find = """    templates = _system_templates(session)
+
+    # --- 2. the registry row"""
+replace = """    # --- 2. the registry row"""
+tests = ["packages/shared-python/tests/test_tenancy_pg.py"]
+needs_pg = true
+
+[[mutant]]
+id = "N-C1"
+group = "onboard-1a"
+why = "the SYSTEM-router fence is removed — an IdP-signed SYSTEM claim reaches every data router on the platform"
+file = "apps/backend/src/irp_backend/deps.py"
+find = """    if principal.tenant_id != SYSTEM_TENANT_ID:
+        return"""
+replace = """    return
+    if principal.tenant_id != SYSTEM_TENANT_ID:
+        return"""
+tests = ["apps/backend/tests/test_tenants_endpoint.py"]
+
+[[mutant]]
+id = "N-C2"
+group = "onboard-1a"
+why = "the fence's allow-list swallows every path — the fence exists and permits everything"
+file = "apps/backend/src/irp_backend/deps.py"
+find = """SYSTEM_TENANT_ALLOWED_PREFIXES: tuple[str, ...] = ("/tenants",)"""
+replace = """SYSTEM_TENANT_ALLOWED_PREFIXES: tuple[str, ...] = ("/tenants", "")"""
+tests = ["apps/backend/tests/test_tenants_endpoint.py"]
+
+[[mutant]]
+id = "N-C3"
+group = "onboard-1a"
+why = "the provisioning route drops its permission guard — the route census must catch an unguarded route"
+file = "apps/backend/src/irp_backend/api/tenants.py"
+find = """    principal: Principal = Depends(_require_create),"""
+replace = """    principal: Principal = Depends(__import__("irp_backend.deps", fromlist=["x"]).get_principal),"""
+tests = ["apps/backend/tests/test_route_permission_census.py"]

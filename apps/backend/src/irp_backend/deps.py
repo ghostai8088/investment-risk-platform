@@ -26,7 +26,7 @@ import uuid
 from collections.abc import Iterator
 from functools import lru_cache
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -35,8 +35,24 @@ from irp_backend.auth import TokenError, get_verifier
 from irp_backend.config import settings
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import set_tenant_context
+from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.entitlement.models import AppUser
 from irp_shared.entitlement.service import Principal, has_permission
+from irp_shared.tenancy.boundary import TenantNotAdmitted, assert_tenant_admitted
+
+#: Path prefixes a SYSTEM-tenant principal may reach (ONBOARD-1a, the OQ-ONB-2A fence).
+#:
+#: Seeding the platform operator makes the SYSTEM tenant AUTHENTICATABLE for the first time in the
+#: platform's life — the verifier pass established that nothing refuses a SYSTEM tenant claim
+#: today, and that it 401s only because no SYSTEM ``app_user`` exists. From the moment one does,
+#: any token an IdP signs with the SYSTEM tenant claim resolves. This allow-list is what keeps that
+#: token worth exactly the provisioning surface and nothing else: not a portfolio, not a governed
+#: number, not the audit trail.
+#:
+#: An ALLOW-list, never a deny-list, and a census walks every route asserting the classification is
+#: total — a router added next year is refused to SYSTEM principals until somebody decides
+#: otherwise, which is the only safe default for a fence.
+SYSTEM_TENANT_ALLOWED_PREFIXES: tuple[str, ...] = ("/tenants",)
 
 
 @lru_cache(maxsize=1)
@@ -55,6 +71,7 @@ def get_db() -> Iterator[Session]:
 
 
 def get_principal(
+    request: Request,
     db: Session = Depends(get_db),
     x_user_id: str | None = Header(default=None),
     x_tenant_id: str | None = Header(default=None),
@@ -66,6 +83,18 @@ def get_principal(
       an active ``app_user`` in the token's tenant (see :func:`_principal_from_token`).
     - ``dev_header``: the unverified ``X-User-Id`` / ``X-Tenant-Id`` shim — permitted only when
       ``app_env == "local"`` (enforced fail-closed at startup by ``validate_auth_config``).
+
+    **ONBOARD-1a adds two boundary refusals, and they sit HERE rather than in the OIDC verifier so
+    they bind BOTH auth modes** (a control that only covers the production path leaves the deployed
+    stack — which runs ``dev_header`` — unprotected, which is precisely where the ignition proof
+    runs):
+
+    1. the claimed tenant must be REGISTERED and ADMITTED (``assert_tenant_admitted`` — see that
+       module for why it is dialect-gated and what the unit tier therefore does not prove);
+    2. a SYSTEM-tenant principal may reach only the provisioning surface.
+
+    Both return the same opaque 401 as every other resolution failure: distinguishing "no such
+    tenant" from "suspended" from "wrong surface" at the wire is a free enumeration oracle.
     """
     if settings.auth_mode == "dev_header":
         # Defense in depth: the startup guard already forbids dev_header outside local, but never
@@ -74,8 +103,37 @@ def get_principal(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
             )
-        return _principal_from_headers(x_user_id, x_tenant_id)
-    return _principal_from_token(authorization, db)
+        principal = _principal_from_headers(x_user_id, x_tenant_id)
+        # The registry check runs AFTER canonicalization and BEFORE anything arms a context.
+        _assert_admitted_or_401(db, principal.tenant_id)
+    else:
+        principal = _principal_from_token(authorization, db)
+    _assert_system_principal_is_fenced(request, principal)
+    return principal
+
+
+def _assert_admitted_or_401(db: Session, tenant_id: str) -> None:
+    try:
+        assert_tenant_admitted(db, tenant_id)
+    except TenantNotAdmitted as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials"
+        ) from exc
+
+
+def _assert_system_principal_is_fenced(request: Request, principal: Principal) -> None:
+    """A SYSTEM-tenant principal may reach only the provisioning surface (ONBOARD-1a).
+
+    Matched on the request PATH rather than on a route object: a path is what the client actually
+    asked for, and it is the same string the census walks, so the fence and its proof cannot drift
+    apart by looking at different things.
+    """
+    if principal.tenant_id != SYSTEM_TENANT_ID:
+        return
+    path = request.url.path
+    if any(path == p or path.startswith(p + "/") for p in SYSTEM_TENANT_ALLOWED_PREFIXES):
+        return
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
 
 
 def _principal_from_headers(x_user_id: str | None, x_tenant_id: str | None) -> Principal:
@@ -139,6 +197,9 @@ def _principal_from_token(authorization: str | None, db: Session) -> Principal:
     except ValueError as exc:
         raise unauthorized from exc
 
+    # ONBOARD-1a: the registry check precedes the context arming, so an unregistered or suspended
+    # tenant never gets a GUC set for it at all.
+    _assert_admitted_or_401(db, tenant)
     set_tenant_context(db, tenant)
     user = db.execute(
         select(AppUser).where(

@@ -1549,5 +1549,5 @@ def test_migration_head_is_active_risk() -> None:
     cfg = Config(str(_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(_ROOT / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_current_head() == "0066_entitlement_revocation"  # REPRO-1
+    assert script.get_current_head() == "0067_tenant_registry"  # REPRO-1
     assert script.get_revision("0030_active_risk").down_revision == "0029_benchmark_series"

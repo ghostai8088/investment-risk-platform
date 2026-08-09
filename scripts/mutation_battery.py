@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -62,6 +63,14 @@ class Mutant:
     replace: str | None = None
     #: Delete everything from ``find`` up to (excluding) ``until`` — for removing a whole block.
     until: str | None = None
+    #: True when the killing tests need a live PostgreSQL (``IRP_TEST_DATABASE_URL``).
+    #:
+    #: The harness strips that variable by default so a battery is runnable mid-fold without a
+    #: database. The consequence bit on this harness's second outing: three PG-tier mutants
+    #: reported KILLED-looking greens because their suites SKIPPED entirely — pytest exits 0 for a
+    #: fully-skipped run, and "exit 0" was the kill signal. Opting in is the fix; the
+    #: zero-tests-ran floor below is the backstop that would have caught it anyway.
+    needs_pg: bool = False
 
     def apply(self, root: Path) -> tuple[bool, str]:
         """Return ``(applied, message)``. A missing anchor is a refusal, not a silent no-op."""
@@ -102,7 +111,15 @@ def _clone() -> Path:
     return CLONE
 
 
-def _pytest(root: Path, targets: list[str]) -> int:
+def _pytest(root: Path, targets: list[str], *, needs_pg: bool = False) -> tuple[int, int]:
+    """Run pytest. Returns ``(exit_code, tests_that_actually_ran)``.
+
+    The second value is not decoration. pytest exits 0 for a run in which every test SKIPPED, so
+    an exit code alone cannot distinguish "the mutant was killed by nothing because the suite is
+    fine" from "the suite never executed". This harness reported three such phantom greens on its
+    second outing (PG-tier mutants whose database URL it had stripped), which is the same
+    false-green class it was built to prevent — so the count is now part of the verdict.
+    """
     env = {
         **os.environ,
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -115,16 +132,32 @@ def _pytest(root: Path, targets: list[str]) -> int:
             )
         ),
     }
-    # The unit tier only: a mutation battery that needed a live PostgreSQL would not be runnable
-    # at the moment a fold needs it, and every control declared here is unit-tier by construction.
-    env.pop("IRP_TEST_DATABASE_URL", None)
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell
-        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "--tb=no", "-q", *targets],
+    if not needs_pg:
+        # Unit tier by default: a battery that always needed a live PostgreSQL would not be
+        # runnable at the moment a fold needs it. PG-tier mutants opt in via `needs_pg`.
+        env.pop("IRP_TEST_DATABASE_URL", None)
+    proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        # NO explicit ``-q``: pyproject's ``addopts`` already supplies one, and a second makes it
+        # ``-qq`` — which suppresses the summary line ENTIRELY. That is the root cause of the
+        # "pytest's final summary line is missing from the full-PG logs" anomaly carried open
+        # across RPT-1, REPRO-1 and the Wave-16 close, where gate counts had to be recovered by
+        # counting progress characters by hand. Diagnosed here because this harness needs the
+        # count to tell a kill from a skip.
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "--tb=no", *targets],
         cwd=root,
         env=env,
         capture_output=True,
         text=True,
-    ).returncode
+    )
+    return proc.returncode, _ran(proc.stdout)
+
+
+_SUMMARY = re.compile(r"(\d+) (passed|failed|error)")
+
+
+def _ran(stdout: str) -> int:
+    """Tests that actually executed — passed + failed + errored, skips deliberately excluded."""
+    return sum(int(n) for n, _ in _SUMMARY.findall(stdout))
 
 
 def main() -> int:
@@ -146,10 +179,14 @@ def main() -> int:
     print(f"clone: {root}")
 
     targets = sorted({t for m in mutants for t in m.tests})
-    baseline = _pytest(root, targets)
-    print(f"BASELINE (unmutated): exit {baseline}")
+    any_pg = any(m.needs_pg for m in mutants)
+    baseline, baseline_ran = _pytest(root, targets, needs_pg=any_pg)
+    print(f"BASELINE (unmutated): exit {baseline}, {baseline_ran} tests ran")
     if baseline != 0:
         print("baseline is RED — every kill below would be unattributable. Stopping.")
+        return 1
+    if baseline_ran == 0:
+        print("baseline ran ZERO tests — the battery would report phantom kills. Stopping.")
         return 1
 
     killed, survived = [], []
@@ -160,19 +197,25 @@ def main() -> int:
             survived.append((m.id, message))
             print(f"{m.id:<12} **SURVIVOR** ({message})")
             continue
-        exit_code = _pytest(root, m.tests)
+        exit_code, ran = _pytest(root, m.tests, needs_pg=m.needs_pg)
         # Restore EXACTLY the bytes displaced — the FK-1 rule, and the reason this reads from
         # memory rather than from git.
         (root / m.file).write_text(pristine)
-        if exit_code != 0:
+        if ran == 0:
+            # A suite that never executed cannot have killed anything. Reported as a SURVIVOR for
+            # the same reason an unmatched anchor is: a mutation that did not run is not a
+            # mutation that was killed.
+            survived.append((m.id, "target suite ran ZERO tests (skipped?) — nothing was proven"))
+            print(f"{m.id:<12} **SURVIVOR** (0 tests ran)  — {m.why}")
+        elif exit_code != 0:
             killed.append(m.id)
-            print(f"{m.id:<12} KILLED (exit {exit_code})  — {m.why}")
+            print(f"{m.id:<12} KILLED (exit {exit_code}, {ran} ran)  — {m.why}")
         else:
-            survived.append((m.id, "tests still passed"))
+            survived.append((m.id, f"tests still passed ({ran} ran)"))
             print(f"{m.id:<12} **SURVIVOR** (exit 0)  — {m.why}")
 
-    after = _pytest(root, targets)
-    print(f"\nPOST-BATTERY baseline: exit {after}")
+    after, after_ran = _pytest(root, targets, needs_pg=any_pg)
+    print(f"\nPOST-BATTERY baseline: exit {after}, {after_ran} tests ran")
     print(f"RESULT: {len(killed)}/{len(mutants)} killed")
     if survived:
         for mid, why in survived:

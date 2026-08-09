@@ -40,6 +40,17 @@ with warnings.catch_warnings():
     from irp_backend.main import app
 
 from irp_shared.entitlement.bootstrap import ALL_CODES
+from irp_shared.entitlement.platform_catalog import PLATFORM_CODES
+
+#: ONBOARD-1a: the census must walk BOTH catalogs.
+#:
+#: ``tenant.create`` lives in ``PLATFORM_PERMISSIONS``, deliberately outside ``PERMISSIONS`` (a
+#: code in ``PERMISSIONS`` enters ``ALL_CODES`` → the ``platform_admin`` template → every tenant's
+#: clones). That separation is the design; the consequence is that an ``ALL_CODES``-only census
+#: cannot see platform codes at all — proven by execution at planning, where the platform code was
+#: invisible to this file and to the P17 delivery gate simultaneously. A census blind to a whole
+#: catalog is not a census for it, so the union is the population from here on.
+MINTED_CODES: set[str] = set(ALL_CODES) | set(PLATFORM_CODES)
 
 #: Routes that are DELIBERATELY anonymous. Exact set — a new anonymous route is a decision.
 ANONYMOUS_ROUTES: set[tuple[str, str]] = {
@@ -64,7 +75,7 @@ UNROUTED_FORWARD_GATES: dict[str, str] = {
 #: The measured route count at RPT-2 (2026-08-07). Moves CONSCIOUSLY with each slice that adds or
 #: removes routes — the point is that it can never silently be zero (the vacuous-walk trap) or
 #: silently shrink (a router falling out of main.py, the CI-allowlist drift class).
-EXPECTED_ROUTE_COUNT = 291
+EXPECTED_ROUTE_COUNT = 292  # +1 at ONBOARD-1a: POST /tenants
 
 
 def _api_routes(routes: Any) -> Iterator[APIRoute]:
@@ -121,7 +132,7 @@ def test_every_route_demands_a_permission_except_the_declared_anonymous_set() ->
 def test_every_minted_code_is_routed_except_the_declared_forward_gates() -> None:
     census = _census()
     demanded: set[str] = set().union(*census.values())
-    unrouted = set(ALL_CODES) - demanded
+    unrouted = MINTED_CODES - demanded
     assert unrouted == set(UNROUTED_FORWARD_GATES), (
         f"unrouted codes drifted from the declared forward-gate list: "
         f"extra={sorted(unrouted - set(UNROUTED_FORWARD_GATES))} "
@@ -137,5 +148,5 @@ def test_every_demanded_code_is_actually_minted() -> None:
     would ever notice it."""
     census = _census()
     demanded: set[str] = set().union(*census.values())
-    ghosts = demanded - set(ALL_CODES)
+    ghosts = demanded - MINTED_CODES
     assert not ghosts, f"routes demand codes that are not in the catalog: {sorted(ghosts)}"

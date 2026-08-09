@@ -17,13 +17,45 @@ def test_permission_codes_unique() -> None:
     assert len(PERMISSIONS) == len(ALL_CODES)
 
 
+#: Templates permitted to carry NO codes, each with the slice that fills them. An EXACT set: an
+#: empty template is a real anomaly (a role that grants nothing but can be assigned reads as
+#: authority), so the general assertion below stays strict and exceptions are named here.
+_DELIBERATELY_EMPTY: dict[str, str] = {
+    "tenant_admin": (
+        "ONBOARD-1a mints the ROLE because tenant onboarding's seed grant needs something to "
+        "grant; its VERBS (user.manage, role.assign, user.view, role.approve) are ONBOARD-1b's "
+        "mint and land WITH the routes that enforce them. Codes without routes would be dead "
+        "guards; routes without codes cannot exist. ONBOARD-1b is a sequenced slice (P19) — when "
+        "it lands, this entry is DELETED, and this test is what will notice if it is not."
+    ),
+}
+
+
 def test_role_templates_reference_known_codes() -> None:
     catalog = set(ALL_CODES)
     for role, codes in ROLE_TEMPLATES.items():
-        assert codes, f"{role} has no permissions"
+        if not codes:
+            assert role in _DELIBERATELY_EMPTY, (
+                f"{role} has no permissions and is not on the deliberately-empty list — an "
+                "assignable role that grants nothing reads as authority to anyone auditing it"
+            )
+            continue
         assert len(codes) == len(set(codes)), f"{role} has duplicate codes"
         unknown = set(codes) - catalog
         assert not unknown, f"{role} references unknown codes: {unknown}"
+
+
+def test_the_deliberately_empty_list_has_no_STALE_entries() -> None:
+    """The other direction: an entry whose template has since been filled must be removed.
+
+    Without this the exemption would silently outlive its reason, which is how a temporary
+    carve-out becomes permanent — the class the ledger sweep exists to catch, at file scope.
+    """
+    stale = sorted(r for r in _DELIBERATELY_EMPTY if ROLE_TEMPLATES.get(r))
+    assert not stale, (
+        f"these templates now HAVE codes but are still listed as deliberately empty: {stale} — "
+        "delete the entry (ONBOARD-1b landing is exactly this moment)"
+    )
 
 
 def test_platform_admin_has_all_permissions() -> None:

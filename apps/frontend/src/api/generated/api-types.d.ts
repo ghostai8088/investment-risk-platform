@@ -5108,6 +5108,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tenants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Tenant
+         * @description Create a tenant, clone its roles, seed its first administrator. One transaction.
+         *
+         *     The dependency arms the CALLER's context (the SYSTEM tenant, for the platform operator) and
+         *     checks ``tenant.create`` there — deny-by-default, like every other route.
+         *     ``onboard_tenant`` then re-arms to the new tenant partway through, which is ratified behaviour
+         *     and explicitly permitted by ``get_tenant_session``'s contract.
+         */
+        post: operations["create_tenant_tenants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/transactions": {
         parameters: {
             query?: never;
@@ -9924,6 +9949,47 @@ export interface components {
             /** Components */
             components: components["schemas"]["ComponentOut"][];
             snapshot: components["schemas"]["SnapshotHeaderOut"];
+        };
+        /**
+         * TenantCreateIn
+         * @description ``extra='forbid'``: an unexpected field is REFUSED, not ignored.
+         *
+         *     The RPT-2 precedent, and it matters more here — a caller who thinks they supplied a
+         *     ``status`` or a ``tenant_id`` and had it silently dropped would believe they provisioned
+         *     something other than what exists.
+         */
+        TenantCreateIn: {
+            /** Admin Display Name */
+            admin_display_name: string;
+            /** Admin External Subject */
+            admin_external_subject: string;
+            /** Code */
+            code: string;
+            /** Display Name */
+            display_name: string;
+        };
+        /** TenantCreateOut */
+        TenantCreateOut: {
+            /** Admin Role */
+            admin_role: string;
+            /** Admin User Id */
+            admin_user_id: string;
+            /** Code */
+            code: string;
+            /** Display Name */
+            display_name: string;
+            /** Grants Cloned */
+            grants_cloned: number;
+            /** Operator Followup */
+            operator_followup: string;
+            /** Roles Cloned */
+            roles_cloned: string[];
+            /** Roles Skipped */
+            roles_skipped: string[];
+            /** Status */
+            status: string;
+            /** Tenant Id */
+            tenant_id: string;
         };
         /** TermsIn */
         TermsIn: {
@@ -21144,6 +21210,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VerifyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_tenant_tenants_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantCreateOut"];
                 };
             };
             /** @description Validation Error */
