@@ -1,255 +1,283 @@
 # ONBOARD-1 decision record — the platform gets an ignition
 
 **Wave 17, slice 0.** Branch `onboard-1-planning`. Ratified as the wave opener at the Wave-16 close
-(**D3** — v1 of this record said D1, which was the `report.*` holder-set item; the misattribution
-was verifier finding L5-4) on the review's headline finding: **251 API paths — 289 RBAC-protected
-operations plus 2 deliberately anonymous (`/health`, `/version`) — and no way to create the
-tenant, user, or role any of them requires.** Every deployment that has ever existed was seeded by
-a demo or proof script.
+(**D3**) on the review's headline finding: **251 API paths — 289 RBAC-protected operations plus 2
+deliberately anonymous (`/health`, `/version`) — and no way to create the tenant, user, or role
+any of them requires.** Every deployment that has ever existed was seeded by a demo or proof
+script.
 
-**Status: v2 — REWRITTEN after the pre-ratification verifier pass** (5 lanes, 40 agents,
-refute-by-default; **11 CONFIRMED BLOCKING, 23 CONFIRMED MATERIAL, 14 minor** against v1 at
-`7a61303`). The findings ledger is §7. v1's worst defect was structural and FIVE lanes converged
-on it independently: v1's own three recommendations, composed, handed `tenant.create` to every
-customer tenant. This version is the fold; nothing here is self-ratified.
+**Status: v3, awaiting the OQ gate.** Two verifier passes ran (P15's different-context bar):
+pass 1 (5 lanes, 40 agents) broke v1 at `7a61303` **11-BLOCKING deep** — including a structural
+trap FIVE lanes converged on independently (v1's own recommendations, composed, handed
+`tenant.create` to every customer tenant). Pass 2 (3 lanes, 23 agents) over v2 at `2b4296b`
+confirmed the structural folds HELD under attack (the escalation closure, the backfill, all four
+orphan paths, the global-class census — proven exactly complete by an executed 86-table walk) and
+found **2 BLOCKING + 13 MATERIAL in v2's own new machinery**, all folded here. The two-pass
+ledger is §7. The yield curve: 49 findings → 20, with round 2's blockers confined to machinery
+round 1 forced into existence — convergent, and the residual tail is implementation-plan
+territory. Nothing here is self-ratified.
 
 ---
 
-## 1. The recon facts (re-derived by the verifier pass; v1's errors corrected in place)
+## 1. The recon facts (verifier-re-derived; both passes' corrections in place)
 
 | # | Fact | Evidence |
 |---|---|---|
-| R1 | **No tenant table exists.** `tenant_id` is a free-floating GUID; no migration creates a `tenant` relation | Re-executed: no `create_table("tenant")` in any of 50 migration files; no `class Tenant` |
-| R2 | **RLS context is armed from the caller's token claim**, canonicalized then set transaction-locally; `set_tenant_context` already re-arms mid-request today (`deps.py:142` then `:170`), so a route-level re-arm is an existing seam, not new machinery | `deps.py:104–170`; verifier lane 1 EXECUTED the two-arm flow against PG 16 with the exact 0001 policy DDL: check-under-SYSTEM then re-arm-and-write works in ONE transaction, no BYPASSRLS |
-| R3 | **The template-cloning code promised since P0.5 does not exist** | `bootstrap.py:6` docstring; no clone code in `entitlement/` |
-| R4 | **Only demo/proof scripts create users**; all use `DEMO_TENANT_ID`/`PROOF_TENANT` | Five non-test `AppUser(` sites |
-| R5 | **ROLE-ADM is described but unminted**: "User/role admin; **cannot** approve own entitlement requests **or edit audit**" (v1 truncated the quote — L5-10) | `entitlement_sod_model.md:51` |
-| R6 | **There are SIX role templates**, not five: `platform_admin`, `ops`, `data_steward`, `risk_analyst_1l`, `risk_manager_2l`, `auditor_3l`. v1 said five throughout — a false load-bearing count (L5-1/L2-2, BLOCKING class) | `ROLE_TEMPLATES` executed listing |
-| R7 | **The uuid5 derivations do NOT namespace by tenant**: `role_id(name)` hardcodes `SYSTEM_TENANT_ID`; `role_permission_id(role, code)` has NO tenant component. v1 claimed the opposite (L3-1, BLOCKING) — cloning requires NEW derivations | `bootstrap.py:537–542`, executed |
-| R8 | **`platform_admin` is `list(ALL_CODES)`** — any code appended to `PERMISSIONS` enters its template automatically, and `sync_catalog` materializes grants solely from `ROLE_TEMPLATES` | `bootstrap.py:255`; `sync.py` |
-| R9 | **The worker's tenant membership is deploy-time env config** (`IRP_TENANT_IDS`, ratified at CAD-1 as "config, NOT a DB sweep") — a created tenant does not TICK until an operator edits the deployment | CAD-1 record; supervisor source |
-| R10 | **The deployed stack runs `AUTH_MODE=dev_header`**; Keycloak sits behind an opt-in compose profile the stack-proof job does not enable | compose + CI workflow, lane 2 |
-| R11 | **`grant_role` as shipped refuses a cross-tenant actor**, and `audit_event` is FORCE-RLS tenant-scoped with `chain_id == tenant_id` — the onboarding act's audit home is a real design choice, not an afterthought | lane 1/lane 4, executed |
-| R12 | **Nothing refuses a SYSTEM-tenant token claim today** — it 401s only because no SYSTEM `app_user` row exists. The day ONBOARD-1 seeds the operator, any IdP-signed token claiming the SYSTEM tenant resolves | lane 1 (L1-3) |
+| R1 | **No tenant table exists.** `tenant_id` is a free-floating GUID | 50 migration files swept; no `class Tenant` |
+| R2 | **RLS context is armed from the caller's token claim** and `set_tenant_context` already re-arms mid-request today — the route-level re-arm is an existing seam | `deps.py:104–170`; pass-1 EXECUTED the check-under-SYSTEM-then-re-arm-and-write flow on PG 16 with the real 0001 policy DDL: works in ONE transaction, no BYPASSRLS |
+| R3 | **The template-cloning code promised since P0.5 does not exist** | `bootstrap.py:6`; no clone code |
+| R4 | **Only demo/proof scripts create users** (`DEMO_TENANT_ID`/`PROOF_TENANT`) | five non-test `AppUser(` sites |
+| R5 | **ROLE-ADM is described but unminted**: "User/role admin; **cannot** approve own entitlement requests **or edit audit**" | `entitlement_sod_model.md:51`, quoted whole |
+| R6 | **SIX role templates exist** (`platform_admin`, `ops`, `data_steward`, `risk_analyst_1l`, `risk_manager_2l`, `auditor_3l`) | executed listing |
+| R7 | **The uuid5 derivations do NOT namespace by tenant** (`role_id` hardcodes `SYSTEM_TENANT_ID`; `role_permission_id` has no tenant component) — cloning requires NEW derivations | `bootstrap.py:537–542`, executed |
+| R8 | **`platform_admin` is `list(ALL_CODES)`**; `sync_catalog` materializes grants solely from `ROLE_TEMPLATES` | `bootstrap.py:255`; `sync.py` |
+| R9 | **The worker's tenant membership is deploy-time env config** (`IRP_TENANT_IDS`; CAD-1 ratified the config-driven supervisor — paraphrase, not a quote) — a created tenant does not TICK until an operator edits the deployment | CAD-1 record; supervisor source |
+| R10 | **The deployed stack runs `AUTH_MODE=dev_header`**; Keycloak is behind an opt-in profile the stack-proof job does not enable | compose + CI workflow |
+| R11 | **`grant_role` refuses a cross-tenant actor**; `audit_event` is FORCE-RLS tenant-scoped, `chain_id == tenant_id`; `record_event` selects the chain from its `tenant_id` argument, genesis-anchors an empty chain automatically, and takes a per-chain advisory lock — pass 2 traced two-chains-in-one-transaction as well-defined under the FROZEN audit service, with SYSTEM-first lock order | `audit/service.py:35–136`, executed trace |
+| R12 | **Nothing refuses a SYSTEM-tenant token claim today** — it 401s only because no SYSTEM `app_user` exists; the day the operator is seeded, any IdP-signed SYSTEM claim resolves | pass 1 (L1-3) |
+| R13 | **The demo tenant already holds roles named with TEMPLATE CODES** (`risk_manager_2l` etc., random ids) under `uq_role_tenant_id` — a backfill-clone collides unless the rule says otherwise; and `PROOF_TENANT` rows exist on any DB the deploy proofs ever touched | pass 2 (B1/B4) |
+| R14 | **The shipped P17 delivery gate and P11 route census walk `ALL_CODES` only** — a platform-catalog code silently ESCAPES both unless they are extended in the SAME commit that creates the catalog; and a `DELIVERS` tuple naming a platform code REDDENS the stale-check until the extension lands | pass 2, EXECUTED (B8/B10 + the wf2 probe) |
 
-## 2. The shape (v2 — restructured around the verifier's two hard constraints)
+## 2. The shape (v3)
 
-The two constraints v1 violated, now load-bearing:
+The two constraints from pass 1, now with pass 2's mechanics folded:
 
-- **C1 (the ALL_CODES trap):** platform-scope authority must live OUTSIDE the tenant catalog.
-  Anything minted into `PERMISSIONS` reaches `platform_admin`, the sync, and every clone.
-- **C2 (the exists-check must not strand anyone):** a tenant registry that refuses unknown tenants
-  must be born already containing the SYSTEM tenant AND every tenant that exists in the deployed
-  world — or ONBOARD-1 ships the exact undeliverable-to-live-DBs class P17 was just ratified
-  against (L1-2/L4-2/L4-3/L5-8).
+- **C1 (the ALL_CODES trap):** platform-scope authority lives OUTSIDE the tenant catalog — a
+  separate `PLATFORM_PERMISSIONS` constant (first member `tenant.create`), a system-only
+  `platform_operator` role that is **not** in `ROLE_TEMPLATES` and never cloned, and a
+  disjointness census asserted against the DATABASE post-onboarding. **Delivery of the platform
+  catalog itself is named** (pass-2 A-2): migration `0067` inserts the platform permission, role
+  and grant rows inline, and `sync_catalog` gains a platform arm (kept out of `ROLE_TEMPLATES`
+  materialization) so future platform codes have the same sync story as tenant codes. **The P17
+  delivery gate and the P11 route census are extended to walk BOTH constants in the SAME commit**
+  (R14 — the ordering is pinned: catalog + gate-extension + `DELIVERS` land atomically or the
+  gates themselves red).
+- **C2 (nobody stranded):** ENT-074 `tenant`, platform-global, EV class, three-arm status
+  (`SYSTEM`/`ACTIVE`/`SUSPENDED`, total-enumeration CHECK). Migration `0067` backfills: the
+  SYSTEM row, and a row for every DISTINCT `app_user.tenant_id` **except the reserved proof
+  literals** (`PROOF_TENANT` and any source-named synthetic ids — pass-2 B4: backfilling proof
+  residue as ACTIVE manufactures wrong facts), each backfilled row stamped
+  `provenance='0067_backfill'`. **The backfill-clone collision rule** (pass-2 B1, R13): the clone
+  step SKIPS any template whose code already exists in that tenant (`uq_role_tenant_id` honored;
+  the demo tenant's ad-hoc roles are untouched and NOT upgraded), and the clone-equivalence proof
+  is scoped to onboarding-created tenants — stated, not discovered at build time.
 
 Three layers:
 
-1. **ENT-074 `tenant`** — platform-global registry (no `tenant_id`, no RLS — the
-   `permission`/`role_permission` class; the canonical standard gains an explicit
-   **PLATFORM-GLOBAL tenancy class** naming all three, rather than v1's silent invention, L4-8).
-   Columns: `code` (unique), `display_name`, `status` (`ACTIVE`/`SUSPENDED`, total-enumeration
-   CHECK, the 0053 pattern), timestamps. EV temporal class (it IS config; "append-lifecycle" was
-   not a ratified class — L4-8). **Migration `0067` backfills**: a row for `SYSTEM_TENANT_ID`
-   (status `SYSTEM` — a third enum arm so the operator's own context passes the exists-check
-   without ever being a customer tenant, L1-2/L5-8) and a row for every DISTINCT `tenant_id` in
-   `app_user` (the already-deployed tenants keep working, L4-3), each with a literal `DELIVERS`-
-   style declaration in the migration docstring of what was backfilled and why.
-2. **The platform catalog + the onboarding act.** A NEW, SEPARATE constant
-   `PLATFORM_PERMISSIONS` (first member: `tenant.create`) and a NEW system-only role
-   `platform_operator` — **not** in `ROLE_TEMPLATES`, **never** cloned, **excluded from
-   `ALL_CODES`** by construction (different constant), with a census test asserting the two
-   catalogs are disjoint AND that no tenant-cloned role ever holds a platform code (C1 made
-   mechanical). The onboarding act is one transaction: check `tenant.create` under the SYSTEM
-   context → insert the `tenant` row → re-arm to the new tenant → clone the templates → seed the
-   first admin → grant. Savepoint around the duplicate-code pre-check (L4-6); every audit event
-   for SYSTEM-context writes lands in the **SYSTEM chain**, every new-tenant row's event in the
-   **new tenant's chain** — the new tenant's audit chain is born WITH the tenant, genesis-anchored
-   by the onboarding act itself (L1-4 resolved explicitly).
-3. **Tenant-local user/role administration** under the newly minted `tenant_admin` (the SEVENTH
-   template — R6), with the SoD design of OQ-4/OQ-9 below.
+1. **ENT-074 `tenant`** (above), plus the **intentionally-global-class census**: every
+   no-`tenant_id` table sits on an explicit allow-list with a reason — pass 2 executed the walk:
+   the population is exactly {`permission`, `role_permission`, `role_permission_revocation`} + the
+   new `tenant`.
+2. **The onboarding act**, one transaction, in the ORDER pass 2 corrected (A-3/B7 — the SYSTEM
+   template rows are FORCE-RLS and must be read under the SYSTEM arm): check `tenant.create` AND
+   materialize the SYSTEM template rows in memory under the SYSTEM context → insert the `tenant`
+   row + the SYSTEM-chain audit event → re-arm to the new tenant → write the clones, the first
+   admin, the seed grant + the new tenant's genesis-anchored audit events (R11). The
+   duplicate-code refusal is a **pre-check, savepoint-wrapped** so the poisoned-transaction path
+   never reaches the caller's session (pass-2 A-12: the savepoint's job is the check, not the
+   insert). **The audit-code mint is named** (pass-2 A-4): `TENANT.CREATE`, `USER.PROVISION`,
+   `ROLE.GRANT_REQUEST`/`ROLE.GRANT_APPROVE` (OQ-9) — an R-07 act inside this same gate, with §4
+   proofs asserting both chains' events and `verify_chain` green on each.
+3. **Tenant-local user/role administration** under `tenant_admin` (the SEVENTH template), with
+   OQ-4's orphan-proof invariant and OQ-9's four-eyes lifecycle.
 
-## 3. The forks (OQ-ONB-1…10) — recommendations attached, none self-ratified
+## 3. The forks (OQ-ONB-1…10) — self-contained (pass-2 C6: every OQ carries its options)
 
-### OQ-ONB-1 — `tenant` as a first-class PLATFORM-GLOBAL entity
-As v1, plus the verifier's corrections baked in: **A (recommended)** = ENT-074 platform-global,
-EV class, the three-arm status enum (`SYSTEM`/`ACTIVE`/`SUSPENDED`), the 0067 backfill of SYSTEM +
-all deployed tenants, and a **new census for the intentionally-global class** (L4-7: a
-no-`tenant_id` table is invisible to every shipped tenancy floor — the class census asserts every
-no-`tenant_id` table is on an explicit allow-list with a reason: `permission`,
-`role_permission`, `role_permission_revocation`, `tenant`). B (implicit tenants) and C (hybrid row)
-fail as in v1.
+*Dependency note (pass-2 C10): OQ-1 and OQ-2 are a pair — OQ-1's `SYSTEM` status arm exists so
+OQ-2A's operator passes the exists-check. Ratifying OQ-2≠A converts that arm to a plain registry
+row for the template holder. The rest are independent.*
+
+### OQ-ONB-1 — `tenant` as a first-class entity
+| Option | Consequence |
+|---|---|
+| **A. ENT-074, PLATFORM-GLOBAL, EV, three-arm status, 0067 backfill with proof-literal exclusions + provenance stamps, the global-class census** *(recommended)* | Provisioning has a subject; the boundary can refuse unknown/suspended tenants; deployed tenants keep working; the hybrid 7-table set is untouched |
+| B. Tenants stay implicit (a UUID convention) | ONBOARD-1 shrinks to user-seeding; no registry, no boundary refusal, no suspension — the status quo with paperwork |
+| C. A SYSTEM-tenant hybrid row | Extends the closed hybrid set (AD-013-R3) for nothing A doesn't do; tenants don't read each other's registry rows |
 
 ### OQ-ONB-2 — Tenant-creation authority (the crux)
-**A (recommended): a SYSTEM-tenant `platform_operator` principal** holding `tenant.create` from
-the PLATFORM catalog (C1), checked in its own context; the route re-arms to the new tenant inside
-the single onboarding transaction (R2 — executed as buildable by the verifier).
-**The invariant amendment, stated whole (L1-5):** option A adds (i) the guarded cross-tenant
-onboarding transaction, **(ii) a standing SYSTEM-tenant authenticatable principal — the first
-ever** (R12), and (iii) the SYSTEM tenant's registry row. Ratifying A amends the CLAUDE.md
-invariant to name all three. **The R12 mitigation ships in-slice:** SYSTEM-tenant principals are
-refused on every router EXCEPT the provisioning router (a route-level fence with its own census
-test + the P18 positive control), so an IdP-signed SYSTEM claim buys exactly the provisioning
-surface and nothing else. The operator seeding is a sub-fork: **(a) recommended** — a
-`DELIVERS`-declared migration seeds the operator `app_user` from a deploy-time env var
-(subject only; no secret in source, BR-10), refusing to seed when the var is absent (fail-closed,
-documented); (b) a documented manual operator step. B (out-of-band CLI) and C (bootstrap token)
-fail as in v1.
+| Option | Consequence |
+|---|---|
+| **A. A SYSTEM-tenant `platform_operator` principal holding `tenant.create` from the PLATFORM catalog, checked in its own context; the route re-arms inside the single onboarding transaction** *(recommended)* | Governed, auditable, HTTP-reachable; the two-arm flow is EXECUTED-proven on PG (R2). **The invariant amendment, whole:** (i) the guarded cross-tenant transaction, (ii) the first standing authenticatable SYSTEM principal (R12), (iii) the SYSTEM registry row. **The R12 mitigation ships in-slice:** SYSTEM-tenant principals are refused on every router except provisioning (a fence with its own census over the full 251-path surface — pass 2 confirmed the walker precedent makes this buildable and non-vacuous) |
+| B. Out-of-band CLI only | Provisioning stays outside the governed surface — no RBAC, no audit, no refusals; the demo-script status quo |
+| C. A signed bootstrap token | A second auth system to build and rotate; BR-10 adjacency; strictly weaker than A |
+
+**Operator seeding sub-fork (pass-2 B5 — a migration is the wrong home: an aborting migration
+wedges `upgrade head` for every non-provisioning deploy, and env-var-dependent migration output
+breaks reproducibility):** **(a) recommended** — an idempotent, `DELIVERS`-style-documented step
+in the deploy prepare path (the `seed_system_reference` pattern `deploy.sh` already proves),
+reading the subject from a deploy-time env var; absent var = loud no-op, stated in the deploy
+output. (b) a documented manual runbook step.
 
 ### OQ-ONB-3 — The first user of a new tenant
-As v1: **A (recommended)** — supplied in the create request, seeded as the tenant's admin in the
-same transaction; the platform operator is NOT a member. (The cross-tenant grant write happens
-inside the onboarding transaction under the NEW tenant's context with the SYSTEM operator as the
-audit actor — `grant_role`'s cross-tenant refusal (R11) stays intact for every OTHER path; the
-onboarding service writes the seed grant directly, and the refusal's census gains the exception
-row with reason, L4-5.)
+| Option | Consequence |
+|---|---|
+| **A. Supplied in the create request (OIDC subject + display name), seeded as the tenant's admin inside the onboarding transaction; the operator is NOT a member** *(recommended)* | The tenant is born with one admin who provisions everyone else; the seed grant is written directly by the onboarding service under the new tenant's arm with the operator as audit actor — `grant_role`'s cross-tenant refusal (R11) stays intact for every other path, and the refusal's census carries the exception row with reason |
+| B. Born empty; a second cross-tenant call adds the first user | Two cross-tenant acts; a window where a tenant exists that nobody can enter |
 
-### OQ-ONB-4 — The tenant admin role, and the ORPHAN-PROOF invariant
-**A (recommended): mint `tenant_admin` as the SEVENTH template** — user/role admin verbs only, no
-analytics reads, no maker verbs. The last-admin protection is now stated as an INVARIANT over all
-paths, not a per-verb rule (L1-8/L3-3/L3-4/L3-5): **a tenant must at all times have ≥1
-currently-valid, ACTIVE-user admin** — enforced identically against role revocation, role
-END-DATING (`valid_to` counts: the admin count is over grants valid NOW), user DEACTIVATION
-(including self), and concurrently (a per-tenant advisory lock around the count-check —
-the MG-2 write-lock precedent — so two admins revoking each other serializes and the second
-refuses). Each path's refusal is a named test with its P18 positive control.
+### OQ-ONB-4 — `tenant_admin` and the ORPHAN-PROOF invariant
+**A (recommended): mint `tenant_admin` as the SEVENTH template** — user/role admin verbs only.
+The invariant, over ALL paths: **a tenant must at all times have ≥1 currently-valid, ACTIVE-user
+admin** — enforced identically against role revocation, role END-DATING (the count is over grants
+valid NOW), user DEACTIVATION including self, and concurrently (a per-tenant advisory lock around
+the count-check, the MG-2 precedent). Each path's refusal is a named test with its P18 positive
+control. B (first user gets the `platform_admin` clone) hands every customer's first user every
+verb including 3L reads — rejected as in v1.
 
 ### OQ-ONB-5 — The mint
-**Tenant catalog** (enters `PERMISSIONS`, `ALL_CODES`, the clones): `user.manage` (create/
-deactivate users), `role.assign` (grant/revoke roles), `user.view` (list users/roles).
-Holder sets: `tenant_admin` + `platform_admin` for all three; **`auditor_3l` is EXCLUDED from
-`user.view`** — v1 recommended inclusion on the schedule.view precedent and the verifier
-mis-class finding (L3-8) is right: `app_user` rows carry `external_subject` (the OIDC sub) and
-`display_name` — person-identifying data, the class every proprietary-identity read has excluded
-the 3L auditor from (the CON-1 split-by-what-the-read-exposes doctrine). A redacted roster read
-for auditors is NOT minted (the SOD-08 half-mint precedent; trigger: a real 3L access-review
-requirement). **Platform catalog** (C1): `tenant.create` only; `tenant.suspend` is NOT minted and
-the `SUSPENDED` status arm ships **enforced at the boundary but unreachable by any verb** — the
-exists-check refuses suspended tenants' tokens (so the semantics are real and tested, L5-6), and
-the setting verb waits with a P19-valid trigger: **the first operator request to suspend a
-tenant** (an external human event, loud and datable — the L5-12 class). P11 in full for every
-code; migration `0067` carries the literal `DELIVERS` tuple for the tenant-catalog codes and the
-platform catalog gets its own parallel delivery census (the P17 test is extended to walk BOTH
-constants — L3-9 noted that the gate is AST-only; the extension keeps it so, deliberately, with
-the PG-tier grant checks as the execution arm).
+**Tenant catalog** (enters `PERMISSIONS`/clones): `user.manage`, `role.assign`, `user.view`, plus
+OQ-9's `role.approve` if OQ-9=A. Holders: `tenant_admin` + `platform_admin` (all); **`auditor_3l`
+EXCLUDED from `user.view`** — an entitlement roster carries `external_subject` and
+`display_name`, person-identifying data in the class every proprietary-identity read has excluded
+the 3L auditor from (a **flip from v1**, which recommended inclusion on the schedule.view
+precedent; pass 1 L3-8 showed that mis-classed the read). A redacted auditor roster is NOT minted
+(deferred — §5). **Platform catalog** (C1): `tenant.create` only. `tenant.suspend` is NOT minted;
+the `SUSPENDED` arm ships boundary-ENFORCED (suspended tenants' tokens refused, tested) but
+setter-less (deferred — §5). P11 in full; the audit-code mint rides (§2); migration `0067`
+carries `DELIVERS` for tenant-catalog codes and the platform catalog's parallel delivery census
+lands in the same commit (R14).
 
-### OQ-ONB-6 — Clone semantics (rebuilt: v1's version was unbuildable, R7)
-**Clone FROM THE DATABASE's SYSTEM template rows, not from the constant** (L3-6: the constant
-would resurrect admin-revoked grants — the exact resurrection class migration `0066` just
-closed; the DB rows are the post-revocation truth). NEW deterministic derivations
-`tenant_role_id(tenant_id, name)` and `tenant_role_permission_id(tenant_id, name, code)` (R7).
-Clone all SEVEN templates. Post-clone drift is tenant configuration; catalog syncs touch SYSTEM
-templates only (verified true of `sync_catalog` by the pass). **Pre-existing tenants** (L3-7): the
-0067 backfill ALSO clones templates for every backfilled ACTIVE tenant that lacks them — the demo
-tenant's three ad-hoc roles are untouched (additive only). **The future-mint catchup** (L5-5 — v1's
-trigger was not mechanical): the mint checklist in `entitlement_sod_model.md` gains a required
-row — "delivery to EXISTING tenants' clones: named migration or explicit refusal with reason" —
-and `sync_catalog`'s report gains a `tenants_missing_code` count so every future sync migration
-LOGS the gap at the moment it runs. Mechanical and loud; the carry names it.
+### OQ-ONB-6 — Clone semantics
+**A (recommended):** clone **FROM THE DATABASE's SYSTEM template rows** (not the constant — the
+constant would resurrect admin-revoked grants, the exact class migration `0066` closed; proven in
+§4 by the revoked-grant interplay test). NEW derivations `tenant_role_id(tenant_id, name)` /
+`tenant_role_permission_id(tenant_id, name, code)` (R7). **The template-set sub-fork pass 2
+demanded (A-7): which templates do customer tenants get?** **Recommended: the four business
+templates + `tenant_admin` — `ops` and `platform_admin` are NOT cloned.** `ops` holds only
+`ops.audit.verify`, consumed by the BYPASSRLS ops CLI with no HTTP consumer — cloning it hands
+tenant admins a grantable code whose only use is a tool tenants never run. `platform_admin`'s
+everything-bundle collapses every SoD partition the matrix builds (register/validate,
+respond/review, manage/approve) inside a customer tenant; a tenant wanting a super-user grants
+multiple roles explicitly and visibly. (The SYSTEM tenant keeps both, unchanged.) Backfill-clone
+collision rule per C2. Alternative (clone all seven): maximal continuity with the SYSTEM shape,
+carries both objections. **Future-mint catchup:** the "delivery to existing tenants' clones —
+named migration or explicit refusal with reason" row is added to the **mint checklist this gate
+CREATES in `entitlement_sod_model.md`** (pass-2 C1: no such checklist exists today — this is a
+creation, not an amendment; P11's text points at it), and `sync_catalog`'s report gains
+`tenants_missing_code` so every future sync LOGS the gap. The log line alone is not claimed to be
+mechanical enforcement (pass-2 A-9): the checklist row is the gate, the log is the tell.
 
 ### OQ-ONB-7 — Surface
-As v1: **A (recommended)** — API for everything; UI for the tenant-local Users & Roles screen
-only. Unchanged by the pass.
-
-### OQ-ONB-8 — Sizing and the split line (quantified, L5-7)
-**Sized L** (v1 had no sizing section — L5-9; comparators: CAL-1b M/L at ~1 migration + 1 family;
-RPT-2 L at ~1 migration + routes + FE). **The split trigger, one condition, measurable:** if at
-the end of planning the implementation plan's checklist exceeds **the RPT-2 plan's checklist row
-count** (the largest single-slice plan shipped to date), the slice splits at the platform/tenant
-line — ONBOARD-1a = OQ-1/2/3 (registry, operator, onboarding act), ONBOARD-1b = OQ-4/5/6/7/9
-(tenant-local admin + UI) — under these same ratified forks, no second gate.
-
-### OQ-ONB-9 — SOD-04: four-eyes on entitlement changes (NEW — the pass found v1 contradicted the ratified SoD model, L5-3 BLOCKING)
-`entitlement_sod_model.md` §7: "Four-eyes is mandatory for: … entitlement changes (SOD-04)". v1's
-direct single-person grant (self-grant refused) contradicts it.
 | Option | Consequence |
 |---|---|
-| **A. Maker-checker grants WHEN POSSIBLE, single-admin bootstrap window (recommended)**: a grant/revoke by an admin in a tenant with **≥2 currently-valid other admins** is born `PENDING` and requires a SECOND admin's approval (the MG-3 person-level pattern: approver ≠ requester by principal id); in a tenant with exactly ONE admin, grants execute directly (the tenant is otherwise stillborn at birth) with the direct-grant fact stamped on the audit event | SOD-04 honored from the first moment it CAN be; the bootstrap window is honest, bounded by the admin count itself, and every direct grant is flagged evidence. The MG-2/MG-3 lifecycle machinery is precedent, not new invention |
-| B. Direct grants + self-grant refusal only; SOD-04 recorded as a ratified deviation | The ratified SoD model is amended by exception on day one of real entitlement changes — the matrix's four-eyes clause becomes aspirational exactly where it first binds |
-| C. Full four-eyes always (the first admin cannot grant until a second admin exists — seeded by the operator) | The operator must seed TWO admins at onboarding; every tenant pays the ceremony forever; the operator names two humans where the request had one |
+| **A. API for everything; UI for the tenant-local Users & Roles screen only** *(recommended)* | The rare operator act needs no screen; the daily tenant-admin act gets one (the OPS-1 write-path precedent); bounded FE scope |
+| B. API-only | "Reachable" means curl again — the finding this slice exists to close |
+| C. Full UI incl. tenant creation | A screen for an audience of ~one; inflates slice 0 |
 
-### OQ-ONB-10 — The ignition proof's auth mode (NEW — v1's proof was unexecutable as written, L2-4/L2-5)
-The deployed stack runs `dev_header`; Keycloak is behind an opt-in profile the stack-proof job
-does not enable (R10).
+### OQ-ONB-8 — Sizing and the split (rebuilt: pass-2 C2/C3 — v2's trigger denominator didn't exist and its partition was incoherent)
+**Sized L, and the default FLIPS to: plan as ONBOARD-1a/1b from the start, one gate (this one),
+two slices.** Pass 2 is right that the OQ-9 lifecycle machinery (a request entity, MG-2-pattern
+ordering) pushes the single-slice size past every comparator. The partition, redrawn so
+dependencies travel together: **1a = the platform half** (OQ-1 registry + census, OQ-2 operator +
+fence, OQ-3 first admin, OQ-6 clones, the `tenant_admin` MINT (OQ-4's role must exist for the
+seed grant), migration `0067`, the deployed ignition proof through "first admin resolves") —
+**1b = the tenant-local half** (OQ-5's admin verbs + routes, OQ-4's orphan-proof enforcement
+paths, OQ-9's four-eyes lifecycle, OQ-7's UI, the remainder of the ignition proof). 1a alone
+leaves tenant-local admin API-absent (the first admin exists but manages nobody) — stated so the
+gate knows what 1a-without-1b ships. Alternative: one L slice, accepting the size risk.
+
+### OQ-ONB-9 — SOD-04 four-eyes, framed as what it is: CTRL-025's first implementation (pass-2 C4)
+`entitlement_sod_model.md` §7: "Four-eyes is mandatory for: … entitlement changes (SOD-04)";
+CTRL-025 ("Entitlement changes maker-checked + audited") is Planned with no code. v1 contradicted
+both; v2's fix had two holes pass 2 confirmed (the threshold exempted two-admin tenants; admin
+DEACTIVATION escaped the flow entirely).
 | Option | Consequence |
 |---|---|
-| **A. The deployed ignition proof runs under `dev_header` end-to-end, PLUS a unit/PG-tier OIDC arm for the exists-check and the SYSTEM-router fence (recommended)** | The deployed proof exercises every layer ONBOARD-1 builds (routes, transaction, clones, RLS) — the auth MODE is the one layer it shares with today's stack-proof, stated as the P15 shared-assumption it is, with the OIDC-specific refusals (unknown-tenant claim, SYSTEM-claim fence, suspended-tenant claim) proven at the tier that can mint tokens |
-| B. Enable the Keycloak profile in CI for this slice | The full OIDC path deployed — at the cost of standing up an IdP in the stack-proof job (provisioning realms/users in CI), a real scope expansion the record would have to size |
-| **The exists-check scope decision folded in (L2-4):** the exists-check binds BOTH auth modes (it lives behind `get_principal`, not inside the OIDC verifier) — `dev_header` requests with unknown tenants are refused identically, so the deployed proof CAN exercise it; the entire existing test suite's uuid4-tenant fixtures are backfill-exempt because the unit tier has no `tenant` table rows — the exists-check is **PG-tier and boundary-only by design**, stated plainly (SQLite suites are structurally out of its reach, the FK-1 lesson acknowledged, not hidden) | |
+| **A. Maker-checker with a single-admin bootstrap window, threshold corrected, deactivation included** *(recommended)*: any entitlement-affecting act by an admin — grant, revoke, end-date, AND `user.manage` deactivation of a user currently holding `tenant_admin` (pass-2 B2) — is born `PENDING` when **≥1 currently-valid OTHER admin exists** (pass-2 B3: four-eyes engages the moment an approver exists, i.e. at two admins, not three), and requires a second admin's approval (`role.approve`; approver ≠ requester by principal id, the MG-3 pattern). With NO other admin, the act executes directly, stamped `direct_grant=true` on its audit event. **The machinery, named:** ENT-075 `entitlement_request` (IA append-only, the MG-2 ordering-key + per-item lock pattern, migration `0067`), the `role.approve` verb, the `ROLE.GRANT_REQUEST`/`ROLE.GRANT_APPROVE` audit codes, and CTRL-025 moves Planned → Implemented on the P9 bar (the refusal fires in §4). Ratifying A adds the bootstrap-window clause to `entitlement_sod_model.md` §7 | SOD-04 honored from the first moment an approver exists; every direct act is flagged evidence; CTRL-025 gets its host |
+| B. Direct grants + self-grant refusal only; SOD-04 recorded as a ratified deviation | The matrix's four-eyes clause goes aspirational exactly where it first binds |
+| C. Full four-eyes always (operator seeds TWO admins) | Every tenant pays double-ceremony forever; the operator names two humans where the request had one |
 
-## 4. Proofs (P18 bar; every refusal paired with its positive control)
+### OQ-ONB-10 — The ignition proof's auth mode + the exists-check's tier (rebuilt: pass-2 A-1/B6 — v2's tier rationale was backwards)
+**The exists-check mechanism, stated as the fork it is:** the check is **dialect-gated** (the
+`_lock_chain`/`sync_catalog` precedent: PG executes it, SQLite does not) — so the unit tier is
+exempt **by mechanism, not by backfill accident**; the deployed and PG tiers enforce it for BOTH
+auth modes (it lives behind `get_principal`, not inside the OIDC verifier). The gate is told
+plainly: SQLite suites are structurally outside the boundary check's reach (the FK-1 lesson,
+acknowledged). In-slice PG seeding paths (conftest fixtures that mint uuid4 tenants) gain
+registry rows via a fixture helper — enumerated in the implementation plan, not discovered.
+| Option | Consequence |
+|---|---|
+| **A. Deployed ignition proof under `dev_header` end-to-end + a token-minting PG/unit arm for the OIDC-specific refusals (unknown tenant, SYSTEM fence, suspended)** *(recommended)* | Every layer ONBOARD-1 builds is deployed-proven; the auth MODE is the one shared assumption with today's stack-proof, named as such (P15) |
+| B. Enable the Keycloak profile in CI for this slice | Full OIDC deployed at the cost of standing up an IdP in the stack-proof job — a real scope expansion that would need its own sizing |
 
-- **The refusal battery, each with its named positive twin**: unknown-tenant claim refused ↔ known
-  tenant admitted; SYSTEM claim refused on a data router ↔ admitted on the provisioning router;
-  suspended tenant refused ↔ active admitted; `tenant.create` denied to every tenant-catalog role
-  ↔ granted to the operator; self-grant refused ↔ second-admin grant lands (OQ-9A); last-admin
-  refusals across ALL FOUR paths (revoke, end-date, deactivate, concurrent) ↔ non-last admin
-  operations succeed; duplicate tenant code refused with NOTHING persisted (absence asserted) ↔
-  fresh code lands everything.
-- **The clone equivalence proof**: post-onboard matrix == the DB's SYSTEM template rows at clone
-  time (not the constant), exact set equality both directions; a revoked-template-grant tenant
-  onboards WITHOUT the revoked grant (the `0066` interplay, executed).
-- **The catalog-disjointness census** (C1): `PLATFORM_PERMISSIONS ∩ PERMISSIONS = ∅`; no cloned
-  role holds a platform code — asserted against the DATABASE after onboarding, not just the
-  constants.
-- **The deployed ignition proof** (OQ-10A): fresh deploy → operator creates a tenant over HTTP →
-  first admin resolves → creates a second user, grants a role (through the OQ-9 flow) → the second
-  user reads one governed surface and is 403'd from another. Rides `stack-proof`.
-- **Mutation battery**: group `onboard-1` in `scripts/mutants.toml` (P18), targeting the census,
-  the fence, the orphan-proof invariant, and the clone-source choice (mutating DB-source back to
-  constant-source must redden the revocation-interplay test).
-- **Migration `0067`**: ENT-074 + backfills + the mint + `DELIVERS`; `alembic check`; identifier
-  sweep; downgrade honesty (downgrade drops the registry and the exists-check's data — stated: a
-  downgraded deployment loses boundary refusal, not tenant data).
+## 4. Proofs (P18; each refusal named with its positive twin)
+
+- Unknown-tenant claim refused ↔ known admitted (BOTH auth modes, PG tier). SYSTEM claim refused
+  on a data router ↔ admitted on provisioning (the fence census walks all 251 paths). Suspended
+  refused ↔ active admitted. `tenant.create` denied to every tenant-catalog role incl. every
+  CLONED `platform_admin` ↔ granted to the operator (the C1 census, against the DB). Self-grant
+  refused ↔ second-admin approval lands. Four-eyes: PENDING born at ≥1 other admin ↔ direct at
+  none, `direct_grant` stamped; deactivation-of-an-admin routes through the flow (B2's exact
+  scenario). Last-admin refusals across all four orphan paths ↔ non-last succeed. Duplicate code
+  refused with NOTHING persisted (absence asserted) ↔ fresh code lands everything.
+- **Audit assertions** (pass-2 A-4): post-onboard, the SYSTEM-chain `TENANT.CREATE` event and the
+  new tenant's genesis-anchored events both exist; `verify_chain` green on BOTH chains; the
+  upgrade-a-POPULATED-DB test (backfilled tenants still authenticate; proof literals absent;
+  provenance stamps present).
+- **Clone equivalence**: post-onboard matrix == the DB's SYSTEM template rows at clone time
+  (scoped to onboarding-created tenants — the collision rule excludes pre-existing ad-hoc roles);
+  a tenant onboarded after a template-grant revocation lacks that grant (the `0066` interplay,
+  executed).
+- **The catalog-disjointness census** + the extended P17/P11 gates walking both constants (R14,
+  same commit).
+- **The deployed ignition proof** (OQ-10A) riding `stack-proof`.
+- **Mutation battery**: group `onboard-1` in `scripts/mutants.toml` (P18) — the census matchers,
+  the fence, the orphan invariant, the four-eyes threshold (mutating `≥1 other` back to `≥2
+  other` must redden the two-admin test), and the clone source (constant-vs-DB must redden the
+  revocation-interplay test).
+- **Migration `0067`**: ENT-074 + ENT-075 + backfills + mint + `DELIVERS`; `alembic check`;
+  identifier sweep; downgrade honesty (downgrade drops the registry: boundary refusal is lost,
+  tenant data is not; stated).
 - Gates at a frozen tree, exit codes quoted (P14); CI green; P16 at the PR boundary.
 
-## 5. Non-goals (unchanged from v1 except as noted)
+## 5. Non-goals and deferrals (each labeled with its P19 class — pass-2 C8: an external-human-event trigger is a ratified DEFERRAL DECISION, not a mechanical trigger, and is labeled as such)
+- Self-service signup, invitations, email, SCIM, MFA: out of scope (decision, ratified here).
+- Tenant deletion: deferred — **decision-class deferral**, revisited on the first real
+  offboarding request (external event, loud and datable).
+- `tenant.suspend` verb: deferred — decision-class, on the first operator suspension request;
+  the status semantics ship enforced (OQ-5).
+- Redacted auditor roster: deferred — decision-class, on a real 3L access-review requirement.
+- Billing/quota/plans: out of scope.
+- OIDC verifier/token shape: untouched.
+- **The worker does not tick new tenants** (R9): `IRP_TENANT_IDS` stays config by CAD-1's
+  ratified decision. The onboarding API response and the runbook both state the operator step
+  verbatim; the scheduled-work gap carries with its P19 SLICE host: **REPRO-2** (the schedule
+  write path), by name.
 
-- No self-service signup, invitations, email, SCIM, MFA surface.
-- No tenant deletion (trigger: the first real offboarding request).
-- No billing/quota/plan concepts.
-- No change to the OIDC verifier or token shape; the exists-check and SYSTEM-router fence sit
-  behind `get_principal`.
-- No `tenant.suspend` verb (OQ-5; status semantics enforced, setter deferred on a P19 trigger).
-- No auditor roster read (OQ-5; deferred with trigger).
-- **The worker still does not tick new tenants** (R9 — v1 was silent, L2-3): `IRP_TENANT_IDS` is
-  deploy config by CAD-1's ratified decision, and ONBOARD-1 does not reopen it. The onboarding
-  API response and the runbook BOTH state the operator's follow-up step verbatim ("add the tenant
-  id to `IRP_TENANT_IDS` and roll the worker"), and the slice record will carry the
-  scheduled-work gap with its P19 host: **REPRO-2's schedule write path** is where tenant-driven
-  scheduling next gets touched, and the carry rides there by name.
+## 6. Blast radius (pass-2 C5: completed)
+1. CLAUDE.md invariant: the three-part ONBOARD-1 clause (OQ-2).
+2. `canonical_data_model_standard.md`: the PLATFORM-GLOBAL tenancy class; ENT-074 + ENT-075 rows.
+3. `entitlement_sod_model.md`: `tenant_admin` minted (ROLE-ADM realized); the mint checklist
+   **created** (with the delivery-to-clones row); SOD-04 §7 gains the bootstrap-window clause
+   (OQ-9A); the template-clone set decision (OQ-6).
+4. `09_compliance_controls/control_matrix_skeleton.md`: **CTRL-025 Planned → Implemented** (OQ-9,
+   P9 bar); new rows for the boundary exists-check, the SYSTEM-router fence, and the orphan-proof
+   invariant (control mints at the H-05 gate = this gate).
+5. `04_data_model/audit_event_taxonomy.md`: the R-07 audit-code mint (`TENANT.CREATE`,
+   `USER.PROVISION`, `ROLE.GRANT_REQUEST`, `ROLE.GRANT_APPROVE`).
+6. The architecture-decision log: the AD row for the platform catalog + operator principal
+   (AD-013 is NOT extended — no hybrid change; a new AD).
+7. The intentionally-global-class census becomes standing (OQ-1).
+8. Tier labels: OQ-1/2/4/5/6/9 are Tier-3 (this gate); OQ-3/7/10 are design confirmations;
+   OQ-8 is sequencing.
 
-## 6. What ratifying this gate amends elsewhere (named, so the gate sees the blast radius)
+## 7. The two-pass verifier ledger
 
-1. The CLAUDE.md invariant gains the three-part ONBOARD-1 clause (OQ-2).
-2. `canonical_data_model_standard.md` gains the PLATFORM-GLOBAL tenancy class (OQ-1).
-3. `entitlement_sod_model.md`: ROLE-ADM → minted as `tenant_admin`; the mint checklist gains the
-   delivery-to-clones row (OQ-6); SOD-04's four-eyes clause gets its first enforcement (OQ-9).
-4. The intentionally-global-class census becomes a standing guard (OQ-1).
+**Pass 1** (over v1 `7a61303`): 5 lanes, 40 agents, 2.0M tokens; **11 BLOCKING + 23 MATERIAL
+CONFIRMED after refute-by-default** (1 refuted, 2 downgraded — the headline counts quote the
+POST-verification severities; pass-2 A-11 caught the v2 header's arithmetic gloss), 14 minors.
+Clusters and folds: v2's §7 table, superseded by this section. Highlights: the five-lane ALL_CODES
+convergence; the false uuid5/template-count/D1-vs-D3 facts; the SOD-04 contradiction; the
+exists-check stranding SYSTEM and deployed tenants; the audit-chain silence.
 
-## 7. The verifier-pass ledger (v1 → v2)
+**Pass 2** (over v2 `2b4296b`): 3 lanes, 23 agents, 1.5M tokens; **2 BLOCKING + 13 MATERIAL
+CONFIRMED**, 2 refuted (whose "refutations" each demanded an explicit rule the record now states:
+the backfill-clone collision rule and the proof-literal exclusions, R13), 3 downgraded, 13 minors.
+Every confirmed finding's fold is inline above, tagged by id. What HELD under attack, executed:
+the C1 escalation closure end-to-end incl. sync semantics; the C2 core; all four orphan paths;
+the split-chain audit mechanics under the frozen service (R11); the global-class census's exact
+completeness; the route-fence buildability; require_permission's indifference to the catalog
+split; CI's fresh-deploy ordering.
 
-**Pass over `7a61303`: 5 lanes, 40 agents, 2.0M tokens; 35 verified findings (11 BLOCKING, 23
-MATERIAL after refute-by-default — 1 refuted outright, 2 downgraded), 14 minors.** Full JSON:
-session scratchpad `onb1_verifier.json`; lanes also recorded 30+ attacks that FAILED (the record's
-transaction mechanics, refusal atomicity, migration numbering, identifier lengths, catalog-sync
-ordering, and idempotency all survived execution).
-
-| Cluster | Findings | Fold |
-|---|---|---|
-| The ALL_CODES trap (5 lanes converged) | L1-1, L2-1, L3-2, L4-1, L5-2 | C1: the separate PLATFORM catalog + `platform_operator` + disjointness census (§2, OQ-2, OQ-5) |
-| Exists-check strands SYSTEM/deployed tenants | L1-2, L4-2, L4-3, L5-8 | C2: the three-arm status + 0067 backfill of SYSTEM and all deployed tenants (OQ-1) |
-| False facts: five templates; uuid5 namespacing; D1-vs-D3; 291 | L5-1, L2-2, L3-1, L4-4, L5-4, L2-7 + minors | Corrected in place (R6, R7, header) |
-| SOD-04 contradiction | L5-3 | NEW OQ-9 with the maker-checker recommendation |
-| Audit-chain silence | L1-4 | §2 layer 2: split-chain design, genesis-anchored |
-| SYSTEM becomes authenticatable | L1-3, L1-5 | The router fence + the three-part invariant amendment (OQ-2) |
-| Orphan paths (deactivate/end-date/TOCTOU) | L1-8, L3-3, L3-4, L3-5 | OQ-4's invariant-over-all-paths + advisory lock |
-| Clone source + pre-existing tenants + catchup | L3-6, L3-7, L5-5 | OQ-6 rebuilt: DB-source clones, backfill clones, mechanical catchup |
-| Worker never ticks | L2-3 | §5 non-goal stated with the runbook step + P19 carry to REPRO-2 |
-| Ignition proof unexecutable | L2-4, L2-5 | NEW OQ-10 |
-| auditor `user.view` mis-class | L3-8 | OQ-5 flipped: auditor EXCLUDED |
-| Global-class census gap | L4-7 | OQ-1's new census |
-| Suspended inert; split trigger; sizing/demo gaps | L5-6, L5-7, L5-9 | OQ-5 boundary-enforced status; OQ-8 quantified; sizing added. Demo-stage disposition: the deployed ignition proof IS this slice's demo (stated, not omitted) |
-| Cross-tenant grant refusal vs step 4 | L4-5 | OQ-3: the seed-grant exception, census-rowed |
-| Savepoint on duplicate-code refusal | L4-6 | §2 layer 2 |
-| Minors (12) | L1-7…L5-12 | Folded in place (counts, quotes, wording) |
+**Convergence:** 49 → 20 verified findings, round 2's blockers confined to round-1-mandated new
+machinery. The residual tail (fixture enumeration, exact checklist wording) is implementation-plan
+territory, gated by the same P14/P16/P18 bars at build time.
