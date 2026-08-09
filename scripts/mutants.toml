@@ -287,3 +287,157 @@ file = "apps/backend/src/irp_backend/api/tenants.py"
 find = """    principal: Principal = Depends(_require_create),"""
 replace = """    principal: Principal = Depends(__import__("irp_backend.deps", fromlist=["x"]).get_principal),"""
 tests = ["apps/backend/tests/test_route_permission_census.py"]
+
+# ---------------------------------------------------------------------------------------------
+# ONBOARD-1b. Four-eyes on entitlement changes (SOD-04 / CTRL-025) + the orphan-proof invariant.
+# Every mutant below re-introduces a defect that was PROPOSED and verified during the design's
+# two adversarial passes, or found while building.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "O-A1"
+group = "onboard-1b"
+why = "the four-eyes threshold exempts two-admin tenants again — SOD-04 never binds until three admins (pass-2 B3)"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """    return bool(valid_admin_user_ids(session, tenant_id, now=now) - {requester})"""
+replace = """    return len(valid_admin_user_ids(session, tenant_id, now=now) - {requester}) >= 2"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-A2"
+group = "onboard-1b"
+why = "an admin can approve their own request — four-eyes with one pair of eyes"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """    if _canonical(request.requested_by) == actor.actor_id:"""
+replace = """    if False:"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-A3"
+group = "onboard-1b"
+why = "actor ids are compared raw — an uppercase id defeats the person-level SoD (the API-2 case-variance vector)"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """        object.__setattr__(self, "actor_id", _canonical(self.actor_id))"""
+replace = """        object.__setattr__(self, "actor_id", str(self.actor_id))"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-A4"
+group = "onboard-1b"
+why = "deactivating an admin escapes the four-eyes flow — the one-step bypass (pass-2 B2)"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """    pending = _four_eyes_required(session, tenant_id, requester=actor.actor_id, now=at)"""
+replace = """    pending = action != ACTION_DEACTIVATE_USER and _four_eyes_required(
+        session, tenant_id, requester=actor.actor_id, now=at
+    )"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-B1"
+group = "onboard-1b"
+why = "the orphan check counts grants that EXIST, not grants VALID NOW — end-dating orphans the tenant silently"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """            or_(UserRole.valid_to.is_(None), UserRole.valid_to > at),"""
+replace = """            UserRole.valid_from <= at,"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-B2"
+group = "onboard-1b"
+why = "a DEACTIVATED user still counts as an administrator — a tenant kept 'safe' by someone who cannot log in"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """            AppUser.is_active.is_(True),"""
+replace = """            AppUser.is_active.is_not(None),"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-B3"
+group = "onboard-1b"
+why = "deactivation skips the orphan check — the last admin deactivates themselves and the tenant is unreachable"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """        if target in valid_admin_user_ids(session, tenant_id, now=now):
+            _assert_not_orphaning(session, tenant_id, losing_admin=target, now=now)"""
+replace = """        if False:
+            _assert_not_orphaning(session, tenant_id, losing_admin=target, now=now)"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-B4"
+group = "onboard-1b"
+why = "revoking the last admin's role is permitted — the invariant's primary path"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """        if request.target_role_id == admin_role:
+            _assert_not_orphaning(session, tenant_id, losing_admin=target, now=now)"""
+replace = """        if False:
+            _assert_not_orphaning(session, tenant_id, losing_admin=target, now=now)"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-C1"
+group = "onboard-1b"
+why = "a DIRECT act is no longer flagged — an auditor cannot count acts taken without a second pair of eyes"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """            "direct_grant": status == STATUS_DIRECT,"""
+replace = """            "direct_grant": False,"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-C2"
+group = "onboard-1b"
+why = "a PENDING request takes effect immediately — the gate exists and gates nothing"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """    if not pending:
+        # The bootstrap window"""
+replace = """    if True:
+        # The bootstrap window"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-D1"
+group = "onboard-1b"
+why = "approval MUTATES the request row instead of appending — refused by the IA trigger on PostgreSQL, invisible on SQLite (the defect this slice shipped and PG caught)"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """    resolution = EntitlementRequest("""
+replace = """    request.status = STATUS_APPROVED
+    request.resolved_by = actor.actor_id
+    request.resolved_at = at
+    session.flush()
+    resolution = EntitlementRequest("""
+tests = ["packages/shared-python/tests/test_entitlement_admin_pg.py"]
+needs_pg = true
+
+[[mutant]]
+id = "O-D2"
+group = "onboard-1b"
+why = "the per-tenant advisory lock is dropped — two concurrent approvals orphan the tenant (the fourth path)"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """    if session.bind is not None and session.bind.dialect.name == "postgresql":"""
+replace = """    if False:"""
+tests = ["packages/shared-python/tests/test_entitlement_admin_pg.py"]
+needs_pg = true
+
+[[mutant]]
+id = "O-D3"
+group = "onboard-1b"
+why = "a resolved request can be approved AGAIN — the second approval re-applies an act already decided"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """    if already is not None:
+        raise EntitlementError("request has already been resolved")"""
+replace = """    if False:
+        raise EntitlementError("request has already been resolved")"""
+tests = ["packages/shared-python/tests/test_entitlement_admin_pg.py"]
+needs_pg = true
+
+# O-D4 was REMOVED, and the reason is a real limit of this harness rather than a gap in the
+# control. The mutant deleted `ALTER TABLE ... FORCE ROW LEVEL SECURITY` from migration 0068 —
+# but the battery runs pytest against an ALREADY-MIGRATED database, so mutating migration DDL
+# changes nothing any test can observe. It survived every time, and a permanent survivor teaches
+# a battery's readers to ignore survivors.
+#
+# The property itself IS asserted: `test_tenancy_floors_pg.py` floor 2 walks every tenant_id-
+# bearing ORM table and requires both RLS-enabled and FORCE-enabled, so ENT-075 is covered the
+# moment it exists — verified directly at build time (relrowsecurity=True, relforcerowsecurity=
+# True, policy `tenant_isolation_entitlement_request` present).
+#
+# The general rule this records: **migration-DDL mutants are not measurable by this harness.**
+# Anything that must be proven about DDL belongs in a schema-reading test, not in a mutant.

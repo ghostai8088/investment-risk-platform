@@ -56,6 +56,8 @@ def test_every_allowed_prefix_matches_a_REAL_route() -> None:
 def test_the_allowed_surface_is_EXACTLY_the_provisioning_router() -> None:
     """Exact set: a route joining the allowed surface is a decision, never an accident."""
     allowed = sorted(p for p in _paths() if _allowed(p))
+    # ONBOARD-1b added eight TENANT-LOCAL routes and this list did NOT move — which is the
+    # assertion, not an omission: a tenant admin's surface must never become SYSTEM-reachable.
     assert allowed == ["/tenants"], (
         f"the SYSTEM-reachable surface drifted: {allowed}. Every entry must be a provisioning "
         "route somebody decided a SYSTEM principal may reach."

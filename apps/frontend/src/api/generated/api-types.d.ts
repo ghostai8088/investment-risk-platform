@@ -1070,6 +1070,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/entitlement-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Pending Requests
+         * @description Requests awaiting a second admin. The queue the UI renders.
+         */
+        get: operations["list_pending_requests_entitlement_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/entitlement-requests/{request_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Request
+         * @description A SECOND admin approves, and the act takes effect (SOD-04).
+         *
+         *     The person-level refusal lives in the service, over canonicalized ids — not here, because a
+         *     route-layer check would be one of several call paths and the invariant belongs where every
+         *     path passes.
+         */
+        post: operations["approve_request_entitlement_requests__request_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exposure": {
         parameters: {
             query?: never;
@@ -4995,6 +5039,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Roles
+         * @description The tenant's roles — what a grant can name.
+         */
+        get: operations["list_roles_roles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/schedules": {
         parameters: {
             query?: never;
@@ -5183,6 +5247,94 @@ export interface paths {
          */
         post: operations["reverse_transaction_endpoint_transactions__transaction_id__reverse_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Users
+         * @description The roster: every user in the caller's tenant with their currently-valid roles.
+         */
+        get: operations["list_users_users_get"];
+        put?: never;
+        /**
+         * Create Tenant User
+         * @description Create a user. NOT four-eyes-gated: a user with no roles holds no authority.
+         */
+        post: operations["create_tenant_user_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{user_id}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deactivate User
+         * @description Deactivate a user.
+         *
+         *     Rides the SAME four-eyes flow when the target holds ``tenant_admin`` — deactivation removes
+         *     authority exactly as revocation does, and letting it escape would make
+         *     "deactivate the other admin, then act alone" a one-step bypass of the whole control.
+         */
+        post: operations["deactivate_user_users__user_id__deactivate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{user_id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grant Role To User
+         * @description Grant a role — PENDING when another admin exists to approve, DIRECT otherwise.
+         */
+        post: operations["grant_role_to_user_users__user_id__roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{user_id}/roles/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Role From User
+         * @description Revoke a role. Refused if it would leave the tenant with no active administrator.
+         */
+        delete: operations["revoke_role_from_user_users__user_id__roles__role_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -7151,6 +7303,27 @@ export interface components {
              * Format: date-time
              */
             system_from: string;
+        };
+        /** EntitlementRequestOut */
+        EntitlementRequestOut: {
+            /** Action */
+            action: string;
+            /** Direct */
+            direct: boolean;
+            /** Id */
+            id: string;
+            /** Requested By */
+            requested_by: string;
+            /** Resolved By */
+            resolved_by: string | null;
+            /** Seq */
+            seq: number;
+            /** Status */
+            status: string;
+            /** Target Role Id */
+            target_role_id: string | null;
+            /** Target User Id */
+            target_user_id: string;
         };
         /** EsBacktestModelIn */
         EsBacktestModelIn: {
@@ -9338,6 +9511,16 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** RoleGrantIn */
+        RoleGrantIn: {
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Role Id
+             * Format: uuid
+             */
+            role_id: string;
+        };
         /** RollingRiskListOut */
         RollingRiskListOut: {
             /** Items */
@@ -10143,6 +10326,26 @@ export interface components {
             reason?: string | null;
             /** Trade Date */
             trade_date?: string | null;
+        };
+        /** UserCreateIn */
+        UserCreateIn: {
+            /** Display Name */
+            display_name: string;
+            /** External Subject */
+            external_subject: string;
+        };
+        /** UserOut */
+        UserOut: {
+            /** Display Name */
+            display_name: string;
+            /** External Subject */
+            external_subject: string | null;
+            /** Id */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Roles */
+            roles: string[];
         };
         /**
          * ValidationDetailOut
@@ -13084,6 +13287,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pending_requests_entitlement_requests_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntitlementRequestOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_request_entitlement_requests__request_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntitlementRequestOut"];
                 };
             };
             /** @description Validation Error */
@@ -21005,6 +21276,41 @@ export interface operations {
             };
         };
     };
+    list_roles_roles_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_schedules_endpoint_schedules_get: {
         parameters: {
             query?: {
@@ -21395,6 +21701,186 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_users_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_tenant_user_users_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deactivate_user_users__user_id__deactivate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntitlementRequestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grant_role_to_user_users__user_id__roles_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleGrantIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntitlementRequestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_role_from_user_users__user_id__roles__role_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntitlementRequestOut"];
                 };
             };
             /** @description Validation Error */

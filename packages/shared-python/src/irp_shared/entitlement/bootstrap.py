@@ -244,6 +244,25 @@ PERMISSIONS: list[tuple[str, str]] = [
     # lesson, inverted). ROLE-RC "Report Consumer" (entitlement_sod_model.md §4) is NOT minted as a
     # template role — a role is under the same R-07 freeze as a code, and no ratification names it.
     ("report.generate", "Generate a governed report (mints a run + snapshot + ENT-072 row)"),
+    # ONBOARD-1b: the tenant-local administration verbs, filling the `tenant_admin` template 1a
+    # minted EMPTY. Holders: tenant_admin + platform_admin only.
+    #
+    # `user.view` deliberately EXCLUDES auditor_3l, and the exclusion is a decision with a reason:
+    # an entitlement roster carries `external_subject` (the OIDC subject) and `display_name` —
+    # person-identifying data, the class every proprietary-identity read has withheld from the 3L
+    # auditor (reference.issuer/legal_entity/classification_assignment.view). The schedule.view
+    # precedent does NOT apply: a schedule row carries no identity. A redacted auditor roster is
+    # deliberately NOT minted (the SOD-08 half-mint precedent) — its trigger is a real 3L
+    # access-review requirement.
+    #
+    # `role.approve` is the CHECKER half of SOD-04's four-eyes, and it is held by the SAME role as
+    # the maker verbs — the MG-3 pattern verbatim: the gate is PERSON-level (approver != requester
+    # by principal id), not role-level, because a tenant's admins are peers. A role-level split
+    # would need two admin roles and would still not stop one person holding both.
+    ("user.manage", "Create and deactivate users within a tenant"),
+    ("role.assign", "Grant and revoke roles within a tenant"),
+    ("user.view", "View users and their role assignments"),
+    ("role.approve", "Approve another admin's entitlement change — four-eyes (SOD-04)"),
     ("report.view", "View governed reports: metadata, listings and the rendered artifact"),
 ]
 
@@ -490,7 +509,15 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
     # enforce them. A role with codes but no routes would be a dead guard; a role with routes but
     # no codes cannot exist. Empty-until-1b is the honest ordering, and 1b is a sequenced slice
     # (P19), not a hope.
-    "tenant_admin": [],
+    "tenant_admin": [
+        # ONBOARD-1b fills what 1a minted empty. ROLE-ADM realized: "User/role admin; cannot
+        # approve own entitlement requests" — the second clause is `role.approve` plus the
+        # person-level refusal, not a withheld code.
+        "user.manage",
+        "role.assign",
+        "user.view",
+        "role.approve",
+    ],
     "auditor_3l": [
         "lineage.view",
         "model.inventory.view",

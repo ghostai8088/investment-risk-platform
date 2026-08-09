@@ -17,18 +17,15 @@ def test_permission_codes_unique() -> None:
     assert len(PERMISSIONS) == len(ALL_CODES)
 
 
-#: Templates permitted to carry NO codes, each with the slice that fills them. An EXACT set: an
-#: empty template is a real anomaly (a role that grants nothing but can be assigned reads as
-#: authority), so the general assertion below stays strict and exceptions are named here.
-_DELIBERATELY_EMPTY: dict[str, str] = {
-    "tenant_admin": (
-        "ONBOARD-1a mints the ROLE because tenant onboarding's seed grant needs something to "
-        "grant; its VERBS (user.manage, role.assign, user.view, role.approve) are ONBOARD-1b's "
-        "mint and land WITH the routes that enforce them. Codes without routes would be dead "
-        "guards; routes without codes cannot exist. ONBOARD-1b is a sequenced slice (P19) — when "
-        "it lands, this entry is DELETED, and this test is what will notice if it is not."
-    ),
-}
+#: Templates permitted to carry NO codes, each with the slice that fills them.
+#:
+#: **EMPTY as of ONBOARD-1b (2026-08-09), and that emptiness is the point.** 1a minted
+#: `tenant_admin` as a codeless role (the onboarding seed grant needed something to grant) and
+#: listed it here with its filling slice named. 1b minted its four verbs, so the entry was
+#: DELETED — which is exactly what `test_the_deliberately_empty_list_has_no_STALE_entries` exists
+#: to force. The dict stays (with its floor) because the next slice to mint a role before its
+#: routes will need it, and a mechanism removed the moment it succeeds has to be re-invented.
+_DELIBERATELY_EMPTY: dict[str, str] = {}
 
 
 def test_role_templates_reference_known_codes() -> None:
@@ -49,13 +46,43 @@ def test_the_deliberately_empty_list_has_no_STALE_entries() -> None:
     """The other direction: an entry whose template has since been filled must be removed.
 
     Without this the exemption would silently outlive its reason, which is how a temporary
-    carve-out becomes permanent — the class the ledger sweep exists to catch, at file scope.
+    carve-out becomes permanent. It did its job at ONBOARD-1b: `tenant_admin` gained its verbs and
+    this test is what required the entry's deletion in the same commit.
     """
     stale = sorted(r for r in _DELIBERATELY_EMPTY if ROLE_TEMPLATES.get(r))
     assert not stale, (
         f"these templates now HAVE codes but are still listed as deliberately empty: {stale} — "
-        "delete the entry (ONBOARD-1b landing is exactly this moment)"
+        "delete the entry"
     )
+
+
+def test_tenant_admin_grants_as_ratified() -> None:
+    """The holder-set pin for ONBOARD-1b's four codes (P11), both directions.
+
+    `user.view` EXCLUDES auditor_3l deliberately: an entitlement roster carries the OIDC subject
+    and display name — person-identifying data, the class the 3L auditor is withheld from
+    everywhere else (issuer / legal_entity / classification_assignment). If someone "fixes" that
+    as an oversight, this test is what tells them it was a decision.
+    """
+    minted = ("user.manage", "role.assign", "user.view", "role.approve")
+    for code in minted:
+        assert code in ALL_CODES, f"{code} was not minted"
+        assert code in ROLE_TEMPLATES["tenant_admin"], f"tenant_admin must hold {code}"
+        assert code in ROLE_TEMPLATES["platform_admin"], f"platform_admin must hold {code}"
+        for role in ("risk_analyst_1l", "risk_manager_2l", "data_steward", "ops", "auditor_3l"):
+            assert code not in ROLE_TEMPLATES[role], f"{role} must NOT hold {code}"
+
+
+def test_the_four_eyes_checker_is_person_level_not_role_level() -> None:
+    """`role.approve` sits on the SAME role as the maker verbs — the MG-3 pattern, asserted.
+
+    A reader could reasonably expect the checker verb to live on a separate role; recording the
+    choice as a test says it is deliberate. A tenant's admins are peers, so the gate that means
+    anything is `approver != requester` by principal id, enforced at runtime. Splitting roles
+    would add ceremony without preventing one person from holding both.
+    """
+    admin = set(ROLE_TEMPLATES["tenant_admin"])
+    assert {"role.assign", "role.approve"} <= admin
 
 
 def test_platform_admin_has_all_permissions() -> None:

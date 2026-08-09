@@ -716,6 +716,14 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_reproduction_pg.py -q
+      - name: Four-eyes entitlement changes + orphan-proofing, concurrent (Postgres, ONBOARD-1b)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        # The concurrency arm runs two real sessions against the per-tenant advisory lock — the
+        # orphan invariant's fourth path, which SQLite cannot express at all. Also proves the
+        # ENT-075 append-only trigger, which is what caught approval-by-mutation at build time.
+        run: pytest packages/shared-python/tests/test_entitlement_admin_pg.py -q
       - name: Tenant registry, boundary + two-context onboarding (Postgres, ONBOARD-1a)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

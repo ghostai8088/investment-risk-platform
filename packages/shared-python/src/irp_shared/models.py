@@ -23,6 +23,7 @@ from irp_shared.entitlement.models import (
     RolePermissionRevocation,
     UserRole,
 )
+from irp_shared.entitlement.request_models import EntitlementRequest
 from irp_shared.exposure.models import ExposureAggregate
 from irp_shared.ingestion.models import IngestionBatch, IngestionStagedRecord
 from irp_shared.limit.models import Breach, LimitDefinition
@@ -108,6 +109,7 @@ __all__ = [
     "Permission",
     "RolePermission",
     "RolePermissionRevocation",
+    "EntitlementRequest",
     "Tenant",
     "UserRole",
     "DataSource",
