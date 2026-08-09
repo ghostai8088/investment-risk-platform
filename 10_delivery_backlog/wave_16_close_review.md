@@ -258,3 +258,36 @@ More importantly: **a green battery is not a green tree.** The harness runs only
 mutants name — deliberately, or it would be too slow to use during a fold — so its baseline says
 the declared controls fire and says nothing about anything else. That caveat is now in the
 harness's own docstring, next to the number a reader would otherwise over-read.
+
+---
+
+## 7. THE DIFFERENT-ENGINE REVIEW OF THE FOLD ITSELF (Fable, 2026-08-08)
+
+The fold was gated, committed (`55f7cd6`) and STOPPED, per the standing pattern that a different
+engine reviews before anything is pushed. The review attacked by execution and found **one
+BLOCKING and one MEDIUM**, both in controls this fold had just built and mutation-certified:
+
+**BLOCKING — the fold's fail-closed fix disabled the v6 termination backstop.** The poisoned skip
+sat BEFORE the `MAX_ALARM_ATTEMPTS` check in `unalarmed_verdicts`, so for exactly the poisoned
+class the attempts ceiling was dead code: executed, a verdict with one permanently-malformed row
+re-alarmed through **ten consecutive ticks — ten pages, never retired**, and would continue
+forever. That is v5's non-termination defect — the one REPRO-1's sixth fold existed to kill —
+resurrected on a new trigger by the fix for the opposite direction, one wave later, past a 16-test
+alarm lane and a 12-mutant battery (16 counted at `55f7cd6` by name-match on
+alarm/poison/queue/dispatch/attempt — counted, not recalled), because every poison-row test stopped before the ceiling.
+Fixed by restoring the OR-clause's unconditionality: the ceiling is checked FIRST (bounded noise),
+the poisoned skip second (an incomplete history still never retires via inferred success). Pinned
+by `test_a_poisoned_verdict_still_TERMINATES_at_the_attempts_ceiling`, which walks all
+`MAX_ALARM_ATTEMPTS` ticks asserting queued-then-retired, and by mutant **M-A4**, which recreates
+the defect verbatim and is KILLED.
+
+**MEDIUM — the bypass census's matcher was narrower than its claim.** It matched the single-line
+import shape only; a suite importing `create_engine` through the MULTILINE style — which ruff
+itself produces when an import list grows — escaped entirely. Proven by planting exactly that
+evader: the census passed over a suite calling the raw constructor. The matcher now reads the
+**AST**, where both import styles are one node, and also catches the `sqlalchemy.create_engine`
+attribute route; the evader was re-planted and the census FIRED. M-B1 re-anchored.
+
+Battery after both fixes: **13/13 KILLED**. The pattern's score at this close: the same-engine
+fold shipped two defects its own battery could not see, and the different engine found both in one
+pass — the fourth consecutive time the second engine has broken a green-looking surface.

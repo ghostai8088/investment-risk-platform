@@ -48,10 +48,13 @@ id = "M-B1"
 group = "w16-close"
 why = "the factory-bypass census stops matching, so its empty offender list certifies nothing"
 file = "packages/shared-python/tests/test_db_foreign_keys.py"
-find = """        line.startswith("from sqlalchemy import") and "create_engine" in line
-        for line in text.splitlines()"""
-replace = """        False
-        for line in text.splitlines()"""
+find = """    import ast
+
+    tree = ast.parse(text)"""
+replace = """    return False
+    import ast
+
+    tree = ast.parse(text)"""
 tests = ["packages/shared-python/tests/test_db_foreign_keys.py"]
 
 [[mutant]]
@@ -136,3 +139,16 @@ file = "packages/shared-python/tests/test_model_registry.py"
 find = """        if "execute_governed_run(" in text or "create_run(" in text:"""
 replace = """        if "execute_governed_run(" in text:"""
 tests = ["packages/shared-python/tests/test_model_registry.py"]
+
+[[mutant]]
+id = "M-A4"
+group = "w16-close"
+why = "the poisoned skip preempts MAX_ALARM_ATTEMPTS again — a poison row pages the desk every tick forever (the review's BLOCKING)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        if len(attempts) >= MAX_ALARM_ATTEMPTS:
+            alarmed.add(entity_id)
+            continue"""
+replace = """        if entity_id not in poisoned and len(attempts) >= MAX_ALARM_ATTEMPTS:
+            alarmed.add(entity_id)
+            continue"""
+tests = ["packages/shared-python/tests/test_reproduction.py"]

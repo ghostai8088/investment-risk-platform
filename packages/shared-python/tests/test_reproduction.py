@@ -1376,6 +1376,46 @@ def test_a_MIXED_history_stays_queued_even_when_the_readable_half_says_delivered
     )
 
 
+def test_a_poisoned_verdict_still_TERMINATES_at_the_attempts_ceiling(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The v6 OR-clause is UNCONDITIONAL — found broken at the close-fold review, by execution.
+
+    The fold's first shape put the poisoned skip BEFORE the ``MAX_ALARM_ATTEMPTS`` check, which
+    disabled the termination backstop for exactly the poisoned class: one permanently-malformed
+    row and the verdict re-alarmed every tick forever (executed: ten ticks, ten pages, never
+    retired). That is v5's non-termination defect — the one the sixth REPRO-1 fold existed to
+    kill — resurrected on a new trigger by the fix for the opposite direction.
+
+    Both properties, in one test, because each alone was already believed and wrong once:
+    below the ceiling the poisoned verdict stays QUEUED even though every readable attempt says
+    delivered (fail-closed toward alarming); AT the ceiling it retires (bounded noise). The only
+    way out of the queue for a poisoned verdict is the ceiling, never an inferred success.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    _poison_row(session, tenant, str(check.id))
+    session.commit()
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: ["reviewer-1"]
+    )
+
+    for attempt_no in range(1, MAX_ALARM_ATTEMPTS + 1):
+        queue = unalarmed_verdicts(session, acting_tenant=tenant)
+        assert [c.id for c in queue] == [check.id], (
+            f"a poisoned verdict left the queue after {attempt_no - 1} attempts on the strength "
+            "of readable rows alone — an inferred success over an incomplete history"
+        )
+        alarm_for_verdict(session, check=queue[0], sink=_RecordingSink(), acting_tenant=tenant)
+        session.flush()
+
+    assert unalarmed_verdicts(session, acting_tenant=tenant) == [], (
+        f"a poisoned verdict did NOT retire after MAX_ALARM_ATTEMPTS={MAX_ALARM_ATTEMPTS} "
+        "recorded attempts — the termination backstop is dead for the poisoned class and the "
+        "risk desk is paged every tick forever"
+    )
+
+
 def test_alarm_channel_health_is_RECOMPUTED_from_source_not_inferred_from_silence(
     session: Session,
 ) -> None:

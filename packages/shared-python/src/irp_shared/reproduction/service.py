@@ -943,12 +943,22 @@ def unalarmed_verdicts(session: Session, *, acting_tenant: str) -> list[Reproduc
     alarmed: set[str] = set()
     poisoned = set(unreadable_rows)
     for entity_id, attempts in attempts_by_entity.items():
-        if entity_id in poisoned:
-            # Some row for THIS verdict was unparseable, so its delivery history is incomplete and
-            # no conclusion drawn from the rest of it is trustworthy. Stay queued.
-            continue
+        # ORDER MATTERS, and the first draft of this fold had it backwards: the poisoned skip sat
+        # FIRST, which quietly disabled the attempts backstop for exactly the poisoned class — one
+        # permanently-malformed row and the verdict re-alarmed every tick forever (executed at the
+        # close-fold review: ten ticks, ten pages, never retired). That is v5's non-termination
+        # defect on a new trigger. The ratified v6 rule is "retire when the latest attempt
+        # concluded for everyone it tried, OR after MAX attempts" — and the OR-clause is
+        # UNCONDITIONAL, which is what checking it first restores. The attempts counted here are
+        # readable rows only (the poison row itself joins no attempt), so a poisoned verdict still
+        # gets its MAX real deliveries before retiring: fail-closed toward alarming, but BOUNDED.
         if len(attempts) >= MAX_ALARM_ATTEMPTS:
             alarmed.add(entity_id)
+            continue
+        if entity_id in poisoned:
+            # Some row for THIS verdict was unparseable, so its delivery history is incomplete and
+            # no SUCCESS conclusion drawn from the rest of it is trustworthy. Stay queued — the
+            # attempts ceiling above, not an inferred delivery, is the only way out.
             continue
         # The LATEST attempt, by the audit chain's own monotonic ordering rather than by wall clock.
         latest = max(attempts.values(), key=lambda rows: max(seq for seq, _ in rows))

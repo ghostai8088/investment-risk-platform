@@ -47,9 +47,19 @@
 >
 > **Migration head `0065` → `0066`.** Next free canonical id **ENT-074**.
 >
-> **NEXT: the close fold's gates at a frozen tree, then a Fable review, then PR/CI/merge, then the
-> Wave-17 planning gate** (ONBOARD-1 slice 0, then ALERT-1, REPRO-2, RPT-3, TS→7; D5 homeless
-> carries and D6 three process rules to ratify at that gate).
+> **THE DIFFERENT-ENGINE REVIEW RAN (Fable, over `6fcb639..55f7cd6`) and found ONE BLOCKING + ONE
+> MEDIUM in the fold's own new controls, both by execution** (close review §7): the fail-closed
+> alarm fix had put the poisoned skip ahead of `MAX_ALARM_ATTEMPTS`, killing the v6 termination
+> backstop for the poisoned class — ten ticks, ten pages, never retired — v5's non-termination
+> defect resurrected by the fix for the opposite direction; and the bypass census missed the
+> MULTILINE import style (planted evader passed; ruff produces that style). Both fixed: the
+> attempts ceiling is checked FIRST and is the poisoned verdict's ONLY exit; the matcher reads the
+> AST. Pinned by a walk-the-ceiling test + mutant M-A4; battery now **13/13**. Fourth consecutive
+> time the second engine broke a green-looking surface.
+>
+> **NEXT: re-gate, review-fold commit, then PR/CI/merge, then the Wave-17 planning gate**
+> (ONBOARD-1 slice 0, then ALERT-1, REPRO-2, RPT-3, TS→7; D5 homeless carries and D6 three process
+> rules to ratify at that gate).
 >
 > ---
 >

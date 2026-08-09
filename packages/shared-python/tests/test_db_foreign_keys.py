@@ -198,21 +198,35 @@ _FACTORY_BYPASS_ALLOWED = {
 
 
 def _builds_its_own_engine(text: str) -> bool:
-    """Match the IMPORT, not the prose.
+    """Match the IMPORT, via the AST — not the prose, and not a line shape.
 
-    The first draft grepped for the call text and flagged THIS file, whose docstrings discuss the
-    very function — a census that cannot tell a mention from a use. Reading the import list is the
-    difference.
+    Three drafts, each killed by execution rather than review:
+
+    1. grepping for the call text flagged THIS file, whose docstrings discuss the very function —
+       a census that cannot tell a mention from a use;
+    2. matching the line shape ``from sqlalchemy import ...create_engine`` missed the MULTILINE
+       import style (``from sqlalchemy import (\\n    create_engine,\\n)``) — which is not exotic:
+       ruff itself produces it when an import list grows. The close-fold review planted exactly
+       that evader and the census passed over it;
+    3. this one parses the AST, where both import styles are the same node. It also catches the
+       module-attribute route (``import sqlalchemy`` + ``sqlalchemy.create_engine(...)``), the one
+       remaining spelling a suite could reach the raw constructor by.
 
     Extracted so the census and its floor share ONE matcher. They did not at first: the floor
     carried a second copy of this expression, so neutering the census left the floor green and the
     mutation battery reported the pair as a survivor (M-B1). Two copies of one property is how a
     floor certifies a guard that has stopped working.
     """
-    return any(
-        line.startswith("from sqlalchemy import") and "create_engine" in line
-        for line in text.splitlines()
-    )
+    import ast
+
+    tree = ast.parse(text)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "sqlalchemy":
+            if any(alias.name == "create_engine" for alias in node.names):
+                return True
+        if isinstance(node, ast.Attribute) and node.attr == "create_engine":
+            return True
+    return False
 
 
 def test_no_SQLITE_suite_builds_an_engine_outside_the_factory() -> None:
