@@ -1260,35 +1260,22 @@ def test_tick_phase_5_alarms_the_queue_and_isolates_a_poison_verdict(
     }, "the failed verdict left the queue despite recording no attempt"
 
 
-def test_an_unreadable_alarm_QUEUE_costs_the_phase_not_the_TICK(
-    session: Session, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The queue read sits OUTSIDE the per-verdict guard, so its failure had the widest blast
-    radius.
+def _poison_row(db: Session, tenant: str, entity_id: str) -> None:
+    """A NOTIFY.DISPATCH row whose after_value is a bare string, not a dict.
 
-    `unalarmed_verdicts` folds a JSON payload in Python; a malformed `after_value` raises there, and
-    the exception would leave phase 5, leave `run_operational_tick_for_tenant`, and take the whole
-    tenant tick with it. No current writer can produce that payload — this guards a latent path —
-    but the blast radius is the entire argument for the per-verdict isolation one line below.
+    No monkeypatch: the FROZEN record_event persists this happily, so the fault is real rather than
+    simulated. Any buggy caller can produce it.
     """
     from irp_shared.audit.actions import ACTION_RECORD
     from irp_shared.audit.service import record_event
-    from irp_worker.reproduction_alarms import poll_tenant_reproduction_alarms
 
-    tenant = str(uuid.uuid4())
-    check = _diverged_check(session, tenant)
-    # NO monkeypatch. The first version of this test patched `unalarmed_verdicts` itself, which
-    # proved only that a `try` surrounds the call site — a test of the patch, which is the shape
-    # this slice has spent six passes learning to distrust. The independent review then showed the
-    # fault is constructible for real: the FROZEN `record_event` will persist a bare string into the
-    # JSON `after_value` column, and the real fold then raises the real AttributeError.
     record_event(
-        session,
+        db,
         tenant_id=tenant,
         event_type=NOTIFY_DISPATCH_EVENT,
         action=ACTION_RECORD,
         entity_type=ENTITY_REPRODUCTION_CHECK,
-        entity_id=str(check.id),
+        entity_id=entity_id,
         actor_id="some-buggy-caller",
         actor_type="SYSTEM",
         source_module="notification",
@@ -1296,17 +1283,161 @@ def test_an_unreadable_alarm_QUEUE_costs_the_phase_not_the_TICK(
         outcome="failure",
         after_value="i am not a dict",  # type: ignore[arg-type]
     )
-    session.flush()
+    db.flush()
 
-    assert (
-        poll_tenant_reproduction_alarms(
-            session, datetime(2026, 8, 8, tzinfo=UTC), acting_tenant=tenant, sink=_RecordingSink()
+
+def test_a_poison_row_cannot_silence_a_LIVE_divergence_found_afterwards(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Wave-16 close review's finding, and the test that would have caught it.
+
+    ONE malformed payload — about an entity with nothing to do with this divergence — used to make
+    the whole phase raise, which the worker caught and turned into an empty list, which every
+    consumer reads as "nothing to alarm". The tenant's alarm channel then went silent on every
+    subsequent tick, permanently, with a log line as the only trace. The review reproduced exactly
+    this and watched a genuine divergence created afterwards go unalarmed for five ticks.
+
+    **The test that shipped asserted the empty list as EXPECTED BEHAVIOUR** — it wrote the poison
+    row for the diverged verdict itself and checked that nothing was delivered. It encoded the
+    fail-open as the contract instead of catching it, which is the defect wearing a passing test.
+    """
+    from irp_worker.reproduction_alarms import poll_tenant_reproduction_alarms
+
+    tenant = str(uuid.uuid4())
+    _poison_row(session, tenant, str(uuid.uuid4()))  # an UNRELATED entity
+
+    live = _diverged_check(session, tenant)  # the divergence arrives AFTER the poison
+    session.commit()
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: ["reviewer-1"]
+    )
+    sink = _RecordingSink()
+    delivered = poll_tenant_reproduction_alarms(
+        session, datetime(2026, 8, 8, tzinfo=UTC), acting_tenant=tenant, sink=sink
+    )
+    assert [d[0] for d in delivered] == [str(live.id)], (
+        "a malformed row about an unrelated entity silenced a live divergence — the alarm channel "
+        "is permanently inert for this tenant and only a log line says so"
+    )
+    assert len(sink.messages) == 1
+
+
+def test_a_verdict_with_an_unreadable_row_stays_QUEUED_rather_than_retiring(
+    session: Session,
+) -> None:
+    """Fail CLOSED toward alarming, which is the only safe direction for a detective control.
+
+    If a verdict's own delivery history contains a row we cannot parse, we do not know whether it
+    was ever delivered. The choice is to re-alarm (noise) or to assume delivered (silence). For a
+    control whose entire value is telling someone a governed number stopped reproducing, noise is
+    the correct failure.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    _poison_row(session, tenant, str(check.id))
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id], (
+        "a verdict whose delivery history is unreadable was treated as delivered — the fail-open "
+        "direction, on the one control where silence is the failure that matters"
+    )
+
+
+def test_a_MIXED_history_stays_queued_even_when_the_readable_half_says_delivered(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The case the ``poisoned`` skip exists for — and the one the battery caught nothing testing.
+
+    ``test_a_verdict_with_an_unreadable_row_stays_QUEUED_rather_than_retiring`` looked like this
+    control's proof and is not. There the poison row is the verdict's ONLY row, so the entity never
+    enters ``attempts_by_entity`` at all and stays queued whether or not the guard exists — a test
+    passing for a reason that has nothing to do with what it claims to check. The mutation battery
+    is what found that: deleting the guard left it green (M-A2, a SURVIVOR).
+
+    The guard only bites on a MIXED history: a completed, all-success attempt AND an unreadable row
+    for the same verdict. The readable half says "delivered, retire it"; the unreadable half means
+    the history is incomplete, so that conclusion is not trustworthy. Fail closed — stay queued.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    session.commit()
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: ["reviewer-1"]
+    )
+    alarm_for_verdict(session, check=check, sink=_RecordingSink(), acting_tenant=tenant)
+    session.flush()
+    # The DISCRIMINATING control, inline: a clean success history DOES retire the verdict. Without
+    # this the assertion below is equally consistent with a delivery that never succeeded.
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == []
+
+    _poison_row(session, tenant, str(check.id))
+
+    assert [c.id for c in unalarmed_verdicts(session, acting_tenant=tenant)] == [check.id], (
+        "a verdict with an unreadable row in its delivery history was retired on the strength of "
+        "the rows that happened to parse — the fail-open direction on a detective control"
+    )
+
+
+def test_a_poisoned_verdict_still_TERMINATES_at_the_attempts_ceiling(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The v6 OR-clause is UNCONDITIONAL — found broken at the close-fold review, by execution.
+
+    The fold's first shape put the poisoned skip BEFORE the ``MAX_ALARM_ATTEMPTS`` check, which
+    disabled the termination backstop for exactly the poisoned class: one permanently-malformed
+    row and the verdict re-alarmed every tick forever (executed: ten ticks, ten pages, never
+    retired). That is v5's non-termination defect — the one the sixth REPRO-1 fold existed to
+    kill — resurrected on a new trigger by the fix for the opposite direction.
+
+    Both properties, in one test, because each alone was already believed and wrong once:
+    below the ceiling the poisoned verdict stays QUEUED even though every readable attempt says
+    delivered (fail-closed toward alarming); AT the ceiling it retires (bounded noise). The only
+    way out of the queue for a poisoned verdict is the ceiling, never an inferred success.
+    """
+    tenant = str(uuid.uuid4())
+    check = _diverged_check(session, tenant)
+    _poison_row(session, tenant, str(check.id))
+    session.commit()
+    monkeypatch.setattr(
+        "irp_shared.entitlement.service.holders_of_permission", lambda *_a, **_k: ["reviewer-1"]
+    )
+
+    for attempt_no in range(1, MAX_ALARM_ATTEMPTS + 1):
+        queue = unalarmed_verdicts(session, acting_tenant=tenant)
+        assert [c.id for c in queue] == [check.id], (
+            f"a poisoned verdict left the queue after {attempt_no - 1} attempts on the strength "
+            "of readable rows alone — an inferred success over an incomplete history"
         )
-        == []
-    ), "an unreadable queue escaped phase 5 and would take the tenant's whole tick with it"
-    # And the session survives: the guard's rollback must leave it serviceable, or one malformed row
-    # would poison every later phase in the same tick.
-    assert session.execute(select(func.count()).select_from(ReproductionCheck)).scalar_one() >= 1
+        alarm_for_verdict(session, check=queue[0], sink=_RecordingSink(), acting_tenant=tenant)
+        session.flush()
+
+    assert unalarmed_verdicts(session, acting_tenant=tenant) == [], (
+        f"a poisoned verdict did NOT retire after MAX_ALARM_ATTEMPTS={MAX_ALARM_ATTEMPTS} "
+        "recorded attempts — the termination backstop is dead for the poisoned class and the "
+        "risk desk is paged every tick forever"
+    )
+
+
+def test_alarm_channel_health_is_RECOMPUTED_from_source_not_inferred_from_silence(
+    session: Session,
+) -> None:
+    """An operator must be able to tell 'nothing to alarm' from 'the alarm channel is broken'.
+
+    Both look identical from phase 5's return value — an empty list — which is exactly how the
+    permanent-silence defect stayed invisible. LIM-1's standing lesson applies verbatim: a
+    fail-open control's health surface must RECOMPUTE from source, never infer from the presence or
+    absence of an evidence row.
+    """
+    from irp_shared.reproduction.service import alarm_channel_health
+
+    tenant = str(uuid.uuid4())
+    healthy = alarm_channel_health(session, acting_tenant=tenant)
+    assert healthy.unreadable_rows == 0 and healthy.healthy is True
+
+    check = _diverged_check(session, tenant)
+    _poison_row(session, tenant, str(check.id))
+    sick = alarm_channel_health(session, acting_tenant=tenant)
+    assert sick.unreadable_rows == 1, "a malformed delivery row is invisible to the health surface"
+    assert sick.healthy is False
+    assert sick.queued >= 1, "the health surface must count what is still owed an alarm"
 
 
 def _legacy_dispatch_row(db: Session, tenant: str, check_id: str, outcome: str) -> None:

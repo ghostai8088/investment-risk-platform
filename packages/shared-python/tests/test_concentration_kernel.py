@@ -21,6 +21,7 @@ from irp_shared.concentration.models import (
     CONCENTRATION_METRIC_TYPES,
     SUMMARY_METRIC_TYPES,
 )
+from irp_shared.db.session import make_engine
 
 FLOOR = Decimal("0.5")
 
@@ -160,6 +161,56 @@ class TestGaps:
             compute_dimension([Atom(_d("10000"), None, None)], FLOOR)
 
 
+def _seed_concentration_parents(db, tenant):  # noqa: ANN001, ANN201
+    """A real COMPLETED run, a real CONCENTRATION_INPUT snapshot, a real REGISTERED model version.
+
+    `concentration_result` carries three hard FKs; before FK-1 reached this suite they were bare
+    uuid4 literals that SQLite accepted only because this class built its engine directly.
+    """
+    import uuid
+    from datetime import UTC, date, datetime
+
+    from irp_shared.calc.models import CalculationRun
+    from irp_shared.model.models import Model, ModelVersion
+    from irp_shared.snapshot.models import DatasetSnapshot
+
+    run = CalculationRun(
+        run_id=str(uuid.uuid4()),
+        tenant_id=tenant,
+        run_type="CONCENTRATION",
+        status="COMPLETED",
+        initiated_by="grain-test",
+        code_version="conc-v1",
+        environment_id="test",
+    )
+    snap = DatasetSnapshot(
+        tenant_id=tenant,
+        label="conc-src",
+        purpose="CONCENTRATION_INPUT",
+        as_of_valid_at=datetime(2026, 6, 30, tzinfo=UTC),
+        as_of_known_at=datetime(2026, 6, 30, tzinfo=UTC),
+        as_of_valuation_date=date(2026, 6, 30),
+        binding_predicate_version="v1:test",
+        component_count=0,
+        manifest_hash="0" * 64,
+    )
+    model = Model(
+        tenant_id=tenant,
+        code="risk.concentration",
+        name="Concentration (grain-test seed)",
+        model_type="CONCENTRATION",
+        is_active=True,
+    )
+    db.add_all([run, snap, model])
+    db.flush()
+    mv = ModelVersion(
+        tenant_id=tenant, model_id=str(model.id), version_label="v1", status="REGISTERED"
+    )
+    db.add(mv)
+    db.flush()
+    return str(run.run_id), str(snap.id), str(mv.id)
+
+
 class TestUnitTierGrain:
     """The ratified BOTH-TIER duplicate refusal, unit tier (SQLite ``create_all``).
 
@@ -172,17 +223,26 @@ class TestUnitTierGrain:
     def _session():  # noqa: ANN205
         import uuid
 
-        from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
         from sqlalchemy.pool import StaticPool
 
         from irp_shared.models import Base
 
-        engine = create_engine(
+        engine = make_engine(
             "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
         )
         Base.metadata.create_all(engine)
-        return sessionmaker(bind=engine)(), str(uuid.uuid4())
+        db = sessionmaker(bind=engine)()
+        tenant = str(uuid.uuid4())
+        # GENUINE PARENTS. This class builds `concentration_result` rows to exercise the UNIQUE
+        # grain, and every one of them binds three hard FKs. It built its engine with a direct
+        # `create_engine`, so FK-1's factory enforcement never reached it and these four tests wrote
+        # dangling parents and passed — the Wave-16 close review found them, and found that FK-1's
+        # census had been measured THROUGH the factory and was therefore structurally blind to
+        # exactly the suites that bypass it. Same blind spot the slice existed to close.
+        run_id, snapshot_id, mv_id = _seed_concentration_parents(db, tenant)
+        db.flush()
+        return db, tenant, run_id, snapshot_id, mv_id
 
     @staticmethod
     def _row(tenant: str, run_id: str, **overrides):  # noqa: ANN003, ANN205
@@ -194,8 +254,8 @@ class TestUnitTierGrain:
         base = dict(
             tenant_id=tenant,
             calculation_run_id=run_id,
-            input_snapshot_id=str(uuid.uuid4()),
-            model_version_id=str(uuid.uuid4()),
+            input_snapshot_id=overrides.pop("_snapshot_id", None) or str(uuid.uuid4()),
+            model_version_id=overrides.pop("_mv_id", None) or str(uuid.uuid4()),
             portfolio_id=str(uuid.uuid4()),
             row_kind="DETAIL",
             dimension_kind="SECTOR_INDUSTRY",
@@ -219,42 +279,42 @@ class TestUnitTierGrain:
         return ConcentrationResult(**base)
 
     def test_duplicate_DETAIL_bucket_refused(self) -> None:
-        import uuid
-
         from sqlalchemy.exc import IntegrityError
 
-        session, tenant = self._session()
-        run_id = str(uuid.uuid4())
-        session.add(self._row(tenant, run_id))
+        session, tenant, run_id, snap_id, mv_id = self._session()
+        session.add(self._row(tenant, run_id, _snapshot_id=snap_id, _mv_id=mv_id))
         session.flush()
-        session.add(self._row(tenant, run_id))
+        session.add(self._row(tenant, run_id, _snapshot_id=snap_id, _mv_id=mv_id))
         with pytest.raises(IntegrityError):
             session.flush()
 
     def test_duplicate_UNCLASSIFIED_residual_refused(self) -> None:
         """The specifically ratified control: the residual sentinel is a bucket_code like any
         other, so two of them in one (run, dimension) must be refused, not silently summed."""
-        import uuid
 
         from sqlalchemy.exc import IntegrityError
 
-        session, tenant = self._session()
-        run_id = str(uuid.uuid4())
-        session.add(self._row(tenant, run_id, bucket_code=BUCKET_UNCLASSIFIED))
+        session, tenant, run_id, snap_id, mv_id = self._session()
+        session.add(
+            self._row(
+                tenant, run_id, _snapshot_id=snap_id, _mv_id=mv_id, bucket_code=BUCKET_UNCLASSIFIED
+            )
+        )
         session.flush()
-        session.add(self._row(tenant, run_id, bucket_code=BUCKET_UNCLASSIFIED))
+        session.add(
+            self._row(
+                tenant, run_id, _snapshot_id=snap_id, _mv_id=mv_id, bucket_code=BUCKET_UNCLASSIFIED
+            )
+        )
         with pytest.raises(IntegrityError):
             session.flush()
 
     def test_duplicate_SUMMARY_metric_refused(self) -> None:
-        import uuid
-
         from sqlalchemy.exc import IntegrityError
 
         from irp_shared.concentration.models import BUCKET_SUMMARY
 
-        session, tenant = self._session()
-        run_id = str(uuid.uuid4())
+        session, tenant, run_id, snap_id, mv_id = self._session()
         summary = dict(
             row_kind="SUMMARY",
             metric_type="HHI_SECTOR_INDUSTRY",
@@ -262,20 +322,18 @@ class TestUnitTierGrain:
             share_invested_long=None,
             metric_value=_d("0.5"),
         )
-        session.add(self._row(tenant, run_id, **summary))
+        session.add(self._row(tenant, run_id, _snapshot_id=snap_id, _mv_id=mv_id, **summary))
         session.flush()
-        session.add(self._row(tenant, run_id, **summary))
+        session.add(self._row(tenant, run_id, _snapshot_id=snap_id, _mv_id=mv_id, **summary))
         with pytest.raises(IntegrityError):
             session.flush()
 
     def test_a_DIFFERENT_bucket_in_the_same_run_is_allowed(self) -> None:
         """The positive control — without it, an index that refused EVERYTHING would pass above."""
-        import uuid
 
-        session, tenant = self._session()
-        run_id = str(uuid.uuid4())
-        session.add(self._row(tenant, run_id, bucket_code="C"))
-        session.add(self._row(tenant, run_id, bucket_code="D"))
+        session, tenant, run_id, snap_id, mv_id = self._session()
+        session.add(self._row(tenant, run_id, _snapshot_id=snap_id, _mv_id=mv_id, bucket_code="C"))
+        session.add(self._row(tenant, run_id, _snapshot_id=snap_id, _mv_id=mv_id, bucket_code="D"))
         session.flush()
 
 

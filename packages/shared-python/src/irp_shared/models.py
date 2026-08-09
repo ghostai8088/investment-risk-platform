@@ -20,6 +20,7 @@ from irp_shared.entitlement.models import (
     Permission,
     Role,
     RolePermission,
+    RolePermissionRevocation,
     UserRole,
 )
 from irp_shared.exposure.models import ExposureAggregate
@@ -105,6 +106,7 @@ __all__ = [
     "Role",
     "Permission",
     "RolePermission",
+    "RolePermissionRevocation",
     "UserRole",
     "DataSource",
     "LineageEdge",

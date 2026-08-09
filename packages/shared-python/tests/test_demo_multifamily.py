@@ -9,9 +9,9 @@ so the refusal semantics get their executable coverage HERE, in every ``make che
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from irp_shared.db.session import make_engine
 from irp_shared.demo import (
     DEMO_TENANT_ID,
     DemoMultifamilyAlreadySeededError,
@@ -24,7 +24,7 @@ from irp_shared.risk import register_factor_exposure_loadings_model
 
 @pytest.fixture()
 def session() -> Session:
-    engine = create_engine("sqlite+pysqlite:///:memory:")
+    engine = make_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine)() as s:
         yield s

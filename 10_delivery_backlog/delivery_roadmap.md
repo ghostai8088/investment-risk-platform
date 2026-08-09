@@ -303,10 +303,17 @@ Then the **WAVE-12 CLOSE REVIEW**. **Named now for later (Wave-13 candidate):** 
 - Standing deferrals with NO assigned wave (each needs its own trigger): **QS-10 day-count conventions** (the
   other half of REQ-SMR-004's deferral — the QS-11 holiday/business-day half is homed at Wave-14 CAL-1; trigger:
   first accrual/pricing methodology needing a declared convention — recorded at the Wave-14 planning gate);
-  **FE toolchain majors** (TS→7, eslint→10, jsdom→30 + the six untypechecked root guard tests; trigger: first FE
-  feature slice or a security advisory — re-deferred at the Wave-14 planning gate, OQ-W14P-8; **escalated at the
-  Wave-15 close §7-C: DECIDED at the Wave-16 planning gate — and note RPT-2's FE report view, if ratified, fires
-  the original trigger anyway**); **PERF-0's four carries** (BOUND at the Wave-15 close §7-B, user-ratified
+  **FE toolchain majors** — **PARTIALLY PAID, and the unpaid half is TS→7, registered here at the Wave-16 close
+  (finding 5) because it was invisible to every document a successor slice reads.** The Wave-16 planning gate
+  ratified "TS→7 paid as RPT-2 slice 0"; `apps/frontend/package.json` at the Wave-16 close reads eslint `10.8.0`
+  ✓, jsdom `30.0.1` ✓, **typescript `^5.9.3` ✗**. The refusal is well-reasoned and honestly written up inside
+  RPT-2's deviations section — `typescript-eslint` and `openapi-typescript` had not declared TS 7 support, and
+  forcing it would have put the FE type-drift gate on an unsupported compiler — but it appeared in no carries
+  table, no `current_state.md`, and not in this register, so a ratified gate outcome sat unpaid and unrecorded.
+  **New trigger, replacing "decided at the Wave-16 gate" (which it now has been):** pay TS→7 when BOTH
+  `typescript-eslint` and `openapi-typescript` declare TS 7 support — monitor, do not force. The six
+  untypechecked root guard tests ride with it. *(Prior history: trigger "first FE feature slice or a security
+  advisory"; re-deferred at the Wave-14 planning gate, OQ-W14P-8; escalated at the Wave-15 close §7-C.)*; **PERF-0's four carries** (BOUND at the Wave-15 close §7-B, user-ratified
   2026-08-07, to the trigger **"before any parallelization or grain-level performance work"** — the next
   perf-touching slice inherits all four mechanically, no re-litigation); covariance v2s (shrinkage/EWMA/
   correlation/annualization); vendor-beta loadings CAPTURE (the FL-1-recorded v2 — the REGRESSION leg SHIPPED

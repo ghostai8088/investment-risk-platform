@@ -45,8 +45,23 @@ diff made false. **Every row below was re-run at this head.**
 | `make check-all` (both tiers) | **`CHECK_ALL_EXIT=0`** |
 | Full-PG battery, schema reset then migrated to head | **`PG_PYTEST_EXIT=0`** |
 | Deployed-stack proof, both arms | CI `stack-proof` job at THIS head — see §2b. **This row previously quoted a LOCAL `PROOF_EXIT=0` measured at an earlier head, carried forward in the one section whose whole subject is not carrying gate numbers forward.** The same defect this record retracted two folds ago, surviving in the row nobody re-derived because the diff never touched it |
-| Mutation battery, **14** controls | **`MUTATION_EXIT=0`** — 14/14 |
+| Mutation battery | **RETRACTED at the Wave-16 close — see the correction below.** The reconstructable figures are the fifth fold's **10/10** and the fourth fold's **11/11** (after a first run with two survivors) |
 | CTRL-018's observed evidence | see §2b — re-cited at the final head |
+
+**RETRACTION (Wave-16 close, 2026-08-08).** The headline row above read "Mutation battery, **14**
+controls — `MUTATION_EXIT=0`, 14/14" and that figure is **not reconstructable from anything in this
+repository or in this record**. The close review checked: `git ls-files | grep -Ei 'mutat|battery'`
+returned nothing, so every mutation claim in Wave 16 rested on a scratch script that no longer
+existed on any branch. The two figures below ARE reconstructable because they are enumerated in
+prose — 10 for the fifth fold, 11 for the fourth — and 14 is neither of them, nor their sum, nor
+anything this record explains. It is withdrawn rather than re-derived: inventing a number to
+replace an unsupported one is the failure this section exists to document, committed twice.
+
+The class fix, not the instance fix: the battery is now a **committed artifact** —
+`scripts/mutation_battery.py` with its mutants declared in `scripts/mutants.toml`, grouped by
+slice. A cited battery can be re-run by anyone with one command, and a mutant whose anchor has
+moved is reported as a SURVIVOR rather than quietly skipped. Every claim from the Wave-16 close
+fold onward is backed by a manifest entry.
 
 **The mutation claim, stated so it can be checked rather than believed.** Each fold gets its own
 battery against the controls IT introduced. The fifth fold's is 10 mutants, `MUTATION_EXIT=0`, all

@@ -75,7 +75,15 @@ $COMPOSE up -d db >/dev/null
 $COMPOSE up --exit-code-from migrate migrate >/dev/null
 head_rev=$($COMPOSE exec -T db psql -U "$PGUSER" -d "$PGDB" -tAc "SELECT version_num FROM alembic_version" | tr -d '[:space:]')
 echo "   alembic_version=${head_rev}"
-[ "$head_rev" = "0065_reproduction_check" ] || die "expected head 0065_reproduction_check, got ${head_rev}"
+# The expected head is DERIVED from the migrations the image actually carries, not hand-pinned.
+# The pinned literal this replaces went RED the first time a migration landed after it (0066, at
+# the Wave-16 close) — the same hand-mirrored-global-fact class as the 21 test-side head pins that
+# went stale in the same fold, except this copy lived in infra where no unit tier could catch it.
+# The check still asserts what it always asserted (migrate ran to head, exactly one head exists);
+# it just asks alembic for the fact instead of a human remembering to update a string.
+expected_heads=$($COMPOSE run --rm --entrypoint alembic migrate heads | awk '/head/{print $1}')
+[ "$(printf '%s\n' "$expected_heads" | grep -c .)" = "1" ] || die "expected exactly ONE alembic head, got: ${expected_heads}"
+[ "$head_rev" = "$expected_heads" ] || die "expected head ${expected_heads}, got ${head_rev}"
 
 log "1. SEED a governed report and the nightly reproduction schedule"
 seed_out=$($COMPOSE run --rm -e IRP_ALLOW_PROOF_SEED=1 --entrypoint python migrate \

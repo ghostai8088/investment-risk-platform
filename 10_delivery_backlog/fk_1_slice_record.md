@@ -28,7 +28,7 @@ Measured at the merge head, tree verified unchanged during both full gates.
 | Gate | Result |
 |---|---|
 | The measurement, BEFORE | **104 failed + 47 errors** across 14 suites with the pragma flipped, at `a37db29` |
-| The measurement, AFTER | full unit tier **`FULL_UNIT_EXIT=0`** — `2554 passed, 602 skipped` |
+| The measurement, AFTER | full unit tier **`FULL_UNIT_EXIT=0`** — `2557 passed, 602 skipped` at the merge head. **CORRECTED at the Wave-16 close (finding 9): this row said `2554`, which is the count from BEFORE this slice's own three guard tests existed — an "after" figure measured on the wrong tree, contradicted three sections later by the 3,159 platform-wide collect count in the same record** |
 | `make check-all` (both tiers) | **`CHECK_ALL_EXIT=0`** (tree verified unchanged during the run) |
 | Full-PG battery, schema reset then migrated to head | **`PG_PYTEST_EXIT=0`** — `3159 passed`, zero skips |
 | Mutation battery, 4 controls | **`MUTATION_EXIT=0`** — 4/4 on BOTH runs; the first run's green was over a tree its own F-D arm had corrupted (§4b), so the battery was corrected and re-run |

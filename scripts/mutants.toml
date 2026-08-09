@@ -1,0 +1,154 @@
+# The declared mutation battery — see scripts/mutation_battery.py.
+#
+# Every entry is a change that SHOULD break a control. `why` states the defect it re-introduces, so
+# a survivor reads as a sentence about the platform rather than an id. Run:
+#
+#     python scripts/mutation_battery.py --group w16-close
+#
+# Anchors are literal source text; a mutant whose anchor no longer matches is reported as a
+# SURVIVOR, not skipped — code that moved out from under its own proof is exactly what a stale
+# battery hides.
+
+# ---------------------------------------------------------------------------------------------
+# Wave-16 close fold. Three controls, each proven to fire.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "M-A1"
+group = "w16-close"
+why = "an unreadable alarm payload raises again, silencing the whole tenant's alarm channel"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        if not isinstance(payload, dict):
+            unreadable_rows.append(str(entity_id))
+            continue
+"""
+replace = ""
+tests = ["packages/shared-python/tests/test_reproduction.py"]
+
+[[mutant]]
+id = "M-A2"
+group = "w16-close"
+why = "a verdict with one unparseable delivery row is concluded on anyway, instead of staying queued"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        if entity_id in poisoned:"""
+replace = """        if False:"""
+tests = ["packages/shared-python/tests/test_reproduction.py"]
+
+[[mutant]]
+id = "M-A3"
+group = "w16-close"
+why = "the alarm channel reports healthy while it cannot read its own delivery rows"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        return self.unreadable_rows == 0"""
+replace = """        return True"""
+tests = ["packages/shared-python/tests/test_reproduction.py"]
+
+[[mutant]]
+id = "M-B1"
+group = "w16-close"
+why = "the factory-bypass census stops matching, so its empty offender list certifies nothing"
+file = "packages/shared-python/tests/test_db_foreign_keys.py"
+find = """    import ast
+
+    tree = ast.parse(text)"""
+replace = """    return False
+    import ast
+
+    tree = ast.parse(text)"""
+tests = ["packages/shared-python/tests/test_db_foreign_keys.py"]
+
+[[mutant]]
+id = "M-B2"
+group = "w16-close"
+why = "a SQLite suite goes back to building its own engine, escaping FK enforcement unnoticed"
+file = "packages/shared-python/tests/test_demo_hg1.py"
+find = """from irp_shared.db.session import make_engine"""
+replace = """from sqlalchemy import create_engine  # noqa: F401
+from irp_shared.db.session import make_engine"""
+tests = ["packages/shared-python/tests/test_db_foreign_keys.py"]
+
+[[mutant]]
+id = "M-C1"
+group = "w16-close"
+why = "the catalog sync resurrects a template grant an administrator deliberately revoked (P17)"
+file = "packages/shared-python/src/irp_shared/entitlement/sync.py"
+find = """        if gid in revoked:"""
+replace = """        if False:"""
+tests = ["packages/shared-python/tests/test_entitlement_sync.py"]
+
+[[mutant]]
+id = "M-C2"
+group = "w16-close"
+why = "an absent revocation ledger is reported as 'nothing was revoked' — absence read as evidence"
+file = "packages/shared-python/src/irp_shared/entitlement/sync.py"
+find = """        return set(), False"""
+replace = """        return set(), True"""
+tests = ["packages/shared-python/tests/test_entitlement_sync.py"]
+
+[[mutant]]
+id = "M-C3"
+group = "w16-close"
+why = "a skipped revoked grant is silently skipped — no operator can see the sync declined"
+file = "packages/shared-python/src/irp_shared/entitlement/sync.py"
+find = """    for name, code in sorted(skipped):
+        messages.append(
+            f"entitlement sync: NOT restoring {name} -> {code} — revoked in "
+            "role_permission_revocation"
+        )
+"""
+replace = ""
+tests = ["packages/shared-python/tests/test_entitlement_sync.py"]
+
+[[mutant]]
+id = "M-C4"
+group = "w16-close"
+why = "a permission is minted into the constant with no migration delivering it to running DBs"
+file = "packages/shared-python/src/irp_shared/entitlement/bootstrap.py"
+find = """]
+
+#: All permission codes, in catalog order."""
+replace = """    ("mutant.undeliverable.view", "A code no migration delivers"),
+]
+
+#: All permission codes, in catalog order."""
+tests = ["packages/shared-python/tests/test_entitlement_mint_delivery.py"]
+
+[[mutant]]
+id = "M-C5"
+group = "w16-close"
+why = "the DELIVERS reader finds nothing, so the mint gate passes over an empty delivered set"
+file = "packages/shared-python/tests/test_entitlement_mint_delivery.py"
+find = """isinstance(t, ast.Name) and t.id == "DELIVERS\""""
+replace = """isinstance(t, ast.Name) and t.id == "NEVER_MATCHES\""""
+tests = ["packages/shared-python/tests/test_entitlement_mint_delivery.py"]
+
+[[mutant]]
+id = "M-D1"
+group = "w16-close"
+why = "report/service.py mints a governed run with no model gate and no recorded exception (P8's real hole)"
+file = "packages/shared-python/tests/test_model_registry.py"
+find = """        "report/service.py": ("""
+replace = """        "report/service.py.DISABLED": ("""
+tests = ["packages/shared-python/tests/test_model_registry.py"]
+
+[[mutant]]
+id = "M-D2"
+group = "w16-close"
+why = "the P8 census narrows back to execute_governed_run only, dropping two shipped families out of its population"
+file = "packages/shared-python/tests/test_model_registry.py"
+find = """        if "execute_governed_run(" in text or "create_run(" in text:"""
+replace = """        if "execute_governed_run(" in text:"""
+tests = ["packages/shared-python/tests/test_model_registry.py"]
+
+[[mutant]]
+id = "M-A4"
+group = "w16-close"
+why = "the poisoned skip preempts MAX_ALARM_ATTEMPTS again — a poison row pages the desk every tick forever (the review's BLOCKING)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        if len(attempts) >= MAX_ALARM_ATTEMPTS:
+            alarmed.add(entity_id)
+            continue"""
+replace = """        if entity_id not in poisoned and len(attempts) >= MAX_ALARM_ATTEMPTS:
+            alarmed.add(entity_id)
+            continue"""
+tests = ["packages/shared-python/tests/test_reproduction.py"]

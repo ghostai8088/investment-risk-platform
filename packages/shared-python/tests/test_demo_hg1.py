@@ -15,11 +15,12 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from irp_shared.audit.models import AuditEvent
 from irp_shared.calc.models import RunStatus
+from irp_shared.db.session import make_engine
 from irp_shared.demo import (
     DemoHg1AlreadySeededError,
     DemoHg1PrereqError,
@@ -57,7 +58,7 @@ from irp_shared.risk.bootstrap import (
 
 @pytest.fixture()
 def session() -> Session:
-    engine = create_engine("sqlite+pysqlite:///:memory:")
+    engine = make_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine)() as s:
         yield s

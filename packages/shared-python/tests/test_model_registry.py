@@ -469,14 +469,27 @@ def test_assign_model_tier_refusals(session: Session) -> None:
 def test_every_governed_binder_calls_the_model_version_gate() -> None:
     """P8 — the governed-binder conformance census (RATIFIED at the Wave-14 close).
 
-    Every module that calls ``execute_governed_run`` must call ``assert_model_version_of`` in the
-    same module, or sit on the exception list with a written reason. Exact set equality in both
+    Every module that mints a governed ``calculation_run`` must call ``assert_model_version_of`` in
+    the same module, or sit on the exception list with a written reason. Exact set equality in both
     directions: a new binder that skips the gate fails here, and a stale exception row fails here.
 
     Grounded in the close's BLOCKING: LQ-1 shipped the 24th governed family as the ONLY one of
     twenty-four missing the gate — a REJECTED model version bound and wrote seven immutable rows,
     and no per-slice gate noticed for a full slice plus its adversarial review. A per-family
     convention with 23 correct instances and one wrong one is exactly what a census is for.
+
+    **WIDENED at the Wave-16 close (finding: REPRO-1 carry (h)).** The population used to be
+    "modules calling ``execute_governed_run``", and that predicate had a hole big enough for two
+    shipped families to walk through: ``report/service.py`` and ``reproduction/service.py`` mint
+    their runs with ``create_run`` directly rather than through the scaffold, so **neither was in
+    the census population at all** — not gated, and not on the exception list either, which is
+    strictly worse than being excepted because nothing recorded the decision.
+
+    RPT-1's own docstring asserted the opposite, in production source: it said the report binder was
+    "recorded on the P8 census exception list", and it never was. That claim is the reason this
+    predicate moved. A census whose population is defined by *how* a run is created rather than
+    *that* one is created can be escaped by not using the helper — which is not a hypothetical
+    evasion, it is simply what the next two slices happened to do.
     """
     import pathlib
 
@@ -490,15 +503,34 @@ def test_every_governed_binder_calls_the_model_version_gate() -> None:
             "model-less by ratified design — EXPOSURE_AGGREGATE binds no model_version "
             "(the captured-aggregation class; AD-018)"
         ),
+        "report/service.py": (
+            "model-less by design — a REPORT registers no model of its own; it renders numbers "
+            "OTHER families produced under THEIR registered versions, and each rendered section "
+            "carries its own family's model_code and methodology_ref. Admitted to the census at "
+            "the Wave-16 close: the module's docstring had claimed this row existed since RPT-1, "
+            "and it did not"
+        ),
+        "reproduction/service.py": (
+            "model-less by ratified design — the REPRODUCTION sweep runs no model of its own; it "
+            "RE-EXECUTES families that each bind their own registered version, which is why "
+            "migration 0065's family CHECK arm is `model_version_id IS NULL` for this family"
+        ),
+        "deploy/report_identity_proof.py": (
+            "a deployed-stack PROOF harness, not a governed binder — it drives report/service.py, "
+            "whose own disposition is two rows above; it registers and asserts nothing itself"
+        ),
     }
 
     binders: set[str] = set()
     for path in root.rglob("*.py"):
         rel = str(path.relative_to(root))
-        if rel == "calc/scaffold.py":
-            continue  # the definition site, not a caller
+        if rel in {"calc/scaffold.py", "calc/service.py"}:
+            continue  # the definition sites, not callers
         text = path.read_text()
-        if "execute_governed_run(" in text:
+        # BOTH doors into a governed run. `execute_governed_run` is the scaffolded one; `create_run`
+        # is the raw one two shipped families use, and scanning only for the first is what let them
+        # out of the population entirely.
+        if "execute_governed_run(" in text or "create_run(" in text:
             binders.add(rel)
 
     assert len(binders) > 20, "the census scanned suspiciously few binders — the walk is broken"
