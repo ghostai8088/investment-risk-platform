@@ -1,17 +1,45 @@
 # Claude Operating Instructions
 
-> **As of HEAD `f941d50` (amended 2026-07-06 for the Opus 4.8 → Fable 5 model change).** How Claude Code works
-> on this project. Read with `current_state.md`, `next_actions.md`, and `decision_summary.md`. These encode the
-> user's required cadence — follow them exactly. (`CLAUDE.md` at the repo root is the auto-loaded entry pointer.)
+> **As of HEAD `f941d50` (amended 2026-07-06 for the Opus 4.8 → Fable 5 model change; reconciled
+> 2026-08-09 at the Wave-17 planning gate — the D6 editorial pass).** How Claude Code works on this
+> project. Read with `current_state.md` and `decision_summary.md`. These encode the user's required
+> cadence — follow them exactly. (`CLAUDE.md` at the repo root is the auto-loaded entry pointer;
+> `next_actions.md` was RETIRED to a pointer stub at the Wave-6 close, OQ-W6C-4.)
+
+## Index of standing rules (added 2026-08-09 — "a rule set nobody can enumerate is the mechanism behind two Wave-16 findings")
+
+**Numbered rules, each a section below or in the named home:** P1 seven-ledger sweep +
+verify-on-main · P2 shared-tree mutation · P3 register entries are claims about the code · P4
+executed dry runs for migration/dependency slices · P5 assert by evidence, not absence · P6
+non-vacuity floors · P7 lessons as acts (+ the pre-flight-manifest companion) · P8 governed-binder
+census · P9 a refusal fires before it ships · P10 folds apply to the class · P11 permission mints
+carry pin + census + SoD row · P12 execute the plainest alternative before recording impossibility
+· P13 kills need factual refutation · P14 gates quote exit codes (+ the subagent-admissibility
+clause) · P15 shared-assumption proofs count once (+ the different-engine trigger) · P16 citations
+re-verified at the PR boundary · P17 a mint isn't minted until a migration delivers it · P18
+harnesses get controls and get committed · P19 a carry names a slice or a trigger, else it is a
+decision.
+
+**Unnumbered standing sections (conventions, same force, enumerated so none is invisible):** the
+adversarial review pattern · verification & objectivity · gate tiers · commit discipline ·
+provenance & dates · the local PG container · scope control · the return format · engineering
+conventions · the design-completeness checklist · the closeout sweep · prohibited behavior.
 
 ## Operating model (UltraCode)
-> **Delivery autonomy (granted 2026-07-12).** Claude self-drives the plan → implement → review → commit →
-> push cycle WITHOUT per-step / per-artifact approval. The user's control points are now (a) opening + merging
-> every PR to `main` (branch protection; Claude never touches the token) and (b) genuine DECISIONS — the Tier-3
-> OQ sign-off ledger, design forks, scope/sequencing changes. Where the text below says "approval required
-> before commit," read it as "commit + push autonomously; the gate is the PR merge + any genuine decision." The
-> other hard invariants are UNCHANGED (frozen `audit/service.py`; no BYPASSRLS / no new audit-permission-role
-> outside the R-07 mint; verification gates never waived; adversarial review still runs before the push).
+> **Delivery autonomy (granted 2026-07-12; EXTENDED 2026-07-14 — see `CLAUDE.md`, the operative
+> text).** Claude self-drives the full plan → implement → review → commit → push → **PR → merge**
+> cycle WITHOUT per-step approval; the 2026-07-14 extension made PR creation and merging Claude's
+> call too, with branch protection's required status checks + the adversarial-review/`make
+> check`/full-PG/CI-green gates as the machine merge gate (executed since 2026-08-01, PRs #156+).
+> The user's control points are genuine DECISIONS — the Tier-3 OQ sign-off ledger, design forks,
+> scope/sequencing changes, standing-rule ratifications — and anything hard-to-reverse or
+> outward-facing beyond the repo. Where the text below says "approval required before commit," read
+> it as "commit + push + merge autonomously once every gate passes." The other hard invariants are
+> UNCHANGED (frozen `audit/service.py`; no BYPASSRLS / no new audit-permission-role outside the
+> R-07 mint; verification gates never waived; adversarial review still runs before the push).
+> *(An earlier revision of this block still named "opening + merging every PR" as a USER control
+> point — the pre-extension text, contradicting the grant for two years of wave-time. That
+> contradiction is what the D6 editorial pass was ratified to remove.)*
 
 Planning-first, per-slice; Claude commits + pushes autonomously:
 - **Planning:** the plan/decision-record markdown is authored single-threaded, then adversarially reviewed
@@ -436,7 +464,11 @@ builder should enact for itself — that is structurally the same move as a cont
 own existence, the defect class this rule exists to prevent. **Corollary now binding: an
 implausibly fast gate is itself a signal.** A job that finishes far too quickly for the work it
 claims has not done the work; read WHICH STEP failed before diagnosing, because everything after a
-failing step never ran at all.
+failing step never ran at all. **Clause added at the Wave-17 planning gate (user-ratified
+2026-08-09, D6-3): a subagent's report is INADMISSIBLE as evidence unless it quotes a terminal
+exit code.** An agent that returns mid-run has not audited anything; one Wave-16 audit did exactly
+that and was correctly discarded, with its steps re-executed in full. The same bar the builder
+holds for its own claims applies to every agent whose output the builder would cite.
 
 ## Two proofs sharing an assumption count as one proof (standing, RATIFIED 2026-08-07, P15)
 When a claim matters, at least one proof must be constructed under **different assumptions** than the
@@ -454,6 +486,19 @@ user ("proceed" on the Wave-15 close review §5-E, wording as proposed in §3). 
 self-enacted when drafted:** proposed at the close review as an explicit ratification item, on the P14
 precedent that an evidence-sufficiency rule for the builder's own claims should not be enacted by the
 builder on its own authority.
+
+**AMENDED at the Wave-17 planning gate (user-ratified 2026-08-09, D6-2), the different-engine
+trigger:** when successive review folds ON THE SAME ENGINE each introduce a defect the next pass
+catches, more passes on that engine are redundant evidence — the passes share the engine's blind
+spots, which is exactly this rule's shared-assumption class. **The trigger: after TWO consecutive
+same-engine folds have each shipped a defect, the next review pass runs on a different engine (or,
+if none is available, a fresh context with the diff as its only input).** Phrased as a trigger and
+not an assignment matrix on purpose — engine availability is not guaranteed, and a standing matrix
+would rot. *Grounded:* REPRO-1's five consecutive same-engine passes each found real defects and
+each shipped a new one; a different engine found the sixth BLOCKING in one pass and proved a
+refactor behaviour-identical by differential execution. Then the Wave-16 close fold repeated the
+pattern at n=1: the same-engine fold shipped two battery-invisible defects and the different engine
+found both in one pass — the fourth consecutive time the second engine broke a green surface.
 
 ## A control-status citation is re-verified against the branch tip before the PR (standing, drafted 2026-08-07, RATIFIED 2026-08-08, P16)
 A control matrix row that moves a control to *Implemented* or *Operational* on OBSERVED evidence cites a
@@ -510,14 +555,60 @@ clauses are one rule.
 the close review's finding that ratifying the sync alone "institutionalises that behaviour" and is
 "the difference between deny-by-default with governed mints being true and being aspirational".
 
+## A verification harness is itself a control: it gets controls, and it gets committed (standing, RATIFIED 2026-08-09, P18)
+Wave 16's dominant defect class — SEVEN instances — was a harness that could not detect what it
+claimed to test: a test that could not plant its own divergence, a proof that minted its own tenant
+and proved nothing, a negative control that never received its input, a mutation battery that
+destroyed the fix it was validating and then certified the corrupted tree, a smoke that compared a
+report to itself, a floor that duplicated the matcher it protected, and a poison-row test whose
+subject stayed queued for a reason unrelated to the guard. **The mechanical rule, two clauses:**
+
+1. **Every negative control ships with a positive control asserting the harness's own precondition
+   landed** — before "the refusal fired" is evidence, something must prove the input that should
+   trigger it actually arrived, or the refusal is indistinguishable from a harness that delivers
+   nothing (LIM-2's lesson, now generalized to every harness).
+2. **Any harness whose output is cited as governed evidence is COMMITTED to the repository.** A
+   proof that lives in a scratchpad is a citation with no artifact — four Wave-16 batteries were
+   cited that way and one headline figure ("14/14") had to be RETRACTED as unreconstructable.
+   `scripts/mutation_battery.py` + `scripts/mutants.toml` are the pattern: declared mutants, an
+   unmatched anchor reported as a SURVIVOR, the working tree never mutated (a clone is), and the
+   caveat in the harness's own docstring that its green is scoped to its targets — **a green
+   battery is not a green tree.**
+
+**RATIFIED 2026-08-09 by the user at the Wave-17 planning gate (D6-1, as recommended).**
+
+## A carry names a sequenced slice or a mechanical trigger — anything else is a DECISION (standing, RATIFIED 2026-08-09, P19)
+The Wave-16 close counted **29 of 31 carries naming a host that does not exist, is not a trigger,
+or is "someone will notice in production"** — a register where known problems go to be forgotten
+with a paper trail. **The rule, bound to the moment of writing any carry:** a carry row is valid
+only if its trigger column names (a) a slice that exists in the roadmap sequence, or (b) a
+mechanical condition that fires on its own (a dependency declaring support, a census reddening, a
+route landing). A deferral that satisfies neither is not a carry — it is a DECISION, and it goes to
+the user at the moment of deferral, not at a close review months later. **The backstop (clause B):
+at each wave close, the register is swept and any carry gone homeless since it was written is
+promoted to the roadmap or escalated as a decision.** *Grounded:* TS→7 — a user-ratified gate
+outcome — sat unpaid and invisible to every document a successor slice reads, because its refusal
+was recorded in a deviations section that nothing sweeps. **RATIFIED 2026-08-09 by the user at the
+Wave-17 planning gate (D5, option A with B as backstop, as recommended).**
+
 ## Prohibited behavior
-- Committing/pushing without explicit approval; starting the next slice unprompted.
+*(Reconciled at the Wave-17 planning gate, 2026-08-09, as the D6 editorial pass: the first bullet
+contradicted the 2026-07-12/14 delivery-autonomy grant for TWO YEARS of wave-time — it predated the
+grant and nothing swept it; the out-of-phase bullet named phases that shipped long ago. A rule set
+nobody can enumerate is the mechanism behind two Wave-16 findings, which is why this pass was
+ratified alongside P18/P19.)*
+- Merging before the gates that replaced the human merge gate all pass (adversarial review,
+  `make check`/`check-all`, full-PG, CI-watch-to-green — see the autonomy grant in `CLAUDE.md`);
+  self-ratifying a Tier-3 decision, a governed mint, or a standing rule that constrains the
+  builder's own reporting.
 - Writing application code during a planning/decision turn.
-- Adding excluded/out-of-phase scope (domain entities, P1C/P2+, dashboards, reporting, real SSO, etc.).
+- Adding scope the roadmap sequence does not name for the current slice — a scope expansion is a
+  gate question, not a builder's call (the standing scope-control rules above).
 - Modifying `audit/service.py`; minting audit codes/permissions/roles outside the governed process.
 - Putting secrets in source (BR-10); staging artifacts/caches/env files.
 - Reading/copying/printing/using a **credential file** (e.g. a stray GitHub PAT) found on disk — never inspect
   token contents; flag it for the user to revoke/rotate. (One was found in the parent dir and resolved on
-  2026-06-22 — see `current_state.md` Housekeeping; git auth is now an SSH key.)
+  2026-06-22 — see `current_state.md` Housekeeping; git auth is the keychain-cached HTTPS credential,
+  origin flipped from SSH 2026-07-09.)
 - Declaring a background workflow "dead" from weak signals — wait for the harness completion notification.
 - Reporting success without verification (state failures with output; say when a step was skipped).

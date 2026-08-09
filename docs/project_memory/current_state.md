@@ -68,10 +68,22 @@
 > exactly-one-head floor. Second CI pass: all jobs green on both runs, `CHECKS_EXIT=0`, stack-proof
 > 2m06s vs main's green 2m08s (duration cross-checked against the implausibly-fast red flag).
 >
-> **NEXT = the WAVE-17 PLANNING GATE** (a user decision point): ONBOARD-1 slice 0 (ratified at the
-> Wave-16 close — tenant/user/role provisioning; the platform currently has NO ignition), then
-> ALERT-1, REPRO-2, RPT-3, TS→7 on its trigger; D5 (homeless carries) and D6 (three process rules)
-> to ratify at that gate.
+> **THE WAVE-17 PLANNING GATE IS RATIFIED (2026-08-09, AskUserQuestion, all three as
+> recommended).** The sequence: **ONBOARD-1 → ALERT-1 → REPRO-2 → RPT-3**, TS→7 on its mechanical
+> trigger (roadmap Part 2.19). **D5 = P19**: a carry names a sequenced slice or a mechanical
+> trigger — anything else is a DECISION at deferral time; wave-close register sweep as backstop.
+> **D6 = P18** (a verification harness is itself a control: positive controls for its
+> preconditions, and any harness cited as governed evidence is COMMITTED) **plus** the P15
+> different-engine trigger (after two consecutive same-engine folds each ship a defect, the next
+> pass runs on a different engine or a fresh context), the P14 subagent-admissibility clause (no
+> terminal exit code = inadmissible), and the editorial pass over the operating instructions —
+> the pre-grant "no committing/pushing without approval" prohibition and the pre-extension "user
+> merges every PR" text were BOTH still standing and are reconciled to the operative grant; the
+> full rule set is now enumerated in an index (P1–P19 + twelve named conventions).
+>
+> **NEXT = ONBOARD-1 planning** (Wave-17 slice 0): tenant/user/role provisioning — the missing
+> ignition. Tier-3 forks to surface at its gate: the admin bootstrap identity and tenant-creation
+> authority. The full mint discipline applies (R-07, P11, P17's DELIVERS migration).
 >
 > ---
 >
