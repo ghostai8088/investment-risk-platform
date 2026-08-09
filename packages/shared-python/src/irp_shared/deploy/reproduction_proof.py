@@ -93,9 +93,11 @@ def _create_repro_schedule(session: Session, code: str) -> str:
 
 def seed(session: Session) -> dict[str, str]:
     """Seed a governed REPORT run plus the nightly schedule that will re-verify it."""
-    from irp_shared.deploy.report_identity_proof import seed_and_generate, seed_principals
-
-    from irp_shared.deploy.report_identity_proof import register_proof_tenant
+    from irp_shared.deploy.report_identity_proof import (
+        register_proof_tenant,
+        seed_and_generate,
+        seed_principals,
+    )
 
     register_proof_tenant(session)
     set_tenant_context(session, PROOF_TENANT)
