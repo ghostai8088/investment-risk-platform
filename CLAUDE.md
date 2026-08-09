@@ -33,7 +33,11 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
 - **`packages/shared-python/src/irp_shared/audit/service.py` is FROZEN** — never modify it.
 - **No BYPASSRLS app path; no hybrid/SYSTEM_TENANT behavior** beyond the closed **7-table** hybrid set (five at
   AD-013-R1, extended to seven by **AD-013-R2** at REF-1 2026-07-29 — user-ratified; the declaration is
-  `reference.models.HYBRID_TABLES`, and each migration polices only the tables it created); proprietary
+  `reference.models.HYBRID_TABLES`, and each migration polices only the tables it created) **plus the
+  three-part ONBOARD-1 clause (user-ratified 2026-08-09, OQ-ONB-2A):** (i) the `tenant.create`-guarded
+  cross-tenant onboarding transaction, (ii) ONE standing authenticatable SYSTEM-tenant principal (the
+  platform operator — refused on every router except provisioning, census-pinned), and (iii) the SYSTEM
+  tenant's row in the ENT-074 registry. The hybrid TABLE set is unchanged at seven; proprietary
   data = symmetric FORCE RLS.
 - **No new audit code, permission, or role** outside the governed R-07 mint; no secrets in source (BR-10).
 - **Verification gates are never waived** (`make check`, full-PG validation, CI-watch-to-green, reproduction
