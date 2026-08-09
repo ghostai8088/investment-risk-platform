@@ -9521,6 +9521,19 @@ export interface components {
              */
             role_id: string;
         };
+        /**
+         * RoleOut
+         * @description Typed, because the FE consumes this via the generated OpenAPI contract (FE-2) — a
+         *     ``list[dict]`` here compiles the screen against ``unknown`` and the contract guards nothing.
+         */
+        RoleOut: {
+            /** Code */
+            code: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** RollingRiskListOut */
         RollingRiskListOut: {
             /** Items */
@@ -21295,9 +21308,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["RoleOut"][];
                 };
             };
             /** @description Validation Error */

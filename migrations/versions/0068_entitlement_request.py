@@ -133,10 +133,13 @@ def upgrade() -> None:
         "entitlement_request",
         "action IN ('GRANT_ROLE', 'REVOKE_ROLE', 'DEACTIVATE_USER')",
     )
+    # No REJECTED: the record ratified approval and nothing else, and the first build minted the
+    # status with no code path able to produce it — struck at review (the LQ-1 inert-state
+    # class). A refusal is inaction; a reject verb is a future gate's decision.
     op.create_check_constraint(
         "status",
         "entitlement_request",
-        "status IN ('PENDING', 'APPROVED', 'REJECTED', 'DIRECT')",
+        "status IN ('PENDING', 'APPROVED', 'DIRECT')",
     )
     # A RESOLUTION row points at what it resolves; an originating row does not. Appending the
     # decision rather than mutating the request is what makes the trigger below compatible with a
@@ -145,7 +148,7 @@ def upgrade() -> None:
         "resolution_link",
         "entitlement_request",
         "(resolves_request_id IS NULL AND status IN ('PENDING', 'DIRECT')) "
-        "OR (resolves_request_id IS NOT NULL AND status IN ('APPROVED', 'REJECTED'))",
+        "OR (resolves_request_id IS NOT NULL AND status = 'APPROVED')",
     )
     # The one CHECK that makes the control non-decorative: a resolved request NAMES its resolver.
     op.create_check_constraint(

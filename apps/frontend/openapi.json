@@ -12690,6 +12690,30 @@
         "title": "RoleGrantIn",
         "type": "object"
       },
+      "RoleOut": {
+        "description": "Typed, because the FE consumes this via the generated OpenAPI contract (FE-2) \u2014 a\n``list[dict]`` here compiles the screen against ``unknown`` and the contract guards nothing.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "title": "RoleOut",
+        "type": "object"
+      },
       "RollingRiskListOut": {
         "properties": {
           "items": {
@@ -45311,8 +45335,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/RoleOut"
                   },
                   "title": "Response List Roles Roles Get",
                   "type": "array"

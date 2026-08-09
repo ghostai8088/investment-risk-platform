@@ -32,6 +32,8 @@ import type { components } from "./generated/api-types";
 type Schemas = components["schemas"];
 export type BreachOut = Schemas["BreachOut"];
 export type LimitOut = Schemas["LimitOut"];
+export type UserOut = Schemas["UserOut"];
+export type EntitlementRequestOut = Schemas["EntitlementRequestOut"];
 
 /** What a 409 actually meant, and therefore what to tell the operator to do. */
 export type RefusalKind = "separation-of-duties" | "stale" | "illegal-transition" | "other";
@@ -101,4 +103,58 @@ export async function approveLimit(
   return request<LimitOut>(`/limits/${limitId}/approve`, session, "POST", {
     approval_ref: input.approvalRef,
   });
+}
+
+// --- ONBOARD-1b: tenant administration (Users & Roles, SOD-04 four-eyes) ----------------------
+// Every entitlement verb returns `EntitlementRequestOut`, and the caller MUST read `status`:
+// PENDING means the act has NOT happened yet (a second admin must approve), DIRECT means it did
+// (the bootstrap window, flagged). Rendering the outcome is the screen's job — a 200 alone says
+// only that the REQUEST was recorded.
+
+export async function createUser(
+  session: Session | null,
+  input: { externalSubject: string; displayName: string },
+): Promise<UserOut> {
+  return request<UserOut>("/users", session, "POST", {
+    external_subject: input.externalSubject,
+    display_name: input.displayName,
+  });
+}
+
+export async function grantRole(
+  session: Session | null,
+  userId: string,
+  input: { roleId: string; reason?: string },
+): Promise<EntitlementRequestOut> {
+  return request<EntitlementRequestOut>(`/users/${userId}/roles`, session, "POST", {
+    role_id: input.roleId,
+    // Optional governed context — sent only when populated (the DTO is extra-forbidding).
+    ...(input.reason ? { reason: input.reason } : {}),
+  });
+}
+
+export async function revokeRole(
+  session: Session | null,
+  userId: string,
+  roleId: string,
+): Promise<EntitlementRequestOut> {
+  return request<EntitlementRequestOut>(`/users/${userId}/roles/${roleId}`, session, "DELETE");
+}
+
+export async function deactivateUser(
+  session: Session | null,
+  userId: string,
+): Promise<EntitlementRequestOut> {
+  return request<EntitlementRequestOut>(`/users/${userId}/deactivate`, session, "POST");
+}
+
+export async function approveEntitlementRequest(
+  session: Session | null,
+  requestId: string,
+): Promise<EntitlementRequestOut> {
+  return request<EntitlementRequestOut>(
+    `/entitlement-requests/${requestId}/approve`,
+    session,
+    "POST",
+  );
 }

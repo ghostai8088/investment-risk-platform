@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
-from irp_shared.audit.actions import ACTION_CREATE, ACTION_STATUS_CHANGE, ACTION_UPDATE
+from irp_shared.audit.actions import ACTION_CREATE, ACTION_STATUS_CHANGE
 from irp_shared.audit.service import record_event
 from irp_shared.entitlement.models import AppUser, Role, UserRole
 from irp_shared.entitlement.request_models import (
@@ -201,8 +201,29 @@ def request_entitlement_change(
         # Tenant-scoped by construction: an admin cannot reach into another tenant, and the
         # refusal is the same whether the user is absent or foreign (no cross-tenant oracle).
         raise EntitlementError("target user not found in this tenant")
+    if target_role_id is not None:
+        # The role gets the SAME scope check as the user — the review found it did not, and the
+        # asymmetry was live: a grant naming another tenant's role id was accepted and would have
+        # written a user_role row referencing a role its own tenant can never see (RLS breaks the
+        # permission join, so the row is a ghost — inert authority on PG, real authority on any
+        # path without RLS). Same opaque refusal as the user check: no cross-tenant oracle.
+        role_in_tenant = session.execute(
+            select(Role.id).where(Role.id == target_role_id, Role.tenant_id == tenant_id)
+        ).scalar_one_or_none()
+        if role_in_tenant is None:
+            raise EntitlementError("target role not found in this tenant")
 
     pending = _four_eyes_required(session, tenant_id, requester=actor.actor_id, now=at)
+    if action == ACTION_DEACTIVATE_USER and target_user_id not in valid_admin_user_ids(
+        session, tenant_id, now=at
+    ):
+        # Four-eyes gates ENTITLEMENT changes, and the record's enumeration is the scope: grant,
+        # revoke, end-date, and deactivation of a user CURRENTLY holding tenant_admin (finding
+        # B2, exactly — deactivate-the-other-admin-then-act-alone). Deactivating a non-admin is
+        # user management: queueing it would put new-joiner churn in the four-eyes queue and
+        # teach people to route around the control. The remit pins the twin by name —
+        # "deactivating a NON-admin user stays direct".
+        pending = False
     status = STATUS_PENDING if pending else STATUS_DIRECT
 
     request = EntitlementRequest(
@@ -444,8 +465,10 @@ def create_user(
     record_event(
         session,
         tenant_id=tenant_id,
+        # The SAME verb 1a's onboarding uses for the SAME event type — the review caught this
+        # recording `update` for an act every other USER.PROVISION records as `create`.
         event_type="USER.PROVISION",
-        action=ACTION_UPDATE,
+        action=ACTION_CREATE,
         entity_type="app_user",
         entity_id=user.id,
         actor_id=actor.actor_id,

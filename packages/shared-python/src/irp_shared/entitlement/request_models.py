@@ -58,18 +58,23 @@ REQUEST_ACTIONS: tuple[str, ...] = (
     ACTION_DEACTIVATE_USER,
 )
 
-#: Where the request is. PENDING → APPROVED | REJECTED; DIRECT is terminal at birth (the
-#: bootstrap window — recorded as its own state rather than as a PENDING row auto-approved by
-#: nobody, because "no second admin existed" and "a second admin agreed" are different facts and
-#: an auditor must be able to count them separately).
+#: Where the request is. PENDING → APPROVED; DIRECT is terminal at birth (the bootstrap window —
+#: recorded as its own state rather than as a PENDING row auto-approved by nobody, because "no
+#: second admin existed" and "a second admin agreed" are different facts and an auditor must be
+#: able to count them separately).
+#:
+#: There is deliberately NO ``REJECTED``: the record ratified approval (OQ-ONB-9A) and nothing
+#: else — a checker's refusal is inaction, and the request stays PENDING for someone to approve
+#: or for nobody to. The first build minted the status anyway, with no code path able to produce
+#: it — the review struck it as the LQ-1 inert-state class (a state an auditor can read in the
+#: CHECK and infer a flow that does not exist). A reject/withdraw verb is a DECISION for a future
+#: gate, not a status to pre-mint.
 STATUS_PENDING = "PENDING"
 STATUS_APPROVED = "APPROVED"
-STATUS_REJECTED = "REJECTED"
 STATUS_DIRECT = "DIRECT"
 REQUEST_STATUSES: tuple[str, ...] = (
     STATUS_PENDING,
     STATUS_APPROVED,
-    STATUS_REJECTED,
     STATUS_DIRECT,
 )
 
@@ -110,7 +115,7 @@ class EntitlementRequest(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin,
         # that points at something is a request pretending to be a decision.
         CheckConstraint(
             "(resolves_request_id IS NULL AND status IN ('PENDING', 'DIRECT')) "
-            "OR (resolves_request_id IS NOT NULL AND status IN ('APPROVED', 'REJECTED'))",
+            "OR (resolves_request_id IS NOT NULL AND status = 'APPROVED')",
             name="ck_entitlement_request_resolution_link",
         ),
         Index("ix_entitlement_request_tenant_status", "tenant_id", "status"),
@@ -158,6 +163,5 @@ __all__ = [
     "STATUS_APPROVED",
     "STATUS_DIRECT",
     "STATUS_PENDING",
-    "STATUS_REJECTED",
     "EntitlementRequest",
 ]

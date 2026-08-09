@@ -53,6 +53,12 @@ This slice fills it.
    `require_permission` (an inline check would make them invisible to the P11 census — 1a's
    recorded near-miss), and every one tenant-local: a tenant admin acts only inside their own
    tenant, never across.
+   *(RECONCILED at the review fold, 2026-08-09 — slice-record finding 5: the shipped paths are
+   `/users`, `/roles`, `/entitlement-requests` with NO `{tenant_id}` parameter. The paths as
+   written above would have nested tenant-admin routes under `/tenants` — the SYSTEM fence's ONE
+   allowed prefix — handing the SYSTEM principal the tenant-admin surface. The record is silent
+   on paths; the outcome (census-visible, `require_permission`-guarded, tenant-local) is what
+   this remit binds, and it is delivered.)*
 
 6. **The Users & Roles screen (OQ-ONB-7A)** — list users and their roles, create a user, grant and
    revoke, and see PENDING requests awaiting a second admin. The FE's read path is the generated

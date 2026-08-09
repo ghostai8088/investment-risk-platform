@@ -16,6 +16,10 @@
 #   1. the operator creates a tenant over HTTP        <-> a tenant principal is 403'd doing it
 #   2. the first admin RESOLVES on a governed read    <-> an unregistered tenant claim is 401'd
 #   3. the SYSTEM fence: the operator is 401'd on the same governed read it just enabled
+#   4. (ONBOARD-1b) the tenant ADMINISTERS ITSELF: the admin creates a user, grants a role in
+#      the bootstrap window (DIRECT), mints a second admin, and the next act is born PENDING —
+#      approved by the second admin, refused as self-approval by the first. The granted user
+#      then reads a surface their role permits <-> is 403'd on one it does not.
 #
 # Usage: ./infra/deploy/prove_onboarding.sh
 
@@ -133,4 +137,76 @@ pa_count=$($COMPOSE exec -T db psql -U "$PGUSER" -d "$PGDB" -tAc \
 [ "$pa_count" = "0" ] || die "ops/platform_admin were cloned into a customer tenant"
 echo "   5 roles cloned; ops/platform_admin absent, as ratified"
 
-log "PASSED — the platform starts: tenant created over HTTP, first admin resolves, every refusal fired"
+log "5. ONBOARD-1b: the tenant administers itself — four-eyes live over HTTP"
+json_field() { $COMPOSE run --rm --entrypoint python migrate -c \
+  "import json,sys; print(json.load(sys.stdin)[\"$1\"])"; }
+
+# The role ids, read through the tenant admin's OWN typed surface (user.view).
+roles=$(curl -sS "http://localhost:${BACKEND_PORT}/roles" \
+  -H "X-User-Id: ${ADMIN_ID}" -H "X-Tenant-Id: ${TENANT_ID}")
+ANALYST_ROLE=$(printf '%s' "$roles" | $COMPOSE run --rm --entrypoint python migrate -c \
+  'import json,sys; print(next(r["id"] for r in json.load(sys.stdin) if r["code"]=="risk_analyst_1l"))')
+MANAGER_ROLE=$(printf '%s' "$roles" | $COMPOSE run --rm --entrypoint python migrate -c \
+  'import json,sys; print(next(r["id"] for r in json.load(sys.stdin) if r["code"]=="risk_manager_2l"))')
+TA_ROLE=$(printf '%s' "$roles" | $COMPOSE run --rm --entrypoint python migrate -c \
+  'import json,sys; print(next(r["id"] for r in json.load(sys.stdin) if r["code"]=="tenant_admin"))')
+[ -n "$ANALYST_ROLE" ] && [ -n "$MANAGER_ROLE" ] && [ -n "$TA_ROLE" ] || die "GET /roles did not return the cloned roles"
+
+# 5a. create the analyst; grant their role in the BOOTSTRAP WINDOW (one admin -> DIRECT).
+ANALYST_ID=$(curl -sS -X POST "http://localhost:${BACKEND_PORT}/users" \
+  -H "X-User-Id: ${ADMIN_ID}" -H "X-Tenant-Id: ${TENANT_ID}" -H "Content-Type: application/json" \
+  -d '{"external_subject":"analyst@ignition","display_name":"Analyst"}' | json_field id)
+[ -n "$ANALYST_ID" ] || die "creating the analyst returned no id"
+direct_status=$(curl -sS -X POST "http://localhost:${BACKEND_PORT}/users/${ANALYST_ID}/roles" \
+  -H "X-User-Id: ${ADMIN_ID}" -H "X-Tenant-Id: ${TENANT_ID}" -H "Content-Type: application/json" \
+  -d "{\"role_id\":\"${ANALYST_ROLE}\"}" | json_field status)
+[ "$direct_status" = "DIRECT" ] || die "a lone admin's grant was ${direct_status}, expected DIRECT (the bootstrap window)"
+echo "   lone admin's grant -> DIRECT (bootstrap window, stamped)"
+
+# 5b. mint a SECOND admin (still DIRECT — the window closes only once this lands)...
+ADMIN2_ID=$(curl -sS -X POST "http://localhost:${BACKEND_PORT}/users" \
+  -H "X-User-Id: ${ADMIN_ID}" -H "X-Tenant-Id: ${TENANT_ID}" -H "Content-Type: application/json" \
+  -d '{"external_subject":"second-admin@ignition","display_name":"Second Admin"}' | json_field id)
+admin2_grant=$(curl -sS -X POST "http://localhost:${BACKEND_PORT}/users/${ADMIN2_ID}/roles" \
+  -H "X-User-Id: ${ADMIN_ID}" -H "X-Tenant-Id: ${TENANT_ID}" -H "Content-Type: application/json" \
+  -d "{\"role_id\":\"${TA_ROLE}\"}" | json_field status)
+[ "$admin2_grant" = "DIRECT" ] || die "the second-admin mint was ${admin2_grant}, expected DIRECT"
+
+# ...and the VERY NEXT act is born PENDING: four-eyes engages at two admins, not three (B3).
+# The PENDING grant is risk_manager_2l, DELIBERATELY not tenant_admin: this arm's first draft
+# granted tenant_admin here and then expected the target to lack user.manage in step 5e — refuted
+# by its own execution (the analyst got 201 where the script demanded 403, because the script had
+# made them an admin two steps earlier). The proof's refusal twin only discriminates if the
+# granted role does NOT confer the verb the twin denies.
+req=$(curl -sS -X POST "http://localhost:${BACKEND_PORT}/users/${ANALYST_ID}/roles" \
+  -H "X-User-Id: ${ADMIN_ID}" -H "X-Tenant-Id: ${TENANT_ID}" -H "Content-Type: application/json" \
+  -d "{\"role_id\":\"${MANAGER_ROLE}\",\"reason\":\"four-eyes proof\"}")
+REQ_ID=$(printf '%s' "$req" | json_field id)
+req_status=$(printf '%s' "$req" | json_field status)
+[ "$req_status" = "PENDING" ] || die "with TWO admins the grant was ${req_status}, expected PENDING — SOD-04 did not engage at the threshold"
+echo "   with a second admin -> PENDING (four-eyes engaged at two admins)"
+
+# 5c. the refusal twin: the requester cannot approve their own request (SOD-04, person-level).
+self_code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+  "http://localhost:${BACKEND_PORT}/entitlement-requests/${REQ_ID}/approve" \
+  -H "X-User-Id: ${ADMIN_ID}" -H "X-Tenant-Id: ${TENANT_ID}")
+[ "$self_code" = "422" ] || die "self-approval got ${self_code}, expected 422 — four-eyes with one pair of eyes"
+echo "   self-approval -> 422 (SOD-04, live)"
+
+# 5d. the SECOND admin approves, and the act takes effect.
+approve_status=$(curl -sS -X POST "http://localhost:${BACKEND_PORT}/entitlement-requests/${REQ_ID}/approve" \
+  -H "X-User-Id: ${ADMIN2_ID}" -H "X-Tenant-Id: ${TENANT_ID}" | json_field status)
+[ "$approve_status" = "APPROVED" ] || die "the second admin's approval returned ${approve_status}"
+echo "   second admin approves -> APPROVED"
+
+# 5e. the granted user resolves: permitted on what their role holds, refused on what it does not.
+analyst_read=$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${BACKEND_PORT}/portfolios" \
+  -H "X-User-Id: ${ANALYST_ID}" -H "X-Tenant-Id: ${TENANT_ID}")
+[ "$analyst_read" = "200" ] || die "the granted analyst got ${analyst_read} on /portfolios — the grant did not confer the role's reads"
+analyst_write=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:${BACKEND_PORT}/users" \
+  -H "X-User-Id: ${ANALYST_ID}" -H "X-Tenant-Id: ${TENANT_ID}" -H "Content-Type: application/json" \
+  -d '{"external_subject":"x@x","display_name":"X"}')
+[ "$analyst_write" = "403" ] || die "the analyst got ${analyst_write} creating a user — expected 403 (no user.manage)"
+echo "   analyst -> /portfolios 200, POST /users 403 (the granted role's exact edge)"
+
+log "PASSED — the platform starts AND administers itself: tenant created over HTTP, four-eyes live, every refusal fired"

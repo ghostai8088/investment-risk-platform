@@ -79,6 +79,17 @@ export function AppShell({
             Reports
           </NavLink>
 
+          {/* ONBOARD-1b: tenant self-administration. The link is shown to everyone — the FE holds
+              no permission knowledge, and a non-admin opening it sees the server's own refusal in
+              plain language (the OPS-1 convention). */}
+          <p className="nav-heading">Administration</p>
+          <NavLink
+            to="/admin/users"
+            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+          >
+            Users &amp; roles
+          </NavLink>
+
           <p className="nav-heading">The walk</p>
           <ol className="nav-steps">
             {WALK_STEPS.map((step) => (

@@ -32,4 +32,10 @@ export const API_PREFIXES = [
   "/breaches",
   // RPT-2: the report read/generate surface (ENT-072 reachable).
   "/reports",
+  // ONBOARD-1b: the tenant-administration surface (Users & Roles + the four-eyes queue). NOTE:
+  // these are also why the SCREEN lives at /admin/users — a client route at bare /users would be
+  // shadowed by this very list (the ops/reports precedent).
+  "/users",
+  "/roles",
+  "/entitlement-requests",
 ] as const;

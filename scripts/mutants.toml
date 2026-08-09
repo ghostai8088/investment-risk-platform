@@ -441,3 +441,31 @@ needs_pg = true
 #
 # The general rule this records: **migration-DDL mutants are not measurable by this harness.**
 # Anything that must be proven about DDL belongs in a schema-reading test, not in a mutant.
+
+# --- the review fold's fixes, each with the mutant that would undo it (P9) -----------------------
+
+[[mutant]]
+id = "O-F1"
+group = "onboard-1b"
+why = "the deactivation four-eyes scope-down never applies — every deactivation queues again, the exact over-broad behavior the review struck (the record scopes B2 to targets currently holding tenant_admin)"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """    if action == ACTION_DEACTIVATE_USER and target_user_id not in valid_admin_user_ids(
+        session, tenant_id, now=at
+    ):"""
+replace = """    if False and target_user_id not in valid_admin_user_ids(
+        session, tenant_id, now=at
+    ):"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+[[mutant]]
+id = "O-F2"
+group = "onboard-1b"
+why = "the target-role scope check loses its tenant filter — a grant naming another tenant's role id is accepted again (the review's probe-confirmed asymmetry: the user was validated, the role was not)"
+file = "packages/shared-python/src/irp_shared/entitlement/admin_service.py"
+find = """        role_in_tenant = session.execute(
+            select(Role.id).where(Role.id == target_role_id, Role.tenant_id == tenant_id)
+        ).scalar_one_or_none()"""
+replace = """        role_in_tenant = session.execute(
+            select(Role.id).where(Role.id == target_role_id)
+        ).scalar_one_or_none()"""
+tests = ["packages/shared-python/tests/test_entitlement_admin.py"]

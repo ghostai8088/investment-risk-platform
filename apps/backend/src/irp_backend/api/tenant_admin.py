@@ -33,7 +33,6 @@ from irp_backend.deps import get_tenant_session, require_permission, require_uui
 from irp_shared.entitlement.admin_service import (
     AdminActor,
     EntitlementError,
-    TenantWouldBeOrphaned,
     approve_entitlement_change,
     create_user,
     request_entitlement_change,
@@ -263,7 +262,8 @@ def _entitlement_act(
             target_role_id=target_role_id,
             reason=reason,
         )
-    except (TenantWouldBeOrphaned, EntitlementError) as exc:
+    except EntitlementError as exc:
+        # TenantWouldBeOrphaned is a subclass — one handler, both refusals (the P3-C1 MRO rule).
         db.rollback()
         _raise_mapped(exc)
     db.commit()
@@ -320,22 +320,31 @@ def approve_request(
             actor=actor,
             request_id=str(request_id),
         )
-    except (TenantWouldBeOrphaned, EntitlementError) as exc:
+    except EntitlementError as exc:
         db.rollback()
         _raise_mapped(exc)
     db.commit()
     return _as_request_out(row)
 
 
-@router.get("/roles", response_model=list[dict])
+class RoleOut(BaseModel):
+    """Typed, because the FE consumes this via the generated OpenAPI contract (FE-2) — a
+    ``list[dict]`` here compiles the screen against ``unknown`` and the contract guards nothing."""
+
+    id: str
+    code: str
+    name: str
+
+
+@router.get("/roles", response_model=list[RoleOut])
 def list_roles(
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
-) -> list[dict]:
+) -> list[RoleOut]:
     """The tenant's roles — what a grant can name."""
     rows = (
         db.execute(select(Role).where(Role.tenant_id == principal.tenant_id).order_by(Role.code))
         .scalars()
         .all()
     )
-    return [{"id": str(r.id), "code": r.code, "name": r.name} for r in rows]
+    return [RoleOut(id=str(r.id), code=r.code, name=r.name) for r in rows]

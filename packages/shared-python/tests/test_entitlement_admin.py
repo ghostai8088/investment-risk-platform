@@ -258,12 +258,18 @@ def test_DEACTIVATION_of_an_admin_rides_the_four_eyes_flow(session: Session, ten
     assert session.get(AppUser, second).is_active is True
 
 
-def test_deactivating_a_NON_admin_stays_direct(session: Session, tenant: str) -> None:
-    """The discriminating twin: the flow gates entitlement changes, not all user management.
+def test_deactivating_a_NON_admin_stays_DIRECT_even_with_a_second_admin(
+    session: Session, tenant: str
+) -> None:
+    """The discriminating twin, and the remit's proof BY NAME: four-eyes gates ENTITLEMENT
+    changes, and the record's enumeration scopes deactivation to a target CURRENTLY holding
+    tenant_admin (finding B2 — deactivate-the-other-admin-then-act-alone). A non-admin
+    deactivation is user management: queueing it would put new-joiner churn in the four-eyes
+    queue and teach people to route around the control.
 
-    Without this, "deactivation is PENDING" would be equally consistent with a rule that queues
-    every user operation — which would put new-joiner admin in the four-eyes queue and teach
-    people to route around the control.
+    The review's cautionary note belongs here: the first build queued EVERY deactivation, and
+    this test carried the ratified behavior in its NAME while asserting the opposite in its body.
+    A test named for the proof it was meant to deliver is a claim; the assertion is the artifact.
     """
     first = next(iter(_admins(session, tenant)))
     _add_admin(session, tenant, "second")
@@ -277,17 +283,45 @@ def test_deactivating_a_NON_admin_stays_direct(session: Session, tenant: str) ->
         target_user_id=ordinary,
         now=NOW,
     )
-    # Still four-eyed (two admins exist) — but the point is it is not REFUSED, and on approval it
-    # touches no admin count.
-    assert req.status == STATUS_PENDING
-    approve_entitlement_change(
-        session,
-        tenant_id=tenant,
-        actor=AdminActor(next(a for a in _admins(session, tenant) if a != first)),
-        request_id=req.id,
-        now=NOW,
+    assert req.status == STATUS_DIRECT, (
+        "deactivating a NON-admin was queued for four-eyes — the record scopes the flow to "
+        "targets currently holding tenant_admin, and the remit pins this twin by name"
     )
-    assert session.get(AppUser, ordinary).is_active is False
+    assert (
+        session.get(AppUser, ordinary).is_active is False
+    ), "DIRECT but not applied — the worst of both"
+
+
+def test_a_grant_naming_ANOTHER_tenants_role_is_REFUSED(session: Session, tenant: str) -> None:
+    """The role gets the same tenant scope check as the user — found missing at review.
+
+    The target USER was validated tenant-locally; the target ROLE was not, so a grant naming a
+    foreign tenant's role id was accepted (probe-confirmed) and would have written a user_role
+    row referencing a role its own tenant can never see. Same opaque refusal as the user check:
+    absent and foreign are indistinguishable, no cross-tenant existence oracle.
+    """
+    lone = next(iter(_admins(session, tenant)))
+    target = _add_user(session, tenant, "local")
+    other_tenant = str(uuid.uuid4())
+    session.add(
+        Role(id=str(uuid.uuid4()), tenant_id=other_tenant, code=FIRST_ADMIN_ROLE, name="Foreign")
+    )
+    session.flush()
+    foreign_role = _role_id(session, other_tenant, FIRST_ADMIN_ROLE)
+
+    with pytest.raises(EntitlementError, match="target role not found in this tenant"):
+        request_entitlement_change(
+            session,
+            tenant_id=tenant,
+            actor=AdminActor(lone),
+            action=ACTION_GRANT_ROLE,
+            target_user_id=target,
+            target_role_id=foreign_role,
+            now=NOW,
+        )
+    assert (
+        not session.execute(select(UserRole).where(UserRole.user_id == target)).scalars().all()
+    ), "the refused grant half-applied"
 
 
 # --------------------------------------------------------------- the orphan-proof invariant
@@ -435,6 +469,13 @@ def test_create_user_is_NOT_four_eyes_gated(session: Session, tenant: str) -> No
     )
     assert session.get(AppUser, user.id).is_active is True
     assert not session.execute(select(UserRole).where(UserRole.user_id == user.id)).scalars().all()
+
+    from irp_shared.audit.models import AuditEvent
+
+    ev = session.execute(select(AuditEvent).where(AuditEvent.entity_id == user.id)).scalar_one()
+    # The SAME (event_type, action) pair as 1a's onboarding — the review caught this path
+    # recording `update` for the act every other USER.PROVISION records as `create`.
+    assert (ev.event_type, ev.action) == ("USER.PROVISION", "create")
 
 
 def test_an_admin_cannot_target_ANOTHER_tenants_user(session: Session, tenant: str) -> None:
