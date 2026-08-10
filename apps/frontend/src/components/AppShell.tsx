@@ -87,6 +87,14 @@ export function AppShell({
             Alerting
           </NavLink>
 
+          {/* REPRO-2: is the nightly reproduction check running, and what did it find? */}
+          <NavLink
+            to="/ops/reproduction"
+            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+          >
+            Reproduction
+          </NavLink>
+
           {/* ONBOARD-1b: tenant self-administration. The link is shown to everyone — the FE holds
               no permission knowledge, and a non-admin opening it sees the server's own refusal in
               plain language (the OPS-1 convention). */}

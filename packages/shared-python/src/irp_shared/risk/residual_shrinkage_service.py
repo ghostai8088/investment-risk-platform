@@ -315,3 +315,38 @@ def run_residual_shrinkage(
         rows=list(outcome.rows),
         failure_reason=outcome.failure_reason,
     )
+
+
+def recover_shrinkage_target(
+    session: Session,
+    *,
+    acting_tenant: str,
+    snapshot_id: str,
+    source_desmoothed_run_id: str,
+) -> str:
+    """Which cohort member a shrinkage run was executed against — recovered from its pinned cohort.
+
+    **Why this lives here and not in the reproduction registry.** `target_estimate_run_id` is a
+    caller-supplied argument that determines the output and has NO column on
+    `proxy_weight_estimate_result`, so a reproducer has to recover it — and the only way is to
+    re-parse this module's own pinned cohort format. Putting that parse in the reproduction package
+    would have meant that package importing `irp_shared.snapshot`, which the import-direction fence
+    refuses by design (`test_snapshot.py`: each exempt package "had to be argued for, and a
+    wildcard would end that"). The knowledge is this module's; so is the function.
+
+    Fails CLOSED on anything but a unique match. A wrong target re-executes a real empirical-Bayes
+    fit over the wrong member, produces a real number, and would be reported as a DIVERGENCE — a
+    false alarm indistinguishable from a true one.
+    """
+    members = _parse_cohort(
+        list_components(session, snapshot_id=snapshot_id, acting_tenant=acting_tenant)
+    )
+    wanted = str(source_desmoothed_run_id).lower()
+    matches = [m for m in members if m.source_desmoothed_run_id == wanted]
+    if len(matches) != 1:
+        raise ResidualShrinkageInputError(
+            f"the pinned cohort has {len(matches)} members whose source_desmoothed_run_id is "
+            f"{wanted} — the shrinkage target cannot be identified, so this run cannot be "
+            "re-executed"
+        )
+    return matches[0].estimate_run_id

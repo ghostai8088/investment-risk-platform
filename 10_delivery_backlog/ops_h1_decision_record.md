@@ -92,7 +92,12 @@ verifier caught the draft claiming regeneration prevents the tick-driven mutatio
 CANNOT while the walk shows an overdue breach: an overdue breach under a running tick escalates,
 because that is what the platform is FOR. What regeneration removes is the ABSURDITY — today a first
 tick would escalate + notify on a breach frozen a year stale, instantly, mutating the walk into
-nonsense. After H1-4 the demo tenant behaves like a real tenant: enrol it in `IRP_TENANT_IDS` and
+nonsense. *(**SUPERSEDED IN PART at REPRO-2, 2026-08-10** — the enrolment MECHANISM below is no
+longer how the demo tenant ticks: registry discovery replaced `IRP_TENANT_IDS` as the tenant set,
+the demo campaign registers the demo tenant, and the lifecycle therefore runs by DEFAULT rather
+than on enrolment. Everything this paragraph says about WHAT happens when it runs — the overdue
+breach escalating as governed, correct behavior, with re-seed as the recovery — is unchanged and
+was the actual point.)* After H1-4 the demo tenant behaves like a real tenant: enrol it in `IRP_TENANT_IDS` and
 the lifecycle RUNS — the overdue breach escalates on the first tick as governed, correct behavior,
 and an operator who wants the pristine walk back re-seeds. **The OQ-W12C-3d interim PROHIBITION is
 therefore retired and REPLACED by a documented consequence**, not silently deleted: the standing-

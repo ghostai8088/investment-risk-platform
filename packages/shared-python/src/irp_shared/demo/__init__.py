@@ -124,6 +124,10 @@ from irp_shared.demo.ref1_stage18 import (
     Ref1Stage18Summary,
     run_demo_ref1_stage18,
 )
+from irp_shared.demo.repro2_stage24 import (
+    DemoRepro2AlreadySeededError,
+    run_demo_repro2_stage24,
+)
 from irp_shared.demo.rm1_stage16 import (
     DemoRm1AlreadySeededError,
     DemoRm1Error,
@@ -265,6 +269,8 @@ __all__ = [
     "DemoData1Error",
     "run_demo_data1_stage22",
     "run_demo_lq1_stage23",
+    "run_demo_repro2_stage24",
+    "DemoRepro2AlreadySeededError",
     "DemoLq1AlreadySeededError",
     "DemoLq1Error",
     "Lq1Stage23Summary",

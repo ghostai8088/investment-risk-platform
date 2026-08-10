@@ -115,6 +115,15 @@ Planning-first, per-slice; Claude commits + pushes autonomously:
   consequence, not a prohibition: the demo lifecycle RUNS — the overdue breach escalates on the first
   tick as governed, correct behavior — and re-seeding restores the pristine walk. Never present the
   old prohibition as current.
+  **AMENDED at REPRO-2 (2026-08-10, ratified as a NAMED disposition amendment): the choice inverted
+  from opt-IN to opt-OUT.** The supervisor now discovers ACTIVE tenants from the ENT-074 registry
+  instead of reading `IRP_TENANT_IDS`, and the demo campaign REGISTERS the demo tenant — so a
+  demo-seeded database ticks the demo tenant BY DEFAULT and the operator's lever is the optional
+  `IRP_TENANT_IDS` restriction filter (pin a subset to exclude it). The consequence above is
+  unchanged in substance and now applies without anyone opting in; re-seeding remains the recovery.
+  **The isolation rule this creates:** a demo-seeded database contains a DISCOVERABLE ACTIVE tenant,
+  so any PG test exercising registry discovery must pin the restriction filter or mint a fresh
+  tenant — "the registry holds exactly my tenant" stopped being true.
 
 ## Verification & objectivity (standing rules)
 - **No quantitative claim from model recall.** Every formula, convention, day-count, sign, tolerance, or

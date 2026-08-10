@@ -1,7 +1,7 @@
 # REPRO-2 slice record — the reproduction control becomes startable
 
-**Status:** PART 1 BUILT + gated (OQ-REP2-1/2/3); **OQ-REP2-4/5/6 REMAIN — a stated finding, not
-an omission (see §5)**
+**Status:** **PART 1 MERGED** (PR #197 = `80e6b9f`, the 28th autonomous merge — OQ-REP2-1/2/3).
+**PART 2 BUILT + gated** (OQ-REP2-4/5/6) — the finding in §5 is DISCHARGED; see §8.
 
 **Wave 17, slice 2.** Branch `repro-2-impl`. Design authority:
 `repro_2_decision_record.md` v3 + the ratification stamp (2026-08-10, four decision points, all
@@ -161,3 +161,108 @@ what the builder certified).
 ## 7. Carries
 
 Unchanged from the record's §4 non-goals, each with its trigger.
+
+## 8. PART 2 — the sixteen families, the seeding, and the screen (OQ-REP2-4/5/6)
+
+Part 1 reported at its gate that this work was owed rather than absorbing it silently. This is it.
+
+### OQ-REP2-4 — sixteen adapters; the coverage census moves 3+18 → 19+2
+
+`reproduction/families.py`. Eleven families share one shape (read the run's rows in key order;
+call one binder with the run's own pinned `snapshot_id` and `model_version_id`; project) and are
+built by one factory; five needed more and say so at their own definitions — two backtests, the
+two window-recovering families, and PROXY_WEIGHT_ESTIMATE.
+
+**`compared_fields` is now DERIVED, not hand-listed** — the model's columns minus what was
+explicitly excused. This inverts REPRO-1's convention deliberately: there, a hand-written list
+silently omitted six governed columns and a planted change to `n_factors` produced a durable
+MATCH. Deriving makes that omission unrepresentable — a new column joins the comparison by
+default, and leaving it out requires writing a reason down.
+
+**Every one of the sixteen was made to say YES and then made to say NO**: a real subject run built
+through that family's own production binder reproduces MATCH over a non-zero row count, then one
+governed value column is tampered (raw SQL, because IA append-only refuses the UPDATE — that
+control working) and the same machinery must report DIVERGED naming the field. Both proxy-weight
+binder arms are covered, including the empirical-Bayes path whose target has no stored column.
+
+**FOUR of the sixteen "not yet adapted" reasons were FACTUALLY WRONG about the binders they
+described** — the `_WHY_RENDER_INPUT` class, one level up, and none of them could have been caught
+by reading prose:
+- **BENCHMARK_RELATIVE**: "read `return_basis` + `benchmark_id` back off the stored rows" — the
+  binder REFUSES both alongside `snapshot_id` and adjudicates them out of the pin itself. An
+  adapter written to that instruction raises on every run.
+- **PROXY_WEIGHT_ESTIMATE**: "binder resolution by model code" — unimplementable. Both binders
+  assert the SAME code; the resolver returns one string for both. The discriminator is the
+  version's declared estimator convention, which is also how production dispatches.
+- **VAR_BACKTEST** and **COVARIANCE_PRIVATE**: the same "shared result table needs binder
+  resolution" reading, when both pairs are disjoint by RUN TYPE and the sweep resolves per run
+  type. A shared table was read as implying a shared dispatch problem; it does not.
+
+**The exclusion-truth obligation is discharged by CONSTRUCTION.** It asked for a tamper proof per
+`uncompared` column outside the two by-construction classes; these sixteen have none — every
+exclusion is a mixin column or a governed-run FK. `test_no_new_family_has_a_DISCRETIONARY_exclusion`
+is what keeps that true and states what is owed the day one appears.
+
+*(A defect of exactly that class was caught in this build, in my own code: four upstream-run FK
+columns were excused as "differs by construction" by analogy with VAR's columns of the same NAME.
+The writers set them from `parsed.*` — the adjudicated pin — so they reproduce exactly. They are
+compared now, and ACTIVE_RISK's green sweep is the executed proof.)*
+
+### OQ-REP2-5 — carry (m), discharged against artifacts that exist
+
+- **Demo**: `run_demo_campaign` registers the demo tenant in ENT-074 (ACTIVE, idempotent, tolerant
+  of a 0067 backfill) and creates its nightly reproduction schedule **through the real
+  `create_schedule` service** — a demo that seeds around its own service demonstrates nothing about
+  the service, and the audit event is the tell. **This AMENDS an OPS-H1-ratified disposition**
+  (enrolment was opt-IN; under discovery it is opt-OUT), annotated at BOTH carriers with the
+  isolation rule it creates for PG tests.
+- **Deploy**: `prove_reproduction.sh` gains a SECOND tenant created over HTTP through ONBOARD-1a,
+  its `schedule.manage` principal provisioned through ONBOARD-1b, its schedule created over HTTP
+  through REPRO-2's own write path — and then the SUPERVISOR runs with **nothing naming that
+  tenant**. It fires. `PROOF_TENANT` and every arm keyed to it are untouched.
+
+### OQ-REP2-6 — the `/ops/reproduction` screen
+
+Schedules (list/create/pause/resume), the verdict table, and the first consumer of
+`GET /schedules/runs` (shipped at SCH-2, unread since). `/schedules` joined `API_PREFIXES` with the
+nginx alternation in lockstep. Seven FE tests pin the four ways this screen could mislead: no
+schedule ≠ clean night; all-paused says the control is OFF and points at Alerting; DIVERGED is
+loud and names the field; UNREPRODUCIBLE shows the fixed literal.
+
+### The sweep, MEASURED (ratified R5)
+
+Run against the **real seeded demo book** — a book twenty-three earlier stages built for unrelated
+reasons, not fixtures written to make these adapters pass:
+
+```
+SWEEP_SECONDS=1.99      SWEEP_FAMILIES_REGISTERED=19
+SWEEP_VERDICTS=18       SWEEP_UNRESOLVED=0        SWEEP_STATUS=COMPLETED
+```
+
+**All eighteen families with a subject returned MATCH**, over 149 compared rows
+(ROLLING_RISK 33, PORTFOLIO_RETURN 20, SHARPE 16, DESMOOTHED_RETURN 13, BENCHMARK_RELATIVE and
+PACING_PROJECTION 11 each, and so on). The acceptance is recorded against 1.99s; the ratified
+split trigger — a real tenant's sweep exceeding FIVE MINUTES moves the sweep phases out of the
+tick's single transaction — is untouched by two orders of magnitude. `scripts/measure_sweep.py` is
+the committed instrument (it refuses to report a time for a sweep that judged nothing), and demo
+stage 24 carries a deliberately loose 60s regression tripwire rather than a tight benchmark that a
+loaded CI runner would teach everyone to ignore.
+
+### Defects found in part 2, and by what
+
+| # | Found by | What |
+|---|---|---|
+| 1 | **The deployed proof, executed** | The proof never rebuilt the **backend** image, so every HTTP arm ran against an arbitrarily old build. Invisible until an arm asserted on a response BODY: the API returned part 1's superseded `operator_followup` text. |
+| 2 | The deployed proof, executed | A guessed SYSTEM-tenant literal (v4-shaped) — the real one is all-zeros-with-1. Reading would never have caught it. |
+| 3 | The deployed proof, executed | An `ANCHOR_DATE` variable this script never defined, caught by `set -u`. |
+| 4 | **The mutation battery** | FIVE survivors on the first run — the refusal mapping, the window recovery, both proxy-weight guards, and the install itself all had NO test. |
+| 5 | The battery, again | Two of my *replacement* tests passed without killing their mutants: the guards they targeted were **unreachable by contract** (`declared_proxy_weight_parameters` fails closed before the `else` arm; `source_desmoothed_run_id` is NOT NULL). The guard moved to where it can fire; the unreachable arm is documented as a backstop, not presented as protection. |
+| 6 | The battery, a third time | The shrinkage test targeted `cohort[0]`, so "pick the first member" and "pick the right member" were the same run. Retargeted to the last member. |
+| 7 | The import-direction fence | `reproduction` importing `irp_shared.snapshot`. The cohort parse moved to the service that OWNS the pinned format rather than widening a fence whose value is that each member was argued for. |
+| 8 | mypy | A `**kwargs` splat erased two binders' differing signatures. |
+| 10 | **The full-PG battery** | The demo seeding was written into `run_demo_campaign`'s BODY, which put an extra ACTIVE schedule into the shared demo tenant before stage 15 — whose tick then dispatched TWO schedules where it asserts exactly one. Seven count pins came up one COMPLETED run short and twelve tests errored. Moved to demo stage 24, seeded LAST; no existing assertion was relaxed. **Adding a schedule to a shared demo tenant is not a local act: it changes what every subsequent tick does.** |
+| 9 | The OpenAPI generator | Part 1's `ScheduleOut` collided with the read path's, mangling BOTH into `irp_backend__api__<module>__ScheduleOut` in the generated FE types. Renamed `ScheduleWriteOut`. |
+
+**Anchors moved FOUR times in this slice** (the formatter, a dedupe, a refactor across modules).
+Part 1's F1 lesson holds and generalises: a mutant anchor is a claim about bytes, and the battery
+run that counts is the one against the bytes being committed.
