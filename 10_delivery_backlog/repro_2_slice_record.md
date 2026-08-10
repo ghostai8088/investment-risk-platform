@@ -149,6 +149,14 @@ what the builder certified).
    "a schedule with code X already exists"** — a false statement in a governed refusal whenever
    the violation was a foreign key (a calendar id, say). The route now asks the database which
    case it is (after rollback the racing winner's committed row is visible); both arms tested.
+7. **HIGH — found by CI after the fold, missed by the review AND the blast-radius sweep:**
+   `test_supervisor_main_empty_tenant_ids_fails_closed` still asserted the SUPERSEDED FOLD-2
+   empty-list refusal — and kept passing locally through a completely different refusal that
+   shares exit code 2 (the fake DB URL made the startup REGISTRY read refuse). CI's backend job
+   has no `psycopg`, so the test errored at the engine creation the behavior it claimed to pin
+   never reached — surfacing that it had been vacuous since the supersession. Both `main()`-level
+   tests rewritten to pin the refusal MESSAGE, not just the exit code: an exit code shared
+   between two refusals is exactly how a superseded test stays green.
 
 ## 7. Carries
 
