@@ -1101,10 +1101,17 @@ def alarm_channel_health(
         str(check.id) for check in _alarming_verdicts(session, tenant=tenant)
     } - retired_ids
 
-    # Poison counts only while the verdict it belongs to is still LIVE. An entity we cannot place
-    # at all counts too — fail toward visible.
+    # Poison counts only while a STILL-QUEUED verdict's history contains it — the ratified
+    # sentence, implemented exactly. The build's first form counted "not retired", which is a
+    # DIFFERENT set: a poison row about a PHANTOM entity (one matching no verdict at all — the
+    # exact shape the Wave-16 close probe planted) is neither queued nor retired, and under the
+    # first form it was PERMANENT RED with no remediation path — the P2-14 cry-wolf state the
+    # ratification excluded, returning through a side door. The review's probe held it red a full
+    # simulated year. A phantom row is now outside the red scope, and that residual is RECORDED
+    # (slice record §5): a buggy writer spraying rows about nothing is real, but a red nobody can
+    # ever clear teaches operators to ignore red, which costs more than the phantom's visibility.
     unreadable = sum(
-        1 for row in classification.rows if row.payload is None and row.entity_id not in retired_ids
+        1 for row in classification.rows if row.payload is None and row.entity_id in queued_ids
     )
 
     def _in_window(row: AlarmRow) -> bool:
@@ -1186,9 +1193,20 @@ def alarm_channel_health(
                 ScheduledRun.tenant_id == tenant,
             )
         ).scalar()
-        # A schedule that has never fired is measured from its own anchor — which is what makes a
-        # freshly-created schedule inside its first period NOT overdue, rather than instantly red.
-        baseline = _parse_event_time(last_fire) or _parse_event_time(schedule.anchor_date)
+        # A never-fired schedule's clock starts at its first due tick after CREATION — the
+        # ratified sentence. The build's first form used the ANCHOR, and the review executed the
+        # consequence against the deployed proof's own seed shape (anchor 2026-01-01, comfortably
+        # past so the first tick is immediately due): a schedule created seconds ago read RED
+        # until its first fire. max(anchor, created_at) implements the sentence — an anchor in
+        # the future still governs (nothing is due before it), and a past anchor defers to when
+        # the schedule actually came to exist.
+        if last_fire is not None:
+            baseline = _parse_event_time(last_fire)
+        else:
+            anchor_at = _parse_event_time(schedule.anchor_date)
+            created_at = _parse_event_time(schedule.created_at)
+            candidates = [b for b in (anchor_at, created_at) if b is not None]
+            baseline = max(candidates) if candidates else None
         if baseline is None:
             continue
         period = _cadence_grace(schedule)

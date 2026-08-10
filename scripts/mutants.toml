@@ -618,9 +618,9 @@ tests = ["packages/shared-python/tests/test_alarm_health.py"]
 [[mutant]]
 id = "A-C8"
 group = "alert-1"
-why = "poison counts unconditionally again — a hash-chained row that can never be repaired leaves the tenant red FOREVER with no action available (pass-2 P2-14, the cry-wolf class)"
+why = "poison counts unconditionally again — a hash-chained row that can never be repaired leaves the tenant red FOREVER with no action available (pass-2 P2-14, the cry-wolf class; re-anchored at the review fold after F1 tightened the scope this mutant removes)"
 file = "packages/shared-python/src/irp_shared/reproduction/service.py"
-find = """        1 for row in classification.rows if row.payload is None and row.entity_id not in retired_ids"""
+find = """        1 for row in classification.rows if row.payload is None and row.entity_id in queued_ids"""
 replace = """        1 for row in classification.rows if row.payload is None"""
 tests = ["packages/shared-python/tests/test_alarm_health.py"]
 
@@ -631,4 +631,23 @@ why = "a self-healed transient failure keeps the surface amber for seven days �
 file = "packages/shared-python/src/irp_shared/reproduction/service.py"
 find = """        and (row.entity_id in queued_ids or row.entity_id in ceiling_ids)"""
 replace = """        and True"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-F1"
+group = "alert-1"
+why = "poison red widens back to 'not retired' — a phantom-entity row (matching no verdict) becomes PERMANENT RED with no remediation path, the P2-14 cry-wolf state the review's probe held red for a simulated year"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        1 for row in classification.rows if row.payload is None and row.entity_id in queued_ids"""
+replace = """        1 for row in classification.rows if row.payload is None and row.entity_id not in retired_ids"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-F2"
+group = "alert-1"
+why = "a never-fired schedule's clock reverts to its ANCHOR — a schedule created seconds ago with the deployed proof's own past-anchored shape reads instantly red"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """            candidates = [b for b in (anchor_at, created_at) if b is not None]
+            baseline = max(candidates) if candidates else None"""
+replace = """            baseline = anchor_at"""
 tests = ["packages/shared-python/tests/test_alarm_health.py"]

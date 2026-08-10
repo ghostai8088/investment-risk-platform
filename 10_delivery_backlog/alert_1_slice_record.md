@@ -1,6 +1,6 @@
 # ALERT-1 slice record — the alarm about the alarm
 
-**Status:** BUILT, gated, awaiting the different-engine review (P15)
+**Status:** BUILT + REVIEW-FOLDED (different engine, 2026-08-10); awaiting PR/CI/merge
 
 **Wave 17, slice 1.** Branch `alert-1-impl`. Design authority: `alert_1_decision_record.md` v3 +
 the ratification stamp (2026-08-09, four decision points, all as recommended).
@@ -75,16 +75,41 @@ the ratification stamp (2026-08-09, four decision points, all as recommended).
    concluding SUBSET separately, because "a new outcome exists" and "a new outcome retires a
    divergence" are different decisions.
 
-## 4. Deviations from the record
+## 4. Deviations from the record — CORRECTED at the review fold
 
-None material. Two implementation choices the record left open:
+The build's version of this section said "none material", and the review refuted it by execution:
 
-- `sweep_overdue` is computed from elapsed-time-since-last-fire rather than from
-  `select_active_due`, because the latter (the record's suggestion) could not express lateness at
-  all — see defect 2. It still reimplements no cadence math: it reads the schedule's DECLARED
-  period and its own `scheduled_run` history.
-- The rollback sentinel is `ffffffff-…-ffffffffffff`, a new named constant, per the record's
-  requirement that it be distinct from `NO_RECIPIENT_SENTINEL`.
+- **The never-fired clock deviated from a RATIFIED sentence.** The record: "a never-fired
+  schedule's clock starts at its first due tick after creation". The build measured from the
+  ANCHOR — and the deployed proof's own seed (anchor 2026-01-01, deliberately past) made a
+  schedule created seconds ago read instantly red. The proof masked it, because its sweep fires
+  before its health read. Fixed: `max(anchor, created_at)`; test + mutant A-F2. The honest note:
+  a deviation from ratified text recorded as "an implementation choice the record left open" is
+  itself the claims-defect class — the record had NOT left it open.
+- `sweep_overdue`'s mechanism (elapsed-time-since-last-fire rather than `select_active_due`)
+  remains a genuine open-choice deviation, documented in §3 defect 2 — the record's suggested
+  mechanism could not express lateness at all.
+- The rollback sentinel is a new named constant, per the record's distinctness requirement.
+
+## 4a. The review fold (different engine, 2026-08-10)
+
+Two probe-confirmed findings, both in the newest logic, both fixed with test + mutant:
+
+1. **Phantom-entity poison was PERMANENT RED.** The ratified scope is "red only while a
+   STILL-QUEUED verdict's history contains poison"; the build implemented "not retired" — a
+   different set. A poison row about an entity matching NO verdict (a buggy writer spraying rows
+   about nothing — the exact shape the Wave-16 close probe planted) was neither queued nor
+   retired, and stayed red for a probe-simulated YEAR with no remediation path: the P2-14
+   cry-wolf state, back through a side door. Fixed to the ratified sentence exactly (mutant
+   A-F1; A-C8 re-anchored). **Recorded residual:** a phantom poison row is now invisible to red —
+   a red nobody can ever clear costs more than the phantom's visibility; trigger to revisit:
+   the first real buggy-writer incident.
+2. **The past-anchored fresh schedule** (above, §4 first bullet; mutant A-F2).
+3. **The register:** this slice's roadmap row was missing — the shipped-without-a-row class at
+   its third possible recurrence — and is now written AT the fold, riding the PR it describes.
+
+Battery after the fold: **17/17** (15 build + A-F1/A-F2; A-C8 re-anchored to the tightened line).
+Probes P3 (pre-attempt-id pooling) and P4 (mixed-attempt semantics) confirmed the build green.
 
 ## 5. Carries (P19)
 

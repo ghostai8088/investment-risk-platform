@@ -220,6 +220,12 @@ def _schedule(
     )
     session.add(schedule)
     session.flush()
+    # A schedule that has existed since its anchor — the fixture's default scenario. The overdue
+    # clock starts at max(anchor, created_at) (the ratified never-fired rule), and created_at
+    # defaults to wall-clock, which would silently turn every "this schedule has been silent for
+    # a month" test into "this schedule was created just now".
+    schedule.created_at = anchor
+    session.flush()
     return schedule
 
 
@@ -435,6 +441,55 @@ def test_poison_on_a_LIVE_verdict_is_red_and_on_a_RETIRED_one_is_not(session: Se
     health = alarm_channel_health(session, acting_tenant=tenant, now=NOW)
     assert health.unreadable_rows == 0
     assert health.exhausted_verdicts == 1
+
+
+def test_PHANTOM_poison_is_not_a_permanent_red(session: Session) -> None:
+    """The review's P1 probe, as a permanent test.
+
+    A poison row whose entity matches NO verdict — a buggy writer spraying rows about nothing, the
+    exact shape the Wave-16 close probe planted — is neither queued nor retired, so the build's
+    "not retired" scope held it RED for a full simulated year with no remediation path: the P2-14
+    cry-wolf state the ratification excluded, back through a side door. The ratified sentence is
+    "red only while a STILL-QUEUED verdict's history contains poison", and a phantom is not a
+    still-queued verdict. The residual (a phantom row is now invisible to red) is recorded in the
+    slice record; a red nobody can ever clear costs more.
+    """
+    tenant = _tenant(session)
+    _dispatch(session, tenant, str(uuid.uuid4()), outcome="", attempt_id="ph", payload_broken=True)
+    session.flush()
+    health = alarm_channel_health(session, acting_tenant=tenant, now=NOW)
+    assert health.unreadable_rows == 0, (
+        "a poison row about a NONEXISTENT verdict is red — and it can never be cleared, because "
+        "no verdict exists to retire"
+    )
+    assert health.healthy is True
+    # A year later it is still not red (the permanence check the probe ran).
+    later = alarm_channel_health(session, acting_tenant=tenant, now=NOW + timedelta(days=365))
+    assert later.healthy is True
+
+
+def test_a_PAST_ANCHORED_fresh_schedule_is_not_instantly_red(session: Session) -> None:
+    """The review's P2 probe, as a permanent test.
+
+    The deployed proof's own seed anchors its schedule at 2026-01-01 so the first tick is
+    immediately due — the NORMAL shape for a new schedule. Measuring a never-fired schedule from
+    its ANCHOR made one created seconds ago read overdue at once; the ratified sentence starts the
+    clock at creation. (The proof itself masked this: its sweep fires before its health read.)
+    """
+    tenant = _tenant(session)
+    schedule = _schedule(session, tenant, anchor=NOW - timedelta(days=200))
+    # created_at defaults to wall-clock "now" — which for this test IS recent relative to NOW's
+    # fixed date only if we set it; pin it explicitly two hours before the reading.
+    schedule.created_at = NOW - timedelta(hours=2)
+    session.flush()
+    health = alarm_channel_health(session, acting_tenant=tenant, now=NOW)
+    assert health.sweep_overdue is False, (
+        "a schedule created two hours ago reads OVERDUE because its anchor is old — the clock "
+        "must start at creation, not at the anchor"
+    )
+    # And the twin: the SAME schedule, still never fired three periods after creation, IS overdue.
+    later = alarm_channel_health(session, acting_tenant=tenant, now=NOW + timedelta(days=3))
+    assert later.sweep_overdue is True
 
 
 def test_a_DELIVERED_at_the_ceiling_verdict_is_not_counted_as_silenced(session: Session) -> None:
