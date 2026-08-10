@@ -32,9 +32,11 @@ from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.db.base import Base
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.notification.events import (
+    NOTIFY_CONCLUDING_OUTCOMES,
     NOTIFY_DISPATCH_EVENT,
     NOTIFY_OUTCOME_FAILED,
     NOTIFY_OUTCOME_SENT,
+    NOTIFY_OUTCOME_SKIPPED,
     NOTIFY_OUTCOME_SUPPRESSED,
     NOTIFY_OUTCOMES,
 )
@@ -1243,10 +1245,29 @@ def test_tick_phase_5_alarms_the_queue_and_isolates_a_poison_verdict(
     exploding = {str(first.id)}
     real = alarm_for_verdict
 
-    def _selective(db: Session, *, check, sink, acting_tenant, now=None):  # noqa: ANN001, ANN202
+    # `attempt_id` is passed by the worker since ALERT-1 (it mints the id so a rolled-back
+    # transaction can still name the attempt it was making) — the double must accept it, or
+    # EVERY verdict fails with a TypeError, which looks exactly like the batch-stopping
+    # defect this test exists to catch.
+    def _selective(  # noqa: ANN202
+        db: Session,
+        *,
+        check,  # noqa: ANN001
+        sink,  # noqa: ANN001
+        acting_tenant,  # noqa: ANN001
+        now=None,  # noqa: ANN001
+        attempt_id=None,  # noqa: ANN001
+    ):
         if str(check.id) in exploding:
             raise RuntimeError("this verdict's alarm transaction blew up")
-        return real(db, check=check, sink=sink, acting_tenant=acting_tenant, now=now)
+        return real(
+            db,
+            check=check,
+            sink=sink,
+            acting_tenant=acting_tenant,
+            now=now,
+            attempt_id=attempt_id,
+        )
 
     monkeypatch.setattr("irp_worker.reproduction_alarms.alarm_for_verdict", _selective)
     delivered = poll_tenant_reproduction_alarms(
@@ -1690,15 +1711,31 @@ def test_the_audit_outcome_mapping_is_TOTAL_over_the_notify_vocabulary() -> None
     a SUPPRESSED sentinel once; the next addition must not silently retire divergences. Pinned
     against the declared vocabulary rather than against a hand-written list, so minting a fourth
     outcome fails HERE until someone decides which way it maps.
+
+    **It worked.** ALERT-1 minted the fourth outcome (``SKIPPED``, the courtesy skip's concluding
+    row) and this test is what stopped it being minted silently — the mint had to come here and
+    say which way it maps. The trap is re-armed for a FIFTH: the vocabulary is pinned as an exact
+    set, and the concluding subset is pinned separately, because "a new outcome exists" and "a new
+    outcome CONCLUDES an alarm" are the two different decisions and only the second one can retire
+    a divergence.
     """
     assert NOTIFY_OUTCOMES == {
         NOTIFY_OUTCOME_SENT,
         NOTIFY_OUTCOME_FAILED,
         NOTIFY_OUTCOME_SUPPRESSED,
+        NOTIFY_OUTCOME_SKIPPED,
     }, (
         "a NOTIFY outcome was minted without deciding whether it CONCLUDES an alarm — see "
         "_emit_dispatch, where an unrecognised value now maps to 'failure' and keeps retrying"
     )
+    assert NOTIFY_CONCLUDING_OUTCOMES == {
+        NOTIFY_OUTCOME_SENT,
+        NOTIFY_OUTCOME_SUPPRESSED,
+        NOTIFY_OUTCOME_SKIPPED,
+    }, "the concluding set changed — every member of it RETIRES a divergence permanently"
+    assert (
+        NOTIFY_OUTCOME_FAILED not in NOTIFY_CONCLUDING_OUTCOMES
+    ), "a FAILED delivery must never conclude an attempt — retrying the wire is the point"
 
 
 def test_a_MATCH_verdict_is_never_queued_for_an_alarm(session: Session) -> None:

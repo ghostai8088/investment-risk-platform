@@ -34,7 +34,30 @@ NOTIFY_OUTCOME_FAILED = (
     "FAILED"  #: the sink rejected it (durable evidence; terminal in v1, no retry)
 )
 NOTIFY_OUTCOME_SUPPRESSED = "SUPPRESSED"  #: no eligible recipient (the cursor-advance sentinel row)
-NOTIFY_OUTCOMES = frozenset({NOTIFY_OUTCOME_SENT, NOTIFY_OUTCOME_FAILED, NOTIFY_OUTCOME_SUPPRESSED})
+#: ALERT-1 (ratified 2026-08-09, OQ-ALR-4): delivery DELIBERATELY not attempted, because this
+#: recipient's own durable state for THIS subject is already-delivered. The fourth outcome exists
+#: because the courtesy skip needs a row and every prior value would have LIED about it: ``SENT``
+#: claims the sink accepted a call that never happened (the Wave-12 honesty doctrine — SENT means
+#: "the LOG sink accepted", never a claimed delivery), and ``SUPPRESSED`` means "nobody to tell",
+#: which is the opposite of "already told". A row that misdescribes its own act is the false-record
+#: class this family has refused twice before.
+NOTIFY_OUTCOME_SKIPPED = "SKIPPED"
+NOTIFY_OUTCOMES = frozenset(
+    {
+        NOTIFY_OUTCOME_SENT,
+        NOTIFY_OUTCOME_FAILED,
+        NOTIFY_OUTCOME_SUPPRESSED,
+        NOTIFY_OUTCOME_SKIPPED,
+    }
+)
+
+#: Outcomes that CONCLUDE an attempt for their recipient (the audit column maps these to
+#: ``success``). Declared here, beside the vocabulary, so the reproduction emitter's total mapping
+#: reads ONE list rather than re-enumerating it — the mapping stays total and fails CLOSED on any
+#: fifth value, which is the property that made this constant necessary at all.
+NOTIFY_CONCLUDING_OUTCOMES = frozenset(
+    {NOTIFY_OUTCOME_SENT, NOTIFY_OUTCOME_SUPPRESSED, NOTIFY_OUTCOME_SKIPPED}
+)
 
 #: Delivery channel vocab. v1 ships only LOG (the record-first posture, OQ-1=A); EMAIL/WEBHOOK are
 #: later config-driven adapters behind the same ``NotificationSink`` Protocol (no schema change).

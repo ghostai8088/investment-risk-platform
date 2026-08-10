@@ -109,6 +109,7 @@ def seed(session: Session) -> dict[str, str]:
     # sentinel row, which is the opposite of what the arm claims to show.
     seed_principals(session)
     recipient_id = _seed_alarm_recipient(session)
+    health_reader_id = _seed_health_reader(session)
     schedule_id = _create_repro_schedule(session, "repro-nightly-a")
     session.commit()
     return {
@@ -116,6 +117,7 @@ def seed(session: Session) -> dict[str, str]:
         "CONTENT_HASH": content_hash,
         "SCHEDULE_A": schedule_id,
         "ALARM_RECIPIENT_ID": recipient_id,
+        "HEALTH_READER_ID": health_reader_id,
     }
 
 
@@ -143,6 +145,35 @@ def _seed_alarm_recipient(session: Session) -> str:
         )
     user = AppUser(tenant_id=PROOF_TENANT, display_name="proof-repro-reviewer")
     role = Role(tenant_id=PROOF_TENANT, code="proof-repro-reviewer", name="repro reviewer")
+    session.add_all([user, role])
+    session.flush()
+    session.add(RolePermission(role_id=role.id, permission_id=perm.id))
+    session.add(UserRole(tenant_id=PROOF_TENANT, user_id=user.id, role_id=role.id))
+    session.flush()
+    return str(user.id)
+
+
+def _seed_health_reader(session: Session) -> str:
+    """One in-tenant principal holding ``schedule.view`` — the alarm-health surface's audience.
+
+    A DIFFERENT principal from the alarm recipient, deliberately: being PAGED by the channel and
+    being entitled to AUDIT whether the channel works are different things, and the deployed proof
+    asserts exactly that separation (the recipient gets a 403 on the health route).
+    """
+    from sqlalchemy import select as _select
+
+    from irp_shared.entitlement.models import AppUser, Permission, Role, RolePermission, UserRole
+
+    perm = session.execute(
+        _select(Permission).where(Permission.code == "schedule.view")
+    ).scalar_one_or_none()
+    if perm is None:
+        raise RuntimeError(
+            "permission 'schedule.view' is ABSENT from the deployed catalog — the alarm-health "
+            "arm would be vacuous"
+        )
+    user = AppUser(tenant_id=PROOF_TENANT, display_name="proof-health-reader")
+    role = Role(tenant_id=PROOF_TENANT, code="proof-health-reader", name="health reader")
     session.add_all([user, role])
     session.flush()
     session.add(RolePermission(role_id=role.id, permission_id=perm.id))
