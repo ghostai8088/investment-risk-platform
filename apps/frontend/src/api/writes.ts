@@ -36,6 +36,7 @@ export type UserOut = Schemas["UserOut"];
 export type EntitlementRequestOut = Schemas["EntitlementRequestOut"];
 export type ScheduleOut = Schemas["ScheduleWriteOut"];
 export type ReproductionCheckOut = Schemas["ReproductionCheckOut"];
+export type ReportOut = Schemas["ReportOut"];
 
 /** What a 409 actually meant, and therefore what to tell the operator to do. */
 export type RefusalKind = "separation-of-duties" | "stale" | "illegal-transition" | "other";
@@ -207,4 +208,24 @@ export async function resumeSchedule(
   scheduleId: string,
 ): Promise<ScheduleOut> {
   return request<ScheduleOut>(`/schedules/${scheduleId}/resume`, session, "POST");
+}
+
+// --- RPT-3: report generation from the UI ----------------------------------------------------
+// The one write this slice adds. `family_runs` carries ONLY the families the operator checked —
+// an unchecked family is absent from the object, never present with a null, because the service
+// reads the dict's KEYS as the family set and the DTO forbids unexpected shapes.
+//
+// No `expected_seq`: a report is an append-only governed act, not a lifecycle transition with an
+// interleaving tick, so there is no stale-write hazard for the token to close. Generating twice
+// is deliberately TWO reports (RPT-2 carry (d) — a re-generation is a new governed act); the
+// screen makes existing reports visible rather than pretending the second is a mistake.
+export async function generateReport(
+  session: Session | null,
+  input: { portfolioId: string; asOfDate: string; familyRuns: Record<string, string> },
+): Promise<ReportOut> {
+  return request<ReportOut>("/reports", session, "POST", {
+    portfolio_id: input.portfolioId,
+    as_of_date: input.asOfDate,
+    family_runs: input.familyRuns,
+  });
 }

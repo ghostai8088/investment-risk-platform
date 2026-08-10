@@ -425,3 +425,47 @@ def test_api1_entity_reads_benchmark_relative_and_desmoothed_smoke(ctx) -> None:
     stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": p.tenant_id}
     denied = client.get("/perf/benchmark-relative", params={"portfolio_id": pf}, headers=stranger)
     assert denied.status_code == 403
+
+
+# ------------------------------------------------- RPT-3 (ratified OQ-RPT3-0=A): rolling_risk ----
+def test_ROLLING_RISK_is_listable_and_SHARPE_is_still_refused(ctx) -> None:  # noqa: ANN001
+    """The allowlist extension, both directions — the fence must still be a fence.
+
+    RPT-3's report picker binds one run id per report family, and `rolling_risk` is one of the four
+    `REPORT_FAMILIES` — but `/perf/runs` fail-closed on that run type because `PERF_RUN_TYPES`
+    predated the family and grew by hand. That was drift, not a decision (ratified OQ-RPT3-0=A).
+
+    The negative arm is the load-bearing half: SHARPE was deliberately NOT added, because nothing
+    consumes sharpe runs and widening a listing on symmetry alone is how a closed set decays into
+    a habit. If this assertion ever goes green-by-widening, the set has stopped being closed.
+    """
+    client, p, db, r0, r1 = ctx
+    ok = client.get("/perf/runs", params={"run_type": "ROLLING_RISK"}, headers=_h(p))
+    assert ok.status_code == 200, ok.text
+
+    refused = client.get("/perf/runs", params={"run_type": "SHARPE"}, headers=_h(p))
+    assert refused.status_code == 422, (
+        "SHARPE became listable — the RPT-3 extension was ratified for ROLLING_RISK ALONE, with "
+        "SHARPE recorded as known drift awaiting its first consumer"
+    )
+
+
+def test_the_UNFILTERED_listing_now_admits_rolling_risk_runs(ctx) -> None:  # noqa: ANN001
+    """The extension's SIDE EFFECT, pinned rather than discovered.
+
+    Adding a type to `PERF_RUN_TYPES` widens the UNFILTERED `/perf/runs` response too, because the
+    unfiltered query is `run_type IN (the set)`. Three verifier lenses flagged that the planning
+    draft had not said so. It is harmless here — `RunsList.tsx` selects a family before listing —
+    but a behavior change every existing consumer inherits should be asserted by name, not left
+    for someone to find.
+    """
+    from irp_shared.perf.queries import PERF_RUN_TYPES
+
+    client, p, db, r0, r1 = ctx
+    assert "ROLLING_RISK" in PERF_RUN_TYPES
+    listing = client.get("/perf/runs", headers=_h(p))
+    assert listing.status_code == 200
+    # The unfiltered listing's admitted vocabulary IS the set — asserted through the API rather
+    # than by re-reading the constant, so a divergence between them would fail here.
+    returned_types = {row["run_type"] for row in listing.json()["items"]}
+    assert returned_types <= PERF_RUN_TYPES

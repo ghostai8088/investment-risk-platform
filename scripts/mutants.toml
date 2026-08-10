@@ -938,3 +938,21 @@ find = """    if session.get(Tenant, DEMO_TENANT_ID) is None:
 replace = """    if False:
         session.add("""
 tests = ["packages/shared-python/tests/test_demo_reproduction_stage.py"]
+
+# ---------------------------------------------------------------------------------------------
+# RPT-3: report generation from the UI. The FE carries no mutation battery (the harness is
+# Python-only), so this group covers the slice's single backend change.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "R-E1"
+group = "rpt-3"
+why = "ROLLING_RISK leaves the perf listing allowlist again — /perf/runs fail-closes on the run type, the report picker's rolling_risk dropdown starves, and a family the report can bind becomes ungenerable from the UI (the drift RPT-3 found, restored)"
+file = "packages/shared-python/src/irp_shared/perf/queries.py"
+# Anchored on the POST-`make fix` multi-line frozenset, deliberately. REPRO-2's F1 lesson, applied
+# before the fact rather than after: the formatter reflowed a single-line anchor there AFTER the
+# battery ran, and the committed 14/14 claim was true of bytes that no longer existed.
+find = """        RUN_TYPE_DESMOOTHED_RETURN,
+        RUN_TYPE_ROLLING_RISK,"""
+replace = """        RUN_TYPE_DESMOOTHED_RETURN,"""
+tests = ["apps/backend/tests/test_perf_endpoint.py"]

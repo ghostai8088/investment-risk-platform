@@ -19,11 +19,30 @@ from irp_shared.perf.events import (
     RUN_TYPE_BENCHMARK_RELATIVE,
     RUN_TYPE_DESMOOTHED_RETURN,
     RUN_TYPE_PORTFOLIO_RETURN,
+    RUN_TYPE_ROLLING_RISK,
 )
 
 #: The closed set this listing may surface (the perf families). Risk/exposure runs are OUT.
+#:
+#: **``ROLLING_RISK`` joined at RPT-3 (ratified OQ-RPT3-0=A), and its absence was DRIFT rather than
+#: a decision.** The set was written when PORTFOLIO_RETURN was the only perf family and grew by
+#: hand as families landed; ROLLING_RISK and SHARPE arrived later and neither was added, so
+#: ``/perf/runs?run_type=ROLLING_RISK`` fail-closed with a 422 and the unfiltered listing silently
+#: omitted the family. Nothing noticed, because nothing had asked: RPT-3's report picker is the
+#: first consumer that needs rolling-risk RUNS (the report binds a run id per family), and
+#: ``rolling_risk`` is one of the four ``REPORT_FAMILIES``.
+#:
+#: **``SHARPE`` is deliberately NOT added.** Nothing consumes sharpe runs, and widening a listing
+#: on symmetry alone is how a surface grows without a reader. Recorded as known drift with its
+#: trigger: the first SHARPE-consuming surface. The fail-closed 422 for it is retained and tested,
+#: which is what keeps this a closed set rather than a habit.
 PERF_RUN_TYPES: frozenset[str] = frozenset(
-    {RUN_TYPE_PORTFOLIO_RETURN, RUN_TYPE_BENCHMARK_RELATIVE, RUN_TYPE_DESMOOTHED_RETURN}
+    {
+        RUN_TYPE_PORTFOLIO_RETURN,
+        RUN_TYPE_BENCHMARK_RELATIVE,
+        RUN_TYPE_DESMOOTHED_RETURN,
+        RUN_TYPE_ROLLING_RISK,
+    }
 )
 
 _STATUS_VALUES: frozenset[str] = frozenset(s.value for s in RunStatus)

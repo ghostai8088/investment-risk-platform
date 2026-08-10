@@ -259,7 +259,7 @@ entitlement/lineage/model-gov/control/phase/dependency are in the [RTM](requirem
 
 | REQ | Title | CAP | Business purpose | Functional | Data | Calc | Test | Acceptance | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| REQ-RPT-001 | Risk reports (market/credit/liquidity) | 16.1 | Communicate risk | Generate governed, reproducible risk reports | approved results | — | Report-reproduction test | Report binds run IDs; regenerates identically (BR-9) | Draft |
+| REQ-RPT-001 | Risk reports (market/credit/liquidity) | 16.1 | Communicate risk | Generate governed, reproducible risk reports | approved results | — | Report-reproduction test | Report binds run IDs; regenerates identically (BR-9) | In-Progress (RPT-1/RPT-2 2026-08-07; RPT-3 2026-08-10) — the acceptance clause (binds run IDs; regenerates identically, BR-9) is PROVEN end-to-end: `infra/deploy/prove_report_identity.sh` byte-verifies a regenerated artifact on the deployed stack with a negative control, and RPT-3 makes generation operator-reachable. **The CREDIT report family is NOT built** (`REPORT_FAMILIES` = var/concentration/liquidity/rolling_risk), so the row does not close |
 | REQ-RPT-002 | Board risk report | 16.3 | Board-level oversight | Aggregate narrative from approved metrics | approved results | — | Board-report test | Publication is maker-checked (SOD-08); no unapproved data | Draft |
 | REQ-RPT-003 | DQ / model-inventory / audit extracts | 16.4/16.5 | Control transparency | Generate control/DQ/inventory/audit reports | DQ, inventory, audit | — | Extract test | Extracts reproduce and are entitlement-scoped | Draft |
 
