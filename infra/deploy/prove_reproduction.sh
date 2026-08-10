@@ -216,7 +216,7 @@ bare_code=$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${BACKEND_
 echo "   alarm recipient -> 403; bare -> 401 (the fence, live)"
 
 # =============================================================================================
-log "8. CARRY (m): a tenant NOBODY CONFIGURED gets its schedule fired by the supervisor"
+log "6. CARRY (m): a tenant NOBODY CONFIGURED gets its schedule fired by the supervisor"
 # **This is carry (m)'s discharge sentence, and it is the whole point of OQ-REP2-1.**
 #
 # Every arm above drives the ONE-SHOT entrypoint against PROOF_TENANT — a tenant this script

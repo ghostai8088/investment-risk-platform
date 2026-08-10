@@ -177,3 +177,111 @@ describe("Reproduction", () => {
     expect(screen.getByText(/outage in the control, not a divergence/)).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// The §3-bound write proofs, added at the different-engine review. The record binds "component
+// tests — create/pause/resume through `writes.ts` with refusal rendering; … the second-active-
+// schedule warning" BY NAME, and the first seven tests rendered buttons without ever exercising a
+// write, rendering a refusal, or asserting the warning — part 1's F2 class (a ratified proof
+// bound in the record, quietly not delivered), caught by the same review pattern.
+// ---------------------------------------------------------------------------------------------
+
+/** Route GETs to payloads AND capture writes, answering them with `write` (a Response-shaped stub). */
+function routeWithWrites(
+  payloads: { schedules?: unknown },
+  write: { status: number; body?: unknown },
+): ReturnType<typeof vi.fn> {
+  const fn = vi.fn((url: string, init?: RequestInit) => {
+    if (init?.method && init.method !== "GET") {
+      return Promise.resolve({
+        ok: write.status < 400,
+        status: write.status,
+        json: () => Promise.resolve(write.body ?? {}),
+      } as unknown as Response);
+    }
+    const body = url.includes("/reproduction/checks")
+      ? []
+      : url.includes("/schedules/runs")
+        ? { items: [] }
+        : (payloads.schedules ?? { items: [] });
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(body),
+    } as unknown as Response);
+  });
+  vi.stubGlobal("fetch", fn);
+  return fn;
+}
+
+describe("Reproduction — the write path through writes.ts", () => {
+  it("Pause actually POSTs to /schedules/{id}/pause", async () => {
+    const fetchSpy = routeWithWrites(
+      { schedules: { items: [SCHEDULE] } },
+      { status: 200, body: { ...SCHEDULE, status: "PAUSED" } },
+    );
+    render(<Reproduction session={SESSION} />);
+    const pause = await screen.findByRole("button", { name: "Pause" });
+    pause.click();
+    await waitFor(() => {
+      const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === "POST");
+      expect(posts.some(([url]) => String(url).includes("/schedules/s-1/pause"))).toBe(true);
+    });
+  });
+
+  it("a schedule.view-only principal's refused pause is EXPLAINED, not swallowed", async () => {
+    // The server's 403 must surface through `explain()`'s plain-language rendering — the OPS-1
+    // convention: the FE holds no permission knowledge, so the refusal names the attempted act.
+    routeWithWrites(
+      { schedules: { items: [SCHEDULE] } },
+      { status: 403, body: { detail: "forbidden" } },
+    );
+    render(<Reproduction session={SESSION} />);
+    const pause = await screen.findByRole("button", { name: "Pause" });
+    pause.click();
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/not entitled to change this schedule/);
+    });
+  });
+
+  it("Create submits through createSchedule and a duplicate-code refusal renders plainly", async () => {
+    const fetchSpy = routeWithWrites(
+      { schedules: { items: [] } },
+      {
+        status: 422,
+        body: {
+          detail: "a schedule with code 'nightly-reproduction' already exists in this tenant",
+        },
+      },
+    );
+    render(<Reproduction session={SESSION} />);
+    const submit = await screen.findByRole("button", {
+      name: "Create daily reproduction schedule",
+    });
+    submit.click();
+    await waitFor(() => {
+      const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === "POST");
+      expect(posts.some(([url]) => String(url).endsWith("/schedules"))).toBe(true);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/already exists/);
+    });
+  });
+
+  it("the SECOND-active-schedule warning shows beside the form exactly when one is ACTIVE", async () => {
+    // The ratified sentence: "the UI warns before creating a second schedule for a family that
+    // already has an ACTIVE one." Both directions, so the warning cannot become wallpaper.
+    routeWithWrites({ schedules: { items: [SCHEDULE] } }, { status: 200 });
+    render(<Reproduction session={SESSION} />);
+    await waitFor(() => {
+      expect(screen.getByText(/second active reproduction schedule would sweep/)).toBeTruthy();
+    });
+    cleanup();
+    routeWithWrites({ schedules: { items: [] } }, { status: 200 });
+    render(<Reproduction session={SESSION} />);
+    await waitFor(() => {
+      expect(screen.getByText(/No reproduction schedule exists/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/second active reproduction schedule would sweep/)).toBeNull();
+  });
+});

@@ -7,10 +7,11 @@ wanted its key/field declaration. This module is those sixteen, moving the cover
 snapshot consume path at all) and LIQUIDITY (a wall clock inside a shipped governed refusal, which
 is a model-identity question rather than a reproduction one).
 
-**Three of the sixteen "not yet adapted" reasons were FACTUALLY WRONG, and following them would
-have produced adapters that refuse every run.** They are corrected in place at the registry, and
-recorded here because the class matters more than the instances — the same class as REPRO-1's
-``_WHY_RENDER_INPUT``, a reason that reads well and is false about the code it describes:
+**FOUR of the sixteen "not yet adapted" reasons were FACTUALLY WRONG, and following them would
+have produced adapters that refuse every run or dead code presented as dispatch.** They are
+corrected in place at the registry, and recorded here because the class matters more than the
+instances — the same class as REPRO-1's ``_WHY_RENDER_INPUT``, a reason that reads well and is
+false about the code it describes:
 
 * **BENCHMARK_RELATIVE** — "needs return_basis + benchmark_id read back off the stored rows". The
   binder REFUSES those arguments alongside ``snapshot_id`` ("ambiguous input"), and adjudicates
@@ -20,21 +21,26 @@ recorded here because the class matters more than the instances — the same cla
   ONE model code (``risk.proxy_weight.regression``); both binders assert it. Model-code resolution
   cannot discriminate them, so the VAR pattern is unimplementable here. What DOES discriminate is
   the version's declared ESTIMATOR CONVENTION, which is also how production dispatches.
-* **COVARIANCE_PRIVATE** — "shares covariance_result with COVARIANCE; needs binder resolution by
-  model code". The TABLE is shared; the RUN TYPE is not, and the sweep resolves subjects per run
-  type. The two families never collide, so no resolution is needed at all.
+* **COVARIANCE_PRIVATE** and **VAR_BACKTEST/ES_BACKTEST** — both pairs' notes read a shared result
+  TABLE as implying a shared dispatch problem ("needs binder resolution by model code"). The table
+  is shared; the RUN TYPE is not, and the sweep resolves subjects per run type — so each family
+  has exactly one possible binder and the VAR-style allowlist would be dead code. What creates the
+  VAR family's genuine ambiguity is seven model codes writing under ONE run type.
 
-**Why a factory for most of them and hand-written functions for five.** Eleven families have
-literally the same shape — read the run's rows in key order; call one binder with the run's own
-pinned ``snapshot_id`` and ``model_version_id``; project. Writing that eleven times would be
-eleven chances to typo a fence, and the field-level declarations (which is what a reader needs to
-audit) would be buried in boilerplate. So the shape is written once, in ``_consume_adapter``.
+*(This docstring itself carried the fourth error for one commit: it said "three" and claimed the
+backtests "need binder resolution by model code (the genuine VAR-shaped case)" — asserting the
+exact falsehood the section below corrects. The different-engine review caught the header
+contradicting its own code, in the module whose subject is prose contradicting code.)*
 
-The five exceptions are exceptions BECAUSE the factory would be a lie about them, and each is
-documented at its own definition: two backtests need binder resolution by model code (the genuine
-VAR-shaped case), ROLLING_RISK and SHARPE need ``window_months`` recovered off their stored rows,
-and PROXY_WEIGHT_ESTIMATE needs both a convention-based binder choice and a derived recovery of a
-caller-supplied argument that has NO stored column. The factory refuses to hide any of that.
+**Why a factory for most of them and dedicated builders for the rest.** Thirteen families have
+literally the same call shape — read the run's rows in key order; call one binder with the run's
+own pinned ``snapshot_id`` and ``model_version_id``; project — and go through ``_family``: eleven
+in ``_standard_families`` plus the two backtests, which get their own function only so the
+shared-table correction has a place to live. The three genuine exceptions are exceptions BECAUSE
+the factory would be a lie about them, and each is documented at its own definition: ROLLING_RISK
+and SHARPE recover ``window_months`` off their stored rows before they can call their binder at
+all, and PROXY_WEIGHT_ESTIMATE needs a convention-based binder choice plus a derived recovery of
+a caller-supplied argument that has NO stored column.
 """
 
 from __future__ import annotations

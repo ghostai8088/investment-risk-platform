@@ -266,3 +266,40 @@ loaded CI runner would teach everyone to ignore.
 **Anchors moved FOUR times in this slice** (the formatter, a dedupe, a refactor across modules).
 Part 1's F1 lesson holds and generalises: a mutant anchor is a claim about bytes, and the battery
 run that counts is the one against the bytes being committed.
+
+## 9. The different-engine review fold, part 2 (Fable, 2026-08-10, over `80e6b9f..3281923`)
+
+Three findings, all folded — P15's tenth consecutive hold, and the first one where the strongest
+finding was the build's own prose about prose:
+
+1. **The `families.py` module header was FALSE twice, in the module whose subject is false
+   prose.** It said "THREE of the sixteen reasons were factually wrong" (it was FOUR — the
+   header contradicted the `_backtest_families` docstring forty lines below it, which correctly
+   calls the backtests "a FOURTH reason"), and it claimed the backtests "need binder resolution
+   by model code (the genuine VAR-shaped case)" — asserting the exact falsehood the code beneath
+   it corrects: the backtests use the STANDARD factory shape precisely because they need no
+   resolution. The header was drafted before the backtest investigation concluded and never
+   updated. Rewritten, with the error recorded in place: a module that documents the
+   reads-well-but-false class must not ship an instance of it as its own summary.
+2. **Two §3-bound UI proofs were not delivered** — the record binds "component tests —
+   create/pause/resume through `writes.ts` with refusal rendering; … the second-active-schedule
+   warning" BY NAME, and the shipped suite rendered the buttons without ever exercising a write,
+   rendering a refusal, or asserting the warning. Part 1's F2 class (a ratified carrier quietly
+   omitted), caught by the same review pattern one part later. Four tests added: Pause POSTs to
+   the real path; a 403'd pause renders `explain()`'s plain-language refusal; Create submits and
+   a duplicate-code refusal renders; the second-active-schedule warning shows exactly when one
+   schedule is ACTIVE and not otherwise. FE suite 7 → 11.
+3. **LOW**: the deployed proof's new section was numbered "8" in a script whose sections run
+   0–5 (the number was copied from deploy.sh's step 8, a different file). Renumbered 6.
+
+Recorded deviations, checked and accepted rather than folded: the part-2 battery group is named
+`repro-2b` where the record's proof list says "group `repro-2`" (both groups run at every gate;
+the split keeps part 1's 15 anchors and part 2's 7 independently re-runnable); and the
+exclusion-truth obligation's per-column tamper tests are vacuously satisfied (zero discretionary
+exclusions exist) with the census demanding the ratified proof shape the day one appears — the
+review verified the census fails with that exact instruction rather than silently.
+
+One property the review checked and confirms rather than assumes: `compare_rows` matches by KEY
+(dict), not by position, so the stored-side SQL ordering and the recompute-side writer ordering
+cannot produce a false divergence — and its duplicate-key guard covers the eight new multi-row
+grains this slice registered.
