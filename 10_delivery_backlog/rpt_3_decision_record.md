@@ -1,6 +1,12 @@
 # RPT-3 — Report generation from the UI (Wave-17 slice 3) — decision record
 
-**Status:** DRAFT v3, GATE-READY (pass 1: 6 lenses, 37 findings survived refutation, broke v1's
+**Status:** **RATIFIED 2026-08-10** (AskUserQuestion, four decision points, ALL as recommended:
+OQ-RPT3-0 = **A** extend `PERF_RUN_TYPES`; REQ-RPT-001 → **In-Progress with the CREDIT clause
+named**; P15 for this slice = **fresh-context Opus audit** (the RPT-2 precedent, Fable exhausted
+for four days); the record ratified and MERGED as design authority before implementation.
+Design authority: THIS record. NEXT: the RPT-3 implementation.)
+
+**Draft history:** v3, gate-ready (pass 1: 6 lenses, 37 findings survived refutation, broke v1's
 central consequence chain in three places. pass 2: 4 lenses, 29 findings against the FOLDS — the
 established pattern held a fourth time, and pass 2's strongest findings are all in text pass 1
 forced. §7 is the honesty ledger for both.) Ratified remit
@@ -290,9 +296,13 @@ their findings were recovered from the journal and verified by hand instead.
 The RPT-3 implementation therefore cannot be reviewed by Fable on the current schedule. The
 options, none of which I should pick silently:
 
-* **Fresh-context Opus audit** — the RPT-2 precedent (a fresh-context pre-merge audit found a
-  real disclosure the review missed). Different context, same engine: weaker than P15's intent,
-  but it has a track record HERE.
+* **Fresh-context Opus audit — RATIFIED 2026-08-10.** The RPT-2 precedent (a fresh-context
+  pre-merge audit found a real disclosure the review missed). Different context, same engine:
+  weaker than P15's intent, but it has a track record HERE. **The binding condition, so this does
+  not become a weaker review wearing P15's name: the audit context is opened with the DIFF and the
+  ratified record only — never the build's reasoning, this conversation's summary, or the
+  implementation notes.** If it finds nothing, that result is recorded as what it is (a
+  same-engine audit's null result), not as a P15 clearance.
 * **Sonnet as the different engine** — genuinely different, unproven in this role on this repo.
 * **Wait** — hold the implementation until Fable returns. Honest, and costs four days.
 
