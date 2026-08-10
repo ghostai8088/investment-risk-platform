@@ -13804,7 +13804,7 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/irp_backend__api__schedules__ScheduleOut"
+              "$ref": "#/components/schemas/ScheduleOut"
             },
             "title": "Items",
             "type": "array"
@@ -13814,6 +13814,197 @@
           "items"
         ],
         "title": "ScheduleListOut",
+        "type": "object"
+      },
+      "ScheduleOut": {
+        "description": "A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable\nsince SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some\ncadences/families and forbidden for others), so the DTO mirrors the column nullability rather\nthan inventing a placeholder.",
+        "properties": {
+          "anchor_date": {
+            "title": "Anchor Date",
+            "type": "string"
+          },
+          "cadence_kind": {
+            "title": "Cadence Kind",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "environment_id": {
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "last_failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Failure Reason"
+          },
+          "last_fired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Fired At"
+          },
+          "last_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Outcome"
+          },
+          "last_scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scheduled For"
+          },
+          "model_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "record_version": {
+            "title": "Record Version",
+            "type": "integer"
+          },
+          "scope_portfolio_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Portfolio Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_run_type": {
+            "title": "Target Run Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "target_run_type",
+          "scope_portfolio_id",
+          "model_version_id",
+          "environment_id",
+          "cadence_kind",
+          "interval_days",
+          "anchor_date",
+          "status",
+          "record_version",
+          "last_scheduled_for",
+          "last_fired_at",
+          "last_outcome",
+          "last_failure_reason"
+        ],
+        "title": "ScheduleOut",
+        "type": "object"
+      },
+      "ScheduleWriteOut": {
+        "description": "The write path's view of a schedule.\n\nNamed distinctly from `schedules.ScheduleOut` (the READ path's, shipped at SCH-2) because two\nPydantic models with the same class name make FastAPI mangle BOTH into\n`irp_backend__api__<module>__ScheduleOut` in the OpenAPI document \u2014 which then propagates into\nthe generated frontend types as an unreadable identifier that says nothing about which surface\nit belongs to. Part 1 introduced the collision; this is the point at which a consumer appeared\nand it stopped being cosmetic.",
+        "properties": {
+          "cadence_kind": {
+            "title": "Cadence Kind",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_run_type": {
+            "title": "Target Run Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "target_run_type",
+          "cadence_kind",
+          "interval_days",
+          "status"
+        ],
+        "title": "ScheduleWriteOut",
         "type": "object"
       },
       "ScheduledRunListOut": {
@@ -16850,196 +17041,6 @@
           "drifted_components"
         ],
         "title": "VerifyOut",
-        "type": "object"
-      },
-      "irp_backend__api__schedule_admin__ScheduleOut": {
-        "properties": {
-          "cadence_kind": {
-            "title": "Cadence Kind",
-            "type": "string"
-          },
-          "code": {
-            "title": "Code",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "interval_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Interval Days"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "target_run_type": {
-            "title": "Target Run Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "code",
-          "name",
-          "target_run_type",
-          "cadence_kind",
-          "interval_days",
-          "status"
-        ],
-        "title": "ScheduleOut",
-        "type": "object"
-      },
-      "irp_backend__api__schedules__ScheduleOut": {
-        "description": "A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable\nsince SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some\ncadences/families and forbidden for others), so the DTO mirrors the column nullability rather\nthan inventing a placeholder.",
-        "properties": {
-          "anchor_date": {
-            "title": "Anchor Date",
-            "type": "string"
-          },
-          "cadence_kind": {
-            "title": "Cadence Kind",
-            "type": "string"
-          },
-          "code": {
-            "title": "Code",
-            "type": "string"
-          },
-          "environment_id": {
-            "title": "Environment Id",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "interval_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Interval Days"
-          },
-          "last_failure_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Failure Reason"
-          },
-          "last_fired_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Fired At"
-          },
-          "last_outcome": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Outcome"
-          },
-          "last_scheduled_for": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Scheduled For"
-          },
-          "model_version_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Version Id"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "record_version": {
-            "title": "Record Version",
-            "type": "integer"
-          },
-          "scope_portfolio_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scope Portfolio Id"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "target_run_type": {
-            "title": "Target Run Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "code",
-          "name",
-          "target_run_type",
-          "scope_portfolio_id",
-          "model_version_id",
-          "environment_id",
-          "cadence_kind",
-          "interval_days",
-          "anchor_date",
-          "status",
-          "record_version",
-          "last_scheduled_for",
-          "last_fired_at",
-          "last_outcome",
-          "last_failure_reason"
-        ],
-        "title": "ScheduleOut",
         "type": "object"
       }
     }
@@ -46045,7 +46046,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/irp_backend__api__schedule_admin__ScheduleOut"
+                  "$ref": "#/components/schemas/ScheduleWriteOut"
                 }
               }
             },
@@ -46309,7 +46310,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/irp_backend__api__schedule_admin__ScheduleOut"
+                  "$ref": "#/components/schemas/ScheduleWriteOut"
                 }
               }
             },
@@ -46401,7 +46402,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/irp_backend__api__schedule_admin__ScheduleOut"
+                  "$ref": "#/components/schemas/ScheduleWriteOut"
                 }
               }
             },

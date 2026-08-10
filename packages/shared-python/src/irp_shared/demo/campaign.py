@@ -1028,6 +1028,89 @@ def _file_records(
     return validations, exceptions
 
 
+def _register_and_schedule_reproduction(session: Session, registrar_id: str) -> str | None:
+    """REPRO-2 (OQ-REP2-5): put the demo tenant in the ENT-074 registry and give it a nightly
+    reproduction schedule, so the demo database demonstrates a control that actually RUNS.
+
+    Two acts, and neither is cosmetic.
+
+    **Registration** is what makes the worker tick this tenant at all. Since REPRO-2 the supervisor
+    discovers ACTIVE tenants from the registry rather than from `IRP_TENANT_IDS`, so an unregistered
+    demo tenant is a tenant the engine never visits — which would have made the schedule below the
+    LQ-1 shape exactly: a control that exists, is believed, and is inert. Idempotency mirrors
+    `register_proof_tenant`: tolerant of an existing row, whether seeded by an earlier run or
+    backfilled by migration 0067 (which registers any tenant holding `app_user` rows, so a
+    re-migrated demo database may already carry one).
+
+    **The schedule** is created through the real `create_schedule` service — the same governed act,
+    audit event and validation an operator's `POST /schedules` performs — not by inserting a row.
+    A demo that seeds around its own service proves nothing about the service.
+
+    **THIS AMENDS AN OPS-H1-RATIFIED DISPOSITION**, and it is stated here because a disposition
+    changed by silence is how a register entry goes stale the day it is written. OPS-H1 ratified
+    that "enrolling DEMO_TENANT_ID in IRP_TENANT_IDS is an OPERATOR CHOICE" — opt-IN. Under
+    registry discovery that choice no longer exists in that form: a registered ACTIVE tenant ticks
+    by default, so the operator's lever became opt-OUT (the `IRP_TENANT_IDS` restriction filter).
+    Re-seeding remains the pristine-walk recovery.
+
+    **The isolation rule this creates, stated where it bites:** a demo-seeded database now contains
+    a DISCOVERABLE ACTIVE tenant. Any PG test that exercises registry discovery must therefore pin
+    the restriction filter or mint a fresh tenant, because "the registry has exactly my tenant in
+    it" stopped being true.
+
+    **Called from the LATE stage `repro2_stage24`, not from the campaign body — and the reason is
+    a real collision, found by the full-PG battery rather than by reasoning.** Seeding the schedule
+    during the campaign puts it in place BEFORE stage 15, whose tick then dispatches TWO schedules
+    and whose stage refuses with "expected exactly one dispatch". Every later count pin then came
+    up one COMPLETED run short. Adding a schedule to a shared demo tenant is not a local act: it
+    changes what every subsequent tick does. Seeding it last leaves every existing stage's meaning
+    untouched.
+
+    Returns the schedule id, or ``None`` if the tenant already had a reproduction schedule.
+    """
+    from irp_shared.reproduction.models import RUN_TYPE_REPRODUCTION
+    from irp_shared.scheduling.events import CADENCE_INTERVAL, SchedulingActor
+    from irp_shared.scheduling.models import Schedule
+    from irp_shared.scheduling.service import create_schedule
+    from irp_shared.tenancy.models import PROVENANCE_ONBOARDED, TENANT_STATUS_ACTIVE, Tenant
+
+    if session.get(Tenant, DEMO_TENANT_ID) is None:
+        session.add(
+            Tenant(
+                id=DEMO_TENANT_ID,
+                code="demo",
+                display_name="Demo tenant",
+                status=TENANT_STATUS_ACTIVE,
+                provenance=PROVENANCE_ONBOARDED,
+            )
+        )
+        session.flush()
+
+    existing = session.execute(
+        select(Schedule.id).where(
+            Schedule.tenant_id == DEMO_TENANT_ID,
+            Schedule.target_run_type == RUN_TYPE_REPRODUCTION,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return None
+
+    schedule = create_schedule(
+        session,
+        tenant_id=DEMO_TENANT_ID,
+        code="demo-nightly-reproduction",
+        name="Nightly reproduction sweep (demo)",
+        target_run_type=RUN_TYPE_REPRODUCTION,
+        environment_id="demo",
+        anchor_date=date(2026, 1, 1),
+        cadence_kind=CADENCE_INTERVAL,
+        interval_days=1,
+        actor=SchedulingActor(actor_id=registrar_id, actor_type="HUMAN"),
+    )
+    session.flush()
+    return str(schedule.id)
+
+
 def run_demo_campaign(session: Session) -> CampaignSummary:
     """Execute the full ratified campaign against the DEMO tenant (OD-MG-1-G). The caller owns
     the commit; the runner arms (and re-arms) the demo tenant's RLS context itself."""

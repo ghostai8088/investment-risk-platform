@@ -41,4 +41,8 @@ export const API_PREFIXES = [
   // ALERT-1: the alarm channel's health read. NOTE the same trap as /users — the SCREEN lives at
   // /ops/alerting, not at /reproduction, because a client route under this prefix is shadowed.
   "/reproduction",
+  // REPRO-2: the schedule WRITE path (create/pause/resume) and the scheduled-run ledger, which the
+  // /ops/reproduction screen drives. Same shadow trap, third instance: the SCREEN is at
+  // /ops/reproduction, never at bare /schedules.
+  "/schedules",
 ] as const;

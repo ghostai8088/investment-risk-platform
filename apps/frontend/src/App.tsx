@@ -10,6 +10,7 @@ import { beginLogin, completeLogin, logout } from "./auth/oidc";
 import { clearSession, loadSession, saveSession } from "./session";
 import type { Session } from "./session";
 import { UsersRoles } from "./views/admin/UsersRoles";
+import { Reproduction } from "./views/ops/Reproduction";
 import { Alerting } from "./views/ops/Alerting";
 import { BreachDetail } from "./views/ops/BreachDetail";
 import { BreachQueue } from "./views/ops/BreachQueue";
@@ -135,6 +136,9 @@ export function App(): ReactElement {
           {/* ALERT-1: the alarm channel's own health. NOT at /reproduction — that is an
               API prefix, and a client route there is shadowed by the proxy/nginx. */}
           <Route path="ops/alerting" element={<Alerting session={session} />} />
+          {/* REPRO-2: the reproduction control, operable. NOT at /schedules or /reproduction —
+              both are API prefixes (api-prefixes.ts) and a client route there is shadowed. */}
+          <Route path="ops/reproduction" element={<Reproduction session={session} />} />
           {/* ONBOARD-1b: NOT at bare /users — that path is an API prefix (api-prefixes.ts), and a
               client route there is shadowed by the vite proxy / nginx alternation (the
               ops/reports precedent: deep-linking would answer 401 JSON instead of the SPA). */}

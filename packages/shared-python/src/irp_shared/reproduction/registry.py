@@ -542,6 +542,31 @@ REPRODUCIBLE_FAMILIES: dict[str, ReproducibleFamily] = {
     ),
 }
 
+#: REPRO-2 (OQ-REP2-4): the sixteen families REPRO-1 enumerated as "not yet adapted", now adapted.
+#:
+#: Imported rather than written here because the three above carry per-family prose that is the
+#: reason they are readable, and sixteen more in the same file would bury it. The import is
+#: deferred to call time for the reason every ``recompute`` already imports locally: this package
+#: must not take a load-time edge to every compute package on the platform.
+#:
+#: **Four of the sixteen reasons this replaces were factually WRONG about the code they described**
+#: (see ``families.py``'s docstring). Each is corrected in ``UNREPRODUCIBLE_FAMILIES`` below by
+#: DELETION — the family moved — but the class is recorded there and in the slice record, because a
+#: reason that reads well and is false is exactly what REPRO-1's own ``_WHY_RENDER_INPUT`` was.
+
+
+#: Installed EAGERLY at import, not behind a function somebody has to remember to call. A lazy
+#: installer would make the sixteen families' registration depend on a call site, and an
+#: unregistered family is silently unchecked — the precise failure the two-declaration census
+#: exists to make impossible. The census test proves the install actually happened.
+def _install_repro2_families() -> None:
+    from irp_shared.reproduction.families import new_families
+
+    REPRODUCIBLE_FAMILIES.update(new_families())
+
+
+_install_repro2_families()
+
 #: Every governed family with NO reproducer, and WHY. This is the half of the census that keeps the
 #: control honest: a family here is unchecked and says so, rather than being unchecked silently.
 #:
@@ -592,6 +617,21 @@ def identity_offenders(*column_groups: tuple[str, ...]) -> list[str]:
 
 
 UNREPRODUCIBLE_FAMILIES: dict[str, str] = {
+    # REPRO-2 (OQ-REP2-4) moved SIXTEEN families out of this declaration and into
+    # `families.py`. These two remain, and they are the two that were never "not yet
+    # adapted": each is blocked by something structural in the compute, with its own trigger.
+    #
+    # **Four of the sixteen departing reasons were FACTUALLY FALSE about the binders they
+    # described** — BENCHMARK_RELATIVE ("read return_basis + benchmark_id back off the stored
+    # rows": the binder REFUSES both alongside snapshot_id, so an adapter written to that
+    # instruction raises on every run), PROXY_WEIGHT_ESTIMATE ("binder resolution by model
+    # code": there is only ONE code, so it cannot discriminate), and VAR_BACKTEST /
+    # COVARIANCE_PRIVATE (the same "shared table needs binder resolution" reading, when the
+    # families are disjoint by RUN TYPE and the sweep resolves per run type). They were
+    # written from the table schema rather than from the binder, and nothing could have
+    # caught them: a reason is prose until an adapter executes against it. That is the
+    # `_WHY_RENDER_INPUT` class one level up, and the reason the two below now cite the
+    # specific LINE of compute that blocks them rather than a summary.
     "CONCENTRATION": (
         "no consume path: run_concentration takes no snapshot_id and build_concentration_snapshot "
         "pins CURRENT-HEAD classification assignments, so any legitimate classification edit since "
@@ -605,36 +645,6 @@ UNREPRODUCIBLE_FAMILIES: dict[str, str] = {
         "gate on pinned content (the var_service precedent) is a change to a shipped governed "
         "refusal and therefore a model-identity question, not a reproduction-slice decision"
     ),
-    "COVARIANCE": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "COVARIANCE_PRIVATE": (
-        "not yet adapted (shares covariance_result with COVARIANCE; needs binder resolution "
-        "by model code)"
-    ),
-    "FACTOR_EXPOSURE": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "SENSITIVITY": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "SCENARIO": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "ACTIVE_RISK": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "VAR_BACKTEST": (
-        "not yet adapted (shares var_backtest_result with ES_BACKTEST; needs binder "
-        "resolution by model code)"
-    ),
-    "ES_BACKTEST": (
-        "not yet adapted (shares var_backtest_result with VAR_BACKTEST; needs binder "
-        "resolution by model code)"
-    ),
-    "PORTFOLIO_RETURN": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "BENCHMARK_RELATIVE": (
-        "not yet adapted (needs return_basis + benchmark_id read back off the stored rows)"
-    ),
-    "DESMOOTHED_RETURN": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "ROLLING_RISK": "not yet adapted (needs window_months read back off rolling_risk_result)",
-    "SHARPE": "not yet adapted (needs window_months read back off sharpe_ratio_result)",
-    "PROXY_WEIGHT_ESTIMATE": (
-        "not yet adapted (two binders — proxy_weight vs residual_shrinkage; needs binder "
-        "resolution by model code)"
-    ),
-    "PURE_PRIVATE_FACTOR": "not yet adapted (has a consume path; needs its key/field declaration)",
-    "PACING_PROJECTION": "not yet adapted (has a consume path; needs its key/field declaration)",
 }
 
 

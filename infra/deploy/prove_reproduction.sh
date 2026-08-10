@@ -58,6 +58,16 @@ set -a; . "$ENV_FILE"; set +a
 PGUSER="${POSTGRES_USER:-irp}"
 PGDB="${POSTGRES_DB:-irp}"
 
+# REPRO-2 (OQ-REP2-5): the second-tenant arm needs a platform operator to create a tenant over
+# HTTP, so the prepare step must seed one. Pipe-free value: this file is BOTH dot-sourced and
+# compose-parsed (the prove_onboarding.sh convention).
+OPERATOR_SUBJECT="repro-operator@platform"
+# The literal, copied from prove_onboarding.sh rather than reconstructed: the first
+# draft of this arm GUESSED a v4-shaped id (…-4000-8000-…) and the deployed run failed
+# on "no platform operator" — the id was simply not the SYSTEM tenant.
+SYSTEM_TENANT="00000000-0000-0000-0000-000000000001"
+echo "IRP_PLATFORM_OPERATOR_SUBJECT=${OPERATOR_SUBJECT}" >> "$ENV_FILE"
+
 if docker ps --format '{{.Names}} {{.Ports}}' | grep -q ":${POSTGRES_PUBLISH_PORT}->"; then
   holder=$(docker ps --format '{{.Names}} {{.Ports}}' | grep ":${POSTGRES_PUBLISH_PORT}->" | head -1)
   die "host port ${POSTGRES_PUBLISH_PORT} is already published by: ${holder}
@@ -70,9 +80,17 @@ field() { printf '%s\n' "$2" | sed -n "s/^$1=//p" | tail -1 | tr -d '[:space:]';
 
 log "0. a migrated stack"
 $COMPOSE down -v --remove-orphans >/dev/null 2>&1 || true
-# worker is built HERE, not lazily: compose reuses an existing project image, and a stale worker
-# would smoke a build that no longer exists (the psycopg-less image prove_report_identity caught).
-$COMPOSE build migrate worker >/dev/null
+# Built HERE, not lazily: compose reuses an existing project image, and a stale one would smoke a
+# build that no longer exists (the psycopg-less image prove_report_identity caught).
+#
+# **`backend` joined this list at REPRO-2, and it was a real hole.** The proof brings the backend
+# up (`$COMPOSE up -d backend`) but never REBUILT it, so every HTTP arm here was exercising
+# whatever backend image the project happened to have — potentially an arbitrarily old tree. It
+# went unnoticed because the earlier arms assert on status codes and on DATABASE state, which a
+# stale image reproduces just fine. The first assertion about a RESPONSE BODY caught it
+# immediately: the deployed API returned the pre-REPRO-2 `operator_followup` text, one slice after
+# that string was corrected and merged.
+$COMPOSE build migrate worker backend >/dev/null
 $COMPOSE up -d db >/dev/null
 $COMPOSE up --exit-code-from migrate migrate >/dev/null
 head_rev=$($COMPOSE exec -T db psql -U "$PGUSER" -d "$PGDB" -tAc "SELECT version_num FROM alembic_version" | tr -d '[:space:]')
@@ -197,8 +215,94 @@ bare_code=$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${BACKEND_
 [ "$bare_code" = "401" ] || die "an unauthenticated health read got ${bare_code}, not 401"
 echo "   alarm recipient -> 403; bare -> 401 (the fence, live)"
 
+# =============================================================================================
+log "6. CARRY (m): a tenant NOBODY CONFIGURED gets its schedule fired by the supervisor"
+# **This is carry (m)'s discharge sentence, and it is the whole point of OQ-REP2-1.**
+#
+# Every arm above drives the ONE-SHOT entrypoint against PROOF_TENANT — a tenant this script
+# names. That proves the tick works; it cannot prove DISCOVERY, because the tenant was handed to
+# the worker on the command line. So this arm creates a SECOND tenant the way a customer is
+# actually created — over HTTP, through ONBOARD-1a provisioning — grants a principal
+# `schedule.manage` through ONBOARD-1b's flows, creates its reproduction schedule over HTTP
+# through REPRO-2's own write path, and then runs the SUPERVISOR with **no configuration naming
+# that tenant at all**. If the schedule fires, the registry found it.
+#
+# PROOF_TENANT and every arm keyed to it are deliberately UNTOUCHED: the shared-constant premise
+# above forbids parameterising the seed/plant chain, and a second tenant needs none of it.
+
+OPERATOR_ID=$($COMPOSE exec -T db psql -U "$PGUSER" -d "$PGDB" -tAc \
+  "SELECT id FROM app_user WHERE tenant_id = '${SYSTEM_TENANT}' AND external_subject = '${OPERATOR_SUBJECT}'" | tr -d '[:space:]')
+[ -n "$OPERATOR_ID" ] || die "the prepare step seeded no platform operator — IRP_PLATFORM_OPERATOR_SUBJECT was set in the env file"
+
+create=$(curl -sS -w '\n%{http_code}' -X POST "http://localhost:${BACKEND_PORT}/tenants" \
+  -H "X-User-Id: ${OPERATOR_ID}" -H "X-Tenant-Id: ${SYSTEM_TENANT}" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"discovered","display_name":"Discovery Proof","admin_external_subject":"admin@discovered","admin_display_name":"Discovered Admin"}')
+code=$(printf '%s' "$create" | tail -1)
+body=$(printf '%s' "$create" | sed '$d')
+[ "$code" = "201" ] || die "creating the second tenant returned ${code}: ${body}"
+TENANT_B=$(printf '%s' "$body" | $COMPOSE run --rm --entrypoint python migrate -c \
+  'import json,sys; print(json.load(sys.stdin)["tenant_id"])')
+ADMIN_B=$(printf '%s' "$body" | $COMPOSE run --rm --entrypoint python migrate -c \
+  'import json,sys; print(json.load(sys.stdin)["admin_user_id"])')
+[ -n "$TENANT_B" ] && [ -n "$ADMIN_B" ] || die "the create response carried no ids: ${body}"
+echo "   tenant B created over HTTP: ${TENANT_B}"
+
+# The follow-up string the API returns must now be TRUE — REPRO-2 rewrote it, and a governed
+# response that gives operators false instructions is a defect the deploy proof should catch.
+printf '%s' "$body" | grep -q "IRP_TENANT_IDS" \
+  && die "the create response still tells the operator to hand-edit IRP_TENANT_IDS — superseded at REPRO-2: ${body}"
+
+# `tenant_admin` administers PEOPLE, not schedules, so the admin grants schedule.manage to a
+# principal who can hold it. This is the two-step onboarding the write path's docstring states.
+roles=$(curl -sS "http://localhost:${BACKEND_PORT}/roles" \
+  -H "X-User-Id: ${ADMIN_B}" -H "X-Tenant-Id: ${TENANT_B}")
+STEWARD_ROLE=$(printf '%s' "$roles" | $COMPOSE run --rm --entrypoint python migrate -c \
+  'import json,sys; print(next(r["id"] for r in json.load(sys.stdin) if r["code"]=="data_steward"))')
+[ -n "$STEWARD_ROLE" ] || die "the cloned role set has no data_steward: ${roles}"
+STEWARD_ID=$(curl -sS -X POST "http://localhost:${BACKEND_PORT}/users" \
+  -H "X-User-Id: ${ADMIN_B}" -H "X-Tenant-Id: ${TENANT_B}" -H "Content-Type: application/json" \
+  -d '{"external_subject":"steward@discovered","display_name":"Steward"}' \
+  | $COMPOSE run --rm --entrypoint python migrate -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+[ -n "$STEWARD_ID" ] || die "creating the steward returned no id"
+grant_status=$(curl -sS -X POST "http://localhost:${BACKEND_PORT}/users/${STEWARD_ID}/roles" \
+  -H "X-User-Id: ${ADMIN_B}" -H "X-Tenant-Id: ${TENANT_B}" -H "Content-Type: application/json" \
+  -d "{\"role_id\":\"${STEWARD_ROLE}\"}" \
+  | $COMPOSE run --rm --entrypoint python migrate -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+[ "$grant_status" = "DIRECT" ] || die "the lone admin's grant was ${grant_status}, expected DIRECT (the bootstrap window)"
+
+# The anchor is the same literal `reproduction_proof.py` pins (_ANCHOR = 2026-01-01):
+# comfortably in the past, so the first tick is immediately due. Written as a literal
+# rather than a shell variable because the first draft referenced an ANCHOR_DATE that
+# this script never defined — caught by `set -u` on the deployed run, not by reading.
+# The schedule, created over HTTP by its holder — REPRO-2's own write path, on the deployed stack.
+sched=$(curl -sS -w '\n%{http_code}' -X POST "http://localhost:${BACKEND_PORT}/schedules" \
+  -H "X-User-Id: ${STEWARD_ID}" -H "X-Tenant-Id: ${TENANT_B}" -H "Content-Type: application/json" \
+  -d "{\"code\":\"discovered-nightly\",\"name\":\"Discovered nightly reproduction\",\"target_run_type\":\"REPRODUCTION\",\"environment_id\":\"proof\",\"anchor_date\":\"2026-01-01\",\"cadence_kind\":\"INTERVAL\",\"interval_days\":1}")
+sched_code=$(printf '%s' "$sched" | tail -1)
+[ "$sched_code" = "201" ] || die "creating tenant B's schedule over HTTP returned ${sched_code}: $(printf '%s' "$sched" | sed '$d')"
+SCHEDULE_B=$(printf '%s' "$sched" | sed '$d' | $COMPOSE run --rm --entrypoint python migrate -c \
+  'import json,sys; print(json.load(sys.stdin)["id"])')
+echo "   schedule created over HTTP by a schedule.manage holder: ${SCHEDULE_B}"
+
+# THE ASSERTION. The SUPERVISOR — not the one-shot — with IRP_TENANT_IDS EMPTY, so nothing on the
+# command line, in the env file or in compose names tenant B. One bounded cycle.
+before=$($COMPOSE exec -T db psql -U "$PGUSER" -d "$PGDB" -tAc \
+  "SELECT count(*) FROM scheduled_run WHERE schedule_id = '${SCHEDULE_B}'" | tr -d '[:space:]')
+[ "$before" = "0" ] || die "tenant B's schedule had already fired before the supervisor ran (${before}) — this arm would prove nothing"
+
+$COMPOSE run --rm -e IRP_MAX_CYCLES=1 -e IRP_TICK_INTERVAL_SECONDS=1 -e IRP_TENANT_IDS= worker \
+  >/dev/null 2>&1 || die "the discovering supervisor exited non-zero"
+
+after=$($COMPOSE exec -T db psql -U "$PGUSER" -d "$PGDB" -tAc \
+  "SELECT count(*) FROM scheduled_run WHERE schedule_id = '${SCHEDULE_B}'" | tr -d '[:space:]')
+[ "$after" -ge 1 ] || die "the supervisor did NOT fire tenant B's schedule — registry discovery did not find a tenant created over HTTP, which is carry (m) UNPAID"
+echo "   the supervisor found tenant B in the REGISTRY and fired its schedule (${after} tick) — carry (m) DISCHARGED"
+
 log "REPRODUCTION PROVEN ON THE DEPLOYED STACK — a scheduled worker tick re-derived a governed
     artifact from its pinned inputs and reported MATCH; a planted divergence made the same
     machinery report DIVERGED and raise an alarm. The worker's database path executed for the
     first time (RPT-2 carry b). AND the channel's own health is now readable over HTTP, with its
-    permission fence proven live (ALERT-1)."
+    permission fence proven live (ALERT-1). AND a tenant created over HTTP that NOTHING
+    configured had its schedule fired by the discovering supervisor — carry (m) discharged
+    against artifacts that exist (REPRO-2)."

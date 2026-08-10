@@ -10010,7 +10010,75 @@ export interface components {
         /** ScheduleListOut */
         ScheduleListOut: {
             /** Items */
-            items: components["schemas"]["irp_backend__api__schedules__ScheduleOut"][];
+            items: components["schemas"]["ScheduleOut"][];
+        };
+        /**
+         * ScheduleOut
+         * @description A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable
+         *     since SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some
+         *     cadences/families and forbidden for others), so the DTO mirrors the column nullability rather
+         *     than inventing a placeholder.
+         */
+        ScheduleOut: {
+            /** Anchor Date */
+            anchor_date: string;
+            /** Cadence Kind */
+            cadence_kind: string;
+            /** Code */
+            code: string;
+            /** Environment Id */
+            environment_id: string;
+            /** Id */
+            id: string;
+            /** Interval Days */
+            interval_days: number | null;
+            /** Last Failure Reason */
+            last_failure_reason: string | null;
+            /** Last Fired At */
+            last_fired_at: string | null;
+            /** Last Outcome */
+            last_outcome: string | null;
+            /** Last Scheduled For */
+            last_scheduled_for: string | null;
+            /** Model Version Id */
+            model_version_id: string | null;
+            /** Name */
+            name: string;
+            /** Record Version */
+            record_version: number;
+            /** Scope Portfolio Id */
+            scope_portfolio_id: string | null;
+            /** Status */
+            status: string;
+            /** Target Run Type */
+            target_run_type: string;
+        };
+        /**
+         * ScheduleWriteOut
+         * @description The write path's view of a schedule.
+         *
+         *     Named distinctly from `schedules.ScheduleOut` (the READ path's, shipped at SCH-2) because two
+         *     Pydantic models with the same class name make FastAPI mangle BOTH into
+         *     `irp_backend__api__<module>__ScheduleOut` in the OpenAPI document — which then propagates into
+         *     the generated frontend types as an unreadable identifier that says nothing about which surface
+         *     it belongs to. Part 1 introduced the collision; this is the point at which a consumer appeared
+         *     and it stopped being cosmetic.
+         */
+        ScheduleWriteOut: {
+            /** Cadence Kind */
+            cadence_kind: string;
+            /** Code */
+            code: string;
+            /** Id */
+            id: string;
+            /** Interval Days */
+            interval_days: number | null;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Target Run Type */
+            target_run_type: string;
         };
         /** ScheduledRunListOut */
         ScheduledRunListOut: {
@@ -10973,64 +11041,6 @@ export interface components {
             ok: boolean;
             /** Snapshot Id */
             snapshot_id: string;
-        };
-        /** ScheduleOut */
-        irp_backend__api__schedule_admin__ScheduleOut: {
-            /** Cadence Kind */
-            cadence_kind: string;
-            /** Code */
-            code: string;
-            /** Id */
-            id: string;
-            /** Interval Days */
-            interval_days: number | null;
-            /** Name */
-            name: string;
-            /** Status */
-            status: string;
-            /** Target Run Type */
-            target_run_type: string;
-        };
-        /**
-         * ScheduleOut
-         * @description A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable
-         *     since SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some
-         *     cadences/families and forbidden for others), so the DTO mirrors the column nullability rather
-         *     than inventing a placeholder.
-         */
-        irp_backend__api__schedules__ScheduleOut: {
-            /** Anchor Date */
-            anchor_date: string;
-            /** Cadence Kind */
-            cadence_kind: string;
-            /** Code */
-            code: string;
-            /** Environment Id */
-            environment_id: string;
-            /** Id */
-            id: string;
-            /** Interval Days */
-            interval_days: number | null;
-            /** Last Failure Reason */
-            last_failure_reason: string | null;
-            /** Last Fired At */
-            last_fired_at: string | null;
-            /** Last Outcome */
-            last_outcome: string | null;
-            /** Last Scheduled For */
-            last_scheduled_for: string | null;
-            /** Model Version Id */
-            model_version_id: string | null;
-            /** Name */
-            name: string;
-            /** Record Version */
-            record_version: number;
-            /** Scope Portfolio Id */
-            scope_portfolio_id: string | null;
-            /** Status */
-            status: string;
-            /** Target Run Type */
-            target_run_type: string;
         };
     };
     responses: never;
@@ -21658,7 +21668,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["irp_backend__api__schedule_admin__ScheduleOut"];
+                    "application/json": components["schemas"]["ScheduleWriteOut"];
                 };
             };
             /** @description Validation Error */
@@ -21733,7 +21743,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["irp_backend__api__schedule_admin__ScheduleOut"];
+                    "application/json": components["schemas"]["ScheduleWriteOut"];
                 };
             };
             /** @description Validation Error */
@@ -21768,7 +21778,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["irp_backend__api__schedule_admin__ScheduleOut"];
+                    "application/json": components["schemas"]["ScheduleWriteOut"];
                 };
             };
             /** @description Validation Error */

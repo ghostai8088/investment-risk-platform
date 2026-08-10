@@ -457,8 +457,13 @@ def test_a_DATABASE_failure_is_not_a_verdict_and_does_not_alarm(
     )
     outcome = _sweep(session, tenant)  # must NOT raise
 
-    assert [c.family_key for c in outcome.checks] == [
-        "EXPOSURE_AGGREGATE"
+    # The PROPERTY is "the broken family minted no verdict", asserted directly. It used to be
+    # spelled as list equality against the only other family that had a subject — which was the
+    # same thing while three families existed, and became a fixture-shape assertion the moment
+    # REPRO-2 registered sixteen more (this fixture's upstream seeding gives COVARIANCE and
+    # FACTOR_EXPOSURE subjects too). Asserting the property keeps the test about the disposition.
+    assert "VAR" not in [
+        c.family_key for c in outcome.checks
     ], "a database failure minted a verdict — it is not a judgement about the run"
     assert outcome.status == RunStatus.FAILED.value, (
         "a sweep that could not check a governed family reported a clean night — the ratified "
@@ -498,10 +503,13 @@ def test_a_broken_SUBJECT_LOOKUP_is_unresolved_and_does_not_end_the_sweep(
     monkeypatch.setattr("irp_shared.reproduction.service.latest_completed_run", _selective)
     outcome = _sweep(session, tenant)  # must NOT raise
 
-    assert [c.family_key for c in outcome.checks] == ["EXPOSURE_AGGREGATE"], (
-        "a failing subject lookup took the night's other verdicts with it, or minted a verdict "
-        "about a run it could not identify"
-    )
+    # Both halves of the property, stated as properties (see the sibling test above for why this
+    # is no longer list equality): the broken family minted nothing, and the OTHERS still did.
+    checked = [c.family_key for c in outcome.checks]
+    assert "VAR" not in checked, "a verdict was minted about a run the sweep could not identify"
+    assert (
+        "EXPOSURE_AGGREGATE" in checked
+    ), "a failing subject lookup took the night's other verdicts with it"
     assert outcome.unresolved and outcome.unresolved[0].startswith("VAR: ")
     assert outcome.status == RunStatus.FAILED.value
     assert unalarmed_verdicts(session, acting_tenant=tenant) == []
@@ -1875,6 +1883,81 @@ _MUST_COMPARE = {
         "fx_legs",
     },
     "REPORT": {"content_hash"},
+    # REPRO-2's sixteen. These are HAND-CHOSEN governed value columns, deliberately not derived
+    # from each family's `compared_fields` — a pin generated from the thing it pins is a tautology
+    # that would pass no matter what left the comparison, which is the failure `_MUST_COMPARE`
+    # itself was written to close ("a census that tolerates shrinkage is a floor wearing a
+    # census's name"). The rule applied: every column carrying a NUMBER the family exists to
+    # produce, plus the counts and conventions that make that number mean what it says.
+    "COVARIANCE": {"covariance_value", "n_observations", "window_start", "window_end"},
+    "COVARIANCE_PRIVATE": {"covariance_value", "n_observations", "window_start", "window_end"},
+    "FACTOR_EXPOSURE": {"loading", "exposure_amount", "base_currency"},
+    "SENSITIVITY": {"sensitivity_value", "bump_bps"},
+    "SCENARIO": {
+        "pnl",
+        "shock_value",
+        "exposure_amount",
+        "n_factors_exposed",
+        "n_factors_shocked",
+        "n_shocks_unmatched",
+    },
+    "ACTIVE_RISK": {"te_value", "portfolio_value", "n_factors", "n_constituents"},
+    "VAR_BACKTEST": {
+        "metric_value",
+        "n_exceptions",
+        "n_pairs",
+        "test_decision",
+        "basel_zone",
+        "var_value",
+        "realized_pnl",
+    },
+    "ES_BACKTEST": {
+        "metric_value",
+        "n_exceptions",
+        "n_pairs",
+        "test_decision",
+        "es_value",
+        "var_value",
+    },
+    "PORTFOLIO_RETURN": {
+        "return_value",
+        "begin_mv",
+        "end_mv",
+        "net_external_flow",
+        "n_flows",
+        "n_periods",
+    },
+    "BENCHMARK_RELATIVE": {
+        "metric_value",
+        "portfolio_return_value",
+        "benchmark_return_value",
+        "n_benchmark_obs",
+        "n_periods",
+        "return_basis",
+    },
+    "DESMOOTHED_RETURN": {
+        "metric_value",
+        "observed_return",
+        "alpha",
+        "alpha_stderr",
+        "observed_stdev",
+    },
+    "ROLLING_RISK": {"metric_value", "suppressed", "n_observations", "annualization_basis"},
+    "SHARPE": {"metric_value", "suppressed", "n_observations", "rf_return_basis"},
+    "PROXY_WEIGHT_ESTIMATE": {
+        "metric_value",
+        "std_error",
+        "residual_stdev",
+        "n_observations",
+        "n_regressors",
+    },
+    "PURE_PRIVATE_FACTOR": {"metric_value", "member_count", "period_count"},
+    "PACING_PROJECTION": {
+        "projected_call",
+        "projected_distribution",
+        "projected_nav",
+        "unfunded_end",
+    },
 }
 
 
@@ -2001,11 +2084,59 @@ def test_every_exclusion_carries_a_real_reason() -> None:
         assert len(reason) >= 30, f"{family} has a placeholder reason: {reason!r}"
 
 
+#: The coverage census, pinned by NAME at 19+2 (REPRO-2, OQ-REP2-4 — was 3+18 at REPRO-1).
+#:
+#: A COUNT would have been cheaper and would have measured nothing: a family moved from one
+#: declaration to the other keeps the total, and moving one INTO `UNREPRODUCIBLE_FAMILIES` (with a
+#: plausible reason) is exactly how reproduction coverage would quietly shrink. So both sets are
+#: named, and shrinking either fails here.
+_EXPECTED_REPRODUCIBLE = {
+    "VAR",
+    "EXPOSURE_AGGREGATE",
+    "REPORT",
+    # REPRO-2's sixteen.
+    "COVARIANCE",
+    "COVARIANCE_PRIVATE",
+    "FACTOR_EXPOSURE",
+    "SENSITIVITY",
+    "SCENARIO",
+    "ACTIVE_RISK",
+    "VAR_BACKTEST",
+    "ES_BACKTEST",
+    "PORTFOLIO_RETURN",
+    "BENCHMARK_RELATIVE",
+    "DESMOOTHED_RETURN",
+    "ROLLING_RISK",
+    "SHARPE",
+    "PROXY_WEIGHT_ESTIMATE",
+    "PURE_PRIVATE_FACTOR",
+    "PACING_PROJECTION",
+}
+#: The two that are structurally blocked, NOT "not yet adapted" — each keeps its own trigger.
+_EXPECTED_UNREPRODUCIBLE = {"CONCENTRATION", "LIQUIDITY"}
+
+
 def test_the_verdict_vocabulary_and_the_registry_agree_with_the_model() -> None:
     assert VERDICTS == {VERDICT_MATCH, VERDICT_DIVERGED, VERDICT_UNREPRODUCIBLE}
-    assert set(REPRODUCIBLE_FAMILIES) == {"VAR", "EXPOSURE_AGGREGATE", "REPORT"}
+    assert set(REPRODUCIBLE_FAMILIES) == _EXPECTED_REPRODUCIBLE
+    assert set(UNREPRODUCIBLE_FAMILIES) == _EXPECTED_UNREPRODUCIBLE
     assert all(key == fam.family_key for key, fam in REPRODUCIBLE_FAMILIES.items())
     assert ALARM_RECIPIENT_PERMISSION == "breach.review"
+
+
+def test_the_sixteen_new_families_are_actually_INSTALLED() -> None:
+    """The eager-install's own control.
+
+    `registry.py` installs REPRO-2's families by calling `_install_repro2_families()` at import.
+    If that call were ever removed — or moved behind a lazy accessor nobody invokes — the sixteen
+    would silently vanish from the sweep while every other test that names a family individually
+    kept passing. An unregistered family is an UNCHECKED family, which is the one thing the
+    two-declaration census exists to make impossible.
+    """
+    for family_key in _EXPECTED_REPRODUCIBLE - {"VAR", "EXPOSURE_AGGREGATE", "REPORT"}:
+        family = REPRODUCIBLE_FAMILIES[family_key]
+        assert callable(family.read_stored) and callable(family.recompute)
+        assert family.model is not None, f"{family_key} installed without its census model"
 
 
 # -------------------------------------------------------------------------- I8: append-only -------

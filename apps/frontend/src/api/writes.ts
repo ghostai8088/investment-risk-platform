@@ -34,6 +34,8 @@ export type BreachOut = Schemas["BreachOut"];
 export type LimitOut = Schemas["LimitOut"];
 export type UserOut = Schemas["UserOut"];
 export type EntitlementRequestOut = Schemas["EntitlementRequestOut"];
+export type ScheduleOut = Schemas["ScheduleWriteOut"];
+export type ReproductionCheckOut = Schemas["ReproductionCheckOut"];
 
 /** What a 409 actually meant, and therefore what to tell the operator to do. */
 export type RefusalKind = "separation-of-duties" | "stale" | "illegal-transition" | "other";
@@ -157,4 +159,52 @@ export async function approveEntitlementRequest(
     session,
     "POST",
   );
+}
+
+// --- REPRO-2: the schedule write path (OQ-REP2-2) --------------------------------------------
+// The verbs that make CTRL-018 startable from a browser. No `expected_seq`: a schedule is a HEAD
+// row, not an append-only lifecycle with an interleaving tick, so there is no stale-write hazard
+// of the breach kind for the token to close. Pause/resume are idempotent in effect — the service
+// refuses an illegal transition and the screen renders that refusal.
+//
+// PAUSE deserves its own note, because a reader should not have to go to the API to find it: it
+// is a ONE-PERSON, reversible switch-off of the platform's only detective control over governed
+// -number drift, and the ratified compensating control is VISIBILITY, not a second approver —
+// pausing every reproduction schedule turns the Alerting panel RED (`control_switched_off`).
+
+export async function createSchedule(
+  session: Session | null,
+  input: {
+    code: string;
+    name: string;
+    targetRunType: string;
+    environmentId: string;
+    anchorDate: string;
+    cadenceKind: string;
+    intervalDays?: number | null;
+  },
+): Promise<ScheduleOut> {
+  return request<ScheduleOut>("/schedules", session, "POST", {
+    code: input.code,
+    name: input.name,
+    target_run_type: input.targetRunType,
+    environment_id: input.environmentId,
+    anchor_date: input.anchorDate,
+    cadence_kind: input.cadenceKind,
+    ...(input.intervalDays ? { interval_days: input.intervalDays } : {}),
+  });
+}
+
+export async function pauseSchedule(
+  session: Session | null,
+  scheduleId: string,
+): Promise<ScheduleOut> {
+  return request<ScheduleOut>(`/schedules/${scheduleId}/pause`, session, "POST");
+}
+
+export async function resumeSchedule(
+  session: Session | null,
+  scheduleId: string,
+): Promise<ScheduleOut> {
+  return request<ScheduleOut>(`/schedules/${scheduleId}/resume`, session, "POST");
 }

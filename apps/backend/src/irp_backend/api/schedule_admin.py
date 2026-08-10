@@ -76,7 +76,17 @@ class ScheduleCreateIn(BaseModel):
     model_version_id: uuid.UUID | None = None
 
 
-class ScheduleOut(BaseModel):
+class ScheduleWriteOut(BaseModel):
+    """The write path's view of a schedule.
+
+    Named distinctly from `schedules.ScheduleOut` (the READ path's, shipped at SCH-2) because two
+    Pydantic models with the same class name make FastAPI mangle BOTH into
+    `irp_backend__api__<module>__ScheduleOut` in the OpenAPI document — which then propagates into
+    the generated frontend types as an unreadable identifier that says nothing about which surface
+    it belongs to. Part 1 introduced the collision; this is the point at which a consumer appeared
+    and it stopped being cosmetic.
+    """
+
     id: str
     code: str
     name: str
@@ -86,8 +96,8 @@ class ScheduleOut(BaseModel):
     status: str
 
 
-def _out(schedule: Schedule) -> ScheduleOut:
-    return ScheduleOut(
+def _out(schedule: Schedule) -> ScheduleWriteOut:
+    return ScheduleWriteOut(
         id=str(schedule.id),
         code=schedule.code,
         name=schedule.name,
@@ -120,12 +130,12 @@ def _load(db: Session, principal: Principal, schedule_id: uuid.UUID) -> Schedule
     return schedule
 
 
-@router.post("/schedules", response_model=ScheduleOut, status_code=status.HTTP_201_CREATED)
+@router.post("/schedules", response_model=ScheduleWriteOut, status_code=status.HTTP_201_CREATED)
 def create(
     payload: ScheduleCreateIn,
     principal: Principal = Depends(_require_manage),
     db: Session = Depends(get_tenant_session),
-) -> ScheduleOut:
+) -> ScheduleWriteOut:
     """Create a schedule. The route adds TRANSPORT; every rule is the existing service's.
 
     The one thing it adds is the duplicate-code refusal, and the mechanism matters: a pre-check
@@ -185,12 +195,12 @@ def create(
     return _out(schedule)
 
 
-@router.post("/schedules/{schedule_id}/pause", response_model=ScheduleOut)
+@router.post("/schedules/{schedule_id}/pause", response_model=ScheduleWriteOut)
 def pause(
     schedule_id: uuid.UUID,
     principal: Principal = Depends(_require_manage),
     db: Session = Depends(get_tenant_session),
-) -> ScheduleOut:
+) -> ScheduleWriteOut:
     """Pause a schedule — one person, audit-trailed, and VISIBLE.
 
     See the module docstring: this is the act the maker-checker adjudication turned on. Pausing
@@ -208,12 +218,12 @@ def pause(
     return _out(paused)
 
 
-@router.post("/schedules/{schedule_id}/resume", response_model=ScheduleOut)
+@router.post("/schedules/{schedule_id}/resume", response_model=ScheduleWriteOut)
 def resume(
     schedule_id: uuid.UUID,
     principal: Principal = Depends(_require_manage),
     db: Session = Depends(get_tenant_session),
-) -> ScheduleOut:
+) -> ScheduleWriteOut:
     """Resume a paused schedule. No four-eyes: resuming only ADDS detection back."""
     schedule = _load(db, principal, schedule_id)
     actor = SchedulingActor(actor_id=require_uuid_principal_id(principal), actor_type="HUMAN")

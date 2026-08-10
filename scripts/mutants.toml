@@ -826,3 +826,115 @@ file = "apps/worker/src/irp_worker/discovery.py"
 find = """    unknown = [t for t in (config.restrict_to or ()) if t not in registered]"""
 replace = """    unknown = [t for t in (config.restrict_to or ()) if t not in set(discovered)]"""
 tests = ["apps/worker/tests/test_discovery.py"]
+
+# ---------------------------------------------------------------------------------------------
+# REPRO-2 part 2: the sixteen family adapters, the demo/deploy seeding, the ops screen.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "R-D1"
+group = "repro-2b"
+why = "the sixteen families stop being installed — an unregistered family is an UNCHECKED family, and every per-family test would keep passing while the sweep silently judged three families instead of nineteen"
+file = "packages/shared-python/src/irp_shared/reproduction/registry.py"
+# Anchored on the BODY, not on the call: `_install_repro2_families()` also matches the `def`
+# line, and the battery's first-occurrence replace turned that into `def pass  # …() -> None:` —
+# a SyntaxError, which collected zero tests. The battery refused to score it, correctly: a mutant
+# that breaks the parser proves nothing about the tests.
+find = """    REPRODUCIBLE_FAMILIES.update(new_families())"""
+replace = """    pass"""
+# Retargeted at the fold: `test_reproduction.py` imports the per-family suites' fixtures and
+# reported ZERO tests run under this mutant (a collection error, not a pass) — which the battery
+# correctly refuses to count as a kill. This suite collects cleanly either way and asserts the
+# installed set by NAME.
+tests = ["packages/shared-python/tests/test_reproduction_families.py"]
+
+[[mutant]]
+id = "R-D2"
+why = "compared_fields silently narrows to the KEY only — every family would compare nothing but its own key and report MATCH over any tampered governed value (the REPRO-1 HIGH, reintroduced wholesale)"
+group = "repro-2b"
+file = "packages/shared-python/src/irp_shared/reproduction/families.py"
+find = """    excused = set(key_fields) | set(uncompared)
+    return tuple(c.name for c in model.__table__.columns if c.name not in excused)"""
+replace = """    return ()"""
+tests = ["packages/shared-python/tests/test_reproduction_families.py", "packages/shared-python/tests/test_reproduction.py"]
+
+[[mutant]]
+id = "R-D3"
+group = "repro-2b"
+why = "a binder's own input refusal becomes an ordinary exception again — an upstream run that is no longer visible would be recorded as a DIVERGENCE (the platform's promise broke) instead of UNREPRODUCIBLE (we could not check), which is the distinction REPRO-1 minted the exception class for"
+file = "packages/shared-python/src/irp_shared/reproduction/families.py"
+find = """        except refusal_types as exc:
+            raise ReproductionUnsupported(
+                f"the binder refused to re-execute run {run.run_id}: {exc}"
+            ) from exc
+        return _rows_of(list(result.rows), key_fields, compared_fields)
+
+    return _recompute
+
+
+def _family("""
+replace = """        except refusal_types:
+            raise
+        return _rows_of(list(result.rows), key_fields, compared_fields)
+
+    return _recompute
+
+
+def _family("""
+tests = ["packages/shared-python/tests/test_reproduction_families.py"]
+
+[[mutant]]
+id = "R-D4"
+group = "repro-2b"
+why = "ROLLING_RISK/SHARPE stop recovering window_months and pass a hard-coded tuple — a run executed over other windows would recompute the WRONG windows and report the resulting row-set mismatch as a divergence (a false alarm indistinguishable from a real one: the RPT-1 B1 defect exactly)"
+file = "packages/shared-python/src/irp_shared/reproduction/families.py"
+find = """        windows = windows_of(session, acting_tenant, run)"""
+replace = """        windows = (12,)"""
+# The perf suite's fixtures all use windows=(12,), so the hard-coded tuple AGREED with them and the
+# mutant survived. The discriminating test — a run spanning (12, 36) — lives here.
+tests = ["packages/shared-python/tests/test_reproduction_families.py"]
+
+[[mutant]]
+id = "R-D5"
+group = "repro-2b"
+why = "the shrinkage TARGET is recovered from an UNUSABLE stored source instead of refusing — the recovery silently proceeds where it cannot identify one member, and a wrong target reports a real difference as a DIVERGENCE (the false-alarm class the read-back exists to prevent)"
+# Homed in the SHRINKAGE SERVICE, not the reproduction package: the recovery moved there when the
+# import-direction fence (correctly) refused `reproduction` importing `irp_shared.snapshot`. The
+# anchor moved with it — the FOURTH re-anchor in this slice, and the same lesson as part 1's F1:
+# an anchor is a claim about bytes, and it must be re-verified against the bytes being committed.
+file = "packages/shared-python/src/irp_shared/risk/residual_shrinkage_service.py"
+# THIRD anchor, and the two rejected ones are the lesson. Both guards inside `_shrinkage_target`
+# defend against states the writers cannot produce — `source_desmoothed_run_id` is NOT NULL and an
+# EB run persists exactly one row, so neither `len(wanted) != 1` nor `len(matches) > 1` can be
+# reached with real data. An unreachable branch cannot be killed, and a mutant that cannot be
+# killed measures nothing while LOOKING like coverage. So this targets the recovery ITSELF: take
+# the first cohort member instead of the matching one. That is reachable, it is the actual defect
+# the read-back exists to prevent (a wrong target produces a real number and reports the
+# difference as a DIVERGENCE), and the shrinkage test's distinct-residuals precondition is what
+# makes it detectable.
+find = """    matches = [m for m in members if m.source_desmoothed_run_id == wanted]"""
+replace = """    matches = members[:1]"""
+tests = ["packages/shared-python/tests/test_reproduction_families_private.py"]
+
+[[mutant]]
+id = "R-D6"
+group = "repro-2b"
+why = "an unresolvable estimator convention stops being mapped to ReproductionUnsupported — the binder cannot be identified, and the raw WrongModelVersionError escapes as an ordinary failure instead of the deliberate 'refusing to guess which kernel produced this run'"
+file = "packages/shared-python/src/irp_shared/reproduction/families.py"
+# Anchored on the resolver mapping, not on the old `else:` arm — that arm was UNREACHABLE by the
+# resolver's own fail-closed contract, which is exactly what the battery proved when deleting it
+# changed nothing. The guard moved to where it can actually fire.
+find = """        except WrongModelVersionError as exc:"""
+replace = """        except ZeroDivisionError as exc:"""
+tests = ["packages/shared-python/tests/test_reproduction_families_private.py"]
+
+[[mutant]]
+id = "R-D7"
+group = "repro-2b"
+why = "the demo campaign stops registering the demo tenant in ENT-074 — the nightly schedule it creates would belong to a tenant the discovering worker never visits, which is the LQ-1 inert-control shape (a control that exists, is believed, and never runs)"
+file = "packages/shared-python/src/irp_shared/demo/campaign.py"
+find = """    if session.get(Tenant, DEMO_TENANT_ID) is None:
+        session.add("""
+replace = """    if False:
+        session.add("""
+tests = ["packages/shared-python/tests/test_demo_reproduction_stage.py"]
