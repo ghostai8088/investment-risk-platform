@@ -115,7 +115,11 @@ bounds nothing about an older chosen date: the true count for that date may be z
 v2 rendered "500+" into the per-date sentence, which asserts ≥500 for a date that may have none —
 its own bar ("never a silently-wrong small number") met by a silently-wrong LARGE one. So:
 
-* page not full → "N report(s) already exist for this book and date" (N exact, including zero);
+* page not full and N > 0 → "N report(s) already exist for this book and date" (N exact);
+* page not full and N = 0 → the line is ABSENT. *(v3 said "including zero" here and "absent when
+  none" in §3.6 — the audit caught the record contradicting itself. The absent form is correct: a
+  visibility control that announces "0 reports exist" on every fresh date is noise, and this one
+  exists to catch the duplicate, not to narrate the empty case.)*
 * page full → "this book has 500+ reports; **the count for this date could not be determined**".
 
 Submit disables while a POST is in flight (the double-click guard). The carry's idempotency

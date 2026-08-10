@@ -141,12 +141,24 @@ export function GenerateReport({
 
   const portfolioRows: PortfolioOut[] = Array.isArray(portfolios.data) ? portfolios.data : [];
 
+  /** The ratified default (OQ-RPT3-5): the most recent snapshot date the tenant has. A
+   * CONVENIENCE, never a fence — the operator overwrites it freely and the server validates
+   * whatever they send. Applied only while the field is untouched, so it can never fight typing. */
+  const defaultAsOf = useMemo(() => {
+    const dates = (Array.isArray(snapshots.data) ? snapshots.data : [])
+      .map((h) => h.as_of_valuation_date)
+      .filter(Boolean)
+      .sort();
+    return dates.length ? dates[dates.length - 1] : "";
+  }, [snapshots.data]);
+  const asOfValue = asOf || defaultAsOf;
+
   const anyChecked = FAMILIES.some((f) => checked[f.key] && runFor[f.key]);
 
   /** The existing-report count, and the honest thing to say when the page bound hides the truth. */
   const existingLine = useMemo(() => {
     const items = existing.data?.items;
-    if (!portfolioId || !asOf || !items) return null;
+    if (!portfolioId || !asOfValue || !items) return null;
     // The listing is as_of_date DESC with no date filter, so a FULL page holds the newest-dated
     // reports and bounds nothing about an older chosen date: the count for that date could be
     // zero or hundreds. Saying "500+ for this date" would be a wrong LARGE number in place of the
@@ -154,11 +166,11 @@ export function GenerateReport({
     if (items.length >= 500) {
       return "This book has 500+ reports; the count for this date could not be determined.";
     }
-    const n = items.filter((r) => r.as_of_date === asOf).length;
+    const n = items.filter((r) => r.as_of_date === asOfValue).length;
     return n === 0
       ? null
       : `${n} report${n === 1 ? "" : "s"} already exist${n === 1 ? "s" : ""} for this book and date.`;
-  }, [existing.data, portfolioId, asOf]);
+  }, [existing.data, portfolioId, asOfValue]);
 
   const submit = useCallback(
     (event: FormEvent) => {
@@ -172,7 +184,7 @@ export function GenerateReport({
       }
       setBusy(true);
       setError(null);
-      void generateReport(session, { portfolioId, asOfDate: asOf, familyRuns: family_runs })
+      void generateReport(session, { portfolioId, asOfDate: asOfValue, familyRuns: family_runs })
         .then(() => {
           onGenerated();
         })
@@ -181,7 +193,7 @@ export function GenerateReport({
         })
         .finally(() => setBusy(false));
     },
-    [busy, anyChecked, checked, runFor, session, portfolioId, asOf, onGenerated],
+    [busy, anyChecked, checked, runFor, session, portfolioId, asOfValue, onGenerated],
   );
 
   const guidance = error ? refusalGuidance(error) : null;
@@ -191,7 +203,9 @@ export function GenerateReport({
       <h2>Generate a report</h2>
       <p className="ops-lede">
         A report BINDS the runs you choose: it re-renders from their pinned snapshots and records a
-        content hash. Generating twice is two governed acts, not an overwrite.
+        content hash. Generating twice is two governed acts, not an overwrite. Runs are labelled
+        with their snapshot date only — the platform exposes no read that says which BOOK a run was
+        computed for, so check the portfolio yourself; the server refuses a mismatch.
       </p>
 
       {error ? (
@@ -236,7 +250,7 @@ export function GenerateReport({
         <input
           id="rpt-asof"
           type="date"
-          value={asOf}
+          value={asOfValue}
           onChange={(e) => setAsOf(e.target.value)}
           required
         />
@@ -270,12 +284,12 @@ export function GenerateReport({
                       // A run dated off the chosen report date is still OFFERED — the server is
                       // the validator — but badged, so its refusal is unsurprising rather than
                       // mysterious.
-                      const mismatch = Boolean(asOf && dated && dated !== asOf);
+                      const mismatch = Boolean(asOfValue && dated && dated !== asOfValue);
                       return (
                         <option key={row.run_id} value={row.run_id}>
                           {row.run_id.slice(0, 8)}
                           {dated ? ` · ${dated}` : " · undated"}
-                          {mismatch ? ` (dated ${dated}, not ${asOf})` : ""}
+                          {mismatch ? ` (dated ${dated}, not ${asOfValue})` : ""}
                         </option>
                       );
                     })}

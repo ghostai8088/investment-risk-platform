@@ -443,7 +443,11 @@ def test_ROLLING_RISK_is_listable_and_SHARPE_is_still_refused(ctx) -> None:  # n
     ok = client.get("/perf/runs", params={"run_type": "ROLLING_RISK"}, headers=_h(p))
     assert ok.status_code == 200, ok.text
 
-    refused = client.get("/perf/runs", params={"run_type": "SHARPE"}, headers=_h(p))
+    # The CONSTANT, not the literal: a rename of its value would otherwise leave this fence green
+    # while testing a string nothing produces (audit LOW-3).
+    from irp_shared.perf.events import RUN_TYPE_SHARPE
+
+    refused = client.get("/perf/runs", params={"run_type": RUN_TYPE_SHARPE}, headers=_h(p))
     assert refused.status_code == 422, (
         "SHARPE became listable — the RPT-3 extension was ratified for ROLLING_RISK ALONE, with "
         "SHARPE recorded as known drift awaiting its first consumer"
@@ -451,21 +455,41 @@ def test_ROLLING_RISK_is_listable_and_SHARPE_is_still_refused(ctx) -> None:  # n
 
 
 def test_the_UNFILTERED_listing_now_admits_rolling_risk_runs(ctx) -> None:  # noqa: ANN001
-    """The extension's SIDE EFFECT, pinned rather than discovered.
+    """The extension's SIDE EFFECT, pinned against a run that ACTUALLY EXISTS.
 
     Adding a type to `PERF_RUN_TYPES` widens the UNFILTERED `/perf/runs` response too, because the
-    unfiltered query is `run_type IN (the set)`. Three verifier lenses flagged that the planning
-    draft had not said so. It is harmless here — `RunsList.tsx` selects a family before listing —
-    but a behavior change every existing consumer inherits should be asserted by name, not left
-    for someone to find.
+    unfiltered query is `run_type IN (the set)`. That is a behavior change every existing consumer
+    inherits, so it is asserted by name rather than left to be found.
+
+    **This test was VACUOUS on its first commit, and the pre-merge audit proved it by execution.**
+    It asserted `returned_types <= PERF_RUN_TYPES` — a SUBSET relation, which stays true when the
+    returned set SHRINKS, and which was in fact being evaluated as `set() <= …` because the
+    fixture's unfiltered listing returned no rows at all. Its own comment claimed it asserted
+    "through the API rather than by re-reading the constant"; the only load-bearing line was a
+    bare re-read of the constant. So the test now MINTS a rolling-risk run and requires the
+    unfiltered listing to contain it — an assertion that fails the moment the allowlist loses the
+    type, which is the whole point.
     """
+    from irp_shared.calc.models import CalculationRun, RunStatus
     from irp_shared.perf.queries import PERF_RUN_TYPES
 
     client, p, db, r0, r1 = ctx
-    assert "ROLLING_RISK" in PERF_RUN_TYPES
+    run = CalculationRun(
+        tenant_id=p.tenant_id,
+        run_type="ROLLING_RISK",
+        status=RunStatus.COMPLETED.value,
+        initiated_by="audit-fold",
+    )
+    db.add(run)
+    db.commit()
+
     listing = client.get("/perf/runs", headers=_h(p))
-    assert listing.status_code == 200
-    # The unfiltered listing's admitted vocabulary IS the set — asserted through the API rather
-    # than by re-reading the constant, so a divergence between them would fail here.
+    assert listing.status_code == 200, listing.text
     returned_types = {row["run_type"] for row in listing.json()["items"]}
+    assert "ROLLING_RISK" in returned_types, (
+        "the UNFILTERED /perf/runs listing does not return a COMPLETED rolling-risk run — either "
+        "the allowlist lost the type, or this listing stopped admitting the perf families it "
+        f"declares. Returned: {sorted(returned_types)}; allowlist: {sorted(PERF_RUN_TYPES)}"
+    )
+    # And the fence still holds in the other direction: nothing OUTSIDE the declared set leaks in.
     assert returned_types <= PERF_RUN_TYPES

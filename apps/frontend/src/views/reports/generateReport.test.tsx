@@ -10,6 +10,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GenerateReport } from "./GenerateReport";
+import { Reports } from "./Reports";
 import type { Session } from "../../session";
 
 const SESSION: Session = { kind: "dev", userId: "u-1", tenantId: "t-1" };
@@ -306,5 +307,106 @@ describe("GenerateReport — the ratified proof list", () => {
         (screen.getByRole("button", { name: "Generate report" }) as HTMLButtonElement).disabled,
       ).toBe(false),
     );
+  });
+
+  it("PROOF 5 (second half): after a 201 the LIST shows the new report's report_code", async () => {
+    // The audit's HIGH-2: the first version proved only that the callback fired. The record binds
+    // "the new report's `report_code` appears in the rendered rows" — the CONSEQUENCE, which is
+    // the half that distinguishes "the write returned 201" from "the ledger now shows it". Pass 2
+    // had rewritten this proof from `id` to `report_code` precisely to make it implementable, and
+    // the implementable half was the half that got dropped.
+    const before = {
+      id: "r-old",
+      portfolio_code: "GLOBAL-EQ",
+      as_of_date: "2026-03-31",
+      report_code: "RPT-OLD",
+      generated_at: "2026-03-31T00:00:00Z",
+      content_hash: "a".repeat(64),
+    };
+    const after = { ...before, id: "r-new", report_code: "RPT-NEW" };
+    let generated = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          generated = true;
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: () => Promise.resolve(after),
+          } as unknown as Response);
+        }
+        const body = url.includes("/portfolios")
+          ? PORTFOLIOS
+          : url.includes("/snapshots")
+            ? SNAPSHOTS
+            : url.includes("/risk/runs")
+              ? VAR_RUNS
+              : url.includes("/reports")
+                ? { items: generated ? [after, before] : [before] }
+                : { items: [] };
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(body),
+        } as unknown as Response);
+      }),
+    );
+
+    render(<Reports session={SESSION} />);
+    await waitFor(() => expect(screen.getByText("RPT-OLD")).toBeTruthy());
+    expect(screen.queryByText("RPT-NEW")).toBeNull(); // the twin: not there before the act
+
+    await fillForm();
+    fireEvent.click(screen.getByRole("button", { name: "Generate report" }));
+    await waitFor(() => expect(screen.getByText("RPT-NEW")).toBeTruthy());
+  });
+
+  it("PROOF 1: the concentration and liquidity dropdowns read their OWN endpoints", async () => {
+    // The audit's MEDIUM-4: proof 1 is bound "per family x4" and only two were covered.
+    const calls = harness();
+    render(<GenerateReport session={SESSION} onGenerated={() => {}} />);
+    fireEvent.click(await screen.findByLabelText("Concentration"));
+    fireEvent.click(screen.getByLabelText("Liquidity"));
+    await waitFor(() => expect(screen.getByLabelText("Liquidity run")).toBeTruthy());
+    expect(calls.some((c) => c.url.includes("/concentration/runs"))).toBe(true);
+    expect(calls.some((c) => c.url.includes("/liquidity/runs"))).toBe(true);
+    // Each carries the status filter the record binds; neither reads another family's listing.
+    for (const path of ["/concentration/runs", "/liquidity/runs"]) {
+      expect(calls.find((c) => c.url.includes(path))?.url).toContain("status=COMPLETED");
+    }
+    expect(calls.some((c) => c.url.includes("/risk/runs"))).toBe(false);
+  });
+
+  it("the carry-(f) checklist line is bound to the carry still being OPEN", async () => {
+    // The ratified staleness binding (audit MEDIUM-1): the FE text names a platform limitation,
+    // so it rots the moment the limitation is fixed. A prose reminder would not survive; this
+    // reddens when carry (f) is marked paid, forcing the screen's text to move with it.
+    const { existsSync, readFileSync } = await import("node:fs");
+    const { dirname, resolve } = await import("node:path");
+    // Walk UP for the repo root instead of counting `../` from cwd. The repo's other file-reading
+    // guards are cwd-sensitive (they assume `apps/frontend`) and the audit caught them failing
+    // when the suite is invoked from the root — a guard that cannot find its subject passes by
+    // reading nothing, which is the failure mode this binding exists to prevent.
+    let dir = process.cwd();
+    while (!existsSync(resolve(dir, "10_delivery_backlog")) && dirname(dir) !== dir) {
+      dir = dirname(dir);
+    }
+    const path = resolve(dir, "10_delivery_backlog/rpt_2_slice_record.md");
+    expect(
+      existsSync(path),
+      `could not locate rpt_2_slice_record.md from cwd ${process.cwd()}`,
+    ).toBe(true);
+    const record = readFileSync(path, "utf8");
+    const carryLine = record.split("\n").find((l) => l.includes("(f) VaR is unbindable")) ?? "";
+    expect(
+      carryLine,
+      "carry (f)'s row is not in rpt_2_slice_record.md — the binding reads nothing",
+    ).not.toBe("");
+    expect(
+      carryLine,
+      "carry (f) is marked PAID: the unscoped-VaR limitation named in GenerateReport's " +
+        "input-class checklist is now stale and the screen's text must move with it",
+    ).not.toContain("PAID");
   });
 });
