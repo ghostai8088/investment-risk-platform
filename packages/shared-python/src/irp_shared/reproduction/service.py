@@ -1035,14 +1035,27 @@ class AlarmChannelHealth:
     #: NOT ONE delivery succeeded in it. Without this clause a totally-dead channel stays amber
     #: forever, which is the shape that hid the original silence.
     dead_channel: bool
+    #: the tenant HAS reproduction schedules and every one of them is paused — the detective
+    #: control is switched off (REPRO-2, ratified 2026-08-10).
+    #:
+    #: **This AMENDS an ALERT-1 disposition, and the amendment is the whole point.** ALERT-1
+    #: ratified `paused_schedules` and `no_schedule` as INFORMATIONAL, which was right while
+    #: nothing could pause a schedule over HTTP. REPRO-2 ships that verb, and pausing is a
+    #: one-person reversible act held by the very population whose runs this control re-checks —
+    #: so "configured, then switched off entirely" would have read SILENT GREEN for exactly the
+    #: window in which a tamper would go undetected. Never-configured stays informational: a
+    #: tenant that never turned the control on is a gap, not a switch-off.
+    control_switched_off: bool
 
     @property
     def healthy(self) -> bool:
         """The enumerated definition — not "nothing happened", and not "any field is nonzero".
 
-        RED: unreadable rows on a live verdict, a lost alarm, a failed sweep, an overdue sweep, or
-        a dead channel. AMBER (visible, not red): retries in flight and ceiling-silenced verdicts.
-        INFORMATIONAL: a queue in flight, no schedule, an empty tenant.
+        RED: unreadable rows on a live verdict, a lost alarm, a failed sweep, an overdue sweep, a
+        dead channel, or a control somebody switched off (every schedule paused — REPRO-2's
+        amendment to this enumeration). AMBER (visible, not red): retries in flight and
+        ceiling-silenced verdicts. INFORMATIONAL: a queue in flight, no schedule at all, an empty
+        tenant, and a PARTIALLY paused set.
         """
         return (
             self.unreadable_rows == 0
@@ -1050,6 +1063,7 @@ class AlarmChannelHealth:
             and self.failed_sweeps == 0
             and not self.sweep_overdue
             and not self.dead_channel
+            and not self.control_switched_off
         )
 
 
@@ -1178,6 +1192,10 @@ def alarm_channel_health(
     )
     active = [s for s in schedules if s.status == SCHEDULE_STATUS_ACTIVE]
     paused = len(schedules) - len(active)
+    # Configured, then switched off ENTIRELY. Never-configured (`schedules` empty) is a gap —
+    # `no_schedule` says so informationally — and a partially-paused set still has a running
+    # control, so neither is this.
+    switched_off = bool(schedules) and not active
     # Due-ness from the SCHEDULER's own selection (it skips-and-reports an unresolvable cadence
     # rather than raising — a health read must never take the tick down). A schedule appears here
     # only if its CURRENT grid tick has not fired; overdue adds "and that tick is more than one
@@ -1230,6 +1248,7 @@ def alarm_channel_health(
         undeliverable_attempts=undeliverable,
         exhausted_verdicts=len(ceiling_ids),
         dead_channel=silenced_in_window and not delivered_in_window,
+        control_switched_off=switched_off,
     )
 
 

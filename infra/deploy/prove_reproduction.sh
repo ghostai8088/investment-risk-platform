@@ -10,10 +10,12 @@
 # container, a real PostgreSQL with FORCE RLS, the scheduler's due-tick arithmetic, and the worker
 # process itself.
 #
-# AND THE WORKER'S DATABASE PATH HAS NEVER EXECUTED, ANYWHERE. `.env.example` ships
-# IRP_TENANT_IDS empty, deploy.sh deliberately deploys it empty, and the supervisor fails closed on
-# an empty list — so deploy.sh's worker step proves only that the REFUSAL fires. RPT-2 recorded
-# that as a carry and named REPRO-1 as its host. This is where it is paid.
+# AND (at the time this was written) THE WORKER'S DATABASE PATH HAD NEVER EXECUTED, ANYWHERE.
+# Under CAD-1, `.env.example` shipped IRP_TENANT_IDS empty, the supervisor failed closed on an
+# empty list, and deploy.sh's worker step proved only that the REFUSAL fired. RPT-2 recorded that
+# as a carry and named REPRO-1 as its host; this script is where it was paid. (Since REPRO-2 an
+# empty IRP_TENANT_IDS means 'no restriction' — tenants come from the registry, and deploy.sh's
+# worker step is a bounded LOUD-IDLE proof instead. The premise above is history, not the present.)
 #
 # BOTH ARMS RUN THROUGH THE WORKER. The negative arm is not an in-process shortcut: the seed
 # creates TWO schedules precisely because a (schedule, tick) pair fires exactly once, so the

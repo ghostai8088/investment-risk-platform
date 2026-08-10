@@ -31,12 +31,24 @@ def canonical_tenant_id(raw: str) -> str:
 def parse_tenant_ids(
     raw_csv: str | None, *, on_bad: Callable[[str, TenantIdError], None] | None = None
 ) -> list[str]:
-    """Parse a comma-separated ``IRP_TENANT_IDS`` value into canonical tenant ids.
+    """Parse a comma-separated ``IRP_TENANT_IDS`` value into canonical tenant ids — STRICTLY.
 
-    Blank entries are ignored. A malformed entry is **skipped** (OQ-3=A: one fat-fingered id must
-    not take the whole engine down) and reported via ``on_bad`` if given — the loser is dropped, the
-    valid tenants remain. Returns the canonical ids in input order, de-duplicated (a repeated tenant
-    would otherwise tick twice per cycle). An EMPTY result is the caller's to treat as fail-closed.
+    **The skip-a-bad-entry behavior (CAD-1 OQ-3=A) is SUPERSEDED at REPRO-2, ratified 2026-08-10,
+    and the reason is a consequence that only appeared once the list became a RESTRICTION rather
+    than the tenant set itself.** Under config-as-the-set, dropping one fat-fingered id left the
+    other tenants ticking and an all-bad list fell through to the caller's empty-list refusal — a
+    bounded loss. Under registry discovery an empty parse means "no restriction", so a single
+    typo would silently widen the filter to EVERY tenant: the looks-configured-but-isn't state
+    CAD-1 FOLD-2 ratified against, inverted into over-ticking. A typo must be a refusal, never a
+    widening.
+
+    So: blank entries are ignored (a trailing comma is not a typo), and any NON-BLANK entry that
+    is not a canonical UUID raises ``TenantIdError``. ``on_bad`` is still called first, so the
+    offending entry is named in the log before the process refuses. Returns canonical ids in input
+    order, de-duplicated (a repeated tenant would otherwise tick twice per cycle).
+
+    An empty result now means exactly one thing — **the filter is UNSET** — which the caller reads
+    as "no restriction", not as "fail closed".
     """
     out: list[str] = []
     seen: set[str] = set()
@@ -49,7 +61,7 @@ def parse_tenant_ids(
         except TenantIdError as exc:
             if on_bad is not None:
                 on_bad(entry, exc)
-            continue
+            raise
         if canonical not in seen:
             seen.add(canonical)
             out.append(canonical)

@@ -1,6 +1,9 @@
 # CAD-1 — Cadence wiring (Wave-12 slice 3) — decision record
 
 **Status:** **✅ CLOSED 2026-07-25 — SHIPPED** (impl **PR #125** `74372b2`, merged `b637bac`; **NO migration** — head stays `0052`; counts UNCHANGED **23/38/109** — infra ignition, NOT a governed number). Gate: **OQ-1=A** (in-process supervisor loop over a configured tenant list, PLUS the one-shot `scheduler --tenant` retained for external schedulers), **OQ-2=A** (tenant list from config env `IRP_TENANT_IDS` — no DB sweep, no BYPASSRLS; the ratified OQ-SCH-1-1=B doctrine preserved), **OQ-3=A** (a malformed tenant id in the loop is skipped-and-logged so the rest keep ticking; the one-shot fails closed exit 2; an EMPTY list fails closed at startup). **Both standing carries PAID:** the **OQ-a** worker `--tenant` canonicalization (SSO-1's 2nd instance — `str(uuid.UUID(x))` before the RLS GUC is armed, at both boundaries plus a defensive check at the shared tick) and the **OQ-W11C-2** `create_schedule` P3-5 cross-tenant FK guard (`assert_portfolio_in_tenant` + the NEW `assert_model_version_in_tenant`; `environment_id` is a free label, correctly unguarded). Retires the `irp_worker/main.py` heartbeat placeholder. **Pre-ratification verifier: 2 folds** (§5 — the BLOCKING `test_worker.py` `run_once` import that would fail pytest at collection; the empty-list fail-closed). **4-finder review: ZERO HIGH**; M1/M2/L3/L4/L5 all folded (§8). FROZEN `audit/service.py` byte-untouched. Battery: `make check` **2021 passed / 416 skipped** + **full-PG GREEN** (clean single run, `PYTEST_EXIT=0`, 100% pass) + CI green.
+
+> **SUPERSEDED IN PART at REPRO-2 (ratified 2026-08-10, OQ-REP2-1).** The tenant list now comes from the **ENT-074 registry** (ACTIVE tenants, re-read every cycle) — which did not exist when OQ-2 was decided, so "a DB sweep" then meant an app-side cross-tenant read with no legitimate home. **OQ-SCH-1-1=B is NOT reopened**: ENT-074 is platform-global by design and the read needs no BYPASSRLS. What is superseded, precisely: **OQ-2** (config as the tenant SET → `IRP_TENANT_IDS` as an optional RESTRICTION), **OQ-3's skip-and-continue** (a malformed entry now REFUSES — under a restriction filter, silently dropping a typo widens the filter to every tenant instead of narrowing it), and **FOLD-2's empty-list refusal for the UNSET case only** (an unset filter on a genuinely empty registry idles LOUDLY and re-polls — the honest state of a fresh platform). What is RETAINED: FOLD-2's refusal wherever the config is actually wrong — a filter naming a tenant the registry does not list as ACTIVE still refuses to start, and so does an unreadable registry. FOLD-2's stated property — *"a silently-idle engine is the exact failure this slice exists to prevent"* — survives: the idle state announces itself every cycle and the deployed proof asserts the announcement.
+
 **Slice:** Wave-12 ("Operations, Reachable") slice 3 of 4. Prior: API-2/API-2b (slice 1), NOTIF-1 (slice 2).
 **Size:** S/M. **Migration:** NONE. **New governed number:** NONE. **New permission / audit code:** NONE.
 **Counts:** UNCHANGED 23/38/109 (this is transport/infra ignition, not a governed computation).
@@ -97,8 +100,8 @@ OQ-2 below re-affirms this at the moment it first becomes concrete.
 | OQ | Question | Options | Recommended |
 |----|----------|---------|-------------|
 | **OQ-1** | The cadence driver | **A** in-process supervisor loop over a configured tenant list, PLUS keep the one-shot for external schedulers · **B** external-scheduler-only (no in-app loop; the tick stays one-shot, cadence lives entirely in undefined infra) | **A** — B leaves nothing runnable from `docker compose up`, so the slice-4 demo would still have a dead engine; A makes the engine actually tick while keeping the one-shot for prod. |
-| **OQ-2** | The loop's tenant-list source | **A** config env `IRP_TENANT_IDS` (no DB read, no BYPASSRLS) · **B** a DB sweep of distinct tenants (needs the ops cross-tenant read) | **A** — B would reverse the ratified OQ-SCH-1-1=B doctrine and open a BYPASSRLS business path. |
-| **OQ-3** | A malformed tenant id inside the loop | **A** skip that tenant, log an error, continue ticking the rest · **B** abort the whole loop at startup | **A** — one fat-fingered id in a shared config must not take the entire operational engine down for every tenant; the one-shot still fails closed (exit 2). |
+| **OQ-2** *(SUPERSEDED IN PART at REPRO-2 — see the Status note)* | The loop's tenant-list source | **A** config env `IRP_TENANT_IDS` (no DB read, no BYPASSRLS) · **B** a DB sweep of distinct tenants (needs the ops cross-tenant read) | **A** — B would reverse the ratified OQ-SCH-1-1=B doctrine and open a BYPASSRLS business path. |
+| **OQ-3** *(skip-and-continue SUPERSEDED at REPRO-2 — a malformed entry now refuses)* | A malformed tenant id inside the loop | **A** skip that tenant, log an error, continue ticking the rest · **B** abort the whole loop at startup | **A** — one fat-fingered id in a shared config must not take the entire operational engine down for every tenant; the one-shot still fails closed (exit 2). |
 
 ## 5. Verifier folds (pre-ratification pass, 2026-07-25)
 
@@ -121,7 +124,7 @@ Two folds into scope:
   `test_worker.py`** (drop the `run_once` import + `test_run_once`; add supervisor unit tests). The
   full retirement dependent-set is exactly three: this test, the CMD in
   **`infra/docker/worker.Dockerfile:16`**, and the run instructions in **`apps/worker/README.md`**.
-- **FOLD-2 (fold):** an **empty** `IRP_TENANT_IDS` must **fail closed at startup** with a clear error
+- **FOLD-2 (fold):** *(SUPERSEDED IN PART at REPRO-2 — the UNSET case idles loudly; a filter naming an unknown tenant still refuses)* an **empty** `IRP_TENANT_IDS` must **fail closed at startup** with a clear error
   — NOT silently idle (a silently-dead engine is the exact failure this slice exists to prevent). This
   is distinct from OQ-3 (a *malformed entry within a non-empty list* → skip-and-continue): an empty
   list is a misconfiguration and must be loud. Also seed the three worker vars
@@ -133,9 +136,9 @@ Two folds into scope:
 
 - **OQ-1 = A** — in-process supervisor loop over a configured tenant list, PLUS keep the one-shot
   `scheduler.main --tenant` for external schedulers.
-- **OQ-2 = A** — the loop's tenant list comes from config env `IRP_TENANT_IDS` (no DB read, no
+- **OQ-2 = A** *(superseded in part at REPRO-2)* — the loop's tenant list comes from config env `IRP_TENANT_IDS` (no DB read, no
   BYPASSRLS); OQ-SCH-1-1=B doctrine preserved.
-- **OQ-3 = A** — a malformed tenant id inside the loop is skipped (logged) and the rest keep ticking;
+- **OQ-3 = A** *(skip-and-continue superseded at REPRO-2)* — a malformed tenant id inside the loop is skipped (logged) and the rest keep ticking;
   the one-shot still fails closed (exit 2), and an EMPTY list fails closed at startup (FOLD-2).
 
 Status → **RATIFIED**; proceed to implementation (both verifier folds in scope).

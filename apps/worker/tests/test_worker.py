@@ -50,11 +50,29 @@ def test_parse_tenant_ids_skips_blanks_and_dedupes_preserving_order() -> None:
     assert parse_tenant_ids(raw) == [_A, _B]
 
 
-def test_parse_tenant_ids_skips_malformed_and_reports_it() -> None:
+def test_parse_tenant_ids_REFUSES_a_malformed_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CAD-1 OQ-3=A skip-and-continue behavior, SUPERSEDED at REPRO-2 — rewritten as the
+    supersession's twin rather than deleted, because the reason it changed is the point.
+
+    Under config-as-the-tenant-set, dropping one fat-fingered id left the other tenants ticking
+    and an all-bad list fell through to the empty-list refusal: a bounded loss. Under registry
+    discovery an empty parse means "no restriction", so skipping a typo would silently widen the
+    filter to EVERY tenant — the looks-configured-but-isn't state CAD-1 FOLD-2 ratified against,
+    inverted into over-ticking. A typo is now a refusal.
+
+    The `on_bad` callback still fires first, so the offending entry is NAMED before the refusal.
+    """
     bad: list[str] = []
-    result = parse_tenant_ids(f"{_A},garbage,{_B}", on_bad=lambda e, _exc: bad.append(e))
-    assert result == [_A, _B]  # the valid ones survive (OQ-3=A)
-    assert bad == ["garbage"]
+    with pytest.raises(TenantIdError):
+        parse_tenant_ids(f"{_A},garbage,{_B}", on_bad=lambda e, _exc: bad.append(e))
+    assert bad == ["garbage"], "the refusal did not name the offending entry first"
+
+
+def test_parse_tenant_ids_ignores_blanks_but_not_typos() -> None:
+    """A trailing comma is not a typo; `not-a-uuid` is. The discriminating pair."""
+    assert parse_tenant_ids(f"{_A}, ,{_B},") == [_A, _B]
+    with pytest.raises(TenantIdError):
+        parse_tenant_ids(f"{_A},not-a-uuid")
 
 
 def test_parse_tenant_ids_empty_is_empty_list() -> None:

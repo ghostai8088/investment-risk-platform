@@ -45,6 +45,7 @@ from irp_backend.api.reference_instruments import router as reference_instrument
 from irp_backend.api.reports import router as reports_router
 from irp_backend.api.reproduction import router as reproduction_router
 from irp_backend.api.risk import router as risk_router
+from irp_backend.api.schedule_admin import router as schedule_admin_router
 from irp_backend.api.schedules import router as schedules_router
 from irp_backend.api.snapshots import router as snapshots_router
 from irp_backend.api.system import router as system_router
@@ -110,3 +111,5 @@ app.include_router(tenants_router)
 app.include_router(tenant_admin_router)
 # ALERT-1: the alarm channel's own health becomes reachable (the six carries' host).
 app.include_router(reproduction_router)
+# REPRO-2: the schedule WRITE path — the control becomes startable (SCH-1's forward gate).
+app.include_router(schedule_admin_router)

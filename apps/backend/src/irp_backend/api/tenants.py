@@ -47,10 +47,17 @@ TENANT_CREATE = PLATFORM_CODES[0]
 #: Module-level guard singleton (deny-by-default; built once, not in an argument default).
 _require_create = require_permission(TENANT_CREATE)
 
-#: Stated in the create response. The operator step that ONBOARD-1a does not perform.
+#: Stated in the create response — the truth about what happens next, which REPRO-2 changed.
+#:
+#: Until REPRO-2 this said the operator must add the id to ``IRP_TENANT_IDS`` and roll the worker.
+#: That is no longer true and was the most operator-facing carrier of the superseded fact: the
+#: supervisor now discovers ACTIVE tenants from the ENT-074 registry every cycle, so this tenant
+#: is already in the rotation. What it still has is nothing to DO — a schedule is a governed act
+#: with an actor and a cadence choice, and the platform does not manufacture one.
 WORKER_FOLLOWUP = (
-    "This tenant has no scheduled work until its id is added to IRP_TENANT_IDS and the worker "
-    "is rolled — the supervisor's tenant membership is deploy configuration (CAD-1)."
+    "The worker picks this tenant up automatically within one tick — supervisor membership comes "
+    "from the tenant registry (REPRO-2), not from deploy configuration. It has no scheduled work "
+    "yet: grant a user schedule.manage and create a schedule (POST /schedules)."
 )
 
 

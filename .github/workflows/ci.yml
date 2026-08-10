@@ -871,7 +871,8 @@ jobs:
 
       # REPRO-1: CTRL-018's OBSERVED scheduled green — and the first execution ANYWHERE of the
       # deployed worker's database path (RPT-2 carry b: deploy.sh only ever proved the worker's
-      # fail-closed refusal, because IRP_TENANT_IDS ships empty). A real tick, through the real
+      # bounded idle proof, because an empty IRP_TENANT_IDS now means 'no restriction' and a
+      # fresh registry has no tenants — REPRO-2). A real tick, through the real
       # scheduler, re-derives a governed report from its pinned inputs. Both arms go through the
       # worker: the second schedule exists so a PLANTED divergence gets its own tick bucket and the
       # failure path is executed rather than assumed.

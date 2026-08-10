@@ -24,6 +24,7 @@ from sqlalchemy.pool import StaticPool
 os.environ.setdefault("IRP_AUTH_MODE", "dev_header")
 os.environ.setdefault("IRP_APP_ENV", "local")
 
+from irp_backend.api.reproduction import UNREPRODUCIBLE_WIRE_DETAIL  # noqa: E402
 from irp_shared.db.base import Base  # noqa: E402
 from irp_shared.db.session import make_engine, make_session_factory  # noqa: E402
 from irp_shared.entitlement.bootstrap import PERMISSIONS, permission_id  # noqa: E402
@@ -49,6 +50,9 @@ EXPECTED_FIELDS = {
     "failed_sweeps",
     "sweep_overdue",
     "dead_channel",
+    # REPRO-2: the ratified ALERT-1 amendment. This pin is BY DESIGN the place a new field must
+    # be declared — widening the payload is a decision, and this is where the decision is made.
+    "control_switched_off",
     "undeliverable_attempts",
     "exhausted_verdicts",
     "queued",
@@ -181,3 +185,115 @@ def test_the_route_is_read_only(wired) -> None:  # noqa: ANN001
     headers = {"X-User-Id": uid, "X-Tenant-Id": tid}
     assert client.post("/reproduction/alarm-health", headers=headers).status_code == 405
     assert client.delete("/reproduction/alarm-health", headers=headers).status_code == 405
+
+
+# --------------------------------------------------- the verdict read, and carry (n)'s discharge
+def _seed_verdict(db: Session, tenant_id: str, *, verdict: str, first_divergence: str | None):  # noqa: ANN202
+    from irp_shared.calc.models import CalculationRun, RunStatus
+    from irp_shared.reproduction.models import RUN_TYPE_REPRODUCTION, ReproductionCheck
+
+    run = CalculationRun(
+        tenant_id=tenant_id,
+        run_type=RUN_TYPE_REPRODUCTION,
+        status=RunStatus.COMPLETED.value,
+        initiated_by="t",
+    )
+    subject = CalculationRun(
+        tenant_id=tenant_id, run_type="VAR", status=RunStatus.COMPLETED.value, initiated_by="t"
+    )
+    db.add_all([run, subject])
+    db.flush()
+    check = ReproductionCheck(
+        tenant_id=tenant_id,
+        calculation_run_id=run.run_id,
+        subject_run_id=subject.run_id,
+        family_key="VAR",
+        verdict=verdict,
+        rows_compared=2,
+        rows_diverged=1 if verdict == "DIVERGED" else 0,
+        first_divergence=first_divergence,
+    )
+    db.add(check)
+    db.flush()
+    return check
+
+
+def test_the_verdict_list_reads_for_a_schedule_view_holder(wired) -> None:  # noqa: ANN001
+    client, db = wired
+    tid = _tenant(db)
+    uid = _user_with(db, tid, "schedule.view")
+    _seed_verdict(db, tid, verdict="MATCH", first_divergence=None)
+    db.commit()
+    resp = client.get("/reproduction/checks", headers={"X-User-Id": uid, "X-Tenant-Id": tid})
+    assert resp.status_code == 200, resp.text
+    assert len(resp.json()) == 1
+    assert resp.json()[0]["verdict"] == "MATCH"
+
+
+def test_a_DIVERGED_row_carries_its_field_and_key_label(wired) -> None:  # noqa: ANN001
+    """The half that must still be USEFUL: a divergence an operator cannot locate is not a
+    finding. REPRO-1 mutation-proved this label names the row key and the field, never values."""
+    client, db = wired
+    tid = _tenant(db)
+    uid = _user_with(db, tid, "schedule.view")
+    _seed_verdict(
+        db, tid, verdict="DIVERGED", first_divergence="key=(pf-1,2026-08-01) field=var_value"
+    )
+    db.commit()
+    body = client.get("/reproduction/checks", headers={"X-User-Id": uid, "X-Tenant-Id": tid}).json()
+    assert body[0]["first_divergence"] == "key=(pf-1,2026-08-01) field=var_value"
+
+
+def test_an_UNREPRODUCIBLE_rows_stored_text_NEVER_reaches_the_wire(wired) -> None:  # noqa: ANN001
+    """CARRY (n)'s DISCHARGE, asserted the only way it can be: with the positive twin first.
+
+    The marker is planted in the STORED row (proving the harness delivered its input — a negative
+    control whose precondition never landed proves nothing), and only then is its ABSENCE from the
+    entire HTTP response asserted. The wire carries a fixed literal instead, which is why this is
+    discharge by EXCLUSION: no parsing, no redaction, nothing that could be defeated by an
+    exception message shaped unlike the ones we imagined.
+    """
+    client, db = wired
+    tid = _tenant(db)
+    uid = _user_with(db, tid, "schedule.view")
+    marker = "ROW-IDENTIFIER-9f3a-LEAK-CANARY"
+    stored = _seed_verdict(
+        db,
+        tid,
+        verdict="UNREPRODUCIBLE",
+        first_divergence=f"OperationalError: relation missing for {marker}",
+    )
+    db.commit()
+
+    # POSITIVE TWIN: the marker really is in the stored row.
+    assert marker in (stored.first_divergence or ""), "the harness never planted the marker"
+
+    resp = client.get("/reproduction/checks", headers={"X-User-Id": uid, "X-Tenant-Id": tid})
+    assert resp.status_code == 200
+    assert marker not in resp.text, (
+        "stored UNREPRODUCIBLE text reached the wire — carry (n)'s residual is live on a read "
+        "surface, which is the exact thing the carry bound"
+    )
+    assert resp.json()[0]["first_divergence"] == UNREPRODUCIBLE_WIRE_DETAIL
+
+
+def test_the_verdict_list_is_TENANT_LOCAL(wired) -> None:  # noqa: ANN001
+    client, db = wired
+    tid_a = _tenant(db)
+    tid_b = _tenant(db)
+    uid_a = _user_with(db, tid_a, "schedule.view")
+    _seed_verdict(db, tid_b, verdict="DIVERGED", first_divergence="key=(x) field=y")
+    db.commit()
+    body = client.get(
+        "/reproduction/checks", headers={"X-User-Id": uid_a, "X-Tenant-Id": tid_a}
+    ).json()
+    assert body == [], "another tenant's verdicts were listed"
+
+
+def test_the_verdict_list_needs_schedule_view(wired) -> None:  # noqa: ANN001
+    client, db = wired
+    tid = _tenant(db)
+    uid = _user_with(db, tid, "breach.review")
+    db.commit()
+    resp = client.get("/reproduction/checks", headers={"X-User-Id": uid, "X-Tenant-Id": tid})
+    assert resp.status_code == 403

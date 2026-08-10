@@ -185,9 +185,15 @@ PERMISSIONS: list[tuple[str, str]] = [
     # goes to the 1L risk maker + the data_steward ops maker (the pacing.run placement); `.view`
     # goes broadly INCLUDING auditor_3l — a governed control-plane object is 3L-oversight scope
     # (the pacing.view precedent). Dispatch itself runs as a synthesized SYSTEM actor, ungated.
-    # Forward-gate: SCH-1 ships no schedule API endpoint yet; when one lands it MUST carry
-    # require_permission("schedule.manage") (the pacing.py pattern) — nothing below the API layer
-    # enforces the maker verb (consistent with the perf/pacing service-ungated design).
+    # Forward-gate DISCHARGED at REPRO-2 (2026-08-10): the schedule API landed
+    # (`api/schedule_admin.py` — POST /schedules, /{id}/pause, /{id}/resume) and it carries
+    # require_permission("schedule.manage"), so the census entry was deleted. The maker-checker
+    # question SCH-2 reserved was answered at the same gate: create/resume are not four-eyes acts
+    # (they only ADD detection), and PAUSE stays one-person with compensating VISIBILITY — a
+    # tenant whose reproduction schedules are all paused reads RED on the alarm-health surface.
+    # The original forward-gate wording, kept because its reason still binds every future route:
+    # nothing below the API layer enforces the maker verb (consistent with the perf/pacing
+    # service-ungated design).
     ("schedule.manage", "Create, edit and pause governed run schedules"),
     ("schedule.view", "View run schedules and the scheduled-run ledger"),
     # LIM-1 limits/breach (ENT-031 limit_definition / ENT-033 breach, Wave-11 slice 2) — a governed

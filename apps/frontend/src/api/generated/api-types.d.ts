@@ -3405,6 +3405,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reproduction/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Checks
+         * @description The tenant's reproduction verdicts, newest first.
+         *
+         *     Tenant-local by RLS with an explicit predicate underneath (the platform's belt-and-braces
+         *     pattern), bounded by `limit` and a lookback window, and silent-empty rather than 404 on an
+         *     unknown filter value — no existence oracle.
+         */
+        get: operations["list_checks_reproduction_checks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/risk/active-risk": {
         parameters: {
             query?: never;
@@ -5095,7 +5119,17 @@ export interface paths {
          */
         get: operations["list_schedules_endpoint_schedules_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create
+         * @description Create a schedule. The route adds TRANSPORT; every rule is the existing service's.
+         *
+         *     The one thing it adds is the duplicate-code refusal, and the mechanism matters: a pre-check
+         *     alone cannot deliver it. Two concurrent creates with the same code both pass any pre-check and
+         *     the loser dies at flush, so the UNIQUE violation is CAUGHT and mapped to the same refusal the
+         *     pre-check gives — the pre-check survives only as the ordinary-path courtesy with the better
+         *     message.
+         */
+        post: operations["create_schedules_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5120,6 +5154,50 @@ export interface paths {
         get: operations["list_scheduled_runs_endpoint_schedules_runs_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/schedules/{schedule_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause
+         * @description Pause a schedule — one person, audit-trailed, and VISIBLE.
+         *
+         *     See the module docstring: this is the act the maker-checker adjudication turned on. Pausing
+         *     every reproduction schedule in a tenant switches off its detective control, so the alarm-health
+         *     surface reads RED (`control_switched_off`) for exactly that state.
+         */
+        post: operations["pause_schedules__schedule_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/schedules/{schedule_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume
+         * @description Resume a paused schedule. No four-eyes: resuming only ADDS detection back.
+         */
+        post: operations["resume_schedules__schedule_id__resume_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5565,6 +5643,8 @@ export interface components {
          *     stored, never inferred from the presence of an evidence row (the LIM-1 rule).
          */
         AlarmHealthOut: {
+            /** Control Switched Off */
+            control_switched_off: boolean;
             /** Dead Channel */
             dead_channel: boolean;
             /** Exhausted Verdicts */
@@ -9483,6 +9563,37 @@ export interface components {
             /** Report Version Label */
             report_version_label: string;
         };
+        /**
+         * ReproductionCheckOut
+         * @description One verdict, as the wire may see it.
+         *
+         *     Counts, keys and ids — plus `first_divergence` under the OQ-ALR-3 rule above. Note what is
+         *     NOT here and never will be without another ratification: the two diverging VALUES. They are
+         *     absent from the stored row for the same reason.
+         */
+        ReproductionCheckOut: {
+            /** Calculation Run Id */
+            calculation_run_id: string;
+            /** Family Key */
+            family_key: string;
+            /** First Divergence */
+            first_divergence: string | null;
+            /** Id */
+            id: string;
+            /** Rows Compared */
+            rows_compared: number;
+            /** Rows Diverged */
+            rows_diverged: number;
+            /** Subject Run Id */
+            subject_run_id: string;
+            /**
+             * System From
+             * Format: date-time
+             */
+            system_from: string;
+            /** Verdict */
+            verdict: string;
+        };
         /** ResidualShrinkageRunIn */
         ResidualShrinkageRunIn: {
             /** Code Version */
@@ -9870,51 +9981,36 @@ export interface components {
             /** Shock Value */
             shock_value: number | string;
         };
-        /** ScheduleListOut */
-        ScheduleListOut: {
-            /** Items */
-            items: components["schemas"]["ScheduleOut"][];
-        };
-        /**
-         * ScheduleOut
-         * @description A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable
-         *     since SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some
-         *     cadences/families and forbidden for others), so the DTO mirrors the column nullability rather
-         *     than inventing a placeholder.
-         */
-        ScheduleOut: {
-            /** Anchor Date */
+        /** ScheduleCreateIn */
+        ScheduleCreateIn: {
+            /**
+             * Anchor Date
+             * Format: date
+             */
             anchor_date: string;
             /** Cadence Kind */
             cadence_kind: string;
+            /** Calendar Id */
+            calendar_id?: string | null;
             /** Code */
             code: string;
             /** Environment Id */
             environment_id: string;
-            /** Id */
-            id: string;
             /** Interval Days */
-            interval_days: number | null;
-            /** Last Failure Reason */
-            last_failure_reason: string | null;
-            /** Last Fired At */
-            last_fired_at: string | null;
-            /** Last Outcome */
-            last_outcome: string | null;
-            /** Last Scheduled For */
-            last_scheduled_for: string | null;
+            interval_days?: number | null;
             /** Model Version Id */
-            model_version_id: string | null;
+            model_version_id?: string | null;
             /** Name */
             name: string;
-            /** Record Version */
-            record_version: number;
             /** Scope Portfolio Id */
-            scope_portfolio_id: string | null;
-            /** Status */
-            status: string;
+            scope_portfolio_id?: string | null;
             /** Target Run Type */
             target_run_type: string;
+        };
+        /** ScheduleListOut */
+        ScheduleListOut: {
+            /** Items */
+            items: components["schemas"]["irp_backend__api__schedules__ScheduleOut"][];
         };
         /** ScheduledRunListOut */
         ScheduledRunListOut: {
@@ -10877,6 +10973,64 @@ export interface components {
             ok: boolean;
             /** Snapshot Id */
             snapshot_id: string;
+        };
+        /** ScheduleOut */
+        irp_backend__api__schedule_admin__ScheduleOut: {
+            /** Cadence Kind */
+            cadence_kind: string;
+            /** Code */
+            code: string;
+            /** Id */
+            id: string;
+            /** Interval Days */
+            interval_days: number | null;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Target Run Type */
+            target_run_type: string;
+        };
+        /**
+         * ScheduleOut
+         * @description A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable
+         *     since SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some
+         *     cadences/families and forbidden for others), so the DTO mirrors the column nullability rather
+         *     than inventing a placeholder.
+         */
+        irp_backend__api__schedules__ScheduleOut: {
+            /** Anchor Date */
+            anchor_date: string;
+            /** Cadence Kind */
+            cadence_kind: string;
+            /** Code */
+            code: string;
+            /** Environment Id */
+            environment_id: string;
+            /** Id */
+            id: string;
+            /** Interval Days */
+            interval_days: number | null;
+            /** Last Failure Reason */
+            last_failure_reason: string | null;
+            /** Last Fired At */
+            last_fired_at: string | null;
+            /** Last Outcome */
+            last_outcome: string | null;
+            /** Last Scheduled For */
+            last_scheduled_for: string | null;
+            /** Model Version Id */
+            model_version_id: string | null;
+            /** Name */
+            name: string;
+            /** Record Version */
+            record_version: number;
+            /** Scope Portfolio Id */
+            scope_portfolio_id: string | null;
+            /** Status */
+            status: string;
+            /** Target Run Type */
+            target_run_type: string;
         };
     };
     responses: never;
@@ -18573,6 +18727,44 @@ export interface operations {
             };
         };
     };
+    list_checks_reproduction_checks_get: {
+        parameters: {
+            query?: {
+                family_key?: string | null;
+                verdict?: string | null;
+                since_days?: number;
+                limit?: number;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReproductionCheckOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_active_risk_by_entity_endpoint_risk_active_risk_get: {
         parameters: {
             query?: {
@@ -21443,6 +21635,43 @@ export interface operations {
             };
         };
     };
+    create_schedules_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["irp_backend__api__schedule_admin__ScheduleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_scheduled_runs_endpoint_schedules_runs_get: {
         parameters: {
             query?: {
@@ -21470,6 +21699,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledRunListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_schedules__schedule_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["irp_backend__api__schedule_admin__ScheduleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_schedules__schedule_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["irp_backend__api__schedule_admin__ScheduleOut"];
                 };
             };
             /** @description Validation Error */

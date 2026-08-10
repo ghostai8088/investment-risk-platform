@@ -26,6 +26,7 @@ const HEALTHY = {
   exhausted_verdicts: 0,
   queued: 0,
   no_schedule: false,
+  control_switched_off: false,
   paused_schedules: 0,
   nothing_to_reproduce: 0,
   last_terminal_sweep_at: "2026-08-10T03:00:00Z",
@@ -67,6 +68,29 @@ describe("Alerting", () => {
     // The row exists AND carries an action, not just a number.
     expect(screen.getByText("Sweep overdue")).toBeTruthy();
     expect(screen.getByText(/Check the worker process/)).toBeTruthy();
+  });
+
+  it("a SWITCHED-OFF control is red, explained, and actionable — never the 'gap' lede", async () => {
+    // REPRO-2's ratified panel carrier: the review found the field shipped in the API and the
+    // healthy fold while this panel rendered NOTHING for it — an all-paused tenant read
+    // NOT HEALTHY with zero red rows, under a lede calling it "a gap … not a fault".
+    // The backend reports no_schedule=true in this state too (no ACTIVE schedule exists), which
+    // is exactly why the lede precedence matters and why this payload sets both.
+    routeHealth({
+      ...HEALTHY,
+      healthy: false,
+      control_switched_off: true,
+      no_schedule: true,
+      paused_schedules: 2,
+    });
+    render(<Alerting session={SESSION} />);
+    await waitFor(() => {
+      expect(screen.getByText("NOT HEALTHY")).toBeTruthy();
+    });
+    expect(screen.getByText("Control switched off")).toBeTruthy();
+    expect(screen.getByText(/somebody turned it off/)).toBeTruthy();
+    expect(screen.getByText(/who paused it and when/)).toBeTruthy();
+    expect(screen.queryByText(/gap in what has been set up/)).toBeNull();
   });
 
   it("no schedule is explained as a gap in setup, not an outage", async () => {

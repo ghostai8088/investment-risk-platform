@@ -291,15 +291,69 @@ def test_NO_schedule_is_informational_never_red(session: Session) -> None:
     assert health.healthy is True, "a tenant that never scheduled a sweep is not BROKEN"
 
 
-def test_a_PAUSED_schedule_is_its_own_disposition(session: Session) -> None:
-    """Pass 2, P2-4: paused is a decision somebody made — neither an outage nor an absence."""
+def test_ALL_schedules_paused_is_a_SWITCHED_OFF_control_and_it_is_RED(session: Session) -> None:
+    """**This test asserted `healthy is True` until REPRO-2, and the inversion is ratified.**
+
+    ALERT-1 called a paused schedule informational — "a decision somebody made, neither an outage
+    nor an absence" — and that was right while nothing could pause a schedule over HTTP. REPRO-2
+    ships `POST /schedules/{id}/pause`, held by `risk_analyst_1l`: the very population whose runs
+    this detective control re-checks can now switch it off, alone, reversibly. Configured-then-
+    fully-paused would have read SILENT GREEN for exactly the window in which a tamper goes
+    undetected.
+
+    So the disposition is amended rather than the test deleted: paused is still not an outage, but
+    a control switched off ENTIRELY is red, and the two informational neighbours below are what
+    keep that from being a blunt instrument.
+    """
     tenant = _tenant(session)
     _schedule(session, tenant, anchor=NOW - timedelta(days=30), status="PAUSED")
     session.flush()
     health = alarm_channel_health(session, acting_tenant=tenant, now=NOW)
     assert health.paused_schedules == 1
     assert health.sweep_overdue is False, "a paused schedule cannot be late"
-    assert health.no_schedule is True, "no ACTIVE schedule exists"
+    assert health.control_switched_off is True
+    assert health.healthy is False, (
+        "a tenant that configured the control and then paused every schedule reads healthy — the "
+        "silent-green tamper window the REPRO-2 amendment exists to close"
+    )
+
+
+def test_a_NEVER_configured_tenant_is_a_GAP_not_a_switch_off(session: Session) -> None:
+    """The first informational neighbour: never-configured is not switched-off.
+
+    Without this the amendment would redden every fresh tenant on the platform, which is the
+    cry-wolf shape ALERT-1 spent its own review avoiding.
+    """
+    tenant = _tenant(session)
+    health = alarm_channel_health(session, acting_tenant=tenant, now=NOW)
+    assert health.no_schedule is True
+    assert health.control_switched_off is False
+    assert health.healthy is True
+
+
+def test_a_PARTIALLY_paused_set_still_has_a_running_control(session: Session) -> None:
+    """The second neighbour: one paused schedule beside a live one is ordinary operations."""
+    tenant = _tenant(session)
+    _schedule(session, tenant, anchor=NOW - timedelta(days=30), status="PAUSED")
+    live = _schedule(session, tenant, anchor=NOW - timedelta(days=30))
+    session.flush()
+    from irp_shared.scheduling.models import ScheduledRun
+
+    tick = NOW.replace(hour=0, minute=0, second=0, microsecond=0)
+    session.add(
+        ScheduledRun(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant,
+            schedule_id=live.id,
+            scheduled_for=tick,
+            outcome="DISPATCHED",
+            fired_at=tick,
+        )
+    )
+    session.flush()
+    health = alarm_channel_health(session, acting_tenant=tenant, now=NOW)
+    assert health.paused_schedules == 1
+    assert health.control_switched_off is False
     assert health.healthy is True
 
 

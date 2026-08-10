@@ -553,6 +553,44 @@ REPRODUCIBLE_FAMILIES: dict[str, ReproducibleFamily] = {
 #:   (3) "not yet adapted" — the binder has a consume path and the family is reproducible in
 #:       principle; only the per-family key/field declaration and its parameter read-back are
 #:       missing. These are the cheap ones, and they are the next slice's work.
+#: Column names that carry an IDENTITY class withheld from some holder of the verdict read's
+#: permission (REPRO-2, ratified OQ-REP2-3). MINTED here because no such list existed: the
+#: CON-1/REF-1 exclusions are implemented as permission-gated ROUTES, not as a reusable
+#: column-class enumeration, so there was nothing for a census to walk.
+#:
+#: **Why a registered family's KEY is a disclosure surface at all.** A DIVERGED verdict's
+#: `first_divergence` names the row KEY and the field — and that label now ships to every
+#: `schedule.view` holder, `auditor_3l` included. The 3L auditor is deliberately excluded from
+#: issuer identity (`reference.issuer.view`), legal-entity identity, and classification
+#: assignments — the CON-1 split exists precisely because one combined code would have handed
+#: them exactly that. A family whose key included `issuer_id` would route that identity around
+#: the split through a divergence label, which is the kind of leak that only ever gets noticed
+#: after it ships.
+#:
+#: Provenance per member is the route gate that withholds it. Extend this list when a new
+#: exclusion class is ratified, and the stale-entry twin below keeps it honest.
+IDENTITY_EXCLUDED_COLUMNS: dict[str, str] = {
+    "issuer_id": "reference.issuer.view / concentration.issuer.view — the CON-1 3L split",
+    "legal_entity_id": "reference.legal_entity.view — the REF-1 proprietary-identity exclusion",
+    "external_subject": "the OIDC subject; person-identifying (ONBOARD-1b's user.view exclusion)",
+    "display_name": "person-identifying (ONBOARD-1b's user.view exclusion)",
+}
+
+
+def identity_offenders(*column_groups: tuple[str, ...]) -> list[str]:
+    """Which of these declared columns carry an excluded identity class.
+
+    The RULE lives here, in production code beside the list it enforces, rather than inside a
+    test — because a census test that re-implements its own rule is a test that can only catch
+    the offenders it was written to imagine. The mutation battery made the point concretely: with
+    the rule inlined in the test, emptying the test's own walk left everything green, since there
+    are no offenders in the current registry to miss.
+    """
+    return [
+        column for group in column_groups for column in group if column in IDENTITY_EXCLUDED_COLUMNS
+    ]
+
+
 UNREPRODUCIBLE_FAMILIES: dict[str, str] = {
     "CONCENTRATION": (
         "no consume path: run_concentration takes no snapshot_id and build_concentration_snapshot "
@@ -619,6 +657,8 @@ def normalize(value: Any) -> Any:
 
 
 __all__ = [
+    "IDENTITY_EXCLUDED_COLUMNS",
+    "identity_offenders",
     "REPRODUCIBLE_FAMILIES",
     "UNREPRODUCIBLE_FAMILIES",
     "ComparableRow",
