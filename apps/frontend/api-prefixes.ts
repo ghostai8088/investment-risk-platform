@@ -38,4 +38,7 @@ export const API_PREFIXES = [
   "/users",
   "/roles",
   "/entitlement-requests",
+  // ALERT-1: the alarm channel's health read. NOTE the same trap as /users — the SCREEN lives at
+  // /ops/alerting, not at /reproduction, because a client route under this prefix is shadowed.
+  "/reproduction",
 ] as const;

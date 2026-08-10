@@ -22,24 +22,30 @@ recorded, so the verdict is still in the queue by the queue's own rule. A failur
 batch (unlike phase 4, whose cursor semantics force head-of-line blocking): a per-verdict question
 has no cursor to corrupt, so one poison verdict must not silence the others.
 
-**Note the one path the retry bound does NOT bound**, stated here rather than left to be
-rediscovered: ``MAX_ALARM_ATTEMPTS`` counts durably-recorded FAILED attempts, and a verdict whose
-alarm TRANSACTION raises records nothing at all. That path retries every tick indefinitely. It is
-carried (see carry (q) in the slice record) rather than fixed here, because recording a failure
-durably inside the transaction that just failed is not available — the honest fix is an operational
-signal on repeated rollback, which belongs to an alerting slice.
+**The rollback path IS bounded now (ALERT-1, carry (q) PAID).** ``MAX_ALARM_ATTEMPTS`` counts
+durably-recorded attempts, and a verdict whose alarm TRANSACTION raises used to record nothing at
+all — so that path retried every tick forever, invisibly, and the retry bound the whole design
+rests on simply did not apply to it. Recording the failure inside the transaction that just failed
+is impossible; recording it in the NEXT one is not. So this module now mints the ``attempt_id``
+itself, hands it to ``alarm_for_verdict``, and on failure opens a fresh transaction to write ONE
+row under that same id. No new rule, no new counter: the existing bound sees an ordinary attempt.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
 from irp_shared.notification.service import default_sink
 from irp_shared.notification.sink import NotificationSink
-from irp_shared.reproduction.service import alarm_for_verdict, unalarmed_verdicts
+from irp_shared.reproduction.service import (
+    alarm_for_verdict,
+    record_alarm_transaction_failure,
+    unalarmed_verdicts,
+)
 
 _LOGGER = logging.getLogger("irp_worker.reproduction_alarms")
 
@@ -86,21 +92,55 @@ def poll_tenant_reproduction_alarms(
         )
         return alarmed
     for check_id, check in pending:
+        # Minted HERE, not inside the service call, so that a transaction which rolls back can
+        # still name the attempt it was making. That is the entire reason the mint moved out.
+        attempt_id = str(uuid4())
         try:
             outcome = alarm_for_verdict(
-                session, check=check, sink=channel, acting_tenant=acting_tenant, now=now
+                session,
+                check=check,
+                sink=channel,
+                acting_tenant=acting_tenant,
+                now=now,
+                attempt_id=attempt_id,
             )
             session.commit()
             alarmed.append((check_id, outcome))
         except Exception as exc:  # noqa: BLE001 - per-verdict isolation, fail CLOSED
             session.rollback()
             # NOT a `break`. Phase 4 stops the batch because its cursor is a derived MAX that a
-            # later commit would advance past a failed earlier event. Here the rollback means no
-            # attempt was recorded, so the verdict is still queued by the queue's own rule — and
-            # stopping would let one poison verdict silence every other divergence that night.
+            # later commit would advance past a failed earlier event. Here the rollback means the
+            # delivery attempt did not land, and stopping would let one poison verdict silence
+            # every other divergence that night.
             _LOGGER.error(
-                "reproduction alarm failed for verdict %s; it stays queued for the next tick: %s",
+                "reproduction alarm failed for verdict %s: %s",
                 check_id,
                 exc,
             )
+            # The SIBLING transaction. The rollback above released the audit chain's advisory lock
+            # (it is transaction-scoped) and the session's `after_begin` listener re-arms the RLS
+            # GUC on this next one, so the write is ordinary — it simply happens after the failure
+            # rather than inside it.
+            try:
+                record_alarm_transaction_failure(
+                    session,
+                    check_id=check_id,
+                    acting_tenant=acting_tenant,
+                    attempt_id=attempt_id,
+                    reason=f"{type(exc).__name__}: {exc}",
+                    channel=channel.channel,
+                    now=now,
+                )
+                session.commit()
+            except Exception as inner:  # noqa: BLE001 - the database itself is gone
+                # Nothing durable is possible by definition. The tick's own failure is the outer
+                # signal; this log line is the only trace, and saying so is better than implying
+                # a guarantee that does not exist.
+                session.rollback()
+                _LOGGER.error(
+                    "could not record the failed alarm attempt for verdict %s either; this "
+                    "attempt is NOT counted against the retry bound: %s",
+                    check_id,
+                    inner,
+                )
     return alarmed

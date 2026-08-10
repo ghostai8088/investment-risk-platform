@@ -3385,6 +3385,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reproduction/alarm-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Alarm Health
+         * @description Is the reproduction alarm channel working, for the caller's own tenant?
+         */
+        get: operations["read_alarm_health_reproduction_alarm_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/risk/active-risk": {
         parameters: {
             query?: never;
@@ -5538,6 +5558,39 @@ export interface components {
             run_type: string;
             /** Status */
             status: string;
+        };
+        /**
+         * AlarmHealthOut
+         * @description The alarm channel's health. Every field is recomputed from source on every read — never
+         *     stored, never inferred from the presence of an evidence row (the LIM-1 rule).
+         */
+        AlarmHealthOut: {
+            /** Dead Channel */
+            dead_channel: boolean;
+            /** Exhausted Verdicts */
+            exhausted_verdicts: number;
+            /** Failed Sweeps */
+            failed_sweeps: number;
+            /** Healthy */
+            healthy: boolean;
+            /** Last Terminal Sweep At */
+            last_terminal_sweep_at: string | null;
+            /** Lost Verdicts */
+            lost_verdicts: number;
+            /** No Schedule */
+            no_schedule: boolean;
+            /** Nothing To Reproduce */
+            nothing_to_reproduce: number;
+            /** Paused Schedules */
+            paused_schedules: number;
+            /** Queued */
+            queued: number;
+            /** Sweep Overdue */
+            sweep_overdue: boolean;
+            /** Undeliverable Attempts */
+            undeliverable_attempts: number;
+            /** Unreadable Rows */
+            unreadable_rows: number;
         };
         /** AsOf */
         AsOf: {
@@ -18474,6 +18527,39 @@ export interface operations {
                 };
                 content: {
                     "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_alarm_health_reproduction_alarm_health_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlarmHealthOut"];
                 };
             };
             /** @description Validation Error */

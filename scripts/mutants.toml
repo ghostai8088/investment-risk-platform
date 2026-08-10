@@ -469,3 +469,166 @@ replace = """        role_in_tenant = session.execute(
             select(Role.id).where(Role.id == target_role_id)
         ).scalar_one_or_none()"""
 tests = ["packages/shared-python/tests/test_entitlement_admin.py"]
+
+# ---------------------------------------------------------------------------------------------
+# ALERT-1. The alarm about the alarm: the health surface's red signals, and the two delivery
+# fixes whose failure modes both verifier passes converged on.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "A-A1"
+group = "alert-1"
+why = "the courtesy skip records NOTHING — an all-skipped tick emits zero rows, the retirement rule (a pure function of those rows) can never fire, and v5's non-termination returns through the delivery loop (the defect three verifier lanes found independently)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """            attempts.append((recipient_id, NOTIFY_OUTCOME_SKIPPED, "already delivered"))
+            continue"""
+replace = """            continue"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-A2"
+group = "alert-1"
+why = "SKIPPED stops being a CONCLUDING outcome — every courtesy skip lands as audit 'failure', burning the retry budget and misclassifying delivered verdicts as silenced (pass-2 P2-1, executed)"
+file = "packages/shared-python/src/irp_shared/notification/events.py"
+find = """NOTIFY_CONCLUDING_OUTCOMES = frozenset(
+    {NOTIFY_OUTCOME_SENT, NOTIFY_OUTCOME_SUPPRESSED, NOTIFY_OUTCOME_SKIPPED}
+)"""
+replace = """NOTIFY_CONCLUDING_OUTCOMES = frozenset({NOTIFY_OUTCOME_SENT, NOTIFY_OUTCOME_SUPPRESSED})"""
+tests = ["packages/shared-python/tests/test_alarm_health.py", "packages/shared-python/tests/test_reproduction.py"]
+
+[[mutant]]
+id = "A-A3"
+group = "alert-1"
+why = "the courtesy read loses its verdict scope — a recipient told about ANY divergence is skipped for a NEW one, and the skip's own concluding row then retires it: a silent alarm drop behind a row asserting success (pass-2 P2-2)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """            AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
+            AuditEvent.entity_id == str(check_id),
+        )"""
+replace = """            AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
+        )"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-A4"
+group = "alert-1"
+why = "doubt resolves to SKIP instead of PAGE — an unreadable payload or a sentinel is read as 'already delivered', so the fail-closed direction inverts"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        if not isinstance(payload, dict):
+            continue
+        recipient = str(payload.get("recipient_id") or "")"""
+replace = """        if not isinstance(payload, dict):
+            delivered.add("unreadable")
+            continue
+        recipient = str(payload.get("recipient_id") or "unreadable")"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-B1"
+group = "alert-1"
+why = "the rolled-back alarm transaction records nothing again — carry (q) returns: that path retries every tick forever, unbounded and invisible"
+file = "apps/worker/src/irp_worker/reproduction_alarms.py"
+find = """                record_alarm_transaction_failure("""
+replace = """                _ = lambda *a, **k: None  # noqa: E731
+                _("""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-B2"
+group = "alert-1"
+why = "the rollback row reuses the no-recipient sentinel, making a transaction failure assert something false about the tenant's holder set"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """            "recipient_id": ALARM_ROLLBACK_SENTINEL,
+            "recipient_reason": "alarm transaction rolled back","""
+replace = """            "recipient_id": NO_RECIPIENT_SENTINEL,
+            "recipient_reason": "alarm transaction rolled back","""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-C1"
+group = "alert-1"
+why = "the health surface goes blind to the sweep's ABSENCE — a dead supervisor reads healthy again (the pass-1 BLOCKING: every other field counts rows that exist)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        if at - baseline > period * 2:
+            overdue = True
+            break"""
+replace = """        if False:
+            overdue = True
+            break"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-C2"
+group = "alert-1"
+why = "sweep_overdue drops out of the healthy fold — the absence is computed and then ignored, which is the inert-control shape one level up"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """            and not self.sweep_overdue
+            and not self.dead_channel"""
+replace = """            and not self.dead_channel"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-C3"
+group = "alert-1"
+why = "a totally dead channel stays amber forever — verdicts silently exhaust while nothing is delivered and the surface never turns red (pass-2 P2-13)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        dead_channel=silenced_in_window and not delivered_in_window,"""
+replace = """        dead_channel=False,"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-C4"
+group = "alert-1"
+why = "the empty-tenant class is classified by the TENANT's present state instead of the RUN's own trace — a real infrastructure failure on a quiet tenant reads as 'empty by design' (pass-2 P2-5/P2-12)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        if NOTHING_CHECKED_MARKER in text:"""
+replace = """        if True:"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-C5"
+group = "alert-1"
+why = "the ALARM LOST night stops counting — the worst night this control has (a divergence judged and then lost) becomes invisible"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        if ALARM_LOST_MARKER in text:
+            lost += 1"""
+replace = """        if False:
+            lost += 1"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-C6"
+group = "alert-1"
+why = "queued counts only verdicts that already have dispatch rows — a divergence recorded minutes ago reads as an empty queue (the defect this slice's own tests caught mid-build)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """    queued_ids = {
+        str(check.id) for check in _alarming_verdicts(session, tenant=tenant)
+    } - retired_ids"""
+replace = """    queued_ids = classification.entities_in(VERDICT_ALARM_QUEUED)"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-C7"
+group = "alert-1"
+why = "a verdict DELIVERED on its final attempt is labelled ceiling-silenced — the one number this slice exists to make trustworthy misreports a success as a silencing (pass-2 P2-3)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """            state[entity_id] = VERDICT_ALARM_DELIVERED if concluded else VERDICT_ALARM_CEILING"""
+replace = """            state[entity_id] = VERDICT_ALARM_CEILING"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-C8"
+group = "alert-1"
+why = "poison counts unconditionally again — a hash-chained row that can never be repaired leaves the tenant red FOREVER with no action available (pass-2 P2-14, the cry-wolf class)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        1 for row in classification.rows if row.payload is None and row.entity_id not in retired_ids"""
+replace = """        1 for row in classification.rows if row.payload is None"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "A-C9"
+group = "alert-1"
+why = "a self-healed transient failure keeps the surface amber for seven days — the bounded retry system WORKING reported as broken (pass-1 C10)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """        and (row.entity_id in queued_ids or row.entity_id in ceiling_ids)"""
+replace = """        and True"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]

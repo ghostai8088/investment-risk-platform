@@ -263,6 +263,88 @@
         "title": "ActiveRiskRunOut",
         "type": "object"
       },
+      "AlarmHealthOut": {
+        "description": "The alarm channel's health. Every field is recomputed from source on every read \u2014 never\nstored, never inferred from the presence of an evidence row (the LIM-1 rule).",
+        "properties": {
+          "dead_channel": {
+            "title": "Dead Channel",
+            "type": "boolean"
+          },
+          "exhausted_verdicts": {
+            "title": "Exhausted Verdicts",
+            "type": "integer"
+          },
+          "failed_sweeps": {
+            "title": "Failed Sweeps",
+            "type": "integer"
+          },
+          "healthy": {
+            "title": "Healthy",
+            "type": "boolean"
+          },
+          "last_terminal_sweep_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Terminal Sweep At"
+          },
+          "lost_verdicts": {
+            "title": "Lost Verdicts",
+            "type": "integer"
+          },
+          "no_schedule": {
+            "title": "No Schedule",
+            "type": "boolean"
+          },
+          "nothing_to_reproduce": {
+            "title": "Nothing To Reproduce",
+            "type": "integer"
+          },
+          "paused_schedules": {
+            "title": "Paused Schedules",
+            "type": "integer"
+          },
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          },
+          "sweep_overdue": {
+            "title": "Sweep Overdue",
+            "type": "boolean"
+          },
+          "undeliverable_attempts": {
+            "title": "Undeliverable Attempts",
+            "type": "integer"
+          },
+          "unreadable_rows": {
+            "title": "Unreadable Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "healthy",
+          "unreadable_rows",
+          "lost_verdicts",
+          "failed_sweeps",
+          "sweep_overdue",
+          "dead_channel",
+          "undeliverable_attempts",
+          "exhausted_verdicts",
+          "queued",
+          "no_schedule",
+          "paused_schedules",
+          "nothing_to_reproduce",
+          "last_terminal_sweep_at"
+        ],
+        "title": "AlarmHealthOut",
+        "type": "object"
+      },
       "AsOf": {
         "properties": {
           "known_at": {
@@ -37527,6 +37609,88 @@
         "summary": "Get Report Html",
         "tags": [
           "reports"
+        ]
+      }
+    },
+    "/reproduction/alarm-health": {
+      "get": {
+        "description": "Is the reproduction alarm channel working, for the caller's own tenant?",
+        "operationId": "read_alarm_health_reproduction_alarm_health_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlarmHealthOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Alarm Health",
+        "tags": [
+          "reproduction"
         ]
       }
     },

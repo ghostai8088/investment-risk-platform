@@ -79,6 +79,14 @@ export function AppShell({
             Reports
           </NavLink>
 
+          {/* ALERT-1: is the reproduction alarm channel actually working? */}
+          <NavLink
+            to="/ops/alerting"
+            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+          >
+            Alerting
+          </NavLink>
+
           {/* ONBOARD-1b: tenant self-administration. The link is shown to everyone — the FE holds
               no permission knowledge, and a non-admin opening it sees the server's own refusal in
               plain language (the OPS-1 convention). */}

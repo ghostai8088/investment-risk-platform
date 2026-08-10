@@ -63,7 +63,10 @@ dep-audit:
 # the only claims); it just makes the first gate run start from a tree the formatters have seen.
 fix:
 	$(PY) -m ruff format .
-	$(PY) -m ruff check --fix .
+	# `|| true`: a lint error this cannot auto-fix is `check`'s to REPORT, not this target's to
+	# fail on. `fix` is a convenience that runs BEFORE the gate; making it exit non-zero would
+	# stop the very gate run it exists to prepare.
+	-$(PY) -m ruff check --fix .
 	npm run -w apps/frontend format
 
 check: lint typecheck test secret-scan docs-check

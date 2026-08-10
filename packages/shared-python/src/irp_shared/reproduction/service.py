@@ -28,10 +28,10 @@ anti-pattern NOTIF-1 restructured itself to avoid. So the sweep records verdicts
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -43,9 +43,11 @@ from irp_shared.calc.service import create_run, update_run_status
 from irp_shared.classification.service import canonical_tenant_id
 from irp_shared.notification.events import (
     NO_RECIPIENT_SENTINEL,
+    NOTIFY_CONCLUDING_OUTCOMES,
     NOTIFY_DISPATCH_EVENT,
     NOTIFY_OUTCOME_FAILED,
     NOTIFY_OUTCOME_SENT,
+    NOTIFY_OUTCOME_SKIPPED,
     NOTIFY_OUTCOME_SUPPRESSED,
     SOURCE_MODULE_NOTIFICATION,
 )
@@ -70,6 +72,8 @@ from irp_shared.reproduction.registry import (
     ReproductionUnsupported,
     normalize,
 )
+from irp_shared.scheduling.events import CADENCE_INTERVAL, SCHEDULE_STATUS_ACTIVE
+from irp_shared.scheduling.models import Schedule, ScheduledRun
 
 #: The redaction cap for operator-facing reason text — the ``redact_failure_reason`` bound, reused
 #: so a driver's multi-kilobyte error cannot fill a governed evidence column.
@@ -98,6 +102,44 @@ MAX_ALARM_ATTEMPTS = 5
 #: collapses into, per verdict. One bucket, so an upgrade cannot turn a handful of legacy rows
 #: into a handful of spent retries.
 _PRE_ATTEMPT_ID_HISTORY = "pre-attempt-id-history"
+
+#: ALERT-1 (OQ-ALR-1): the two sweep-failure classes an operator surface must tell APART, hoisted
+#: to constants so the WRITER (the failure-reason builder below) and the READER
+#: (``alarm_channel_health``) share ONE token instead of a grep that drifts.
+#:
+#: The health surface's first design classified these by asking the TENANT's present state ("does
+#: this tenant have any completed reproducible run?"), and both verifier passes killed it: that
+#: question is answered at READ time, not at sweep time, so a genuine infrastructure failure on a
+#: quiet tenant read as "empty by design", and an honest empty-tenant night turned red the moment
+#: the tenant's first real run landed. A run's own durable trace is the only thing that says what
+#: THAT run did.
+#:
+#: They are prefixed sentinels rather than prose fragments because the reason column also carries
+#: exception text from binders, and a bare phrase like "checked NOTHING" could plausibly appear
+#: inside one.
+NOTHING_CHECKED_MARKER = "[REPRO-NOTHING-CHECKED]"
+ALARM_LOST_MARKER = "[REPRO-ALARM-LOST]"
+
+#: The window for the health surface's RATE fields (failed sweeps, lost alarms, undeliverable
+#: attempts). Deliberately NOT applied to ``queued``/``unreadable_rows``/``exhausted_verdicts``:
+#: a still-owed alarm, standing poison, or a silenced verdict must never age out of sight, and
+#: ``queued`` is ``unalarmed_verdicts`` itself, whose horizon the retirement rule owns (its
+#: O(history) cost is carry (k)'s, not paid here — said plainly rather than papered over).
+HEALTH_WINDOW = timedelta(days=7)
+
+#: The non-recipient ``recipient_id`` for the row that records an alarm TRANSACTION failure
+#: (OQ-ALR-3). A DISTINCT sentinel from ``NO_RECIPIENT_SENTINEL``, whose documented meaning is
+#: "no eligible recipient" (SUPPRESSED) — reusing it would make a rollback row assert something
+#: false about the tenant's holder set. Never a real ``app_user.id``.
+ALARM_ROLLBACK_SENTINEL = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+
+#: How a verdict stands with the alarm channel. ONE fold classifies every verdict and BOTH
+#: consumers (the delivery queue and the health surface) read it — the queue's rule has had six
+#: versions, five of them wrong, and a second implementation of it living in a health read is the
+#: drift hazard this project has paid for in other registers.
+VERDICT_ALARM_QUEUED = "QUEUED"  #: still owed a delivery attempt
+VERDICT_ALARM_DELIVERED = "DELIVERED"  #: the latest attempt concluded for everyone it tried
+VERDICT_ALARM_CEILING = "CEILING_RETIRED"  #: retired by MAX_ALARM_ATTEMPTS, never concluded
 
 
 class ReproductionInfrastructureFailure(Exception):
@@ -739,7 +781,8 @@ def run_reproduction_sweep(
         # Alarming material LEADS, because the first clause is what a woken operator reads.
         if outcome.lost_alarms:
             parts.append(
-                f"ALARM LOST — {len(outcome.lost_alarms)} alarming verdict(s) were computed but "
+                f"{ALARM_LOST_MARKER} ALARM LOST — {len(outcome.lost_alarms)} alarming verdict(s) "
+                "were computed but "
                 f"could NOT be recorded, so they were never delivered: "
                 f"{', '.join(outcome.lost_alarms)}. Investigate these FIRST: the sweep judged "
                 "these "
@@ -768,6 +811,7 @@ def run_reproduction_sweep(
             )
         if not failing:
             parts.append(
+                f"{NOTHING_CHECKED_MARKER} "
                 "the reproduction sweep checked NOTHING: no registered family had a COMPLETED run "
                 f"to reproduce (families with a reproducer: "
                 f"{', '.join(sorted(REPRODUCIBLE_FAMILIES))}). A sweep with zero verdicts proves "
@@ -793,6 +837,144 @@ def run_reproduction_sweep(
 
 
 @dataclass(frozen=True)
+class AlarmRow:
+    """One parsed ``NOTIFY.DISPATCH`` row about a reproduction verdict. ``payload is None`` means
+    UNREADABLE — the row exists, and what it says cannot be trusted."""
+
+    entity_id: str
+    sequence_no: int
+    audit_outcome: str
+    #: The audit chain stores this as a canonical UTC ISO-8601 STRING, not a datetime — the hash
+    #: chain is computed over the serialized form, so the column is text by design. Parsed here
+    #: rather than compared as text: lexicographic comparison happens to work for this exact
+    #: format and would break silently the day the format gained an offset variant.
+    event_time: datetime | None
+    payload: dict | None
+
+    @property
+    def notify_outcome(self) -> str | None:
+        return None if self.payload is None else str(self.payload.get("outcome") or "")
+
+    @property
+    def recipient_id(self) -> str | None:
+        return None if self.payload is None else str(self.payload.get("recipient_id") or "")
+
+
+@dataclass(frozen=True)
+class AlarmClassification:
+    """Every verdict's standing with the alarm channel, from ONE fold over the dispatch rows.
+
+    **The single implementation, and why it is not two.** The retirement rule has had six versions,
+    five of which were wrong in ways that reading did not reveal and execution did. A health
+    surface that re-derived "which verdicts were silenced by the ceiling" would be a SECOND
+    implementation of that rule, free to drift from the one the queue actually uses — so the fold
+    classifies once and both consumers read the result.
+    """
+
+    #: verdict id -> VERDICT_ALARM_QUEUED | _DELIVERED | _CEILING
+    state: dict[str, str]
+    #: every parsed row, in the order read (readable and unreadable alike)
+    rows: list[AlarmRow]
+    #: verdict ids with at least one unreadable row
+    poisoned: set[str]
+
+    def entities_in(self, *states: str) -> set[str]:
+        return {eid for eid, st in self.state.items() if st in states}
+
+
+def _parse_event_time(value: object) -> datetime | None:
+    """The stored canonical ISO-8601 string as an aware datetime; ``None`` if it cannot be read.
+
+    Unparseable is treated as OUT of every window rather than raising: a health read must never
+    take down the caller, and a row whose timestamp we cannot read tells us nothing about a rate.
+    """
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _classify_alarm_states(session: Session, *, tenant: str) -> AlarmClassification:
+    """THE fold. Read every dispatch row once; say where each verdict stands.
+
+    The retirement SET is exactly what it was before this classification existed — ``QUEUED`` is
+    the complement of ``DELIVERED | CEILING_RETIRED``, and the two retired labels partition the old
+    ``alarmed`` set. Only the LABEL is new, and it is derived rather than re-decided:
+
+    * **CEILING_RETIRED** iff attempts >= MAX **and** (poisoned **or** the latest attempt did not
+      conclude for everyone it tried) — the bound did the retiring;
+    * **DELIVERED** iff the latest attempt concluded for everyone it tried and the history is not
+      poisoned — the channel did the retiring, even if that happened on the final attempt;
+    * **QUEUED** otherwise.
+
+    The ordering matters and is the ratified one: the ceiling is checked FIRST and
+    UNCONDITIONALLY (a poisoned verdict must still terminate — the Wave-16 close-review BLOCKING),
+    and a delivered-at-the-ceiling verdict is labelled DELIVERED rather than silenced, because
+    calling a successful final delivery "silenced by the bound" would misreport the one number
+    this slice exists to make trustworthy.
+    """
+    rows: list[AlarmRow] = []
+    for entity_id, outcome_value, payload, seq, event_time in session.execute(
+        select(
+            AuditEvent.entity_id,
+            AuditEvent.outcome,
+            AuditEvent.after_value,
+            AuditEvent.sequence_no,
+            AuditEvent.event_time,
+        ).where(
+            AuditEvent.chain_id == tenant,
+            AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
+            AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
+        )
+    ).all():
+        rows.append(
+            AlarmRow(
+                entity_id=str(entity_id),
+                sequence_no=int(seq),
+                audit_outcome=str(outcome_value),
+                event_time=_parse_event_time(event_time),
+                payload=payload if isinstance(payload, dict) else None,
+            )
+        )
+
+    attempts_by_entity: dict[str, dict[str, list[tuple[int, str]]]] = {}
+    poisoned: set[str] = set()
+    for row in rows:
+        # A row whose payload cannot be read RETIRES NOTHING and cannot raise. The failure is
+        # scoped to the ROW (a payload we cannot parse says nothing about any other verdict), and
+        # its direction is FAIL-CLOSED TOWARD ALARMING: if we cannot tell whether a verdict was
+        # delivered, we assume it was not. A repeated alarm is noise; a divergence nobody hears is
+        # the thing this control exists to prevent.
+        if row.payload is None:
+            poisoned.add(row.entity_id)
+            continue
+        # Rows written before `attempt_id` existed collapse into ONE synthetic attempt per verdict
+        # — a bounded UNDERCOUNT. Giving each unkeyed row its own attempt counts UP toward
+        # termination, which is safe for audit VOLUME and DROPS DELIVERIES for an alarm queue.
+        attempt = str(row.payload.get("attempt_id") or _PRE_ATTEMPT_ID_HISTORY)
+        attempts_by_entity.setdefault(row.entity_id, {}).setdefault(attempt, []).append(
+            (row.sequence_no, row.audit_outcome)
+        )
+
+    state: dict[str, str] = {eid: VERDICT_ALARM_QUEUED for eid in poisoned}
+    for entity_id, attempts in attempts_by_entity.items():
+        is_poisoned = entity_id in poisoned
+        # The LATEST attempt, by the audit chain's own monotonic ordering rather than wall clock.
+        latest = max(attempts.values(), key=lambda rows_: max(seq for seq, _ in rows_))
+        concluded = not is_poisoned and all(value == "success" for _, value in latest)
+        if len(attempts) >= MAX_ALARM_ATTEMPTS:
+            state[entity_id] = VERDICT_ALARM_DELIVERED if concluded else VERDICT_ALARM_CEILING
+        elif concluded:
+            state[entity_id] = VERDICT_ALARM_DELIVERED
+        else:
+            state[entity_id] = VERDICT_ALARM_QUEUED
+    return AlarmClassification(state=state, rows=rows, poisoned=poisoned)
+
+
+@dataclass(frozen=True)
 class AlarmChannelHealth:
     """Whether the reproduction alarm channel is WORKING, recomputed from source.
 
@@ -805,37 +987,231 @@ class AlarmChannelHealth:
     RECOMPUTE from source, never infer from an evidence row's presence.** So this counts what is
     actually owed and what is actually broken, rather than reporting "fine" because nothing was
     delivered.
+
+    **ALERT-1 added the question the first version could not ask: is the sweep RUNNING AT ALL?**
+    Every original field counted rows that EXIST, so a dead supervisor — no runs, no verdicts, no
+    dispatch rows — read as perfectly healthy. That is the same inert-control shape the surface was
+    built to expose, turned on the surface itself.
     """
 
+    #: verdicts still owed a delivery attempt. NOT a degradation: a queue in flight is the channel
+    #: working, and reddening on it would flap on every normal sweep-to-phase-5 gap.
     queued: int
+    #: unreadable dispatch rows belonging to verdicts that are STILL QUEUED. Scoped deliberately:
+    #: an audit row is hash-chained and append-only, so poison can never be repaired, and an
+    #: unscoped count would leave a tenant permanently red with no action available — the cry-wolf
+    #: state this surface exists to avoid. Poison on a retired verdict stays visible through
+    #: ``exhausted_verdicts``.
     unreadable_rows: int
+    #: when the newest terminal (COMPLETED or FAILED) reproduction sweep landed; ``None`` if none
+    #: ever has.
+    last_terminal_sweep_at: datetime | None
+    #: an ACTIVE reproduction schedule has missed its own grid tick by more than one full cadence
+    #: period. THE absence signal — the only field that can be true when nothing at all happened.
+    sweep_overdue: bool
+    #: no ACTIVE reproduction schedule exists for this tenant. Informational, not a fault: the
+    #: schedule WRITE path is REPRO-2's, and pointing at a gap is not owning it.
+    no_schedule: bool
+    #: reproduction schedules that exist but are PAUSED. Informational: a paused schedule is a
+    #: decision somebody made, and it must not read as either an outage or an absence.
+    paused_schedules: int
+    #: FAILED sweeps in the window that are NOT the empty-tenant class.
+    failed_sweeps: int
+    #: FAILED sweeps in the window that failed ONLY because there was nothing to reproduce (carry
+    #: (e)): a legitimately-empty tenant fails its nightly sweep BY DESIGN, and an operator surface
+    #: that calls that an incident teaches its operator to ignore it.
+    nothing_to_reproduce: int
+    #: sweeps in the window that computed an alarming verdict and could not record it. The worst
+    #: night this control has: a divergence was JUDGED and then lost.
+    lost_verdicts: int
+    #: durably-recorded FAILED delivery rows in the window, for verdicts still queued or retired by
+    #: the ceiling. A transient failure whose retry succeeded leaves this field — the bounded retry
+    #: system WORKING must not read as broken.
+    undeliverable_attempts: int
+    #: verdicts the ceiling silenced without any attempt ever concluding. The ACCEPTED bound, made
+    #: countable instead of invisible (amber, never red: it is a decision, not a fault).
+    exhausted_verdicts: int
+    #: the channel is not merely degraded but DEAD: verdicts hit the ceiling in the window while
+    #: NOT ONE delivery succeeded in it. Without this clause a totally-dead channel stays amber
+    #: forever, which is the shape that hid the original silence.
+    dead_channel: bool
 
     @property
     def healthy(self) -> bool:
-        """False if ANY delivery row is unparseable — not "false if nothing was delivered".
+        """The enumerated definition — not "nothing happened", and not "any field is nonzero".
 
-        A quiet night and a broken channel are different facts and this is the field that tells
-        them apart.
+        RED: unreadable rows on a live verdict, a lost alarm, a failed sweep, an overdue sweep, or
+        a dead channel. AMBER (visible, not red): retries in flight and ceiling-silenced verdicts.
+        INFORMATIONAL: a queue in flight, no schedule, an empty tenant.
         """
-        return self.unreadable_rows == 0
+        return (
+            self.unreadable_rows == 0
+            and self.lost_verdicts == 0
+            and self.failed_sweeps == 0
+            and not self.sweep_overdue
+            and not self.dead_channel
+        )
 
 
-def alarm_channel_health(session: Session, *, acting_tenant: str) -> AlarmChannelHealth:
+def _cadence_grace(schedule: Schedule) -> timedelta:
+    """One full cadence period, read from the schedule's OWN declared fields.
+
+    Note what this does not do: compute a grid point. Due-ness comes from the scheduler's own
+    ``select_active_due`` — there is exactly one implementation of cadence math in this platform and
+    this is not a second one. This only answers "how long is one period", to say how late is late.
+    """
+    if schedule.cadence_kind == CADENCE_INTERVAL and schedule.interval_days:
+        return timedelta(days=int(schedule.interval_days))
+    # The month-end kinds: one month, taken at its longest so the grace is never too tight.
+    return timedelta(days=31)
+
+
+def _alarming_verdicts(session: Session, *, tenant: str) -> list[ReproductionCheck]:
+    """Every verdict that WANTS an alarm — before asking what happened to it."""
+    return list(
+        session.execute(
+            select(ReproductionCheck)
+            .where(
+                ReproductionCheck.tenant_id == tenant,
+                ReproductionCheck.verdict.in_(sorted(ALARMING_VERDICTS)),
+            )
+            .order_by(ReproductionCheck.system_from, ReproductionCheck.id)
+        ).scalars()
+    )
+
+
+def alarm_channel_health(
+    session: Session, *, acting_tenant: str, now: datetime | None = None
+) -> AlarmChannelHealth:
     """Recompute the alarm channel's health for one tenant, from the rows themselves."""
     tenant = canonical_tenant_id(acting_tenant)
-    unreadable = 0
-    for (payload,) in session.execute(
-        select(AuditEvent.after_value).where(
-            AuditEvent.chain_id == tenant,
-            AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
-            AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
+    at = now or datetime.now(UTC)
+    since = at - HEALTH_WINDOW
+
+    classification = _classify_alarm_states(session, tenant=tenant)
+    retired_ids = classification.entities_in(VERDICT_ALARM_DELIVERED, VERDICT_ALARM_CEILING)
+    ceiling_ids = classification.entities_in(VERDICT_ALARM_CEILING)
+    # QUEUED is asked of the VERDICTS, not of the dispatch rows. The classification only knows
+    # verdicts that have a row, so counting its QUEUED entries missed the most ordinary case in
+    # the system: a divergence recorded minutes ago that phase 5 has not yet reached has NO
+    # dispatch rows at all, and would have read as an empty queue. Caught by this slice's own
+    # tests; worth stating because the same shortcut is what made the ORIGINAL surface unable to
+    # see an absence.
+    queued_ids = {
+        str(check.id) for check in _alarming_verdicts(session, tenant=tenant)
+    } - retired_ids
+
+    # Poison counts only while the verdict it belongs to is still LIVE. An entity we cannot place
+    # at all counts too — fail toward visible.
+    unreadable = sum(
+        1 for row in classification.rows if row.payload is None and row.entity_id not in retired_ids
+    )
+
+    def _in_window(row: AlarmRow) -> bool:
+        return row.event_time is not None and row.event_time >= since
+
+    undeliverable = sum(
+        1
+        for row in classification.rows
+        if row.payload is not None
+        and row.notify_outcome == NOTIFY_OUTCOME_FAILED
+        and _in_window(row)
+        and (row.entity_id in queued_ids or row.entity_id in ceiling_ids)
+    )
+    # DEAD, not merely degraded: something was silenced in the window and nothing at all got
+    # through in it.
+    silenced_in_window = any(
+        row.entity_id in ceiling_ids and _in_window(row) for row in classification.rows
+    )
+    delivered_in_window = any(
+        row.payload is not None and row.notify_outcome == NOTIFY_OUTCOME_SENT and _in_window(row)
+        for row in classification.rows
+    )
+
+    # --- the sweeps themselves ------------------------------------------------------------------
+    failed_total = 0
+    nothing_to_reproduce = 0
+    lost = 0
+    for (reason,) in session.execute(
+        select(CalculationRun.failure_reason).where(
+            CalculationRun.tenant_id == tenant,
+            CalculationRun.run_type == RUN_TYPE_REPRODUCTION,
+            CalculationRun.status == RunStatus.FAILED.value,
+            CalculationRun.created_at >= since,
         )
     ).all():
-        if not isinstance(payload, dict):
-            unreadable += 1
+        text = reason or ""
+        if NOTHING_CHECKED_MARKER in text:
+            # Emitted ONLY when no family had a failing disposition — the pure empty-tenant night.
+            # It is therefore mutually exclusive with the ALARM LOST marker by construction, and a
+            # test asserts that so the exclusivity cannot rot.
+            nothing_to_reproduce += 1
+        else:
+            failed_total += 1
+        if ALARM_LOST_MARKER in text:
+            lost += 1
+    last_terminal = session.execute(
+        select(
+            func.max(func.coalesce(CalculationRun.completed_at, CalculationRun.created_at))
+        ).where(
+            CalculationRun.tenant_id == tenant,
+            CalculationRun.run_type == RUN_TYPE_REPRODUCTION,
+            CalculationRun.status.in_([RunStatus.COMPLETED.value, RunStatus.FAILED.value]),
+        )
+    ).scalar()
+
+    # --- is it even scheduled to run? ------------------------------------------------------------
+    schedules = list(
+        session.execute(
+            select(Schedule).where(
+                Schedule.tenant_id == tenant,
+                Schedule.target_run_type == RUN_TYPE_REPRODUCTION,
+            )
+        ).scalars()
+    )
+    active = [s for s in schedules if s.status == SCHEDULE_STATUS_ACTIVE]
+    paused = len(schedules) - len(active)
+    # Due-ness from the SCHEDULER's own selection (it skips-and-reports an unresolvable cadence
+    # rather than raising — a health read must never take the tick down). A schedule appears here
+    # only if its CURRENT grid tick has not fired; overdue adds "and that tick is more than one
+    # full period old", which is also what makes a freshly-created schedule inside its first
+    # period NOT overdue.
+    overdue = False
+    for schedule in active:
+        # Per SCHEDULE, not per tenant (verifier pass 2): a tenant with two reproduction schedules
+        # where one has gone silent must not read healthy because the other one fired.
+        last_fire = session.execute(
+            select(func.max(ScheduledRun.fired_at)).where(
+                ScheduledRun.schedule_id == schedule.id,
+                ScheduledRun.tenant_id == tenant,
+            )
+        ).scalar()
+        # A schedule that has never fired is measured from its own anchor — which is what makes a
+        # freshly-created schedule inside its first period NOT overdue, rather than instantly red.
+        baseline = _parse_event_time(last_fire) or _parse_event_time(schedule.anchor_date)
+        if baseline is None:
+            continue
+        period = _cadence_grace(schedule)
+        # Cadence PLUS a grace bound of one full period: one missed tick is a gap, two is a
+        # pattern. Deliberately forgiving — a health surface that cries wolf gets ignored, and the
+        # thing this field exists to catch (a supervisor that has stopped) does not self-heal.
+        if at - baseline > period * 2:
+            overdue = True
+            break
+
     return AlarmChannelHealth(
-        queued=len(unalarmed_verdicts(session, acting_tenant=tenant)),
+        queued=len(queued_ids),
         unreadable_rows=unreadable,
+        last_terminal_sweep_at=last_terminal,
+        sweep_overdue=overdue,
+        no_schedule=not active,
+        paused_schedules=paused,
+        failed_sweeps=failed_total,
+        nothing_to_reproduce=nothing_to_reproduce,
+        lost_verdicts=lost,
+        undeliverable_attempts=undeliverable,
+        exhausted_verdicts=len(ceiling_ids),
+        dead_channel=silenced_in_window and not delivered_in_window,
     )
 
 
@@ -878,96 +1254,13 @@ def unalarmed_verdicts(session: Session, *, acting_tenant: str) -> list[Reproduc
     one bucket and silently restored the count-the-rows defect).
     """
     tenant = canonical_tenant_id(acting_tenant)
-    attempts_by_entity: dict[str, dict[str, list[tuple[int, str]]]] = {}
-    unreadable_rows: list[str] = []
-    for entity_id, outcome_value, payload, seq in session.execute(
-        select(
-            AuditEvent.entity_id,
-            AuditEvent.outcome,
-            AuditEvent.after_value,
-            AuditEvent.sequence_no,
-        ).where(
-            AuditEvent.chain_id == tenant,
-            AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
-            AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
-        )
-    ).all():
-        # Rows written before `attempt_id` existed collapse into ONE synthetic attempt per verdict.
-        #
-        # The first draft gave each unkeyed row its own attempt, with a comment calling that
-        # "conservative in the safe direction (it counts UP, toward termination)". **That comment
-        # was backwards, and the independent review executed why.** Counting up is the safe
-        # direction for
-        # AUDIT VOLUME; for an ALARM QUEUE it DROPS DELIVERIES, and it resurrected both of the
-        # defects this rule exists to kill, at the upgrade boundary:
-        #
-        #   * one pre-upgrade FAILED tick with five recipients is five rows — five "attempts" — so
-        #     the verdict retired the instant v6 deployed, with zero retries ever taken. That is
-        #     v3's
-        #     BLOCKING zero-retry shape, reached through a migration rather than through the rule.
-        #   * a pre-upgrade PARTIAL tick retired or not depending on which row happened to be
-        #     written
-        #     last: a lone success row with the higher sequence_no is a singleton "latest attempt",
-        #     all-success, so the same real tick's unreached recipient was silenced. That is v4,
-        #     order-dependent.
-        #
-        # Collapsing instead is a bounded UNDERCOUNT — the whole pre-v6 history costs one budget
-        # unit — and a mixed history can never masquerade as an all-success latest attempt. Narrowly
-        # reachable (only a deployment holding live un-retired rows at upgrade, and no production
-        # deployment exists), fixed anyway: a load-bearing comment that is false is itself a defect.
-        # A row whose payload cannot be read RETIRES NOTHING, and cannot raise.
-        #
-        # This fold reads a JSON column, and the FROZEN `record_event` will persist a bare string
-        # there for any buggy caller. The first shape let that raise: the exception escaped the
-        # fold, the worker caught it one level up, and phase 5 returned an empty list — which every
-        # consumer reads as "nothing to alarm". ONE malformed row, about ANY entity, then silenced
-        # the whole tenant's alarm channel on every subsequent tick, permanently, with a log line as
-        # the only trace. The Wave-16 close review reproduced it with a poison row about an
-        # UNRELATED entity and watched a genuine divergence created afterwards go unalarmed across
-        # five consecutive ticks.
-        #
-        # Two properties, and the second is the one that matters for a DETECTIVE control:
-        #   * the failure is scoped to the ROW — a payload we cannot parse tells us nothing about
-        #     any other verdict, so it must not affect any other verdict;
-        #   * the direction is FAIL-CLOSED TOWARD ALARMING. If we cannot tell whether a verdict was
-        #     delivered, we assume it was NOT and leave it queued. A repeated alarm is noise; a
-        #     divergence nobody hears is the thing this control exists to prevent.
-        if not isinstance(payload, dict):
-            unreadable_rows.append(str(entity_id))
-            continue
-        attempt = str(payload.get("attempt_id") or _PRE_ATTEMPT_ID_HISTORY)
-        attempts_by_entity.setdefault(str(entity_id), {}).setdefault(attempt, []).append(
-            (int(seq), str(outcome_value))
-        )
-
-    alarmed: set[str] = set()
-    poisoned = set(unreadable_rows)
-    for entity_id, attempts in attempts_by_entity.items():
-        # ORDER MATTERS, and the first draft of this fold had it backwards: the poisoned skip sat
-        # FIRST, which quietly disabled the attempts backstop for exactly the poisoned class — one
-        # permanently-malformed row and the verdict re-alarmed every tick forever (executed at the
-        # close-fold review: ten ticks, ten pages, never retired). That is v5's non-termination
-        # defect on a new trigger. The ratified v6 rule is "retire when the latest attempt
-        # concluded for everyone it tried, OR after MAX attempts" — and the OR-clause is
-        # UNCONDITIONAL, which is what checking it first restores. The attempts counted here are
-        # readable rows only (the poison row itself joins no attempt), so a poisoned verdict still
-        # gets its MAX real deliveries before retiring: fail-closed toward alarming, but BOUNDED.
-        if len(attempts) >= MAX_ALARM_ATTEMPTS:
-            alarmed.add(entity_id)
-            continue
-        if entity_id in poisoned:
-            # Some row for THIS verdict was unparseable, so its delivery history is incomplete and
-            # no SUCCESS conclusion drawn from the rest of it is trustworthy. Stay queued — the
-            # attempts ceiling above, not an inferred delivery, is the only way out.
-            continue
-        # The LATEST attempt, by the audit chain's own monotonic ordering rather than by wall clock.
-        latest = max(attempts.values(), key=lambda rows: max(seq for seq, _ in rows))
-        if all(outcome_value == "success" for _, outcome_value in latest):
-            # Everyone that attempt tried concluded — SENT, or SUPPRESSED because there was nobody
-            # to tell. A partial delivery does NOT retire it: the holders who were not reached are
-            # exactly the point of retrying.
-            alarmed.add(entity_id)
-
+    alarmed = _classify_alarm_states(session, tenant=tenant).entities_in(
+        VERDICT_ALARM_DELIVERED, VERDICT_ALARM_CEILING
+    )
+    # The fold that answers this lives in `_classify_alarm_states` — ONE implementation, read
+    # here and by `alarm_channel_health`. It was inlined in this function until ALERT-1; a
+    # health surface that re-derived the same rule would have been free to drift from the rule
+    # the queue actually enforces, and this rule's six-version history is the argument.
     rows = (
         session.execute(
             select(ReproductionCheck)
@@ -983,6 +1276,38 @@ def unalarmed_verdicts(session: Session, *, acting_tenant: str) -> list[Reproduc
     return [row for row in rows if str(row.id) not in alarmed]
 
 
+def already_delivered_recipients(session: Session, *, check_id: str, tenant: str) -> set[str]:
+    """Recipients whose OWN durable state for THIS verdict is already-delivered (OQ-ALR-4).
+
+    **Scoped to the verdict, and that scoping is the whole safety property.** A recipient-only read
+    would match rows about OTHER verdicts, so a recipient already told about last night's
+    divergence would be skipped for tonight's NEW one — and the skip's own concluding row would
+    then retire it. A silent alarm drop hidden behind a row asserting success is the worst shape
+    this file can produce; the ``entity_id`` predicate is what makes it unreachable.
+
+    Doubt always resolves to PAGE, never to skip: an unreadable payload, a missing recipient key,
+    an outcome this code does not recognise, or either sentinel simply does not enter the set.
+    """
+    delivered: set[str] = set()
+    for (payload,) in session.execute(
+        select(AuditEvent.after_value).where(
+            AuditEvent.chain_id == tenant,
+            AuditEvent.event_type == NOTIFY_DISPATCH_EVENT,
+            AuditEvent.entity_type == ENTITY_REPRODUCTION_CHECK,
+            AuditEvent.entity_id == str(check_id),
+        )
+    ).all():
+        if not isinstance(payload, dict):
+            continue
+        recipient = str(payload.get("recipient_id") or "")
+        outcome = str(payload.get("outcome") or "")
+        if not recipient or recipient in (NO_RECIPIENT_SENTINEL, ALARM_ROLLBACK_SENTINEL):
+            continue
+        if outcome in (NOTIFY_OUTCOME_SENT, NOTIFY_OUTCOME_SKIPPED):
+            delivered.add(recipient)
+    return delivered
+
+
 def alarm_for_verdict(
     session: Session,
     *,
@@ -990,6 +1315,7 @@ def alarm_for_verdict(
     sink: NotificationSink,
     acting_tenant: str,
     now: datetime | None = None,
+    attempt_id: str | None = None,
 ) -> str:
     """Deliver ONE divergence alarm and record the attempt. Returns the NOTIFY outcome.
 
@@ -1001,17 +1327,28 @@ def alarm_for_verdict(
     A zero-recipient tenant records a SUPPRESSED attempt rather than nothing. "Nobody was
     configured to hear this" is a fact an operator needs; silence would be indistinguishable from
     a healthy night.
+
+    **The courtesy skip (ALERT-1, OQ-ALR-4).** A recipient already told about THIS verdict is not
+    POSTed again — retry the wire, not the audience — but a skipped recipient still emits a durable
+    CONCLUDING row (``SKIPPED``). That row is not bookkeeping: the retirement rule is a pure
+    function of these rows, so a skip that recorded nothing would make an all-skipped attempt emit
+    zero rows, and neither retirement clause could ever fire again. Three independent verifier
+    lanes found that in the design before any code existed; it is the v5 non-termination defect,
+    reachable through the delivery loop.
+
+    ``attempt_id`` is supplied by the CALLER (the worker) so that a transaction which rolls back
+    can still record its failure under the same attempt — see ``record_alarm_transaction_failure``.
+    It defaults to a fresh id for direct callers and tests.
     """
     from irp_shared.entitlement.service import holders_of_permission
 
     tenant = canonical_tenant_id(acting_tenant)
     # ONE id for this ATTEMPT, stamped onto every row this call emits — the grouping key
-    # `unalarmed_verdicts` counts. It is minted here, at the call boundary, precisely because an
-    # "attempt" is one invocation of this function: whatever the holder set happens to be, whatever
-    # succeeds and whatever fails, it is one thing this system did. Deriving that grouping from the
-    # rows afterwards is what five previous versions of the queue tried, and the recipient
-    # population moves underneath any such derivation.
-    attempt_id = str(uuid4())
+    # `unalarmed_verdicts` counts. An "attempt" is one invocation of this function: whatever the
+    # holder set happens to be, whatever succeeds and whatever fails, it is one thing this system
+    # did. Deriving that grouping from the rows afterwards is what five previous versions of the
+    # queue tried, and the recipient population moves underneath any such derivation.
+    attempt_id = attempt_id or str(uuid4())
     recipients = holders_of_permission(
         session, permission_code=ALARM_RECIPIENT_PERMISSION, acting_tenant=tenant
     )
@@ -1029,9 +1366,19 @@ def alarm_for_verdict(
         )
         return NOTIFY_OUTCOME_SUPPRESSED
 
+    # Who has already been told about THIS verdict. Read once, before any delivery.
+    told = already_delivered_recipients(session, check_id=str(check.id), tenant=tenant)
+
     # PHASE A — every delivery first, no audit emit yet (nothing holds the advisory lock).
     attempts: list[tuple[str, str, str | None]] = []
     for recipient_id in recipients:
+        if recipient_id in told:
+            # Courtesy skip: no wire call, and a CONCLUDING row all the same. The payload outcome
+            # is SKIPPED rather than SENT because no sink accepted anything — a row claiming SENT
+            # for a call that never happened is the false-record class this family has refused
+            # twice (the Wave-12 honesty doctrine).
+            attempts.append((recipient_id, NOTIFY_OUTCOME_SKIPPED, "already delivered"))
+            continue
         message = NotificationMessage(
             tenant_id=tenant,
             recipient_id=recipient_id,
@@ -1062,10 +1409,64 @@ def alarm_for_verdict(
             now=now,
             attempt_id=attempt_id,
         )
-    return (
-        NOTIFY_OUTCOME_SENT
-        if any(o == NOTIFY_OUTCOME_SENT for _, o, _ in attempts)
-        else (NOTIFY_OUTCOME_FAILED)
+    outcomes = {o for _, o, _ in attempts}
+    if NOTIFY_OUTCOME_SENT in outcomes:
+        return NOTIFY_OUTCOME_SENT
+    # Every recipient had already been told: the attempt concluded without touching the wire.
+    if outcomes == {NOTIFY_OUTCOME_SKIPPED}:
+        return NOTIFY_OUTCOME_SKIPPED
+    return NOTIFY_OUTCOME_FAILED
+
+
+def record_alarm_transaction_failure(
+    session: Session,
+    *,
+    check_id: str,
+    acting_tenant: str,
+    attempt_id: str,
+    reason: str,
+    channel: str,
+    now: datetime | None = None,
+) -> None:
+    """Record that an alarm TRANSACTION failed, in a SIBLING transaction (OQ-ALR-3, carry (q)).
+
+    ``MAX_ALARM_ATTEMPTS`` counts durably-recorded attempts, and a transaction that rolls back
+    records nothing — so before ALERT-1 that path retried every tick forever, invisibly. Recording
+    the failure inside the transaction that just failed is not available; recording it in the NEXT
+    one is, and it needs no new rule: the row carries the SAME ``attempt_id`` the failed call was
+    given, so the existing bound counts it like any other attempt and the existing surface shows
+    it.
+
+    The caller supplies ``attempt_id`` because it minted it — that is the whole reason the mint
+    moved to the worker boundary.
+
+    If THIS write also fails, nothing durable is possible by definition (the database is gone) and
+    the supervisor's own tick failure is the outer signal. Stated, not silently hoped for.
+    """
+    tenant = canonical_tenant_id(acting_tenant)
+    record_event(
+        session,
+        tenant_id=tenant,
+        event_type=NOTIFY_DISPATCH_EVENT,
+        action=ACTION_RECORD,
+        entity_type=ENTITY_REPRODUCTION_CHECK,
+        entity_id=str(check_id),
+        actor_id="reproduction-alarm",
+        actor_type="SYSTEM",
+        source_module=SOURCE_MODULE_NOTIFICATION,
+        severity="warning",
+        outcome="failure",
+        after_value={
+            # A DISTINCT sentinel from the no-recipient one: this row makes no claim about the
+            # tenant's holder set, and reusing the SUPPRESSED sentinel would have it assert one.
+            "recipient_id": ALARM_ROLLBACK_SENTINEL,
+            "recipient_reason": "alarm transaction rolled back",
+            "channel": channel,
+            "outcome": NOTIFY_OUTCOME_FAILED,
+            "detail": _redact(reason),
+            "attempt_id": attempt_id,
+        },
+        event_time=now,
     )
 
 
@@ -1108,15 +1509,18 @@ def _emit_dispatch(
         # alarm permission. Only a FAILED delivery — the wire broke — is a failure, and only that
         # is worth retrying. Ratified 2026-08-07: retry the wire, not the audience.
         #
-        # Written as a TOTAL mapping over the two concluding values rather than as "not FAILED",
-        # because `success` is now the TERMINAL branch: `unalarmed_verdicts` retires a verdict the
-        # instant one such row exists. The negated form defaulted an unrecognised outcome to
-        # `success`, so the first time a fourth NOTIFY outcome is minted — this family has already
-        # grown a SUPPRESSED sentinel once — it would have silently and permanently retired every
-        # divergence it touched, with no test failing. This form fails CLOSED on an unknown value.
-        outcome=(
-            "success" if outcome in (NOTIFY_OUTCOME_SENT, NOTIFY_OUTCOME_SUPPRESSED) else "failure"
-        ),
+        # Written as a TOTAL mapping over the CONCLUDING values rather than as "not FAILED",
+        # because `success` is the TERMINAL branch: the queue retires a verdict the instant one
+        # such row exists. The negated form defaulted an unrecognised outcome to `success`, so the
+        # first time a fourth NOTIFY outcome is minted it would have silently and permanently
+        # retired every divergence it touched, with no test failing. This form fails CLOSED on an
+        # unknown value.
+        #
+        # ALERT-1 minted that fourth outcome (`SKIPPED`) and this is where the prediction came
+        # due: the mapping reads the ONE declared set of concluding outcomes rather than
+        # re-enumerating them here, so the vocabulary and its consequence cannot drift apart, and
+        # a FIFTH value still fails closed.
+        outcome=("success" if outcome in NOTIFY_CONCLUDING_OUTCOMES else "failure"),
         after_value={
             "verdict": check.verdict,
             "family_key": check.family_key,

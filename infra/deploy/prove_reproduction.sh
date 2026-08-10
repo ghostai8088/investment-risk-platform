@@ -91,6 +91,8 @@ seed_out=$($COMPOSE run --rm -e IRP_ALLOW_PROOF_SEED=1 --entrypoint python migra
 echo "$seed_out"
 SCHEDULE_A=$(field SCHEDULE_A "$seed_out")
 [ -n "$SCHEDULE_A" ] || die "the seed did not emit a schedule id"
+HEALTH_READER_ID=$(field HEALTH_READER_ID "$seed_out")
+ALARM_RECIPIENT_ID=$(field ALARM_RECIPIENT_ID "$seed_out")
 
 log "2. THE DEPLOYED WORKER TICKS — its database path, executed for the first time"
 # The one-shot entrypoint (retained at CAD-1 for exactly this): one tenant, one tick, exit 0.
@@ -154,7 +156,47 @@ printf '%s' "$outcomes_alarm" | grep -q "SENT" \
 [ "$trigger" = "1" ] || die "the append-only trigger is not ENABLED after the plant (tgenabled != 'O')"
 echo "   the divergence was DETECTED, DELIVERED (${outcomes_alarm}), and the fence is back"
 
+log "5. ALERT-1: the alarm channel's own HEALTH, read over HTTP on the deployed stack"
+# The backend is not otherwise part of this proof — the arms above run through the worker — so it
+# comes up here. Without it the health route could not be exercised at all, and an arm that cannot
+# run is an arm that proves nothing (the C20 finding at the design's first verifier pass).
+$COMPOSE up -d backend >/dev/null
+BACKEND_PORT="${BACKEND_PORT:-8000}"
+ok=0
+for _ in $(seq 1 30); do
+  if curl -fsS "http://localhost:${BACKEND_PORT}/health" >/dev/null 2>&1; then ok=1; break; fi
+  sleep 1
+done
+[ "$ok" = "1" ] || die "the backend never became healthy"
+
+[ -n "$HEALTH_READER_ID" ] || die "the seed emitted no HEALTH_READER_ID"
+health=$(curl -sS -w '\n%{http_code}' "http://localhost:${BACKEND_PORT}/reproduction/alarm-health" \
+  -H "X-User-Id: ${HEALTH_READER_ID}" -H "X-Tenant-Id: ${PROOF_TENANT}")
+code=$(printf '%s' "$health" | tail -1)
+body=$(printf '%s' "$health" | sed '$d')
+[ "$code" = "200" ] || die "the schedule.view holder got ${code} on the health route: ${body}"
+# The channel just delivered a real divergence through the real sink, so it must READ as working.
+# A surface that cannot say "healthy" after a successful night cannot say "unhealthy" credibly.
+printf '%s' "$body" | grep -q '"healthy":true' \
+  || die "the alarm channel reads UNHEALTHY after a night it demonstrably worked: ${body}"
+printf '%s' "$body" | grep -q '"sweep_overdue":false' \
+  || die "a sweep that fired minutes ago reads as OVERDUE: ${body}"
+# Counts-only: the payload must not carry verdict content (carry (n)'s boundary, live).
+printf '%s' "$body" | grep -q 'first_divergence' \
+  && die "the health payload leaked verdict CONTENT: ${body}"
+echo "   schedule.view holder -> 200, healthy=true, counts-only"
+
+# The refusal twins (P18). Being PAGED by the channel does not entitle you to audit it.
+recipient_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+  "http://localhost:${BACKEND_PORT}/reproduction/alarm-health" \
+  -H "X-User-Id: ${ALARM_RECIPIENT_ID}" -H "X-Tenant-Id: ${PROOF_TENANT}")
+[ "$recipient_code" = "403" ] || die "the breach.review-only recipient got ${recipient_code} on the health route — expected 403"
+bare_code=$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${BACKEND_PORT}/reproduction/alarm-health")
+[ "$bare_code" = "401" ] || die "an unauthenticated health read got ${bare_code}, not 401"
+echo "   alarm recipient -> 403; bare -> 401 (the fence, live)"
+
 log "REPRODUCTION PROVEN ON THE DEPLOYED STACK — a scheduled worker tick re-derived a governed
     artifact from its pinned inputs and reported MATCH; a planted divergence made the same
     machinery report DIVERGED and raise an alarm. The worker's database path executed for the
-    first time (RPT-2 carry b)."
+    first time (RPT-2 carry b). AND the channel's own health is now readable over HTTP, with its
+    permission fence proven live (ALERT-1)."

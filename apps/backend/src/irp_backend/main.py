@@ -43,6 +43,7 @@ from irp_backend.api.reference_corporate_actions import (
 from irp_backend.api.reference_entities import router as reference_entities_router
 from irp_backend.api.reference_instruments import router as reference_instruments_router
 from irp_backend.api.reports import router as reports_router
+from irp_backend.api.reproduction import router as reproduction_router
 from irp_backend.api.risk import router as risk_router
 from irp_backend.api.schedules import router as schedules_router
 from irp_backend.api.snapshots import router as snapshots_router
@@ -107,3 +108,5 @@ app.include_router(schedules_router)
 app.include_router(reports_router)
 app.include_router(tenants_router)
 app.include_router(tenant_admin_router)
+# ALERT-1: the alarm channel's own health becomes reachable (the six carries' host).
+app.include_router(reproduction_router)
