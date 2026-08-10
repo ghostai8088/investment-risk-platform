@@ -63,7 +63,6 @@ ANONYMOUS_ROUTES: set[tuple[str, str]] = {
 UNROUTED_FORWARD_GATES: dict[str, str] = {
     "liquidity.run": "LQ-1 ships four READS; a run endpoint MUST carry this code when it lands "
     "(the catalog comment at entitlement/bootstrap.py is the binding record)",
-    "schedule.manage": "SCH-1 ships no schedule API; the maker verb gates the future endpoint",
     "lineage.source.manage": "lineage sources are managed via ingestion bootstrap only; no HTTP "
     "maker verb has ever shipped",
     "ops.audit.verify": "consumed by the audit_verify ops CLI, not by an HTTP route — the one "
@@ -75,7 +74,8 @@ UNROUTED_FORWARD_GATES: dict[str, str] = {
 #: The measured route count at RPT-2 (2026-08-07). Moves CONSCIOUSLY with each slice that adds or
 #: removes routes — the point is that it can never silently be zero (the vacuous-walk trap) or
 #: silently shrink (a router falling out of main.py, the CI-allowlist drift class).
-EXPECTED_ROUTE_COUNT = 301  # +1 ONBOARD-1a; +8 ONBOARD-1b; +1 ALERT-1 (GET alarm-health)
+# +1 ONBOARD-1a; +8 ONBOARD-1b; +1 ALERT-1; +4 REPRO-2 (3 schedule writes + the verdict read)
+EXPECTED_ROUTE_COUNT = 305
 
 
 def _api_routes(routes: Any) -> Iterator[APIRoute]:

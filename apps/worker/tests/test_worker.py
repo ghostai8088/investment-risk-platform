@@ -50,11 +50,29 @@ def test_parse_tenant_ids_skips_blanks_and_dedupes_preserving_order() -> None:
     assert parse_tenant_ids(raw) == [_A, _B]
 
 
-def test_parse_tenant_ids_skips_malformed_and_reports_it() -> None:
+def test_parse_tenant_ids_REFUSES_a_malformed_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CAD-1 OQ-3=A skip-and-continue behavior, SUPERSEDED at REPRO-2 — rewritten as the
+    supersession's twin rather than deleted, because the reason it changed is the point.
+
+    Under config-as-the-tenant-set, dropping one fat-fingered id left the other tenants ticking
+    and an all-bad list fell through to the empty-list refusal: a bounded loss. Under registry
+    discovery an empty parse means "no restriction", so skipping a typo would silently widen the
+    filter to EVERY tenant — the looks-configured-but-isn't state CAD-1 FOLD-2 ratified against,
+    inverted into over-ticking. A typo is now a refusal.
+
+    The `on_bad` callback still fires first, so the offending entry is NAMED before the refusal.
+    """
     bad: list[str] = []
-    result = parse_tenant_ids(f"{_A},garbage,{_B}", on_bad=lambda e, _exc: bad.append(e))
-    assert result == [_A, _B]  # the valid ones survive (OQ-3=A)
-    assert bad == ["garbage"]
+    with pytest.raises(TenantIdError):
+        parse_tenant_ids(f"{_A},garbage,{_B}", on_bad=lambda e, _exc: bad.append(e))
+    assert bad == ["garbage"], "the refusal did not name the offending entry first"
+
+
+def test_parse_tenant_ids_ignores_blanks_but_not_typos() -> None:
+    """A trailing comma is not a typo; `not-a-uuid` is. The discriminating pair."""
+    assert parse_tenant_ids(f"{_A}, ,{_B},") == [_A, _B]
+    with pytest.raises(TenantIdError):
+        parse_tenant_ids(f"{_A},not-a-uuid")
 
 
 def test_parse_tenant_ids_empty_is_empty_list() -> None:
@@ -170,16 +188,56 @@ def test_supervisor_main_missing_db_url(monkeypatch) -> None:  # type: ignore[no
     assert supervisor_main([]) == 2
 
 
-def test_supervisor_main_empty_tenant_ids_fails_closed(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_supervisor_main_empty_tenant_ids_reaches_discovery_and_an_unreadable_registry_refuses(
+    monkeypatch,  # type: ignore[no-untyped-def]
+    capsys,
+) -> None:
+    """The CAD-1 FOLD-2 empty-list refusal at main(), SUPERSEDED at REPRO-2 — rewritten as the
+    supersession's twin, and this rewrite was forced by CI, not by the blast-radius sweep.
+
+    The old test asserted exit 2 on an empty IRP_TENANT_IDS and KEPT PASSING locally after the
+    supersession — through a completely different refusal that happens to share the exit code
+    (the fake DB URL made the STARTUP REGISTRY READ refuse). CI, with no psycopg installed,
+    surfaced the truth: the test was reaching engine creation, which the behavior it claimed to
+    pin never did. So this pins the MESSAGE, not just the code: an empty filter must NOT die at
+    env-parse (no 'no valid tenants'), and an unreadable registry at startup refuses as ITSELF.
+    """
+    import irp_worker.supervisor as sup
+
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://x/y")
     monkeypatch.setenv("IRP_TENANT_IDS", "")
-    assert supervisor_main([]) == 2  # FOLD-2: an empty list is refused, not silently idle
 
+    class _DeadSession:
+        def execute(self, *_a: object, **_k: object) -> object:
+            raise RuntimeError("registry unreachable")
 
-def test_supervisor_main_all_malformed_tenant_ids_fails_closed(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://x/y")
-    monkeypatch.setenv("IRP_TENANT_IDS", "garbage,also-bad")  # all skipped → empty → fail closed
+        def __enter__(self) -> _DeadSession:
+            return self
+
+        def __exit__(self, *_a: object) -> None:
+            return None
+
+    class _DeadEngine:
+        def dispose(self) -> None:
+            return None
+
+    monkeypatch.setattr(sup, "make_engine", lambda _url: _DeadEngine())
+    monkeypatch.setattr(sup, "make_session_factory", lambda _e: _DeadSession)
     assert supervisor_main([]) == 2
+    err = capsys.readouterr().err
+    assert "could not be read" in err, "the refusal was not the startup-registry one"
+    assert "no valid tenants" not in err, "the superseded empty-list refusal came back"
+
+
+def test_supervisor_main_a_malformed_tenant_id_fails_closed(monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    # REPRO-2 strict parse: the entry itself refuses (never 'all skipped → empty → fail closed',
+    # which was the CAD-1 shape this test used to describe). Refusal happens BEFORE any engine
+    # exists, and the message names the parse — pinned so this cannot pass through a later
+    # refusal that shares the exit code.
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://x/y")
+    monkeypatch.setenv("IRP_TENANT_IDS", "garbage,also-bad")
+    assert supervisor_main([]) == 2
+    assert "malformed tenant id" in capsys.readouterr().err
 
 
 # ----------------------------------------------------- L4: defensive tick canonicalization ---

@@ -133,28 +133,58 @@ fi
 # is to FAIL CLOSED at startup rather than idle silently (CAD-1 FOLD-2). So that is what gets
 # proven: the worker must start, refuse LOUDLY with the documented message, and exit non-zero.
 # A worker that comes up green here would be the defect.
-log "8. the worker: with no tenants configured it must FAIL CLOSED, not idle"
+log "8. the worker on an EMPTY platform: it must start, IDLE LOUDLY, and keep polling"
+# **This assertion INVERTED at REPRO-2 (ratified 2026-08-10), and the inversion is the point.**
+# It used to require the worker to REFUSE (exit 2, "no valid tenants") on an unconfigured tenant
+# list, because under CAD-1 the tenant list WAS deploy config and an empty one could only be a
+# misconfiguration. Under registry-driven discovery the same input means something different and
+# TRUE: a freshly deployed platform has no tenants yet. Refusing there would make the platform's
+# ignition depend on restart orchestration — the worker would crash-loop until somebody onboarded
+# a tenant.
+#
+# What did NOT change is the property CAD-1 was protecting: a silently-idle engine. The worker
+# must SAY it is idle, every cycle. So this step now bounds the run (IRP_MAX_CYCLES — the seam
+# added for exactly this proof, since a polling supervisor otherwise never exits) and asserts the
+# announcement rather than the exit code.
+#
+# The fail-closed arms did not disappear either; they moved to the states that are genuinely
+# wrong, and step 8b below proves one of them live.
 set +e
-wout=$($COMPOSE run --rm --no-deps worker 2>&1)
+wout=$($COMPOSE run --rm --no-deps -e IRP_MAX_CYCLES=2 -e IRP_TICK_INTERVAL_SECONDS=1 worker 2>&1)
 wrc=$?
 set -e
-if [ "$wrc" -eq 0 ]; then
-  log "FAILED: the worker STARTED with no tenants configured — a silently-idle engine is the exact failure CAD-1 refuses"
-  exit 1
-fi
-# The worker has TWO fail-closed layers and the FIRST execution of this step proved I had asserted
-# the wrong one: the entrypoint (main) refuses at env-parse with EXIT 2 and "no valid tenants",
-# BEFORE run_supervisor's "refusing to start a silently-idle engine" (defence-in-depth for
-# programmatic callers) can ever fire. The assertion was written from READING the supervisor module;
-# EXECUTING the container corrected it. Exit code 2 is pinned deliberately — a crash tracebacks out
-# with exit 1, so 2 discriminates the governed refusal from an ordinary death.
-if [ "$wrc" -ne 2 ] || ! printf '%s' "$wout" | grep -q "no valid tenants"; then
-  log "FAILED: the worker exited (${wrc}) but NOT via the documented env-parse refusal — it died for some other reason"
+if [ "$wrc" -ne 0 ]; then
+  log "FAILED: the worker did not complete its bounded run on an empty platform (exit ${wrc})"
   printf '%s\n' "$wout" | tail -15
   exit 1
 fi
-echo "   worker refused loudly (exit ${wrc}, the documented no-valid-tenants refusal)"
+if ! printf '%s' "$wout" | grep -q "no ACTIVE tenants in the registry"; then
+  log "FAILED: the worker was idle and did NOT SAY SO — a silently-idle engine is the exact failure CAD-1 refused, and registry discovery does not get to reintroduce it"
+  printf '%s\n' "$wout" | tail -15
+  exit 1
+fi
+echo "   worker idled LOUDLY on an empty registry and polled again (exit 0, announcement present)"
+
+log "8b. the worker with a MISCONFIGURED restriction: it must still FAIL CLOSED"
+# The retained half of CAD-1 FOLD-2. A filter naming a tenant the registry does not know is a
+# definite misconfiguration — ticking the remainder silently would be the looks-configured-but-
+# isn't state — so this refuses, and the deploy proves it rather than trusting the unit tier.
+set +e
+bout=$($COMPOSE run --rm --no-deps -e IRP_TENANT_IDS=99999999-9999-4999-8999-999999999999 worker 2>&1)
+brc=$?
+set -e
+if [ "$brc" -eq 0 ]; then
+  log "FAILED: the worker STARTED with a restriction naming an unknown tenant — the filter silently shrank to nothing"
+  exit 1
+fi
+if ! printf '%s' "$bout" | grep -q "the registry does not know"; then
+  log "FAILED: the worker exited (${brc}) but not via the documented unknown-tenant refusal"
+  printf '%s\n' "$bout" | tail -15
+  exit 1
+fi
+echo "   worker refused a restriction naming an unknown tenant (exit ${brc})"
 
 log "DEPLOY VERIFIED — images built from source, empty database migrated and seeded through the
     governed prepare step (twice, proving idempotency), API and frontend both reachable, and the
-    worker PROVEN to fail closed rather than idle on an unconfigured tenant list."
+    worker PROVEN to idle LOUDLY on an empty registry while still failing closed on a restriction
+    that names a tenant the registry does not know (REPRO-2's discovery supersession, both arms)."

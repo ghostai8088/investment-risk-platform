@@ -178,9 +178,17 @@ def test_the_operator_can_create_a_tenant(wired) -> None:  # noqa: ANN001
     body = resp.json()
     assert body["code"] == "acme"
     assert body["admin_role"] == "tenant_admin"
-    assert "IRP_TENANT_IDS" in body["operator_followup"], (
-        "the response must state the operator's follow-up step — a created tenant does not tick, "
-        "and a consequence nobody is told about is a silent one"
+    # REPRO-2 changed WHAT the follow-up is, and this pin changed with it rather than being
+    # deleted: the tenant now ticks automatically (registry discovery), so telling an operator to
+    # edit IRP_TENANT_IDS would be false instructions in a governed response. What remains true —
+    # and what an operator still must be told — is that nothing is SCHEDULED yet.
+    followup = body["operator_followup"]
+    assert (
+        "IRP_TENANT_IDS" not in followup
+    ), "the response still tells the operator to hand-edit worker config — superseded at REPRO-2"
+    assert "schedule" in followup.lower(), (
+        "the response must state the operator's real follow-up step: a created tenant is ticked "
+        "but has nothing scheduled, and a consequence nobody is told about is a silent one"
     )
     assert set(body["roles_cloned"]) and "platform_admin" not in body["roles_cloned"]
 

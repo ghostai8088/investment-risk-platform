@@ -651,3 +651,178 @@ find = """            candidates = [b for b in (anchor_at, created_at) if b is n
             baseline = max(candidates) if candidates else None"""
 replace = """            baseline = anchor_at"""
 tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+# ---------------------------------------------------------------------------------------------
+# REPRO-2 (part 1: discovery, the write path, the verdict read). The sixteen family adapters and
+# the UI are the slice's remaining work and will bring their own group entries.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "R-A1"
+group = "repro-2"
+why = "a malformed IRP_TENANT_IDS entry is skipped again — under a RESTRICTION filter that silently widens the filter to every tenant, which is CAD-1 FOLD-2's looks-configured-but-isn't state inverted into over-ticking"
+file = "apps/worker/src/irp_worker/tenants.py"
+find = """            if on_bad is not None:
+                on_bad(entry, exc)
+            raise"""
+replace = """            if on_bad is not None:
+                on_bad(entry, exc)
+            continue"""
+tests = ["apps/worker/tests/test_worker.py"]
+
+[[mutant]]
+id = "R-A2"
+group = "repro-2"
+why = "an unreadable registry returns [] instead of raising — 'I could not ask' becomes 'the answer was none', and the worker idles silently on a broken database (the exact failure CAD-1's refusal existed to prevent, by a new road)"
+file = "apps/worker/src/irp_worker/discovery.py"
+find = """        raise TenantDiscoveryError(f"the tenant registry could not be read: {exc}") from exc"""
+replace = """        return []"""
+tests = ["apps/worker/tests/test_discovery.py"]
+
+[[mutant]]
+id = "R-A3"
+group = "repro-2"
+why = "a restriction naming an unknown tenant silently shrinks instead of refusing — the retained half of FOLD-2 disappears"
+file = "apps/worker/src/irp_worker/discovery.py"
+find = """    if unknown:
+        raise ValueError("""
+replace = """    if False:
+        raise ValueError("""
+tests = ["apps/worker/tests/test_discovery.py"]
+
+[[mutant]]
+id = "R-A4"
+group = "repro-2"
+why = "SUSPENDED and SYSTEM tenants are discovered and ticked — the status filter that keeps a suspended tenant stopped is gone"
+file = "apps/worker/src/irp_worker/discovery.py"
+find = """            select(Tenant.id).where(Tenant.status == TENANT_STATUS_ACTIVE).order_by(Tenant.id)"""
+replace = """            select(Tenant.id).order_by(Tenant.id)"""
+tests = ["apps/worker/tests/test_discovery.py"]
+
+[[mutant]]
+id = "R-A5"
+group = "repro-2"
+why = "the registry is read ONCE instead of every cycle — an onboarded tenant never ticks without a restart, which is the ONBOARD-1a carry un-paid"
+file = "apps/worker/src/irp_worker/supervisor.py"
+find = """        try:
+            with session_factory() as session:
+                tenant_ids = resolve_tick_tenants(session, config)
+            registry_failures = 0"""
+replace = """        try:
+            if cycles == 0:
+                with session_factory() as session:
+                    _cached = resolve_tick_tenants(session, config)
+                globals()["_CACHED_TENANTS"] = _cached
+            tenant_ids = globals().get("_CACHED_TENANTS", [])
+            registry_failures = 0"""
+tests = ["apps/worker/tests/test_discovery.py"]
+
+[[mutant]]
+id = "R-A6"
+group = "repro-2"
+why = "the idle state stops announcing itself — a silently-idle engine, which is the ONE property CAD-1 FOLD-2 was actually protecting and the supersession promised to keep"
+file = "apps/worker/src/irp_worker/supervisor.py"
+# (Re-anchored at the review fold with the branched idle message — the restricted and
+# unrestricted idle states are different facts and each announcement has its own test.)
+find = """                else:
+                    log.warning(
+                        "no ACTIVE tenants in the registry — the worker is idle and will re-poll "
+                        "in %ds (onboard a tenant and it starts ticking within one cycle)",
+                        interval_seconds,
+                    )"""
+replace = """                else:
+                    pass"""
+tests = ["apps/worker/tests/test_discovery.py"]
+
+[[mutant]]
+id = "R-B1"
+group = "repro-2"
+why = "a concurrent duplicate schedule code escapes as a raw IntegrityError 500 instead of a refusal — the pre-check alone cannot close it under READ COMMITTED"
+file = "apps/backend/src/irp_backend/api/schedule_admin.py"
+find = """    except IntegrityError:"""
+replace = """    except ZeroDivisionError:"""
+tests = ["apps/backend/tests/test_schedule_admin_endpoint.py"]
+
+[[mutant]]
+id = "R-B2"
+group = "repro-2"
+why = "a schedule in ANOTHER tenant can be paused — the tenant-scoped load loses its predicate and one tenant switches off another's detective control"
+file = "apps/backend/src/irp_backend/api/schedule_admin.py"
+find = """            Schedule.id == str(schedule_id), Schedule.tenant_id == principal.tenant_id"""
+replace = """            Schedule.id == str(schedule_id)"""
+tests = ["apps/backend/tests/test_schedule_admin_endpoint.py"]
+
+[[mutant]]
+id = "R-B3"
+group = "repro-2"
+why = "a fully-paused tenant reads healthy again — the ratified compensating control for one-person pause disappears and the tamper window goes silent-green"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """    switched_off = bool(schedules) and not active"""
+replace = """    switched_off = False"""
+tests = ["packages/shared-python/tests/test_alarm_health.py", "apps/backend/tests/test_schedule_admin_endpoint.py"]
+
+[[mutant]]
+id = "R-B4"
+group = "repro-2"
+why = "control_switched_off drops out of the healthy fold — computed, then ignored (the inert-control shape one level up)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """            and not self.dead_channel
+            and not self.control_switched_off"""
+replace = """            and not self.dead_channel"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "R-B5"
+group = "repro-2"
+why = "a NEVER-configured tenant reads as switched-off — the amendment becomes a blunt instrument reddening every fresh tenant (the cry-wolf shape ALERT-1's review spent itself avoiding)"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """    switched_off = bool(schedules) and not active"""
+replace = """    switched_off = not active"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "R-C1"
+group = "repro-2"
+why = "the UNREPRODUCIBLE wire rule falls through to the stored text — carry (n)'s bounded-but-unguaranteed exception text reaches a read surface, which is exactly what the carry bound"
+file = "apps/backend/src/irp_backend/api/reproduction.py"
+find = """    if row.verdict == VERDICT_UNREPRODUCIBLE:
+        return UNREPRODUCIBLE_WIRE_DETAIL"""
+replace = """    if False:
+        return UNREPRODUCIBLE_WIRE_DETAIL"""
+tests = ["apps/backend/tests/test_reproduction_endpoint.py"]
+
+[[mutant]]
+id = "R-C2"
+group = "repro-2"
+why = "the verdict list loses its tenant predicate — one tenant reads another's reproduction history"
+file = "apps/backend/src/irp_backend/api/reproduction.py"
+find = """        ReproductionCheck.tenant_id == principal.tenant_id,
+        ReproductionCheck.system_from >= datetime.now(UTC) - timedelta(days=since_days),"""
+replace = """        ReproductionCheck.system_from >= datetime.now(UTC) - timedelta(days=since_days),"""
+tests = ["apps/backend/tests/test_reproduction_endpoint.py"]
+
+[[mutant]]
+id = "R-C3"
+group = "repro-2"
+why = "the identity-column census stops walking key_fields — a future family adapter can key on issuer_id and route the CON-1-excluded identity to the 3L auditor through a divergence label"
+file = "packages/shared-python/src/irp_shared/reproduction/registry.py"
+find = """    return [
+        column for group in column_groups for column in group if column in IDENTITY_EXCLUDED_COLUMNS
+    ]"""
+replace = """    return []"""
+tests = ["packages/shared-python/tests/test_reproduction_registry_identity.py"]
+
+# The review fold (the fold that RE-ANCHORED R-C3 above): the committed battery claimed 14/14
+# KILLED, but `ruff format` had reformatted R-C3's single-line anchor into the three-line return
+# AFTER the battery ran — at HEAD the re-run reported ANCHOR NOT MATCHED, a survivor. The claim
+# was true of a tree that no longer existed. Same class as FK-1's displaced-bytes lesson: the
+# battery run that counts is the one against the BYTES BEING COMMITTED.
+
+[[mutant]]
+id = "R-A7"
+group = "repro-2"
+why = "a pinned tenant the registry KNOWS but lists as SUSPENDED is treated as UNKNOWN and refused — the conflation the review caught: one governed suspension mid-run kills the engine for every OTHER pinned tenant"
+file = "apps/worker/src/irp_worker/discovery.py"
+find = """    unknown = [t for t in (config.restrict_to or ()) if t not in registered]"""
+replace = """    unknown = [t for t in (config.restrict_to or ()) if t not in set(discovered)]"""
+tests = ["apps/worker/tests/test_discovery.py"]

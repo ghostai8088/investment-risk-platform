@@ -60,8 +60,8 @@ services:
     build:
       context: .
       dockerfile: infra/docker/worker.Dockerfile
-    # CAD-1: the supervisor ticks each tenant in IRP_TENANT_IDS every IRP_TICK_INTERVAL_SECONDS.
-    # Set these in .env (see .env.example); an empty IRP_TENANT_IDS fails closed at startup.
+    # CAD-1 + REPRO-2: the supervisor ticks every ACTIVE tenant in the registry, re-read each
+    # cycle. IRP_TENANT_IDS is an optional RESTRICTION (pin a subset); empty = no restriction
     env_file: ${IRP_ENV_FILE:-.env}
     environment:
       # DEP-1: .env's DATABASE_URL is HOST-oriented (localhost:5432) so host tooling — a local

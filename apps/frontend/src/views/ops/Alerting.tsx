@@ -84,6 +84,16 @@ function signals(h: AlarmHealthOut): Signal[] {
       action: "Check the notification sink and the reviewer role assignments.",
     },
     {
+      label: "Control switched off",
+      value: h.control_switched_off ? "YES" : "no",
+      tone: "red",
+      bad: h.control_switched_off,
+      meaning:
+        "This tenant configured reproduction schedules and every one of them is now paused. Pausing is a one-person, reversible act — this row is the ratified compensating visibility (REPRO-2): a switched-off detective control must never read as a quiet night.",
+      action:
+        "Resume a schedule, or confirm the pause was intended — the SCHEDULE.UPDATE audit rows say who paused it and when.",
+    },
+    {
       label: "Silenced by the retry bound",
       value: String(h.exhausted_verdicts),
       tone: "amber",
@@ -124,7 +134,8 @@ function signals(h: AlarmHealthOut): Signal[] {
       value: String(h.paused_schedules),
       tone: "info",
       bad: false,
-      meaning: "Reproduction schedules that exist but are paused — a decision somebody made.",
+      meaning:
+        "Reproduction schedules that exist but are paused — a decision somebody made. Informational only while at least one schedule is still running; ALL of them paused is the red 'Control switched off' signal above.",
       action: "No action unless the pause was not intended.",
     },
   ];
@@ -162,11 +173,13 @@ export function Alerting({ session }: { session: Session }): ReactElement {
               </span>
             </h3>
             <p className="ops-lede">
-              {data.no_schedule
-                ? "No reproduction schedule is active for this tenant, so no sweep will run. That is a gap in what has been set up, not a fault in the channel."
-                : data.healthy
-                  ? "The sweep is running and alarms are getting through."
-                  : "At least one red signal below needs attention."}
+              {data.control_switched_off
+                ? "Reproduction schedules exist for this tenant and every one of them is paused — the detective control is switched off. This is not a set-up gap; somebody turned it off."
+                : data.no_schedule
+                  ? "No reproduction schedule is active for this tenant, so no sweep will run. That is a gap in what has been set up, not a fault in the channel."
+                  : data.healthy
+                    ? "The sweep is running and alarms are getting through."
+                    : "At least one red signal below needs attention."}
             </p>
             <dl className="ops-facts">
               <dt>Last completed sweep</dt>

@@ -266,6 +266,10 @@
       "AlarmHealthOut": {
         "description": "The alarm channel's health. Every field is recomputed from source on every read \u2014 never\nstored, never inferred from the presence of an evidence row (the LIM-1 rule).",
         "properties": {
+          "control_switched_off": {
+            "title": "Control Switched Off",
+            "type": "boolean"
+          },
           "dead_channel": {
             "title": "Dead Channel",
             "type": "boolean"
@@ -334,6 +338,7 @@
           "failed_sweeps",
           "sweep_overdue",
           "dead_channel",
+          "control_switched_off",
           "undeliverable_attempts",
           "exhausted_verdicts",
           "queued",
@@ -12482,6 +12487,68 @@
         "title": "ReportOut",
         "type": "object"
       },
+      "ReproductionCheckOut": {
+        "description": "One verdict, as the wire may see it.\n\nCounts, keys and ids \u2014 plus `first_divergence` under the OQ-ALR-3 rule above. Note what is\nNOT here and never will be without another ratification: the two diverging VALUES. They are\nabsent from the stored row for the same reason.",
+        "properties": {
+          "calculation_run_id": {
+            "title": "Calculation Run Id",
+            "type": "string"
+          },
+          "family_key": {
+            "title": "Family Key",
+            "type": "string"
+          },
+          "first_divergence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Divergence"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "rows_compared": {
+            "title": "Rows Compared",
+            "type": "integer"
+          },
+          "rows_diverged": {
+            "title": "Rows Diverged",
+            "type": "integer"
+          },
+          "subject_run_id": {
+            "title": "Subject Run Id",
+            "type": "string"
+          },
+          "system_from": {
+            "format": "date-time",
+            "title": "System From",
+            "type": "string"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "family_key",
+          "verdict",
+          "rows_compared",
+          "rows_diverged",
+          "subject_run_id",
+          "calculation_run_id",
+          "system_from",
+          "first_divergence"
+        ],
+        "title": "ReproductionCheckOut",
+        "type": "object"
+      },
       "ResidualShrinkageRunIn": {
         "properties": {
           "code_version": {
@@ -13637,26 +13704,11 @@
         "title": "ScenarioShockSupersedeIn",
         "type": "object"
       },
-      "ScheduleListOut": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ScheduleOut"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "ScheduleListOut",
-        "type": "object"
-      },
-      "ScheduleOut": {
-        "description": "A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable\nsince SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some\ncadences/families and forbidden for others), so the DTO mirrors the column nullability rather\nthan inventing a placeholder.",
+      "ScheduleCreateIn": {
+        "additionalProperties": false,
         "properties": {
           "anchor_date": {
+            "format": "date",
             "title": "Anchor Date",
             "type": "string"
           },
@@ -13664,21 +13716,34 @@
             "title": "Cadence Kind",
             "type": "string"
           },
+          "calendar_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calendar Id"
+          },
           "code": {
+            "maxLength": 150,
+            "minLength": 1,
             "title": "Code",
             "type": "string"
           },
           "environment_id": {
+            "maxLength": 100,
+            "minLength": 1,
             "title": "Environment Id",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
             "type": "string"
           },
           "interval_days": {
             "anyOf": [
               {
+                "exclusiveMinimum": 0.0,
                 "type": "integer"
               },
               {
@@ -13687,55 +13752,10 @@
             ],
             "title": "Interval Days"
           },
-          "last_failure_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Failure Reason"
-          },
-          "last_fired_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Fired At"
-          },
-          "last_outcome": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Outcome"
-          },
-          "last_scheduled_for": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Scheduled For"
-          },
           "model_version_id": {
             "anyOf": [
               {
+                "format": "uuid",
                 "type": "string"
               },
               {
@@ -13745,16 +13765,15 @@
             "title": "Model Version Id"
           },
           "name": {
+            "maxLength": 255,
+            "minLength": 1,
             "title": "Name",
             "type": "string"
-          },
-          "record_version": {
-            "title": "Record Version",
-            "type": "integer"
           },
           "scope_portfolio_id": {
             "anyOf": [
               {
+                "format": "uuid",
                 "type": "string"
               },
               {
@@ -13763,34 +13782,38 @@
             ],
             "title": "Scope Portfolio Id"
           },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
           "target_run_type": {
+            "maxLength": 100,
+            "minLength": 1,
             "title": "Target Run Type",
             "type": "string"
           }
         },
         "required": [
-          "id",
           "code",
           "name",
           "target_run_type",
-          "scope_portfolio_id",
-          "model_version_id",
           "environment_id",
-          "cadence_kind",
-          "interval_days",
           "anchor_date",
-          "status",
-          "record_version",
-          "last_scheduled_for",
-          "last_fired_at",
-          "last_outcome",
-          "last_failure_reason"
+          "cadence_kind"
         ],
-        "title": "ScheduleOut",
+        "title": "ScheduleCreateIn",
+        "type": "object"
+      },
+      "ScheduleListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/irp_backend__api__schedules__ScheduleOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ScheduleListOut",
         "type": "object"
       },
       "ScheduledRunListOut": {
@@ -16827,6 +16850,196 @@
           "drifted_components"
         ],
         "title": "VerifyOut",
+        "type": "object"
+      },
+      "irp_backend__api__schedule_admin__ScheduleOut": {
+        "properties": {
+          "cadence_kind": {
+            "title": "Cadence Kind",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_run_type": {
+            "title": "Target Run Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "target_run_type",
+          "cadence_kind",
+          "interval_days",
+          "status"
+        ],
+        "title": "ScheduleOut",
+        "type": "object"
+      },
+      "irp_backend__api__schedules__ScheduleOut": {
+        "description": "A schedule head + its last fire. ``interval_days``/``model_version_id`` are BOTH nullable\nsince SCH-2, and ``scope_portfolio_id`` joined them at REPRO-1 (each is required for some\ncadences/families and forbidden for others), so the DTO mirrors the column nullability rather\nthan inventing a placeholder.",
+        "properties": {
+          "anchor_date": {
+            "title": "Anchor Date",
+            "type": "string"
+          },
+          "cadence_kind": {
+            "title": "Cadence Kind",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "environment_id": {
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "last_failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Failure Reason"
+          },
+          "last_fired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Fired At"
+          },
+          "last_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Outcome"
+          },
+          "last_scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scheduled For"
+          },
+          "model_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "record_version": {
+            "title": "Record Version",
+            "type": "integer"
+          },
+          "scope_portfolio_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Portfolio Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_run_type": {
+            "title": "Target Run Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "target_run_type",
+          "scope_portfolio_id",
+          "model_version_id",
+          "environment_id",
+          "cadence_kind",
+          "interval_days",
+          "anchor_date",
+          "status",
+          "record_version",
+          "last_scheduled_for",
+          "last_fired_at",
+          "last_outcome",
+          "last_failure_reason"
+        ],
+        "title": "ScheduleOut",
         "type": "object"
       }
     }
@@ -37694,6 +37907,148 @@
         ]
       }
     },
+    "/reproduction/checks": {
+      "get": {
+        "description": "The tenant's reproduction verdicts, newest first.\n\nTenant-local by RLS with an explicit predicate underneath (the platform's belt-and-braces\npattern), bounded by `limit` and a lookback window, and silent-empty rather than 404 on an\nunknown filter value \u2014 no existence oracle.",
+        "operationId": "list_checks_reproduction_checks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "family_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Family Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Verdict"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since_days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Since Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReproductionCheckOut"
+                  },
+                  "title": "Response List Checks Reproduction Checks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Checks",
+        "tags": [
+          "reproduction"
+        ]
+      }
+    },
     "/risk/active-risk": {
       "get": {
         "description": "API-1b entity read (Class C): governed active-risk rows resolved via the run's ROOT\n``scope_portfolio_id`` + an optional native ``benchmark_id`` and ``as_of`` run cutoff.\nSilent-empty on a foreign/NULL-scope id. Each row carries ``calculation_run_id``.",
@@ -45621,6 +45976,96 @@
         "tags": [
           "schedules"
         ]
+      },
+      "post": {
+        "description": "Create a schedule. The route adds TRANSPORT; every rule is the existing service's.\n\nThe one thing it adds is the duplicate-code refusal, and the mechanism matters: a pre-check\nalone cannot deliver it. Two concurrent creates with the same code both pass any pre-check and\nthe loser dies at flush, so the UNIQUE violation is CAUGHT and mapped to the same refusal the\npre-check gives \u2014 the pre-check survives only as the ordinary-path courtesy with the better\nmessage.",
+        "operationId": "create_schedules_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/irp_backend__api__schedule_admin__ScheduleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create",
+        "tags": [
+          "schedules"
+        ]
       }
     },
     "/schedules/runs": {
@@ -45790,6 +46235,190 @@
           }
         },
         "summary": "List Scheduled Runs Endpoint",
+        "tags": [
+          "schedules"
+        ]
+      }
+    },
+    "/schedules/{schedule_id}/pause": {
+      "post": {
+        "description": "Pause a schedule \u2014 one person, audit-trailed, and VISIBLE.\n\nSee the module docstring: this is the act the maker-checker adjudication turned on. Pausing\nevery reproduction schedule in a tenant switches off its detective control, so the alarm-health\nsurface reads RED (`control_switched_off`) for exactly that state.",
+        "operationId": "pause_schedules__schedule_id__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/irp_backend__api__schedule_admin__ScheduleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause",
+        "tags": [
+          "schedules"
+        ]
+      }
+    },
+    "/schedules/{schedule_id}/resume": {
+      "post": {
+        "description": "Resume a paused schedule. No four-eyes: resuming only ADDS detection back.",
+        "operationId": "resume_schedules__schedule_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/irp_backend__api__schedule_admin__ScheduleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume",
         "tags": [
           "schedules"
         ]

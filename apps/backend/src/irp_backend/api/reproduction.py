@@ -23,15 +23,38 @@ exclusion is a ratified decision with a revisit trigger, not an oversight.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, require_permission
 from irp_shared.entitlement.service import Principal
+from irp_shared.reproduction.events import VERDICT_UNREPRODUCIBLE
+from irp_shared.reproduction.models import ReproductionCheck
 from irp_shared.reproduction.service import alarm_channel_health
+
+#: What an UNREPRODUCIBLE row's `first_divergence` becomes ON THE WIRE — a FIXED LITERAL, never
+#: the stored text (REPRO-2, ratified OQ-REP2-3).
+#:
+#: **This is carry (n)'s discharge, and it is discharge BY EXCLUSION rather than by redaction.**
+#: On the DIVERGED path `first_divergence` names a row KEY and a FIELD — mutation-proven at
+#: REPRO-1 to carry no values. On the UNREPRODUCIBLE path it embeds a binder's exception text,
+#: `_redact` bounds that text without guaranteeing the absence of every identifier, and the carry
+#: bound that residual to "before any read surface is added over ENT-073". This is that surface.
+#:
+#: The design's first answer was to ship the exception CLASS NAME — which the verifier pass proved
+#: unimplementable: the class name is not recoverable from the stored text on the paths that
+#: actually produce these rows, and a prefix-parse would have emitted the message body on exactly
+#: the rows lacking a prefix. So no read surface transports the stored text at all. It stays in
+#: the database for database-grade investigation, which is where an operator with a real
+#: divergence to chase is going anyway.
+UNREPRODUCIBLE_WIRE_DETAIL = "UNREPRODUCIBLE — detail withheld; investigate at database grade"
+
+#: The page cap. An append-only table's list read must not be unbounded (carry (k)'s class).
+_MAX_PAGE = 200
 
 router = APIRouter(tags=["reproduction"])
 
@@ -49,6 +72,8 @@ class AlarmHealthOut(BaseModel):
     failed_sweeps: int
     sweep_overdue: bool
     dead_channel: bool
+    #: REPRO-2's amendment to ALERT-1's enumeration: configured, then every schedule paused.
+    control_switched_off: bool
 
     #: AMBER — visible, deliberately not red.
     undeliverable_attempts: int
@@ -60,6 +85,79 @@ class AlarmHealthOut(BaseModel):
     paused_schedules: int
     nothing_to_reproduce: int
     last_terminal_sweep_at: datetime | None
+
+
+class ReproductionCheckOut(BaseModel):
+    """One verdict, as the wire may see it.
+
+    Counts, keys and ids — plus `first_divergence` under the OQ-ALR-3 rule above. Note what is
+    NOT here and never will be without another ratification: the two diverging VALUES. They are
+    absent from the stored row for the same reason.
+    """
+
+    id: str
+    family_key: str
+    verdict: str
+    rows_compared: int
+    rows_diverged: int
+    subject_run_id: str
+    calculation_run_id: str
+    system_from: datetime
+    first_divergence: str | None
+
+
+@router.get("/reproduction/checks", response_model=list[ReproductionCheckOut])
+def list_checks(
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+    family_key: str | None = Query(default=None),
+    verdict: str | None = Query(default=None),
+    since_days: int = Query(default=30, ge=1, le=365),
+    limit: int = Query(default=100, ge=1, le=_MAX_PAGE),
+) -> list[ReproductionCheckOut]:
+    """The tenant's reproduction verdicts, newest first.
+
+    Tenant-local by RLS with an explicit predicate underneath (the platform's belt-and-braces
+    pattern), bounded by `limit` and a lookback window, and silent-empty rather than 404 on an
+    unknown filter value — no existence oracle.
+    """
+    stmt = select(ReproductionCheck).where(
+        ReproductionCheck.tenant_id == principal.tenant_id,
+        ReproductionCheck.system_from >= datetime.now(UTC) - timedelta(days=since_days),
+    )
+    if family_key:
+        stmt = stmt.where(ReproductionCheck.family_key == family_key)
+    if verdict:
+        stmt = stmt.where(ReproductionCheck.verdict == verdict)
+    rows = (
+        db.execute(stmt.order_by(ReproductionCheck.system_from.desc()).limit(limit)).scalars().all()
+    )
+    return [
+        ReproductionCheckOut(
+            id=str(r.id),
+            family_key=r.family_key,
+            verdict=r.verdict,
+            rows_compared=r.rows_compared,
+            rows_diverged=r.rows_diverged,
+            subject_run_id=str(r.subject_run_id),
+            calculation_run_id=str(r.calculation_run_id),
+            system_from=r.system_from,
+            first_divergence=_wire_divergence(r),
+        )
+        for r in rows
+    ]
+
+
+def _wire_divergence(row: ReproductionCheck) -> str | None:
+    """DIVERGED: the stored field+key label. UNREPRODUCIBLE: the fixed literal. MATCH: nothing.
+
+    Written as an explicit verdict switch rather than as "redact if it looks risky", because the
+    property that must hold is not "we tried to clean it" — it is that stored UNREPRODUCIBLE text
+    NEVER reaches this response, whatever it happens to contain.
+    """
+    if row.verdict == VERDICT_UNREPRODUCIBLE:
+        return UNREPRODUCIBLE_WIRE_DETAIL
+    return row.first_divergence
 
 
 @router.get("/reproduction/alarm-health", response_model=AlarmHealthOut)
@@ -76,6 +174,7 @@ def read_alarm_health(
         failed_sweeps=health.failed_sweeps,
         sweep_overdue=health.sweep_overdue,
         dead_channel=health.dead_channel,
+        control_switched_off=health.control_switched_off,
         undeliverable_attempts=health.undeliverable_attempts,
         exhausted_verdicts=health.exhausted_verdicts,
         queued=health.queued,
