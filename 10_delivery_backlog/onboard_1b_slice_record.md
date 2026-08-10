@@ -132,8 +132,9 @@ deliver.
   next entitlement slice, whichever first — and the verb needs its own ratification (R-07).**
 - The worker still does not tick a created tenant (`IRP_TENANT_IDS` stays deploy config) — rides
   to REPRO-2 by name, unchanged from 1a.
-- The 22 hand-mirrored migration-head pins → one shared assertion: the Wave-17 close decision,
-  unchanged.
+- ~~The 22 hand-mirrored migration-head pins → one shared assertion: the Wave-17 close decision,
+  unchanged.~~ **DONE EARLY — the same-day process fold (user-ratified): 21 pins collapsed into
+  `test_migration_head.py`, mutant-checked.**
 
 ## 6. Non-goals honored
 

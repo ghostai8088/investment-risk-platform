@@ -56,6 +56,16 @@ docs-check:
 dep-audit:
 	$(VENV_BIN)/pip-audit --ignore-vuln PYSEC-2026-1845
 
+# Run the FORMATTERS (write mode, both tiers) BEFORE the first gate run. Process fold 2026-08-09:
+# the ONBOARD-1b review fold ran `check-all` six times, and three of those runs died on formatting
+# or a lint auto-fixable — each a ~5-minute gate cycle buying a 10-second formatter's lesson. This
+# target is NOT a gate and proves nothing (the gates still run last and their exit codes are still
+# the only claims); it just makes the first gate run start from a tree the formatters have seen.
+fix:
+	$(PY) -m ruff format .
+	$(PY) -m ruff check --fix .
+	npm run -w apps/frontend format
+
 check: lint typecheck test secret-scan docs-check
 
 # BOTH tiers in one command (DEP-1 / Wave-15 process fold). `check` covers Python only and
@@ -105,5 +115,21 @@ gen-api:
 	$(PY) scripts/dump_openapi.py
 	npm run -w apps/frontend gen:types
 
-gen-api-check: gen-api
-	git diff --exit-code apps/frontend/openapi.json apps/frontend/src/api/generated
+# Compares the regenerated artifacts against the WORKTREE, not against HEAD (process fold
+# 2026-08-09). The old form (`git diff --exit-code` after regenerating) diffed worktree vs HEAD,
+# which made this target STRUCTURALLY unable to pass before the API change was committed — the
+# ONBOARD-1b fold spent a full check-all run discovering that. Snapshot-then-compare asks the
+# question this gate actually means ("are the tree's generated artifacts current?") and answers it
+# identically pre- and post-commit. CI's "API type drift" job keeps its own git-diff form — there
+# the checkout IS HEAD, so the two are equivalent, and CI additionally guards against a locally
+# regenerated-but-uncommitted tree being pushed without these files.
+gen-api-check:
+	@tmp=$$(mktemp -d) && \
+	cp apps/frontend/openapi.json $$tmp/openapi.json && \
+	cp apps/frontend/src/api/generated/api-types.d.ts $$tmp/api-types.d.ts && \
+	$(MAKE) gen-api && \
+	if ! diff -u $$tmp/openapi.json apps/frontend/openapi.json || \
+	   ! diff -u $$tmp/api-types.d.ts apps/frontend/src/api/generated/api-types.d.ts; then \
+		echo "gen-api-check: the tree's generated API artifacts were STALE (now regenerated — review and include them)"; \
+		rm -rf $$tmp; exit 1; \
+	fi && rm -rf $$tmp

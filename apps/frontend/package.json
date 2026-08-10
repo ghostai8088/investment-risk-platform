@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.guards.json",
     "lint": "eslint .",
+    "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
     "gen:types": "openapi-typescript openapi.json -o src/api/generated/api-types.d.ts"
