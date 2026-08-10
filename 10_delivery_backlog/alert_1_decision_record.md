@@ -1,7 +1,9 @@
 # ALERT-1 decision record — the alarm about the alarm, visible and bounded
 
-**Wave 17, slice 1** (the ratified Part 2.19 sequence). Status: **DRAFT v2 — post-pass-1,
-pre-pass-2**. Branch `alert-1-planning`. Design authority once ratified: THIS record.
+**Status:** v3 — post-pass-2, READY FOR RATIFICATION (not yet ratified)
+
+**Wave 17, slice 1** (the ratified Part 2.19 sequence). Branch `alert-1-planning`. Design
+authority once ratified: THIS record.
 
 ## 1. What this slice is, and is not
 
@@ -11,185 +13,204 @@ bounded, silenced, or simply STOPPED with no path by which an operator learns an
 here touches governed numbers, the ratified v6 retirement rule, or reproduction verdicts' CONTENT
 (REPRO-2's remit).
 
-**The six carries (census CORRECTED at pass 1, finding C13 — v1 dropped (e) and counted the
-enabling machinery as a carry):** all from `repro_1_slice_record.md` §6:
+**The six carries** (census corrected at pass 1, C13 — v1 dropped (e)); all from
+`repro_1_slice_record.md` §6:
 
 | # | Carry | Disposition here |
 |---|---|---|
-| (e) | A legitimately-empty tenant FAILS its nightly sweep BY DESIGN; an operator surface treating a FAILED run as an incident needs a distinct disposition | PAID — the `nothing_to_reproduce` disposition, recomputed from source, non-red (OQ-ALR-1) |
+| (e) | A legitimately-empty tenant FAILS its nightly sweep BY DESIGN; an operator surface treating that as an incident needs a distinct disposition | PAID — `nothing_to_reproduce`, classified per-RUN from the run's own durable trace (OQ-ALR-1) |
 | (l) | A sweep that checked NOTHING is invisible to the alarm channel | PAID — `failed_sweeps` (OQ-ALR-1) |
 | (q) | The retry bound does not cover a failed alarm TRANSACTION; retries every tick indefinitely, no trace | PAID — the sibling-transaction FAILED row joins the EXISTING bound (OQ-ALR-3) |
-| (r) | An already-delivered recipient is re-paged on retry ticks | PAID — the courtesy skip, WITH a durable concluded row per skip (OQ-ALR-4) |
+| (r) | An already-delivered recipient is re-paged on retry ticks | PAID — the courtesy skip, emitting a durable `SKIPPED` row per skip (OQ-ALR-4) |
 | (s) | A recipient provisioned mid-outage can be retired at 1 of `MAX_ALARM_ATTEMPTS` attempts | ACCEPTED, made visible via `exhausted_verdicts` (OQ-ALR-4) |
-| (t) | One malformed payload silences the tenant's channel, and no alarm fires about the alarm system | **First half ALREADY PAID at the Wave-16 close** — executed probe at pass 1: a planted bare-string payload for one entity left ANOTHER entity's genuine verdict queued (per-row scoping, mutants M-A1/M-A2 pin it). ALERT-1 pays the VISIBILITY half only |
+| (t) | One malformed payload silences the tenant's channel, and no alarm fires about the alarm system | **First half ALREADY PAID at the Wave-16 close** — executed probe at pass 1 (C5): a planted bare-string payload for one entity left ANOTHER entity's genuine verdict queued (per-row scoping; mutants M-A1/M-A2). ALERT-1 pays the VISIBILITY half; the residual regress is stated in §5 |
 
-The enabling machinery (not itself a carry): `AlarmChannelHealth`
-(`reproduction/service.py`) — recomputed, correct, and consumed by nothing outside its module.
-This slice gives it its missing fields, its route, and its screen.
+The roadmap's five phrases, mapped (pass-2 P2-13 demanded the map be explicit): *alarm-channel
+health surface reaching an operator* = OQ-ALR-1/2/6; *recipient-degradation* = OQ-ALR-4;
+*the repeated-rollback signal* = OQ-ALR-3 + `undeliverable_attempts` + the persistent-total-failure
+red clause; *the bounded-noise ceiling made visible* = `exhausted_verdicts`; *the poison-row noise
+floor* = `unreadable_rows` with its terminal disposition.
+
+The enabling machinery (not itself a carry): `AlarmChannelHealth` — recomputed, correct, consumed
+by nothing. This slice gives it its missing fields, its route, and its screen.
 
 ## 2. The shape (one sentence)
 
 Extend the recomputed per-tenant health object until it answers every question the six carries ask
-— including the question v1 forgot, "is the sweep RUNNING AT ALL?" — give it a governed read route
-and an ops-UI panel, make failed alarm transactions durable in a sibling transaction so the
-EXISTING attempt bound covers them, and make retries stop re-paging the already-told while still
-emitting the durable rows the retirement rule counts — with no new entity, no new permission, no
-new audit code, and no change to the ratified v6 rule.
+— including "is the sweep RUNNING AT ALL?" — give it a governed read route and an ops panel, make
+failed alarm transactions durable so the EXISTING attempt bound covers them, and make retries stop
+re-paging the already-told while still emitting the durable rows the retirement rule counts — with
+no new entity, no new permission, no new audit event code, no migration, and no change to the
+ratified v6 rule. **One vocabulary amendment IS made and named: a fourth NOTIFY outcome,
+`SKIPPED`** (OQ-ALR-4/7).
 
 ## 3. Decisions (OQ-ALR-1…7)
 
 ### OQ-ALR-1 — The health surface: fields, windows, and what "healthy" means — all enumerated
 
-Extend `AlarmChannelHealth` (computed, never stored — the LIM-1 rule). Pass 1 broke v1's field set
-four ways (absence-blindness C1; the alarm-lost night C7; window incoherence C9/C15/C21; transient
-red C10) — v2 enumerates per-field semantics:
+Extend `AlarmChannelHealth` (computed, never stored — the LIM-1 rule). Per-field semantics, each
+sharpened by a named pass finding:
 
-| Field | Answers | Window | In `healthy`? |
+| Field | Semantics | Window | In `healthy`? |
 |---|---|---|---|
-| `queued` | verdicts still owed delivery | UNWINDOWED — it IS `unalarmed_verdicts`, which is O(all-history) by the v6 rule's own needs; that cost is carry (k)'s, hosted elsewhere, and this record says so instead of pretending a window fixes it | NO — a nonzero queue is the channel WORKING (a divergence in flight between phases) |
-| `unreadable_rows` | the poison floor | UNWINDOWED — standing poison must not age out of sight | YES (red) |
-| `last_terminal_sweep_at` + `sweep_overdue` | **the absence-sensing pair (pass-1 BLOCKING C1): a dead supervisor, a never-firing schedule, or a mid-run death (which rolls back to NO row at all — the refuter's sharpening) all read as an overdue sweep.** `sweep_overdue` is true iff a REPRODUCTION schedule EXISTS for the tenant and no terminal (COMPLETED/FAILED) REPRODUCTION run has landed within its cadence plus a grace bound | overdue derives from the schedule's own cadence | YES (red) |
-| `no_schedule` | the tenant has NO reproduction schedule — a distinct, honest disposition (REPRO-2's startability gap, not an incident; pointing at it is not owning it) | — | NO (informational; the UI names REPRO-2) |
-| `failed_sweeps` | **ALL** FAILED REPRODUCTION runs in the window **except** the `nothing_to_reproduce` class (pass-1 C7 killed v1's "and no verdict rows" qualifier: the alarm-lost night is a FAILED run WITH verdict rows) | 7-day window | YES (red) |
-| `nothing_to_reproduce` | carry (e)'s disposition: FAILED sweeps whose tenant has NO completed reproducible-family runs — **recomputed from source** (the LIM-1 rule again), not parsed from prose | 7-day window | NO (informational) |
-| `lost_verdicts` | the alarm-LOST signal: sweeps whose failure reason records verdicts that could not be written (`DISPOSITION_UNRECORDED`). The durable trace is the run's `failure_reason` prose, so the marker phrase is HOISTED to a module constant used by BOTH the writer and this reader — one implementation, no drifting grep (the C4 medicine applied here too) | 7-day window | YES (red) |
-| `undeliverable_attempts` | durably-recorded FAILED attempt rows — **for verdicts still queued or ceiling-retired only**, so a transient failure whose retry succeeded goes green (pass-1 C10) | 7-day window | NO (amber — retries in flight are the system working; persistent failure ends in `exhausted_verdicts`) |
-| `exhausted_verdicts` | verdicts retired BY the ceiling — the bound made VISIBLE. Classification comes from the SAME implementation as the queue (pass-1 C4): `unalarmed_verdicts`' fold is refactored to expose per-verdict classification (queued / delivered / ceiling-retired) and both consumers read it. Semantics stated: a verdict whose final attempt concluded for everyone counts as DELIVERED even at the ceiling; a poisoned verdict at the ceiling counts as ceiling-retired (its history is untrustworthy) | UNWINDOWED — a silenced verdict must not age into invisibility | NO (amber — the ACCEPTED bound, visible; making it red forever would be the cry-wolf class carry (j) warns about) |
+| `queued` | verdicts still owed delivery | UNWINDOWED (it IS `unalarmed_verdicts`; the O(all-history) cost is carry (k)'s, said plainly) | NO — a nonzero queue is the channel working |
+| `unreadable_rows` | the poison floor — **red only while a STILL-QUEUED verdict's history contains poison** (P2-14: an IA audit row can never be repaired, so unconditional-unwindowed red is permanent red — the cry-wolf class; a poison row whose verdict has ceiling-retired stops reddening and stays visible via `exhausted_verdicts`; there is NO remediation path and this record says so) | classification-scoped | YES (red, per the stated scope) |
+| `last_terminal_sweep_at` + `sweep_overdue` | absence-sensing (pass-1 C1; a mid-run death rolls back to NO row — the refuter's sharpening). **Evaluated per ACTIVE REPRODUCTION schedule** (P2-4/P2-10): overdue iff ANY active reproduction schedule has no terminal run within its own cadence + grace, where due-ness comes from **the scheduler's own next-fire computation** (the single-implementation medicine — no reimplemented cadence math), grace = one full cadence period, and a never-fired schedule's clock starts at its first due tick after creation. A PAUSED/disabled schedule (if the model has the state) is a distinct informational disposition — not overdue, not `no_schedule` | schedule-derived | YES (red) |
+| `no_schedule` | NO active reproduction schedule exists — REPRO-2's startability gap named, not owned | — | NO (informational) |
+| `failed_sweeps` | **ALL** FAILED REPRODUCTION runs in the window **except** those classified `nothing_to_reproduce` (pass-1 C7: the alarm-lost night is a FAILED run WITH verdict rows) | 7 days | YES (red) |
+| `nothing_to_reproduce` | carry (e). **Classified per-RUN from the run's own durable trace** (P2-5/P2-12 killed the tenant-state recompute — it misread in both directions): the sweep's "checked NOTHING" sentence is HOISTED to a module constant shared by writer and reader; a FAILED run whose reason is exactly the pure nothing-checked class counts here; every other FAILED run is `failed_sweeps` | 7 days | NO (informational) |
+| `lost_verdicts` | the alarm-LOST signal, **bound to the `lost_alarms` writer clause specifically** (P2-6 — not `DISPOSITION_UNRECORDED` broadly), via a distinctive prefixed sentinel token hoisted to a shared constant; **unit: SWEEPS with lost alarms** (an unwritten row cannot be counted from prose) | 7 days | YES (red) |
+| `undeliverable_attempts` | durably-recorded FAILED attempt rows for verdicts still queued or ceiling-retired (a self-healed transient goes green — pass-1 C10); expected aged shape stated: an old failure whose verdict has retired leaves this field | 7 days | NO (amber) |
+| `exhausted_verdicts` | the bound made VISIBLE. Classification from the SAME fold as the queue (pass-1 C4), with the derivation STATED (P2-3, executed): **ceiling-retired iff attempts ≥ MAX AND (poisoned OR latest attempt not all-success); delivered iff latest attempt all-success AND not poisoned** — the retirement SET is provably unchanged (both branches retire); only the label differs from the fold's branch order. The refactor also absorbs `alarm_channel_health`'s second, independent poison-detection loop (pass-2 minor): ONE implementation, all consumers | UNWINDOWED | NO (amber) |
 
-`healthy` is therefore **enumerated**: `unreadable_rows == 0 AND lost_verdicts == 0 AND
-failed_sweeps == 0 AND NOT sweep_overdue`. Amber fields render distinctly in the UI; nothing else
-participates. The existing `AlarmChannelHealth.healthy` docstring is updated to this definition in
-the same commit that changes it.
+**`healthy`, enumerated** (pass-1 C8, named here as its fold): `unreadable_rows == 0 AND
+lost_verdicts == 0 AND failed_sweeps == 0 AND NOT sweep_overdue AND NOT dead_channel`, where
+**`dead_channel`** (P2-13 — the totally-dead channel must not stay amber): true iff
+`exhausted_verdicts` GREW in-window while ZERO successful deliveries landed in-window — the
+persistent-total-failure clause that gives the repeated-rollback class a red of its own. Amber
+fields render distinctly; nothing else participates. The existing `healthy` docstring is updated
+in the same commit.
 
-### OQ-ALR-2 — The read route and its permission: REUSE `schedule.view`, counts only
+### OQ-ALR-2 — The read route and its permission: REUSE `schedule.view`
 
 `GET /reproduction/alarm-health`; ordinary `require_permission`; census-visible
-(`EXPECTED_ROUTE_COUNT` 300 → 301, a conscious move). Payload = the OQ-ALR-1 fields — counts,
-booleans, one timestamp. **No verdict ids, no reason text, no `first_divergence`** (carry (n)'s
-redaction residual stays bound to REPRO-2's content reads).
+(`EXPECTED_ROUTE_COUNT` 300 → 301, conscious). Payload = the OQ-ALR-1 fields — counts, booleans,
+and the `last_terminal_sweep_at` timestamp; **no verdict ids, no reason text, no
+`first_divergence`** (carry (n)'s residual stays bound to REPRO-2).
 
-**Permission: REUSE `schedule.view`.** Holder set — corrected at pass 1 (C3/C12/C16: v1 claimed
-"all four business roles"; the recomputed truth, from `ROLE_TEMPLATES` source:
-**`data_steward`, `risk_analyst_1l`, `risk_manager_2l`, `auditor_3l`, `platform_admin` — five
-roles; `tenant_admin` and `ops` do NOT hold it.** Channel health is control-plane oversight
-(the CTRL-018 chain) with no proprietary values and no person data — `auditor_3l`'s inclusion is
-the point, per the governed-oversight doctrine. **`tenant_admin`'s exclusion is surfaced as part
-of this OQ rather than discovered later**: recommendation — keep the five-role set (a tenant
-admin administers PEOPLE, not the risk control plane; the roles that operate the control see its
-health), revisitable when a real operator asks.
+**Permission: REUSE `schedule.view`.** Holder set recomputed from `ROLE_TEMPLATES` source
+(pass-1 C3/C12/C16 corrected v1's miscount): **`data_steward`, `risk_analyst_1l`,
+`risk_manager_2l`, `auditor_3l`, `platform_admin` — five roles; `tenant_admin` and `ops` do NOT
+hold it.** `auditor_3l`'s inclusion is the point (control-plane oversight, no proprietary values,
+no person data). **`tenant_admin`'s exclusion is a decision made here, not an accident**:
+recommendation — keep the five-role set (a tenant admin administers people, not the risk control
+plane); revisit on a real operator ask.
 
-FE consequence, stated: `/reproduction` is a NEW API prefix — `api-prefixes.ts` and the nginx
-alternation move in lockstep (the census test forces it).
+FE consequence: `/reproduction` is a NEW API prefix — `api-prefixes.ts` and the nginx alternation
+move together (the prefix-parity test pins them to each other once the list moves; the discipline
+is the lockstep edit — pass-2 minor, attribution corrected).
 
-### OQ-ALR-3 — C2 (repeated rollback): the failure becomes DURABLE in a sibling transaction
+### OQ-ALR-3 — Carry (q): the failure becomes DURABLE in a sibling transaction
 
-Pass 1 (C2/C11/C19) proved v1's mechanism unimplementable as written — `attempt_id` is a local
-inside `alarm_for_verdict` and the failure surfaces at the worker's `session.commit()` where only
-the exception is in scope. **The plumbing, named:**
+Plumbing named (pass-1 C2/C11/C19): `attempt_id` is minted at the WORKER call boundary and passed
+into `alarm_for_verdict` (its one-invocation-one-attempt contract unchanged; the doctrine wording
+per the code's own comment). On failure, the worker's except arm begins a NEW transaction on the
+same session after rollback (verified: advisory locks are transaction-scoped, released at
+ROLLBACK; the `after_begin` listener re-arms the RLS GUC) and records ONE `NOTIFY.DISPATCH` row:
+`outcome='failure'`, the SAME boundary-minted `attempt_id`, a **NEW named sentinel recipient
+value** (pass-2 minor: NOT `NO_RECIPIENT_SENTINEL`, whose SUPPRESSED semantics this row would
+falsify) excluded by name from OQ-ALR-4's courtesy reads, and a bounded reason. The EXISTING
+`MAX_ALARM_ATTEMPTS` bound then covers the rollback path — no new rule. Commit-ambiguity stated:
+success rows and a sibling failure row under one `attempt_id` pool into ONE mixed attempt — not
+retired, not double-counted. If the sibling write also fails (database down), nothing durable is
+possible; the supervisor's tick failure is the outer signal. Stated residual.
 
-- `attempt_id` is minted at the WORKER call boundary and passed into `alarm_for_verdict`
-  (consistent with the service's own minted-at-the-call-boundary doctrine); the function's
-  one-invocation-one-attempt contract is unchanged.
-- On failure, the worker's except arm begins a NEW transaction on the same session after rollback
-  — architecturally verified at pass 1: the audit service's advisory locks are
-  transaction-scoped (released at ROLLBACK) and the `after_begin` listener re-arms the RLS GUC on
-  the next transaction — and records ONE `NOTIFY.DISPATCH` row: `outcome='failure'`, the SAME
-  `attempt_id`, a SENTINEL recipient value (excluded by name from OQ-ALR-4's courtesy-skip reads),
-  and a bounded reason.
-- The EXISTING `MAX_ALARM_ATTEMPTS` bound now covers the rollback path — no new rule; the v6
-  grouping pools the sibling row by its `attempt_id` like any other.
-- **Commit-ambiguity, stated (pass-1 minor):** if the COMMIT actually landed server-side but the
-  poller saw an error, the attempt's success rows AND the sibling failure row coexist under one
-  `attempt_id` — they pool into ONE attempt whose rows are mixed, which does not retire the
-  verdict (not all-success) and does not double-count the ceiling. Benign, and now said.
-- If the sibling write ALSO fails (the database itself is down), nothing durable is possible by
-  definition; the supervisor's own tick failure is the outer signal. Stated residual.
+### OQ-ALR-4 — Carries (r)/(s): the courtesy skip EMITS THE ROW IT SKIPS — fully pinned
 
-### OQ-ALR-4 — C3/C4 (recipient degradation): the courtesy skip EMITS THE ROW IT SKIPS
+Pass 1's strongest convergence (C6/C14/C18: a skip that records nothing makes an all-skipped tick
+emit zero rows). Pass 2 then broke the fold's own specification twice (P2-1/P2-9: the row's
+outcome value undetermined, with SENT a false record, SUPPRESSED a contradicted semantic, and an
+unmapped new value landing as audit `failure`; P2-2: the courtesy read's scope unstated). **The
+mechanism, fully pinned:**
 
-Pass 1's strongest convergence (C6/C14/C18 — three lanes independently): v1's skip, which POSTed
-nothing and recorded nothing for an already-told recipient, made an all-skipped tick emit ZERO
-rows — the v6 rule (a pure function of `NOTIFY.DISPATCH` rows) could then never retire the
-verdict. v5's non-termination, resurrected through the delivery loop by a slice whose remit is
-noise reduction.
+- **A fourth NOTIFY outcome is MINTED: `SKIPPED`** — "delivery deliberately not attempted: this
+  recipient's latest state for THIS verdict is already-delivered". It joins `NOTIFY_OUTCOMES` and
+  the ratified `_emit_dispatch` total mapping **in the same commit**, mapping to audit
+  `'success'`; the mapping stays total and fail-closed on any FIFTH value. The `NOTIFY.DISPATCH`
+  taxonomy row gains the outcome (a vocabulary amendment, not a new event code — the R-07 note
+  rides this ratification). **A skip row's payload outcome is NEVER `SENT`** — the wave-12
+  honesty doctrine (SENT = the sink accepted a real call) is preserved for auditors counting
+  deliveries.
+- **The courtesy read is scoped**: THIS verdict's rows (`entity_id = check.id`) for THIS
+  recipient; "already delivered" = any prior row whose payload outcome is `SENT` (or `SKIPPED`).
+  Failure direction on ANY doubt — no rows, unreadable rows, unrecognized shape, the OQ-ALR-3
+  sentinel — is PAGE.
+- An all-skipped attempt is therefore an all-success latest attempt and the verdict retires
+  exactly as today. (Pass-2's refuter sharpened the stake: even the broken variant terminates at
+  the unconditional ceiling — the harm was five false `failure` rows, a burned retry budget, and
+  a delivered verdict misclassified as exhausted on the very surface this slice builds. The pin
+  removes all three.)
 
-**The fold: a courtesy-skipped recipient still emits a durable CONCLUDED row** under the tick's
-`attempt_id` — `outcome='success'`, payload detail `skipped: already delivered` — so an
-all-skipped attempt is an all-success latest attempt and the verdict retires EXACTLY as it does
-today, minus the wire noise. The skip consults the recipient's own prior outcome rows for the
-courtesy decision only; **failure direction on ANY doubt (no rows, unreadable rows, shape it does
-not recognize, the OQ-ALR-3 sentinel) is PAGE** — shape-blindness degrades to paging, never to
-dropping, which is also why the pass-1 claim that the skip resurrects the payload-shape dependency
-was REFUTED: a dependency whose failure mode is the status quo is a courtesy, not a load-bearing
-read. The retirement rule itself never reads per-recipient state — unchanged, un-reopened.
-
-**C4 (carry (s)) is ACCEPTED, not fixed** — the alternative is the non-terminating rule the bound
-exists to prevent. Visible via `exhausted_verdicts`; recorded here.
+**Carry (s) is ACCEPTED, not fixed** — the alternative is the non-terminating rule the bound
+exists to prevent. Visible via `exhausted_verdicts`.
 
 ### OQ-ALR-5 — Scope fence: the REPRODUCTION channel only
 
-Breach-channel health (ENT-063 has its own durable per-recipient rows and semantics) is a NAMED
-NON-GOAL; trigger: the first breach-channel delivery incident, or the operator-workflow slice
-hosting carry (j).
+Breach-channel health is a NAMED NON-GOAL; trigger: the first breach-channel delivery incident,
+or the operator-workflow slice hosting carry (j).
 
 ### OQ-ALR-6 — The UI: an "Alerting" panel on the operations surface
 
-`/ops/alerting` (client route; the API prefix consequence is OQ-ALR-2's). Red fields, amber
-fields, and the two informational dispositions rendered with plain-language explanations —
-`no_schedule` names REPRO-2 as the payer; `nothing_to_reproduce` says "empty tenant, by design".
-FE reads via generated types; no writes; no acknowledgement (carry (j), §5).
+`/ops/alerting`. Red, amber, and informational fields rendered with plain-language explanations
+**and one operator-action line per red field** (pass-2 minor: at 02:00, `lost_verdicts` red says
+"read the FAILED sweep's reason in the run ledger", `sweep_overdue` says "check the worker
+process/schedule") — runbook strings in the panel, not a runbook document. `no_schedule` names
+REPRO-2; `nothing_to_reproduce` says "empty tenant, by design". FE via generated types; no
+writes; no acknowledgement (carry (j), §5).
 
-### OQ-ALR-7 — Mint census: NOTHING minted
+### OQ-ALR-7 — Mint census: no entity, no permission, no event code, no migration — ONE vocabulary amendment, named
 
-No new entity, no new permission, no new audit code (`NOTIFY.DISPATCH` reused with
-`outcome='failure'` — an outcome, not a verb), no model, no migration. §5C is a PER-MINT
-checklist (pass-1 correction): a slice minting nothing owes no rows, and this line records that
-reading rather than inventing refused-row ceremony. The route-count pin and the FE prefix pair
-move consciously. CTRL moves: NONE (CTRL-018 is REPRO-2's to move); this slice's evidence rides
-existing rows. *(v1's "first slice ever to ship no migration" boast was false — struck at pass 1,
-C17.)*
+No new entity, no new permission, no new audit **event code**, no model, no migration. §5C is a
+per-MINT checklist; a slice minting no permission owes no rows (pass-1 correction). **What IS
+amended, ratified here by name (pass-2 P2-1): the NOTIFY outcome vocabulary gains `SKIPPED`, and
+the ratified `_emit_dispatch` total mapping gains its third success-mapping member — each with its
+own mutant.** The route-count pin (300 → 301) and the FE prefix pair move consciously. CTRL
+moves: NONE (CTRL-018 is REPRO-2's). *(v1's false "first slice with no migration" boast was
+struck at pass 1, C17.)*
 
 ## 4. Proofs (the remit binds these; P18 throughout)
 
-- Every red/amber field: a test that MAKES its condition true and sees it move, plus the
-  discriminating twin (a clean tenant: all-zero, healthy, and `nothing_to_reproduce`
-  distinguishable from a real failure). Named additions from pass 1:
-  - **absence-sensing**: a tenant with a schedule and NO terminal run within cadence+grace →
-    `sweep_overdue` ↔ a fresh terminal run → not overdue; a tenant with no schedule →
-    `no_schedule`, NOT overdue, NOT red;
-  - **the alarm-lost night**: a FAILED run WITH other families' verdict rows and an UNRECORDED
-    verdict → `lost_verdicts` nonzero (the marker constant asserted shared by writer and reader);
-  - **all-skipped termination** (the C6/C14/C18 killer): both recipients already told → the tick
-    emits concluded rows, the attempt is all-success, the verdict RETIRES; mutant: skip stops
-    emitting rows → a named test must redden on non-termination;
-  - **sibling row joins the bound**: force a rollback on PG → the FAILED row lands with the
-    boundary-minted `attempt_id` → the verdict retires at the EXISTING ceiling; mutant: drop the
-    sibling write → indefinite-retry test reddens;
-  - **classification single-implementation**: the queue and `exhausted_verdicts` disagree-proof —
-    one fold, two consumers, asserted by construction (the refactor) and by a test that would
-    catch a second implementation appearing.
-- Route: census-visible; permission parity (five-role holder ↔ 403 for `tenant_admin`/stranger ↔
-  401 bare); counts-only payload asserted against the response model BY FIELD NAME.
-- Deployed arm (pass-1 C20 named the gaps): host = `prove_reproduction.sh`, which gains
-  `$COMPOSE up -d backend` and a `schedule.view`-holding seeded principal; asserts the healthy
-  all-zero read on the live stack, plus twins: the `breach.review`-only principal → 403; bare →
-  401.
-- Mutation battery group `alert-1`, committed, `needs_pg` on PG-tier mutants (P18).
-- Both tiers + full-PG + CI-watch-to-green, exit codes quoted (P14).
+- Every red/amber field: make its condition true, see it move; the discriminating twin (clean
+  tenant: all-zero, healthy). Named additions:
+  - **absence-sensing**: schedule with no terminal run past cadence+grace → `sweep_overdue` ↔
+    fresh terminal run → not overdue; no schedule → `no_schedule`, not red; fresh never-fired
+    schedule inside its first period → NOT overdue (P2-4); two schedules, one silent → overdue
+    (P2-10, per-schedule grain).
+  - **the alarm-lost night**: FAILED run WITH other verdict rows + a lost alarm →
+    `lost_verdicts` nonzero; the sentinel token asserted shared writer/reader.
+  - **carry (e)'s twin pair** (P2-5/P2-12): an empty tenant's FAILED sweep →
+    `nothing_to_reproduce`, healthy; an infrastructure-failed sweep on the SAME empty tenant →
+    `failed_sweeps`, red.
+  - **all-skipped termination**: both recipients already told → SKIPPED rows land → attempt
+    all-success → verdict RETIRES; mutants: skip stops emitting rows → redden; `SKIPPED` dropped
+    from the success mapping → redden (the P2-1 probe as a permanent test).
+  - **the scoped courtesy read** (P2-2): two queued verdicts, recipient told about verdict 1
+    only → tick PAGES for verdict 2; mutant: drop the `entity_id` predicate → redden.
+  - **sibling row joins the bound**: force a PG rollback → FAILED row with the boundary-minted
+    `attempt_id` → verdict retires at the EXISTING ceiling; mutant: drop the sibling write →
+    indefinite-retry test reddens.
+  - **classification** (P2-3): delivered-at-ceiling labels DELIVERED; poisoned-at-ceiling labels
+    ceiling-retired; retirement set unchanged (asserted equal before/after the refactor);
+    `dead_channel` fires on grown-exhausted + zero-success (P2-13) ↔ one successful delivery →
+    not dead.
+- Route: census-visible; permission parity (five-role holder ↔ 403 `tenant_admin`/stranger ↔ 401
+  bare); the payload's field set asserted BY NAME against the response model (counts, booleans,
+  one timestamp — nothing else).
+- Deployed arm (pass-1 C20): host = `prove_reproduction.sh` + `$COMPOSE up -d backend` + a
+  seeded `schedule.view`-holding principal (`risk_manager_2l`); asserts the healthy read on the
+  live stack ↔ the `breach.review`-only principal 403 ↔ bare 401.
+- Mutation battery group `alert-1`, committed, `needs_pg` where PG-tier (P18). Both tiers +
+  full-PG + CI-watch-to-green, exit codes quoted (P14).
 
-## 5. Non-goals (each with its trigger, P19)
+## 5. Non-goals and stated residuals (each with its trigger, P19)
 
-- **Acknowledgement / the nightly re-fire (carry (j))** — trigger: REPRO-2's verdict reads making
-  re-fires visible, or the first operator complaint.
+- **Acknowledgement / the nightly re-fire (carry (j))** — trigger: REPRO-2's verdict reads
+  making re-fires visible, or the first operator complaint.
 - **Breach-channel health** — trigger at OQ-ALR-5.
 - **Phase-5 scan performance/retention (carry (k))** — a performance slice; `queued`'s
-  O(all-history) cost is THAT carry's, explicitly not paid here.
-- **A real paging integration** — the sink Protocol is the boundary; DEP-1's webhook stands.
-- **Verdict CONTENT reads** — REPRO-2, where carry (n)'s redaction residual is bound.
+  O(all-history) cost is that carry's, not paid here.
+- **A real paging integration** — trigger (P2-11): the first production tenant with a real
+  on-call rotation, or DEP-1's webhook failing an actual incident.
+- **Verdict CONTENT reads** — REPRO-2, where carry (n)'s residual is bound.
+- **The regress, terminated honestly (P2-15):** the health surface is PULL-only — a red field
+  pages nobody, and carry (t)'s sentence "no alarm fires about the alarm system" remains
+  literally true one level up. The regress stops at the operator's eyes: a broken health ROUTE
+  is visibly broken (an error, never a false green), which is the property that makes pull-only
+  acceptable. Trigger for a push leg: carry (j)'s slice, or the first missed-red incident.
 
 ## 6. Verifier ledger
 
 | Pass | Shape | Outcome |
 |---|---|---|
-| 1 (2026-08-09) | 5 adversarial lanes + refute-by-default on every serious finding; 29 agents, 0 errors | **21 CONFIRMED (6 BLOCKING-class in 3 convergence groups), 3 REFUTED, 12 minor.** The three convergences: the courtesy skip's zero-row tick resurrecting v5 non-termination (3 lanes independently); the health surface blind to the sweep's ABSENCE (the LQ-1 inert-control shape applied to the health surface itself); the six-carry census wrong in v1 (carry (e) dropped). All folded above; each fold names its pass-1 finding. |
-| 2 | PENDING — attacks the folds | |
+| 1 (2026-08-09) | 5 adversarial lanes + refute-by-default; 29 agents, 0 errors | **21 CONFIRMED (6 BLOCKING-class, 3 convergence groups: the zero-row skip tick — C6/C14/C18; absence-blindness — C1; the census wrong — C13), 3 REFUTED, 12 minor.** All folded in v2; pass-2 P2-7 then found C5 and C8 folded but UNCITED — C5 = the carries-table (t) row; C8 = the `healthy` enumeration — now named at their folds. |
+| 2 (2026-08-09) | 3 lanes attacking the FOLDS + a completeness critic + refute-by-default; 21 agents, 0 errors | **15 CONFIRMED (5 BLOCKING-class), 2 REFUTED, 8 minor.** The pattern the passes exist for: pass-2's strongest findings were specification gaps in pass-1's own fixes — the skip row's outcome value undetermined with every existing value defective (P2-1); the empty-tenant recompute keyed on read-time state instead of the run's trace (P2-5/P2-12); the absence-sensing pair blind to paused/fresh/multiple schedules (P2-4/P2-10); the dead channel that never turns red (P2-13); permanent-red poison (P2-14). All folded in v3, each named at its fold. |
