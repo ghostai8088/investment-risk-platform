@@ -9,6 +9,7 @@ import { SessionForm } from "./components/SessionForm";
 import { beginLogin, completeLogin, logout } from "./auth/oidc";
 import { clearSession, loadSession, saveSession } from "./session";
 import type { Session } from "./session";
+import { UsersRoles } from "./views/admin/UsersRoles";
 import { BreachDetail } from "./views/ops/BreachDetail";
 import { BreachQueue } from "./views/ops/BreachQueue";
 import { LimitHealth } from "./views/ops/LimitHealth";
@@ -130,6 +131,10 @@ export function App(): ReactElement {
               returns 401 JSON instead of the SPA. Every other client route is already
               namespaced away from the API surface (`ops/limits`, not `/limits`). */}
           <Route path="ops/reports" element={<Reports session={session} />} />
+          {/* ONBOARD-1b: NOT at bare /users — that path is an API prefix (api-prefixes.ts), and a
+              client route there is shadowed by the vite proxy / nginx alternation (the
+              ops/reports precedent: deep-linking would answer 401 JSON instead of the SPA). */}
+          <Route path="admin/users" element={<UsersRoles session={session} />} />
           <Route path="walk" element={<WalkOverview />} />
           <Route path="walk/:step" element={<WalkStep session={session} />} />
           <Route path="runs" element={<RunsList session={session} />} />

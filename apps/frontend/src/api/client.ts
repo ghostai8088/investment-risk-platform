@@ -84,11 +84,15 @@ function identityHeaders(session: Session): Record<string, string> {
     : { "X-User-Id": session.userId, "X-Tenant-Id": session.tenantId };
 }
 
-/** The shared core. `body === undefined` means no request body (a read). */
+/** The shared core. `body === undefined` means no request body (a read).
+ *
+ * `DELETE` joined the union at ONBOARD-1b (role revocation is `DELETE /users/{uid}/roles/{rid}`)
+ * — a deliberate widening of the write surface, not a workaround: the verb is still only
+ * reachable through `./writes`, and identity injection still has exactly one implementation. */
 export async function request<T>(
   path: string,
   session: Session | null,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   body?: unknown,
 ): Promise<T> {
   if (!session) {

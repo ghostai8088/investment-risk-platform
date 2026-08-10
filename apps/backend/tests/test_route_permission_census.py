@@ -75,7 +75,7 @@ UNROUTED_FORWARD_GATES: dict[str, str] = {
 #: The measured route count at RPT-2 (2026-08-07). Moves CONSCIOUSLY with each slice that adds or
 #: removes routes — the point is that it can never silently be zero (the vacuous-walk trap) or
 #: silently shrink (a router falling out of main.py, the CI-allowlist drift class).
-EXPECTED_ROUTE_COUNT = 292  # +1 at ONBOARD-1a: POST /tenants
+EXPECTED_ROUTE_COUNT = 300  # +1 at ONBOARD-1a (POST /tenants); +8 at ONBOARD-1b (tenant admin)
 
 
 def _api_routes(routes: Any) -> Iterator[APIRoute]:

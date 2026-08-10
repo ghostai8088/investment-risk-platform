@@ -903,3 +903,29 @@ main.shell-content {
   border: 1px solid var(--border, #d0d0d0);
   background: #fff;
 }
+
+/* --- ONBOARD-1b: Users & Roles (tenant self-administration) --------------------------------- */
+
+/* A role chip's inline revoke affordance — a small text action inside the chip, not a second
+   button row: the chip IS the grant, and its removal verb belongs on it. */
+.chip-action {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 0.35rem;
+  font-size: 0.75em;
+  text-decoration: underline;
+  cursor: pointer;
+  color: inherit;
+}
+.chip-action:disabled {
+  cursor: default;
+  opacity: 0.5;
+  text-decoration: none;
+}
+
+.ops-grant {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+}

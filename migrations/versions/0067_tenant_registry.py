@@ -287,19 +287,41 @@ def upgrade() -> None:
                 }
             ],
         )
-    # Its grants come from ROLE_TEMPLATES, which is EMPTY for this role in 1a. Written as a loop
-    # anyway so 1b's mint needs no new machinery here — and so this migration stays truthful if
-    # somebody adds a code to the template before 1b lands.
-    admin_grants = [
-        {
+    # Its grants come from ROLE_TEMPLATES, which was EMPTY for this role when 1a shipped.
+    #
+    # **EXISTENCE-GUARDED, and the guard is the finding.** This loop live-imports a MUTABLE
+    # constant, so its behaviour changed the moment ONBOARD-1b filled the template: on a fresh
+    # database `0002` (which also live-imports the constant) now seeds these four grants, and this
+    # unguarded insert then collided on `pk_role_permission` — a migration that had shipped green
+    # started failing because a LATER slice edited a constant it reads. Found by executing
+    # `alembic upgrade head` on a reset database at 1b, not by reading.
+    #
+    # The class rule this makes concrete: **an insert that live-imports a mutable constant must be
+    # existence-guarded**, because the constant's future is not the migration's to control. Every
+    # other insert in this file already was; this one was the exception, written to be
+    # forward-friendly, and being forward-friendly is precisely what broke it.
+    want_admin_grants = {
+        role_permission_id("tenant_admin", code): {
             "id": role_permission_id("tenant_admin", code),
             "role_id": admin_role_id,
             "permission_id": permission_id(code),
         }
         for code in ROLE_TEMPLATES.get("tenant_admin", [])
-    ]
-    if admin_grants:
-        op.bulk_insert(_role_permission, admin_grants)
+    }
+    if want_admin_grants:
+        present = {
+            str(r)
+            for r in bind.execute(
+                sa.select(_role_permission.c.id).where(
+                    _role_permission.c.id.in_(list(want_admin_grants))
+                )
+            )
+            .scalars()
+            .all()
+        }
+        admin_grants = [v for k, v in want_admin_grants.items() if k not in present]
+        if admin_grants:
+            op.bulk_insert(_role_permission, admin_grants)
 
 
 def downgrade() -> None:
