@@ -27,6 +27,7 @@ import { verbatim } from "../../api/format";
 import type { components } from "../../api/generated/api-types";
 import type { Session } from "../../session";
 import { explain } from "../ops/Refusal";
+import { GenerateReport } from "./GenerateReport";
 
 type ReportOut = components["schemas"]["ReportOut"];
 type ReportListOut = components["schemas"]["ReportListOut"];
@@ -92,6 +93,8 @@ export function Reports({ session }: { session: Session }): ReactElement {
           is re-proven byte-identical to the recorded artifact, not served from a cache.
         </p>
       </header>
+
+      <GenerateReport session={session} onGenerated={() => setReload((n) => n + 1)} />
 
       {reports.loading ? <p className="state">Loading reports…</p> : null}
       {reports.error ? (

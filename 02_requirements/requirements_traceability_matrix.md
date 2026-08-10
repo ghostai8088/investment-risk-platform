@@ -91,7 +91,7 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-AUD-001 | 15.1/15.4 | P-IA,P-CO | Plat/3L | P1 | BX-AUD | BX-ENT | — | — | CTRL-005/012 | FW-AUD (extends) | Draft |
 | REQ-AUD-002 | 15.2 | P-IA | Plat | P0 | BX-AUD | BX-ENT | — | — | CTRL-026 | FW-AUD, DEP-CIH | Draft |
 | REQ-AUD-003 | 15.3 | P-IA,P-CO | 3L/2L | P8 | BX-AUD | BX-ENT | — | — | CTRL-012 | DEP-RPT | Draft |
-| REQ-RPT-001 | 16.1 | P-RM,P-RA | 2L/1L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009 | DEP-RPT, DEP-LIN | Draft |
+| REQ-RPT-001 | 16.1 | P-RM,P-RA | 2L/1L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009 | DEP-RPT, DEP-LIN | In-Progress (RPT-1/RPT-2 2026-08-07; RPT-3 2026-08-10) — acceptance proven; CREDIT family not built |
 | REQ-RPT-002 | 16.3 | P-RM,P-BRD | 2L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009/015 | DEP-RPT, BX-SOD | Draft |
 | REQ-RPT-003 | 16.4/16.5 | P-CO,P-IA | 2L/3L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009 | DEP-RPT, CAP-12/13/15 | Draft |
 | REQ-ADM-001 | 17.1 | P-ADM | Plat | P9 | BX-AUD | BX-ENT | — | — | CTRL-010 | DEP-SSO (AD-007) | **In-Progress (SSO-1 W9 + FE-3b W10):** principal-from-OIDC realized (real boundary + browser PKCE); admin surfaces + full dev-shim replacement remain RTM-P9 *(re-synced at the Wave-14 planning gate)* |

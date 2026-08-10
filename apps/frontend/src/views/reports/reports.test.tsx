@@ -58,7 +58,13 @@ function stubFetch(htmlBody: string, htmlStatus = 200, detail = "boom"): void {
         });
       }
       if (url.includes("/reports")) {
-        return new Response(JSON.stringify({ items: [REPORT] }), {
+        // RPT-3 mounted the generate form on this screen, so a render now also reads
+        // /portfolios and /snapshots — BARE ARRAYS, not `{items}`. The catch-all used to answer
+        // every non-/html path with the report envelope; that was fine when this screen made one
+        // read and became wrong the moment it made three. Routed explicitly rather than widened.
+        const body =
+          url.includes("/portfolios") || url.includes("/snapshots") ? [] : { items: [REPORT] };
+        return new Response(JSON.stringify(body), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
@@ -177,7 +183,13 @@ describe("apiGetHtml's content-type refusal (review finding: it had never fired)
             headers: { "content-type": "application/json" },
           });
         }
-        return new Response(JSON.stringify({ items: [REPORT] }), {
+        // RPT-3 mounted the generate form on this screen, so a render now also reads
+        // /portfolios and /snapshots — BARE ARRAYS, not `{items}`. The catch-all used to answer
+        // every non-/html path with the report envelope; that was fine when this screen made one
+        // read and became wrong the moment it made three. Routed explicitly rather than widened.
+        const body =
+          url.includes("/portfolios") || url.includes("/snapshots") ? [] : { items: [REPORT] };
+        return new Response(JSON.stringify(body), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
