@@ -158,7 +158,7 @@ Grouped by bounded context. IDs are stable; attributes listed are indicative (th
 | ID | Entity | Notes |
 |---|---|---|
 | ENT-038 | `data_source` | Source registry (lineage origin) |
-| ENT-039 | `data_quality_rule` / `dq_result` | DQ rules and outcomes |
+| ENT-039 | `data_quality_rule` / `dq_result` | DQ rules and outcomes. **Census backfill 2026-08-09: the realized outcome table is named `data_quality_result` (not the `dq_result` shorthand this row carried from P0) — one row per evaluated rule per batch, the four evaluator types incl. `RULE_TYPE_COMPLETENESS` (DATA-1).** |
 | ENT-040 | `reconciliation_result` | Recon outcomes |
 | ENT-041 | `manual_override` | Prior/new value, justification, approval (BR-7) |
 | ENT-042 | `lineage_edge` | Source-to-target lineage graph edges (BR-13). **P2-3 (ratified-in-planning, OD-P2-3-J):** the P2-1 internal-lineage writer is generalized to root a `calculation_run` source — additive `source_type` token `SOURCE_TYPE_CALCULATION_RUN` (joining `data_source`/`data_snapshot`) + the additive `edge_kind` value **`EDGE_KIND_DEPENDENCY` (`"DEPENDS_ON"`)**. Edges per exposure run: `dataset_snapshot → calculation_run` (`DEPENDS_ON`) + `calculation_run → exposure_aggregate` (`EDGE_KIND_ORIGIN`, with `lineage_edge.run_id` stamped). `edge_kind`/`source_type` are free controlled-vocab strings → additive, **no `lineage_edge` migration, no framework rewrite**. (**"DEP-LIN" is the RTM/control traceability token, NOT an `edge_kind`.**) Tenant stamped from the RLS-resolved source. |
@@ -167,8 +167,8 @@ Grouped by bounded context. IDs are stable; attributes listed are indicative (th
 | ID | Entity | Notes |
 |---|---|---|
 | ENT-043 | `user` / `service_account` / `agent_principal` | Subjects (incl. AI agents) |
-| ENT-044 | `role` / `permission` / `entitlement_grant` / `scope` | RBAC/ABAC model |
-| ENT-045 | `audit_event` | Immutable; schema in audit_event_taxonomy.md |
+| ENT-044 | `role` / `permission` / `entitlement_grant` / `scope` | RBAC/ABAC model. **Realized tables (census backfill 2026-08-09 — the mechanical ledger census's first run found the realized names were never recorded here): `app_user` (the person — OIDC `external_subject`, `display_name`, `is_active`; DC-3 person-identifying, the reason `user.view` excludes `auditor_3l`), `user_role` (the effective-dated grant — `valid_from`/`valid_to`; authority = an ACTIVE user holding a grant valid NOW, the ONBOARD-1b orphan-invariant definition), plus `role_permission` (already recorded). `entitlement_grant`/`scope` remain the P6+ ABAC reservation, unrealized.** |
+| ENT-045 | `audit_event` | Immutable; schema in audit_event_taxonomy.md. **Census backfill 2026-08-09: `audit_checkpoint` rides this family — the periodic hash-chain anchor the FROZEN audit service writes so chain verification has a trusted start (`ops.audit.verify`'s subject). Same governance class as the event row it anchors.** |
 | ENT-046 | `report` / `report_version` | Reproducible reports (BR-9) |
 
 ### Integration (BC-16)
