@@ -1,6 +1,6 @@
 # ALERT-1 decision record — the alarm about the alarm, visible and bounded
 
-**Status:** v3 — post-pass-2, READY FOR RATIFICATION (not yet ratified)
+**Status:** **RATIFIED 2026-08-09** (AskUserQuestion, four decision points, ALL as recommended: v3 OQ-ALR-1…7 ratified; the `SKIPPED` NOTIFY-outcome mint AUTHORIZED (the ratified total mapping gains its third success member, fail-closed on a fifth); the five-role `schedule.view` set kept — `tenant_admin`'s exclusion is a decision with a revisit trigger; both residuals ACCEPTED as recorded (carry (s); pull-only surface until carry (j)'s slice). Design authority: THIS record. NEXT: the ALERT-1 implementation.)
 
 **Wave 17, slice 1** (the ratified Part 2.19 sequence). Branch `alert-1-planning`. Design
 authority once ratified: THIS record.
