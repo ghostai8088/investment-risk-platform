@@ -1023,3 +1023,24 @@ file = "02_requirements/requirements_traceability_matrix.md"
 find = """That assertion is now MACHINE-CHECKABLE for **nineteen of the twenty-one**"""
 replace = """That assertion is now MACHINE-CHECKABLE for exactly three families"""
 tests = ["packages/shared-python/tests/test_reproduction_register_truth.py"]
+
+[[mutant]]
+id = "W-D1"
+group = "w17-close"
+why = "the legacy-tenant backfill stops skipping the SYSTEM tenant, cloning a template into the tenant that OWNS the templates"
+file = "migrations/versions/0069_legacy_tenant_admin.py"
+find = """        if str(t) != SYSTEM_TENANT_ID
+    ]
+    if not tenants:"""
+replace = """    ]
+    if not tenants:"""
+tests = ["packages/shared-python/tests/test_legacy_tenant_admin_backfill.py"]
+
+[[mutant]]
+id = "W-D2"
+group = "w17-close"
+why = "the backfill creates the role and grants it nothing — a tenant_admin role that permits nothing looks identical in a role listing and is 403 on every verb"
+file = "migrations/versions/0069_legacy_tenant_admin.py"
+find = """    wanted_codes = list(ROLE_TEMPLATES.get("tenant_admin", ()))"""
+replace = """    wanted_codes = []"""
+tests = ["packages/shared-python/tests/test_legacy_tenant_admin_backfill.py"]
