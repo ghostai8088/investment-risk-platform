@@ -6,5 +6,6 @@
   "workspaces": [
     "apps/frontend",
     "packages/shared-ts"
-  ]
+  ],
+  "license": "UNLICENSED"
 }

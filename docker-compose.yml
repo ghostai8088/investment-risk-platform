@@ -41,7 +41,16 @@ services:
       # CONTAINER, so every DB-touching service gets the service-name URL explicitly here. This was
       # a real footgun: the shipped .env.example could not have worked for a containerized backend,
       # and nothing would have said so except a connection refusal at runtime.
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # DEPLOY-1 (2026-08-11): the APPLICATION services connect as `irp_app` —
+      # NOSUPERUSER NOBYPASSRLS, delivered by migration 0070. Until this change every
+      # service connected as ${POSTGRES_USER}, which the postgres:16 image creates as a
+      # SUPERUSER, so all 84 FORCE-RLS tables were bypassed in the only artifact anyone
+      # would deploy. Measured before the fix: as the owner, 2 rows visible across two
+      # tenants with no tenant GUC armed; as irp_app, 0.
+      #
+      # `migrate` keeps the OWNER url below — it needs DDL, and running migrations as the
+      # constrained role would fail on the first CREATE TABLE.
+      DATABASE_URL: postgresql+psycopg://${IRP_APP_DB_USER:-irp_app}:${IRP_APP_DB_PASSWORD}@db:5432/${POSTGRES_DB}
     ports:
       - "8000:8000"
     depends_on:
@@ -69,7 +78,16 @@ services:
       # CONTAINER, so every DB-touching service gets the service-name URL explicitly here. This was
       # a real footgun: the shipped .env.example could not have worked for a containerized backend,
       # and nothing would have said so except a connection refusal at runtime.
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # DEPLOY-1 (2026-08-11): the APPLICATION services connect as `irp_app` —
+      # NOSUPERUSER NOBYPASSRLS, delivered by migration 0070. Until this change every
+      # service connected as ${POSTGRES_USER}, which the postgres:16 image creates as a
+      # SUPERUSER, so all 84 FORCE-RLS tables were bypassed in the only artifact anyone
+      # would deploy. Measured before the fix: as the owner, 2 rows visible across two
+      # tenants with no tenant GUC armed; as irp_app, 0.
+      #
+      # `migrate` keeps the OWNER url below — it needs DDL, and running migrations as the
+      # constrained role would fail on the first CREATE TABLE.
+      DATABASE_URL: postgresql+psycopg://${IRP_APP_DB_USER:-irp_app}:${IRP_APP_DB_PASSWORD}@db:5432/${POSTGRES_DB}
     depends_on:
       # DEP-1: was `db: service_healthy` — waiting for PG to accept connections is NOT the same as
       # waiting for the schema to exist. The worker ticks against governed tables from its first

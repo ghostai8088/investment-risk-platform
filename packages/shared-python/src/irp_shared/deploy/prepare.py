@@ -40,6 +40,38 @@ log = logging.getLogger(__name__)
 #: them — which is why this lives HERE and not in an alembic revision (the verifier pass's B5).
 OPERATOR_SUBJECT_ENV = "IRP_PLATFORM_OPERATOR_SUBJECT"
 
+#: DEPLOY-1: the application role, and the env var carrying its password. The ROLE is a fixed
+#: identifier owned by migration 0070; only the credential is deployment-specific.
+APP_ROLE = "irp_app"
+APP_DB_PASSWORD_ENV = "IRP_APP_DB_PASSWORD"
+
+
+def _grant_app_role_login(owner_url: str, password: str) -> None:
+    """Give the migration-created application role its LOGIN and password.
+
+    Runs as the OWNER (this function is called from the prepare step, which holds the owner URL) —
+    the app role cannot grant itself anything, which is the point of it.
+
+    ``ALTER ROLE`` accepts no bind parameters, and a password is exactly the kind of value that
+    will one day contain a quote. So the literal is quoted BY THE SERVER — ``SELECT
+    quote_literal(:pw)`` with a real bind, then the already-quoted result is interpolated. The
+    escaping is PostgreSQL's job rather than this file's, and the password never appears in a
+    string this module concatenated by hand.
+
+    (The first draft wrapped it in a ``DO $$ … EXECUTE format('%L') … $$`` block. That cannot work:
+    a DO block's body is an opaque string literal to the server, so there is nothing for a bind
+    parameter to bind to. Caught by executing it.)
+    """
+    from sqlalchemy import text
+
+    engine = make_engine(owner_url)
+    try:
+        with engine.begin() as conn:
+            quoted = conn.execute(text("SELECT quote_literal(:pw)"), {"pw": password}).scalar_one()
+            conn.execute(text(f"ALTER ROLE {APP_ROLE} LOGIN PASSWORD {quoted}"))
+    finally:
+        engine.dispose()
+
 
 def _active_operator_subjects(session: Session) -> set[str]:
     """Every SYSTEM-tenant subject that can authenticate AND holds the platform-operator role.
@@ -200,6 +232,33 @@ def prepare_database(
     # `relation "currency" does not exist` while ALL SEVEN other jobs stayed green. The job is a
     # control, not an assertion that one exists (P9).
     command.upgrade(cfg, "head")
+
+    # DEPLOY-1: the application role's CREDENTIAL. Migration 0070 creates `irp_app` NOLOGIN and
+    # grants it what an application needs; a password in a migration would be a secret in source
+    # (BR-10), so the deployment supplies it here — the same split `seed_platform_operator` below
+    # already uses for the operator identity.
+    #
+    # FAIL CLOSED, deliberately. An absent password used to be impossible to get wrong because the
+    # services connected as the owner; now an absent password means the backend and worker cannot
+    # connect at all, and the useful failure is HERE with a sentence explaining it rather than a
+    # connection refusal in a container log at 3am.
+    app_password = os.environ.get(APP_DB_PASSWORD_ENV, "").strip()
+    if app_password:
+        _grant_app_role_login(url, app_password)
+        log.info(
+            "application role %s: LOGIN granted, password set from %s",
+            APP_ROLE,
+            APP_DB_PASSWORD_ENV,
+        )
+    else:
+        log.warning(
+            "%s is not set — the application role %s stays NOLOGIN. The backend and worker "
+            "connect as %s (docker-compose.yml) and WILL fail to start. Set it, or you are "
+            "deploying a stack whose services cannot reach the database.",
+            APP_DB_PASSWORD_ENV,
+            APP_ROLE,
+            APP_ROLE,
+        )
 
     log.info("seeding the SYSTEM reference slice (idempotent)")
     engine = make_engine(url)
