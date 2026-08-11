@@ -1005,3 +1005,21 @@ file = "scripts/check_docs.py"
 find = """    missing_witnesses = sorted(_MUST_PARSE_AS_DONE - done)"""
 replace = """    missing_witnesses = []"""
 tests = ["apps/backend/tests/test_check_docs_closure.py"]
+
+[[mutant]]
+id = "W-C1"
+group = "w17-close"
+why = "the CTRL-018 control-matrix row reverts to the REPRO-1-era census — three of twenty-one for a control that checks nineteen. The Wave-17 close BLOCKING 1 restored: this is the row a compliance assessor reads first"
+file = "09_compliance_controls/control_matrix_skeleton.md"
+find = """**NINETEEN families are registered and TWO are pinned UNREGISTERED**"""
+replace = """three families are registered (VAR, EXPOSURE_AGGREGATE, REPORT) and eighteen are pinned UNREGISTERED"""
+tests = ["packages/shared-python/tests/test_reproduction_register_truth.py"]
+
+[[mutant]]
+id = "W-C2"
+group = "w17-close"
+why = "the RTM's closing paragraph reverts — the sibling register whose near-identical wording is why correcting one file leaves two false"
+file = "02_requirements/requirements_traceability_matrix.md"
+find = """That assertion is now MACHINE-CHECKABLE for **nineteen of the twenty-one**"""
+replace = """That assertion is now MACHINE-CHECKABLE for exactly three families"""
+tests = ["packages/shared-python/tests/test_reproduction_register_truth.py"]
