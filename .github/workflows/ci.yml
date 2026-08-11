@@ -759,6 +759,51 @@ jobs:
       - name: Secret scan (placeholder for gitleaks)
         run: python scripts/secret_scan.py
 
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    # DEPLOY-1 (2026-08-11), ratified with the proprietary licence position. Diligence asks for a
+    # dependency bill of materials before it asks for a chart, and the licence file makes a claim
+    # about the dependency tree (psycopg is LGPL-3.0-only and is a RUNTIME dep) that should be
+    # mechanically re-derivable rather than hand-maintained.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install the runtime tree
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e packages/shared-python -e apps/backend -e apps/worker
+          pip install cyclonedx-bom
+      - name: Generate the Python SBOM
+        run: cyclonedx-py environment --output-format JSON --outfile sbom-python.json
+      - name: Fail on a copyleft licence the LICENSE file does not already declare
+        # The declared exceptions are psycopg/psycopg-binary (LGPL-3.0-only, used unmodified) and
+        # certifi/pathspec (MPL-2.0). A NEW copyleft dependency is a licence decision, not a
+        # dependency bump, and it must not arrive silently.
+        run: |
+          python - <<'PY'
+          import json, sys
+          declared = {"psycopg", "psycopg-binary", "certifi", "pathspec"}
+          sbom = json.load(open("sbom-python.json"))
+          bad = []
+          for c in sbom.get("components", []):
+              name = c.get("name", "")
+              lic = json.dumps(c.get("licenses", []))
+              if any(k in lic.upper() for k in ("GPL", "MPL", "SSPL", "EUPL")) and name not in declared:
+                  bad.append((name, lic))
+          if bad:
+              print("UNDECLARED COPYLEFT DEPENDENCIES:", bad)
+              print("Add them to LICENSE's third-party section deliberately, or remove them.")
+              sys.exit(1)
+          print(f"SBOM: {len(sbom.get('components', []))} components, no undeclared copyleft")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-python
+          path: sbom-python.json
+
   docs-check:
     name: Documentation check
     runs-on: ubuntu-latest
