@@ -142,9 +142,11 @@ def test_the_REAL_roadmaps_done_set_contains_the_slices_that_cannot_un_ship() ->
     done = _done_slice_ids((_ROOT / "10_delivery_backlog" / "delivery_roadmap.md").read_text())
 
     # The `✅ **DONE + CLOSED …**` shape — the one that broke, and the one that will break next.
-    assert {"REF-1", "DATA-1", "LQ-1"} <= done, (
-        "the leading-title branch has stopped matching the roadmap's own row shape again"
-    )
+    assert {
+        "REF-1",
+        "DATA-1",
+        "LQ-1",
+    } <= done, "the leading-title branch has stopped matching the roadmap's own row shape again"
     # The Wave-10 arc's inline marks, and the Wave-13 tick-inside-the-bold shape.
     assert {"PPF-1", "PPF-3"} <= done, "the arc-style inline branch has regressed"
     assert {"SR-1", "OPS-H1"} <= done, "the tick-inside-the-bold branch has regressed"
