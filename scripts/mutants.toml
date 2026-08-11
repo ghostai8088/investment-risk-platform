@@ -1044,3 +1044,24 @@ file = "migrations/versions/0069_legacy_tenant_admin.py"
 find = """    wanted_codes = list(ROLE_TEMPLATES.get("tenant_admin", ()))"""
 replace = """    wanted_codes = []"""
 tests = ["packages/shared-python/tests/test_legacy_tenant_admin_backfill.py"]
+
+[[mutant]]
+id = "W-E1"
+group = "w17-close"
+why = "the second-operator refusal is removed — rotating IRP_PLATFORM_OPERATOR_SUBJECT mints a SECOND live principal holding tenant.create, reachable by no HTTP path (the Wave-17 close D2 finding restored)"
+file = "packages/shared-python/src/irp_shared/deploy/prepare.py"
+find = """    live = _active_operator_subjects(session)
+    if live:"""
+replace = """    live = _active_operator_subjects(session)
+    if False:"""
+tests = ["packages/shared-python/tests/test_tenancy.py"]
+
+[[mutant]]
+id = "W-E2"
+group = "w17-close"
+why = "the operator census stops filtering on is_active, so a RETIRED operator still counts and rotation is blocked forever — an invariant with no exit is a trap"
+file = "packages/shared-python/src/irp_shared/deploy/prepare.py"
+find = """            AppUser.is_active.is_(True),
+            UserRole.role_id == platform_role_id(PLATFORM_OPERATOR_ROLE),"""
+replace = """            UserRole.role_id == platform_role_id(PLATFORM_OPERATOR_ROLE),"""
+tests = ["packages/shared-python/tests/test_tenancy.py"]

@@ -41,6 +41,65 @@ log = logging.getLogger(__name__)
 OPERATOR_SUBJECT_ENV = "IRP_PLATFORM_OPERATOR_SUBJECT"
 
 
+def _active_operator_subjects(session: Session) -> set[str]:
+    """Every SYSTEM-tenant subject that can authenticate AND holds the platform-operator role.
+
+    Both halves are load-bearing, and neither is a proxy for the other: a deactivated row cannot
+    authenticate, and a SYSTEM row without the grant is not an operator. Counting `app_user` alone
+    would over-report; counting grants alone would count a retired identity.
+    """
+    from irp_shared.entitlement.models import AppUser, UserRole
+    from irp_shared.entitlement.platform_catalog import PLATFORM_OPERATOR_ROLE, platform_role_id
+
+    rows = session.execute(
+        select(AppUser.external_subject)
+        .join(UserRole, UserRole.user_id == AppUser.id)
+        .where(
+            AppUser.tenant_id == SYSTEM_TENANT_ID,
+            AppUser.is_active.is_(True),
+            UserRole.role_id == platform_role_id(PLATFORM_OPERATOR_ROLE),
+        )
+    ).scalars()
+    return {str(r) for r in rows}
+
+
+def retire_platform_operator(session: Session, *, subject: str) -> bool:
+    """Retire a platform-operator identity so another can take its place. Returns whether it did.
+
+    **The rotation half of the Wave-17 close's D2.** Before this existed, the ONLY way to remove a
+    stale operator was hand-written SQL against `app_user`: the operator is refused on every router
+    except `/tenants`, and RLS hides SYSTEM users from every other tenant, so no HTTP path could
+    reach the row.
+
+    Deactivation, not deletion. The identity's audit trail — every tenant it created — must keep
+    resolving to a principal that still exists; deleting the row would orphan it. `is_active=False`
+    is what the authentication path already reads, so a retired operator stops authenticating
+    immediately without anything else having to know about this function.
+
+    Deliberately NOT an HTTP route, and this is a recorded deviation from the ratified wording
+    ("give the provisioning router a deactivate verb"): a route would need its own minted
+    permission, which is a governed R-07 act carrying a migration, a census entry and an SoD row —
+    a slice, not a close fold — and it would widen the SYSTEM-fenced surface, which is a hard
+    invariant, to fix a row that a deploy-tier tool can reach directly. The user's stated reason
+    for choosing enforcement was that "the only fix is SQL" had to end. It has: this is the same
+    tier as the seed it rotates, and the seed now names it in its own refusal.
+    """
+    from irp_shared.entitlement.models import AppUser
+
+    operator = session.execute(
+        select(AppUser).where(
+            AppUser.tenant_id == SYSTEM_TENANT_ID,
+            AppUser.external_subject == subject,
+            AppUser.is_active.is_(True),
+        )
+    ).scalar_one_or_none()
+    if operator is None:
+        return False
+    operator.is_active = False
+    session.flush()
+    return True
+
+
 def seed_platform_operator(session: Session, *, subject: str) -> str:
     """Idempotently seed the platform operator: one SYSTEM-tenant user + its role grant.
 
@@ -63,6 +122,32 @@ def seed_platform_operator(session: Session, *, subject: str) -> str:
     ).scalar_one_or_none()
     if existing is not None:
         return existing.id
+
+    # --- "exactly ONE" enforced, not merely stated (Wave-17 close, D2 ratified) -------------------
+    #
+    # The hard invariant says ONE standing authenticatable SYSTEM-tenant principal. Nothing counted
+    # them. Because this function keys idempotency on the SUBJECT, changing
+    # `IRP_PLATFORM_OPERATOR_SUBJECT` between deploys minted a SECOND live operator holding the
+    # platform's most privileged verb — measured at the close review: two ACTIVE SYSTEM `app_user`
+    # rows, two `platform_operator` grants. And because the operator is fenced off every route
+    # except `/tenants`, the stale identity could then be removed only by hand-written SQL, which
+    # is the manual step this wave existed to eliminate.
+    #
+    # The suite's only test of this path re-seeded the SAME subject and asserted `first == second`,
+    # which cannot see a second subject at all.
+    #
+    # Fail CLOSED rather than warn: a second privileged login is not a degraded state to report, it
+    # is a state to refuse. Rotation is `retire_platform_operator` below — an explicit act, in this
+    # module, so "deactivate the old one" is a supported operation rather than a DBA errand.
+    live = _active_operator_subjects(session)
+    if live:
+        raise ValueError(
+            "refusing to seed a SECOND platform operator: "
+            f"{sorted(live)} already authenticates against the SYSTEM tenant and holds "
+            f"`tenant.create`. The invariant is exactly ONE standing operator. To ROTATE, retire "
+            f"the current identity first (`retire_platform_operator`), then re-run this seed with "
+            f"the new subject."
+        )
     operator = AppUser(
         id=str(uuid.uuid4()),
         tenant_id=SYSTEM_TENANT_ID,
