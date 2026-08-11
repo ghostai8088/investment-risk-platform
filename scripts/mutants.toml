@@ -1065,3 +1065,15 @@ find = """            AppUser.is_active.is_(True),
             UserRole.role_id == platform_role_id(PLATFORM_OPERATOR_ROLE),"""
 replace = """            UserRole.role_id == platform_role_id(PLATFORM_OPERATOR_ROLE),"""
 tests = ["packages/shared-python/tests/test_tenancy.py"]
+
+[[mutant]]
+id = "W-F1"
+group = "w17-close"
+why = "model_version_id returns to the uncompared set — a stored governed row's recorded provenance can be repointed at a different registered model and CTRL-018 reports MATCH (the Wave-17 close D4 hole restored)"
+file = "packages/shared-python/src/irp_shared/reproduction/families.py"
+find = """    "calculation_run_id": _WHY_EXECUTION_FK,
+}"""
+replace = """    "calculation_run_id": _WHY_EXECUTION_FK,
+    "model_version_id": _WHY_EXECUTION_FK,
+}"""
+tests = ["packages/shared-python/tests/test_reproduction_families.py"]
