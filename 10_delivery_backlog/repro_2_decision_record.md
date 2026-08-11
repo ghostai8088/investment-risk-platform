@@ -1,6 +1,6 @@
 # REPRO-2 decision record — the reproduction control becomes STARTABLE
 
-**Status:** **RATIFIED 2026-08-10** (AskUserQuestion, four decision points, ALL as recommended: v3 OQ-REP2-1…7 ratified; the OQ-CAD-1-2=A/OQ-CAD-1-3=A supersession AUTHORIZED (registry-driven discovery, strict parse, the full disposition table, ~12-carrier blast radius incl. the deploy.sh step-8 rewrite); BOTH named ratified-disposition amendments AUTHORIZED (ALERT-1's `control_switched_off` red; OPS-H1's demo-tick default-on); pause = compensating VISIBILITY, not four-eyes, with its revisit trigger. Design authority: THIS record. NEXT: the REPRO-2 implementation.)
+**Status:** **CLOSED 2026-08-11 — RATIFIED 2026-08-10** (SHIPPED as PRs #197 = `80e6b9f` + #198 = `4908b65`) (AskUserQuestion, four decision points, ALL as recommended: v3 OQ-REP2-1…7 ratified; the OQ-CAD-1-2=A/OQ-CAD-1-3=A supersession AUTHORIZED (registry-driven discovery, strict parse, the full disposition table, ~12-carrier blast radius incl. the deploy.sh step-8 rewrite); BOTH named ratified-disposition amendments AUTHORIZED (ALERT-1's `control_switched_off` red; OPS-H1's demo-tick default-on); pause = compensating VISIBILITY, not four-eyes, with its revisit trigger. Design authority: THIS record. NEXT: the REPRO-2 implementation.)
 
 **Wave 17, slice 2** (the ratified Part 2.19 sequence). Branch `repro-2-planning`. Design
 authority once ratified: THIS record.

@@ -6,7 +6,7 @@ deliberately anonymous (`/health`, `/version`) — and no way to create the tena
 any of them requires.** Every deployment that has ever existed was seeded by a demo or proof
 script.
 
-**Status: RATIFIED 2026-08-09 (AskUserQuestion, four questions, ALL as recommended):**
+**Status: CLOSED 2026-08-11 — RATIFIED 2026-08-09 (AskUserQuestion, four questions, ALL as recommended) and SHIPPED as PRs #191 (`888e1ec`, 1a — THE IGNITION) + #192 (`7761cf1`, 1b); ENT-074 + ENT-075; migrations `0067`/`0068`.** *Terminal stamp added at the Wave-17 close; the closure gate could not see this record until its parser was repaired the same day.*
 OQ-1A + OQ-2A (registry + operator, the three-part invariant amendment + SYSTEM-router fence);
 OQ-9A (four-eyes maker-checker with the bootstrap window — CTRL-025's implementation); OQ-6 as
 recommended (DB-sourced clones; customer tenants get the four business templates + `tenant_admin`,
