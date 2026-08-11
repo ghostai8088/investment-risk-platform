@@ -19,9 +19,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 #: The platform's current migration head. A new migration updates THIS LINE ONLY.
-EXPECTED_MIGRATION_HEAD = (
-    "0069_legacy_tenant_admin"  # Wave-17 close D3 (legacy tenant_admin backfill)
-)
+EXPECTED_MIGRATION_HEAD = "0070_app_role"  # DEPLOY-1: the app role the deployment never had
 
 
 def _script() -> ScriptDirectory:
