@@ -1,7 +1,10 @@
 # DATA-1 — the first genuinely external dataset (decision record)
 
-**Status: RATIFIED 2026-08-02 — OQ-DATA-1-1…12 ALL as recommended ("Proceed" on the briefed
-gate).** Wave-14 slice 3.5 (INSERTED 2026-07-30, user-ratified). Planning branch
+**Status: CLOSED 2026-08-02 — RATIFIED (OQ-DATA-1-1…12 ALL as recommended, "Proceed" on the briefed
+gate) and SHIPPED** (PR **#165**; the first genuinely EXTERNAL dataset — TB3MS, migration `0060`,
+CTRL-034 → Operational). *Terminal stamp added at the Wave-17 close, 2026-08-11: the record was left
+at RATIFIED when the slice shipped, and the closure gate could not see it — `_DONE_MARK` had stopped
+matching the roadmap's own row shape three days earlier.* Wave-14 slice 3.5 (INSERTED 2026-07-30, user-ratified). Planning branch
 `data-1-planning` off `e3253a9` (the CAL-1b closeout merge). Grounding recon: six independent
 lanes at pinned HEAD `e3253a9`, 193 facts; the curated fact base is Part 0. The four-lane
 refute-by-default verifier ran BEFORE ratification (the ES-1 standing lesson); its 28 findings

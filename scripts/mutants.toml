@@ -18,11 +18,13 @@ id = "M-A1"
 group = "w16-close"
 why = "an unreadable alarm payload raises again, silencing the whole tenant's alarm channel"
 file = "packages/shared-python/src/irp_shared/reproduction/service.py"
-find = """        if not isinstance(payload, dict):
-            unreadable_rows.append(str(entity_id))
-            continue
-"""
-replace = ""
+# RE-ANCHORED at the Wave-17 close (2026-08-11). The control is unchanged; ALERT-1's
+# `_classify_alarm_states` fold moved its bytes on 2026-08-10 and the anchor was not carried over,
+# so this mutant and its three siblings were UNMATCHED — survivors by the harness's own rule — for
+# a day, with no gate running the battery to notice. Without the isinstance guard a non-dict
+# payload reaches `row.payload.get(...)` and raises, which is the original defect exactly.
+find = """                payload=payload if isinstance(payload, dict) else None,"""
+replace = """                payload=payload,"""
 tests = ["packages/shared-python/tests/test_reproduction.py"]
 
 [[mutant]]
@@ -30,8 +32,9 @@ id = "M-A2"
 group = "w16-close"
 why = "a verdict with one unparseable delivery row is concluded on anyway, instead of staying queued"
 file = "packages/shared-python/src/irp_shared/reproduction/service.py"
-find = """        if entity_id in poisoned:"""
-replace = """        if False:"""
+# RE-ANCHORED at the Wave-17 close: the poison check now rides the `concluded` expression.
+find = """        concluded = not is_poisoned and all(value == "success" for _, value in latest)"""
+replace = """        concluded = all(value == "success" for _, value in latest)"""
 tests = ["packages/shared-python/tests/test_reproduction.py"]
 
 [[mutant]]
@@ -39,8 +42,10 @@ id = "M-A3"
 group = "w16-close"
 why = "the alarm channel reports healthy while it cannot read its own delivery rows"
 file = "packages/shared-python/src/irp_shared/reproduction/service.py"
-find = """        return self.unreadable_rows == 0"""
-replace = """        return True"""
+# RE-ANCHORED at the Wave-17 close: `healthy` became a multi-clause expression at ALERT-1.
+find = """            self.unreadable_rows == 0
+            and self.lost_verdicts == 0"""
+replace = """            self.lost_verdicts == 0"""
 tests = ["packages/shared-python/tests/test_reproduction.py"]
 
 [[mutant]]
@@ -145,12 +150,14 @@ id = "M-A4"
 group = "w16-close"
 why = "the poisoned skip preempts MAX_ALARM_ATTEMPTS again — a poison row pages the desk every tick forever (the review's BLOCKING)"
 file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+# RE-ANCHORED at the Wave-17 close. The defect restored is unchanged and it is the worst one in
+# this group: a poisoned verdict that can never reach the ceiling stays QUEUED forever and pages
+# the risk desk every tick. A DIFFERENT review engine found this originally; the battery had
+# certified the tree green while it was live.
 find = """        if len(attempts) >= MAX_ALARM_ATTEMPTS:
-            alarmed.add(entity_id)
-            continue"""
+            state[entity_id] = VERDICT_ALARM_DELIVERED if concluded else VERDICT_ALARM_CEILING"""
 replace = """        if entity_id not in poisoned and len(attempts) >= MAX_ALARM_ATTEMPTS:
-            alarmed.add(entity_id)
-            continue"""
+            state[entity_id] = VERDICT_ALARM_DELIVERED if concluded else VERDICT_ALARM_CEILING"""
 tests = ["packages/shared-python/tests/test_reproduction.py"]
 
 # ---------------------------------------------------------------------------------------------
@@ -980,3 +987,21 @@ find = """                    ScheduledRun.outcome == OUTCOME_FAILED,
                     ScheduledRun.fired_at >= since,"""
 replace = """                    ScheduledRun.fired_at >= since,"""
 tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "W-B1"
+group = "w17-close"
+why = "the closure gate's done-mark reverts to the literal that stopped matching at REF-1 — the Wave-17 close HIGH 1 restored: eleven shipped slices go invisible to a CI-blocking gate that keeps exiting 0"
+file = "scripts/check_docs.py"
+find = """_DONE_MARK = re.compile(r"✅\\s*\\*\\*\\s*DONE\\b")"""
+replace = """_DONE_MARK = re.compile(r"✅ \\*\\*DONE\\*\\*")"""
+tests = ["apps/backend/tests/test_check_docs_closure.py"]
+
+[[mutant]]
+id = "W-B2"
+group = "w17-close"
+why = "the named-witness non-vacuity check is removed — the gate returns to policing its own done-set with a COUNT floor, which is what let a set of 55 lose every slice that mattered"
+file = "scripts/check_docs.py"
+find = """    missing_witnesses = sorted(_MUST_PARSE_AS_DONE - done)"""
+replace = """    missing_witnesses = []"""
+tests = ["apps/backend/tests/test_check_docs_closure.py"]

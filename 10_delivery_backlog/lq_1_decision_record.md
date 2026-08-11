@@ -7,7 +7,13 @@
 single-threaded draft → **four-lane refute-by-default verifier, which REFUTED the draft (6 BLOCKING,
 10 HIGH, 11 MED, 5 LOW — all folded, Part 8)** → this record → ratification gate.
 
-**Status: PENDING RATIFICATION. Nothing below is decided.**
+**Status: CLOSED 2026-08-02 — RATIFIED and SHIPPED** (PR **#168** = `28f76ca`, the eleventh
+autonomous merge; migration `0061`; **ENT-071 `liquidity_result`**, the 24th governed number family;
+WAVE 14 COMPLETE). *Stamp added at the Wave-17 close, 2026-08-11, and the delay is the finding: this
+record read **"PENDING RATIFICATION. Nothing below is decided"** for nine days after the slice it
+governs had shipped, closed a wave, and been cited by three later slices. The gate that exists to
+catch exactly this had been structurally blind since 2026-07-29 (see `check_docs.py` `_DONE_MARK`)
+and reported exit 0 throughout. It found this the moment it could parse the roadmap again.*
 
 > **Read Part 8 first if you are auditing this record.** The first draft's two central justifications
 > were both refuted by the primary source it cited. The *shape* survived; the *reasoning* did not.

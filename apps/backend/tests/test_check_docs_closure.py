@@ -108,5 +108,64 @@ def test_status_lines_ignore_prose_describing_a_status_line() -> None:
 def test_real_tree_has_no_unstamped_shipped_record() -> None:
     """Regression guard: every DONE slice's decision record is stamped (not left 'DRAFT for
     ratification'). This is the exact invariant the API-1 stamp miss violated before the Wave-9
-    close fixed it."""
+    close fixed it.
+
+    **This assertion is vacuous on its own, and the Wave-17 close proved it by execution.** An
+    empty error list is what a working gate returns AND what a gate returns when its done-set no
+    longer contains the slices it is supposed to police — which is the state this repository was
+    in for thirteen days. The test below is what makes this one mean something; keep them adjacent.
+    """
     assert _closure_stamp_errors() == []
+
+
+def test_the_REAL_roadmaps_done_set_contains_the_slices_that_cannot_un_ship() -> None:
+    """**The Wave-17 close's HIGH 1, as a mechanical act rather than a lesson.**
+
+    The gate above was structurally blind from 2026-07-29 to 2026-08-11 and reported exit 0
+    throughout, because ``_DONE_MARK`` was the literal ``"✅ **DONE**"`` and every roadmap row from
+    Wave 14 on writes ``✅ **DONE + CLOSED <date> …**``. The leading-title branch stopped running;
+    ``_TICK_SLICE`` matched ``✅ **DONE`` and added the WORD ``DONE`` to the done-set. Eleven
+    shipped slices went invisible to a CI-BLOCKING gate that had been rebuilt four times for this
+    exact purpose.
+
+    Every guard that should have caught it was a SUBSET or a COUNT:
+
+    * the tests above assert ``{"API-1", "FE-3"} <= done`` over a SYNTHETIC roadmap fixture, which
+      stays true no matter what the real file says;
+    * the non-vacuity floor compared 55 parsed against a floor of 38, and a set can lose every
+      member that matters while staying large.
+
+    So this test asserts membership in the REAL tree, names the slices, and covers each parser
+    branch — the same correction RPT-3's audit forced one slice earlier, applied to the instrument
+    that was supposed to be watching.
+    """
+    done = _done_slice_ids((_ROOT / "10_delivery_backlog" / "delivery_roadmap.md").read_text())
+
+    # The `✅ **DONE + CLOSED …**` shape — the one that broke, and the one that will break next.
+    assert {"REF-1", "DATA-1", "LQ-1"} <= done, (
+        "the leading-title branch has stopped matching the roadmap's own row shape again"
+    )
+    # The Wave-10 arc's inline marks, and the Wave-13 tick-inside-the-bold shape.
+    assert {"PPF-1", "PPF-3"} <= done, "the arc-style inline branch has regressed"
+    assert {"SR-1", "OPS-H1"} <= done, "the tick-inside-the-bold branch has regressed"
+    # And the plain early shape, so no branch is left without a witness.
+    assert "API-1" in done
+
+
+def test_the_witness_check_INSIDE_the_gate_actually_fires(monkeypatch) -> None:  # noqa: ANN001
+    """The twin for the test above, and it was added because the battery demanded it.
+
+    Mutant W-B2 deleted the gate's witness check and every test still passed: the test above reads
+    ``_done_slice_ids`` directly, so it proves the PARSER works while saying nothing about whether
+    the GATE would complain. A non-vacuity check that no test can make fire is the same inert
+    control this whole fold is about — so it is asserted here through ``_closure_stamp_errors``,
+    the function CI actually calls.
+    """
+    import check_docs
+
+    monkeypatch.setattr(check_docs, "_MUST_PARSE_AS_DONE", frozenset({"NO-SUCH-SLICE-99"}))
+    errors = check_docs._closure_stamp_errors()
+    assert any("NO-SUCH-SLICE-99" in e for e in errors), (
+        "the gate did not complain about a witness that cannot possibly be in the done-set — the "
+        "non-vacuity check is present and inert"
+    )

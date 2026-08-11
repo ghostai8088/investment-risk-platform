@@ -32,7 +32,21 @@ ROOT = Path(__file__).resolve().parents[1]
 #: records. Records with NEITHER shape (old pre-cadence records) stay out of scope.
 BACKLOG_DIR = "10_delivery_backlog"
 ROADMAP = "10_delivery_backlog/delivery_roadmap.md"
-_DONE_MARK = "✅ **DONE**"
+#: The done mark, as a PREFIX rather than a literal — the Wave-17 close's HIGH 1.
+#:
+#: This was the literal string ``"✅ **DONE**"`` from the gate's first version until 2026-08-11, and
+#: it stopped matching anything at REF-1 (2026-07-29), when roadmap rows began writing the closure
+#: date into the same bold run: ``✅ **DONE + CLOSED 2026-08-02 …**``. The consequence is the reason
+#: this gate exists to be distrusted rather than trusted. With the literal unmatched, the
+#: leading-title branch below never ran, so the row's actual slice id was never harvested — while
+#: ``_TICK_SLICE`` happily matched ``✅ **DONE`` and added the WORD ``DONE`` to the done-set. Eleven
+#: shipped slices (REF-1, CON-1, LIM-2, CAL-1, DATA-1, PERF-0, LQ-1, ONBOARD-1, ALERT-1, REPRO-2,
+#: RPT-3) were therefore invisible to a CI-BLOCKING gate that had been rebuilt four times for the
+#: express purpose of catching a shipped slice left at RATIFIED, and it exited 0 throughout.
+#:
+#: Anchored on ``DONE`` as a WORD so the mark cannot be satisfied by prose containing "done", and
+#: written as a prefix so the next row shape that appends to this run does not silently re-break it.
+_DONE_MARK = re.compile(r"✅\s*\*\*\s*DONE\b")
 _CLOSED_MARK = "CLOSED"  # the required TERMINAL Status stamp for a shipped slice
 #: A bold slice-id token: `**API-1**`, `**PPF-3**`, … (row-anchored; upper-cased to match).
 _LEAD_SLICE = re.compile(r"\*\*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)")
@@ -54,7 +68,7 @@ def _done_slice_ids(roadmap_text: str) -> set[str]:
     for line in roadmap_text.splitlines():
         if "✅" not in line or "DONE" not in line.upper():
             continue
-        if _DONE_MARK in line:  # a normal `… **SLICE …** ✅ **DONE** …` row → leading title token
+        if _DONE_MARK.search(line):  # a normal `… **SLICE …** ✅ **DONE …** …` row → leading token
             m = _LEAD_SLICE.search(line)
             if m:
                 done.add(m.group(1).upper())
@@ -125,6 +139,18 @@ def _is_unstamped_shipped(slice_id: str, status_lines: list[str], done: set[str]
 #: anticipate the next shape — it only needs to notice that coverage fell.
 _MIN_RECORDS_WITH_STATUS = 50
 _MIN_DONE_SLICES = 38
+#: **Named witnesses, one group per parser branch (Wave-17 close, HIGH 1).** A count floor is the
+#: wrong instrument here and its failure is on the record: the done-set kept 55 members while
+#: silently losing every slice shipped after 2026-07-29, and 55 > 38, so the floor stayed quiet.
+#: Say what must be IN the set.
+#:
+#: * ``REF-1``/``DATA-1``/``LQ-1`` — the ``✅ **DONE + CLOSED …**`` rows, the shape that broke.
+#: * ``PPF-1``/``PPF-3`` — the Wave-10 arc's inline ``✅ **PPF-1**`` marks (``_TICK_SLICE``).
+#: * ``SR-1``/``OPS-H1`` — the Wave-13 tick-inside-the-bold shape (``_BOLD_TICK_SLICE``).
+#: * ``API-1`` — the plain early shape, so the original branch keeps a witness too.
+_MUST_PARSE_AS_DONE = frozenset(
+    {"REF-1", "DATA-1", "LQ-1", "PPF-1", "PPF-3", "SR-1", "OPS-H1", "API-1"}
+)
 
 #: Decision records whose Status line the matcher does NOT recognize, enumerated EXACTLY.
 #:
@@ -180,6 +206,20 @@ def _closure_stamp_errors() -> list[str]:
                 f"{record.name}: slice {slice_id} is DONE in the roadmap but its Status cell is "
                 f"not stamped CLOSED (the OQ-W9C-5 / OQ-W10C closure-discipline rule)"
             )
+    # The Wave-17 close's replacement for a count floor, and the reason it is named rather than
+    # counted: this gate's done-set fell from "every shipped slice" to "every shipped slice before
+    # 2026-07-29 plus the literal word DONE" and the count barely moved — 55 parsed against a floor
+    # of 38. A quantity floor cannot see a set that stays large while losing the members that
+    # matter. Each witness below is a slice that has SHIPPED and can never un-ship, and the three
+    # groups are the three parser branches, so a regression in any one of them names itself.
+    missing_witnesses = sorted(_MUST_PARSE_AS_DONE - done)
+    if missing_witnesses:
+        errors.append(
+            f"closure-stamp gate NON-VACUITY: the roadmap's done-set no longer contains "
+            f"{', '.join(missing_witnesses)} — slices that have SHIPPED and cannot un-ship. The "
+            f"row-shape parser has lost a branch (see _DONE_MARK / _TICK_SLICE / "
+            f"_BOLD_TICK_SLICE). Fix the parser; do NOT remove the witness."
+        )
     if with_status < _MIN_RECORDS_WITH_STATUS:
         errors.append(
             f"closure-stamp gate NON-VACUITY: only {with_status} decision records have a "

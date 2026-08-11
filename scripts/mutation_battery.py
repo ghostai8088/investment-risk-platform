@@ -164,12 +164,38 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--group", default=None, help="run only this group")
     parser.add_argument("--list", action="store_true", help="list mutants and exit")
+    parser.add_argument(
+        "--check-anchors",
+        action="store_true",
+        help="verify every mutant's `find` still matches its target file, and exit. Seconds, not "
+        "minutes — this is the half that runs inside `make check`.",
+    )
     args = parser.parse_args()
 
     mutants = _load(args.group)
     if args.list:
         for m in mutants:
             print(f"{m.id:<12} [{m.group}] {m.why}")
+        return 0
+    if args.check_anchors:
+        # Ratified at the Wave-17 close gate (2026-08-11, D5 — "the cheap anchor check in
+        # `make check`"). The full battery clones the tree and runs pytest per mutant, which is too
+        # slow to sit in every local gate; but the failure it had just suffered needed none of
+        # that. Four `w16-close` mutants stopped matching their target file when ALERT-1 moved
+        # bytes in a module it did not own the mutants for, and because NO gate ran the battery,
+        # four Wave-16 alarm controls sat with no executable proof for a day — one of them the
+        # infinite-paging bug a different review engine had caught. An unmatched anchor is a
+        # SURVIVOR, so the battery was RED at HEAD the whole time and nothing asked.
+        stale = [m for m in mutants if m.find not in (REPO / m.file).read_text(encoding="utf-8")]
+        for m in stale:
+            print(f"{m.id:<12} STALE ANCHOR in {m.file} — {m.why}")
+        print(f"anchors: {len(mutants) - len(stale)}/{len(mutants)} match")
+        if stale:
+            print(
+                "\nA stale anchor is a SURVIVOR, never a pass: the control it targets has NO "
+                "executable proof. Re-anchor it against the current bytes — do not delete it."
+            )
+            return 1
         return 0
     if not mutants:
         print(f"no mutants selected (group={args.group!r})")
