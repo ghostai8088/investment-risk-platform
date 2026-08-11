@@ -38,6 +38,8 @@ from datetime import UTC, datetime
 import sqlalchemy as sa
 from alembic import op
 
+from irp_shared.db.types import GUID
+
 from irp_shared.entitlement.bootstrap import (
     ROLE_TEMPLATES,
     SYSTEM_TENANT_ID,
@@ -58,10 +60,16 @@ DELIVERS: tuple[str, ...] = ()
 
 TS = datetime(2026, 8, 11, tzinfo=UTC)
 
+# **GUID, not String, and CI is why.** The first version of this file typed every id column as
+# `sa.String`. The unit tier passed (SQLite has no uuid type), and the local full-PG run passed for
+# a worse reason: the database was freshly reset, so `tenant` was EMPTY and neither the insert nor
+# the delete path ever bound an id at all. CI's downgrade smoke ran against a database with rows and
+# reported `operator does not exist: uuid = character varying`. A migration whose data paths are
+# never exercised has not been tested by a green migration job.
 _role = sa.table(
     "role",
-    sa.column("id", sa.String),
-    sa.column("tenant_id", sa.String),
+    sa.column("id", GUID),
+    sa.column("tenant_id", GUID),
     sa.column("code", sa.String),
     sa.column("name", sa.String),
     sa.column("created_at", sa.DateTime),
@@ -69,11 +77,13 @@ _role = sa.table(
 )
 _role_permission = sa.table(
     "role_permission",
-    sa.column("id", sa.String),
-    sa.column("role_id", sa.String),
-    sa.column("permission_id", sa.String),
+    sa.column("id", GUID),
+    sa.column("role_id", GUID),
+    sa.column("permission_id", GUID),
 )
-_permission = sa.table("permission", sa.column("id", sa.String))
+_permission = sa.table("permission", sa.column("id", GUID))
+_user_role = sa.table("user_role", sa.column("role_id", GUID))
+_tenant = sa.table("tenant", sa.column("id", GUID))
 
 
 def backfill_legacy_tenant_admin(bind: sa.engine.Connection) -> tuple[int, int]:
@@ -92,7 +102,7 @@ def backfill_legacy_tenant_admin(bind: sa.engine.Connection) -> tuple[int, int]:
     # "a tenant" is exactly the kind of drift this close review spent its length finding.
     tenants = [
         str(t)
-        for t in bind.execute(sa.text("SELECT id FROM tenant")).scalars().all()
+        for t in bind.execute(sa.select(_tenant.c.id)).scalars().all()
         if str(t) != SYSTEM_TENANT_ID
     ]
     if not tenants:
@@ -186,7 +196,7 @@ def downgrade() -> None:
     bind = op.get_bind()
     tenants = [
         str(t)
-        for t in bind.execute(sa.text("SELECT id FROM tenant")).scalars().all()
+        for t in bind.execute(sa.select(_tenant.c.id)).scalars().all()
         if str(t) != SYSTEM_TENANT_ID
     ]
     role_ids = [tenant_role_id(t, "tenant_admin") for t in tenants]
@@ -195,9 +205,7 @@ def downgrade() -> None:
     assigned = {
         str(r)
         for r in bind.execute(
-            sa.text("SELECT DISTINCT role_id FROM user_role WHERE role_id IN :ids").bindparams(
-                sa.bindparam("ids", value=tuple(role_ids), expanding=True)
-            )
+            sa.select(_user_role.c.role_id).where(_user_role.c.role_id.in_(role_ids)).distinct()
         )
         .scalars()
         .all()
@@ -205,13 +213,5 @@ def downgrade() -> None:
     removable = [r for r in role_ids if r not in assigned]
     if not removable:
         return
-    bind.execute(
-        sa.text("DELETE FROM role_permission WHERE role_id IN :ids").bindparams(
-            sa.bindparam("ids", value=tuple(removable), expanding=True)
-        )
-    )
-    bind.execute(
-        sa.text("DELETE FROM role WHERE id IN :ids").bindparams(
-            sa.bindparam("ids", value=tuple(removable), expanding=True)
-        )
-    )
+    bind.execute(_role_permission.delete().where(_role_permission.c.role_id.in_(removable)))
+    bind.execute(_role.delete().where(_role.c.id.in_(removable)))
