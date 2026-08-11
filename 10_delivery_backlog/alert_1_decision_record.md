@@ -1,6 +1,6 @@
 # ALERT-1 decision record — the alarm about the alarm, visible and bounded
 
-**Status:** **RATIFIED 2026-08-09** (AskUserQuestion, four decision points, ALL as recommended: v3 OQ-ALR-1…7 ratified; the `SKIPPED` NOTIFY-outcome mint AUTHORIZED (the ratified total mapping gains its third success member, fail-closed on a fifth); the five-role `schedule.view` set kept — `tenant_admin`'s exclusion is a decision with a revisit trigger; both residuals ACCEPTED as recorded (carry (s); pull-only surface until carry (j)'s slice). Design authority: THIS record. NEXT: the ALERT-1 implementation.)
+**Status:** **CLOSED 2026-08-11 — RATIFIED 2026-08-09** (AskUserQuestion, four decision points, ALL as recommended: v3 OQ-ALR-1…7 ratified; the `SKIPPED` NOTIFY-outcome mint AUTHORIZED (the ratified total mapping gains its third success member, fail-closed on a fifth); the five-role `schedule.view` set kept — `tenant_admin`'s exclusion is a decision with a revisit trigger; both residuals ACCEPTED as recorded (carry (s); pull-only surface until carry (j)'s slice). Design authority: THIS record. NEXT: the ALERT-1 implementation.)
 
 **Wave 17, slice 1** (the ratified Part 2.19 sequence). Branch `alert-1-planning`. Design
 authority once ratified: THIS record.
@@ -194,8 +194,19 @@ struck at pass 1, C17.)*
 
 ## 5. Non-goals and stated residuals (each with its trigger, P19)
 
-- **Acknowledgement / the nightly re-fire (carry (j))** — trigger: REPRO-2's verdict reads
-  making re-fires visible, or the first operator complaint.
+- **Acknowledgement / the nightly re-fire (carry (j))** — ~~trigger: REPRO-2's verdict reads
+  making re-fires visible, or the first operator complaint~~ **TRIGGER SUPERSEDED, and the
+  annotation is nine days late.** REPRO-2's decision record (§ OQ-REP2 carries) states: *"the
+  ALERT-1 trigger has NOT literally fired. The trigger is REWORDED to … an alarm-attempt read
+  surface, or the first operator complaint about repeat pages. **Recorded here, annotated at the
+  ALERT-1 register.**"* It was not annotated here — `grep -niE 'rewor|alarm-attempt'` across both
+  ALERT-1 records returned zero matches, and their newest commit predates REPRO-2's merge. So a
+  successor sweeping THIS register read the carry as fired and due (REPRO-2 part 2 shipped exactly
+  the verdict reads named above), while a reader of REPRO-2's record read that it had not.
+  **The live trigger is the reworded one: an alarm-attempt read surface, or the first operator
+  complaint about repeat pages.** Written at the Wave-17 close, 2026-08-11 — a P1 ledger-7 finding
+  (a delivery claim in a ratified record with no artifact behind it), committed by the record that
+  made the claim.
 - **Breach-channel health** — trigger at OQ-ALR-5.
 - **Phase-5 scan performance/retention (carry (k))** — a performance slice; `queued`'s
   O(all-history) cost is that carry's, not paid here.

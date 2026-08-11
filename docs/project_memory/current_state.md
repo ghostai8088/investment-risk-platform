@@ -45,7 +45,8 @@
 > appeared in no carries table, no register and not here — a ratified gate outcome, unpaid and
 > invisible. New trigger: pay it when BOTH declare support. Monitor, do not force.
 >
-> **Migration head `0065` → `0066`.** Next free canonical id **ENT-074**.
+> **Migration head `0068_entitlement_request`.** Next free canonical id **ENT-076**. Route census
+> **263 paths / 305 operations** (measured off the generated OpenAPI spec, not carried forward).
 >
 > **THE DIFFERENT-ENGINE REVIEW RAN (Fable, over `6fcb639..55f7cd6`) and found ONE BLOCKING + ONE
 > MEDIUM in the fold's own new controls, both by execution** (close review §7): the fail-closed
@@ -98,6 +99,49 @@
 > **NEXT = the ONBOARD-1a implementation plan** (the platform half: registry + operator +
 > onboarding act + clones + migration `0067` + the deployed ignition proof through "first admin
 > resolves").
+
+---
+
+## CURRENT TRUTH — swept at the Wave-17 close, 2026-08-11
+
+**Everything above this line is the Wave-17 PLANNING-gate snapshot and is kept as history.** It was
+the newest text in this file for the whole of Wave 17: `git log -1` on this file named
+`a69775c` ("ONBOARD-1 RATIFIED"), an ancestor of all seven Wave-17 merge commits, with 38 commits
+and 11 merges landing after it. Its "NEXT = the ONBOARD-1a implementation plan" line pointed at a
+slice that merged as PR #191 and was followed by nine more merges.
+
+That is the finding, not the staleness itself: **P1 ledger (4) went unswept across five consecutive
+slice closeouts, and `test_ledger_census.py:19` explicitly leaves this ledger procedural** ("the P1
+seven-ledger sweep owns it"), so nothing mechanical will ever catch it. The mitigating fact is that
+the authoritative ledgers were right and `test_migration_head.py` pins the head mechanically, so a
+successor following the stale snapshot would have been reddened before shipping — but they would
+have read it first, and CLAUDE.md orders every session to read this file second.
+
+**Wave 17 is BUILT and CLOSED.** Four slices, all merged and verified on main:
+
+| Slice | PR | What it made possible |
+|---|---|---|
+| ONBOARD-1a | #191 | **The ignition** — a tenant can be created over HTTP. ENT-074 registry, migration `0067`, the `tenant.create` platform catalog, the SYSTEM-router fence |
+| ONBOARD-1b | #192 | The tenant administers itself — four tenant-admin codes, ENT-075 four-eyes, migration `0068`, `/admin/users`; CTRL-025 + CTRL-037 → Implemented |
+| ALERT-1 | #195 | Alarm-channel health — twelve recomputed fields, `GET /reproduction/alarm-health`, `/ops/alerting` |
+| REPRO-2 (parts 1+2) | #197, #198 | CTRL-018 goes from **3 governed families to 19**; a schedule WRITE API; `/ops/reproduction` |
+| RPT-3 | #199, #200 | `ROLLING_RISK` joins `PERF_RUN_TYPES`; the generate-report form at `/ops/reports` |
+
+**Measured at the close, not carried forward:** migration head `0068_entitlement_request` (one head);
+route census **263 paths / 305 operations**; next free canonical id **ENT-076**; reproduction census
+**19 reproducible + 2 unreproducible** = the whole 21-family run-type vocabulary; 84 mutants, all
+anchors matching.
+
+**What the close review found, all four confirmed by execution before the fold:** the alarm-health
+surface read HEALTHY through a sweep failing at dispatch every night (a fire is not a landing); the
+three CTRL-018 registers still described a three-family control with no write API; the
+closure-discipline gate had been structurally blind since 2026-07-29 while exiting 0; and the
+committed mutation battery was RED at HEAD with four alarm controls dark and no gate running it.
+
+**NEXT = the Wave-18 planning gate.** The sequence is not set: the roadmap runs to Part 2.19
+(Wave 17) and then to Part 3, which is explicitly unsequenced — which is why thirteen of Wave 17's
+carries name a host that does not exist, and why they are labelled as deferral decisions at this
+close rather than parked (P19 clause B).
 >
 > ---
 >

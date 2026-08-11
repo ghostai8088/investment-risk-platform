@@ -73,14 +73,31 @@ _WHY_EXECUTION_FK = (
     "version rather than the values that were computed"
 )
 
-#: `id`, `tenant_id`, `system_from` + the three governed-run FKs — the floor every family shares.
+#: `id`, `system_from` and `calculation_run_id` — the floor every family shares, and it is now
+#: THREE columns rather than six.
+#:
+#: **The Wave-17 close deleted three exclusions whose stated reason was false (D4, ratified —
+#: "settle by execution").** ``tenant_id``, ``input_snapshot_id`` and ``model_version_id`` were
+#: excluded here under `_WHY_EXECUTION_FK`, "differs by construction on any re-execution". The close
+#: review measured all three IDENTICAL across a real re-execution — and of course they are: the
+#: sweep re-executes the run's OWN pinned snapshot with the SAME registered model, so the recompute
+#: reproduces those values rather than inventing new ones. Only the row's own identity, its
+#: knowledge time, and the run the recompute created genuinely differ.
+#:
+#: The cost of the false reason was a real hole, and it is now proven closed rather than argued
+#: about: repointing a stored row's ``model_version_id`` at a different registered model used to
+#: report MATCH over six compared columns, and now reports DIVERGED
+#: (`test_a_TAMPERED_model_version_on_a_stored_row_is_DETECTED`). A governed number whose recorded
+#: provenance can be edited without CTRL-018 noticing is precisely the claim the control makes.
+#:
+#: Two lenses disagreed about this — one called it a hole, the other argued the comparison would be
+#: vacuous because the sweep hands those values to the recompute. Execution settled it: all
+#: twenty-two family tests pass with the columns compared, so the comparison is not vacuous, and
+#: the tamper probe fires, so it is not decorative either.
 _STANDARD_UNCOMPARED: dict[str, str] = {
     "id": _WHY_ROW_IDENTITY,
-    "tenant_id": _WHY_ROW_IDENTITY,
     "system_from": _WHY_ROW_IDENTITY,
     "calculation_run_id": _WHY_EXECUTION_FK,
-    "input_snapshot_id": _WHY_EXECUTION_FK,
-    "model_version_id": _WHY_EXECUTION_FK,
 }
 
 

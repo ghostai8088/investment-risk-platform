@@ -431,3 +431,69 @@ def test_the_operator_seed_is_idempotent_and_grants_the_platform_role(catalog: S
     assert [g.role_id for g in grants] == [platform_role_id(PLATFORM_OPERATOR_ROLE)]
     user = catalog.execute(select(AppUser).where(AppUser.id == first)).scalar_one()
     assert user.tenant_id == SYSTEM_TENANT_ID
+
+
+# --------------------------------------------------- Wave-17 close, D2: exactly ONE operator ---
+def test_seeding_a_SECOND_operator_subject_is_REFUSED(catalog: Session) -> None:
+    """**The Wave-17 close finding, made to fire.**
+
+    `seed_platform_operator` keys idempotency on the SUBJECT, so changing
+    `IRP_PLATFORM_OPERATOR_SUBJECT` between deploys used to mint a second ACTIVE SYSTEM principal
+    holding `tenant.create` — measured at the close review as two rows, two grants. The suite's
+    only test of this path re-seeded the SAME subject and asserted `first == second`, which cannot
+    see a second subject at all.
+    """
+    from irp_shared.deploy.prepare import _active_operator_subjects, seed_platform_operator
+
+    seed_platform_operator(catalog, subject="op-v1@platform")
+    catalog.flush()
+    assert _active_operator_subjects(catalog) == {"op-v1@platform"}
+
+    with pytest.raises(ValueError, match="refusing to seed a SECOND platform operator"):
+        seed_platform_operator(catalog, subject="op-v2@platform")
+    assert _active_operator_subjects(catalog) == {
+        "op-v1@platform"
+    }, "a refused seed left a second operator behind"
+
+
+def test_re_seeding_the_SAME_subject_is_still_idempotent(catalog: Session) -> None:
+    """The twin. Without it the refusal above could be satisfied by refusing EVERY re-seed, which
+    would break the deploy script's own re-runnability bar."""
+    from irp_shared.deploy.prepare import seed_platform_operator
+
+    first = seed_platform_operator(catalog, subject="op-v1@platform")
+    catalog.flush()
+    assert seed_platform_operator(catalog, subject="op-v1@platform") == first
+
+
+def test_retiring_the_operator_lets_a_NEW_subject_take_its_place(catalog: Session) -> None:
+    """Rotation is the whole point of enforcing the count — an invariant with no exit is a trap."""
+    from irp_shared.deploy.prepare import (
+        _active_operator_subjects,
+        retire_platform_operator,
+        seed_platform_operator,
+    )
+
+    old = seed_platform_operator(catalog, subject="op-v1@platform")
+    catalog.flush()
+    assert retire_platform_operator(catalog, subject="op-v1@platform") is True
+    assert _active_operator_subjects(catalog) == set()
+
+    new = seed_platform_operator(catalog, subject="op-v2@platform")
+    catalog.flush()
+    assert new != old
+    assert _active_operator_subjects(catalog) == {"op-v2@platform"}
+    # Deactivated, NOT deleted: the tenants the old identity created must keep resolving to a
+    # principal that still exists.
+    from irp_shared.entitlement.models import AppUser
+
+    assert catalog.get(AppUser, old) is not None
+    assert catalog.get(AppUser, old).is_active is False
+
+
+def test_retiring_a_subject_that_is_not_an_operator_reports_it_rather_than_lying(
+    catalog: Session,
+) -> None:
+    from irp_shared.deploy.prepare import retire_platform_operator
+
+    assert retire_platform_operator(catalog, subject="nobody@platform") is False

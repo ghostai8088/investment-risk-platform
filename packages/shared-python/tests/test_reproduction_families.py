@@ -340,3 +340,62 @@ def test_the_WINDOW_recovery_uses_the_runs_OWN_windows(session: Session) -> None
         "the adapter is not re-executing over the windows the run actually used"
     )
     assert verdict.rows_compared == len(stored.rows)
+
+
+# ------------------------------- Wave-17 close, D4: provenance is COMPARED, and it had to be ------
+def test_a_TAMPERED_model_version_on_a_stored_row_is_DETECTED(session: Session) -> None:
+    """**The Wave-17 close's D4, settled by execution rather than by argument.**
+
+    Until this close, ``model_version_id``, ``input_snapshot_id`` and ``tenant_id`` were excluded
+    from every family's comparison under the reason *"differs by construction on any
+    re-execution"*. That reason was FALSE for all three: the close review measured them IDENTICAL
+    across a real re-execution (`bdf43780…` / `010ab06d…` / `6b76ce8f…` on both sides), because the
+    sweep re-executes the run's OWN pinned snapshot with the SAME registered model. Only ``id``,
+    ``system_from`` and ``calculation_run_id`` genuinely differ.
+
+    Two lenses disagreed about whether the exclusion mattered — one called it a hole, the other
+    argued comparing them would be vacuous — so the gate ratified settling it by EXECUTION. It is
+    settled here: repointing a stored row's ``model_version_id`` at a DIFFERENT registered model is
+    now a DIVERGED verdict, where before it reported MATCH over six compared columns. A governed
+    number whose recorded provenance can be edited without the reproduction control noticing is
+    exactly the claim CTRL-018 makes to an assessor.
+    """
+    from test_covariance import _abc, _model, _run
+
+    tenant = str(uuid.uuid4())
+    factor_ids = _abc(session, tenant)
+    mv = _model(session, tenant, window=4)
+    stored = _run(session, tenant, mv, factor_ids)
+    session.commit()
+    assert stored.status == RunStatus.COMPLETED.value, stored.failure_reason
+
+    # A SECOND genuinely registered version — the plant must be a real FK target, or FK-1's
+    # enforcement would refuse it and this test would be measuring the constraint, not the control.
+    # Registered as a distinct version_label under the SAME model, because the registry correctly
+    # refuses to re-register one label with different parameters (model governance, doing its job).
+    from irp_shared.model.models import ModelVersion
+
+    stored_version = session.get(ModelVersion, str(mv))
+    assert stored_version is not None, "the fixture's model version id does not resolve"
+    other = ModelVersion(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant,
+        model_id=stored_version.model_id,
+        version_label="v2-for-the-tamper-probe",
+        code_version="risk-v2",
+        status="REGISTERED",
+    )
+    session.add(other)
+    session.flush()
+    session.commit()
+    assert str(other.id) != str(mv), "the fixture returned the same version twice"
+
+    assert_reproduces_and_then_diverges(
+        session,
+        tenant,
+        family_key="COVARIANCE",
+        table="covariance_result",
+        subject_run_id=str(stored.run.run_id),
+        column="model_version_id",
+        tampered=str(other.id),
+    )

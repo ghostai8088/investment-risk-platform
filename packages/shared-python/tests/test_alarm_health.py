@@ -52,6 +52,7 @@ from irp_shared.reproduction.models import RUN_TYPE_REPRODUCTION, ReproductionCh
 from irp_shared.reproduction.service import (
     ALARM_LOST_MARKER,
     ALARM_ROLLBACK_SENTINEL,
+    HEALTH_WINDOW,
     MAX_ALARM_ATTEMPTS,
     NOTHING_CHECKED_MARKER,
     VERDICT_ALARM_DELIVERED,
@@ -272,6 +273,110 @@ def test_a_sweep_that_LANDED_is_not_overdue(session: Session) -> None:
     assert health.sweep_overdue is False
     assert health.last_terminal_sweep_at is not None
     assert health.healthy is True
+
+
+# ------------------------------------- the Wave-17 close finding: a fire is not a LANDING (W17-C2)
+def test_a_sweep_that_FAILS_AT_DISPATCH_every_night_is_NOT_healthy(session: Session) -> None:
+    """**The Wave-17 close review's BLOCKING finding, and the twin that makes it fire.**
+
+    ``record_failed_dispatch`` appends a ledger row for a dispatch that RAISED before a run was
+    ever created: ``fired_at=now, outcome=FAILED, calculation_run_id=NULL``. So the tick DID fire —
+    it just did not land. Every field on this surface was blind to the difference:
+
+    * ``sweep_overdue`` keyed on ``max(fired_at)`` with no outcome predicate, so a nightly failure
+      refreshed the very clock that exists to notice the sweep stopping.
+    * ``failed_sweeps`` counts FAILED ``calculation_run`` rows, and on this path there is no run to
+      count — the dispatch raised before one existed.
+
+    The result an operator saw: thirty consecutive failed nights rendering the green HEALTHY chip
+    over the lede "The sweep is running and alarms are getting through." That is the exact state
+    the ``AlarmChannelHealth`` docstring names as this surface's reason to exist — "the control was
+    Implemented, the tick was green, and nothing anywhere said the alarm channel had stopped
+    working" — reproduced one wave later on the surface built to expose it.
+    """
+    from irp_shared.scheduling.models import ScheduledRun
+
+    tenant = _tenant(session)
+    schedule = _schedule(session, tenant, anchor=NOW - timedelta(days=30))
+    # Thirty nights, every one of them fired and every one of them failed at dispatch. Note what
+    # is deliberately absent: any `calculation_run` row at all. The dispatch never got that far.
+    for day in range(30, 0, -1):
+        tick = (NOW - timedelta(days=day)).replace(hour=0, minute=0, second=0, microsecond=0)
+        session.add(
+            ScheduledRun(
+                id=str(uuid.uuid4()),
+                tenant_id=tenant,
+                schedule_id=schedule.id,
+                scheduled_for=tick,
+                outcome="FAILED",
+                fired_at=tick,
+                calculation_run_id=None,
+                failure_reason="the reproduction sweep could not be started",
+            )
+        )
+    session.flush()
+
+    health = alarm_channel_health(session, acting_tenant=tenant, now=NOW)
+    # Asserted against the WINDOW, not a bare number. The first draft of this line asserted 30 and
+    # was simply wrong — the field is bounded by HEALTH_WINDOW like every other windowed field on
+    # this surface — and a bare count would have hidden which of the two it was pinning.
+    expected_in_window = sum(
+        1
+        for day in range(30, 0, -1)
+        if (NOW - timedelta(days=day)).replace(hour=0, minute=0, second=0, microsecond=0)
+        >= NOW - HEALTH_WINDOW
+    )
+    assert expected_in_window > 0, "the fixture must put failures INSIDE the window to prove this"
+    assert health.failed_dispatches == expected_in_window, (
+        "a dispatch that RAISED is countable — it is the only trace the sweep leaves when it "
+        "never reaches a calculation_run — and it is counted over the health window"
+    )
+    assert health.sweep_overdue is True, (
+        "a fire is not a landing: thirty consecutive FAILED ledger rows refreshed the absence "
+        "clock, so the field that exists to notice a stopped sweep was kept green BY the failures"
+    )
+    assert health.healthy is False, (
+        "thirty consecutive failed nights rendered the green HEALTHY chip and the lede 'The sweep "
+        "is running and alarms are getting through'"
+    )
+
+
+def test_a_dispatch_failure_the_NEXT_NIGHT_RECOVERS_is_visible_but_not_overdue(
+    session: Session,
+) -> None:
+    """The discriminating twin. Without it the fix above is indistinguishable from "FAILED is red".
+
+    A transient failure whose next tick succeeded is the bounded-retry system WORKING, and the
+    ``undeliverable_attempts`` precedent one field over says exactly that. It stays COUNTED —
+    an operator should be able to see it — and it must not redden the surface.
+    """
+    from irp_shared.scheduling.models import ScheduledRun
+
+    tenant = _tenant(session)
+    schedule = _schedule(session, tenant, anchor=NOW - timedelta(days=30))
+    _sweep_run(session, tenant, status=RunStatus.COMPLETED.value, reason=None, at=NOW)
+    for day, outcome in ((2, "FAILED"), (1, "DISPATCHED")):
+        tick = (NOW - timedelta(days=day)).replace(hour=0, minute=0, second=0, microsecond=0)
+        session.add(
+            ScheduledRun(
+                id=str(uuid.uuid4()),
+                tenant_id=tenant,
+                schedule_id=schedule.id,
+                scheduled_for=tick,
+                outcome=outcome,
+                fired_at=tick,
+                calculation_run_id=None,
+                failure_reason="transient" if outcome == "FAILED" else None,
+            )
+        )
+    session.flush()
+
+    health = alarm_channel_health(session, acting_tenant=tenant, now=NOW)
+    assert health.failed_dispatches == 1, "the failure stays visible after it recovers"
+    assert health.sweep_overdue is False, "the NEXT tick landed — the sweep is running"
+    assert (
+        health.healthy is True
+    ), "a dispatch failure whose next tick succeeded is the retry system working, not an outage"
 
 
 def test_a_FRESH_schedule_inside_its_first_period_is_NOT_overdue(session: Session) -> None:

@@ -23,6 +23,7 @@ const HEALTHY = {
   sweep_overdue: false,
   dead_channel: false,
   undeliverable_attempts: 0,
+  failed_dispatches: 0,
   exhausted_verdicts: 0,
   queued: 0,
   no_schedule: false,
@@ -127,6 +128,30 @@ describe("Alerting", () => {
       expect(screen.getByText("Empty-tenant sweeps")).toBeTruthy();
     });
     expect(screen.getByText(/fails its nightly sweep by design/)).toBeTruthy();
+    expect(screen.getByText("HEALTHY")).toBeTruthy();
+  });
+
+  it("a sweep that never started is a row of its own, and it is not the failed-sweep count", async () => {
+    // The Wave-17 close BLOCKING, rendered: a dispatch that RAISED creates no calculation_run, so
+    // `failed_sweeps` stays 0 while the control is dead. An operator reading only that number
+    // learns nothing. The twin below is what makes this row discriminate.
+    routeHealth({ ...HEALTHY, healthy: false, failed_dispatches: 6, sweep_overdue: true });
+    render(<Alerting session={SESSION} />);
+    await waitFor(() => {
+      expect(screen.getByText("Sweeps that never started")).toBeTruthy();
+    });
+    expect(screen.getByText(/no reproduction run was ever created/)).toBeTruthy();
+    expect(screen.getByText("NOT HEALTHY")).toBeTruthy();
+  });
+
+  it("a dispatch failure that recovered is visible and still HEALTHY", async () => {
+    // The discriminating twin: without it, "the row appears" and "the row means something" are
+    // the same assertion, and the panel could redden on every transient failure.
+    routeHealth({ ...HEALTHY, failed_dispatches: 1 });
+    render(<Alerting session={SESSION} />);
+    await waitFor(() => {
+      expect(screen.getByText("Sweeps that never started")).toBeTruthy();
+    });
     expect(screen.getByText("HEALTHY")).toBeTruthy();
   });
 

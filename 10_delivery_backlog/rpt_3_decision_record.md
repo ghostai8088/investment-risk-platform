@@ -1,6 +1,6 @@
 # RPT-3 — Report generation from the UI (Wave-17 slice 3) — decision record
 
-**Status:** **RATIFIED 2026-08-10** (AskUserQuestion, four decision points, ALL as recommended:
+**Status:** **CLOSED 2026-08-11 — RATIFIED 2026-08-10** (SHIPPED as PRs #199 = `341e3e0` + #200 = `3bccce0`) (AskUserQuestion, four decision points, ALL as recommended:
 OQ-RPT3-0 = **A** extend `PERF_RUN_TYPES`; REQ-RPT-001 → **In-Progress with the CREDIT clause
 named**; P15 for this slice = **fresh-context Opus audit** (the RPT-2 precedent, Fable exhausted
 for four days); the record ratified and MERGED as design authority before implementation.

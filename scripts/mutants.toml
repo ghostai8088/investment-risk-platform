@@ -18,11 +18,13 @@ id = "M-A1"
 group = "w16-close"
 why = "an unreadable alarm payload raises again, silencing the whole tenant's alarm channel"
 file = "packages/shared-python/src/irp_shared/reproduction/service.py"
-find = """        if not isinstance(payload, dict):
-            unreadable_rows.append(str(entity_id))
-            continue
-"""
-replace = ""
+# RE-ANCHORED at the Wave-17 close (2026-08-11). The control is unchanged; ALERT-1's
+# `_classify_alarm_states` fold moved its bytes on 2026-08-10 and the anchor was not carried over,
+# so this mutant and its three siblings were UNMATCHED — survivors by the harness's own rule — for
+# a day, with no gate running the battery to notice. Without the isinstance guard a non-dict
+# payload reaches `row.payload.get(...)` and raises, which is the original defect exactly.
+find = """                payload=payload if isinstance(payload, dict) else None,"""
+replace = """                payload=payload,"""
 tests = ["packages/shared-python/tests/test_reproduction.py"]
 
 [[mutant]]
@@ -30,8 +32,9 @@ id = "M-A2"
 group = "w16-close"
 why = "a verdict with one unparseable delivery row is concluded on anyway, instead of staying queued"
 file = "packages/shared-python/src/irp_shared/reproduction/service.py"
-find = """        if entity_id in poisoned:"""
-replace = """        if False:"""
+# RE-ANCHORED at the Wave-17 close: the poison check now rides the `concluded` expression.
+find = """        concluded = not is_poisoned and all(value == "success" for _, value in latest)"""
+replace = """        concluded = all(value == "success" for _, value in latest)"""
 tests = ["packages/shared-python/tests/test_reproduction.py"]
 
 [[mutant]]
@@ -39,8 +42,10 @@ id = "M-A3"
 group = "w16-close"
 why = "the alarm channel reports healthy while it cannot read its own delivery rows"
 file = "packages/shared-python/src/irp_shared/reproduction/service.py"
-find = """        return self.unreadable_rows == 0"""
-replace = """        return True"""
+# RE-ANCHORED at the Wave-17 close: `healthy` became a multi-clause expression at ALERT-1.
+find = """            self.unreadable_rows == 0
+            and self.lost_verdicts == 0"""
+replace = """            self.lost_verdicts == 0"""
 tests = ["packages/shared-python/tests/test_reproduction.py"]
 
 [[mutant]]
@@ -145,12 +150,14 @@ id = "M-A4"
 group = "w16-close"
 why = "the poisoned skip preempts MAX_ALARM_ATTEMPTS again — a poison row pages the desk every tick forever (the review's BLOCKING)"
 file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+# RE-ANCHORED at the Wave-17 close. The defect restored is unchanged and it is the worst one in
+# this group: a poisoned verdict that can never reach the ceiling stays QUEUED forever and pages
+# the risk desk every tick. A DIFFERENT review engine found this originally; the battery had
+# certified the tree green while it was live.
 find = """        if len(attempts) >= MAX_ALARM_ATTEMPTS:
-            alarmed.add(entity_id)
-            continue"""
+            state[entity_id] = VERDICT_ALARM_DELIVERED if concluded else VERDICT_ALARM_CEILING"""
 replace = """        if entity_id not in poisoned and len(attempts) >= MAX_ALARM_ATTEMPTS:
-            alarmed.add(entity_id)
-            continue"""
+            state[entity_id] = VERDICT_ALARM_DELIVERED if concluded else VERDICT_ALARM_CEILING"""
 tests = ["packages/shared-python/tests/test_reproduction.py"]
 
 # ---------------------------------------------------------------------------------------------
@@ -956,3 +963,117 @@ find = """        RUN_TYPE_DESMOOTHED_RETURN,
         RUN_TYPE_ROLLING_RISK,"""
 replace = """        RUN_TYPE_DESMOOTHED_RETURN,"""
 tests = ["apps/backend/tests/test_perf_endpoint.py"]
+
+# ---------------------------------------------------------------------------------------------
+# Wave-17 close. The two BLOCKING findings, plus the gates the review found enforcing nothing.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "W-A1"
+group = "w17-close"
+why = "the overdue clock stops discriminating a FIRE from a LANDING — the Wave-17 close BLOCKING restored: record_failed_dispatch stamps fired_at on a dispatch that RAISED, so a sweep failing every night refreshes the very clock that exists to notice it stopping, and thirty dead nights render the green HEALTHY chip"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """                ScheduledRun.tenant_id == tenant,
+                ScheduledRun.outcome != OUTCOME_FAILED,"""
+replace = """                ScheduledRun.tenant_id == tenant,"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "W-A2"
+group = "w17-close"
+why = "failed_dispatches counts every ledger row instead of the FAILED ones — the count that tells an operator the sweep never started becomes a count of nights, which is true on a perfectly healthy tenant"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """                    ScheduledRun.outcome == OUTCOME_FAILED,
+                    ScheduledRun.fired_at >= since,"""
+replace = """                    ScheduledRun.fired_at >= since,"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "W-B1"
+group = "w17-close"
+why = "the closure gate's done-mark reverts to the literal that stopped matching at REF-1 — the Wave-17 close HIGH 1 restored: eleven shipped slices go invisible to a CI-blocking gate that keeps exiting 0"
+file = "scripts/check_docs.py"
+find = """_DONE_MARK = re.compile(r"✅\\s*\\*\\*\\s*DONE\\b")"""
+replace = """_DONE_MARK = re.compile(r"✅ \\*\\*DONE\\*\\*")"""
+tests = ["apps/backend/tests/test_check_docs_closure.py"]
+
+[[mutant]]
+id = "W-B2"
+group = "w17-close"
+why = "the named-witness non-vacuity check is removed — the gate returns to policing its own done-set with a COUNT floor, which is what let a set of 55 lose every slice that mattered"
+file = "scripts/check_docs.py"
+find = """    missing_witnesses = sorted(_MUST_PARSE_AS_DONE - done)"""
+replace = """    missing_witnesses = []"""
+tests = ["apps/backend/tests/test_check_docs_closure.py"]
+
+[[mutant]]
+id = "W-C1"
+group = "w17-close"
+why = "the CTRL-018 control-matrix row reverts to the REPRO-1-era census — three of twenty-one for a control that checks nineteen. The Wave-17 close BLOCKING 1 restored: this is the row a compliance assessor reads first"
+file = "09_compliance_controls/control_matrix_skeleton.md"
+find = """**NINETEEN families are registered and TWO are pinned UNREGISTERED**"""
+replace = """three families are registered (VAR, EXPOSURE_AGGREGATE, REPORT) and eighteen are pinned UNREGISTERED"""
+tests = ["packages/shared-python/tests/test_reproduction_register_truth.py"]
+
+[[mutant]]
+id = "W-C2"
+group = "w17-close"
+why = "the RTM's closing paragraph reverts — the sibling register whose near-identical wording is why correcting one file leaves two false"
+file = "02_requirements/requirements_traceability_matrix.md"
+find = """That assertion is now MACHINE-CHECKABLE for **nineteen of the twenty-one**"""
+replace = """That assertion is now MACHINE-CHECKABLE for exactly three families"""
+tests = ["packages/shared-python/tests/test_reproduction_register_truth.py"]
+
+[[mutant]]
+id = "W-D1"
+group = "w17-close"
+why = "the legacy-tenant backfill stops skipping the SYSTEM tenant, cloning a template into the tenant that OWNS the templates"
+file = "migrations/versions/0069_legacy_tenant_admin.py"
+find = """        if str(t) != SYSTEM_TENANT_ID
+    ]
+    if not tenants:"""
+replace = """    ]
+    if not tenants:"""
+tests = ["packages/shared-python/tests/test_legacy_tenant_admin_backfill.py"]
+
+[[mutant]]
+id = "W-D2"
+group = "w17-close"
+why = "the backfill creates the role and grants it nothing — a tenant_admin role that permits nothing looks identical in a role listing and is 403 on every verb"
+file = "migrations/versions/0069_legacy_tenant_admin.py"
+find = """    wanted_codes = list(ROLE_TEMPLATES.get("tenant_admin", ()))"""
+replace = """    wanted_codes = []"""
+tests = ["packages/shared-python/tests/test_legacy_tenant_admin_backfill.py"]
+
+[[mutant]]
+id = "W-E1"
+group = "w17-close"
+why = "the second-operator refusal is removed — rotating IRP_PLATFORM_OPERATOR_SUBJECT mints a SECOND live principal holding tenant.create, reachable by no HTTP path (the Wave-17 close D2 finding restored)"
+file = "packages/shared-python/src/irp_shared/deploy/prepare.py"
+find = """    live = _active_operator_subjects(session)
+    if live:"""
+replace = """    live = _active_operator_subjects(session)
+    if False:"""
+tests = ["packages/shared-python/tests/test_tenancy.py"]
+
+[[mutant]]
+id = "W-E2"
+group = "w17-close"
+why = "the operator census stops filtering on is_active, so a RETIRED operator still counts and rotation is blocked forever — an invariant with no exit is a trap"
+file = "packages/shared-python/src/irp_shared/deploy/prepare.py"
+find = """            AppUser.is_active.is_(True),
+            UserRole.role_id == platform_role_id(PLATFORM_OPERATOR_ROLE),"""
+replace = """            UserRole.role_id == platform_role_id(PLATFORM_OPERATOR_ROLE),"""
+tests = ["packages/shared-python/tests/test_tenancy.py"]
+
+[[mutant]]
+id = "W-F1"
+group = "w17-close"
+why = "model_version_id returns to the uncompared set — a stored governed row's recorded provenance can be repointed at a different registered model and CTRL-018 reports MATCH (the Wave-17 close D4 hole restored)"
+file = "packages/shared-python/src/irp_shared/reproduction/families.py"
+find = """    "calculation_run_id": _WHY_EXECUTION_FK,
+}"""
+replace = """    "calculation_run_id": _WHY_EXECUTION_FK,
+    "model_version_id": _WHY_EXECUTION_FK,
+}"""
+tests = ["packages/shared-python/tests/test_reproduction_families.py"]

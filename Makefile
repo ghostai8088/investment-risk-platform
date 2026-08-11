@@ -1,4 +1,4 @@
-.PHONY: help setup lint format typecheck test secret-scan docs-check dep-audit check check-all fe-setup fe-check fe-audit gen-api gen-api-check
+.PHONY: help setup lint format typecheck test secret-scan docs-check mutant-anchors dep-audit check check-all fe-setup fe-check fe-audit gen-api gen-api-check
 
 PY := .venv/bin/python
 PIP := .venv/bin/pip
@@ -13,6 +13,7 @@ help:
 	@echo "  make test        - pytest"
 	@echo "  make secret-scan - scripts/secret_scan.py (placeholder)"
 	@echo "  make docs-check  - scripts/check_docs.py (placeholder)"
+	@echo "  make mutant-anchors - every mutant's anchor still matches its target (seconds)"
 	@echo "  make dep-audit   - pip-audit (mirrors the CI dependency-audit gate)"
 	@echo "  make check       - run all backend checks"
 	@echo "Frontend / Node:"
@@ -48,6 +49,20 @@ secret-scan:
 docs-check:
 	$(PY) scripts/check_docs.py
 
+# The CHEAP half of the mutation battery, ratified into `check` at the Wave-17 close gate
+# (2026-08-11, D5). It verifies only that every mutant's `find` string still matches the file it
+# targets — seconds, no clone, no pytest. The full battery stays a per-slice manual run.
+#
+# Why it exists: the battery was wired into NO gate at all (`grep -rn mutation_battery Makefile
+# .github/workflows/` returned nothing), and four `w16-close` mutants stopped matching when
+# ALERT-1 moved bytes in a module it did not own the mutants for. An unmatched anchor is a
+# SURVIVOR by the harness's own rule, so the committed battery was RED at HEAD for a day while
+# four Wave-16 alarm controls sat with no executable proof — including the infinite-paging bug a
+# different review engine had caught. A stale anchor is exactly the failure this just had, and it
+# costs seconds to see.
+mutant-anchors:
+	$(PY) scripts/mutation_battery.py --check-anchors
+
 # Mirrors the CI "Python dependency audit" step exactly, including the ignored advisory. CI has this
 # gate and the local gate did not, so an advisory could fail CI with `make check` green (the same
 # class as the prettier gap). NOT folded into `check`: it queries a LIVE advisory service, so an
@@ -69,7 +84,7 @@ fix:
 	-$(PY) -m ruff check --fix .
 	npm run -w apps/frontend format
 
-check: lint typecheck test secret-scan docs-check
+check: lint typecheck test secret-scan docs-check mutant-anchors
 
 # BOTH tiers in one command (DEP-1 / Wave-15 process fold). `check` covers Python only and
 # `fe-check` has to be REMEMBERED — and the six-consecutive-red-push episode of 2026-08-03 began
