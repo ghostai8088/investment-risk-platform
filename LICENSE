@@ -33,11 +33,13 @@ explicitly rather than left for a reader to discover:
     attribution requirement.
 
   MPL-2.0
-    certifi, pathspec.
+    certifi, pathspec — DEVELOPMENT TOOLING ONLY.
 
-    Used unmodified. MPL-2.0 is a file-level copyleft: source for these files is
-    available from their upstream projects, and no file covered by MPL-2.0 has
-    been altered in this software.
+    Measured, not assumed: an SBOM of an environment built to mirror the shipped
+    Dockerfiles contains 35 components and neither of these is among them. They
+    are declared here because they appear in development environments and because
+    the CI copyleft gate treats them as known; they are not distributed with this
+    software. MPL-2.0 is a file-level copyleft and neither is modified.
 
 A machine-readable inventory of every dependency and its licence is published as
 a CycloneDX SBOM alongside each release.
