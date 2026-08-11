@@ -72,7 +72,11 @@ from irp_shared.reproduction.registry import (
     ReproductionUnsupported,
     normalize,
 )
-from irp_shared.scheduling.events import CADENCE_INTERVAL, SCHEDULE_STATUS_ACTIVE
+from irp_shared.scheduling.events import (
+    CADENCE_INTERVAL,
+    OUTCOME_FAILED,
+    SCHEDULE_STATUS_ACTIVE,
+)
 from irp_shared.scheduling.models import Schedule, ScheduledRun
 
 #: The redaction cap for operator-facing reason text — the ``redact_failure_reason`` bound, reused
@@ -1028,6 +1032,19 @@ class AlarmChannelHealth:
     #: the ceiling. A transient failure whose retry succeeded leaves this field — the bounded retry
     #: system WORKING must not read as broken.
     undeliverable_attempts: int
+    #: ticks in the window that FIRED and did not LAND — ``scheduled_run`` rows carrying
+    #: ``outcome=FAILED``, written by ``record_failed_dispatch`` when the dispatch RAISED before a
+    #: ``calculation_run`` existed (Wave-17 close, BLOCKING 2).
+    #:
+    #: **This field and the ``outcome`` predicate on the overdue clock are one fix, and the reason
+    #: is the whole finding.** ``failed_sweeps`` counts FAILED ``calculation_run`` rows, so a
+    #: dispatch that never reached a run was countable nowhere; and ``sweep_overdue`` keyed on
+    #: ``max(fired_at)`` with no outcome predicate, so each night's failure REFRESHED the very
+    #: clock that exists to notice the sweep stopping. Thirty consecutive failed nights rendered
+    #: the green HEALTHY chip. Countable, deliberately not red on its own — a failure whose next
+    #: tick landed is the retry system working, exactly as ``undeliverable_attempts`` one field up
+    #: already argues; the redness arrives through ``sweep_overdue`` when nothing lands.
+    failed_dispatches: int
     #: verdicts the ceiling silenced without any attempt ever concluding. The ACCEPTED bound, made
     #: countable instead of invisible (amber, never red: it is a decision, not a fault).
     exhausted_verdicts: int
@@ -1192,6 +1209,24 @@ def alarm_channel_health(
     )
     active = [s for s in schedules if s.status == SCHEDULE_STATUS_ACTIVE]
     paused = len(schedules) - len(active)
+    # Ticks that FIRED and did not LAND, over this tenant's reproduction schedules only. Counted
+    # from the ledger rather than from `calculation_run`, because the whole point of this class of
+    # failure is that no run was ever created to count.
+    failed_dispatches = 0
+    if schedules:
+        failed_dispatches = (
+            session.execute(
+                select(func.count())
+                .select_from(ScheduledRun)
+                .where(
+                    ScheduledRun.tenant_id == tenant,
+                    ScheduledRun.schedule_id.in_([s.id for s in schedules]),
+                    ScheduledRun.outcome == OUTCOME_FAILED,
+                    ScheduledRun.fired_at >= since,
+                )
+            ).scalar()
+            or 0
+        )
     # Configured, then switched off ENTIRELY. Never-configured (`schedules` empty) is a gap —
     # `no_schedule` says so informationally — and a partially-paused set still has a running
     # control, so neither is this.
@@ -1205,10 +1240,15 @@ def alarm_channel_health(
     for schedule in active:
         # Per SCHEDULE, not per tenant (verifier pass 2): a tenant with two reproduction schedules
         # where one has gone silent must not read healthy because the other one fired.
+        # `outcome != FAILED` is load-bearing, and it is the Wave-17 close's BLOCKING finding.
+        # `record_failed_dispatch` stamps `fired_at=now` on a dispatch that RAISED, so without
+        # this predicate a sweep failing every single night refreshed the absence clock with its
+        # own failures and read as a sweep that was running. A fire is not a landing.
         last_fire = session.execute(
             select(func.max(ScheduledRun.fired_at)).where(
                 ScheduledRun.schedule_id == schedule.id,
                 ScheduledRun.tenant_id == tenant,
+                ScheduledRun.outcome != OUTCOME_FAILED,
             )
         ).scalar()
         # A never-fired schedule's clock starts at its first due tick after CREATION — the
@@ -1246,6 +1286,7 @@ def alarm_channel_health(
         nothing_to_reproduce=nothing_to_reproduce,
         lost_verdicts=lost,
         undeliverable_attempts=undeliverable,
+        failed_dispatches=failed_dispatches,
         exhausted_verdicts=len(ceiling_ids),
         dead_channel=silenced_in_window and not delivered_in_window,
         control_switched_off=switched_off,

@@ -54,6 +54,10 @@ EXPECTED_FIELDS = {
     # be declared — widening the payload is a decision, and this is where the decision is made.
     "control_switched_off",
     "undeliverable_attempts",
+    # Wave-17 close, BLOCKING 2. Declared here deliberately, per the sentence above: a COUNT of
+    # ticks that fired and did not land. It discloses no identifier and no payload — the carry-(n)
+    # counts-only boundary is unchanged.
+    "failed_dispatches",
     "exhausted_verdicts",
     "queued",
     "no_schedule",

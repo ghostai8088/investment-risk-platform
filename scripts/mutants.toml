@@ -956,3 +956,27 @@ find = """        RUN_TYPE_DESMOOTHED_RETURN,
         RUN_TYPE_ROLLING_RISK,"""
 replace = """        RUN_TYPE_DESMOOTHED_RETURN,"""
 tests = ["apps/backend/tests/test_perf_endpoint.py"]
+
+# ---------------------------------------------------------------------------------------------
+# Wave-17 close. The two BLOCKING findings, plus the gates the review found enforcing nothing.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "W-A1"
+group = "w17-close"
+why = "the overdue clock stops discriminating a FIRE from a LANDING — the Wave-17 close BLOCKING restored: record_failed_dispatch stamps fired_at on a dispatch that RAISED, so a sweep failing every night refreshes the very clock that exists to notice it stopping, and thirty dead nights render the green HEALTHY chip"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """                ScheduledRun.tenant_id == tenant,
+                ScheduledRun.outcome != OUTCOME_FAILED,"""
+replace = """                ScheduledRun.tenant_id == tenant,"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]
+
+[[mutant]]
+id = "W-A2"
+group = "w17-close"
+why = "failed_dispatches counts every ledger row instead of the FAILED ones — the count that tells an operator the sweep never started becomes a count of nights, which is true on a perfectly healthy tenant"
+file = "packages/shared-python/src/irp_shared/reproduction/service.py"
+find = """                    ScheduledRun.outcome == OUTCOME_FAILED,
+                    ScheduledRun.fired_at >= since,"""
+replace = """                    ScheduledRun.fired_at >= since,"""
+tests = ["packages/shared-python/tests/test_alarm_health.py"]

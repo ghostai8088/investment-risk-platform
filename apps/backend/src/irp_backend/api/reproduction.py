@@ -77,6 +77,10 @@ class AlarmHealthOut(BaseModel):
 
     #: AMBER — visible, deliberately not red.
     undeliverable_attempts: int
+    #: ticks that FIRED and did not LAND (Wave-17 close, BLOCKING 2). Amber for the same reason as
+    #: its neighbour: a failure whose next tick landed is the retry system working. When nothing
+    #: lands, `sweep_overdue` carries the red.
+    failed_dispatches: int
     exhausted_verdicts: int
 
     #: INFORMATIONAL — facts, not faults.
@@ -176,6 +180,7 @@ def read_alarm_health(
         dead_channel=health.dead_channel,
         control_switched_off=health.control_switched_off,
         undeliverable_attempts=health.undeliverable_attempts,
+        failed_dispatches=health.failed_dispatches,
         exhausted_verdicts=health.exhausted_verdicts,
         queued=health.queued,
         no_schedule=health.no_schedule,

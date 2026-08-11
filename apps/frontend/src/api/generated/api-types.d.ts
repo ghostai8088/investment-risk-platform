@@ -5649,6 +5649,8 @@ export interface components {
             dead_channel: boolean;
             /** Exhausted Verdicts */
             exhausted_verdicts: number;
+            /** Failed Dispatches */
+            failed_dispatches: number;
             /** Failed Sweeps */
             failed_sweeps: number;
             /** Healthy */

@@ -278,6 +278,10 @@
             "title": "Exhausted Verdicts",
             "type": "integer"
           },
+          "failed_dispatches": {
+            "title": "Failed Dispatches",
+            "type": "integer"
+          },
           "failed_sweeps": {
             "title": "Failed Sweeps",
             "type": "integer"
@@ -340,6 +344,7 @@
           "dead_channel",
           "control_switched_off",
           "undeliverable_attempts",
+          "failed_dispatches",
           "exhausted_verdicts",
           "queued",
           "no_schedule",

@@ -112,6 +112,16 @@ function signals(h: AlarmHealthOut): Signal[] {
       action: "If this is climbing, check the sink before the bound retires the verdicts.",
     },
     {
+      label: "Sweeps that never started",
+      value: String(h.failed_dispatches),
+      tone: "amber",
+      bad: h.failed_dispatches > 0,
+      meaning:
+        "Nightly ticks that fired and failed before the sweep could begin — no reproduction run was ever created, so these appear nowhere in the failed-sweep count. Until the Wave-17 close these refreshed the overdue clock with their own failures, so a sweep failing every single night read as a sweep that was running.",
+      action:
+        "Read the failure reason on the scheduled-run ledger. If this number matches the number of nights since the last successful sweep, the control is not running at all — 'Sweep overdue' above will say so.",
+    },
+    {
       label: "Awaiting delivery",
       value: String(h.queued),
       tone: "info",
