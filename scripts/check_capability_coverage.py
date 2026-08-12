@@ -95,14 +95,20 @@ def cited_leaves() -> set[str]:
 
 
 def scope_coverage() -> tuple[set[str], set[str]]:
-    """SCOPE ids declared, and those cited anywhere outside the scope document itself."""
+    """SCOPE ids declared, and those a REQUIREMENT cites.
+
+    **Scoped to the requirement register on purpose, and the first version was not.** It scanned
+    every markdown file in the tree, so a commitment counted as discharged the moment any document
+    mentioned it — and it fired within the hour: the re-baseline document that DISCUSSES SCOPE-01,
+    -02 and -05 made the gate report all three as covered and their baseline entries as stale.
+
+    Writing *about* a commitment is not serving it. A SCOPE id is discharged when a REQUIREMENT
+    ROW declares that it serves it, which is the whole point — the drift happened because the
+    strategy's vocabulary was spoken in exactly one file and nothing in the delivery path had to
+    answer to it. Prose about the gap does not close the gap.
+    """
     declared = set(_SCOPE.findall(_read(SCOPE_DOC)))
-    cited: set[str] = set()
-    for path in ROOT.rglob("*.md"):
-        rel = path.relative_to(ROOT).as_posix()
-        if rel.startswith(("node_modules", "CC-Session-Logs")) or rel == SCOPE_DOC:
-            continue
-        cited |= set(_SCOPE.findall(path.read_text(encoding="utf-8", errors="ignore")))
+    cited = set(_SCOPE.findall(_read(BACKBONE))) | set(_SCOPE.findall(_read(RTM)))
     return declared, cited
 
 
