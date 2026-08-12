@@ -769,6 +769,14 @@ jobs:
           python-version: "3.12"
       - name: Documentation consistency (placeholder)
         run: python scripts/check_docs.py
+      - name: Capability coverage (strategy -> requirement)
+        # Product re-baseline 2026-08-12. Fails when a capability the OWNER's taxonomy declares, or
+        # a SCOPE commitment, has no requirement behind it. Every prior audit used the requirement
+        # register as its yardstick, which is exactly where the Wave 1-17 drift lived; this gate's
+        # inputs are documents the owner wrote. Ratchet: today's gaps are recorded by name in
+        # 02_requirements/capability_coverage_baseline.json, only NEW ones fail, and an exemption
+        # left in place after it has been paid also fails.
+        run: python scripts/check_capability_coverage.py
 
   # DEP-1 (Wave-15, OQ-W15P-1): CI BUILDS the three images it has always only tested the source of.
   #

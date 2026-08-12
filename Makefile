@@ -84,7 +84,7 @@ fix:
 	-$(PY) -m ruff check --fix .
 	npm run -w apps/frontend format
 
-check: lint typecheck test secret-scan docs-check mutant-anchors
+check: lint typecheck test secret-scan docs-check capability-check mutant-anchors
 
 # BOTH tiers in one command (DEP-1 / Wave-15 process fold). `check` covers Python only and
 # `fe-check` has to be REMEMBERED — and the six-consecutive-red-push episode of 2026-08-03 began
@@ -151,3 +151,11 @@ gen-api-check:
 		echo "gen-api-check: the tree's generated API artifacts were STALE (now regenerated — review and include them)"; \
 		rm -rf $$tmp; exit 1; \
 	fi && rm -rf $$tmp
+
+.PHONY: capability-check
+capability-check:
+	@# Product re-baseline (2026-08-12). Reads the OWNER's capability taxonomy and SCOPE
+	@# commitments and fails when one has no requirement behind it. Its inputs are deliberately
+	@# documents Claude did not generate — every prior audit used the requirement register as its
+	@# yardstick, which is exactly where the Wave 1-17 drift lived.
+	$(PY) scripts/check_capability_coverage.py
