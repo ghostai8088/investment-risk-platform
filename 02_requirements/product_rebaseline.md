@@ -1,8 +1,20 @@
 # Product re-baseline — 2026-08-12
 
-**Status: DRAFT — NOTHING BELOW IS RATIFIED.** §3's ten answers are researched recommendations
-awaiting the owner's decision; §4's requirement set is proposed, not adopted. The one thing in this
-document that is already built and merged-pending is §6's first gate.
+**Status: §3 RATIFIED 2026-08-12** — the owner accepted all ten recommended answers ("proceed with
+your recommended answers to the 10 questions"). §4's requirement set remains PROPOSED and is not
+adopted until it is written into the backbone as rows with testable acceptance criteria, which is
+the work §5 sequences. §6's first gate is built, proven and merged.
+
+**The three answers that ratify a LOSS, recorded here so they cannot later read as oversights:**
+
+1. **Monte Carlo leaves the governed spine** (Q1). Simulated exposure profiles — EPE, EEPE, peak
+   PFE — and path-dependent exotics are permanently out. This CONTRADICTS a ratified requirement
+   specifying seeded Monte Carlo; that requirement is superseded by this ratification, and the
+   supersession must be annotated at the requirement itself, not only here.
+2. **Counterparty risk is declined** behind named triggers (Q6), which follows from (1).
+3. **The report sign-off rail is deferred** (Q9), so the platform carries a visible half-mint and
+   two ratified documents promising a control it has not built. An assessor reading the segregation
+   model will find it. That is accepted, not hidden.
 
 **Why it exists.** After eight weeks and seventeen delivery waves, the owner reviewed the build and
 said: *"The math and visualization need to be the star of the show. This needs to be flexible
