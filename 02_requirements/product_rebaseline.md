@@ -172,7 +172,7 @@ because the existing table cannot hold them.
 | # | Question | Recommendation | Size |
 |---|---|---|---|
 | **Q3** | Multiple exposure measures per holding? | **Yes — widen the grain now**, while the vocabulary has one member. Relax four not-null columns; make every consumer declare the measure it eats and refuse others. Eight families touched, not four | L |
-| **Q4** | Sleeve label vs measured holdings | Ratify three words used everywhere — **Mandate / Measured / Off-mandate** — and declare the portfolio name semantically inert | XL |
+| **Q4** | Sleeve label vs measured holdings | ~~Ratify three words used everywhere — Mandate / Measured / Off-mandate~~ — **SUPERSEDED 2026-08-13 at the G2 gate, user-ratified: the mandate comparison is DECLINED.** It is a COMPLIANCE function, absent from SCOPE-03's declared risk coverage, and a mandate rule engine would duplicate the shipped limit framework with only a different owner. What survives is the second half: **the portfolio name is semantically inert** (REQ-PPM-009, narrowed). Triggers to revisit are recorded on that row | XL → S |
 | **Q5** | New limit dimensions | **Strategy-node limits already work and have never been demonstrated** — do that first. Add strategy as a concentration dimension (no new captured data). Defer ultimate-parent behind a named trigger | L |
 | **Q6** | Credit vs counterparty | **Build credit, decline counterparty** behind three named triggers. Credit as a real Decimal bond-analytics kernel, not a vendor-spread wrapper. Introduces bounded-bisection iteration — a new numerical class here | XL |
 | **Q7** | Filer or input supplier | **Input supplier**, written as an explicit supersession of the existing fence. Then build a fund-grain net/gross assets series and a governed export — both pay for themselves with no regulatory argument | M |
@@ -246,7 +246,7 @@ Dependencies are real even in a full build with no MVP constraint:
    This is the highest-value visible capability in the whole re-baseline.
 4. **Presentation contract + the governed chart** (`REQ-PRES-001`, `REQ-PRS-001/2/3/4`). Can run in
    parallel with (2) and (3); it is not blocked by the pricing engine.
-5. **Node-scoped runs and rollup** (`REQ-PPM-005`), then the Mandate/Measured vocabulary (Q4).
+5. **Node-scoped runs and rollup** (`REQ-PPM-008`). *The Mandate/Measured vocabulary that followed it here was DECLINED on 2026-08-13 — see Q4.*
 6. **Report definition entity, then audience-tiered renditions** (`REQ-RPT-004`, `-005`).
 7. **Factor model** (Q2) once its descriptor inputs are decided.
 8. **Credit** (Q6). **Counterparty declined** behind triggers.
