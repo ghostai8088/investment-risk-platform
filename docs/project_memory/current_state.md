@@ -102,6 +102,46 @@
 
 ---
 
+## CURRENT TRUTH — the product RE-BASELINE, 2026-08-12/13
+
+**Read this before the Wave-17 close block below, which it supersedes on one point only: the "NEXT"
+line. Everything the close block records about what was built and measured still stands.**
+
+The owner asked whether the platform's data-inflow assumptions were current best practice. That
+question ended eight weeks of drift, and the diagnosis is one sentence: **the requirement register's
+acceptance criteria were satisfiable without delivering their stated purpose.** REQ-PPM-004 promised
+*"roll up exposures across hierarchy"* and accepted *"aggregates reproduce within tolerance"* — an
+aggregation that rolls up NOTHING reproduces perfectly. A test-driven process built exactly what
+could pass. Of the 74 rows then in the register, 22 required reproduction and **two** required a
+human to see anything.
+
+**Why seventeen wave-close audits missed it:** every one compared code against requirements, or
+records against code. The register was the yardstick in all of them and the register carried the
+gap. *An audit whose reference point is the artifact carrying the defect cannot see the defect.*
+
+Merged (33rd–39th merges): **#202** the capability-coverage gate + the re-baseline document ·
+**#203** DEPLOY-1, which found the deployed stack connected as a SUPERUSER with 84 FORCE-RLS tables
+bypassed, fixed by migration `0070_app_role` and proven over HTTP · **#204** the INGEST-1 decision
+record · **#205** the register 74→86 rows with CAP-21 Presentation minted · **#206** the Monte Carlo
+withdrawal · **#207** gate G3 · **G2** (this fold).
+
+**The four gates, all now resolved:** G1 capability coverage (built, ratchet, 8 controls) · G3
+presentation rows need a visible acceptance (built; it rejected a row written an hour before it
+existed) · **G2 — built 2026-08-13 and NOT as specified: six automated detector designs were built
+and scored, all six catch the three known-bad rows and none is usable, so G2 is a HUMAN act (P20)
+with bookkeeping that proves the act happened** · G4 — the close review cannot close without the
+capability coverage table — **STILL OPEN, rides the next close.**
+
+**Ratified, and three of them ratify a LOSS:** Monte Carlo withdrawn from the governed spine,
+counterparty risk declined, report sign-off deferred. Measured rather than argued: Decimal pricing
+of 5,000 positions × 20 scenarios at **4.5s**, and a Decimal factor model at 117 factors × 10,000
+instruments at **0.838s** per period.
+
+**NEXT = the Wave-18 planning gate**, at which every row entering the slice scope needs a G2
+adjudication (P20, T1). Re-baseline part 2 — roughly 18 further requirement rows — is unwritten.
+
+---
+
 ## CURRENT TRUTH — swept at the Wave-17 close, 2026-08-11
 
 **Everything above this line is the Wave-17 PLANNING-gate snapshot and is kept as history.** It was

@@ -849,6 +849,16 @@ jobs:
         # 02_requirements/capability_coverage_baseline.json, only NEW ones fail, and an exemption
         # left in place after it has been paid also fails.
         run: python scripts/check_capability_coverage.py
+      - name: G2 adjudication ledger (bookkeeping, NOT quality)
+        # Product re-baseline 2026-08-13. G2 was specified as an automated detector — "does this
+        # acceptance criterion actually test the business purpose?" — and six independent designs
+        # were built and scored against a labelled register. All six caught all three known-bad
+        # rows and none is usable: measured by hand on the best performer, an acceptance reading
+        # "the rollup is NOT implemented; the endpoint returns 501" PASSED, the register's own
+        # 2026-08-12 repair was FLAGGED, and six appended words turned the real defect green.
+        # So G2 is a HUMAN act (P20) and this step checks only that the act happened and has not
+        # lapsed. It must never be described as a check on requirement quality.
+        run: python scripts/check_g2_adjudication.py
 
   # DEP-1 (Wave-15, OQ-W15P-1): CI BUILDS the three images it has always only tested the source of.
   #

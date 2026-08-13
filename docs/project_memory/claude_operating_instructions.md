@@ -600,7 +600,73 @@ outcome — sat unpaid and invisible to every document a successor slice reads, 
 was recorded in a deviations section that nothing sweeps. **RATIFIED 2026-08-09 by the user at the
 Wave-17 planning gate (D5, option A with B as backstop, as recommended).**
 
+## A requirement row is ADJUDICATED by a human before it enters a slice (standing, RATIFIED 2026-08-13, P20)
+The Wave 1-17 drift had one mechanism: **acceptance criteria satisfiable without delivering the
+stated purpose.** REQ-PPM-004 promised *"roll up exposures across hierarchy"* and accepted
+*"aggregates reproduce within tolerance"* — an aggregation that rolls up NOTHING reproduces
+perfectly, and for seventeen waves that is what shipped. A test-driven process builds exactly what
+can pass.
+
+**This rule cannot be a script, and that was established by building six of them.** The 2026-08-13
+bake-off implemented six independent detector designs and scored them against a labelled register.
+All six caught all three known-bad rows; none is usable. Measured by hand on the best performer,
+varying only REQ-PPM-004's acceptance cell: *"Exposure rollup across the hierarchy is NOT
+implemented; the endpoint returns 501"* → **PASS**; the real 2026-08-12 repair → **FLAG**; the
+original defect plus six words, *"; the hierarchy is recorded"* → **PASS**. The check passes the bug
+and blocks the patch, and a cosmetic edit disarms it. The model-judged variant understood the
+defects and flipped its verdict on 15 of 74 rows between runs. **The reason is structural: G2 asks a
+question about MEANING, about a document the person being checked can freely reword — so any word
+rule is one word away from being switched off by the person it polices.**
+
+**The rule, bound to two moments.** *(T1)* A requirement row may not appear in a slice's scope list
+at the planning gate until its adjudication is current — this is the load-bearing trigger, because
+the failure was rows entering build unexamined. *(T2)* Editing a row's Business purpose or
+Acceptance cell lapses its adjudication immediately.
+
+**The act:** a human on the roster (`02_requirements/g2_adjudicators.json`) answers, in exactly this
+form, because it forces a construction rather than an opinion:
+
+> *"Describe an implementation that passes EVERY clause of this acceptance criterion and does NOT
+> deliver the stated business purpose. Barred: 'they might compute it wrongly' — the implementation
+> must be one a competent, lazy team would actually ship."*
+
+Two permitted dispositions: **AMENDED** (an exploit exists — write it down, rewrite the acceptance
+so the exploit fails, record the repair commit) or **REBUTTED** (name the specific clause that
+blocks the obvious exploit, in at least a full sentence — *"looks fine"* is not a disposition).
+**Claude may PROPOSE an adjudication and its proposal is never the adjudication** — the register is
+authored by the model, which is exactly why this is the one gate a model cannot answer for itself.
+
+**What an AMENDED criterion must contain** — guidance, deliberately NOT a pattern, because the
+moment it is a pattern it is one word from being gamed: at least one clause a degenerate
+implementation provably FAILS. The four shapes the 2026-08-12 amendments already demonstrate — a
+named falsifying case (*"a node whose subtree is empty REFUSES rather than returning zero"*); a
+differential (*"removing the largest contributor moves total risk by that contributor's stated
+amount"*); an external oracle (agreement with a hand-computed or vendor value, never with a re-run
+of itself); a named restricted population (*"an option, a swap and a callable note each round-trip
+with no field loss"* — never a bare *"every X"*). **Five of the six candidate detectors flagged
+criteria of exactly this shape as defective**, which is the strongest single argument for keeping
+this as prose and out of CI.
+
+**The bake-off ran TWICE, independently, and both runs reached the same verdict** — the second also
+tested the one idea the first did not: an ensemble requiring 4 of 5 detectors to agree. On the
+original 74 rows it looked superb (3 extra flags, all genuine). Against 15 freshly-written rows it
+caught **3 of 10** defective ones and **0 of 4** written in fresh wording, and scored the three
+strongest acceptance criteria identically to the three most vacuous. *The good result was five
+detectors having been fitted to the same 74 sentences.* **The second run also found a defect in the
+first version of the mechanical half: with an empty slice scope it exited 0 having adjudicated
+nothing — the empty-population vacuity, inside the gate written to prevent it.** It is now a
+refusal: a declared slice with an empty scope, or an undeclared scope with no written reason, exits
+2. *A guard is probed before it is trusted, including the guard against unprobed guards.*
+
+**The mechanical half** is `scripts/check_g2_adjudication.py` + `make g2-check` + CI, and it checks
+**paperwork, never quality**: that the act happened, by a human, with reasoning, and that it lapses
+when the text moves. *It must never be cited in a status document as a check on requirement
+quality* — that framing is the failure this whole rule exists because of. **RATIFIED 2026-08-13 by
+the user** at the G2 decision gate (option A, as recommended), the design having been produced by
+the bake-off's own refutation of its brief.
+
 ## Prohibited behavior
+
 *(Reconciled at the Wave-17 planning gate, 2026-08-09, as the D6 editorial pass: the first bullet
 contradicted the 2026-07-12/14 delivery-autonomy grant for TWO YEARS of wave-time — it predated the
 grant and nothing swept it; the out-of-phase bullet named phases that shipped long ago. A rule set

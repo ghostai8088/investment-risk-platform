@@ -250,9 +250,53 @@ citation parser producing 47 false positives, and a first negative control that 
 it anchored on text that does not occur in the file. Six controls are committed so it cannot rot
 into a green light matching nothing.*
 
-**G2 — acceptance criteria must test the stated purpose.** Flag any row whose acceptance clause
-does not reference the same object as its business-purpose clause. REQ-PPM-004 and REQ-MKT-003 are
-the reference cases. *Rides the re-baselined register — it checks that register's structure.*
+**G2 — acceptance criteria must test the stated purpose. BUILT 2026-08-13, AND NOT AS SPECIFIED:
+the automated version does not exist, and that is a measured result rather than a shortfall.**
+
+G2 was specified here as *"flag any row whose acceptance clause does not reference the same object
+as its business-purpose clause"*. Six independent detector designs were built to that brief and
+scored against a labelled 74-row register with three known-bad rows. **All six catch all three. None
+is usable.** Varying only REQ-PPM-004's acceptance cell, on the best performer, verified by hand:
+
+| Acceptance text | Verdict |
+|---|---|
+| `Aggregates reproduce within tolerance and bind lineage` — the real defect | **FLAG** (correct) |
+| `Exposure rollup across the hierarchy is NOT implemented; the endpoint returns 501` | **PASS** |
+| the defect plus six words: `; the hierarchy is recorded` | **PASS** |
+| the real 2026-08-12 repair, `removing the largest contributor moves total risk by that contributor's stated amount` | **FLAG** |
+
+**The check passes the bug and blocks the patch**, and six words of appended noise disarm it — not
+an attack anyone must mount, an edit an author makes while tidying prose. Underneath, all six are
+checking which WORDS appear in the acceptance sentence, and no word rule distinguishes a sentence
+that promises something from one that merely mentions it. Five of the six flagged criteria of
+exactly the shape the 2026-08-12 amendments demonstrate. The model-judged variant understood the
+defects properly and failed differently: its verdict flips on 15 of 74 rows between runs, and its
+headline 3/3 collapsed to **0/3** once the answers were removed from its own rubric.
+
+The reason is structural and worth stating once: **G2 asks a question about MEANING, about a
+document the person being checked can freely reword.** Any word rule is one word away from being
+switched off by the person it polices — which is how this drift happened in the first place. The
+criteria were written to be passable; a rule reading those criteria gets written around too.
+
+**So G2 is a human act (P20), with deterministic bookkeeping that proves the act happened and lapses
+it when the text moves** — `scripts/check_g2_adjudication.py`, `02_requirements/g2_adjudication_ledger.jsonl`,
+wired into `make check` and CI, 16 controls committed. **The bookkeeping checks paperwork, never
+quality, and must never be cited otherwise.** Ratified by the user at the G2 decision gate,
+2026-08-13.
+
+*The bake-off's union of flags is kept as an advisory reading order in `g2_slice_scope.json` — 11
+rows flagged by three or more independent designs, several corroborated by the register's own Status
+column. A row absent from that list is not thereby fine: the second run measured that **0 of 4**
+defective rows written in fresh wording reach three votes.*
+
+**The bake-off ran twice, independently, and the second run earned its keep twice over.** It tested
+the one idea the first did not — an ensemble requiring 4 of 5 detectors to agree — which looked
+superb on the original 74 rows (3 extra flags, all genuine) and then caught **3 of 10** defective
+rows written fresh that morning, scoring the three strongest acceptance criteria identically to the
+three most vacuous. The good result was five detectors fitted to the same 74 sentences. **It also
+found a defect in the first version of the bookkeeping gate: with an empty slice scope it exited 0
+having adjudicated nothing** — the empty-population vacuity, inside the gate written to prevent it,
+and this repository's fifth near-miss of that class. Now a refusal (exit 2), with its own control.
 
 **G3 — every presentation requirement needs an acceptance criterion a human can see.** Two of 74
 rows qualify today. *Rides the re-baselined register.*

@@ -84,7 +84,7 @@ fix:
 	-$(PY) -m ruff check --fix .
 	npm run -w apps/frontend format
 
-check: lint typecheck test secret-scan docs-check capability-check mutant-anchors
+check: lint typecheck test secret-scan docs-check capability-check g2-check mutant-anchors
 
 # BOTH tiers in one command (DEP-1 / Wave-15 process fold). `check` covers Python only and
 # `fe-check` has to be REMEMBERED — and the six-consecutive-red-push episode of 2026-08-03 began
@@ -159,3 +159,12 @@ capability-check:
 	@# documents Claude did not generate — every prior audit used the requirement register as its
 	@# yardstick, which is exactly where the Wave 1-17 drift lived.
 	$(PY) scripts/check_capability_coverage.py
+
+.PHONY: g2-check
+g2-check:
+	@# G2 (product re-baseline, 2026-08-13). BOOKKEEPING ONLY — it proves a named human asked the
+	@# G2 question about this exact text, and has no opinion about whether they answered it well.
+	@# Six automated detectors were built and scored; none works, because every word-based rule is
+	@# one word away from being switched off by the person it polices. Never cite this as a check
+	@# on requirement quality.
+	$(PY) scripts/check_g2_adjudication.py
