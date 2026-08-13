@@ -303,6 +303,18 @@ EVERY artifact the slice claims to have delivered — review folds included** (c
 merged; FE-M1's R-4 fold raced its own PR — a sweep run on the branch measures intent, only the main check
 measures delivery.
 
+**G4 — the close review carries the capability-coverage table (product re-baseline, from the Wave-18
+close).** A wave close review must contain a `## Capability coverage (G4)` section listing the
+capability leaves the wave's slices newly covered, one per table row, leaf id in the first cell.
+`scripts/check_capability_coverage.py` verifies that each listed leaf is real in the owner's
+taxonomy and is still cited by a requirement row — a wave that covered nothing writes
+`NO NEW CAPABILITY COVERAGE` plus a sentence saying why, because an empty table is not a
+measurement. The table is the wave's OWN contribution, not the platform's running total, so it does
+not go stale when a later wave mints new leaves. **The reason this is a gate rather than a habit:
+seventeen close reviews were written without ever asking which of the owner's stated capabilities
+the wave actually advanced, which is how eight weeks of delivery drifted from the product's intent
+with every audit reporting green.**
+
 ## Shared-tree mutation rules (standing, RATIFIED at the Wave-13 close 2026-07-29, P2)
 Whenever ANY agent may hold the tree (reviews, mutation batteries, parallel finders): **never `git add -A`** —
 stage explicit paths; **grep the COMMIT, not the tree** for mutation markers before pushing
