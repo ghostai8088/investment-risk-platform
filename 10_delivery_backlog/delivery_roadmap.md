@@ -306,8 +306,13 @@ enumerated in a new index).
     snapshot-pinned report over the shipped governed numbers — the first artifact a board, regulator, or
     prospective buyer asks for, currently wholly unowned; also the first end-to-end exercise of the
     thesis §2.3 reproducibility claim by a human-consumable artifact.
-- **VaR completions (on demand):** √h multi-horizon; component/marginal VaR; Monte-Carlo (GATED: needs a
-  seeded simulator + revaluation engine, QS-18). *(Rewritten at the Wave-6 close: ES SHIPPED at ES-1 and
+- **VaR completions (on demand):** √h multi-horizon; component/marginal VaR; ~~Monte-Carlo~~ **WITHDRAWN 2026-08-12 at the
+  product re-baseline — not deferred, DROPPED.** Exact-Decimal MC measures ~112 hours per core
+  against ~15 seconds vectorised: the arithmetic that makes this platform reproducible is the
+  arithmetic that makes MC unaffordable. Off the register rather than sitting on it as work
+  someone might one day pick up. Carries with it EPE/EEPE/peak-PFE exposure profiles and
+  path-dependent exotics; counterparty risk was declined separately at the same gate. QS-18
+  (recorded RNG seed) becomes inapplicable to VaR/ES. *(Rewritten at the Wave-6 close: ES SHIPPED at ES-1 and
   backtesting at BT-1/BT-2 — ES-over-HS is the named Wave-7 headline candidate, not a theme item.)*
 - **Credit & counterparty risk** (RTM-P3 theme — now also carries the spread-sensitivity REQ minted out of REQ-CRD-003 at the Wave-14 planning gate, OQ-W14P-4; trigger: genuine curve feeds) · **Private assets + liquidity** (RTM-P4 — now also HOMES **REQ-LIQ-002 redemption stress & waterfall**, deferred at the Wave-14 planning gate OQ-W14P-5; trigger: the first scenario slice extending CAP-9 beyond linear factor shocks, or a user redemption-stress ask) · **Limits, breach
   workflow + SoD enforcement** (RTM-P6) · **Full model governance / validation workflow + DQ reconciliation**

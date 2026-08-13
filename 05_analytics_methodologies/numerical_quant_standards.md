@@ -85,7 +85,7 @@ exception is registered with the model version.
 
 | ID | Standard |
 |---|---|
-| QS-18 | Stochastic calculations (Monte Carlo VaR, PFE, etc.) use a **recorded RNG seed**; the seed and path count are bound to the run (TR-14). |
+| QS-18 | Stochastic calculations (Monte Carlo VaR, PFE, etc.) use a **recorded RNG seed**; the seed and path count are bound to the run (TR-14). **INAPPLICABLE TO VaR/ES AS OF 2026-08-12** — the product re-baseline withdrew Monte Carlo from the governed spine (measured: ~112 hours per core in exact Decimal against ~15 seconds vectorised; the arithmetic that makes this platform reproducible is the arithmetic that makes MC unaffordable). This standard now has NO subject in the governed families and is retained only so that any future non-governed stochastic use inherits it rather than inventing its own rule. A standard with no subject is kept deliberately and said so, rather than deleted — deleting it would let a later slice reintroduce seeded simulation with no standard to meet. |
 | QS-19 | The RNG algorithm is fixed and documented; parallelization must be reproducible (deterministic stream partitioning). |
 | QS-20 | Convergence criteria / number of paths are configurable and recorded; methodology documents expected Monte Carlo error. |
 
