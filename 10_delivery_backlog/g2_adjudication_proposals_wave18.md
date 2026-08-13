@@ -29,6 +29,29 @@ roster rule exists to prevent, and it makes this the least trustworthy adjudicat
 ever produce. A REBUTTED verdict from me on my own row would be worth even less than an AMENDED one.
 Please read the exploits on their merits and reject the ones that are theatre.
 
+### The revision pass, 2026-08-13 — four of my five amendments were themselves defective
+
+The user refuted the `PPM-006` amendment on domain grounds: delta-adjusted exposure only says
+something new when the payoff is non-linear, so my clause *"the two carry different values"* would
+have **rejected a correct implementation** on every future, forward and vanilla swap. That is the
+exact defect measured in the G2 bake-off the day before, where the best detector flagged the
+register's own repair as broken.
+
+Re-reading the other four for the same class found it in three of them, and the shared cause is
+sharper than carelessness: **I kept banning a MECHANISM where I should have required an OUTCOME.**
+
+| Row | The mechanism I banned | Why that rejects a correct build |
+|---|---|---|
+| `PPM-007` | "aggregation has ONE enforcement point" | A system may legitimately aggregate in SQL for a read view and in Python for a governed run. What matters is that every path consults the contract |
+| `PPM-008` | regrouping never moves a total, unscoped | True for ADDITIVE families; not guaranteed for weighted ones. The row's body carried the scope and my amendment dropped it |
+| `PPM-009` | "a mandate derived from holdings is refused" | Seeding a draft mandate from a book and letting a human edit it is a reasonable way to onboard. The falsifying case already kills the exploit without the ban |
+| `PPM-010` | A→B→C must equal A→C | Triangulated and direct rates genuinely differ, by source, time and rounding at each hop |
+
+**The rule this yields, and it belongs in P20's guidance if it survives:** an acceptance clause
+should state an outcome the degenerate build cannot produce, never forbid a route to the outcome. A
+banned mechanism is a guess about how someone will cheat; an outcome is a fact about what you asked
+for. Every one of these four was me guessing.
+
 **Recurring theme, worth naming once:** four of the five exploits are the **empty or one-member
 population** — a vocabulary with a single member, a book with a single currency, a tree with a single
 level, a mandate derived from what is already held. This repository has shipped that failure at
@@ -55,13 +78,35 @@ one exposure anywhere outside the test.
 This is not hypothetical. It is what `SUPPORTED_FACTOR_FAMILIES = (CURRENCY,)` already is, one row
 over, and REQ-MKT-004a was amended for precisely it.
 
-**Proposed amendment** — add a differential clause the one-member version provably fails:
+**Proposed amendment, REVISED 2026-08-13 — and the first draft was WRONG.** The original read: *"a
+single derivative holding emits BOTH a notional row and a delta-equivalent row … and the two carry
+different values, so a delta-equivalent that silently equals notional fails."*
 
-> A single derivative holding emits BOTH a notional row and a delta-equivalent row **from the
-> ingestion and valuation path, not from a test fixture**, asserted by reading back two rows for one
-> holding id; and the two carry different values, so a delta-equivalent that silently equals notional
-> fails. The measure vocabulary has at least two members with a producer each, asserted against the
-> producers rather than against the vocabulary.
+The user refuted it: **delta-adjusted exposure only says something new when the payoff is
+non-linear.** For a future, a forward, an FX forward or a vanilla swap, delta is 1 by construction —
+the delta-equivalent IS the notional equivalent, the same number under a second name. So the clause
+*"the two carry different values"* would have **rejected a correct implementation** on every linear
+derivative, which is the identical defect measured in the G2 detector bake-off the day before, where
+the best-scoring detector flagged the register's own repair as broken. A criterion that fails the
+right answer is worse than no criterion.
+
+It also picked a bad example. The need for more than one exposure measure is broad and mostly is not
+about delta: a **swap** carries a 100m notional and a near-zero market value; a **private fund
+commitment** carries funded and unfunded, and unfunded is the one whose absence ruins a liquidity
+forecast; a **rates position** is carried by DV01 or duration, not notional at all. Optionality is
+one instance, and the only one that needs the pricing engine.
+
+> **Revised clause.** At least two exposure measures exist with a DISTINCT PRODUCER each, asserted
+> against the producers rather than against the vocabulary. On a holding whose measures are
+> economically distinct — a swap's notional against its market value, or a commitment's funded
+> against unfunded — the two values DIFFER, read back off one holding id, from the ingestion and
+> valuation path rather than a test fixture. Where an instrument's measures legitimately coincide (a
+> future's delta-equivalent and its notional), **coincidence is NOT a failure.**
+
+**Consequence, and it is the reason the revision matters beyond correctness:** the row is no longer
+chained to the options pricing engine. The swap and commitment cases are buildable on data already
+captured, so this can be delivered in the structure slice, with the optionality case arriving later
+alongside `REQ-MKT-007` and requiring no change to the criterion.
 
 ---
 
@@ -80,11 +125,17 @@ in fact refuse anything; a helper does, and nothing calls it.
 
 This is the LQ-1 finding exactly: *three controls written, believed and INERT.*
 
-**Proposed amendment** — bind the contract to the path:
+**Proposed amendment, REVISED 2026-08-13.** The first draft read *"aggregation has ONE enforcement
+point, asserted by a census of aggregation sites that fails when a second path exists."* That bans a
+mechanism, and a mechanism ban rejects correct implementations: a system may legitimately aggregate
+in SQL for a read view AND in Python for a governed run. What matters is not that there is one path
+but that **every** path answers to the contract.
 
-> Aggregation has ONE enforcement point, asserted by a census of aggregation sites that fails when a
-> second path exists; and the `NOT AGGREGATABLE` refusal is made to fire **through the public read
-> surface** (an HTTP request for a summed yield is refused), not only against the helper.
+> **Revised clause.** EVERY aggregation site consults the contract, asserted by a census of
+> aggregation sites in which each is bound to a contract lookup — a site with no lookup fails,
+> regardless of how many sites there are; and the `NOT AGGREGATABLE` refusal is made to fire
+> **through the public read surface** (an HTTP request for a summed non-aggregatable value is
+> refused), not only against an internal helper.
 
 **Separately, a content correction I believe the row gets wrong.** It offers *"a yield, a ratio, a
 duration"* as examples of `NOT AGGREGATABLE`. **Duration is aggregatable** — by market-value
@@ -107,13 +158,18 @@ the node id is on the run. And *"any node — fund, portfolio, sleeve, strategy"
 because a fund of sleeves of strategies is never exercised and may not even be representable. The
 associativity that actually breaks — grandparent against grandchildren — is untested.
 
-**Proposed amendment** — name the population:
+**Proposed amendment, REVISED 2026-08-13.** The first draft's last clause — *"a node's result is
+unchanged by inserting an intermediate node that regroups its children"* — was written without its
+scope. Regrouping preserves the total for ADDITIVE families; it is not guaranteed for weighted ones
+computed hierarchically, and is meaningless for `NOT AGGREGATABLE`. Unscoped, the clause would fail a
+correct implementation the moment a weighted family existed. The row's own body already carries the
+scope and the amendment dropped it.
 
-> The rollup identity holds on a tree of at least THREE levels and is asserted at the grandparent
-> against BOTH its children and its grandchildren; at least two distinct node types participate
-> (a fund containing sleeves, not one portfolio containing positions); and a node's result is
-> unchanged by inserting an intermediate node that regroups its children without changing the
-> holdings — a regrouping that moves the total fails.
+> **Revised clause.** The rollup identity holds on a tree of at least THREE levels and is asserted at
+> the grandparent against BOTH its children and its grandchildren; at least two distinct node types
+> participate (a fund containing sleeves, not one portfolio containing positions); and **for families
+> the aggregation contract declares ADDITIVE**, a node's result is unchanged by inserting an
+> intermediate node that regroups its children without changing the holdings.
 
 ---
 
@@ -135,13 +191,20 @@ comparison is genuinely performed, `UNDECLARED` is reported for nodes with no ma
 private sleeves are the same kind of node — and the row delivers nothing, because no holding is ever
 outside its mandate.
 
-**Proposed amendment** — a falsifying case, with the mandate authored independently:
+**Proposed amendment, REVISED 2026-08-13.** The first draft ended *"a mandate derived from current
+holdings is refused at declaration."* Another mechanism ban, and a bad one: seeding a draft mandate
+from today's holdings and letting a human edit it is a perfectly reasonable way to onboard a book,
+and the clause would forbid it. What must be required is the OUTCOME — that a mandate is capable of
+being violated — not the route by which it was authored.
 
-> A node whose DECLARED mandate excludes an instrument it holds reports exactly that instrument as
-> OFF-MANDATE, on a fixture where the mandate is declared BEFORE the position is added; the mandate
-> is a structured declaration with at least two expressible dimensions (an instrument-class rule and
-> a concentration rule), not free text; and a mandate derived from current holdings is refused at
-> declaration, because a mandate that cannot be violated is not a mandate.
+> **Revised clause.** A node whose DECLARED mandate excludes an instrument it holds reports exactly
+> that instrument as OFF-MANDATE, on a fixture where the mandate is declared BEFORE the position is
+> added; and the mandate is a structured declaration with at least two expressible dimensions (an
+> instrument-class rule and a concentration rule), not free text.
+
+*How a mandate is first drafted is left open deliberately. The falsifying case above already kills
+the seed-from-holdings exploit, because a mandate that mirrors the book cannot produce the required
+OFF-MANDATE row.*
 
 *Exploit A is worth keeping as a clause, just not as evidence — suggest marking it explicitly as a
 regression guard so nobody mistakes it for the work.*
@@ -160,13 +223,19 @@ translation is the exact identity (trivially — it is the only case); the missi
 in a unit test. Nothing is ever translated, and *one book, several currencies, one honest total* is
 not delivered.
 
-**Proposed amendment** — assert the population is non-empty, then assert against an external oracle:
+**Proposed amendment, REVISED 2026-08-13.** The first draft's last clause required that *"translating
+to currency A and then A to B agrees with translating directly to B."* **Triangulated and direct
+rates genuinely differ** — different quote sources, different times, and rounding at each hop — so a
+correct implementation would fail it. The original hedged with "or the result states which convention
+broke the chain", which makes the clause unfalsifiable rather than correct: any behaviour satisfies
+one branch or the other.
 
-> The test book holds at least THREE currencies, at least one node's reporting currency differs from
-> its holdings' currencies, and the count of translated legs is asserted NON-ZERO before any claim is
-> made about them; the translated total agrees with a HAND-COMPUTED value (an external oracle, never
-> a re-run of the same code); and translating a node to currency A and then A to B agrees with
-> translating directly to B, or the result states which convention broke the chain.
+> **Revised clause.** The test book holds at least THREE currencies, at least one node's reporting
+> currency differs from its holdings' currencies, and the count of translated legs is asserted
+> NON-ZERO before any claim is made about them; the translated total agrees with a HAND-COMPUTED
+> value (an external oracle, never a re-run of the same code); and where a pair has no direct rate,
+> the result records that it was TRIANGULATED and through which currency — so a reader can tell a
+> direct translation from a chained one without re-deriving it.
 
 ---
 
