@@ -1,0 +1,30 @@
+// G2 adjudication ledger — APPEND ONLY. One JSON object per line.
+//
+// Each line records that a named HUMAN asked one question about one exact piece of text:
+//
+//   "Describe an implementation that passes EVERY clause of this acceptance criterion and does NOT
+//    deliver the stated business purpose. Barred: 'they might compute it wrongly' — the
+//    implementation must be one a competent, lazy team would actually ship."
+//
+// It does NOT record that they answered it well. scripts/check_g2_adjudication.py checks the
+// paperwork and nothing else; it must never be cited as a check on requirement quality.
+//
+// Fields (all required):
+//   req_id            the register row, e.g. "REQ-PPM-004"
+//   hash              sha256 of the row's normalised (Business purpose \x1f Acceptance) cells.
+//                     Edit either cell and the adjudication LAPSES — that is the point.
+//   adjudicator       a human handle from 02_requirements/g2_adjudicators.json. "MODEL:..." is
+//                     rejected: this is the one gate a model cannot answer for itself.
+//   disposition       AMENDED (an exploit existed — the acceptance was rewritten so it fails) or
+//                     REBUTTED (name the clause that blocks the obvious exploit, in a full sentence)
+//   reasoning         >= 120 characters. The exploit, or the clause that blocks it. A cost, not a
+//                     proof: a fluent wrong rebuttal passes as easily as a correct one.
+//   amendment_commit  required for AMENDED — the commit that carries the rewritten acceptance
+//   adjudicated_at    ISO date
+//
+// Duplicate (req_id, hash) keys are REJECTED, not last-line-wins: appending must never erase a
+// prior finding.
+//
+// EMPTY BY DESIGN at creation (2026-08-13). The first adjudications happen at the Wave-18 planning
+// gate, when rows are declared into a slice scope — recording them retrospectively would be
+// recording a human act that did not happen, in a ledger whose only purpose is to prove it did.

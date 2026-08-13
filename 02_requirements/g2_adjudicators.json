@@ -1,0 +1,5 @@
+{
+  "_why": "G2 is the one gate a model cannot answer for itself. The register is authored by the model, so the adjudicator must be a human on this list; an entry prefixed 'MODEL:' is rejected outright by scripts/check_g2_adjudication.py. See docs/project_memory/claude_operating_instructions.md (P20) for the question they must answer.",
+  "_note_on_the_unimplemented_clause": "The ratified design also required adjudicator != PR author. On this project every PR is authored by the sole human account, who is also the only valid adjudicator, so that clause would fail every run or be deleted within a week. It is deliberately not implemented; the substantive rule (the adjudicator must not be the row's author) is carried by MODEL: rejection plus this roster. Revisit if a second human joins.",
+  "adjudicators": ["ghostai8088"]
+}
