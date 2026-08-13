@@ -129,8 +129,10 @@ withdrawal · **#207** gate G3 · **G2** (this fold).
 presentation rows need a visible acceptance (built; it rejected a row written an hour before it
 existed) · **G2 — built 2026-08-13 and NOT as specified: six automated detector designs were built
 and scored, all six catch the three known-bad rows and none is usable, so G2 is a HUMAN act (P20)
-with bookkeeping that proves the act happened** · G4 — the close review cannot close without the
-capability coverage table — **STILL OPEN, rides the next close.**
+with bookkeeping that proves the act happened** · **G4 — from the Wave-18 close on, a close review
+must carry a `## Capability coverage (G4)` section naming the leaves the wave newly covered (built
+2026-08-13; bound to zero documents today, and a control asserts exactly that and instructs its own
+deletion at the first close under it).** **ALL FOUR GATES ARE BUILT.**
 
 **Ratified, and three of them ratify a LOSS:** Monte Carlo withdrawn from the governed spine,
 counterparty risk declined, report sign-off deferred. Measured rather than argued: Decimal pricing

@@ -301,8 +301,26 @@ and this repository's fifth near-miss of that class. Now a refusal (exit 2), wit
 **G3 — every presentation requirement needs an acceptance criterion a human can see.** Two of 74
 rows qualify today. *Rides the re-baselined register.*
 
-**G4 — the close review cannot close without the capability coverage table.** Make the artifact a
-required output rather than a good intention. *Rides the next close.*
+**G4 — the close review cannot close without the capability coverage table. BUILT 2026-08-13.**
+A wave close review from the Wave-18 close on must carry a `## Capability coverage (G4)` section
+listing the capability leaves the wave's slices newly covered. The gate verifies each listed leaf is
+real in the owner's taxonomy and is still cited by a requirement row; a wave that covered nothing
+writes `NO NEW CAPABILITY COVERAGE` plus a sentence, because an empty table is not a measurement.
+
+*The table is the wave's OWN contribution rather than the platform's running total — deliberately,
+because a "coverage right now" table goes stale the moment the next requirement row lands, and
+enforcing it would redden CI until someone edited a historical document. Rewriting a measurement
+after the fact is the class of defect this gate exists to prevent.*
+
+*Waves 1–17 are NOT retro-fitted, and a control asserts they carry no G4 section: demanding a
+coverage table from seventeen closed waves would mean writing a measurement that was never taken.*
+
+**Its weak point today, named rather than discovered:** no wave has closed since G4 existed, so on
+the real tree it is bound to **zero** documents. That is the same vacuity the second G2 bake-off run
+found inside the G2 gate, and it is handled the same way — a committed control asserts the count is
+zero and instructs its own deletion at the Wave-18 close, and nine further controls prove the gate
+fires. A tenth refuses (exit 2) if the discovery glob ever stops finding the seventeen historical
+reviews, which is how a gate reports green having checked nothing.
 
 ---
 

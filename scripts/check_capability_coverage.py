@@ -160,6 +160,102 @@ def presentation_rows_without_visible_acceptance() -> list[tuple[str, str]]:
     return offenders
 
 
+#: G4 (product re-baseline). A wave close review must carry the capability-coverage artifact — the
+#: gate exists to make it a required OUTPUT rather than a good intention, which is what it was.
+CLOSE_REVIEW_GLOB = "wave_*_close_review.md"
+CLOSE_REVIEW_DIR = "10_delivery_backlog"
+G4_HEADING = "## Capability coverage (G4)"
+#: Waves 1-17 closed before this gate existed. Retro-fitting a coverage table onto seventeen
+#: historical documents would be writing a measurement that was never taken — the precise sin the
+#: re-baseline exists to stop. G4 binds the next close and every one after it.
+G4_FROM_WAVE = 18
+#: The seventeen historical close reviews must still be FOUND. If the glob stops matching, the gate
+#: has nothing to check and would report green forever — the failure mode this repository has now
+#: hit five times, once inside the G2 fold written to prevent it.
+G4_MIN_CLOSE_REVIEWS = 17
+#: A wave that covered no new capability must SAY SO, in words, rather than shipping an empty table.
+G4_NONE_MARK = "NO NEW CAPABILITY COVERAGE"
+G4_MIN_NONE_REASON = 60
+_WAVE_NUM = re.compile(r"wave_(\d+)_close_review\.md$")
+_G4_TABLE_LEAF = re.compile(r"^\|\s*(\d{1,2}\.\d{1,2}[a-z]?)\s*\|", re.M)
+
+
+def close_reviews() -> list[tuple[int, Path]]:
+    """(wave number, path) for every close review, newest last. Refuses if the glob goes blind."""
+    found: list[tuple[int, Path]] = []
+    for p in sorted((ROOT / CLOSE_REVIEW_DIR).glob(CLOSE_REVIEW_GLOB)):
+        m = _WAVE_NUM.search(p.name)
+        if m:
+            found.append((int(m.group(1)), p))
+    if len(found) < G4_MIN_CLOSE_REVIEWS:
+        print(
+            f"capability-coverage: found {len(found)} close reviews, floor is "
+            f"{G4_MIN_CLOSE_REVIEWS} — the discovery glob has gone blind and this gate would "
+            f"report green having checked nothing",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    return sorted(found)
+
+
+def g4_errors(cited: set[str], leaves: dict[str, str]) -> list[str]:
+    """G4 — every close review from wave 18 on carries a verifiable capability-coverage table.
+
+    **What is checked, and why it is the wave's OWN coverage rather than the platform's.** A table
+    of "coverage right now" goes stale the moment the next requirement row lands, so enforcing it
+    would redden CI until someone edited a historical document — rewriting a measurement after the
+    fact, which is the class of defect this gate exists to prevent. The wave's own contribution is
+    stable: the leaves its slices newly covered do not change when a later wave mints new ones.
+
+    So each listed leaf must (a) be a real leaf in the owner's taxonomy and (b) still be cited by a
+    requirement row today. (b) is monotone in the right direction: a leaf that was covered at close
+    and is uncovered now is a REGRESSION, and failing on it is correct.
+    """
+    errors: list[str] = []
+    for wave, path in close_reviews():
+        if wave < G4_FROM_WAVE:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if G4_HEADING not in text:
+            errors.append(
+                f"{path.name} closes wave {wave} and has no '{G4_HEADING}' section. The coverage "
+                f"table is a required OUTPUT of a close review, not a good intention."
+            )
+            continue
+        body = text.split(G4_HEADING, 1)[1]
+        body = re.split(r"^## ", body, maxsplit=1, flags=re.M)[0]
+        listed = _G4_TABLE_LEAF.findall(body)
+        if not listed:
+            if G4_NONE_MARK not in body:
+                errors.append(
+                    f"{path.name}: the G4 section lists no capability and does not say "
+                    f"'{G4_NONE_MARK}'. An empty table is not a measurement."
+                )
+            elif len(" ".join(body.split())) - len(G4_NONE_MARK) < G4_MIN_NONE_REASON:
+                errors.append(
+                    f"{path.name}: '{G4_NONE_MARK}' with no reason. A wave that covered no new "
+                    f"capability is a fact worth a sentence."
+                )
+            continue
+        seen: set[str] = set()
+        for leaf in listed:
+            if leaf in seen:
+                errors.append(f"{path.name}: capability {leaf} is listed twice in the G4 table")
+            seen.add(leaf)
+            if leaf not in leaves:
+                errors.append(
+                    f"{path.name}: the G4 table claims capability {leaf}, which is not a leaf in "
+                    f"the owner's taxonomy (backbone section 4)"
+                )
+            elif leaf not in cited:
+                errors.append(
+                    f"{path.name}: the G4 table claims wave {wave} covered capability {leaf}, and "
+                    f"NO requirement row cites it today — either the claim was never true or the "
+                    f"coverage has REGRESSED"
+                )
+    return errors
+
+
 def main() -> int:
     leaves = declared_leaves()
     cited = cited_leaves()
@@ -223,6 +319,11 @@ def main() -> int:
             f"platform has read endpoints with no screens."
         )
     print(f"presentation rows w/o visible acceptance: {len(invisible)}")
+
+    reviews = close_reviews()
+    bound = [w for w, _ in reviews if w >= G4_FROM_WAVE]
+    errors.extend(g4_errors(cited, leaves))
+    print(f"close reviews found        : {len(reviews)} — {len(bound)} bound by G4")
 
     if errors:
         print("\ncapability-coverage FAILED:")
