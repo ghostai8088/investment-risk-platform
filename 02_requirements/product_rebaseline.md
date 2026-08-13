@@ -182,11 +182,31 @@ because the existing table cannot hold them.
 
 ---
 
-## 4. The proposed requirement set
+## 4. The requirement set — WRITTEN INTO THE BACKBONE, 2026-08-12/13
 
 Thirty requirements survived adversarial attack out of sixty proposed: **9 analytics, 7 structure,
-6 presentation, 6 reporting, 1 governance, 1 operations.** Full statements are in the synthesis
-dossier; the shape that matters:
+6 presentation, 6 reporting, 1 governance, 1 operations.**
+
+**They are no longer proposals.** Part 1 (2026-08-12) wrote twelve rows and minted CAP-21; part 2
+(2026-08-13) wrote nineteen more. The register went **74 → 105 rows**, and the RTM was brought level
+with it — part 1 had updated only one half, which is the P1 ledger-5 omission class and nothing
+mechanical was checking it.
+
+**Seven coverage gaps were paid in part 2, and the gate found every one of them itself** by refusing
+to pass while the stale exemptions sat in the baseline: capability `13.3` Exception management
+(REQ-DQR-004), `16.2` Scenario/breach reports (REQ-RPT-005), and **all five SCOPE commitments** —
+discharged the only way that means anything, by requirement rows that CITE the id they serve.
+`SCOPE-01` REQ-INT-004 · `SCOPE-02` REQ-PPM-009 and REQ-SMR-007 · `SCOPE-03` REQ-MDG-004 ·
+`SCOPE-04` REQ-ADM-005 and REQ-DQR-004 · `SCOPE-05` REQ-ADM-006. Two accepted gaps remain, both
+deliberate: `20.2` money-weighted return and `20.4` composites.
+
+> **A cited SCOPE id means a requirement now answers to the commitment. It does not mean the
+> commitment is built.** SCOPE-02's derivative half is still the largest gap the re-baseline found —
+> instrument terms carry seven bond fields and cannot express an option — and REQ-SMR-007 is
+> precisely the row that fails until that is fixed. Discharging a coverage gap makes work visible to
+> the process; it does not do the work.
+
+The shape that matters:
 
 - **`REQ-STR-005` — the risk-bearing exposure measure. BUILD THIS FIRST.** Factor allocation and
   every exposure-consuming family must consume a *declared* risk-bearing measure. Everything
