@@ -1,24 +1,31 @@
 {
-  "_what_this_is": "The capability-coverage gate's ratchet. Every entry is a capability the strategy declares with NO requirement behind it, or a SCOPE commitment nothing downstream cites. Recorded 2026-08-12 at the product re-baseline. The gate fails on a NEW gap, and also fails when an entry here has since been covered but was left in place — a stale exemption is standing permission to regress.",
+  "_what_this_is": "The capability-coverage gate's ratchet. Every entry is a capability the strategy declares with NO requirement behind it, or a SCOPE commitment nothing downstream cites. Recorded 2026-08-12 at the product re-baseline. The gate fails on a NEW gap, and also fails when an entry here has since been covered but was left in place \u2014 a stale exemption is standing permission to regress.",
   "_how_to_discharge": "Write the requirement, then delete the entry. Never delete an entry to silence the gate; the gate will fail on the stale exemption, which is the point.",
   "_recorded_at": "2026-08-12, product re-baseline",
-
-  "accepted_uncovered_capabilities": ["13.3", "16.2", "20.2", "20.3", "20.4"],
-  "accepted_uncovered_scope": ["SCOPE-01", "SCOPE-02", "SCOPE-03", "SCOPE-04", "SCOPE-05"],
-
+  "accepted_uncovered_capabilities": [
+    "13.3",
+    "16.2",
+    "20.2",
+    "20.4"
+  ],
+  "accepted_uncovered_scope": [
+    "SCOPE-01",
+    "SCOPE-02",
+    "SCOPE-03",
+    "SCOPE-04",
+    "SCOPE-05"
+  ],
   "_reasons": {
     "13.3": "Exception management (data quality). Rules evaluate and results are recorded; nothing manages the exception lifecycle. No requirement row cites it. Owed to the re-baseline.",
     "16.2": "Scenario/breach reports. The scenario engine reaches one factor family and the breach lifecycle has no report family, so the capability has no host yet. Owed to the re-baseline.",
     "20.2": "Money-weighted return / IRR. Deferred at PA-0; the deferral is real and recorded.",
-    "20.3": "Performance attribution. THE gap the re-baseline named independently — a risk committee's first question, absent repo-wide. Owed to the re-baseline as a first-class requirement.",
     "20.4": "Composites / GIPS presentation. Deferred; no requirement, and no near-term trigger.",
-
     "SCOPE-01": "Committed in regulatory_product_scope.md and cited in no other document.",
-    "SCOPE-02": "Public AND private both first-class, INCLUDING derivatives. The derivative half is unbuildable today — instrument terms carry seven bond fields and cannot express an option. This is the single largest gap the re-baseline found, and it is here rather than fixed because the pricing-engine decision (Q1) gates it.",
+    "SCOPE-02": "Public AND private both first-class, INCLUDING derivatives. The derivative half is unbuildable today \u2014 instrument terms carry seven bond fields and cannot express an option. This is the single largest gap the re-baseline found, and it is here rather than fixed because the pricing-engine decision (Q1) gates it.",
     "SCOPE-03": "Market, credit, counterparty, liquidity, scenario/stress, limits/breach across both domains. Credit and counterparty have nine requirement rows and almost no code.",
     "SCOPE-04": "Cited nowhere downstream.",
     "SCOPE-05": "Cited nowhere downstream.",
-
-    "_the_scope_class": "All five SCOPE ids share one defect and it is the mechanism of the Wave 1-17 drift: the strategy layer's own commitment vocabulary is spoken in exactly one file. A commitment nothing downstream references cannot be traced, cannot be gated, and cannot be noticed when it goes unbuilt. Discharging these means the requirement rows CITE the SCOPE id they serve, not merely that the work exists."
+    "_the_scope_class": "All five SCOPE ids share one defect and it is the mechanism of the Wave 1-17 drift: the strategy layer's own commitment vocabulary is spoken in exactly one file. A commitment nothing downstream references cannot be traced, cannot be gated, and cannot be noticed when it goes unbuilt. Discharging these means the requirement rows CITE the SCOPE id they serve, not merely that the work exists.",
+    "_20_3_discharged": "20.3 Performance attribution DISCHARGED 2026-08-12 by REQ-PRF-005. It was the gap the gate rediscovered unprompted on the day it was installed; it is the first entry paid."
   }
 }
