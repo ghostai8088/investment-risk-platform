@@ -1,0 +1,48 @@
+Copyright (c) 2026. All rights reserved.
+
+PROPRIETARY AND CONFIDENTIAL
+
+This software and its accompanying documentation are proprietary and confidential.
+No licence, express or implied, is granted to any person or entity to use, copy,
+modify, merge, publish, distribute, sublicense, or sell copies of this software,
+in whole or in part, except under a separate written agreement with the copyright
+holder.
+
+Unauthorised copying, distribution, or use of this software, via any medium, is
+strictly prohibited.
+
+---
+
+THIRD-PARTY COMPONENTS
+
+This software incorporates third-party open-source components, each licensed by
+its respective copyright holders. The majority are distributed under permissive
+licences (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0, PSF). Two categories carry
+obligations that survive into a proprietary distribution and are recorded here
+explicitly rather than left for a reader to discover:
+
+  LGPL-3.0-only
+    psycopg, psycopg-binary — the PostgreSQL database adapter.
+
+    Used as an unmodified, separately installed library, imported at runtime. It
+    is neither modified nor statically linked, and nothing in this software
+    prevents a recipient from replacing it with another copy or version of the
+    same library. Where this software is distributed (as opposed to operated as a
+    hosted service), the full text of the GNU Lesser General Public License
+    version 3 is provided with the distribution, and this notice satisfies the
+    attribution requirement.
+
+  MPL-2.0
+    certifi, pathspec — DEVELOPMENT TOOLING ONLY.
+
+    Measured, not assumed: an SBOM of an environment built to mirror the shipped
+    Dockerfiles contains 35 components and neither of these is among them. They
+    are declared here because they appear in development environments and because
+    the CI copyleft gate treats them as known; they are not distributed with this
+    software. MPL-2.0 is a file-level copyleft and neither is modified.
+
+A machine-readable inventory of every dependency and its licence is published as
+a CycloneDX SBOM alongside each release.
+
+Nothing in this section grants any additional rights in the proprietary portions
+of this software.

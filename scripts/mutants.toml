@@ -1077,3 +1077,31 @@ replace = """    "calculation_run_id": _WHY_EXECUTION_FK,
     "model_version_id": _WHY_EXECUTION_FK,
 }"""
 tests = ["packages/shared-python/tests/test_reproduction_families.py"]
+
+# ---------------------------------------------------------------------------------------------
+# DEPLOY-1 (pre-Wave-18): the application role the deployment never had. PG-tier — the properties
+# these mutants attack exist only on PostgreSQL.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "X-A1"
+group = "deploy-1"
+why = "the app role regains BYPASSRLS — the platform's first hard invariant ('no BYPASSRLS application path') negated in the migration that exists to guarantee it, and 84 FORCE-RLS tables stop constraining the application"
+file = "migrations/versions/0070_app_role.py"
+find = """    op.execute(f"ALTER ROLE {APP_ROLE} NOSUPERUSER NOBYPASSRLS")"""
+replace = """    op.execute(f"ALTER ROLE {APP_ROLE} NOSUPERUSER BYPASSRLS")"""
+tests = ["packages/shared-python/tests/test_app_role_pg.py"]
+needs_pg = true
+
+[[mutant]]
+id = "X-A2"
+group = "deploy-1"
+why = "ALTER DEFAULT PRIVILEGES is dropped, so every table a FUTURE migration creates is unreadable by the application — a break that surfaces as a production 500 rather than a red test"
+file = "migrations/versions/0070_app_role.py"
+find = """    op.execute(
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {APP_ROLE}"
+    )"""
+replace = """    pass"""
+tests = ["packages/shared-python/tests/test_app_role_pg.py"]
+needs_pg = true
