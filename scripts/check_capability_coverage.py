@@ -112,6 +112,54 @@ def scope_coverage() -> tuple[set[str], set[str]]:
     return declared, cited
 
 
+#: G3 (product re-baseline). A row in the PRESENTATION domain must have an acceptance criterion a
+#: HUMAN CAN SEE. Measured before this gate existed: of 74 requirement rows, 22 required
+#: reproduction and TWO required anyone to see anything, and the Definition of Done's only UI clause
+#: was a prohibition. A presentation requirement whose acceptance is "the endpoint returns 200" is
+#: how a platform ends up with 105 read endpoints and no screens.
+_PRESENTATION_LEAF = re.compile(r"\b21\.\d{1,2}\b")
+#: Deliberately a vocabulary of OBSERVABLE outcomes, not of UI nouns. "renders", "byte-identical
+#: SVG" and "a reader reaches" all qualify; "the API exposes" does not, which is the point.
+_HUMAN_VISIBLE = (
+    "render",
+    "rendered",
+    "renders",
+    "display",
+    "displayed",
+    "screen",
+    "chart",
+    "svg",
+    "a reader",
+    "sees",
+    "seen",
+    "visible",
+    "on the page",
+    "rendition",
+)
+#: A REQ row: id in column 1, cap in column 3, acceptance in column 9, of eleven pipe-separated
+#: cells. Parsed positionally rather than by header, and asserted below so a column reshuffle
+#: cannot silently turn this check into a no-op.
+_REQ_ROW = re.compile(r"^\|\s*(REQ-[A-Z0-9-]+)\s*\|")
+
+
+def presentation_rows_without_visible_acceptance() -> list[tuple[str, str]]:
+    """Presentation requirements whose acceptance nobody could watch happen."""
+    offenders: list[tuple[str, str]] = []
+    for line in _read(BACKBONE).splitlines():
+        m = _REQ_ROW.match(line)
+        if not m:
+            continue
+        cells = line.split("|")
+        if len(cells) < 11:
+            continue
+        cap, acceptance = cells[3], cells[9]
+        if not _PRESENTATION_LEAF.search(cap):
+            continue
+        if not any(tok in acceptance.lower() for tok in _HUMAN_VISIBLE):
+            offenders.append((m.group(1), acceptance.strip()[:90]))
+    return offenders
+
+
 def main() -> int:
     leaves = declared_leaves()
     cited = cited_leaves()
@@ -165,6 +213,16 @@ def main() -> int:
         errors.append(
             f"{s} is listed as an accepted gap but IS now cited — remove it from {BASELINE}."
         )
+
+    invisible = presentation_rows_without_visible_acceptance()
+    for req_id, acceptance in invisible:
+        errors.append(
+            f"{req_id} is a PRESENTATION requirement whose acceptance criterion nobody could watch "
+            f'happen: "{acceptance}...". A presentation row must be acceptable by SEEING '
+            f"something rendered — 2 of the 74 pre-re-baseline rows were, and that is why the "
+            f"platform has read endpoints with no screens."
+        )
+    print(f"presentation rows w/o visible acceptance: {len(invisible)}")
 
     if errors:
         print("\ncapability-coverage FAILED:")

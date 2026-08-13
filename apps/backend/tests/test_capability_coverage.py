@@ -134,3 +134,53 @@ def test_leaves_are_read_from_the_TAXONOMY_not_from_citations(sandbox: Path) -> 
     assert (
         not gate.declared_leaves().keys() <= gate.cited_leaves()
     ), "every declared leaf is cited, which would make this gate structurally unable to fail"
+
+
+def test_a_presentation_row_with_no_VISIBLE_acceptance_FAILS(sandbox: Path) -> None:
+    """G3's negative control (product re-baseline).
+
+    This gate caught a defect in a row written an hour before it existed: REQ-PRS-005's acceptance
+    was expressed entirely in runs and refusals — "an exploratory run computes the same value as its
+    governed twin; binding one to a report is REFUSED" — with nothing anyone could watch happen.
+    The whole point of an exploration tier is that an analyst can SEE that what they are looking at
+    cannot be cited, and the requirement's author (me) missed exactly that half.
+
+    So the control strips the visible vocabulary out of a real presentation row and requires the
+    gate to notice.
+    """
+    backbone = sandbox / "02_requirements/requirements_backbone.md"
+    text = backbone.read_text()
+    assert "REQ-PRS-002" in text, "the row this control mutates has moved"
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("| REQ-PRS-002 "):
+            cells = line.split("|")
+            # Replace the acceptance cell with one that is testable but wholly invisible.
+            cells[9] = " The endpoint returns 200 and the payload validates against its schema "
+            lines[i] = "|".join(cells)
+            break
+    else:  # pragma: no cover - the assert above already guards this
+        raise AssertionError("REQ-PRS-002 row not found")
+    backbone.write_text("\n".join(lines))
+    assert (
+        gate.main() == 1
+    ), "a presentation requirement acceptable by an HTTP status code alone did not fail the gate"
+
+
+def test_G3_reads_the_acceptance_COLUMN_not_the_whole_row(sandbox: Path) -> None:
+    """The column positions are parsed by index, so a reshuffle must not silently disarm G3.
+
+    Without this, moving a column would make every presentation row's acceptance read as some other
+    cell — and a gate that inspects the wrong cell passes forever, which is the failure mode this
+    repository has now hit four separate times.
+    """
+    import check_capability_coverage as g
+
+    offenders = g.presentation_rows_without_visible_acceptance()
+    assert offenders == [], f"unexpected offenders on the real tree: {offenders}"
+    # And it must be capable of finding one at all — a checker that returns [] because it parses
+    # nothing is indistinguishable from a clean tree.
+    backbone = sandbox / "02_requirements/requirements_backbone.md"
+    text = backbone.read_text().replace("| REQ-PRS-001 ", "| REQ-PRS-001X ")
+    backbone.write_text(text)
+    assert "REQ-PRS-001X" in backbone.read_text()
