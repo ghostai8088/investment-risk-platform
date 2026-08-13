@@ -209,4 +209,75 @@ analyst_write=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhos
 [ "$analyst_write" = "403" ] || die "the analyst got ${analyst_write} creating a user — expected 403 (no user.manage)"
 echo "   analyst -> /portfolios 200, POST /users 403 (the granted role's exact edge)"
 
-log "PASSED — the platform starts AND administers itself: tenant created over HTTP, four-eyes live, every refusal fired"
+log "6. TENANT ISOLATION, PROVEN AS THE DEPLOYED ROLE (DEPLOY-1 — the break-in test)"
+# THE arm this slice exists for. Before DEPLOY-1 every service connected as ${POSTGRES_USER},
+# which the postgres:16 image creates a SUPERUSER — so all 84 FORCE-RLS tables were bypassed in
+# the only artifact anyone would deploy, and every proof in this file demonstrated its behaviour
+# with tenant isolation switched OFF. Measured at the close: as the owner, two rows visible across
+# two tenants with no tenant GUC armed; as irp_app, zero.
+#
+# The database-level proof is in test_app_role_pg.py. THIS is the one that matters, because the
+# claim is about the deployed stack: a real principal, over HTTP, against a real second tenant.
+
+# 6a. the role the BACKEND is actually connected as — asked of the running container, not inferred.
+app_role=$($COMPOSE exec -T backend python -c \
+  "import os,re;u=os.environ['DATABASE_URL'];print(re.match(r'.*://([^:]+):',u).group(1))" | tr -d '\r')
+[ "$app_role" = "irp_app" ] || die "the backend is connected as '${app_role}', not irp_app — the whole fix is inert"
+super_flags=$($COMPOSE exec -T db psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -tAc \
+  "SELECT rolsuper::text||'/'||rolbypassrls::text FROM pg_roles WHERE rolname='irp_app'" | tr -d '\r')
+[ "$super_flags" = "false/false" ] || die "irp_app reports rolsuper/rolbypassrls = ${super_flags} — expected false/false"
+echo "   backend connects as irp_app; rolsuper=false rolbypassrls=false"
+
+# 6b. a SECOND tenant, created over HTTP by the operator exactly as the first was.
+create2=$(curl -sS -w '\n%{http_code}' -X POST "http://localhost:${BACKEND_PORT}/tenants" \
+  -H "X-User-Id: ${OPERATOR_ID}" -H "X-Tenant-Id: ${SYSTEM_TENANT}" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"neighbour","display_name":"Neighbour Tenant","admin_external_subject":"admin@neighbour","admin_display_name":"Neighbour Admin"}')
+code2=$(printf '%s' "$create2" | tail -1)
+[ "$code2" = "201" ] || die "second tenant creation returned ${code2}"
+TENANT2_ID=$(printf '%s' "$create2" | sed '$d' | $COMPOSE run --rm --entrypoint python migrate -c \
+  'import json,sys; print(json.load(sys.stdin)["tenant_id"])')
+ADMIN2_T2=$(printf '%s' "$create2" | sed '$d' | $COMPOSE run --rm --entrypoint python migrate -c \
+  'import json,sys; print(json.load(sys.stdin)["admin_user_id"])')
+echo "   second tenant=${TENANT2_ID}"
+
+# 6c. THE POSITIVE HALF FIRST, and the ordering is deliberate. `/users` is a route this admin
+#     genuinely holds (tenant_admin carries ONBOARD-1b's user verbs), so a 200 here is what makes
+#     the refusal below mean something.
+#
+#     The first version of this arm used `/portfolios` — which tenant_admin cannot read on EITHER
+#     tenant — so the break-in and the control both returned 403 and the test could not tell them
+#     apart. Wrong answer and right answer coinciding is the REPRO-2 `cohort[0]` defect exactly.
+own=$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${BACKEND_PORT}/users" \
+  -H "X-User-Id: ${ADMIN2_T2}" -H "X-Tenant-Id: ${TENANT2_ID}")
+[ "$own" = "200" ] || die "tenant 2's admin got ${own} on its OWN /users — expected 200. Without this the refusal below proves nothing"
+echo "   tenant-2 admin on its OWN /users -> 200 (the principal works)"
+
+# 6d. THE BREAK-IN. The SAME principal, the SAME route, tenant 1's id.
+#
+#     Expect 403, not 401, and the reason is worth stating because the first draft of this arm
+#     asserted 401 and failed: the dev-header shim takes (user, tenant) at face value and only
+#     checks that the tenant is ADMITTED, so the principal is constructed and RLS does the real
+#     work — under tenant 1's context this user has no rows, therefore no roles, therefore no
+#     permissions. The isolation is enforced at the permission layer, and THAT is what the
+#     constrained role makes true: as a SUPERUSER the same request would have found the rows.
+breakin=$(curl -sS -w '\n%{http_code}' "http://localhost:${BACKEND_PORT}/users" \
+  -H "X-User-Id: ${ADMIN2_T2}" -H "X-Tenant-Id: ${TENANT_ID}")
+bcode=$(printf '%s' "$breakin" | tail -1)
+bbody=$(printf '%s' "$breakin" | sed '$d')
+[ "$bcode" = "403" ] || die "BREAK-IN: tenant 2's admin reading tenant 1's /users got ${bcode}, expected 403"
+# Belt and braces: a refusal that still leaked a row would be the worst possible pass.
+case "$bbody" in
+  *"@ignition"*|*"First Admin"*) die "BREAK-IN LEAKED TENANT 1 DATA in the refusal body: ${bbody}" ;;
+esac
+echo "   SAME admin, SAME route, tenant-1's id -> 403, no tenant-1 identity in the body"
+
+# 6e. and the negative twin for the ROLE itself: the constrained role must not be able to see
+#     across tenants at the DATABASE either, which is the property the migration delivers.
+rows=$($COMPOSE exec -T db psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -tAc \
+  "SET ROLE irp_app; SELECT count(*) FROM app_user;" | tr -d '\r' | tail -1)
+[ "$rows" = "0" ] || die "irp_app with no tenant GUC armed sees ${rows} app_user rows — expected 0. RLS is not holding for the deployed role"
+echo "   irp_app with no tenant context -> 0 app_user rows (RLS holds for the role the app uses)"
+
+
+log "PASSED — the platform starts AND administers itself: tenant created over HTTP, four-eyes live, tenant isolation proven over HTTP as the constrained role, every refusal fired"
