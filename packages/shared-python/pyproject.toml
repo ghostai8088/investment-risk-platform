@@ -5,6 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "irp-shared"
 version = "0.1.0"
+license = { text = "Proprietary" }
 description = "Investment Risk Platform - shared Python library (foundation frameworks)"
 requires-python = ">=3.12"
 dependencies = [

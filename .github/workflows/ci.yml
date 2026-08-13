@@ -158,6 +158,15 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_tenant_context_pg.py -q
+      - name: Deployed application-role RLS tests (Postgres, DEPLOY-1 — the role the deploy uses)
+        # The CI-parity gate caught this suite shipping with no CI step, which is the correct
+        # catch: a test proving the DEPLOYED role cannot cross tenants is worth nothing if only
+        # the author's laptop ever runs it. That is the whole shape of the defect this slice
+        # exists to fix — an isolation proof that was true of a role nothing deployed used.
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_app_role_pg.py -q
       - name: OIDC tenant-claim canonicalization RLS test (Postgres, SSO-1 / AD-007 / BR-17)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
@@ -758,6 +767,69 @@ jobs:
           python-version: "3.12"
       - name: Secret scan (placeholder for gitleaks)
         run: python scripts/secret_scan.py
+
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    # DEPLOY-1 (2026-08-11), ratified with the proprietary licence position. Diligence asks for a
+    # dependency bill of materials before it asks for a chart, and the licence file makes a claim
+    # about the dependency tree (psycopg is LGPL-3.0-only and is a RUNTIME dep) that should be
+    # mechanically re-derivable rather than hand-maintained.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install the runtime tree into an ISOLATED environment
+        # The scanner must NOT live in the environment it scans. The first version of this job
+        # pip-installed cyclonedx-bom alongside the product and then ran `cyclonedx-py environment`
+        # over the result — so the SBOM described the TOOL as much as the product, and the copyleft
+        # gate below failed CI on `chardet` (LGPL), which is a dependency of cyclonedx-bom itself
+        # and of nothing this platform ships. Two separate environments, and the scanner is handed
+        # the product interpreter as an argument.
+        run: |
+          python -m pip install --upgrade pip
+          python -m venv /tmp/product-venv
+          /tmp/product-venv/bin/pip install --upgrade pip
+          # MIRRORS THE DOCKERFILES, not the pyprojects. `psycopg` is declared by NO pyproject —
+          # backend/worker/migrate.Dockerfile each install "psycopg[binary]>=3.1" explicitly and
+          # say so in a comment (RPT-2). An SBOM built from the pyprojects alone omitted the
+          # database driver entirely: 25 components, psycopg absent — i.e. it omitted the ONE
+          # dependency carrying a real licence obligation, which is worse than publishing nothing.
+          /tmp/product-venv/bin/pip install \
+            "./packages/shared-python[deploy]" ./apps/backend ./apps/worker \
+            "uvicorn[standard]>=0.30" "psycopg[binary]>=3.1"
+          python -m venv /tmp/sbom-venv
+          /tmp/sbom-venv/bin/pip install cyclonedx-bom
+      - name: Generate the Python SBOM (of the PRODUCT environment)
+        run: |
+          /tmp/sbom-venv/bin/cyclonedx-py environment /tmp/product-venv/bin/python \
+            --output-format JSON --output-file sbom-python.json
+      - name: Fail on a copyleft licence the LICENSE file does not already declare
+        # The declared exceptions are psycopg/psycopg-binary (LGPL-3.0-only, used unmodified) and
+        # certifi/pathspec (MPL-2.0). A NEW copyleft dependency is a licence decision, not a
+        # dependency bump, and it must not arrive silently.
+        run: |
+          python - <<'PY'
+          import json, sys
+          declared = {"psycopg", "psycopg-binary", "certifi", "pathspec"}
+          sbom = json.load(open("sbom-python.json"))
+          bad = []
+          for c in sbom.get("components", []):
+              name = c.get("name", "")
+              lic = json.dumps(c.get("licenses", []))
+              if any(k in lic.upper() for k in ("GPL", "MPL", "SSPL", "EUPL")) and name not in declared:
+                  bad.append((name, lic))
+          if bad:
+              print("UNDECLARED COPYLEFT DEPENDENCIES:", bad)
+              print("Add them to LICENSE's third-party section deliberately, or remove them.")
+              sys.exit(1)
+          print(f"SBOM: {len(sbom.get('components', []))} components, no undeclared copyleft")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-python
+          path: sbom-python.json
 
   docs-check:
     name: Documentation check
