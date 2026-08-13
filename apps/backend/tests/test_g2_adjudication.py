@@ -315,3 +315,25 @@ def test_a_row_OUTSIDE_the_slice_scope_is_REPORTED_not_BLOCKED(sandbox: Path) ->
     assert (
         len(rows) > 80
     ), "the register is full of unadjudicated rows and the gate is silent — by design"
+
+
+def test_a_SECOND_header_shape_EXITS_TWO(sandbox: Path) -> None:
+    """The repair, pinned (2026-08-13, found while writing re-baseline part 2).
+
+    The first version of this gate matched headers by the prefix ``| REQ | Title |`` and was
+    therefore blind to the CAP-21 table, whose header read ``| ID | Requirement | Cap | ...`` — a
+    second shape, in the section written the day before, sitting inside the file the "exactly one
+    header" assertion claimed to cover. Nothing was mis-hashed only because the two happened to
+    order their columns identically. That is luck, not a control.
+
+    Headers are now recognised by content, so a variant cannot hide behind a different first cell.
+    """
+    backbone = sandbox / "02_requirements/requirements_backbone.md"
+    text = backbone.read_text()
+    assert _HEADER_ROW in text
+    variant = (
+        "| ID | Requirement | Cap | Business purpose | What it does | Inputs | Method | Test "
+        "| Acceptance | Status |"
+    )
+    backbone.write_text(text.replace(_HEADER_ROW, variant, 1))
+    assert gate.main() == 2

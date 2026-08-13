@@ -139,8 +139,18 @@ counterparty risk declined, report sign-off deferred. Measured rather than argue
 of 5,000 positions × 20 scenarios at **4.5s**, and a Decimal factor model at 117 factors × 10,000
 instruments at **0.838s** per period.
 
+**Re-baseline part 2 is WRITTEN (2026-08-13).** Nineteen more requirement rows; the register is
+**74 → 105**, and the RTM was brought level with it — part 1 had updated only one half, the P1
+ledger-5 omission class with nothing mechanical checking it. **Seven coverage gaps paid, every one
+found by the gate itself** refusing to pass with stale exemptions in the baseline: `13.3` exception
+management, `16.2` scenario/breach reports, and **all five SCOPE commitments**, discharged by rows
+that CITE the id they serve. Two accepted gaps remain by choice: `20.2` money-weighted return,
+`20.4` composites. *A cited SCOPE id means a requirement answers to the commitment — not that the
+commitment is built. SCOPE-02's derivative half is still the largest gap the re-baseline found.*
+
 **NEXT = the Wave-18 planning gate**, at which every row entering the slice scope needs a G2
-adjudication (P20, T1). Re-baseline part 2 — roughly 18 further requirement rows — is unwritten.
+adjudication (P20, T1). The sequencing is in `product_rebaseline.md` §5: the risk-bearing exposure
+measure and the aggregation contract first, because nothing analytic is safe to build before them.
 
 ---
 

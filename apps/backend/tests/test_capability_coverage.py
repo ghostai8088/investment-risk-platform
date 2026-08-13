@@ -106,11 +106,28 @@ def test_a_new_capability_with_no_requirement_FAILS(sandbox: Path) -> None:
 
 
 def test_an_uncited_SCOPE_commitment_FAILS(sandbox: Path) -> None:
-    """A strategy commitment nothing downstream speaks is the drift mechanism itself."""
-    baseline = sandbox / "02_requirements/capability_coverage_baseline.json"
-    data = json.loads(baseline.read_text())
-    data["accepted_uncovered_scope"].remove("SCOPE-02")  # the derivatives commitment
-    baseline.write_text(json.dumps(data))
+    """A strategy commitment nothing downstream speaks is the drift mechanism itself.
+
+    **Rewritten 2026-08-13, because its premise was PAID.** The first version discharged SCOPE-02
+    from the baseline and expected the gate to fail on the now-unexempted gap. Re-baseline part 2
+    cited all five SCOPE ids from requirement rows, so there was no gap left to un-exempt and the
+    control silently stopped testing anything — it would have gone on passing forever.
+
+    So it now INJECTS a commitment instead of relying on one existing. A control whose subject can
+    be fixed out from under it is a control with an expiry date nobody wrote down.
+    """
+    scope_doc = sandbox / "01_product_strategy/regulatory_product_scope.md"
+    text = scope_doc.read_text()
+    anchor = "| SCOPE-05 |"
+    assert anchor in text, "the injection anchor has moved — this control proves nothing"
+    scope_doc.write_text(
+        text.replace(
+            anchor,
+            "| SCOPE-99 | A commitment no requirement row cites. |\n" + anchor,
+            1,
+        )
+    )
+    assert "SCOPE-99" in scope_doc.read_text(), "the injection did not apply"
     assert gate.main() == 1
 
 

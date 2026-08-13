@@ -126,16 +126,39 @@ def row_hash(purpose: str, acceptance: str) -> str:
 
 
 def _columns(text: str) -> tuple[int, int, int]:
-    """(purpose, acceptance, width) column indices, read from the table header, not assumed."""
-    headers = {
-        tuple(c.strip() for c in line.strip().strip("|").split("|"))
-        for line in text.splitlines()
-        if line.startswith(_HEADER)
-    }
+    """(purpose, acceptance, width) column indices, read from the table header, not assumed.
+
+    **Headers are recognised by CONTENT, not by a prefix, and that is a repair.** The first version
+    matched ``| REQ | Title |`` and therefore never saw the CAP-21 table, whose header reads
+    ``| ID | Requirement | Cap | ...`` — a second shape, in the section written the day before, that
+    the "exactly one header" assertion was silently blind to. Nothing was mis-hashed, because the
+    two happened to order their columns identically. That is luck, not a control: reorder CAP-21's
+    columns and the gate would have hashed the wrong cells while reporting a clean parse.
+
+    So the rule is now: **every requirement row is bound to the header of the table it is actually
+    in**, and all of those headers must agree. The intermediate version — recognising headers by
+    content anywhere in the file — was WEAKER than it looked and its own control caught it: break
+    one table's header and that table stops being recognised at all, so its rows are parsed with a
+    *different* table's column positions while the gate reports a clean single-shape parse. A header
+    the gate cannot read must stop the gate, not be skipped by it.
+    """
+    lines = text.splitlines()
+    headers: set[tuple[str, ...]] = set()
+    current: tuple[str, ...] | None = None
+    for i, line in enumerate(lines):
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        # A markdown table header is the line immediately above the |---|---| separator.
+        if line.startswith("|") and nxt.startswith("|") and set(nxt) <= set("|-: "):
+            current = tuple(c.strip() for c in line.strip().strip("|").split("|"))
+        if _ANY_ROW.match(line):
+            if current is None:
+                raise Structural(f"line {i + 1} is a requirement row inside no table with a header")
+            headers.add(current)
     if len(headers) != 1:
+        shapes = " ;; ".join(" | ".join(h) for h in sorted(headers))
         raise Structural(
-            f"expected exactly one requirement-table header shape, found {len(headers)} — a column "
-            f"reshuffle would make this gate hash the wrong cells"
+            f"requirement rows live under {len(headers)} different table headers: {shapes} — "
+            f"differing shapes mean this gate hashes different cells in different sections"
         )
     cells = headers.pop()
     for name in ("Business purpose", "Acceptance"):
