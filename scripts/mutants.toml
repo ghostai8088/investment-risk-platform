@@ -1105,3 +1105,50 @@ find = """    op.execute(
 replace = """    pass"""
 tests = ["packages/shared-python/tests/test_app_role_pg.py"]
 needs_pg = true
+
+# ---------------------------------------------------------------------------------------------
+# current_state.md freshness gate (housekeeping fold, 2026-08-14).
+#
+# Registered here because the adversarial review found the gate wired into no battery at all —
+# `make mutant-anchors` gave it nothing. The four below are the survivors that review actually
+# found against the gate's FIRST version, kept as the regression set: each one was a silent pass
+# over a genuinely stale document, and M-CS1 is the one that matters most, because deleting the
+# `main()` call left all twenty of the original tests green while `check_docs.py` exited 0 over
+# the real 2026-08-14 defect.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "M-CS1"
+group = "current-state"
+why = "the freshness gate is unplugged from main(), so `make check` passes over a stale entry-point snapshot"
+file = "scripts/check_docs.py"
+find = """    errors.extend(_current_state_errors())"""
+replace = """    pass  # gate unplugged"""
+tests = ["apps/backend/tests/test_check_docs_current_state.py"]
+
+[[mutant]]
+id = "M-CS2"
+group = "current-state"
+why = "the newest-first walk only compares the top pair, so any inversion deeper in the file passes"
+file = "scripts/check_docs.py"
+find = """    for (h_above, d_above), (h_below, d_below) in zip(dated, dated[1:], strict=False):"""
+replace = """    for (h_above, d_above), (h_below, d_below) in zip(dated[:1], dated[1:], strict=False):"""
+tests = ["apps/backend/tests/test_check_docs_current_state.py"]
+
+[[mutant]]
+id = "M-CS3"
+group = "current-state"
+why = "a heading's date is taken as the max, so 're-confirmed <newer date>' lifts a stale block to the top"
+file = "scripts/check_docs.py"
+find = """        out.append((line.strip(), kind, dates[0] if dates else None))"""
+replace = """        out.append((line.strip(), kind, max(dates) if dates else None))"""
+tests = ["apps/backend/tests/test_check_docs_current_state.py"]
+
+[[mutant]]
+id = "M-CS4"
+group = "current-state"
+why = "a stale banner above the current-truth block is allowed again, which is the 2026-08-14 defect reinstated"
+file = "scripts/check_docs.py"
+find = """    if first_truth is not None and first_truth > allowance:"""
+replace = """    if False:"""
+tests = ["apps/backend/tests/test_check_docs_current_state.py"]
