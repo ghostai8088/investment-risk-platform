@@ -10,7 +10,8 @@ Next free canonical id ENT-076. NEXT = the Wave-18 planning gate.**
 The owner asked whether the platform's data-inflow assumptions were current best practice. That
 question ended eight weeks of drift. The diagnosis is one sentence: **the requirement register's
 acceptance criteria were satisfiable without delivering their stated purpose.** REQ-PPM-004 promised
-*"roll up exposures across hierarchy"* and accepted *"aggregates reproduce within tolerance"*. An
+*"Roll up exposures across hierarchy"* and accepted *"Aggregates reproduce within tolerance and bind
+lineage"*. Neither clause requires a rollup: lineage binds whatever was computed, and an
 aggregation that rolls up nothing reproduces perfectly. A test-driven process built exactly what
 could pass. Of the 74 rows then in the register, 22 required reproduction and **two** required a
 human to see anything.
@@ -30,19 +31,25 @@ the G2 proposals plus the first five adjudications (#211 – #214).
 
 **All four gates are built:**
 
-- **G1** capability coverage. Ratchet, 8 controls. Its inputs are deliberately documents Claude did
-  not generate, because every prior audit used the requirement register as its yardstick.
-- **G2** adjudication, and **not as specified**. Six automated detector designs were built and
+- **G1** capability coverage (built 2026-08-12). Ratchet, **6 controls at the mint**; the file that
+  holds them is at 19 today because G3 and G4 landed in it too. Its inputs are deliberately
+  documents Claude did not generate, because every prior audit used the requirement register as its
+  yardstick. *(The figure read "8 controls" until 2026-08-14. Eight was G1+G3 together at a moment
+  already two commits stale — a number carried forward without re-measuring, which is the exact
+  habit that made this file go stale in the first place.)*
+- **G2** (built 2026-08-13) adjudication, and **not as specified**. Six detector designs were
+  built and
   scored twice by independent fleets. All six catch the three known-bad rows and none is usable, so
   G2 is a HUMAN act (**P20**) with bookkeeping that proves the act happened. The mechanical half
   checks paperwork only and must never be cited as a check on requirement quality.
-- **G3** presentation rows need a visible acceptance. It rejected a row written an hour before it
-  existed.
-- **G4** from the Wave-18 close on, a close review must carry a `## Capability coverage (G4)`
-  section naming the leaves the wave newly covered. It binds to zero documents today, and a control
+- **G3** (built 2026-08-13) presentation rows need a visible acceptance. It rejected a row written
+  an hour before it existed.
+- **G4** (built 2026-08-13) from the Wave-18 close on, a close review must carry a
+  `## Capability coverage (G4)` section naming the leaves the wave newly covered. It binds to zero documents today, and a control
   asserts exactly that and instructs its own deletion at the first close under it.
 
-**The register is at 105 rows** and the RTM is level with it. Part 1 had updated only one half,
+**The register is at 105 rows** after re-baseline part 2 added nineteen on 2026-08-13, and the RTM
+is level with it. Part 1 had updated only one half,
 which is the P1 ledger-5 omission class with nothing mechanical checking it. **Seven coverage gaps
 were paid, every one found by the gate itself** refusing to pass with stale exemptions in the
 baseline: `13.3` exception management, `16.2` scenario and breach reports, and all five SCOPE
@@ -52,22 +59,29 @@ the commitment. It does not mean the commitment is built. SCOPE-02's derivative 
 largest gap the re-baseline found.*
 
 **Ratified, and three of them ratify a LOSS:** Monte Carlo withdrawn from the governed spine,
-counterparty risk declined, report sign-off deferred. Measured rather than argued: Decimal pricing
-of 5,000 positions × 20 scenarios at **4.5s**, and a Decimal factor model at 117 factors × 10,000
-instruments at **0.838s** per period.
+counterparty risk declined, report sign-off deferred. Measured rather than argued, and quoted as
+the RANGE both measurements produced rather than the favourable end: Decimal pricing of 5,000
+positions × 20 scenarios at **4.5–6.5s**, and a Decimal factor model at 117 factors × 10,000
+instruments at **0.61–0.84s** per period. The lower figure of each pair is the researcher's, the
+higher the independent adversary's; `product_rebaseline.md` carries both.
 
 ### What is adjudicated, and what that gates
 
 **Five rows are cleared through G2: REQ-PPM-006 through REQ-PPM-010, all AMENDED**
-(`02_requirements/g2_adjudication_ledger.jsonl`, eight entries — 006 and 007 were re-adjudicated
-after rewrites, which is the lapse rule working). The owner refuted the proposer on three of them,
+(`02_requirements/g2_adjudication_ledger.jsonl`, eight entries: 006 was adjudicated three times
+and 007 twice, after their text was rewritten. That is the lapse rule working, not a duplicate —
+006's two re-adjudications are different acts, one substantive and one presentational.) The owner refuted the proposer on three of them,
 and rejected one row's premise outright: **mandate comparison is DECLINED** (REQ-PPM-009), because
 mandate compliance is a compliance function and not risk, SCOPE-03's declared risk coverage does not
 include it, and a mandate rule engine would duplicate the shipped limit framework. That supersedes
 the Q4 answer ratified the previous day, and is recorded with two triggers.
 
 **Nothing else is adjudicated, so nothing else can enter a slice.** The advisory worklist of 11
-flagged rows in `10_delivery_backlog/g2_adjudication_proposals_wave18.md` is unread.
+flagged rows is the `worklist` array in `02_requirements/g2_slice_scope.json`, and it is unread:
+REQ-PUB-002, REQ-MKT-002, REQ-LIQ-004, REQ-SCN-003, REQ-LIM-002, REQ-CRD-005, REQ-PPM-002,
+REQ-RPT-001, REQ-CPT-002, REQ-PPM-001, REQ-CPT-004. *(This block named
+`g2_adjudication_proposals_wave18.md` until 2026-08-14. That file holds the five rows that ARE
+adjudicated, so the pointer sent a reader to an artifact contradicting the sentence around it.)*
 
 **The lesson from the G2 build, and it applies to every requirement written from here:** four of
 five of the author's own amendments banned a MECHANISM where they should have required an OUTCOME,
