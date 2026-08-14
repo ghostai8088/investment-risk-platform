@@ -4,6 +4,8 @@
 Verifies that:
   1. Each code package/app has a README.md.
   2. The ratified governance standards carry a "Document Control" section.
+  3. The closure-discipline stamp on shipped decision records.
+  4. current_state.md's newest block is the one at the top, and its migration head is real.
 
 Exits non-zero on failure so CI blocks, preventing code/doc drift. This is a
 placeholder to be extended (e.g., code-change -> required doc-change checks).
@@ -234,6 +236,173 @@ def _closure_stamp_errors() -> list[str]:
     return errors
 
 
+# ---------------------------------------------------------------------------------------------
+# current_state.md freshness (housekeeping fold, 2026-08-14)
+# ---------------------------------------------------------------------------------------------
+#
+# CLAUDE.md orders every session to read `current_state.md` SECOND, before doing anything. On
+# 2026-08-14 the first thing that file said was:
+#
+#     ## ⚠️ CURRENT TRUTH (2026-08-08, latest) — read this block; everything below it is HISTORY
+#
+# Two load-bearing facts in that block were wrong. Its `NEXT` named the ONBOARD-1a implementation
+# plan, which had shipped as PR #191 twenty-three merges earlier; and it stated migration head
+# `0068_entitlement_request` when the head on disk was `0070_app_role`. The real current truth was
+# a hundred lines further down, underneath a heading instructing the reader to treat it as history.
+#
+# This is the SECOND recurrence, and the first one is written up two blocks below in the same file:
+# the Wave-17 close found that "P1 ledger (4) went unswept across five consecutive slice closeouts"
+# and that `test_ledger_census.py:19` deliberately leaves that ledger PROCEDURAL, so nothing
+# mechanical would ever catch it. The fix applied at that close was to append a newer block
+# UNDERNEATH the stale one, which is precisely how the class recurred the same week.
+#
+# So this is the P7 shape rather than a promise to sweep harder: a new block that is not the newest
+# block, or a migration head the repository does not have, fails `make check`.
+#
+# Deliberately NOT checked: whether the prose is true. That is unautomatable for the same reason G2
+# is (see scripts/check_g2_adjudication.py) — any word-based rule is one rewording away from being
+# switched off by the person it polices. These two facts are checked because both are machine-
+# comparable against something outside the document.
+CURRENT_STATE = "docs/project_memory/current_state.md"
+
+#: A dated "truth" heading, at any heading level, optionally inside a blockquote. Three spellings
+#: are in use in the file today: `CURRENT TRUTH`, `Previous truth` and `Prior current-truth`.
+_TRUTH_HEADING = re.compile(
+    r"^>?\s*#{2,4}\s+.*?(?P<kind>CURRENT TRUTH|Previous truth|Prior current-truth)",
+    re.IGNORECASE,
+)
+#: An ISO date, tolerating the disambiguating letter this file appends when a day has more than one
+#: block (`2026-07-29c`). A trailing `\b` would NOT match that, and the first run of this gate
+#: failed on exactly it. The lookahead still rejects a longer digit run or a further date part.
+_ISO_DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})(?![\d-])")
+#: `Migration head \`0070_app_role\``, with or without emphasis between the words and the tick.
+_HEAD_CLAIM = re.compile(r"[Mm]igration head[^\n`]{0,60}`(?P<rev>\d{4}_[a-z0-9_]+)`")
+
+#: Non-vacuity floor. The file carries nine dated truth headings today. A parser that stops
+#: recognising the heading shape would otherwise leave this gate ordering an empty list and exiting
+#: 0 — which is exactly how the closure-discipline gate above guarded nothing for an entire wave.
+_MIN_TRUTH_HEADINGS = 5
+
+
+def _truth_headings(text: str) -> list[tuple[str, str | None]]:
+    """Every dated truth heading, in file order, as (heading, newest ISO date in it).
+
+    The date is the MAXIMUM of the dates in the heading, because a block may span days — the
+    re-baseline heading read `2026-08-12/13`, and the Wave-17 close heading carries its date at the
+    end of the line rather than in parentheses.
+    """
+    out: list[tuple[str, str | None]] = []
+    for line in text.splitlines():
+        if not _TRUTH_HEADING.match(line):
+            continue
+        dates = _ISO_DATE.findall(line)
+        out.append((line.strip(), max(dates) if dates else None))
+    return out
+
+
+def _top_block(text: str) -> str:
+    """The text from the first truth heading up to the second one."""
+    lines = text.splitlines()
+    starts = [i for i, ln in enumerate(lines) if _TRUTH_HEADING.match(ln)]
+    if not starts:
+        return ""
+    end = starts[1] if len(starts) > 1 else len(lines)
+    return "\n".join(lines[starts[0] : end])
+
+
+def _freshness_errors(text: str, actual_head: str) -> list[str]:
+    """The rule's teeth, pure and unit-tested.
+
+    ``actual_head`` is the migration head derived from the repository, never from the document.
+    """
+    errors: list[str] = []
+    headings = _truth_headings(text)
+
+    if len(headings) < _MIN_TRUTH_HEADINGS:
+        errors.append(
+            f"current_state.md freshness NON-VACUITY: only {len(headings)} dated truth headings "
+            f"parsed (floor {_MIN_TRUTH_HEADINGS}). The heading shape has drifted past "
+            f"_TRUTH_HEADING, so this gate is ordering almost nothing. Fix the matcher, not the "
+            f"floor."
+        )
+        return errors
+
+    undated = [h for h, d in headings if d is None]
+    if undated:
+        errors.append(
+            "current_state.md: these truth headings carry no ISO date, so they cannot be ordered "
+            "and the block above them cannot be proven newest: " + "; ".join(undated)
+        )
+        return errors
+
+    # (1) The top block must be the CURRENT one, and the only CURRENT one.
+    current = [h for h, _ in headings if "CURRENT TRUTH" in h.upper()]
+    if not current:
+        errors.append(
+            "current_state.md: no `CURRENT TRUTH` heading. The file every session is ordered to "
+            "read second must say which block is true now."
+        )
+    elif len(current) > 1:
+        errors.append(
+            f"current_state.md: {len(current)} headings claim CURRENT TRUTH. Exactly one block is "
+            f"true now; demote the rest to `Previous truth`. Headings: " + " | ".join(current)
+        )
+    elif "CURRENT TRUTH" not in headings[0][0].upper():
+        errors.append(
+            f"current_state.md: the CURRENT TRUTH block is not at the top of the file. The topmost "
+            f"heading is {headings[0][0]!r}. A reader following CLAUDE.md reads this file top-down "
+            f"and acts on the first block they meet."
+        )
+
+    # (2) Dates must never increase as you read down. This is the check that would have fired on
+    #     2026-08-14: a 08-12/13 block and a 08-11 block both sat BELOW a block labelled
+    #     "(2026-08-08, latest)".
+    # `strict=False` is deliberate: the two sequences differ in length by one BY CONSTRUCTION —
+    # this is the adjacent-pairs walk, and the last heading has nothing below it to compare against.
+    for (h_above, d_above), (h_below, d_below) in zip(headings, headings[1:], strict=False):
+        if d_below > d_above:  # type: ignore[operator]
+            errors.append(
+                f"current_state.md: a NEWER block sits below an OLDER one. {h_below!r} "
+                f"({d_below}) is below {h_above!r} ({d_above}). Newest first — a stale block at "
+                f"the top is read as current and acted on."
+            )
+
+    # (3) Any migration head the top block claims must be the head the repository actually has.
+    top = _top_block(text)
+    claimed = _HEAD_CLAIM.findall(top)
+    if not claimed:
+        errors.append(
+            "current_state.md: the CURRENT TRUTH block names no migration head, so half this gate "
+            "is guarding nothing. State it as: Migration head `<revision>`."
+        )
+    for rev in claimed:
+        if rev != actual_head:
+            errors.append(
+                f"current_state.md: the CURRENT TRUTH block claims migration head `{rev}`, but "
+                f"the repository's head is `{actual_head}`. This exact drift shipped on "
+                f"2026-08-14 (claimed 0068, actual 0070)."
+            )
+    return errors
+
+
+def _actual_migration_head() -> str:
+    """The head, from alembic itself — the same source `test_migration_head.py` pins against.
+
+    Deliberately not read from any document: a check that compares one piece of prose against
+    another proves only that someone copied it twice (the CON-1 lesson — ask the database).
+    """
+    from alembic.script import ScriptDirectory
+
+    return ScriptDirectory(str(ROOT / "migrations")).get_current_head() or ""
+
+
+def _current_state_errors() -> list[str]:
+    path = ROOT / CURRENT_STATE
+    if not path.is_file():
+        return [f"missing entry-point snapshot: {CURRENT_STATE}"]
+    return _freshness_errors(path.read_text(encoding="utf-8"), _actual_migration_head())
+
+
 PACKAGE_DIRS = [
     "apps/backend",
     "apps/frontend",
@@ -275,6 +444,7 @@ def main() -> int:
             errors.append(f"missing Document Control header: {doc}")
 
     errors.extend(_closure_stamp_errors())
+    errors.extend(_current_state_errors())
 
     if errors:
         print("Documentation check FAILED:")
