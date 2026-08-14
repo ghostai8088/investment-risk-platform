@@ -385,22 +385,80 @@ def _freshness_errors(text: str, actual_head: str) -> list[str]:
     return errors
 
 
-def _actual_migration_head() -> str:
-    """The head, from alembic itself — the same source `test_migration_head.py` pins against.
+#: `revision: str = "0070_app_role"`, anchored so prose in a module docstring cannot match — the
+#: word "revision" opens a sentence in at least one migration's docstring.
+_REVISION = re.compile(r'^revision:\s*str\s*=\s*"([^"]+)"', re.MULTILINE)
+_DOWN_REVISION = re.compile(
+    r'^down_revision:\s*str\s*\|\s*None\s*=\s*(?:"([^"]+)"|None)', re.MULTILINE
+)
+#: Non-vacuity floor: 71 migrations exist today and they are only ever added. A parser that stopped
+#: matching would otherwise derive "no head" from an empty set and compare it against nothing.
+_MIN_MIGRATIONS = 60
 
-    Deliberately not read from any document: a check that compares one piece of prose against
-    another proves only that someone copied it twice (the CON-1 lesson — ask the database).
+
+def _migration_head_from_source(versions_dir: Path | None = None) -> tuple[str, list[str]]:
+    """The head, derived by READING migrations/versions — deliberately without importing alembic.
+
+    The `docs-check` CI job is bare `actions/setup-python` plus `python scripts/check_docs.py`,
+    with no dependency install at all. The first version of this gate called
+    `alembic.script.ScriptDirectory`, passed locally where the venv has alembic, and failed that CI
+    job in seven seconds on the import. So the derivation here is stdlib-only.
+
+    Re-deriving alembic's answer by hand is the risk this trades for, and it is covered rather than
+    argued: `test_check_docs_current_state.py` asserts this function agrees with
+    `ScriptDirectory.get_current_head()`, and that test runs in the Backend job where alembic IS
+    installed. Two independent derivations that must agree.
+
+    Returns (head, errors). The head is "" when it cannot be determined.
+
+    ``versions_dir`` exists so the two floors below can be shown FIRING against a fabricated
+    versions directory. A floor that cannot be demonstrated failing is the same inert-control class
+    this repository has shipped three times.
     """
-    from alembic.script import ScriptDirectory
+    versions = sorted((versions_dir or ROOT / "migrations" / "versions").glob("*.py"))
+    revisions: set[str] = set()
+    parents: set[str] = set()
+    for path in versions:
+        text = path.read_text(encoding="utf-8")
+        rev = _REVISION.search(text)
+        if rev:
+            revisions.add(rev.group(1))
+        down = _DOWN_REVISION.search(text)
+        if down and down.group(1):
+            parents.add(down.group(1))
 
-    return ScriptDirectory(str(ROOT / "migrations")).get_current_head() or ""
+    if len(revisions) < _MIN_MIGRATIONS:
+        return "", [
+            f"migration-head derivation NON-VACUITY: parsed {len(revisions)} revisions from "
+            f"{len(versions)} files (floor {_MIN_MIGRATIONS}). The declaration shape has drifted "
+            f"past _REVISION. Fix the matcher, not the floor."
+        ]
+
+    heads = sorted(revisions - parents)
+    if len(heads) != 1:
+        return "", [
+            f"the migration chain does not have exactly one head: {heads or 'none'}. "
+            f"current_state.md's head claim cannot be checked against a forked chain."
+        ]
+    return heads[0], []
+
+
+def _actual_migration_head() -> str:
+    """The head alone, for callers that have already accepted the derivation."""
+    return _migration_head_from_source()[0]
 
 
 def _current_state_errors() -> list[str]:
     path = ROOT / CURRENT_STATE
     if not path.is_file():
         return [f"missing entry-point snapshot: {CURRENT_STATE}"]
-    return _freshness_errors(path.read_text(encoding="utf-8"), _actual_migration_head())
+    head, head_errors = _migration_head_from_source()
+    if head_errors:
+        # A derivation that failed must be REPORTED, never silently passed to the comparison as
+        # "" — that would turn the head check into a guaranteed mismatch with a useless message,
+        # or (worse, if the claim were also absent) into silence.
+        return head_errors
+    return _freshness_errors(path.read_text(encoding="utf-8"), head)
 
 
 PACKAGE_DIRS = [

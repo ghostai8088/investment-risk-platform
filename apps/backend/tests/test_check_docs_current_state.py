@@ -30,6 +30,7 @@ from check_docs import (  # noqa: E402
     _actual_migration_head,
     _current_state_errors,
     _freshness_errors,
+    _migration_head_from_source,
     _top_block,
     _truth_headings,
 )
@@ -199,6 +200,82 @@ def test_the_top_block_stops_at_the_next_truth_heading() -> None:
     top = _top_block(_WELL_FORMED)
     assert "CURRENT TRUTH (2026-08-14)" in top
     assert "Wave-17 close" not in top
+
+
+def test_the_stdlib_head_derivation_agrees_with_alembic() -> None:
+    """THE cross-check, and the reason the gate is allowed to re-derive alembic's answer by hand.
+
+    `scripts/check_docs.py` parses migrations/versions with regexes instead of importing alembic,
+    because the `docs-check` CI job is bare `setup-python` with NO dependency install — the first
+    version of this gate imported alembic, passed locally, and failed that job in seven seconds.
+
+    Hand-rolling a graph walk is the risk that trades for. This test closes it by asserting the two
+    derivations agree, and it lives in the Backend job, where alembic IS installed. If the parser
+    ever drifts from alembic's real answer, this fails rather than the document check quietly
+    comparing against the wrong head.
+    """
+    from alembic.script import ScriptDirectory
+
+    alembic_head = ScriptDirectory(str(_ROOT / "migrations")).get_current_head()
+    derived, errors = _migration_head_from_source()
+    assert errors == [], errors
+    assert (
+        derived == alembic_head
+    ), f"the stdlib derivation says {derived!r}, alembic says {alembic_head!r}"
+    # And it is the head the pin declares, so all three agree.
+    assert derived == _HEAD
+
+
+def test_the_head_derivation_reports_rather_than_returning_an_empty_head() -> None:
+    """A failed derivation must surface as an error, not as "" flowing into the comparison."""
+    head, errors = _migration_head_from_source()
+    assert head and not errors, (head, errors)
+
+
+def _fake_versions(tmp_path: Path, chain: list[tuple[str, str | None]]) -> Path:
+    """Write a fabricated migrations/versions directory: (revision, down_revision) pairs."""
+    d = tmp_path / "versions"
+    d.mkdir()
+    for rev, down in chain:
+        parent = f'"{down}"' if down else "None"
+        (d / f"{rev}.py").write_text(
+            f'"""revision) a docstring that opens with the word revision."""\n'
+            f'revision: str = "{rev}"\n'
+            f"down_revision: str | None = {parent}\n",
+            encoding="utf-8",
+        )
+    return d
+
+
+def test_the_migration_count_floor_FIRES_on_a_thin_versions_dir(tmp_path: Path) -> None:
+    """If the declaration shape drifts past _REVISION, the parser would derive a head from a
+    handful of files, or none, and compare the document against it in silence."""
+    thin = _fake_versions(tmp_path, [("0001_a", None), ("0002_b", "0001_a")])
+    head, errors = _migration_head_from_source(thin)
+    assert head == ""
+    assert any("NON-VACUITY" in e for e in errors), errors
+
+
+def test_a_FORKED_chain_FIRES_rather_than_picking_one_head(tmp_path: Path) -> None:
+    """Two heads means the document's single head claim cannot be checked at all. Say so, rather
+    than silently comparing against whichever sorted first."""
+    forked = [("0001_a", None)] + [(f"{i:04d}_x", "0001_a") for i in range(2, 64)]
+    d = _fake_versions(tmp_path, forked)
+    head, errors = _migration_head_from_source(d)
+    assert head == ""
+    assert any("does not have exactly one head" in e for e in errors), errors
+
+
+def test_the_parser_ignores_the_word_revision_in_a_docstring(tmp_path: Path) -> None:
+    """One real migration's docstring opens a sentence with "revision)", which is why _REVISION is
+    anchored on the full `revision: str =` declaration."""
+    chain = [("0001_a", None)] + [
+        (f"{i:04d}_b", f"{i - 1:04d}_a" if i == 2 else f"{i - 1:04d}_b") for i in range(2, 64)
+    ]
+    d = _fake_versions(tmp_path, chain)
+    head, errors = _migration_head_from_source(d)
+    assert errors == [], errors
+    assert head == "0063_b"
 
 
 def test_the_real_file_head_claim_matches_the_repository() -> None:
