@@ -1,6 +1,134 @@
 # Current State
 
-> ## ⚠️ CURRENT TRUTH (2026-08-08, latest) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-14) — read this block; everything below it is HISTORY
+
+**Main `0cf3e31`, tree clean, CI green on all nine checks. Migration head `0070_app_role`, one head.
+Next free canonical id ENT-076. NEXT = the Wave-18 planning gate.**
+
+### The re-baseline, and why it happened
+
+The owner asked whether the platform's data-inflow assumptions were current best practice. That
+question ended eight weeks of drift. The diagnosis is one sentence: **the requirement register's
+acceptance criteria were satisfiable without delivering their stated purpose.** REQ-PPM-004 promised
+*"roll up exposures across hierarchy"* and accepted *"aggregates reproduce within tolerance"*. An
+aggregation that rolls up nothing reproduces perfectly. A test-driven process built exactly what
+could pass. Of the 74 rows then in the register, 22 required reproduction and **two** required a
+human to see anything.
+
+**Why seventeen wave-close audits missed it:** every one compared code against requirements, or
+records against code. The register was the yardstick in all of them, and the register carried the
+gap. *An audit whose reference point is the artifact carrying the defect cannot see the defect.*
+
+### What is built
+
+Merged as PRs **#202** through **#214**: the capability-coverage gate and the re-baseline document
+(#202); DEPLOY-1, which found the deployed stack connected as a SUPERUSER with 84 FORCE-RLS tables
+bypassed, fixed by migration `0070_app_role` and proven over HTTP (#203); the INGEST-1 decision
+record (#204); the register at 74 → 86 rows with CAP-21 Presentation minted (#205); the Monte Carlo
+withdrawal (#206); gate G3 (#207); gate G2 (#208); gate G4 (#209); re-baseline part 2 (#210); and
+the G2 proposals plus the first five adjudications (#211 – #214).
+
+**All four gates are built:**
+
+- **G1** capability coverage. Ratchet, 8 controls. Its inputs are deliberately documents Claude did
+  not generate, because every prior audit used the requirement register as its yardstick.
+- **G2** adjudication, and **not as specified**. Six automated detector designs were built and
+  scored twice by independent fleets. All six catch the three known-bad rows and none is usable, so
+  G2 is a HUMAN act (**P20**) with bookkeeping that proves the act happened. The mechanical half
+  checks paperwork only and must never be cited as a check on requirement quality.
+- **G3** presentation rows need a visible acceptance. It rejected a row written an hour before it
+  existed.
+- **G4** from the Wave-18 close on, a close review must carry a `## Capability coverage (G4)`
+  section naming the leaves the wave newly covered. It binds to zero documents today, and a control
+  asserts exactly that and instructs its own deletion at the first close under it.
+
+**The register is at 105 rows** and the RTM is level with it. Part 1 had updated only one half,
+which is the P1 ledger-5 omission class with nothing mechanical checking it. **Seven coverage gaps
+were paid, every one found by the gate itself** refusing to pass with stale exemptions in the
+baseline: `13.3` exception management, `16.2` scenario and breach reports, and all five SCOPE
+commitments, discharged by rows that CITE the id they serve. Two accepted gaps remain by choice:
+`20.2` money-weighted return and `20.4` composites. *A cited SCOPE id means a requirement answers to
+the commitment. It does not mean the commitment is built. SCOPE-02's derivative half is still the
+largest gap the re-baseline found.*
+
+**Ratified, and three of them ratify a LOSS:** Monte Carlo withdrawn from the governed spine,
+counterparty risk declined, report sign-off deferred. Measured rather than argued: Decimal pricing
+of 5,000 positions × 20 scenarios at **4.5s**, and a Decimal factor model at 117 factors × 10,000
+instruments at **0.838s** per period.
+
+### What is adjudicated, and what that gates
+
+**Five rows are cleared through G2: REQ-PPM-006 through REQ-PPM-010, all AMENDED**
+(`02_requirements/g2_adjudication_ledger.jsonl`, eight entries — 006 and 007 were re-adjudicated
+after rewrites, which is the lapse rule working). The owner refuted the proposer on three of them,
+and rejected one row's premise outright: **mandate comparison is DECLINED** (REQ-PPM-009), because
+mandate compliance is a compliance function and not risk, SCOPE-03's declared risk coverage does not
+include it, and a mandate rule engine would duplicate the shipped limit framework. That supersedes
+the Q4 answer ratified the previous day, and is recorded with two triggers.
+
+**Nothing else is adjudicated, so nothing else can enter a slice.** The advisory worklist of 11
+flagged rows in `10_delivery_backlog/g2_adjudication_proposals_wave18.md` is unread.
+
+**The lesson from the G2 build, and it applies to every requirement written from here:** four of
+five of the author's own amendments banned a MECHANISM where they should have required an OUTCOME,
+and a banned mechanism rejects correct implementations. *State an outcome the degenerate build
+cannot produce; never forbid a route to it.*
+
+### NEXT
+
+**The Wave-18 planning gate.** The scope is not set and it is the owner's call. Every row entering
+the slice scope needs a G2 adjudication first (P20, T1). The sequencing argument is in
+`product_rebaseline.md` §5: the risk-bearing exposure measure and the aggregation contract come
+first, because nothing analytic is safe to build before them. Three candidates were named at the
+close of the last session: the structure block (the only rows currently cleared), "Show it to
+someone", and INGEST-1.
+
+---
+
+## Previous truth — swept at the Wave-17 close, 2026-08-11
+
+**The Wave-17 PLANNING-gate snapshot, kept as history, now sits BELOW this block.** It was
+the newest text in this file for the whole of Wave 17: `git log -1` on this file named
+`a69775c` ("ONBOARD-1 RATIFIED"), an ancestor of all seven Wave-17 merge commits, with 38 commits
+and 11 merges landing after it. Its "NEXT = the ONBOARD-1a implementation plan" line pointed at a
+slice that merged as PR #191 and was followed by nine more merges.
+
+That is the finding, not the staleness itself: **P1 ledger (4) went unswept across five consecutive
+slice closeouts, and `test_ledger_census.py:19` explicitly leaves this ledger procedural** ("the P1
+seven-ledger sweep owns it"), so nothing mechanical will ever catch it. The mitigating fact is that
+the authoritative ledgers were right and `test_migration_head.py` pins the head mechanically, so a
+successor following the stale snapshot would have been reddened before shipping — but they would
+have read it first, and CLAUDE.md orders every session to read this file second.
+
+**Wave 17 is BUILT and CLOSED.** Four slices, all merged and verified on main:
+
+| Slice | PR | What it made possible |
+|---|---|---|
+| ONBOARD-1a | #191 | **The ignition** — a tenant can be created over HTTP. ENT-074 registry, migration `0067`, the `tenant.create` platform catalog, the SYSTEM-router fence |
+| ONBOARD-1b | #192 | The tenant administers itself — four tenant-admin codes, ENT-075 four-eyes, migration `0068`, `/admin/users`; CTRL-025 + CTRL-037 → Implemented |
+| ALERT-1 | #195 | Alarm-channel health — twelve recomputed fields, `GET /reproduction/alarm-health`, `/ops/alerting` |
+| REPRO-2 (parts 1+2) | #197, #198 | CTRL-018 goes from **3 governed families to 19**; a schedule WRITE API; `/ops/reproduction` |
+| RPT-3 | #199, #200 | `ROLLING_RISK` joins `PERF_RUN_TYPES`; the generate-report form at `/ops/reports` |
+
+**Measured at the close, not carried forward:** migration head `0068_entitlement_request` (one head);
+route census **263 paths / 305 operations**; next free canonical id **ENT-076**; reproduction census
+**19 reproducible + 2 unreproducible** = the whole 21-family run-type vocabulary; 84 mutants, all
+anchors matching.
+
+**What the close review found, all four confirmed by execution before the fold:** the alarm-health
+surface read HEALTHY through a sweep failing at dispatch every night (a fire is not a landing); the
+three CTRL-018 registers still described a three-family control with no write API; the
+closure-discipline gate had been structurally blind since 2026-07-29 while exiting 0; and the
+committed mutation battery was RED at HEAD with four alarm controls dark and no gate running it.
+
+**NEXT = the Wave-18 planning gate.** The sequence is not set: the roadmap runs to Part 2.19
+(Wave 17) and then to Part 3, which is explicitly unsequenced — which is why thirteen of Wave 17's
+carries name a host that does not exist, and why they are labelled as deferral decisions at this
+close rather than parked (P19 clause B).
+
+---
+
+> ## Previous truth (2026-08-08) — the Wave-17 planning gate
 >
 > **THE WAVE-16 CLOSE REVIEW HAS RUN AND ITS GATE IS RATIFIED; THE CLOSE FOLD IS BUILT AND AWAITING
 > ITS GATES.** Branch `wave-16-close`. The review ran fresh-context over the whole wave and found
@@ -96,104 +224,11 @@
 > (hybrid table set unchanged at seven). Record: `onboard_1_decision_record.md` v3 = `47bc563` +
 > the ratification stamp.
 >
-> **NEXT = the ONBOARD-1a implementation plan** (the platform half: registry + operator +
+> **NEXT (as written then, DISCHARGED — ONBOARD-1a shipped as PR #191) = the ONBOARD-1a
+> implementation plan** (the platform half: registry + operator +
 > onboarding act + clones + migration `0067` + the deployed ignition proof through "first admin
 > resolves").
 
----
-
-## CURRENT TRUTH — the product RE-BASELINE, 2026-08-12/13
-
-**Read this before the Wave-17 close block below, which it supersedes on one point only: the "NEXT"
-line. Everything the close block records about what was built and measured still stands.**
-
-The owner asked whether the platform's data-inflow assumptions were current best practice. That
-question ended eight weeks of drift, and the diagnosis is one sentence: **the requirement register's
-acceptance criteria were satisfiable without delivering their stated purpose.** REQ-PPM-004 promised
-*"roll up exposures across hierarchy"* and accepted *"aggregates reproduce within tolerance"* — an
-aggregation that rolls up NOTHING reproduces perfectly. A test-driven process built exactly what
-could pass. Of the 74 rows then in the register, 22 required reproduction and **two** required a
-human to see anything.
-
-**Why seventeen wave-close audits missed it:** every one compared code against requirements, or
-records against code. The register was the yardstick in all of them and the register carried the
-gap. *An audit whose reference point is the artifact carrying the defect cannot see the defect.*
-
-Merged (33rd–39th merges): **#202** the capability-coverage gate + the re-baseline document ·
-**#203** DEPLOY-1, which found the deployed stack connected as a SUPERUSER with 84 FORCE-RLS tables
-bypassed, fixed by migration `0070_app_role` and proven over HTTP · **#204** the INGEST-1 decision
-record · **#205** the register 74→86 rows with CAP-21 Presentation minted · **#206** the Monte Carlo
-withdrawal · **#207** gate G3 · **G2** (this fold).
-
-**The four gates, all now resolved:** G1 capability coverage (built, ratchet, 8 controls) · G3
-presentation rows need a visible acceptance (built; it rejected a row written an hour before it
-existed) · **G2 — built 2026-08-13 and NOT as specified: six automated detector designs were built
-and scored, all six catch the three known-bad rows and none is usable, so G2 is a HUMAN act (P20)
-with bookkeeping that proves the act happened** · **G4 — from the Wave-18 close on, a close review
-must carry a `## Capability coverage (G4)` section naming the leaves the wave newly covered (built
-2026-08-13; bound to zero documents today, and a control asserts exactly that and instructs its own
-deletion at the first close under it).** **ALL FOUR GATES ARE BUILT.**
-
-**Ratified, and three of them ratify a LOSS:** Monte Carlo withdrawn from the governed spine,
-counterparty risk declined, report sign-off deferred. Measured rather than argued: Decimal pricing
-of 5,000 positions × 20 scenarios at **4.5s**, and a Decimal factor model at 117 factors × 10,000
-instruments at **0.838s** per period.
-
-**Re-baseline part 2 is WRITTEN (2026-08-13).** Nineteen more requirement rows; the register is
-**74 → 105**, and the RTM was brought level with it — part 1 had updated only one half, the P1
-ledger-5 omission class with nothing mechanical checking it. **Seven coverage gaps paid, every one
-found by the gate itself** refusing to pass with stale exemptions in the baseline: `13.3` exception
-management, `16.2` scenario/breach reports, and **all five SCOPE commitments**, discharged by rows
-that CITE the id they serve. Two accepted gaps remain by choice: `20.2` money-weighted return,
-`20.4` composites. *A cited SCOPE id means a requirement answers to the commitment — not that the
-commitment is built. SCOPE-02's derivative half is still the largest gap the re-baseline found.*
-
-**NEXT = the Wave-18 planning gate**, at which every row entering the slice scope needs a G2
-adjudication (P20, T1). The sequencing is in `product_rebaseline.md` §5: the risk-bearing exposure
-measure and the aggregation contract first, because nothing analytic is safe to build before them.
-
----
-
-## CURRENT TRUTH — swept at the Wave-17 close, 2026-08-11
-
-**Everything above this line is the Wave-17 PLANNING-gate snapshot and is kept as history.** It was
-the newest text in this file for the whole of Wave 17: `git log -1` on this file named
-`a69775c` ("ONBOARD-1 RATIFIED"), an ancestor of all seven Wave-17 merge commits, with 38 commits
-and 11 merges landing after it. Its "NEXT = the ONBOARD-1a implementation plan" line pointed at a
-slice that merged as PR #191 and was followed by nine more merges.
-
-That is the finding, not the staleness itself: **P1 ledger (4) went unswept across five consecutive
-slice closeouts, and `test_ledger_census.py:19` explicitly leaves this ledger procedural** ("the P1
-seven-ledger sweep owns it"), so nothing mechanical will ever catch it. The mitigating fact is that
-the authoritative ledgers were right and `test_migration_head.py` pins the head mechanically, so a
-successor following the stale snapshot would have been reddened before shipping — but they would
-have read it first, and CLAUDE.md orders every session to read this file second.
-
-**Wave 17 is BUILT and CLOSED.** Four slices, all merged and verified on main:
-
-| Slice | PR | What it made possible |
-|---|---|---|
-| ONBOARD-1a | #191 | **The ignition** — a tenant can be created over HTTP. ENT-074 registry, migration `0067`, the `tenant.create` platform catalog, the SYSTEM-router fence |
-| ONBOARD-1b | #192 | The tenant administers itself — four tenant-admin codes, ENT-075 four-eyes, migration `0068`, `/admin/users`; CTRL-025 + CTRL-037 → Implemented |
-| ALERT-1 | #195 | Alarm-channel health — twelve recomputed fields, `GET /reproduction/alarm-health`, `/ops/alerting` |
-| REPRO-2 (parts 1+2) | #197, #198 | CTRL-018 goes from **3 governed families to 19**; a schedule WRITE API; `/ops/reproduction` |
-| RPT-3 | #199, #200 | `ROLLING_RISK` joins `PERF_RUN_TYPES`; the generate-report form at `/ops/reports` |
-
-**Measured at the close, not carried forward:** migration head `0068_entitlement_request` (one head);
-route census **263 paths / 305 operations**; next free canonical id **ENT-076**; reproduction census
-**19 reproducible + 2 unreproducible** = the whole 21-family run-type vocabulary; 84 mutants, all
-anchors matching.
-
-**What the close review found, all four confirmed by execution before the fold:** the alarm-health
-surface read HEALTHY through a sweep failing at dispatch every night (a fire is not a landing); the
-three CTRL-018 registers still described a three-family control with no write API; the
-closure-discipline gate had been structurally blind since 2026-07-29 while exiting 0; and the
-committed mutation battery was RED at HEAD with four alarm controls dark and no gate running it.
-
-**NEXT = the Wave-18 planning gate.** The sequence is not set: the roadmap runs to Part 2.19
-(Wave 17) and then to Part 3, which is explicitly unsequenced — which is why thirteen of Wave 17's
-carries name a host that does not exist, and why they are labelled as deferral decisions at this
-close rather than parked (P19 clause B).
 >
 > ---
 >
