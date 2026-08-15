@@ -1,9 +1,10 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-14) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-15) — read this block; everything below it is HISTORY
 
-**Main `0cf3e31`, tree clean, CI green on all nine checks. Migration head `0070_app_role`, one head.
-Next free canonical id ENT-076. NEXT = the Wave-18 planning gate.**
+**Main `f9d1666` (PR #217, the G2 worklist adjudication), tree clean, CI green on all nine checks.
+Migration head `0070_app_role`, one head. Next free canonical id ENT-076. NEXT = the Wave-18
+planning gate.**
 
 ### The re-baseline, and why it happened
 
