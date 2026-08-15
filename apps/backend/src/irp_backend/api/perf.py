@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, map_refusal, require_permission
+from irp_shared.aggregation.contracts import ForeignMeasureError
 from irp_shared.entitlement.service import Principal
 from irp_shared.marketdata import BenchmarkNotVisible, FxRateNotFound
 from irp_shared.model.service import (
@@ -113,6 +114,12 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     PortfolioReturnInputError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "invalid portfolio-return run input",
+    ),
+    # STRUCT-1 (REQ-PPM-006): a consumed snapshot carrying an exposure atom of a measure the
+    # family did not declare — refused, never summed or converted.
+    ForeignMeasureError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "exposure atom of an undeclared measure — the family refuses foreign measures",
     ),
     UnregisteredModelError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -408,6 +415,7 @@ def create_portfolio_return_run(
         SnapshotNotFound,
         ReturnSnapshotError,
         FxRateNotFound,
+        ForeignMeasureError,
     ) as exc:
         # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
         db.rollback()

@@ -82,7 +82,7 @@ def ctx() -> Iterator[tuple[TestClient, Principal, Session, str]]:
             tenant_id=tenant_id,
             code=f"I{n}",
             name="i",
-            asset_class="BOND",
+            asset_class="EQUITY",
             actor=ReferenceActor(actor_id="a"),
         )
         create_position(
@@ -274,3 +274,92 @@ def test_view_only_user_cannot_run(ctx) -> None:  # noqa: ANN001
     db.commit()
     headers = {"X-User-Id": viewer.id, "X-Tenant-Id": tenant}
     assert client.post("/exposure/runs", json=_run_body(pf), headers=headers).status_code == 403
+
+
+# ---------- STRUCT-1 (REQ-PPM-006): the measure filter over HTTP ----------
+
+
+def _seed_bond(db: Session, tenant_id: str, pf: str) -> str:
+    from irp_shared.reference.instrument_terms import create_instrument_terms
+
+    inst = create_instrument(
+        db,
+        tenant_id=tenant_id,
+        code="B0",
+        name="UST 2031",
+        asset_class="BOND",
+        actor=ReferenceActor(actor_id="a"),
+    )
+    create_instrument_terms(
+        db,
+        instrument_id=inst.id,
+        acting_tenant=tenant_id,
+        actor=ReferenceActor(actor_id="a"),
+        valid_from=_VA,
+        face_value=Decimal("1000.0000"),
+        denomination_currency="USD",
+    )
+    create_position(
+        db,
+        portfolio_id=pf,
+        instrument_id=inst.id,
+        acting_tenant=tenant_id,
+        actor=PositionActor(actor_id="a"),
+        quantity=Decimal("10"),
+        valid_from=_VA,
+    )
+    create_valuation(
+        db,
+        portfolio_id=pf,
+        instrument_id=inst.id,
+        valuation_date=_VD,
+        acting_tenant=tenant_id,
+        actor=ValuationActor(actor_id="a"),
+        mark_value=Decimal("985.40"),
+        currency_code="USD",
+        valid_from=_VA,
+    )
+    db.commit()
+    return inst.id
+
+
+def test_exposure_type_filter_over_http(ctx) -> None:  # noqa: ANN001
+    client, principal, db, pf = ctx
+    inst = _seed_bond(db, principal.tenant_id, pf)
+    run = client.post("/exposure/runs", json=_run_body(pf), headers=_h(principal))
+    assert run.status_code == 201, run.text
+    assert run.json()["status"] == "COMPLETED"
+
+    both = client.get(
+        "/exposure", params={"portfolio_id": pf, "instrument_id": inst}, headers=_h(principal)
+    )
+    assert both.status_code == 200
+    assert {r["exposure_type"] for r in both.json()} == {"MARKET_VALUE", "NOTIONAL"}
+
+    only = client.get(
+        "/exposure",
+        params={"portfolio_id": pf, "instrument_id": inst, "exposure_type": "NOTIONAL"},
+        headers=_h(principal),
+    )
+    assert only.status_code == 200
+    assert {r["exposure_type"] for r in only.json()} == {"NOTIONAL"}
+    assert only.json()[0]["exposure_amount"] == "10000.000000"
+
+    latest = client.get(
+        "/exposure/latest",
+        params={"portfolio_id": pf, "exposure_type": "MARKET_VALUE"},
+        headers=_h(principal),
+    )
+    assert latest.status_code == 200
+    assert {r["exposure_type"] for r in latest.json()} == {"MARKET_VALUE"}
+
+
+def test_unknown_exposure_type_is_422_not_empty(ctx) -> None:  # noqa: ANN001
+    client, principal, _db, pf = ctx
+    for path, params in (
+        ("/exposure", {"exposure_type": "GROSS_DELTA"}),
+        ("/exposure/latest", {"portfolio_id": pf, "exposure_type": "GROSS_DELTA"}),
+    ):
+        resp = client.get(path, params=params, headers=_h(principal))
+        assert resp.status_code == 422, (path, resp.text)
+        assert "unknown exposure_type" in resp.json()["detail"]

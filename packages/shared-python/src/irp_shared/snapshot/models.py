@@ -197,6 +197,18 @@ COMPONENT_KIND_EXPOSURE = "EXPOSURE"
 #: system axis; ``record_version`` the drift discriminator). ``COMPONENT_KIND_FACTOR_RETURN`` was
 #: readiness-noted here until P3-4 minted it below (OD-P3-2-G / OD-P3-3-I / OD-P3-4-I).
 COMPONENT_KIND_FACTOR = "FACTOR"
+#: STRUCT-1 (REQ-PPM-006, DP-3 ratified 2026-08-15): a pinned ``instrument`` EV identity version
+#: (the PORTFOLIO EV-pin flavor). Pinned on EXPOSURE_INPUT builds — the NOTIONAL producer's DP-4
+#: failure model needs ``asset_class`` at compute time and AD-014 forbids a live read there. One
+#: per distinct instrument of the subtree.
+COMPONENT_KIND_INSTRUMENT = "INSTRUMENT"
+#: STRUCT-1 (REQ-PPM-006, DP-3 ratified 2026-08-15): a pinned ``instrument_terms`` FR version (the
+#: CLASSIFICATION FR-row pin flavor; ``record_version`` the drift discriminator). Pinned on
+#: EXPOSURE_INPUT builds for each instrument with a terms version as-of — carries ``face_value`` +
+#: ``denomination_currency`` so NOTIONAL = face_value x quantity is computable from the snapshot
+#: alone. An instrument with NO terms as-of pins only its INSTRUMENT component (the DP-4 rule
+#: decides skip-vs-gap from ``asset_class``).
+COMPONENT_KIND_INSTRUMENT_TERMS = "INSTRUMENT_TERMS"
 #: P3-4 (OD-P3-4-I): a pinned per-factor RETURN WINDOW — the ordered ``factor_return`` FR rows of
 #: the aligned estimation window, captured as ONE component per factor (the ``curve``
 #: header+nodes shape over FR rows; readiness-noted since OD-P3-2-G, MINTED here at its designed

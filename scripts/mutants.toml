@@ -1152,3 +1152,108 @@ file = "scripts/check_docs.py"
 find = """    if first_truth is not None and first_truth > allowance:"""
 replace = """    if False:"""
 tests = ["apps/backend/tests/test_check_docs_current_state.py"]
+
+# ---------------------------------------------------------------------------------------------
+# STRUCT-1 (REQ-PPM-006). The declaration filter, the second producer, and the parser refusal —
+# each proven load-bearing, not present.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "M-S1-1"
+group = "struct-1"
+why = "the builder pins EVERY measure again — a second measure in a consumed run double-counts in all four downstream families"
+file = "packages/shared-python/src/irp_shared/snapshot/service.py"
+find = """                ExposureAggregate.calculation_run_id == str(run_id),
+                ExposureAggregate.tenant_id == str(acting_tenant),
+                ExposureAggregate.exposure_type == measure,"""
+replace = """                ExposureAggregate.calculation_run_id == str(run_id),
+                ExposureAggregate.tenant_id == str(acting_tenant),"""
+tests = ["packages/shared-python/tests/test_aggregation_contracts.py"]
+
+[[mutant]]
+id = "M-S1-2"
+group = "struct-1"
+why = "the NOTIONAL producer is unplugged — the vocabulary still lists two measures while the run emits one, the exact single-measure exploit the row was amended against"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+find = """EXPOSURE_PRODUCERS: dict[str, Any] = {
+    EXPOSURE_TYPE_MARKET_VALUE: _produce_market_value,
+    EXPOSURE_TYPE_NOTIONAL: _produce_notional,
+}"""
+replace = """EXPOSURE_PRODUCERS: dict[str, Any] = {
+    EXPOSURE_TYPE_MARKET_VALUE: _produce_market_value,
+}"""
+tests = ["packages/shared-python/tests/test_exposure.py"]
+
+[[mutant]]
+id = "M-S1-3"
+group = "struct-1"
+why = "a foreign-measure atom reaching a family's parser is silently summed instead of refused"
+file = "packages/shared-python/src/irp_shared/aggregation/contracts.py"
+find = """    declared = consumed_exposure_measure(run_type)
+    found = atom_content.get("exposure_type")
+    if found != declared:
+        raise ForeignMeasureError(run_type=run_type, declared=declared, found=str(found))"""
+replace = """    declared = consumed_exposure_measure(run_type)
+    found = atom_content.get("exposure_type")"""
+tests = ["packages/shared-python/tests/test_aggregation_contracts.py"]
+
+[[mutant]]
+id = "M-S1-4"
+group = "struct-1"
+why = "a bond with no face value is silently skipped instead of failing the run closed — the DP-4 data-defect class disappears"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+# RE-ANCHORED at the review fold: F-3 replaced the exact-string match with containment.
+find = """            if "BOND" in asset_class.upper():
+                gaps.append(f"missing-face-value:{pf}/{inst}")
+            continue"""
+replace = """            continue"""
+tests = ["packages/shared-python/tests/test_exposure.py"]
+
+[[mutant]]
+id = "M-S1-5"
+group = "struct-1"
+why = "the factor family's own parser stops refusing foreign-measure atoms — the call site is deletable, only the shared helper was proven (review fold F-8)"
+file = "packages/shared-python/src/irp_shared/risk/factor_service.py"
+find = """            _refuse_foreign_measure("FACTOR_EXPOSURE", data)
+            atoms.append("""
+replace = """            atoms.append("""
+tests = ["packages/shared-python/tests/test_aggregation_contracts.py"]
+
+[[mutant]]
+id = "M-S1-6"
+group = "struct-1"
+why = "the portfolio-return parser stops refusing foreign-measure atoms — BMV/EMV would sum a measure the family never declared"
+file = "packages/shared-python/src/irp_shared/perf/return_service.py"
+find = """            _refuse_foreign_measure("PORTFOLIO_RETURN", data)
+            exposure_raw.append(data)"""
+replace = """            exposure_raw.append(data)"""
+tests = ["packages/shared-python/tests/test_aggregation_contracts.py"]
+
+[[mutant]]
+id = "M-S1-7"
+group = "struct-1"
+why = "the concentration parser stops refusing foreign-measure atoms before bucketing"
+file = "packages/shared-python/src/irp_shared/concentration/service.py"
+find = """            _refuse_foreign_measure("CONCENTRATION", content)
+            pinned.atoms.append(content)"""
+replace = """            pinned.atoms.append(content)"""
+tests = ["packages/shared-python/tests/test_aggregation_contracts.py"]
+
+[[mutant]]
+id = "M-S1-8"
+group = "struct-1"
+why = "the liquidity parser stops refusing foreign-measure atoms before bucketing"
+file = "packages/shared-python/src/irp_shared/liquidity/service.py"
+find = """            _refuse_foreign_measure("LIQUIDITY", content)
+            pinned.atoms.append(content)"""
+replace = """            pinned.atoms.append(content)"""
+tests = ["packages/shared-python/tests/test_aggregation_contracts.py"]
+
+[[mutant]]
+id = "M-S1-9"
+group = "struct-1"
+why = "denomination currencies drop out of the FX-completeness pin — a bond denominated in a currency no mark carries gaps missing-fx where the binder should have pinned the leg (review fold F-5)"
+file = "packages/shared-python/src/irp_shared/snapshot/service.py"
+find = """        for ccy in sorted(mark_currencies | denomination_currencies):"""
+replace = """        for ccy in sorted(mark_currencies):"""
+tests = ["packages/shared-python/tests/test_exposure.py"]

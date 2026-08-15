@@ -384,6 +384,27 @@ def _seed_sleeve(session: Session, actor_id: str) -> _Sleeve:
             actor=ReferenceActor(actor_id=actor_id),
         ).id
         instrument_ids[code] = inst
+        if "BOND" in asset_class:
+            # STRUCT-1 (REQ-PPM-006 / DP-4): a bond without a captured face value is a DATA
+            # DEFECT that fails the exposure run closed — and MF-CR-A is a real bond this book
+            # carried for four waves with no terms row (found the day the containment predicate
+            # shipped). Marks are per-100-face notes (98.50 style), so face 100 per unit; the
+            # 4.25% coupon and 2031 maturity are the ones in the instrument's own name. The
+            # sleeve exposure runs now lawfully emit a NOTIONAL row beside each MARKET_VALUE.
+            from irp_shared.reference.instrument_terms import create_instrument_terms
+
+            create_instrument_terms(
+                session,
+                instrument_id=inst,
+                acting_tenant=DEMO_TENANT_ID,
+                actor=ReferenceActor(actor_id=actor_id),
+                valid_from=_T0,
+                face_value=Decimal("100.0000"),
+                denomination_currency=_BASE_CURRENCY,
+                coupon_rate=Decimal("0.0425"),
+                coupon_frequency="SEMI_ANNUAL",
+                maturity_date=date(2031, 6, 30),
+            )
         create_position(
             session,
             portfolio_id=pf,

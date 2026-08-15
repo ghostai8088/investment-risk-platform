@@ -82,7 +82,7 @@ def _inst(db: Session, tenant: str, code: str) -> str:
         tenant_id=tenant,
         code=code,
         name="i",
-        asset_class="BOND",
+        asset_class="EQUITY",
         actor=ReferenceActor(actor_id="steward"),
     ).id
 
@@ -202,8 +202,10 @@ def test_build_snapshot_components_and_manifest(session: Session) -> None:
         as_of_valuation_date=VD,
     )
     session.commit()
-    # 2 positions + 2 valuations + 1 portfolio = 5 components.
-    assert header.component_count == 5
+    # 2 positions + 2 valuations + 1 portfolio + 2 instrument identity pins (STRUCT-1: an
+    # EXPOSURE_INPUT build pins each distinct instrument's EV identity; no terms rows are seeded
+    # here, so no INSTRUMENT_TERMS components) = 7 components.
+    assert header.component_count == 7
     assert len(header.manifest_hash) == 64
     kinds = sorted(
         c.component_kind
@@ -215,7 +217,15 @@ def test_build_snapshot_components_and_manifest(session: Session) -> None:
         .scalars()
         .all()
     )
-    assert kinds == ["PORTFOLIO", "POSITION", "POSITION", "VALUATION", "VALUATION"]
+    assert kinds == [
+        "INSTRUMENT",
+        "INSTRUMENT",
+        "PORTFOLIO",
+        "POSITION",
+        "POSITION",
+        "VALUATION",
+        "VALUATION",
+    ]
     # No status / no model_version columns exist on the header.
     assert not hasattr(header, "status") and not hasattr(header, "model_version_id")
 
@@ -1134,3 +1144,89 @@ def test_every_component_kind_has_a_reresolve_branch() -> None:
     assert (
         missing == []
     ), f"pinned kinds with no re-resolve branch (they verify vacuously): {missing}"
+
+
+# ---------- STRUCT-1 review fold F-7: the INSTRUMENT / INSTRUMENT_TERMS drift arms ----------
+
+
+def _seed_with_terms(db: Session) -> tuple[str, str, str]:
+    """The complete book plus a terms version on the first instrument. Returns
+    ``(tenant, portfolio_id, instrument_id)``."""
+    from irp_shared.reference.instrument_terms import create_instrument_terms
+    from irp_shared.reference.models import Instrument
+
+    tenant, pf = _seed_complete(db)
+    inst = db.execute(
+        select(Instrument.id).where(Instrument.tenant_id == tenant, Instrument.code == "INST-0")
+    ).scalar_one()
+    create_instrument_terms(
+        db,
+        instrument_id=str(inst),
+        acting_tenant=tenant,
+        actor=ReferenceActor(actor_id="s"),
+        valid_from=T0,
+        face_value=Decimal("1000.0000"),
+        denomination_currency="USD",
+    )
+    db.flush()
+    return tenant, pf, str(inst)
+
+
+def _exposure_input_snapshot(db: Session, tenant: str, pf: str):  # noqa: ANN202
+    return build_snapshot(
+        db,
+        acting_tenant=tenant,
+        actor=ACTOR,
+        purpose="EXPOSURE_INPUT",
+        portfolio_id=pf,
+        as_of_valid_at=VALID_AT,
+        as_of_known_at=KNOWN_AT,
+        as_of_valuation_date=VD,
+    )
+
+
+def test_verify_reports_instrument_ev_amend_as_drift(session: Session) -> None:
+    """The INSTRUMENT pin is the EV flavor: an identity amend bumps record_version and MUST move
+    the pinned content (TR-09 amend detection through the new re-resolve arm)."""
+    from irp_shared.reference.instrument import resolve_instrument, update_instrument
+
+    tenant, pf, inst = _seed_with_terms(session)
+    header = _exposure_input_snapshot(session, tenant, pf)
+    session.commit()
+    clean = verify_snapshot(session, snapshot_id=header.id, acting_tenant=tenant)
+    assert clean.ok and clean.drifted_components == []
+    update_instrument(
+        session,
+        resolve_instrument(session, inst, acting_tenant=tenant),
+        actor=ReferenceActor(actor_id="steward"),
+        name="renamed instrument",
+    )
+    session.commit()
+    result = verify_snapshot(session, snapshot_id=header.id, acting_tenant=tenant)
+    assert not result.ok and len(result.drifted_components) == 1
+
+
+def test_verify_terms_supersede_is_byte_stable_not_drift(session: Session) -> None:
+    """The INSTRUMENT_TERMS pin is the FR-row flavor: a later supersede closes the pinned
+    version's window but never edits its economic content — verify must stay CLEAN (TR-09;
+    through the new surrogate-id re-resolve arm)."""
+    from datetime import timedelta
+
+    from irp_shared.reference.instrument_terms import supersede_instrument_terms
+
+    tenant, pf, inst = _seed_with_terms(session)
+    header = _exposure_input_snapshot(session, tenant, pf)
+    session.commit()
+    supersede_instrument_terms(
+        session,
+        instrument_id=inst,
+        acting_tenant=tenant,
+        actor=ReferenceActor(actor_id="steward"),
+        effective_at=VALID_AT + timedelta(days=30),
+        face_value=Decimal("1000.0000"),
+        denomination_currency="USD",
+        coupon_rate=Decimal("0.0500"),
+    )
+    session.commit()
+    result = verify_snapshot(session, snapshot_id=header.id, acting_tenant=tenant)
+    assert result.ok and result.drifted_components == []

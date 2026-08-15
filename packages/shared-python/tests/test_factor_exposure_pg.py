@@ -145,7 +145,7 @@ def _seed_and_run(factory, tenant: str) -> str:  # noqa: ANN001
             tenant_id=tenant,
             code=f"I-{uuid.uuid4().hex[:6]}",
             name="i",
-            asset_class="BOND",
+            asset_class="EQUITY",
             actor=ReferenceActor(actor_id="s"),
         ).id
         create_position(
@@ -433,7 +433,7 @@ def test_failed_run_persists_reason_on_pg(app_url: str) -> None:
             tenant_id=tenant,
             code=f"I-{uuid.uuid4().hex[:6]}",
             name="i",
-            asset_class="BOND",
+            asset_class="EQUITY",
             actor=ReferenceActor(actor_id="s"),
         ).id
         create_position(

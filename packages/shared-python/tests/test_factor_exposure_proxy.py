@@ -157,7 +157,7 @@ def _book(
             tenant_id=tenant,
             code=f"{code}-{uuid.uuid4().hex[:6]}",
             name=code,
-            asset_class=("PRIVATE_EQUITY" if code.startswith("I-PE") else "BOND"),
+            asset_class=("PRIVATE_EQUITY" if code.startswith("I-PE") else "EQUITY"),
             actor=ReferenceActor(actor_id="s"),
         ).id
         insts[code] = inst

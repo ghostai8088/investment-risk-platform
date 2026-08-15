@@ -121,7 +121,7 @@ def _holding(db: Session, tenant: str, pf: str, code: str, qty: str, mark: str, 
         tenant_id=tenant,
         code=code,
         name="i",
-        asset_class="BOND",
+        asset_class="EQUITY",
         actor=ReferenceActor(actor_id="s"),
     ).id
     create_position(
@@ -731,6 +731,9 @@ def _atom(base: str | None = "USD", amount: str = "10.000000") -> dict:
         "base_currency": base,
         "mark_currency": "USD",
         "exposure_amount": amount,
+        # STRUCT-1: a hand-minted pin is well-formed except for the field under test — the family
+        # declares MARKET_VALUE, and an unlabeled atom is refused before the malformed-field gate.
+        "exposure_type": "MARKET_VALUE",
     }
 
 

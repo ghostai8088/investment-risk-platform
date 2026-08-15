@@ -285,20 +285,28 @@ def list_exposure_by_entity_endpoint(
     portfolio_id: uuid.UUID | None = Query(default=None),
     instrument_id: uuid.UUID | None = Query(default=None),
     as_of: datetime | None = Query(default=None),
+    exposure_type: str | None = Query(default=None),
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> list[ExposureRowOut]:
     """API-1 entity/time read: exposure-aggregate rows across COMPLETED runs filtered by
     ``portfolio_id``/``instrument_id`` + an optional ``as_of`` run cutoff (a run spans the portfolio
     SUBTREE, so the filter row-filters to the queried book; silent-empty on a foreign id). Each row
-    carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR."""
-    rows = list_exposure_by_entity(
-        db,
-        acting_tenant=principal.tenant_id,
-        portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
-        instrument_id=(str(instrument_id) if instrument_id is not None else None),
-        as_of=as_of,
-    )
+    carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR.
+    ``exposure_type`` (STRUCT-1) filters to ONE measure; an unknown measure is a 422."""
+    try:
+        rows = list_exposure_by_entity(
+            db,
+            acting_tenant=principal.tenant_id,
+            portfolio_id=(str(portfolio_id) if portfolio_id is not None else None),
+            instrument_id=(str(instrument_id) if instrument_id is not None else None),
+            as_of=as_of,
+            exposure_type=exposure_type,
+        )
+    except ExposureInputError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from None
     return [_row_out(r) for r in rows]
 
 
@@ -307,18 +315,26 @@ def latest_exposure_endpoint(
     portfolio_id: uuid.UUID,
     instrument_id: uuid.UUID | None = Query(default=None),
     as_of: datetime | None = Query(default=None),
+    exposure_type: str | None = Query(default=None),
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> list[ExposureRowOut]:
     """API-1 latest-resolver: the newest COMPLETED exposure run's rows for the portfolio (empty
-    when none)."""
-    rows = latest_exposure(
-        db,
-        acting_tenant=principal.tenant_id,
-        portfolio_id=str(portfolio_id),
-        instrument_id=(str(instrument_id) if instrument_id is not None else None),
-        as_of=as_of,
-    )
+    when none). ``exposure_type`` (STRUCT-1) = the newest run CARRYING that measure; an unknown
+    measure is a 422."""
+    try:
+        rows = latest_exposure(
+            db,
+            acting_tenant=principal.tenant_id,
+            portfolio_id=str(portfolio_id),
+            instrument_id=(str(instrument_id) if instrument_id is not None else None),
+            as_of=as_of,
+            exposure_type=exposure_type,
+        )
+    except ExposureInputError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from None
     return [_row_out(r) for r in rows]
 
 

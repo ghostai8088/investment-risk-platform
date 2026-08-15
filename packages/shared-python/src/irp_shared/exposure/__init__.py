@@ -18,6 +18,7 @@ from irp_shared.exposure.events import (
 )
 from irp_shared.exposure.models import (
     EXPOSURE_TYPE_MARKET_VALUE,
+    EXPOSURE_TYPE_NOTIONAL,
     EXPOSURE_TYPES,
     ExposureAggregate,
 )
@@ -42,6 +43,7 @@ from irp_shared.exposure.service import (
 __all__ = [
     "ExposureAggregate",
     "EXPOSURE_TYPE_MARKET_VALUE",
+    "EXPOSURE_TYPE_NOTIONAL",
     "EXPOSURE_TYPES",
     "ExposureActor",
     "RUN_TYPE_EXPOSURE_AGGREGATE",

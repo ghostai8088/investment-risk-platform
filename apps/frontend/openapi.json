@@ -23915,7 +23915,7 @@
     },
     "/exposure": {
       "get": {
-        "description": "API-1 entity/time read: exposure-aggregate rows across COMPLETED runs filtered by\n``portfolio_id``/``instrument_id`` + an optional ``as_of`` run cutoff (a run spans the portfolio\nSUBTREE, so the filter row-filters to the queried book; silent-empty on a foreign id). Each row\ncarries ``calculation_run_id`` \u2014 cross-run aggregation is a CONSUMER ERROR.",
+        "description": "API-1 entity/time read: exposure-aggregate rows across COMPLETED runs filtered by\n``portfolio_id``/``instrument_id`` + an optional ``as_of`` run cutoff (a run spans the portfolio\nSUBTREE, so the filter row-filters to the queried book; silent-empty on a foreign id). Each row\ncarries ``calculation_run_id`` \u2014 cross-run aggregation is a CONSUMER ERROR.\n``exposure_type`` (STRUCT-1) filters to ONE measure; an unknown measure is a 422.",
         "operationId": "list_exposure_by_entity_endpoint_exposure_get",
         "parameters": [
           {
@@ -23967,6 +23967,22 @@
                 }
               ],
               "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exposure_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exposure Type"
             }
           },
           {
@@ -24052,7 +24068,7 @@
     },
     "/exposure/latest": {
       "get": {
-        "description": "API-1 latest-resolver: the newest COMPLETED exposure run's rows for the portfolio (empty\nwhen none).",
+        "description": "API-1 latest-resolver: the newest COMPLETED exposure run's rows for the portfolio (empty\nwhen none). ``exposure_type`` (STRUCT-1) = the newest run CARRYING that measure; an unknown\nmeasure is a 422.",
         "operationId": "latest_exposure_endpoint_exposure_latest_get",
         "parameters": [
           {
@@ -24097,6 +24113,22 @@
                 }
               ],
               "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exposure_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exposure Type"
             }
           },
           {

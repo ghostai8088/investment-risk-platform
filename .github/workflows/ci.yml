@@ -139,6 +139,19 @@ jobs:
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: alembic check
+      # STRUCT-1 (review fold F-12): the FULL-CHAIN downgrade smoke moved here, onto the still-
+      # empty schema, because it can no longer run at the end of the job: from 0071 on, a
+      # downgrade below 0071 over a book carrying two exposure measures is a REFUSED data-loss
+      # operation by design (narrowing the key under multi-measure rows; the append-only trigger
+      # forbids the row-deleting alternative), and stage 25 seeds exactly such a book. The end-of-
+      # job smoke survives, floored at 0071, so future migrations' downgrade legs still run over
+      # the fully seeded book.
+      - name: Revert migrations (full-chain downgrade smoke, empty schema)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: |
+          alembic downgrade base
+          alembic upgrade head
       - name: Audit-write concurrency test (Postgres, BR-18 / OD-051)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
@@ -725,6 +738,14 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzzzzzzzz_repro2_pg.py -q
+      # STRUCT-1 stage 25 (REQ-PPM-006): the demonstrating bond in its OWN DEMO-FI book — two
+      # measures from one holding, hand amounts, and the widened 0071 key proven by the live
+      # PostgreSQL constraint. Runs after stage 24 (alpha-sort; a new book, so it moves no golden).
+      - name: Demo stage 25 (Postgres, STRUCT-1 — the two-measure demonstrating bond)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzzzzzzzzz_struct1_pg.py -q
       - name: Report generation RLS + append-only + unique-key non-vacuity (Postgres)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
@@ -752,10 +773,14 @@ jobs:
         # row-level security switched off. That is not hypothetical — the suite's first draft did
         # exactly that and was caught only by its own rolbypassrls floor.
         run: pytest packages/shared-python/tests/test_tenancy_pg.py -q
-      - name: Revert migrations (downgrade smoke)
+      # Floored at 0071 (review fold F-12): 0071's own downgrade under the stage-25 two-measure
+      # book correctly refuses (see the full-chain empty-schema smoke earlier in this job for the
+      # whole chain's DDL reversibility). A no-op while head IS 0071; every migration 0072+ adds
+      # its downgrade-over-data leg here automatically.
+      - name: Revert migrations to 0071 (downgrade-over-data smoke)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
-        run: alembic downgrade base
+        run: alembic downgrade 0071_exposure_type_in_grain_key
 
   secret-scan:
     name: Secret scan

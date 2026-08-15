@@ -193,7 +193,7 @@ def test_real_estimate_chain_total_var_decomposition(session: Session) -> None:
         tenant_id=tenant,
         code=f"BOND-{uuid.uuid4().hex[:6]}",
         name="EUR bond",
-        asset_class="BOND",
+        asset_class="EQUITY",
         actor=ReferenceActor(actor_id="s"),
     ).id
     for inst, qty in ((fund, "100"), (bond, "100")):

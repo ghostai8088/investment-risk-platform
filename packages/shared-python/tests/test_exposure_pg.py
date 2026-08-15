@@ -112,7 +112,7 @@ def _seed_and_run(factory, tenant: str) -> str:  # noqa: ANN001
                 tenant_id=tenant,
                 code=f"I{n}",
                 name="i",
-                asset_class="BOND",
+                asset_class="EQUITY",
                 actor=ReferenceActor(actor_id="a"),
             )
             create_position(

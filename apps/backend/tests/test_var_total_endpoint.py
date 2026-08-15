@@ -109,7 +109,7 @@ def ctx() -> Iterator[tuple[TestClient, Principal, Session, str, str, str]]:
             tenant_id=tenant_id,
             code=code,
             name="i",
-            asset_class="BOND",
+            asset_class="EQUITY",
             actor=ReferenceActor(actor_id="s"),
         ).id
         instrument_ids[code] = inst

@@ -102,7 +102,7 @@ def _inst(db: Session, tenant: str, code: str) -> str:
         tenant_id=tenant,
         code=code,
         name="i",
-        asset_class="BOND",
+        asset_class="EQUITY",
         actor=ReferenceActor(actor_id="s"),
     ).id
 
@@ -538,9 +538,13 @@ def test_consume_non_exposure_input_snapshot_refused(session: Session) -> None:
 def test_build_rows_gap_detection_missing_mark() -> None:
     # Defensive unit: a position without a mark is a gap (the gate would fail closed).
     rows, gaps = exposure_service._build_rows(
-        positions={("p", "i"): Decimal("10")},
-        marks={},  # no mark
-        rate_map={},
+        inputs=exposure_service._PinnedInputs(
+            positions={("p", "i"): Decimal("10")},
+            marks={},  # no mark
+            rate_map={},
+            asset_classes={},
+            terms={},
+        ),
         base_currency="USD",
         acting_tenant="t",
         run=_FakeRun(),
@@ -769,3 +773,291 @@ def _count_exposure_for_run(db: Session, run_id: str) -> int:
         .select_from(ExposureAggregate)
         .where(ExposureAggregate.calculation_run_id == run_id)
     ).scalar_one()
+
+
+# ---------- STRUCT-1 (REQ-PPM-006): two measures, one holding ----------
+
+
+def _bond(
+    db: Session,
+    tenant: str,
+    code: str,
+    *,
+    face_value: str | None,
+    denomination: str | None = "USD",
+) -> str:
+    """A bond instrument with (optionally) a terms version carrying its face value."""
+    from irp_shared.reference.instrument_terms import create_instrument_terms
+
+    inst = create_instrument(
+        db,
+        tenant_id=tenant,
+        code=code,
+        name=code,
+        asset_class="BOND",
+        actor=ReferenceActor(actor_id="s"),
+    ).id
+    if face_value is not None or denomination is not None:
+        create_instrument_terms(
+            db,
+            instrument_id=inst,
+            acting_tenant=tenant,
+            actor=ReferenceActor(actor_id="s"),
+            valid_from=T0,
+            face_value=(None if face_value is None else Decimal(face_value)),
+            denomination_currency=denomination,
+            coupon_rate=Decimal("0.0425"),
+        )
+    return inst
+
+
+def test_bond_holding_produces_both_measures_from_one_holding_id(session: Session) -> None:
+    """THE demonstrating case of the amended row: one bond holding, a NOTIONAL exposure (face x
+    qty) AND a MARKET-VALUE exposure (mark x qty), both readable from ONE holding id, both from
+    the valuation path (an EXECUTED governed run over pinned components — no fixture rows), and
+    the two values DIFFER because the bond is not priced at par."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    pf = _pf(session, tenant)
+    inst = _bond(session, tenant, "UST-2031", face_value="1000.0000")
+    _pos(session, tenant, pf, inst, "50")
+    _val(session, tenant, pf, inst, "985.40", "USD")  # off par
+    session.flush()
+
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.COMPLETED.value
+    mine = [r for r in result.rows if r.portfolio_id == pf and r.instrument_id == inst]
+    by_type = {r.exposure_type: r for r in mine}
+    assert set(by_type) == {"MARKET_VALUE", "NOTIONAL"}
+    assert by_type["MARKET_VALUE"].exposure_amount == Decimal("49270.000000")
+    assert by_type["NOTIONAL"].exposure_amount == Decimal("50000.000000")
+    assert by_type["MARKET_VALUE"].exposure_amount != by_type["NOTIONAL"].exposure_amount
+    # Both rows are run-bound + snapshot-gated (the valuation path, not a fixture).
+    for r in mine:
+        assert r.calculation_run_id == result.run.run_id
+        assert r.input_snapshot_id is not None
+    # The NOTIONAL row's captured inputs keep the self-audit identity: mark_value carries the
+    # per-unit FACE VALUE, mark_currency the denomination currency.
+    n = by_type["NOTIONAL"]
+    assert n.mark_value == Decimal("1000.0000")
+    assert n.mark_currency == "USD"
+    q = (n.signed_quantity * n.mark_value * n.fx_rate).quantize(_MONEY_Q, rounding=ROUND_HALF_UP)
+    assert q == n.exposure_amount
+
+
+def test_producer_census_exact_set_equality(session: Session) -> None:
+    """REQ-PPM-006: 'checked against the producers'. EXACT set equality between the producer
+    registry, the vocabulary, and the DISTINCT measures an EXECUTED run emitted — never an
+    assertion over the vocabulary tuple alone."""
+    from irp_shared.exposure.models import EXPOSURE_TYPES
+    from irp_shared.exposure.service import EXPOSURE_PRODUCERS
+
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    pf = _pf(session, tenant)
+    inst = _bond(session, tenant, "CORP-2029", face_value="1000.0000")
+    _pos(session, tenant, pf, inst, "25")
+    _val(session, tenant, pf, inst, "1012.75", "USD")
+    session.flush()
+
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.COMPLETED.value
+    emitted = {r.exposure_type for r in result.rows}
+    assert emitted == set(EXPOSURE_PRODUCERS)
+    assert emitted == set(EXPOSURE_TYPES)
+
+
+def test_bond_without_face_value_fails_closed(session: Session) -> None:
+    """DP-4: a BOND with no face value is a DATA DEFECT — a committed FAILED run naming the gap,
+    never a silent skip. (The positive control is the COMPLETED bond run above: the same book
+    WITH a face value completes — P18 clause 1.)"""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    pf = _pf(session, tenant)
+    inst = create_instrument(
+        session,
+        tenant_id=tenant,
+        code="MYSTERY-BOND",
+        name="bond with no terms",
+        asset_class="BOND",
+        actor=ReferenceActor(actor_id="s"),
+    ).id
+    _pos(session, tenant, pf, inst, "10")
+    _val(session, tenant, pf, inst, "990.00", "USD")
+    session.flush()
+
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.FAILED.value
+    assert result.failure_reason and "missing-face-value" in result.failure_reason
+    assert result.rows == []
+
+
+def test_face_value_without_denomination_fails_closed(session: Session) -> None:
+    """DP-4's missing-input case: a face value with no denomination currency cannot be converted
+    — fail-closed gap, never a guessed currency."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    pf = _pf(session, tenant)
+    inst = _bond(session, tenant, "NODENOM-2030", face_value="1000.0000", denomination=None)
+    _pos(session, tenant, pf, inst, "10")
+    _val(session, tenant, pf, inst, "1001.00", "USD")
+    session.flush()
+
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.FAILED.value
+    assert result.failure_reason and "missing-denomination-currency" in result.failure_reason
+
+
+def test_equity_without_terms_skips_notional(session: Session) -> None:
+    """DP-4: NOTIONAL is defined only where a face value exists — a non-bond without terms is a
+    SKIP (market value only), not a gap."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    pf = _pf(session, tenant)
+    _holding(session, tenant, pf, "EQ-1", "100", "12.50", "USD")
+    session.flush()
+
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.COMPLETED.value
+    assert {r.exposure_type for r in result.rows} == {"MARKET_VALUE"}
+
+
+def test_notional_converts_from_denomination_currency(session: Session) -> None:
+    """DP-4: the NOTIONAL leg converts from the DENOMINATION currency — exercised where the
+    denomination is NOT any mark's currency (review fold F-5: a EUR-denominated bond MARKED in
+    USD), so the leg is pinned ONLY because the binder unions denomination currencies into the
+    FX-completeness set. Reverting that union makes this book gap missing-fx."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD", "EUR")
+    pf = _pf(session, tenant)
+    inst = _bond(session, tenant, "BUND-2032", face_value="1000.0000", denomination="EUR")
+    _pos(session, tenant, pf, inst, "30")
+    _val(session, tenant, pf, inst, "1071.50", "USD")  # marked in USD; EUR appears ONLY via terms
+    _fx(session, tenant, "EUR", "USD", "1.10")
+    session.flush()
+
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.COMPLETED.value
+    by_type = {r.exposure_type: r for r in result.rows}
+    # 30 x 1000 x 1.10 = 33,000 USD (hand-derived, not a re-run of the code).
+    assert by_type["NOTIONAL"].exposure_amount == Decimal("33000.000000")
+    assert by_type["NOTIONAL"].mark_currency == "EUR"
+    # 30 x 1071.50 = 32,145 USD — no FX leg on the mark side.
+    assert by_type["MARKET_VALUE"].exposure_amount == Decimal("32145.000000")
+
+
+def test_missing_denomination_fx_refuses_at_build(session: Session) -> None:
+    """The P18 positive control of the union: the SAME book WITHOUT the EUR rate refuses at the
+    snapshot build (FxRateNotFound, pre-create — zero run), proving the pinned leg above arrived
+    because the binder demanded it, not by coincidence."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD", "EUR")
+    pf = _pf(session, tenant)
+    inst = _bond(session, tenant, "BUND-2033", face_value="1000.0000", denomination="EUR")
+    _pos(session, tenant, pf, inst, "30")
+    _val(session, tenant, pf, inst, "1071.50", "USD")
+    session.flush()  # NO EUR->USD rate captured
+
+    with pytest.raises(FxRateNotFound):
+        _run(session, tenant, pf, "USD")
+    assert (
+        session.execute(select(func.count()).select_from(CalculationRun)).scalar_one() == 0
+    )  # pre-create refusal: zero runs
+
+
+def test_terms_without_face_value_do_not_demand_fx(session: Session) -> None:
+    """Review fold F-0: a terms row carrying a denomination but NO face value produces no
+    NOTIONAL (DP-4 SKIP) — so its currency must NOT join the FX demand. This book has no EUR
+    rate and must still COMPLETE, market-value only."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD", "EUR")
+    pf = _pf(session, tenant)
+    inst = _inst(session, tenant, "EQ-DEN")  # EQUITY
+    from irp_shared.reference.instrument_terms import create_instrument_terms
+
+    create_instrument_terms(
+        session,
+        instrument_id=inst,
+        acting_tenant=tenant,
+        actor=ReferenceActor(actor_id="s"),
+        valid_from=T0,
+        denomination_currency="EUR",  # noted, but face_value is NULL
+    )
+    _pos(session, tenant, pf, inst, "100")
+    _val(session, tenant, pf, inst, "12.50", "USD")
+    session.flush()  # NO EUR rate exists
+
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.COMPLETED.value
+    assert {r.exposure_type for r in result.rows} == {"MARKET_VALUE"}
+
+
+def test_bond_vocabulary_variant_still_gaps(session: Session) -> None:
+    """Review fold F-3: the bond-gap predicate is containment, not exact-string equality — a
+    CORP_BOND without a face value fails closed rather than silently skipping."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    pf = _pf(session, tenant)
+    inst = create_instrument(
+        session,
+        tenant_id=tenant,
+        code="CORP-VAR",
+        name="corporate bond, variant vocab",
+        asset_class="CORP_BOND",
+        actor=ReferenceActor(actor_id="s"),
+    ).id
+    _pos(session, tenant, pf, inst, "10")
+    _val(session, tenant, pf, inst, "990.00", "USD")
+    session.flush()
+
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.FAILED.value
+    assert result.failure_reason and "missing-face-value" in result.failure_reason
+
+
+def test_face_value_over_envelope_is_a_governed_gap(session: Session) -> None:
+    """Review fold F-2: instrument_terms lawfully stores 16 integer digits, mark_value holds 14 —
+    an over-envelope face value must be a named governed gap, never a numeric-overflow 500."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    pf = _pf(session, tenant)
+    inst = _bond(session, tenant, "JUMBO-2040", face_value="100000000000000.0000")  # 1E14
+    _pos(session, tenant, pf, inst, "1")
+    _val(session, tenant, pf, inst, "990.00", "USD")
+    session.flush()
+
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.FAILED.value
+    assert result.failure_reason and "face-value-exceeds-envelope" in result.failure_reason
+
+
+def test_pre_struct1_snapshot_emits_no_notional_and_no_gap() -> None:
+    """A pre-STRUCT-1 snapshot has no INSTRUMENT/INSTRUMENT_TERMS pins: the NOTIONAL measure is
+    definitionally absent from its pinned inputs — the producer emits nothing and gaps nothing
+    (old-run reproduction stays byte-identical; never fabricate, never refuse retroactively)."""
+    rows, gaps = exposure_service._build_rows(
+        inputs=exposure_service._PinnedInputs(
+            positions={("p", "i"): Decimal("10")},
+            marks={("p", "i"): (Decimal("99.50"), "USD")},
+            rate_map={},
+            asset_classes={},  # the pre-STRUCT-1 shape
+            terms={},
+        ),
+        base_currency="USD",
+        acting_tenant="t",
+        run=_FakeRun(),
+        snapshot_id="s",
+    )
+    assert gaps == []
+    assert [r.exposure_type for r in rows] == ["MARKET_VALUE"]
+
+
+def test_unknown_exposure_type_read_refused(session: Session) -> None:
+    """The read surface refuses an unknown measure (a vocabulary error is a caller defect, not an
+    empty book)."""
+    from irp_shared.exposure import list_exposure_by_entity
+
+    with pytest.raises(ExposureInputError, match="unknown exposure_type"):
+        list_exposure_by_entity(
+            session, acting_tenant=str(uuid.uuid4()), exposure_type="GROSS_DELTA"
+        )

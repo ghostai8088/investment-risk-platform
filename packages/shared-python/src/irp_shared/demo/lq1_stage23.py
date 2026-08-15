@@ -206,6 +206,23 @@ def run_demo_lq1_stage23(session: Session) -> Lq1Stage23Summary:
             asset_class=asset_class,
             actor=ref_actor,
         )
+        if "BOND" in asset_class:
+            # STRUCT-1 (DP-4): both bonds in this book had no captured face value — the exposure
+            # run now fails closed on that, correctly. Both are marked AT PAR (100), so their
+            # NOTIONAL equals their MARKET_VALUE — the row's own "coincidence is NOT a failure"
+            # case; the liquidity family consumes MARKET_VALUE only (builder-filtered), so every
+            # hand-computed share below is untouched.
+            from irp_shared.reference.instrument_terms import create_instrument_terms
+
+            create_instrument_terms(
+                session,
+                instrument_id=inst.id,
+                acting_tenant=DEMO_TENANT_ID,
+                actor=ref_actor,
+                valid_from=_T0,
+                face_value=Decimal("100.0000"),
+                denomination_currency="USD",
+            )
         create_position(
             session,
             portfolio_id=pf,

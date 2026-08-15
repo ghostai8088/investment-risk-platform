@@ -161,6 +161,10 @@ from irp_shared.demo.stage10_api1 import (
     Stage10Api1Summary,
     run_demo_stage10_api1,
 )
+from irp_shared.demo.struct1_stage25 import (
+    DemoStruct1AlreadySeededError,
+    run_demo_struct1_stage25,
+)
 
 __all__ = [
     "run_demo_rm1_stage16",
@@ -271,6 +275,8 @@ __all__ = [
     "run_demo_lq1_stage23",
     "run_demo_repro2_stage24",
     "DemoRepro2AlreadySeededError",
+    "run_demo_struct1_stage25",
+    "DemoStruct1AlreadySeededError",
     "DemoLq1AlreadySeededError",
     "DemoLq1Error",
     "Lq1Stage23Summary",
