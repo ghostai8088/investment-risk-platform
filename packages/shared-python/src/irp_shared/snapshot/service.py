@@ -84,6 +84,7 @@ from irp_shared.marketdata.service import FxRateNotVisible, resolve_fx_rate
 from irp_shared.portfolio import PortfolioNotVisible, resolve_portfolio
 from irp_shared.position import PositionNotVisible, resolve_position
 from irp_shared.reference.instrument import InstrumentNotVisible, resolve_instrument
+from irp_shared.reference.instrument_terms import reconstruct_terms_as_of
 from irp_shared.reference.service import CalendarNotVisible
 from irp_shared.snapshot.events import SnapshotActor, record_snapshot_create
 from irp_shared.snapshot.models import (
@@ -104,6 +105,8 @@ from irp_shared.snapshot.models import (
     COMPONENT_KIND_FX,
     COMPONENT_KIND_GOVERNED_VALUE,
     COMPONENT_KIND_HOLIDAY_CALENDAR,
+    COMPONENT_KIND_INSTRUMENT,
+    COMPONENT_KIND_INSTRUMENT_TERMS,
     COMPONENT_KIND_ISSUER_EDGE,
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_PORTFOLIO_RETURN,
@@ -120,6 +123,7 @@ from irp_shared.snapshot.models import (
     PURPOSE_CONCENTRATION_INPUT,
     PURPOSE_COVARIANCE_INPUT,
     PURPOSE_DESMOOTHING_INPUT,
+    PURPOSE_EXPOSURE_INPUT,
     PURPOSE_FACTOR_EXPOSURE_INPUT,
     PURPOSE_LIQUIDITY_INPUT,
     PURPOSE_PACING_INPUT,
@@ -156,6 +160,8 @@ from irp_shared.snapshot.serialize import (
     factor_exposure_content,
     factor_return_series_content,
     fx_content,
+    instrument_content,
+    instrument_terms_content,
     manifest_hash,
     portfolio_content,
     portfolio_return_content,
@@ -330,7 +336,9 @@ def build_snapshot(
     # safety) and capture its canonical content. component spec = (kind, target_type, row, hash).
     specs: list[tuple[str, str, Any, str, str]] = []
     seen_portfolios: set[str] = set()
+    seen_instruments: set[str] = set()
     mark_currencies: set[str] = set()
+    denomination_currencies: set[str] = set()
     for e in enriched:
         h = e.holding
         pos = resolve_position(session, h.position_id, acting_tenant=acting_tenant)
@@ -339,6 +347,40 @@ def build_snapshot(
             seen_portfolios.add(h.portfolio_id)
             pf = resolve_portfolio(session, h.portfolio_id, acting_tenant=acting_tenant)
             _append_spec(specs, COMPONENT_KIND_PORTFOLIO, "portfolio", pf, portfolio_content(pf))
+        # STRUCT-1 (REQ-PPM-006, DP-3): EXPOSURE_INPUT builds pin, per distinct instrument, the
+        # instrument EV identity (asset_class — the DP-4 bond-gap rule reads it from the pin, never
+        # live, AD-014) and the terms FR version as-of when one exists (face_value +
+        # denomination_currency — the NOTIONAL inputs). No terms as-of ⇒ only the INSTRUMENT
+        # component; the compute decides skip-vs-gap from the pinned asset_class.
+        if purpose == PURPOSE_EXPOSURE_INPUT and h.instrument_id not in seen_instruments:
+            seen_instruments.add(h.instrument_id)
+            inst = resolve_instrument(session, h.instrument_id, acting_tenant=acting_tenant)
+            _append_spec(
+                specs, COMPONENT_KIND_INSTRUMENT, "instrument", inst, instrument_content(inst)
+            )
+            terms = reconstruct_terms_as_of(
+                session,
+                h.instrument_id,
+                acting_tenant=acting_tenant,
+                valid_at=as_of_valid_at,
+                known_at=known,
+            )
+            if terms is not None:
+                _append_spec(
+                    specs,
+                    COMPONENT_KIND_INSTRUMENT_TERMS,
+                    "instrument_terms",
+                    terms,
+                    instrument_terms_content(terms),
+                )
+                # The NOTIONAL leg converts from the DENOMINATION currency (DP-4), which need not
+                # be any mark's currency — its convert path must be pinned too or the compute
+                # gaps on an FX the binder could have supplied. Gated on the face value existing
+                # (review fold F-0): a terms row with a denomination but NO face value produces no
+                # NOTIONAL (DP-4 SKIP), so demanding its FX path would turn the ratified skip into
+                # a whole-run pre-create FxRateNotFound refusal for a leg the compute never uses.
+                if terms.denomination_currency is not None and terms.face_value is not None:
+                    denomination_currencies.add(terms.denomination_currency)
         if e.mark is not None:
             val = resolve_valuation(session, e.mark.valuation_id, acting_tenant=acting_tenant)
             _append_spec(specs, COMPONENT_KIND_VALUATION, "valuation", val, valuation_content(val))
@@ -350,7 +392,7 @@ def build_snapshot(
     #     closed (FxRateNotFound) BEFORE any write if a leg is missing as-of.
     if base_currency is not None:
         seen_fx: set[str] = set()
-        for ccy in sorted(mark_currencies):
+        for ccy in sorted(mark_currencies | denomination_currencies):
             if ccy == base_currency:
                 continue
             for fx_row in resolve_conversion_legs(
@@ -648,17 +690,29 @@ def _resolve_exposure_atom(session: Session, atom_id: str, *, acting_tenant: str
     return row
 
 
-def _list_exposure_atoms(session: Session, run_id: str, *, acting_tenant: str) -> list[Any]:
-    """The ``exposure_aggregate`` atoms of a run (tenant-scoped, stable order; models-only
-    import)."""
+def _list_exposure_atoms(
+    session: Session, run_id: str, *, acting_tenant: str, consuming_run_type: str
+) -> list[Any]:
+    """The ``exposure_aggregate`` atoms of a run FOR ONE CONSUMING FAMILY (tenant-scoped, stable
+    order; models-only import).
+
+    STRUCT-1 (REQ-PPM-006): the builder consults the family's consumed-measure declaration
+    (``irp_shared.aggregation.contracts``) and pins ONLY atoms of that measure — with two measures
+    per holding in one run, an unfiltered pin would double-count in every downstream sum. The
+    declaration is the SINGLE filter authority: an undeclared family refuses here (fail-closed,
+    ``UndeclaredConsumerError``), and the family's own pin parser refuses any foreign-measure atom
+    that reaches it anyway (defense in depth)."""
+    from irp_shared.aggregation.contracts import consumed_exposure_measure  # no cycle
     from irp_shared.exposure.models import ExposureAggregate  # models-only (no cycle)
 
+    measure = consumed_exposure_measure(consuming_run_type)
     return list(
         session.execute(
             select(ExposureAggregate)
             .where(
                 ExposureAggregate.calculation_run_id == str(run_id),
                 ExposureAggregate.tenant_id == str(acting_tenant),
+                ExposureAggregate.exposure_type == measure,
             )
             .order_by(ExposureAggregate.portfolio_id, ExposureAggregate.instrument_id)
         )
@@ -727,7 +781,9 @@ def build_factor_exposure_snapshot(
         )
     if not factor_ids:
         raise FactorExposureSnapshotError("no factor ids to pin — an empty factor set is refused")
-    atoms = _list_exposure_atoms(session, exposure_run_id, acting_tenant=acting_tenant)
+    atoms = _list_exposure_atoms(
+        session, exposure_run_id, acting_tenant=acting_tenant, consuming_run_type="FACTOR_EXPOSURE"
+    )
     if not atoms:
         raise FactorExposureSnapshotError(
             f"exposure run {exposure_run_id} has no visible atoms to pin"
@@ -1062,6 +1118,23 @@ def _resolve_benchmark_constituent_row(session: Session, row_id: str, *, acting_
     ).scalar_one_or_none()
     if row is None:
         raise VarSnapshotError(f"benchmark constituent {row_id} is not visible")
+    return row
+
+
+def _resolve_instrument_terms_row(session: Session, row_id: str, *, acting_tenant: str) -> Any:
+    """Resolve one ``instrument_terms`` FR row by surrogate id with an EXPLICIT tenant predicate
+    (STRUCT-1; the ``_resolve_proxy_mapping_row`` precedent). Raises ``InstrumentNotVisible`` (the
+    id in the message is the TERMS row's) — already in verify's drift except-tuple (CON-1)."""
+    from irp_shared.reference.models import InstrumentTerms  # models-only (no cycle)
+
+    row = session.execute(
+        select(InstrumentTerms).where(
+            InstrumentTerms.id == str(row_id),
+            InstrumentTerms.tenant_id == str(acting_tenant),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise InstrumentNotVisible(str(row_id))
     return row
 
 
@@ -1444,7 +1517,9 @@ def build_return_snapshot(
     boundary_dates: list[date] = []
     base_currency: str | None = None
     for run_id in run_ids:
-        atoms = _list_exposure_atoms(session, run_id, acting_tenant=acting_tenant)
+        atoms = _list_exposure_atoms(
+            session, run_id, acting_tenant=acting_tenant, consuming_run_type="PORTFOLIO_RETURN"
+        )
         if not atoms:
             raise ReturnSnapshotError(f"exposure run {run_id} has no visible atoms to pin")
         boundary = resolve_snapshot(
@@ -3648,6 +3723,20 @@ def _reresolve_content(
         return exposure_content(
             _resolve_exposure_atom(session, comp.target_entity_id, acting_tenant=acting_tenant)
         )
+    if comp.component_kind == COMPONENT_KIND_INSTRUMENT:
+        # STRUCT-1: the instrument EV identity pin (asset_class for the DP-4 rule). An EV amend
+        # moves record_version/content — real drift the discriminator must see (TR-09).
+        return instrument_content(
+            resolve_instrument(session, comp.target_entity_id, acting_tenant=acting_tenant)
+        )
+    if comp.component_kind == COMPONENT_KIND_INSTRUMENT_TERMS:
+        # STRUCT-1: the terms FR version pin — byte-stable under a later supersede/correct (the
+        # pinned version's immutable content, TR-09); a gone/cross-tenant row reports as drift.
+        return instrument_terms_content(
+            _resolve_instrument_terms_row(
+                session, comp.target_entity_id, acting_tenant=acting_tenant
+            )
+        )
     if comp.component_kind == COMPONENT_KIND_TRANSACTION:
         return transaction_content(
             _resolve_transaction_row(session, comp.target_entity_id, acting_tenant=acting_tenant)
@@ -4137,7 +4226,9 @@ def build_concentration_snapshot(
     now = utcnow()
     valid_at = known = now
 
-    atoms = _list_exposure_atoms(session, exposure_run_id, acting_tenant=acting_tenant)
+    atoms = _list_exposure_atoms(
+        session, exposure_run_id, acting_tenant=acting_tenant, consuming_run_type="CONCENTRATION"
+    )
     if not atoms:
         raise ConcentrationSnapshotError(
             f"exposure run {exposure_run_id} has no visible atoms to pin"
@@ -4306,7 +4397,9 @@ def build_liquidity_snapshot(
     now = utcnow()
     valid_at = known = now
 
-    atoms = _list_exposure_atoms(session, exposure_run_id, acting_tenant=acting_tenant)
+    atoms = _list_exposure_atoms(
+        session, exposure_run_id, acting_tenant=acting_tenant, consuming_run_type="LIQUIDITY"
+    )
     if not atoms:
         raise LiquiditySnapshotError(f"exposure run {exposure_run_id} has no visible atoms to pin")
 

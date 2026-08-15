@@ -29,6 +29,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from irp_shared.aggregation.contracts import refuse_foreign_measure as _refuse_foreign_measure
 from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.runs import resolve_completed_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
@@ -242,6 +243,8 @@ def _parse_pins(components: list[Any]) -> _PinnedContent:
     for comp in components:
         content = json.loads(comp.captured_content)
         if comp.component_kind == COMPONENT_KIND_EXPOSURE:
+            # STRUCT-1 (REQ-PPM-006): refuse a foreign-measure atom before it enters any bucket.
+            _refuse_foreign_measure("CONCENTRATION", content)
             pinned.atoms.append(content)
         elif comp.component_kind == COMPONENT_KIND_ISSUER_EDGE:
             pinned.issuer_by_instrument[content["id"]] = content["issuer_id"]

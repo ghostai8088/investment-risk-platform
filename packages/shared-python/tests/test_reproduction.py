@@ -1873,13 +1873,16 @@ _MUST_COMPARE = {
         "private_variance",
         "estimate_age_days",
     },
+    # STRUCT-1 (REQ-PPM-006): ``exposure_type`` left this set because it moved INTO the row key —
+    # a STRONGER position (a divergence in it now fails row pairing, not just a field compare).
+    # Its key membership is pinned by ``test_exposure_type_is_a_key_field`` below so it cannot
+    # silently leave both.
     "EXPOSURE_AGGREGATE": {
         "signed_quantity",
         "mark_value",
         "fx_rate",
         "exposure_amount",
         "mark_currency",
-        "exposure_type",
         "fx_legs",
     },
     "REPORT": {"content_hash"},
@@ -1959,6 +1962,13 @@ _MUST_COMPARE = {
         "unfunded_end",
     },
 }
+
+
+def test_exposure_type_is_a_key_field() -> None:
+    """STRUCT-1 (REQ-PPM-006): the measure discriminator is part of the row-pairing KEY. Without
+    it, two measures for one holding produce duplicate comparison keys and the adapter pairs a
+    stored NOTIONAL row against a recomputed MARKET_VALUE row."""
+    assert "exposure_type" in REPRODUCIBLE_FAMILIES["EXPOSURE_AGGREGATE"].key_fields
 
 
 def test_no_governed_column_can_be_dropped_from_the_comparison() -> None:

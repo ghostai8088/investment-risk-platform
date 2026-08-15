@@ -159,7 +159,7 @@ def _seed_factor_exposure_run(db: Session, tenant: str) -> tuple[str, str, str]:
             tenant_id=tenant,
             code=f"{code}-{uuid.uuid4().hex[:6]}",
             name="i",
-            asset_class="BOND",
+            asset_class="EQUITY",
             actor=ReferenceActor(actor_id="s"),
         ).id
         create_position(
@@ -628,7 +628,7 @@ def _seed_large_exposure_run(
         tenant_id=tenant,
         code=f"I-USD-{uuid.uuid4().hex[:6]}",
         name="i",
-        asset_class="BOND",
+        asset_class="EQUITY",
         actor=ReferenceActor(actor_id="s"),
     ).id
     create_position(

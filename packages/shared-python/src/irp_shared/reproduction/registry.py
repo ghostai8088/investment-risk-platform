@@ -314,7 +314,10 @@ def _recompute_var(
 
 
 # ------------------------------------------------------------------- EXPOSURE_AGGREGATE family ---
-_EXPOSURE_KEY = ("portfolio_id", "instrument_id", "base_currency")
+#: STRUCT-1 (REQ-PPM-006): ``exposure_type`` moved from COMPARED into the KEY — with two measures
+#: per holding in one run, a key without the measure produces duplicate comparison keys and the
+#: adapter would pair a stored NOTIONAL row against a recomputed MARKET_VALUE row.
+_EXPOSURE_KEY = ("portfolio_id", "instrument_id", "base_currency", "exposure_type")
 #: `fx_legs` joined at the review fold: it is the ORDERED pinned conversion path, so a change in
 #: leg selection or ordering that lands on the same composite rate is a real behavioural change
 #: the row records and the comparison must see.
@@ -324,7 +327,6 @@ _EXPOSURE_COMPARED = (
     "fx_rate",
     "exposure_amount",
     "mark_currency",
-    "exposure_type",
     "fx_legs",
 )
 _EXPOSURE_UNCOMPARED = {
@@ -350,6 +352,7 @@ def _stored_exposure_rows(
                 ExposureAggregate.portfolio_id,
                 ExposureAggregate.instrument_id,
                 ExposureAggregate.base_currency,
+                ExposureAggregate.exposure_type,
             )
         )
         .scalars()

@@ -1127,6 +1127,7 @@ export interface paths {
          *     ``portfolio_id``/``instrument_id`` + an optional ``as_of`` run cutoff (a run spans the portfolio
          *     SUBTREE, so the filter row-filters to the queried book; silent-empty on a foreign id). Each row
          *     carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR.
+         *     ``exposure_type`` (STRUCT-1) filters to ONE measure; an unknown measure is a 422.
          */
         get: operations["list_exposure_by_entity_endpoint_exposure_get"];
         put?: never;
@@ -1147,7 +1148,8 @@ export interface paths {
         /**
          * Latest Exposure Endpoint
          * @description API-1 latest-resolver: the newest COMPLETED exposure run's rows for the portfolio (empty
-         *     when none).
+         *     when none). ``exposure_type`` (STRUCT-1) = the newest run CARRYING that measure; an unknown
+         *     measure is a 422.
          */
         get: operations["latest_exposure_endpoint_exposure_latest_get"];
         put?: never;
@@ -13606,6 +13608,7 @@ export interface operations {
                 portfolio_id?: string | null;
                 instrument_id?: string | null;
                 as_of?: string | null;
+                exposure_type?: string | null;
             };
             header?: {
                 "x-user-id"?: string | null;
@@ -13643,6 +13646,7 @@ export interface operations {
                 portfolio_id: string;
                 instrument_id?: string | null;
                 as_of?: string | null;
+                exposure_type?: string | null;
             };
             header?: {
                 "x-user-id"?: string | null;

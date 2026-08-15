@@ -175,7 +175,7 @@ def _seed_and_run_total(factory, tenant: str, *, es: bool = False):  # noqa: ANN
                 tenant_id=tenant,
                 code=f"{code}-{uuid.uuid4().hex[:6]}",
                 name="i",
-                asset_class="BOND",
+                asset_class="EQUITY",
                 actor=ReferenceActor(actor_id="s"),
             ).id
             instrument_ids[code] = inst

@@ -238,7 +238,7 @@ def _seed_chain(db: Session, tenant: str, n_dates: int) -> str:
             tenant_id=tenant,
             code=f"{code}-{uuid.uuid4().hex[:6]}",
             name="i",
-            asset_class="BOND",
+            asset_class="EQUITY",
             actor=ReferenceActor(actor_id="s"),
         ).id
         create_position(

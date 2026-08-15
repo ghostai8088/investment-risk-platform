@@ -30,6 +30,8 @@ _SCALE_QUANTITY = 8
 _SCALE_MONEY = 6
 _SCALE_FX_RATE = 12
 _SCALE_CURVE_POINT = 12
+_SCALE_FACE_VALUE = 4  # instrument_terms.face_value Numeric(20,4) (STRUCT-1)
+_SCALE_COUPON = 6  # instrument_terms.coupon_rate Numeric(12,6) (STRUCT-1)
 _SCALE_COVARIANCE = 20  # covariance_result.covariance_value Numeric(38,20) (P3-5)
 
 
@@ -208,6 +210,56 @@ def exposure_content(row: Any) -> dict[str, Any]:
         "exposure_amount": _norm_decimal(row.exposure_amount, _SCALE_MONEY),
         "exposure_type": row.exposure_type,
         "system_from": _norm_datetime(row.system_from),
+    }
+
+
+def instrument_content(row: Any) -> dict[str, Any]:
+    """The captured content of an ``instrument`` (EV) identity version (STRUCT-1 INSTRUMENT
+    component — the ``portfolio_content`` EV flavor: no ``system_from``; ``record_version`` the
+    drift discriminator). ``asset_class`` is the load-bearing field: the NOTIONAL producer's DP-4
+    rule (bond with no face value = fail-closed gap) reads it from THIS pinned content, never
+    live (AD-014)."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "code": row.code,
+        "name": row.name,
+        "asset_class": row.asset_class,
+        "instrument_type": row.instrument_type,
+        "currency_code": row.currency_code,
+        "is_active": row.is_active,
+        "valid_from": _norm_datetime(row.valid_from),
+        "record_version": row.record_version,
+    }
+
+
+def instrument_terms_content(row: Any) -> dict[str, Any]:
+    """The immutable captured content of an ``instrument_terms`` (FR) version (STRUCT-1
+    INSTRUMENT_TERMS component — the ``fx_content`` FR flavor; close-out markers EXCLUDED).
+    ``face_value`` (scale 4) + ``denomination_currency`` are what the NOTIONAL producer consumes;
+    the remaining economic fields are captured so a terms supersede/correction moves the hash on
+    any field, not only the two read today."""
+    return {
+        "id": _norm_guid(row.id),
+        "tenant_id": _norm_guid(row.tenant_id),
+        "instrument_id": _norm_guid(row.instrument_id),
+        "coupon_rate": (
+            None if row.coupon_rate is None else _norm_decimal(row.coupon_rate, _SCALE_COUPON)
+        ),
+        "coupon_frequency": row.coupon_frequency,
+        "issue_date": None if row.issue_date is None else row.issue_date.isoformat(),
+        "maturity_date": None if row.maturity_date is None else row.maturity_date.isoformat(),
+        "day_count": row.day_count,
+        "denomination_currency": row.denomination_currency,
+        "face_value": (
+            None if row.face_value is None else _norm_decimal(row.face_value, _SCALE_FACE_VALUE)
+        ),
+        "term_source": row.term_source,
+        "restatement_reason": row.restatement_reason,
+        "supersedes_id": (None if row.supersedes_id is None else _norm_guid(row.supersedes_id)),
+        "valid_from": _norm_datetime(row.valid_from),
+        "system_from": _norm_datetime(row.system_from),
+        "record_version": row.record_version,
     }
 
 

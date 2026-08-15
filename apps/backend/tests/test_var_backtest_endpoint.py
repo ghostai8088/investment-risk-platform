@@ -119,7 +119,7 @@ def ctx() -> Iterator[tuple[TestClient, Principal, Session, str, str]]:
             tenant_id=tenant_id,
             code=f"{code}-{uuid.uuid4().hex[:6]}",
             name="i",
-            asset_class="BOND",
+            asset_class="EQUITY",
             actor=ReferenceActor(actor_id="s"),
         ).id
         insts.append(inst)

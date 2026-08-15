@@ -30,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, map_refusal, require_permission
+from irp_shared.aggregation.contracts import ForeignMeasureError
 from irp_shared.db.integrity import is_unique_violation
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
@@ -238,6 +239,12 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     FactorExposureInputError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "invalid factor-exposure run input",
+    ),
+    # STRUCT-1 (REQ-PPM-006): a consumed snapshot carrying an exposure atom of a measure the
+    # family did not declare — refused, never summed or converted.
+    ForeignMeasureError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "exposure atom of an undeclared measure — the family refuses foreign measures",
     ),
     FactorExposureSnapshotError: (
         status.HTTP_409_CONFLICT,
@@ -898,6 +905,7 @@ def create_factor_exposure_run(
         FactorExposureSnapshotError,
         ExposureRunNotVisible,
         FactorNotVisible,
+        ForeignMeasureError,
     ) as exc:
         # Pre-create refusal: whole-unit rollback (no run/result/audit) before the HTTP error.
         db.rollback()

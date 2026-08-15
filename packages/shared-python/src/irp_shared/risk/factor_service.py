@@ -68,6 +68,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.aggregation.contracts import refuse_foreign_measure as _refuse_foreign_measure
 from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
@@ -237,6 +238,10 @@ def _parse_pins(comps: list[Any]) -> tuple[list[AtomPin], list[FactorPin], list[
                 )
             )
         elif comp.component_kind == COMPONENT_KIND_EXPOSURE:
+            # STRUCT-1 (REQ-PPM-006): the family consumes ONE declared measure; a foreign-measure
+            # atom reaching this parser is refused, never summed (defense in depth behind the
+            # builder's declaration filter).
+            _refuse_foreign_measure("FACTOR_EXPOSURE", data)
             atoms.append(
                 AtomPin(
                     id=data["id"],

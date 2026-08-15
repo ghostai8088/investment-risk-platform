@@ -428,6 +428,8 @@ def test_mixed_base_atoms_refused_pre_create(session: Session) -> None:
             "base_currency": base,  # the MIXED-base smuggle
             "mark_currency": "USD",
             "exposure_amount": "100.000000",
+            # STRUCT-1: well-formed except the field under test (the mixed base).
+            "exposure_type": "MARKET_VALUE",
         }
 
     from irp_shared.marketdata.factor import resolve_factor as _rf

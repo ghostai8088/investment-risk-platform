@@ -39,10 +39,13 @@ from irp_shared.db.mixins import ImmutableAppendOnlyMixin, PrimaryKeyMixin, Tena
 from irp_shared.db.types import GUID, PreciseDecimal
 from irp_shared.temporal import TemporalClass
 
-#: Controlled-vocab ``exposure_type`` (plain String, no enum/CHECK; app-side allow-list). v1 =
-#: signed market value only. (Gross/net/absolute views are DEFERRED — not minted.)
+#: Controlled-vocab ``exposure_type`` (plain String, no enum/CHECK; app-side allow-list).
+#: STRUCT-1 (REQ-PPM-006, Wave 18): TWO measures — the signed market value and the bond NOTIONAL
+#: (face value x quantity). One holding carries one row PER measure in the SAME run; the measure
+#: is part of the uniqueness key (migration 0071). (Gross/net/absolute views stay DEFERRED.)
 EXPOSURE_TYPE_MARKET_VALUE = "MARKET_VALUE"
-EXPOSURE_TYPES = (EXPOSURE_TYPE_MARKET_VALUE,)
+EXPOSURE_TYPE_NOTIONAL = "NOTIONAL"
+EXPOSURE_TYPES = (EXPOSURE_TYPE_MARKET_VALUE, EXPOSURE_TYPE_NOTIONAL)
 
 
 class ExposureAggregate(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
@@ -52,12 +55,15 @@ class ExposureAggregate(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     __tablename__ = "exposure_aggregate"
     __temporal_class__ = TemporalClass.IMMUTABLE_APPEND_ONLY
     __table_args__ = (
-        # The per-holding grain is unique within a run (one exposure per portfolio+instrument+base).
+        # The per-holding, PER-MEASURE grain is unique within a run (STRUCT-1 / REQ-PPM-006:
+        # exposure_type is part of the key — two measures for one holding must NOT collide;
+        # widened by migration 0071 in lockstep with this definition).
         UniqueConstraint(
             "calculation_run_id",
             "portfolio_id",
             "instrument_id",
             "base_currency",
+            "exposure_type",
             name="uq_exposure_aggregate_run_grain",
         ),
     )
@@ -89,9 +95,9 @@ class ExposureAggregate(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, 
     # = quantize_HALF_UP(signed_quantity x mark_value x fx_rate, 6), in base_currency (money scale
     # 6).
     exposure_amount: Mapped[Decimal] = mapped_column(PreciseDecimal(28, 6), nullable=False)
-    exposure_type: Mapped[str] = mapped_column(
-        String(30), nullable=False, default=EXPOSURE_TYPE_MARKET_VALUE
-    )
+    # NO ORM default (removed at STRUCT-1): a producer that does not SAY which measure it emits
+    # must fail NOT NULL, never be silently labeled MARKET_VALUE.
+    exposure_type: Mapped[str] = mapped_column(String(30), nullable=False)
 
 
 def _block_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:

@@ -581,6 +581,9 @@ _EXPOSURE_IMPORTERS = frozenset(
     # the cost of that fix and is admitted BY NAME; widening the fence would have been the cheaper
     # and wrong move.
     # REPRO-1 (2026-08-07): `reproduction` joined — see the note above _RISK_IMPORTERS.
+    # STRUCT-1 (2026-08-15): `aggregation` joined — the contracts module declares each consumer
+    # family's exposure measure in terms of the measure constants (`exposure.models` ONLY, a
+    # models-only import; the declaration surface cannot name measures it does not import).
     {
         "models.py",
         "demo",
@@ -590,6 +593,7 @@ _EXPOSURE_IMPORTERS = frozenset(
         "concentration",
         "liquidity",
         "reproduction",
+        "aggregation",
     }
 )
 

@@ -19,7 +19,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 #: The platform's current migration head. A new migration updates THIS LINE ONLY.
-EXPECTED_MIGRATION_HEAD = "0070_app_role"  # DEPLOY-1: the app role the deployment never had
+EXPECTED_MIGRATION_HEAD = "0071_exposure_type_in_grain_key"  # STRUCT-1: the measure into the key
 
 
 def _script() -> ScriptDirectory:

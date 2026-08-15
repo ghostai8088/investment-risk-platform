@@ -50,11 +50,18 @@ from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
 from irp_shared.calc.scaffold import execute_governed_run
 from irp_shared.exposure.events import RUN_TYPE_EXPOSURE_AGGREGATE, ExposureActor
-from irp_shared.exposure.models import EXPOSURE_TYPE_MARKET_VALUE, ExposureAggregate
+from irp_shared.exposure.models import (
+    EXPOSURE_TYPE_MARKET_VALUE,
+    EXPOSURE_TYPE_NOTIONAL,
+    EXPOSURE_TYPES,
+    ExposureAggregate,
+)
 from irp_shared.marketdata import DEFAULT_BASE, compose_effective_rate
 from irp_shared.portfolio import resolve_portfolio
 from irp_shared.snapshot import (
     COMPONENT_KIND_FX,
+    COMPONENT_KIND_INSTRUMENT,
+    COMPONENT_KIND_INSTRUMENT_TERMS,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
     SnapshotActor,
@@ -71,6 +78,11 @@ _MONEY_QUANTUM = Decimal(1).scaleb(-6)
 
 #: Per-tenant governed completeness DQ rule (resolve-or-register; the snapshot/fx pattern).
 _COMPLETENESS_RULE_CODE = "exposure.completeness"
+
+#: The mark_value column is Numeric(20,6) — 14 integer digits — while instrument_terms.face_value
+#: is Numeric(20,4) — 16. A face value at or past this bound cannot be stored as the NOTIONAL
+#: row's captured per-unit input; it is refused as a governed gap (P3-7 magnitude precedent).
+_MAX_FACE_VALUE_ABS = Decimal("1E14")
 
 
 class ExposureInputError(Exception):
@@ -124,18 +136,33 @@ def _resolve_base_currency(
     return pf.base_currency_code or DEFAULT_BASE
 
 
-def _read_components(
-    comps: list[Any],
-) -> tuple[
-    dict[tuple[str, str], Decimal],
-    dict[tuple[str, str], tuple[Decimal, str]],
-    dict[tuple[str, str], tuple[str, Decimal]],
-]:
+@dataclass(frozen=True)
+class _PinnedInputs:
+    """The exposure compute's entire input surface, parsed from the snapshot's pinned components
+    (PURE — no live read; AD-014). STRUCT-1 added the instrument identity/terms maps: a
+    pre-STRUCT-1 snapshot simply has no INSTRUMENT/INSTRUMENT_TERMS components, so both maps are
+    empty and the NOTIONAL producer emits nothing for it — which is what keeps the reproduction
+    of pre-STRUCT-1 runs byte-identical (the measure is definitionally absent from their pinned
+    inputs, never fabricated)."""
+
+    positions: dict[tuple[str, str], Decimal]
+    marks: dict[tuple[str, str], tuple[Decimal, str]]
+    rate_map: dict[tuple[str, str], tuple[str, Decimal]]
+    #: instrument_id -> asset_class (the pinned instrument EV identity; the DP-4 rule's input).
+    asset_classes: dict[str, str]
+    #: instrument_id -> (face_value | None, denomination_currency | None) from the pinned terms.
+    terms: dict[str, tuple[Decimal | None, str | None]]
+
+
+def _read_components(comps: list[Any]) -> _PinnedInputs:
     """Parse the snapshot's pinned components' captured content (PURE — no live read): positions
-    ``(pf,inst)->qty``, marks ``(pf,inst)->(mark,ccy)``, fx ``(base,quote)->(id,rate)``."""
+    ``(pf,inst)->qty``, marks ``(pf,inst)->(mark,ccy)``, fx ``(base,quote)->(id,rate)``, plus the
+    STRUCT-1 instrument identity/terms maps."""
     positions: dict[tuple[str, str], Decimal] = {}
     marks: dict[tuple[str, str], tuple[Decimal, str]] = {}
     rate_map: dict[tuple[str, str], tuple[str, Decimal]] = {}
+    asset_classes: dict[str, str] = {}
+    terms: dict[str, tuple[Decimal | None, str | None]] = {}
     for comp in comps:
         data = json.loads(comp.captured_content)
         if comp.component_kind == COMPONENT_KIND_POSITION:
@@ -150,56 +177,200 @@ def _read_components(
                 data["id"],
                 Decimal(data["rate"]),
             )
-    return positions, marks, rate_map
+        elif comp.component_kind == COMPONENT_KIND_INSTRUMENT:
+            asset_classes[data["id"]] = data["asset_class"]
+        elif comp.component_kind == COMPONENT_KIND_INSTRUMENT_TERMS:
+            terms[data["instrument_id"]] = (
+                None if data["face_value"] is None else Decimal(data["face_value"]),
+                data["denomination_currency"],
+            )
+    return _PinnedInputs(
+        positions=positions,
+        marks=marks,
+        rate_map=rate_map,
+        asset_classes=asset_classes,
+        terms=terms,
+    )
+
+
+def _emit_row(
+    *,
+    exposure_type: str,
+    unit_value: Decimal,
+    unit_currency: str,
+    pf: str,
+    inst: str,
+    qty: Decimal,
+    inputs: _PinnedInputs,
+    base_currency: str,
+    acting_tenant: str,
+    run: CalculationRun,
+    snapshot_id: str,
+    rows: list[ExposureAggregate],
+    gaps: list[str],
+) -> None:
+    """The shared emit tail of both producers: compose the pinned FX path for ``unit_currency`` ->
+    base, quantize, and append one row of ``exposure_type``. The self-audit identity holds for
+    BOTH measures: ``exposure_amount = quantize(signed_quantity x mark_value x fx_rate, 6)`` —
+    for NOTIONAL, ``mark_value`` carries the per-unit FACE VALUE and ``mark_currency`` the
+    DENOMINATION currency (the captured inputs stay a faithful recompute recipe)."""
+    composed = compose_effective_rate(
+        inputs.rate_map, from_currency=unit_currency, to_currency=base_currency, base=DEFAULT_BASE
+    )
+    if composed is None:
+        gaps.append(f"missing-fx:{unit_currency}->{base_currency}")
+        return
+    effective, legs = composed
+    fx_rate = effective.quantize(_FX_QUANTUM, rounding=ROUND_HALF_UP)
+    amount = (qty * unit_value * fx_rate).quantize(_MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+    rows.append(
+        ExposureAggregate(
+            tenant_id=str(acting_tenant),
+            calculation_run_id=run.run_id,
+            input_snapshot_id=str(snapshot_id),
+            portfolio_id=pf,
+            instrument_id=inst,
+            base_currency=base_currency,
+            mark_currency=unit_currency,
+            signed_quantity=qty,
+            mark_value=unit_value,
+            fx_rate=fx_rate,
+            fx_legs=json.dumps([leg.as_dict() for leg in legs]),
+            exposure_amount=amount,
+            exposure_type=exposure_type,
+        )
+    )
+
+
+def _produce_market_value(
+    *,
+    inputs: _PinnedInputs,
+    base_currency: str,
+    acting_tenant: str,
+    run: CalculationRun,
+    snapshot_id: str,
+    rows: list[ExposureAggregate],
+    gaps: list[str],
+) -> None:
+    """MARKET_VALUE producer (the P2-3 v1 semantics, unchanged): one row per holding with a mark +
+    a resolvable FX path; a markless holding is a fail-closed gap."""
+    for (pf, inst), qty in sorted(inputs.positions.items()):
+        mark = inputs.marks.get((pf, inst))
+        if mark is None:
+            gaps.append(f"missing-mark:{pf}/{inst}")
+            continue
+        mark_value, mark_ccy = mark
+        _emit_row(
+            exposure_type=EXPOSURE_TYPE_MARKET_VALUE,
+            unit_value=mark_value,
+            unit_currency=mark_ccy,
+            pf=pf,
+            inst=inst,
+            qty=qty,
+            inputs=inputs,
+            base_currency=base_currency,
+            acting_tenant=acting_tenant,
+            run=run,
+            snapshot_id=snapshot_id,
+            rows=rows,
+            gaps=gaps,
+        )
+
+
+def _produce_notional(
+    *,
+    inputs: _PinnedInputs,
+    base_currency: str,
+    acting_tenant: str,
+    run: CalculationRun,
+    snapshot_id: str,
+    rows: list[ExposureAggregate],
+    gaps: list[str],
+) -> None:
+    """NOTIONAL producer (STRUCT-1, REQ-PPM-006): ``face_value x signed_quantity x FX`` from the
+    pinned terms, converted from the DENOMINATION currency (DP-4, ratified 2026-08-15).
+
+    The DP-4 failure model, exactly:
+    - instrument not pinned at all (a pre-STRUCT-1 snapshot): produce NOTHING — the measure is
+      definitionally absent from the snapshot's pinned inputs (keeps old-run reproduction exact);
+    - ``asset_class`` != BOND and no face value: SKIP — notional is defined only where a face
+      value exists;
+    - ``asset_class`` == BOND with no terms or a NULL ``face_value``: fail-closed GAP (a bond
+      without a face value is a data defect, not an absent concept);
+    - a face value with no denomination currency: fail-closed GAP (an amount without a currency
+      cannot be converted — the platform-wide fail-closed default; DP-4 names the conversion
+      currency and this is its missing-input case)."""
+    for (pf, inst), qty in sorted(inputs.positions.items()):
+        asset_class = inputs.asset_classes.get(inst)
+        if asset_class is None:
+            continue  # pre-STRUCT-1 snapshot: no instrument pin, measure absent by construction
+        face_value, denomination = inputs.terms.get(inst, (None, None))
+        if face_value is None:
+            # Containment, not equality (review fold F-3): asset_class is a free string, and a
+            # vocabulary variant ("CORP_BOND", "GOVT_BOND") must not silently downgrade the
+            # fail-closed gap to a skip — the containment errs toward the gap, which is the
+            # fail-closed direction.
+            if "BOND" in asset_class.upper():
+                gaps.append(f"missing-face-value:{pf}/{inst}")
+            continue
+        # Source-column envelope gate (review fold F-2, the P3-7 precedent): instrument_terms
+        # lawfully stores 16 integer digits while mark_value holds 14 — an over-envelope face
+        # value must be a governed gap, never a numeric-overflow 500 at flush.
+        if abs(face_value) >= _MAX_FACE_VALUE_ABS:
+            gaps.append(f"face-value-exceeds-envelope:{pf}/{inst}")
+            continue
+        if denomination is None:
+            gaps.append(f"missing-denomination-currency:{pf}/{inst}")
+            continue
+        _emit_row(
+            exposure_type=EXPOSURE_TYPE_NOTIONAL,
+            unit_value=face_value,
+            unit_currency=denomination,
+            pf=pf,
+            inst=inst,
+            qty=qty,
+            inputs=inputs,
+            base_currency=base_currency,
+            acting_tenant=acting_tenant,
+            run=run,
+            snapshot_id=snapshot_id,
+            rows=rows,
+            gaps=gaps,
+        )
+
+
+#: The producer registry (REQ-PPM-006: "at least TWO exposure measures, each with its own
+#: producer ... checked against the producers"). The census (test_exposure) asserts EXACT SET
+#: EQUALITY between these keys, ``EXPOSURE_TYPES``, and the DISTINCT ``exposure_type`` values an
+#: EXECUTED demonstrating run emits — never an assertion over the vocabulary tuple alone.
+EXPOSURE_PRODUCERS: dict[str, Any] = {
+    EXPOSURE_TYPE_MARKET_VALUE: _produce_market_value,
+    EXPOSURE_TYPE_NOTIONAL: _produce_notional,
+}
 
 
 def _build_rows(
     *,
-    positions: dict[tuple[str, str], Decimal],
-    marks: dict[tuple[str, str], tuple[Decimal, str]],
-    rate_map: dict[tuple[str, str], tuple[str, Decimal]],
+    inputs: _PinnedInputs,
     base_currency: str,
     acting_tenant: str,
     run: CalculationRun,
     snapshot_id: str,
 ) -> tuple[list[ExposureAggregate], list[str]]:
-    """Compute one exposure row per ``(portfolio, instrument)`` with a mark + a resolvable FX path.
-    Returns ``(rows, gaps)`` — ``gaps`` names every holding lacking a mark or a pinned FX path (the
-    fail-closed DQ signal; rows are NOT written when gaps exist)."""
+    """Run every registered producer over the pinned inputs (deterministic registry order).
+    Returns ``(rows, gaps)`` — ``gaps`` names every fail-closed input defect (missing mark, FX
+    path, bond face value, denomination currency); rows are NOT written when gaps exist."""
     rows: list[ExposureAggregate] = []
     gaps: list[str] = []
-    for (pf, inst), qty in sorted(positions.items()):
-        mark = marks.get((pf, inst))
-        if mark is None:
-            gaps.append(f"missing-mark:{pf}/{inst}")
-            continue
-        mark_value, mark_ccy = mark
-        composed = compose_effective_rate(
-            rate_map, from_currency=mark_ccy, to_currency=base_currency, base=DEFAULT_BASE
-        )
-        if composed is None:
-            gaps.append(f"missing-fx:{mark_ccy}->{base_currency}")
-            continue
-        effective, legs = composed
-        fx_rate = effective.quantize(_FX_QUANTUM, rounding=ROUND_HALF_UP)
-        # Signed market value v1; exact-by-construction from the stored, rounded fx_rate.
-        amount = (qty * mark_value * fx_rate).quantize(_MONEY_QUANTUM, rounding=ROUND_HALF_UP)
-        rows.append(
-            ExposureAggregate(
-                tenant_id=str(acting_tenant),
-                calculation_run_id=run.run_id,
-                input_snapshot_id=str(snapshot_id),
-                portfolio_id=pf,
-                instrument_id=inst,
-                base_currency=base_currency,
-                mark_currency=mark_ccy,
-                signed_quantity=qty,
-                mark_value=mark_value,
-                fx_rate=fx_rate,
-                fx_legs=json.dumps([leg.as_dict() for leg in legs]),
-                exposure_amount=amount,
-                exposure_type=EXPOSURE_TYPE_MARKET_VALUE,
-            )
+    for measure in sorted(EXPOSURE_PRODUCERS):
+        EXPOSURE_PRODUCERS[measure](
+            inputs=inputs,
+            base_currency=base_currency,
+            acting_tenant=acting_tenant,
+            run=run,
+            snapshot_id=snapshot_id,
+            rows=rows,
+            gaps=gaps,
         )
     return rows, gaps
 
@@ -279,13 +450,11 @@ def run_exposure(
     # compute stays a pure callback over the pinned content; the reason format is preserved
     # verbatim (bare ``str(gate)`` — the P3-1 format exposure already used). ---
     def _compute(run: CalculationRun) -> tuple[list[ExposureAggregate], list[str]]:
-        positions, marks, rate_map = _read_components(
+        inputs = _read_components(
             list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
         )
         return _build_rows(
-            positions=positions,
-            marks=marks,
-            rate_map=rate_map,
+            inputs=inputs,
             base_currency=base,
             acting_tenant=acting_tenant,
             run=run,
@@ -307,7 +476,10 @@ def run_exposure(
         rule_target_entity_type="exposure_aggregate",
         result_entity_type="exposure_aggregate",
         compute=_compute,
-        format_reason=lambda gate, gaps: str(gate),  # verbatim pre-P3-C2 exposure format
+        # STRUCT-1: the gap NAMES join the persisted reason — DP-4 mints operator-actionable gap
+        # classes (missing-face-value, missing-denomination-currency) and a reason that names
+        # neither is not a legible refusal. The pre-P3-C2 bare-str(gate) prefix is preserved.
+        format_reason=lambda gate, gaps: (f"{gate}: {'; '.join(gaps)}" if gaps else str(gate)),
         # API-1b (OD-API-1b-B): the ROOT is the build-path portfolio_id (the subtree this run
         # aggregates). The snapshot-consume path did NOT take a root → NULL (honest, OD-API-1b-D).
         scope_portfolio_id=(None if snapshot_id is not None else portfolio_id),
@@ -329,7 +501,11 @@ def list_exposure(session: Session, *, run_id: str, acting_tenant: str) -> list[
                 ExposureAggregate.calculation_run_id == str(run_id),
                 ExposureAggregate.tenant_id == str(acting_tenant),
             )
-            .order_by(ExposureAggregate.portfolio_id, ExposureAggregate.instrument_id)
+            .order_by(
+                ExposureAggregate.portfolio_id,
+                ExposureAggregate.instrument_id,
+                ExposureAggregate.exposure_type,
+            )
         )
         .scalars()
         .all()
@@ -343,11 +519,17 @@ def list_exposure_by_entity(
     portfolio_id: str | None = None,
     instrument_id: str | None = None,
     as_of=None,  # noqa: ANN001  (datetime | None — the API-1 run cutoff)
+    exposure_type: str | None = None,
 ) -> list[ExposureAggregate]:
     """API-1 entity/time read (Class A): ``exposure_aggregate`` rows across COMPLETED runs for a
     (portfolio, instrument). A run's rows SPAN the portfolio SUBTREE, so the ``portfolio_id`` filter
     row-filters to the queried book's own rows. Silent-empty on a foreign id; ``as_of=None`` =
-    now."""
+    now. ``exposure_type`` (STRUCT-1) filters to ONE measure; an unknown measure REFUSES
+    (:class:`ExposureInputError` — a vocabulary error is a caller defect, not an empty book)."""
+    if exposure_type is not None and exposure_type not in EXPOSURE_TYPES:
+        raise ExposureInputError(
+            f"unknown exposure_type {exposure_type!r} — expected one of {sorted(EXPOSURE_TYPES)}"
+        )
     return list_governed_results(
         session,
         ExposureAggregate,
@@ -355,6 +537,7 @@ def list_exposure_by_entity(
         filters=(
             (ExposureAggregate.portfolio_id, portfolio_id),
             (ExposureAggregate.instrument_id, instrument_id),
+            (ExposureAggregate.exposure_type, exposure_type),
         ),
         as_of=as_of,
         order_by=ExposureAggregate.instrument_id,
@@ -368,10 +551,11 @@ def latest_exposure(
     portfolio_id: str,
     instrument_id: str | None = None,
     as_of=None,  # noqa: ANN001  (datetime | None)
+    exposure_type: str | None = None,
 ) -> list[ExposureAggregate]:
     """API-1 latest-resolver (Class A): the newest COMPLETED exposure run's rows for the portfolio
     (the run may be rooted at an ancestor — rows returned are the portfolio's own; empty when
-    none)."""
+    none). ``exposure_type`` (STRUCT-1) filters to ONE measure of that run."""
     return latest_run_rows(
         list_exposure_by_entity(
             session,
@@ -379,6 +563,7 @@ def latest_exposure(
             portfolio_id=portfolio_id,
             instrument_id=instrument_id,
             as_of=as_of,
+            exposure_type=exposure_type,
         )
     )
 
