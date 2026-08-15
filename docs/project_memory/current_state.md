@@ -1,6 +1,48 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-15) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-15, evening) — read this block; everything below it is HISTORY
+
+**Main `c0bc90b` (PR #220, STRUCT-1 — the 34th autonomous merge), tree clean. Migration head
+`0071_exposure_type_in_grain_key`, one head. Next free canonical id ENT-076. NEXT = STRUCT-2
+(aggregation contracts + the two censuses), per the ratified Wave-18 sequence.**
+
+### Wave 18 is underway: the planning gate and the first slice landed the same day
+
+- **The Wave-18 planning gate RATIFIED and merged (PR #219).** The owner adopted all 14 decision
+  points as recommended ("Proceed with your recommendations"). The wave = the structure block in
+  four slices: STRUCT-1 exposure grain → STRUCT-2 aggregation contracts + censuses → STRUCT-3
+  versioned hierarchy + node-scoped rollup → STRUCT-4 reporting currency + governed FX visible.
+  The record, verifier findings ledger, and standing-rule map: `10_delivery_backlog/
+  wave_18_planning.md`; the sequence: roadmap Part 2.20. Planned by an ultracode workflow
+  (3 independent drafts, 2 judges, 5 per-row refute-by-default verifiers); every verifier gap was
+  folded before ratification.
+- **STRUCT-1 COMPLETE (PR #220 = `b333cb8`, merged as `c0bc90b`): REQ-PPM-006 delivered.**
+  `exposure_type` is in the uniqueness key (migration `0071`, P17-proven over a populated table by
+  the committed harness `scripts/migration_0071_p17_check.py`); the NOTIONAL producer runs beside
+  MARKET_VALUE in ONE governed run behind a producer registry with an executed-run census; all
+  four consuming families declare their measure in `irp_shared/aggregation/contracts.py` (the
+  contract module's FINAL home — STRUCT-2 adds operators to it) and refuse the rest, builder-
+  filtered AND parser-refused, mutation-proven load-bearing (9/9 killed). Demo stage 25 =
+  the demonstrating bond (DEMO-FI book): NOTIONAL 250,000 vs MARKET_VALUE 246,350 from ONE
+  holding id. The walk's Exposures screen shows the two measures side by side with a filter.
+- **The adversarial review earned its keep: 16 confirmed findings, 2 BLOCKING, all folded.** The
+  CI downgrade smoke would have gone red — downgrading below 0071 over two-measure data is a
+  REFUSED data-loss operation by design, so the smoke is now full-chain-on-empty-schema early in
+  the migration job plus over-data floored at 0071. And the four parser refusals had only ever
+  fired through the bare helper — each family's REAL parser now fires against a real produced
+  NOTIONAL row, with a call-site deletion mutant per family.
+- **The DP-4 containment predicate found THREE real data defects in the demo book itself**: bonds
+  with no captured face value (multifamily's MF-CR-A, four waves old; both LQ-1 book bonds).
+  Terms captured through the real service; the at-par LQ pair exercises the row's "coincidence is
+  NOT a failure" clause in live data.
+- **Gates at the merge**: `make check` 0 (2,849 unit tests, anchors 106/106), full-PG 0 (3,475),
+  fe-check 0, gen-api-check 0, mutation battery 0 (9/9), CI green on all nine checks at the PR
+  head `b333cb8` (verified per-conclusion via the REST API before merging).
+- **Standing gate for STRUCT-3**: REQ-PPM-001's adjudication lapsed when its own amendment landed
+  (2026-08-15) — the owner re-adjudicates the current text at STRUCT-3's slice entry (P20 T1).
+  Recorded in roadmap Part 2.20.
+
+## Prior current truth (2026-08-15, the re-baseline) — HISTORY
 
 **Main `f9d1666` (PR #217, the G2 worklist adjudication), tree clean, CI green on all nine checks.
 Migration head `0070_app_role`, one head. Next free canonical id ENT-076. NEXT = the Wave-18
