@@ -79,14 +79,13 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-CRD-004 | 6.5 | P-RA,P-MV | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/007/022 | FW-RUN, DEP-MGW, CAP-2/4 | Draft |
 | REQ-CRD-006 | 6.3 | P-RA,P-RM | 1L/2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-6 | **Draft (re-baseline part 2, 2026-08-13)** |
 | REQ-CRD-007 | 6.4 | P-RA,P-RM | 1L/2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-6 | **Draft (re-baseline part 2, 2026-08-13)** |
+| REQ-CRD-008 | 16.1 | P-RM,P-RA | 2L/1L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009 | DEP-RPT, DEP-LIN | Draft — MINTED 2026-08-15 by narrowing REQ-RPT-001 (G2 worklist adjudication); homed with the Q6 credit build (trigger: the credit kernel lands) |
 | REQ-CPT-001 | 7.1/7.3 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-2 | Draft |
-| REQ-CPT-002 | 7.2 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018/020 | FW-RUN, DEP-MREG, CAP-3 | Draft |
 | REQ-CPT-003 | 7.4 | P-RA,P-RM | 1L/2L | P3 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-10 | Draft |
-| REQ-CPT-004 | 7.5 | P-RA,P-MV | 2L | P3 | BX-AUD | BX-ENT | — | **Y** | CTRL-014 | BX-LIM (placeholder maturity) | Draft |
 | REQ-LIQ-001 | 8.1 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-1/2 | **Implemented (LQ-1, 2026-08-02; mirrored from the backbone). ModelGov = Y HELD: the ratified OQ-LQ-1-4 landed model-bound (`risk.liquidity_tiers` v1), so the §3 count of 28 model-governed requirements is UNCHANGED and no re-measurement is owed.** |
 | REQ-LIQ-002 | 8.2 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-9 | **Deferred with an event trigger (mirrored from the backbone at LQ-1, OQ-LQ-1-12).** |
 | REQ-LIQ-003 | 8.3/8.4 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-9 | Draft |
-| REQ-LIQ-004 | 8.5 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-4 | Draft |
+| REQ-LIQ-004 | 8.5 | P-RA,P-RM | 1L/2L | P4 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-002/018 | FW-RUN, CAP-4 | In-Progress — status reconciled 2026-08-15 (G2 worklist): CC-2 shipped the per-pair kernel 2026-07-20 (ENT-059); open = portfolio-level rollup + the driver-sensitivity test; acceptance AMENDED same day |
 | REQ-SCN-001 | 9.1/9.2 | P-RA,P-RM | 1L/2L | P5 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-008 | FW-TMP(IA), DEP-LIN | **In-Progress (P3-6, Wave 2, mig `0035`, ENT-029/030):** versioned scenarios shipped, LINEAR FACTOR shocks only *(status stale ~11 waves; re-synced at the Wave-14 planning gate)* |
 | REQ-SCN-002 | 9.3 | P-RA,P-RM | 2L | P5 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-008/018 | FW-RUN, CAP-5/6/8 | Draft |
 | REQ-SCN-003 | 9.4/9.5 | P-RA,P-RM | 1L/2L | P5 | BX-AUD | BX-ENT | BX-LIN | **Y** | CTRL-008/018 | FW-RUN, CAP-4/5/6/8 | Draft |
@@ -110,7 +109,7 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-AUD-001 | 15.1/15.4 | P-IA,P-CO | Plat/3L | P1 | BX-AUD | BX-ENT | — | — | CTRL-005/012 | FW-AUD (extends) | Draft |
 | REQ-AUD-002 | 15.2 | P-IA | Plat | P0 | BX-AUD | BX-ENT | — | — | CTRL-026 | FW-AUD, DEP-CIH | Draft |
 | REQ-AUD-003 | 15.3 | P-IA,P-CO | 3L/2L | P8 | BX-AUD | BX-ENT | — | — | CTRL-012 | DEP-RPT | Draft |
-| REQ-RPT-001 | 16.1 | P-RM,P-RA | 2L/1L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009 | DEP-RPT, DEP-LIN | In-Progress (RPT-1/RPT-2 2026-08-07; RPT-3 2026-08-10) — acceptance proven; CREDIT family not built |
+| REQ-RPT-001 | 16.1 | P-RM,P-RA | 2L/1L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009 | DEP-RPT, DEP-LIN | In-Progress (RPT-1/RPT-2 2026-08-07; RPT-3 2026-08-10) — acceptance proven for the four registered families; NARROWED 2026-08-15 (G2 worklist) to exact set equality against REPORT_FAMILIES; the CREDIT report moved to REQ-CRD-008 |
 | REQ-RPT-002 | 16.3 | P-RM,P-BRD | 2L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009/015 | DEP-RPT, BX-SOD | Draft |
 | REQ-RPT-003 | 16.4/16.5 | P-CO,P-IA | 2L/3L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009 | DEP-RPT, CAP-12/13/15 | Draft |
 | REQ-RPT-004 | 16.1 | P-RM,P-ADM | 2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-16 | **Draft (re-baseline 2026-08-12)** |
