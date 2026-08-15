@@ -363,6 +363,21 @@ def test_a_date_with_a_disambiguating_letter_parses() -> None:
     assert parsed[0][1] == "PRIOR CURRENT-TRUTH"
 
 
+def test_all_THREE_spelling_branches_are_recognised() -> None:
+    """One witness per alternative in `_TRUTH_HEADING`, on synthetic input so that archiving the
+    real file can never take a branch's only proof away with it."""
+    cases = {
+        "## ⚠️ CURRENT TRUTH (2026-08-14) — read this": "CURRENT TRUTH",
+        "## Previous truth — the Wave-17 close, 2026-08-11": "PREVIOUS TRUTH",
+        "> ## Prior current-truth block (2026-07-29c)": "PRIOR CURRENT-TRUTH",
+        "> ## Prior current truth block (2026-07-29c)": "PRIOR CURRENT-TRUTH",
+    }
+    for line, expected in cases.items():
+        parsed = _truth_headings(line + "\n")
+        assert parsed, f"not recognised at all: {line}"
+        assert parsed[0][1] == expected, (line, parsed[0][1])
+
+
 def test_a_block_spanning_two_days_takes_its_OPENING_date() -> None:
     """The re-baseline heading read `2026-08-12/13`. Note `13` is not an ISO date, so this yields
     one date — which is why the first version's test of the same name was vacuous: a one-element
@@ -391,17 +406,75 @@ def test_fences_are_stripped_without_moving_line_numbers() -> None:
 
 
 def test_the_real_file_parses_the_headings_we_think_it_does() -> None:
-    """Say what must be IN the set. A count is blind to a set that stays large while losing the
-    members that matter — the Wave-17 close's HIGH 1, where a done-set kept 55 members and silently
-    dropped every slice shipped after a given date."""
+    """What must hold of the live file, whatever its archive depth.
+
+    This test used to also assert `"PRIOR CURRENT-TRUTH" in kinds` and `count("PREVIOUS TRUTH")
+    >= 6`. Both pinned the file's shape on 2026-08-14 rather than an invariant of it, and the
+    archive shrink later the same day removed those blocks legitimately and turned the test red.
+    A witness is only worth pinning if the thing it witnesses cannot go away for a GOOD reason —
+    the Wave-17 close's witnesses were shipped slices, which can never un-ship, and archive depth
+    is not that. The parser's three spelling branches are witnessed on synthetic input instead,
+    where archiving cannot reach them (see the parsing-detail tests above).
+    """
     parsed = _truth_headings(
         (_ROOT / "docs/project_memory/current_state.md").read_text(encoding="utf-8")
     )
     kinds = [k for _, k, _ in parsed]
+    dates = [d for _, _, d in parsed]
     assert kinds[0] == "CURRENT TRUTH"
     assert kinds.count("CURRENT TRUTH") == 1
-    assert "PRIOR CURRENT-TRUTH" in kinds
-    assert kinds.count("PREVIOUS TRUTH") >= 6
-    dates = [d for _, _, d in parsed]
-    assert dates == sorted(dates, reverse=True), dates
+    assert len(parsed) >= _MIN_TRUTH_HEADINGS
     assert None not in dates
+    assert dates == sorted(dates, reverse=True), dates
+
+
+# =============================================================================================
+# The coverage RATIO, added 2026-08-14 while doing the archive shrink the review predicted would
+# trip the floor. It did — and diagnosing it found the denominator was wrong on its own terms.
+# =============================================================================================
+
+
+def test_ARCHIVING_down_to_two_blocks_does_not_trip_the_RATIO() -> None:
+    """Archiving removes numerator and denominator together, so the ratio must be indifferent to
+    it. The four trailer sections (`## Repository`, `## Re-check at session start`, ...) stay."""
+    archived = _doc(
+        _block("## ⚠️ CURRENT TRUTH (2026-08-14) — read this block", "Body."),
+        _block("## Previous truth — swept at the Wave-17 close, 2026-08-11"),
+        _block("## History archive"),
+        _block("## Repository"),
+        _block("## Housekeeping / security"),
+        _block("## Re-check at session start"),
+    )
+    assert _freshness_errors(archived) == []
+
+
+def test_many_SUBSECTIONS_in_the_current_block_do_not_trip_the_RATIO() -> None:
+    """An `###` is a section INSIDE a block and can never be a block. Counting them diluted the
+    ratio to 0.29 on twelve subsections — a false positive with nothing archived at all."""
+    subsections = "\n\n".join(f"### Section {i}\n\nProse." for i in range(12))
+    doc = _nine().replace("Main `0cf3e31`. Migration head `0070_app_role`, one head.", subsections)
+    assert _freshness_errors(doc) == []
+
+
+def test_the_ratio_STILL_FIRES_when_blocks_go_INVISIBLE() -> None:
+    """The failure it exists for, and the one archiving must not be confused with: the blocks are
+    still in the file, at H2, but written in a shape the matcher cannot see."""
+    drifted = _nine()
+    for old, new in (
+        (
+            "## Previous truth — swept at the Wave-17 close, 2026-08-11",
+            "## Wave-17 close (2026-08-11)",
+        ),
+        (
+            "> ## Previous truth (2026-08-08) — the Wave-17 planning gate",
+            "> ## Planning gate (2026-08-08)",
+        ),
+        ("> ## Previous truth (2026-08-08, earlier) — FK-1's close", "> ## FK-1 (2026-08-08)"),
+        ("> ## Previous truth (2026-08-08, earlier) — REPRO-1", "> ## REPRO-1 (2026-08-08)"),
+        ("> ## Previous truth (2026-08-07, later) — RPT-2", "> ## RPT-2 (2026-08-07)"),
+        ("> ## Previous truth (2026-08-07, earlier) — RPT-1", "> ## RPT-1 (2026-08-07)"),
+        ("> ## Previous truth (2026-08-02) — LQ-1 / Wave 14", "> ## LQ-1 (2026-08-02)"),
+    ):
+        drifted = drifted.replace(old, new)
+    errors = _freshness_errors(drifted)
+    assert any("H2 headings are truth headings" in e for e in errors), errors
