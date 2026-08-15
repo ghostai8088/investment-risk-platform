@@ -302,6 +302,14 @@ _TRUTH_HEADING = re.compile(
 )
 #: Any ATX heading, quoted or not — used only to measure how much of the file this gate can SEE.
 _ANY_HEADING = re.compile(r"^>?\s*#{1,6}\s+\S")
+#: An H2 specifically — the level EVERY truth block uses. This is the denominator for the coverage
+#: ratio below, and the distinction matters: an `###` is a section INSIDE a block and can never be
+#: a block itself, so counting one dilutes the ratio without telling you anything about drift.
+#: Measured 2026-08-14 while archiving: with all heading levels in the denominator, adding twelve
+#: `###` subsections to the current block — ordinary authoring, nothing archived — drops the ratio
+#: to 0.29 and trips the floor. That is a false positive on its own terms, quite apart from the
+#: archiving case the review predicted.
+_H2_HEADING = re.compile(r"^>?\s*#{2}\s+\S")
 #: The document TITLE: a single unquoted `#`. Exactly one of these may precede the first truth
 #: heading, and nothing else may. Allowing "any H1" instead would reopen the hole this rule exists
 #: to close, because `# ⚠️ READ THIS FIRST` is an H1 too — so the allowance is positional (the very
@@ -325,8 +333,9 @@ _FENCE = re.compile(r"^\s*(?:```|~~~)")
 #: a current block, and something below it to be newer than. Shape drift is caught by the coverage
 #: ratio below instead, which does not punish archiving.
 _MIN_TRUTH_HEADINGS = 2
-#: At least this share of the file's headings must be truth headings the matcher RECOGNISES. Today
-#: the file is 9 truth headings out of 16 total (0.56). This replaces a count floor, which cannot
+#: At least this share of the file's H2 headings must be truth headings the matcher RECOGNISES.
+#: Measured 2026-08-14: 9 truth of 13 H2 (0.69) before the archive shrink, 2 of 6 (0.33) after.
+#: This replaces a count floor, which cannot
 #: tell "blocks were archived" (legitimate) from "the heading shape drifted past the matcher"
 #: (the failure). The closure-discipline gate above guarded NOTHING for an entire wave while
 #: exiting 0, for exactly the want of a check like this.
@@ -376,6 +385,7 @@ def _freshness_errors(text: str) -> list[str]:
     stripped = _strip_fences(text)
     headings = _truth_headings(text)
     all_headings = [ln for ln in stripped.splitlines() if _ANY_HEADING.match(ln)]
+    h2_headings = [ln for ln in stripped.splitlines() if _H2_HEADING.match(ln)]
 
     if len(headings) < _MIN_TRUTH_HEADINGS:
         return [
@@ -386,14 +396,15 @@ def _freshness_errors(text: str) -> list[str]:
             f"archived, this gate has nothing left to order and should be reconsidered."
         ]
 
-    share = len(headings) / len(all_headings) if all_headings else 0.0
+    share = len(headings) / len(h2_headings) if h2_headings else 0.0
     if share < _MIN_TRUTH_HEADING_SHARE:
         errors.append(
             f"current_state.md freshness NON-VACUITY: only {len(headings)} of "
-            f"{len(all_headings)} headings are truth headings this gate recognises "
-            f"({share:.0%}, floor {_MIN_TRUTH_HEADING_SHARE:.0%}). The heading shape has drifted "
-            f"past _TRUTH_HEADING and the gate is ordering a shrinking minority of the file. Fix "
-            f"the matcher, not the floor."
+            f"{len(h2_headings)} H2 headings are truth headings this gate recognises "
+            f"({share:.0%}, floor {_MIN_TRUTH_HEADING_SHARE:.0%}). Blocks exist that the matcher "
+            f"cannot see, so the gate is ordering a shrinking minority of the file. Fix the "
+            f"matcher — archiving does NOT trip this, because it removes numerator and "
+            f"denominator together."
         )
 
     undated = [h for h, _, d in headings if d is None]
