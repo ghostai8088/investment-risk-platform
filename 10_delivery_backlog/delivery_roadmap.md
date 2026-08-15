@@ -292,6 +292,23 @@ subagent-admissibility clause + the editorial reconciliation pass** over
 `claude_operating_instructions.md` (the autonomy-grant contradiction removed, the rule set
 enumerated in a new index).
 
+## Part 2.20 — Wave 18: the ratified sequence (2026-08-15 at the Wave-18 planning gate; the wave = the STRUCTURE BLOCK — the exposure grain, aggregation contracts, versioned hierarchy with node-scoped rollup, and governed FX made visible)
+
+*(Scope = the G2-cleared structure block REQ-PPM-006 … -010, plus REQ-PPM-001 clauses 1–2 as
+PPM-008's named dependency. The plan, its 14 ratified decision points (all as recommended,
+"Proceed with your recommendations" 2026-08-15), the verifier findings ledger, and the standing-rule
+map live in `wave_18_planning.md`. Planned by ultracode workflow `wf_f0ef96d8-350`: 3 independent
+drafts, 2 judges, 5 per-row refute-by-default verifiers; every verifier gap folded before
+ratification. NOTE: REQ-PPM-001's 2026-08-15 adjudication lapsed when its own amendment landed —
+re-adjudication of the current text is required at STRUCT-3's slice entry (P20 T1).)*
+
+| # | Slice | What it is | Size |
+|---|---|---|---|
+| 0 | **STRUCT-1 — exposure grain: `exposure_type` into the key, the NOTIONAL producer, consumer declarations + refusals (PPM-006 complete)** | Migration `0071` widens `uq_exposure_aggregate_run_grain`; `COMPONENT_KIND_INSTRUMENT_TERMS` FR-pin; the NOTIONAL producer beside MARKET_VALUE in ONE run; `irp_shared/aggregation/contracts.py` as the declarations' final home; all four consuming families filter-by-declaration + refuse foreign measures (mutation-proven load-bearing); reproduction key + API filter + Holding view screen. Atomic because a split leaves a double-count window. | XL |
+| 1 | **STRUCT-2 — aggregation contracts + two censuses (PPM-007 complete; PPM-009 census + rename guard)** | Per-field operator contracts; census 1 exact-set vs the registry (minus the ratified REPRODUCTION exclusion, DP-13); census 2 discovers aggregation constructs mechanically (never a hand list) with result-obedience mutation; NOT-AGGREGATABLE fired over HTTP on SHARPE and VAR; mixed-measure refusal with a named firing test; repo-wide name-read census under the three-way taxonomy. | L |
+| 2 | **STRUCT-3 — versioned hierarchy + node-scoped rollup (PPM-001 cl. 1–2, PPM-008 complete)** | Migration `0072` history table beside the EV head (DP-1); full-subtree snapshot pin incl. position-less nodes; middle-node re-parent test; explicit-node-or-refuse consume path (DP-7) with the node id validated against the pinned subtree; read-time rollup identity on a 3-level, 2-node-type DEMO tree; execution-evidence census (every family RUNS at a non-root node); Portfolio Structure tree screen with as-of toggle. **Gate at entry: PPM-001 re-adjudication.** | XL |
+| 3 | **STRUCT-4 — reporting currency + governed FX made visible (PPM-010 complete)** | Declaration semantics per DP-11 (inherit; root refuses); FX-completeness vs node reporting currencies; 3-currency book with a triangulated pair; the governed read AT the foreign-reporting node against a HAND-DERIVED literal oracle; pivot recorded forward-only (DP-12); conversion-path drill-in screen; old-snapshot missing-fx honesty test; rule 6(a) citations for the FX conventions (DP-14). Migration `0073` conditional. | L |
+
 ## Part 3 — Beyond Wave 1 (coarse; themes from the RTM map, NOT sequenced yet)
 
 - **COMMITTED Wave-15 openers (user-ratified 2026-07-30; their order within Wave 15 sets at the Wave-14
