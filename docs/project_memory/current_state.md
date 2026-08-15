@@ -48,8 +48,9 @@ the G2 proposals plus the first five adjudications (#211 – #214).
   `## Capability coverage (G4)` section naming the leaves the wave newly covered. It binds to zero documents today, and a control
   asserts exactly that and instructs its own deletion at the first close under it.
 
-**The register is at 105 rows** after re-baseline part 2 added nineteen on 2026-08-13, and the RTM
-is level with it. Part 1 had updated only one half,
+**The register is at 104 rows** (105 after re-baseline part 2 added nineteen on 2026-08-13; minus
+REQ-CPT-002/-004 withdrawn and plus REQ-CRD-008 minted at the 2026-08-15 worklist adjudication),
+and the RTM is level with it. Part 1 had updated only one half,
 which is the P1 ledger-5 omission class with nothing mechanical checking it. **Seven coverage gaps
 were paid, every one found by the gate itself** refusing to pass with stale exemptions in the
 baseline: `13.3` exception management, `16.2` scenario and breach reports, and all five SCOPE
@@ -76,10 +77,17 @@ mandate compliance is a compliance function and not risk, SCOPE-03's declared ri
 include it, and a mandate rule engine would duplicate the shipped limit framework. That supersedes
 the Q4 answer ratified the previous day, and is recorded with two triggers.
 
-**Nothing else is adjudicated, so nothing else can enter a slice.** The advisory worklist of 11
-flagged rows is the `worklist` array in `02_requirements/g2_slice_scope.json`, and it is unread:
-REQ-PUB-002, REQ-MKT-002, REQ-LIQ-004, REQ-SCN-003, REQ-LIM-002, REQ-CRD-005, REQ-PPM-002,
-REQ-RPT-001, REQ-CPT-002, REQ-PPM-001, REQ-CPT-004. *(This block named
+**The advisory worklist of 11 flagged rows was WORKED THROUGH 2026-08-15** (proposals in
+`10_delivery_backlog/g2_adjudication_proposals_worklist.md`, ratified by the owner as
+recommended). Nine acceptance cells rewritten with ledger entries: REQ-PPM-001, REQ-PPM-002,
+REQ-PUB-002, REQ-MKT-002, REQ-LIM-002, REQ-SCN-003, REQ-CRD-005, REQ-LIQ-004 (whose Status also
+read bare Draft while CC-2 had shipped the per-pair kernel — the OQ-LQ-1-12 register-silence
+class), and REQ-RPT-001 (NARROWED to exact set equality against REPORT_FAMILIES; the credit
+report minted as REQ-CRD-008, homed with the Q6 credit build). **REQ-CPT-002 and REQ-CPT-004
+WITHDRAWN** — rows removed, leaves 7.2/7.5 recorded as accepted coverage gaps — executing the
+ratified MC withdrawal and counterparty decline. The register is at 104 rows. **Amendment is not
+clearance: every amended row carries a NEW hash and re-enters G2 at slice entry.** The five
+structure rows remain the only slice-ready cleared set. *(This block named
 `g2_adjudication_proposals_wave18.md` until 2026-08-14. That file holds the five rows that ARE
 adjudicated, so the pointer sent a reader to an artifact contradicting the sentence around it.)*
 

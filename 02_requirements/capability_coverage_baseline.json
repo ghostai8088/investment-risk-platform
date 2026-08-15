@@ -1,20 +1,24 @@
 {
-  "_what_this_is": "The capability-coverage gate's ratchet. Every entry is a capability the strategy declares with NO requirement behind it, or a SCOPE commitment nothing downstream cites. Recorded 2026-08-12 at the product re-baseline. The gate fails on a NEW gap, and also fails when an entry here has since been covered but was left in place — a stale exemption is standing permission to regress.",
-  "_how_to_discharge": "Write the requirement, then delete the entry. Never delete an entry to silence the gate; the gate will fail on the stale exemption, which is the point.",
-  "_recorded_at": "2026-08-12, product re-baseline",
-  "_last_discharge": "2026-08-13, re-baseline part 2 — nineteen requirement rows written. SEVEN entries paid in one fold: 13.3, 16.2 and all five SCOPE ids. The gate found every one of them itself, by refusing to pass with the stale exemptions still in the file.",
-  "accepted_uncovered_capabilities": [
-    "20.2",
-    "20.4"
-  ],
-  "accepted_uncovered_scope": [],
-  "_reasons": {
-    "20.2": "Money-weighted return / IRR. Deferred at PA-0; the deferral is real and recorded.",
-    "20.4": "Composites / GIPS presentation. Deferred; no requirement, and no near-term trigger.",
-    "_13_3_discharged": "13.3 Exception management DISCHARGED 2026-08-13 by REQ-DQR-004 — an owner, a state, an evidenced closure, and a re-open when the underlying rule still fails.",
-    "_16_2_discharged": "16.2 Scenario/breach reports DISCHARGED 2026-08-13 by REQ-RPT-005.",
-    "_20_3_discharged": "20.3 Performance attribution DISCHARGED 2026-08-12 by REQ-PRF-005. It was the gap the gate rediscovered unprompted on the day it was installed; it is the first entry paid.",
-    "_the_scope_class_discharged": "All five SCOPE ids DISCHARGED 2026-08-13. Their shared defect WAS the mechanism of the Wave 1-17 drift: the strategy layer's own commitment vocabulary was spoken in exactly one file, so a commitment nothing downstream referenced could not be traced, could not be gated, and could not be noticed when it went unbuilt. They are discharged the only way that means anything — requirement rows that CITE the SCOPE id they serve: SCOPE-01 by REQ-INT-004 (input supplier, not filer), SCOPE-02 by REQ-PPM-009 and REQ-SMR-007 (a private sleeve and a public sleeve are the same kind of node; the admitted product-type set must cover both families), SCOPE-03 by REQ-MDG-004 (each of the six risk domains declared GOVERNED, PARTIAL or DECLINED, with counterparty DECLINED behind its triggers — an honest declaration rather than a claim of full coverage), SCOPE-04 by REQ-ADM-005 and REQ-DQR-004 (three lines, three refusals), SCOPE-05 by REQ-ADM-006 (one image, two deployment shapes).",
-    "_what_a_citation_does_NOT_mean": "A cited SCOPE id means a requirement now answers to the commitment. It does NOT mean the commitment is built. SCOPE-02's derivative half remains the largest gap the re-baseline found — instrument terms carry seven bond fields and cannot express an option — and REQ-SMR-007 is precisely the row that will fail until that is fixed. Discharging a coverage gap makes the work visible to the process; it does not do the work."
-  }
+ "_what_this_is": "The capability-coverage gate's ratchet. Every entry is a capability the strategy declares with NO requirement behind it, or a SCOPE commitment nothing downstream cites. Recorded 2026-08-12 at the product re-baseline. The gate fails on a NEW gap, and also fails when an entry here has since been covered but was left in place — a stale exemption is standing permission to regress.",
+ "_how_to_discharge": "Write the requirement, then delete the entry. Never delete an entry to silence the gate; the gate will fail on the stale exemption, which is the point.",
+ "_recorded_at": "2026-08-12, product re-baseline",
+ "_last_discharge": "2026-08-13, re-baseline part 2 — nineteen requirement rows written. SEVEN entries paid in one fold: 13.3, 16.2 and all five SCOPE ids. The gate found every one of them itself, by refusing to pass with the stale exemptions still in the file.",
+ "accepted_uncovered_capabilities": [
+  "7.2",
+  "7.5",
+  "20.2",
+  "20.4"
+ ],
+ "accepted_uncovered_scope": [],
+ "_reasons": {
+  "20.2": "Money-weighted return / IRR. Deferred at PA-0; the deferral is real and recorded.",
+  "20.4": "Composites / GIPS presentation. Deferred; no requirement, and no near-term trigger.",
+  "_13_3_discharged": "13.3 Exception management DISCHARGED 2026-08-13 by REQ-DQR-004 — an owner, a state, an evidenced closure, and a re-open when the underlying rule still fails.",
+  "_16_2_discharged": "16.2 Scenario/breach reports DISCHARGED 2026-08-13 by REQ-RPT-005.",
+  "_20_3_discharged": "20.3 Performance attribution DISCHARGED 2026-08-12 by REQ-PRF-005. It was the gap the gate rediscovered unprompted on the day it was installed; it is the first entry paid.",
+  "_the_scope_class_discharged": "All five SCOPE ids DISCHARGED 2026-08-13. Their shared defect WAS the mechanism of the Wave 1-17 drift: the strategy layer's own commitment vocabulary was spoken in exactly one file, so a commitment nothing downstream referenced could not be traced, could not be gated, and could not be noticed when it went unbuilt. They are discharged the only way that means anything — requirement rows that CITE the SCOPE id they serve: SCOPE-01 by REQ-INT-004 (input supplier, not filer), SCOPE-02 by REQ-PPM-009 and REQ-SMR-007 (a private sleeve and a public sleeve are the same kind of node; the admitted product-type set must cover both families), SCOPE-03 by REQ-MDG-004 (each of the six risk domains declared GOVERNED, PARTIAL or DECLINED, with counterparty DECLINED behind its triggers — an honest declaration rather than a claim of full coverage), SCOPE-04 by REQ-ADM-005 and REQ-DQR-004 (three lines, three refusals), SCOPE-05 by REQ-ADM-006 (one image, two deployment shapes).",
+  "_what_a_citation_does_NOT_mean": "A cited SCOPE id means a requirement now answers to the commitment. It does NOT mean the commitment is built. SCOPE-02's derivative half remains the largest gap the re-baseline found — instrument terms carry seven bond fields and cannot express an option — and REQ-SMR-007 is precisely the row that will fail until that is fixed. Discharging a coverage gap makes the work visible to the process; it does not do the work.",
+  "7.2": "PFE/EPE. REQ-CPT-002 WITHDRAWN 2026-08-15 (G2 worklist adjudication): its mandated seeded-MC method was withdrawn from the governed spine at the 2026-08-12 re-baseline (the withdrawal explicitly carries EPE/EEPE/peak-PFE), and counterparty risk is declined behind named triggers (Q6). Re-entry: a counterparty trigger fires, fresh rows are written and G2-adjudicated, and the method question is re-opened.",
+  "7.5": "CVA. REQ-CPT-004 WITHDRAWN 2026-08-15 (G2 worklist adjudication): its acceptance — capability present, limitations documented — was satisfiable by a documentation page, the degenerate build by design, and counterparty risk is declined behind named triggers (Q6). The limitation statement lives in BX-LIM. Same re-entry path as 7.2."
+ }
 }
