@@ -1,12 +1,10 @@
 {
   "_why": "The rows currently entering build. G2 gates at SLICE ENTRY because the Wave 1-17 drift happened by rows entering build unexamined. A row outside any slice is never adjudicated, and that is the correct trade: an unbuilt row has driven nothing. It means the register as a whole is never certified, only the parts entering build.",
   "_updated_at": "the slice-planning gate, as part of declaring the slice's scope",
-
   "slice": null,
   "slice_scope": [],
   "_no_scope_reason_why": "An empty scope must be a DECLARED emptiness. A second, independent bake-off run found that the first version of this gate exited 0 with an empty scope, having adjudicated nothing — the empty-population vacuity, inside the gate written to prevent exactly that. It is now a refusal.",
   "no_scope_reason": "2026-08-13: no slice is in flight. Wave 17 closed at PR #201 and the re-baseline folds (#202-#207 plus this one) are process and register work — no requirement row is entering build. The first scope is declared at the Wave-18 planning gate, where every row in it needs a current G2 adjudication (P20, T1).",
-
   "_worklist_why": "Advisory ONLY, and never an exemption. The 2026-08-13 detector bake-off built six independent designs and none of them is a usable gate (see scripts/check_g2_adjudication.py). Their union is still a legitimate reading order: these rows were flagged by three or more independent designs, several corroborated by the register's own Status column. A row NOT on this list is not thereby fine.",
   "worklist": [
     "REQ-PUB-002",
@@ -20,5 +18,6 @@
     "REQ-CPT-002",
     "REQ-PPM-001",
     "REQ-CPT-004"
-  ]
+  ],
+  "_worklist_worked": "2026-08-15: all 11 rows worked through and ratified by the owner ('proceed with your recommendations' on 10_delivery_backlog/g2_adjudication_proposals_worklist.md). Nine acceptance cells rewritten (ledger entries under ghostai8088); REQ-CPT-002 and REQ-CPT-004 WITHDRAWN (rows removed; leaves 7.2/7.5 accepted gaps in the coverage baseline). The two withdrawn ids stay in the array above as the bake-off's historical record. Amended rows carry NEW hashes and re-enter G2 at slice entry as usual."
 }
