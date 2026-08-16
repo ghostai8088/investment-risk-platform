@@ -47,6 +47,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from irp_shared.aggregation.contracts import assert_aggregatable as _assert_aggregatable
 from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.scaffold import execute_governed_run
@@ -191,6 +192,10 @@ def _adjudicate_pins(
     IDENTICAL date sets of EXACTLY the declared length (no imputation, no ragged windows, no
     duplicate dates); COVERAGE (every exposure factor has a pinned window); source-column
     magnitude envelopes. Raises :class:`HsVarInputError`."""
+    # STRUCT-2 (REQ-PPM-007): the contract lookup governs the consumption sums below —
+    # consulted ONCE at parse entry (review fold: the in-loop form paid the lookup per row and
+    # sat behind earlier gates).
+    _assert_aggregatable("FACTOR_EXPOSURE", "exposure_amount")
     if not exposure_raw:
         raise HsVarInputError(
             "the snapshot pins no FACTOR_EXPOSURE rows — not a historical-VaR input (an empty "

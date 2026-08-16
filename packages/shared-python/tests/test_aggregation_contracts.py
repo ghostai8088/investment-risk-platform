@@ -309,3 +309,368 @@ def test_reproduction_matches_a_two_measure_run(session: Session) -> None:  # no
     assert by_family.get("EXPOSURE_AGGREGATE") == VERDICT_MATCH
     checked = next(c for c in outcome.checks if c.family_key == "EXPOSURE_AGGREGATE")
     assert checked.rows_compared == 2  # BOTH measures paired and compared
+
+
+# ---------- STRUCT-2 (REQ-PPM-007): census 1 + field completeness + the pinned floor ----------
+
+
+def _registry_universe() -> set[str]:
+    from irp_shared.reproduction.registry import (
+        REPRODUCIBLE_FAMILIES,
+        UNREPRODUCIBLE_FAMILIES,
+    )
+
+    return set(REPRODUCIBLE_FAMILIES) | set(UNREPRODUCIBLE_FAMILIES)
+
+
+def test_census1_contract_keys_equal_the_registry_exactly() -> None:
+    """REQ-PPM-007: every family in the run-type registry declares a contract, checked by EXACT
+    SET EQUALITY (a subset check passes on an empty contract set — the RPT-3 defect). The
+    universe is the registry union, which the shipped reproduction census already proves equals
+    the pkgutil RUN_TYPE_* walk minus RUN_TYPE_REPRODUCTION (DP-13's ratified exclusion)."""
+    from irp_shared.aggregation.contracts import AGGREGATION_CONTRACTS
+
+    assert set(AGGREGATION_CONTRACTS) == _registry_universe()
+
+
+#: family -> its result model. Reviewed data guarded by the exact-set assert below; the numeric
+#: column reflection is what makes the census MECHANICAL — a new Numeric/Integer value column
+#: on any result model fails the census until it is classified.
+def _family_models() -> dict:
+    from irp_shared.concentration.models import ConcentrationResult
+    from irp_shared.exposure.models import ExposureAggregate
+    from irp_shared.liquidity.models import LiquidityResult
+    from irp_shared.pacing.models import PacingProjectionResult
+    from irp_shared.perf.models import (
+        BenchmarkRelativeResult,
+        DesmoothedReturnResult,
+        PortfolioReturnResult,
+        RollingRiskResult,
+        SharpeRatioResult,
+    )
+    from irp_shared.report.models import ReportGeneration
+    from irp_shared.risk.models import (
+        ActiveRiskResult,
+        CovarianceResult,
+        FactorExposureResult,
+        PrivateFactorReturnResult,
+        ProxyWeightEstimateResult,
+        SensitivityResult,
+        VarBacktestResult,
+        VarResult,
+    )
+    from irp_shared.risk.scenario_models import ScenarioResult
+
+    return {
+        "EXPOSURE_AGGREGATE": ExposureAggregate,
+        "FACTOR_EXPOSURE": FactorExposureResult,
+        "SENSITIVITY": SensitivityResult,
+        "SCENARIO": ScenarioResult,
+        "COVARIANCE": CovarianceResult,
+        "COVARIANCE_PRIVATE": CovarianceResult,
+        "VAR": VarResult,
+        "ACTIVE_RISK": ActiveRiskResult,
+        "VAR_BACKTEST": VarBacktestResult,
+        "ES_BACKTEST": VarBacktestResult,
+        "PORTFOLIO_RETURN": PortfolioReturnResult,
+        "BENCHMARK_RELATIVE": BenchmarkRelativeResult,
+        "DESMOOTHED_RETURN": DesmoothedReturnResult,
+        "ROLLING_RISK": RollingRiskResult,
+        "SHARPE": SharpeRatioResult,
+        "PURE_PRIVATE_FACTOR": PrivateFactorReturnResult,
+        "PROXY_WEIGHT_ESTIMATE": ProxyWeightEstimateResult,
+        "PACING_PROJECTION": PacingProjectionResult,
+        "CONCENTRATION": ConcentrationResult,
+        "LIQUIDITY": LiquidityResult,
+        "REPORT": ReportGeneration,
+    }
+
+
+def _numeric_value_columns(model) -> set[str]:  # noqa: ANN001
+    """Every Numeric/Integer column that is a VALUE (not an id, key, or FK) — the mechanical
+    half of the completeness census."""
+    import sqlalchemy as sa
+
+    from irp_shared.db.types import PreciseDecimal
+
+    def _is_numeric(t) -> bool:  # noqa: ANN001
+        if isinstance(t, sa.Boolean):
+            return False
+        # PreciseDecimal's SQLite impl is String (PG gets Numeric via dialect) — detect the
+        # decorator itself, not its impl.
+        return isinstance(t, sa.Numeric | sa.Integer | PreciseDecimal)
+
+    out = set()
+    for col in model.__table__.columns:
+        if col.primary_key or col.foreign_keys:
+            continue
+        if _is_numeric(col.type):
+            out.add(col.name)
+    return out
+
+
+def test_every_numeric_value_column_is_classified() -> None:
+    """The completeness half: per family, the contract's declared fields equal the result
+    model's numeric value columns EXACTLY — a new column fails the census until someone SAYS
+    what combining it means (the reproduction-registry key|compared|uncompared precedent)."""
+    from irp_shared.aggregation.contracts import AGGREGATION_CONTRACTS
+
+    models = _family_models()
+    assert set(models) == set(AGGREGATION_CONTRACTS)
+    for family, model in models.items():
+        declared = set(AGGREGATION_CONTRACTS[family])
+        actual = _numeric_value_columns(model)
+        assert declared == actual, (
+            f"{family}: contract declares {sorted(declared)} but the result model carries "
+            f"numeric value columns {sorted(actual)} — undeclared: {sorted(actual - declared)}, "
+            f"phantom: {sorted(declared - actual)}"
+        )
+
+
+def test_operators_are_the_ratified_vocabulary_only() -> None:
+    from irp_shared.aggregation.contracts import (
+        AGGREGATION_CONTRACTS,
+        AGGREGATION_OPERATORS,
+    )
+
+    for family, fields in AGGREGATION_CONTRACTS.items():
+        for field, op in fields.items():
+            assert op in AGGREGATION_OPERATORS, (family, field, op)
+
+
+def test_the_not_aggregatable_floor_is_pinned() -> None:
+    """The permissive-contract negative control (REQ-PPM-007: 'a contract that permits every
+    operator on every family FAILS this row'): the load-bearing refusal subjects are pinned BY
+    NAME, so a permissive rewrite (everything ADDITIVE) fails here, not in production."""
+    from irp_shared.aggregation.contracts import (
+        AGGREGATION_CONTRACTS,
+        OPERATOR_NOT_AGGREGATABLE,
+    )
+
+    floor = {
+        ("SHARPE", "metric_value"),  # the DP-6 fired HTTP subject (a ratio)
+        ("VAR", "var_value"),  # the DP-6 fired HTTP subject (a quantile)
+        ("PORTFOLIO_RETURN", "return_value"),  # TWR is not a weighted mean under flows
+        ("ROLLING_RISK", "metric_value"),  # portfolio vol needs correlations
+        ("COVARIANCE", "covariance_value"),  # a factor-pair statistic
+        ("EXPOSURE_AGGREGATE", "mark_value"),  # a per-unit price
+    }
+    for family, field in floor:
+        assert AGGREGATION_CONTRACTS[family][field] == OPERATOR_NOT_AGGREGATABLE, (family, field)
+
+
+def test_weighted_ships_empty_with_its_trigger_documented() -> None:
+    """DP-5/judge caution: WEIGHTED is vocabulary, not a live classification — duration (its
+    canonical subject) has no producing field anywhere. If this assert ever fails, a WEIGHTED
+    classification arrived: delete this test and ship the weights plumbing WITH it."""
+    from irp_shared.aggregation.contracts import (
+        AGGREGATION_CONTRACTS,
+        OPERATOR_WEIGHTED,
+    )
+
+    weighted = [
+        (f, field)
+        for f, fields in AGGREGATION_CONTRACTS.items()
+        for field, op in fields.items()
+        if op == OPERATOR_WEIGHTED
+    ]
+    assert weighted == []
+
+
+def test_result_obedience_flipping_an_operator_makes_the_sites_refuse(
+    session: Session,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """THE result-obedience control (the V-007 exploit, killed): the contract lookup's RESULT
+    governs the aggregation sites — flip exposure_amount to NOT_AGGREGATABLE and (a) the summed
+    read refuses, (b) a consuming family's parser refuses BEFORE any sum. A lookup whose result
+    nothing obeys stays green under this only by obeying it."""
+    from sqlalchemy import select
+
+    from irp_shared.aggregation.contracts import (
+        AGGREGATION_CONTRACTS,
+        OPERATOR_NOT_AGGREGATABLE,
+        NotAggregatableError,
+    )
+    from irp_shared.concentration import service as concentration_service
+    from irp_shared.exposure.service import summed_latest_exposure
+    from irp_shared.snapshot.models import COMPONENT_KIND_EXPOSURE
+    from irp_shared.snapshot.serialize import exposure_content, serialize_content
+
+    tenant, run_id = _seeded_two_measure_run(session)
+
+    # Baseline: both sites work under the shipped contract.
+    baseline = summed_latest_exposure(
+        session,
+        acting_tenant=tenant,
+        portfolio_id=_pf_of_run(session, run_id),
+        exposure_type=EXPOSURE_TYPE_MARKET_VALUE,
+    )
+    assert baseline.n_rows == 1
+
+    from irp_shared.exposure.models import ExposureAggregate
+
+    mv_row = (
+        session.execute(
+            select(ExposureAggregate).where(
+                ExposureAggregate.calculation_run_id == run_id,
+                ExposureAggregate.exposure_type == EXPOSURE_TYPE_MARKET_VALUE,
+            )
+        )
+        .scalars()
+        .one()
+    )
+
+    class _Comp:
+        component_kind = COMPONENT_KIND_EXPOSURE
+        captured_content = serialize_content(exposure_content(mv_row))
+
+    concentration_service._parse_pins([_Comp()])  # passes under the shipped contract
+
+    monkeypatch.setitem(
+        AGGREGATION_CONTRACTS["EXPOSURE_AGGREGATE"],
+        "exposure_amount",
+        OPERATOR_NOT_AGGREGATABLE,
+    )
+    with pytest.raises(NotAggregatableError):
+        summed_latest_exposure(
+            session,
+            acting_tenant=tenant,
+            portfolio_id=_pf_of_run(session, run_id),
+            exposure_type=EXPOSURE_TYPE_MARKET_VALUE,
+        )
+    with pytest.raises(NotAggregatableError):
+        concentration_service._parse_pins([_Comp()])
+
+
+def _pf_of_run(db: Session, run_id: str) -> str:
+    from sqlalchemy import select
+
+    from irp_shared.exposure.models import ExposureAggregate
+
+    return str(
+        db.execute(
+            select(ExposureAggregate.portfolio_id)
+            .where(ExposureAggregate.calculation_run_id == run_id)
+            .limit(1)
+        ).scalar_one()
+    )
+
+
+# ---------- STRUCT-2 review folds: the EMITTED GRAIN half (the BLOCKING finding) ----------
+
+
+def test_grain_census_every_family_declares_and_every_column_exists() -> None:
+    """The second machine-readable half the plan ratified ('per family: emitted grain +
+    operator'): every family declares its grain, and every named dimension, selector, and
+    detail-predicate column EXISTS on the result model — a renamed column fails here, never
+    silently detaches the declaration."""
+    from irp_shared.aggregation.contracts import AGGREGATION_CONTRACTS, EMITTED_GRAINS
+
+    assert set(EMITTED_GRAINS) == set(AGGREGATION_CONTRACTS)
+    models = _family_models()
+    for family, grain in EMITTED_GRAINS.items():
+        cols = {c.name for c in models[family].__table__.columns}
+        for dim in grain.dimensions:
+            assert dim in cols, (family, dim)
+        for sel in grain.additive_selectors:
+            assert sel in grain.dimensions, (family, sel)
+        if grain.detail_predicate is not None:
+            assert grain.detail_predicate[0] in cols, (family, grain.detail_predicate)
+
+
+def test_grain_floor_is_pinned() -> None:
+    """The load-bearing grain declarations, pinned by name (the permissive-flip control for the
+    grain half): the measure selector, the two stored-aggregate exclusions, the concentration
+    partition selector, and the portfolio-return period selector."""
+    from irp_shared.aggregation.contracts import EMITTED_GRAINS
+
+    assert "exposure_type" in EMITTED_GRAINS["EXPOSURE_AGGREGATE"].additive_selectors
+    assert EMITTED_GRAINS["SCENARIO"].detail_predicate == ("metric_type", "SCENARIO_PNL")
+    assert EMITTED_GRAINS["CONCENTRATION"].detail_predicate == ("row_kind", "DETAIL")
+    assert EMITTED_GRAINS["LIQUIDITY"].detail_predicate == ("row_kind", "DETAIL")
+    assert "dimension_kind" in EMITTED_GRAINS["CONCENTRATION"].additive_selectors
+    assert "period_start" in EMITTED_GRAINS["PORTFOLIO_RETURN"].additive_selectors
+
+
+def test_scenario_detail_predicate_kills_the_total_row_double_count() -> None:
+    """The review's HIGH made executable: a run stores per-factor SCENARIO_PNL rows AND one
+    SCENARIO_PNL_TOTAL row that IS their sum. A NAIVE contract-conformant sum returns 2x; a
+    grain-conformant sum (detail rows only) returns the true P&L and equals the stored total —
+    the declaration is the thing that makes the difference."""
+    from decimal import Decimal
+
+    from irp_shared.aggregation.contracts import EMITTED_GRAINS
+    from irp_shared.risk.events import (
+        METRIC_TYPE_SCENARIO_PNL,
+        METRIC_TYPE_SCENARIO_PNL_TOTAL,
+    )
+
+    rows = [
+        {"metric_type": METRIC_TYPE_SCENARIO_PNL, "pnl": Decimal("-120.50")},
+        {"metric_type": METRIC_TYPE_SCENARIO_PNL, "pnl": Decimal("300.00")},
+        {"metric_type": METRIC_TYPE_SCENARIO_PNL_TOTAL, "pnl": Decimal("179.50")},
+    ]
+    col, required = EMITTED_GRAINS["SCENARIO"].detail_predicate
+    conformant = sum((r["pnl"] for r in rows if r[col] == required), Decimal(0))
+    naive = sum((r["pnl"] for r in rows), Decimal(0))
+    assert conformant == Decimal("179.50")  # == the stored total: the true P&L
+    assert naive == Decimal("359.00")  # the double-count the predicate exists to kill
+
+
+def test_grain_selector_requirement_obeys_the_declaration(
+    session: Session,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Result obedience for the GRAIN half: the summed read's exposure_type requirement comes
+    FROM the declaration — empty the selector tuple and the requirement disappears (proving the
+    hand-written form the review refuted is gone), while the floor test above pins the shipped
+    selector so a permissive rewrite fails in review."""
+    from irp_shared.aggregation.contracts import EMITTED_GRAINS, EmittedGrain
+    from irp_shared.exposure.service import ExposureInputError, summed_latest_exposure
+
+    tenant, run_id = _seeded_two_measure_run(session)
+    pf = _pf_of_run(session, run_id)
+
+    with pytest.raises(ExposureInputError, match="additive-selector"):
+        summed_latest_exposure(session, acting_tenant=tenant, portfolio_id=pf, exposure_type=None)
+
+    from irp_shared.exposure.service import NothingToSumError
+
+    bare = EmittedGrain(dimensions=EMITTED_GRAINS["EXPOSURE_AGGREGATE"].dimensions)
+    monkeypatch.setitem(EMITTED_GRAINS, "EXPOSURE_AGGREGATE", bare)
+    with pytest.raises(NothingToSumError):
+        # With no selector declared the read no longer REQUIRES a measure — it proceeds to the
+        # empty-book refusal instead, proving the declaration governed the requirement.
+        summed_latest_exposure(
+            session, acting_tenant=tenant, portfolio_id=str(uuid.uuid4()), exposure_type=None
+        )
+
+
+def test_factor_exposure_side_result_obedience(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review fold: the FACTOR_EXPOSURE-side preconditions were never mutated. Flip the
+    declared operator and the HS-VaR binder's pin adjudication refuses BEFORE any sum — through
+    the REAL parse path, with a minimal well-formed row."""
+    from irp_shared.aggregation.contracts import (
+        AGGREGATION_CONTRACTS,
+        OPERATOR_NOT_AGGREGATABLE,
+        NotAggregatableError,
+    )
+    from irp_shared.risk import var_hs_service
+
+    row = {
+        "calculation_run_id": str(uuid.uuid4()),
+        "factor_id": str(uuid.uuid4()),
+        "portfolio_id": str(uuid.uuid4()),
+        "instrument_id": str(uuid.uuid4()),
+        "base_currency": "USD",
+        "exposure_amount": "100.000000",
+        "id": str(uuid.uuid4()),
+    }
+    monkeypatch.setitem(
+        AGGREGATION_CONTRACTS["FACTOR_EXPOSURE"],
+        "exposure_amount",
+        OPERATOR_NOT_AGGREGATABLE,
+    )
+    with pytest.raises(NotAggregatableError):
+        var_hs_service._adjudicate_pins([row], [], declared_window=250)

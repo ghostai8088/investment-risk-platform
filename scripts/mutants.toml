@@ -1257,3 +1257,109 @@ file = "packages/shared-python/src/irp_shared/snapshot/service.py"
 find = """        for ccy in sorted(mark_currencies | denomination_currencies):"""
 replace = """        for ccy in sorted(mark_currencies):"""
 tests = ["packages/shared-python/tests/test_exposure.py"]
+
+# ---------------------------------------------------------------------------------------------
+# STRUCT-2 (REQ-PPM-007/-009). The operator contract, the consumption preconditions, and the
+# HTTP refusals — each proven load-bearing.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "M-S2-1"
+group = "struct-2"
+why = "the contract lookup stops governing — every summed read and consumption site silently proceeds over a NOT_AGGREGATABLE declaration"
+file = "packages/shared-python/src/irp_shared/aggregation/contracts.py"
+find = """    op = aggregation_operator(run_type, field)
+    if op != OPERATOR_ADDITIVE:
+        raise NotAggregatableError(run_type=str(run_type), field=str(field), operator=op)"""
+replace = """    op = aggregation_operator(run_type, field)"""
+tests = ["packages/shared-python/tests/test_aggregation_contracts.py", "apps/backend/tests/test_var_endpoint.py"]
+
+[[mutant]]
+id = "M-S2-2"
+group = "struct-2"
+why = "a permissive contract: the Sharpe ratio becomes ADDITIVE and the desk's summed-Sharpe request is served instead of refused"
+file = "packages/shared-python/src/irp_shared/aggregation/contracts.py"
+find = """    "SHARPE": {
+        "metric_value": OPERATOR_NOT_AGGREGATABLE,  # the DP-6 fired subject (a ratio)"""
+replace = """    "SHARPE": {
+        "metric_value": OPERATOR_ADDITIVE,"""
+tests = ["packages/shared-python/tests/test_aggregation_contracts.py", "apps/backend/tests/test_perf_endpoint.py"]
+
+[[mutant]]
+id = "M-S2-3"
+group = "struct-2"
+why = "a consumption site loses its contract lookup — the census must catch the module going unguarded"
+file = "packages/shared-python/src/irp_shared/risk/var_hs_service.py"
+# RE-ANCHORED at the review fold: the lookup moved from the row loop to the parse entry.
+find = """    # STRUCT-2 (REQ-PPM-007): the contract lookup governs the consumption sums below —
+    # consulted ONCE at parse entry (review fold: the in-loop form paid the lookup per row and
+    # sat behind earlier gates).
+    _assert_aggregatable("FACTOR_EXPOSURE", "exposure_amount")"""
+replace = """"""
+tests = ["packages/shared-python/tests/test_aggregation_census.py", "packages/shared-python/tests/test_aggregation_contracts.py"]
+
+[[mutant]]
+id = "M-S2-4"
+group = "struct-2"
+why = "the summed-VaR HTTP refusal is unplugged — the desk's summed-VaR request returns rows as if a summed VaR were the portfolio VaR"
+file = "apps/backend/src/irp_backend/api/risk.py"
+find = """    if summed:
+        try:
+            assert_aggregatable("VAR", "var_value")
+        except NotAggregatableError as exc:
+            code, detail = _map_error(exc)
+            raise HTTPException(status_code=code, detail=detail) from None
+    rows = latest_var_for_portfolio("""
+replace = """    rows = latest_var_for_portfolio("""
+tests = ["apps/backend/tests/test_var_endpoint.py"]
+
+[[mutant]]
+id = "M-S2-5"
+group = "struct-2"
+why = "the mixed-measure sum refusal is unplugged — a summed exposure read without a named measure silently adds NOTIONAL to MARKET_VALUE"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+# RE-ANCHORED at the review fold: the requirement now derives from the grain declaration.
+find = """    try:
+        require_additive_selection("EXPOSURE_AGGREGATE", {"exposure_type": exposure_type})
+    except NotAggregatableError:
+        raise ExposureInputError(
+            "a summed exposure read must fix every declared additive-selector dimension "
+            "(exposure_type) — aggregating rows of different measure types is refused, never "
+            "converted (REQ-PPM-007)"
+        ) from None"""
+replace = """"""
+tests = ["apps/backend/tests/test_exposure_endpoint.py"]
+
+[[mutant]]
+id = "M-S2-6"
+group = "struct-2"
+why = "the measure selector leaves the grain declaration — a summed exposure read stops requiring ONE measure and mixes notionals into market values (the grain half's permissive flip)"
+file = "packages/shared-python/src/irp_shared/aggregation/contracts.py"
+find = """        # Summing ACROSS measures adds notionals to market values — refused, never converted.
+        additive_selectors=("exposure_type",),"""
+replace = """"""
+tests = ["packages/shared-python/tests/test_aggregation_contracts.py", "apps/backend/tests/test_exposure_endpoint.py"]
+
+[[mutant]]
+id = "M-S2-7"
+group = "struct-2"
+why = "the SCENARIO detail predicate is deleted — a contract-conformant sum counts the stored TOTAL row with its own details, 2x the true P&L with the contract's blessing"
+file = "packages/shared-python/src/irp_shared/aggregation/contracts.py"
+find = """        # THE review's double-count: the run stores per-factor SCENARIO_PNL rows AND one
+        # SCENARIO_PNL_TOTAL row that IS their sum. A conformant sum includes details only.
+        detail_predicate=("metric_type", "SCENARIO_PNL"),"""
+replace = """"""
+tests = ["packages/shared-python/tests/test_aggregation_contracts.py"]
+
+[[mutant]]
+id = "M-S2-8"
+group = "struct-2"
+why = "ONE of var_service's TWO contract lookups vanishes — the module-presence guard the review refuted would have stayed green; the count pin must go red"
+file = "packages/shared-python/src/irp_shared/risk/var_service.py"
+find = """            ctx.prec = _COMPUTE_PREC  # prec-50 MV sum (the total-path precedent)
+            # STRUCT-2 (REQ-PPM-007): the contract lookup governs this consumption sum.
+            _assert_aggregatable("EXPOSURE_AGGREGATE", "exposure_amount")
+            mv_by_instrument: dict[str, Decimal] = {}"""
+replace = """            ctx.prec = _COMPUTE_PREC  # prec-50 MV sum (the total-path precedent)
+            mv_by_instrument: dict[str, Decimal] = {}"""
+tests = ["packages/shared-python/tests/test_aggregation_census.py"]

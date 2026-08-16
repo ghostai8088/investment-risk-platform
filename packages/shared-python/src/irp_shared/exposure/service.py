@@ -568,6 +568,84 @@ def latest_exposure(
     )
 
 
+class NothingToSumError(Exception):
+    """A summed read over an EMPTY population (no COMPLETED run carries the measure). Distinct
+    from the 422 caller-defect class (review fold: empty-scope refusals map 409, the
+    EmptySnapshotError convention — an empty book is a state of the world, not a bad request)."""
+
+    def __init__(self, exposure_type: str) -> None:
+        super().__init__(
+            f"no COMPLETED exposure run carries measure {exposure_type!r} for this portfolio — "
+            "nothing to sum"
+        )
+        self.exposure_type = str(exposure_type)
+
+
+@dataclass(frozen=True)
+class ExposureSum:
+    """A summed latest-exposure read (STRUCT-2, REQ-PPM-007): ONE run, ONE measure, with the
+    provenance a consumer needs to cite it."""
+
+    total: Decimal
+    exposure_type: str
+    base_currency: str
+    calculation_run_id: str
+    n_rows: int
+
+
+def summed_latest_exposure(
+    session: Session,
+    *,
+    acting_tenant: str,
+    portfolio_id: str,
+    exposure_type: str | None,
+    as_of=None,  # noqa: ANN001  (datetime | None)
+) -> ExposureSum:
+    """The ADDITIVE positive case of the aggregation contract (STRUCT-2): the newest COMPLETED
+    run's ``exposure_amount`` total for ONE declared measure.
+
+    Two refusals, both fail-closed BY CONSTRUCTION (the review's V-007-2 shape — mixture
+    detection over returned rows passes vacuously on a single-measure book, so the measure is
+    REQUIRED instead): (1) no ``exposure_type`` ⇒ refused — a sum across measures is a category
+    error, never a conversion; (2) the contract lookup governs the sum — flip the operator and
+    this read refuses (the result-obedience control)."""
+    from irp_shared.aggregation.contracts import (
+        NotAggregatableError,
+        assert_aggregatable,
+        require_additive_selection,
+    )
+
+    # The selector requirement comes FROM the grain declaration (review fold: the earlier form
+    # required exposure_type by hand — "additive by hand, not by contract", the exact pattern
+    # the plan forbids for STRUCT-3's rollup). Flip the declaration and the requirement moves.
+    try:
+        require_additive_selection("EXPOSURE_AGGREGATE", {"exposure_type": exposure_type})
+    except NotAggregatableError:
+        raise ExposureInputError(
+            "a summed exposure read must fix every declared additive-selector dimension "
+            "(exposure_type) — aggregating rows of different measure types is refused, never "
+            "converted (REQ-PPM-007)"
+        ) from None
+    assert_aggregatable("EXPOSURE_AGGREGATE", "exposure_amount")
+    rows = latest_exposure(
+        session,
+        acting_tenant=acting_tenant,
+        portfolio_id=portfolio_id,
+        as_of=as_of,
+        exposure_type=exposure_type,
+    )
+    if not rows:
+        raise NothingToSumError(str(exposure_type))
+    total = sum((r.exposure_amount for r in rows), Decimal(0))
+    return ExposureSum(
+        total=total,
+        exposure_type=str(exposure_type),
+        base_currency=rows[0].base_currency,
+        calculation_run_id=rows[0].calculation_run_id,
+        n_rows=len(rows),
+    )
+
+
 def resolve_run(session: Session, run_id: str, *, acting_tenant: str) -> CalculationRun:
     """Resolve an EXPOSURE ``calculation_run`` by ``run_id`` with an EXPLICIT tenant predicate +
     ``run_type`` filter (fail-closed). Returns the REAL run (its true ``status`` —

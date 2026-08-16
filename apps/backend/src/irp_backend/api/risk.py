@@ -30,7 +30,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, map_refusal, require_permission
-from irp_shared.aggregation.contracts import ForeignMeasureError
+from irp_shared.aggregation.contracts import (
+    ForeignMeasureError,
+    NotAggregatableError,
+    assert_aggregatable,
+)
 from irp_shared.db.integrity import is_unique_violation
 from irp_shared.dq.service import DataQualityError
 from irp_shared.entitlement.service import Principal
@@ -245,6 +249,12 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     ForeignMeasureError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "exposure atom of an undeclared measure — the family refuses foreign measures",
+    ),
+    # STRUCT-2 (REQ-PPM-007): a summed read of a NOT_AGGREGATABLE field — refused through the
+    # contract, before any row is read. A summed VaR is NOT the portfolio VaR.
+    NotAggregatableError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "this family's value is declared NOT_AGGREGATABLE — a summed read is refused",
     ),
     FactorExposureSnapshotError: (
         status.HTTP_409_CONFLICT,
@@ -1708,13 +1718,24 @@ def list_vars_by_entity_endpoint(
     portfolio_id: uuid.UUID | None = Query(default=None),
     metric_type: str | None = Query(default=None),
     as_of: datetime | None = Query(default=None),
+    summed: bool = Query(default=False),
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> list[VarRowOut]:
     """API-1b entity read (Class C): governed VaR rows resolved via the run's ROOT
     ``scope_portfolio_id`` (``var_result`` carries no portfolio) + an optional ``metric_type``
     (parametric/total/HS/ES) and ``as_of`` run cutoff. Silent-empty on a foreign/NULL-scope id.
-    Each row carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR."""
+    Each row carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR.
+
+    ``summed=true`` (STRUCT-2, REQ-PPM-007): ``var_value`` is declared NOT_AGGREGATABLE — a
+    summed VaR is NOT the portfolio VaR (diversification) — so the request is REFUSED 422
+    through the contract, before any row is read."""
+    if summed:
+        try:
+            assert_aggregatable("VAR", "var_value")
+        except NotAggregatableError as exc:
+            code, detail = _map_error(exc)
+            raise HTTPException(status_code=code, detail=detail) from None
     rows = list_var_results(
         db,
         acting_tenant=principal.tenant_id,
@@ -1730,13 +1751,23 @@ def latest_var_endpoint(
     portfolio_id: uuid.UUID,
     metric_type: str | None = Query(default=None),
     as_of: datetime | None = Query(default=None),
+    summed: bool = Query(default=False),
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> list[VarRowOut]:
     """API-1b latest-resolver: the newest COMPLETED VaR run scoped to the portfolio (its metric
     row(s), or the one ``metric_type``) — the flagship 'latest VaR for portfolio P' read. Empty
     when the portfolio has no scoped COMPLETED run (a snapshot-consume-rooted or pre-0046 run is
-    honestly unresolvable)."""
+    honestly unresolvable).
+
+    ``summed=true`` (STRUCT-2, REQ-PPM-007): refused 422 — the contract declares ``var_value``
+    NOT_AGGREGATABLE, and the declaration governs regardless of row count."""
+    if summed:
+        try:
+            assert_aggregatable("VAR", "var_value")
+        except NotAggregatableError as exc:
+            code, detail = _map_error(exc)
+            raise HTTPException(status_code=code, detail=detail) from None
     rows = latest_var_for_portfolio(
         db,
         acting_tenant=principal.tenant_id,

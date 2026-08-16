@@ -363,3 +363,97 @@ def test_unknown_exposure_type_is_422_not_empty(ctx) -> None:  # noqa: ANN001
         resp = client.get(path, params=params, headers=_h(principal))
         assert resp.status_code == 422, (path, resp.text)
         assert "unknown exposure_type" in resp.json()["detail"]
+
+
+# ------- STRUCT-2 (REQ-PPM-007): the ADDITIVE positive case + the mixed-measure refusal -------
+
+
+def test_summed_exposure_requires_one_measure_and_hand_totals(ctx) -> None:  # noqa: ANN001
+    client, principal, db, pf = ctx
+    _seed_bond2(db, principal.tenant_id, pf)
+    run = client.post("/exposure/runs", json=_run_body(pf), headers=_h(principal))
+    assert run.status_code == 201 and run.json()["status"] == "COMPLETED"
+
+    # The mixed-measure refusal, fail-closed BY CONSTRUCTION: no measure named -> 422 (never a
+    # silent cross-measure sum; mixture detection over rows would pass vacuously on a
+    # single-measure book).
+    refused = client.get("/exposure/latest/sum", params={"portfolio_id": pf}, headers=_h(principal))
+    assert refused.status_code == 422
+    assert "refused, never converted" in refused.json()["detail"]
+
+    # The additive positive case, hand totals: MV = 100x12.50 + (-200x7.00x1.10) + 10x985.40
+    # = 1250 - 1540 + 9854 = 9564; NOTIONAL = 10x1000 = 10000.
+    mv = client.get(
+        "/exposure/latest/sum",
+        params={"portfolio_id": pf, "exposure_type": "MARKET_VALUE"},
+        headers=_h(principal),
+    )
+    assert mv.status_code == 200, mv.text
+    assert mv.json()["total"] == "9564.000000"
+    assert mv.json()["n_rows"] == 3
+    notional = client.get(
+        "/exposure/latest/sum",
+        params={"portfolio_id": pf, "exposure_type": "NOTIONAL"},
+        headers=_h(principal),
+    )
+    assert notional.status_code == 200
+    assert notional.json()["total"] == "10000.000000"
+    assert notional.json()["calculation_run_id"] == mv.json()["calculation_run_id"]
+
+
+def _seed_bond2(db: Session, tenant_id: str, pf: str) -> str:
+    from irp_shared.reference.instrument_terms import create_instrument_terms
+
+    inst = create_instrument(
+        db,
+        tenant_id=tenant_id,
+        code="B2",
+        name="UST 2032",
+        asset_class="BOND",
+        actor=ReferenceActor(actor_id="a"),
+    )
+    create_instrument_terms(
+        db,
+        instrument_id=inst.id,
+        acting_tenant=tenant_id,
+        actor=ReferenceActor(actor_id="a"),
+        valid_from=_VA,
+        face_value=Decimal("1000.0000"),
+        denomination_currency="USD",
+    )
+    create_position(
+        db,
+        portfolio_id=pf,
+        instrument_id=inst.id,
+        acting_tenant=tenant_id,
+        actor=PositionActor(actor_id="a"),
+        quantity=Decimal("10"),
+        valid_from=_VA,
+    )
+    create_valuation(
+        db,
+        portfolio_id=pf,
+        instrument_id=inst.id,
+        valuation_date=_VD,
+        acting_tenant=tenant_id,
+        actor=ValuationActor(actor_id="a"),
+        mark_value=Decimal("985.40"),
+        currency_code="USD",
+        valid_from=_VA,
+    )
+    db.commit()
+    return inst.id
+
+
+def test_summed_exposure_empty_book_is_409_and_fires(ctx) -> None:  # noqa: ANN001
+    """P9 for the empty-population refusal (review fold): a valid measure over a book with NO
+    completed run of it is 409 — a state of the world, not a caller defect — and the refusal is
+    EXECUTED, not declared."""
+    client, principal, _db, pf = ctx
+    resp = client.get(
+        "/exposure/latest/sum",
+        params={"portfolio_id": pf, "exposure_type": "NOTIONAL"},
+        headers=_h(principal),
+    )
+    assert resp.status_code == 409, resp.text
+    assert "nothing to sum" in resp.json()["detail"]
