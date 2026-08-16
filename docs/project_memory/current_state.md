@@ -1,6 +1,44 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-15, evening) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-15, night) — read this block; everything below it is HISTORY
+
+**Main `42095d2` (PR #223, STRUCT-2 — the 36th autonomous merge), tree clean. Migration head
+`0071_exposure_type_in_grain_key`, one head (STRUCT-2 shipped NO migration). Next free canonical
+id ENT-076. NEXT = STRUCT-3 (versioned hierarchy + node-scoped rollup) — its entry gate is
+ALREADY PAID: the owner's REQ-PPM-001 re-adjudication landed as PR #222 (the pin-only versioning
+exploit found by asking the G2 question of the current text, closed by one clause).**
+
+### STRUCT-2 landed the same day as STRUCT-1: the wave is at its halfway mark
+
+- **REQ-PPM-007 delivered (PR #223).** `irp_shared/aggregation/contracts.py` now carries BOTH
+  ratified halves: per-field OPERATORS (21 families; ADDITIVE only for amounts over a common
+  grain; WEIGHTED ships as vocabulary with zero fields pending a duration producer; the
+  completeness census reflects every model's numeric columns) and the machine-readable EMITTED
+  GRAIN (dimensions, additive-selector dimensions a conformant sum must fix, detail predicates
+  excluding stored TOTAL/SUMMARY rows). Census 2 discovers all ~100 aggregation sites by AST
+  across the three source trees — including SQL aggregates and plain-assign accumulation — under
+  a pinned five-way taxonomy; every cross-family consumption site's guard module carries an
+  EXACT-counted contract lookup whose RESULT governs (result-obedience proven on both the
+  exposure and factor-exposure sides). The DP-6 refusals fire through HTTP: summed Sharpe/VaR
+  422; `GET /exposure/latest/sum` is the additive positive case (fail-closed mixed-measure
+  refusal derived FROM the grain declaration; 409 on an empty book).
+- **REQ-PPM-009 delivered.** The portfolio-name census is repo-wide and mechanical (attribute
+  reads by receiver key; literal dynamic shapes x["name"]/x.get("name")/getattr(x,"name") as
+  census keys — zero exist, proven; the two key-variable loops pinned by their constants; the
+  frontend by file). COMPUTATION has no allowlist code: classifying one means editing the census
+  in review. The rename guard re-runs TWO families fresh post-rename (values identical, snapshot
+  hashes excluded per DP-8); the FULL-BREADTH re-run is carried BY NAME to STRUCT-3's
+  three-level book (P19, on its roadmap row).
+- **The adversarial review confirmed 20 findings, one BLOCKING, all folded**: the ratified
+  "emitted grain" half was missing — its live consequence, a contract-blessed double-count of
+  SCENARIO's stored TOTAL row, is killed by declaration + an executable arithmetic test + a
+  mutant. The census evasions the reviewers demonstrated (SQL invisibility, plain-assign, the
+  one-of-two lookup deletion, dict-key name reads) are each closed mechanically.
+- **Gates at the merge**: make check 0 (2,872), full-PG 0 (3,498), fe-check 0, gen-api-check 0,
+  mutation battery 0 (STRUCT-2 8/8 killed; anchors 114/114), CI green on all nine checks at the
+  PR head, verified per-conclusion via the REST API before merging.
+
+## Prior current truth (2026-08-15, evening) — HISTORY
 
 **Main `c0bc90b` (PR #220, STRUCT-1 — the 34th autonomous merge), tree clean. Migration head
 `0071_exposure_type_in_grain_key`, one head. Next free canonical id ENT-076. NEXT = STRUCT-2
