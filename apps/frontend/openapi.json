@@ -6372,6 +6372,39 @@
         "title": "ExposureRunSummaryOut",
         "type": "object"
       },
+      "ExposureSumOut": {
+        "properties": {
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "calculation_run_id": {
+            "title": "Calculation Run Id",
+            "type": "string"
+          },
+          "exposure_type": {
+            "title": "Exposure Type",
+            "type": "string"
+          },
+          "n_rows": {
+            "title": "N Rows",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "total",
+          "exposure_type",
+          "base_currency",
+          "calculation_run_id",
+          "n_rows"
+        ],
+        "title": "ExposureSumOut",
+        "type": "object"
+      },
       "FactorExposureRowOut": {
         "properties": {
           "base_currency": {
@@ -24212,6 +24245,131 @@
         ]
       }
     },
+    "/exposure/latest/sum": {
+      "get": {
+        "description": "STRUCT-2 (REQ-PPM-007): the ADDITIVE positive case \u2014 the newest COMPLETED run's total for\nONE declared measure. Refuses 422 without ``exposure_type`` (a sum across measures is a\ncategory error, never a conversion) and consults the aggregation contract before summing.",
+        "operationId": "summed_latest_exposure_endpoint_exposure_latest_sum_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Portfolio Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exposure_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exposure Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExposureSumOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Summed Latest Exposure Endpoint",
+        "tags": [
+          "exposure"
+        ]
+      }
+    },
     "/exposure/runs": {
       "get": {
         "description": "List the tenant's EXPOSURE_AGGREGATE runs, newest first (gated ``exposure.view`` \u2014 the\nsibling of ``GET /risk/runs`` for the exposure family; read-only; fail-closed filters). The\nquery param is ``status`` (aliased \u2014 the FastAPI ``status`` module shadows the name).",
@@ -31747,7 +31905,7 @@
     },
     "/perf/sharpe": {
       "get": {
-        "description": "The rule-7 entity/time read across COMPLETED runs.\n\nRolling values are NOT independent: adjacent 12-month windows share 11 of 12 observations, so a\nchange between consecutive points reflects the single entering and exiting month, not a\nre-estimate. The ``metric_type``/``window_months`` filters exist so a caller can ask for one\nseries instead of four interleaved row kinds.",
+        "description": "The rule-7 entity/time read across COMPLETED runs.\n\nRolling values are NOT independent: adjacent 12-month windows share 11 of 12 observations, so a\nchange between consecutive points reflects the single entering and exiting month, not a\nre-estimate. The ``metric_type``/``window_months`` filters exist so a caller can ask for one\nseries instead of four interleaved row kinds.\n\n``summed=true`` (STRUCT-2, REQ-PPM-007): refused 422 \u2014 a ratio is NOT_AGGREGATABLE.",
         "operationId": "list_sharpe_endpoint_perf_sharpe_get",
         "parameters": [
           {
@@ -31814,6 +31972,16 @@
                 }
               ],
               "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "summed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Summed",
+              "type": "boolean"
             }
           },
           {
@@ -31895,7 +32063,7 @@
     },
     "/perf/sharpe/latest": {
       "get": {
-        "description": "The newest COMPLETED Sharpe run's rows for a book (empty when none).\n\nONE run's rows, never a merge across runs: two runs can carry different window sets AND\ndifferent risk-free series, so a merge would silently mix both the estimator domain and the\nthing the excess is measured against.",
+        "description": "The newest COMPLETED Sharpe run's rows for a book (empty when none).\n\nONE run's rows, never a merge across runs: two runs can carry different window sets AND\ndifferent risk-free series, so a merge would silently mix both the estimator domain and the\nthing the excess is measured against.\n\n``summed=true`` (STRUCT-2, REQ-PPM-007): a Sharpe ratio is declared NOT_AGGREGATABLE \u2014 the\nrequest is REFUSED 422 through the contract, before any row is read. The refusal is\ncontract-first: it fires on an empty book too, because the declaration governs, not the row\ncount.",
         "operationId": "get_latest_sharpe_perf_sharpe_latest_get",
         "parameters": [
           {
@@ -31955,6 +32123,16 @@
                 }
               ],
               "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "summed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Summed",
+              "type": "boolean"
             }
           },
           {
@@ -45201,7 +45379,7 @@
     },
     "/risk/vars": {
       "get": {
-        "description": "API-1b entity read (Class C): governed VaR rows resolved via the run's ROOT\n``scope_portfolio_id`` (``var_result`` carries no portfolio) + an optional ``metric_type``\n(parametric/total/HS/ES) and ``as_of`` run cutoff. Silent-empty on a foreign/NULL-scope id.\nEach row carries ``calculation_run_id`` \u2014 cross-run aggregation is a CONSUMER ERROR.",
+        "description": "API-1b entity read (Class C): governed VaR rows resolved via the run's ROOT\n``scope_portfolio_id`` (``var_result`` carries no portfolio) + an optional ``metric_type``\n(parametric/total/HS/ES) and ``as_of`` run cutoff. Silent-empty on a foreign/NULL-scope id.\nEach row carries ``calculation_run_id`` \u2014 cross-run aggregation is a CONSUMER ERROR.\n\n``summed=true`` (STRUCT-2, REQ-PPM-007): ``var_value`` is declared NOT_AGGREGATABLE \u2014 a\nsummed VaR is NOT the portfolio VaR (diversification) \u2014 so the request is REFUSED 422\nthrough the contract, before any row is read.",
         "operationId": "list_vars_by_entity_endpoint_risk_vars_get",
         "parameters": [
           {
@@ -45252,6 +45430,16 @@
                 }
               ],
               "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "summed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Summed",
+              "type": "boolean"
             }
           },
           {
@@ -45429,7 +45617,7 @@
     },
     "/risk/vars/latest": {
       "get": {
-        "description": "API-1b latest-resolver: the newest COMPLETED VaR run scoped to the portfolio (its metric\nrow(s), or the one ``metric_type``) \u2014 the flagship 'latest VaR for portfolio P' read. Empty\nwhen the portfolio has no scoped COMPLETED run (a snapshot-consume-rooted or pre-0046 run is\nhonestly unresolvable).",
+        "description": "API-1b latest-resolver: the newest COMPLETED VaR run scoped to the portfolio (its metric\nrow(s), or the one ``metric_type``) \u2014 the flagship 'latest VaR for portfolio P' read. Empty\nwhen the portfolio has no scoped COMPLETED run (a snapshot-consume-rooted or pre-0046 run is\nhonestly unresolvable).\n\n``summed=true`` (STRUCT-2, REQ-PPM-007): refused 422 \u2014 the contract declares ``var_value``\nNOT_AGGREGATABLE, and the declaration governs regardless of row count.",
         "operationId": "latest_var_endpoint_risk_vars_latest_get",
         "parameters": [
           {
@@ -45473,6 +45661,16 @@
                 }
               ],
               "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "summed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Summed",
+              "type": "boolean"
             }
           },
           {

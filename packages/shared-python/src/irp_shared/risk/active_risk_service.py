@@ -60,6 +60,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.aggregation.contracts import assert_aggregatable as _assert_aggregatable
 from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.calc.reads import latest_run_rows, list_governed_results
 from irp_shared.calc.runs import resolve_run_of_type
@@ -265,6 +266,10 @@ def _adjudicate_pins(
     constituent); then CONSTRUCTS the active weights ``w_a = w_p - w_b`` and re-verifies COVERAGE
     (every active factor in the covariance set + every canonical pair present — NO imputation).
     Raises :class:`ActiveRiskInputError`."""
+    # STRUCT-2 (REQ-PPM-007): the contract lookup governs the consumption sums below —
+    # consulted ONCE at parse entry (review fold: the in-loop form paid the lookup per row and
+    # sat behind earlier gates).
+    _assert_aggregatable("FACTOR_EXPOSURE", "exposure_amount")
     covariance, covariance_run_id = _adjudicate_covariance(covariance_raw)
     covariance_factors = {fid for pair in covariance for fid in pair}
 

@@ -338,6 +338,53 @@ def latest_exposure_endpoint(
     return [_row_out(r) for r in rows]
 
 
+class ExposureSumOut(BaseModel):
+    total: str  # decimal-as-string, the platform convention
+    exposure_type: str
+    base_currency: str
+    calculation_run_id: str
+    n_rows: int
+
+
+@router.get("/latest/sum", response_model=ExposureSumOut)
+def summed_latest_exposure_endpoint(
+    portfolio_id: uuid.UUID,
+    exposure_type: str | None = Query(default=None),
+    as_of: datetime | None = Query(default=None),
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> ExposureSumOut:
+    """STRUCT-2 (REQ-PPM-007): the ADDITIVE positive case — the newest COMPLETED run's total for
+    ONE declared measure. Refuses 422 without ``exposure_type`` (a sum across measures is a
+    category error, never a conversion) and consults the aggregation contract before summing."""
+    from irp_shared.aggregation.contracts import NotAggregatableError
+    from irp_shared.exposure.service import NothingToSumError, summed_latest_exposure
+
+    try:
+        result = summed_latest_exposure(
+            db,
+            acting_tenant=principal.tenant_id,
+            portfolio_id=str(portfolio_id),
+            exposure_type=exposure_type,
+            as_of=as_of,
+        )
+    except (ExposureInputError, NotAggregatableError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from None
+    except NothingToSumError as exc:
+        # 409, the empty-scope convention: an empty book is a state of the world, not a caller
+        # defect (review fold).
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+    return ExposureSumOut(
+        total=str(result.total),
+        exposure_type=result.exposure_type,
+        base_currency=result.base_currency,
+        calculation_run_id=result.calculation_run_id,
+        n_rows=result.n_rows,
+    )
+
+
 @router.get("/{exposure_id}", response_model=ExposureRowOut)
 def get_exposure(
     exposure_id: uuid.UUID,

@@ -32,6 +32,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.aggregation.contracts import assert_aggregatable as _assert_aggregatable
 from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.reads import latest_run_rows, list_governed_results
@@ -144,6 +145,10 @@ def _adjudicate_pins(
     """Adjudicate the pinned content pre-create: aggregate the exposure atoms per factor, enforce a
     uniform portfolio + base currency + CURRENCY family, parse-harden every consumed decimal, and
     build the shock map. Raises :class:`ScenarioInputError` on any ill-formed input."""
+    # STRUCT-2 (REQ-PPM-007): the contract lookup governs the consumption sums below —
+    # consulted ONCE at parse entry (review fold: the in-loop form paid the lookup per row and
+    # sat behind earlier gates).
+    _assert_aggregatable("FACTOR_EXPOSURE", "exposure_amount")
     if not exposure_raw:
         raise ScenarioInputError("no pinned factor-exposure rows — nothing to shock")
     if not shock_raw:

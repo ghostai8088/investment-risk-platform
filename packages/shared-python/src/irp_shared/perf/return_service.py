@@ -64,6 +64,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.aggregation.contracts import assert_aggregatable as _assert_aggregatable
 from irp_shared.aggregation.contracts import refuse_foreign_measure as _refuse_foreign_measure
 from irp_shared.calc.models import CalculationRun
 from irp_shared.calc.parse import parse_strict_decimal
@@ -208,6 +209,7 @@ def _parse_pins(
         if comp.component_kind == COMPONENT_KIND_EXPOSURE:
             # STRUCT-1 (REQ-PPM-006): refuse a foreign-measure atom — BMV/EMV must never sum a
             # measure this family did not declare.
+            _assert_aggregatable("EXPOSURE_AGGREGATE", "exposure_amount")
             _refuse_foreign_measure("PORTFOLIO_RETURN", data)
             exposure_raw.append(data)
         elif comp.component_kind == COMPONENT_KIND_TRANSACTION:

@@ -678,3 +678,22 @@ def test_expired_exception_run_is_422_not_500(ctx) -> None:  # noqa: ANN001
     assert resp.status_code == 422, resp.text
     assert "EXCEPTION has expired" in resp.json()["detail"]
     assert _count_var_runs(db, p.tenant_id) == before
+
+
+# ---------- STRUCT-2 (REQ-PPM-007): the summed-read refusal fires THROUGH HTTP ----------
+
+
+def test_summed_var_read_is_refused_422(ctx) -> None:  # noqa: ANN001
+    """DP-6: a summed VaR is NOT the portfolio VaR — the contract refuses the request through
+    the public read surface, contract-first (it fires on any book, row count irrelevant)."""
+    client, p, _db, _fx_run, _cov_run = ctx
+    for path, params in (
+        ("/risk/vars", {"summed": "true"}),
+        ("/risk/vars/latest", {"portfolio_id": str(uuid.uuid4()), "summed": "true"}),
+    ):
+        resp = client.get(path, params=params, headers=_h(p))
+        assert resp.status_code == 422, (path, resp.text)
+        assert "NOT_AGGREGATABLE" in resp.json()["detail"]
+    # The P18 positive control: the same reads WITHOUT summed are not refused.
+    ok = client.get("/risk/vars", headers=_h(p))
+    assert ok.status_code == 200

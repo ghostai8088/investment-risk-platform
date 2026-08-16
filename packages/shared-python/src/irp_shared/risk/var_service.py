@@ -47,6 +47,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irp_shared.aggregation.contracts import assert_aggregatable as _assert_aggregatable
 from irp_shared.calc.models import CalculationRun, RunStatus
 from irp_shared.calc.parse import parse_strict_decimal
 from irp_shared.calc.reads import latest_run_rows, list_governed_results
@@ -862,6 +863,8 @@ def run_var(
                 # sum of >= 2 near-envelope exposure rows silently rounds the MV — a breach of the
                 # registered "Decimal at 50-digit context" assumption (2026-07 review).
                 ctx.prec = _COMPUTE_PREC
+                # STRUCT-2 (REQ-PPM-007): the contract lookup governs this consumption sum.
+                _assert_aggregatable("EXPOSURE_AGGREGATE", "exposure_amount")
                 for r in exposure_raw:
                     iid = str(r["instrument_id"]).lower()
                     mv_by_instrument[iid] = mv_by_instrument.get(iid, Decimal(0)) + Decimal(
@@ -1237,6 +1240,8 @@ def run_var_unified(
         omega_pp, omega_run_id = _adjudicate_private_covariance(appraisal_cov_raw)
         with localcontext() as ctx:
             ctx.prec = _COMPUTE_PREC  # prec-50 MV sum (the total-path precedent)
+            # STRUCT-2 (REQ-PPM-007): the contract lookup governs this consumption sum.
+            _assert_aggregatable("EXPOSURE_AGGREGATE", "exposure_amount")
             mv_by_instrument: dict[str, Decimal] = {}
             for r in exposure_raw:
                 iid = str(r["instrument_id"]).lower()

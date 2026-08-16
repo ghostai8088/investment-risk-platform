@@ -493,3 +493,21 @@ def test_the_UNFILTERED_listing_now_admits_rolling_risk_runs(ctx) -> None:  # no
     )
     # And the fence still holds in the other direction: nothing OUTSIDE the declared set leaks in.
     assert returned_types <= PERF_RUN_TYPES
+
+
+# ---------- STRUCT-2 (REQ-PPM-007): the summed Sharpe read is refused THROUGH HTTP ----------
+
+
+def test_summed_sharpe_read_is_refused_422(ctx) -> None:  # noqa: ANN001
+    """DP-6: a ratio is NOT_AGGREGATABLE — the refusal fires through the public read surface,
+    contract-first (row count irrelevant)."""
+    client, p, _db, _a, _b = ctx
+    for path, params in (
+        ("/perf/sharpe", {"summed": "true"}),
+        ("/perf/sharpe/latest", {"portfolio_id": str(uuid.uuid4()), "summed": "true"}),
+    ):
+        resp = client.get(path, params=params, headers=_h(p))
+        assert resp.status_code == 422, (path, resp.text)
+        assert "NOT_AGGREGATABLE" in resp.json()["detail"]
+    ok = client.get("/perf/sharpe", headers=_h(p))  # P18 positive control
+    assert ok.status_code == 200

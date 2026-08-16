@@ -28,7 +28,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, map_refusal, require_permission
-from irp_shared.aggregation.contracts import ForeignMeasureError
+from irp_shared.aggregation.contracts import (
+    ForeignMeasureError,
+    NotAggregatableError,
+    assert_aggregatable,
+)
 from irp_shared.entitlement.service import Principal
 from irp_shared.marketdata import BenchmarkNotVisible, FxRateNotFound
 from irp_shared.model.service import (
@@ -120,6 +124,12 @@ _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     ForeignMeasureError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         "exposure atom of an undeclared measure — the family refuses foreign measures",
+    ),
+    # STRUCT-2 (REQ-PPM-007): a summed read of a NOT_AGGREGATABLE field — refused through the
+    # contract, before any row is read.
+    NotAggregatableError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "this family's value is declared NOT_AGGREGATABLE — a summed read is refused",
     ),
     UnregisteredModelError: (
         status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1363,6 +1373,7 @@ def get_latest_sharpe(
     metric_type: str | None = Query(default=None),
     window_months: int | None = Query(default=None),
     as_of: datetime | None = Query(default=None),
+    summed: bool = Query(default=False),
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> SharpeRatioListOut:
@@ -1371,7 +1382,18 @@ def get_latest_sharpe(
     ONE run's rows, never a merge across runs: two runs can carry different window sets AND
     different risk-free series, so a merge would silently mix both the estimator domain and the
     thing the excess is measured against.
+
+    ``summed=true`` (STRUCT-2, REQ-PPM-007): a Sharpe ratio is declared NOT_AGGREGATABLE — the
+    request is REFUSED 422 through the contract, before any row is read. The refusal is
+    contract-first: it fires on an empty book too, because the declaration governs, not the row
+    count.
     """
+    if summed:
+        try:
+            assert_aggregatable("SHARPE", "metric_value")
+        except NotAggregatableError as exc:
+            code, detail = _map_error(exc)
+            raise HTTPException(status_code=code, detail=detail) from None
     rows = latest_sharpe_ratio(
         db,
         acting_tenant=principal.tenant_id,
@@ -1389,6 +1411,7 @@ def list_sharpe_endpoint(
     metric_type: str | None = Query(default=None),
     window_months: int | None = Query(default=None),
     as_of: datetime | None = Query(default=None),
+    summed: bool = Query(default=False),
     principal: Principal = Depends(_require_view),
     db: Session = Depends(get_tenant_session),
 ) -> SharpeRatioListOut:
@@ -1398,7 +1421,15 @@ def list_sharpe_endpoint(
     change between consecutive points reflects the single entering and exiting month, not a
     re-estimate. The ``metric_type``/``window_months`` filters exist so a caller can ask for one
     series instead of four interleaved row kinds.
+
+    ``summed=true`` (STRUCT-2, REQ-PPM-007): refused 422 — a ratio is NOT_AGGREGATABLE.
     """
+    if summed:
+        try:
+            assert_aggregatable("SHARPE", "metric_value")
+        except NotAggregatableError as exc:
+            code, detail = _map_error(exc)
+            raise HTTPException(status_code=code, detail=detail) from None
     rows = list_sharpe_ratios(
         db,
         acting_tenant=principal.tenant_id,

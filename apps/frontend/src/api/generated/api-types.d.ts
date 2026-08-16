@@ -1160,6 +1160,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exposure/latest/sum": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Summed Latest Exposure Endpoint
+         * @description STRUCT-2 (REQ-PPM-007): the ADDITIVE positive case — the newest COMPLETED run's total for
+         *     ONE declared measure. Refuses 422 without ``exposure_type`` (a sum across measures is a
+         *     category error, never a conversion) and consults the aggregation contract before summing.
+         */
+        get: operations["summed_latest_exposure_endpoint_exposure_latest_sum_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exposure/runs": {
         parameters: {
             query?: never;
@@ -2516,6 +2538,8 @@ export interface paths {
          *     change between consecutive points reflects the single entering and exiting month, not a
          *     re-estimate. The ``metric_type``/``window_months`` filters exist so a caller can ask for one
          *     series instead of four interleaved row kinds.
+         *
+         *     ``summed=true`` (STRUCT-2, REQ-PPM-007): refused 422 — a ratio is NOT_AGGREGATABLE.
          */
         get: operations["list_sharpe_endpoint_perf_sharpe_get"];
         put?: never;
@@ -2540,6 +2564,11 @@ export interface paths {
          *     ONE run's rows, never a merge across runs: two runs can carry different window sets AND
          *     different risk-free series, so a merge would silently mix both the estimator domain and the
          *     thing the excess is measured against.
+         *
+         *     ``summed=true`` (STRUCT-2, REQ-PPM-007): a Sharpe ratio is declared NOT_AGGREGATABLE — the
+         *     request is REFUSED 422 through the contract, before any row is read. The refusal is
+         *     contract-first: it fires on an empty book too, because the declaration governs, not the row
+         *     count.
          */
         get: operations["get_latest_sharpe_perf_sharpe_latest_get"];
         put?: never;
@@ -4962,6 +4991,10 @@ export interface paths {
          *     ``scope_portfolio_id`` (``var_result`` carries no portfolio) + an optional ``metric_type``
          *     (parametric/total/HS/ES) and ``as_of`` run cutoff. Silent-empty on a foreign/NULL-scope id.
          *     Each row carries ``calculation_run_id`` — cross-run aggregation is a CONSUMER ERROR.
+         *
+         *     ``summed=true`` (STRUCT-2, REQ-PPM-007): ``var_value`` is declared NOT_AGGREGATABLE — a
+         *     summed VaR is NOT the portfolio VaR (diversification) — so the request is REFUSED 422
+         *     through the contract, before any row is read.
          */
         get: operations["list_vars_by_entity_endpoint_risk_vars_get"];
         put?: never;
@@ -5012,6 +5045,9 @@ export interface paths {
          *     row(s), or the one ``metric_type``) — the flagship 'latest VaR for portfolio P' read. Empty
          *     when the portfolio has no scoped COMPLETED run (a snapshot-consume-rooted or pre-0046 run is
          *     honestly unresolvable).
+         *
+         *     ``summed=true`` (STRUCT-2, REQ-PPM-007): refused 422 — the contract declares ``var_value``
+         *     NOT_AGGREGATABLE, and the declaration governs regardless of row count.
          */
         get: operations["latest_var_endpoint_risk_vars_latest_get"];
         put?: never;
@@ -7661,6 +7697,19 @@ export interface components {
             run_type: string;
             /** Status */
             status: string;
+        };
+        /** ExposureSumOut */
+        ExposureSumOut: {
+            /** Base Currency */
+            base_currency: string;
+            /** Calculation Run Id */
+            calculation_run_id: string;
+            /** Exposure Type */
+            exposure_type: string;
+            /** N Rows */
+            n_rows: number;
+            /** Total */
+            total: string;
         };
         /** FactorExposureRowOut */
         FactorExposureRowOut: {
@@ -13678,6 +13727,43 @@ export interface operations {
             };
         };
     };
+    summed_latest_exposure_endpoint_exposure_latest_sum_get: {
+        parameters: {
+            query: {
+                portfolio_id: string;
+                exposure_type?: string | null;
+                as_of?: string | null;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExposureSumOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_exposure_runs_exposure_runs_get: {
         parameters: {
             query?: {
@@ -16489,6 +16575,7 @@ export interface operations {
                 metric_type?: string | null;
                 window_months?: number | null;
                 as_of?: string | null;
+                summed?: boolean;
             };
             header?: {
                 "x-user-id"?: string | null;
@@ -16527,6 +16614,7 @@ export interface operations {
                 metric_type?: string | null;
                 window_months?: number | null;
                 as_of?: string | null;
+                summed?: boolean;
             };
             header?: {
                 "x-user-id"?: string | null;
@@ -21371,6 +21459,7 @@ export interface operations {
                 portfolio_id?: string | null;
                 metric_type?: string | null;
                 as_of?: string | null;
+                summed?: boolean;
             };
             header?: {
                 "x-user-id"?: string | null;
@@ -21445,6 +21534,7 @@ export interface operations {
                 portfolio_id: string;
                 metric_type?: string | null;
                 as_of?: string | null;
+                summed?: boolean;
             };
             header?: {
                 "x-user-id"?: string | null;
