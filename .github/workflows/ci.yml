@@ -754,6 +754,15 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzzzzzzzzzz_struct3_pg.py -q
+      # STRUCT-4 stage 27: the three-currency book — DP-11 resolution live (root EUR / foreign
+      # node USD / inherited EUR), the hand oracle at the foreign-reporting node, the stated
+      # pivot on persisted bytes, the rollup translation, and the return-chain rename carry.
+      # Runs after stage 26 (alpha-sort; its own book moves no golden).
+      - name: Demo stage 27 (Postgres, STRUCT-4 — the three-currency book + FX visible)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzzzzzzzzzzz_struct4_pg.py -q
       - name: Report generation RLS + append-only + unique-key non-vacuity (Postgres)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp

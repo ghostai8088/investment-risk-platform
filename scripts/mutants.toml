@@ -1254,8 +1254,10 @@ id = "M-S1-9"
 group = "struct-1"
 why = "denomination currencies drop out of the FX-completeness pin — a bond denominated in a currency no mark carries gaps missing-fx where the binder should have pinned the leg (review fold F-5)"
 file = "packages/shared-python/src/irp_shared/snapshot/service.py"
-find = """        for ccy in sorted(mark_currencies | denomination_currencies):"""
-replace = """        for ccy in sorted(mark_currencies):"""
+# RE-ANCHORED at STRUCT-4 (the loop gained the fx_targets union; the denomination drop is
+# the same defect on the new line).
+find = """        for ccy in sorted(mark_currencies | denomination_currencies | fx_targets):"""
+replace = """        for ccy in sorted(mark_currencies | fx_targets):"""
 tests = ["packages/shared-python/tests/test_exposure.py"]
 
 # ---------------------------------------------------------------------------------------------
@@ -1427,3 +1429,147 @@ find = """    if purpose == PURPOSE_EXPOSURE_INPUT:
             )"""
 replace = """"""
 tests = ["packages/shared-python/tests/test_exposure.py", "packages/shared-python/tests/test_snapshot.py"]
+
+# ---------------------------------------------------------------------------
+# STRUCT-4 (REQ-PPM-010): reporting-currency declarations + governed FX visible
+# ---------------------------------------------------------------------------
+
+[[mutant]]
+id = "M-S4-1"
+group = "struct-4"
+why = "the silent USD default resurrects on the BUILD path — an undeclared root silently computes a USD book again (the exact DP-11 kill target)"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+# RE-ANCHORED at the review fold (C9 moved the declaration resolution above the explicit-arg
+# branch to make the conflict refusal symmetric).
+find = """    if declared is None:
+        raise UndeclaredReportingCurrencyError(
+            f"no reporting currency is declared on portfolio {portfolio_id} or any ancestor — "
+            "an undeclared root REFUSES rather than defaulting (REQ-PPM-010/DP-11); declare "
+            "base_currency_code on the root or pass base_currency explicitly"
+        )
+    return declared"""
+replace = """    return declared or DEFAULT_BASE"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+[[mutant]]
+id = "M-S4-2"
+group = "struct-4"
+why = "the declaration walk stops ascending — an undeclared child no longer inherits its parent, so DP-11's inherit clause is dead while its refusal still fires"
+file = "packages/shared-python/src/irp_shared/portfolio/portfolio.py"
+find = """        parent_id = current.parent_portfolio_id
+        if parent_id is None:
+            return None"""
+replace = """        return None
+        parent_id = current.parent_portfolio_id
+        if parent_id is None:
+            return None"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+[[mutant]]
+id = "M-S4-3"
+group = "struct-4"
+why = "the silent USD default resurrects on the CONSUME path — the reproduction registry documents this exact hazard (a EUR book recomputed in USD)"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+find = """        elif declared_base is not None:
+            base = declared_base
+        else:
+            raise UndeclaredReportingCurrencyError(
+                "the snapshot's pinned declaration chain resolves no reporting currency — an "
+                "undeclared scope REFUSES rather than defaulting (REQ-PPM-010/DP-11); pass "
+                "base_currency explicitly"
+            )"""
+replace = """        else:
+            base = declared_base or DEFAULT_BASE"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+[[mutant]]
+id = "M-S4-4"
+group = "struct-4"
+why = "the override-conflict refusal is unplugged — an explicit base silently overrides a node's declared reporting currency on a v3 node-scoped consume"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+find = """            if is_v3 and scope_node_id is not None and declared_base not in (None, base_currency):"""
+replace = """            if False:"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+[[mutant]]
+id = "M-S4-5"
+group = "struct-4"
+why = "the missing-fx honesty branch fabricates a 1.0 — a pre-PPM-010 snapshot's untranslatable total reads as translated at par, the exact silent-default class the requirement kills"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+find = """                if composed is None:
+                    missing_fx = f"missing-fx:{base}->{reporting}"
+                else:"""
+replace = """                if composed is None:
+                    composed = (Decimal(1), [])
+                if composed is not None:"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+[[mutant]]
+id = "M-S4-6"
+group = "struct-4"
+why = "FX-completeness collapses back to the run base — the node-currency legs are never pinned, the missing-rate refusal never fires at build, and the foreign-node read starves"
+file = "packages/shared-python/src/irp_shared/snapshot/service.py"
+find = """        fx_targets = {base_currency}
+        if binding_predicate_version == NODE_FX_BINDING_PREDICATE:
+            fx_targets |= node_reporting_currencies"""
+replace = """        fx_targets = {base_currency}"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+[[mutant]]
+id = "M-S4-7"
+group = "struct-4"
+why = "the DP-12 stated pivot is dropped at serialization — new triangulated rows ship the legacy byte shape and the pivot survives only by read-time inference"
+file = "packages/shared-python/src/irp_shared/marketdata/legs.py"
+find = """    if pivot is not None and len(legs) == 2:
+        return json.dumps([{**leg.as_dict(), "pivot": pivot} for leg in legs])
+    return json.dumps([leg.as_dict() for leg in legs])"""
+replace = """    return json.dumps([leg.as_dict() for leg in legs])"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+[[mutant]]
+id = "M-S4-8"
+group = "struct-4"
+why = "the read-time pivot derivation ignores reciprocal orientation — a shipped triangulated path derives NO pivot (or the wrong one) and old rows lose their DP-12 read half"
+file = "packages/shared-python/src/irp_shared/marketdata/legs.py"
+find = """    def _travel(leg: dict) -> tuple[str, str]:
+        if leg.get("direction") == LEG_RECIPROCAL:
+            return leg["quote_currency"], leg["base_currency"]
+        return leg["base_currency"], leg["quote_currency"]"""
+replace = """    def _travel(leg: dict) -> tuple[str, str]:
+        return leg["base_currency"], leg["quote_currency"]"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+[[mutant]]
+id = "M-S4-9"
+group = "struct-4"
+why = "currency-minor-unit rounding creeps into the identity path — the same-currency pass-through re-rounds to 2dp, the exact regression the kept no-op guard exists to catch"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+find = """            if reporting == base:
+                # The same-currency no-op is EXACT — the total passes through untouched (the
+                # regression-guard clause: no rate lookup, no re-rounding on the identity path).
+                translated, translated_ccy, fx_rate = total, reporting, Decimal(1)"""
+replace = """            if reporting == base:
+                translated, translated_ccy, fx_rate = (
+                    total.quantize(Decimal("0.01")),
+                    reporting,
+                    Decimal(1),
+                )"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+[[mutant]]
+id = "M-S4-10"
+group = "struct-4"
+why = "the node-total translation stops STATING its pivot — the triangulated rollup reads back pivot-less and DP-12's node-total half survives only as inference (review fold C0/C12)"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+find = """                    pivot = DEFAULT_BASE if len(fx_legs) == 2 else None"""
+replace = """                    pivot = None"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+[[mutant]]
+id = "M-S4-11"
+group = "struct-4"
+why = "the API's DP-12 read-time half is unplugged — fx_pivot ships NULL for every row and the drill-in's pivot column dies while every helper test stays green (review fold C11)"
+file = "apps/backend/src/irp_backend/api/exposure.py"
+find = """        fx_pivot=derive_pivot(legs),"""
+replace = """        fx_pivot=None,"""
+tests = ["apps/backend/tests/test_exposure_endpoint.py"]

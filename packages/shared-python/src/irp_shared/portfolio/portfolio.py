@@ -124,6 +124,40 @@ def resolve_ultimate_parent(session: Session, portfolio: Portfolio, *, acting_te
     raise HierarchyCycleError(str(portfolio.id))  # exceeded the depth cap
 
 
+def resolve_reporting_currency(
+    session: Session, portfolio: Portfolio, *, acting_tenant: str
+) -> str | None:
+    """The node's DECLARED reporting currency under DP-11 (STRUCT-4, REQ-PPM-010): its own
+    ``base_currency_code``, else the nearest ancestor's — an undeclared node INHERITS its parent.
+    Returns ``None`` when NOTHING up the chain declares (the undeclared-ROOT case the caller must
+    REFUSE — never a silent default). Bounded (visited-set + depth cap), cycle-safe,
+    tenant-filtered; a parent outside the acting tenant ends the walk (boundary, same as
+    :func:`resolve_ultimate_parent`)."""
+    if str(portfolio.tenant_id) != str(acting_tenant):
+        raise PortfolioNotVisible(str(portfolio.id))
+    current = portfolio
+    visited = {str(current.id)}
+    for _ in range(MAX_HIERARCHY_DEPTH):
+        if current.base_currency_code:
+            return current.base_currency_code
+        parent_id = current.parent_portfolio_id
+        if parent_id is None:
+            return None
+        if str(parent_id) in visited:
+            raise HierarchyCycleError(str(portfolio.id))
+        parent = session.execute(
+            select(Portfolio).where(
+                Portfolio.id == str(parent_id),
+                Portfolio.tenant_id == str(acting_tenant),
+            )
+        ).scalar_one_or_none()
+        if parent is None:
+            return None  # boundary: the chain leaves the visible tenant undeclared
+        visited.add(str(parent.id))
+        current = parent
+    raise HierarchyCycleError(str(portfolio.id))  # exceeded the depth cap
+
+
 def resolve_descendants(
     session: Session, portfolio: Portfolio, *, acting_tenant: str
 ) -> list[Portfolio]:
@@ -258,6 +292,7 @@ def resolve_tree_as_of(
             node_type=row.node_type,
             name=row.name,
             status=row.status,
+            base_currency_code=row.base_currency_code,
             record_version=row.record_version,
             effective_at=row.effective_at,
         )
@@ -273,6 +308,9 @@ class TreeNodeAsOf:
     node_type: str
     name: str
     status: str
+    #: STRUCT-4 (DP-11): every ENT-076 row carried this from mint; the projection dropped it,
+    #: leaving the historical currency view silently poorer than the live one.
+    base_currency_code: str | None
     record_version: int
     effective_at: datetime
 

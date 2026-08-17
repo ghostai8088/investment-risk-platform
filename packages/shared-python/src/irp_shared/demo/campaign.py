@@ -407,6 +407,11 @@ def _seed_book(session: Session, actor_id: str) -> _Book:
         code="DEMO-GLOBAL",
         name="Demo campaign multi-asset book",
         node_type="ACCOUNT",
+        # STRUCT-4 (DP-11): the book DECLARES the USD it has always computed in — the scheduler's
+        # cadence dispatch builds with no explicit base, and an undeclared root now REFUSES (the
+        # full-PG battery caught the fire going FAILED). Migration 0073 states the same
+        # declaration on every pre-existing real book.
+        base_currency_code="USD",
         actor=PortfolioActor(actor_id=actor_id),
     ).id
     instruments = {

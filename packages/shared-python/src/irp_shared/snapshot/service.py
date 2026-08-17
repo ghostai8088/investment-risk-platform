@@ -81,7 +81,12 @@ from irp_shared.marketdata.factor import (
 )
 from irp_shared.marketdata.models import REFERENCE_KEY_NONE, RETURN_TYPE_SIMPLE, FactorReturn
 from irp_shared.marketdata.service import FxRateNotVisible, resolve_fx_rate
-from irp_shared.portfolio import PortfolioNotVisible, resolve_descendants, resolve_portfolio
+from irp_shared.portfolio import (
+    Portfolio,
+    PortfolioNotVisible,
+    resolve_descendants,
+    resolve_portfolio,
+)
 from irp_shared.position import PositionNotVisible, resolve_position
 from irp_shared.reference.instrument import InstrumentNotVisible, resolve_instrument
 from irp_shared.reference.instrument_terms import reconstruct_terms_as_of
@@ -186,6 +191,14 @@ DEFAULT_BINDING_PREDICATE = "v1:subtree-open-positions"
 #: pre-STRUCT-3 snapshot (v1) keeps legacy semantics (reproduction of old runs untouched); a v2
 #: snapshot REQUIRES an explicit consume node (DP-7).
 SUBTREE_BINDING_PREDICATE = "v2:subtree-open-positions+full-node-pin"
+#: STRUCT-4 (REQ-PPM-010, DP-11/DP-12): v3 EXPOSURE_INPUT builds ADDITIONALLY (a) redefine
+#: FX-completeness against the set of RESOLVED node reporting currencies in scope (not just the
+#: run base) — so a later node read in the node's own declared currency composes from pins alone —
+#: and (b) mark rows whose triangulated ``fx_legs`` STATE their pivot. The predicate string is the
+#: version marker the exposure paths branch on (the STRUCT-3 lesson: key new strictness to the
+#: artifact's OWN marker, never to code age): v1/v2 snapshots keep their shipped semantics and
+#: byte shapes exactly, so reproduction of old runs is untouched.
+NODE_FX_BINDING_PREDICATE = "v3:subtree-open-positions+full-node-pin+node-fx"
 
 #: The per-tenant completeness DataQualityRule (resolve-or-register, the ``ensure_manual_source``
 #: pattern). A NOT_NULL rule over a derived dataset — no new evaluator, Protocol untouched (§16).
@@ -320,10 +333,11 @@ def build_snapshot(
     # 1. Resolve the bound scope FIRST — a foreign/unknown portfolio raises PortfolioNotVisible
     #    (fail closed on SQLite AND PG) BEFORE any enumeration or write.
     resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
-    # STRUCT-3: EXPOSURE_INPUT snapshots carry the v2 full-subtree predicate unless the caller
-    # pinned a version explicitly (the predicate string is load-bearing — see its constant).
+    # STRUCT-3/STRUCT-4: EXPOSURE_INPUT snapshots carry the newest predicate (v3) unless the
+    # caller pinned a version explicitly (the predicate string is load-bearing — see the
+    # constants; explicit v2 keeps the STRUCT-3 semantics for the legacy-shape tests).
     if purpose == PURPOSE_EXPOSURE_INPUT and binding_predicate_version == DEFAULT_BINDING_PREDICATE:
-        binding_predicate_version = SUBTREE_BINDING_PREDICATE
+        binding_predicate_version = NODE_FX_BINDING_PREDICATE
 
     # 2. Enumerate the open positions of the subtree + their marks at the fixed valuation_date
     #    (the shipped, tenant-bounded, cycle-safe, arithmetic-free composers).
@@ -407,6 +421,7 @@ def build_snapshot(
     #    position-less grouping nodes — so the run's stored tree view is reconstructable from
     #    PORTFOLIO components alone (edges no longer dangle) and re-parenting a MIDDLE node
     #    after the run cannot change what the run saw.
+    node_reporting_currencies: set[str] = set()
     if purpose == PURPOSE_EXPOSURE_INPUT:
         root = resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
         subtree = [root, *resolve_descendants(session, root, acting_tenant=acting_tenant)]
@@ -417,28 +432,54 @@ def build_snapshot(
             _append_spec(
                 specs, COMPONENT_KIND_PORTFOLIO, "portfolio", node, portfolio_content(node)
             )
+        # STRUCT-4 (DP-11, v3 only): the set of reporting currencies a NODE read of this
+        # snapshot could resolve — each node's declaration walked WITHIN the pinned subtree
+        # chain (own -> nearest declared ancestor up to the scope root), mirroring EXACTLY what
+        # the consume side can resolve from pinned content. A currency resolvable above the
+        # scope root is deliberately excluded: the pin cannot answer it, so pinning for it
+        # would promise a read the snapshot cannot honor.
+        if binding_predicate_version == NODE_FX_BINDING_PREDICATE:
+            by_id = {str(n.id): n for n in subtree}
+            for node in subtree:
+                current: Portfolio | None = node
+                walked: set[str] = set()
+                while current is not None and str(current.id) not in walked:
+                    if current.base_currency_code:
+                        node_reporting_currencies.add(current.base_currency_code)
+                        break
+                    walked.add(str(current.id))
+                    parent_id = current.parent_portfolio_id
+                    current = by_id.get(str(parent_id)) if parent_id else None
 
-    # 3b. P2-3: pin the FX legs (EXPOSURE_INPUT). For each distinct mark currency != base, pin the
-    #     convert-path fx_rate rows (triangulation pivot = DEFAULT_BASE). FX-completeness fails
-    #     closed (FxRateNotFound) BEFORE any write if a leg is missing as-of.
+    # 3b. P2-3: pin the FX legs (EXPOSURE_INPUT). For each distinct mark/denomination currency,
+    #     pin the convert-path fx_rate rows to every conversion TARGET (triangulation pivot =
+    #     DEFAULT_BASE). v1/v2: the single target is the run base (the shipped semantics,
+    #     byte-identical). v3 (STRUCT-4, DP-11): the target set is REDEFINED as {run base} ∪ the
+    #     resolved node reporting currencies in scope — including base -> node-currency legs, so
+    #     a node total can be translated from pins alone. FX-completeness fails closed
+    #     (FxRateNotFound) BEFORE any write if any required leg is missing as-of.
     if base_currency is not None:
+        fx_targets = {base_currency}
+        if binding_predicate_version == NODE_FX_BINDING_PREDICATE:
+            fx_targets |= node_reporting_currencies
         seen_fx: set[str] = set()
-        for ccy in sorted(mark_currencies | denomination_currencies):
-            if ccy == base_currency:
-                continue
-            for fx_row in resolve_conversion_legs(
-                session,
-                from_currency=ccy,
-                to_currency=base_currency,
-                valid_at=as_of_valid_at,
-                acting_tenant=acting_tenant,
-                known_at=known,
-                base=DEFAULT_BASE,
-            ):
-                if fx_row.id in seen_fx:
+        for ccy in sorted(mark_currencies | denomination_currencies | fx_targets):
+            for target in sorted(fx_targets):
+                if ccy == target:
                     continue
-                seen_fx.add(fx_row.id)
-                _append_spec(specs, COMPONENT_KIND_FX, "fx_rate", fx_row, fx_content(fx_row))
+                for fx_row in resolve_conversion_legs(
+                    session,
+                    from_currency=ccy,
+                    to_currency=target,
+                    valid_at=as_of_valid_at,
+                    acting_tenant=acting_tenant,
+                    known_at=known,
+                    base=DEFAULT_BASE,
+                ):
+                    if fx_row.id in seen_fx:
+                        continue
+                    seen_fx.add(fx_row.id)
+                    _append_spec(specs, COMPONENT_KIND_FX, "fx_rate", fx_row, fx_content(fx_row))
 
     # 4. No empty / foreign-scope snapshot (fail closed before any write).
     if not specs:
@@ -4687,6 +4728,7 @@ _BINDING_PREDICATES = (
     REPORT_BINDING_PREDICATE,
     DEFAULT_BINDING_PREDICATE,
     SUBTREE_BINDING_PREDICATE,
+    NODE_FX_BINDING_PREDICATE,
     FACTOR_EXPOSURE_BINDING_PREDICATE,
     FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE,
     FACTOR_EXPOSURE_LOADINGS_BINDING_PREDICATE,

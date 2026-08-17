@@ -32,6 +32,8 @@ from irp_shared.exposure.service import (
     ExposureNotVisible,
     ExposureRunNotVisible,
     ExposureRunResult,
+    ReportingCurrencyConflictError,
+    UndeclaredReportingCurrencyError,
     latest_exposure,
     list_exposure,
     list_exposure_by_entity,
@@ -58,6 +60,8 @@ __all__ = [
     "resolve_run",
     "ExposureRunResult",
     "ExposureInputError",
+    "ReportingCurrencyConflictError",
+    "UndeclaredReportingCurrencyError",
     "ExposureNotVisible",
     "ExposureRunNotVisible",
 ]

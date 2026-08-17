@@ -19,7 +19,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 #: The platform's current migration head. A new migration updates THIS LINE ONLY.
-EXPECTED_MIGRATION_HEAD = "0072_portfolio_hierarchy_version"  # STRUCT-3: the tree's own history
+EXPECTED_MIGRATION_HEAD = "0073_declare_root_currency"  # STRUCT-4: DP-11 declared roots
 
 
 def _script() -> ScriptDirectory:

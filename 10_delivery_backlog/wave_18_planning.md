@@ -96,6 +96,12 @@ IN: REQ-PPM-006, -007, -008, -009 (name-inertness half only — mandate comparis
 2. The ledger-class omission sweep (seven ledgers), verified on main AFTER the last merge.
 3. Roadmap rows stamped with merge identities in the FIRST commit of the following slice (the REPRO-2 carry pattern).
 4. Deferred triggers from Part 1 re-checked: none should have fired mid-wave; if one did, it is a decision, not a carry.
+5. *(Added 2026-08-17, STRUCT-4 review fold C1 — recorded here so the close cannot miss it.)*
+   The rename-carry RESIDUAL decision (P19): the RETURN chain was discharged at STRUCT-4
+   (stage 27, fresh post-rename, values identical); the backtest/desmoothing/pacing chains —
+   whose fresh inputs live on the SHARED flat demo books — come to the close as a named
+   decision: accept recurrence on the strength of the mechanical name census + five
+   fresh-executed families, or name a host slice. Silence at the close is the P19 violation.
 
 ## Part 6 — Verifier findings ledger (all folded)
 
