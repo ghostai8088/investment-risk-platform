@@ -1,6 +1,47 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-15, night) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-16) — read this block; everything below it is HISTORY
+
+**Main `f74d207` (PR #225, STRUCT-3 — the 38th autonomous merge), tree clean. Migration head
+`0072_portfolio_hierarchy_version`, one head. Next free canonical id ENT-077 (ENT-076
+`portfolio_hierarchy_version` minted at STRUCT-3). NEXT = STRUCT-4 (reporting currency +
+governed FX made visible), the LAST Wave-18 slice; its scope rows REQ-PPM-010 (adjudicated
+2026-08-13, CURRENT) enters at the slice gate.**
+
+### STRUCT-3 landed: the hierarchy has a memory and runs have nodes
+
+- **REQ-PPM-001 clauses 1-2 + REQ-PPM-008 delivered (PR #225).** ENT-076 gives the hierarchy
+  its OWN version history (migration `0072`, backfilled with `source='0072_BACKFILL'` rows,
+  P17-proven by the committed harness): `resolve_tree_as_of` rebuilds the tree at any past
+  timestamp with NO run or snapshot in scope — the re-adjudicated clause verbatim. Exposure
+  snapshots pin the FULL subtree under a v2 predicate (the run's stored tree view; a middle-node
+  re-parent after the run provably cannot move it); consume runs REQUIRE a validated node,
+  compute only its sub-holdings, and stamp it; the rollup identity holds per measure to the last
+  decimal across three levels with middle-insertion invariance; NODE_SCOPES declares every
+  family's node-scope class exact-set with executed evidence at and below a sleeve. The as-of
+  tree endpoint + the Portfolio Structure screen (as-of toggle) are the entity's first read
+  surface. Demo stage 26: the tree book, the chain below the top (factor + VaR at a sleeve,
+  portfolio-return at a LEAF), the rename carry executed fresh.
+- **The review confirmed 23 findings, 3 BLOCKING, all folded**: legacy-run reproduction would
+  have broken (legacy snapshots now keep pre-STRUCT-3 semantics bit-for-bit); FIVE
+  SCOPE_INHERITED declarations were false — their binders stamped NULL, the SCENARIO defect
+  shape shipped as data — all five now stamp, grep-census-pinned; the rollup's silent zeros are
+  refusals. Plus: the 0072 backfill ran after FORCE RLS behind a false docstring sentence
+  (survived only as superuser; empirically verified by a reviewer on a NOSUPERUSER role) —
+  moved before the RLS block.
+- **CI earned its keep too**: the OD-052 drift gate caught the as-of index existing in the
+  migration only — the ONE gate class no local battery runs (alembic check on fresh PG).
+  Declared on the model, re-watched to green, and the first merge attempt was REFUSED by branch
+  protection because the per-conclusion REST verification found the red job the exit-0 watch
+  missed (the Wave-17 lesson, earning again).
+- **Gates at the merge**: make check 0 (2,890), full-PG 0 (3,518), fe-check 0, gen-api-check 0,
+  mutation battery 0 (4/4, anchors 118/118), the 0072 P17 harness 0, CI green on all nine
+  checks at head `4f754b5` per-conclusion-verified.
+- **Carry status**: the full-breadth rename re-run is PARTIALLY DISCHARGED (three families fresh
+  on the tree book + STRUCT-2's two; the census is the half with teeth); the residual names
+  STRUCT-4's close (P19, on the roadmap row).
+
+## Prior current truth (2026-08-15, night) — HISTORY
 
 **Main `42095d2` (PR #223, STRUCT-2 — the 36th autonomous merge), tree clean. Migration head
 `0071_exposure_type_in_grain_key`, one head (STRUCT-2 shipped NO migration). Next free canonical
