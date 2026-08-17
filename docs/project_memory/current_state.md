@@ -1,6 +1,62 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-16) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-17) — read this block; everything below it is HISTORY
+
+**Main `d465b6b` (PR #227, STRUCT-4 — the 39th autonomous merge), tree clean. Migration head
+`0073_declare_root_currency`, one head. Next free canonical id ENT-077 (no entity minted at
+STRUCT-4 — 0073 is data-only). WAVE-18 BUILD COMPLETE (all four slices). NEXT = the WAVE-18
+CLOSE: G4 fires for the FIRST time (capability-coverage section + delete the zero-bindings
+control per its own instruction); the seven-ledger omission sweep verify-on-main; the rename-
+carry residual DECISION (planning Part 5 item 5 — backtest/desmoothing/pacing chains: accept
+recurrence on the census's strength, or name a host); the wave decision ledger.**
+
+### STRUCT-4 landed: reporting currency declared, governed FX visible
+
+- **REQ-PPM-010 delivered (PR #227).** DP-11: the silent USD default is DEAD on both paths;
+  declaration = own `base_currency_code` else nearest declared ancestor
+  (`resolve_reporting_currency`); an undeclared ROOT refuses (`UndeclaredReportingCurrencyError`);
+  migration `0073` states `'USD'` on every previously-undeclared root (head bump + ENT-076
+  history row, `source='0073_BACKFILL'`; P17 harness committed + run over populated rows; the
+  original revision id blew alembic_version's varchar(32) — found by EXECUTING it). DP-12: v3
+  (`v3:subtree-open-positions+full-node-pin+node-fx`) runs STATE the triangulation pivot in
+  `fx_legs`; shipped rows derive it at read time (`derive_pivot`); v1/v2 byte shapes proven
+  unchanged. FX-completeness redefined on v3: targets = {run base} ∪ {resolved node reporting
+  currencies}; the rollup translates node totals into the node's declared currency from PINNED
+  FX with honest `missing-fx` on pre-PPM-010 snapshots; RunDetail ships the conversion-path
+  drill-in + translated node totals ("via USD" pivot; node-id input reaches grouping nodes).
+  The three-currency book (GBP pair only-triangulated; SLEEVE-UK reports USD holding GBP+EUR):
+  hand-derived literals in `08_testing_qa/struct4_fx_test_spec.md` — the foreign-node oracle
+  6,080.000000 USD, the two-leg node translation 432.000000 GBP; translated-leg count > 0
+  asserted FIRST everywhere (P18). DP-14: `05_analytics_methodologies/fx_translation_v1.md`
+  cites QS-04/07/08/09 + DM-N-04 verbatim with locators (the citation lane corrected two
+  locators + an unmarked elision).
+- **The review (6 lanes, 25 agents, per-finding verification) confirmed 19 findings, 0
+  rejected, ALL folded.** The BLOCKING (proven by execution): the build path accepted an
+  explicit base contradicting a DECLARED root, minting v3 runs whose own CTRL-018 reproduction
+  the new consume-path conflict refusal then REFUSED — the refusal is now SYMMETRIC
+  (build + v3 node-scoped consume; matching/undeclared overrides stay legal). Two HIGH
+  never-fired surfaces (the API's `fx_pivot` wiring; the two-leg rollup-translation branch)
+  now execute true and are mutation-pinned (M-S4-10/11). The v1 multi-top consume resolution
+  counted an unresolvable top as agreement — now every pinned top must resolve identically or
+  it refuses (P3-C1). The v3-only conflict scoping + pin-bounded resolution are PINNED
+  decisions (tests + fx doc §4); 0073's verify-drift consequence documented as by-design.
+- **The full-PG battery's own catch, fixed at cause**: the scheduler's cadence dispatch builds
+  with NO explicit base, so the undeclared DEMO-GLOBAL root turned the scheduled fire into a
+  FAILED dispatch (10 downstream count pins moved). The demo root now DECLARES its USD — the
+  0073 statement, never a scheduler default.
+- **Rename-carry residual (P19)**: the RETURN chain DISCHARGED at stage 27 (fresh post-rename,
+  values identical); backtest/desmoothing/pacing = the named decision at the close (planning
+  Part 5 item 5; roadmap carry row stamped). STRUCT-3's merge identity stamped on its roadmap
+  row per Part 5 item 3.
+- **Gates at the merge**: make check 0 (2,908), full-PG 0 (3,499), fe-check 0 (19 RunDetail
+  tests), gen-api-check 0, mutation battery struct-4 11/11 KILLED (anchors 129/129), alembic
+  upgrade + check clean on fresh PG, the 0073 P17 harness 0, CI green on all nine checks at
+  head `aa1f8f1` per-conclusion-verified. GitHub's API 503'd through three PR-create attempts —
+  landed by REST retry loop, nothing hand-waved.
+
+---
+
+## Previous truth — superseded at the STRUCT-4 merge, 2026-08-17
 
 **Main `f74d207` (PR #225, STRUCT-3 — the 38th autonomous merge), tree clean. Migration head
 `0072_portfolio_hierarchy_version`, one head. Next free canonical id ENT-077 (ENT-076
