@@ -515,3 +515,152 @@ def test_rollup_contract_refusal_reaches_http_as_422(ctx, monkeypatch) -> None: 
     )
     assert resp.status_code == 422, resp.text
     assert "cannot be summed" in resp.json()["detail"]
+
+
+# ------- STRUCT-4 (REQ-PPM-010): DP-11 refusals + the visible conversion path over HTTP -------
+
+
+def _declared_eur_book(db: Session, tenant_id: str) -> str:
+    """A declared-EUR fund holding one USD instrument (one reciprocal leg — the translated leg
+    count 1 > 0) and one GBP instrument (review fold C11: the TRIANGULATED path over HTTP — no
+    GBP/EUR rate exists, so the row carries two legs and a STATED pivot the API must surface)."""
+    from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
+    from irp_shared.reference.models import Currency
+
+    db.add(Currency(tenant_id=SYSTEM_TENANT_ID, code="GBP", name="GBP", valid_from=_VA))
+    db.flush()
+    fund = create_portfolio(
+        db,
+        tenant_id=tenant_id,
+        code="FX-EUR-FUND",
+        name="fx eur fund",
+        node_type="FUND",
+        base_currency_code="EUR",
+        actor=PortfolioActor(actor_id="a"),
+    )
+    for code, qty, mark, ccy in (("FX-I1", "10", "11.00", "USD"), ("FX-I2", "5", "8.00", "GBP")):
+        inst = create_instrument(
+            db,
+            tenant_id=tenant_id,
+            code=code,
+            name="i",
+            asset_class="EQUITY",
+            actor=ReferenceActor(actor_id="a"),
+        )
+        create_position(
+            db,
+            portfolio_id=fund.id,
+            instrument_id=inst.id,
+            acting_tenant=tenant_id,
+            actor=PositionActor(actor_id="a"),
+            quantity=Decimal(qty),
+            valid_from=_VA,
+        )
+        create_valuation(
+            db,
+            portfolio_id=fund.id,
+            instrument_id=inst.id,
+            valuation_date=_VD,
+            acting_tenant=tenant_id,
+            actor=ValuationActor(actor_id="a"),
+            mark_value=Decimal(mark),
+            currency_code=ccy,
+            valid_from=_VA,
+        )
+    capture_fx_rate(
+        db,
+        base_currency="GBP",
+        quote_currency="USD",
+        rate_date=_VD,
+        rate=Decimal("1.25"),
+        acting_tenant=tenant_id,
+        actor=FxRateActor(actor_id="a"),
+        valid_from=_VA,
+    )
+    db.commit()
+    return fund.id
+
+
+def test_undeclared_root_refusal_is_422_with_its_own_detail(ctx) -> None:  # noqa: ANN001
+    """DP-11 through the real entry point: the fixture book declares NOTHING, so omitting
+    base_currency answers the subclass's OWN 422 detail (the API-2 error-map lesson) — the
+    pre-STRUCT-4 behavior was a silent USD run. Zero runs committed (negative control)."""
+    client, principal, _db, pf = ctx
+    body = _run_body(pf)
+    del body["base_currency"]
+    resp = client.post("/exposure/runs", json=body, headers=_h(principal))
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == "no reporting currency declared on the scope or any ancestor"
+    runs = client.get("/exposure/runs", headers=_h(principal)).json()["items"]
+    assert runs == []
+
+
+def test_conflict_override_refusal_is_422_over_http(ctx) -> None:  # noqa: ANN001
+    """The override clause through the real entry point: an explicit base contradicting the
+    node's declared EUR on a v3 node-scoped consume is refused with its own detail; the
+    declaration-default consume (no base at all) COMPLETES in EUR (positive control)."""
+    client, principal, db, _pf = ctx
+    fund = _declared_eur_book(db, principal.tenant_id)
+    body = _run_body(fund)
+    del body["base_currency"]  # DP-11: the declaration IS the default now
+    built = client.post("/exposure/runs", json=body, headers=_h(principal)).json()
+    assert built["status"] == "COMPLETED"
+    assert {r["base_currency"] for r in built["rows"]} == {"EUR"}
+
+    conflict = client.post(
+        "/exposure/runs",
+        json={
+            "code_version": "v1",
+            "environment_id": "ci",
+            "snapshot_id": built["input_snapshot_id"],
+            "scope_node_id": fund,
+            "base_currency": "USD",
+        },
+        headers=_h(principal),
+    )
+    assert conflict.status_code == 422, conflict.text
+    assert (
+        conflict.json()["detail"]
+        == "base_currency contradicts the node's declared reporting currency"
+    )
+
+
+def test_conversion_path_is_visible_over_http(ctx) -> None:  # noqa: ANN001
+    """The read-endpoints-without-screens gap's API half: the run rows carry fx_legs + the DP-12
+    fx_pivot, and the rollup carries the translation evidence. The translated-leg count is
+    asserted > 0 BEFORE any leg assertion (P18 clause 1)."""
+    client, principal, db, _pf = ctx
+    fund = _declared_eur_book(db, principal.tenant_id)
+    body = _run_body(fund)
+    del body["base_currency"]
+    built = client.post("/exposure/runs", json=body, headers=_h(principal)).json()
+
+    translated = [r for r in built["rows"] if r["fx_legs"]]
+    assert len(translated) > 0  # P18: this book actually translates
+    # USD -> EUR with only EUR/USD published = ONE reciprocal leg; no pivot on a 1-leg path.
+    one_leg = [r for r in translated if len(r["fx_legs"]) == 1]
+    assert [leg["direction"] for leg in one_leg[0]["fx_legs"]] == ["reciprocal"]
+    assert one_leg[0]["fx_pivot"] is None
+    # Review fold C11: the TRIANGULATED row over HTTP — the fx_pivot wiring (derive_pivot at
+    # _row_out) must be load-bearing through the real endpoint, and the stored legs STATE the
+    # pivot (DP-12). Deleting the API wiring or the stated key goes red HERE.
+    two_leg = [r for r in translated if len(r["fx_legs"]) == 2]
+    assert len(two_leg) == 1  # the GBP row: GBP->USD direct, then USD->EUR reciprocal
+    assert two_leg[0]["fx_pivot"] == "USD"
+    assert [leg["pivot"] for leg in two_leg[0]["fx_legs"]] == ["USD", "USD"]
+
+    rollup = client.get(
+        f"/exposure/runs/{built['run_id']}/rollup",
+        params={"node_id": fund},
+        headers=_h(principal),
+    ).json()
+    row = rollup[0]
+    # The fund's own declared EUR: identity translation, exact, with the evidence fields shaped.
+    assert (row["reporting_currency"], row["translated_currency"]) == ("EUR", "EUR")
+    assert row["translated_total"] == row["total"]
+    assert row["translation_fx_rate"] == "1"
+    assert (row["translation_legs"], row["translation_pivot"], row["missing_fx"]) == (
+        [],
+        None,
+        None,
+    )

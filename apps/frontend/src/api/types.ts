@@ -44,6 +44,9 @@ export type Position = Schemas["PositionOut"];
 export type Valuation = Schemas["ValuationOut"];
 export type FactorExposureRow = Schemas["FactorExposureRowOut"];
 export type ExposureRow = Schemas["ExposureRowOut"];
+/** STRUCT-4 (REQ-PPM-010): the rollup read with the node's declared reporting currency + the
+ * translated total and its conversion-path evidence (legs/pivot/fx_rate_id provenance). */
+export type NodeRollup = Schemas["NodeRollupOut"];
 export type PortfolioReturnRow = Schemas["PortfolioReturnRowOut"];
 export type CovarianceRow = Schemas["CovarianceRowOut"];
 export type VarBacktestRow = Schemas["VarBacktestRowOut"];

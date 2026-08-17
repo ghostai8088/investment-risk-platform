@@ -165,6 +165,9 @@ class TreeNodeAsOfOut(BaseModel):
     node_type: str
     name: str
     status: str
+    # STRUCT-4 (DP-11): every ENT-076 row carried the declaration from mint; the projection
+    # dropped it, leaving the historical currency view silently poorer than the live one.
+    base_currency_code: str | None
     record_version: int
     effective_at: datetime
 
@@ -189,6 +192,7 @@ def get_tree_as_of(
             node_type=n.node_type,
             name=n.name,
             status=n.status,
+            base_currency_code=n.base_currency_code,
             record_version=n.record_version,
             effective_at=n.effective_at,
         )

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 
@@ -206,10 +206,12 @@ describe("RunDetail", () => {
             signed_quantity: "100.00000000",
             mark_value: "7.000000",
             fx_rate: "1.100000000000",
+            fx_pivot: null,
+            fx_legs: [],
             exposure_amount: "770.000000",
           },
         ],
-      }),
+      } as unknown as Partial<RunDetailBase>),
     );
     renderDetail("exposure", "55555555-5555-5555-5555-555555555555");
     expect(await screen.findByText("770.000000")).toBeTruthy();
@@ -384,5 +386,148 @@ describe("RunDetail", () => {
     expect(await screen.findByText(/NOT the SEC Rule 22e-4 15% test/)).toBeTruthy();
     expect(screen.getByText("Registered model limitations")).toBeTruthy();
     expect(screen.getByText(/INSTRUMENT-grain/)).toBeTruthy();
+  });
+
+  // ------- STRUCT-4 (REQ-PPM-010): the conversion-path drill-in -------
+
+  const EXPOSURE_ROW = {
+    id: "row-1",
+    calculation_run_id: "55555555-5555-5555-5555-555555555555",
+    portfolio_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    instrument_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    base_currency: "EUR",
+    mark_currency: "GBP",
+    signed_quantity: "100",
+    mark_value: "40.00",
+    fx_rate: "1.157407407407",
+    fx_pivot: "USD",
+    fx_legs: [
+      {
+        fx_rate_id: "fx-leg-1",
+        base_currency: "GBP",
+        quote_currency: "USD",
+        rate: "1.25",
+        direction: "direct",
+        pivot: "USD",
+      },
+      {
+        fx_rate_id: "fx-leg-2",
+        base_currency: "EUR",
+        quote_currency: "USD",
+        rate: "1.08",
+        direction: "reciprocal",
+        pivot: "USD",
+      },
+    ],
+    exposure_amount: "4629.629630",
+    exposure_type: "MARKET_VALUE",
+  };
+
+  function stubExposureDetail(rows: unknown[], rollup: unknown[]): ReturnType<typeof vi.fn> {
+    // Two fetches now leave this screen (run detail + node rollup) — route by URL.
+    const mock = vi.fn().mockImplementation((url: string) => {
+      const body = String(url).includes("/rollup") ? rollup : detail({ rows } as never);
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+    });
+    vi.stubGlobal("fetch", mock);
+    return mock;
+  }
+
+  it("STRUCT-4: renders the conversion path — legs with travel direction, provenance ids, the stated pivot — and the translated node total", async () => {
+    const mock = stubExposureDetail(
+      [EXPOSURE_ROW],
+      [
+        {
+          node_id: EXPOSURE_ROW.portfolio_id,
+          exposure_type: "MARKET_VALUE",
+          total: "5629.629630",
+          n_rows: 2,
+          base_currency: "EUR",
+          reporting_currency: "USD",
+          translated_total: "6080.000000",
+          translated_currency: "USD",
+          translation_fx_rate: "1.080000000000",
+          translation_legs: [
+            {
+              fx_rate_id: "fx-leg-2",
+              base_currency: "EUR",
+              quote_currency: "USD",
+              rate: "1.08",
+              direction: "direct",
+            },
+          ],
+          translation_pivot: null,
+          missing_fx: null,
+        },
+      ],
+    );
+    renderDetail("exposure", "22222222-2222-2222-2222-222222222222");
+    expect(await screen.findByText("Conversion paths")).toBeTruthy();
+    // The DIRECT leg travels base→quote; the RECIPROCAL leg travels quote→base (stored pair is
+    // the published orientation) — rendering it raw would show the path backwards.
+    expect(screen.getByText(/GBP → USD \(direct @ 1\.25; fx_rate fx-leg-1\)/)).toBeTruthy();
+    expect(
+      screen.getByText(/USD → EUR \(reciprocal of EUR\/USD @ 1\.08; fx_rate fx-leg-2\)/),
+    ).toBeTruthy();
+    // Review fold C13: the pivot cell renders DISTINCTLY ("via USD") — a bare currency-code
+    // match was satisfiable by the reporting-currency cell, proving nothing about the pivot.
+    expect(screen.getByText("via USD")).toBeTruthy();
+    // The translated node total, byte-for-byte with its currency.
+    expect(await screen.findByText("6080.000000 USD")).toBeTruthy();
+    const urls = mock.mock.calls.map((c) => String(c[0]));
+    // Review fold C15: the EXACT rollup URL — run id AND node id pinned, not a substring.
+    expect(urls).toContain(
+      `/exposure/runs/22222222-2222-2222-2222-222222222222/rollup?node_id=${EXPOSURE_ROW.portfolio_id}`,
+    );
+  });
+
+  it("STRUCT-4 negative: a NON-exposure family renders no conversion section", async () => {
+    stubDetail(detail({ rows: [{ id: "r", metric_type: "VAR_PARAMETRIC", value: "1.0" }] }));
+    renderDetail("vars", "22222222-2222-2222-2222-222222222222");
+    await screen.findByText("Provenance");
+    expect(screen.queryByText("Conversion paths")).toBeNull();
+    expect(screen.queryByText(/Node totals/)).toBeNull();
+  });
+
+  it("STRUCT-4 honesty: an all-identity run says so, and a missing pinned path renders the gap — never a fabricated rate", async () => {
+    stubExposureDetail(
+      [{ ...EXPOSURE_ROW, mark_currency: "EUR", fx_rate: "1", fx_pivot: null, fx_legs: [] }],
+      [
+        {
+          node_id: EXPOSURE_ROW.portfolio_id,
+          exposure_type: "MARKET_VALUE",
+          total: "90.000000",
+          n_rows: 1,
+          base_currency: "USD",
+          reporting_currency: "GBP",
+          translated_total: null,
+          translated_currency: null,
+          translation_fx_rate: null,
+          translation_legs: [],
+          translation_pivot: null,
+          missing_fx: "missing-fx:USD->GBP",
+        },
+      ],
+    );
+    renderDetail("exposure", "22222222-2222-2222-2222-222222222222");
+    expect(await screen.findByText(/no published-rate legs were used/)).toBeTruthy();
+    expect(
+      await screen.findByText(/unavailable — missing-fx:USD->GBP \(no pinned path/),
+    ).toBeTruthy();
+  });
+
+  it("STRUCT-4 (C8): a typed node id re-fetches the rollup for a node the rows never mention", async () => {
+    const mock = stubExposureDetail([EXPOSURE_ROW], []);
+    renderDetail("exposure", "22222222-2222-2222-2222-222222222222");
+    await screen.findByText("Conversion paths");
+    const input = screen.getByPlaceholderText("node id");
+    const grouping = "cccccccc-cccc-cccc-cccc-cccccccccccc"; // a grouping node with no rows
+    fireEvent.change(input, { target: { value: grouping } });
+    await waitFor(() => {
+      const urls = mock.mock.calls.map((c) => String(c[0]));
+      expect(urls).toContain(
+        `/exposure/runs/22222222-2222-2222-2222-222222222222/rollup?node_id=${grouping}`,
+      );
+    });
   });
 });

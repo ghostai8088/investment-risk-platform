@@ -1124,7 +1124,7 @@ def test_full_subtree_pin_stores_the_tree_and_survives_a_middle_reparent(
     insufficient — the row's own amendment); the grouping nodes are pinned even with no
     positions."""
     from irp_shared.portfolio import resolve_portfolio, update_portfolio
-    from irp_shared.snapshot import SUBTREE_BINDING_PREDICATE, resolve_snapshot
+    from irp_shared.snapshot import NODE_FX_BINDING_PREDICATE, resolve_snapshot
     from irp_shared.snapshot.models import COMPONENT_KIND_PORTFOLIO
 
     tenant = str(uuid.uuid4())
@@ -1144,7 +1144,9 @@ def test_full_subtree_pin_stores_the_tree_and_survives_a_middle_reparent(
     result = _run(session, tenant, fund, "USD")
     assert result.status == RunStatus.COMPLETED.value
     snap = resolve_snapshot(session, result.run.input_snapshot_id, acting_tenant=tenant)
-    assert snap.binding_predicate_version == SUBTREE_BINDING_PREDICATE
+    # STRUCT-4: the default EXPOSURE_INPUT predicate advanced to v3 (node-fx); the
+    # full-subtree pin this test proves is carried forward unchanged.
+    assert snap.binding_predicate_version == NODE_FX_BINDING_PREDICATE
 
     def _pinned_parents() -> dict[str, str | None]:
         comps = list_components(session, snapshot_id=snap.id, acting_tenant=tenant)

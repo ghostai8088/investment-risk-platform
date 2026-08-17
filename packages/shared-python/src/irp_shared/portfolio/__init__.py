@@ -24,6 +24,7 @@ from irp_shared.portfolio.portfolio import (
     create_portfolio,
     resolve_descendants,
     resolve_portfolio,
+    resolve_reporting_currency,
     resolve_ultimate_parent,
     update_portfolio,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "resolve_portfolio",
     "resolve_ultimate_parent",
     "resolve_descendants",
+    "resolve_reporting_currency",
     "create_portfolio",
     "update_portfolio",
 ]

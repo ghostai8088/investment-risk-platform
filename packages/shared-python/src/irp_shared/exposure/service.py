@@ -56,8 +56,12 @@ from irp_shared.exposure.models import (
     EXPOSURE_TYPES,
     ExposureAggregate,
 )
-from irp_shared.marketdata import DEFAULT_BASE, compose_effective_rate
-from irp_shared.portfolio import resolve_portfolio
+from irp_shared.marketdata import (
+    DEFAULT_BASE,
+    compose_effective_rate,
+    serialize_legs,
+)
+from irp_shared.portfolio import resolve_portfolio, resolve_reporting_currency
 from irp_shared.snapshot import (
     COMPONENT_KIND_FX,
     COMPONENT_KIND_INSTRUMENT,
@@ -65,6 +69,7 @@ from irp_shared.snapshot import (
     COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
+    NODE_FX_BINDING_PREDICATE,
     SUBTREE_BINDING_PREDICATE,
     SnapshotActor,
     build_snapshot,
@@ -90,6 +95,18 @@ _MAX_FACE_VALUE_ABS = Decimal("1E14")
 class ExposureInputError(Exception):
     """A missing/invalid prerequisite detected BEFORE the run is created — pre-create refusal (no
     run, no exposure, no audit). Maps to 422."""
+
+
+class UndeclaredReportingCurrencyError(ExposureInputError):
+    """DP-11 (STRUCT-4, REQ-PPM-010): NOTHING up the scope's declaration chain names a reporting
+    currency and no explicit ``base_currency`` was given. The pre-STRUCT-4 path silently computed
+    such a book in USD — an undeclared ROOT now REFUSES, never defaults."""
+
+
+class ReportingCurrencyConflictError(ExposureInputError):
+    """STRUCT-4 (the planning row's override clause): an explicit ``base_currency`` on a
+    node-scoped consume of a v3 snapshot CONTRADICTS the node's own declared reporting currency —
+    refused rather than silently overriding a declaration the node carries."""
 
 
 class ExposureNotVisible(Exception):
@@ -125,17 +142,36 @@ class ExposureRunResult:
 def _resolve_base_currency(
     session: Session, *, portfolio_id: str, acting_tenant: str, base_currency: str | None
 ) -> str:
-    """The reporting/base currency: the explicit arg → the bound portfolio's ``base_currency_code``
-    →
-    ``DEFAULT_BASE`` (USD). Resolving the portfolio also fails closed cross-tenant
-    (PortfolioNotVisible
-    ⇒ pre-create refusal)."""
-    if base_currency:
-        # Still resolve the portfolio so a cross-tenant/unknown scope fails closed pre-create.
-        resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
-        return base_currency
+    """The build path's reporting/base currency (DP-11, STRUCT-4): the explicit arg (legal only
+    when it MATCHES the declaration or nothing is declared — a contradicting override is refused
+    on BOTH paths, or the consume-side conflict check makes the run irreproducible) → the scope
+    node's DECLARED currency (its own ``base_currency_code``, else inherited from the nearest
+    declared ancestor) → REFUSE. The pre-STRUCT-4 ``or DEFAULT_BASE`` tail is DEAD: an undeclared
+    root never silently becomes a USD book. Resolving the portfolio also fails closed
+    cross-tenant (PortfolioNotVisible ⇒ pre-create refusal)."""
     pf = resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
-    return pf.base_currency_code or DEFAULT_BASE
+    declared = resolve_reporting_currency(session, pf, acting_tenant=acting_tenant)
+    if base_currency:
+        # Review fold (the BLOCKING C9 class): the conflict refusal must be SYMMETRIC. A build
+        # permitted to override a DECLARED root would mint a v3 run whose own CTRL-018
+        # reproduction is then REFUSED by the consume-path conflict check (the adapter replays
+        # the stored base at the stored node) — an irreproducible governed-run class. An
+        # explicit base over an UNDECLARED scope stays legal (the pre-DP-11 books' path); a
+        # different reporting view of a declared book is the READ-time translation's job.
+        if declared is not None and declared != base_currency:
+            raise ReportingCurrencyConflictError(
+                f"base_currency {base_currency!r} contradicts the scope's declared reporting "
+                f"currency {declared!r} — refused at build (REQ-PPM-010; the read-time "
+                "translation serves other reporting views)"
+            )
+        return base_currency
+    if declared is None:
+        raise UndeclaredReportingCurrencyError(
+            f"no reporting currency is declared on portfolio {portfolio_id} or any ancestor — "
+            "an undeclared root REFUSES rather than defaulting (REQ-PPM-010/DP-11); declare "
+            "base_currency_code on the root or pass base_currency explicitly"
+        )
+    return declared
 
 
 @dataclass(frozen=True)
@@ -154,12 +190,17 @@ class _PinnedInputs:
     asset_classes: dict[str, str]
     #: instrument_id -> (face_value | None, denomination_currency | None) from the pinned terms.
     terms: dict[str, tuple[Decimal | None, str | None]]
+    #: STRUCT-4 (DP-12): the pivot a TRIANGULATED row's ``fx_legs`` should STATE — set only for a
+    #: v3 snapshot. ``None`` reproduces the pre-STRUCT-4 byte shape exactly (fx_legs is a
+    #: byte-compared reproduction field; legacy runs must re-emit identical bytes).
+    stated_pivot: str | None = None
 
 
-def _read_components(comps: list[Any]) -> _PinnedInputs:
+def _read_components(comps: list[Any], *, stated_pivot: str | None = None) -> _PinnedInputs:
     """Parse the snapshot's pinned components' captured content (PURE — no live read): positions
     ``(pf,inst)->qty``, marks ``(pf,inst)->(mark,ccy)``, fx ``(base,quote)->(id,rate)``, plus the
-    STRUCT-1 instrument identity/terms maps."""
+    STRUCT-1 instrument identity/terms maps. ``stated_pivot`` (STRUCT-4/DP-12) rides through to
+    the emit path — the caller sets it ONLY for a v3 snapshot."""
     positions: dict[tuple[str, str], Decimal] = {}
     marks: dict[tuple[str, str], tuple[Decimal, str]] = {}
     rate_map: dict[tuple[str, str], tuple[str, Decimal]] = {}
@@ -192,6 +233,7 @@ def _read_components(comps: list[Any]) -> _PinnedInputs:
         rate_map=rate_map,
         asset_classes=asset_classes,
         terms=terms,
+        stated_pivot=stated_pivot,
     )
 
 
@@ -237,7 +279,9 @@ def _emit_row(
             signed_quantity=qty,
             mark_value=unit_value,
             fx_rate=fx_rate,
-            fx_legs=json.dumps([leg.as_dict() for leg in legs]),
+            # DP-12: a v3 run's triangulated legs STATE their pivot; on v1/v2 snapshots
+            # ``stated_pivot`` is None and the bytes are the pre-STRUCT-4 shape exactly.
+            fx_legs=serialize_legs(legs, pivot=inputs.stated_pivot),
             exposure_amount=amount,
             exposure_type=exposure_type,
         )
@@ -379,22 +423,46 @@ def _build_rows(
 
 def _pinned_tree_and_position_portfolios(
     comps: list[Any],
-) -> tuple[dict[str, str | None], set[str]]:
-    """The snapshot's stored tree view (portfolio_id -> parent, from pinned PORTFOLIO components)
-    and the set of portfolio ids that pinned POSITIONS live under — everything the consume-path
-    node validation needs, read from captured content only."""
+) -> tuple[dict[str, str | None], set[str], dict[str, str | None]]:
+    """The snapshot's stored tree view (portfolio_id -> parent, from pinned PORTFOLIO components),
+    the set of portfolio ids that pinned POSITIONS live under, and each pinned node's DECLARED
+    ``base_currency_code`` (STRUCT-4 — the pinned portfolio content has carried it since P2-1) —
+    everything the consume-path node validation and the DP-11 resolution need, read from captured
+    content only."""
     tree: dict[str, str | None] = {}
     position_pfs: set[str] = set()
+    declared: dict[str, str | None] = {}
     for comp in comps:
         if comp.component_kind == COMPONENT_KIND_PORTFOLIO:
             data = json.loads(comp.captured_content)
             tree[str(data["id"])] = (
                 str(data["parent_portfolio_id"]) if data.get("parent_portfolio_id") else None
             )
+            declared[str(data["id"])] = data.get("base_currency_code")
         elif comp.component_kind == COMPONENT_KIND_POSITION:
             data = json.loads(comp.captured_content)
             position_pfs.add(str(data["portfolio_id"]))
-    return tree, position_pfs
+    return tree, position_pfs, declared
+
+
+def _pinned_reporting_currency(
+    tree: dict[str, str | None], declared: dict[str, str | None], node_id: str
+) -> str | None:
+    """DP-11 resolution over PINNED content only (mirror-exact with the binder's build-time walk):
+    the node's own declared currency, else the nearest declared ancestor WITHIN the pinned chain.
+    ``None`` when nothing in the pinned chain declares — including a chain that dangles out of
+    the pin undeclared (the pin cannot answer what it never saw). Cycle-bounded by a visited
+    set."""
+    current: str | None = str(node_id).lower()
+    walked: set[str] = set()
+    while current is not None and current not in walked and current in tree:
+        ccy = declared.get(current)
+        if ccy:
+            return ccy
+        walked.add(current)
+        parent = tree[current]
+        current = str(parent).lower() if parent else None
+    return None
 
 
 def _pinned_subtree_of(tree: dict[str, str | None], node_id: str) -> set[str]:
@@ -477,11 +545,13 @@ def run_exposure(
             raise ExposureInputError(
                 f"snapshot {snapshot_id} purpose {snapshot.purpose!r} != {PURPOSE_EXPOSURE_INPUT}"
             )
-        base = base_currency or DEFAULT_BASE
         # --- STRUCT-3 (DP-7): the consume node, validated against the PINNED subtree ---
         comps_pre = list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
-        pinned_tree, pinned_position_pfs = _pinned_tree_and_position_portfolios(comps_pre)
-        strict = snapshot.binding_predicate_version == SUBTREE_BINDING_PREDICATE
+        pinned_tree, pinned_position_pfs, pinned_declared = _pinned_tree_and_position_portfolios(
+            comps_pre
+        )
+        is_v3 = snapshot.binding_predicate_version == NODE_FX_BINDING_PREDICATE
+        strict = is_v3 or snapshot.binding_predicate_version == SUBTREE_BINDING_PREDICATE
         if strict and scope_node_id is None:
             raise ExposureInputError(
                 "a consume run on a full-subtree snapshot must name its node (scope_node_id) — "
@@ -509,6 +579,54 @@ def run_exposure(
                     f"the pinned subtree of node {scope_node_id} holds no positions — an empty "
                     "subtree refuses rather than returning zero (REQ-PPM-008)"
                 )
+        # --- STRUCT-4 (DP-11): the consume run's reporting base. The pre-STRUCT-4 tail
+        # (`base_currency or DEFAULT_BASE`) silently recomputed an undeclared book in USD — the
+        # reproduction registry documents the hazard verbatim. Resolution is over PINNED content
+        # only (AD-014 — the compute may not ask the live tree): the scoped node's declaration
+        # chain, else the pinned top-of-tree's; nothing resolvable ⇒ REFUSE, never default.
+        # The reproduction adapters pass the ORIGINAL run's stored base explicitly, so legacy
+        # runs reproduce untouched. ---
+        if scope_node_id is not None and strict:
+            # The NODE's chain — only where the compute is actually node-filtered. On a legacy
+            # v1 snapshot the compute stays whole-book (the F6/F7 folds above), so anchoring
+            # the base to the named node would denominate the WHOLE book in one sleeve's
+            # currency (review fold C10) — v1 falls through to the top-of-tree resolution.
+            declared_base = _pinned_reporting_currency(
+                pinned_tree, pinned_declared, str(scope_node_id)
+            )
+        else:
+            # Review fold C7: EVERY pinned top must resolve, and to the SAME currency. A v1
+            # pin can carry several dangling tops (position-bearing sleeves only); counting an
+            # UNRESOLVABLE top as agreement would let one sleeve's declaration silently price
+            # its sibling — refused, never guessed (the P3-C1 ambiguity rule).
+            tops = [n for n, p in pinned_tree.items() if p is None or p not in pinned_tree]
+            top_resolved = [
+                _pinned_reporting_currency(pinned_tree, pinned_declared, t) for t in tops
+            ]
+            declared_base = (
+                top_resolved[0]
+                if top_resolved and None not in top_resolved and len(set(top_resolved)) == 1
+                else None
+            )
+        if base_currency:
+            if is_v3 and scope_node_id is not None and declared_base not in (None, base_currency):
+                # v3 ONLY (the STRUCT-3 lesson — new strictness keys to the artifact's own
+                # version marker): an explicit base contradicting the node's declaration is a
+                # refused override, not a silent recompute in a foreign currency.
+                raise ReportingCurrencyConflictError(
+                    f"base_currency {base_currency!r} contradicts node {scope_node_id}'s "
+                    f"declared reporting currency {declared_base!r} — a node-scoped read is "
+                    "refused rather than silently overriding the declaration (REQ-PPM-010)"
+                )
+            base = base_currency
+        elif declared_base is not None:
+            base = declared_base
+        else:
+            raise UndeclaredReportingCurrencyError(
+                "the snapshot's pinned declaration chain resolves no reporting currency — an "
+                "undeclared scope REFUSES rather than defaulting (REQ-PPM-010/DP-11); pass "
+                "base_currency explicitly"
+            )
     else:
         if portfolio_id is None or as_of_valid_at is None:
             raise ExposureInputError(
@@ -540,7 +658,14 @@ def run_exposure(
     # verbatim (bare ``str(gate)`` — the P3-1 format exposure already used). ---
     def _compute(run: CalculationRun) -> tuple[list[ExposureAggregate], list[str]]:
         inputs = _read_components(
-            list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+            list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant),
+            # DP-12: only a v3 snapshot's rows STATE their triangulation pivot — v1/v2 rows
+            # keep the pre-STRUCT-4 fx_legs bytes exactly (byte-compared reproduction field).
+            stated_pivot=(
+                DEFAULT_BASE
+                if snapshot.binding_predicate_version == NODE_FX_BINDING_PREDICATE
+                else None
+            ),
         )
         if node_scope is not None:
             # STRUCT-3: a node-scoped consume run computes ONLY the node's sub-holdings — the
@@ -551,6 +676,7 @@ def run_exposure(
                 rate_map=inputs.rate_map,
                 asset_classes=inputs.asset_classes,
                 terms=inputs.terms,
+                stated_pivot=inputs.stated_pivot,
             )
         return _build_rows(
             inputs=inputs,
@@ -763,6 +889,22 @@ class NodeRollup:
     total: Decimal
     n_rows: int
     base_currency: str
+    #: STRUCT-4 (REQ-PPM-010): the node's DECLARED reporting currency resolved over the PINNED
+    #: declaration chain (None = nothing declared — honest, no translation attempted).
+    reporting_currency: str | None = None
+    #: The node total TRANSLATED into ``reporting_currency`` via the run's PINNED FX components
+    #: (never a live rate — AD-014). None when undeclared or when the pinned set has no path.
+    translated_total: Decimal | None = None
+    translated_currency: str | None = None
+    #: The effective composite multiplier used (12dp, HALF_UP) — Decimal(1) on the identity path.
+    translation_fx_rate: Decimal | None = None
+    #: The ordered published-rate legs of the translation (empty on identity).
+    translation_legs: tuple = ()
+    #: The triangulation pivot when the translation took two legs (DP-12 — stated, not inferred).
+    translation_pivot: str | None = None
+    #: A pre-PPM-010 snapshot lacking the node-currency leg surfaces the gap HONESTLY — never a
+    #: retroactive refusal, never a fabricated 1.0 (the planning row's risk-first test).
+    missing_fx: str | None = None
 
 
 def rollup_exposure(
@@ -789,14 +931,17 @@ def rollup_exposure(
     if run.input_snapshot_id is None:
         raise ExposureInputError(f"run {run_id} carries no input snapshot — nothing to roll up")
     snapshot = resolve_snapshot(session, run.input_snapshot_id, acting_tenant=acting_tenant)
-    if snapshot.binding_predicate_version != SUBTREE_BINDING_PREDICATE:
+    if snapshot.binding_predicate_version not in (
+        SUBTREE_BINDING_PREDICATE,
+        NODE_FX_BINDING_PREDICATE,
+    ):
         raise ExposureInputError(
             f"run {run_id} was bound to a pre-STRUCT-3 snapshot without a full-subtree pin — "
             "a node rollup needs the run's stored tree view"
         )
-    pinned_tree, _ = _pinned_tree_and_position_portfolios(
-        list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
-    )
+    comps = list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+    pinned_tree, _, pinned_declared = _pinned_tree_and_position_portfolios(comps)
+    rate_map = _read_components(comps).rate_map
     node_key = str(node_id).lower()
     if node_key not in pinned_tree:
         raise ExposureInputError(
@@ -827,13 +972,52 @@ def rollup_exposure(
                 f"the node's rows span base currencies {sorted(bases)} — a single total would "
                 "mix currencies (REQ-PPM-007: refused, never converted)"
             )
+        total = sum((r.exposure_amount for r in member_rows), Decimal(0))
+        base = next(iter(bases))
+        # --- STRUCT-4 (REQ-PPM-010): translate the node total into the node's DECLARED
+        # reporting currency, from the run's PINNED FX components only (AD-014 — never a live
+        # rate). Undeclared ⇒ no translation (honest None); a pre-PPM-010 snapshot lacking the
+        # node-currency leg ⇒ ``missing_fx`` — surfaced, never refused retroactively, never a
+        # fabricated 1.0. ---
+        reporting = _pinned_reporting_currency(pinned_tree, pinned_declared, node_key)
+        translated: Decimal | None = None
+        translated_ccy: str | None = None
+        fx_rate: Decimal | None = None
+        legs: tuple = ()
+        pivot: str | None = None
+        missing_fx: str | None = None
+        if reporting is not None:
+            if reporting == base:
+                # The same-currency no-op is EXACT — the total passes through untouched (the
+                # regression-guard clause: no rate lookup, no re-rounding on the identity path).
+                translated, translated_ccy, fx_rate = total, reporting, Decimal(1)
+            else:
+                composed = compose_effective_rate(
+                    rate_map, from_currency=base, to_currency=reporting, base=DEFAULT_BASE
+                )
+                if composed is None:
+                    missing_fx = f"missing-fx:{base}->{reporting}"
+                else:
+                    effective, fx_legs = composed
+                    fx_rate = effective.quantize(_FX_QUANTUM, rounding=ROUND_HALF_UP)
+                    translated = (total * fx_rate).quantize(_MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+                    translated_ccy = reporting
+                    legs = tuple(fx_legs)
+                    pivot = DEFAULT_BASE if len(fx_legs) == 2 else None
         out.append(
             NodeRollup(
                 node_id=str(node_id),
                 exposure_type=measure,
-                total=sum((r.exposure_amount for r in member_rows), Decimal(0)),
+                total=total,
                 n_rows=len(member_rows),
-                base_currency=next(iter(bases)),
+                base_currency=base,
+                reporting_currency=reporting,
+                translated_total=translated,
+                translated_currency=translated_ccy,
+                translation_fx_rate=fx_rate,
+                translation_legs=legs,
+                translation_pivot=pivot,
+                missing_fx=missing_fx,
             )
         )
     if not out:

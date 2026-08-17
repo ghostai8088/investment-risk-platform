@@ -40,6 +40,8 @@ from irp_shared.exposure import (
     ExposureRunNotVisible,
     ExposureRunQueryError,
     ExposureRunResult,
+    ReportingCurrencyConflictError,
+    UndeclaredReportingCurrencyError,
     latest_exposure,
     list_exposure,
     list_exposure_by_entity,
@@ -48,7 +50,7 @@ from irp_shared.exposure import (
     resolve_run,
     run_exposure,
 )
-from irp_shared.marketdata import FxRateNotFound
+from irp_shared.marketdata import FxRateNotFound, derive_pivot
 from irp_shared.portfolio import HierarchyCycleError, PortfolioNotVisible
 from irp_shared.snapshot import EmptySnapshotError, SnapshotNotFound, SnapshotPurposeError
 
@@ -62,6 +64,16 @@ _require_view = require_permission("exposure.view")
 #: indistinguishable 404; completeness/empty/cycle/FX-missing are 409; bad input is 422.
 _ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     ExposureInputError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid exposure run input"),
+    # STRUCT-4 (DP-11): subclasses carry their OWN keys (the API-2 error-map lesson) — each
+    # refusal names its distinct cause rather than collapsing into the generic input detail.
+    UndeclaredReportingCurrencyError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "no reporting currency declared on the scope or any ancestor",
+    ),
+    ReportingCurrencyConflictError: (
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "base_currency contradicts the node's declared reporting currency",
+    ),
     SnapshotPurposeError: (status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid snapshot purpose"),
     PortfolioNotVisible: (status.HTTP_404_NOT_FOUND, "portfolio not found"),
     SnapshotNotFound: (status.HTTP_404_NOT_FOUND, "snapshot not found"),
@@ -102,7 +114,9 @@ class ExposureRunIn(BaseModel):
     environment_id: str  # the run environment (FW-RUN §5 item 7; required)
     portfolio_id: uuid.UUID | None = None  # build-in-request scope (with as_of_valid_at)
     as_of_valid_at: datetime | None = None
-    base_currency: str | None = None  # default: portfolio base, else USD
+    # STRUCT-4 (DP-11): default = the scope's DECLARED reporting currency (own, else inherited
+    # from the nearest declared ancestor); an undeclared scope REFUSES — the "else USD" tail died.
+    base_currency: str | None = None
     as_of_known_at: datetime | None = None
     snapshot_id: uuid.UUID | None = None  # consume-existing alternative
     # STRUCT-3 (DP-7 / REQ-PPM-008): the consume path's explicit node — REQUIRED for a
@@ -121,6 +135,9 @@ class ExposureRowOut(BaseModel):
     mark_value: str
     fx_rate: str
     fx_legs: list[dict]
+    # STRUCT-4 (DP-12): the triangulation pivot — STATED in new rows' legs, DERIVED at read
+    # time for shipped rows (their pinned bytes are never rewritten); None off the 2-leg path.
+    fx_pivot: str | None
     exposure_amount: str
     exposure_type: str
 
@@ -138,6 +155,7 @@ class ExposureRunOut(BaseModel):
 
 
 def _row_out(row: ExposureAggregate) -> ExposureRowOut:
+    legs = json.loads(row.fx_legs)
     return ExposureRowOut(
         id=row.id,
         calculation_run_id=row.calculation_run_id,
@@ -148,7 +166,8 @@ def _row_out(row: ExposureAggregate) -> ExposureRowOut:
         signed_quantity=str(row.signed_quantity),
         mark_value=str(row.mark_value),
         fx_rate=str(row.fx_rate),
-        fx_legs=json.loads(row.fx_legs),
+        fx_legs=legs,
+        fx_pivot=derive_pivot(legs),
         exposure_amount=str(row.exposure_amount),
         exposure_type=row.exposure_type,
     )
@@ -395,6 +414,17 @@ class NodeRollupOut(BaseModel):
     total: str
     n_rows: int
     base_currency: str
+    # STRUCT-4 (REQ-PPM-010): the node's declared reporting currency + the total TRANSLATED into
+    # it from the run's PINNED FX (decimals as strings; legs carry the published-rate evidence;
+    # the pivot is stated where two legs were taken). A pre-PPM-010 snapshot lacking the leg
+    # surfaces ``missing_fx`` honestly — never a retroactive refusal, never a fabricated 1.0.
+    reporting_currency: str | None
+    translated_total: str | None
+    translated_currency: str | None
+    translation_fx_rate: str | None
+    translation_legs: list[dict]
+    translation_pivot: str | None
+    missing_fx: str | None
 
 
 @router.get("/runs/{run_id}/rollup", response_model=list[NodeRollupOut])
@@ -432,6 +462,15 @@ def rollup_exposure_endpoint(
             total=str(r.total),
             n_rows=r.n_rows,
             base_currency=r.base_currency,
+            reporting_currency=r.reporting_currency,
+            translated_total=(None if r.translated_total is None else str(r.translated_total)),
+            translated_currency=r.translated_currency,
+            translation_fx_rate=(
+                None if r.translation_fx_rate is None else str(r.translation_fx_rate)
+            ),
+            translation_legs=[leg.as_dict() for leg in r.translation_legs],
+            translation_pivot=r.translation_pivot,
+            missing_fx=r.missing_fx,
         )
         for r in rollups
     ]

@@ -22,6 +22,7 @@ lookup, so the live and captured ends pick the identical path. ``rate`` means "1
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -68,6 +69,42 @@ class FxLeg:
             "rate": str(self.rate),
             "direction": self.direction,
         }
+
+
+def serialize_legs(legs: list[FxLeg], *, pivot: str | None = None) -> str:
+    """The ``fx_legs`` JSON evidence string (STRUCT-4, DP-12). A TRIANGULATED path (two legs)
+    STATES its pivot on each leg dict when ``pivot`` is given; a one-leg or identity path never
+    carries one (there is no pivot to state). Passing ``pivot=None`` reproduces the pre-STRUCT-4
+    byte shape EXACTLY — the legacy writer path reproduction of old runs depends on (fx_legs is a
+    byte-compared reproduction field; shipped rows derive their pivot at read time instead,
+    :func:`derive_pivot`)."""
+    if pivot is not None and len(legs) == 2:
+        return json.dumps([{**leg.as_dict(), "pivot": pivot} for leg in legs])
+    return json.dumps([leg.as_dict() for leg in legs])
+
+
+def derive_pivot(leg_dicts: list[dict]) -> str | None:
+    """The conversion path's pivot currency, from stored ``fx_legs`` dicts (STRUCT-4, DP-12):
+    a STATED ``pivot`` key wins (new rows); else a two-leg path DERIVES it as the currency the
+    travel direction passes through — a reciprocal leg's stored base/quote are the PUBLISHED
+    row's orientation, so travel is ``quote -> base`` there. One-leg and identity paths have no
+    pivot (``None``). Shipped pinned bytes are never rewritten — this is the read-time half of
+    DP-12."""
+    for leg in leg_dicts:
+        stated = leg.get("pivot")
+        if stated:
+            return str(stated)
+    if len(leg_dicts) != 2:
+        return None
+
+    def _travel(leg: dict) -> tuple[str, str]:
+        if leg.get("direction") == LEG_RECIPROCAL:
+            return leg["quote_currency"], leg["base_currency"]
+        return leg["base_currency"], leg["quote_currency"]
+
+    first_to = _travel(leg_dicts[0])[1]
+    second_from = _travel(leg_dicts[1])[0]
+    return first_to if first_to == second_from else None
 
 
 def _hop(get_rate: RateLookup, a: str, b: str) -> tuple[FxLeg, FxRate | None] | None:

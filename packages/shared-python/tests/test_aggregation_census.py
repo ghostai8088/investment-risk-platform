@@ -127,6 +127,9 @@ _ALLOWLIST: dict[tuple[str, str, str], tuple[int, str]] = {
     ("irp_shared.demo.sr1_stage17", "run_demo_sr1_stage17", "sum-call"): (1, N),
     # Stage 26's identity assertions sum rollup totals across levels (demo invariant checks).
     ("irp_shared.demo.struct3_stage26", "run_demo_struct3_stage26", "sum-call"): (2, N),
+    # STRUCT-4 stage 27: the foreign-node oracle check re-totals the node run's rows against the
+    # hand literal — a demo assertion over one run's rows, not a shipped aggregation surface.
+    ("irp_shared.demo.struct4_stage27", "run_demo_struct4_stage27", "sum-call"): (1, N),
     ("irp_shared.dq.rules", "evaluate_not_null", "sum-call"): (1, N),
     ("irp_shared.dq.service", "update_dq_rule", "augassign-add"): (1, N),
     ("irp_shared.ingestion.service", "stage_upload", "augassign-add"): (1, N),

@@ -112,7 +112,9 @@ from irp_shared.marketdata.factor import (
 from irp_shared.marketdata.legs import (
     FxLeg,
     compose_effective_rate,
+    derive_pivot,
     resolve_conversion_legs,
+    serialize_legs,
 )
 from irp_shared.marketdata.models import (
     BENCHMARK_LEVEL_TYPES,
@@ -221,6 +223,8 @@ __all__ = [
     "resolve_conversion_legs",
     "compose_effective_rate",
     "FxLeg",
+    "derive_pivot",
+    "serialize_legs",
     "PricePoint",
     "PRICE_TYPES",
     "PRICE_TYPE_CLOSE",

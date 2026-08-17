@@ -7658,6 +7658,8 @@ export interface components {
             fx_legs: {
                 [key: string]: unknown;
             }[];
+            /** Fx Pivot */
+            fx_pivot: string | null;
             /** Fx Rate */
             fx_rate: string;
             /** Id */
@@ -8798,12 +8800,28 @@ export interface components {
             base_currency: string;
             /** Exposure Type */
             exposure_type: string;
+            /** Missing Fx */
+            missing_fx: string | null;
             /** N Rows */
             n_rows: number;
             /** Node Id */
             node_id: string;
+            /** Reporting Currency */
+            reporting_currency: string | null;
             /** Total */
             total: string;
+            /** Translated Currency */
+            translated_currency: string | null;
+            /** Translated Total */
+            translated_total: string | null;
+            /** Translation Fx Rate */
+            translation_fx_rate: string | null;
+            /** Translation Legs */
+            translation_legs: {
+                [key: string]: unknown;
+            }[];
+            /** Translation Pivot */
+            translation_pivot: string | null;
         };
         /** PacingModelIn */
         PacingModelIn: {
@@ -10673,6 +10691,8 @@ export interface components {
         };
         /** TreeNodeAsOfOut */
         TreeNodeAsOfOut: {
+            /** Base Currency Code */
+            base_currency_code: string | null;
             /**
              * Effective At
              * Format: date-time

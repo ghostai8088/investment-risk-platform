@@ -6042,6 +6042,17 @@
             "title": "Fx Legs",
             "type": "array"
           },
+          "fx_pivot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Pivot"
+          },
           "fx_rate": {
             "title": "Fx Rate",
             "type": "string"
@@ -6082,6 +6093,7 @@
           "mark_value",
           "fx_rate",
           "fx_legs",
+          "fx_pivot",
           "exposure_amount",
           "exposure_type"
         ],
@@ -9764,6 +9776,17 @@
             "title": "Exposure Type",
             "type": "string"
           },
+          "missing_fx": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Fx"
+          },
           "n_rows": {
             "title": "N Rows",
             "type": "integer"
@@ -9772,9 +9795,72 @@
             "title": "Node Id",
             "type": "string"
           },
+          "reporting_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporting Currency"
+          },
           "total": {
             "title": "Total",
             "type": "string"
+          },
+          "translated_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translated Currency"
+          },
+          "translated_total": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translated Total"
+          },
+          "translation_fx_rate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Fx Rate"
+          },
+          "translation_legs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Translation Legs",
+            "type": "array"
+          },
+          "translation_pivot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Pivot"
           }
         },
         "required": [
@@ -9782,7 +9868,14 @@
           "exposure_type",
           "total",
           "n_rows",
-          "base_currency"
+          "base_currency",
+          "reporting_currency",
+          "translated_total",
+          "translated_currency",
+          "translation_fx_rate",
+          "translation_legs",
+          "translation_pivot",
+          "missing_fx"
         ],
         "title": "NodeRollupOut",
         "type": "object"
@@ -15569,6 +15662,17 @@
       },
       "TreeNodeAsOfOut": {
         "properties": {
+          "base_currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Currency Code"
+          },
           "effective_at": {
             "format": "date-time",
             "title": "Effective At",
@@ -15612,6 +15716,7 @@
           "node_type",
           "name",
           "status",
+          "base_currency_code",
           "record_version",
           "effective_at"
         ],
