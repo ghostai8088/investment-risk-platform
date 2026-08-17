@@ -25,7 +25,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, event
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
 from irp_shared.audit.models import AppendOnlyViolation
@@ -100,6 +100,14 @@ class PortfolioHierarchyVersion(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnl
         # as-of tie-break orders by record_version.
         UniqueConstraint(
             "portfolio_id", "record_version", name="uq_portfolio_hierarchy_version_node_version"
+        ),
+        # The as-of read's access path (declared here too so the OD-052 drift gate sees the
+        # model and the migration agree — CI caught the migration-only index as drift).
+        Index(
+            "ix_portfolio_hierarchy_version_tenant_effective",
+            "tenant_id",
+            "portfolio_id",
+            "effective_at",
         ),
     )
 
