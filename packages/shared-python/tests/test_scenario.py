@@ -400,6 +400,9 @@ def test_full_stack_golden_and_coverage(session: Session) -> None:
     def_id = _scenario(session, t, fid_usd, fid_eur)  # shocks BOTH factors
     result = _run(session, t, fx_run, def_id)
     assert result.status == RunStatus.COMPLETED.value
+    # STRUCT-3 (review fold, the LQ-1 inert class): the scope stamp FIRES — the run carries the
+    # pinned factor-exposure run's node, no longer NULL.
+    assert result.run.scope_portfolio_id is not None
     rows = {(r.metric_type, r.factor_code): r for r in result.rows}
     # per-factor P&L (the hand-derived golden): -3000 and +2000.
     assert rows[(METRIC_TYPE_SCENARIO_PNL, "FX_USD")].pnl == Decimal("-3000.000000")

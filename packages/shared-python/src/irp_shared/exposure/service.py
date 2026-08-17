@@ -62,8 +62,10 @@ from irp_shared.snapshot import (
     COMPONENT_KIND_FX,
     COMPONENT_KIND_INSTRUMENT,
     COMPONENT_KIND_INSTRUMENT_TERMS,
+    COMPONENT_KIND_PORTFOLIO,
     COMPONENT_KIND_POSITION,
     COMPONENT_KIND_VALUATION,
+    SUBTREE_BINDING_PREDICATE,
     SnapshotActor,
     build_snapshot,
     list_components,
@@ -375,6 +377,44 @@ def _build_rows(
     return rows, gaps
 
 
+def _pinned_tree_and_position_portfolios(
+    comps: list[Any],
+) -> tuple[dict[str, str | None], set[str]]:
+    """The snapshot's stored tree view (portfolio_id -> parent, from pinned PORTFOLIO components)
+    and the set of portfolio ids that pinned POSITIONS live under — everything the consume-path
+    node validation needs, read from captured content only."""
+    tree: dict[str, str | None] = {}
+    position_pfs: set[str] = set()
+    for comp in comps:
+        if comp.component_kind == COMPONENT_KIND_PORTFOLIO:
+            data = json.loads(comp.captured_content)
+            tree[str(data["id"])] = (
+                str(data["parent_portfolio_id"]) if data.get("parent_portfolio_id") else None
+            )
+        elif comp.component_kind == COMPONENT_KIND_POSITION:
+            data = json.loads(comp.captured_content)
+            position_pfs.add(str(data["portfolio_id"]))
+    return tree, position_pfs
+
+
+def _pinned_subtree_of(tree: dict[str, str | None], node_id: str) -> set[str]:
+    """The node's subtree WITHIN the pinned tree (the node + every pinned descendant), computed
+    from the captured parent map — bounded by the pin's own size, no live read."""
+    children: dict[str, list[str]] = {}
+    for child, parent in tree.items():
+        if parent is not None:
+            children.setdefault(parent, []).append(child)
+    out: set[str] = set()
+    stack = [str(node_id)]
+    while stack:
+        current = stack.pop()
+        if current in out:
+            continue
+        out.add(current)
+        stack.extend(children.get(current, []))
+    return out
+
+
 def run_exposure(
     session: Session,
     *,
@@ -387,10 +427,20 @@ def run_exposure(
     base_currency: str | None = None,
     as_of_known_at: datetime | None = None,
     snapshot_id: str | None = None,
+    scope_node_id: str | None = None,
 ) -> ExposureRunResult:
     """Run a governed exposure aggregation. Build-in-request (default — ``portfolio_id`` +
     ``as_of_valid_at``: builds an ``EXPOSURE_INPUT`` snapshot with FX pinned) or consume-existing
-    (``snapshot_id``). See the module docstring for the failure model + the AD-014 invariant."""
+    (``snapshot_id``). See the module docstring for the failure model + the AD-014 invariant.
+
+    ``scope_node_id`` (STRUCT-3, DP-7 / REQ-PPM-008): the consume path's EXPLICIT node. A
+    full-subtree (v2-predicate) snapshot REFUSES a node-less consume — the shipped path stamped
+    NULL and failed the node-id clause silently; a LEGACY (v1) snapshot keeps its pre-STRUCT-3
+    semantics so reproduction of old runs is untouched. The node is validated against the
+    snapshot's PINNED subtree (never a live walk — AD-014/the scope fence), the run computes
+    ONLY the node's sub-holdings, an empty pinned sub-subtree refuses (DP-10), and the validated
+    node is stamped as the run's ``scope_portfolio_id`` (the node id carried on the run). On the
+    build path the scope IS ``portfolio_id`` — ``scope_node_id`` there is refused as ambiguous."""
     # --- Pre-create prerequisite gate (raise BEFORE create_run ⇒ zero run/exposure/audit) ---
     if not code_version:
         raise ExposureInputError("code_version is required (FW-RUN/TR-15)")
@@ -400,6 +450,14 @@ def run_exposure(
         raise ExposureInputError("initiator is required (FW-RUN/TR-15)")
 
     # --- Bind the snapshot (cross-tenant/unknown/incomplete/FX-missing ⇒ pre-create refusal) ---
+    node_scope: set[str] | None = None
+    if snapshot_id is None and scope_node_id is not None:
+        # The build path's scope IS portfolio_id (the subtree root) — a second node argument is
+        # the same ambiguity the P3-C1 guard below refuses.
+        raise ExposureInputError(
+            "scope_node_id applies to the consume path only — the build path's node is "
+            "portfolio_id"
+        )
     if snapshot_id is not None and (
         portfolio_id is not None or as_of_valid_at is not None or as_of_known_at is not None
     ):
@@ -420,6 +478,37 @@ def run_exposure(
                 f"snapshot {snapshot_id} purpose {snapshot.purpose!r} != {PURPOSE_EXPOSURE_INPUT}"
             )
         base = base_currency or DEFAULT_BASE
+        # --- STRUCT-3 (DP-7): the consume node, validated against the PINNED subtree ---
+        comps_pre = list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+        pinned_tree, pinned_position_pfs = _pinned_tree_and_position_portfolios(comps_pre)
+        strict = snapshot.binding_predicate_version == SUBTREE_BINDING_PREDICATE
+        if strict and scope_node_id is None:
+            raise ExposureInputError(
+                "a consume run on a full-subtree snapshot must name its node (scope_node_id) — "
+                "REQ-PPM-008: the node id is carried on the run, never NULL"
+            )
+        if scope_node_id is not None and strict:
+            # v2 only: validate against the pinned subtree and filter the compute to it. A
+            # LEGACY (v1, holdings-only-pinned) snapshot skips BOTH (review folds F6/F7): its
+            # pin set cannot answer membership (a grouping-node root is legitimately unpinned
+            # there), and filtering would silently truncate a run that pre-STRUCT-3 semantics
+            # computed in full — the exact divergence that would break reproduction of legacy
+            # build-path runs. On a legacy snapshot the given node is stamped verbatim (the
+            # adapter passes the ORIGINAL run's scope) and the compute stays whole-snapshot.
+            node_key = str(scope_node_id).lower()
+            if node_key not in pinned_tree:
+                raise ExposureInputError(
+                    f"scope_node_id {scope_node_id} is not a node of the snapshot's pinned "
+                    "subtree — a run cannot be scoped to a node its snapshot never saw"
+                )
+            node_scope = _pinned_subtree_of(pinned_tree, node_key)
+            if not (node_scope & pinned_position_pfs):
+                # DP-10: a node whose pinned sub-subtree holds no positions REFUSES rather than
+                # returning zero.
+                raise ExposureInputError(
+                    f"the pinned subtree of node {scope_node_id} holds no positions — an empty "
+                    "subtree refuses rather than returning zero (REQ-PPM-008)"
+                )
     else:
         if portfolio_id is None or as_of_valid_at is None:
             raise ExposureInputError(
@@ -453,6 +542,16 @@ def run_exposure(
         inputs = _read_components(
             list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
         )
+        if node_scope is not None:
+            # STRUCT-3: a node-scoped consume run computes ONLY the node's sub-holdings — the
+            # membership set was derived from the PINNED tree pre-create, never a live walk.
+            inputs = _PinnedInputs(
+                positions={k: v for k, v in inputs.positions.items() if k[0] in node_scope},
+                marks=inputs.marks,
+                rate_map=inputs.rate_map,
+                asset_classes=inputs.asset_classes,
+                terms=inputs.terms,
+            )
         return _build_rows(
             inputs=inputs,
             base_currency=base,
@@ -482,7 +581,13 @@ def run_exposure(
         format_reason=lambda gate, gaps: (f"{gate}: {'; '.join(gaps)}" if gaps else str(gate)),
         # API-1b (OD-API-1b-B): the ROOT is the build-path portfolio_id (the subtree this run
         # aggregates). The snapshot-consume path did NOT take a root → NULL (honest, OD-API-1b-D).
-        scope_portfolio_id=(None if snapshot_id is not None else portfolio_id),
+        # STRUCT-3: the consume path stamps its VALIDATED node (REQ-PPM-008 — the node id is
+        # carried on the run); only a LEGACY node-less consume still stamps the honest NULL.
+        scope_portfolio_id=(
+            (str(scope_node_id) if scope_node_id is not None else None)
+            if snapshot_id is not None
+            else portfolio_id
+        ),
     )
     return ExposureRunResult(
         run=outcome.run,
@@ -644,6 +749,101 @@ def summed_latest_exposure(
         calculation_run_id=rows[0].calculation_run_id,
         n_rows=len(rows),
     )
+
+
+@dataclass(frozen=True)
+class NodeRollup:
+    """One node's composed totals for ONE measure (STRUCT-3, REQ-PPM-008 / DP-9): read-time
+    composition over the run's LEAF rows — the leaf rows were quantized once at the run, so the
+    composition is exact by construction; no parent row is ever persisted (parent-scoped RUNS
+    stay the governed number)."""
+
+    node_id: str
+    exposure_type: str
+    total: Decimal
+    n_rows: int
+    base_currency: str
+
+
+def rollup_exposure(
+    session: Session, *, acting_tenant: str, run_id: str, node_id: str
+) -> list[NodeRollup]:
+    """Per-measure totals for ``node_id`` composed from a COMPLETED run's rows over the node's
+    subtree AS THE RUN SAW IT (the pinned tree — a re-parent after the run cannot move a
+    historical rollup). Consults the aggregation contract for every measure (REQ-PPM-007: the
+    operator AND the grain selectors govern; a NOT_AGGREGATABLE flip refuses this read).
+    Refusals: an unknown/foreign run; a run without a pinned tree (a legacy v1 snapshot cannot
+    anchor a node rollup); a node outside the pinned subtree."""
+    from irp_shared.aggregation.contracts import (
+        assert_aggregatable,
+        require_additive_selection,
+    )
+
+    run = resolve_run(session, run_id, acting_tenant=acting_tenant)
+    if run.status != "COMPLETED":
+        # Review fold: a FAILED run has nothing to compose — refusing is honest; a silent
+        # empty list reads as "the node is worth zero".
+        raise ExposureInputError(
+            f"run {run_id} is {run.status} — a rollup composes a COMPLETED run's rows only"
+        )
+    if run.input_snapshot_id is None:
+        raise ExposureInputError(f"run {run_id} carries no input snapshot — nothing to roll up")
+    snapshot = resolve_snapshot(session, run.input_snapshot_id, acting_tenant=acting_tenant)
+    if snapshot.binding_predicate_version != SUBTREE_BINDING_PREDICATE:
+        raise ExposureInputError(
+            f"run {run_id} was bound to a pre-STRUCT-3 snapshot without a full-subtree pin — "
+            "a node rollup needs the run's stored tree view"
+        )
+    pinned_tree, _ = _pinned_tree_and_position_portfolios(
+        list_components(session, snapshot_id=snapshot.id, acting_tenant=acting_tenant)
+    )
+    node_key = str(node_id).lower()
+    if node_key not in pinned_tree:
+        raise ExposureInputError(
+            f"node {node_id} is not in the run's pinned subtree — a rollup cannot be anchored "
+            "at a node the run never saw"
+        )
+    member_ids = _pinned_subtree_of(pinned_tree, node_key)
+    rows = list_exposure(session, run_id=run_id, acting_tenant=acting_tenant)
+    out: list[NodeRollup] = []
+    for measure in sorted({r.exposure_type for r in rows}):
+        # The contract governs the composition: the operator must be ADDITIVE (flip it and this
+        # read refuses — mutation-proven), and the selector check is the FORWARD guard — with
+        # today's single selector it is satisfied per-measure by construction, but a future
+        # selector dimension this read does not fix will refuse here rather than silently sum
+        # across it (the review's vacuity note, kept deliberately).
+        require_additive_selection("EXPOSURE_AGGREGATE", {"exposure_type": measure})
+        assert_aggregatable("EXPOSURE_AGGREGATE", "exposure_amount")
+        member_rows = [
+            r
+            for r in rows
+            if r.exposure_type == measure and str(r.portfolio_id).lower() in member_ids
+        ]
+        if not member_rows:
+            continue  # a measure with no rows UNDER THIS NODE is absent, never a zero
+        bases = {r.base_currency for r in member_rows}
+        if len(bases) != 1:
+            raise ExposureInputError(
+                f"the node's rows span base currencies {sorted(bases)} — a single total would "
+                "mix currencies (REQ-PPM-007: refused, never converted)"
+            )
+        out.append(
+            NodeRollup(
+                node_id=str(node_id),
+                exposure_type=measure,
+                total=sum((r.exposure_amount for r in member_rows), Decimal(0)),
+                n_rows=len(member_rows),
+                base_currency=next(iter(bases)),
+            )
+        )
+    if not out:
+        # The DP-10 shape at read time (review BLOCKING F18): a node with NO rows of this run
+        # under it must refuse — a zero-rollup response reads as "this node is worth nothing".
+        raise ExposureInputError(
+            f"no rows of run {run_id} lie under node {node_id} — an empty rollup refuses "
+            "rather than reporting zero (REQ-PPM-008)"
+        )
+    return out
 
 
 def resolve_run(session: Session, run_id: str, *, acting_tenant: str) -> CalculationRun:

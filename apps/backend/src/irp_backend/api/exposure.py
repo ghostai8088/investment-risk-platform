@@ -105,6 +105,9 @@ class ExposureRunIn(BaseModel):
     base_currency: str | None = None  # default: portfolio base, else USD
     as_of_known_at: datetime | None = None
     snapshot_id: uuid.UUID | None = None  # consume-existing alternative
+    # STRUCT-3 (DP-7 / REQ-PPM-008): the consume path's explicit node — REQUIRED for a
+    # full-subtree (v2) snapshot; validated against the pinned subtree; stamped on the run.
+    scope_node_id: uuid.UUID | None = None
 
 
 class ExposureRowOut(BaseModel):
@@ -186,6 +189,7 @@ def create_exposure_run(
             base_currency=body.base_currency,
             as_of_known_at=body.as_of_known_at,
             snapshot_id=(None if body.snapshot_id is None else str(body.snapshot_id)),
+            scope_node_id=(None if body.scope_node_id is None else str(body.scope_node_id)),
         )
     except (
         ExposureInputError,
@@ -383,6 +387,54 @@ def summed_latest_exposure_endpoint(
         calculation_run_id=result.calculation_run_id,
         n_rows=result.n_rows,
     )
+
+
+class NodeRollupOut(BaseModel):
+    node_id: str
+    exposure_type: str
+    total: str
+    n_rows: int
+    base_currency: str
+
+
+@router.get("/runs/{run_id}/rollup", response_model=list[NodeRollupOut])
+def rollup_exposure_endpoint(
+    run_id: uuid.UUID,
+    node_id: uuid.UUID,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[NodeRollupOut]:
+    """STRUCT-3 (REQ-PPM-008 / DP-9): a node's composed totals per measure — read-time
+    composition over the run's leaf rows within the node's PINNED subtree; the contract governs
+    (operator + grain selector); no parent row is persisted. 422 on a node outside the pinned
+    subtree or a pre-STRUCT-3 run."""
+    from irp_shared.aggregation.contracts import NotAggregatableError
+    from irp_shared.exposure.service import rollup_exposure
+
+    try:
+        rollups = rollup_exposure(
+            db, acting_tenant=principal.tenant_id, run_id=str(run_id), node_id=str(node_id)
+        )
+    except (ExposureInputError, NotAggregatableError) as exc:
+        # NotAggregatableError joined at the review fold: the PPM-007 refusal must reach HTTP
+        # as a 422, never a 500 (map_refusal KeyErrors loudly on unmapped classes).
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from None
+    except ExposureRunNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="exposure run not found"
+        ) from None
+    return [
+        NodeRollupOut(
+            node_id=r.node_id,
+            exposure_type=r.exposure_type,
+            total=str(r.total),
+            n_rows=r.n_rows,
+            base_currency=r.base_currency,
+        )
+        for r in rollups
+    ]
 
 
 @router.get("/{exposure_id}", response_model=ExposureRowOut)

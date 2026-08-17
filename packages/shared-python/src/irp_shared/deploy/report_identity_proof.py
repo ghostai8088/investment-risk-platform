@@ -122,6 +122,12 @@ def seed_and_generate(session: Session) -> tuple[str, str]:
     )
     session.add(portfolio)
     session.flush()
+    # STRUCT-3 (review fold): this is the ONE production writer outside the binder — without
+    # the history append the proof tenant's tree would resolve to {} at every timestamp and any
+    # head-vs-history parity control would fail on the deployed artifact.
+    from irp_shared.portfolio.portfolio import _append_hierarchy_version
+
+    _append_hierarchy_version(session, portfolio)
     portfolio_id = str(portfolio.id)
     model = Model(
         tenant_id=PROOF_TENANT,

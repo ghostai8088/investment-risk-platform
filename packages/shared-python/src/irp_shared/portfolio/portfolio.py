@@ -28,13 +28,15 @@ P1C because the data is synthetic (DC-1/DC-2).
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irp_shared.portfolio.models import Portfolio
+from irp_shared.db.mixins import utcnow
+from irp_shared.portfolio.models import Portfolio, PortfolioHierarchyVersion
 from irp_shared.portfolio.service import (
     PortfolioActor,
     record_portfolio_create,
@@ -193,6 +195,88 @@ def _reject_reparent_cycle(
     raise HierarchyCycleError(str(portfolio.id))  # too deep
 
 
+def _append_hierarchy_version(
+    session: Session, portfolio: Portfolio, *, now: datetime | None = None
+) -> None:
+    """Append the node's post-edit structural state to the ENT-076 history (STRUCT-3, the
+    re-adjudicated REQ-PPM-001 clause 2). Co-transactional with the head write and its
+    PORTFOLIO.* event — commit or vanish together. ``now`` is the same deterministic-injection
+    seam the head uses (backfill/synthetic only)."""
+    session.add(
+        PortfolioHierarchyVersion(
+            tenant_id=str(portfolio.tenant_id),
+            portfolio_id=str(portfolio.id),
+            parent_portfolio_id=(
+                str(portfolio.parent_portfolio_id) if portfolio.parent_portfolio_id else None
+            ),
+            node_type=portfolio.node_type,
+            name=portfolio.name,
+            status=portfolio.status,
+            base_currency_code=portfolio.base_currency_code,
+            record_version=portfolio.record_version,
+            effective_at=(now if now is not None else utcnow()),
+            source="BINDER",
+        )
+    )
+
+
+def resolve_tree_as_of(
+    session: Session, *, acting_tenant: str, at: datetime
+) -> dict[str, TreeNodeAsOf]:
+    """The tree AS IT WAS at ``at``, from the entity's OWN version history — by timestamp, with
+    NO run or snapshot in scope (REQ-PPM-001 clause 2 as re-adjudicated 2026-08-15; the pin-only
+    exploit this clause closed). Returns ``portfolio_id -> TreeNodeAsOf`` for every node whose
+    latest history row at or before ``at`` exists; nodes first recorded after ``at`` are absent.
+    Tenant-filtered explicitly (fail-closed on SQLite AND PG)."""
+    # Normalize the as-of instant to UTC first (review fold: SQLite stores these columns
+    # naive-as-UTC, and a non-UTC-offset input compared raw would misresolve by its offset).
+    if at.tzinfo is not None:
+        at = at.astimezone(UTC)
+    # The full history prefix is loaded and folded last-row-wins — O(history), chosen over a
+    # per-node window query for readability; revisit on a measured trigger, not on principle.
+    rows = (
+        session.execute(
+            select(PortfolioHierarchyVersion)
+            .where(
+                PortfolioHierarchyVersion.tenant_id == str(acting_tenant),
+                PortfolioHierarchyVersion.effective_at <= at,
+            )
+            .order_by(
+                PortfolioHierarchyVersion.portfolio_id,
+                PortfolioHierarchyVersion.effective_at,
+                PortfolioHierarchyVersion.record_version,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    tree: dict[str, TreeNodeAsOf] = {}
+    for row in rows:  # ordered ascending: the last row per node wins
+        tree[str(row.portfolio_id)] = TreeNodeAsOf(
+            portfolio_id=str(row.portfolio_id),
+            parent_portfolio_id=(str(row.parent_portfolio_id) if row.parent_portfolio_id else None),
+            node_type=row.node_type,
+            name=row.name,
+            status=row.status,
+            record_version=row.record_version,
+            effective_at=row.effective_at,
+        )
+    return tree
+
+
+@dataclass(frozen=True)
+class TreeNodeAsOf:
+    """One node of the as-of tree view (a read projection of the ENT-076 history)."""
+
+    portfolio_id: str
+    parent_portfolio_id: str | None
+    node_type: str
+    name: str
+    status: str
+    record_version: int
+    effective_at: datetime
+
+
 def create_portfolio(
     session: Session,
     *,
@@ -241,6 +325,10 @@ def create_portfolio(
         portfolio.id = entity_id  # seam: deterministic uuid5 id (skips the `default=new_uuid`)
     session.add(portfolio)
     session.flush()
+    # ENT-076, co-transactional. effective_at = the head's OWN valid_from (review fold: a
+    # second utcnow() read landed microseconds later, so an as-of read anchored at the head's
+    # valid_from — the join key the backfill teaches — missed the node's own creation instant).
+    _append_hierarchy_version(session, portfolio, now=portfolio.valid_from)
     record_portfolio_create(
         session,
         entity=portfolio,
@@ -286,6 +374,7 @@ def update_portfolio(
         setattr(portfolio, key, value)
     portfolio.record_version += 1
     session.flush()
+    _append_hierarchy_version(session, portfolio)  # ENT-076, co-transactional
     record_portfolio_update(
         session,
         entity=portfolio,

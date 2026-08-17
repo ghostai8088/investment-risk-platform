@@ -513,6 +513,10 @@ def run_proxy_weight_estimate(
         result_entity_type="proxy_weight_estimate_result",
         compute=_compute,
         format_reason=lambda gate, gaps: f"{gate} — {'; '.join(gaps)}",
+        # STRUCT-3 (REQ-PPM-008, the census fold): the run CARRIES its node — the
+        # adjudicated single measured portfolio, previously stamped NULL (the SCENARIO
+        # defect shape, found declared-false by the review).
+        scope_portfolio_id=str(parsed.portfolio_id),
     )
     return ProxyWeightEstimateRunResult(
         run=outcome.run,

@@ -52,6 +52,9 @@ _ALLOWLIST: dict[tuple[str, str, str], tuple[int, str]] = {
     # The STRUCT-2 summed read itself — the census caught it the day it was written, which is
     # the discovery half working; its own module carries the lookup.
     ("irp_shared.exposure.service", "summed_latest_exposure", "sum-call"): (1, C),
+    # STRUCT-3: the rollup composition (DP-9) — read-time sums over leaf rows within the pinned
+    # subtree, contract-consulted in the same function.
+    ("irp_shared.exposure.service", "rollup_exposure", "sum-call"): (1, C),
     ("irp_shared.risk.var_service", "run_var", "dict-get-add"): (1, C),
     ("irp_shared.risk.var_service", "run_var_unified", "dict-get-add"): (1, C),
     ("irp_shared.risk.var_hs_service", "_adjudicate_pins", "dict-get-add"): (1, C),
@@ -122,6 +125,8 @@ _ALLOWLIST: dict[tuple[str, str, str], tuple[int, str]] = {
     ("irp_shared.demo.rm1_stage16", "run_demo_rm1_stage16", "sum-call"): (1, N),
     ("irp_shared.demo.rs1_stage5", "run_demo_rs1_stage5", "augassign-add"): (2, N),
     ("irp_shared.demo.sr1_stage17", "run_demo_sr1_stage17", "sum-call"): (1, N),
+    # Stage 26's identity assertions sum rollup totals across levels (demo invariant checks).
+    ("irp_shared.demo.struct3_stage26", "run_demo_struct3_stage26", "sum-call"): (2, N),
     ("irp_shared.dq.rules", "evaluate_not_null", "sum-call"): (1, N),
     ("irp_shared.dq.service", "update_dq_rule", "augassign-add"): (1, N),
     ("irp_shared.ingestion.service", "stage_upload", "augassign-add"): (1, N),
@@ -279,7 +284,7 @@ _GUARD_CALL_COUNTS: dict[str, int] = {
     "irp_shared.concentration.service": 1,
     "irp_shared.liquidity.service": 1,
     "irp_shared.perf.return_service": 1,
-    "irp_shared.exposure.service": 1,
+    "irp_shared.exposure.service": 2,  # the summed read + the STRUCT-3 rollup composition
     "irp_shared.risk.var_service": 2,
     "irp_shared.risk.var_hs_service": 1,
     "irp_shared.risk.scenario_service": 1,

@@ -406,6 +406,10 @@ def _recompute_exposure(
         environment_id=run.environment_id or "reproduction",
         snapshot_id=str(run.input_snapshot_id),
         base_currency=bases.pop(),
+        # STRUCT-3 (DP-7): re-execute AT the original run's node. A post-STRUCT-3 run always
+        # carries one (the consume refusal guarantees it); a legacy NULL rides the legacy
+        # (v1-predicate) branch untouched, so old-run reproduction is preserved.
+        scope_node_id=(str(run.scope_portfolio_id) if run.scope_portfolio_id is not None else None),
     )
     return _rows_of(list(result.rows), _EXPOSURE_KEY, _EXPOSURE_COMPARED)
 

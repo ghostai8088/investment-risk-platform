@@ -19,7 +19,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 #: The platform's current migration head. A new migration updates THIS LINE ONLY.
-EXPECTED_MIGRATION_HEAD = "0071_exposure_type_in_grain_key"  # STRUCT-1: the measure into the key
+EXPECTED_MIGRATION_HEAD = "0072_portfolio_hierarchy_version"  # STRUCT-3: the tree's own history
 
 
 def _script() -> ScriptDirectory:

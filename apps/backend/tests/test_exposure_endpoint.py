@@ -235,6 +235,7 @@ def test_post_create_failed_returns_201_failed(ctx) -> None:  # noqa: ANN001
             "environment_id": "ci",
             "snapshot_id": snap_id,
             "base_currency": "JPY",
+            "scope_node_id": pf,  # STRUCT-3 (DP-7)
         },
         headers=_h(p),
     )
@@ -457,3 +458,60 @@ def test_summed_exposure_empty_book_is_409_and_fires(ctx) -> None:  # noqa: ANN0
     )
     assert resp.status_code == 409, resp.text
     assert "nothing to sum" in resp.json()["detail"]
+
+
+# ------- STRUCT-3 review folds: the rollup endpoint through HTTP -------
+
+
+def test_rollup_endpoint_happy_path_and_refusals(ctx) -> None:  # noqa: ANN001
+    client, principal, db, pf = ctx
+    run = client.post("/exposure/runs", json=_run_body(pf), headers=_h(principal)).json()
+    rid = run["run_id"]
+
+    ok = client.get(f"/exposure/runs/{rid}/rollup", params={"node_id": pf}, headers=_h(principal))
+    assert ok.status_code == 200, ok.text
+    body = ok.json()
+    assert {r["exposure_type"] for r in body} == {"MARKET_VALUE"}
+    assert body[0]["base_currency"] == "USD"
+    # 100x12.50 + (-200x7.00x1.10) = -290, the flat book's own total.
+    assert body[0]["total"] == "-290.000000"
+
+    outside = client.get(
+        f"/exposure/runs/{rid}/rollup",
+        params={"node_id": str(uuid.uuid4())},
+        headers=_h(principal),
+    )
+    assert outside.status_code == 422
+    assert "pinned subtree" in outside.json()["detail"]
+
+    unknown_run = client.get(
+        f"/exposure/runs/{uuid.uuid4()}/rollup", params={"node_id": pf}, headers=_h(principal)
+    )
+    assert unknown_run.status_code == 404
+
+    denied = client.get(
+        f"/exposure/runs/{rid}/rollup", params={"node_id": pf}, headers=_no_perm(principal)
+    )
+    assert denied.status_code == 403
+
+
+def test_rollup_contract_refusal_reaches_http_as_422(ctx, monkeypatch) -> None:  # noqa: ANN001
+    """The PPM-007 through-HTTP refusal for the rollup read (review fold): flip the operator and
+    the endpoint answers 422, never 500."""
+    from irp_shared.aggregation.contracts import (
+        AGGREGATION_CONTRACTS,
+        OPERATOR_NOT_AGGREGATABLE,
+    )
+
+    client, principal, _db, pf = ctx
+    run = client.post("/exposure/runs", json=_run_body(pf), headers=_h(principal)).json()
+    monkeypatch.setitem(
+        AGGREGATION_CONTRACTS["EXPOSURE_AGGREGATE"],
+        "exposure_amount",
+        OPERATOR_NOT_AGGREGATABLE,
+    )
+    resp = client.get(
+        f"/exposure/runs/{run['run_id']}/rollup", params={"node_id": pf}, headers=_h(principal)
+    )
+    assert resp.status_code == 422, resp.text
+    assert "cannot be summed" in resp.json()["detail"]

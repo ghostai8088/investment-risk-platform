@@ -1231,6 +1231,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exposure/runs/{run_id}/rollup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rollup Exposure Endpoint
+         * @description STRUCT-3 (REQ-PPM-008 / DP-9): a node's composed totals per measure — read-time
+         *     composition over the run's leaf rows within the node's PINNED subtree; the contract governs
+         *     (operator + grain selector); no parent row is persisted. 422 on a node outside the pinned
+         *     subtree or a pre-STRUCT-3 run.
+         */
+        get: operations["rollup_exposure_endpoint_exposure_runs__run_id__rollup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exposure/{exposure_id}": {
         parameters: {
             query?: never;
@@ -2611,6 +2634,29 @@ export interface paths {
         put?: never;
         /** Create Portfolio Endpoint */
         post: operations["create_portfolio_endpoint_portfolios_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/portfolios/tree-as-of": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tree As Of
+         * @description STRUCT-3 (REQ-PPM-001 clause 2): the tenant's tree AS IT WAS at ``at`` — resolved from
+         *     the hierarchy's OWN version history (ENT-076) by timestamp, with NO run or snapshot in
+         *     scope. Declared BEFORE ``/{portfolio_id}`` (route-order house rule: a literal path must not
+         *     be captured by the id route).
+         */
+        get: operations["get_tree_as_of_portfolios_tree_as_of_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7641,6 +7687,8 @@ export interface components {
             environment_id: string;
             /** Portfolio Id */
             portfolio_id?: string | null;
+            /** Scope Node Id */
+            scope_node_id?: string | null;
             /** Snapshot Id */
             snapshot_id?: string | null;
         };
@@ -8743,6 +8791,19 @@ export interface components {
             parent_node_id: string | null;
             /** Scheme Id */
             scheme_id: string;
+        };
+        /** NodeRollupOut */
+        NodeRollupOut: {
+            /** Base Currency */
+            base_currency: string;
+            /** Exposure Type */
+            exposure_type: string;
+            /** N Rows */
+            n_rows: number;
+            /** Node Id */
+            node_id: string;
+            /** Total */
+            total: string;
         };
         /** PacingModelIn */
         PacingModelIn: {
@@ -10609,6 +10670,26 @@ export interface components {
             reason?: string | null;
             /** Trade Date */
             trade_date?: string | null;
+        };
+        /** TreeNodeAsOfOut */
+        TreeNodeAsOfOut: {
+            /**
+             * Effective At
+             * Format: date-time
+             */
+            effective_at: string;
+            /** Name */
+            name: string;
+            /** Node Type */
+            node_type: string;
+            /** Parent Portfolio Id */
+            parent_portfolio_id: string | null;
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Record Version */
+            record_version: number;
+            /** Status */
+            status: string;
         };
         /** UserCreateIn */
         UserCreateIn: {
@@ -13873,6 +13954,43 @@ export interface operations {
             };
         };
     };
+    rollup_exposure_endpoint_exposure_runs__run_id__rollup_get: {
+        parameters: {
+            query: {
+                node_id: string;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeRollupOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_exposure_exposure__exposure_id__get: {
         parameters: {
             query?: never;
@@ -16741,6 +16859,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PortfolioOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tree_as_of_portfolios_tree_as_of_get: {
+        parameters: {
+            query: {
+                at: string;
+            };
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeNodeAsOfOut"][];
                 };
             };
             /** @description Validation Error */

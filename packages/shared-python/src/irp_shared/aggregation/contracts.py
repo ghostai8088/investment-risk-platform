@@ -465,3 +465,95 @@ def assert_aggregatable(run_type: str, field: str) -> None:
     op = aggregation_operator(run_type, field)
     if op != OPERATOR_ADDITIVE:
         raise NotAggregatableError(run_type=str(run_type), field=str(field), operator=op)
+
+
+# --------------------------------------------------------------------------------------------
+# STRUCT-3 (REQ-PPM-008, clause 7): the NODE-SCOPE declarations.
+# "A family that only ever executes at the top of the tree FAILS this row." The shipped
+# requires_portfolio_scope flag lives in a 3-entry scheduling registry and cannot census the
+# other 18 families — the RPT-3/LQ-1 declaration-without-firing class the amendment names. The
+# census here is exact-set over the registry, and the EXECUTION half lives in the battery: the
+# subtree family runs AT a middle node, the inheriting chain runs FROM a sleeve-rooted upstream,
+# and the demo's three-level book re-runs the families fresh (stage 26).
+# --------------------------------------------------------------------------------------------
+
+#: How a family's run relates to a hierarchy node.
+NODE_SCOPE_SUBTREE = "SUBTREE"  # takes a node directly and computes its whole subtree
+NODE_SCOPE_INHERITED = "SCOPE_INHERITED"  # carries/derives its node from an upstream run
+NODE_SCOPE_PORTFOLIO_ARG = "PORTFOLIO_ARG"  # takes a node argument; fences, does not traverse
+NODE_SCOPE_PAIR_GRAIN = "PAIR_GRAIN"  # one (portfolio node, instrument) pair; any node valid
+NODE_SCOPE_PORTFOLIO_FREE = "PORTFOLIO_FREE"  # no portfolio dimension exists on this family
+
+
+@dataclass(frozen=True)
+class NodeScope:
+    """One family's node-scope class, its upstream (for the inherited class), and the reason a
+    node execution is meaningful/meaningless — the declared half of the clause-7 census."""
+
+    scope_class: str
+    upstream: str | None = None
+    reason: str = ""
+
+
+NODE_SCOPES: dict[str, NodeScope] = {
+    "EXPOSURE_AGGREGATE": NodeScope(
+        NODE_SCOPE_SUBTREE,
+        reason="the build path takes ANY node and enumerates its subtree; executed at a "
+        "STRATEGY node in the battery",
+    ),
+    "FACTOR_EXPOSURE": NodeScope(
+        NODE_SCOPE_INHERITED,
+        upstream="EXPOSURE_AGGREGATE",
+        reason="copies the upstream exposure run's scope forward; sleeve execution proven in "
+        "the battery",
+    ),
+    "VAR": NodeScope(
+        NODE_SCOPE_INHERITED,
+        upstream="FACTOR_EXPOSURE",
+        reason="all three VaR binders stamp the pinned factor-exposure run's scope",
+    ),
+    "ACTIVE_RISK": NodeScope(NODE_SCOPE_INHERITED, upstream="FACTOR_EXPOSURE"),
+    "SCENARIO": NodeScope(
+        NODE_SCOPE_INHERITED,
+        upstream="FACTOR_EXPOSURE",
+        reason="stamps the pinned factor-exposure run's scope (fixed at STRUCT-3 — the run was "
+        "NULL-scoped though its upstream carried a node, the exact PPM-008 defect)",
+    ),
+    "CONCENTRATION": NodeScope(
+        NODE_SCOPE_INHERITED,
+        upstream="EXPOSURE_AGGREGATE",
+        reason="refuses a NULL upstream scope and stamps it forward",
+    ),
+    "LIQUIDITY": NodeScope(NODE_SCOPE_INHERITED, upstream="EXPOSURE_AGGREGATE"),
+    "PORTFOLIO_RETURN": NodeScope(
+        NODE_SCOPE_INHERITED,
+        upstream="EXPOSURE_AGGREGATE",
+        reason="v1 is a SINGLE-portfolio book by ratified deferral (an intra-subtree transfer "
+        "between children is internal, not an external flow — its own slice); a node with "
+        "positioned CHILDREN cannot run it until that lands",
+    ),
+    "BENCHMARK_RELATIVE": NodeScope(NODE_SCOPE_INHERITED, upstream="PORTFOLIO_RETURN"),
+    "ROLLING_RISK": NodeScope(NODE_SCOPE_INHERITED, upstream="PORTFOLIO_RETURN"),
+    "SHARPE": NodeScope(NODE_SCOPE_INHERITED, upstream="PORTFOLIO_RETURN"),
+    "VAR_BACKTEST": NodeScope(NODE_SCOPE_INHERITED, upstream="PORTFOLIO_RETURN"),
+    "ES_BACKTEST": NodeScope(NODE_SCOPE_INHERITED, upstream="PORTFOLIO_RETURN"),
+    "PROXY_WEIGHT_ESTIMATE": NodeScope(NODE_SCOPE_INHERITED, upstream="DESMOOTHED_RETURN"),
+    "DESMOOTHED_RETURN": NodeScope(
+        NODE_SCOPE_PAIR_GRAIN,
+        reason="one (portfolio, instrument) pair; the portfolio may be ANY node",
+    ),
+    "PACING_PROJECTION": NodeScope(NODE_SCOPE_PAIR_GRAIN),
+    "REPORT": NodeScope(
+        NODE_SCOPE_PORTFOLIO_ARG,
+        reason="takes a node directly and fences every attributed family run to it",
+    ),
+    "SENSITIVITY": NodeScope(
+        NODE_SCOPE_PORTFOLIO_FREE,
+        reason="curve-intrinsic DV01 of a unit claim — no instrument/position attribution",
+    ),
+    "COVARIANCE": NodeScope(NODE_SCOPE_PORTFOLIO_FREE, reason="tenant-global factor statistics"),
+    "COVARIANCE_PRIVATE": NodeScope(NODE_SCOPE_PORTFOLIO_FREE),
+    "PURE_PRIVATE_FACTOR": NodeScope(
+        NODE_SCOPE_PORTFOLIO_FREE, reason="segment-factor grain pooling across member pairs"
+    ),
+}
