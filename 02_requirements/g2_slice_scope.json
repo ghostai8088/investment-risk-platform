@@ -1,10 +1,10 @@
 {
  "_why": "The rows currently entering build. G2 gates at SLICE ENTRY because the Wave 1-17 drift happened by rows entering build unexamined. A row outside any slice is never adjudicated, and that is the correct trade: an unbuilt row has driven nothing. It means the register as a whole is never certified, only the parts entering build.",
  "_updated_at": "the slice-planning gate, as part of declaring the slice's scope",
- "slice": "STRUCT-2 (Wave 18, per the ratified 2026-08-15 sequence)",
+ "slice": "STRUCT-3 (Wave 18, ratified 2026-08-15 sequence)",
  "slice_scope": [
-  "REQ-PPM-007",
-  "REQ-PPM-009"
+  "REQ-PPM-008",
+  "REQ-PPM-001"
  ],
  "_no_scope_reason_why": "An empty scope must be a DECLARED emptiness. A second, independent bake-off run found that the first version of this gate exited 0 with an empty scope, having adjudicated nothing \u2014 the empty-population vacuity, inside the gate written to prevent exactly that. It is now a refusal.",
  "no_scope_reason": "superseded 2026-08-15: the Wave-18 planning gate declared STRUCT-1's scope; see slice_scope. This field becomes load-bearing again only when the scope next empties at a wave boundary.",

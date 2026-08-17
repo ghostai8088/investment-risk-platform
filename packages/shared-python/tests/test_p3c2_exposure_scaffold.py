@@ -125,6 +125,7 @@ def _failed_run(db: Session, tenant: str):  # noqa: ANN202
         environment_id="ci",
         snapshot_id=built.run.input_snapshot_id,
         base_currency="JPY",
+        scope_node_id=pf,  # STRUCT-3 (DP-7): a v2-snapshot consume names its node
     )
 
 

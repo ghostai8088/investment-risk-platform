@@ -46,9 +46,14 @@ E = "ENGINE_INTERNAL"  # SQLAlchemy dialect/column machinery
 #: other hit is pinned so the DISCOVERY set stays exact (a receiver named to dodge a classifier
 #: is a new key and fails).
 _NAME_READS: dict[tuple[str, str, str], str] = {
-    # --- the TWO production portfolio-name reads ---
+    # --- the production portfolio-name reads ---
     ("irp_backend.api.portfolios", "_out", "node"): D,
     ("irp_shared.snapshot.serialize", "portfolio_content", "row"): V,
+    # STRUCT-3: the ENT-076 history — the append CAPTURES the post-edit name (recorded, never
+    # interpreted); the as-of resolver and its endpoint PROJECT the recorded name for display.
+    ("irp_shared.portfolio.portfolio", "_append_hierarchy_version", "portfolio"): V,
+    ("irp_shared.portfolio.portfolio", "resolve_tree_as_of", "row"): V,
+    ("irp_backend.api.portfolios", "get_tree_as_of", "n"): D,
     # --- request-body pass-throughs (Pydantic field access, not entity reads) ---
     ("irp_backend.api.portfolios", "create_portfolio_endpoint", "body"): B,
     ("irp_backend.api.dq", "create_rule", "body"): B,
@@ -221,18 +226,13 @@ def test_name_census_exactly_two_portfolio_reads_and_their_classes() -> None:
     """The census's subject, pinned by exact set: TWO production portfolio-name reads exist —
     the display serializer and the provenance pin (recorded and byte-compared, never
     interpreted; TR-09 amend detection is the DESIGN, DP-8)."""
-    portfolio_sites = {
-        k: v
-        for k, v in _NAME_READS.items()
-        if k
-        in {
-            ("irp_backend.api.portfolios", "_out", "node"),
-            ("irp_shared.snapshot.serialize", "portfolio_content", "row"),
-        }
-    }
+    portfolio_sites = {k: v for k, v in _NAME_READS.items() if v in (D, V)}
     assert portfolio_sites == {
         ("irp_backend.api.portfolios", "_out", "node"): D,
         ("irp_shared.snapshot.serialize", "portfolio_content", "row"): V,
+        ("irp_shared.portfolio.portfolio", "_append_hierarchy_version", "portfolio"): V,
+        ("irp_shared.portfolio.portfolio", "resolve_tree_as_of", "row"): V,
+        ("irp_backend.api.portfolios", "get_tree_as_of", "n"): D,
     }
 
 
@@ -265,7 +265,13 @@ def test_name_census_frontend_has_zero_portfolio_reads() -> None:
         for line in f.read_text().splitlines():
             if re.search(r"\.name\b", line):
                 hits.add(rel)
-    assert hits == {"api/writes.ts", "views/ops/LimitHealth.tsx"}
+    # PortfolioStructure joined at STRUCT-3: the as-of tree screen DISPLAYS node names from the
+    # ENT-076 history projection — a display read, the census's permitted class.
+    assert hits == {
+        "api/writes.ts",
+        "views/ops/LimitHealth.tsx",
+        "views/ops/PortfolioStructure.tsx",
+    }
 
 
 # ---------- REQ-PPM-009: the rename regression (DP-8's output definition) ----------

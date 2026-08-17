@@ -330,7 +330,7 @@ def run_scenario(
 
     # Re-resolve the exposure run + the portfolio from the PINNED content under the acting tenant
     # BEFORE anything is stamped into a hard-FK / read (PG FK checks bypass RLS — the P3-5 finding).
-    _resolve_run(
+    pinned_fe_run = _resolve_run(
         session,
         parsed.factor_exposure_run_id,
         acting_tenant=acting_tenant,
@@ -426,6 +426,10 @@ def run_scenario(
         result_entity_type="scenario_result",
         compute=_compute,
         format_reason=lambda gate, gaps: f"{gate} — {'; '.join(gaps)}",
+        # STRUCT-3 (REQ-PPM-008, the census's finding): the run was NULL-scoped while its
+        # pinned upstream carried a node — the exact node-id-on-the-run clause failing silently.
+        # The scope is the pinned factor-exposure run's, copied forward (the VAR precedent).
+        scope_portfolio_id=pinned_fe_run.scope_portfolio_id,
     )
     return ScenarioRunResult(
         run=outcome.run,

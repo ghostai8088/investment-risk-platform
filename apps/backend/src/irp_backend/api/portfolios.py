@@ -17,6 +17,7 @@ nothing. Portfolio-scope enforcement is deferred to P6+.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -156,6 +157,43 @@ def list_portfolios(
         stmt = stmt.where(Portfolio.parent_portfolio_id == str(parent_portfolio_id))
     rows = db.execute(stmt).scalars().all()
     return [_out(node) for node in rows]
+
+
+class TreeNodeAsOfOut(BaseModel):
+    portfolio_id: str
+    parent_portfolio_id: str | None
+    node_type: str
+    name: str
+    status: str
+    record_version: int
+    effective_at: datetime
+
+
+@router.get("/tree-as-of", response_model=list[TreeNodeAsOfOut])
+def get_tree_as_of(
+    at: datetime,
+    principal: Principal = Depends(_require_view),
+    db: Session = Depends(get_tenant_session),
+) -> list[TreeNodeAsOfOut]:
+    """STRUCT-3 (REQ-PPM-001 clause 2): the tenant's tree AS IT WAS at ``at`` — resolved from
+    the hierarchy's OWN version history (ENT-076) by timestamp, with NO run or snapshot in
+    scope. Declared BEFORE ``/{portfolio_id}`` (route-order house rule: a literal path must not
+    be captured by the id route)."""
+    from irp_shared.portfolio.portfolio import resolve_tree_as_of
+
+    tree = resolve_tree_as_of(db, acting_tenant=principal.tenant_id, at=at)
+    return [
+        TreeNodeAsOfOut(
+            portfolio_id=n.portfolio_id,
+            parent_portfolio_id=n.parent_portfolio_id,
+            node_type=n.node_type,
+            name=n.name,
+            status=n.status,
+            record_version=n.record_version,
+            effective_at=n.effective_at,
+        )
+        for n in sorted(tree.values(), key=lambda n: (n.node_type, n.name))
+    ]
 
 
 @router.get("/{portfolio_id}", response_model=PortfolioOut)

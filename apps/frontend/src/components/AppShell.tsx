@@ -71,6 +71,13 @@ export function AppShell({
           >
             Limits &amp; approvals
           </NavLink>
+          {/* STRUCT-3: the hierarchy's first read surface — the as-of tree (ENT-076). */}
+          <NavLink
+            to="/ops/structure"
+            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+          >
+            Portfolio structure
+          </NavLink>
           {/* RPT-2: governed reports, regenerated (and re-proven) on every read. */}
           <NavLink
             to="/ops/reports"

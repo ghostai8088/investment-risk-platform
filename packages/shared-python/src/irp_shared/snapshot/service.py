@@ -81,7 +81,7 @@ from irp_shared.marketdata.factor import (
 )
 from irp_shared.marketdata.models import REFERENCE_KEY_NONE, RETURN_TYPE_SIMPLE, FactorReturn
 from irp_shared.marketdata.service import FxRateNotVisible, resolve_fx_rate
-from irp_shared.portfolio import PortfolioNotVisible, resolve_portfolio
+from irp_shared.portfolio import PortfolioNotVisible, resolve_descendants, resolve_portfolio
 from irp_shared.position import PositionNotVisible, resolve_position
 from irp_shared.reference.instrument import InstrumentNotVisible, resolve_instrument
 from irp_shared.reference.instrument_terms import reconstruct_terms_as_of
@@ -179,6 +179,13 @@ from irp_shared.valuation import ValuationNotVisible, resolve_valuation
 
 #: The v1 binding/selection rule (versioned via the header ``binding_predicate_version``).
 DEFAULT_BINDING_PREDICATE = "v1:subtree-open-positions"
+#: STRUCT-3 (REQ-PPM-008): EXPOSURE_INPUT builds pin the FULL scope subtree — every node,
+#: including position-less grouping nodes — so the run's stored tree view is reconstructable
+#: from PORTFOLIO components alone and a consume run can validate its node against the pin. The
+#: predicate string is the SELF-DESCRIBING marker the exposure consume path branches on: a
+#: pre-STRUCT-3 snapshot (v1) keeps legacy semantics (reproduction of old runs untouched); a v2
+#: snapshot REQUIRES an explicit consume node (DP-7).
+SUBTREE_BINDING_PREDICATE = "v2:subtree-open-positions+full-node-pin"
 
 #: The per-tenant completeness DataQualityRule (resolve-or-register, the ``ensure_manual_source``
 #: pattern). A NOT_NULL rule over a derived dataset — no new evaluator, Protocol untouched (§16).
@@ -313,6 +320,10 @@ def build_snapshot(
     # 1. Resolve the bound scope FIRST — a foreign/unknown portfolio raises PortfolioNotVisible
     #    (fail closed on SQLite AND PG) BEFORE any enumeration or write.
     resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
+    # STRUCT-3: EXPOSURE_INPUT snapshots carry the v2 full-subtree predicate unless the caller
+    # pinned a version explicitly (the predicate string is load-bearing — see its constant).
+    if purpose == PURPOSE_EXPOSURE_INPUT and binding_predicate_version == DEFAULT_BINDING_PREDICATE:
+        binding_predicate_version = SUBTREE_BINDING_PREDICATE
 
     # 2. Enumerate the open positions of the subtree + their marks at the fixed valuation_date
     #    (the shipped, tenant-bounded, cycle-safe, arithmetic-free composers).
@@ -323,6 +334,11 @@ def build_snapshot(
         valid_at=as_of_valid_at,
         known_at=known,
     )
+    # DP-10 (STRUCT-3): an empty subtree REFUSES at submission — keyed to the HOLDINGS set, not
+    # to the spec list (with grouping nodes pinned unconditionally the spec list is never empty
+    # for a resolvable node, so the old `if not specs` guard could no longer fire).
+    if not holdings:
+        raise EmptySnapshotError(str(portfolio_id))
     enriched = attach_marks_as_of(
         session,
         acting_tenant=acting_tenant,
@@ -386,6 +402,21 @@ def build_snapshot(
             _append_spec(specs, COMPONENT_KIND_VALUATION, "valuation", val, valuation_content(val))
             if val.currency_code is not None:
                 mark_currencies.add(val.currency_code)
+
+    # 3a-bis. STRUCT-3 (REQ-PPM-008): pin the FULL scope subtree — every node including
+    #    position-less grouping nodes — so the run's stored tree view is reconstructable from
+    #    PORTFOLIO components alone (edges no longer dangle) and re-parenting a MIDDLE node
+    #    after the run cannot change what the run saw.
+    if purpose == PURPOSE_EXPOSURE_INPUT:
+        root = resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
+        subtree = [root, *resolve_descendants(session, root, acting_tenant=acting_tenant)]
+        for node in subtree:
+            if str(node.id) in seen_portfolios:
+                continue
+            seen_portfolios.add(str(node.id))
+            _append_spec(
+                specs, COMPONENT_KIND_PORTFOLIO, "portfolio", node, portfolio_content(node)
+            )
 
     # 3b. P2-3: pin the FX legs (EXPOSURE_INPUT). For each distinct mark currency != base, pin the
     #     convert-path fx_rate rows (triangulation pivot = DEFAULT_BASE). FX-completeness fails
@@ -4655,6 +4686,7 @@ _BINDING_PREDICATES = (
     LIQUIDITY_BINDING_PREDICATE,
     REPORT_BINDING_PREDICATE,
     DEFAULT_BINDING_PREDICATE,
+    SUBTREE_BINDING_PREDICATE,
     FACTOR_EXPOSURE_BINDING_PREDICATE,
     FACTOR_EXPOSURE_PROXY_BINDING_PREDICATE,
     FACTOR_EXPOSURE_LOADINGS_BINDING_PREDICATE,

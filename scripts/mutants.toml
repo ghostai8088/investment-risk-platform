@@ -1363,3 +1363,67 @@ find = """            ctx.prec = _COMPUTE_PREC  # prec-50 MV sum (the total-path
 replace = """            ctx.prec = _COMPUTE_PREC  # prec-50 MV sum (the total-path precedent)
             mv_by_instrument: dict[str, Decimal] = {}"""
 tests = ["packages/shared-python/tests/test_aggregation_census.py"]
+
+# ---------------------------------------------------------------------------------------------
+# STRUCT-3 (REQ-PPM-001/-008). The history append, the consume-node refusal, the rollup's
+# pinned-tree anchoring — each proven load-bearing.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "M-S3-1"
+group = "struct-3"
+why = "hierarchy edits stop being versioned — the update path appends no history row and the as-of tree silently shows the PRESENT parent for the past"
+file = "packages/shared-python/src/irp_shared/portfolio/portfolio.py"
+find = """    portfolio.record_version += 1
+    session.flush()
+    _append_hierarchy_version(session, portfolio)  # ENT-076, co-transactional"""
+replace = """    portfolio.record_version += 1
+    session.flush()"""
+tests = ["packages/shared-python/tests/test_portfolio.py"]
+
+[[mutant]]
+id = "M-S3-2"
+group = "struct-3"
+why = "the consume-node refusal is unplugged — a v2-snapshot consume run stamps NULL again, failing PPM-008's node-id clause exactly as the shipped path did"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+find = """        if strict and scope_node_id is None:
+            raise ExposureInputError(
+                "a consume run on a full-subtree snapshot must name its node (scope_node_id) — "
+                "REQ-PPM-008: the node id is carried on the run, never NULL"
+            )"""
+replace = """"""
+tests = ["packages/shared-python/tests/test_exposure.py"]
+
+[[mutant]]
+id = "M-S3-3"
+group = "struct-3"
+why = "the rollup anchors to the LIVE tree instead of the pinned one — a re-parent after the run moves a historical rollup"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+# RE-ANCHORED at the review fold (case-normalized keys).
+find = """    node_key = str(node_id).lower()
+    if node_key not in pinned_tree:
+        raise ExposureInputError(
+            f"node {node_id} is not in the run's pinned subtree — a rollup cannot be anchored "
+            "at a node the run never saw"
+        )"""
+replace = """    node_key = str(node_id).lower()"""
+tests = ["packages/shared-python/tests/test_exposure.py"]
+
+[[mutant]]
+id = "M-S3-4"
+group = "struct-3"
+why = "the full-subtree pin quietly shrinks back to holdings-only — grouping nodes vanish from the stored tree view and the middle-node re-parent test loses its subject"
+file = "packages/shared-python/src/irp_shared/snapshot/service.py"
+# RE-ANCHORED after make fix reflowed the block.
+find = """    if purpose == PURPOSE_EXPOSURE_INPUT:
+        root = resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
+        subtree = [root, *resolve_descendants(session, root, acting_tenant=acting_tenant)]
+        for node in subtree:
+            if str(node.id) in seen_portfolios:
+                continue
+            seen_portfolios.add(str(node.id))
+            _append_spec(
+                specs, COMPONENT_KIND_PORTFOLIO, "portfolio", node, portfolio_content(node)
+            )"""
+replace = """"""
+tests = ["packages/shared-python/tests/test_exposure.py", "packages/shared-python/tests/test_snapshot.py"]

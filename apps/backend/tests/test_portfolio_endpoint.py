@@ -205,3 +205,52 @@ def test_list_filter_and_anchor_not_enforce(ctx) -> None:  # noqa: ANN001
     # there is no portfolio-scope filtering in P1C-1.
     seen = client.get("/portfolios", headers=_h(viewer)).json()
     assert {n["code"] for n in seen} == {"ROOT", "F1"}
+
+
+# ---------- STRUCT-3 (REQ-PPM-001 cl.2): the as-of tree over HTTP ----------
+
+
+def test_tree_as_of_reads_the_history_not_the_head(ctx) -> None:  # noqa: ANN001
+    from irp_shared.db.mixins import utcnow
+
+    client, principal, db = ctx[0], ctx[1], ctx[3]
+    created = client.post(
+        "/portfolios",
+        json={"code": "AOF", "name": "Original fund name", "node_type": "FUND"},
+        headers=_h(principal),
+    )
+    assert created.status_code == 201, created.text
+    fund_id = created.json()["id"]
+    child = client.post(
+        "/portfolios",
+        json={
+            "code": "AOF-S",
+            "name": "sleeve",
+            "node_type": "STRATEGY",
+            "parent_portfolio_id": fund_id,
+        },
+        headers=_h(principal),
+    )
+    assert child.status_code == 201
+    db.commit()
+    t_before = utcnow()
+
+    renamed = client.post(
+        f"/portfolios/{fund_id}", json={"name": "Renamed fund"}, headers=_h(principal)
+    )
+    assert renamed.status_code == 200
+    db.commit()
+    t_after = utcnow()
+
+    past = client.get(
+        "/portfolios/tree-as-of", params={"at": t_before.isoformat()}, headers=_h(principal)
+    )
+    assert past.status_code == 200
+    by_id = {n["portfolio_id"]: n for n in past.json()}
+    assert by_id[fund_id]["name"] == "Original fund name"  # the history, not the head
+    assert by_id[child.json()["id"]]["parent_portfolio_id"] == fund_id
+
+    present = client.get(
+        "/portfolios/tree-as-of", params={"at": t_after.isoformat()}, headers=_h(principal)
+    )
+    assert {n["portfolio_id"]: n for n in present.json()}[fund_id]["name"] == "Renamed fund"

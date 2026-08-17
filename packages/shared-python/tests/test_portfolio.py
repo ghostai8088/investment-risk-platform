@@ -309,3 +309,122 @@ def test_portfolio_import_direction() -> None:
                     assert (
                         segments[1] in allowed_subpackages
                     ), f"{py.name} imports non-allowlisted {mod} (irp_shared.{segments[1]})"
+
+
+# ------- STRUCT-3 (REQ-PPM-001 cl.2, re-adjudicated 2026-08-15): the entity's OWN history -------
+
+
+def test_hierarchy_edits_append_history_rows(session: Session) -> None:
+    """Every structural write appends an ENT-076 row co-transactionally, capturing the
+    POST-state — create one, amend twice, three rows with the head's version trail."""
+    from irp_shared.portfolio.models import PortfolioHierarchyVersion
+
+    tenant = str(uuid.uuid4())
+    actor = PortfolioActor(actor_id="steward")
+    root = create_portfolio(
+        session, tenant_id=tenant, code="F", name="Fund", node_type="FUND", actor=actor
+    )
+    update_portfolio(session, root, actor=actor, name="Fund renamed")
+    update_portfolio(session, root, actor=actor, status="CLOSED")
+    rows = (
+        session.execute(
+            select(PortfolioHierarchyVersion)
+            .where(PortfolioHierarchyVersion.portfolio_id == root.id)
+            .order_by(
+                PortfolioHierarchyVersion.effective_at, PortfolioHierarchyVersion.record_version
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [r.record_version for r in rows] == [1, 2, 3]
+    assert [r.name for r in rows] == ["Fund", "Fund renamed", "Fund renamed"]
+    assert [r.status for r in rows] == ["ACTIVE", "ACTIVE", "CLOSED"]
+
+
+def test_tree_resolves_as_of_by_timestamp_no_run_in_scope(session: Session) -> None:
+    """THE re-adjudicated clause, executed: re-parent a node, and the tree at a PAST timestamp —
+    resolved from the entity's own history alone, no run, no snapshot — still shows the OLD
+    parent; the present shows the new one; a node created later is absent from the past."""
+    from irp_shared.db.mixins import utcnow
+    from irp_shared.portfolio.portfolio import resolve_tree_as_of
+
+    tenant = str(uuid.uuid4())
+    actor = PortfolioActor(actor_id="steward")
+    fund = create_portfolio(
+        session, tenant_id=tenant, code="F", name="Fund", node_type="FUND", actor=actor
+    )
+    s1 = create_portfolio(
+        session,
+        tenant_id=tenant,
+        code="S1",
+        name="Sleeve 1",
+        node_type="STRATEGY",
+        actor=actor,
+        parent_portfolio_id=fund.id,
+    )
+    s2 = create_portfolio(
+        session,
+        tenant_id=tenant,
+        code="S2",
+        name="Sleeve 2",
+        node_type="STRATEGY",
+        actor=actor,
+        parent_portfolio_id=fund.id,
+    )
+    acct = create_portfolio(
+        session,
+        tenant_id=tenant,
+        code="A1",
+        name="Account 1",
+        node_type="ACCOUNT",
+        actor=actor,
+        parent_portfolio_id=s1.id,
+    )
+    session.flush()
+    t_before = utcnow()
+
+    update_portfolio(session, acct, actor=actor, parent_portfolio_id=s2.id)  # the re-parent
+    late = create_portfolio(
+        session, tenant_id=tenant, code="A2", name="Account 2", node_type="ACCOUNT", actor=actor
+    )
+    session.flush()
+    t_after = utcnow()
+
+    past = resolve_tree_as_of(session, acting_tenant=tenant, at=t_before)
+    assert past[str(acct.id)].parent_portfolio_id == str(s1.id)  # AS IT WAS
+    assert str(late.id) not in past  # not yet created
+    assert past[str(s1.id)].node_type == "STRATEGY"
+
+    now_view = resolve_tree_as_of(session, acting_tenant=tenant, at=t_after)
+    assert now_view[str(acct.id)].parent_portfolio_id == str(s2.id)
+    assert str(late.id) in now_view
+
+    # Tenant isolation is explicit in the resolver (fail-closed on SQLite too).
+    assert resolve_tree_as_of(session, acting_tenant=str(uuid.uuid4()), at=t_after) == {}
+
+
+def test_hierarchy_version_rows_are_append_only(session: Session) -> None:
+    """The ORM guard fires (the belt half; the PG trigger is the braces, proven in the PG
+    tier)."""
+    from irp_shared.audit.models import AppendOnlyViolation
+    from irp_shared.portfolio.models import PortfolioHierarchyVersion
+
+    tenant = str(uuid.uuid4())
+    actor = PortfolioActor(actor_id="steward")
+    node = create_portfolio(
+        session, tenant_id=tenant, code="X", name="x", node_type="ACCOUNT", actor=actor
+    )
+    row = (
+        session.execute(
+            select(PortfolioHierarchyVersion).where(
+                PortfolioHierarchyVersion.portfolio_id == node.id
+            )
+        )
+        .scalars()
+        .one()
+    )
+    row.name = "tampered"
+    with pytest.raises(AppendOnlyViolation):
+        session.flush()
+    session.rollback()

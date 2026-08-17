@@ -616,6 +616,9 @@ def run_es_backtest(
         result_entity_type="var_backtest_result",
         compute=_compute,
         format_reason=lambda gate, gaps: f"{gate} — {'; '.join(gaps)}",
+        # STRUCT-3 (REQ-PPM-008, the census fold): the run CARRIES its node — the
+        # adjudicated single measured portfolio, previously stamped NULL.
+        scope_portfolio_id=str(parsed.portfolio_id),
     )
     return EsBacktestRunResult(
         run=outcome.run,

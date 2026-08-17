@@ -674,3 +674,148 @@ def test_factor_exposure_side_result_obedience(monkeypatch: pytest.MonkeyPatch) 
     )
     with pytest.raises(NotAggregatableError):
         var_hs_service._adjudicate_pins([row], [], declared_window=250)
+
+
+# ---------- STRUCT-3 (REQ-PPM-008 clause 7): the node-scope census + execution evidence ----------
+
+
+def test_node_scope_census_exact_set_and_valid_upstreams() -> None:
+    """Every registry family declares its node-scope class (exact set — the 3-entry scheduling
+    flag structurally cannot census 21 families, the clause's own insufficiency premise), and
+    every SCOPE_INHERITED upstream is itself a declared family."""
+    from irp_shared.aggregation.contracts import (
+        NODE_SCOPE_INHERITED,
+        NODE_SCOPES,
+    )
+
+    assert set(NODE_SCOPES) == _registry_universe()
+    for family, scope in NODE_SCOPES.items():
+        if scope.scope_class == NODE_SCOPE_INHERITED:
+            assert scope.upstream in NODE_SCOPES, (family, scope.upstream)
+        else:
+            assert scope.upstream is None, family
+
+
+def test_exposure_executes_at_a_middle_node(session: Session) -> None:  # noqa: F811
+    """The SUBTREE family's execution evidence: a governed run AT a STRATEGY node (not the
+    root) completes and carries the node."""
+    import uuid as _uuid
+
+    from test_exposure import _ccy as _ccy2
+    from test_exposure import _run as _run_exp
+    from test_exposure import _three_level_book
+
+    tenant = str(_uuid.uuid4())
+    _ccy2(session, "USD")
+    fund, strat, a, b = _three_level_book(session, tenant)
+    session.flush()
+    result = _run_exp(session, tenant, strat, "USD")  # BUILD at the middle node
+    assert result.status == "COMPLETED"
+    assert result.run.scope_portfolio_id == str(strat)
+    assert {r.portfolio_id for r in result.rows} == {str(a), str(b)}  # the sleeve's subtree
+
+
+def test_factor_exposure_inherits_a_sleeve_scope(session: Session) -> None:  # noqa: F811
+    """The SCOPE_INHERITED chain head's execution evidence: a factor-exposure run over a
+    sleeve-rooted exposure run copies the SLEEVE scope forward — the chain executes below the
+    top of the tree."""
+    import uuid as _uuid
+
+    from test_exposure import T0, _three_level_book
+    from test_exposure import _ccy as _ccy2
+    from test_exposure import _run as _run_exp
+
+    from irp_shared.marketdata.factor import FactorActor, capture_factor
+    from irp_shared.risk.bootstrap import register_factor_exposure_model
+    from irp_shared.risk.events import FactorExposureActor
+    from irp_shared.risk.factor_service import run_factor_exposure
+
+    tenant = str(_uuid.uuid4())
+    _ccy2(session, "USD")
+    fund, strat, a, b = _three_level_book(session, tenant)
+    session.flush()
+    sleeve_run = _run_exp(session, tenant, strat, "USD")
+    assert sleeve_run.status == "COMPLETED"
+
+    factor = capture_factor(
+        session,
+        factor_code="FX_USD",
+        factor_source="VENDOR_F",
+        factor_family="CURRENCY",
+        currency_code="USD",
+        acting_tenant=tenant,
+        actor=FactorActor(actor_id="s"),
+        valid_from=T0,
+    ).id
+    mv_id = register_factor_exposure_model(
+        session, tenant_id=tenant, actor_id="analyst", code_version="risk-v1"
+    ).id
+    fe = run_factor_exposure(
+        session,
+        acting_tenant=tenant,
+        actor=FactorExposureActor(actor_id="a"),
+        code_version="risk-v1",
+        environment_id="ci",
+        model_version_id=mv_id,
+        exposure_run_id=sleeve_run.run.run_id,
+        factor_ids=[factor],
+    )
+    assert fe.status == "COMPLETED"
+    assert fe.run.scope_portfolio_id == str(strat)  # the sleeve, inherited
+
+
+def test_inherited_scope_declarations_are_not_decorative(session: Session) -> None:  # noqa: F811
+    """Review BLOCKING fold: five SCOPE_INHERITED declarations were factually false — the
+    binders stamped NULL (the SCENARIO defect shape, shipped again as data). The mechanical
+    check: every family declared SCOPE_INHERITED must have at least one COMPLETED run in this
+    battery carrying a NON-NULL scope... executed per-family in their own suites; here the
+    DECLARATION-level guard is that the class list matches the binders that STAMP — pinned by
+    name so a new false declaration fails in review."""
+    from irp_shared.aggregation.contracts import NODE_SCOPE_INHERITED, NODE_SCOPES
+
+    inherited = {f for f, sc in NODE_SCOPES.items() if sc.scope_class == NODE_SCOPE_INHERITED}
+    # Every one of these binders now passes scope_portfolio_id to the scaffold (grep-pinned in
+    # the census below); the five that did NOT before this fold: PORTFOLIO_RETURN,
+    # BENCHMARK_RELATIVE, VAR_BACKTEST, ES_BACKTEST, PROXY_WEIGHT_ESTIMATE.
+    assert inherited == {
+        "FACTOR_EXPOSURE",
+        "VAR",
+        "ACTIVE_RISK",
+        "SCENARIO",
+        "CONCENTRATION",
+        "LIQUIDITY",
+        "PORTFOLIO_RETURN",
+        "BENCHMARK_RELATIVE",
+        "ROLLING_RISK",
+        "SHARPE",
+        "VAR_BACKTEST",
+        "ES_BACKTEST",
+        "PROXY_WEIGHT_ESTIMATE",
+    }
+
+
+def test_every_inherited_binder_stamps_scope_mechanically() -> None:
+    """The grep-level census: each SCOPE_INHERITED family's service module passes
+    scope_portfolio_id to the governed-run scaffold — a stamp deleted from any of them fails
+    HERE, not in a demo three stages later."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "src" / "irp_shared"
+    modules = {
+        "FACTOR_EXPOSURE": "risk/factor_service.py",
+        "VAR": "risk/var_service.py",
+        "ACTIVE_RISK": "risk/active_risk_service.py",
+        "SCENARIO": "risk/scenario_service.py",
+        "CONCENTRATION": "concentration/service.py",
+        "LIQUIDITY": "liquidity/service.py",
+        "PORTFOLIO_RETURN": "perf/return_service.py",
+        "BENCHMARK_RELATIVE": "perf/benchmark_relative_service.py",
+        "ROLLING_RISK": "perf/rolling_service.py",
+        "SHARPE": "perf/sharpe_service.py",
+        "VAR_BACKTEST": "risk/var_backtest_service.py",
+        "ES_BACKTEST": "risk/es_backtest_service.py",
+        "PROXY_WEIGHT_ESTIMATE": "risk/proxy_weight_service.py",
+    }
+    for family, rel in modules.items():
+        text = (root / rel).read_text()
+        assert "scope_portfolio_id" in text, f"{family}: {rel} never stamps a scope"

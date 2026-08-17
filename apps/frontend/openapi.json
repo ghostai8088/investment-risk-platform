@@ -6145,6 +6145,18 @@
             ],
             "title": "Portfolio Id"
           },
+          "scope_node_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Node Id"
+          },
           "snapshot_id": {
             "anyOf": [
               {
@@ -9740,6 +9752,39 @@
           "description"
         ],
         "title": "NodeOut",
+        "type": "object"
+      },
+      "NodeRollupOut": {
+        "properties": {
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "exposure_type": {
+            "title": "Exposure Type",
+            "type": "string"
+          },
+          "n_rows": {
+            "title": "N Rows",
+            "type": "integer"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "exposure_type",
+          "total",
+          "n_rows",
+          "base_currency"
+        ],
+        "title": "NodeRollupOut",
         "type": "object"
       },
       "PacingModelIn": {
@@ -15520,6 +15565,57 @@
           }
         },
         "title": "TransactionReverseIn",
+        "type": "object"
+      },
+      "TreeNodeAsOfOut": {
+        "properties": {
+          "effective_at": {
+            "format": "date-time",
+            "title": "Effective At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node_type": {
+            "title": "Node Type",
+            "type": "string"
+          },
+          "parent_portfolio_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Portfolio Id"
+          },
+          "portfolio_id": {
+            "title": "Portfolio Id",
+            "type": "string"
+          },
+          "record_version": {
+            "title": "Record Version",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "portfolio_id",
+          "parent_portfolio_id",
+          "node_type",
+          "name",
+          "status",
+          "record_version",
+          "effective_at"
+        ],
+        "title": "TreeNodeAsOfOut",
         "type": "object"
       },
       "UserCreateIn": {
@@ -24670,6 +24766,112 @@
         ]
       }
     },
+    "/exposure/runs/{run_id}/rollup": {
+      "get": {
+        "description": "STRUCT-3 (REQ-PPM-008 / DP-9): a node's composed totals per measure \u2014 read-time\ncomposition over the run's leaf rows within the node's PINNED subtree; the contract governs\n(operator + grain selector); no parent row is persisted. 422 on a node outside the pinned\nsubtree or a pre-STRUCT-3 run.",
+        "operationId": "rollup_exposure_endpoint_exposure_runs__run_id__rollup_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NodeRollupOut"
+                  },
+                  "title": "Response Rollup Exposure Endpoint Exposure Runs  Run Id  Rollup Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollup Exposure Endpoint",
+        "tags": [
+          "exposure"
+        ]
+      }
+    },
     "/exposure/{exposure_id}": {
       "get": {
         "description": "Read a single ``exposure_aggregate`` row (tenant-scoped; read-only).",
@@ -32506,6 +32708,102 @@
           }
         },
         "summary": "Create Portfolio Endpoint",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/portfolios/tree-as-of": {
+      "get": {
+        "description": "STRUCT-3 (REQ-PPM-001 clause 2): the tenant's tree AS IT WAS at ``at`` \u2014 resolved from\nthe hierarchy's OWN version history (ENT-076) by timestamp, with NO run or snapshot in\nscope. Declared BEFORE ``/{portfolio_id}`` (route-order house rule: a literal path must not\nbe captured by the id route).",
+        "operationId": "get_tree_as_of_portfolios_tree_as_of_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "at",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "At",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TreeNodeAsOfOut"
+                  },
+                  "title": "Response Get Tree As Of Portfolios Tree As Of Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tree As Of",
         "tags": [
           "portfolios"
         ]

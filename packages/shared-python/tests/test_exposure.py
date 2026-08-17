@@ -311,6 +311,7 @@ def test_determinism_same_snapshot(session: Session) -> None:
         environment_id="ci",
         snapshot_id=snap_id,
         base_currency="USD",
+        scope_node_id=pf,  # STRUCT-3 (DP-7): a v2-snapshot consume names its node
     )
     assert [r.exposure_amount for r in first.rows] == [r.exposure_amount for r in second.rows]
 
@@ -347,6 +348,7 @@ def test_reproducible_under_fx_correction(session: Session) -> None:
         environment_id="ci",
         snapshot_id=snap_id,
         base_currency="USD",
+        scope_node_id=pf,  # STRUCT-3 (DP-7): a v2-snapshot consume names its node
     )
     assert [r.exposure_amount for r in again.rows] == before
 
@@ -496,6 +498,7 @@ def test_post_create_failed_commits_failed_run_zero_rows(session: Session) -> No
         environment_id="ci",
         snapshot_id=snap_id,
         base_currency="JPY",
+        scope_node_id=pf,  # STRUCT-3 (DP-7)
     )
     assert result.status == RunStatus.FAILED.value
     assert result.rows == []
@@ -597,6 +600,7 @@ def test_failed_run_emits_failure_outcome(session: Session) -> None:
         environment_id="ci",
         snapshot_id=built.run.input_snapshot_id,
         base_currency="JPY",
+        scope_node_id=pf,  # STRUCT-3 (DP-7)
     )
     fail_events = [
         e
@@ -1061,3 +1065,352 @@ def test_unknown_exposure_type_read_refused(session: Session) -> None:
         list_exposure_by_entity(
             session, acting_tenant=str(uuid.uuid4()), exposure_type="GROSS_DELTA"
         )
+
+
+# ---------- STRUCT-3 (REQ-PPM-008 / DP-7 / DP-10): the node-scoped consume path ----------
+
+
+def _three_level_book(db: Session, tenant: str) -> tuple[str, str, str, str]:
+    """FUND -> STRATEGY -> two ACCOUNTs, positions on the leaves only. Returns
+    (fund, strategy, account_a, account_b)."""
+    from irp_shared.portfolio import create_portfolio
+
+    actor = PortfolioActor(actor_id="s")
+    fund = create_portfolio(
+        db, tenant_id=tenant, code="FUND", name="fund", node_type="FUND", actor=actor
+    ).id
+    strat = create_portfolio(
+        db,
+        tenant_id=tenant,
+        code="STRAT",
+        name="strategy",
+        node_type="STRATEGY",
+        actor=actor,
+        parent_portfolio_id=fund,
+    ).id
+    a = create_portfolio(
+        db,
+        tenant_id=tenant,
+        code="ACCT-A",
+        name="account a",
+        node_type="ACCOUNT",
+        actor=actor,
+        parent_portfolio_id=strat,
+    ).id
+    b = create_portfolio(
+        db,
+        tenant_id=tenant,
+        code="ACCT-B",
+        name="account b",
+        node_type="ACCOUNT",
+        actor=actor,
+        parent_portfolio_id=strat,
+    ).id
+    ia = _inst(db, tenant, "3L-I0")
+    ib = _inst(db, tenant, "3L-I1")
+    _pos(db, tenant, a, ia, "100")
+    _val(db, tenant, a, ia, "12.50", "USD")
+    _pos(db, tenant, b, ib, "40")
+    _val(db, tenant, b, ib, "25.00", "USD")
+    db.flush()
+    return fund, strat, a, b
+
+
+def test_full_subtree_pin_stores_the_tree_and_survives_a_middle_reparent(
+    session: Session,
+) -> None:
+    """The run's STORED view is the pinned PORTFOLIO components: re-parent the MIDDLE node after
+    the run and the captured parent map is UNCHANGED (leaf-only re-parents are explicitly
+    insufficient — the row's own amendment); the grouping nodes are pinned even with no
+    positions."""
+    from irp_shared.portfolio import resolve_portfolio, update_portfolio
+    from irp_shared.snapshot import SUBTREE_BINDING_PREDICATE, resolve_snapshot
+    from irp_shared.snapshot.models import COMPONENT_KIND_PORTFOLIO
+
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    fund, strat, a, b = _three_level_book(session, tenant)
+    other = create_portfolio(
+        session,
+        tenant_id=tenant,
+        code="STRAT2",
+        name="second strategy",
+        node_type="STRATEGY",
+        actor=PortfolioActor(actor_id="s"),
+        parent_portfolio_id=fund,
+    ).id
+    session.flush()
+
+    result = _run(session, tenant, fund, "USD")
+    assert result.status == RunStatus.COMPLETED.value
+    snap = resolve_snapshot(session, result.run.input_snapshot_id, acting_tenant=tenant)
+    assert snap.binding_predicate_version == SUBTREE_BINDING_PREDICATE
+
+    def _pinned_parents() -> dict[str, str | None]:
+        comps = list_components(session, snapshot_id=snap.id, acting_tenant=tenant)
+        out = {}
+        for c in comps:
+            if c.component_kind == COMPONENT_KIND_PORTFOLIO:
+                data = json.loads(c.captured_content)
+                out[data["id"]] = data["parent_portfolio_id"]
+        return out
+
+    before = _pinned_parents()
+    # Grouping nodes with no positions ARE pinned: fund, strat, AND the empty second strategy.
+    assert set(before) >= {str(fund).lower(), str(strat).lower(), str(other).lower()}
+
+    # Re-parent the MIDDLE node (strategy under the other strategy) AFTER the run.
+    update_portfolio(
+        session,
+        resolve_portfolio(session, strat, acting_tenant=tenant),
+        actor=PortfolioActor(actor_id="s"),
+        parent_portfolio_id=other,
+    )
+    session.flush()
+    assert _pinned_parents() == before  # the run's stored view of the tree did not change
+
+
+def test_v2_consume_without_node_refuses_and_with_node_scopes(session: Session) -> None:
+    """DP-7 executed: a node-less consume on a full-subtree snapshot REFUSES (the shipped NULL
+    stamp failed the node-id clause silently); a consume AT the strategy node computes ONLY its
+    sub-holdings and stamps the node on the run."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    fund, strat, a, b = _three_level_book(session, tenant)
+    built = _run(session, tenant, fund, "USD")
+    snap_id = built.run.input_snapshot_id
+
+    with pytest.raises(ExposureInputError, match="must name its node"):
+        run_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=ACTOR,
+            code_version="v1",
+            environment_id="ci",
+            snapshot_id=snap_id,
+            base_currency="USD",
+        )
+
+    at_strat = run_exposure(
+        session,
+        acting_tenant=tenant,
+        actor=ACTOR,
+        code_version="v1",
+        environment_id="ci",
+        snapshot_id=snap_id,
+        base_currency="USD",
+        scope_node_id=strat,
+    )
+    assert at_strat.status == RunStatus.COMPLETED.value
+    assert at_strat.run.scope_portfolio_id == str(strat)  # the node id carried on the run
+    # Both accounts sit under the strategy: 100x12.50 + 40x25.00, market value.
+    mv = [r for r in at_strat.rows if r.exposure_type == "MARKET_VALUE"]
+    assert sum(r.exposure_amount for r in mv) == Decimal("2250.000000")
+
+    at_a = run_exposure(
+        session,
+        acting_tenant=tenant,
+        actor=ACTOR,
+        code_version="v1",
+        environment_id="ci",
+        snapshot_id=snap_id,
+        base_currency="USD",
+        scope_node_id=a,
+    )
+    mv_a = [r for r in at_a.rows if r.exposure_type == "MARKET_VALUE"]
+    assert sum(r.exposure_amount for r in mv_a) == Decimal("1250.000000")  # account A only
+    # Two runs at different nodes are distinguishable from run rows alone.
+    assert at_strat.run.scope_portfolio_id != at_a.run.scope_portfolio_id
+
+
+def test_consume_node_refusals_fire(session: Session) -> None:
+    """P9 for the two new refusals: a node OUTSIDE the pinned subtree refuses; a pinned grouping
+    node with NO positions beneath refuses (DP-10 — never a zero total)."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    fund, strat, a, b = _three_level_book(session, tenant)
+    empty = create_portfolio(
+        session,
+        tenant_id=tenant,
+        code="EMPTY-S",
+        name="empty strategy",
+        node_type="STRATEGY",
+        actor=PortfolioActor(actor_id="s"),
+        parent_portfolio_id=fund,
+    ).id
+    session.flush()
+    built = _run(session, tenant, fund, "USD")
+    snap_id = built.run.input_snapshot_id
+
+    with pytest.raises(ExposureInputError, match="not a node of the snapshot's pinned"):
+        run_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=ACTOR,
+            code_version="v1",
+            environment_id="ci",
+            snapshot_id=snap_id,
+            base_currency="USD",
+            scope_node_id=str(uuid.uuid4()),
+        )
+    with pytest.raises(ExposureInputError, match="empty (subtree|.*holds no positions)"):
+        run_exposure(
+            session,
+            acting_tenant=tenant,
+            actor=ACTOR,
+            code_version="v1",
+            environment_id="ci",
+            snapshot_id=snap_id,
+            base_currency="USD",
+            scope_node_id=empty,
+        )
+
+
+def test_shallow_trees_run_normally(session: Session) -> None:
+    """Minimum depth is a property of the TEST, never a rule applied to data: a single flat node
+    with positions runs exactly as before."""
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    pf = _pf(session, tenant)
+    _holding(session, tenant, pf, "FLAT-I", "10", "5.00", "USD")
+    session.flush()
+    result = _run(session, tenant, pf, "USD")
+    assert result.status == RunStatus.COMPLETED.value
+
+
+# ---------- STRUCT-3 (REQ-PPM-008): the rollup identity ----------
+
+
+def _rollup_totals(db: Session, tenant: str, run_id: str, node: str) -> dict[str, Decimal]:
+    from irp_shared.exposure.service import rollup_exposure
+
+    return {
+        r.exposure_type: r.total
+        for r in rollup_exposure(db, acting_tenant=tenant, run_id=run_id, node_id=node)
+    }
+
+
+def test_rollup_identity_three_levels_two_node_types_per_measure(session: Session) -> None:
+    """THE identity, on a tree at least three levels deep with two node types and BOTH measures
+    live: the top total equals the sum of the level below it, AND the sum of the level below
+    that — per exposure_type, to the last decimal (leaf rows quantized once; composition exact
+    by construction)."""
+    from irp_shared.portfolio import create_portfolio
+
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    fund, strat, a, b = _three_level_book(session, tenant)
+    # A second strategy holding a BOND leaf so the NOTIONAL measure joins the identity.
+    strat2 = create_portfolio(
+        session,
+        tenant_id=tenant,
+        code="STRAT-FI",
+        name="fixed income strategy",
+        node_type="STRATEGY",
+        actor=PortfolioActor(actor_id="s"),
+        parent_portfolio_id=fund,
+    ).id
+    acct_c = create_portfolio(
+        session,
+        tenant_id=tenant,
+        code="ACCT-C",
+        name="account c",
+        node_type="ACCOUNT",
+        actor=PortfolioActor(actor_id="s"),
+        parent_portfolio_id=strat2,
+    ).id
+    bond = _bond(session, tenant, "3L-UST", face_value="1000.0000")
+    _pos(session, tenant, acct_c, bond, "5")
+    _val(session, tenant, acct_c, bond, "985.40", "USD")
+    session.flush()
+
+    run = _run(session, tenant, fund, "USD")
+    assert run.status == RunStatus.COMPLETED.value
+    rid = run.run.run_id
+
+    top = _rollup_totals(session, tenant, rid, fund)
+    level1 = [_rollup_totals(session, tenant, rid, n) for n in (strat, strat2)]
+    level2 = [_rollup_totals(session, tenant, rid, n) for n in (a, b, acct_c)]
+
+    for measure in top:
+        l1 = sum((d.get(measure, Decimal(0)) for d in level1), Decimal(0))
+        l2 = sum((d.get(measure, Decimal(0)) for d in level2), Decimal(0))
+        assert top[measure] == l1 == l2, measure
+    # Both measures were genuinely in the identity (the bond emitted NOTIONAL).
+    assert set(top) == {"MARKET_VALUE", "NOTIONAL"}
+    assert top["NOTIONAL"] == Decimal("5000.000000")  # 5 x 1000, hand-derived
+    assert top["MARKET_VALUE"] == Decimal("2250.000000") + Decimal("4927.000000")
+
+
+def test_middle_node_insertion_changes_no_additive_total(session: Session) -> None:
+    """Insert a NEW grouping node between the strategy and its accounts, change no holding,
+    re-RUN — every contract-declared-additive total is unchanged (ratios are excluded by the
+    CONTRACT: this read composes only what the operator declaration admits)."""
+    from irp_shared.portfolio import create_portfolio, resolve_portfolio, update_portfolio
+
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    fund, strat, a, b = _three_level_book(session, tenant)
+    session.flush()
+    before_run = _run(session, tenant, fund, "USD")
+    before = _rollup_totals(session, tenant, before_run.run.run_id, fund)
+
+    middle = create_portfolio(
+        session,
+        tenant_id=tenant,
+        code="MID",
+        name="inserted grouping node",
+        node_type="STRATEGY",
+        actor=PortfolioActor(actor_id="s"),
+        parent_portfolio_id=strat,
+    ).id
+    for leaf in (a, b):
+        update_portfolio(
+            session,
+            resolve_portfolio(session, leaf, acting_tenant=tenant),
+            actor=PortfolioActor(actor_id="s"),
+            parent_portfolio_id=middle,
+        )
+    session.flush()
+
+    after_run = _run(session, tenant, fund, "USD")
+    after = _rollup_totals(session, tenant, after_run.run.run_id, fund)
+    assert after == before  # the top's additive totals are invariant under regrouping
+    # And the inserted node composes the SAME totals as its parent chain (4 levels deep now).
+    at_middle = _rollup_totals(session, tenant, after_run.run.run_id, middle)
+    assert at_middle == after
+
+
+def test_rollup_refusals_fire(session: Session) -> None:
+    """P9: a node outside the pinned subtree refuses; the contract governs the read (flip the
+    operator and the rollup refuses — result obedience for the composition)."""
+    from irp_shared.aggregation.contracts import (
+        AGGREGATION_CONTRACTS,
+        OPERATOR_NOT_AGGREGATABLE,
+        NotAggregatableError,
+    )
+    from irp_shared.exposure.service import rollup_exposure
+
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    fund, strat, a, b = _three_level_book(session, tenant)
+    session.flush()
+    run = _run(session, tenant, fund, "USD")
+    rid = run.run.run_id
+
+    with pytest.raises(ExposureInputError, match="not in the run's pinned subtree"):
+        rollup_exposure(session, acting_tenant=tenant, run_id=rid, node_id=str(uuid.uuid4()))
+
+    import pytest as _pytest
+
+    mp = _pytest.MonkeyPatch()
+    try:
+        mp.setitem(
+            AGGREGATION_CONTRACTS["EXPOSURE_AGGREGATE"],
+            "exposure_amount",
+            OPERATOR_NOT_AGGREGATABLE,
+        )
+        with pytest.raises(NotAggregatableError):
+            rollup_exposure(session, acting_tenant=tenant, run_id=rid, node_id=fund)
+    finally:
+        mp.undo()
