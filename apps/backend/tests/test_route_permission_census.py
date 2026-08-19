@@ -74,7 +74,9 @@ UNROUTED_FORWARD_GATES: dict[str, str] = {
 #: The measured route count at RPT-2 (2026-08-07). Moves CONSCIOUSLY with each slice that adds or
 #: removes routes — the point is that it can never silently be zero (the vacuous-walk trap) or
 #: silently shrink (a router falling out of main.py, the CI-allowlist drift class).
-# +1 ONBOARD-1a; +8 ONBOARD-1b; +1 ALERT-1; +4 REPRO-2 (3 schedule writes + the verdict read)
+# +1 ONBOARD-1a; +8 ONBOARD-1b; +1 ALERT-1; +4 REPRO-2 (3 schedule writes + the verdict read);
+# +1 STRUCT-2 (GET /exposure/latest/sum — the Wave-18 close repaired this line's arithmetic:
+# the visible sum read 305+2 while the pin was 308); +2 STRUCT-3; +0 STRUCT-4.
 EXPECTED_ROUTE_COUNT = (
     308  # STRUCT-3: +GET /portfolios/tree-as-of, +GET /exposure/runs/{run_id}/rollup
 )

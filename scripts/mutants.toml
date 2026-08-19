@@ -1573,3 +1573,16 @@ file = "apps/backend/src/irp_backend/api/exposure.py"
 find = """        fx_pivot=derive_pivot(legs),"""
 replace = """        fx_pivot=None,"""
 tests = ["apps/backend/tests/test_exposure_endpoint.py"]
+
+# ---------------------------------------------------------------------------
+# Wave-18 close folds.
+# ---------------------------------------------------------------------------
+
+[[mutant]]
+id = "M-W18C-1"
+group = "w18-close"
+why = "the legacy-branch scope stamp goes verbatim again — a nonexistent/foreign UUID mints a COMPLETED run labelled with a scope no one owns (the V-008 shape the close sweep found re-opened, K24)"
+file = "packages/shared-python/src/irp_shared/exposure/service.py"
+find = """            resolve_portfolio(session, str(scope_node_id), acting_tenant=acting_tenant)"""
+replace = """            pass"""
+tests = ["packages/shared-python/tests/test_struct4_fx.py"]

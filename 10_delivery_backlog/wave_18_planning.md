@@ -49,7 +49,7 @@ IN: REQ-PPM-006, -007, -008, -009 (name-inertness half only — mandate comparis
 - Node-scoped runs per DP-7; **the stamped node id is VALIDATED against the pinned subtree** (closes the V-008 exploit — a verbatim-stamped arbitrary id would pass "distinguishable from run rows alone" while breaking the scope label).
 - Rollup per DP-9 (recommended: read-time composition consulting the STRUCT-2 contract; additive only by contract, not by hand). Rollup identity on a tree ≥3 levels, TWO node types (FUND → STRATEGY → ACCOUNTs), built in DEMO data, not only fixtures (judge graft): top == sum(level below) == sum(level below that), per exposure_type; middle-node insertion changes no contract-declared-additive total. Shallow trees run normally — minimum depth is a property of the TEST, never a data rule.
 - Empty-subtree and positions-without-marks semantics per DP-10, each pinned by its own test so neither branch can regress to a silent zero (risk-first graft).
-- **Clause-7 census is EXECUTION evidence, not declaration** (closes V-008-1): every family in the run-type registry is EXECUTED at a non-root node in the battery (or refuses with its contract-declared reason); a `requires_portfolio_scope`-style registry check is explicitly insufficient — that is the RPT-3/LQ-1 declaration-without-firing class.
+- **Clause-7 census is EXECUTION evidence, not declaration** (closes V-008-1): every family in the run-type registry is EXECUTED at a non-root node in the battery (or refuses with its contract-declared reason); a `requires_portfolio_scope`-style registry check is explicitly insufficient — that is the RPT-3/LQ-1 declaration-without-firing class. **AMENDED at the Wave-18 close (2026-08-17, ratified decision D2 — the delivered form): the NODE_SCOPES exact-set declaration census + one EXECUTED representative per node-scope class (EXPOSURE_AGGREGATE at a STRATEGY; FACTOR_EXPOSURE and VAR inheriting a sleeve; PORTFOLIO_RETURN at a LEAF) + the mechanical scope-stamp census. Per-family non-root execution for the remaining families rides the next slice that touches each family's chain (P19 trigger). The original per-family universal was broader than what was built — recorded here rather than left as a false ratified sentence.**
 - **Rule 7 screen**: the Portfolio Structure tree screen with an as-of toggle — the portfolio entity's first read surface.
 
 ### STRUCT-4 — Reporting currency + governed FX translation made visible (PPM-010 complete) — **L**, migration `0073` (conditional on DP-11)
@@ -96,8 +96,9 @@ IN: REQ-PPM-006, -007, -008, -009 (name-inertness half only — mandate comparis
 2. The ledger-class omission sweep (seven ledgers), verified on main AFTER the last merge.
 3. Roadmap rows stamped with merge identities in the FIRST commit of the following slice (the REPRO-2 carry pattern).
 4. Deferred triggers from Part 1 re-checked: none should have fired mid-wave; if one did, it is a decision, not a carry.
-5. *(Added 2026-08-17, STRUCT-4 review fold C1 — recorded here so the close cannot miss it.)*
-   The rename-carry RESIDUAL decision (P19): the RETURN chain was discharged at STRUCT-4
+5. *(Added 2026-08-17, STRUCT-4 review fold C1; DECIDED at the Wave-18 close — ratified D1:
+   ACCEPT RECURRENCE on the census's strength, with the touch-trigger. See
+   `wave_18_close_review.md`.)* The rename-carry RESIDUAL decision (P19): the RETURN chain was discharged at STRUCT-4
    (stage 27, fresh post-rename, values identical); the backtest/desmoothing/pacing chains —
    whose fresh inputs live on the SHARED flat demo books — come to the close as a named
    decision: accept recurrence on the strength of the mechanical name census + five

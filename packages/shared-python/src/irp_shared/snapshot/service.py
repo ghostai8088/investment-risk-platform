@@ -335,7 +335,10 @@ def build_snapshot(
     resolve_portfolio(session, str(portfolio_id), acting_tenant=acting_tenant)
     # STRUCT-3/STRUCT-4: EXPOSURE_INPUT snapshots carry the newest predicate (v3) unless the
     # caller pinned a version explicitly (the predicate string is load-bearing — see the
-    # constants; explicit v2 keeps the STRUCT-3 semantics for the legacy-shape tests).
+    # constants; explicit v2 keeps the STRUCT-3 semantics for the legacy-shape tests). NOTE
+    # (Wave-18 close, K26): an EXPLICIT v1 request for EXPOSURE_INPUT cannot be honored — v1
+    # equals the DEFAULT constant, so it upgrades; a true v1 artifact can only be inherited
+    # from history, never re-minted (the close's legacy tests emulate one by raw SQL).
     if purpose == PURPOSE_EXPOSURE_INPUT and binding_predicate_version == DEFAULT_BINDING_PREDICATE:
         binding_predicate_version = NODE_FX_BINDING_PREDICATE
 

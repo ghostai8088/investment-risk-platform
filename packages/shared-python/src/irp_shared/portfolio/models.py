@@ -127,9 +127,9 @@ class PortfolioHierarchyVersion(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnl
     #: The as-of axis: when this state became the head's state (write wall-clock; backfill uses
     #: the head's valid_from).
     effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    #: BINDER (written by create/update at edit time) or 0072_BACKFILL (reconstructed from the
+    #: BINDER (written by create/update at edit time), 0072_BACKFILL (reconstructed from the
     #: head at migration — review fold: a reader must be able to tell recorded history from the
-    #: backfill's honest fabrication).
+    #: backfill's honest fabrication), or 0073_BACKFILL (the DP-11 root-currency declaration).
     source: Mapped[str] = mapped_column(String(20), nullable=False)
 
 

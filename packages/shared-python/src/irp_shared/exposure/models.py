@@ -13,9 +13,11 @@ a re-run is a NEW ``calculation_run`` + new rows. PROPRIETARY, tenant-scoped, **
 NOT-NULL
 ``input_snapshot_id`` (FK) — no exposure exists without a complete run over a bound snapshot. Grain
 =
-the per-holding atom ``(calculation_run_id, portfolio_id, instrument_id, base_currency)``. **Signed
+the per-holding atom ``(calculation_run_id, portfolio_id, instrument_id, base_currency,
+exposure_type)`` — STRUCT-1 (migration ``0071``) put the measure in the key. **Signed
 market value v1:** ``exposure_amount = quantize_HALF_UP(signed_quantity x mark_value x fx_rate, 6)``
-(``Numeric(28,6)`` money scale, base currency); ``exposure_type = MARKET_VALUE`` only. The captured
+(``Numeric(28,6)`` money scale, base currency); TWO declared measures since STRUCT-1
+(``MARKET_VALUE``, ``NOTIONAL`` — the ``EXPOSURE_PRODUCERS`` registry). The captured
 inputs (``signed_quantity``/``mark_value``/``fx_rate``/``fx_legs``) make each row self-auditing.
 ``fx_rate`` is the **effective composite** multiplier (mark->base; a published rate only in the
 direct/identity case); ``fx_legs`` is the JSON **leg evidence** (the pinned fx_rate leg ids + rates

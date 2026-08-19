@@ -612,3 +612,50 @@ def test_legacy_v1_multi_top_resolution_refuses_partial_declarations(session: Se
         _run(session, tenant, snapshot_id=v1_snap.id, scope_node_id=a)  # C10: node ignored
     ok = _run(session, tenant, base="USD", snapshot_id=v1_snap.id)
     assert ok.status == RunStatus.COMPLETED.value
+
+
+def test_legacy_v1_scope_stamp_must_be_a_real_tenant_visible_node(session: Session) -> None:
+    """Wave-18 close fold K24 (the V-008 shape re-opened on the legacy branch): a v1-snapshot
+    consume accepted ANY scope_node_id — a nonexistent or foreign UUID minted a COMPLETED run
+    stamped with a scope no one owns, and the false label propagates through the
+    SCOPE_INHERITED chain. The stamp must resolve as a tenant-visible portfolio; the
+    reproduction adapter replays the ORIGINAL run's stored scope, which resolves by
+    construction (positive control below)."""
+    from irp_shared.portfolio import PortfolioNotVisible
+
+    tenant = str(uuid.uuid4())
+    _ccy(session, "USD")
+    root = _pf(session, tenant, "V1S-ROOT", base="USD")
+    _holding(session, tenant, root, "EQ-V1S", "10", "5.00", "USD")
+    v2_snap = build_snapshot(
+        session,
+        acting_tenant=tenant,
+        actor=SnapshotActor(actor_id="s"),
+        purpose=PURPOSE_EXPOSURE_INPUT,
+        portfolio_id=root,
+        as_of_valid_at=VALID_AT,
+        as_of_known_at=KNOWN_AT,
+        binding_predicate_version=SUBTREE_BINDING_PREDICATE,
+        base_currency="USD",
+    )
+    from sqlalchemy import update
+
+    from irp_shared.snapshot.models import DatasetSnapshot
+
+    session.execute(
+        update(DatasetSnapshot)
+        .where(DatasetSnapshot.id == v2_snap.id)
+        .values(binding_predicate_version="v1:subtree-open-positions")
+    )
+    session.flush()
+    session.expire_all()
+
+    runs_before = _count_runs(session, tenant)
+    with pytest.raises(PortfolioNotVisible):
+        _run(session, tenant, base="USD", snapshot_id=v2_snap.id, scope_node_id=str(uuid.uuid4()))
+    assert _count_runs(session, tenant) == runs_before  # pre-create refusal: zero runs
+
+    # Positive control — the adapter's replay shape: the ORIGINAL run's real scope resolves.
+    ok = _run(session, tenant, base="USD", snapshot_id=v2_snap.id, scope_node_id=root)
+    assert ok.status == RunStatus.COMPLETED.value
+    assert ok.run.scope_portfolio_id == str(root)
