@@ -557,8 +557,17 @@ def run_exposure(
                 "a consume run on a full-subtree snapshot must name its node (scope_node_id) — "
                 "REQ-PPM-008: the node id is carried on the run, never NULL"
             )
+        if scope_node_id is not None and not strict:
+            # LEGACY (v1) + a named node: the pin cannot answer subtree membership and the
+            # compute stays whole-snapshot (F6/F7 below) — but the STAMP must still be a real,
+            # tenant-visible portfolio (Wave-18 close fold K24: the verbatim stamp re-opened
+            # the V-008 shape — a nonexistent/foreign UUID minted a COMPLETED run labelled with
+            # a scope no one owns, and the false label propagates through the SCOPE_INHERITED
+            # chain). The reproduction adapter always replays the ORIGINAL run's stored scope,
+            # which resolves by construction, so legacy replays are untouched.
+            resolve_portfolio(session, str(scope_node_id), acting_tenant=acting_tenant)
         if scope_node_id is not None and strict:
-            # v2 only: validate against the pinned subtree and filter the compute to it. A
+            # v2+ only: validate against the pinned subtree and filter the compute to it. A
             # LEGACY (v1, holdings-only-pinned) snapshot skips BOTH (review folds F6/F7): its
             # pin set cannot answer membership (a grouping-node root is legitimately unpinned
             # there), and filtering would silently truncate a run that pre-STRUCT-3 semantics

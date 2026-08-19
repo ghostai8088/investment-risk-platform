@@ -79,6 +79,9 @@ function TreeTable({ nodes }: { nodes: TreeNode[] }): ReactElement {
         <tr>
           <th>Node</th>
           <th>Type</th>
+          {/* Wave-18 close (K27): the DP-11 declaration that now governs run refusals —
+              blank means INHERIT the parent's (an undeclared ROOT refuses at run time). */}
+          <th>Reporting ccy</th>
           <th>Status</th>
           <th>Version</th>
           <th>Effective</th>
@@ -89,6 +92,7 @@ function TreeTable({ nodes }: { nodes: TreeNode[] }): ReactElement {
           <tr key={node.portfolio_id}>
             <td style={{ paddingLeft: `${depth * 1.5}rem` }}>{verbatim(node.name)}</td>
             <td>{verbatim(node.node_type)}</td>
+            <td className="mono">{verbatim(node.base_currency_code)}</td>
             <td>{verbatim(node.status)}</td>
             <td className="mono">{node.record_version}</td>
             <td className="mono">{node.effective_at}</td>

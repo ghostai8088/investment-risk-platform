@@ -28,6 +28,7 @@ describe("PortfolioStructure", () => {
                 parent_portfolio_id: null,
                 node_type: "FUND",
                 name: "Demo structured multi-sleeve fund",
+                base_currency_code: "EUR",
                 status: "ACTIVE",
                 record_version: 1,
                 effective_at: "2026-05-27T00:00:00+00:00",
@@ -37,6 +38,7 @@ describe("PortfolioStructure", () => {
                 parent_portfolio_id: "f1",
                 node_type: "STRATEGY",
                 name: "Demo fixed-income sleeve",
+                base_currency_code: null,
                 status: "ACTIVE",
                 record_version: 1,
                 effective_at: "2026-05-27T00:00:00+00:00",
@@ -48,6 +50,10 @@ describe("PortfolioStructure", () => {
     render(<PortfolioStructure session={SESSION} />);
     expect(await screen.findByText("Demo structured multi-sleeve fund")).toBeTruthy();
     expect(screen.getByText("Demo fixed-income sleeve")).toBeTruthy();
+    // Wave-18 close (K27): the DP-11 declaration column — declared shows the code, undeclared
+    // renders the dash (INHERIT), so a reader can see which node a refusal would anchor on.
+    expect(screen.getByText("Reporting ccy")).toBeTruthy();
+    expect(screen.getByText("EUR")).toBeTruthy();
     expect(screen.getByText("STRATEGY")).toBeTruthy();
     expect(seen.some((u) => u.includes("/portfolios/tree-as-of?at="))).toBe(true);
   });

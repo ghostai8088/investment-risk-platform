@@ -373,12 +373,15 @@ def _recompute_exposure(
 ) -> list[ComparableRow]:
     """Re-execute the exposure rollup over the subject run's own snapshot.
 
-    **``base_currency`` is read back off the stored rows, never defaulted.** ``run_exposure``'s
-    consume path silently falls back to ``DEFAULT_BASE`` when the caller omits it, so a reproducer
-    that passed only ``snapshot_id`` would recompute a EUR-denominated book in USD and report every
-    row divergent — a false alarm indistinguishable from a real one. This is RPT-1's B1 defect
-    exactly (a value that reaches the output but is supplied by the caller rather than pinned), and
-    the fix is the same: take it from the stored artifact.
+    **``base_currency`` is read back off the stored rows, never defaulted.** When this adapter
+    was written, ``run_exposure``'s consume path silently fell back to ``DEFAULT_BASE`` when the
+    caller omitted it, so a reproducer that passed only ``snapshot_id`` would have recomputed a
+    EUR-denominated book in USD and reported every row divergent — a false alarm
+    indistinguishable from a real one. STRUCT-4 (DP-11) KILLED that fallback (the consume path
+    now resolves the pinned declaration chain or refuses), but the stored-rows read stays: it is
+    what pins the replay to the ORIGINAL run's base regardless of how resolution evolves — the
+    RPT-1 B1 rule (a value that reaches the output is taken from the stored artifact, never
+    re-supplied).
     """
     from irp_shared.exposure.events import ExposureActor
     from irp_shared.exposure.service import run_exposure

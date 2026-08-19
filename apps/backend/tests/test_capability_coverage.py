@@ -233,19 +233,10 @@ def test_G3_reads_the_acceptance_COLUMN_not_the_whole_row(sandbox: Path) -> None
 # --------------------------------------------------------------------------------------------
 
 
-def test_G4_is_bound_to_nothing_today_and_that_is_NAMED(sandbox: Path) -> None:
-    """The vacuity, asserted rather than left to be discovered.
-
-    When this control starts failing, a wave has closed under G4 and the gate has teeth in
-    production rather than only in this file. That is the trigger, and it is why the control asserts
-    the count instead of merely passing.
-    """
-    bound = [w for w, _ in gate.close_reviews() if w >= gate.G4_FROM_WAVE]
-    assert bound == [], (
-        f"waves {bound} now close under G4 — delete this control and keep the ones below, which "
-        f"are what actually hold"
-    )
-    assert gate.main() == 0
+# test_G4_is_bound_to_nothing_today_and_that_is_NAMED was DELETED at the Wave-18 close
+# (2026-08-17), per its own instruction: wave 18 closed under G4, so the gate has teeth in
+# production and the zero-bindings vacuity control's trigger fired. The controls below are
+# what actually hold.
 
 
 def test_a_wave18_close_review_WITHOUT_the_table_FAILS(sandbox: Path) -> None:
