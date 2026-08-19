@@ -1,6 +1,48 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-17) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-17, second stamp — the WAVE-18 CLOSE) — read this block; everything below it is HISTORY
+
+**Main `e8ab540` (PR #229, the Wave-18 CLOSE — the 40th autonomous merge), tree clean. Migration
+head `0073_declare_root_currency`, one head. Next free canonical id ENT-077. WAVE 18 IS CLOSED:
+build (STRUCT-1..4) + the close record `10_delivery_backlog/wave_18_close_review.md` with all
+three gate decisions RATIFIED by the owner ("proceed", 2026-08-17). NEXT = the WAVE-19 PLANNING
+GATE: sequence the next slices from the roadmap (Part 4 rules), decide the two control-mint
+candidates (backup/DR, standing since DEP-1; the aggregation-contract enforcement layer, close
+finding K8), and re-adjudicate any G2 rows entering scope (PPM-006/PPM-010 lapsed by annotation
+— decision D3 leaves them to re-ask at next entry). G2 scope is a DECLARED emptiness until that
+gate.**
+
+### The close in six lines
+
+- **G4 fired for the first time**: the close review carries the capability-coverage table
+  (leaves 1.1/1.4/1.5, labels verbatim, worded as delivered-substance-against-cited-leaves —
+  never gate-sense "newly covered"); the zero-bindings vacuity control was DELETED per its own
+  instruction; the gate now binds 1 of 18 close reviews.
+- **The ten-lane sweep confirmed 34 findings, all dispositioned**: both requirement registers
+  advanced with merge identities (2 BLOCKING); a re-opened V-008 shape on the legacy v1 consume
+  branch FIXED (an arbitrary/foreign scope stamp now refuses pre-create; mutant M-W18C-1);
+  CTRL-018's fourth P16 citation re-take + Wave-18 EXTENDED disposition; the ledgers repaired
+  (ENT-014 grain text, stale footers, 0073_BACKFILL enumeration, the taxonomy's minted-nothing
+  sentence, the repro registry's killed-fallback prose); the Portfolio Structure screen shows
+  the DP-11 declaration; deferred triggers: NONE FIRED.
+- **A verifier-confirmed finding was REFUTED by measurement**: the "unreachable" full-PG 3,499
+  was correct for the battery's own selection — the close battery passes **3,500, zero skips,
+  exit 0** (the auditors had counted the whole-repo selection, +40 root-tests/ gate tests that
+  were never part of the battery). Consensus lost to one execution, again.
+- **Decisions D1-D3 ratified as recommended**: rename-residual = accept recurrence on the
+  census's strength with the touch-trigger; the clause-7 per-family-execution sentence AMENDED
+  to the delivered form (representative-per-node-scope-class + censuses; per-family execution
+  rides each family's next slice); the annotation-lapsed adjudications stay lapsed.
+- **Gates at the close merge**: make check 0 (2,908), fe-check 0, gen-api-check 0, full-PG
+  exit 0 (3,500), anchors 130/130, w18-close mutants 1/1, CI green on all nine checks at head
+  `dd13027` per-conclusion-verified.
+- **Wave-18 totals**: four slices, 78 slice-review findings + 34 close findings all folded,
+  32 struct mutants + 1 close mutant killed, migrations 0071-0073, ENT-076 minted, six
+  requirement rows delivered (PPM-006..010 + PPM-001 clauses 1-2).
+
+---
+
+## Previous truth — superseded at the Wave-18 close, 2026-08-17
 
 **Main `d465b6b` (PR #227, STRUCT-4 — the 39th autonomous merge), tree clean. Migration head
 `0073_declare_root_currency`, one head. Next free canonical id ENT-077 (no entity minted at
