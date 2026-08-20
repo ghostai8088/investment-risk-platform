@@ -40,8 +40,19 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
   tenant's row in the ENT-074 registry. The hybrid TABLE set is unchanged at seven; proprietary
   data = symmetric FORCE RLS.
 - **No new audit code, permission, or role** outside the governed R-07 mint; no secrets in source (BR-10).
+- **A G2 amendment is TWO commits, in this order** (P20): the commit carrying the rewritten acceptance text
+  lands FIRST, then the ledger entry whose `hash` is computed from the POST-amendment cells — via the gate's own
+  `parse_rows`, against the committed blob, never the working tree. Adjudicating text that no longer exists is
+  not an adjudication: the 2026-08-15 batch hashed pre-amendment cells and left **ten rows LAPSED on `main`**
+  until 2026-08-20, and `make check` runs `g2-check`, so a lapsed row in a declared slice scope blocks the wave.
 - **Verification gates are never waived** (`make check`, full-PG validation, CI-watch-to-green, reproduction
   tests) — model confidence is not evidence; see the standing rules in `claude_operating_instructions.md`.
+- **A DIFFERENT ENGINE verifies every planning gate and every ratification diff** (P15's shared-assumption rule,
+  made standing 2026-08-20). Fleet size is not independence: 15 same-engine agents produced a Wave-19 plan whose
+  direction rationale was FALSE at its own citation, and a different engine found that plus 61 more (5 BLOCKING)
+  in one pass; the ratification commit then yielded 39 more (3 BLOCKING), **all three in control rows that same
+  commit had just minted**. Control rows assert their own proof — review them hardest. And re-measure the
+  verifier: one of its counts was wrong, and my correction of it was wrong too.
 - Governed derived numbers bind `dataset_snapshot` + `calculation_run` + a registered `model_version` (where a
   model applies) and are IA append-only; captured inputs bind none of those. Pick the pattern correctly.
 
@@ -49,6 +60,12 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
 - The git repo is THIS directory (on this machine it sits nested under
   `~/Projects/investment_risk_platform/`); branch `main`; **origin is HTTPS** (flipped from SSH
   2026-07-09 — SSH port 22 is BLOCKED on this network; plain `git push` works via the keychain PAT).
-- `gh` is NOT installed — query CI via the public GitHub REST API.
+- **`gh` IS installed, at `~/.local/bin/gh`** (not on `PATH` — invoke it by full path), authenticated via the
+  device flow. *This line read "`gh` is NOT installed" until 2026-08-20, contradicting the autonomy note above
+  it in this same file since 2026-08-01. Executed evidence: PRs #231 and #232 were created, check-watched and
+  merged with it.* The REST API is still the right tool for **per-conclusion CI verification** — `gh pr checks
+  --watch` can exit 0 for a head whose runs have not registered, so verify with
+  `gh api repos/OWNER/REPO/commits/<sha>/check-runs` and quote every conclusion. Merge via
+  `gh api -X PUT .../pulls/N/merge` when the GraphQL path is unavailable.
 - Local PG validation uses the single reused container `irp_pg_local` (`postgres:16`); see the standing rule in
   the operating instructions. Reset the schema between full pytest runs against the same DB.
