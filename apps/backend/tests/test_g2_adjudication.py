@@ -23,6 +23,7 @@ the fifth.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -111,10 +112,40 @@ def test_every_row_including_the_LETTERED_ones_is_parsed(sandbox: Path) -> None:
 
     Their id pattern did not allow a letter suffix, so they read 84 of 86 rows and said nothing —
     and those two are the newest, least-reviewed rows in the file, the amendment rows themselves.
+
+    **Two halves, and the second exists because the first was paid out from under it.** This test
+    named both ids as literals. REQ-MKT-002a was WITHDRAWN at the Wave-19 planning gate (merged into
+    REQ-MKT-002, whose acceptance absorbed its two unique clauses), and the test went red for an
+    edit that was correct. Re-pointing it at the surviving id would rebuild the same trap one
+    withdrawal later, and if the register ever holds NO lettered row the literal form degrades to
+    green-while-matching-nothing — the exact failure this file's docstring counts four instances of.
+    So: (a) discover the lettered rows the register actually holds and require every one to parse,
+    and (b) inject a synthetic lettered row, so the guard still tests the parser's letter handling
+    when the register happens to hold none. This is the `test_an_uncited_SCOPE_commitment_FAILS`
+    lesson — that control stopped testing anything the day its premise was discharged, and was
+    rewritten to INJECT its subject rather than rely on one existing.
     """
-    rows = gate.parse_rows((sandbox / "02_requirements/requirements_backbone.md").read_text())
-    for req in ("REQ-MKT-002a", "REQ-MKT-004a"):
+    text = (sandbox / "02_requirements/requirements_backbone.md").read_text()
+    rows = gate.parse_rows(text)
+
+    # (a) whatever lettered rows exist today, discovered rather than listed.
+    for req in sorted(set(re.findall(r"^\| (REQ-[A-Z]+-\d+[a-z]) ", text, re.M))):
         assert req in rows, f"{req} was silently dropped — the lettered-id defect has returned"
+
+    # (b) the non-vacuity floor: clone a real row, give it a lettered id, and require it to parse.
+    # Cloning keeps the cell count identical to the header the parser reads, and inserting it
+    # directly after its source keeps it inside that same table.
+    donor = next(line for line in text.splitlines() if re.match(r"^\| REQ-[A-Z]+-\d+ \|", line))
+    injected_id = "REQ-ZZZ-001a"
+    injected = re.sub(r"^\| REQ-[A-Z]+-\d+ \|", f"| {injected_id} |", donor, count=1)
+    assert injected != donor, "the injection did not rewrite the id — the floor is not testing"
+    spiked = text.replace(donor, donor + "\n" + injected, 1)
+
+    spiked_rows = gate.parse_rows(spiked)
+    assert injected_id in spiked_rows, (
+        f"{injected_id} was injected into the register and the parser did not return it — "
+        "the lettered-id defect has returned"
+    )
 
 
 def test_a_row_entering_a_slice_UNADJUDICATED_FAILS(sandbox: Path) -> None:
