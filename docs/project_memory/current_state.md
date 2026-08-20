@@ -1,6 +1,40 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-17, second stamp — the WAVE-18 CLOSE) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-20 — the WAVE-19 PLANNING GATE RATIFIED) — read this block; everything below it is HISTORY
+
+**Migration head `0073_declare_root_currency`, one head. Next free canonical id ENT-077 (EARMARKED for Wave-19
+S3a's `ingestion_mapping_version`; NOT reserved in the catalog, because P17 says a mint is not minted until a
+migration delivers it). Next free control id CTRL-040 — CTRL-038 (backup/DR) and CTRL-039 (aggregation-contract
+enforcement) were MINTED at this gate as docs-only rows, Implemented (OBSERVED). WAVE 19 IS RATIFIED AND
+PLANNED: `10_delivery_backlog/wave_19_planning.md` + roadmap Part 2.21. NEXT = WAVE-19 SLICE S3a (the INGEST-1
+mapping spine).**
+
+### The wave, in five lines
+
+- **Wave 19 = SHOW IT**: real data in through a ratified mapping, governed charts out, deployed and
+  demonstrable. Real internal order **S3a → S3b → S1 → S2 → S5**; only S3a and S1 are independently mergeable;
+  S5 is FIRST on the cut line because it is the terminal integration slice. Two optional slices were DECLINED
+  (ING-2 external market data; LIM-3 stored utilization) and are Wave-20's first two candidates.
+- **THE LESSON OF THIS GATE IS THE METHOD.** A Fable planning workflow (5 readers, 3 drafts, 2 judges,
+  5 verifiers) produced a confident plan. A **different-engine (Opus) pass then found 62 findings, 5 BLOCKING** —
+  the direction's rationale was FALSE at its own citation, the governed chart had no host report section, and the
+  wave's XL carried three migrations when **no commit in this repo's history has ever added more than one**.
+  Seven Fable agents missed all three. P15's shared-assumption rule, demonstrated rather than argued.
+- **Two verifier claims were re-measured and one was WRONG** (the outward-benchmark lapse is six consecutive
+  closes, not eight). A subagent's number is a claim, not evidence — re-run it before it enters a record.
+- **Seven requirement rows adjudicated, six AMENDED** (INT-001, PRS-001, PRS-002, RPT-001, ADM-001, PPM-002;
+  RPT-004 rebutted). The ADM-001 amendment had **silently dropped a CISO-approved MFA clause** — restored.
+  The ledger entries are hashed from the POST-amendment cells, in a SECOND commit, because adjudicating
+  pre-amendment text does not clear P20 T1 (the 2026-08-15 batch made exactly that mistake and left ten rows lapsed).
+- **Restored to the wave close (Part 5 items 8–9)**: the outward-facing benchmark review and the public+private
+  destination evaluation, both ratified standing obligations, absent from waves 13–18. Wave 19 advances the
+  public+private destination by ZERO and the close must say so.
+
+---
+
+## Previous truth — superseded at the Wave-19 planning gate, 2026-08-20
+
+## ⚠️ (2026-08-17, second stamp — the WAVE-18 CLOSE)
 
 **Main `e8ab540` (PR #229, the Wave-18 CLOSE — the 40th autonomous merge), tree clean. Migration
 head `0073_declare_root_currency`, one head. Next free canonical id ENT-077. WAVE 18 IS CLOSED:

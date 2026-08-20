@@ -109,28 +109,28 @@ defined in [personas_and_user_journeys.md](personas_and_user_journeys.md). Phase
 | REQ-AUD-001 | 15.1/15.4 | P-IA,P-CO | Plat/3L | P1 | BX-AUD | BX-ENT | — | — | CTRL-005/012 | FW-AUD (extends) | Draft |
 | REQ-AUD-002 | 15.2 | P-IA | Plat | P0 | BX-AUD | BX-ENT | — | — | CTRL-026 | FW-AUD, DEP-CIH | Draft |
 | REQ-AUD-003 | 15.3 | P-IA,P-CO | 3L/2L | P8 | BX-AUD | BX-ENT | — | — | CTRL-012 | DEP-RPT | Draft |
-| REQ-RPT-001 | 16.1 | P-RM,P-RA | 2L/1L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009 | DEP-RPT, DEP-LIN | In-Progress (RPT-1/RPT-2 2026-08-07; RPT-3 2026-08-10) — acceptance proven for the four registered families; NARROWED 2026-08-15 (G2 worklist) to exact set equality against REPORT_FAMILIES; the CREDIT report moved to REQ-CRD-008 |
+| REQ-RPT-001 | 16.1 | P-RM,P-RA | 2L/1L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009 | DEP-RPT, DEP-LIN | In-Progress (RPT-1/RPT-2 2026-08-07; RPT-3 2026-08-10) — **acceptance RE-AMENDED at the Wave-19 planning gate (2026-08-20): the exact-set equality now binds the NAMED deployed proof artifact and forbids closing the gap by declining to add a family. Enters build at Wave-19 S2.** |
 | REQ-RPT-002 | 16.3 | P-RM,P-BRD | 2L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009/015 | DEP-RPT, BX-SOD | Draft |
 | REQ-RPT-003 | 16.4/16.5 | P-CO,P-IA | 2L/3L | P8 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-009 | DEP-RPT, CAP-12/13/15 | Draft |
-| REQ-RPT-004 | 16.1 | P-RM,P-ADM | 2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-16 | **Draft (re-baseline 2026-08-12)** |
+| REQ-RPT-004 | 16.1 | P-RM,P-ADM | 2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-16 | **Draft (re-baseline 2026-08-12) — enters build at Wave-19 S2 (the report definition entity, built BEFORE further reporting rows per the re-baseline §4 instruction).** |
 | REQ-RPT-008 | 16.1 | P-RM,P-ADM | 2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-16 | **Draft (re-baseline 2026-08-12)** |
 | REQ-RPT-005 | 16.2 | P-RM,P-ADM | 2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-16 | **Draft (re-baseline part 2, 2026-08-13)** |
 | REQ-RPT-006 | 16.3 | P-RM,P-ADM | 2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-16 | **Draft (re-baseline part 2, 2026-08-13; Q10 — the editorial flag is DEFERRED)** |
-| REQ-ADM-001 | 17.1 | P-ADM | Plat | P9 | BX-AUD | BX-ENT | — | — | CTRL-010 | DEP-SSO (AD-007) | **In-Progress (SSO-1 W9 + FE-3b W10):** principal-from-OIDC realized (real boundary + browser PKCE); admin surfaces + full dev-shim replacement remain RTM-P9 *(re-synced at the Wave-14 planning gate)* |
+| REQ-ADM-001 | 17.1 | P-ADM | Plat | P9 | BX-AUD | BX-ENT | — | — | CTRL-010 | DEP-SSO (AD-007) | **In-Progress (SSO-1 W9 + FE-3b W10):** principal-from-OIDC realized (real boundary + browser PKCE); **acceptance AMENDED at the Wave-19 planning gate (2026-08-20) to the delivered deployed-posture form, MFA clause RETAINED and made assertable. Enters build at Wave-19 S5.** Internet-facing hosting + enterprise IdP remain RTM-P9 |
 | REQ-ADM-002 | 17.2/17.3 | P-ADM | Plat | P6 | BX-AUD | BX-ENT | — | — | CTRL-015/021/025 | FW-ENT (SoD build) | Draft |
 | REQ-ADM-003 | 17.5 | P-CO,P-ADM | 2L/Plat | P4 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-023/024 | CAP-4, DEP-RPT (export part P8) | Draft |
 | REQ-ADM-004 | 17.4 | P-ADM | Plat | P9 | BX-AUD | BX-ENT | — | — | CTRL-011 | FW-ENT | Draft |
 | REQ-ADM-005 | 17.2/17.3 | P-ADM | Plat | P9 | BX-AUD | BX-ENT | — | — | — | CAP-17 | **Draft (re-baseline part 2, 2026-08-13)** |
 | REQ-ADM-006 | 17.4 | P-ADM | Plat | P9 | BX-AUD | BX-ENT | — | — | — | CAP-17 | **Draft (re-baseline part 2, 2026-08-13)** |
-| REQ-INT-001 | 18.1 | P-DS,P-ADM | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027 | anti-corruption, FW-AUD, DEP-DQF | In-Progress (P1A-4 skeleton: generic CSV upload + anti-corruption + raw-row staging + on-ingest DQ + lineage origin + audit; canonical mapping → P1B/P1C; API/SFTP/vendor/GP adapters REQ-INT-002/003 → P9) |
+| REQ-INT-001 | 18.1 | P-DS,P-ADM | Plat | P1 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027 | anti-corruption, FW-AUD, DEP-DQF | In-Progress (P1A-4 skeleton: generic CSV upload + anti-corruption + raw-row staging + on-ingest DQ + lineage origin + audit) — **the canonical mapping spine is Wave-19 S3a/S3b (INGEST-1, ratified 2026-08-12); acceptance AMENDED at the Wave-19 planning gate.** API/SFTP/vendor/GP adapters REQ-INT-002/003 → P9 |
 | REQ-INT-002 | 18.2/18.3 | P-DS,P-ADM | Plat | P9 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027 | DEP-DQF, CAP-2 | Draft |
 | REQ-INT-003 | 18.4/18.5 | P-DS,P-ADM | Plat | P9 | BX-AUD | BX-ENT | BX-LIN | — | CTRL-027 | CAP-3/4, DEP-DQF | Draft |
 | REQ-INT-004 | 18.2 | P-DS,P-ADM | Plat | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-18 | **Draft (re-baseline part 2, 2026-08-13; Q7 — SCOPE-01)** |
 | REQ-BAI-001 | 19.1 | P-DS,P-RA | BAU | P10 | BX-AUD | BX-ENT | — | — | CTRL-016 | FW-AUD, AD-009 (read-only tier) | Draft |
 | REQ-BAI-002 | 19.2/19.3 | P-PM,P-RA | BAU | P10 | BX-AUD | BX-ENT | — | — | CTRL-016 | AD-009, CAP-9/11 | Draft |
 | REQ-BAI-003 | 19.4/19.5 | P-MV,P-BRD | BAU | P10 | BX-AUD | BX-ENT | — | — | CTRL-015/016 | AD-009, CAP-12/16 | Draft |
-| REQ-PRS-001 | 21.1 | P-RA,P-RM | 1L/2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-21 | **Draft (re-baseline 2026-08-12)** |
-| REQ-PRS-002 | 21.2 | P-RA,P-RM | 1L/2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-21 | **Draft (re-baseline 2026-08-12)** |
+| REQ-PRS-001 | 21.1 | P-RA,P-RM | 1L/2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-21 | **Draft (re-baseline 2026-08-12); acceptance AMENDED at the Wave-19 planning gate (2026-08-20) — contract CONSUMPTION and the declared-exclusion vocabulary added. Enters build at Wave-19 S1.** |
+| REQ-PRS-002 | 21.2 | P-RA,P-RM | 1L/2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-21 | **Draft (re-baseline 2026-08-12); acceptance AMENDED at the Wave-19 planning gate (2026-08-20) — pinned-contract derivation and declared mark shapes added. Enters build at Wave-19 S1.** |
 | REQ-PRS-003 | 21.3 | P-RA,P-RM | 1L/2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-21 | **Draft (re-baseline 2026-08-12)** |
 | REQ-PRS-004 | 21.4 | P-RA,P-RM | 1L/2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-21 | **Draft (re-baseline 2026-08-12)** |
 | REQ-PRS-005 | 21.5 | P-RA,P-RM | 1L/2L | P9 | BX-AUD | BX-ENT | BX-LIN | — | — | CAP-21 | **Draft (re-baseline 2026-08-12)** |
