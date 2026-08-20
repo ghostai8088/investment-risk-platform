@@ -1,10 +1,13 @@
 {
  "_why": "The rows currently entering build. G2 gates at SLICE ENTRY because the Wave 1-17 drift happened by rows entering build unexamined. A row outside any slice is never adjudicated, and that is the correct trade: an unbuilt row has driven nothing. It means the register as a whole is never certified, only the parts entering build.",
  "_updated_at": "the slice-planning gate, as part of declaring the slice's scope",
- "slice": null,
- "slice_scope": [],
+ "slice": "WAVE-19-S3a",
+ "slice_scope": [
+  "REQ-INT-001"
+ ],
  "_no_scope_reason_why": "An empty scope must be a DECLARED emptiness. A second, independent bake-off run found that the first version of this gate exited 0 with an empty scope, having adjudicated nothing — the empty-population vacuity, inside the gate written to prevent exactly that. It is now a refusal.",
- "no_scope_reason": "Wave-18 build completed 2026-08-17 (STRUCT-1..4 merged; PR #227 = d465b6b the last). The close is a gate, not a build slice, so no row is entering build. The next scope is declared at the Wave-19 planning gate. NOTE for that gate: the Wave-18 close's ledger-5 sweep annotated the PPM-006 and PPM-010 acceptance cells with of-the-amendment history (three present-tense defect claims the wave made false), which LAPSED those rows' adjudication hashes by the ledger's own mechanism — the text's meaning is unchanged, but a lapsed row re-enters G2 at its next slice entry as usual.",
+ "_scope_note": "Wave-19 ratified 2026-08-20. Only S3a's row is declared here, because the gate polices the rows ENTERING BUILD and the wave's later slices enter at their own slice gates: S3b = REQ-PPM-002, S1 = REQ-PRS-001 + REQ-PRS-002, S2 = REQ-RPT-004 + REQ-RPT-001, S5 = REQ-ADM-001. All seven were adjudicated at the planning gate against their POST-amendment text (ledger entries dated 2026-08-20, amendment_commit 32e88a5), so each is CURRENT when its slice opens; declaring them all here would claim they are in build simultaneously, which is false and would defeat the gate's own purpose.",
+ "no_scope_reason": "SUPERSEDED 2026-08-20 by the Wave-19 declaration above; retained as history. Wave-18 build completed 2026-08-17 (STRUCT-1..4 merged; PR #227 = d465b6b the last). The close is a gate, not a build slice, so no row is entering build. The next scope is declared at the Wave-19 planning gate. NOTE for that gate: the Wave-18 close's ledger-5 sweep annotated the PPM-006 and PPM-010 acceptance cells with of-the-amendment history (three present-tense defect claims the wave made false), which LAPSED those rows' adjudication hashes by the ledger's own mechanism — the text's meaning is unchanged, but a lapsed row re-enters G2 at its next slice entry as usual.",
  "_worklist_why": "Advisory ONLY, and never an exemption. The 2026-08-13 detector bake-off built six independent designs and none of them is a usable gate (see scripts/check_g2_adjudication.py). Their union is still a legitimate reading order: these rows were flagged by three or more independent designs, several corroborated by the register's own Status column. A row NOT on this list is not thereby fine.",
  "worklist": [
   "REQ-PUB-002",
@@ -13,10 +16,8 @@
   "REQ-SCN-003",
   "REQ-LIM-002",
   "REQ-CRD-005",
-  "REQ-PPM-002",
-  "REQ-RPT-001",
   "REQ-CPT-002",
   "REQ-CPT-004"
  ],
- "_worklist_worked": "2026-08-15: all 11 rows worked through and ratified by the owner ('proceed with your recommendations' on 10_delivery_backlog/g2_adjudication_proposals_worklist.md). Nine acceptance cells rewritten (ledger entries under ghostai8088); REQ-CPT-002 and REQ-CPT-004 WITHDRAWN (rows removed; leaves 7.2/7.5 accepted gaps in the coverage baseline). The two withdrawn ids stay in the array above as the bake-off's historical record. Amended rows carry NEW hashes and re-enter G2 at slice entry as usual. 2026-08-15 (STRUCT-1 close): REQ-PPM-001 removed from the array per the gate's own advisory — its re-adjudication is CURRENT (the pin-only exploit closed; ledger entry against hash of the amended text)."
+ "_worklist_worked": "2026-08-15: all 11 rows worked through and ratified by the owner ('proceed with your recommendations' on 10_delivery_backlog/g2_adjudication_proposals_worklist.md). Nine acceptance cells rewritten (ledger entries under ghostai8088); REQ-CPT-002 and REQ-CPT-004 WITHDRAWN (rows removed; leaves 7.2/7.5 accepted gaps in the coverage baseline). The two withdrawn ids stay in the array above as the bake-off's historical record. Amended rows carry NEW hashes and re-enter G2 at slice entry as usual. 2026-08-15 (STRUCT-1 close): REQ-PPM-001 removed from the array per the gate's own advisory — its re-adjudication is CURRENT (the pin-only exploit closed; ledger entry against hash of the amended text). 2026-08-20 (Wave-19 planning gate): REQ-PPM-002 and REQ-RPT-001 removed per the gate's own advisory — both re-adjudicated against their post-amendment text at the gate. The array now holds eight ids: SIX live advisory rows (PUB-002, MKT-002, LIQ-004, SCN-003, LIM-002, CRD-005), which stay advisory and re-enter G2 at their own slice entries, plus the two WITHDRAWN ids (CPT-002, CPT-004) retained as the bake-off's historical record and never candidates."
 }
