@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **DRAFT — awaiting owner ratification at the Wave-19 planning gate** |
+| Status | **RATIFIED by the owner 2026-08-20 ("proceed") — all 12 decision points as recommended, plus two sub-questions decided by Claude and flagged for reversal (Part 3). Landed as PR #231.** |
 | Authored | 2026-08-19, revised 2026-08-20 after the different-engine verification. Against main `d886fb8` (tree clean, CI green on all nine checks at that head, migration head `0073_declare_root_currency`, next free canonical id ENT-077, next free control id CTRL-038) |
 | Method | Ultracode planning workflow `wf_bae159d8-6d5` (Fable): 5 subsystem readers → 3 independent drafts → 2-judge panel → 5 refute-by-default verifiers. Both judges independently ranked the demonstrable-first draft first (36/40 combined vs 32 and 31). Then `wf_9b50a003-a5b` (**Opus — a different engine**): 4 refute-by-default lanes over this document, including one aimed at the DIRECTION itself. |
 | Verification state (P15, stated precisely) | The first five verifiers read the data-first RUNNER-UP, not this plan — a workflow scoring defect pointed them at the wrong draft. Their transferable findings are folded (Part 6). **This document's own verification is the Opus pass: 62 findings, 5 BLOCKING, 27 HIGH (Part 6b).** That pass is the first genuine different-engine proof at a planning gate on this project; every prior gate's evidence shared the authoring engine. It changed the plan substantially — the direction's stated rationale was false, the wave's XL was unprecedented in the repo's history, and three slices were not independently mergeable as claimed. |
@@ -28,7 +28,7 @@
 
 ## Part 1 — Scope boundary
 
-IN (base wave): REQ-PRS-001, REQ-PRS-002 (S1); REQ-RPT-001 (S2); REQ-INT-001, REQ-PPM-002 (S3a/S3b); REQ-ADM-001 (S5).
+IN (base wave): REQ-PRS-001, REQ-PRS-002 (S1); **REQ-RPT-004 + REQ-RPT-001 (S2)**; REQ-INT-001, REQ-PPM-002 (S3a/S3b); REQ-ADM-001 (S5).
 OPTIONAL, owner's call: REQ-PUB-005 capture half (S4 — the credit enabler); REQ-LIM-002 + REQ-LIM-004 (S6 flex).
 
 OUT (each with its named trigger, P19):
@@ -36,7 +36,7 @@ OUT (each with its named trigger, P19):
 - **Credit (CRD-005..-008):** CRD-005's trigger — "real curve feeds land" — fires only if S4 ratifies; otherwise the trigger stands unfired and credit opens at Wave 20 cold.
 - **PUB-005's valuation clauses:** trigger — the standing Wave-18 OUT trigger "instrument terms can express a swap".
 - **REQ-PRS-003** (audience-tiered rendition): trigger — REQ-RPT-004 lands. **REQ-PRS-004** (drill-down): trigger — the decomposition slice (it needs contributors that do not exist). **REQ-PRS-005** (exploration tier): **nothing blocks it** — named for the Wave-20 gate as a labelled deferral decision, because "we did not get to it" is not a trigger.
-- **REQ-RPT-004** (report definition entity): the re-baseline says BUILD BEFORE THE OTHER REPORTING ROWS (`product_rebaseline.md:226`). S2 departs from that; DP-19-6 records who pays the re-binding, or moves RPT-004 into S2 instead.
+*(REQ-RPT-004 was on this OUT list in the pre-ratification draft. It is now **IN**, at S2 — see DP-19-6's recorded call. The OUT entry is deleted rather than left contradicting the IN list, which is how the ratification review found it.)*
 - **REQ-DQR-002 reconciliation:** trigger — a genuine second source. **REQ-DQR-004 exception management:** trigger — the first real load producing failures nobody owns.
 - **REQ-INT-002 (API & SFTP adapters):** trigger — a real vendor contract. **Scenario depth (SCN-003, MKT-004a), LIQ-004:** the Wave-20 gate (a guaranteed event under Part 4, but labelled a deferral decision, not dressed as a mechanical trigger). **Internet-facing + enterprise IdP:** RTM-P9. **Evidence egress / INT-004:** first assessor or filer export ask. **Report sign-off rail:** ratified Q9 defers it; no trigger text exists in that ratification, so this is a labelled deferral decision. **Backup/DR Operational:** the four preconditions in CTRL-038's row. **TS→7:** dependency trigger, not fired. **PERF-0's four carries:** parallelization or grain-level perf work — none here.
 - **DEMO-1 (seed-the-demo-book command):** enters S5's scope if the demo walk is ratified (DP-19-8); otherwise trigger — the first external demo session.
@@ -72,11 +72,15 @@ Build: per-family presentation contracts (mark type, axes, units, precision, ide
 
 Rule 7: the chart on the run-detail screen in-slice. No migration. Risks: SVG byte-determinism — fonts, timestamps, locale, **and the Decimal context, which this repo has been bitten by before**; the unescaped-markup path a server-rendered fragment opens into the report (the first one), which needs its own escaping test.
 
-### W19-S2 — RPT-W19: close RPT-001's census clause + one report family (S/M → sized after DP-19-6)
+### W19-S2 — RPT-W19: the report definition entity + RPT-001's census clause (M/L), migration ×1
 
-Row: REQ-RPT-001 (**AMENDED, not rebutted** — the amended text binds scope to `REPORT_FAMILIES`, an editable code constant, so "do not add the family" and "delete a family" both keep exact-set equality true; and "the reproduction proof" has no defined referent, while the deployed proof the register names exercises ONE of four families).
+Rows: **REQ-RPT-004** (adjudicated REBUTTED at the gate) and REQ-RPT-001 (**AMENDED, not rebutted** — the amended text binds scope to `REPORT_FAMILIES`, an editable code constant, so "do not add the family" and "delete a family" both keep exact-set equality true; and "the reproduction proof" has no defined referent, while the deployed proof the register names exercises ONE of four families).
 
-Build: close the exact-set-equality clause between the families the **named deployed proof** exercises and the registry; add one report family carrying Wave-18 content **once DP-19-6 resolves its provenance** — every ReportFamily must resolve a model version and the exposure rollup has none. Embed S1's chart fragments under the existing content hash; extend `prove_report_identity.sh` to the new family.
+Build: **REQ-RPT-004's report definition entity** — an append-only versioned definition carrying the declared family set, audience tiers and section order; a generation binds a `report_definition_version_id`; editing mints a NEW version; a generation bound to version N re-renders from N's declarations after N+1 exists. New canonical entity + migration, P17-proven over a populated DB. Then close RPT-001's exact-set-equality clause between the families the **named deployed proof artifact** exercises and the registry, and extend `prove_report_identity.sh` accordingly. Embed S1's chart fragments under the existing content hash.
+
+*Why RPT-004 and not a fifth report family (the ratification call, DP-19-6):* the re-baseline instructs that the definition entity is built BEFORE the other reporting rows (`product_rebaseline.md:226`), and a Wave-18-content family would have needed a model version the exposure rollup does not have — `ReportFamily.read_provenance` refuses to render a governed number with no resolvable model version, and RPT-1 deliberately refused to invent a report model. Taking RPT-004 obeys the ratified order and dissolves the provenance problem instead of weakening an invariant to route around it. Cost: S2 grows S/M → M/L and gains a migration.
+
+**Carry into S2's build, from the ratification review (do not lose this):** RPT-004's acceptance says a definition carries "declared families, audience tiers and section order", but those words live in the register's *Requirement* column, which the G2 hash does not cover — so all three acceptance clauses are satisfiable by a definition carrying one cosmetic field while families and section order stay hard-coded in the renderer. Real version plumbing, nothing versioned that matters. **S2 must therefore assert what the ratification review specified: adding a family at version N+1 and re-rendering a generation bound to N must still render N's family set.** If that assertion is written into the acceptance cell rather than only the build, the row re-enters G2 at its own slice gate — which is the honest path and is recommended.
 
 ### W19-S5 — SHOW-1: deployed demo posture (M/L — re-sized), **first on the cut line**
 
@@ -166,7 +170,15 @@ The owner's "proceed" ratified the recommendations. Two DP-19-6 sub-questions ca
 8. **The outward-facing benchmark review** (roadmap Part 4 rule 6(b), ratified 2026-07-08).
 9. **The public+private destination evaluation** (differentiation thesis §4).
 
-*Items 8 and 9 are restorations, and the lapse is recorded rather than repeated silently. Both are ratified standing obligations. **Measured at this gate rather than taken on the verifier's word: waves 1, 10, 11 and 12 carry the section — Waves 11 and 12 head it "## 4. Outward benchmark + destination (rule 6b)" verbatim — and waves 13 through 18 carry nothing. Six consecutive closes, not eight.*** (The Opus lane reported eight; re-executing its own grep showed waves 11 and 12 each match. The finding stands, its magnitude does not — recorded because a corrected count is the P13 discipline working, and because a plan that repeats an auditor's number without re-running it is the habit this project keeps paying for.) Wave 19 advances the public+private destination by zero — no private-asset math is in any slice — and the close must say so rather than omit the section.*
+*Items 8 and 9 are restorations, and the lapse is recorded rather than repeated silently. Both are ratified standing obligations, and **they lapsed by DIFFERENT amounts — one count does not cover both:***
+
+- ***Item 8, the outward-facing benchmark review: lapsed at waves 13–18. Six consecutive closes.*** Wave 13's close says so in its own words — "No outward architecture/benchmark sweep beyond §4's destination re-check" (`wave_13_close_review.md:38-39`).
+- ***Item 9, the public+private destination evaluation: lapsed at waves 14–18. Five closes*** — `wave_13_close_review.md:146` carries `## 4. Outward destination (rule 6b)` as a substantive section.
+- **Waves 1 through 12 all carry the section.**
+
+*This paragraph has now been wrong twice, and the sequence is the lesson. The Opus verification lane said "eight consecutive closes"; I re-ran its grep, found waves 11 and 12 matched, and corrected it to "six" — presenting that correction as the P13 discipline working. **The adversarial review of the ratification commit then refuted my correction too:** applying one number to two obligations hid that wave 13 carried the destination half, and my supporting enumeration ("waves 1, 10, 11 and 12") omitted eight waves that also carry it. A re-measurement is not automatically right because it is a re-measurement. Both prior versions are left visible here rather than tidied away, because the failure mode — a confident count, corrected confidently, still wrong — is the thing worth carrying forward.*
+
+*Wave 19 advances the public+private destination by zero — no private-asset math is in any slice — and the close must say so rather than omit the section.*
 
 ## Part 6 — First verifier pass (Fable, against the runner-up draft): transferable findings, folded
 

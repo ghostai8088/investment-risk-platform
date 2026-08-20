@@ -2,9 +2,14 @@
 
 ## ⚠️ CURRENT TRUTH (2026-08-20 — the WAVE-19 PLANNING GATE RATIFIED) — read this block; everything below it is HISTORY
 
-**Migration head `0073_declare_root_currency`, one head. Next free canonical id ENT-077 (EARMARKED for Wave-19
+**Main `d886fb8` at the time this gate was authored; the ratification lands as PR #231 on branch
+`wave-19-planning-gate` (re-stamp this line with the merge commit when it lands — a CURRENT TRUTH block
+without a main pointer is the one thing every prior block carried and this one initially dropped).
+Migration head `0073_declare_root_currency`, one head. Next free canonical id ENT-077 (EARMARKED for Wave-19
 S3a's `ingestion_mapping_version`; NOT reserved in the catalog, because P17 says a mint is not minted until a
-migration delivers it). Next free control id CTRL-040 — CTRL-038 (backup/DR) and CTRL-039 (aggregation-contract
+migration delivers it). **S2's report-definition entity needs the NEXT id after that (ENT-078) — earmarked here
+because S4, which had been penciled for ENT-078, was DECLINED at this gate, so the id is free and the
+accounting must not carry the declined slice's claim forward.** Next free control id CTRL-040 — CTRL-038 (backup/DR) and CTRL-039 (aggregation-contract
 enforcement) were MINTED at this gate as docs-only rows, Implemented (OBSERVED). WAVE 19 IS RATIFIED AND
 PLANNED: `10_delivery_backlog/wave_19_planning.md` + roadmap Part 2.21. NEXT = WAVE-19 SLICE S3a (the INGEST-1
 mapping spine).**
