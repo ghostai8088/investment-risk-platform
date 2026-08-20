@@ -2,10 +2,8 @@
 
 ## ⚠️ CURRENT TRUTH (2026-08-20 — the WAVE-19 PLANNING GATE RATIFIED) — read this block; everything below it is HISTORY
 
-**Main `d886fb8` at the time this gate was authored; the ratification lands as PR #231 on branch
-`wave-19-planning-gate` (re-stamp this line with the merge commit when it lands — a CURRENT TRUTH block
-without a main pointer is the one thing every prior block carried and this one initially dropped).
-Migration head `0073_declare_root_currency`, one head. Next free canonical id ENT-077 (EARMARKED for Wave-19
+**Main `01bcfc3` (PR #231, the Wave-19 planning gate — the 41st autonomous merge), tree clean, CI green
+on all nine checks at head `4a36e0a` verified per-conclusion. Migration head `0073_declare_root_currency`, one head. Next free canonical id ENT-077 (EARMARKED for Wave-19
 S3a's `ingestion_mapping_version`; NOT reserved in the catalog, because P17 says a mint is not minted until a
 migration delivers it). **S2's report-definition entity needs the NEXT id after that (ENT-078) — earmarked here
 because S4, which had been penciled for ENT-078, was DECLINED at this gate, so the id is free and the
@@ -25,8 +23,17 @@ mapping spine).**
   the direction's rationale was FALSE at its own citation, the governed chart had no host report section, and the
   wave's XL carried three migrations when **no commit in this repo's history has ever added more than one**.
   Seven Fable agents missed all three. P15's shared-assumption rule, demonstrated rather than argued.
-- **Two verifier claims were re-measured and one was WRONG** (the outward-benchmark lapse is six consecutive
-  closes, not eight). A subagent's number is a claim, not evidence — re-run it before it enters a record.
+- **A claim was re-measured, corrected, and the CORRECTION was wrong too.** An Opus lane said the outward
+  benchmark obligation had lapsed eight consecutive closes; I re-ran its grep and corrected it to six,
+  and presented that as the P13 discipline working. The ratification review then refuted the correction:
+  one number cannot cover two obligations — the benchmark review lapsed at waves 13–18 (six), the
+  public+private destination evaluation at waves 14–18 (five), because wave 13 carries the destination
+  section. **A re-measurement is not right because it is a re-measurement.**
+- **THE RATIFICATION COMMIT ITSELF WAS DEFECTIVE AND ITS REVIEW CAUGHT IT: 39 findings, 3 BLOCKING** —
+  all three in control rows the commit MINTED. CTRL-038 claimed both backup arms mutation-proven when
+  the cited red run broke the MIGRATION step and skipped backup entirely; it cited a CI step title that
+  does not exist in the workflow (the exact CTRL-009 class P16 was written for); and both new rows failed
+  P16 at birth while a compliant green run already existed. A ratified gate is not a merged gate.
 - **Seven requirement rows adjudicated, six AMENDED** (INT-001, PRS-001, PRS-002, RPT-001, ADM-001, PPM-002;
   RPT-004 rebutted). The ADM-001 amendment had **silently dropped a CISO-approved MFA clause** — restored.
   The ledger entries are hashed from the POST-amendment cells, in a SECOND commit, because adjudicating
