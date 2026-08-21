@@ -1122,3 +1122,67 @@ def test_nothing_imports_ingest_mapping_backwards() -> None:
                 stripped = line.strip()
                 if stripped.startswith(("import ", "from ")):
                     assert "ingest_mapping" not in stripped, f"{path}: {stripped}"
+
+
+# --- the anti-corruption interaction: SHORT POSITIONS -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("staged", "expected"),
+    [
+        ("'-3.2", Decimal("-3200.0")),  # a SHORT, as the anti-corruption layer stages it
+        ("'+4.0", Decimal("4000.0")),  # an explicitly-signed long, same treatment
+        ("12.5", Decimal("12500.0")),  # the ordinary case, unchanged
+    ],
+)
+def test_scale_reads_a_short_position_through_the_anticorruption_quote(
+    staged: str, expected: Decimal
+) -> None:
+    """``neutralize_cell`` prefixes ``'`` to any cell starting with ``= + - @`` (THR-06), and a
+    SHORT POSITION starts with ``-``. Without the numeric-path repair the platform would refuse to
+    load any book containing a short, while ``position.quantity`` is documented as SIGNED.
+
+    Found by execution during this slice, not by reading.
+    """
+    spec = {"op": "scale", "source": "Q", "factor": "1000"}
+    assert ops.apply_operation(spec, {"Q": staged}, 0, None) == expected
+
+
+def test_the_anticorruption_quote_survives_on_TEXT_fields() -> None:
+    """The repair is confined to the NUMERIC path on purpose. A text field keeps the neutralized
+    form, because the CSV-injection defence exists for values that flow onward into a spreadsheet
+    — and a quantity does not, since it is coerced to Decimal and stored as a number."""
+    assert ops.apply_operation({"op": "rename", "source": "T"}, {"T": "'=SUM(A1)"}, 0, None) == (
+        "'=SUM(A1)"
+    )
+
+
+def test_a_formula_cell_is_still_refused_as_a_number() -> None:
+    """The repair must not turn a genuine injection attempt into a parseable number: the quote is
+    only dropped when what follows is a sign or a digit."""
+    with pytest.raises(ScaleRefusedError):
+        ops.apply_operation(
+            {"op": "scale", "source": "Q", "factor": "10"}, {"Q": "'=SUM(A1)"}, 0, None
+        )
+    with pytest.raises(CastRefusedError):
+        ops.apply_operation({"op": "cast", "source": "C", "to": "decimal"}, {"C": "'@x"}, 0, None)
+
+
+def test_a_loaded_short_position_lands_signed(session: Session) -> None:
+    """End to end: a short in the file becomes a NEGATIVE canonical quantity."""
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _book(session, tenant)
+    _ratified(session, tenant, source_id)
+    row = dict(_row())
+    row["QTY_THOUSANDS"] = "'-3.2"  # exactly what the anti-corruption layer stages
+    batch = _batch(session, tenant, source_id, [row])
+    load_batch(
+        session,
+        batch=batch,
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    session.flush()
+    assert _open_head(session).quantity == Decimal("-3200.0")

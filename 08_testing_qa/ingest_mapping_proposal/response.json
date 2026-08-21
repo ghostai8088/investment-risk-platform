@@ -1,0 +1,26 @@
+{
+  "_what_this_is": "The RAW envelope of the drafting act that produced the demonstrating mapping proposal, committed so a reviewer has something checkable rather than the builder's say-so. Recorded verbatim; nothing here is reconstructed.",
+  "_honesty_note": "This is a record of PRESENCE, not a cryptographic proof of ORIGIN. It shows a real model, a real prompt whose hash matches the committed file, and the response that prompt produced. It cannot prove to a third party that the response came from that model rather than from a person typing — closing that gap needs signed attestation from the provider, which does not exist today. The residual is stated in 05_analytics_methodologies/ingest_mapping_drafting_v1.md section 5 rather than papered over.",
+  "model": "claude-opus-5",
+  "model_family": "INGEST_MAPPING_DRAFTER",
+  "protocol_version": "v1",
+  "ran": "operator-side, outside the deployed product; no API key exists in the deployed stack (OQ-ING-3=A)",
+  "inputs_seen": "schema only — column names, inferred types, and shape-preserving obfuscated samples. Zero client holdings. The obfuscated sample table in prompt.md IS the entire data surface.",
+  "prompt_ref": "08_testing_qa/ingest_mapping_proposal/prompt.md",
+  "prompt_sha256": "fdbfcecabbd032c074e7b0d0969b701100b582309095081fc1c82d14136cc5eb",
+  "operations": [
+    {"op": "rename", "target": "portfolio_code", "source": "Account Ref"},
+    {"op": "code-lookup", "target": "instrument", "source": "SEDOL", "scheme": "SEDOL"},
+    {"op": "scale", "target": "quantity", "source": "Nominal (000s)", "factor": "1000"},
+    {"op": "cast", "target": "cost_basis", "source": "Book Cost (GBP)", "to": "decimal"},
+    {"op": "rename", "target": "quantity_unit", "source": "Unit"},
+    {"op": "parse-date", "target": "valid_from", "source": "Valuation Date", "format": "%d/%m/%Y"}
+  ],
+  "notes": [
+    "DATE FORMAT IS AN ASSUMPTION, and it is the one worth challenging at ratification. The sample 99/99/9999 is ambiguous between day-first and month-first. I assumed DAY-FIRST because the file is GBP-denominated (a 'Book Cost (GBP)' column and a 'Ccy' column sampling as three letters), and UK custodian statements are day-first. If the supplier is North American this is wrong for the first twelve days of every month and silently right for the rest, which is the worst possible failure shape. A human should confirm it against one real row before ratifying.",
+    "'Nominal (000s)' is scaled by 1000 on the strength of the column NAME, not the sample. The sample 99.9 is consistent with either reading.",
+    "The sign is preserved: 'scale' multiplies, so a negative nominal stays negative and a short position lands short.",
+    "DELIBERATELY UNMAPPED: 'Security Description' (a label, not a canonical target), 'Asset Class' (a property of the security master, not of a holding), and 'Ccy' (a property of the instrument, not of the position row). Mapping any of them would put file-supplied text where reference data belongs.",
+    "I did not propose a 'constant' for any required target. Every one of the four is derivable from a real column, so a constant would have been a guess wearing a declaration's clothes."
+  ]
+}

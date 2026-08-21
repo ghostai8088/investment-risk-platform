@@ -619,3 +619,43 @@ def test_rails_do_not_import_ingestion() -> None:
         for py in sorted(pkg_dir.glob("*.py")):
             text = py.read_text()
             assert "irp_shared.ingestion" not in text, f"{pkg.__name__}/{py.name} imports ingestion"
+
+
+def test_staging_rules_are_tenant_predicated_not_only_rls_scoped(session: Session) -> None:
+    """W19-S3a: ``stage_upload`` runs only THIS tenant's ``staging.row`` rules.
+
+    The query previously relied on RLS alone. RLS does not constrain a SUPERUSER — not even with
+    FORCE — and every migration, demo seed and psql session runs as one, so on a shared database a
+    superuser-path upload ran ANOTHER tenant's rules against this tenant's file and rejected it.
+    SQLite has no RLS at all, which makes this tier the right place to pin the predicate: here the
+    ONLY thing that can scope the query is the predicate itself.
+    """
+    mine, theirs = _tenant(), _tenant()
+    # their rule would REJECT our file (it demands a `ccy` column of USD/EUR, which we do not send)
+    _rule(session, theirs, code="THEIRS", params={"column": "ccy", "allowed": ["USD"]})
+    _rule(session, mine, code="MINE", rule_type=RULE_TYPE_NOT_NULL, params={"column": "sedol"})
+    source_id = _source(session, mine)
+    batch = stage_upload(
+        session,
+        tenant_id=mine,
+        data_source_id=source_id,
+        filename="ours.csv",
+        content_type="text/csv",
+        raw_bytes=b"sedol\nB1YW440\n",
+        actor_id="a",
+    )
+    assert batch.status == STATUS_COMPLETED
+
+    # POSITIVE CONTROL: the other tenant's rule is real and DOES reject that same file for THEM,
+    # so the pass above is the predicate working rather than the rule being inert.
+    their_source = _source(session, theirs)
+    with pytest.raises(IngestionRejected):
+        stage_upload(
+            session,
+            tenant_id=theirs,
+            data_source_id=their_source,
+            filename="theirs.csv",
+            content_type="text/csv",
+            raw_bytes=b"sedol\nB1YW440\n",
+            actor_id="a",
+        )

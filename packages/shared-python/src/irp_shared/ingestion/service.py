@@ -239,9 +239,17 @@ def stage_upload(
     batch.staged_count = len(rows)
 
     # --- Generic data quality (P1A-3): run active staging rules; ERROR rejects, WARNING flags. ---
+    # The EXPLICIT tenant predicate is defense in depth on top of RLS, and it is not theoretical:
+    # this query previously relied on RLS alone, and RLS does not constrain a SUPERUSER — not even
+    # with FORCE. Every migration, every demo seed and every psql session runs as one. So on a
+    # database that had accumulated another tenant's `staging.row` rules, a superuser-path upload
+    # ran THEIR rules against THIS tenant's file and rejected it. Found by W19-S3a's demo stage,
+    # which is the first superuser-path caller of `stage_upload` on a shared database. Under the
+    # constrained `irp_app` role the behaviour is unchanged, which is why nothing caught it.
     active_rules = (
         session.execute(
             select(DataQualityRule).where(
+                DataQualityRule.tenant_id == str(tenant_id),
                 DataQualityRule.target_entity_type == STAGING_ROW_TARGET,
                 DataQualityRule.is_active.is_(True),
             )

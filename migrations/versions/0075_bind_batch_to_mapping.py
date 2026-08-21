@@ -53,6 +53,20 @@ assert all(len(name) <= 63 for name in _IDENTIFIERS), [
 
 
 def upgrade() -> None:
+    # A DEFECT FOUND BY THIS SLICE'S OWN P17 HARNESS, fixed here because this migration already
+    # ALTERs this table. `ingestion_batch.status` has been varchar(20) since migration 0007, and
+    # the vocabulary it stores declares `COMPLETED_WITH_WARNINGS` — 23 characters. A batch that
+    # finished with a DQ WARNING therefore could not be persisted on PostgreSQL at all; it raised
+    # StringDataRightTruncation. It survived four waves because SQLite ignores VARCHAR length
+    # (column affinity), so the whole unit tier passed, and no PG test drove the warning path.
+    # Widening is data-safe in both directions for existing rows: every stored value is <= 20.
+    op.alter_column(
+        "ingestion_batch",
+        "status",
+        existing_type=sa.String(length=20),
+        type_=sa.String(length=30),
+        existing_nullable=False,
+    )
     op.add_column(
         "ingestion_batch",
         sa.Column("mapping_version_id", GUID, nullable=True),
@@ -85,3 +99,16 @@ def downgrade() -> None:
     op.drop_index("ix_ingestion_batch_mapping_version_id", "ingestion_batch")
     op.drop_column("ingestion_batch", "lookup_as_of")
     op.drop_column("ingestion_batch", "mapping_version_id")
+    # The status widening is DELIBERATELY NOT REVERSED, and this is a decision rather than an
+    # oversight. Once a batch has finished WITH WARNINGS the column holds a 23-character value, so
+    # narrowing back to varchar(20) is a data-DESTROYING operation: PostgreSQL refuses the ALTER
+    # outright (StringDataRightTruncation), which turns the downgrade-over-data smoke red on any
+    # database that has ever run a warning-producing upload. Verified by executing it — CI's
+    # "Revert migrations to 0071" step runs over the fully seeded demo book, and that is exactly
+    # where it failed.
+    #
+    # Leaving the column WIDER than the pre-0075 schema is inert: every value the older code writes
+    # still fits, and `alembic check` compares the ORM against HEAD, not against a downgraded
+    # revision, so no drift is introduced. The platform's own precedent is 0071, whose downgrade
+    # over two-measure data is a refused data-loss operation by design; this takes the same
+    # position and simply declines to destroy rather than refusing the whole downgrade.

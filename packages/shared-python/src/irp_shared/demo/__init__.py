@@ -70,6 +70,11 @@ from irp_shared.demo.hg1_private import (
     Hg1PrivateSummary,
     run_demo_hg1_private,
 )
+from irp_shared.demo.ingest1_stage28 import (
+    DemoIngest1AlreadySeededError,
+    DemoIngest1Error,
+    run_demo_ingest1_stage28,
+)
 from irp_shared.demo.lim2_stage20 import (
     DemoLim2AlreadySeededError,
     DemoLim2Error,
@@ -290,6 +295,9 @@ __all__ = [
     "run_demo_struct3_stage26",
     "DemoStruct3AlreadySeededError",
     "DemoStruct3Error",
+    "DemoIngest1AlreadySeededError",
+    "DemoIngest1Error",
+    "run_demo_ingest1_stage28",
     "run_demo_struct4_stage27",
     "DemoStruct4AlreadySeededError",
     "DemoStruct4Error",

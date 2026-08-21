@@ -84,7 +84,13 @@ class IngestionBatch(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Bas
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default=STATUS_RECEIVED)
+    # varchar(30), NOT 20. `COMPLETED_WITH_WARNINGS` is 23 characters and this column was
+    # varchar(20) from migration 0007 until W19-S3a, so a batch that finished WITH WARNINGS
+    # could never be persisted on PostgreSQL — it raised StringDataRightTruncation. Invisible
+    # for four waves because SQLite ignores VARCHAR length (column affinity), so the entire
+    # unit tier passed, and no PG test exercised the warning path. Found by the 0075 P17
+    # harness. `test_controlled_vocab_widths.py` is the mechanical gate that closes the class.
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default=STATUS_RECEIVED)
     scan_status: Mapped[str] = mapped_column(String(20), nullable=False, default=SCAN_PENDING)
     row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     staged_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

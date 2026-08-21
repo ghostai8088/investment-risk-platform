@@ -63,6 +63,31 @@ CAST_STRING = "string"
 CAST_TYPES: tuple[str, ...] = (CAST_DECIMAL, CAST_INTEGER, CAST_STRING)
 
 
+def _numeric_text(raw: Any) -> str:
+    """The text of a cell, prepared for numeric coercion.
+
+    Two repairs, both narrow and both necessary against real custodian files:
+
+    1. **Thousands separators are stripped.** Every real statement has them.
+    2. **A leading anti-corruption quote is removed.** This is the important one, and it is not
+       cosmetic. ``anticorruption.neutralize_cell`` prefixes ``'`` to any cell starting with
+       ``= + - @``, which is a CSV-injection defence (THR-06) — and a SHORT POSITION starts with
+       ``-``. So every short in every client file reaches the interpreter as ``'-3.2``, and without
+       this the platform would refuse to load any book containing one, while ``position.quantity``
+       is documented as SIGNED (long > 0, short < 0). Verified by execution, not assumed.
+
+    The repair is deliberately confined to the NUMERIC path. ``rename`` and ``concatenate`` keep the
+    neutralized text exactly as staged, because the defence exists for values that flow onward into
+    a spreadsheet, and a quantity does not: it is coerced to Decimal here and stored as a number.
+    """
+    if raw is None:
+        return ""
+    text_value = str(raw).strip().replace(",", "")
+    if text_value.startswith("'") and len(text_value) > 1 and text_value[1] in "+-.0123456789":
+        text_value = text_value[1:]
+    return text_value
+
+
 def _cell(payload: dict[str, Any], column: str, row_number: int) -> Any:
     """Read one staged cell, refusing a missing column rather than substituting a null.
 
@@ -94,7 +119,7 @@ def _op_cast(spec: dict[str, Any], payload: dict[str, Any], row_number: int, ctx
         raise CastRefusedError(raw, to_type, row_number)
     if to_type == CAST_STRING:
         return "" if raw is None else str(raw).strip()
-    cleaned = "" if raw is None else str(raw).strip().replace(",", "")
+    cleaned = _numeric_text(raw)
     if not cleaned:
         raise CastRefusedError(raw, to_type, row_number)
     try:
@@ -123,7 +148,7 @@ def _op_scale(spec: dict[str, Any], payload: dict[str, Any], row_number: int, ct
     if not factor.is_finite() or factor <= 0:
         raise ScaleRefusedError(f"declared factor {factor} must be finite and positive")
     raw = _cell(payload, str(spec["source"]), row_number)
-    cleaned = "" if raw is None else str(raw).strip().replace(",", "")
+    cleaned = _numeric_text(raw)
     try:
         value = Decimal(cleaned)
     except (InvalidOperation, ValueError, ArithmeticError) as exc:

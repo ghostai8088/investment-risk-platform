@@ -205,6 +205,11 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_ingestion_pg.py -q
+      - name: INGEST-1 mapping spine (Postgres, REQ-INT-001 / ENT-077 / W19-S3a)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_ingest_mapping_pg.py -q
       - name: Reference hybrid-RLS tests (Postgres, REQ-SMR-005 / AD-013-R1 / BR-17)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
@@ -763,6 +768,12 @@ jobs:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
           IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
         run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzzzzzzzzzzz_struct4_pg.py -q
+      # Runs after stage 27 (alpha-sort; its own book, so it moves no golden).
+      - name: Demo stage 28 (Postgres, W19-S3a — a client file becomes a governed book)
+        env:
+          DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+          IRP_TEST_DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
+        run: pytest packages/shared-python/tests/test_demo_stage9zzzzzzzzzzzzzzzzzzz_ingest1_pg.py -q
       - name: Report generation RLS + append-only + unique-key non-vacuity (Postgres)
         env:
           DATABASE_URL: postgresql+psycopg://irp:irp@localhost:5432/irp
