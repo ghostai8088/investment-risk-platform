@@ -54,6 +54,35 @@ Rows: REQ-INT-001 (AMENDED, DP-19-6). Build: ENT-077 `ingestion_mapping_version`
 
 D2: the end-to-end proof runs the exposure family over the loaded book at a NON-ROOT node — the D2 discharge for the touched chain. D1: **argued, not asserted** — the loaded book is a NEW book, not one of the shared flat demo books the D1 residual rests on, so D1 does not fire; if the slice touches a shared book's goldens, the fresh post-rename re-run lands in-slice.
 
+### Amendment — W19-S3a's slice gate (2026-08-21): two ratified scope changes, recorded here
+
+The S3a paragraph above says *"single-actor ratification in this slice"* and files the ``MAPPING.*``
+audit codes with S3b. The owner ratified two departures at the slice gate (`w19_s3a_remit.md`
+DS3a-2, DS3a-3), and they are written into this record rather than left to disagree with the build:
+
+- **DS3a-2 — the audit-code mint MOVED into S3a.** S3a is where the PROPOSED → RATIFIED →
+  SUPERSEDED lifecycle is born and no existing code covers it (`DATA.INGEST` is scoped to the
+  `ingestion_batch` lifecycle, `DATA.VALIDATE` to DQ runs), so S3a as planned would have shipped a
+  governed status lifecycle emitting NOTHING — something no other lifecycle on this platform does.
+  ONE code, `DATA.MAPPING`, with two actions on the `DATA.INGEST` shape. **The PERMISSION codes are
+  unchanged and still land at S3b** with the four-eyes lifecycle.
+- **DS3a-3 — `SelfRatificationError` ships in S3a.** The refusal half of four-eyes only; the
+  permission separation that makes four-eyes real is still S3b's. Ten lines, strictly safer, and
+  surfaced as a widening of a ratified scope line rather than taken as a builder's call.
+
+Two further calls the owner ratified that do NOT change this plan's scope, recorded for the reader:
+**DS3a-1** keeps the ratify act at the service tier (the three new HTTP routes are READS behind the
+existing `data.upload`), and **DS3a-4** gives the position binders an explicit lineage-source
+override so a file-loaded holding is attributed to the INGESTION source rather than to MANUAL entry
+— the first design used the existing lineage edge unchanged, and the remit's verification killed it
+by reading the code.
+
+**Three defects were found by S3a's own proofs, none by reading**, and each is recorded where it
+was fixed: `ingestion_batch.status` was `varchar(20)` while its vocabulary declared a 23-character
+value (four waves old, invisible because SQLite ignores VARCHAR length); the anti-corruption layer's
+CSV-injection prefix made every SHORT position unparseable; and the on-ingest DQ rule selection had
+no tenant predicate, so a superuser-path upload ran another tenant's rules.
+
 ### W19-S3b — INGEST-1 governance: four-eyes, attribution, screens (M/L), migration ×1
 
 Rows: REQ-PPM-002 (fresh adjudication on amended text + the mechanical-discovery clause). Build: the **governed R-07 mint** — the mapping-ratifier permission code(s), never co-granted with the proposer path, plus the `MAPPING.*` audit event codes, with P11's holder-set pin, route census and SoD row; four-eyes as a parallel resolution-row lifecycle on ENT-077 (the ENT-075/breach_action pattern — NOT an ENT-075 CHECK widening, whose rail is hard-constrained to three entitlement actions and fails closed on a fourth); **hard-FK attribution on canonical `position` rows** (migration, P17 over a table populated since 0014; `position_source` free text is not attribution and the amended row bans it); the PPM-002 census, hosted here and enforced unconditionally — the loaded-book read resolves through the position master's as-of reconstruction. Rule 7: batch lineage + the loaded-book read with mapping-version provenance.

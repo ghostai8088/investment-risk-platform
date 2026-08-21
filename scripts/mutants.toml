@@ -1586,3 +1586,232 @@ file = "packages/shared-python/src/irp_shared/exposure/service.py"
 find = """            resolve_portfolio(session, str(scope_node_id), acting_tenant=acting_tenant)"""
 replace = """            pass"""
 tests = ["packages/shared-python/tests/test_struct4_fx.py"]
+
+# ---------------------------------------------------------------------------------------------
+# W19-S3a — the INGEST-1 mapping spine. Every mutant below re-introduces a defect the slice's own
+# review or its verification actually found, or a guard whose absence would be invisible to
+# reading. Deliberately NOT covering the DDL: the battery runs against an ALREADY-MIGRATED
+# database, so a mutant that deletes FORCE RLS or narrows a column is a permanent survivor —
+# those claims are proven by the schema-reading PG suite instead.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "M-S3A-1"
+group = "w19-s3a"
+why = "the closed vocabulary stops being closed — an unknown operation silently produces None instead of being refused BY NAME, so a mapping typo loads a book of null holdings"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/operations.py"
+find = """    fn = _DISPATCH.get(op)
+    if fn is None:
+        raise UnsupportedOperationError(op, OPERATIONS)"""
+replace = """    fn = _DISPATCH.get(op, _op_rename)"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-2"
+group = "w19-s3a"
+why = "a file loads with NO ratified mapping version — REQ-INT-001 clause (1) deleted, and the whole governance claim with it"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """    if row is None:
+        raise UnratifiedMappingError(str(data_source_id), str(source_type))"""
+replace = """    if row is None:
+        raise MappingNotVisible(str(data_source_id))"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-3"
+group = "w19-s3a"
+why = "a zero or negative declared scale factor is accepted, turning an entire loaded book into zero holdings that reproduce perfectly against themselves"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/operations.py"
+find = """    if not factor.is_finite() or factor <= 0:
+        raise ScaleRefusedError(f"declared factor {factor} must be finite and positive")"""
+replace = """    if not factor.is_finite():
+        raise ScaleRefusedError(f"declared factor {factor} must be finite and positive")"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-4"
+group = "w19-s3a"
+why = "an overlapping re-load silently overwrites a client's holdings instead of refusing — DP-19-7's fail-closed restatement rule deleted"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """                if restatement_reason is None:
+                    raise OverlappingLoadError(portfolio.id, instrument_id, record.row_number)"""
+replace = """                if restatement_reason is None:
+                    restatement_reason = "auto"""" 
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-5"
+group = "w19-s3a"
+why = "the tz normalization is dropped and the overlap check never fires — the ACTUAL bug this slice's tests caught, where SQLite naive vs interpreter-aware datetimes made == False for identical instants"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)"""
+replace = """    return value"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-6"
+group = "w19-s3a"
+why = "a mapping is ratified by its own proposer — the refusal half of four-eyes deleted (DS3a-3)"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+# RE-ANCHORED at the slice-review fold: the comparison is now canonicalized (the uppercase-uuid
+# vector), so the old anchor no longer matches. An unmatched anchor is a SURVIVOR by the harness's
+# own rule, which is how this was noticed.
+find = """    if canonical_actor(actor_id) == canonical_actor(version.proposed_by_actor_id):
+        raise SelfRatificationError(str(actor_id))"""
+replace = """    if actor_id is None:
+        raise SelfRatificationError(str(actor_id))"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-7"
+group = "w19-s3a"
+why = "a ratified mapping's CONTENT can be edited in place — nothing at the DB layer catches it, so this guard is the only thing between a ratified mapping and a silent change of meaning"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """    if changed:
+        raise MappingContentImmutableError(changed)"""
+replace = """    if False:
+        raise MappingContentImmutableError(changed)"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-8"
+group = "w19-s3a"
+why = "an ALREADY-ratified or superseded version can be ratified again — the alternate-path half of the lifecycle gate, the shape the Wave-11 review angle names"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """    if version.status != STATUS_PROPOSED:
+        raise MappingLifecycleError(version.id, version.status, "ratify")"""
+replace = """    if version.status == "NEVER":
+        raise MappingLifecycleError(version.id, version.status, "ratify")"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-9"
+group = "w19-s3a"
+why = "a code-lookup that matches MORE THAN ONE instrument silently picks one instead of refusing — the deterministic-or-AmbiguousIdentifier contract (OD-P1B-G) laundered into a guess"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/interpreter.py"
+find = """        except AmbiguousIdentifier as exc:
+            raise CodeLookupRefusedError(scheme, value, row_number, "resolves ambiguously") from exc"""
+replace = """        except AmbiguousIdentifier:
+            return "ambiguous\""""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-10"
+group = "w19-s3a"
+why = "clause (9)'s third input goes dead: every code-lookup resolves at wall-clock 'now' instead of the batch's recorded instant, so a re-run silently disagrees with the original load the moment an identifier is superseded"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/interpreter.py"
+find = """                as_of=self.lookup_as_of,"""
+replace = """                as_of=None,"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-11"
+group = "w19-s3a"
+why = "a MODEL_PROPOSED mapping binds a model version from ANOTHER tenant — PG FK checks bypass RLS, so the FK alone would durably admit it and the re-resolution is the only control"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """        assert_model_version_in_tenant(
+            session,
+            str(proposer_model_version_id),
+            acting_tenant=str(tenant_id),
+            error=MappingNotVisible,
+        )"""
+replace = """        pass"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-12"
+group = "w19-s3a"
+why = "a loaded holding is attributed to MANUAL ENTRY again — the DS3a-4 false-provenance defect, which is worse than no attribution because a reader cannot tell it from a genuine hand capture"
+file = "packages/shared-python/src/irp_shared/position/service.py"
+find = """    source = source or ensure_manual_source(session, entity.tenant_id, actor.actor_id)"""
+replace = """    source = ensure_manual_source(session, entity.tenant_id, actor.actor_id)"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-13"
+group = "w19-s3a"
+why = "the write-path census stops discovering position writers, so it reports an empty offender list — indistinguishable from total compliance, which is the failure its positive control exists to catch"
+file = "packages/shared-python/tests/test_ingest_mapping_census.py"
+find = """            if name in _POSITION_CALLS:
+                return True"""
+replace = """            if name in ():
+                return True"""
+tests = ["packages/shared-python/tests/test_ingest_mapping_census.py"]
+
+# --- W19-S3a REVIEW FOLDS. Each re-introduces a defect the slice review reproduced. -------------
+
+[[mutant]]
+id = "M-S3A-14"
+group = "w19-s3a"
+why = "the content-immutability guard goes back to being a helper nobody calls — a ratified mapping's meaning changes silently on an ordinary autoflush, with no refusal and no audit event (reproduced by a reviewer)"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/models.py"
+find = """event.listen(IngestionMappingVersion, "before_update", _refuse_content_mutation)"""
+replace = """# listener removed"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-15"
+group = "w19-s3a"
+why = "four-eyes is defeated by an UPPERCASE uuid — the same principal proposes and ratifies, because the comparison is raw strings again"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """    if canonical_actor(actor_id) == canonical_actor(version.proposed_by_actor_id):"""
+replace = """    if str(actor_id) == str(version.proposed_by_actor_id):"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-16"
+group = "w19-s3a"
+why = "an operation that cannot produce a Decimal may target quantity again — the mapping ratifies and then dies at load with a bare decimal.InvalidOperation, which is not a MappingError, so a caller failing closed on the family catches nothing"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/interpreter.py"
+find = """        if target in _DECIMAL_TARGETS and op not in _DECIMAL_PRODUCING_OPS:
+            raise IncoherentTargetOperationError(op, target, tuple(sorted(_DECIMAL_PRODUCING_OPS)))"""
+replace = """        if False:
+            raise IncoherentTargetOperationError(op, target, tuple(sorted(_DECIMAL_PRODUCING_OPS)))"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-17"
+group = "w19-s3a"
+why = "a mapping whose every operation is outside the closed vocabulary can be PROPOSED and RATIFIED — a governance record saying a human approved something guaranteed to refuse every row"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/interpreter.py"
+find = """        if op not in OPERATIONS:
+            raise UnsupportedOperationError(op, OPERATIONS)"""
+replace = """        if op is None:
+            raise UnsupportedOperationError(op, OPERATIONS)"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-18"
+group = "w19-s3a"
+why = "an over-length quantity unit is silently TRUNCATED again, writing a governed holding that says something the client's file did not say"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/interpreter.py"
+find = """        if len(text_unit) > _QUANTITY_UNIT_MAX:
+            raise QuantityUnitTooLongError(text_unit, _QUANTITY_UNIT_MAX, row_number)
+        out[TARGET_QUANTITY_UNIT] = text_unit"""
+replace = """        out[TARGET_QUANTITY_UNIT] = text_unit[:_QUANTITY_UNIT_MAX]"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-19"
+group = "w19-s3a"
+why = "the write-path census stops following calls and goes back to per-file co-occurrence — a two-module bypass (reader here, writer there) reports an empty offender list, indistinguishable from compliance (a reviewer planted exactly this and every test stayed green)"
+file = "packages/shared-python/tests/test_ingest_mapping_census.py"
+find = """                if calls & write_names:
+                    write_names.add(name)
+                    changed = True"""
+replace = """                if False:
+                    write_names.add(name)
+                    changed = True"""
+tests = ["packages/shared-python/tests/test_ingest_mapping_census.py"]
+
+[[mutant]]
+id = "M-S3A-20"
+group = "w19-s3a"
+why = "a non-numeric reaching a decimal target escapes as a raw ArithmeticError instead of a governed MappingError, so a caller failing closed on the family catches nothing"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/interpreter.py"
+find = """        try:
+            coerced = Decimal(numeric_text(raw))
+        except (ArithmeticError, ValueError, TypeError) as exc:
+            raise CastRefusedError(raw, f"a decimal for {target!r}", row_number) from exc"""
+replace = """        coerced = Decimal(numeric_text(raw))"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]

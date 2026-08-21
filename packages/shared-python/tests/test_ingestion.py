@@ -536,10 +536,20 @@ def test_scope_fence_generic_only(session: Session) -> None:
     # Staged record is generic: NO domain column, only id/tenant/system_from/batch/row/payload.
     cols = set(IngestionStagedRecord.__table__.columns.keys())
     assert cols == {"id", "tenant_id", "system_from", "batch_id", "row_number", "payload"}
-    # No FK to any domain/canonical table; batch FK only to data_source, staged FK only to batch.
+    # No FK to any DOMAIN/CANONICAL table. The batch's FK set was `{data_source}` from P1A-4 until
+    # W19-S3a, which added `ingestion_mapping_version` — REQ-INT-001 clause (2): "every ingestion
+    # batch ... binds the ratifying mapping version by hard FK -- never a free-text field". The
+    # fence is WIDENED here deliberately, in the slice that needs it, rather than relaxed: a mapping
+    # version is ingest-side governance metadata, NOT a domain/canonical table, so the property this
+    # fence protects (staging is domain-agnostic — no Security Master / portfolio / position /
+    # valuation coupling) is unchanged. Staged rows stay coupled to nothing but their batch.
     batch_fks = {fk.column.table.name for fk in IngestionBatch.__table__.foreign_keys}
     staged_fks = {fk.column.table.name for fk in IngestionStagedRecord.__table__.foreign_keys}
-    assert batch_fks == {"data_source"} and staged_fks == {"ingestion_batch"}
+    assert batch_fks == {"data_source", "ingestion_mapping_version"}
+    assert staged_fks == {"ingestion_batch"}
+    # The property behind the fence, asserted DIRECTLY rather than inferred from the set above, so a
+    # future widening cannot smuggle a domain FK in under the same edit.
+    assert not batch_fks & {"portfolio", "position", "instrument", "valuation", "transaction"}
     # The DQ engine is reused, not extended by ingestion: the four generic evaluators (RANGE added
     # P2-2 for FX; COMPLETENESS minted at DATA-1 for the captured-rate rail, not by ingestion) and
     # no domain evaluators.
@@ -609,3 +619,43 @@ def test_rails_do_not_import_ingestion() -> None:
         for py in sorted(pkg_dir.glob("*.py")):
             text = py.read_text()
             assert "irp_shared.ingestion" not in text, f"{pkg.__name__}/{py.name} imports ingestion"
+
+
+def test_staging_rules_are_tenant_predicated_not_only_rls_scoped(session: Session) -> None:
+    """W19-S3a: ``stage_upload`` runs only THIS tenant's ``staging.row`` rules.
+
+    The query previously relied on RLS alone. RLS does not constrain a SUPERUSER — not even with
+    FORCE — and every migration, demo seed and psql session runs as one, so on a shared database a
+    superuser-path upload ran ANOTHER tenant's rules against this tenant's file and rejected it.
+    SQLite has no RLS at all, which makes this tier the right place to pin the predicate: here the
+    ONLY thing that can scope the query is the predicate itself.
+    """
+    mine, theirs = _tenant(), _tenant()
+    # their rule would REJECT our file (it demands a `ccy` column of USD/EUR, which we do not send)
+    _rule(session, theirs, code="THEIRS", params={"column": "ccy", "allowed": ["USD"]})
+    _rule(session, mine, code="MINE", rule_type=RULE_TYPE_NOT_NULL, params={"column": "sedol"})
+    source_id = _source(session, mine)
+    batch = stage_upload(
+        session,
+        tenant_id=mine,
+        data_source_id=source_id,
+        filename="ours.csv",
+        content_type="text/csv",
+        raw_bytes=b"sedol\nB1YW440\n",
+        actor_id="a",
+    )
+    assert batch.status == STATUS_COMPLETED
+
+    # POSITIVE CONTROL: the other tenant's rule is real and DOES reject that same file for THEM,
+    # so the pass above is the predicate working rather than the rule being inert.
+    their_source = _source(session, theirs)
+    with pytest.raises(IngestionRejected):
+        stage_upload(
+            session,
+            tenant_id=theirs,
+            data_source_id=their_source,
+            filename="theirs.csv",
+            content_type="text/csv",
+            raw_bytes=b"sedol\nB1YW440\n",
+            actor_id="a",
+        )

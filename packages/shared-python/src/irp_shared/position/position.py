@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 from irp_shared.audit.payload import json_safe as _json_safe
 from irp_shared.db.bitemporal import assert_supersede_effective_at
 from irp_shared.db.mixins import utcnow
+from irp_shared.lineage.models import DataSource
 from irp_shared.portfolio import resolve_portfolio
 from irp_shared.position.models import Position
 from irp_shared.position.service import (
@@ -147,6 +148,7 @@ def create_position(
     position_source: str | None = None,
     entity_id: str | None = None,
     now: datetime | None = None,
+    origin_source: DataSource | None = None,
 ) -> Position:
     """Create the first open position version (governed: MANUAL-source ORIGIN lineage +
     ``POSITION.CREATE``). ``portfolio_id`` + ``instrument_id`` are resolved tenant-filtered
@@ -177,7 +179,14 @@ def create_position(
         row.id = entity_id  # seam: deterministic uuid5 id (skips the `default=new_uuid`)
     session.add(row)
     session.flush()
-    record_position_create(session, entity=row, after_value=_summary(row), actor=actor, now=now)
+    record_position_create(
+        session,
+        entity=row,
+        after_value=_summary(row),
+        actor=actor,
+        now=now,
+        origin_source=origin_source,
+    )
     return row
 
 
@@ -191,6 +200,7 @@ def supersede_position(
     effective_at: datetime,
     entity_id: str | None = None,
     now: datetime | None = None,
+    origin_source: DataSource | None = None,
     **new_fields: Any,
 ) -> Position:
     """Effective-dated (valid-time) supersede: close the current head's ``valid_to = effective_at``
@@ -240,7 +250,14 @@ def supersede_position(
         new.id = entity_id  # seam: deterministic uuid5 id for the new open version
     session.add(new)
     session.flush()
-    record_position_create(session, entity=new, after_value=_summary(new), actor=actor, now=now)
+    record_position_create(
+        session,
+        entity=new,
+        after_value=_summary(new),
+        actor=actor,
+        now=now,
+        origin_source=origin_source,
+    )
     return new
 
 
@@ -253,6 +270,7 @@ def correct_position(
     actor: PositionActor,
     entity_id: str | None = None,
     now: datetime | None = None,
+    origin_source: DataSource | None = None,
     **corrected: Any,
 ) -> Position:
     """As-known restatement (TR-08): close the prior row's ``system_to = now``
@@ -310,6 +328,7 @@ def correct_position(
         ),
         actor=actor,
         now=now,
+        origin_source=origin_source,
     )
     return corrected_row
 

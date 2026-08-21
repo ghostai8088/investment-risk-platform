@@ -45,4 +45,11 @@ export const API_PREFIXES = [
   // /ops/reproduction screen drives. Same shadow trap, third instance: the SCREEN is at
   // /ops/reproduction, never at bare /schedules.
   "/schedules",
+  // W19-S3a: the ENT-077 mapping reads the /ops/mappings screen drives. The shadow trap for the
+  // FOURTH time: the SCREEN is at /ops/mappings, never at bare /ingest — a client route under a
+  // prefix in this list is answered by nginx as 200 + index.html and reports as a phantom outage.
+  // NOTE this prefix was ALREADY missing while /ingest/upload and /ingest/batches shipped at
+  // P1A-4: those routes existed in the backend and in the committed OpenAPI, and the SPA simply
+  // never called them, so nothing noticed.
+  "/ingest",
 ] as const;

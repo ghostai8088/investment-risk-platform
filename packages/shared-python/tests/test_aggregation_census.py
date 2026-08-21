@@ -133,6 +133,10 @@ _ALLOWLIST: dict[tuple[str, str, str], tuple[int, str]] = {
     ("irp_shared.dq.rules", "evaluate_not_null", "sum-call"): (1, N),
     ("irp_shared.dq.service", "update_dq_rule", "augassign-add"): (1, N),
     ("irp_shared.ingestion.service", "stage_upload", "augassign-add"): (1, N),
+    # W19-S3a: a per-scheme COUNTER of code-lookups performed, kept so a load can prove its
+    # lookups actually happened (the P18 positive control for clause 9). Counts resolutions,
+    # never a measure — nothing downstream reads it as an amount.
+    ("irp_shared.ingest_mapping.interpreter", "resolve_code", "dict-get-add"): (1, N),
     ("irp_shared.limit.service", "approve_limit", "augassign-add"): (1, N),
     ("irp_shared.limit.service", "update_limit", "augassign-add"): (1, N),
     ("irp_shared.lineage.service", "update_data_source", "augassign-add"): (1, N),

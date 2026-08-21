@@ -4,6 +4,15 @@ SQLite has no RLS, so cross-tenant RLS-hidden 404 / isolation are proven in
 ``packages/shared-python/tests/test_ingestion_pg.py``; here we prove entitlement gating
 (deny-by-default), server-side tenant stamping, the size cap, anti-corruption + DQ rejection
 (4xx + durable evidence), and audit emission over real HTTP.
+
+**W19-S3a correction.** An earlier version of this docstring said the cross-tenant gap was closed
+by ``packages/shared-python/tests/test_ingestion_pg.py``. For the MAPPING routes that was false —
+that file does not mention mappings at all, and the one PG test that checked cross-tenant hiding
+went through ``resolve_mapping_version`` (which carries its own explicit tenant predicate), NOT
+through the route's ``db.get``. A slice reviewer caught the claim. The route functions' own
+queries are now exercised on PostgreSQL, under the constrained role, in
+``test_ingest_mapping_pg.py`` — see
+``test_the_mapping_routes_hide_another_tenants_rows``.
 """
 
 from __future__ import annotations
@@ -242,3 +251,117 @@ def test_list_without_permission_403(ctx: tuple[TestClient, Principal, Session, 
         headers={"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": principal.tenant_id},
     )
     assert resp.status_code == 403
+
+
+# --- W19-S3a: the ENT-077 mapping READS (Rule 7's entity/time surface) -------------------------
+
+
+_MAPPING_OPS = [
+    {"op": "constant", "target": "portfolio_code", "value": "P"},
+    {"op": "code-lookup", "target": "instrument", "source": "SEDOL", "scheme": "SEDOL"},
+    {"op": "scale", "target": "quantity", "source": "QTY", "factor": "1000"},
+    {"op": "parse-date", "target": "valid_from", "source": "D", "format": "%d/%m/%Y"},
+]
+
+
+def _propose(db: Session, principal: Principal, source_id: str, label: str = "v1"):  # noqa: ANN202
+    from irp_shared.ingest_mapping.service import propose_mapping_version
+
+    version = propose_mapping_version(
+        db,
+        tenant_id=principal.tenant_id,
+        data_source_id=source_id,
+        source_type="POSITIONS",
+        version_label=label,
+        operations=list(_MAPPING_OPS),
+        actor_id="proposer@irp",
+    )
+    db.commit()
+    return version
+
+
+def test_mapping_list_shows_a_PROPOSED_version(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """Deliberately NOT filtered to RATIFIED: a screen that hid the proposal awaiting a human
+    would hide the one thing an operator opens this page to find."""
+    client, principal, db, source_id = ctx
+    version = _propose(db, principal, source_id)
+    resp = client.get("/ingest/mappings", headers=_headers(principal))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [row["id"] for row in body] == [version.id]
+    assert body[0]["status"] == "PROPOSED"
+    assert body[0]["ratified_by_actor_id"] is None
+
+
+def test_mapping_detail_carries_the_operations_verbatim(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """A mapping is meant to be readable by a non-engineer — "what did this mapping do?" is the
+    question the closed vocabulary exists to keep answerable, so the screen gets the real list."""
+    client, principal, db, source_id = ctx
+    version = _propose(db, principal, source_id)
+    resp = client.get(f"/ingest/mappings/{version.id}", headers=_headers(principal))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["operations"] == _MAPPING_OPS
+    assert body["operations_hash"] == version.operations_hash
+    assert body["authorship"] == "HAND_AUTHORED"
+    # a HAND_AUTHORED version carries NEITHER piece of model attribution (the symmetric CHECK)
+    assert body["proposer_model_version_id"] is None
+    assert body["proposal_prompt_hash"] is None
+
+
+def test_mapping_unknown_404_and_malformed_422(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    client, principal, _, _ = ctx
+    unknown = client.get(f"/ingest/mappings/{uuid.uuid4()}", headers=_headers(principal))
+    assert unknown.status_code == 404 and unknown.json()["detail"] == "mapping not found"
+    assert client.get("/ingest/mappings/not-a-uuid", headers=_headers(principal)).status_code == 422
+
+
+def test_mapping_batches_404s_on_an_unknown_mapping_rather_than_returning_empty(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """ "No batches" and "not your mapping" must stay distinguishable to a caller entitled to know;
+    an empty list for an unknown id conflates them."""
+    client, principal, db, source_id = ctx
+    version = _propose(db, principal, source_id)
+    empty = client.get(f"/ingest/mappings/{version.id}/batches", headers=_headers(principal))
+    assert empty.status_code == 200 and empty.json() == []
+    missing = client.get(f"/ingest/mappings/{uuid.uuid4()}/batches", headers=_headers(principal))
+    assert missing.status_code == 404
+
+
+def test_the_batch_dto_exposes_its_mapping_binding(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """Clause (2)'s batch half, on the read surface. A generic upload legitimately has none, and
+    the DTO says so with a null rather than omitting the field."""
+    client, principal, _, source_id = ctx
+    created = client.post(
+        "/ingest/upload",
+        data={"data_source_id": source_id},
+        files=_csv(),
+        headers=_headers(principal),
+    ).json()
+    assert created["mapping_version_id"] is None
+    assert created["lookup_as_of"] is None
+
+
+def test_mapping_reads_are_permission_gated(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """Deny-by-default, on every one of the three. The reads sit behind `data.upload` for one
+    slice by ratified decision (DS3a-1); S3b mints the dedicated codes."""
+    client, principal, db, source_id = ctx
+    version = _propose(db, principal, source_id)
+    stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": principal.tenant_id}
+    for path in (
+        "/ingest/mappings",
+        f"/ingest/mappings/{version.id}",
+        f"/ingest/mappings/{version.id}/batches",
+    ):
+        assert client.get(path, headers=stranger).status_code == 403, path
