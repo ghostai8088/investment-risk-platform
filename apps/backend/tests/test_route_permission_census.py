@@ -77,9 +77,10 @@ UNROUTED_FORWARD_GATES: dict[str, str] = {
 # +1 ONBOARD-1a; +8 ONBOARD-1b; +1 ALERT-1; +4 REPRO-2 (3 schedule writes + the verdict read);
 # +1 STRUCT-2 (GET /exposure/latest/sum — the Wave-18 close repaired this line's arithmetic:
 # the visible sum read 305+2 while the pin was 308); +2 STRUCT-3; +0 STRUCT-4.
-EXPECTED_ROUTE_COUNT = (
-    308  # STRUCT-3: +GET /portfolios/tree-as-of, +GET /exposure/runs/{run_id}/rollup
-)
+# +3 W19-S3a: GET /ingest/mappings, GET /ingest/mappings/{id}, GET /ingest/mappings/{id}/batches.
+# READS ONLY — the propose/ratify verbs land at S3b with their own minted codes (DS3a-1), so all
+# three sit behind the existing `data.upload` rather than a governed act sharing an upload code.
+EXPECTED_ROUTE_COUNT = 311  # W19-S3a: +3 mapping reads (ENT-077, Rule 7)
 
 
 def _api_routes(routes: Any) -> Iterator[APIRoute]:

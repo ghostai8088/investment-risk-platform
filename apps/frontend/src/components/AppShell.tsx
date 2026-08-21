@@ -78,6 +78,13 @@ export function AppShell({
           >
             Portfolio structure
           </NavLink>
+          {/* W19-S3a: what a client's file MEANS, who drafted it and who agreed (ENT-077). */}
+          <NavLink
+            to="/ops/mappings"
+            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+          >
+            Source mappings
+          </NavLink>
           {/* RPT-2: governed reports, regenerated (and re-proven) on every read. */}
           <NavLink
             to="/ops/reports"

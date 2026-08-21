@@ -15,6 +15,7 @@ import { Alerting } from "./views/ops/Alerting";
 import { BreachDetail } from "./views/ops/BreachDetail";
 import { BreachQueue } from "./views/ops/BreachQueue";
 import { LimitHealth } from "./views/ops/LimitHealth";
+import { MappingDetail, Mappings } from "./views/ops/Mappings";
 import { PortfolioStructure } from "./views/ops/PortfolioStructure";
 import { Reports } from "./views/reports/Reports";
 import { RunDetail } from "./views/RunDetail";
@@ -128,6 +129,12 @@ export function App(): ReactElement {
           <Route path="ops/breaches/:breachId" element={<BreachDetail session={session} />} />
           <Route path="ops/limits" element={<LimitHealth session={session} />} />
           <Route path="ops/structure" element={<PortfolioStructure session={session} />} />
+          {/* W19-S3a: the ENT-077 mapping reads. NAMESPACED under ops/ for the FOURTH
+              time and for the same reason: `/ingest` is an API prefix in api-prefixes.ts,
+              so a client route at bare /ingest would be answered by nginx as 200 +
+              index.html and read as a phantom outage. */}
+          <Route path="ops/mappings" element={<Mappings session={session} />} />
+          <Route path="ops/mappings/:mappingId" element={<MappingDetail session={session} />} />
           {/* RPT-2: the governed report becomes reachable in a browser (remit I4).
               NAMESPACED under ops/ deliberately (review finding): the API prefix `/reports` is
               proxied by nginx AND the vite dev server, and its regex matches the BARE path —

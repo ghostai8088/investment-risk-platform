@@ -1560,6 +1560,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ingest/mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Mapping Versions
+         * @description Every mapping version visible to the caller's tenant, newest first.
+         *
+         *     Deliberately NOT filtered to RATIFIED. A screen that showed only the ratified version would
+         *     hide the proposal awaiting a human — which is the one thing an operator opens this page to
+         *     find.
+         */
+        get: operations["list_mapping_versions_ingest_mappings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ingest/mappings/{mapping_version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Mapping Version */
+        get: operations["get_mapping_version_ingest_mappings__mapping_version_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ingest/mappings/{mapping_version_id}/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Batches For Mapping
+         * @description The batches this version loaded — the provenance question read the other way round.
+         *
+         *     404s on an unknown/hidden mapping rather than returning an empty list, so "no batches" and
+         *     "not your mapping" stay distinguishable to the caller who is entitled to know.
+         */
+        get: operations["list_batches_for_mapping_ingest_mappings__mapping_version_id__batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ingest/upload": {
         parameters: {
             query?: never;
@@ -5895,6 +5959,10 @@ export interface components {
             filename: string;
             /** Id */
             id: string;
+            /** Lookup As Of */
+            lookup_as_of: string | null;
+            /** Mapping Version Id */
+            mapping_version_id: string | null;
             /** Row Count */
             row_count: number | null;
             /** Scan Status */
@@ -8650,6 +8718,52 @@ export interface components {
             run_type: string;
             /** Status */
             status: string;
+        };
+        /**
+         * MappingVersionOut
+         * @description One ENT-077 version. Carries the operations VERBATIM — a mapping is meant to be readable by
+         *     a non-engineer, and "what did this mapping do?" is the question the closed vocabulary exists to
+         *     keep answerable.
+         */
+        MappingVersionOut: {
+            /** Authorship */
+            authorship: string;
+            /** Data Source Id */
+            data_source_id: string;
+            /** Id */
+            id: string;
+            /** Operations */
+            operations: {
+                [key: string]: unknown;
+            }[];
+            /** Operations Hash */
+            operations_hash: string;
+            /** Proposal Prompt Hash */
+            proposal_prompt_hash: string | null;
+            /** Proposal Prompt Ref */
+            proposal_prompt_ref: string | null;
+            /** Proposal Response Ref */
+            proposal_response_ref: string | null;
+            /** Proposed At */
+            proposed_at: string;
+            /** Proposed By Actor Id */
+            proposed_by_actor_id: string;
+            /** Proposer Model Version Id */
+            proposer_model_version_id: string | null;
+            /** Ratified At */
+            ratified_at: string | null;
+            /** Ratified By Actor Id */
+            ratified_by_actor_id: string | null;
+            /** Source Type */
+            source_type: string;
+            /** Status */
+            status: string;
+            /** Superseded At */
+            superseded_at: string | null;
+            /** Supersedes Id */
+            supersedes_id: string | null;
+            /** Version Label */
+            version_label: string;
         };
         /**
          * MarkOut
@@ -14663,6 +14777,109 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mapping_versions_ingest_mappings_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MappingVersionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_mapping_version_ingest_mappings__mapping_version_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                mapping_version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MappingVersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_batches_for_mapping_ingest_mappings__mapping_version_id__batches_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                mapping_version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchOut"][];
                 };
             };
             /** @description Validation Error */

@@ -707,6 +707,28 @@
             "title": "Id",
             "type": "string"
           },
+          "lookup_as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lookup As Of"
+          },
+          "mapping_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Version Id"
+          },
           "row_count": {
             "anyOf": [
               {
@@ -748,7 +770,9 @@
           "data_source_id",
           "row_count",
           "staged_count",
-          "failed_count"
+          "failed_count",
+          "mapping_version_id",
+          "lookup_as_of"
         ],
         "title": "BatchOut",
         "type": "object"
@@ -9327,6 +9351,165 @@
           "failure_reason"
         ],
         "title": "LiquidityRunSummaryOut",
+        "type": "object"
+      },
+      "MappingVersionOut": {
+        "description": "One ENT-077 version. Carries the operations VERBATIM \u2014 a mapping is meant to be readable by\na non-engineer, and \"what did this mapping do?\" is the question the closed vocabulary exists to\nkeep answerable.",
+        "properties": {
+          "authorship": {
+            "title": "Authorship",
+            "type": "string"
+          },
+          "data_source_id": {
+            "title": "Data Source Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "operations_hash": {
+            "title": "Operations Hash",
+            "type": "string"
+          },
+          "proposal_prompt_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Prompt Hash"
+          },
+          "proposal_prompt_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Prompt Ref"
+          },
+          "proposal_response_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Response Ref"
+          },
+          "proposed_at": {
+            "title": "Proposed At",
+            "type": "string"
+          },
+          "proposed_by_actor_id": {
+            "title": "Proposed By Actor Id",
+            "type": "string"
+          },
+          "proposer_model_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposer Model Version Id"
+          },
+          "ratified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratified At"
+          },
+          "ratified_by_actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratified By Actor Id"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "superseded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded At"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "version_label": {
+            "title": "Version Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "data_source_id",
+          "source_type",
+          "version_label",
+          "status",
+          "operations",
+          "operations_hash",
+          "authorship",
+          "proposer_model_version_id",
+          "proposal_prompt_hash",
+          "proposal_prompt_ref",
+          "proposal_response_ref",
+          "proposed_by_actor_id",
+          "proposed_at",
+          "ratified_by_actor_id",
+          "ratified_at",
+          "superseded_at",
+          "supersedes_id"
+        ],
+        "title": "MappingVersionOut",
         "type": "object"
       },
       "MarkOut": {
@@ -26856,6 +27039,279 @@
           }
         },
         "summary": "Get Batch",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingest/mappings": {
+      "get": {
+        "description": "Every mapping version visible to the caller's tenant, newest first.\n\nDeliberately NOT filtered to RATIFIED. A screen that showed only the ratified version would\nhide the proposal awaiting a human \u2014 which is the one thing an operator opens this page to\nfind.",
+        "operationId": "list_mapping_versions_ingest_mappings_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MappingVersionOut"
+                  },
+                  "title": "Response List Mapping Versions Ingest Mappings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Mapping Versions",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingest/mappings/{mapping_version_id}": {
+      "get": {
+        "operationId": "get_mapping_version_ingest_mappings__mapping_version_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mapping_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mapping Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mapping Version",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingest/mappings/{mapping_version_id}/batches": {
+      "get": {
+        "description": "The batches this version loaded \u2014 the provenance question read the other way round.\n\n404s on an unknown/hidden mapping rather than returning an empty list, so \"no batches\" and\n\"not your mapping\" stay distinguishable to the caller who is entitled to know.",
+        "operationId": "list_batches_for_mapping_ingest_mappings__mapping_version_id__batches_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mapping_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mapping Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BatchOut"
+                  },
+                  "title": "Response List Batches For Mapping Ingest Mappings  Mapping Version Id  Batches Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Batches For Mapping",
         "tags": [
           "ingestion"
         ]
