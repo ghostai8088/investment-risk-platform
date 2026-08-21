@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from irp_shared.audit.models import AuditEvent
 from irp_shared.audit.service import verify_chain
+from irp_shared.holdings import reconstruct_holdings_as_of
 from irp_shared.ingest_mapping import operations as ops
 from irp_shared.ingest_mapping.errors import (
     CastRefusedError,
@@ -78,7 +79,7 @@ from irp_shared.lineage.service import register_data_source
 from irp_shared.model.service import register_model, register_model_version
 from irp_shared.portfolio.portfolio import create_portfolio
 from irp_shared.portfolio.service import PortfolioActor
-from irp_shared.position import PositionActor
+from irp_shared.position import PositionActor, create_position
 from irp_shared.position.models import Position
 from irp_shared.reference.identifier import create_identifier_xref
 from irp_shared.reference.instrument import create_instrument
@@ -1899,3 +1900,67 @@ def test_supersedes_cannot_reach_into_ANOTHER_tenant(session: Session) -> None:
             actor_id=PROPOSER,
             supersedes_id=theirs.id,
         )
+
+
+def test_the_HOLDINGS_READ_carries_the_mapping_provenance(session: Session) -> None:
+    """Rule 7's read half for clause (2): the binding is not merely stored, it is READABLE.
+
+    A provenance column nothing surfaces is provenance nobody can check. This drives the REAL as-of
+    reader — `reconstruct_holdings_as_of` — rather than re-querying `position`, because the question
+    is whether an operator looking at the book can see which mapping produced each line.
+
+    The hand-captured row in the same book is asserted NULL in the same call. That is the half a
+    one-row fixture cannot show: a read that hard-coded the mapping id, or that back-filled it from
+    the most recent mapping, would pass on a book where every row came from one file.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    portfolio, instrument = _book(session, tenant)
+    mapping = _ratified(session, tenant, source_id)
+    load_batch(
+        session,
+        batch=_batch(session, tenant, source_id, [_row()]),
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    # ...and one holding captured BY HAND, which has no mapping version and must read back as None.
+    other = create_instrument(
+        session,
+        tenant_id=tenant,
+        code="BP-LN",
+        name="BP plc",
+        asset_class="EQUITY",
+        actor=ReferenceActor(actor_id="ops"),
+        currency_code="GBP",
+    )
+    session.flush()
+    hand = create_position(
+        session,
+        acting_tenant=tenant,
+        portfolio_id=portfolio,
+        instrument_id=other.id,
+        quantity=Decimal("500"),
+        valid_from=datetime(2026, 7, 31, tzinfo=UTC),
+        actor=PositionActor(actor_id="ops"),
+    )
+    session.flush()
+
+    rows = reconstruct_holdings_as_of(
+        session,
+        acting_tenant=tenant,
+        portfolio_id=portfolio,
+        valid_at=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    by_id = {r.position_id: r for r in rows}
+    loaded = [r for r in rows if r.position_id != hand.id]
+    assert loaded, "the loaded holding is not in the as-of read at all"
+    assert all(r.mapping_version_id == mapping.id for r in loaded), (
+        "the as-of holdings read does not carry the mapping version — clause (2)'s binding is "
+        "stored but unreadable, which is provenance nobody can check"
+    )
+    assert by_id[hand.id].mapping_version_id is None, (
+        "a HAND-captured holding reads back with a mapping version — the read is inventing "
+        "provenance, which is worse than none because a reader cannot tell it from a real record"
+    )
+    assert instrument is not None

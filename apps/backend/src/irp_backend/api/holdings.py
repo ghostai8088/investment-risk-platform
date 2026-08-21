@@ -67,6 +67,10 @@ class HoldingOut(BaseModel):
     quantity_unit: str | None
     cost_basis: Decimal | None
     position_source: str | None
+    #: W19-S3b (REQ-INT-001 clause 2, the read half). A STRING id, never a number: `HoldingOut` is
+    #: inside `decimal-contract.ts`'s curated key set, so a `number` field here fails tsc across the
+    #: whole guards program. It is also the honest type — it is a UUID.
+    mapping_version_id: str | None
     valid_from: datetime
     valid_to: datetime | None
     system_from: datetime
@@ -112,6 +116,7 @@ def _holding_out(holding: HoldingRow, mark=None) -> HoldingOut:  # noqa: ANN001 
         quantity_unit=holding.quantity_unit,
         cost_basis=holding.cost_basis,
         position_source=holding.position_source,
+        mapping_version_id=holding.mapping_version_id,
         valid_from=holding.valid_from,
         valid_to=holding.valid_to,
         system_from=holding.system_from,

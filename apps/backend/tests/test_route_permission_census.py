@@ -81,10 +81,17 @@ UNROUTED_FORWARD_GATES: dict[str, str] = {
 # READS ONLY — the propose/ratify verbs land at S3b with their own minted codes (DS3a-1), so all
 # three sit behind the existing `data.upload` rather than a governed act sharing an upload code.
 # +3 W19-S3b: POST /ingest/mappings (propose), POST .../ratify, POST .../withdraw. The three S3a
-# READS also MOVED from  onto the new  code — a re-gating, not a
-# count change, so it does not appear in this arithmetic. Re-derived rather than incremented: this
-# comment block had its sum repaired once already at the Wave-18 close.
-EXPECTED_ROUTE_COUNT = 314  # W19-S3b: +3 mapping lifecycle verbs (ENT-078, REQ-INT-001 clause 6)
+# READS also MOVED from `data.upload` onto the new `ingest.mapping.view` code — a re-gating, not a
+# count change, so it does not appear in this arithmetic. (Those two backticked names were EMPTY in
+# this comment for one commit: the block was written through a shell heredoc and the backticks were
+# eaten as command substitution. Same class as the standing rule against backticks in `git commit
+# -m`, in a place the rule did not name.)
+# +1 W19-S3b: GET /lineage/targets/{type}/{id} — the by-target lineage read. `/lineage` had exactly
+# one endpoint, keyed on an edge id NO endpoint returned and NO listing produced: a surface that was
+# live, permission-gated, in `API_PREFIXES` and the nginx alternation, and unreachable in practice.
+# Re-derived rather than incremented: this comment block had its sum repaired once already at the
+# Wave-18 close.
+EXPECTED_ROUTE_COUNT = 315  # W19-S3b: +3 mapping lifecycle verbs, +1 by-target lineage read
 
 
 def _api_routes(routes: Any) -> Iterator[APIRoute]:

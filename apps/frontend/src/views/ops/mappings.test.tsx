@@ -228,3 +228,106 @@ describe("Mappings — the POSITIVE branches", () => {
     expect(screen.queryByText(/not recorded/)).toBeNull();
   });
 });
+
+// --- W19-S3b: the checker's decision, the re-gating, and the by-target lineage cell -------------
+
+const BATCH = {
+  id: "b1",
+  status: "COMPLETED",
+  filename: "custodian_positions_2026-07-31.csv",
+  staged_count: 4,
+  lookup_as_of: "2026-08-21T09:00:00+00:00",
+  mapping_version_id: "m1",
+};
+
+const EDGE = {
+  id: "e1",
+  source_type: "data_source",
+  source_id: "ds1",
+  target_entity_type: "ingestion_batch",
+  target_entity_id: "b1",
+  edge_kind: "ORIGIN",
+  run_id: null,
+};
+
+/** Route a stub by URL shape: the detail, its batches, and the lineage of each batch. */
+function detailRoutes(version: unknown, batches: unknown[], lineage: unknown) {
+  return (url: string): unknown => {
+    if (url.includes("/lineage/targets/")) return lineage;
+    if (url.endsWith("/batches")) return batches;
+    return version;
+  };
+}
+
+function renderDetailAt(payload: (url: string) => unknown): string[] {
+  const seen = stubJson(payload);
+  render(
+    <MemoryRouter initialEntries={["/ops/mappings/m1"]}>
+      <Routes>
+        <Route path="/ops/mappings/:mappingId" element={<MappingDetail session={SESSION} />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  return seen;
+}
+
+describe("MappingDetail — the checker's decision (W19-S3b)", () => {
+  it("offers ratify and withdraw on a PROPOSED version, and NO reject verb", async () => {
+    renderDetailAt(detailRoutes(PROPOSED, [], { edges: [], truncated: false }));
+
+    expect(await screen.findByRole("button", { name: /Ratify this version/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Withdraw my proposal/ })).toBeTruthy();
+    // A checker's refusal to ratify is INACTION — there is deliberately no reject verb anywhere,
+    // and the ENT-075 review struck exactly this shape when it deleted REJECTED.
+    expect(screen.queryByRole("button", { name: /Reject/i })).toBeNull();
+  });
+
+  it("hides the decision entirely once the version is no longer PROPOSED", async () => {
+    const ratified = {
+      ...PROPOSED,
+      status: "RATIFIED",
+      ratified_by_actor_id: "risk.manager@demo",
+      ratified_at: "2026-08-21T10:00:00+00:00",
+    };
+    renderDetailAt(detailRoutes(ratified, [], { edges: [], truncated: false }));
+
+    expect(await screen.findByText(/RATIFIED — files load through this version/)).toBeTruthy();
+    // Both verbs are gone: they are the only two acts a PROPOSED version admits, and offering a
+    // button whose only outcome is a 409 teaches an operator to ignore refusals.
+    expect(screen.queryByRole("button", { name: /Ratify this version/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Withdraw my proposal/ })).toBeNull();
+  });
+
+  it("will not let a withdrawal be submitted without a reason", async () => {
+    renderDetailAt(detailRoutes(PROPOSED, [], { edges: [], truncated: false }));
+
+    const withdraw = await screen.findByRole("button", { name: /Withdraw my proposal/ });
+    // Disabled with the reason box empty — so the backend's 422 is never an operator's first
+    // sight of the rule. Ratify has no such requirement: a reason there is optional metadata.
+    expect(withdraw.hasAttribute("disabled")).toBe(true);
+    expect(
+      screen.getByRole("button", { name: /Ratify this version/ }).hasAttribute("disabled"),
+    ).toBe(false);
+  });
+});
+
+describe("MappingDetail — the by-target lineage cell (W19-S3b)", () => {
+  it("fetches lineage BY TARGET for each loaded batch and reports what it found", async () => {
+    const seen = renderDetailAt(
+      detailRoutes(PROPOSED, [BATCH], { edges: [EDGE], truncated: false }),
+    );
+
+    expect(await screen.findByText(/1 edge · data_source/)).toBeTruthy();
+    // The endpoint that did not exist before this slice, keyed on an id the SPA actually holds.
+    // `/lineage` previously had ONE route, taking an edge id nothing produced.
+    expect(seen).toContain("/lineage/targets/ingestion_batch/b1");
+  });
+
+  it("says 'no lineage recorded' rather than rendering a blank", async () => {
+    renderDetailAt(detailRoutes(PROPOSED, [BATCH], { edges: [], truncated: false }));
+
+    // Honest-empty: no recorded origin for a LOADED batch is a real finding about the batch, and a
+    // blank cell reads as "nothing to say here".
+    expect(await screen.findByText(/no lineage recorded/)).toBeTruthy();
+  });
+});

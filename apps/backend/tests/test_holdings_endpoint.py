@@ -306,3 +306,24 @@ def test_no_write_methods_on_holdings_path(ctx) -> None:  # noqa: ANN001
             f"/portfolios/{ctx['root']}/holdings", headers=_h(ctx["full"])
         )
         assert r.status_code == 405, f"{method} should be 405, got {r.status_code}"
+
+
+def test_the_holdings_dto_exposes_the_mapping_binding(ctx) -> None:  # noqa: ANN001
+    """W19-S3b (REQ-INT-001 clause 2, the read half) — the field is PRESENT and honest.
+
+    These fixture holdings were captured by hand, so the honest answer is `None`. Asserting the KEY
+    exists and its value is null is the whole point: a DTO that omitted the key entirely would look
+    identical to a caller doing `body["holdings"][0].get("mapping_version_id")`, and the loaded-book
+    direction is proven against the real as-of reader in
+    `test_ingest_mapping.py::test_the_HOLDINGS_READ_carries_the_mapping_provenance`.
+    """
+    r = ctx["client"].get(
+        f"/portfolios/{ctx['root']}/holdings", params={"valid_at": T1}, headers=_h(ctx["full"])
+    )
+    assert r.status_code == 200, r.text
+    holding = r.json()["holdings"][0]
+    assert "mapping_version_id" in holding
+    assert holding["mapping_version_id"] is None
+    # ...and it is a STRING id, never a number — `HoldingOut` is inside `decimal-contract.ts`'s
+    # curated key set, where a `number` field fails tsc across the whole guards program.
+    assert holding["mapping_version_id"] is None or isinstance(holding["mapping_version_id"], str)
