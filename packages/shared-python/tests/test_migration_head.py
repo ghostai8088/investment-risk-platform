@@ -19,7 +19,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 #: The platform's current migration head. A new migration updates THIS LINE ONLY.
-EXPECTED_MIGRATION_HEAD = "0073_declare_root_currency"  # STRUCT-4: DP-11 declared roots
+EXPECTED_MIGRATION_HEAD = "0074_ingestion_mapping_version"  # W19-S3a: ENT-077, the mapping artifact
 
 
 def _script() -> ScriptDirectory:
