@@ -167,7 +167,7 @@ in this document and the discipline lived only in the rule's prose.
 | 2 | Route census entry (routed, or a named forward-gate with reason) | `test_route_permission_census.py` — walks BOTH catalogs as of ONBOARD-1a |
 | 3 | SoD row in THIS document | reviewed at the P16 boundary |
 | 4 | `DELIVERS` (or `DELIVERS_PLATFORM`) tuple in a migration | `test_entitlement_mint_delivery.py` (P17) — walks BOTH catalogs as of ONBOARD-1a |
-| 5 | **Delivery to EXISTING tenants' role clones: a named migration, or an explicit refusal with reason** | `sync_catalog`'s report logs `tenants_missing_code`; the refusal is recorded in the mint's slice record |
+| 5 | **Delivery to EXISTING tenants' role clones: a named migration, or an explicit refusal with reason** | The migration is the tell, and the only one. **Amended at W19-S3b:** this cell cited `sync_catalog`'s report logging `tenants_missing_code` — a field `SyncReport` has never had. The one checklist row about reaching existing tenants named a mechanism that does not exist, which is worse than naming none, because a reviewer ticking the row believed something was watching. What actually exists: a migration declares a literal `DELIVERS` tuple, and `test_entitlement_mint_delivery.py` fails until the catalog is covered by the union of those declarations **and** the declaring migration calls a real delivery verb (the second half added at W19-S3b, after a mutation proved the gate accepted a declaration with no delivery behind it). |
 
 Row 5 exists because clones are copied at onboarding and catalog syncs touch SYSTEM templates
 only (post-clone drift is tenant configuration) — so a code minted after a tenant onboards

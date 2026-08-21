@@ -17,6 +17,7 @@ Unit tier, SQLite. The concurrency path is a no-op here (no advisory locks) and 
 
 from __future__ import annotations
 
+import pathlib
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -38,6 +39,8 @@ from irp_shared.entitlement.request_models import (
     ACTION_DEACTIVATE_USER,
     ACTION_GRANT_ROLE,
     ACTION_REVOKE_ROLE,
+    REQUEST_ACTIONS,
+    REQUEST_STATUSES,
     STATUS_APPROVED,
     STATUS_DIRECT,
     STATUS_PENDING,
@@ -539,3 +542,66 @@ def test_the_request_sequence_is_per_tenant_and_monotonic(session: Session, tena
         .all()
     )
     assert sorted(seqs) == [1, 2, 3]
+
+
+# --- W19-S3b: the "fails closed on a fourth" rail, FIRED --------------------------------------
+#
+# INHERITED FINDING, fixed in-slice. The Wave-19 plan's stated reason for NOT widening ENT-075 is
+# that its vocabulary fails closed on an unenumerated action. That rail had ONE raise site, no test
+# fired it, and no off-vocabulary INSERT was ever attempted — the LQ-1 class exactly: three controls
+# written, believed, and inert. W19-S3b cites the rail as its reason for building ENT-078 as a
+# separate table, so W19-S3b fires it.
+
+
+def test_an_UNENUMERATED_action_is_REFUSED_at_the_service(session: Session, tenant: str) -> None:
+    """The refusal, fired. An action nobody enumerated is an action nobody decided needed four
+    eyes, so it must fail CLOSED rather than be recorded as an act of unknown kind."""
+    lone = next(iter(_admins(session, tenant)))
+    target = _add_user(session, tenant, "newjoiner")
+
+    with pytest.raises(EntitlementError) as excinfo:
+        request_entitlement_change(
+            session,
+            tenant_id=tenant,
+            actor=AdminActor(lone),
+            action="DELETE_TENANT",  # plausible-sounding, and not in the vocabulary
+            target_user_id=target,
+            target_role_id=_role_id(session, tenant, "risk_analyst_1l"),
+            now=NOW,
+        )
+    assert "unknown entitlement action" in str(excinfo.value)
+
+    # ...and NOTHING was written. A refusal that leaves a row behind is a partial act, and on an
+    # append-only table a partial act cannot be taken back.
+    rows = (
+        session.execute(select(EntitlementRequest).where(EntitlementRequest.tenant_id == tenant))
+        .scalars()
+        .all()
+    )
+    assert not any(r.action == "DELETE_TENANT" for r in rows)
+
+
+def test_the_services_action_list_and_the_DB_vocabulary_cannot_DRIFT() -> None:
+    """The two halves of the same rail, pinned against each other.
+
+    `request_entitlement_change` enumerates the three actions LITERALLY rather than iterating
+    `REQUEST_ACTIONS`, and the migration's CHECK is built from `REQUEST_ACTIONS`. That is fine —
+    the literal is the fail-closed side — but it means the two can drift: mint a fourth action in
+    the tuple and the DB would accept it while the service still refused it, which is a state
+    nobody designed and no test would have noticed.
+    """
+    from irp_shared.entitlement import admin_service
+
+    source = pathlib.Path(admin_service.__file__).read_text()
+    guard = source.split("if action not in (")[1].split(")")[0]
+    named = {name.strip().rstrip(",") for name in guard.split() if name.strip()}
+    assert named == {"ACTION_GRANT_ROLE", "ACTION_REVOKE_ROLE", "ACTION_DEACTIVATE_USER"}, (
+        f"the service's action guard names {sorted(named)} — it has drifted from the vocabulary "
+        f"the database CHECK is built from"
+    )
+    assert len(REQUEST_ACTIONS) == 3, (
+        f"REQUEST_ACTIONS grew to {REQUEST_ACTIONS} without the service guard following it. The DB "
+        f"would accept the new action and the service would refuse it."
+    )
+    # The other vocabulary, for the same reason: NO REJECTED. A checker's refusal is inaction.
+    assert "REJECTED" not in REQUEST_STATUSES

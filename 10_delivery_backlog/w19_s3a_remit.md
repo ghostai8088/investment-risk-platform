@@ -413,9 +413,16 @@ rather than merely absent, and it leaves the hard FK exactly where the plan put 
 **DS3a-5 — NOT put to the owner; builder's call, flagged for reversal: NO.** Does S3b's `position.mapping_version_id` enter the snapshot content hash? Decide now, not
 at the S3b review. `snapshot/serialize.py::position_content` is a hand-enumerated field list, and
 adding the column would make **every** pre-S3b POSITION component drift — 294 of them in the local
-validation DB — marking historical snapshots DIVERGED in the CTRL-018 sweep. **Recommend NO**, on
+validation DB — so every historical snapshot would fail its integrity re-read. **Recommend NO**, on
 exactly the reasoning that made the S1 pinned-contract finding BLOCKING at the wave gate: a
 provenance column is not a value the reproduction is about.
+
+*CORRECTED AT W19-S3b.* This decision named **the CTRL-018 sweep** as the affected surface. It is
+not. `verify_snapshot` is called from `GET /snapshots/{id}/verify` and from nowhere else — the
+`reproduction` package never calls it and reads no snapshot content hash at all, verified by
+searching every call site rather than by reasoning about what the sweep probably does. The DECISION
+was correct and is unchanged; the citation behind it was wrong, and a right answer resting on a
+wrong reason is the shape a later slice inherits and repeats.
 
 ---
 

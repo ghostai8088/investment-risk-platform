@@ -409,13 +409,20 @@ def test_a_family_reading_the_table_directly_is_CAUGHT() -> None:
     assert result.offenders != EXPECTED_OFFENDERS
 
 
-def test_a_TWO_HOP_family_bypass_is_CAUGHT() -> None:
-    """NEGATIVE CONTROL, two-hop shape — the hole S3a's census shipped with and had to repair.
+def test_a_MULTI_HOP_family_bypass_is_CAUGHT() -> None:
+    """NEGATIVE CONTROL for the fixed point — and the FIRST version of it did not test the fixed
+    point at all, which mutation ``M-S3B-7`` proved by surviving it.
 
-    The family never names ``Position``; it calls a plainly-named helper in another module that
-    does. No single file is both, so a per-file co-occurrence check reports nothing.
-    Extract-a-helper is the most ordinary refactor there is, which is why this control is
-    permanent.
+    That version planted a TWO-hop chain: family -> helper -> ``select(Position)``. Two hops are
+    caught by the SEEDING step alone, because the helper's own body queries the table, so its name
+    is already in the raw set before a single iteration runs. Disabling the propagation loop
+    entirely left the control green. It was S3a's lesson verbatim — a control asserting against the
+    algorithm's parts rather than driving the thing itself — reproduced in the census written to
+    apply that lesson.
+
+    So the chain is THREE hops: only the middle link, which names nothing itself, requires
+    propagation to be discovered. Both depths are asserted, because the two-hop shape is the one a
+    real refactor produces and the three-hop shape is the one that proves the mechanism.
     """
     planted = {
         "irp_shared.zz_holdings_repo": (
@@ -424,21 +431,42 @@ def test_a_TWO_HOP_family_bypass_is_CAUGHT() -> None:
             "def fetch_book(session):\n"
             "    return session.execute(select(Position)).scalars().all()\n"
         ),
-        "irp_shared.zz_sneaky_family": (
+        # The MIDDLE link. It names neither `Position` nor a query — it is discovered only by
+        # following `fetch_book`, which is exactly what the fixed point is for.
+        "irp_shared.zz_book_facade": (
             "from irp_shared.zz_holdings_repo import fetch_book\n"
+            "def current_book(session):\n"
+            "    return [r for r in fetch_book(session) if r.system_to is None]\n"
+        ),
+        "irp_shared.zz_sneaky_family": (
+            "from irp_shared.zz_book_facade import current_book\n"
             "from irp_shared.calc.service import create_run\n"
             "def run_sneaky(session, tenant_id):\n"
-            "    rows = fetch_book(session)\n"
+            "    rows = current_book(session)\n"
             "    return create_run(session, tenant_id=tenant_id, run_type='SNEAKY'), rows\n"
         ),
     }
     result = census(extra=planted)
     assert "irp_shared.zz_sneaky_family" in result.families
     assert "irp_shared.zz_holdings_repo" not in result.families  # the helper mints nothing...
+    assert "irp_shared.zz_book_facade" not in result.families  # ...nor does the facade
     assert "irp_shared.zz_sneaky_family" in result.offenders, (
-        "the two-hop bypass was NOT caught — the census is back to per-file co-occurrence, which "
-        "reports an empty offender list for a genuine second source of holdings"
+        "the THREE-hop bypass was NOT caught — the reachability fixed point is not running, and a "
+        "family two refactors away from the table reports as compliant"
     )
+
+    # ...and the ordinary two-hop shape, which a real extract-a-helper produces.
+    two_hop = {
+        "irp_shared.zz_holdings_repo": planted["irp_shared.zz_holdings_repo"],
+        "irp_shared.zz_direct_family": (
+            "from irp_shared.zz_holdings_repo import fetch_book\n"
+            "from irp_shared.calc.service import create_run\n"
+            "def run_direct(session, tenant_id):\n"
+            "    rows = fetch_book(session)\n"
+            "    return create_run(session, tenant_id=tenant_id, run_type='D'), rows\n"
+        ),
+    }
+    assert "irp_shared.zz_direct_family" in census(extra=two_hop).offenders
 
 
 def test_a_family_using_the_SANCTIONED_route_is_not_an_offender() -> None:

@@ -635,6 +635,25 @@ def tenant_role_id(tenant_id: str, name: str) -> str:
 
 
 def tenant_role_permission_id(tenant_id: str, role: str, code: str) -> str:
+    """A tenant's grant id, derived from (tenant, role, THIRD ARGUMENT).
+
+    **The third argument is called ``code`` and is NOT always a code, and that divergence is live.**
+    Recorded at W19-S3b under its ratified disposition (DECLARE AND AVOID) rather than repaired,
+    because repairing it means rewriting an already-applied migration:
+
+    - ``tenancy/service.py`` and ``0068`` pass a permission **UUID**;
+    - ``0069`` passes the raw permission **CODE**.
+
+    Same (tenant, role, permission) therefore yields TWO different grant ids depending on which
+    path created it, and a tenant that acquired the grant by both paths would collide on
+    ``uq_role_permission_role_id``. No test covers the two derivations against each other.
+
+    **The convention for anything new is the UUID**, matching ``tenancy/service.py`` — the path
+    every ONBOARDED tenant takes, so it is the one already true of most rows. W19-S3b writes no
+    clone backfill at all and so touches neither; this docstring exists so the next slice that does
+    picks deliberately instead of copying whichever call site it happened to read first.
+    Repairing ``0069`` is named as a Wave-20 candidate.
+    """
     return str(uuid.uuid5(_NS, f"role_permission:{tenant_id}:{role}:{code}"))
 
 
