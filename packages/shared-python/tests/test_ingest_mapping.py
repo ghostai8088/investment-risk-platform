@@ -20,11 +20,12 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.models import AuditEvent
 from irp_shared.audit.service import verify_chain
+from irp_shared.holdings import reconstruct_holdings_as_of
 from irp_shared.ingest_mapping import operations as ops
 from irp_shared.ingest_mapping.errors import (
     CastRefusedError,
@@ -62,6 +63,7 @@ from irp_shared.ingest_mapping.models import (
     STATUS_SUPERSEDED,
     IngestionMappingVersion,
 )
+from irp_shared.ingest_mapping.ratification_models import IngestionMappingRatification
 from irp_shared.ingest_mapping.service import (
     assert_only_lifecycle_fields_change,
     canonical_operations_hash,
@@ -70,6 +72,7 @@ from irp_shared.ingest_mapping.service import (
     ratified_mapping_for,
     ratify_mapping_version,
     resolve_mapping_version,
+    withdraw_mapping_version,
 )
 from irp_shared.ingestion.models import IngestionBatch, IngestionStagedRecord
 from irp_shared.lineage.models import LineageEdge
@@ -77,7 +80,7 @@ from irp_shared.lineage.service import register_data_source
 from irp_shared.model.service import register_model, register_model_version
 from irp_shared.portfolio.portfolio import create_portfolio
 from irp_shared.portfolio.service import PortfolioActor
-from irp_shared.position import PositionActor
+from irp_shared.position import PositionActor, create_position
 from irp_shared.position.models import Position
 from irp_shared.reference.identifier import create_identifier_xref
 from irp_shared.reference.instrument import create_instrument
@@ -1475,3 +1478,676 @@ def test_the_DEMONSTRATING_mapping_itself_clears_the_clause_8_floor() -> None:
 
     kinds = declared_operation_kinds(committed_operations())
     assert len(kinds) >= 3, f"the shipped demonstrating mapping declares only {sorted(kinds)}"
+
+
+# --- W19-S3b: four-eyes as an APPEND-ONLY resolution row (ENT-078) ----------------------------
+
+
+def _resolutions(session: Session, tenant: str) -> list[IngestionMappingRatification]:
+    return list(
+        session.execute(
+            select(IngestionMappingRatification)
+            .where(IngestionMappingRatification.tenant_id == tenant)
+            .order_by(IngestionMappingRatification.seq)
+        )
+        .scalars()
+        .all()
+    )
+
+
+def test_ratifying_appends_a_resolution_row_rather_than_only_a_status(session: Session) -> None:
+    """The decision is a ROW. ENT-077's status is a projection of it, never the authority."""
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    version = _ratified(session, tenant, source_id)
+    session.flush()
+
+    rows = _resolutions(session, tenant)
+    assert [r.outcome for r in rows] == ["RATIFIED"]
+    assert rows[0].mapping_version_id == version.id
+    assert rows[0].resolved_by == RATIFIER
+    assert rows[0].seq == 1
+    # the denormalized source, without which the invariant has nothing to key on
+    assert rows[0].data_source_id == source_id
+    assert rows[0].source_type == SOURCE_TYPE_POSITIONS
+
+
+def test_a_resolution_row_cannot_be_edited(session: Session) -> None:
+    """The one property that matters here. A decision that can be edited after the fact is not
+    evidence of a decision — the ENT-075 lesson, applied rather than re-learned."""
+    from irp_shared.audit.models import AppendOnlyViolation
+
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _ratified(session, tenant, source_id)
+    session.flush()
+    row = _resolutions(session, tenant)[0]
+    row.outcome = "WITHDRAWN"
+    with pytest.raises(AppendOnlyViolation):
+        session.flush()
+    session.rollback()
+
+
+def test_the_load_gate_reads_the_RESOLUTION_not_the_status(session: Session) -> None:
+    """The re-pointing, proven the only way that means anything: force ENT-077's status to RATIFIED
+    with NO resolution row behind it, and the load must still refuse.
+
+    Without this the append-only table would be evidence nobody consults — a governance record
+    placed beside the real gate instead of in front of it.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _book(session, tenant)
+    version = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v1",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    session.flush()
+    # the shape a non-ORM UPDATE produces: the projection says RATIFIED, nobody decided anything
+    session.execute(
+        text("UPDATE ingestion_mapping_version SET status = 'RATIFIED' WHERE id = :i"),
+        {"i": version.id},
+    )
+    session.flush()
+    assert not _resolutions(session, tenant)
+
+    batch = _batch(session, tenant, source_id, [_row()])
+    with pytest.raises(UnratifiedMappingError):
+        load_batch(
+            session,
+            batch=batch,
+            acting_tenant=tenant,
+            actor=PositionActor(actor_id="ops"),
+            source_type=SOURCE_TYPE_POSITIONS,
+        )
+
+
+def test_supersession_is_its_own_appended_fact_and_the_latest_row_governs(
+    session: Session,
+) -> None:
+    """The invariant, enforced structurally rather than by an index.
+
+    On an append-only log the incumbent's ratification is still there after it is superseded, so
+    "is there a RATIFIED row" is true forever once it has been true once. The current decision is
+    the LAST one made, and the seq uniqueness makes that unique by construction.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    v1 = _ratified(session, tenant, source_id)
+    v2 = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v2",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+        supersedes_id=v1.id,
+    )
+    ratify_mapping_version(
+        session, mapping_version_id=v2.id, acting_tenant=tenant, actor_id=RATIFIER
+    )
+    session.flush()
+
+    rows = _resolutions(session, tenant)
+    assert [r.outcome for r in rows] == ["RATIFIED", "SUPERSEDED", "RATIFIED"]
+    assert [r.seq for r in rows] == [1, 2, 3]
+    # v1's ORIGINAL ratification is still on the log — it happened, and it is not erased
+    assert rows[0].mapping_version_id == v1.id
+    assert rows[1].mapping_version_id == v1.id  # the supersession, as its own fact
+    assert rows[2].mapping_version_id == v2.id
+    # ...and the gate follows the LATEST row
+    current = ratified_mapping_for(
+        session,
+        acting_tenant=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    assert current.id == v2.id
+
+
+def test_the_seq_is_monotonic_per_tenant_and_does_not_leak_across_tenants(
+    session: Session,
+) -> None:
+    """A DB-monotonic ordering key, because a wall clock ties and two ratifiers acting in the same
+    millisecond is exactly what this table adjudicates."""
+    tenant_a, tenant_b = _tenant(), _tenant()
+    _ratified(session, tenant_a, _source(session, tenant_a))
+    _ratified(session, tenant_b, _source(session, tenant_b, code="OTHER"))
+    session.flush()
+    assert [r.seq for r in _resolutions(session, tenant_a)] == [1]
+    assert [r.seq for r in _resolutions(session, tenant_b)] == [1]
+
+
+# --- the withdraw verb (DS3b-6) ----------------------------------------------------------------
+
+
+def test_the_proposer_can_withdraw_their_own_proposal(session: Session) -> None:
+    """`STATUS_WITHDRAWN` was declared at S3a with no path producing it — the inert-state class the
+    ENT-075 review struck when it deleted REJECTED. This is the verb that makes it real."""
+    from irp_shared.ingest_mapping.models import STATUS_WITHDRAWN
+    from irp_shared.ingest_mapping.service import withdraw_mapping_version
+
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    version = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v1",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    withdrawn = withdraw_mapping_version(
+        session,
+        mapping_version_id=version.id,
+        acting_tenant=tenant,
+        actor_id=PROPOSER,
+        reason="the custodian re-issued the file with different headers",
+    )
+    session.flush()
+    assert withdrawn.status == STATUS_WITHDRAWN
+    rows = _resolutions(session, tenant)
+    assert [r.outcome for r in rows] == ["WITHDRAWN"]
+    assert rows[0].reason.startswith("the custodian")
+
+
+def test_a_third_party_cannot_withdraw_someone_elses_proposal(session: Session) -> None:
+    """Withdrawal is the PROPOSER's own act. Letting a third party do it would be a rejection verb
+    wearing a withdrawal's name — and this platform deliberately has no rejection verb, because a
+    checker's refusal to ratify is inaction."""
+    from irp_shared.ingest_mapping.errors import NotTheProposerError
+    from irp_shared.ingest_mapping.service import withdraw_mapping_version
+
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    proposer = str(uuid.uuid4())
+    version = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v1",
+        operations=list(DEMO_OPS),
+        actor_id=proposer,
+    )
+    with pytest.raises(NotTheProposerError):
+        withdraw_mapping_version(
+            session,
+            mapping_version_id=version.id,
+            acting_tenant=tenant,
+            actor_id=str(uuid.uuid4()),
+            reason="not mine to withdraw",
+        )
+    # ...and the UPPERCASE spelling of the proposer's OWN id is still the proposer (the S3a vector)
+    ok = withdraw_mapping_version(
+        session,
+        mapping_version_id=version.id,
+        acting_tenant=tenant,
+        actor_id=proposer.upper(),
+        reason="mine, spelled differently",
+    )
+    assert ok.status == "WITHDRAWN"
+
+
+def test_a_withdrawn_version_cannot_load_and_cannot_be_ratified(session: Session) -> None:
+    """The alternate-path half: a gate that fires only in the obvious state is not a control."""
+    from irp_shared.ingest_mapping.service import withdraw_mapping_version
+
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _book(session, tenant)
+    version = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v1",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    withdraw_mapping_version(
+        session,
+        mapping_version_id=version.id,
+        acting_tenant=tenant,
+        actor_id=PROPOSER,
+        reason="withdrawn",
+    )
+    session.flush()
+    with pytest.raises(MappingLifecycleError):
+        ratify_mapping_version(
+            session, mapping_version_id=version.id, acting_tenant=tenant, actor_id=RATIFIER
+        )
+    batch = _batch(session, tenant, source_id, [_row()])
+    with pytest.raises(UnratifiedMappingError):
+        load_batch(
+            session,
+            batch=batch,
+            acting_tenant=tenant,
+            actor=PositionActor(actor_id="ops"),
+            source_type=SOURCE_TYPE_POSITIONS,
+        )
+
+
+# --- W19-S3b: the position FK, and the trap on BOTH sides of it --------------------------------
+
+
+def test_a_loaded_row_binds_its_mapping_version(session: Session) -> None:
+    """Clause (2), the position half, on a first capture."""
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _book(session, tenant)
+    mapping = _ratified(session, tenant, source_id)
+    batch = _batch(session, tenant, source_id, [_row()])
+    load_batch(
+        session,
+        batch=batch,
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    session.flush()
+    assert _open_head(session).mapping_version_id == mapping.id
+
+
+def test_the_binding_SURVIVES_a_second_file(session: Session) -> None:
+    """THE trap, and it would have shipped silently.
+
+    The FR binders build each new version from `{**carried, **new_fields}` where `carried` is
+    exactly `POSITION_FIELDS`. A column outside that set is dropped to NULL on every supersede and
+    every correction — and `load_batch` issues BOTH verbs. So a naive column is populated on first
+    capture and NULL on every subsequent load of the same holding: a provenance FK that vanishes
+    exactly when the second file arrives.
+
+    A ONE-file load cannot see this. That is why this test loads TWO.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _book(session, tenant)
+    v1 = _ratified(session, tenant, source_id)
+    load_batch(
+        session,
+        batch=_batch(session, tenant, source_id, [_row()]),
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    session.flush()
+    assert _open_head(session).mapping_version_id == v1.id
+
+    # a LATER-dated file supersedes — the verb that would have nulled the column
+    load_batch(
+        session,
+        batch=_batch(session, tenant, source_id, [_row(qty="14.0", as_at="31/08/2026")]),
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    session.flush()
+    head = _open_head(session)
+    assert head.quantity == Decimal("14000.0")
+    assert head.mapping_version_id == v1.id, (
+        "the mapping binding was dropped on supersede — the column is outside POSITION_FIELDS, so "
+        "it is NOT carried and must be stamped explicitly per verb"
+    )
+
+
+def test_a_MANUAL_supersede_does_NOT_inherit_a_mapping_version(session: Session) -> None:
+    """The MIRROR trap, and it is the reason membership in `POSITION_FIELDS` is not the fix.
+
+    Inside that set the column would carry forward blindly, so a hand-typed supersede of a
+    file-loaded holding would inherit a mapping version that never produced it — DS3a-4's
+    false-provenance class re-entering by the other door. Worse than no attribution, because a
+    reader cannot tell it from a real one.
+
+    A two-file load cannot prove this direction: every row a load writes goes through the
+    interpreter. It needs a manual binder call, which is what this is.
+    """
+    from irp_shared.position import supersede_position
+
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    portfolio_id, instrument_id = _book(session, tenant)
+    mapping = _ratified(session, tenant, source_id)
+    load_batch(
+        session,
+        batch=_batch(session, tenant, source_id, [_row()]),
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    session.flush()
+    assert _open_head(session).mapping_version_id == mapping.id  # positive control
+
+    manual = supersede_position(
+        session,
+        portfolio_id=portfolio_id,
+        instrument_id=instrument_id,
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="a.human"),
+        effective_at=datetime(2026, 9, 30, tzinfo=UTC),
+        quantity=Decimal("999.0"),
+    )
+    session.flush()
+    assert manual.mapping_version_id is None, (
+        "a hand-typed supersede inherited a mapping version that never produced it — the "
+        "false-provenance class, which is worse than no attribution"
+    )
+
+
+def test_the_position_content_hash_does_NOT_carry_the_mapping_binding() -> None:
+    """A frozen key-set pin, because `position_content` had none.
+
+    `var_result_content` has such a pin and this one did not, so the next slice to "complete" the
+    serializer would redden every POSITION component in every seeded database — measured, not
+    reasoned: every component currently re-serializes to its stored hash, and adding this key with
+    a NULL value breaks all of them across a third of the snapshots.
+
+    *The affected surface is `verify_snapshot`, NOT the CTRL-018 sweep* — S3a's records named the
+    sweep, which does not read snapshot content hashes at all. Right conclusion, wrong mechanism,
+    corrected here and in the S3b remit's Part 0.
+    """
+    from irp_shared.snapshot.serialize import position_content
+
+    tenant = _tenant()
+    row = Position(
+        tenant_id=tenant,
+        portfolio_id=str(uuid.uuid4()),
+        instrument_id=str(uuid.uuid4()),
+        quantity=Decimal("1"),
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        system_from=datetime(2026, 1, 1, tzinfo=UTC),
+        record_version=1,
+    )
+    keys = set(position_content(row))
+    assert "mapping_version_id" not in keys, (
+        "the mapping binding entered the snapshot content hash — every previously stored POSITION "
+        "component would now fail verify_snapshot"
+    )
+    assert "position_source" in keys  # the key set is real, so the absence above is meaningful
+
+
+def test_supersedes_cannot_reach_into_ANOTHER_tenant(session: Session) -> None:
+    """A cross-tenant `supersedes_id` is refused at PROPOSAL, not admitted by the FK.
+
+    This was a live defect until W19-S3b. `propose_mapping_version` re-resolved
+    `proposer_model_version_id` tenant-filtered with a docstring explaining that PostgreSQL
+    evaluates FK checks BYPASSING RLS — and then stamped `supersedes_id`, the self-FK sitting three
+    lines below it, with no check at all. The constraint would have accepted another tenant's
+    version id and the row would have durably recorded a cross-tenant reference that every read
+    showing lineage would have repeated as fact.
+
+    NEGATIVE by construction: delete the `resolve_mapping_version` call in `propose_mapping_version`
+    and this test fails, because nothing else in the write path looks at the value.
+    """
+    tenant_a, tenant_b = _tenant(), _tenant()
+    theirs = _ratified(session, tenant_b, _source(session, tenant_b, code="THEIRS"))
+    session.flush()
+
+    with pytest.raises(MappingNotVisible):
+        propose_mapping_version(
+            session,
+            tenant_id=tenant_a,
+            data_source_id=_source(session, tenant_a),
+            source_type=SOURCE_TYPE_POSITIONS,
+            version_label="v1",
+            operations=list(DEMO_OPS),
+            actor_id=PROPOSER,
+            supersedes_id=theirs.id,
+        )
+
+
+def test_the_HOLDINGS_READ_carries_the_mapping_provenance(session: Session) -> None:
+    """Rule 7's read half for clause (2): the binding is not merely stored, it is READABLE.
+
+    A provenance column nothing surfaces is provenance nobody can check. This drives the REAL as-of
+    reader — `reconstruct_holdings_as_of` — rather than re-querying `position`, because the question
+    is whether an operator looking at the book can see which mapping produced each line.
+
+    The hand-captured row in the same book is asserted NULL in the same call. That is the half a
+    one-row fixture cannot show: a read that hard-coded the mapping id, or that back-filled it from
+    the most recent mapping, would pass on a book where every row came from one file.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    portfolio, instrument = _book(session, tenant)
+    mapping = _ratified(session, tenant, source_id)
+    load_batch(
+        session,
+        batch=_batch(session, tenant, source_id, [_row()]),
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    # ...and one holding captured BY HAND, which has no mapping version and must read back as None.
+    other = create_instrument(
+        session,
+        tenant_id=tenant,
+        code="BP-LN",
+        name="BP plc",
+        asset_class="EQUITY",
+        actor=ReferenceActor(actor_id="ops"),
+        currency_code="GBP",
+    )
+    session.flush()
+    hand = create_position(
+        session,
+        acting_tenant=tenant,
+        portfolio_id=portfolio,
+        instrument_id=other.id,
+        quantity=Decimal("500"),
+        valid_from=datetime(2026, 7, 31, tzinfo=UTC),
+        actor=PositionActor(actor_id="ops"),
+    )
+    session.flush()
+
+    rows = reconstruct_holdings_as_of(
+        session,
+        acting_tenant=tenant,
+        portfolio_id=portfolio,
+        valid_at=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    by_id = {r.position_id: r for r in rows}
+    loaded = [r for r in rows if r.position_id != hand.id]
+    assert loaded, "the loaded holding is not in the as-of read at all"
+    assert all(r.mapping_version_id == mapping.id for r in loaded), (
+        "the as-of holdings read does not carry the mapping version — clause (2)'s binding is "
+        "stored but unreadable, which is provenance nobody can check"
+    )
+    assert by_id[hand.id].mapping_version_id is None, (
+        "a HAND-captured holding reads back with a mapping version — the read is inventing "
+        "provenance, which is worse than none because a reader cannot tell it from a real record"
+    )
+    assert instrument is not None
+
+
+def test_an_unrelated_WITHDRAWAL_does_not_shadow_a_live_ratification(session: Session) -> None:
+    """THE BLOCKING defect this slice shipped, found by a different-engine review and reproduced.
+
+    Two PROPOSED versions may legitimately coexist for one source — ENT-077's partial unique index
+    restricts only RATIFIED rows, and a competing draft is the ordinary case. So:
+
+      1. Y is proposed and ratified. It governs the source.
+      2. Z is proposed for the SAME source. Legal; Y still governs.
+      3. Z's PROPOSER withdraws Z. An ordinary single-actor act with no lifecycle violation.
+
+    Before the fix, step 3 appended a WITHDRAWN row that outranked Y's RATIFIED row, because the
+    "latest row wins" rule had no outcome filter — and a withdrawal is a decision about a PROPOSAL,
+    not about which version governs a source. Every load for that source then refused, with Y still
+    literally RATIFIED. A routine "I changed my mind" became an ingestion outage.
+
+    The root cause was one rule written out twice, which is why the fix is one shared helper.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    y = _ratified(session, tenant, source_id)
+    session.flush()
+
+    z = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="Z-competing-draft",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    session.flush()
+    withdraw_mapping_version(
+        session,
+        mapping_version_id=z.id,
+        acting_tenant=tenant,
+        actor_id=PROPOSER,
+        reason="changed my mind",
+    )
+    session.flush()
+
+    still = ratified_mapping_for(
+        session,
+        acting_tenant=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    assert still.id == y.id, (
+        "withdrawing an unrelated draft made the source read back as ungoverned while its ratified "
+        "mapping was untouched — every load for the source would refuse"
+    )
+    # ...and the resolution log still records the withdrawal. It is filtered from the GOVERNANCE
+    # question, not erased: an append-only log that dropped facts would be a different defect.
+    assert [r.outcome for r in _resolutions(session, tenant)] == ["RATIFIED", "WITHDRAWN"]
+
+
+def test_a_ratification_AFTER_an_unrelated_withdrawal_still_supersedes(session: Session) -> None:
+    """The SECOND face of the same root cause, and it fails differently — which is why it is its
+    own test rather than an extra assertion above.
+
+    `ratify_mapping_version` finds the incumbent to supersede by the same latest-row rule. With a
+    WITHDRAWN row on top it found NO incumbent, skipped the supersede, and the new ratification then
+    collided with ENT-077's partial unique index: a governed act raising a raw `IntegrityError`
+    instead of superseding cleanly. A test that only checked the load gate would have passed while
+    this stayed broken.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    y = _ratified(session, tenant, source_id)
+    z = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="Z-competing-draft",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    session.flush()
+    withdraw_mapping_version(
+        session, mapping_version_id=z.id, acting_tenant=tenant, actor_id=PROPOSER, reason="no"
+    )
+    session.flush()
+
+    w = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="W",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    ratify_mapping_version(
+        session, mapping_version_id=w.id, acting_tenant=tenant, actor_id=RATIFIER
+    )
+    session.flush()
+
+    # EXACTLY ONE version is RATIFIED for this source — the invariant ENT-078 owns.
+    live = (
+        session.execute(
+            select(IngestionMappingVersion).where(
+                IngestionMappingVersion.tenant_id == tenant,
+                IngestionMappingVersion.data_source_id == source_id,
+                IngestionMappingVersion.status == STATUS_RATIFIED,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [v.version_label for v in live] == ["W"], (
+        f"expected W alone to be RATIFIED, found {sorted(v.version_label for v in live)} — the "
+        f"incumbent was not superseded, so the source has two current mappings or none"
+    )
+    assert session.get(IngestionMappingVersion, y.id).status == STATUS_SUPERSEDED
+    assert (
+        ratified_mapping_for(
+            session,
+            acting_tenant=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+        ).id
+        == w.id
+    )
+
+
+def test_a_source_whose_LATEST_governing_row_is_a_SUPERSESSION_cannot_load(
+    session: Session,
+) -> None:
+    """The fail-closed arm of the load gate, FIRED (P9).
+
+    `ratified_mapping_for` refuses when the latest governing row is not a ratification. After the
+    `GOVERNING_OUTCOMES` fix, no service verb produces that state: `ratify_mapping_version` appends
+    the SUPERSEDED row and the replacement's RATIFIED row in one transaction, so the supersession is
+    never last. Mutation `M-S3B-2` deleting the check therefore SURVIVED — not because the check is
+    wrong, but because nothing had ever put the platform in the state it guards.
+
+    The state is constructed here at the table, which is the same idiom the DB-constraint tests use:
+    a guard whose input no test builds is a guard nobody has seen work. It is reachable in practice
+    by any future verb that retires a mapping without replacing it, and by any non-ORM write.
+
+    A mapping that WAS ratified and has been retired must not keep governing loads — "there is a
+    RATIFIED row somewhere in the log" is true forever once it has been true once.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    v1 = _ratified(session, tenant, source_id)
+    session.flush()
+    assert (
+        ratified_mapping_for(
+            session,
+            acting_tenant=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+        ).id
+        == v1.id
+    )
+
+    # Retire it with NO replacement — the state the service does not currently produce.
+    session.add(
+        IngestionMappingRatification(
+            tenant_id=tenant,
+            seq=99,
+            mapping_version_id=v1.id,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+            outcome="SUPERSEDED",
+            resolved_by=RATIFIER,
+            resolved_at=datetime(2026, 8, 21, tzinfo=UTC),
+            reason="retired, nothing put in its place",
+        )
+    )
+    session.flush()
+
+    with pytest.raises(UnratifiedMappingError):
+        ratified_mapping_for(
+            session,
+            acting_tenant=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+        )
+    # ...and the earlier ratification is still ON the log. It is not the CURRENT decision; it is
+    # still a fact. Filtering the governance question is not erasing history.
+    assert [r.outcome for r in _resolutions(session, tenant)] == ["RATIFIED", "SUPERSEDED"]

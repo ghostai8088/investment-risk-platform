@@ -19,7 +19,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 #: The platform's current migration head. A new migration updates THIS LINE ONLY.
-EXPECTED_MIGRATION_HEAD = "0075_bind_batch_to_mapping"  # W19-S3a: the INGEST-1 mapping spine
+EXPECTED_MIGRATION_HEAD = "0077_bind_position_to_mapping"  # W19-S3b: position binds its mapping
 
 
 def _script() -> ScriptDirectory:

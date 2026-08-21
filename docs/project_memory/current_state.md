@@ -70,8 +70,12 @@ the existing edge unchanged, and the remit's verification killed it by reading t
 ### Carried into S3b, by name
 
 Clause (2)'s per-`position` FK (a migration over a table populated since `0014`; **decided now, not
-at the S3b review: it does NOT enter `position_content`'s hash**, because adding it would mark every
-pre-S3b POSITION component DIVERGED in the CTRL-018 sweep) · clause (6)'s R-07 ratifier mint with
+at the S3b review: it does NOT enter `position_content`'s hash**, because adding it would break the
+stored hash of every pre-S3b POSITION component. *The DECISION was right and is unchanged; the
+REASON named the wrong surface, corrected at S3b: the affected surface is `verify_snapshot` /
+`GET /snapshots/{id}/verify`, **not** the CTRL-018 sweep. `verify_snapshot` is called from that
+endpoint and nowhere else — the reproduction package never calls it and reads no snapshot content
+hash at all. Measured, not reasoned, in both directions.*) · clause (6)'s R-07 ratifier mint with
 its P11 holder-set pin, route census and SoD row · the `withdraw` verb (`STATUS_WITHDRAWN` is
 declared and RESERVED; no verb reaches it) · `code-lookup` is scoped to `identifier_xref`
 (instruments) because it is the platform's only as-of-capable resolver, so a MULTI-ACCOUNT file

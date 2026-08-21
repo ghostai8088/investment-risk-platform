@@ -25,7 +25,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.pool import NullPool
 
 from irp_shared.db.session import make_engine, make_session_factory
@@ -366,4 +366,75 @@ def test_a_resolved_request_cannot_be_approved_TWICE(factory) -> None:  # noqa: 
             )
     finally:
         session.rollback()
+        session.close()
+
+
+def test_an_UNENUMERATED_action_is_REFUSED_at_the_DATABASE(factory) -> None:  # noqa: ANN001
+    """The other half of the "fails closed on a fourth" rail — the CHECK, fired.
+
+    INHERITED FINDING, fixed at W19-S3b. The Wave-19 plan's reason for not widening ENT-075 is that
+    its vocabulary fails closed. That rail had one raise site in the service, no test firing it, and
+    NO off-vocabulary INSERT ever attempted. A CHECK constraint does not exist on SQLite in this
+    setup, so the service test cannot make this claim: only PostgreSQL can say whether the database
+    would refuse a row the service never constructs.
+
+    Attempted as RAW SQL on purpose. Going through `request_entitlement_change` would be stopped by
+    the service guard and prove nothing about the constraint — and the whole point of a DB CHECK is
+    what happens when something reaches the table WITHOUT the service.
+    """
+    tid, role_id, one, two = _seed_two_admins(factory)
+    session = factory()
+    try:
+        set_tenant_context(session, tid)
+        with pytest.raises(IntegrityError) as caught:
+            session.execute(
+                text(
+                    "INSERT INTO entitlement_request "
+                    "(id, tenant_id, system_from, seq, action, status, requested_by, "
+                    " requested_at, target_user_id) "
+                    "VALUES (:i, :t, now(), 9999, 'DELETE_TENANT', 'PENDING', :a, now(), :u)"
+                ),
+                {"i": str(uuid.uuid4()), "t": tid, "a": one, "u": two},
+            )
+            session.flush()
+        assert "ck_entitlement_request_action" in str(caught.value), (
+            f"the row was refused, but not by the ACTION check: {caught.value}. A refusal by some "
+            f"other constraint would leave the vocabulary rail still unfired."
+        )
+        session.rollback()
+
+        # The STATUS arm fails closed too — but NOT by the constraint anyone would name, and the
+        # difference was found by this test's own assertion refusing to accept a lookalike.
+        #
+        # `ck_entitlement_request_status` is SHADOWED. `ck_entitlement_request_resolution_link`
+        # reads `(resolves_request_id IS NULL AND status IN ('PENDING','DIRECT')) OR
+        # (resolves_request_id IS NOT NULL AND status = 'APPROVED')`, so ANY unenumerated status
+        # fails BOTH arms of it whatever else the row says, and PostgreSQL reports that constraint
+        # first. There is no row shape that isolates the status vocabulary check.
+        #
+        # Recorded rather than papered over: the rail holds — an off-vocabulary status cannot be
+        # written — but a reader who deleted `ck_..._status` believing it was the guard would find
+        # every test still green, because the link check is doing the work. That is worth a
+        # sentence, and the assertion below names the constraint that ACTUALLY refuses.
+        set_tenant_context(session, tid)
+        with pytest.raises(IntegrityError) as caught:
+            session.execute(
+                text(
+                    "INSERT INTO entitlement_request "
+                    "(id, tenant_id, system_from, seq, action, status, requested_by, "
+                    " requested_at, target_user_id, resolved_by, resolved_at) "
+                    "VALUES (:i, :t, now(), 9998, 'GRANT_ROLE', 'REJECTED', :a, now(), :u, :a, "
+                    " now())"
+                ),
+                {"i": str(uuid.uuid4()), "t": tid, "a": one, "u": two},
+            )
+            session.flush()
+        refused_by = str(caught.value)
+        assert "ck_entitlement_request_resolution_link" in refused_by, (
+            f"the shadowing changed — an off-vocabulary status is now refused by something else: "
+            f"{refused_by}. Re-read which constraint is load-bearing before trusting either."
+        )
+        session.rollback()
+        assert role_id
+    finally:
         session.close()

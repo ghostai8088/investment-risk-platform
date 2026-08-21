@@ -228,6 +228,22 @@ PERMISSIONS: list[tuple[str, str]] = [
     # dual-hat. A future breach-action API endpoint MUST carry the matching require_permission.
     ("breach.respond", "File a 1L remediation response on a breach (1L)"),
     ("breach.review", "Assign, review, escalate and close a breach (2L)"),
+    # W19-S3b (INGEST-1, REQ-INT-001 clause 6): the mapping governance mint, splitting the
+    # maker and the checker of a source mapping across ROLES rather than only across persons.
+    #
+    # The precedent is `breach.respond`/`breach.review` — a CROSS-LINE partition — and NOT
+    # `limit.manage`/`limit.approve`, which deliberately share a role because that gate is
+    # person-level. The two shapes look alike and enforce opposite things; the wave plan requires
+    # the ratifier code to be "never co-granted with the proposer path", so the partition is the
+    # one that applies.
+    #
+    # `ingest.mapping.view` is the third code and exists for a reason found at recon: every
+    # `/ingest` read was gated on the MAKER's `data.upload`, so a ratifier-only holder would have
+    # got 403 on the very screens showing what they were about to approve. A checker who cannot
+    # read the artifact is not a checker (DS3b-2).
+    ("ingest.mapping.propose", "Propose a source mapping version for ratification (maker)"),
+    ("ingest.mapping.ratify", "Ratify or supersede a source mapping version (checker)"),
+    ("ingest.mapping.view", "Read source mapping versions and their ratification history"),
     # RPT-2 (Wave-16) — a governed R-07 mint. TWO codes, split by
     # **RATIFICATION STATUS, corrected at the pre-merge audit: the Wave-16 gate (OQ-W16P-1..7)
     # asked NO permission question and enumerated NO holder set.** An earlier version of this
@@ -338,6 +354,10 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # maker/admin-only; auditor_3l excluded.
         "snapshot.view",
         "snapshot.create",
+        # W19-S3b: the steward PROPOSES a mapping and READS it, and never ratifies — the maker
+        # side of the INGEST-1 partition.
+        "ingest.mapping.propose",
+        "ingest.mapping.view",
         # P2-2 market data: steward is the maker — holds BOTH view + ingest (reads its own writes).
         # risk_analyst_1l/risk_manager_2l hold marketdata.view (below); marketdata.ingest is
         # maker/admin-only; auditor_3l excluded.
@@ -500,6 +520,11 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         # response, escalate, close. NEVER co-held with `breach.respond` (SOD-02, the maker-checker
         # partition); the person-level reviewer/closer != responder refusal is the runtime backstop.
         "breach.review",
+        # W19-S3b: the 2L manager RATIFIES a mapping and READS it, and never proposes — the
+        # checker side. NEVER co-held with `ingest.mapping.propose`, which is what makes this a
+        # role-level partition rather than the person-level `limit.approve` shape.
+        "ingest.mapping.ratify",
+        "ingest.mapping.view",
         "model.inventory.view",
         # VW-1: the 2L independent validator (ROLE-MV) is the ONLY non-admin holder of
         # model.validate — SOD-03 (author ≠ validator): risk_analyst_1l holds register, not this.
@@ -525,6 +550,9 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         "role.approve",
     ],
     "auditor_3l": [
+        # W19-S3b: 3L READS the mapping and its ratification history and holds neither verb —
+        # the standing 3L exclusion, applied per code rather than to the family.
+        "ingest.mapping.view",
         "lineage.view",
         "model.inventory.view",
         "dq.result.view",
@@ -607,6 +635,25 @@ def tenant_role_id(tenant_id: str, name: str) -> str:
 
 
 def tenant_role_permission_id(tenant_id: str, role: str, code: str) -> str:
+    """A tenant's grant id, derived from (tenant, role, THIRD ARGUMENT).
+
+    **The third argument is called ``code`` and is NOT always a code, and that divergence is live.**
+    Recorded at W19-S3b under its ratified disposition (DECLARE AND AVOID) rather than repaired,
+    because repairing it means rewriting an already-applied migration:
+
+    - ``tenancy/service.py`` and ``0068`` pass a permission **UUID**;
+    - ``0069`` passes the raw permission **CODE**.
+
+    Same (tenant, role, permission) therefore yields TWO different grant ids depending on which
+    path created it, and a tenant that acquired the grant by both paths would collide on
+    ``uq_role_permission_role_id``. No test covers the two derivations against each other.
+
+    **The convention for anything new is the UUID**, matching ``tenancy/service.py`` — the path
+    every ONBOARDED tenant takes, so it is the one already true of most rows. W19-S3b writes no
+    clone backfill at all and so touches neither; this docstring exists so the next slice that does
+    picks deliberately instead of copying whichever call site it happened to read first.
+    Repairing ``0069`` is named as a Wave-20 candidate.
+    """
     return str(uuid.uuid5(_NS, f"role_permission:{tenant_id}:{role}:{code}"))
 
 

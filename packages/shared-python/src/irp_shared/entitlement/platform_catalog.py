@@ -16,9 +16,20 @@ platform authority lives in a **different constant**, held by a **role that is n
 is never cloned**, and a census asserts the two catalogs are disjoint *in the database after an
 onboarding* — not merely in the constants, because the constants were never the thing that leaked.
 
-**Delivery.** These rows are inserted by migration ``0067`` inline, and ``sync_catalog`` gains a
-platform arm so a future platform code has the same delivery story as a tenant code (P17: a
-permission is not minted until a migration delivers it to running databases).
+**Delivery.** These rows are inserted by migration ``0067`` inline, via ``bulk_insert``. That is
+the whole delivery mechanism today.
+
+*Corrected at W19-S3b.* This paragraph previously said ``sync_catalog`` "gains a platform arm so a
+future platform code has the same delivery story as a tenant code". **It did not gain one, and it
+still has none** — ``sync_catalog`` walks ``PERMISSIONS`` and ``ROLE_TEMPLATES`` and never mentions
+``PLATFORM_CODES``. The gate below is real and does walk both catalogs; the delivery claim beside it
+was not. A future platform code therefore needs its own inline migration, exactly as ``0067`` did:
+declaring ``DELIVERS_PLATFORM`` and expecting a sync to notice would deliver nothing.
+
+W19-S3b also closed the gap that let this stay invisible: ``test_entitlement_mint_delivery.py`` now
+asserts that a migration DECLARING a delivery actually CALLS a delivery verb. A declaration is not a
+delivery — which is P17's own thesis, and the gate did not enforce it about itself until a mutation
+survived and said so.
 
 **The gates that would have missed this.** ``test_entitlement_mint_delivery.py`` (P17) and the
 route census (P11) walk ``ALL_CODES`` only — proven by execution at planning that a platform code

@@ -1577,7 +1577,12 @@ export interface paths {
          */
         get: operations["list_mapping_versions_ingest_mappings_get"];
         put?: never;
-        post?: never;
+        /**
+         * Propose Mapping
+         * @description The MAKER's verb. `tenant_id` and the proposing actor are server-stamped, never from the
+         *     body — the four-eyes comparison downstream is only as good as who the platform believes acted.
+         */
+        post: operations["propose_mapping_ingest_mappings_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1618,6 +1623,54 @@ export interface paths {
         get: operations["list_batches_for_mapping_ingest_mappings__mapping_version_id__batches_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ingest/mappings/{mapping_version_id}/ratify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ratify Mapping
+         * @description The CHECKER's verb, behind a code never co-granted with the proposer's.
+         *
+         *     A self-ratification is a 409, not a 403: the caller HAS the authority and the act is refused on
+         *     who they are relative to this particular proposal. Collapsing the two would tell an operator to
+         *     go and ask for a permission they already hold.
+         */
+        post: operations["ratify_mapping_ingest_mappings__mapping_version_id__ratify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ingest/mappings/{mapping_version_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw Mapping
+         * @description The PROPOSER takes their own proposal back — gated on the PROPOSE code, not the ratify one.
+         *
+         *     Withdrawal is not rejection. A checker's refusal to ratify is inaction and leaves the version
+         *     PROPOSED; withdrawal is the proposer's own act, and letting a checker do it would be a rejection
+         *     verb wearing a withdrawal's name. There is deliberately no reject verb.
+         */
+        post: operations["withdraw_mapping_ingest_mappings__mapping_version_id__withdraw_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1754,6 +1807,37 @@ export interface paths {
         };
         /** Get Lineage Edge */
         get: operations["get_lineage_edge_lineage_edges__edge_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lineage/targets/{target_entity_type}/{target_entity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lineage For Target
+         * @description Every lineage edge pointing AT one entity — the entry point the by-id read never had.
+         *
+         *     **An empty list is a 200, not a 404**, and that is a deliberate difference from the by-id read.
+         *     Asking "what is the lineage of this position?" about an entity with none is a legitimate
+         *     question with the legitimate answer "nothing was recorded". A 404 would additionally claim the
+         *     entity does not exist, which this endpoint has no way to know: it queries ``lineage_edge`` and
+         *     never looks at the target's own table. Answering 404 here would also make the reply an existence
+         *     oracle in the other direction — it would distinguish "no lineage" from "not your tenant", which
+         *     are the same answer under RLS and must stay that way.
+         *
+         *     ``target_entity_type`` is a free-text discriminator on an append-only table, not an enum, so it
+         *     is passed through as a filter value and never interpolated.
+         */
+        get: operations["get_lineage_for_target_lineage_targets__target_entity_type___target_entity_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8181,6 +8265,8 @@ export interface components {
             cost_basis: string | null;
             /** Instrument Id */
             instrument_id: string;
+            /** Mapping Version Id */
+            mapping_version_id: string | null;
             mark?: components["schemas"]["MarkOut"] | null;
             /** Portfolio Id */
             portfolio_id: string;
@@ -8639,6 +8725,20 @@ export interface components {
             target_entity_id: string;
             /** Target Entity Type */
             target_entity_type: string;
+        };
+        /**
+         * LineageEdgesOut
+         * @description The inbound edges of one target, plus whether the cap cut the answer short.
+         */
+        LineageEdgesOut: {
+            /** Edges */
+            edges: components["schemas"]["LineageEdgeOut"][];
+            /** Target Entity Id */
+            target_entity_id: string;
+            /** Target Entity Type */
+            target_entity_type: string;
+            /** Truncated */
+            truncated: boolean;
         };
         /** LiquidityListOut */
         LiquidityListOut: {
@@ -9409,6 +9509,38 @@ export interface components {
             /** Price */
             price?: number | string | null;
         };
+        /**
+         * ProposeMappingIn
+         * @description A mapping proposal. `operations` is validated by the interpreter's coherence check before a
+         *     human is ever asked to ratify it — an unusable mapping must not reach a ratification queue.
+         */
+        ProposeMappingIn: {
+            /**
+             * Authorship
+             * @default HAND_AUTHORED
+             */
+            authorship: string;
+            /** Data Source Id */
+            data_source_id: string;
+            /** Operations */
+            operations: {
+                [key: string]: unknown;
+            }[];
+            /** Proposal Prompt Hash */
+            proposal_prompt_hash?: string | null;
+            /** Proposal Prompt Ref */
+            proposal_prompt_ref?: string | null;
+            /** Proposal Response Ref */
+            proposal_response_ref?: string | null;
+            /** Proposer Model Version Id */
+            proposer_model_version_id?: string | null;
+            /** Source Type */
+            source_type: string;
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Version Label */
+            version_label: string;
+        };
         /** ProxyMappingCorrectIn */
         ProxyMappingCorrectIn: {
             /** Factor Id */
@@ -9860,6 +9992,14 @@ export interface components {
              * Format: uuid
              */
             target_estimate_run_id: string;
+        };
+        /**
+         * ResolveMappingIn
+         * @description A ratify or withdraw act. `reason` is DC-2 metadata, never a credential.
+         */
+        ResolveMappingIn: {
+            /** Reason */
+            reason?: string | null;
         };
         /** ResultOut */
         ResultOut: {
@@ -14823,6 +14963,43 @@ export interface operations {
             };
         };
     };
+    propose_mapping_ingest_mappings_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposeMappingIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MappingVersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_mapping_version_ingest_mappings__mapping_version_id__get: {
         parameters: {
             query?: never;
@@ -14880,6 +15057,84 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BatchOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ratify_mapping_ingest_mappings__mapping_version_id__ratify_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                mapping_version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveMappingIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MappingVersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_mapping_ingest_mappings__mapping_version_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                mapping_version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveMappingIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MappingVersionOut"];
                 };
             };
             /** @description Validation Error */
@@ -15415,6 +15670,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LineageEdgeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lineage_for_target_lineage_targets__target_entity_type___target_entity_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-user-id"?: string | null;
+                "x-tenant-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                target_entity_type: string;
+                target_entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LineageEdgesOut"];
                 };
             };
             /** @description Validation Error */

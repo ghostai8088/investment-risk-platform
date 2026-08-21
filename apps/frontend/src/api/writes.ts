@@ -229,3 +229,44 @@ export async function generateReport(
     family_runs: input.familyRuns,
   });
 }
+
+// --- W19-S3b: the mapping checker's verbs ------------------------------------------------------
+// TWO writes, and PROPOSE is deliberately not among them. A proposal is an ordered operations
+// program produced by the operator-side drafting flow and recorded with its model version and
+// prompt hash; putting a free-text JSON editor on this screen would let a mapping be authored with
+// no drafting provenance at all, which is the one thing INGEST-1's authorship model exists to
+// prevent. The SPA shows what was proposed and lets the CHECKER decide.
+//
+// Both verbs 409 rather than 403 when the caller holds the permission but may not act on THIS
+// proposal — a self-ratification, or a withdrawal by someone who is not the proposer. Collapsing
+// those into 403 would tell an operator to go and ask for a permission they already hold.
+
+export type MappingVersionOut = Schemas["MappingVersionOut"];
+
+export async function ratifyMappingVersion(
+  session: Session | null,
+  mappingVersionId: string,
+  reason?: string,
+): Promise<MappingVersionOut> {
+  return request<MappingVersionOut>(
+    `/ingest/mappings/${mappingVersionId}/ratify`,
+    session,
+    "POST",
+    { reason: reason ?? null },
+  );
+}
+
+export async function withdrawMappingVersion(
+  session: Session | null,
+  mappingVersionId: string,
+  reason: string,
+): Promise<MappingVersionOut> {
+  // The reason is REQUIRED here as well as at the backend, so the refusal a missing one earns is
+  // never the operator's first sight of the rule.
+  return request<MappingVersionOut>(
+    `/ingest/mappings/${mappingVersionId}/withdraw`,
+    session,
+    "POST",
+    { reason },
+  );
+}

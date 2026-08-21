@@ -22,7 +22,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.actions import ACTION_CREATE, ACTION_STATUS_CHANGE
@@ -32,6 +32,7 @@ from irp_shared.ingest_mapping.errors import (
     MappingContentImmutableError,
     MappingLifecycleError,
     MappingNotVisible,
+    NotTheProposerError,
     OverlappingLoadError,
     PortfolioCodeNotVisible,
     SelfRatificationError,
@@ -63,7 +64,15 @@ from irp_shared.ingest_mapping.models import (
     STATUS_PROPOSED,
     STATUS_RATIFIED,
     STATUS_SUPERSEDED,
+    STATUS_WITHDRAWN,
     IngestionMappingVersion,
+)
+from irp_shared.ingest_mapping.ratification_models import (
+    GOVERNING_OUTCOMES,
+    OUTCOME_RATIFIED,
+    OUTCOME_SUPERSEDED,
+    OUTCOME_WITHDRAWN,
+    IngestionMappingRatification,
 )
 from irp_shared.ingestion.models import IngestionBatch, IngestionStagedRecord
 from irp_shared.lineage.models import DataSource
@@ -77,6 +86,38 @@ from irp_shared.position import (
     supersede_position,
 )
 from irp_shared.position.position import _current_open  # noqa: PLC2701 - the bitemporal head read
+
+
+def _lock_tenant(session: Session, tenant_id: str) -> None:
+    """Serialize mapping resolutions within a tenant (PostgreSQL; no-op elsewhere).
+
+    Without it the ``seq`` assignment and the one-ratified-mapping invariant are both TOCTOU: two
+    ratifiers read the same ``max(seq)`` and race, and two resolutions for two different versions of
+    one source can pass their individual checks. Keyed on the tenant, transaction-scoped, released
+    at COMMIT — the ``admin_service._lock_tenant`` pattern, reused rather than re-invented.
+
+    **It is a literal no-op off PostgreSQL, and that is why its proof is a `_pg` test with real
+    threads.** SQLite serializes writes at the file level anyway, so deleting this call is invisible
+    to any single-connection unit test — a mutant would be killed by nothing. The remit's
+    verification caught that before the mutant was written.
+    """
+    if session.bind is not None and session.bind.dialect.name == "postgresql":
+        key = int.from_bytes(uuid.UUID(str(tenant_id)).bytes[:8], "big", signed=True)
+        session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": key})
+
+
+def _next_seq(session: Session, tenant_id: str) -> int:
+    """Per-tenant monotonic sequence, assigned under the tenant lock (the MG-2 pattern).
+
+    A state machine over an append-only log needs a DB-monotonic ordering key: a wall clock ties,
+    and two ratifiers acting in the same millisecond is precisely what this table adjudicates.
+    """
+    current = session.execute(
+        select(func.max(IngestionMappingRatification.seq)).where(
+            IngestionMappingRatification.tenant_id == str(tenant_id)
+        )
+    ).scalar()
+    return int(current or 0) + 1
 
 
 def canonical_actor(actor_id: str) -> str:
@@ -273,6 +314,15 @@ def propose_mapping_version(
         proposer_model_version_id = None
         proposal_prompt_hash = None
 
+    # `supersedes_id` gets the SAME treatment as `proposer_model_version_id` above, and the reason
+    # is written out because S3a applied it to one field and not to the other sitting beside it.
+    # It is a self-FK, and PostgreSQL evaluates FK checks BYPASSING RLS — so the constraint happily
+    # accepts another tenant's version id and the row durably records a cross-tenant reference.
+    # Nothing downstream would catch it: `supersedes_id` is lineage prose to every read that shows
+    # it. Resolving it tenant-filtered is the only place this can be refused.
+    if supersedes_id is not None:
+        resolve_mapping_version(session, str(supersedes_id), acting_tenant=str(tenant_id))
+
     version = IngestionMappingVersion(
         tenant_id=str(tenant_id),
         data_source_id=source.id,
@@ -303,6 +353,38 @@ def propose_mapping_version(
     return version
 
 
+def _latest_governing_row(
+    session: Session, *, acting_tenant: str, data_source_id: str, source_type: str
+) -> IngestionMappingRatification | None:
+    """The latest resolution row for a source that speaks to WHICH VERSION GOVERNS it.
+
+    ``WITHDRAWN`` is filtered out, and that filter is the fix for a BLOCKING defect this slice
+    shipped and a different-engine review reproduced. A withdrawal is a decision about a PROPOSAL —
+    the proposer took their own draft back — and a proposal that was never ratified never governed
+    anything. Two PROPOSED versions may legitimately coexist for one source, so withdrawing the
+    second appended a row that outranked the first's live RATIFIED row, and BOTH callers below then
+    read the source as ungoverned:
+
+    - the load gate refused every file for a source with a perfectly good ratified mapping;
+    - the ratify path found no incumbent to supersede, so the next legitimate ratification collided
+      with ENT-077's partial unique index and a governed act raised a raw ``IntegrityError``.
+
+    ONE query, used by both callers, because the two had the same rule written out twice and a fix
+    applied to one of them would have left the other wrong.
+    """
+    return session.execute(
+        select(IngestionMappingRatification)
+        .where(
+            IngestionMappingRatification.tenant_id == str(acting_tenant),
+            IngestionMappingRatification.data_source_id == str(data_source_id),
+            IngestionMappingRatification.source_type == str(source_type),
+            IngestionMappingRatification.outcome.in_(sorted(GOVERNING_OUTCOMES)),
+        )
+        .order_by(IngestionMappingRatification.seq.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
 def ratify_mapping_version(
     session: Session,
     *,
@@ -310,6 +392,7 @@ def ratify_mapping_version(
     acting_tenant: str,
     actor_id: str,
     actor_type: str = "user",
+    reason: str | None = None,
     now: datetime | None = None,
 ) -> IngestionMappingVersion:
     """Ratify a PROPOSED version, superseding whatever was ratified before it.
@@ -324,24 +407,50 @@ def ratify_mapping_version(
     check here was ratified as a deliberate widening of S3a's scope line (DS3a-3).
     """
     now = now or utcnow()
+    _lock_tenant(session, acting_tenant)
     version = resolve_mapping_version(session, mapping_version_id, acting_tenant=acting_tenant)
     if version.status != STATUS_PROPOSED:
         raise MappingLifecycleError(version.id, version.status, "ratify")
     if canonical_actor(actor_id) == canonical_actor(version.proposed_by_actor_id):
         raise SelfRatificationError(str(actor_id))
 
-    # Supersede the incumbent FIRST and FLUSH, so the partial unique index never sees two RATIFIED
-    # rows for the same key even transiently — the close-first ordering the FR binders use, for the
-    # same reason.
-    incumbent = session.execute(
-        select(IngestionMappingVersion).where(
-            IngestionMappingVersion.tenant_id == str(acting_tenant),
-            IngestionMappingVersion.data_source_id == version.data_source_id,
-            IngestionMappingVersion.source_type == version.source_type,
-            IngestionMappingVersion.status == STATUS_RATIFIED,
-        )
-    ).scalar_one_or_none()
+    # The incumbent is found through the RESOLUTION table too, by the same latest-row rule.
+    # Reading ENT-077.status here would reintroduce the dependency this slice removed.
+    incumbent_row = _latest_governing_row(
+        session,
+        acting_tenant=str(acting_tenant),
+        data_source_id=str(version.data_source_id),
+        source_type=str(version.source_type),
+    )
+    incumbent = None
+    if incumbent_row is not None and incumbent_row.outcome == OUTCOME_RATIFIED:
+        incumbent = session.execute(
+            select(IngestionMappingVersion).where(
+                IngestionMappingVersion.id == incumbent_row.mapping_version_id
+            )
+        ).scalar_one_or_none()
     if incumbent is not None:
+        # CLOSE FIRST, and the ORDER IS THE INVARIANT — not a tidiness preference, and not (as an
+        # earlier draft of this comment claimed) protection for a partial unique index, which this
+        # table does not have. "Which mapping governs this source" is answered by the HIGHEST `seq`
+        # for the source. Append the SUPERSEDED row second and it outranks the new RATIFIED row, so
+        # the source reads back as having NO current mapping and every subsequent load refuses.
+        # `_next_seq` allocates in call order, so the call order IS the answer.
+        session.add(
+            IngestionMappingRatification(
+                tenant_id=str(acting_tenant),
+                seq=_next_seq(session, acting_tenant),
+                mapping_version_id=incumbent.id,
+                data_source_id=incumbent.data_source_id,
+                source_type=incumbent.source_type,
+                outcome=OUTCOME_SUPERSEDED,
+                resolved_by=str(actor_id),
+                resolved_at=now,
+                reason=f"superseded by {version.version_label}",
+            )
+        )
+        session.flush()
+
         before = incumbent.status
         incumbent.status = STATUS_SUPERSEDED
         incumbent.superseded_at = now
@@ -355,6 +464,25 @@ def ratify_mapping_version(
             actor_type=actor_type,
             before_status=before,
         )
+
+    # THE DECISION, recorded as an APPEND-ONLY ROW before anything else. ENT-077's status is a
+    # projection of this fact, never the authority for it — a ratification that lives only in a
+    # mutable column can be edited into existence after the fact, and ENT-077's content guard is an
+    # ORM listener that does not fire on a non-ORM write.
+    session.add(
+        IngestionMappingRatification(
+            tenant_id=str(acting_tenant),
+            seq=_next_seq(session, acting_tenant),
+            mapping_version_id=version.id,
+            data_source_id=version.data_source_id,
+            source_type=version.source_type,
+            outcome=OUTCOME_RATIFIED,
+            resolved_by=str(actor_id),
+            resolved_at=now,
+            reason=reason,
+        )
+    )
+    session.flush()
 
     before = version.status
     version.status = STATUS_RATIFIED
@@ -377,12 +505,28 @@ def ratified_mapping_for(
     session: Session, *, acting_tenant: str, data_source_id: str, source_type: str
 ) -> IngestionMappingVersion:
     """The one RATIFIED version for a (source, source_type), or REFUSE — clause (1)."""
+    # RESOLVED THROUGH ENT-078, and specifically through its LATEST row for this source.
+    #
+    # Not through ENT-077's `status`: that is a mutable column whose only guard is an ORM listener,
+    # so a gate reading it would let a non-ORM UPDATE decide which mapping governs a client's
+    # holdings. And an append-only decision table the load path does not consult is evidence nobody
+    # reads — the declaration-without-consumption defect, which the remit's verification caught.
+    #
+    # LATEST, not "any RATIFIED row": on an append-only log the incumbent's ratification is still
+    # there after it is superseded, so "is there a RATIFIED row" is true forever once it has been
+    # true once. The current decision is the last one made, and `uq_..._seq` makes that unique.
+    latest = _latest_governing_row(
+        session,
+        acting_tenant=str(acting_tenant),
+        data_source_id=str(data_source_id),
+        source_type=str(source_type),
+    )
+    if latest is None or latest.outcome != OUTCOME_RATIFIED:
+        raise UnratifiedMappingError(str(data_source_id), str(source_type))
     row = session.execute(
         select(IngestionMappingVersion).where(
+            IngestionMappingVersion.id == latest.mapping_version_id,
             IngestionMappingVersion.tenant_id == str(acting_tenant),
-            IngestionMappingVersion.data_source_id == str(data_source_id),
-            IngestionMappingVersion.source_type == str(source_type),
-            IngestionMappingVersion.status == STATUS_RATIFIED,
         )
     ).scalar_one_or_none()
     if row is None:
@@ -517,6 +661,9 @@ def load_batch(
                     quantity=values[TARGET_QUANTITY],
                     cost_basis=values.get(TARGET_COST_BASIS),
                     quantity_unit=values.get(TARGET_QUANTITY_UNIT),
+                    # The CORRECTION's provenance is whatever produced the correction, never what
+                    # produced the row being corrected (DS3b-3, per verb).
+                    mapping_version_id=mapping.id,
                 )
                 restated.append(corrected.id)
                 continue
@@ -540,6 +687,10 @@ def load_batch(
                 quantity=values[TARGET_QUANTITY],
                 cost_basis=values.get(TARGET_COST_BASIS),
                 quantity_unit=values.get(TARGET_QUANTITY_UNIT),
+                # NOT carried from the prior version: this row was produced by THIS load. Without
+                # the explicit stamp the column would be dropped to NULL here, and a provenance FK
+                # that vanishes when the second file arrives is worse than none.
+                mapping_version_id=mapping.id,
             )
             superseded.append(newer.id)
             continue
@@ -557,6 +708,8 @@ def load_batch(
             quantity_unit=values.get(TARGET_QUANTITY_UNIT),
             now=now,
             origin_source=source,
+            # Clause (2)'s position half: the ratifying mapping version, by hard FK.
+            mapping_version_id=mapping.id,
         )
         created.append(row.id)
 
@@ -590,3 +743,69 @@ def _resolve_portfolio_by_code(session: Session, code: str, *, acting_tenant: st
         # small false record, and small false records are how the large ones start.
         raise PortfolioCodeNotVisible(code)
     return row
+
+
+def withdraw_mapping_version(
+    session: Session,
+    *,
+    mapping_version_id: str,
+    acting_tenant: str,
+    actor_id: str,
+    reason: str,
+    actor_type: str = "user",
+    now: datetime | None = None,
+) -> IngestionMappingVersion:
+    """The PROPOSER takes their own proposal back (DS3b-6, owner-ratified).
+
+    ``STATUS_WITHDRAWN`` was declared at S3a with no path producing it — the inert-state class the
+    ENT-075 review struck when it deleted ``REJECTED``: a state an auditor can read in the
+    vocabulary and infer a flow that does not exist. This is the verb that makes it real, shipped
+    beside the lifecycle it belongs to rather than left for a future gate.
+
+    **Withdrawal is NOT rejection, and the distinction is deliberate.** A checker's refusal to
+    ratify is inaction: the version stays PROPOSED for someone else to approve or for nobody to.
+    Withdrawal is the PROPOSER's own act — a different fact with a different actor — which is why it
+    is a resolution OUTCOME here rather than a status nobody writes. There is still no reject verb,
+    for exactly ENT-075's recorded reason.
+
+    A ``reason`` is REQUIRED. A proposal removed from the queue with no explanation is the shape an
+    auditor cannot distinguish from one that was never made.
+    """
+    now = now or utcnow()
+    _lock_tenant(session, acting_tenant)
+    version = resolve_mapping_version(session, mapping_version_id, acting_tenant=acting_tenant)
+    if version.status != STATUS_PROPOSED:
+        # A RATIFIED version is not withdrawn, it is SUPERSEDED by ratifying a replacement — the
+        # alternate-path half, because a gate that fires only in the obvious state is not a control.
+        raise MappingLifecycleError(version.id, version.status, "withdraw")
+    if canonical_actor(actor_id) != canonical_actor(version.proposed_by_actor_id):
+        raise NotTheProposerError(str(actor_id), str(version.proposed_by_actor_id))
+
+    session.add(
+        IngestionMappingRatification(
+            tenant_id=str(acting_tenant),
+            seq=_next_seq(session, acting_tenant),
+            mapping_version_id=version.id,
+            data_source_id=version.data_source_id,
+            source_type=version.source_type,
+            outcome=OUTCOME_WITHDRAWN,
+            resolved_by=str(actor_id),
+            resolved_at=now,
+            reason=reason,
+        )
+    )
+    session.flush()
+
+    before = version.status
+    version.status = STATUS_WITHDRAWN
+    assert_only_lifecycle_fields_change(version)
+    session.flush()
+    _emit(
+        session,
+        version,
+        action=ACTION_STATUS_CHANGE,
+        actor_id=str(actor_id),
+        actor_type=actor_type,
+        before_status=before,
+    )
+    return version

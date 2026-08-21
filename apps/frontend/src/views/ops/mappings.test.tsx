@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -226,5 +226,236 @@ describe("Mappings — the POSITIVE branches", () => {
     // clause 9's third input, RECORDED rather than absent
     expect(screen.getByText("2026-08-21T10:31:00+00:00")).toBeTruthy();
     expect(screen.queryByText(/not recorded/)).toBeNull();
+  });
+});
+
+// --- W19-S3b: the checker's decision, the re-gating, and the by-target lineage cell -------------
+
+const BATCH = {
+  id: "b1",
+  status: "COMPLETED",
+  filename: "custodian_positions_2026-07-31.csv",
+  staged_count: 4,
+  lookup_as_of: "2026-08-21T09:00:00+00:00",
+  mapping_version_id: "m1",
+};
+
+const EDGE = {
+  id: "e1",
+  source_type: "data_source",
+  source_id: "ds1",
+  target_entity_type: "ingestion_batch",
+  target_entity_id: "b1",
+  edge_kind: "ORIGIN",
+  run_id: null,
+};
+
+/** Route a stub by URL shape: the detail, its batches, and the lineage of each batch. */
+function detailRoutes(version: unknown, batches: unknown[], lineage: unknown) {
+  return (url: string): unknown => {
+    if (url.includes("/lineage/targets/")) return lineage;
+    if (url.endsWith("/batches")) return batches;
+    return version;
+  };
+}
+
+function renderDetailAt(payload: (url: string) => unknown): string[] {
+  const seen = stubJson(payload);
+  render(
+    <MemoryRouter initialEntries={["/ops/mappings/m1"]}>
+      <Routes>
+        <Route path="/ops/mappings/:mappingId" element={<MappingDetail session={SESSION} />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  return seen;
+}
+
+describe("MappingDetail — the checker's decision (W19-S3b)", () => {
+  it("offers ratify and withdraw on a PROPOSED version, and NO reject verb", async () => {
+    renderDetailAt(detailRoutes(PROPOSED, [], { edges: [], truncated: false }));
+
+    expect(await screen.findByRole("button", { name: /Ratify this version/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Withdraw my proposal/ })).toBeTruthy();
+    // A checker's refusal to ratify is INACTION — there is deliberately no reject verb anywhere,
+    // and the ENT-075 review struck exactly this shape when it deleted REJECTED.
+    expect(screen.queryByRole("button", { name: /Reject/i })).toBeNull();
+  });
+
+  it("hides the decision entirely once the version is no longer PROPOSED", async () => {
+    const ratified = {
+      ...PROPOSED,
+      status: "RATIFIED",
+      ratified_by_actor_id: "risk.manager@demo",
+      ratified_at: "2026-08-21T10:00:00+00:00",
+    };
+    renderDetailAt(detailRoutes(ratified, [], { edges: [], truncated: false }));
+
+    expect(await screen.findByText(/RATIFIED — files load through this version/)).toBeTruthy();
+    // Both verbs are gone: they are the only two acts a PROPOSED version admits, and offering a
+    // button whose only outcome is a 409 teaches an operator to ignore refusals.
+    expect(screen.queryByRole("button", { name: /Ratify this version/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Withdraw my proposal/ })).toBeNull();
+  });
+
+  it("will not let a withdrawal be submitted without a reason", async () => {
+    renderDetailAt(detailRoutes(PROPOSED, [], { edges: [], truncated: false }));
+
+    const withdraw = await screen.findByRole("button", { name: /Withdraw my proposal/ });
+    // Disabled with the reason box empty — so the backend's 422 is never an operator's first
+    // sight of the rule. Ratify has no such requirement: a reason there is optional metadata.
+    expect(withdraw.hasAttribute("disabled")).toBe(true);
+    expect(
+      screen.getByRole("button", { name: /Ratify this version/ }).hasAttribute("disabled"),
+    ).toBe(false);
+  });
+});
+
+describe("MappingDetail — the by-target lineage cell (W19-S3b)", () => {
+  it("fetches lineage BY TARGET for each loaded batch and reports what it found", async () => {
+    const seen = renderDetailAt(
+      detailRoutes(PROPOSED, [BATCH], { edges: [EDGE], truncated: false }),
+    );
+
+    expect(await screen.findByText(/1 edge · data_source/)).toBeTruthy();
+    // The endpoint that did not exist before this slice, keyed on an id the SPA actually holds.
+    // `/lineage` previously had ONE route, taking an edge id nothing produced.
+    expect(seen).toContain("/lineage/targets/ingestion_batch/b1");
+  });
+
+  it("says 'no lineage recorded' rather than rendering a blank", async () => {
+    renderDetailAt(detailRoutes(PROPOSED, [BATCH], { edges: [], truncated: false }));
+
+    // Honest-empty: no recorded origin for a LOADED batch is a real finding about the batch, and a
+    // blank cell reads as "nothing to say here".
+    expect(await screen.findByText(/no lineage recorded/)).toBeTruthy();
+  });
+});
+
+// --- W19-S3b: the WRITE PATH, exercised ---------------------------------------------------------
+//
+// Added after a review found the decision tests asserted only that a button RENDERED. The
+// component's whole reason for existing is the write and its refusal handling; `ops.test.tsx` (same
+// directory, same class of maker/checker UI) already sets the convention — click, assert the POST
+// body, assert the refetch, assert the exact remedy text. This follows it.
+
+/** Route reads by URL and capture writes, so a POST body and a refusal can both be asserted. */
+function routeMapping(
+  reads: (url: string) => unknown,
+  write?: () => { __status?: number; detail?: string } | unknown,
+): { posts: RequestInit[]; reads: string[] } {
+  const posts: RequestInit[] = [];
+  const seen: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        posts.push(init);
+        const body = write ? write() : {};
+        const status = (body as { __status?: number }).__status ?? 200;
+        return Promise.resolve({
+          ok: status < 400,
+          status,
+          json: () => Promise.resolve(body),
+        });
+      }
+      seen.push(url);
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(reads(url)) });
+    }),
+  );
+  return { posts, reads: seen };
+}
+
+describe("MappingDetail — the write path (W19-S3b)", () => {
+  function mount(): void {
+    render(
+      <MemoryRouter initialEntries={["/ops/mappings/m1"]}>
+        <Routes>
+          <Route path="/ops/mappings/:mappingId" element={<MappingDetail session={SESSION} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it("POSTs to the ratify route and REFETCHES what the write changed", async () => {
+    const captured = routeMapping(detailRoutes(PROPOSED, [], { edges: [], truncated: false }));
+    mount();
+    await screen.findByRole("button", { name: /Ratify this version/ });
+    const before = captured.reads.length;
+
+    fireEvent.click(screen.getByRole("button", { name: /Ratify this version/ }));
+
+    await waitFor(() => {
+      expect(captured.posts.length).toBe(1);
+    });
+    // The refetch is the point of `onDone`: without it the screen still says PROPOSED and the
+    // buttons stay live after a successful ratification.
+    await waitFor(() => {
+      expect(captured.reads.length).toBeGreaterThan(before);
+    });
+  });
+
+  it("sends the operator's reason with a withdrawal", async () => {
+    const captured = routeMapping(detailRoutes(PROPOSED, [], { edges: [], truncated: false }));
+    mount();
+    await screen.findByRole("button", { name: /Withdraw my proposal/ });
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "the custodian re-issued the file" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Withdraw my proposal/ }));
+
+    await waitFor(() => {
+      expect(captured.posts.length).toBe(1);
+    });
+    expect(JSON.parse(String(captured.posts[0].body))).toMatchObject({
+      reason: "the custodian re-issued the file",
+    });
+  });
+
+  it("tells a self-ratifier that a DIFFERENT PERSON must act, not to ask for a permission", async () => {
+    const captured = routeMapping(
+      detailRoutes(PROPOSED, [], { edges: [], truncated: false }),
+      () => ({
+        __status: 409,
+        detail: "the ratifier may not be the proposer of this mapping version",
+      }),
+    );
+    mount();
+    await screen.findByRole("button", { name: /Ratify this version/ });
+    fireEvent.click(screen.getByRole("button", { name: /Ratify this version/ }));
+
+    const alert = await screen.findByRole("alert");
+    // The caller HOLDS the code. Telling them to request a permission would send them nowhere,
+    // and a retry cannot help — the remedy is a different person.
+    expect(alert.textContent).toContain("Someone else must act on this proposal");
+    expect(alert.textContent).not.toContain("You need the");
+    expect(captured.posts.length).toBe(1);
+  });
+
+  it("tells a caller WITHOUT the code which permission they need", async () => {
+    routeMapping(detailRoutes(PROPOSED, [], { edges: [], truncated: false }), () => ({
+      __status: 403,
+      detail: "permission denied",
+    }));
+    mount();
+    await screen.findByRole("button", { name: /Ratify this version/ });
+    fireEvent.click(screen.getByRole("button", { name: /Ratify this version/ }));
+
+    const alert = await screen.findByRole("alert");
+    // The opposite case, and it must NOT collapse into the 409 wording.
+    expect(alert.textContent).toContain("ingest.mapping.ratify");
+    expect(alert.textContent).not.toContain("Someone else must act");
+  });
+});
+
+describe("MappingDetail — the lineage cap (W19-S3b)", () => {
+  it("says TRUNCATED rather than presenting a cut-short lineage answer as complete", async () => {
+    const many = Array.from({ length: 200 }, (_, i) => ({ ...EDGE, id: `e${String(i)}` }));
+    renderDetailAt(detailRoutes(PROPOSED, [BATCH], { edges: many, truncated: true }));
+
+    // A silently truncated lineage answer is worse than no answer: it looks complete. Every other
+    // assertion in this file sees `truncated: false`, so without this the branch never runs.
+    expect(await screen.findByText(/200 edges · data_source · truncated/)).toBeTruthy();
   });
 });

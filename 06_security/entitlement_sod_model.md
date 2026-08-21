@@ -133,6 +133,27 @@ portfolios until the P6+ `entitlement_grant` scope payload lands. Acceptable in 
 **ENT-P-06** is thus **partially satisfied** in P1C-1: the **tenant** attribute is enforced (RLS); the **portfolio-scope**
 attribute is **anchored, not enforced** (→ P6+).
 
+### W19-S3b — source mapping governance (INGEST-1, REQ-INT-001 clause 6)
+
+| Code | Line | Holders | Partition |
+|---|---|---|---|
+| `ingest.mapping.propose` | maker | `data_steward` | NEVER co-held with `.ratify` |
+| `ingest.mapping.ratify` | checker | `risk_manager_2l` | NEVER co-held with `.propose` |
+| `ingest.mapping.view` | read | `data_steward`, `risk_manager_2l`, `auditor_3l` | read-only; held by both sides and by 3L |
+
+A source mapping decides what a client's file MEANS, so the act of proposing one and the act of
+agreeing to it are separated at ROLE level — the `breach.respond` / `breach.review` cross-line
+shape, not the `limit.manage` / `limit.approve` person-level shape, which deliberately shares a
+role. Person-level SoD holds too (`ratified_by != proposed_by`, canonicalized), but the role
+partition is what makes the separation structural rather than advisory.
+
+`ingest.mapping.view` exists because the reads were gated on the MAKER's `data.upload`, so a
+ratifier-only holder would have been refused the screens showing what they were about to approve.
+A checker who cannot read the artifact is not a checker.
+
+`platform_admin` holds all three, by construction rather than by decision:
+`ROLE_TEMPLATES["platform_admin"] = list(ALL_CODES)`.
+
 ### 5C. The permission-mint checklist (CREATED at ONBOARD-1a, 2026-08-09 — ratified OQ-ONB-6)
 
 Every permission mint executes ALL rows or records an explicit refusal with reason. P11 is the
@@ -145,7 +166,7 @@ in this document and the discipline lived only in the rule's prose.
 | 2 | Route census entry (routed, or a named forward-gate with reason) | `test_route_permission_census.py` — walks BOTH catalogs as of ONBOARD-1a |
 | 3 | SoD row in THIS document | reviewed at the P16 boundary |
 | 4 | `DELIVERS` (or `DELIVERS_PLATFORM`) tuple in a migration | `test_entitlement_mint_delivery.py` (P17) — walks BOTH catalogs as of ONBOARD-1a |
-| 5 | **Delivery to EXISTING tenants' role clones: a named migration, or an explicit refusal with reason** | `sync_catalog`'s report logs `tenants_missing_code`; the refusal is recorded in the mint's slice record |
+| 5 | **Delivery to EXISTING tenants' role clones: a named migration, or an explicit refusal with reason** | The migration is the tell, and the only one. **Amended at W19-S3b:** this cell cited `sync_catalog`'s report logging `tenants_missing_code` — a field `SyncReport` has never had. The one checklist row about reaching existing tenants named a mechanism that does not exist, which is worse than naming none, because a reviewer ticking the row believed something was watching. What actually exists: a migration declares a literal `DELIVERS` tuple, and `test_entitlement_mint_delivery.py` fails until the catalog is covered by the union of those declarations **and** the declaring migration calls a real delivery verb (the second half added at W19-S3b, after a mutation proved the gate accepted a declaration with no delivery behind it). |
 
 Row 5 exists because clones are copied at onboarding and catalog syncs touch SYSTEM templates
 only (post-clone drift is tenant configuration) — so a code minted after a tenant onboards

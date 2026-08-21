@@ -334,3 +334,24 @@ class PortfolioCodeNotVisible(MappingError):
     def __init__(self, code: str) -> None:
         super().__init__(f"portfolio code {code!r} is not visible in this tenant")
         self.code = code
+
+
+class NotTheProposerError(MappingError):
+    """Someone other than the proposer tried to withdraw a proposal.
+
+    FIRES WHEN: ``withdraw_mapping_version`` is called by an actor who is not the version's
+    ``proposed_by_actor_id`` (compared CANONICALIZED — the uppercase-UUID vector the S3a review
+    reproduced against the self-ratification check applies identically here).
+
+    Withdrawal is the proposer's own act. Letting a third party withdraw someone else's proposal
+    would be a rejection verb wearing a withdrawal's name, and this platform deliberately has no
+    rejection verb: a checker's refusal to ratify is inaction, and the version stays PROPOSED.
+    """
+
+    def __init__(self, actor_id: str, proposer_id: str) -> None:
+        super().__init__(
+            f"actor {actor_id} is not the proposer of this mapping version ({proposer_id}) and "
+            f"may not withdraw it"
+        )
+        self.actor_id = actor_id
+        self.proposer_id = proposer_id

@@ -6,13 +6,17 @@ byte-size cap **while reading** (never trusting `Content-Length`), and delegates
 transaction; `tenant_id` is server-stamped (never from the body). A rejected upload **commits**
 its durable evidence (batch + flagged result + audit) and returns a 4xx (never a 200). Reads are
 RLS-scoped to the caller's tenant; a cross-tenant/unknown id yields an **indistinguishable 404**.
-**W19-S3a adds the MAPPING READS** — `GET /ingest/mappings` and `GET /ingest/mappings/{id}` —
-Rule 7's entity/time read surface for ENT-077. They are READS ONLY, and that is a ratified
-decision (DS3a-1), not an omission: S3a mints no permission code, and gating a governed
-RATIFICATION act behind `data.upload` would put a maker verb and a checker verb behind one code
-for a slice — exactly the co-granting S3b's R-07 mint exists to prevent. The propose/ratify HTTP
-verbs land at S3b with their own codes; until then those acts run at the service tier, exercised
-by the demo walk and by tests.
+**W19-S3b completes the surface.** The propose / ratify / withdraw verbs land here with their own
+minted codes, and the three mapping READS move off `data.upload` onto `ingest.mapping.view`. That
+re-gating is the point of the third code: the reads were on the MAKER's upload permission, so a
+ratifier-only holder was refused the very screens showing what they were about to approve, and a
+checker who cannot read the artifact is not a checker (DS3b-2).
+
+**W19-S3a added the MAPPING READS** — `GET /ingest/mappings` and `GET /ingest/mappings/{id}` —
+Rule 7's entity/time read surface for ENT-077. They were READS ONLY at S3a — a ratified
+decision (DS3a-1) rather than an omission, because S3a minted no permission code and gating a
+governed ratification behind `data.upload` would have put a maker verb and a checker verb behind
+one code. That promise is kept here.
 
 There is still NO reconciliation / override / adapter surface, and no staged-ROW read: the staged
 payload echoes raw client data (DC-2, possibly higher), and widening its audience is a deliberate
@@ -31,7 +35,19 @@ from sqlalchemy.orm import Session
 
 from irp_backend.deps import get_tenant_session, require_permission
 from irp_shared.entitlement.service import Principal
+from irp_shared.ingest_mapping.errors import (
+    MappingError,
+    MappingLifecycleError,
+    MappingNotVisible,
+    NotTheProposerError,
+    SelfRatificationError,
+)
 from irp_shared.ingest_mapping.models import IngestionMappingVersion
+from irp_shared.ingest_mapping.service import (
+    propose_mapping_version,
+    ratify_mapping_version,
+    withdraw_mapping_version,
+)
 from irp_shared.ingestion.anticorruption import MAX_UPLOAD_BYTES
 from irp_shared.ingestion.models import IngestionBatch
 from irp_shared.ingestion.service import IngestionRejected, stage_upload
@@ -39,8 +55,16 @@ from irp_shared.lineage.service import DataSourceNotVisible
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
 
-#: Module-level guard singleton (deny-by-default; built once, not in argument defaults).
+#: Module-level guard singletons (deny-by-default; built once, not in argument defaults).
+#:
+#: THREE codes, partitioned at role level: the maker proposes, the checker ratifies, and both plus
+#: 3L can read. `require_permission(code)` must remain the ONLY closure on a route's dependency
+#: list — the route census scrapes every string in the guard closure and would report an extra one
+#: as a demanded permission.
 _require_upload = require_permission("data.upload")
+_require_propose = require_permission("ingest.mapping.propose")
+_require_ratify = require_permission("ingest.mapping.ratify")
+_require_mapping_view = require_permission("ingest.mapping.view")
 
 _READ_CHUNK = 64 * 1024
 
@@ -202,7 +226,7 @@ def get_batch(
 
 @router.get("/mappings", response_model=list[MappingVersionOut])
 def list_mapping_versions(
-    _: Principal = Depends(_require_upload),
+    _: Principal = Depends(_require_mapping_view),
     db: Session = Depends(get_tenant_session),
 ) -> list[MappingVersionOut]:
     """Every mapping version visible to the caller's tenant, newest first.
@@ -224,7 +248,7 @@ def list_mapping_versions(
 @router.get("/mappings/{mapping_version_id}", response_model=MappingVersionOut)
 def get_mapping_version(
     mapping_version_id: uuid.UUID,  # malformed -> uniform 422 before any DB hit (no 500 / oracle)
-    _: Principal = Depends(_require_upload),
+    _: Principal = Depends(_require_mapping_view),
     db: Session = Depends(get_tenant_session),
 ) -> MappingVersionOut:
     row = db.get(IngestionMappingVersion, str(mapping_version_id))
@@ -236,7 +260,7 @@ def get_mapping_version(
 @router.get("/mappings/{mapping_version_id}/batches", response_model=list[BatchOut])
 def list_batches_for_mapping(
     mapping_version_id: uuid.UUID,
-    _: Principal = Depends(_require_upload),
+    _: Principal = Depends(_require_mapping_view),
     db: Session = Depends(get_tenant_session),
 ) -> list[BatchOut]:
     """The batches this version loaded — the provenance question read the other way round.
@@ -256,3 +280,143 @@ def list_batches_for_mapping(
         .all()
     )
     return [_batch_out(b) for b in rows]
+
+
+class ProposeMappingIn(BaseModel):
+    """A mapping proposal. `operations` is validated by the interpreter's coherence check before a
+    human is ever asked to ratify it — an unusable mapping must not reach a ratification queue."""
+
+    data_source_id: str
+    source_type: str
+    version_label: str
+    operations: list[dict[str, Any]]
+    authorship: str = "HAND_AUTHORED"
+    proposer_model_version_id: str | None = None
+    proposal_prompt_hash: str | None = None
+    proposal_prompt_ref: str | None = None
+    proposal_response_ref: str | None = None
+    supersedes_id: str | None = None
+
+
+class ResolveMappingIn(BaseModel):
+    """A ratify or withdraw act. `reason` is DC-2 metadata, never a credential."""
+
+    reason: str | None = None
+
+
+@router.post("/mappings", status_code=status.HTTP_201_CREATED, response_model=MappingVersionOut)
+def propose_mapping(
+    body: ProposeMappingIn,
+    principal: Principal = Depends(_require_propose),
+    db: Session = Depends(get_tenant_session),
+) -> MappingVersionOut:
+    """The MAKER's verb. `tenant_id` and the proposing actor are server-stamped, never from the
+    body — the four-eyes comparison downstream is only as good as who the platform believes acted.
+    """
+    try:
+        version = propose_mapping_version(
+            db,
+            tenant_id=principal.tenant_id,
+            data_source_id=body.data_source_id,
+            source_type=body.source_type,
+            version_label=body.version_label,
+            operations=body.operations,
+            actor_id=principal.user_id,
+            authorship=body.authorship,
+            proposer_model_version_id=body.proposer_model_version_id,
+            proposal_prompt_hash=body.proposal_prompt_hash,
+            proposal_prompt_ref=body.proposal_prompt_ref,
+            proposal_response_ref=body.proposal_response_ref,
+            supersedes_id=body.supersedes_id,
+        )
+    except DataSourceNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="data_source not found"
+        ) from None
+    except MappingNotVisible:
+        # `supersedes_id` naming a version in ANOTHER tenant. This clause must stay ABOVE the
+        # `MappingError` one — `MappingNotVisible` is a subclass, so the broad catch below would
+        # otherwise answer 422 with a message, and a distinguishable answer about an id the caller
+        # cannot see is a cross-tenant existence oracle. Same indistinguishable 404 as every other
+        # read on this router.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="mapping not found"
+        ) from None
+    except MappingError as exc:
+        # Every coherence refusal is a 422: the proposal is malformed, not forbidden.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from None
+    db.commit()
+    return _mapping_out(version)
+
+
+@router.post("/mappings/{mapping_version_id}/ratify", response_model=MappingVersionOut)
+def ratify_mapping(
+    mapping_version_id: uuid.UUID,
+    body: ResolveMappingIn,
+    principal: Principal = Depends(_require_ratify),
+    db: Session = Depends(get_tenant_session),
+) -> MappingVersionOut:
+    """The CHECKER's verb, behind a code never co-granted with the proposer's.
+
+    A self-ratification is a 409, not a 403: the caller HAS the authority and the act is refused on
+    who they are relative to this particular proposal. Collapsing the two would tell an operator to
+    go and ask for a permission they already hold.
+    """
+    try:
+        version = ratify_mapping_version(
+            db,
+            mapping_version_id=str(mapping_version_id),
+            acting_tenant=principal.tenant_id,
+            actor_id=principal.user_id,
+            reason=body.reason,
+        )
+    except MappingNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="mapping not found"
+        ) from None
+    except SelfRatificationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+    except MappingLifecycleError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+    db.commit()
+    return _mapping_out(version)
+
+
+@router.post("/mappings/{mapping_version_id}/withdraw", response_model=MappingVersionOut)
+def withdraw_mapping(
+    mapping_version_id: uuid.UUID,
+    body: ResolveMappingIn,
+    principal: Principal = Depends(_require_propose),
+    db: Session = Depends(get_tenant_session),
+) -> MappingVersionOut:
+    """The PROPOSER takes their own proposal back — gated on the PROPOSE code, not the ratify one.
+
+    Withdrawal is not rejection. A checker's refusal to ratify is inaction and leaves the version
+    PROPOSED; withdrawal is the proposer's own act, and letting a checker do it would be a rejection
+    verb wearing a withdrawal's name. There is deliberately no reject verb.
+    """
+    if not body.reason:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="a withdrawal requires a reason",
+        )
+    try:
+        version = withdraw_mapping_version(
+            db,
+            mapping_version_id=str(mapping_version_id),
+            acting_tenant=principal.tenant_id,
+            actor_id=principal.user_id,
+            reason=body.reason,
+        )
+    except MappingNotVisible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="mapping not found"
+        ) from None
+    except NotTheProposerError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+    except MappingLifecycleError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+    db.commit()
+    return _mapping_out(version)

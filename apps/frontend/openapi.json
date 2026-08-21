@@ -7560,6 +7560,17 @@
             "title": "Instrument Id",
             "type": "string"
           },
+          "mapping_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Version Id"
+          },
           "mark": {
             "anyOf": [
               {
@@ -7652,6 +7663,7 @@
           "quantity_unit",
           "cost_basis",
           "position_source",
+          "mapping_version_id",
           "valid_from",
           "valid_to",
           "system_from",
@@ -9034,6 +9046,38 @@
           "run_id"
         ],
         "title": "LineageEdgeOut",
+        "type": "object"
+      },
+      "LineageEdgesOut": {
+        "description": "The inbound edges of one target, plus whether the cap cut the answer short.",
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/LineageEdgeOut"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "target_entity_id": {
+            "title": "Target Entity Id",
+            "type": "string"
+          },
+          "target_entity_type": {
+            "title": "Target Entity Type",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target_entity_type",
+          "target_entity_id",
+          "edges",
+          "truncated"
+        ],
+        "title": "LineageEdgesOut",
         "type": "object"
       },
       "LiquidityListOut": {
@@ -11657,6 +11701,99 @@
         "title": "PriceSupersedeIn",
         "type": "object"
       },
+      "ProposeMappingIn": {
+        "description": "A mapping proposal. `operations` is validated by the interpreter's coherence check before a\nhuman is ever asked to ratify it \u2014 an unusable mapping must not reach a ratification queue.",
+        "properties": {
+          "authorship": {
+            "default": "HAND_AUTHORED",
+            "title": "Authorship",
+            "type": "string"
+          },
+          "data_source_id": {
+            "title": "Data Source Id",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "proposal_prompt_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Prompt Hash"
+          },
+          "proposal_prompt_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Prompt Ref"
+          },
+          "proposal_response_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Response Ref"
+          },
+          "proposer_model_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposer Model Version Id"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "version_label": {
+            "title": "Version Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data_source_id",
+          "source_type",
+          "version_label",
+          "operations"
+        ],
+        "title": "ProposeMappingIn",
+        "type": "object"
+      },
       "ProxyMappingCorrectIn": {
         "properties": {
           "factor_id": {
@@ -12963,6 +13100,24 @@
           "target_estimate_run_id"
         ],
         "title": "ResidualShrinkageRunIn",
+        "type": "object"
+      },
+      "ResolveMappingIn": {
+        "description": "A ratify or withdraw act. `reason` is DC-2 metadata, never a credential.",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "ResolveMappingIn",
         "type": "object"
       },
       "ResultOut": {
@@ -27128,6 +27283,96 @@
         "tags": [
           "ingestion"
         ]
+      },
+      "post": {
+        "description": "The MAKER's verb. `tenant_id` and the proposing actor are server-stamped, never from the\nbody \u2014 the four-eyes comparison downstream is only as good as who the platform believes acted.",
+        "operationId": "propose_mapping_ingest_mappings_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeMappingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Mapping",
+        "tags": [
+          "ingestion"
+        ]
       }
     },
     "/ingest/mappings/{mapping_version_id}": {
@@ -27312,6 +27557,210 @@
           }
         },
         "summary": "List Batches For Mapping",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingest/mappings/{mapping_version_id}/ratify": {
+      "post": {
+        "description": "The CHECKER's verb, behind a code never co-granted with the proposer's.\n\nA self-ratification is a 409, not a 403: the caller HAS the authority and the act is refused on\nwho they are relative to this particular proposal. Collapsing the two would tell an operator to\ngo and ask for a permission they already hold.",
+        "operationId": "ratify_mapping_ingest_mappings__mapping_version_id__ratify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mapping_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mapping Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveMappingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ratify Mapping",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingest/mappings/{mapping_version_id}/withdraw": {
+      "post": {
+        "description": "The PROPOSER takes their own proposal back \u2014 gated on the PROPOSE code, not the ratify one.\n\nWithdrawal is not rejection. A checker's refusal to ratify is inaction and leaves the version\nPROPOSED; withdrawal is the proposer's own act, and letting a checker do it would be a rejection\nverb wearing a withdrawal's name. There is deliberately no reject verb.",
+        "operationId": "withdraw_mapping_ingest_mappings__mapping_version_id__withdraw_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mapping_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mapping Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveMappingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw Mapping",
         "tags": [
           "ingestion"
         ]
@@ -28322,6 +28771,107 @@
           }
         },
         "summary": "Get Lineage Edge",
+        "tags": [
+          "lineage"
+        ]
+      }
+    },
+    "/lineage/targets/{target_entity_type}/{target_entity_id}": {
+      "get": {
+        "description": "Every lineage edge pointing AT one entity \u2014 the entry point the by-id read never had.\n\n**An empty list is a 200, not a 404**, and that is a deliberate difference from the by-id read.\nAsking \"what is the lineage of this position?\" about an entity with none is a legitimate\nquestion with the legitimate answer \"nothing was recorded\". A 404 would additionally claim the\nentity does not exist, which this endpoint has no way to know: it queries ``lineage_edge`` and\nnever looks at the target's own table. Answering 404 here would also make the reply an existence\noracle in the other direction \u2014 it would distinguish \"no lineage\" from \"not your tenant\", which\nare the same answer under RLS and must stay that way.\n\n``target_entity_type`` is a free-text discriminator on an append-only table, not an enum, so it\nis passed through as a filter value and never interpolated.",
+        "operationId": "get_lineage_for_target_lineage_targets__target_entity_type___target_entity_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_entity_type",
+            "required": true,
+            "schema": {
+              "title": "Target Entity Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "target_entity_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Entity Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-user-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tenant-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LineageEdgesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Lineage For Target",
         "tags": [
           "lineage"
         ]

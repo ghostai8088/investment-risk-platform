@@ -49,6 +49,13 @@ class HoldingRow:
     quantity_unit: str | None
     cost_basis: Decimal | None
     position_source: str | None
+    #: W19-S3b: the RATIFIED mapping version that produced this row, or ``None`` for a holding
+    #: captured by hand. Carried as the plain id and nothing more — resolving it to a label would
+    #: mean importing ``ingest_mapping`` here, and this package's import fence deliberately admits
+    #: only ``{db, portfolio, position, valuation, reference, holdings}``. A reader that wants the
+    #: label follows the id to ``GET /ingest/mappings/{id}``, which is where the mapping's own
+    #: governance surface lives. The fence stays as it is; nothing about it needed changing.
+    mapping_version_id: str | None
     valid_from: datetime
     valid_to: datetime | None
     system_from: datetime
@@ -88,6 +95,7 @@ def _holding_row(row: Position) -> HoldingRow:
         quantity_unit=row.quantity_unit,
         cost_basis=row.cost_basis,
         position_source=row.position_source,
+        mapping_version_id=row.mapping_version_id,
         valid_from=row.valid_from,
         valid_to=row.valid_to,
         system_from=row.system_from,

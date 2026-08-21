@@ -26,6 +26,7 @@ from irp_shared.entitlement.models import (
 from irp_shared.entitlement.request_models import EntitlementRequest
 from irp_shared.exposure.models import ExposureAggregate
 from irp_shared.ingest_mapping.models import IngestionMappingVersion
+from irp_shared.ingest_mapping.ratification_models import IngestionMappingRatification
 from irp_shared.ingestion.models import IngestionBatch, IngestionStagedRecord
 from irp_shared.limit.models import Breach, LimitDefinition
 from irp_shared.lineage.models import DataSource, LineageEdge
@@ -126,6 +127,7 @@ __all__ = [
     "DataQualityRule",
     "DataQualityResult",
     "IngestionBatch",
+    "IngestionMappingRatification",
     "IngestionMappingVersion",
     "IngestionStagedRecord",
     "Currency",

@@ -1815,3 +1815,196 @@ find = """        try:
             raise CastRefusedError(raw, f"a decimal for {target!r}", row_number) from exc"""
 replace = """        coerced = Decimal(numeric_text(raw))"""
 tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3B-1"
+group = "w19-s3b"
+why = "the ratification appends SUPERSEDED after RATIFIED instead of before, so the highest seq for the source says SUPERSEDED — the source reads back as having no current mapping and every subsequent load refuses. Ordering IS the invariant on an append-only log, and no index guards it."
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """    if incumbent is not None:"""
+replace = """    if incumbent is not None and False:"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3B-2"
+group = "w19-s3b"
+why = "the load gate stops checking that the latest GOVERNING row is a ratification, so a mapping retired with no replacement keeps governing loads forever — 'there is a RATIFIED row somewhere in the log' is true forever once true. This mutant SURVIVED after the GOVERNING_OUTCOMES fix, because no service verb produces that state (a supersession is always followed by its replacement in one transaction). The guard was correct and had simply never been made to FIRE; the state is now constructed at the table."
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """    if latest is None or latest.outcome != OUTCOME_RATIFIED:
+        raise UnratifiedMappingError(str(data_source_id), str(source_type))"""
+replace = """    if latest is None:
+        raise UnratifiedMappingError(str(data_source_id), str(source_type))"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3B-3"
+group = "w19-s3b"
+why = "a cross-tenant `supersedes_id` is stamped unchecked — PostgreSQL evaluates FK checks BYPASSING RLS, so the row durably records another tenant's mapping version and every lineage read repeats it as fact"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """    if supersedes_id is not None:
+        resolve_mapping_version(session, str(supersedes_id), acting_tenant=str(tenant_id))"""
+replace = """    if supersedes_id is not None and False:
+        resolve_mapping_version(session, str(supersedes_id), acting_tenant=str(tenant_id))"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3B-4"
+group = "w19-s3b"
+why = "the withdraw verb stops checking that the caller is the proposer — a checker can then take someone else's proposal off the queue, which is a rejection verb wearing a withdrawal's name (and there is deliberately no reject verb)"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """    if canonical_actor(actor_id) != canonical_actor(version.proposed_by_actor_id):
+        raise NotTheProposerError(str(actor_id), str(version.proposed_by_actor_id))"""
+replace = """    if False:
+        raise NotTheProposerError(str(actor_id), str(version.proposed_by_actor_id))"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3B-5"
+group = "w19-s3b"
+why = "the position binders stop stamping the mapping version, so clause (2)'s hard FK is silently NULL on every loaded row — provenance that looks recorded and is not"
+file = "packages/shared-python/src/irp_shared/position/position.py"
+find = """        mapping_version_id=(str(mapping_version_id) if mapping_version_id else None),
+    )"""
+replace = """        mapping_version_id=None,
+    )"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3B-6"
+group = "w19-s3b"
+why = "the holdings as-of read drops the mapping binding, so the provenance is stored and unreadable — provenance nobody can check"
+file = "packages/shared-python/src/irp_shared/holdings/service.py"
+find = """        mapping_version_id=row.mapping_version_id,"""
+replace = """        mapping_version_id=None,"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3B-7"
+group = "w19-s3b"
+why = "the REQ-PPM-002 census stops following calls, so a family two refactors away from the table reports as compliant. This mutant SURVIVED its first control: a two-hop plant is caught by SEEDING alone (the helper's own body queries the table), so the control never exercised the fixed point at all — S3a's lesson reproduced inside the census written to apply it. The control is now three hops."
+file = "packages/shared-python/tests/test_holdings_consumption_census.py"
+find = """                        if target is not None and target in reach:
+                            reach.add((module, name))
+                            changed = True
+                            break"""
+replace = """                        if False:
+                            reach.add((module, name))
+                            changed = True
+                            break"""
+tests = ["packages/shared-python/tests/test_holdings_consumption_census.py"]
+
+[[mutant]]
+id = "M-S3B-8"
+group = "w19-s3b"
+why = "the census's raw-read matcher stops seeing a query over the ORM class, so it finds nothing anywhere — an empty offender list from a broken matcher is indistinguishable from compliance"
+file = "packages/shared-python/tests/test_holdings_consumption_census.py"
+find = """                    if isinstance(arg, ast.Name) and arg.id in names:
+                        return True"""
+replace = """                    if False:
+                        return True"""
+tests = ["packages/shared-python/tests/test_holdings_consumption_census.py"]
+
+[[mutant]]
+id = "M-S3B-9"
+group = "w19-s3b"
+why = "the by-target lineage read ignores the entity-type discriminator and matches on the id alone, returning another entity family's edges for a colliding id"
+file = "apps/backend/src/irp_backend/api/lineage.py"
+find = """                LineageEdge.target_entity_type == target_entity_type,
+                LineageEdge.target_entity_id == str(target_entity_id),"""
+replace = """                LineageEdge.target_entity_id == str(target_entity_id),"""
+tests = ["apps/backend/tests/test_lineage_endpoint.py"]
+
+[[mutant]]
+id = "M-S3B-10"
+group = "w19-s3b"
+why = "a cross-tenant `supersedes_id` answers 422 WITH the refusal's message instead of the indistinguishable 404 — a caller can enumerate another tenant's mapping ids by the difference in the reply"
+file = "apps/backend/src/irp_backend/api/ingest.py"
+find = """    except MappingNotVisible:
+        # `supersedes_id` naming a version in ANOTHER tenant. This clause must stay ABOVE the"""
+replace = """    except ValueError:
+        # `supersedes_id` naming a version in ANOTHER tenant. This clause must stay ABOVE the"""
+tests = ["apps/backend/tests/test_ingest_endpoint.py"]
+
+[[mutant]]
+id = "M-S3B-11"
+group = "w19-s3b"
+why = "the maker/checker partition collapses — the ratify code is granted to the proposer's role, so one person holds both halves of four-eyes and the person-level refusal is the only thing left"
+file = "packages/shared-python/src/irp_shared/entitlement/bootstrap.py"
+find = """        "ingest.mapping.propose",
+        "ingest.mapping.view","""
+replace = """        "ingest.mapping.propose",
+        "ingest.mapping.ratify",
+        "ingest.mapping.view","""
+tests = ["packages/shared-python/tests/test_entitlement_bootstrap.py"]
+
+[[mutant]]
+id = "M-S3B-12"
+group = "w19-s3b"
+why = "0077 declares DELIVERS and OMITS the sync_catalog call, so every from-empty test still passes (0002 seeds from the live constants) while a deployed tenant silently holds none of the codes — the P17 class, one level up: a DECLARATION is not a DELIVERY. This mutant SURVIVED its first run, and the survivor was the finding: nothing in the P17 gate asked whether a declaring migration does anything. RESIDUAL, recorded rather than hidden: the new check reads the AST for a call to a delivery verb, so it detects OMISSION (what a forgetful edit produces) and NOT a call left syntactically present but rendered dead by a guard. Detecting that needs execution, which scripts/migration_0077_p17_check.py does against a populated database."
+file = "migrations/versions/0077_bind_position_to_mapping.py"
+find = """    report = sync_catalog(op.get_bind(), now=SYNC_TS)
+    print(  # noqa: T201 - migration console output
+        f"0077: +{report.permissions_inserted} permissions, +{report.grants_inserted} grants""""
+replace = """    print(  # noqa: T201 - migration console output
+        f"0077: +0 permissions, +0 grants""""
+tests = ["packages/shared-python/tests/test_entitlement_mint_delivery.py"]
+
+[[mutant]]
+id = "M-S3B-13"
+group = "w19-s3b"
+why = "the governing-outcome filter is dropped, so a WITHDRAWN row for an unrelated competing draft outranks a live RATIFIED row: the source reads back as ungoverned and every load refuses, while the ratify path finds no incumbent and the next legitimate ratification collides with ENT-077's partial index. THE BLOCKING defect this slice shipped and a different-engine review reproduced"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """            IngestionMappingRatification.outcome.in_(sorted(GOVERNING_OUTCOMES)),"""
+replace = """            IngestionMappingRatification.outcome.in_(sorted(RESOLUTION_OUTCOMES)),"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3B-14"
+group = "w19-s3b"
+why = "the REQ-PPM-002 census goes back to BARE-NAME reachability, so one generic private helper name shared across families (`_compute`) credits twenty families as holdings consumers that reference no sanctioned name at all — the name-collision artifact this census shipped with"
+file = "packages/shared-python/tests/test_holdings_consumption_census.py"
+find = """        if name in functions.get(module, {}):
+            return (module, name)"""
+replace = """        if True:
+            return (module, name)"""
+tests = ["packages/shared-python/tests/test_holdings_consumption_census.py"]
+
+[[mutant]]
+id = "M-S3B-15"
+group = "w19-s3b"
+why = "the raw-read matcher stops folding concatenated and f-string SQL, so a family building `'SELECT ... FROM ' + 'position'` reads holdings with the census green — one of five equivalent shapes a review planted and executed against the first matcher"
+file = "packages/shared-python/tests/test_holdings_consumption_census.py"
+find = """    return any(marker in text for text in _string_constants(node) for marker in _POSITION_SQL)"""
+replace = """    return any(
+        marker in c.value
+        for c in ast.walk(node)
+        if isinstance(c, ast.Constant) and isinstance(c.value, str)
+        for marker in _POSITION_SQL
+    )"""
+tests = ["packages/shared-python/tests/test_holdings_consumption_census.py"]
+
+[[mutant]]
+id = "M-S3B-16"
+group = "w19-s3b"
+why = "the sanctioned cut goes back to MODULE scope, so any new helper added to holdings/service.py or position/position.py inherits blanket immunity from the offender check — the escape hatch a review demonstrated"
+file = "packages/shared-python/tests/test_holdings_consumption_census.py"
+find = """    raw_reach = reaching(raw_seeds, stop_at=SANCTIONED_HOLDINGS_NAMES)"""
+replace = """    raw_seeds = {(m, n) for (m, n) in raw_seeds if m not in SANCTIONED_MODULES}
+    raw_reach = reaching(raw_seeds, stop_at=SANCTIONED_HOLDINGS_NAMES)"""
+tests = ["packages/shared-python/tests/test_holdings_consumption_census.py"]
+
+[[mutant]]
+id = "M-S3B-17"
+group = "w19-s3b"
+why = "the by-target lineage read stops reporting truncation, so a capped answer is presented as the complete lineage of an entity — worse than no answer, because it looks whole"
+file = "apps/backend/src/irp_backend/api/lineage.py"
+find = """    truncated = len(rows) > MAX_EDGES_PER_TARGET"""
+replace = """    truncated = False"""
+tests = ["apps/backend/tests/test_lineage_endpoint.py"]
+
+# NOTE: there is deliberately NO M-S3B-18 for the mapping screen's refetch-after-write. One was
+# written and REMOVED: this battery runs pytest, and naming a `.tsx` file in `tests` makes pytest
+# exit 4 collecting nothing — a RED baseline, under which every kill in the run is unattributable.
+# The behaviour it would have targeted is proven directly instead, by the four write-path tests in
+# `apps/frontend/src/views/ops/mappings.test.tsx` (click -> POST body -> refetch, and the 403 and
+# 409 remedies), which are the equivalent evidence on the tier that can execute it.

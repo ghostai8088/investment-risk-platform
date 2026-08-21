@@ -67,6 +67,19 @@ class HoldingOut(BaseModel):
     quantity_unit: str | None
     cost_basis: Decimal | None
     position_source: str | None
+    #: W19-S3b (REQ-INT-001 clause 2, the read half). A STRING, because it is a UUID.
+    #:
+    #: *An earlier version of this comment claimed `HoldingOut` "is inside `decimal-contract.ts`'s
+    #: curated key set, so a `number` field here fails tsc". That is FALSE and a review caught it:
+    #: the guard reaches a DTO either through the `${string}RowOut` name pattern or through the
+    #: curated `ExtraGovernedDtoKey` union (`PositionOut`, `ValuationOut`, `BreachOut`,
+    #: `BreachActionOut`, `BreachNotificationOut`, `LimitOut`, `LimitHealthOut`), and `HoldingOut`
+    #: matches neither — it has never appeared in that file at any point in its history. So this
+    #: DTO's decimal-as-string contract, including the pre-existing `quantity` and `cost_basis`,
+    #: is NOT compiler-enforced. Adding it to the curated union is a real improvement and is NOT
+    #: done here: it is a change to a shipped cross-cutting guard, outside this slice's scope, and
+    #: is named in the slice record instead of made quietly.*
+    mapping_version_id: str | None
     valid_from: datetime
     valid_to: datetime | None
     system_from: datetime
@@ -112,6 +125,7 @@ def _holding_out(holding: HoldingRow, mark=None) -> HoldingOut:  # noqa: ANN001 
         quantity_unit=holding.quantity_unit,
         cost_basis=holding.cost_basis,
         position_source=holding.position_source,
+        mapping_version_id=holding.mapping_version_id,
         valid_from=holding.valid_from,
         valid_to=holding.valid_to,
         system_from=holding.system_from,

@@ -23,6 +23,7 @@ is its proof. ``0075`` has a data path and gets ``scripts/migration_0075_p17_che
 from __future__ import annotations
 
 import os
+import threading
 import uuid
 
 import pytest
@@ -58,6 +59,7 @@ TABLE = "ingestion_mapping_version"
 
 _TABLES = (
     "ingestion_mapping_version",
+    "ingestion_mapping_ratification",  # W19-S3b, ENT-078
     "ingestion_batch",
     "ingestion_staged_record",
     "data_source",
@@ -651,3 +653,424 @@ def test_the_mapping_routes_hide_another_tenants_rows(app_factory) -> None:  # n
             list_batches_for_mapping(uuid.UUID(mapping_id), None, session)
         assert batches.value.status_code == 404
         assert list_mapping_versions(None, session) == []
+
+
+# --- W19-S3b: ENT-078, the ratification log -----------------------------------------------------
+#
+# `0076` CREATEs a table, so it gets no P17 harness — there are no pre-existing rows and a
+# populated-DB proof would be paperwork rather than evidence (the 0074 precedent). THIS is its
+# proof: the DDL read back out of PostgreSQL rather than out of the migration text.
+
+RATIFICATION_TABLE = "ingestion_mapping_ratification"
+
+
+def test_ent078_rls_is_enabled_and_forced(superuser_engine) -> None:  # noqa: ANN001
+    """ENABLED is not enough. Without FORCE the table OWNER bypasses the policy, and every migration
+    and every psql session runs as the owner."""
+    with superuser_engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = :t"),
+            {"t": RATIFICATION_TABLE},
+        ).one()
+    assert row.relrowsecurity is True, f"{RATIFICATION_TABLE} has no RLS at all"
+    assert row.relforcerowsecurity is True, f"{RATIFICATION_TABLE} is ENABLED but not FORCED"
+
+
+def test_ent078_policy_is_symmetric_and_names_no_system_tenant(superuser_engine) -> None:  # noqa: ANN001
+    """PROPRIETARY, tenant-scoped. The SYSTEM literal must NEVER appear: the AD-013-R2 hybrid set is
+    closed at seven and this table is not one of them.
+
+    Symmetric because a USING-only policy reads correctly and WRITES anywhere — the shape that
+    lets a tenant append a ratification row into another tenant's log, which on a four-eyes table
+    means forging an approval.
+    """
+    with superuser_engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT policyname, qual, with_check FROM pg_policies WHERE tablename = :t"),
+            {"t": RATIFICATION_TABLE},
+        ).all()
+    assert len(rows) == 1, f"expected exactly one policy, found {[r.policyname for r in rows]}"
+    policy = rows[0]
+    assert (
+        policy.qual is not None and policy.with_check is not None
+    ), "the policy has no WITH CHECK — it reads correctly and writes anywhere"
+    assert "current_setting('app.current_tenant'" in policy.qual
+    assert "current_setting('app.current_tenant'" in policy.with_check
+    assert "SYSTEM" not in (policy.qual + policy.with_check)
+
+
+def test_ent078_identifier_names_landed_whole(superuser_engine) -> None:  # noqa: ANN001
+    """PostgreSQL truncates identifiers at 63 bytes SILENTLY.
+
+    The convention-generated FK name for this table is 74 characters, and the revision id itself was
+    shortened from 35 to 25 because `alembic_version.version_num` is `varchar(32)`. Nothing but
+    reading the catalogue back proves the short names are what actually landed.
+    """
+    with superuser_engine.connect() as conn:
+        names = {
+            r[0]
+            for r in conn.execute(
+                text(
+                    "SELECT conname FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid "
+                    "WHERE t.relname = :t"
+                ),
+                {"t": RATIFICATION_TABLE},
+            ).all()
+        }
+    for expected in (
+        "pk_ingestion_mapping_ratification",
+        "fk_ingestion_mapping_ratification_version",
+        "uq_ingestion_mapping_ratification_seq",
+        "ck_ingestion_mapping_ratification_outcome",
+        "ck_ingestion_mapping_ratification_resolver_present",
+    ):
+        assert expected in names, f"{expected} is missing (or landed truncated): {sorted(names)}"
+        assert len(expected) <= 63
+
+
+def test_ent078_carries_NO_partial_unique_index(superuser_engine) -> None:  # noqa: ANN001
+    """The ABSENCE is asserted, because two drafts put one here and the database refused both.
+
+    On an append-only log nothing ever leaves a predicate, so `WHERE outcome='RATIFIED'` cannot
+    express "currently ratified": the incumbent's ratification is still a ratification after it is
+    superseded. "At most one row matching P" and "at most one CURRENT thing" are different
+    statements and a partial unique index can only make the first.
+
+    A future edit re-adding one would not fail any existing test — it would fail a legitimate
+    replacement at runtime, in production, on the second mapping a tenant ever ratifies. So the
+    absence is pinned here rather than left to memory.
+    """
+    with superuser_engine.connect() as conn:
+        indexes = {
+            r[0]: r[1]
+            for r in conn.execute(
+                text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = :t"),
+                {"t": RATIFICATION_TABLE},
+            ).all()
+        }
+    partial = {name: ddl for name, ddl in indexes.items() if " WHERE " in ddl.upper()}
+    assert not partial, (
+        f"a partial index reappeared on {RATIFICATION_TABLE}: {partial}. The invariant is "
+        f"structural — the LATEST resolution row per source, made unique by uq_..._seq. An index "
+        f"here refuses legitimate replacements."
+    )
+    # ...and the constraint that DOES carry the invariant is present.
+    assert "uq_ingestion_mapping_ratification_seq" in indexes
+
+
+def test_ent078_append_only_trigger_refuses_an_update_and_a_delete(app_factory) -> None:  # noqa: ANN001
+    """The DB half of the belt-and-braces guard, fired as the CONSTRAINED role.
+
+    ENT-075 shipped with only the trigger and its first mutation attempt was caught by PostgreSQL
+    rather than by the code. This table carries both; the ORM half is proven at the unit tier, and
+    only PostgreSQL can prove the trigger — a non-ORM UPDATE walks straight past a `before_update`
+    listener, which is the entire reason approval evidence does not live in ENT-077's columns.
+    """
+    session = app_factory()
+    tenant = str(uuid.uuid4())
+    try:
+        set_tenant_context(session, tenant)
+        source_id = _source(session, tenant)
+        version = propose_mapping_version(
+            session,
+            tenant_id=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+            version_label="v1",
+            operations=list(DEMO_OPS),
+            actor_id="proposer@pg",
+        )
+        ratify_mapping_version(
+            session,
+            mapping_version_id=version.id,
+            acting_tenant=tenant,
+            actor_id="ratifier@pg",
+        )
+        session.commit()
+
+        set_tenant_context(session, tenant)
+        row_id = session.execute(
+            text(f"SELECT id FROM {RATIFICATION_TABLE} WHERE tenant_id = :t"), {"t": tenant}
+        ).scalar_one()
+
+        with pytest.raises((DBAPIError, ProgrammingError, IntegrityError)):
+            session.execute(
+                text(f"UPDATE {RATIFICATION_TABLE} SET outcome = 'WITHDRAWN' WHERE id = :i"),
+                {"i": row_id},
+            )
+            session.flush()
+        session.rollback()
+
+        set_tenant_context(session, tenant)
+        with pytest.raises((DBAPIError, ProgrammingError, IntegrityError)):
+            session.execute(text(f"DELETE FROM {RATIFICATION_TABLE} WHERE id = :i"), {"i": row_id})
+            session.flush()
+        session.rollback()
+    finally:
+        session.close()
+
+
+def test_ent078_outcome_check_refuses_an_unenumerated_value(app_factory) -> None:  # noqa: ANN001
+    """A CHECK does not exist on SQLite at all in this setup, so this claim can only be made here.
+
+    An outcome nobody enumerated is an outcome nobody decided needed four eyes — it must fail
+    CLOSED. Attempted as raw SQL rather than through the service, because the service would never
+    construct it and a test that cannot reach the constraint is not testing the constraint.
+    """
+    session = app_factory()
+    tenant = str(uuid.uuid4())
+    try:
+        set_tenant_context(session, tenant)
+        source_id = _source(session, tenant)
+        version = propose_mapping_version(
+            session,
+            tenant_id=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+            version_label="v1",
+            operations=list(DEMO_OPS),
+            actor_id="proposer@pg",
+        )
+        session.flush()
+        with pytest.raises(IntegrityError):
+            session.execute(
+                text(
+                    f"INSERT INTO {RATIFICATION_TABLE} "
+                    "(id, tenant_id, system_from, seq, mapping_version_id, data_source_id, "
+                    " source_type, outcome, resolved_by, resolved_at) "
+                    "VALUES (:i, :t, now(), 99, :m, :d, :st, 'APPROVED-ISH', 'x@pg', now())"
+                ),
+                {
+                    "i": str(uuid.uuid4()),
+                    "t": tenant,
+                    "m": version.id,
+                    "d": source_id,
+                    "st": SOURCE_TYPE_POSITIONS,
+                },
+            )
+            session.flush()
+        session.rollback()
+    finally:
+        session.close()
+
+
+def test_ent078_seq_is_unique_per_tenant_under_REAL_CONCURRENCY(app_url: str) -> None:
+    """N THREADS, not N sequential calls — the only shape that tests the advisory lock.
+
+    `_next_seq` reads MAX(seq)+1 and the read-then-write is not atomic on its own: two ratifiers
+    landing in the same instant both read the same maximum and both try to write it. The advisory
+    lock is what serialises them, and `pg_advisory_xact_lock` is a literal NO-OP off PostgreSQL, so
+    every SQLite test of this passes without the lock existing at all.
+
+    What is asserted: every thread SUCCEEDS, and the seqs are exactly 1..N with no gap and no
+    duplicate. A test that only asserted uniqueness would pass if the unique constraint rejected
+    half the writers — which is a lock that does not work plus a constraint cleaning up after it.
+    """
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+    n = 8
+
+    setup = factory()
+    try:
+        set_tenant_context(setup, tenant)
+        source_id = _source(setup, tenant)
+        versions = [
+            propose_mapping_version(
+                setup,
+                tenant_id=tenant,
+                data_source_id=_source(setup, tenant, code=f"PG-SRC-{i}"),
+                source_type=SOURCE_TYPE_POSITIONS,
+                version_label=f"v{i}",
+                operations=list(DEMO_OPS),
+                actor_id="proposer@pg",
+            ).id
+            for i in range(n)
+        ]
+        assert source_id
+        setup.commit()
+    finally:
+        setup.close()
+
+    barrier = threading.Barrier(n)
+    errors: list[Exception] = []
+
+    def ratifier(version_id: str) -> None:
+        db = factory()
+        try:
+            set_tenant_context(db, tenant)
+            barrier.wait(timeout=30)  # fail fast rather than hang
+            ratify_mapping_version(
+                db,
+                mapping_version_id=version_id,
+                acting_tenant=tenant,
+                actor_id="ratifier@pg",
+            )
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 - collected and asserted below
+            errors.append(exc)
+        finally:
+            db.close()
+
+    threads = [threading.Thread(target=ratifier, args=(v,)) for v in versions]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    check = factory()
+    try:
+        set_tenant_context(check, tenant)
+        seqs = sorted(
+            r[0]
+            for r in check.execute(
+                text(f"SELECT seq FROM {RATIFICATION_TABLE} WHERE tenant_id = :t"), {"t": tenant}
+            ).all()
+        )
+    finally:
+        check.close()
+        engine.dispose()
+
+    assert not errors, f"ratifier errors under concurrency: {errors}"
+    assert seqs == list(range(1, n + 1)), (
+        f"seq is not gapless-unique under {n} concurrent ratifiers: {seqs}. Each source has its "
+        f"own mapping, so all {n} ratifications are legitimate and all must land."
+    )
+
+
+def test_the_position_fk_binds_a_real_mapping_and_refuses_a_stranger(app_factory) -> None:  # noqa: ANN001
+    """`0077`'s FK, proven at the database rather than in the ORM.
+
+    SQLite does not enforce foreign keys in this setup, so the unit tier cannot say whether the
+    constraint exists at all. The column is NULLABLE by design — hand-captured holdings have no
+    mapping version — and a nullable FK that is never checked is indistinguishable from a free-text
+    field, which is exactly what clause (2) forbids.
+    """
+    session = app_factory()
+    tenant = str(uuid.uuid4())
+    try:
+        set_tenant_context(session, tenant)
+        stranger = str(uuid.uuid4())
+        with pytest.raises(IntegrityError):
+            session.execute(
+                text(
+                    'UPDATE "position" SET mapping_version_id = :m '
+                    "WHERE tenant_id = :t AND system_to IS NULL"
+                ),
+                {"m": stranger, "t": tenant},
+            )
+            session.execute(
+                text(
+                    'INSERT INTO "position" (id, tenant_id, portfolio_id, instrument_id, '
+                    " quantity, valid_from, system_from, record_version, mapping_version_id) "
+                    "VALUES (:i, :t, :p, :n, 1, now(), now(), 1, :m)"
+                ),
+                {
+                    "i": str(uuid.uuid4()),
+                    "t": tenant,
+                    "p": str(uuid.uuid4()),
+                    "n": str(uuid.uuid4()),
+                    "m": stranger,
+                },
+            )
+            session.flush()
+        session.rollback()
+    finally:
+        session.close()
+
+
+def test_ent078_two_ratifiers_racing_on_the_SAME_source_serialize(app_url: str) -> None:
+    """The race the invariant is ACTUALLY about — two ratifiers deciding ONE source at once.
+
+    The sibling concurrency test above races N threads over N DISJOINT sources: it stresses the
+    shared per-tenant `seq` counter and nothing else. A review pointed out that this is not the
+    property `_lock_tenant` is claimed to protect — the docstrings say the lock is what stops two
+    resolutions for one source from both passing their individual checks — and that the property
+    with the real consequence had no executed proof anywhere in the slice.
+
+    Two competing PROPOSED versions of ONE source, ratified concurrently. Whatever order they land
+    in, afterwards EXACTLY ONE version is RATIFIED and the incumbent is SUPERSEDED. Without the
+    lock, both read "no incumbent" and both write RATIFIED — and the only thing left standing
+    between the platform and two current mappings for one source is ENT-077's partial index, i.e. a
+    raw IntegrityError out of a governed act.
+    """
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+
+    setup = factory()
+    try:
+        set_tenant_context(setup, tenant)
+        source_id = _source(setup, tenant, code="PG-RACE")
+        versions = [
+            propose_mapping_version(
+                setup,
+                tenant_id=tenant,
+                data_source_id=source_id,
+                source_type=SOURCE_TYPE_POSITIONS,
+                version_label=f"race-v{i}",
+                operations=list(DEMO_OPS),
+                actor_id="proposer@pg",
+            ).id
+            for i in range(2)
+        ]
+        setup.commit()
+    finally:
+        setup.close()
+
+    barrier = threading.Barrier(2)
+    errors: list[Exception] = []
+
+    def ratifier(version_id: str) -> None:
+        db = factory()
+        try:
+            set_tenant_context(db, tenant)
+            barrier.wait(timeout=30)
+            ratify_mapping_version(
+                db, mapping_version_id=version_id, acting_tenant=tenant, actor_id="ratifier@pg"
+            )
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 - collected and asserted below
+            errors.append(exc)
+        finally:
+            db.close()
+
+    threads = [threading.Thread(target=ratifier, args=(v,)) for v in versions]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    check = factory()
+    try:
+        set_tenant_context(check, tenant)
+        statuses = dict(
+            check.execute(
+                text(
+                    "SELECT version_label, status FROM ingestion_mapping_version "
+                    "WHERE tenant_id = CAST(:t AS uuid) ORDER BY version_label"
+                ),
+                {"t": tenant},
+            ).fetchall()
+        )
+        current = check.execute(
+            text(
+                "SELECT outcome FROM ingestion_mapping_ratification "
+                "WHERE tenant_id = CAST(:t AS uuid) ORDER BY seq DESC LIMIT 1"
+            ),
+            {"t": tenant},
+        ).scalar_one()
+    finally:
+        check.close()
+        engine.dispose()
+
+    assert not errors, f"a ratifier failed under a same-source race: {errors}"
+    ratified = [label for label, status in statuses.items() if status == STATUS_RATIFIED]
+    assert len(ratified) == 1, (
+        f"expected exactly ONE ratified version for this source, found {ratified} out of "
+        f"{statuses} — the two ratifiers did not serialize and the source now has two current "
+        f"mappings, or none"
+    )
+    assert sorted(statuses.values()) == ["RATIFIED", "SUPERSEDED"]
+    # ...and the governing log agrees: the LATEST row is the ratification, not the supersession.
+    assert current == "RATIFIED"

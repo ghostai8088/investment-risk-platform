@@ -181,3 +181,77 @@ def test_platform_declarations_are_non_vacuous() -> None:
         declared
     ), "no migration declares a DELIVERS_PLATFORM tuple — the platform gate is unpopulated"
     assert set(PLATFORM_CODES), "the platform catalog is empty — the gate above is vacuous"
+
+
+# --- W19-S3b: a DECLARATION is not a DELIVERY ---------------------------------------------------
+
+
+#: The verbs that actually put permission rows into a running database. `sync_catalog` is the
+#: entitlement arm; `bulk_insert` is how `0067` seeds the platform registry rows directly.
+_DELIVERY_VERBS = frozenset({"sync_catalog", "bulk_insert"})
+
+
+def _delivering_migrations(name: str) -> dict[str, tuple[str, ...]]:
+    """Migrations whose `name` tuple is NON-EMPTY — the ones making a delivery claim."""
+    return {rev: codes for rev, codes in _declared(name=name).items() if codes}
+
+
+def _calls_a_delivery_verb(revision: str) -> bool:
+    for path in sorted(_MIGRATIONS.glob("*.py")):
+        if not path.name.startswith(revision.split("_")[0]):
+            continue
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            name = (
+                fn.id
+                if isinstance(fn, ast.Name)
+                else fn.attr
+                if isinstance(fn, ast.Attribute)
+                else None
+            )
+            if name in _DELIVERY_VERBS:
+                return True
+    return False
+
+
+def test_a_migration_that_DECLARES_a_delivery_actually_MAKES_one() -> None:
+    """The hole in this gate's own thesis, found by mutating it.
+
+    Everything above reads the `DELIVERS` tuple and asks whether the catalog is covered by the union
+    of those declarations. Nothing asked whether the migration DOES anything. Delete the
+    `sync_catalog(...)` call from a migration and leave its `DELIVERS` tuple in place and every test
+    in this file stayed green — while a running database received nothing, which is the precise
+    failure P17 exists to make impossible. Verified by mutation `M-S3B-12`, which survived.
+
+    A declaration is not a delivery. That sentence is this gate's entire subject, and the gate did
+    not enforce it about itself.
+    """
+    for name in ("DELIVERS", "DELIVERS_PLATFORM"):
+        for revision, codes in _delivering_migrations(name).items():
+            assert _calls_a_delivery_verb(revision), (
+                f"{revision} declares {name} = {codes} and calls none of {sorted(_DELIVERY_VERBS)} "
+                f"— the declaration is a claim about a running database that the migration never "
+                f"makes true. Every from-empty test passes over this gap because `0002` seeds from "
+                f"the live constants."
+            )
+
+
+def test_the_delivery_verb_check_is_NOT_vacuous() -> None:
+    """P6, and it matters more than usual here: the assertion above iterates a dict, so it passes
+    trivially if the dict is empty — which is what a broken `_declared` reader would produce."""
+    claiming = _delivering_migrations("DELIVERS") | _delivering_migrations("DELIVERS_PLATFORM")
+    assert len(claiming) >= 4, (
+        f"only {len(claiming)} migration(s) make a non-empty delivery claim — the check above is "
+        f"iterating an almost-empty set and proving almost nothing"
+    )
+    # ...and the verb matcher must genuinely fire, or every revision would pass by never matching.
+    assert any(_calls_a_delivery_verb(rev) for rev in claiming)
+    # ...and genuinely NOT fire on a migration that makes no delivery claim, or it matches anything.
+    non_claiming = set(_declared(name="DELIVERS")) - set(claiming)
+    assert non_claiming, "no migration declares an EMPTY DELIVERS — nothing pins the negative side"
+    assert not all(
+        _calls_a_delivery_verb(rev) for rev in non_claiming
+    ), "every non-claiming migration also 'calls a delivery verb' — the matcher matches anything"

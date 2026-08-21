@@ -310,8 +310,13 @@ def test_the_call_walker_sees_both_call_shapes() -> None:
 def test_the_census_actually_detects_known_production_writers() -> None:
     """The POSITIVE CONTROL, against REAL pre-existing sites rather than a freshly authored plant.
 
-    A plant tests the matcher against a shape the matcher was written for. These four sites were
-    here before this slice and are what a refactor would silently move out of view.
+    A plant tests the matcher against a shape the matcher was written for. The sites in
+    ``KNOWN_POSITION_WRITERS`` were here before this slice and are what a refactor would silently
+    move out of view.
+
+    *The sentence above said "these four sites" while the set held two — a stale prose count inside
+    the slice's own positive control, corrected at W19-S3b. Naming the constant instead of counting
+    it in prose is the fix that cannot go stale again.*
     """
     writers, _ = _census()
     missing = KNOWN_POSITION_WRITERS - writers
