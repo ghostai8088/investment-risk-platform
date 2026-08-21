@@ -94,9 +94,28 @@ def ensure_manual_source(session: Session, tenant_id: str, actor_id: str) -> Dat
     )
 
 
-def _origin_edge(session: Session, *, entity: Any, actor: PositionActor) -> None:
-    """Root one ORIGIN lineage edge (MANUAL source) for a NEW physical version row."""
-    source = ensure_manual_source(session, entity.tenant_id, actor.actor_id)
+def _origin_edge(
+    session: Session,
+    *,
+    entity: Any,
+    actor: PositionActor,
+    source: DataSource | None = None,
+) -> None:
+    """Root one ORIGIN lineage edge for a NEW physical version row.
+
+    ``source`` defaults to the tenant's shared ``MANUAL`` root — correct for the hand-capture
+    verbs this module was written for, and WRONG for anything else. **W19-S3a (DS3a-4) added the
+    override**: a position loaded from a client file through a ratified mapping is not manual
+    entry, and recording it as manual entry would be a FALSE provenance record — worse than none,
+    because a reader cannot tell it from a genuine hand capture. The interpreter passes the
+    ingestion batch's own ``data_source``, so the lineage answers "where did this holding come
+    from?" truthfully one slice before the hard FK lands at S3b.
+
+    The caller supplies an ALREADY-RESOLVED source; ``record_lineage`` re-resolves it through the
+    RLS-scoped session and stamps ``tenant_id`` from the resolved row, so a cross-tenant source
+    fails closed there rather than here.
+    """
+    source = source or ensure_manual_source(session, entity.tenant_id, actor.actor_id)
     record_lineage(
         session,
         source=source,
@@ -149,9 +168,13 @@ def record_position_create(
     after_value: dict[str, Any],
     actor: PositionActor,
     now: datetime | None = None,
+    origin_source: DataSource | None = None,
 ) -> None:
-    """Root one ORIGIN edge + emit ``POSITION.CREATE`` (EVT-170) for a captured new version."""
-    _origin_edge(session, entity=entity, actor=actor)
+    """Root one ORIGIN edge + emit ``POSITION.CREATE`` (EVT-170) for a captured new version.
+
+    ``origin_source`` (W19-S3a, DS3a-4) overrides the default MANUAL lineage root — see
+    :func:`_origin_edge`. Default-None keeps every hand-capture call site byte-identical."""
+    _origin_edge(session, entity=entity, actor=actor, source=origin_source)
     _emit(
         session,
         entity=entity,
@@ -194,12 +217,14 @@ def record_position_correction(
     after_value: dict[str, Any],
     actor: PositionActor,
     now: datetime | None = None,
+    origin_source: DataSource | None = None,
 ) -> None:
     """Root one ORIGIN edge + emit ``POSITION.CORRECTION`` (EVT-172) for an as-known restatement (a
     corrected NEW version). ``restatement_reason`` (TR-08) lands on the canonical ``justification``
     audit field AND in the DC-2 ``after_value`` metadata; ``before_value`` is left None — the prior
-    row's ``system_to`` close-out (a separate ``POSITION.UPDATE``) carries the boundary diff."""
-    _origin_edge(session, entity=entity, actor=actor)
+    row's ``system_to`` close-out (a separate ``POSITION.UPDATE``) carries the boundary diff.
+    ``origin_source`` (W19-S3a, DS3a-4) overrides the default MANUAL lineage root."""
+    _origin_edge(session, entity=entity, actor=actor, source=origin_source)
     _emit(
         session,
         entity=entity,

@@ -536,10 +536,20 @@ def test_scope_fence_generic_only(session: Session) -> None:
     # Staged record is generic: NO domain column, only id/tenant/system_from/batch/row/payload.
     cols = set(IngestionStagedRecord.__table__.columns.keys())
     assert cols == {"id", "tenant_id", "system_from", "batch_id", "row_number", "payload"}
-    # No FK to any domain/canonical table; batch FK only to data_source, staged FK only to batch.
+    # No FK to any DOMAIN/CANONICAL table. The batch's FK set was `{data_source}` from P1A-4 until
+    # W19-S3a, which added `ingestion_mapping_version` — REQ-INT-001 clause (2): "every ingestion
+    # batch ... binds the ratifying mapping version by hard FK -- never a free-text field". The
+    # fence is WIDENED here deliberately, in the slice that needs it, rather than relaxed: a mapping
+    # version is ingest-side governance metadata, NOT a domain/canonical table, so the property this
+    # fence protects (staging is domain-agnostic — no Security Master / portfolio / position /
+    # valuation coupling) is unchanged. Staged rows stay coupled to nothing but their batch.
     batch_fks = {fk.column.table.name for fk in IngestionBatch.__table__.foreign_keys}
     staged_fks = {fk.column.table.name for fk in IngestionStagedRecord.__table__.foreign_keys}
-    assert batch_fks == {"data_source"} and staged_fks == {"ingestion_batch"}
+    assert batch_fks == {"data_source", "ingestion_mapping_version"}
+    assert staged_fks == {"ingestion_batch"}
+    # The property behind the fence, asserted DIRECTLY rather than inferred from the set above, so a
+    # future widening cannot smuggle a domain FK in under the same edit.
+    assert not batch_fks & {"portfolio", "position", "instrument", "valuation", "transaction"}
     # The DQ engine is reused, not extended by ingestion: the four generic evaluators (RANGE added
     # P2-2 for FX; COMPLETENESS minted at DATA-1 for the captured-rate rail, not by ingestion) and
     # no domain evaluators.

@@ -93,6 +93,23 @@ class IngestionBatch(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Bas
         DateTime(timezone=True), default=utcnow, nullable=False
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # W19-S3a (REQ-INT-001 clause 2, the batch half): the RATIFIED mapping version this batch was
+    # interpreted through — a HARD FK, never free text. NULLABLE because a generic non-positions
+    # upload legitimately has none (this table stages files the mapping spine never interprets) and
+    # because the table is populated on every live deployment; the LOAD PATH requires it, not the
+    # schema. Spelled as a literal table name rather than a Python import: `irp_shared.ingestion`
+    # may not import `irp_shared.ingest_mapping` (the dependency runs the other way), and the
+    # `HYBRID_TABLES` literal-spelling precedent covers exactly this shape.
+    mapping_version_id: Mapped[str | None] = mapped_column(
+        GUID,
+        ForeignKey("ingestion_mapping_version.id", name="fk_ingestion_batch_mapping_version"),
+        nullable=True,
+        index=True,
+    )
+    # The instant every code-lookup in this batch resolved against — REQ-INT-001 clause (9)'s third
+    # named input. Recorded rather than assumed: without it a re-run would resolve identifiers "now"
+    # and silently disagree with the original load the moment an identifier is superseded.
+    lookup_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class IngestionStagedRecord(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyMixin, Base):
