@@ -1,6 +1,86 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-20 — the WAVE-19 PLANNING GATE RATIFIED) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-21 — W19-S3a MERGED: a client file becomes a governed book) — read this block; everything below it is HISTORY
+
+**Main `7682a1c` (PR #234, W19-S3a — the 42nd autonomous merge), tree clean. CI green on all nine
+checks at head `57efd4c`, verified per conclusion. Migration head `0075_bind_batch_to_mapping`, one
+head. Next free canonical id **ENT-078** (ENT-077 `ingestion_mapping_version` minted here; all THREE
+live pointer copies advanced). Next free control id CTRL-040. NEXT = WAVE-19 SLICE S3b (INGEST-1
+governance: the R-07 permission mint, four-eyes as a resolution-row lifecycle, the per-`position`
+hard FK, the PPM-002 census).**
+
+### The slice in six lines
+
+- **REQ-INT-001 is In-Progress, not Delivered, and the line is drawn deliberately.** Eight of ten
+  acceptance clauses ship, plus the BATCH half of (2) and the REFUSAL half of (6). Clause (2)'s
+  per-`position` hard FK and clause (6)'s permission separation are S3b's. Saying "Delivered" here
+  would be the drift the 2026-08-12 re-baseline exists to stop.
+- **ENT-077 + the closed seven-operation interpreter + the load path**, in five commits with ONE
+  migration each (`0074`, `0075`) per the repo's own precedent. Demo stage 28 walks it: propose →
+  ratify → load → read back → the exposure family at a NON-ROOT node (the D2 discharge). The
+  demonstrating mapping is genuinely model-drafted from SCHEMA ONLY, operator-side, with the
+  verbatim prompt and raw response envelope committed so the recorded prompt hash is RECOMPUTABLE.
+- **SIX defects found, none by reading.** Three by the slice's own proofs: `ingestion_batch.status`
+  was `varchar(20)` while its vocabulary declared a 23-character value, so **a batch could not
+  finish WITH WARNINGS on PostgreSQL at all** — four waves old, invisible because SQLite ignores
+  VARCHAR length and no PG test drove the warning path (found by the P17 harness); the
+  anti-corruption CSV-injection prefix made **every SHORT position unparseable**; and the on-ingest
+  DQ rule selection had **no tenant predicate**, so a superuser-path upload ran another tenant's
+  rules. Three more by the review, below.
+- **THE REVIEW'S HEADLINE: a refusal that could never fire, in the slice that shipped a census to
+  prevent exactly that.** `assert_only_lifecycle_fields_change` was called by hand at two sites
+  where only lifecycle fields had been assigned, and its two tests called it DIRECTLY — so a
+  ratified mapping's meaning changed silently on an ordinary autoflush. It is an ORM listener now.
+  Alongside it: four-eyes **defeated by an uppercase UUID** (the ENT-075 rail already carries that
+  vector; this slice did not reuse the rail and did not inherit the lesson), and a `rename` into
+  `quantity` that ratified happily then died at load with a **bare `decimal.InvalidOperation`** —
+  not a `MappingError`, so failing closed on the family caught nothing.
+- **And a FALSE CLAIM in the module whose purpose is to prevent them.** `errors.py`'s docstring
+  said a census asserted every refusal was fired by a test. No such census existed — not in the
+  module, not anywhere in the repo. Third instance of the shape its own prose accuses two earlier
+  incidents of. The census exists now, discovers its population from `__subclasses__()`, and is
+  **P9's mechanical limb, which this repo had never had**.
+- **Review: 5 refute-by-default lanes on a different model, then per-finding adversarial
+  verification — 16 raised, 13 confirmed, 2 REFUTED with executed evidence, all folded.** The
+  refutations are recorded rather than dropped: one verifier reset a database, created the
+  constrained NOSUPERUSER role and executed the cross-tenant read to show the new endpoints are
+  reachable only under it. Reviewers reproduced by PLANTING files and MUTATING production code, and
+  one of those plants was live in the shared tree while a gate of mine ran — the shared-tree hazard,
+  paid and caught by the standing check rather than by luck.
+
+### Gates at the merge, quoted
+
+`make check` exit 0 — **3,007 passed / 654 skipped** (baseline 2,908) · full-PG exit 0 on a fresh
+database — **3,661 passed, ZERO skips** (baseline 3,500) · `fe-check` exit 0 (39 files / 274 tests)
+· `gen-api-check` exit 0 · `alembic check` exit 0 · downgrade-over-data to `0071` exit 0 ·
+`0074`/`0075` downgrade + re-upgrade exit 0 · P17 harness exit 0 · mutation battery **20/20 KILLED**
+· anchors **150/150** · CI green on all nine checks at `57efd4c`, per-conclusion verified.
+
+### Two ratified SCOPE CHANGES to the wave plan, surfaced rather than taken
+
+`DATA.MAPPING`'s audit-code mint MOVED into S3a (DS3a-2 — a governed status lifecycle emitting
+NOTHING is unlike every other lifecycle here; the PERMISSION codes still land at S3b), and
+`SelfRatificationError` ships in S3a (DS3a-3). Both are written into `wave_19_planning.md` and
+roadmap Part 2.21, so the ratified plan and the build do not disagree on the record. Two further
+ratified calls changed no scope: DS3a-1 keeps the ratify act at the service tier (the three new
+routes are READS), and DS3a-4 gave the position binders a lineage-source override so a file-loaded
+holding is attributed to the INGESTION source rather than to MANUAL entry — the first design used
+the existing edge unchanged, and the remit's verification killed it by reading the code.
+
+### Carried into S3b, by name
+
+Clause (2)'s per-`position` FK (a migration over a table populated since `0014`; **decided now, not
+at the S3b review: it does NOT enter `position_content`'s hash**, because adding it would mark every
+pre-S3b POSITION component DIVERGED in the CTRL-018 sweep) · clause (6)'s R-07 ratifier mint with
+its P11 holder-set pin, route census and SoD row · the `withdraw` verb (`STATUS_WITHDRAWN` is
+declared and RESERVED; no verb reaches it) · `code-lookup` is scoped to `identifier_xref`
+(instruments) because it is the platform's only as-of-capable resolver, so a MULTI-ACCOUNT file
+needs either a portfolio resolver or the P1B-3 scope fence lifted · `resolve_identifier` does not
+honour `is_active`, and clause (9) explicitly does not claim it does.
+
+---
+
+## Previous truth — superseded at the W19-S3a merge, 2026-08-21
 
 **Main `01bcfc3` (PR #231, the Wave-19 planning gate — the 41st autonomous merge), tree clean, CI green
 on all nine checks at head `4a36e0a` verified per-conclusion. Migration head `0073_declare_root_currency`, one head. Next free canonical id ENT-077 (EARMARKED for Wave-19
