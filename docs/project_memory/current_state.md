@@ -1,6 +1,119 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-21 — W19-S3a MERGED: a client file becomes a governed book) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-21 — W19-S3b MERGED: four-eyes that cannot be edited into existence) — read this block; everything below it is HISTORY
+
+**Main `6dcb4e4` (PR #236, W19-S3b — the 43rd autonomous merge), tree clean. CI green on all nine
+checks at head `328219f`, verified per conclusion, zero non-success. Migration head
+`0077_bind_position_to_mapping`, one head. Next free canonical id **ENT-079** (ENT-078
+`ingestion_mapping_ratification` minted here; all live pointer copies advanced). Next free control
+id CTRL-040. NEXT = WAVE-19 SLICE S1 (PRESENT-1: the presentation contract + the governed chart).**
+
+### The slice in six lines
+
+- **REQ-INT-001 is DELIVERED.** S3b closes the two halves S3a left by design: clause (2)'s
+  per-`position` hard FK (migration `0077`, with the real P17 harness) and clause (6)'s permission
+  separation. REQ-PPM-002's census clause is delivered too, and that row stays **In-Progress** — its
+  residual portfolio-scope ABAC conjunct is unchanged at P6+.
+- **ENT-078 `ingestion_mapping_ratification`** (migration `0076`): a four-eyes decision is a NEW
+  APPEND-ONLY ROW, not a mutation of ENT-077's status. An approval recorded by editing a column can
+  be edited into existence afterwards, and ENT-077's content guard is an ORM listener that does not
+  fire on a non-ORM write. The load gate resolves through this table and never through that column.
+- **The R-07 mint** — `ingest.mapping.propose` / `.ratify` / `.view`, partitioned at ROLE level (the
+  `breach.respond`/`breach.review` shape, NOT the person-level `limit.approve` one). The third code
+  was found at recon, not designed in: every `/ingest` read was gated on the MAKER's `data.upload`,
+  so a ratifier-only holder was refused the very screens showing what they were about to approve.
+- **FOUR defects found while building, every one by execution.** `supersedes_id` was stamped with no
+  tenant check — and a PostgreSQL FK check BYPASSES RLS, so the self-FK would have durably recorded
+  another tenant's version, with the same case answering a distinguishable 422 over HTTP (a
+  cross-tenant existence oracle). `0077` passed `sa.func.now()` to `sync_catalog`, which binds it as
+  a parameter. And the `0076` commit left six pieces of prose describing a partial unique index that
+  same commit had removed.
+- **THE REVIEW'S HEADLINE: an ordinary withdrawal shadowed a live ratification.** Two PROPOSED
+  versions may legitimately coexist for one source; withdrawing the second appended a row that
+  outranked the first's live RATIFIED row. Every load for that source then refused while its mapping
+  was still literally RATIFIED, and the next legitimate ratification found no incumbent and raised a
+  raw `IntegrityError` out of a governed act. One distinction undrawn: WITHDRAWN is a decision about
+  a PROPOSAL, and a proposal never ratified never governed anything.
+- **AND MY OWN QUOTED EXIT CODE WAS NOT EVIDENCE.** `P17_EXIT=0` was real; the state was not
+  reproducible. `0002` seeds permissions from the LIVE bootstrap constant, and this slice added the
+  codes to it — so any database built from empty today already has them at `0076`. The green run was
+  against a database whose `0002` executed before the constant changed, which nobody can rebuild from
+  this repository. An unreproducible green is not a green.
+
+### The census's positive claim was a NAME COLLISION
+
+It pinned 21 holdings-consuming families. Reachability ran over BARE function names;
+`exposure.service` reaches the reconstruction through a private helper called `_compute`, and every
+governed family names its `execute_governed_run` callback `_compute`. One generic name carried
+twenty families with it — four of them contain ZERO references to any of the seven sanctioned names.
+Reachability is module-qualified now, resolved through each module's own imports. **The corrected
+answer is the more useful one: EXACTLY ONE governed family consumes holdings**, so REQ-PPM-002's
+word SINGLE is today a claim about one module — and the empty offender set finally means something.
+
+The same review planted and EXECUTED five read shapes that escaped the matcher entirely (aliased
+import, `getattr`, concatenated SQL, f-string, eager load through a relationship) and showed the
+sanctioned cut was MODULE-scoped, so any new helper in those two files inherited blanket immunity.
+All fixed and pinned. A mint-wrapper tripwire was written and **DISCARDED** because it fired on all
+twenty-five families: it cannot tell a demo stage calling `run_exposure` from a family calling a
+shared helper, and a guard that fires on everything teaches its reader to ignore it. The family
+population is pinned by exact set equality instead.
+
+### Review: a DIFFERENT ENGINE, and the first attempt did not run
+
+P15 held. **Fable was quota-exhausted — all seven lanes failed and ZERO agents ran, so its "0
+findings" was an UNRUN review, not a clean one.** Recorded because a result of zero from a pass that
+never executed is indistinguishable, in a summary, from a pass that found nothing. Re-run on Sonnet:
+**15 raised / 13 confirmed by independent verification / 2 refuted.** Two BLOCKING, both real, both
+reproduced by execution before being fixed.
+
+### Gates at the merge, quoted
+
+`make check` exit 0 — **3,055 passed / 664 skipped** (baseline 3,007) · full-PG exit 0 on a fresh
+four-part reset — **3,719 passed, ZERO skips** (baseline 3,661) · `fe-check` exit 0 (39 files / 284
+tests) · `gen-api-check` exit 0 · `alembic check` exit 0 at `0077` · `0077` P17 harness exit 0 **from
+a database built entirely by the repo's own migration chain** · mutation battery **18/18 KILLED** ·
+anchors **168/168** · CI green on all nine checks at `328219f`, per-conclusion verified.
+
+`M-S3B-2` survived the fold and the survivor was a finding: after the governing-outcome fix, no
+service verb can produce a source whose latest governing row is a supersession, so a correct
+fail-closed guard had never been made to FIRE. The state is built at the table now and it fires.
+There is deliberately no `M-S3B-18`: a frontend mutant was written and REMOVED because this battery
+is pytest-only and naming a `.tsx` file made the baseline RED, under which every kill is
+unattributable.
+
+### Five inherited findings discharged, and one shadowed constraint
+
+ENT-075's "fails closed on a fourth" rail was UNTESTED — one raise site, no test firing it, no
+off-vocabulary INSERT ever attempted. This slice cites that rail, so this slice fires it. Its DB
+test then caught a lookalike by refusing it: **`ck_entitlement_request_status` is SHADOWED** — any
+unenumerated status fails both arms of `ck_..._resolution_link`, which PostgreSQL reports first, so
+no row shape isolates the status CHECK. The rail holds; someone deleting that constraint believing
+it was the guard would find every test green. Also: the grant-id derivation divergence DECLARED AND
+AVOIDED in the function's own docstring; SoD checklist row 5's citation of a `SyncReport` field that
+has never existed AMENDED; and `platform_catalog.py`'s claim that `sync_catalog` "gains a platform
+arm" CORRECTED — it did not and still has none.
+
+**The P17 gate itself gained a limb.** Nothing in it asked whether a migration DECLARING a delivery
+makes one: delete the `sync_catalog` call, keep `DELIVERS`, and every test stayed green while a
+running database received nothing. "A declaration is not a delivery" is that gate's entire subject
+and it did not enforce it about itself. Found by a mutant surviving.
+
+### Corrected from S3a's own records
+
+Both said the `position_content` decision's affected surface was the CTRL-018 sweep. It is not:
+`verify_snapshot` is called from `GET /snapshots/{id}/verify` and nowhere else, and the
+`reproduction` package reads no snapshot content hash at all — checked by searching every call site.
+The DECISION was right and is unchanged; the citation was not, and a right answer resting on a wrong
+reason is what the next slice inherits.
+
+### Operational note
+
+A review agent ran the P17 harness against the shared `irp_pg_local` container and left the
+validation database at `0076`. Verify the revision before trusting a full-PG run from a container
+shared with agents.
+
+
+## Previous truth — superseded at the W19-S3b merge, 2026-08-21 (W19-S3a MERGED: a client file becomes a governed book)
 
 **Main `7682a1c` (PR #234, W19-S3a — the 42nd autonomous merge), tree clean. CI green on all nine
 checks at head `57efd4c`, verified per conclusion. Migration head `0075_bind_batch_to_mapping`, one

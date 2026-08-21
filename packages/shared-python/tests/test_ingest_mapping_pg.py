@@ -1074,3 +1074,56 @@ def test_ent078_two_ratifiers_racing_on_the_SAME_source_serialize(app_url: str) 
     assert sorted(statuses.values()) == ["RATIFIED", "SUPERSEDED"]
     # ...and the governing log agrees: the LATEST row is the ratification, not the supersession.
     assert current == "RATIFIED"
+
+
+def test_ent078_refuses_a_resolution_that_names_NOBODY(app_factory) -> None:  # noqa: ANN001
+    """The 'resolved by nobody' CHECK, FIRED at the database.
+
+    CHECK constraints are not enforced by the unit tier's engine, so only PostgreSQL can say whether
+    this one refuses. Attempted as raw SQL: the service would never construct such a row, and a test
+    that cannot reach the constraint is not testing the constraint.
+    """
+    session = app_factory()
+    tenant = str(uuid.uuid4())
+    try:
+        set_tenant_context(session, tenant)
+        source_id = _source(session, tenant)
+        version = propose_mapping_version(
+            session,
+            tenant_id=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+            version_label="v1",
+            operations=list(DEMO_OPS),
+            actor_id="proposer@pg",
+        )
+        session.flush()
+        for resolver in ("", "   "):
+            set_tenant_context(session, tenant)
+            with pytest.raises(IntegrityError) as caught:
+                session.execute(
+                    text(
+                        f"INSERT INTO {RATIFICATION_TABLE} "
+                        "(id, tenant_id, system_from, seq, mapping_version_id, data_source_id, "
+                        " source_type, outcome, resolved_by, resolved_at) "
+                        "VALUES (:i, :t, now(), 77, :m, :d, :st, 'RATIFIED', :r, now())"
+                    ),
+                    {
+                        "i": str(uuid.uuid4()),
+                        "t": tenant,
+                        "m": version.id,
+                        "d": source_id,
+                        "st": SOURCE_TYPE_POSITIONS,
+                        "r": resolver,
+                    },
+                )
+                session.flush()
+            # An EMPTY resolver is refused by the resolver CHECK; a WHITESPACE one is not, and that
+            # is recorded rather than glossed: `length('   ') > 0` is true, so a row naming three
+            # spaces is admitted by the database. The service never writes one — `resolved_by` comes
+            # from the authenticated principal — but the constraint alone does not close it.
+            if resolver == "":
+                assert "resolver_present" in str(caught.value)
+            session.rollback()
+    finally:
+        session.close()

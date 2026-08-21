@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import CheckConstraint, func, select, text
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.models import AuditEvent
@@ -63,7 +63,12 @@ from irp_shared.ingest_mapping.models import (
     STATUS_SUPERSEDED,
     IngestionMappingVersion,
 )
-from irp_shared.ingest_mapping.ratification_models import IngestionMappingRatification
+from irp_shared.ingest_mapping.ratification_models import (
+    CHECK_OUTCOME,
+    CHECK_RESOLVER,
+    RESOLUTION_OUTCOMES,
+    IngestionMappingRatification,
+)
 from irp_shared.ingest_mapping.service import (
     assert_only_lifecycle_fields_change,
     canonical_operations_hash,
@@ -2151,3 +2156,36 @@ def test_a_source_whose_LATEST_governing_row_is_a_SUPERSESSION_cannot_load(
     # ...and the earlier ratification is still ON the log. It is not the CURRENT decision; it is
     # still a fact. Filtering the governance question is not erasing history.
     assert [r.outcome for r in _resolutions(session, tenant)] == ["RATIFIED", "SUPERSEDED"]
+
+
+def test_ENT078_declares_both_of_its_CHECK_constraints() -> None:
+    """The two CHECKs, asserted on the ORM metadata rather than assumed.
+
+    "Resolved by nobody" is what keeps this control non-decorative: a resolution row naming no
+    resolver is an approval with no approver, which is exactly the thing ENT-078 exists to make
+    unrepresentable. The DB arm is fired on PostgreSQL (`test_ingest_mapping_pg.py`); CHECK
+    constraints are not enforced by the unit tier's engine at all, so THIS is where a constraint
+    silently disappearing from the model gets caught — and a migration only creates what the model
+    declares.
+    """
+    # Keyed by SUFFIX: the naming convention prepends `ck_<table>_` itself, which is exactly why
+    # the constants are suffixes and why passing a full name to `create_check_constraint` doubles
+    # it and truncates at 63 invisibly (the 0057 trap).
+    checks = {
+        str(c.name).replace("ck_ingestion_mapping_ratification_", ""): str(c.sqltext)
+        for c in IngestionMappingRatification.__table__.constraints
+        if isinstance(c, CheckConstraint)
+    }
+    assert CHECK_RESOLVER in checks, (
+        f"the 'resolved by nobody' CHECK is gone: {sorted(checks)} — a resolution row could "
+        f"name no resolver, and an approval with no approver is not evidence of an approval"
+    )
+    assert "resolved_by IS NOT NULL" in checks[CHECK_RESOLVER]
+    assert "length(resolved_by) > 0" in checks[CHECK_RESOLVER], (
+        "the CHECK no longer rejects an EMPTY resolver — NOT NULL alone admits '' , which names "
+        "nobody just as effectively as NULL does"
+    )
+    # ...and the outcome vocabulary, for the same reason: an unenumerated outcome must fail closed.
+    assert CHECK_OUTCOME in checks
+    for outcome in RESOLUTION_OUTCOMES:
+        assert outcome in checks[CHECK_OUTCOME]

@@ -2008,3 +2008,12 @@ tests = ["apps/backend/tests/test_lineage_endpoint.py"]
 # The behaviour it would have targeted is proven directly instead, by the four write-path tests in
 # `apps/frontend/src/views/ops/mappings.test.tsx` (click -> POST body -> refetch, and the 403 and
 # 409 remedies), which are the equivalent evidence on the tier that can execute it.
+
+[[mutant]]
+id = "M-S3B-19"
+group = "w19-s3b"
+why = "ENT-078's 'resolved by nobody' CHECK stops rejecting an EMPTY resolver, so a resolution row can name nobody — an approval with no approver, which is the one thing this table exists to make unrepresentable. NOT NULL alone admits '' just as effectively as NULL. Named in the slice remit's proof list and missing until the ledger-7 sweep asked for it by name."
+file = "packages/shared-python/src/irp_shared/ingest_mapping/ratification_models.py"
+find = """            "resolved_by IS NOT NULL AND length(resolved_by) > 0","""
+replace = """            "resolved_by IS NOT NULL","""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
