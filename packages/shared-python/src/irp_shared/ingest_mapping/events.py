@@ -14,8 +14,14 @@ other lifecycle on this platform does. Surfaced as a scope change and ratified b
 lifecycle.
 
 **One code, two actions — the ``DATA.INGEST`` shape exactly**: ``action=create`` when a version is
-proposed, ``action=status_change`` on every ratify / supersede / withdraw transition. Minting three
+proposed, ``action=status_change`` on every ratify and supersede transition. Minting three
 verb-shaped codes would have been three mints where the platform's own precedent needs one.
+
+*The first draft of this docstring said "ratify / supersede / withdraw". No verb transitions a
+version to WITHDRAWN — the constant is reserved and the verb is S3b's — so the word described an
+action the shipped code cannot produce. A reviewer caught it; a verifier then partly refuted the
+finding on the grounds that the taxonomy row itself never echoed the word, which is true and is why
+this is a docstring correction rather than a mint correction.*
 
 ``before`` / ``after`` are DC-2 metadata only: version identity, status, authorship, the operations
 HASH and the operation KINDS — **never the operations themselves and never a staged cell**, because

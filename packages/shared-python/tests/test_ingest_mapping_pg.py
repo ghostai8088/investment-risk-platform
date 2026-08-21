@@ -594,3 +594,60 @@ def test_the_mapping_lifecycle_survives_a_real_commit(app_factory) -> None:  # n
         assert resolve_mapping_version(session, version_id, acting_tenant=tenant).status == (
             STATUS_RATIFIED
         )
+
+
+def test_the_mapping_routes_hide_another_tenants_rows(app_factory) -> None:  # noqa: ANN001
+    """The ROUTE FUNCTIONS' own queries, on PostgreSQL, under the constrained role.
+
+    This was tested only on SQLite, which has no RLS — and the endpoint suite's docstring claimed a
+    PG file closed the gap when that file does not mention mappings at all. The one PG test that
+    did check cross-tenant hiding went through ``resolve_mapping_version``, which carries its own
+    explicit tenant predicate; the ROUTES call a bare ``db.get``. Different code, so a different
+    proof was needed. A slice reviewer caught the claim.
+
+    The route FUNCTIONS are called directly with a real RLS-scoped session rather than over HTTP:
+    the property under test is the route's own query, and threading the dev-header auth stack
+    through a PG session would test the auth stack instead. Permission gating is proven over HTTP
+    in ``apps/backend/tests/test_ingest_endpoint.py``.
+    """
+    from fastapi import HTTPException
+
+    from irp_backend.api.ingest import (
+        get_mapping_version,
+        list_batches_for_mapping,
+        list_mapping_versions,
+    )
+
+    tenant_a, tenant_b = str(uuid.uuid4()), str(uuid.uuid4())
+    with app_factory() as session:
+        set_tenant_context(session, tenant_a)
+        source_id = _source(session, tenant_a)
+        mapping_id = propose_mapping_version(
+            session,
+            tenant_id=tenant_a,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+            version_label="v1",
+            operations=list(DEMO_OPS),
+            actor_id="proposer@irp",
+        ).id
+        session.commit()
+
+    # POSITIVE CONTROL FIRST: the same functions, the same code, the OWNING tenant. Without this
+    # the refusals below would be satisfied by routes that are simply broken for everyone.
+    with app_factory() as session:
+        set_tenant_context(session, tenant_a)
+        assert get_mapping_version(uuid.UUID(mapping_id), None, session).id == mapping_id
+        assert [row.id for row in list_mapping_versions(None, session)] == [mapping_id]
+        assert list_batches_for_mapping(uuid.UUID(mapping_id), None, session) == []
+
+    with app_factory() as session:
+        set_tenant_context(session, tenant_b)
+        # indistinguishable 404, not a 403 and not a leak
+        with pytest.raises(HTTPException) as detail:
+            get_mapping_version(uuid.UUID(mapping_id), None, session)
+        assert detail.value.status_code == 404
+        with pytest.raises(HTTPException) as batches:
+            list_batches_for_mapping(uuid.UUID(mapping_id), None, session)
+        assert batches.value.status_code == 404
+        assert list_mapping_versions(None, session) == []

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -32,6 +33,7 @@ from irp_shared.ingest_mapping.errors import (
     MappingLifecycleError,
     MappingNotVisible,
     OverlappingLoadError,
+    PortfolioCodeNotVisible,
     SelfRatificationError,
     UnknownTargetFieldError,
     UnratifiedMappingError,
@@ -75,6 +77,30 @@ from irp_shared.position import (
     supersede_position,
 )
 from irp_shared.position.position import _current_open  # noqa: PLC2701 - the bitemporal head read
+
+
+def canonical_actor(actor_id: str) -> str:
+    """Canonicalize an actor id so an identity comparison cannot be defeated by FORMAT.
+
+    A principal id is a UUID, and ``require_uuid_principal_id`` accepts any spelling
+    ``uuid.UUID()`` parses — so ``d8c6987d-...`` and ``D8C6987D-...`` are the SAME PERSON to
+    authentication and two different strings to ``==``. The slice review reproduced the
+    consequence: the proposer re-authenticates with the uppercase spelling and ratifies their own
+    mapping, because ``SelfRatificationError`` compared raw strings.
+
+    This is the ``AdminActor`` convention (``entitlement/admin_service.py``), whose docstring says
+    identity is canonicalized "so the comparison cannot be defeated by case or format", and the
+    ENT-075 four-eyes rail already carries the uppercase-UUID vector as a named test and mutant.
+    This slice did not reuse that rail and so did not inherit the lesson; it does now.
+
+    A non-UUID actor id (a service principal, a demo literal) is compared case-folded rather than
+    rejected — the guard's job is to refuse self-ratification, not to police id formats.
+    """
+    text_id = str(actor_id).strip()
+    try:
+        return str(uuid.UUID(text_id))
+    except (ValueError, AttributeError, TypeError):
+        return text_id.casefold()
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -169,10 +195,15 @@ def resolve_mapping_version(
 def assert_only_lifecycle_fields_change(version: IngestionMappingVersion) -> None:
     """Refuse a CONTENT edit on a mapping version.
 
-    Content immutability here is SERVICE-enforced, not trigger-enforced — the row must stay
-    status-mutable, so nothing at the DB layer will catch a re-point. This function is therefore
-    the only thing between a ratified mapping and a silent change of meaning, which is why it is
-    mutation-proven rather than merely present. An edit mints a NEW version that supersedes.
+    **This is no longer the control — the ORM ``before_update`` listener on the model is** (see
+    ``models._refuse_content_mutation``). It stayed as an eager pre-flush assertion because it
+    fails at the point of the mistake rather than at the next flush, which is a better error.
+
+    The history is worth keeping: this function WAS the only guard, and it could never fire. Both
+    of its production call sites assign nothing but lifecycle fields, so it was decorative at both,
+    and its two tests called it directly — the "refusal reachable only through a private helper the
+    real path never calls" shape. An ordinary ``version.operations = [...]`` plus any subsequent
+    query silently persisted the edit through autoflush. Found by the slice review, by execution.
     """
     state = version.__dict__.get("_sa_instance_state")
     if state is None:  # pragma: no cover - a detached object cannot be mid-update
@@ -296,7 +327,7 @@ def ratify_mapping_version(
     version = resolve_mapping_version(session, mapping_version_id, acting_tenant=acting_tenant)
     if version.status != STATUS_PROPOSED:
         raise MappingLifecycleError(version.id, version.status, "ratify")
-    if str(actor_id) == str(version.proposed_by_actor_id):
+    if canonical_actor(actor_id) == canonical_actor(version.proposed_by_actor_id):
         raise SelfRatificationError(str(actor_id))
 
     # Supersede the incumbent FIRST and FLUSH, so the partial unique index never sees two RATIFIED
@@ -553,5 +584,9 @@ def _resolve_portfolio_by_code(session: Session, code: str, *, acting_tenant: st
         select(Portfolio).where(Portfolio.tenant_id == str(acting_tenant), Portfolio.code == code)
     ).scalar_one_or_none()
     if row is None:
-        raise MappingNotVisible(f"portfolio code {code!r}")
+        # Its OWN class: `MappingNotVisible` stores its argument as `mapping_version_id`, so a
+        # handler reading that attribute to report which MAPPING was not visible would have
+        # been handed a portfolio code. A record that mislabels what failed to resolve is a
+        # small false record, and small false records are how the large ones start.
+        raise PortfolioCodeNotVisible(code)
     return row

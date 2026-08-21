@@ -4,6 +4,15 @@ SQLite has no RLS, so cross-tenant RLS-hidden 404 / isolation are proven in
 ``packages/shared-python/tests/test_ingestion_pg.py``; here we prove entitlement gating
 (deny-by-default), server-side tenant stamping, the size cap, anti-corruption + DQ rejection
 (4xx + durable evidence), and audit emission over real HTTP.
+
+**W19-S3a correction.** An earlier version of this docstring said the cross-tenant gap was closed
+by ``packages/shared-python/tests/test_ingestion_pg.py``. For the MAPPING routes that was false —
+that file does not mention mappings at all, and the one PG test that checked cross-tenant hiding
+went through ``resolve_mapping_version`` (which carries its own explicit tenant predicate), NOT
+through the route's ``db.get``. A slice reviewer caught the claim. The route functions' own
+queries are now exercised on PostgreSQL, under the constrained role, in
+``test_ingest_mapping_pg.py`` — see
+``test_the_mapping_routes_hide_another_tenants_rows``.
 """
 
 from __future__ import annotations

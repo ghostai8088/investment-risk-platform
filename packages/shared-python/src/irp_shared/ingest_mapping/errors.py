@@ -5,8 +5,16 @@ control proving the input that should trigger it actually arrived (P18 clause 1)
 docstring says so rather than a plan saying so: this project has shipped structurally UNFIREABLE
 refusals twice — CON-1's mixed-VERSION refusal, and again in the Wave-19 ratification commit — and
 both times the design document named the refusal without naming what reaches it. The firing
-condition for each is in the class docstring, and ``test_ingest_mapping.py`` asserts the census of
-this module against the tests that fire them.
+condition for each is in the class docstring.
+
+**That claim is now MECHANICAL, and it was not when this module first shipped.** The original
+docstring said a census asserted it; no such census existed, in this module or anywhere — the slice
+review caught the claim and it was a false governance record of exactly the class this module's own
+prose accuses two earlier incidents of. The census is
+``test_ingest_mapping.py::test_every_declared_refusal_is_fired_by_a_test``: it walks
+``MappingError.__subclasses__()`` recursively and requires every class to be named by a test that
+raises it, with a floor so the population cannot collapse silently. It is also P9's mechanical limb,
+which this repo did not have.
 
 P9's corollary, and the reason "the refusal exists in the source" is never evidence: *a refusal that
 cannot fire and a refusal that never fires are indistinguishable from the diff.*
@@ -246,9 +254,14 @@ class MappingContentImmutableError(MappingError):
 class MappingLifecycleError(MappingError):
     """An illegal lifecycle transition.
 
-    FIRES WHEN: ratifying a version that is not PROPOSED (already RATIFIED, SUPERSEDED or
-    WITHDRAWN). A gate that fires only in the obvious state is not a control until the alternate
-    paths are closed (the Wave-11 standing review angle).
+    FIRES WHEN: ratifying a version that is not PROPOSED — already RATIFIED, or SUPERSEDED. A gate
+    that fires only in the obvious state is not a control until the alternate paths are closed (the
+    Wave-11 standing review angle).
+
+    ``WITHDRAWN`` is deliberately NOT named here even though the vocabulary declares it: no verb
+    transitions a version into that state, so naming it as a firing condition would describe
+    behaviour the shipped code cannot produce. The constant is RESERVED; the withdraw verb is
+    S3b's, with the rest of the lifecycle.
     """
 
     def __init__(self, mapping_version_id: str, status: str, attempted: str) -> None:
@@ -256,3 +269,68 @@ class MappingLifecycleError(MappingError):
         self.mapping_version_id = mapping_version_id
         self.status = status
         self.attempted = attempted
+
+
+class IncoherentTargetOperationError(MappingError):
+    """An operation cannot produce the type its target requires.
+
+    FIRES WHEN: a mapping aims ``rename``, ``concatenate`` or ``code-lookup`` at ``quantity`` or
+    ``cost_basis``, or aims anything but ``parse-date`` at ``valid_from``. Refused at PROPOSAL, so
+    the incoherent mapping never reaches a human for ratification.
+
+    **This exists because the slice review reproduced its absence end to end**: a `rename` into
+    `quantity` passed the coherence check, was proposed and RATIFIED through the real service
+    verbs, and then raised a bare ``decimal.InvalidOperation`` at load — an ``ArithmeticError``,
+    not a ``MappingError``, so a caller failing closed on the family caught nothing. The trigger
+    value was ``1,234.50``: an ordinary comma-formatted number, structurally identical to the
+    demonstrating file's own book-cost column.
+    """
+
+    def __init__(self, op: str, target: str, allowed: tuple[str, ...]) -> None:
+        super().__init__(
+            f"operation {op!r} cannot produce a value for target {target!r}; "
+            f"that target admits {', '.join(allowed)}"
+        )
+        self.op = op
+        self.target = target
+        self.allowed = allowed
+
+
+class QuantityUnitTooLongError(MappingError):
+    """A quantity unit is longer than the column that stores it.
+
+    FIRES WHEN: an interpreted ``quantity_unit`` exceeds ``position.quantity_unit``'s 20 characters
+    — e.g. ``"SHARES (POST-SPLIT ADJ)"``.
+
+    Refused rather than TRUNCATED, and the difference is the whole point: cutting that value to
+    ``"SHARES (POST-SPLIT A"`` writes a governed record saying something the client's file did not
+    say, with nothing downstream able to tell it was altered. A refused batch is recoverable; a
+    quietly rewritten holding is not. The first draft of the interpreter truncated silently.
+    """
+
+    def __init__(self, value: str, limit: int, row_number: int) -> None:
+        super().__init__(
+            f"staged row {row_number}: quantity unit {value!r} is {len(value)} characters and the "
+            f"column holds {limit} — refused rather than truncated"
+        )
+        self.value = value
+        self.limit = limit
+        self.row_number = row_number
+
+
+class PortfolioCodeNotVisible(MappingError):
+    """A portfolio code in a staged row resolves to no node in the acting tenant.
+
+    FIRES WHEN: the file's ``Account Ref`` (or whatever column the mapping routes to
+    ``portfolio_code``) names a node this tenant does not have — including one that belongs to
+    another tenant.
+
+    Its own class rather than ``MappingNotVisible``, because that error stores its argument as
+    ``mapping_version_id`` and a handler reading that attribute to report "which mapping was not
+    visible" would have been handed a portfolio code. A record that mislabels what failed to
+    resolve is a small false record, and small false records are how the large ones start.
+    """
+
+    def __init__(self, code: str) -> None:
+        super().__init__(f"portfolio code {code!r} is not visible in this tenant")
+        self.code = code

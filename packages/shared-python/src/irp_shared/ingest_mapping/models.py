@@ -8,15 +8,18 @@ a client's file needs no software release.
 
 **Temporal class: IA, status-mutable — the ``ingestion_batch`` / ``calculation_run`` precedent, and
 the choice is stated rather than left to be inferred.** ``status`` transitions PROPOSED → RATIFIED
-→ SUPERSEDED, so the row is deliberately **NOT** in ``APPEND_ONLY_TABLES``, carries **no**
-``irp_prevent_mutation`` trigger and **no** ORM ``before_update`` guard; the authoritative history
-is the append-only ``DATA.MAPPING`` audit chain. The commoner choice on this project is true IA
-plus the trigger (ENT-076, ENT-075), which is exactly why this docstring says which one this is.
+→ SUPERSEDED, so the row is deliberately **NOT** in ``APPEND_ONLY_TABLES`` and carries **no**
+``irp_prevent_mutation`` trigger — a DB-level append-only trigger would forbid the lifecycle
+itself. The commoner choice on this project is true IA plus the trigger (ENT-076, ENT-075), which
+is exactly why this docstring says which one this is.
 
-**Content immutability is service-enforced** (``service.assert_only_lifecycle_fields_change``), not
-trigger-enforced — nothing at the DB layer will catch a content edit, the same posture as
-``position`` and for the same reason. An edited mapping is a NEW version that SUPERSEDES its
-predecessor.
+**Content immutability is enforced by a ``before_update`` ORM listener** (see the bottom of this
+module), so it fires on every flush of a dirty instance whatever the caller did. It was originally
+a helper the service called by hand at two sites, and the slice review proved that could never fire
+in production: at both sites only lifecycle fields had been assigned, and an ordinary
+``version.operations = [...]`` followed by any query let autoflush push the UPDATE silently. An
+edited mapping is a NEW version that SUPERSEDES its predecessor; nothing may re-point an existing
+one.
 
 PROPRIETARY, tenant-scoped, **symmetric** FORCE RLS (``USING`` == ``WITH CHECK`` == own tenant).
 NEVER hybrid — the AD-013-R2 hybrid set is closed at seven and DB-censused.
@@ -35,9 +38,11 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
+    event,
+    inspect,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
 from irp_shared.db.base import Base
 from irp_shared.db.mixins import ImmutableAppendOnlyMixin, PrimaryKeyMixin, TenantMixin
@@ -163,9 +168,44 @@ class IngestionMappingVersion(PrimaryKeyMixin, TenantMixin, ImmutableAppendOnlyM
     )
 
 
-# NOTE: deliberately NO event.listen(before_update/before_delete) here, and deliberately NOT in
-# APPEND_ONLY_TABLES — the status projection MUST transition. The IA guarantee this table gives is
-# the one `ingestion_batch` gives: the CONTENT is immutable (service-enforced, mutation-proven) and
-# the history is the audit chain. Do not "fix" the asymmetry; the negative controls in
-# test_ingest_mapping.py pin both halves, and one of them compares this class's listener set to a
-# genuinely append-only peer so an empty result cannot mean "wrong attribute".
+def _refuse_content_mutation(mapper: Mapper[Any], connection: Any, target: Any) -> None:
+    """Refuse any UPDATE that touches a column outside :data:`LIFECYCLE_FIELDS`.
+
+    **This is an ORM listener, and it did not start out as one — that was the defect.** The guard
+    was a plain function called by hand at the two sites in ``ratify_mapping_version``, and at BOTH
+    of those sites the only attributes ever assigned beforehand are lifecycle fields. So under the
+    code as shipped it could never raise: it was decorative at both its production call sites, and
+    the two tests exercising it called it DIRECTLY — the "refusal reachable only through a private
+    helper the real path never calls" shape. The slice review proved the consequence by execution:
+    assigning ``version.operations`` on a RATIFIED row and issuing an ordinary ``select()`` let
+    SQLAlchemy's autoflush push the UPDATE with no refusal, no audit event, and the ratified
+    mapping's meaning silently changed.
+
+    As a listener it fires on every flush of a dirty instance regardless of caller, which is the
+    property the docstrings were already claiming.
+
+    NOTE this is a ``before_update`` guard only — NOT a full append-only guard, and the table is
+    still deliberately absent from ``APPEND_ONLY_TABLES`` with no ``irp_prevent_mutation`` trigger.
+    The status projection MUST transition; what may never change is the CONTENT.
+    """
+    state = inspect(target)
+    changed = tuple(
+        sorted(
+            attr.key
+            for attr in state.attrs
+            if attr.history.has_changes() and attr.key not in LIFECYCLE_FIELDS
+        )
+    )
+    if changed:
+        from irp_shared.ingest_mapping.errors import MappingContentImmutableError
+
+        raise MappingContentImmutableError(changed)
+
+
+event.listen(IngestionMappingVersion, "before_update", _refuse_content_mutation)
+
+# NOTE: deliberately NOT in APPEND_ONLY_TABLES and NO `irp_prevent_mutation` trigger — the status
+# projection MUST transition, and a DB-level append-only trigger would forbid the lifecycle itself.
+# The IA guarantee this table gives is the one `ingestion_batch` gives, with one addition: the
+# CONTENT is immutable and that is now enforced by the listener above rather than by remembering to
+# call a helper.

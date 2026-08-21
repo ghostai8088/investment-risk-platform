@@ -1653,7 +1653,10 @@ id = "M-S3A-6"
 group = "w19-s3a"
 why = "a mapping is ratified by its own proposer — the refusal half of four-eyes deleted (DS3a-3)"
 file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
-find = """    if str(actor_id) == str(version.proposed_by_actor_id):
+# RE-ANCHORED at the slice-review fold: the comparison is now canonicalized (the uppercase-uuid
+# vector), so the old anchor no longer matches. An unmatched anchor is a SURVIVOR by the harness's
+# own rule, which is how this was noticed.
+find = """    if canonical_actor(actor_id) == canonical_actor(version.proposed_by_actor_id):
         raise SelfRatificationError(str(actor_id))"""
 replace = """    if actor_id is None:
         raise SelfRatificationError(str(actor_id))"""
@@ -1734,3 +1737,81 @@ find = """            if name in _POSITION_CALLS:
 replace = """            if name in ():
                 return True"""
 tests = ["packages/shared-python/tests/test_ingest_mapping_census.py"]
+
+# --- W19-S3a REVIEW FOLDS. Each re-introduces a defect the slice review reproduced. -------------
+
+[[mutant]]
+id = "M-S3A-14"
+group = "w19-s3a"
+why = "the content-immutability guard goes back to being a helper nobody calls — a ratified mapping's meaning changes silently on an ordinary autoflush, with no refusal and no audit event (reproduced by a reviewer)"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/models.py"
+find = """event.listen(IngestionMappingVersion, "before_update", _refuse_content_mutation)"""
+replace = """# listener removed"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-15"
+group = "w19-s3a"
+why = "four-eyes is defeated by an UPPERCASE uuid — the same principal proposes and ratifies, because the comparison is raw strings again"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """    if canonical_actor(actor_id) == canonical_actor(version.proposed_by_actor_id):"""
+replace = """    if str(actor_id) == str(version.proposed_by_actor_id):"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-16"
+group = "w19-s3a"
+why = "an operation that cannot produce a Decimal may target quantity again — the mapping ratifies and then dies at load with a bare decimal.InvalidOperation, which is not a MappingError, so a caller failing closed on the family catches nothing"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/interpreter.py"
+find = """        if target in _DECIMAL_TARGETS and op not in _DECIMAL_PRODUCING_OPS:
+            raise IncoherentTargetOperationError(op, target, tuple(sorted(_DECIMAL_PRODUCING_OPS)))"""
+replace = """        if False:
+            raise IncoherentTargetOperationError(op, target, tuple(sorted(_DECIMAL_PRODUCING_OPS)))"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-17"
+group = "w19-s3a"
+why = "a mapping whose every operation is outside the closed vocabulary can be PROPOSED and RATIFIED — a governance record saying a human approved something guaranteed to refuse every row"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/interpreter.py"
+find = """        if op not in OPERATIONS:
+            raise UnsupportedOperationError(op, OPERATIONS)"""
+replace = """        if op is None:
+            raise UnsupportedOperationError(op, OPERATIONS)"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-18"
+group = "w19-s3a"
+why = "an over-length quantity unit is silently TRUNCATED again, writing a governed holding that says something the client's file did not say"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/interpreter.py"
+find = """        if len(text_unit) > _QUANTITY_UNIT_MAX:
+            raise QuantityUnitTooLongError(text_unit, _QUANTITY_UNIT_MAX, row_number)
+        out[TARGET_QUANTITY_UNIT] = text_unit"""
+replace = """        out[TARGET_QUANTITY_UNIT] = text_unit[:_QUANTITY_UNIT_MAX]"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3A-19"
+group = "w19-s3a"
+why = "the write-path census stops following calls and goes back to per-file co-occurrence — a two-module bypass (reader here, writer there) reports an empty offender list, indistinguishable from compliance (a reviewer planted exactly this and every test stayed green)"
+file = "packages/shared-python/tests/test_ingest_mapping_census.py"
+find = """                if calls & write_names:
+                    write_names.add(name)
+                    changed = True"""
+replace = """                if False:
+                    write_names.add(name)
+                    changed = True"""
+tests = ["packages/shared-python/tests/test_ingest_mapping_census.py"]
+
+[[mutant]]
+id = "M-S3A-20"
+group = "w19-s3a"
+why = "a non-numeric reaching a decimal target escapes as a raw ArithmeticError instead of a governed MappingError, so a caller failing closed on the family catches nothing"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/interpreter.py"
+find = """        try:
+            coerced = Decimal(numeric_text(raw))
+        except (ArithmeticError, ValueError, TypeError) as exc:
+            raise CastRefusedError(raw, f"a decimal for {target!r}", row_number) from exc"""
+replace = """        coerced = Decimal(numeric_text(raw))"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]

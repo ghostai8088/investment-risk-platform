@@ -32,11 +32,14 @@ from irp_shared.ingest_mapping.errors import (
     ConcatenateRefusedError,
     ConstantTypeRefusedError,
     DateParseRefusedError,
+    IncoherentTargetOperationError,
     MappingContentImmutableError,
     MappingLifecycleError,
     MappingNotVisible,
     MissingSourceColumnError,
     OverlappingLoadError,
+    PortfolioCodeNotVisible,
+    QuantityUnitTooLongError,
     ScaleRefusedError,
     SelfRatificationError,
     UnknownTargetFieldError,
@@ -548,9 +551,10 @@ def test_a_cross_tenant_mapping_id_is_not_visible(session: Session) -> None:
         resolve_mapping_version(session, version.id, acting_tenant=tenant_b)
 
 
-def test_content_immutability_is_enforced_not_merely_documented(session: Session) -> None:
-    """Nothing at the DB layer catches this — the table must stay status-mutable — so this guard is
-    the only thing between a ratified mapping and a silent change of meaning."""
+def test_the_eager_content_guard_still_refuses_when_called_directly(session: Session) -> None:
+    """The service keeps an EAGER pre-flush assertion beside the listener, because it fails at the
+    point of the mistake rather than at the next flush. It is no longer THE control — see
+    ``test_a_content_edit_is_refused_on_an_ORDINARY_flush``, which does not call it at all."""
     tenant = _tenant()
     source_id = _source(session, tenant)
     version = _ratified(session, tenant, source_id)
@@ -1008,19 +1012,21 @@ def test_the_table_declares_its_temporal_class_and_is_not_append_only() -> None:
     asserted rather than left to a reader to infer from an empty table."""
     assert IngestionMappingVersion.__temporal_class__ is TemporalClass.IMMUTABLE_APPEND_ONLY
 
-    # (a) NO ORM mutation guard: the status projection must transition. `APPEND_ONLY_TABLES` is a
-    # per-migration constant rather than a runtime one, so the runtime property IS the listener
-    # set, and it is asserted against a KNOWN-EQUIVALENT peer (`ingestion_batch`, the precedent
-    # this table follows) rather than a bare `not ...`, which would pass on a typo'd hook name.
+    # (a) The listener set is ASYMMETRIC, and the asymmetry is the design:
+    #   - `before_update` HAS a guard — the content-immutability refusal. It was a helper called by
+    #     hand until the slice review proved that could never fire in production.
+    #   - `before_delete` has NONE, and must not: a delete guard would make this a truly
+    #     append-only table, and the status projection has to transition.
     dispatch = IngestionMappingVersion.__mapper__.dispatch
-    peer = IngestionBatch.__mapper__.dispatch
-    for hook in ("before_update", "before_delete"):
-        assert list(getattr(dispatch, hook)) == list(getattr(peer, hook)) == []
+    assert list(dispatch.before_update), "the content-immutability listener is not registered"
+    assert list(dispatch.before_delete) == []
 
-    # (a-control) ...and the assertion is NOT vacuous: the same read on a truly append-only table
-    # returns a NON-empty listener list, so an empty result means "no guard", not "wrong attribute".
+    # (a-control) the read is not vacuous in EITHER direction: a truly append-only peer has BOTH,
+    # and the status-mutable peer this table otherwise follows has NEITHER.
     guarded = IngestionStagedRecord.__mapper__.dispatch
     assert list(guarded.before_update) and list(guarded.before_delete)
+    status_mutable_peer = IngestionBatch.__mapper__.dispatch
+    assert list(status_mutable_peer.before_update) == []
 
     # (b) NO irp_prevent_mutation TRIGGER in the migration that creates it — matched on the DDL
     # statement, not the function name, which the module docstring legitimately mentions.
@@ -1186,3 +1192,286 @@ def test_a_loaded_short_position_lands_signed(session: Session) -> None:
     )
     session.flush()
     assert _open_head(session).quantity == Decimal("-3200.0")
+
+
+# --- the refusal census: P9's MECHANICAL limb, which this repo did not have ---------------------
+
+
+def _refusal_classes() -> set[str]:
+    """Every concrete refusal in the mapping spine, discovered from the class tree."""
+    from irp_shared.ingest_mapping import errors as errs
+
+    found: set[str] = set()
+
+    def walk(cls: type) -> None:
+        for sub in cls.__subclasses__():
+            found.add(sub.__name__)
+            walk(sub)
+
+    walk(errs.MappingError)
+    return found
+
+
+def test_every_declared_refusal_is_fired_by_a_test() -> None:
+    """P9's mechanical limb.
+
+    *A refusal that cannot fire and a refusal that never fires are indistinguishable from the diff.*
+    This repo has shipped structurally unfireable refusals twice, and P9's own text says the
+    mechanical half should be a census — but no such census existed anywhere in the repo, in any
+    slice. ``errors.py``'s docstring nonetheless CLAIMED one, which a slice reviewer caught: a false
+    governance record inside the module whose purpose is to prevent them. This is the census the
+    claim needed.
+
+    It DISCOVERS its population from ``MappingError.__subclasses__()`` rather than a hand list, so a
+    refusal minted tomorrow joins it by construction.
+    """
+    here = pathlib.Path(__file__).resolve().parent
+    corpus = "\n".join(
+        path.read_text()
+        for path in (
+            here / "test_ingest_mapping.py",
+            here / "test_ingest_mapping_pg.py",
+            here / "test_ingestion.py",
+        )
+    )
+    declared = _refusal_classes()
+    assert declared, "the refusal collector found NOTHING — the census walked an empty population"
+
+    unfired = sorted(
+        name
+        for name in declared
+        if f"pytest.raises({name}" not in corpus and f"{name})" not in corpus
+    )
+    assert not unfired, (
+        f"refusals with no test that makes them FIRE: {unfired}. A refusal that cannot fire and a "
+        f"refusal that never fires are indistinguishable from the diff."
+    )
+
+
+def test_the_refusal_census_population_has_not_collapsed() -> None:
+    """P6's floor on the census above. A collector that silently stopped finding subclasses would
+    report zero unfired refusals — which reads exactly like full coverage."""
+    declared = _refusal_classes()
+    assert len(declared) >= 14, (
+        f"the refusal census discovered only {len(declared)} classes — the collector has stopped "
+        "matching, not the module stopped declaring refusals"
+    )
+    # named instances, so a collector that found a DIFFERENT 14 classes still fails
+    assert {"UnratifiedMappingError", "SelfRatificationError", "OverlappingLoadError"} <= declared
+
+
+# --- the folds from the slice review -----------------------------------------------------------
+
+
+def test_a_mapping_whose_operations_are_all_unsupported_cannot_be_PROPOSED(
+    session: Session,
+) -> None:
+    """The coherence check never validated the OPERATION, only the target.
+
+    A reviewer reproduced the consequence: a mapping whose every op was `regex_replace` passed
+    cleanly and could be RATIFIED — a governance record saying a human approved something
+    guaranteed to refuse every row, which is precisely the outcome the check's docstring says it
+    exists to prevent.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    bad = [dict(op, op="regex_replace") for op in DEMO_OPS]
+    with pytest.raises(UnsupportedOperationError) as exc:
+        propose_mapping_version(
+            session,
+            tenant_id=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+            version_label="bad",
+            operations=bad,
+            actor_id=PROPOSER,
+        )
+    assert "regex_replace" in str(exc.value)
+    # positive control: the SAME shape with supported ops proposes fine
+    assert (
+        propose_mapping_version(
+            session,
+            tenant_id=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+            version_label="good",
+            operations=list(DEMO_OPS),
+            actor_id=PROPOSER,
+        ).status
+        == STATUS_PROPOSED
+    )
+
+
+@pytest.mark.parametrize("op_name", ["rename", "concatenate", "code-lookup"])
+def test_an_operation_that_cannot_produce_a_decimal_is_refused_at_PROPOSAL(
+    session: Session, op_name: str
+) -> None:
+    """The BLOCKING finding two lanes reproduced end to end.
+
+    A `rename` into `quantity` used to pass coherence, get RATIFIED through the real service verbs,
+    and then raise a bare ``decimal.InvalidOperation`` at load — an ArithmeticError, not a
+    ``MappingError``, so a caller failing closed on the family caught nothing. The trigger value was
+    ``1,234.50``: an ordinary comma-formatted number, structurally identical to the demonstrating
+    file's own book-cost column.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    spec: dict[str, object] = {"op": op_name, "target": "quantity", "source": "QTY"}
+    if op_name == "concatenate":
+        spec = {"op": op_name, "target": "quantity", "sources": ["A", "B"]}
+    if op_name == "code-lookup":
+        spec = {"op": op_name, "target": "quantity", "source": "S", "scheme": "SEDOL"}
+    ops_list = [op for op in DEMO_OPS if op["target"] != "quantity"] + [spec]
+    with pytest.raises(IncoherentTargetOperationError) as exc:
+        propose_mapping_version(
+            session,
+            tenant_id=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+            version_label=f"bad-{op_name}",
+            operations=ops_list,
+            actor_id=PROPOSER,
+        )
+    assert "quantity" in str(exc.value)
+
+
+def test_a_constant_valid_from_is_refused_at_PROPOSAL(session: Session) -> None:
+    """The datetime half of the same rule: only `parse-date` may fill `valid_from`. A constant
+    would pin every row of every load to one instant."""
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    ops_list = [op for op in DEMO_OPS if op["target"] != "valid_from"] + [
+        {"op": "constant", "target": "valid_from", "value": "2026-07-31"}
+    ]
+    with pytest.raises((IncoherentTargetOperationError, ConstantTypeRefusedError)):
+        propose_mapping_version(
+            session,
+            tenant_id=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+            version_label="bad-const-date",
+            operations=ops_list,
+            actor_id=PROPOSER,
+        )
+
+
+def test_a_non_numeric_reaching_a_decimal_target_refuses_GOVERNED(session: Session) -> None:
+    """Defense in depth for the same class: even if a shape slipped past ratification, the write
+    path must refuse with a ``MappingError``, never a bare ``decimal.InvalidOperation``."""
+    from irp_shared.ingest_mapping.interpreter import _as_decimal
+
+    with pytest.raises(CastRefusedError):
+        _as_decimal("not a number", "quantity", 3)
+    # ...and the anti-corruption quote is handled HERE too, not only inside cast/scale
+    assert _as_decimal("'-3.2", "quantity", 0) == Decimal("-3.2")
+    assert _as_decimal("1,234.50", "cost_basis", 0) == Decimal("1234.50")
+
+
+def test_a_content_edit_is_refused_on_an_ORDINARY_flush(session: Session) -> None:
+    """THE fold that mattered most: the guard is an ORM listener now, not a helper called by hand.
+
+    It could never fire before. Both production call sites assign nothing but lifecycle fields, and
+    the two tests exercising it called it DIRECTLY. A reviewer proved the consequence by execution:
+    ``version.operations = [...]`` followed by any query let autoflush push the UPDATE with no
+    refusal, no audit event, and the ratified mapping's meaning silently changed.
+
+    This test does NOT call the guard. It edits and flushes, the way real code would.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    version = _ratified(session, tenant, source_id)
+    session.flush()
+    version.operations = [{"op": "rename", "target": "quantity", "source": "SOMEWHERE_ELSE"}]
+    with pytest.raises(MappingContentImmutableError) as exc:
+        session.flush()
+    assert "operations" in str(exc.value)
+    session.rollback()
+
+
+def test_the_listener_permits_the_lifecycle_it_sits_beside(session: Session) -> None:
+    """The positive control: a listener that refused everything would pass the test above and break
+    ratification entirely — and ratification is a flush of exactly this shape."""
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    version = _ratified(session, tenant, source_id)  # this ITSELF flushes two status transitions
+    session.flush()
+    assert version.status == STATUS_RATIFIED
+    version.status = STATUS_SUPERSEDED
+    version.superseded_at = datetime.now(tz=UTC)
+    session.flush()  # must NOT raise
+    assert version.status == STATUS_SUPERSEDED
+
+
+def test_self_ratification_is_not_defeated_by_an_UPPERCASE_uuid(session: Session) -> None:
+    """The four-eyes refusal compared RAW STRINGS, and a reviewer showed the vector.
+
+    ``require_uuid_principal_id`` accepts any spelling ``uuid.UUID()`` parses, so the same person
+    authenticating with the uppercase form is the SAME PRINCIPAL to authentication and a DIFFERENT
+    STRING to ``==``. The proposer re-authenticates uppercase and ratifies their own mapping. The
+    ENT-075 four-eyes rail already carries this exact vector as a named test; this slice did not
+    reuse that rail and so did not inherit the lesson.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    proposer = str(uuid.uuid4())
+    version = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v1",
+        operations=list(DEMO_OPS),
+        actor_id=proposer,
+    )
+    assert proposer != proposer.upper()  # the two spellings really are different strings
+    with pytest.raises(SelfRatificationError):
+        ratify_mapping_version(
+            session,
+            mapping_version_id=version.id,
+            acting_tenant=tenant,
+            actor_id=proposer.upper(),
+        )
+    # positive control: a genuinely different principal still ratifies
+    ratified = ratify_mapping_version(
+        session,
+        mapping_version_id=version.id,
+        acting_tenant=tenant,
+        actor_id=str(uuid.uuid4()),
+    )
+    assert ratified.status == STATUS_RATIFIED
+
+
+def test_an_over_long_quantity_unit_is_REFUSED_not_truncated(session: Session) -> None:
+    """Truncating would write a governed record saying something the client's file did not say,
+    with nothing downstream able to tell it was altered. The first draft truncated silently."""
+    tenant = _tenant()
+    _book(session, tenant)
+    payload = dict(_row())
+    payload["UNIT"] = "SHARES (POST-SPLIT ADJUSTED)"  # 28 characters; the column holds 20
+    with pytest.raises(QuantityUnitTooLongError) as exc:
+        interpret_row(DEMO_OPS, payload, 2, _ctx(session, tenant))
+    assert "28 characters" in str(exc.value)
+    # positive control: a unit that FITS passes through unchanged, not silently shortened
+    payload["UNIT"] = "SHARES"
+    assert interpret_row(DEMO_OPS, payload, 2, _ctx(session, tenant))["quantity_unit"] == "SHARES"
+
+
+def test_an_unresolvable_portfolio_code_raises_its_OWN_error(session: Session) -> None:
+    """``MappingNotVisible`` stores its argument as ``mapping_version_id``; handing it a portfolio
+    code made a handler reading that attribute report something untrue about what failed."""
+    from irp_shared.ingest_mapping.service import _resolve_portfolio_by_code
+
+    tenant = _tenant()
+    with pytest.raises(PortfolioCodeNotVisible) as exc:
+        _resolve_portfolio_by_code(session, "NO-SUCH-BOOK", acting_tenant=tenant)
+    assert exc.value.code == "NO-SUCH-BOOK"
+
+
+def test_the_DEMONSTRATING_mapping_itself_clears_the_clause_8_floor() -> None:
+    """Clause (8) is about THE DEMONSTRATING FILE, and the original test asserted it of a local
+    fixture instead. A reviewer proved the gap by mutating the real ``committed_operations()`` down
+    to one operation kind and watching the test stay green."""
+    from irp_shared.demo.ingest1_stage28 import committed_operations
+
+    kinds = declared_operation_kinds(committed_operations())
+    assert len(kinds) >= 3, f"the shipped demonstrating mapping declares only {sorted(kinds)}"

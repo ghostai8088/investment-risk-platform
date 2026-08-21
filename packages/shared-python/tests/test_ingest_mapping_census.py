@@ -17,6 +17,34 @@ audits is blind to whatever bypasses that mechanism (the recorded lesson at
 independent questions per module — does it READ staged rows, and does it WRITE positions — and
 asserts the intersection by EXACT SET EQUALITY.
 
+**The census follows IMPORTS, and the first version did not — that was a real hole.** The original
+computed two per-module booleans (does this file read staged rows? does this file write positions?)
+and asserted their pairwise intersection. A bypass split across two modules — one reads
+``IngestionStagedRecord`` and calls a plainly-named helper, the other calls ``create_position`` and
+never mentions staged rows — has NO single module that is both, so the intersection was unchanged
+and the assertion passed. Two review lanes found this independently and one PLANTED the three-file
+shape and watched all seven tests stay green. It is not a contrived attack: extract-a-helper and
+put-the-reader-behind-a-repository-module are the two most ordinary refactors there are.
+
+So the census now follows CALLS, at function granularity, to a fixed point: a function reaches a
+position write if it calls one of the four write names, or calls a function that does. A module
+reaches a write if any of its functions does. That catches the two-hop shape — the reader calls
+``apply_row``, ``apply_row`` calls ``create_position``, so ``apply_row`` joins the write names and
+the reader is caught.
+
+**Import-following was tried first and was too coarse**, which is worth recording because the
+failure is instructive: it flagged the demo stage, on the grounds that the stage imports
+``demo.campaign`` and campaign seeds positions somewhere. The stage imports campaign for two
+CONSTANTS. A census that cannot tell "imports a module that happens to contain a writer" from
+"actually reaches a writer" produces exemption lists, and an exemption list is how a census stops
+meaning anything.
+
+**And the sanctioned route is cut out of the graph.** Functions defined in the interpreter's service
+do NOT propagate write-reachability to their callers, because calling ``load_batch`` is the
+permitted path — every legitimate caller uses it, and counting them would again mean exemptions. The
+question the census actually asks is: *who reaches a position write WITHOUT going through the
+ratified mapping?* The planted two-hop shape is a permanent negative control.
+
 **Two guards, not one, because they catch different failures** (the shape both shipped precedents
 carry and the first draft of this slice's plan had only half of):
 
@@ -57,7 +85,7 @@ _STAGED_STRINGS = ("ingestion_staged_record", "FROM ingestion_staged_record")
 #: costs one allowlist line, a missed raw INSERT would cost the census its subject.
 _POSITION_STRINGS = ("INSERT INTO position", 'INSERT INTO "position"')
 
-#: THE ANSWER. Exactly one module may do both — and it is the interpreter's service.
+#: THE ANSWER. Exactly one module may read staged rows and REACH a position write, transitively.
 EXPECTED_STAGED_TO_POSITION = frozenset({"irp_shared.ingest_mapping.service"})
 
 #: Known pre-existing PRODUCTION position writers, for the positive control. These are real sites
@@ -72,7 +100,7 @@ KNOWN_POSITION_WRITERS = frozenset(
 
 #: P6 floors, MEASURED at this slice rather than guessed. A collapse below these means the census's
 #: population vanished — which is the failure a floor exists to make loud.
-_MIN_POSITION_WRITERS = 4
+_MIN_POSITION_WRITERS = 4  # direct + transitive reachers; the floor is on the DIRECT set
 _MIN_STAGED_READERS = 2
 
 
@@ -117,18 +145,90 @@ def _reads_staged_rows(tree: ast.AST, text: str) -> bool:
     return any(marker in text for marker in _STAGED_STRINGS)
 
 
-def _census() -> tuple[set[str], set[str]]:
-    writers: set[str] = set()
+_ROOT_PACKAGES = frozenset({"irp_shared", "irp_backend", "irp_worker"})
+
+#: The SANCTIONED route. A function defined here does NOT propagate write-reachability to whoever
+#: calls it: calling ``load_batch`` IS the permitted path. Without this the census would flag every
+#: legitimate caller of the loader and have to be silenced with exemptions.
+INTERPRETER_MODULE = "irp_shared.ingest_mapping.service"
+
+
+def _called_names(node: ast.AST) -> set[str]:
+    """Every function name called anywhere inside ``node`` — bare and attribute forms alike.
+
+    Attribute calls collapse to the attribute (``svc.create_position`` -> ``create_position``),
+    deliberately over-capturing: a name collision costs a false positive that a reviewer resolves in
+    one line, while a missed call costs the census its subject.
+    """
+    out: set[str] = set()
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Call):
+            continue
+        fn = child.func
+        if isinstance(fn, ast.Name):
+            out.add(fn.id)
+        elif isinstance(fn, ast.Attribute):
+            out.add(fn.attr)
+    return out
+
+
+def _functions_of(tree: ast.AST) -> dict[str, set[str]]:
+    """Top-level (and nested) function name -> the names its body calls."""
+    out: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            out[node.name] = _called_names(node)
+    return out
+
+
+def _census(extra: dict[str, str] | None = None) -> tuple[set[str], set[str]]:
+    """(modules that REACH a position write without the sanctioned route, modules that read staged
+    rows).
+
+    Reachability is a fixed point over CALL names at function granularity — see the module
+    docstring for why import-following was rejected.
+
+    ``extra`` injects synthetic module sources into the SAME analysis. It exists so the negative
+    control can drive THIS function rather than its parts: a control that re-implements the
+    algorithm proves the control works, not the census. A mutant that disabled the fixed point
+    survived the first version of that control for exactly this reason.
+    """
     readers: set[str] = set()
-    for path in _iter_modules():
-        text = path.read_text()
+    module_calls: dict[str, set[str]] = {}
+    functions: dict[str, dict[str, set[str]]] = {}
+    text_writers: set[str] = set()
+
+    sources: list[tuple[str, str]] = [
+        (_module_name(path), path.read_text()) for path in _iter_modules()
+    ]
+    sources.extend((name, src) for name, src in (extra or {}).items())
+
+    for module, text in sources:
         tree = ast.parse(text)
-        module = _module_name(path)
-        if _writes_positions(tree, text):
-            writers.add(module)
+        module_calls[module] = _called_names(tree)
+        functions[module] = _functions_of(tree)
         if _reads_staged_rows(tree, text):
             readers.add(module)
-    return writers, readers
+        if any(marker in text for marker in _POSITION_STRINGS):
+            text_writers.add(module)  # a raw SQL INSERT is a write with no call name to follow
+
+    write_names = set(_POSITION_CALLS)
+    changed = True
+    while changed:
+        changed = False
+        for module, defs in functions.items():
+            for name, calls in defs.items():
+                if name in write_names or module == INTERPRETER_MODULE:
+                    continue  # the sanctioned route does not propagate
+                if calls & write_names:
+                    write_names.add(name)
+                    changed = True
+
+    reaches = set(text_writers)
+    for module, calls in module_calls.items():
+        if calls & write_names:
+            reaches.add(module)
+    return reaches, readers
 
 
 def test_only_the_interpreter_writes_positions_from_staged_rows() -> None:
@@ -141,6 +241,70 @@ def test_only_the_interpreter_writes_positions_from_staged_rows() -> None:
         f"REQ-INT-001 clause (4) admits exactly {sorted(EXPECTED_STAGED_TO_POSITION)} — a second "
         f"route from an uploaded file into canonical holdings bypasses the ratified mapping."
     )
+
+
+def test_a_two_hop_bypass_is_caught() -> None:
+    """The NEGATIVE CONTROL for the hole the first version had, kept permanently — and it drives
+    ``_census()`` ITSELF.
+
+    Module A reads staged rows and calls a plainly-named helper; module B calls ``create_position``
+    and never mentions staged rows. Neither file is both a reader and a writer, so a per-file
+    co-occurrence check reports nothing — which is what the first version did, verified by a
+    reviewer who planted exactly this and watched every test stay green.
+
+    The FIRST version of this control asserted against the algorithm's parts and a mutant that
+    disabled the fixed point survived it. Driving the real function is the difference between
+    testing the census and testing a re-implementation of it.
+    """
+    extra = {
+        "irp_shared.zz_reader": (
+            "from irp_shared.zz_writer import apply_row\n"
+            "from irp_shared.ingestion.models import IngestionStagedRecord\n"
+            "def load(session, batch_id):\n"
+            "    for row in session.query(IngestionStagedRecord).all():\n"
+            "        apply_row(session, row.payload)\n"
+        ),
+        "irp_shared.zz_writer": (
+            "from irp_shared.position import create_position\n"
+            "def apply_row(session, payload):\n"
+            "    create_position(session, **payload)\n"
+        ),
+    }
+    clean_writers, clean_readers = _census()
+    assert (clean_writers & clean_readers) == EXPECTED_STAGED_TO_POSITION  # baseline
+
+    writers, readers = _census(extra=extra)
+    assert "irp_shared.zz_reader" in readers  # A alone looks like a mere reader...
+    assert "irp_shared.zz_writer" in writers  # ...and B alone like a mere writer
+    offenders = writers & readers
+    assert "irp_shared.zz_reader" in offenders, (
+        "the two-hop bypass was NOT caught — the census is back to per-file co-occurrence, which "
+        "reports an empty offender list for a genuine second write path"
+    )
+    assert offenders != EXPECTED_STAGED_TO_POSITION
+
+
+def test_a_legitimate_caller_of_the_loader_is_NOT_an_offender() -> None:
+    """The other half, and it is what makes the census usable rather than merely strict.
+
+    The demo stage reads staged rows AND reaches a position write — through ``load_batch``. If the
+    census counted that it would flag the sanctioned route's own users, and the only way to keep it
+    green would be an exemption list, which is how a census stops meaning anything. This asserts the
+    real module is NOT in the offender set while genuinely being both a reader and a caller.
+    """
+    writers, readers = _census()
+    stage = "irp_shared.demo.ingest1_stage28"
+    assert stage in readers, "the demo stage really does read staged rows — the control is live"
+    assert stage not in (writers & readers)
+
+
+def test_the_call_walker_sees_both_call_shapes() -> None:
+    """A bare call and an attribute call must both register, or which spelling a refactor happens to
+    use decides whether the census can see it."""
+    assert "create_position" in _called_names(ast.parse("create_position(s, x=1)\n"))
+    assert "create_position" in _called_names(ast.parse("position.create_position(s, x=1)\n"))
+    # ...and a mere REFERENCE without a call is not a call.
+    assert "create_position" not in _called_names(ast.parse("fn = create_position\n"))
 
 
 def test_the_census_actually_detects_known_production_writers() -> None:

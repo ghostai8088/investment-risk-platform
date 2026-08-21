@@ -164,3 +164,67 @@ describe("MappingDetail", () => {
     expect(screen.getByText(/not recorded/)).toBeTruthy();
   });
 });
+
+describe("Mappings — the POSITIVE branches", () => {
+  // Every test above covers an absent/negative state: PROPOSED, hand-authored, no lookup, empty
+  // list. A slice reviewer pointed out that the states representing the system WORKING — a
+  // RATIFIED mapping, a recorded ratifier, a recorded lookup instant — were never rendered at all,
+  // so a swapped condition or a blanked cell in any of them would ship undetected.
+  const RATIFIED = {
+    ...PROPOSED,
+    status: "RATIFIED",
+    ratified_by_actor_id: "data.steward@demo",
+    ratified_at: "2026-08-21T10:30:00+00:00",
+  };
+
+  it("renders a RATIFIED mapping as in force, with its ratifier", async () => {
+    stubJson(() => [RATIFIED]);
+    render(
+      <MemoryRouter>
+        <Mappings session={SESSION} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(/RATIFIED — files load through this version/)).toBeTruthy();
+    expect(screen.getByText("data.steward@demo")).toBeTruthy();
+    expect(screen.queryByText(/awaiting ratification/)).toBeNull();
+  });
+
+  it("renders the populated ratifier row and lookup instant on the detail view", async () => {
+    stubJson((url) =>
+      url.endsWith("/batches")
+        ? [
+            {
+              id: "b1",
+              status: "COMPLETED",
+              scan_status: "SKIPPED",
+              filename: "custodian_positions_2026-07-31.csv",
+              content_type: "text/csv",
+              byte_size: 512,
+              data_source_id: "ds1",
+              row_count: 4,
+              staged_count: 4,
+              failed_count: 0,
+              mapping_version_id: "m1",
+              lookup_as_of: "2026-08-21T10:31:00+00:00",
+            },
+          ]
+        : RATIFIED,
+    );
+    render(
+      <MemoryRouter initialEntries={["/ops/mappings/m1"]}>
+        <Routes>
+          <Route path="/ops/mappings/:mappingId" element={<MappingDetail session={SESSION} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // "who agreed?" — the question the whole INGEST-1 thesis turns on, for the one state that can
+    // actually load a file.
+    expect(await screen.findByText(/data\.steward@demo · 2026-08-21T10:30:00\+00:00/)).toBeTruthy();
+    expect(screen.queryByText(/not ratified — this version cannot load a file/)).toBeNull();
+    // clause 9's third input, RECORDED rather than absent
+    expect(screen.getByText("2026-08-21T10:31:00+00:00")).toBeTruthy();
+    expect(screen.queryByText(/not recorded/)).toBeNull();
+  });
+});

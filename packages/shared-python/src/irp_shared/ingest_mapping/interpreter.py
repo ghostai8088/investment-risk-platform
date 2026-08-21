@@ -24,16 +24,24 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from irp_shared.ingest_mapping.errors import (
+    CastRefusedError,
     CodeLookupRefusedError,
     ConstantTypeRefusedError,
+    IncoherentTargetOperationError,
+    QuantityUnitTooLongError,
     UnknownTargetFieldError,
+    UnsupportedOperationError,
 )
 from irp_shared.ingest_mapping.operations import (
+    OP_CAST,
     OP_CODE_LOOKUP,
     OP_CONSTANT,
+    OP_PARSE_DATE,
+    OP_SCALE,
     OPERATIONS,
     apply_operation,
     is_finite_decimal,
+    numeric_text,
 )
 from irp_shared.reference.identifier import AmbiguousIdentifier, resolve_identifier
 
@@ -68,6 +76,25 @@ REQUIRED_TARGETS: frozenset[str] = frozenset(
 #: and the load-time coercion, so an incoherent constant cannot become a ratified mapping.
 _DECIMAL_TARGETS: frozenset[str] = frozenset({TARGET_QUANTITY, TARGET_COST_BASIS})
 _DATETIME_TARGETS: frozenset[str] = frozenset({TARGET_VALID_FROM})
+
+#: The ONLY operations that provably produce a Decimal-coercible value. `constant` is admitted
+#: separately because its literal is coercibility-checked at proposal time.
+#:
+#: The slice review found the gap this closes, and reproduced it end to end: a mapping using
+#: `rename` (or `concatenate`, or `code-lookup`) to fill `quantity` passed the coherence check, was
+#: PROPOSED and RATIFIED through the real service verbs, and then raised a bare
+#: `decimal.InvalidOperation` at load — an ArithmeticError, NOT a `MappingError` — so a caller
+#: failing closed on the family caught nothing. `1,234.50` was enough to trigger it: an ordinary
+#: comma-formatted number, structurally identical to the demonstrating file's own book-cost column.
+_DECIMAL_PRODUCING_OPS: frozenset[str] = frozenset({OP_SCALE, OP_CAST, OP_CONSTANT})
+
+#: The ONLY operation that produces a datetime. `constant` is deliberately NOT admitted here: a
+#: constant `valid_from` would pin every row of every load to one instant.
+_DATETIME_PRODUCING_OPS: frozenset[str] = frozenset({OP_PARSE_DATE})
+
+#: `position.quantity_unit` is varchar(20). Over-length values REFUSE rather than truncate — see
+#: `_coerce`.
+_QUANTITY_UNIT_MAX = 20
 
 
 @dataclass
@@ -123,11 +150,26 @@ def assert_targets_coherent(operations: list[dict[str, Any]]) -> None:
     """
     targets: set[str] = set()
     for spec in operations:
+        op = str(spec.get("op", ""))
+        # (a) The OPERATION must be in the closed vocabulary. This check was MISSING, and the slice
+        # review reproduced the consequence: a mapping whose every operation was `regex_replace`
+        # passed coherence cleanly and could be RATIFIED — a governance record saying a human
+        # approved something guaranteed to refuse every row at load. That is exactly the outcome
+        # this function's docstring says it exists to prevent.
+        if op not in OPERATIONS:
+            raise UnsupportedOperationError(op, OPERATIONS)
         target = str(spec.get("target", ""))
         if target not in TARGET_FIELDS:
             raise UnknownTargetFieldError(target, TARGET_FIELDS)
         targets.add(target)
-        if str(spec.get("op", "")) == OP_CONSTANT:
+        # (b) The operation must be able to PRODUCE the target's type. Without this a `rename` into
+        # `quantity` ratifies happily and then dies at load with a bare decimal.InvalidOperation —
+        # not a MappingError, so a caller failing closed on the family catches nothing.
+        if target in _DECIMAL_TARGETS and op not in _DECIMAL_PRODUCING_OPS:
+            raise IncoherentTargetOperationError(op, target, tuple(sorted(_DECIMAL_PRODUCING_OPS)))
+        if target in _DATETIME_TARGETS and op not in _DATETIME_PRODUCING_OPS:
+            raise IncoherentTargetOperationError(op, target, tuple(sorted(_DATETIME_PRODUCING_OPS)))
+        if op == OP_CONSTANT:
             _assert_constant_coercible(spec.get("value"), target)
     missing = REQUIRED_TARGETS - targets
     if missing:
@@ -168,10 +210,10 @@ def interpret_row(
         if target not in TARGET_FIELDS:
             raise UnknownTargetFieldError(target, TARGET_FIELDS)
         out[target] = apply_operation(spec, payload, row_number, ctx)
-    return _coerce(out)
+    return _coerce(out, row_number)
 
 
-def _coerce(values: dict[str, Any]) -> dict[str, Any]:
+def _coerce(values: dict[str, Any], row_number: int) -> dict[str, Any]:
     """Normalize interpreted values to the binder's expected Python types.
 
     Numeric targets land as ``Decimal`` and are finiteness-guarded before any write — the same
@@ -181,18 +223,49 @@ def _coerce(values: dict[str, Any]) -> dict[str, Any]:
     out = dict(values)
     for target in _DECIMAL_TARGETS:
         if out.get(target) is not None:
-            raw = out[target]
-            coerced = raw if isinstance(raw, Decimal) else Decimal(str(raw))
-            if not is_finite_decimal(coerced):
-                raise ConstantTypeRefusedError(raw, target)
-            out[target] = coerced
+            out[target] = _as_decimal(out[target], target, row_number)
     for target in _DATETIME_TARGETS:
         if isinstance(out.get(target), datetime) and out[target].tzinfo is None:
             # parse-date produces a naive datetime; the platform stores UTC everywhere (QS-12).
             out[target] = out[target].replace(tzinfo=UTC)
-    if out.get(TARGET_QUANTITY_UNIT) is not None:
-        out[TARGET_QUANTITY_UNIT] = str(out[TARGET_QUANTITY_UNIT])[:20]
+    unit = out.get(TARGET_QUANTITY_UNIT)
+    if unit is not None:
+        # REFUSE, never truncate. `position.quantity_unit` is varchar(20), and silently cutting
+        # "SHARES (POST-SPLIT ADJ)" to "SHARES (POST-SPLIT A" would write a governed record saying
+        # something the client's file did not say, with nothing downstream able to tell it had been
+        # altered. A refused batch is recoverable; a quietly rewritten holding is not.
+        text_unit = str(unit)
+        if len(text_unit) > _QUANTITY_UNIT_MAX:
+            raise QuantityUnitTooLongError(text_unit, _QUANTITY_UNIT_MAX, row_number)
+        out[TARGET_QUANTITY_UNIT] = text_unit
     return out
+
+
+def _as_decimal(raw: Any, target: str, row_number: int) -> Decimal:
+    """Coerce ONE interpreted value to a finite Decimal, or raise a GOVERNED refusal.
+
+    This is the single funnel every decimal target passes through, whichever operation produced it
+    — which is the point. The numeric repair used to live only inside `cast` and `scale` in
+    ``operations.py``, so a value arriving by any other route reached a bare ``Decimal(str(raw))``
+    with no try/except: a raw ``decimal.InvalidOperation`` escaped ``load_batch``, and an
+    ``ArithmeticError`` is not a ``MappingError``, so a caller failing closed on the family caught
+    nothing at all. Reproduced end to end by the slice review before this existed.
+
+    ``assert_targets_coherent`` now refuses the shapes that could produce a non-numeric here, so
+    this is defense in depth rather than the primary control. It is kept because the primary
+    control is a proposal-time check and this one is a write-time one, and the write is the thing
+    that must never happen ungoverned.
+    """
+    if isinstance(raw, Decimal):
+        coerced = raw
+    else:
+        try:
+            coerced = Decimal(numeric_text(raw))
+        except (ArithmeticError, ValueError, TypeError) as exc:
+            raise CastRefusedError(raw, f"a decimal for {target!r}", row_number) from exc
+    if not is_finite_decimal(coerced):
+        raise CastRefusedError(raw, f"a finite decimal for {target!r}", row_number)
+    return coerced
 
 
 def declared_operation_kinds(operations: list[dict[str, Any]]) -> frozenset[str]:

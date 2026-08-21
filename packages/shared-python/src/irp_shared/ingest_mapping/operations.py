@@ -63,7 +63,7 @@ CAST_STRING = "string"
 CAST_TYPES: tuple[str, ...] = (CAST_DECIMAL, CAST_INTEGER, CAST_STRING)
 
 
-def _numeric_text(raw: Any) -> str:
+def numeric_text(raw: Any) -> str:
     """The text of a cell, prepared for numeric coercion.
 
     Two repairs, both narrow and both necessary against real custodian files:
@@ -119,7 +119,7 @@ def _op_cast(spec: dict[str, Any], payload: dict[str, Any], row_number: int, ctx
         raise CastRefusedError(raw, to_type, row_number)
     if to_type == CAST_STRING:
         return "" if raw is None else str(raw).strip()
-    cleaned = _numeric_text(raw)
+    cleaned = numeric_text(raw)
     if not cleaned:
         raise CastRefusedError(raw, to_type, row_number)
     try:
@@ -148,7 +148,7 @@ def _op_scale(spec: dict[str, Any], payload: dict[str, Any], row_number: int, ct
     if not factor.is_finite() or factor <= 0:
         raise ScaleRefusedError(f"declared factor {factor} must be finite and positive")
     raw = _cell(payload, str(spec["source"]), row_number)
-    cleaned = _numeric_text(raw)
+    cleaned = numeric_text(raw)
     try:
         value = Decimal(cleaned)
     except (InvalidOperation, ValueError, ArithmeticError) as exc:
