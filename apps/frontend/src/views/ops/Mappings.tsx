@@ -5,7 +5,7 @@ import { Link, useParams } from "react-router";
 import { ApiError } from "../../api/client";
 import { useApiGet } from "../../api/useApiGet";
 import { verbatim } from "../../api/format";
-import { classifyRefusal, ratifyMappingVersion, withdrawMappingVersion } from "../../api/writes";
+import { ratifyMappingVersion, withdrawMappingVersion } from "../../api/writes";
 import { Pane } from "../../components/Pane";
 import type { components } from "../../api/generated/api-types";
 import type { Session } from "../../session";
@@ -422,17 +422,25 @@ function Decision({
   );
 }
 
-/** What the refusal MEANT, and therefore what to do about it. */
+/** What the refusal MEANT, and therefore what to do about it.
+ *
+ * `classifyRefusal` is deliberately NOT used here, and a review is why. Its three markers are
+ * pinned to the BREACH domain's error map ("separation of duties", "reload and retry", "illegal
+ * transition") by `refusal-contract.test.ts`. The mapping router's three conflict details match
+ * none of them, so every mapping 409 fell through to "other" and the branch that looked like it
+ * was discriminating was doing nothing at all. Borrowing a classifier whose contract is pinned to
+ * another domain's strings is how a UI ends up silently generic.
+ *
+ * A mapping 409 has exactly two causes — you proposed this and may not ratify it, or you did not
+ * propose it and may not withdraw it — and both have the SAME remedy. So this says that plainly
+ * instead of pretending to discriminate. */
 function explainDecision(error: ApiError): string {
   if (error.kind === "forbidden") {
     return "You need the “ingest.mapping.ratify” permission to ratify, or “ingest.mapping.propose” to withdraw.";
   }
   if (error.kind === "conflict") {
-    // Not an entitlement problem. The caller HAS the code; the act is refused on who they are
-    // relative to this particular proposal, and the remedy is a different person — never a retry.
-    return classifyRefusal(error.message) === "separation-of-duties"
-      ? error.message
-      : `${error.message} — this is not a permission problem; a retry will not change it.`;
+    // The caller HAS the code. The act is refused on who they are relative to THIS proposal.
+    return `${error.message} — this is not a permission problem, and a retry will not change it. Someone else must act on this proposal.`;
   }
   return error.message;
 }

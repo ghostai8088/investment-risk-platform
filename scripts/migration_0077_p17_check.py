@@ -81,6 +81,31 @@ def main() -> int:
     # referenced because the column did not exist. The migration owner bypasses RLS here — the
     # migration's own execution posture, stated rather than left as a surprise.
     with engine.begin() as conn:
+        # CONSTRUCT the pre-existing-database state, because the migration chain CANNOT produce
+        # it — and that is a fact about this repo, not a shortcut.
+        #
+        # A database that has been running since before this mint has 0077's ancestors and NOT the
+        # three codes. But `0002` seeds `permission` from the LIVE `bootstrap.PERMISSIONS`
+        # constant at upgrade time, and this slice added the codes to that constant — so ANY
+        # database built from empty today already has them at revision 0076, whatever route it
+        # took. There is no reachable starting state in which `before_codes` is naturally empty.
+        #
+        # This was found by a different-engine review AFTER an exit-0 run of this harness had been
+        # quoted as evidence. That run was real, but the database it ran against had executed
+        # `0002` BEFORE the constant changed — a state nobody can rebuild from the repository. An
+        # unreproducible green is not evidence, and the harness now says so by building the state
+        # it needs rather than depending on one that happened to exist.
+        conn.execute(
+            text(
+                "DELETE FROM role_permission WHERE permission_id IN "
+                "(SELECT id FROM permission WHERE code = ANY(:codes))"
+            ),
+            {"codes": list(_MINTED_CODES)},
+        )
+        conn.execute(
+            text("DELETE FROM permission WHERE code = ANY(:codes)"),
+            {"codes": list(_MINTED_CODES)},
+        )
         before_codes = _codes_present(conn)
         conn.execute(
             text(
@@ -147,8 +172,8 @@ def main() -> int:
 
     if before_codes:
         raise RuntimeError(
-            f"the mapping codes were already present BEFORE 0077: {sorted(before_codes)} — the "
-            "delivery arm below would pass vacuously"
+            f"the mapping codes are STILL present after being deleted: {sorted(before_codes)} — "
+            "the delivery arm below would pass vacuously, which is the one thing it must not do"
         )
 
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)

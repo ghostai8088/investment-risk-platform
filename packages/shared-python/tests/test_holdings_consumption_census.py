@@ -115,18 +115,22 @@ SANCTIONED_MODULES = frozenset({"irp_shared.holdings.service", "irp_shared.posit
 #: reconstruction is what REQ-PPM-002 forbids.
 EXPECTED_OFFENDERS: frozenset[str] = frozenset()
 
-#: THE ANSWER to question (2), DISCOVERED and then recorded. Twenty-one of the twenty-five governed
-#: families consume holdings, every one of them through the reconstruction.
-EXPECTED_HOLDINGS_CONSUMERS = frozenset(
+#: THE ANSWER to question (1) — the census's SUBJECT, pinned so it cannot narrow silently. The
+#: twenty-five modules that mint a governed calculation run by a DIRECT call.
+EXPECTED_FAMILIES = frozenset(
     {
         "irp_shared.concentration.service",
+        "irp_shared.deploy.report_identity_proof",
         "irp_shared.exposure.service",
+        "irp_shared.liquidity.service",
         "irp_shared.pacing.service",
         "irp_shared.perf.benchmark_relative_service",
         "irp_shared.perf.desmoothing_service",
         "irp_shared.perf.return_service",
         "irp_shared.perf.rolling_service",
         "irp_shared.perf.sharpe_service",
+        "irp_shared.report.service",
+        "irp_shared.reproduction.service",
         "irp_shared.risk.active_risk_service",
         "irp_shared.risk.covariance_service",
         "irp_shared.risk.es_backtest_service",
@@ -143,31 +147,89 @@ EXPECTED_HOLDINGS_CONSUMERS = frozenset(
     }
 )
 
-#: The four families that mint runs and do NOT consume holdings, pinned for the same reason: if one
-#: of them starts reading holdings, that is a change to this requirement's subject and must be seen.
-#: `report` and `reproduction` consume other families' governed OUTPUT; `liquidity` consumes
-#: exposure results; `report_identity_proof` is a deploy-time proof.
+#: THE ANSWER to question (2), DISCOVERED and then recorded. **Exactly ONE** governed family
+#: consumes holdings: the exposure family, which reads pinned ``COMPONENT_KIND_POSITION``
+#: components (and calls ``build_snapshot`` on its build-in-request path). Every other governed
+#: family consumes another family's pinned governed OUTPUT — factor rows, covariance rows, exposure
+#: atoms, portfolio returns — never holdings.
+#:
+#: **This pin said TWENTY-ONE for one commit and that was a name-collision artifact**, found by a
+#: different-engine review and confirmed by grep: ``covariance_service``, ``factor_service``,
+#: ``perf/return_service`` and ``pacing/service`` contain ZERO references to any of the seven
+#: sanctioned names. They were credited because the reachability fixed point ran over BARE function
+#: names, ``exposure.service`` reaches the reconstruction through a private helper called
+#: ``_compute``, and every governed family names its ``execute_governed_run`` callback ``_compute``.
+#: One generic name entered the reachable set and carried twenty families with it. Reachability is
+#: now module-qualified and resolved through each module's own imports.
+#:
+#: The corrected answer is the more useful one: REQ-PPM-002's "SINGLE source of holdings" is, today,
+#: a claim about one module.
+EXPECTED_HOLDINGS_CONSUMERS = frozenset({"irp_shared.exposure.service"})
+
+#: The twenty-four families that mint governed runs and do NOT consume holdings, pinned for the
+#: same reason as the consumers: if one of them starts reading holdings, that is a change to this
+#: requirement's SUBJECT and must be seen rather than absorbed. They consume other families' pinned
+#: governed output. (``var_service`` looks like a counter-example to a substring grep — it contains
+#: ``build_snapshot_fn``, a LOCAL VARIABLE holding one of the var snapshot builders. The AST is
+#: exact where grep is not, and that difference is why the census reads the AST.)
 EXPECTED_NON_CONSUMERS = frozenset(
     {
+        "irp_shared.concentration.service",
         "irp_shared.deploy.report_identity_proof",
         "irp_shared.liquidity.service",
+        "irp_shared.pacing.service",
+        "irp_shared.perf.benchmark_relative_service",
+        "irp_shared.perf.desmoothing_service",
+        "irp_shared.perf.return_service",
+        "irp_shared.perf.rolling_service",
+        "irp_shared.perf.sharpe_service",
         "irp_shared.report.service",
         "irp_shared.reproduction.service",
+        "irp_shared.risk.active_risk_service",
+        "irp_shared.risk.covariance_service",
+        "irp_shared.risk.es_backtest_service",
+        "irp_shared.risk.factor_service",
+        "irp_shared.risk.private_covariance_service",
+        "irp_shared.risk.private_factor_service",
+        "irp_shared.risk.proxy_weight_service",
+        "irp_shared.risk.residual_shrinkage_service",
+        "irp_shared.risk.scenario_service",
+        "irp_shared.risk.service",
+        "irp_shared.risk.var_backtest_service",
+        "irp_shared.risk.var_hs_service",
+        "irp_shared.risk.var_service",
     }
 )
 
-#: Known RAW readers, for the positive control. Real pre-existing sites, neither of them a family.
+#: Known RAW readers, for the positive control. Real pre-existing sites. NONE of them is a governed
+#: family, which is why the offender intersection is empty without a single exemption.
+#:
+#: The two SANCTIONED modules appear here too, and that is the CUT WORKING rather than failing: the
+#: cut is FUNCTION-scoped, so ``holdings/service.py`` and ``position/position.py`` are still seen to
+#: read the table — only propagation THROUGH the reconstruction's named entry points is stopped. The
+#: cut used to be module-scoped, and a different-engine review demonstrated the escape hatch that
+#: opened: any NEW helper added to either file (a debug export, a reporting shortcut) inherited
+#: blanket immunity, invisible to every assertion here.
 KNOWN_RAW_READERS = frozenset(
     {
         "irp_backend.api.positions",  # GET /positions — the open-head listing
         "irp_shared.demo.ingest1_stage28",  # S3a's oracle, reading the table to VERIFY the load
+        "irp_shared.holdings.service",  # the set-returning as-of reconstruction itself
+        "irp_shared.position.position",  # the governed binders + the single-position as-of read
+        "irp_shared.ingest_mapping.service",  # the interpreter's load path
+        "irp_shared.synthetic.builder",  # the deterministic test-data builder
     }
 )
 
 #: P6 floors, MEASURED at this slice. A collapse means the census lost its subject.
+#:
+#: ``_MIN_CONSUMERS`` is 1 and that is deliberately weak — the honest population IS one. The real
+#: guard on that side is the exact-set pin above; the floor's only job here is to catch the
+#: sanctioned-route arm silently matching NOTHING, which would empty the offender set for the wrong
+#: reason.
 _MIN_FAMILIES = 20
-_MIN_CONSUMERS = 18
-_MIN_RAW_READERS = 2
+_MIN_CONSUMERS = 1
+_MIN_RAW_READERS = 4
 
 #: A query construct naming the ORM class. Narrow on purpose: merely IMPORTING `Position` (the way
 #: `snapshot.service` imports `PositionNotVisible` beside it) is not reading the table, and a
@@ -224,31 +286,100 @@ def _referenced_names(node: ast.AST) -> set[str]:
     return out
 
 
-def queries_position_table(node: ast.AST) -> bool:
-    """Does this node build a query over the ``position`` table itself?
+def _string_constants(node: ast.AST) -> list[str]:
+    """Every string this node could produce, with concatenations and f-strings JOINED.
 
-    ``select(Position)`` / ``session.query(Position)`` / a raw ``FROM position``. Deliberately NOT
-    "mentions the name Position": an import, a type annotation, or an exception class beside it are
-    not reads, and treating them as reads is what turns a census into an exemption list.
+    A raw SQL read built as ``"SELECT ... FROM " + "position"`` parses as a ``BinOp`` of two
+    ``Constant`` nodes, neither containing the marker; an f-string is a ``JoinedStr`` and is not a
+    ``Constant`` at all. Both escaped the first matcher — demonstrated by execution in the
+    different-engine review — so both are folded here before the markers are looked for.
     """
+    out: list[str] = []
+    for child in ast.walk(node):
+        if isinstance(child, ast.BinOp) and isinstance(child.op, ast.Add):
+            parts = [
+                g.value
+                for g in ast.walk(child)
+                if isinstance(g, ast.Constant) and isinstance(g.value, str)
+            ]
+            if parts:
+                out.append("".join(parts))
+        elif isinstance(child, ast.JoinedStr):
+            out.append(
+                "".join(
+                    g.value
+                    for g in child.values
+                    if isinstance(g, ast.Constant) and isinstance(g.value, str)
+                )
+            )
+        elif isinstance(child, ast.Constant) and isinstance(child.value, str):
+            out.append(child.value)
+    return out
+
+
+def position_aliases(tree: ast.AST) -> frozenset[str]:
+    """Every local name in this module that IS the ``Position`` ORM class.
+
+    ``from irp_shared.position.models import Position as P`` makes ``select(P)`` a read of the
+    position table, and the first matcher compared against the literal name and missed it.
+    """
+    names = {_POSITION_CLASS}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == _POSITION_CLASS:
+                    names.add(alias.asname or alias.name)
+    return frozenset(names)
+
+
+#: Eager-load verbs. ``joinedload(Other.position)`` pulls position ROWS through a relationship
+#: without ever naming the class in the query's subject — the fifth escape the review executed.
+_LOADER_CALLS = frozenset({"joinedload", "selectinload", "subqueryload", "contains_eager"})
+_RELATIONSHIP_ATTRS = frozenset({"position", "positions"})
+
+
+def queries_position_table(node: ast.AST, aliases: frozenset[str] | None = None) -> bool:
+    """Does this node read the ``position`` table itself?
+
+    Deliberately NOT "mentions the name Position": an import, a type annotation, or an exception
+    class beside it are not reads, and treating them as reads is what turns a census into an
+    exemption list.
+
+    **Five equivalent shapes escaped the first version**, every one of them planted and executed by
+    a different-engine review rather than imagined: an aliased import, ``getattr(models,
+    'Position')``, concatenated raw SQL, an f-string, and an eager-load through a relationship.
+    Each is handled below and each has its own assertion in
+    :func:`test_the_query_matcher_distinguishes_a_read_from_a_mention`. The list is not claimed to
+    be exhaustive — a matcher only covers the shapes someone thought of, which is what the coverage
+    floors are for.
+    """
+    names = aliases or frozenset({_POSITION_CLASS})
     for child in ast.walk(node):
         if isinstance(child, ast.Call):
             fn = child.func
-            name = (
+            call_name = (
                 fn.id
                 if isinstance(fn, ast.Name)
                 else fn.attr
                 if isinstance(fn, ast.Attribute)
                 else None
             )
-            if name in _QUERY_CALLS and any(
-                isinstance(arg, ast.Name) and arg.id == _POSITION_CLASS for arg in child.args
-            ):
-                return True
-        if isinstance(child, ast.Constant) and isinstance(child.value, str):
-            if any(marker in child.value for marker in _POSITION_SQL):
-                return True
-    return False
+            if call_name in _QUERY_CALLS:
+                for arg in child.args:
+                    # the plain shape, and the aliased-import shape
+                    if isinstance(arg, ast.Name) and arg.id in names:
+                        return True
+                    # `select(getattr(models, "Position"))` and anything else naming it as a string
+                    if any(isinstance(g, ast.Constant) and g.value in names for g in ast.walk(arg)):
+                        return True
+                    if isinstance(arg, ast.Attribute) and arg.attr in names:
+                        return True
+            # an eager load pulls position ROWS without the class ever being the query's subject
+            if call_name in _LOADER_CALLS:
+                for arg in child.args:
+                    if isinstance(arg, ast.Attribute) and arg.attr in _RELATIONSHIP_ATTRS:
+                        return True
+    return any(marker in text for text in _string_constants(node) for marker in _POSITION_SQL)
 
 
 class _Census:
@@ -269,17 +400,63 @@ class _Census:
         self.offenders = offenders
 
 
+def _import_map(tree: ast.AST) -> dict[str, str]:
+    """Local name -> the module it was imported FROM.
+
+    This is what makes reachability MODULE-QUALIFIED, and it is the fix for a BLOCKING defect the
+    first version of this census shipped. See :func:`census`.
+    """
+    out: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                out[alias.asname or alias.name] = node.module
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                out[(alias.asname or alias.name).split(".")[0]] = alias.name
+    return out
+
+
 def census(extra: dict[str, str] | None = None) -> _Census:
     """Walk the source trees and answer the census's three questions.
 
     ``extra`` injects synthetic module sources into the SAME analysis, so a negative control can
     plant an offender and watch this function catch it.
+
+    **Reachability is MODULE-QUALIFIED, over ``(module, function)`` pairs resolved through each
+    module's own imports.** The first version propagated over BARE function names, and a
+    different-engine review reproduced what that costs: ``exposure.service`` reaches
+    ``COMPONENT_KIND_POSITION`` through a private helper named ``_compute``, and every other
+    governed family also names its ``execute_governed_run`` callback ``_compute``. One generic name
+    entered the reachable set and credited **twenty** families as holdings consumers that contain no
+    reference to any sanctioned name at all — verified by grep: ``covariance_service``,
+    ``factor_service``, ``perf/return_service`` and ``pacing/service`` each have ZERO hits on all
+    seven. The pin was a name-collision artifact and the census's positive claim was false.
+
+    A call resolves to ``(this module, name)`` if the module defines it, else to
+    ``(imported-from module, name)`` if the module imports it, else it does NOT resolve and does NOT
+    propagate. Unresolved attribute calls (``svc.helper()``) are dropped rather than matched by
+    name — deliberately, and asymmetrically justified: over-capturing on the SANCTIONED side
+    silently credits a family that consumes nothing, which is the defect above, while
+    under-capturing there can only turn a real consumer into a pin mismatch, which is loud.
+
+    **The sanctioned cut is FUNCTION-scoped, not module-scoped.** It used to skip the whole of
+    ``holdings/service.py`` and ``position/position.py``, so any NEW helper added to either file —
+    a debug export, a reporting shortcut — would have inherited blanket immunity, and the same
+    review demonstrated exactly that escape hatch. Propagation now stops AT a function named in
+    ``SANCTIONED_HOLDINGS_NAMES`` and nowhere else, so a raw read added anywhere, including inside
+    those two files, is still reachable.
+
+    **Family detection is a fixed point too**, for the same reason: a family whose ``create_run``
+    call sits behind one shared ``start_run(...)`` wrapper used to fall out of the census's subject
+    entirely — neither consumer, nor non-consumer, nor offender.
     """
     sources: list[tuple[str, str]] = [
         (_module_name(path), path.read_text()) for path in _iter_modules()
     ]
     sources.extend((name, src) for name, src in (extra or {}).items())
 
+    imports: dict[str, dict[str, str]] = {}
     module_names: dict[str, set[str]] = {}
     module_calls: dict[str, set[str]] = {}
     # module -> function name -> (names it mentions, does its own body query the table?)
@@ -287,61 +464,95 @@ def census(extra: dict[str, str] | None = None) -> _Census:
 
     for module, text in sources:
         tree = ast.parse(text)
+        imports[module] = _import_map(tree)
         module_calls[module] = _called_names(tree)
         module_names[module] = _referenced_names(tree)
+        module_aliases = position_aliases(tree)
         functions[module] = {
             node.name: (
                 _referenced_names(node) | _called_names(node),
-                queries_position_table(node),
+                queries_position_table(node, module_aliases),
             )
             for node in ast.walk(tree)
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
         }
 
+    def resolve(module: str, name: str) -> tuple[str, str] | None:
+        """Which (module, function) does ``name`` mean, seen from ``module``?"""
+        if name in functions.get(module, {}):
+            return (module, name)
+        target = imports.get(module, {}).get(name)
+        if target and target in functions:
+            return (target, name) if name in functions[target] else None
+        return None
+
+    def reaching(seeds: set[tuple[str, str]], *, stop_at: frozenset[str]) -> set[tuple[str, str]]:
+        """Fixed point over qualified functions, never propagating THROUGH a ``stop_at`` name."""
+        reach = set(seeds)
+        changed = True
+        while changed:
+            changed = False
+            for module, defs in functions.items():
+                for name, (mentions, _) in defs.items():
+                    if (module, name) in reach or name in stop_at:
+                        continue
+                    for mentioned in mentions:
+                        target = resolve(module, mentioned)
+                        if target is not None and target in reach:
+                            reach.add((module, name))
+                            changed = True
+                            break
+        return reach
+
+    _NONE: frozenset[str] = frozenset()
+
+    # (1) Governed families: modules that MINT a run, by a DIRECT call. Not the transitive closure
+    #     — that was tried and it makes every demo stage calling `run_exposure` a "family", which
+    #     puts the whole demo package in the subject and forces exactly the exemption list this
+    #     census refuses to have. A family is the module that mints; its callers are callers.
     families = {
         module
         for module, calls in module_calls.items()
         if (calls & RUN_MINT_NAMES) and module not in CALC_MODULES
     }
 
-    # (2) Sanctioned-route reachability, as a fixed point over names.
-    sanctioned = set(SANCTIONED_HOLDINGS_NAMES)
-    changed = True
-    while changed:
-        changed = False
-        for defs in functions.values():
-            for name, (mentions, _) in defs.items():
-                if name not in sanctioned and mentions & sanctioned:
-                    sanctioned.add(name)
-                    changed = True
-    consumers = {m for m in families if (module_calls[m] | module_names[m]) & sanctioned}
+    # (2) Sanctioned-route reachability. Seeded on functions that MENTION a sanctioned name, then
+    #     propagated through RESOLVED calls only.
+    sanct_seeds = {
+        (m, n)
+        for m, defs in functions.items()
+        for n, (mentions, _) in defs.items()
+        if mentions & SANCTIONED_HOLDINGS_NAMES
+    }
+    sanct_reach = reaching(sanct_seeds, stop_at=_NONE)
+    consumers: set[str] = set()
+    for module in families:
+        if module_names[module] & SANCTIONED_HOLDINGS_NAMES:
+            consumers.add(module)
+            continue
+        for called in module_calls[module]:
+            target = resolve(module, called)
+            if target is not None and target in sanct_reach:
+                consumers.add(module)
+                break
 
-    # (3) Raw-read reachability, with the sanctioned route CUT out of the graph.
-    raw_names: set[str] = set()
-    seed_modules: set[str] = set()
-    for module, defs in functions.items():
-        if module in SANCTIONED_MODULES:
-            continue
-        for name, (_, reads) in defs.items():
-            if reads:
-                raw_names.add(name)
-                seed_modules.add(module)
-    changed = True
-    while changed:
-        changed = False
-        for module, defs in functions.items():
-            if module in SANCTIONED_MODULES:
-                continue
-            for name, (mentions, _) in defs.items():
-                if name not in raw_names and mentions & raw_names:
-                    raw_names.add(name)
-                    changed = True
-    raw_readers = set(seed_modules)
-    for module, calls in module_calls.items():
-        if module in SANCTIONED_MODULES:
-            continue
-        if calls & raw_names:
+    # (3) Raw-read reachability, stopping AT the reconstruction's own entry points.
+    raw_seeds = {(m, n) for m, defs in functions.items() for n, (_, reads) in defs.items() if reads}
+    raw_reach = reaching(raw_seeds, stop_at=SANCTIONED_HOLDINGS_NAMES)
+    raw_readers: set[str] = set()
+    for module in functions:
+        if any((module, n) in raw_reach for n in functions[module]):
             raw_readers.add(module)
+            continue
+        for called in module_calls[module]:
+            target = resolve(module, called)
+            if (
+                target is not None
+                and target in raw_reach
+                and target[1] not in SANCTIONED_HOLDINGS_NAMES
+            ):
+                raw_readers.add(module)
+                break
 
     return _Census(families, consumers, raw_readers, families & raw_readers)
 
@@ -557,8 +768,21 @@ def test_the_sanctioned_cut_is_LIVE_and_not_a_no_op() -> None:
             f"it queries the `position` table — the cut is now hiding nothing, or hiding the wrong "
             f"thing"
         )
+    # ...and the cut is FUNCTION-scoped, which these two assertions together pin.
+    #
+    # The sanctioned modules ARE raw readers — they read the table, that is what they are for — and
+    # an earlier version asserted the opposite, because the cut used to remove those two files from
+    # the graph entirely. A different-engine review showed what that bought: any NEW helper added to
+    # either file got blanket immunity from the offender check. What must be true is not that those
+    # modules are invisible, but that no FAMILY reaches the table THROUGH the reconstruction's named
+    # entry points.
     result = census()
-    assert not (SANCTIONED_MODULES & result.raw_readers)
+    assert SANCTIONED_MODULES <= result.raw_readers, (
+        "the sanctioned modules no longer read the position table — the reconstruction has moved, "
+        "and the cut is now stopping propagation through functions that do not do the reading"
+    )
+    assert not (SANCTIONED_MODULES & result.families)
+    assert not (SANCTIONED_MODULES & result.offenders)
 
 
 def test_every_population_has_a_coverage_floor() -> None:
@@ -577,6 +801,105 @@ def test_every_population_has_a_coverage_floor() -> None:
         f"the raw-read population collapsed to {len(result.raw_readers)} (floor "
         f"{_MIN_RAW_READERS}) — nothing left for the matcher to find means nothing proves it works"
     )
+
+
+def test_every_ALTERNATE_READ_SHAPE_is_caught() -> None:
+    """The five bypasses a different-engine review PLANTED AND EXECUTED against the first matcher.
+
+    Every one of them produced a module that mints a run, reads the `position` table, and was not
+    an offender — while all six existing controls stayed green, because every one of them used the
+    identical `select(Position)` call form. A matcher covers the shapes someone thought of; these
+    are the shapes someone else thought of, and they are pinned here so they stay covered.
+
+    Not claimed to be exhaustive. That is what the coverage floors are for.
+    """
+    shapes = {
+        "aliased import": (
+            "from sqlalchemy import select\n"
+            "from irp_shared.position.models import Position as P\n"
+            "from irp_shared.calc.service import create_run\n"
+            "def run_alias(session, tenant_id):\n"
+            "    rows = session.execute(select(P)).scalars().all()\n"
+            "    return create_run(session, tenant_id=tenant_id, run_type='A'), rows\n"
+        ),
+        "getattr on the models module": (
+            "from sqlalchemy import select\n"
+            "from irp_shared.position import models as pm\n"
+            "from irp_shared.calc.service import create_run\n"
+            "def run_getattr(session, tenant_id):\n"
+            "    rows = session.execute(select(getattr(pm, 'Position'))).scalars().all()\n"
+            "    return create_run(session, tenant_id=tenant_id, run_type='G'), rows\n"
+        ),
+        "concatenated raw SQL": (
+            "from sqlalchemy import text\n"
+            "from irp_shared.calc.service import create_run\n"
+            "def run_concat(session, tenant_id):\n"
+            "    sql = 'SELECT id, quantity FROM ' + 'position' + ' WHERE system_to IS NULL'\n"
+            "    rows = session.execute(text(sql)).fetchall()\n"
+            "    return create_run(session, tenant_id=tenant_id, run_type='C'), rows\n"
+        ),
+        "f-string raw SQL": (
+            "from sqlalchemy import text\n"
+            "from irp_shared.calc.service import create_run\n"
+            "def run_fstring(session, tenant_id, col):\n"
+            "    rows = session.execute(text(f'SELECT {col} FROM position')).fetchall()\n"
+            "    return create_run(session, tenant_id=tenant_id, run_type='F'), rows\n"
+        ),
+        "eager load through a relationship": (
+            "from sqlalchemy import select\n"
+            "from sqlalchemy.orm import joinedload\n"
+            "from irp_shared.portfolio.models import Portfolio\n"
+            "from irp_shared.calc.service import create_run\n"
+            "def run_eager(session, tenant_id):\n"
+            "    q = select(Portfolio).options(joinedload(Portfolio.positions))\n"
+            "    rows = session.execute(q).unique().scalars().all()\n"
+            "    return create_run(session, tenant_id=tenant_id, run_type='E'), rows\n"
+        ),
+    }
+    escaped = []
+    for label, source in shapes.items():
+        module = "irp_shared.zz_shape_" + label.replace(" ", "_")
+        result = census(extra={module: source})
+        assert module in result.families, f"{label}: the plant did not even register as a family"
+        if module not in result.offenders:
+            escaped.append(label)
+    assert not escaped, (
+        f"these read shapes escape the matcher entirely: {escaped}. A family using any of them "
+        f"assembles run inputs from raw holdings rows while the census stays green."
+    )
+
+
+def test_the_FAMILY_population_is_pinned_exactly() -> None:
+    """The census's SUBJECT, pinned by exact set equality — so it cannot narrow silently.
+
+    A review raised the mint-wrapper case: a shared ``start_run(...)`` convenience wrapper is an
+    ordinary DRY refactor, and it would move the direct mint call out of the family modules and drop
+    those families out of this census entirely — neither consumer, nor non-consumer, nor offender.
+    ``_MIN_FAMILIES`` alone tolerates losing several before it notices.
+
+    A tripwire was tried first and DISCARDED, which is worth recording. It flagged any module that
+    mints a run and is imported elsewhere — and that fires on all twenty-five, because every
+    family's ``run_*`` entry point mints and is imported by a demo stage or an API router. It
+    cannot tell "a demo stage calling ``run_exposure``" (correct, and by design not a family) from
+    "a family calling a shared helper" (the harmful case). The two are distinguished only by
+    whether the CALLER is a governed family in its own right — the question being computed. A guard
+    that
+    fires on everything is worse than no guard: it teaches its reader to ignore it.
+
+    So the guard is this pin instead. It is precise, mechanical, and strictly stronger for the
+    stated risk: losing even ONE family to a wrapper fails here by name, and gaining one demands a
+    deliberate edit.
+    """
+    result = census()
+    assert result.families == EXPECTED_FAMILIES, (
+        f"added: {sorted(result.families - EXPECTED_FAMILIES)}; "
+        f"dropped: {sorted(EXPECTED_FAMILIES - result.families)}. A family dropping out is not a "
+        f"pin to update — it means the module stopped minting its run directly, and every claim "
+        f"this census makes about it silently stopped being made."
+    )
+    # ...and the two halves partition it, so no family is left unclassified.
+    assert result.consumers | EXPECTED_NON_CONSUMERS == result.families
+    assert not (result.consumers & EXPECTED_NON_CONSUMERS)
 
 
 def test_the_query_matcher_distinguishes_a_read_from_a_mention() -> None:

@@ -13,6 +13,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -21,6 +22,7 @@ from irp_backend.deps import get_db
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.entitlement.models import AppUser, Permission, Role, RolePermission, UserRole
 from irp_shared.entitlement.service import Principal
+from irp_shared.lineage.models import DataSource
 from irp_shared.lineage.service import record_lineage, register_data_source
 from irp_shared.models import Base
 
@@ -199,3 +201,44 @@ def test_by_target_is_permission_gated_and_id_validated(
         client.get(f"/lineage/targets/{kind}/not-a-uuid", headers=_headers(principal)).status_code
         == 422
     )
+
+
+def test_the_cap_reports_TRUNCATION_rather_than_presenting_a_cut_answer_as_whole(
+    client_and_edge: tuple[TestClient, Principal, str],
+) -> None:
+    """The `truncated` flag, EXERCISED — every other assertion in this file sees it False.
+
+    A silently truncated lineage answer is worse than no answer: it looks complete, and lineage is
+    exactly the surface where "these are all the edges" is the whole point. The cap and its flag had
+    zero execution until a review said so.
+    """
+    from irp_backend.api.lineage import MAX_EDGES_PER_TARGET
+
+    client, principal, edge_id = client_and_edge
+    kind, target_id = _target_of(client, principal, edge_id)
+
+    # One MORE than the cap, so the boundary is crossed rather than merely reached.
+    db = _session_of(client)
+    src = db.execute(select(DataSource).limit(1)).scalar_one()
+    for _ in range(MAX_EDGES_PER_TARGET):
+        record_lineage(db, source=src, target_entity_type=kind, target_entity_id=target_id)
+    db.commit()
+
+    resp = client.get(f"/lineage/targets/{kind}/{target_id}", headers=_headers(principal))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body["edges"]) == MAX_EDGES_PER_TARGET
+    assert body["truncated"] is True, (
+        "the cap cut the answer short and the reply did not say so — a reader would take a partial "
+        "lineage for a complete one"
+    )
+
+
+def _session_of(client: TestClient) -> Session:
+    """The SAME session the app writes through — the fixture overrides `get_db` with a generator
+    yielding one long-lived session, so a test that opened its own would write into a database the
+    app cannot see."""
+    gen = client.app.dependency_overrides[get_db]()  # type: ignore[attr-defined]
+    session = next(gen)
+    assert isinstance(session, Session)
+    return session

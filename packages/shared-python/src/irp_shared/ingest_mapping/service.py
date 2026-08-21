@@ -68,6 +68,7 @@ from irp_shared.ingest_mapping.models import (
     IngestionMappingVersion,
 )
 from irp_shared.ingest_mapping.ratification_models import (
+    GOVERNING_OUTCOMES,
     OUTCOME_RATIFIED,
     OUTCOME_SUPERSEDED,
     OUTCOME_WITHDRAWN,
@@ -352,6 +353,38 @@ def propose_mapping_version(
     return version
 
 
+def _latest_governing_row(
+    session: Session, *, acting_tenant: str, data_source_id: str, source_type: str
+) -> IngestionMappingRatification | None:
+    """The latest resolution row for a source that speaks to WHICH VERSION GOVERNS it.
+
+    ``WITHDRAWN`` is filtered out, and that filter is the fix for a BLOCKING defect this slice
+    shipped and a different-engine review reproduced. A withdrawal is a decision about a PROPOSAL —
+    the proposer took their own draft back — and a proposal that was never ratified never governed
+    anything. Two PROPOSED versions may legitimately coexist for one source, so withdrawing the
+    second appended a row that outranked the first's live RATIFIED row, and BOTH callers below then
+    read the source as ungoverned:
+
+    - the load gate refused every file for a source with a perfectly good ratified mapping;
+    - the ratify path found no incumbent to supersede, so the next legitimate ratification collided
+      with ENT-077's partial unique index and a governed act raised a raw ``IntegrityError``.
+
+    ONE query, used by both callers, because the two had the same rule written out twice and a fix
+    applied to one of them would have left the other wrong.
+    """
+    return session.execute(
+        select(IngestionMappingRatification)
+        .where(
+            IngestionMappingRatification.tenant_id == str(acting_tenant),
+            IngestionMappingRatification.data_source_id == str(data_source_id),
+            IngestionMappingRatification.source_type == str(source_type),
+            IngestionMappingRatification.outcome.in_(sorted(GOVERNING_OUTCOMES)),
+        )
+        .order_by(IngestionMappingRatification.seq.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
 def ratify_mapping_version(
     session: Session,
     *,
@@ -383,16 +416,12 @@ def ratify_mapping_version(
 
     # The incumbent is found through the RESOLUTION table too, by the same latest-row rule.
     # Reading ENT-077.status here would reintroduce the dependency this slice removed.
-    incumbent_row = session.execute(
-        select(IngestionMappingRatification)
-        .where(
-            IngestionMappingRatification.tenant_id == str(acting_tenant),
-            IngestionMappingRatification.data_source_id == version.data_source_id,
-            IngestionMappingRatification.source_type == version.source_type,
-        )
-        .order_by(IngestionMappingRatification.seq.desc())
-        .limit(1)
-    ).scalar_one_or_none()
+    incumbent_row = _latest_governing_row(
+        session,
+        acting_tenant=str(acting_tenant),
+        data_source_id=str(version.data_source_id),
+        source_type=str(version.source_type),
+    )
     incumbent = None
     if incumbent_row is not None and incumbent_row.outcome == OUTCOME_RATIFIED:
         incumbent = session.execute(
@@ -486,16 +515,12 @@ def ratified_mapping_for(
     # LATEST, not "any RATIFIED row": on an append-only log the incumbent's ratification is still
     # there after it is superseded, so "is there a RATIFIED row" is true forever once it has been
     # true once. The current decision is the last one made, and `uq_..._seq` makes that unique.
-    latest = session.execute(
-        select(IngestionMappingRatification)
-        .where(
-            IngestionMappingRatification.tenant_id == str(acting_tenant),
-            IngestionMappingRatification.data_source_id == str(data_source_id),
-            IngestionMappingRatification.source_type == str(source_type),
-        )
-        .order_by(IngestionMappingRatification.seq.desc())
-        .limit(1)
-    ).scalar_one_or_none()
+    latest = _latest_governing_row(
+        session,
+        acting_tenant=str(acting_tenant),
+        data_source_id=str(data_source_id),
+        source_type=str(source_type),
+    )
     if latest is None or latest.outcome != OUTCOME_RATIFIED:
         raise UnratifiedMappingError(str(data_source_id), str(source_type))
     row = session.execute(

@@ -977,3 +977,100 @@ def test_the_position_fk_binds_a_real_mapping_and_refuses_a_stranger(app_factory
         session.rollback()
     finally:
         session.close()
+
+
+def test_ent078_two_ratifiers_racing_on_the_SAME_source_serialize(app_url: str) -> None:
+    """The race the invariant is ACTUALLY about — two ratifiers deciding ONE source at once.
+
+    The sibling concurrency test above races N threads over N DISJOINT sources: it stresses the
+    shared per-tenant `seq` counter and nothing else. A review pointed out that this is not the
+    property `_lock_tenant` is claimed to protect — the docstrings say the lock is what stops two
+    resolutions for one source from both passing their individual checks — and that the property
+    with the real consequence had no executed proof anywhere in the slice.
+
+    Two competing PROPOSED versions of ONE source, ratified concurrently. Whatever order they land
+    in, afterwards EXACTLY ONE version is RATIFIED and the incumbent is SUPERSEDED. Without the
+    lock, both read "no incumbent" and both write RATIFIED — and the only thing left standing
+    between the platform and two current mappings for one source is ENT-077's partial index, i.e. a
+    raw IntegrityError out of a governed act.
+    """
+    engine = make_engine(app_url, poolclass=NullPool)
+    factory = make_session_factory(engine)
+    tenant = str(uuid.uuid4())
+
+    setup = factory()
+    try:
+        set_tenant_context(setup, tenant)
+        source_id = _source(setup, tenant, code="PG-RACE")
+        versions = [
+            propose_mapping_version(
+                setup,
+                tenant_id=tenant,
+                data_source_id=source_id,
+                source_type=SOURCE_TYPE_POSITIONS,
+                version_label=f"race-v{i}",
+                operations=list(DEMO_OPS),
+                actor_id="proposer@pg",
+            ).id
+            for i in range(2)
+        ]
+        setup.commit()
+    finally:
+        setup.close()
+
+    barrier = threading.Barrier(2)
+    errors: list[Exception] = []
+
+    def ratifier(version_id: str) -> None:
+        db = factory()
+        try:
+            set_tenant_context(db, tenant)
+            barrier.wait(timeout=30)
+            ratify_mapping_version(
+                db, mapping_version_id=version_id, acting_tenant=tenant, actor_id="ratifier@pg"
+            )
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 - collected and asserted below
+            errors.append(exc)
+        finally:
+            db.close()
+
+    threads = [threading.Thread(target=ratifier, args=(v,)) for v in versions]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    check = factory()
+    try:
+        set_tenant_context(check, tenant)
+        statuses = dict(
+            check.execute(
+                text(
+                    "SELECT version_label, status FROM ingestion_mapping_version "
+                    "WHERE tenant_id = CAST(:t AS uuid) ORDER BY version_label"
+                ),
+                {"t": tenant},
+            ).fetchall()
+        )
+        current = check.execute(
+            text(
+                "SELECT outcome FROM ingestion_mapping_ratification "
+                "WHERE tenant_id = CAST(:t AS uuid) ORDER BY seq DESC LIMIT 1"
+            ),
+            {"t": tenant},
+        ).scalar_one()
+    finally:
+        check.close()
+        engine.dispose()
+
+    assert not errors, f"a ratifier failed under a same-source race: {errors}"
+    ratified = [label for label, status in statuses.items() if status == STATUS_RATIFIED]
+    assert len(ratified) == 1, (
+        f"expected exactly ONE ratified version for this source, found {ratified} out of "
+        f"{statuses} — the two ratifiers did not serialize and the source now has two current "
+        f"mappings, or none"
+    )
+    assert sorted(statuses.values()) == ["RATIFIED", "SUPERSEDED"]
+    # ...and the governing log agrees: the LATEST row is the ratification, not the supersession.
+    assert current == "RATIFIED"

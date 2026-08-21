@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -329,5 +329,133 @@ describe("MappingDetail — the by-target lineage cell (W19-S3b)", () => {
     // Honest-empty: no recorded origin for a LOADED batch is a real finding about the batch, and a
     // blank cell reads as "nothing to say here".
     expect(await screen.findByText(/no lineage recorded/)).toBeTruthy();
+  });
+});
+
+// --- W19-S3b: the WRITE PATH, exercised ---------------------------------------------------------
+//
+// Added after a review found the decision tests asserted only that a button RENDERED. The
+// component's whole reason for existing is the write and its refusal handling; `ops.test.tsx` (same
+// directory, same class of maker/checker UI) already sets the convention — click, assert the POST
+// body, assert the refetch, assert the exact remedy text. This follows it.
+
+/** Route reads by URL and capture writes, so a POST body and a refusal can both be asserted. */
+function routeMapping(
+  reads: (url: string) => unknown,
+  write?: () => { __status?: number; detail?: string } | unknown,
+): { posts: RequestInit[]; reads: string[] } {
+  const posts: RequestInit[] = [];
+  const seen: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        posts.push(init);
+        const body = write ? write() : {};
+        const status = (body as { __status?: number }).__status ?? 200;
+        return Promise.resolve({
+          ok: status < 400,
+          status,
+          json: () => Promise.resolve(body),
+        });
+      }
+      seen.push(url);
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(reads(url)) });
+    }),
+  );
+  return { posts, reads: seen };
+}
+
+describe("MappingDetail — the write path (W19-S3b)", () => {
+  function mount(): void {
+    render(
+      <MemoryRouter initialEntries={["/ops/mappings/m1"]}>
+        <Routes>
+          <Route path="/ops/mappings/:mappingId" element={<MappingDetail session={SESSION} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it("POSTs to the ratify route and REFETCHES what the write changed", async () => {
+    const captured = routeMapping(detailRoutes(PROPOSED, [], { edges: [], truncated: false }));
+    mount();
+    await screen.findByRole("button", { name: /Ratify this version/ });
+    const before = captured.reads.length;
+
+    fireEvent.click(screen.getByRole("button", { name: /Ratify this version/ }));
+
+    await waitFor(() => {
+      expect(captured.posts.length).toBe(1);
+    });
+    // The refetch is the point of `onDone`: without it the screen still says PROPOSED and the
+    // buttons stay live after a successful ratification.
+    await waitFor(() => {
+      expect(captured.reads.length).toBeGreaterThan(before);
+    });
+  });
+
+  it("sends the operator's reason with a withdrawal", async () => {
+    const captured = routeMapping(detailRoutes(PROPOSED, [], { edges: [], truncated: false }));
+    mount();
+    await screen.findByRole("button", { name: /Withdraw my proposal/ });
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "the custodian re-issued the file" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Withdraw my proposal/ }));
+
+    await waitFor(() => {
+      expect(captured.posts.length).toBe(1);
+    });
+    expect(JSON.parse(String(captured.posts[0].body))).toMatchObject({
+      reason: "the custodian re-issued the file",
+    });
+  });
+
+  it("tells a self-ratifier that a DIFFERENT PERSON must act, not to ask for a permission", async () => {
+    const captured = routeMapping(
+      detailRoutes(PROPOSED, [], { edges: [], truncated: false }),
+      () => ({
+        __status: 409,
+        detail: "the ratifier may not be the proposer of this mapping version",
+      }),
+    );
+    mount();
+    await screen.findByRole("button", { name: /Ratify this version/ });
+    fireEvent.click(screen.getByRole("button", { name: /Ratify this version/ }));
+
+    const alert = await screen.findByRole("alert");
+    // The caller HOLDS the code. Telling them to request a permission would send them nowhere,
+    // and a retry cannot help — the remedy is a different person.
+    expect(alert.textContent).toContain("Someone else must act on this proposal");
+    expect(alert.textContent).not.toContain("You need the");
+    expect(captured.posts.length).toBe(1);
+  });
+
+  it("tells a caller WITHOUT the code which permission they need", async () => {
+    routeMapping(detailRoutes(PROPOSED, [], { edges: [], truncated: false }), () => ({
+      __status: 403,
+      detail: "permission denied",
+    }));
+    mount();
+    await screen.findByRole("button", { name: /Ratify this version/ });
+    fireEvent.click(screen.getByRole("button", { name: /Ratify this version/ }));
+
+    const alert = await screen.findByRole("alert");
+    // The opposite case, and it must NOT collapse into the 409 wording.
+    expect(alert.textContent).toContain("ingest.mapping.ratify");
+    expect(alert.textContent).not.toContain("Someone else must act");
+  });
+});
+
+describe("MappingDetail — the lineage cap (W19-S3b)", () => {
+  it("says TRUNCATED rather than presenting a cut-short lineage answer as complete", async () => {
+    const many = Array.from({ length: 200 }, (_, i) => ({ ...EDGE, id: `e${String(i)}` }));
+    renderDetailAt(detailRoutes(PROPOSED, [BATCH], { edges: many, truncated: true }));
+
+    // A silently truncated lineage answer is worse than no answer: it looks complete. Every other
+    // assertion in this file sees `truncated: false`, so without this the branch never runs.
+    expect(await screen.findByText(/200 edges · data_source · truncated/)).toBeTruthy();
   });
 });

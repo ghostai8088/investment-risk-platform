@@ -1828,7 +1828,7 @@ tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
 [[mutant]]
 id = "M-S3B-2"
 group = "w19-s3b"
-why = "the load gate reads ANY ratified row rather than the LATEST one — on an append-only log the incumbent's ratification is still there after supersession, so a superseded mapping keeps governing loads forever"
+why = "the load gate stops checking that the latest GOVERNING row is a ratification, so a mapping retired with no replacement keeps governing loads forever — 'there is a RATIFIED row somewhere in the log' is true forever once true. This mutant SURVIVED after the GOVERNING_OUTCOMES fix, because no service verb produces that state (a supersession is always followed by its replacement in one transaction). The guard was correct and had simply never been made to FIRE; the state is now constructed at the table."
 file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
 find = """    if latest is None or latest.outcome != OUTCOME_RATIFIED:
         raise UnratifiedMappingError(str(data_source_id), str(source_type))"""
@@ -1883,12 +1883,14 @@ id = "M-S3B-7"
 group = "w19-s3b"
 why = "the REQ-PPM-002 census stops following calls, so a family two refactors away from the table reports as compliant. This mutant SURVIVED its first control: a two-hop plant is caught by SEEDING alone (the helper's own body queries the table), so the control never exercised the fixed point at all — S3a's lesson reproduced inside the census written to apply it. The control is now three hops."
 file = "packages/shared-python/tests/test_holdings_consumption_census.py"
-find = """                if name not in raw_names and mentions & raw_names:
-                    raw_names.add(name)
-                    changed = True"""
-replace = """                if False:
-                    raw_names.add(name)
-                    changed = True"""
+find = """                        if target is not None and target in reach:
+                            reach.add((module, name))
+                            changed = True
+                            break"""
+replace = """                        if False:
+                            reach.add((module, name))
+                            changed = True
+                            break"""
 tests = ["packages/shared-python/tests/test_holdings_consumption_census.py"]
 
 [[mutant]]
@@ -1896,12 +1898,10 @@ id = "M-S3B-8"
 group = "w19-s3b"
 why = "the census's raw-read matcher stops seeing a query over the ORM class, so it finds nothing anywhere — an empty offender list from a broken matcher is indistinguishable from compliance"
 file = "packages/shared-python/tests/test_holdings_consumption_census.py"
-find = """            if name in _QUERY_CALLS and any(
-                isinstance(arg, ast.Name) and arg.id == _POSITION_CLASS for arg in child.args
-            ):
-                return True"""
-replace = """            if False:
-                return True"""
+find = """                    if isinstance(arg, ast.Name) and arg.id in names:
+                        return True"""
+replace = """                    if False:
+                        return True"""
 tests = ["packages/shared-python/tests/test_holdings_consumption_census.py"]
 
 [[mutant]]
@@ -1948,3 +1948,63 @@ find = """    report = sync_catalog(op.get_bind(), now=SYNC_TS)
 replace = """    print(  # noqa: T201 - migration console output
         f"0077: +0 permissions, +0 grants""""
 tests = ["packages/shared-python/tests/test_entitlement_mint_delivery.py"]
+
+[[mutant]]
+id = "M-S3B-13"
+group = "w19-s3b"
+why = "the governing-outcome filter is dropped, so a WITHDRAWN row for an unrelated competing draft outranks a live RATIFIED row: the source reads back as ungoverned and every load refuses, while the ratify path finds no incumbent and the next legitimate ratification collides with ENT-077's partial index. THE BLOCKING defect this slice shipped and a different-engine review reproduced"
+file = "packages/shared-python/src/irp_shared/ingest_mapping/service.py"
+find = """            IngestionMappingRatification.outcome.in_(sorted(GOVERNING_OUTCOMES)),"""
+replace = """            IngestionMappingRatification.outcome.in_(sorted(RESOLUTION_OUTCOMES)),"""
+tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-S3B-14"
+group = "w19-s3b"
+why = "the REQ-PPM-002 census goes back to BARE-NAME reachability, so one generic private helper name shared across families (`_compute`) credits twenty families as holdings consumers that reference no sanctioned name at all — the name-collision artifact this census shipped with"
+file = "packages/shared-python/tests/test_holdings_consumption_census.py"
+find = """        if name in functions.get(module, {}):
+            return (module, name)"""
+replace = """        if True:
+            return (module, name)"""
+tests = ["packages/shared-python/tests/test_holdings_consumption_census.py"]
+
+[[mutant]]
+id = "M-S3B-15"
+group = "w19-s3b"
+why = "the raw-read matcher stops folding concatenated and f-string SQL, so a family building `'SELECT ... FROM ' + 'position'` reads holdings with the census green — one of five equivalent shapes a review planted and executed against the first matcher"
+file = "packages/shared-python/tests/test_holdings_consumption_census.py"
+find = """    return any(marker in text for text in _string_constants(node) for marker in _POSITION_SQL)"""
+replace = """    return any(
+        marker in c.value
+        for c in ast.walk(node)
+        if isinstance(c, ast.Constant) and isinstance(c.value, str)
+        for marker in _POSITION_SQL
+    )"""
+tests = ["packages/shared-python/tests/test_holdings_consumption_census.py"]
+
+[[mutant]]
+id = "M-S3B-16"
+group = "w19-s3b"
+why = "the sanctioned cut goes back to MODULE scope, so any new helper added to holdings/service.py or position/position.py inherits blanket immunity from the offender check — the escape hatch a review demonstrated"
+file = "packages/shared-python/tests/test_holdings_consumption_census.py"
+find = """    raw_reach = reaching(raw_seeds, stop_at=SANCTIONED_HOLDINGS_NAMES)"""
+replace = """    raw_seeds = {(m, n) for (m, n) in raw_seeds if m not in SANCTIONED_MODULES}
+    raw_reach = reaching(raw_seeds, stop_at=SANCTIONED_HOLDINGS_NAMES)"""
+tests = ["packages/shared-python/tests/test_holdings_consumption_census.py"]
+
+[[mutant]]
+id = "M-S3B-17"
+group = "w19-s3b"
+why = "the by-target lineage read stops reporting truncation, so a capped answer is presented as the complete lineage of an entity — worse than no answer, because it looks whole"
+file = "apps/backend/src/irp_backend/api/lineage.py"
+find = """    truncated = len(rows) > MAX_EDGES_PER_TARGET"""
+replace = """    truncated = False"""
+tests = ["apps/backend/tests/test_lineage_endpoint.py"]
+
+# NOTE: there is deliberately NO M-S3B-18 for the mapping screen's refetch-after-write. One was
+# written and REMOVED: this battery runs pytest, and naming a `.tsx` file in `tests` makes pytest
+# exit 4 collecting nothing — a RED baseline, under which every kill in the run is unattributable.
+# The behaviour it would have targeted is proven directly instead, by the four write-path tests in
+# `apps/frontend/src/views/ops/mappings.test.tsx` (click -> POST body -> refetch, and the 403 and
+# 409 remedies), which are the equivalent evidence on the tier that can execute it.

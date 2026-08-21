@@ -72,6 +72,7 @@ from irp_shared.ingest_mapping.service import (
     ratified_mapping_for,
     ratify_mapping_version,
     resolve_mapping_version,
+    withdraw_mapping_version,
 )
 from irp_shared.ingestion.models import IngestionBatch, IngestionStagedRecord
 from irp_shared.lineage.models import LineageEdge
@@ -1964,3 +1965,189 @@ def test_the_HOLDINGS_READ_carries_the_mapping_provenance(session: Session) -> N
         "provenance, which is worse than none because a reader cannot tell it from a real record"
     )
     assert instrument is not None
+
+
+def test_an_unrelated_WITHDRAWAL_does_not_shadow_a_live_ratification(session: Session) -> None:
+    """THE BLOCKING defect this slice shipped, found by a different-engine review and reproduced.
+
+    Two PROPOSED versions may legitimately coexist for one source — ENT-077's partial unique index
+    restricts only RATIFIED rows, and a competing draft is the ordinary case. So:
+
+      1. Y is proposed and ratified. It governs the source.
+      2. Z is proposed for the SAME source. Legal; Y still governs.
+      3. Z's PROPOSER withdraws Z. An ordinary single-actor act with no lifecycle violation.
+
+    Before the fix, step 3 appended a WITHDRAWN row that outranked Y's RATIFIED row, because the
+    "latest row wins" rule had no outcome filter — and a withdrawal is a decision about a PROPOSAL,
+    not about which version governs a source. Every load for that source then refused, with Y still
+    literally RATIFIED. A routine "I changed my mind" became an ingestion outage.
+
+    The root cause was one rule written out twice, which is why the fix is one shared helper.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    y = _ratified(session, tenant, source_id)
+    session.flush()
+
+    z = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="Z-competing-draft",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    session.flush()
+    withdraw_mapping_version(
+        session,
+        mapping_version_id=z.id,
+        acting_tenant=tenant,
+        actor_id=PROPOSER,
+        reason="changed my mind",
+    )
+    session.flush()
+
+    still = ratified_mapping_for(
+        session,
+        acting_tenant=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    assert still.id == y.id, (
+        "withdrawing an unrelated draft made the source read back as ungoverned while its ratified "
+        "mapping was untouched — every load for the source would refuse"
+    )
+    # ...and the resolution log still records the withdrawal. It is filtered from the GOVERNANCE
+    # question, not erased: an append-only log that dropped facts would be a different defect.
+    assert [r.outcome for r in _resolutions(session, tenant)] == ["RATIFIED", "WITHDRAWN"]
+
+
+def test_a_ratification_AFTER_an_unrelated_withdrawal_still_supersedes(session: Session) -> None:
+    """The SECOND face of the same root cause, and it fails differently — which is why it is its
+    own test rather than an extra assertion above.
+
+    `ratify_mapping_version` finds the incumbent to supersede by the same latest-row rule. With a
+    WITHDRAWN row on top it found NO incumbent, skipped the supersede, and the new ratification then
+    collided with ENT-077's partial unique index: a governed act raising a raw `IntegrityError`
+    instead of superseding cleanly. A test that only checked the load gate would have passed while
+    this stayed broken.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    y = _ratified(session, tenant, source_id)
+    z = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="Z-competing-draft",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    session.flush()
+    withdraw_mapping_version(
+        session, mapping_version_id=z.id, acting_tenant=tenant, actor_id=PROPOSER, reason="no"
+    )
+    session.flush()
+
+    w = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="W",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    ratify_mapping_version(
+        session, mapping_version_id=w.id, acting_tenant=tenant, actor_id=RATIFIER
+    )
+    session.flush()
+
+    # EXACTLY ONE version is RATIFIED for this source — the invariant ENT-078 owns.
+    live = (
+        session.execute(
+            select(IngestionMappingVersion).where(
+                IngestionMappingVersion.tenant_id == tenant,
+                IngestionMappingVersion.data_source_id == source_id,
+                IngestionMappingVersion.status == STATUS_RATIFIED,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [v.version_label for v in live] == ["W"], (
+        f"expected W alone to be RATIFIED, found {sorted(v.version_label for v in live)} — the "
+        f"incumbent was not superseded, so the source has two current mappings or none"
+    )
+    assert session.get(IngestionMappingVersion, y.id).status == STATUS_SUPERSEDED
+    assert (
+        ratified_mapping_for(
+            session,
+            acting_tenant=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+        ).id
+        == w.id
+    )
+
+
+def test_a_source_whose_LATEST_governing_row_is_a_SUPERSESSION_cannot_load(
+    session: Session,
+) -> None:
+    """The fail-closed arm of the load gate, FIRED (P9).
+
+    `ratified_mapping_for` refuses when the latest governing row is not a ratification. After the
+    `GOVERNING_OUTCOMES` fix, no service verb produces that state: `ratify_mapping_version` appends
+    the SUPERSEDED row and the replacement's RATIFIED row in one transaction, so the supersession is
+    never last. Mutation `M-S3B-2` deleting the check therefore SURVIVED — not because the check is
+    wrong, but because nothing had ever put the platform in the state it guards.
+
+    The state is constructed here at the table, which is the same idiom the DB-constraint tests use:
+    a guard whose input no test builds is a guard nobody has seen work. It is reachable in practice
+    by any future verb that retires a mapping without replacing it, and by any non-ORM write.
+
+    A mapping that WAS ratified and has been retired must not keep governing loads — "there is a
+    RATIFIED row somewhere in the log" is true forever once it has been true once.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    v1 = _ratified(session, tenant, source_id)
+    session.flush()
+    assert (
+        ratified_mapping_for(
+            session,
+            acting_tenant=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+        ).id
+        == v1.id
+    )
+
+    # Retire it with NO replacement — the state the service does not currently produce.
+    session.add(
+        IngestionMappingRatification(
+            tenant_id=tenant,
+            seq=99,
+            mapping_version_id=v1.id,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+            outcome="SUPERSEDED",
+            resolved_by=RATIFIER,
+            resolved_at=datetime(2026, 8, 21, tzinfo=UTC),
+            reason="retired, nothing put in its place",
+        )
+    )
+    session.flush()
+
+    with pytest.raises(UnratifiedMappingError):
+        ratified_mapping_for(
+            session,
+            acting_tenant=tenant,
+            data_source_id=source_id,
+            source_type=SOURCE_TYPE_POSITIONS,
+        )
+    # ...and the earlier ratification is still ON the log. It is not the CURRENT decision; it is
+    # still a fact. Filtering the governance question is not erasing history.
+    assert [r.outcome for r in _resolutions(session, tenant)] == ["RATIFIED", "SUPERSEDED"]

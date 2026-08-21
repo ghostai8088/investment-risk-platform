@@ -31,10 +31,14 @@ append-only surface instead of from ENT-077's mutable ``status``. The slice's he
 approval facts must be unfalsifiable; leaving the invariant resting on the column the table exists
 to stop trusting would have left that claim resting on the thing it just argued against.
 
-It is enforced STRUCTURALLY — the latest resolution row per source, made unique by ``uq_..._seq`` —
-and **not** by a partial unique index. Two index drafts were written and the database refused both.
-The ``__table_args__`` comment records why, because that is where a reader looking for the missing
-index will go.
+It is enforced STRUCTURALLY — the latest resolution row per source **whose outcome is in
+``GOVERNING_OUTCOMES``**, made unique by ``uq_..._seq`` — and **not** by a partial unique index. Two
+index drafts were written and the database refused both; the ``__table_args__`` comment records why,
+because that is where a reader looking for the missing index will go.
+
+The ``GOVERNING_OUTCOMES`` filter is not a detail. Without it a ``WITHDRAWN`` row for an unrelated
+competing proposal outranks a live ratification and the source reads back as ungoverned — a BLOCKING
+defect this table shipped with and a different-engine review found. See the constant.
 """
 
 from __future__ import annotations
@@ -78,6 +82,27 @@ RESOLUTION_OUTCOMES: tuple[str, ...] = (
     OUTCOME_SUPERSEDED,
 )
 
+#: The outcomes that speak to WHICH VERSION GOVERNS A SOURCE, as opposed to what happened to one
+#: proposal. **This distinction is the fix for a BLOCKING defect the first build shipped**, and it
+#: is written here because the whole "latest row wins" rule is meaningless without it.
+#:
+#: The first version asked for the latest row for a source across ALL outcomes. But ``WITHDRAWN``
+#: is a decision about a PROPOSAL — the proposer took their own draft back — and a proposal that
+#: was never ratified never governed anything. Two PROPOSED versions may legitimately coexist for
+#: one source, so withdrawing the second one appended a WITHDRAWN row that outranked the first
+#: one's live RATIFIED row, and:
+#:
+#: - :func:`ratified_mapping_for` then reported NO current mapping and every load for that source
+#:   refused — an ingestion outage caused by an ordinary "I changed my mind";
+#: - :func:`ratify_mapping_version` then found NO incumbent to supersede, so the next legitimate
+#:   ratification hit ENT-077's partial unique index and a governed act raised a raw
+#:   ``IntegrityError`` instead of superseding cleanly.
+#:
+#: Both reproduced by execution before the fix. The class docstring below claimed "no state can
+#: exist in which the question has two answers"; that claim was FALSE as written, and it is the
+#: filter — not the ordering alone — that makes it true.
+GOVERNING_OUTCOMES: frozenset[str] = frozenset({OUTCOME_RATIFIED, OUTCOME_SUPERSEDED})
+
 #: The CHECK suffixes. Pass the SUFFIX to `op.create_check_constraint`, never the full name — the
 #: convention prepends `ck_<table>_` itself and a doubled name truncates at 63 invisibly (0057).
 #: Budget: `ck_ingestion_mapping_ratification_` is 34 of 63, leaving 29.
@@ -120,11 +145,17 @@ class IngestionMappingRatification(PrimaryKeyMixin, TenantMixin, ImmutableAppend
         # nothing ever leaves a predicate, which makes "at most one row matching P" and "at most one
         # CURRENT thing" different statements. A partial unique index can only express the first.
         #
-        # The invariant is therefore enforced STRUCTURALLY, and more strongly: the current ratified
-        # mapping for a source is the one named by the LATEST resolution row for that source, and
-        # `uq_..._seq` makes "latest" unique by construction. There cannot be two latest rows. No
-        # index is needed because no state can exist in which the question has two answers — which
-        # is a better guarantee than an index that merely refuses to record one.
+        # The invariant is therefore enforced STRUCTURALLY: the current ratified mapping for a
+        # source is the one named by the latest row **whose outcome is in `GOVERNING_OUTCOMES`**,
+        # and `uq_..._seq` makes "latest" unique by construction.
+        #
+        # THE FILTER IS LOAD-BEARING AND WAS MISSING. An earlier version of this comment said "the
+        # LATEST resolution row for that source" with no filter, and asserted that "no state can
+        # exist in which the question has two answers". That was FALSE: a WITHDRAWN row for an
+        # unrelated competing proposal outranks a live RATIFIED row, and the question then answers
+        # "none" while a ratified mapping is sitting right there. Reproduced by execution, found by
+        # a different-engine review, fixed by filtering to the outcomes that speak to governance.
+        # See `GOVERNING_OUTCOMES` above for the full account.
         #
         # This still satisfies what DS3b-5 ratified: the invariant lives on the append-only surface
         # rather than on ENT-077's mutable `status`.

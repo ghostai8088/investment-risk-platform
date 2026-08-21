@@ -133,7 +133,6 @@ portfolios until the P6+ `entitlement_grant` scope payload lands. Acceptable in 
 **ENT-P-06** is thus **partially satisfied** in P1C-1: the **tenant** attribute is enforced (RLS); the **portfolio-scope**
 attribute is **anchored, not enforced** (→ P6+).
 
-#
 ### W19-S3b — source mapping governance (INGEST-1, REQ-INT-001 clause 6)
 
 | Code | Line | Holders | Partition |
@@ -155,7 +154,7 @@ A checker who cannot read the artifact is not a checker.
 `platform_admin` holds all three, by construction rather than by decision:
 `ROLE_TEMPLATES["platform_admin"] = list(ALL_CODES)`.
 
-## 5C. The permission-mint checklist (CREATED at ONBOARD-1a, 2026-08-09 — ratified OQ-ONB-6)
+### 5C. The permission-mint checklist (CREATED at ONBOARD-1a, 2026-08-09 — ratified OQ-ONB-6)
 
 Every permission mint executes ALL rows or records an explicit refusal with reason. P11 is the
 standing rule; this is its checklist, created here because until ONBOARD-1a no such list existed

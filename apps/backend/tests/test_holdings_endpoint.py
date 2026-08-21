@@ -324,6 +324,9 @@ def test_the_holdings_dto_exposes_the_mapping_binding(ctx) -> None:  # noqa: ANN
     holding = r.json()["holdings"][0]
     assert "mapping_version_id" in holding
     assert holding["mapping_version_id"] is None
-    # ...and it is a STRING id, never a number — `HoldingOut` is inside `decimal-contract.ts`'s
-    # curated key set, where a `number` field fails tsc across the whole guards program.
+    # ...and it is a STRING id, never a number. Asserted HERE precisely because it is NOT
+    # compiler-enforced: `HoldingOut` is in neither of `decimal-contract.ts`'s two membership
+    # routes, so nothing in the frontend guards program would notice this DTO regressing to a
+    # bare `number`. A review corrected the opposite claim; this runtime assertion is what
+    # actually stands behind it.
     assert holding["mapping_version_id"] is None or isinstance(holding["mapping_version_id"], str)
