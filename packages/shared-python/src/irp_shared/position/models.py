@@ -84,6 +84,31 @@ class Position(PrimaryKeyMixin, TenantMixin, FullReproducibleMixin, TimestampMix
     record_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1
     )  # logical version count (create=1; each supersede/correction = prev+1)
+    # W19-S3b (REQ-INT-001 clause 2, the position half): the RATIFIED mapping version that produced
+    # THIS row. A hard FK, never free text — `position_source` is an unconstrained String(150) and
+    # the amended requirement bans it as attribution.
+    #
+    # NULLABLE, and it must be: a hand-captured holding has no mapping version, and the table has
+    # been populated since 0014.
+    #
+    # NOT in POSITION_FIELDS, and that is the whole design (DS3b-3). Membership would make the
+    # binders CARRY IT FORWARD, so a hand-typed supersede of a file-loaded holding would inherit a
+    # mapping version that never produced it — the false-provenance class. Non-membership alone
+    # would drop it to NULL on every supersede and correction, so a provenance FK would vanish
+    # exactly when the second file arrived. Neither default is right, so the three binders take it
+    # as an EXPLICIT keyword and each caller states it: the interpreter passes the version that
+    # produced the row it is writing, a manual call passes nothing and gets NULL.
+    #
+    # Spelled as a literal table name with an EXPLICIT constraint name: `irp_shared.position` may
+    # not import `irp_shared.ingest_mapping` (its own fence forbids it), and naming the column
+    # `ingestion_mapping_version_id` instead would generate a 66-char FK name that PostgreSQL
+    # truncates at 63 silently.
+    mapping_version_id: Mapped[str | None] = mapped_column(
+        GUID,
+        ForeignKey("ingestion_mapping_version.id", name="fk_position_mapping_version"),
+        nullable=True,
+        index=True,
+    )
 
 
 # NOTE: position is FR (NOT append-only) — there is deliberately NO ORM before_update/before_delete

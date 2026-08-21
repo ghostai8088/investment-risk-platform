@@ -547,3 +547,58 @@ def test_liquidity_grants_as_ratified() -> None:
     }
     assert _holders("liquidity.run") == {"data_steward", "risk_analyst_1l", "platform_admin"}
     assert "auditor_3l" not in _holders("liquidity.run")
+
+
+def test_ingest_mapping_grants_as_ratified() -> None:
+    """W19-S3b (REQ-INT-001 clause 6): the mapping maker/checker partition.
+
+    **This is the `breach.respond`/`breach.review` shape, NOT the `limit.manage`/`limit.approve`
+    one**, and the two look alike while enforcing opposite things. The limit pair deliberately SHARE
+    `risk_manager_2l` because that gate is person-level; the wave plan requires the mapping ratifier
+    to be "never co-granted with the proposer path", so the partition is at ROLE level and a shared
+    role would be the defect rather than the design.
+
+    `platform_admin` is exempt BY CONSTRUCTION, not by oversight: a code in `PERMISSIONS` enters
+    `ALL_CODES`, and `ROLE_TEMPLATES["platform_admin"] = list(ALL_CODES)`, so that role holds every
+    code the platform has and a separate test asserts it does. The exemption is stated here so a
+    reviewer does not read it as one — an unexplained hole in a partition is indistinguishable from
+    a forgotten grant.
+    """
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    for code in ("ingest.mapping.propose", "ingest.mapping.ratify", "ingest.mapping.view"):
+        assert code in ALL_CODES, f"{code} was not minted"
+
+    # EXACT set equality in both directions — a newly minted code with no pin fails by construction.
+    assert _holders("ingest.mapping.propose") == {"data_steward", "platform_admin"}
+    assert _holders("ingest.mapping.ratify") == {"risk_manager_2l", "platform_admin"}
+    assert _holders("ingest.mapping.view") == {
+        "data_steward",
+        "risk_manager_2l",
+        "auditor_3l",
+        "platform_admin",
+    }
+
+
+def test_the_mapping_maker_and_checker_share_no_tenant_role() -> None:
+    """The partition itself, asserted as a PROPERTY rather than inferred from the two sets above.
+
+    Stated separately on purpose: the holder-set pin would still pass if a future edit added the
+    same role to both lists and updated both expectations together. This one cannot.
+    """
+
+    def _holders(code: str) -> set[str]:
+        return {role for role, codes in ROLE_TEMPLATES.items() if code in codes}
+
+    shared = _holders("ingest.mapping.propose") & _holders("ingest.mapping.ratify")
+    assert shared == {"platform_admin"}, (
+        f"the maker and checker of a source mapping share {sorted(shared)} — a role-level "
+        f"partition is what makes four-eyes structural rather than advisory. `platform_admin` is "
+        f"the ONLY permitted overlap, and only because it is `list(ALL_CODES)` by construction."
+    )
+    # ...and the 3L auditor reads without holding either verb (the standing per-code exclusion).
+    assert "ingest.mapping.view" in ROLE_TEMPLATES["auditor_3l"]
+    assert "ingest.mapping.propose" not in ROLE_TEMPLATES["auditor_3l"]
+    assert "ingest.mapping.ratify" not in ROLE_TEMPLATES["auditor_3l"]

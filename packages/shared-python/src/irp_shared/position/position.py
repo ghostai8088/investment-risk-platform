@@ -149,6 +149,7 @@ def create_position(
     entity_id: str | None = None,
     now: datetime | None = None,
     origin_source: DataSource | None = None,
+    mapping_version_id: str | None = None,
 ) -> Position:
     """Create the first open position version (governed: MANUAL-source ORIGIN lineage +
     ``POSITION.CREATE``). ``portfolio_id`` + ``instrument_id`` are resolved tenant-filtered
@@ -174,6 +175,8 @@ def create_position(
         quantity_unit=quantity_unit,
         position_source=position_source,
         record_version=1,
+        # EXPLICIT per verb (DS3b-3) — never carried, never defaulted. See the column's comment.
+        mapping_version_id=(str(mapping_version_id) if mapping_version_id else None),
     )
     if entity_id is not None:
         row.id = entity_id  # seam: deterministic uuid5 id (skips the `default=new_uuid`)
@@ -201,6 +204,7 @@ def supersede_position(
     entity_id: str | None = None,
     now: datetime | None = None,
     origin_source: DataSource | None = None,
+    mapping_version_id: str | None = None,
     **new_fields: Any,
 ) -> Position:
     """Effective-dated (valid-time) supersede: close the current head's ``valid_to = effective_at``
@@ -244,6 +248,10 @@ def supersede_position(
         system_to=None,
         supersedes_id=prior.id,
         record_version=prior.record_version + 1,
+        # NOT carried from `prior`: a new version's provenance is whatever produced THIS row. A
+        # manual supersede of a file-loaded holding therefore gets NULL rather than inheriting a
+        # mapping version that never saw it.
+        mapping_version_id=(str(mapping_version_id) if mapping_version_id else None),
         **{**carried, **new_fields},
     )
     if entity_id is not None:
@@ -271,6 +279,7 @@ def correct_position(
     entity_id: str | None = None,
     now: datetime | None = None,
     origin_source: DataSource | None = None,
+    mapping_version_id: str | None = None,
     **corrected: Any,
 ) -> Position:
     """As-known restatement (TR-08): close the prior row's ``system_to = now``
@@ -309,6 +318,9 @@ def correct_position(
         restatement_reason=restatement_reason,
         supersedes_id=position_row.id,
         record_version=position_row.record_version + 1,
+        # Same rule as supersede: the corrected row's provenance is whatever produced the
+        # CORRECTION, not what produced the row being corrected.
+        mapping_version_id=(str(mapping_version_id) if mapping_version_id else None),
         **{**carried, **corrected},
     )
     if entity_id is not None:

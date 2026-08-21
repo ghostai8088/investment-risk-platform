@@ -12,8 +12,10 @@ caught by PostgreSQL rather than by the code.
 
 **This table OWNS the "at most one RATIFIED mapping per source" invariant** (DS3b-5,
 owner-ratified). ``data_source_id`` / ``source_type`` are denormalized from the version for exactly
-that reason: so the partial unique index keys on this append-only surface rather than on ENT-077's
-mutable ``status`` — the column this table exists to stop trusting.
+that reason: the current mapping for a source is read from THIS append-only surface — the latest
+resolution row for that source — rather than from ENT-077's mutable ``status``, the column this
+table exists to stop trusting. It is enforced structurally, NOT by a partial unique index; the
+upgrade-side note records the two attempts the database refused and why.
 
 **CREATE TABLE only, and this migration therefore gets NO P17 harness**, by the same reasoning the
 repo already applied to ``0074``: there are no pre-existing rows, so a populated-DB proof would be
@@ -160,9 +162,11 @@ def downgrade() -> None:
             "DROP POLICY IF EXISTS tenant_isolation_ingestion_mapping_ratification "
             "ON ingestion_mapping_ratification"
         )
-    op.drop_index(
-        "uq_ingestion_mapping_ratification_active", "ingestion_mapping_ratification"
-    )
+    # NOTE: no `uq_ingestion_mapping_ratification_active` drop. An earlier draft of `upgrade()`
+    # created that partial unique index; the index was removed when the DB refused two legitimate
+    # replacements (see the upgrade-side note) and the matching drop survived here for one commit —
+    # a downgrade that references a name `upgrade()` never creates. It is unreachable from any
+    # from-empty test, because those never downgrade. Found by reading the pair together.
     op.drop_index(
         "ix_ingestion_mapping_ratification_tenant_outcome", "ingestion_mapping_ratification"
     )

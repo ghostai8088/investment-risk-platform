@@ -313,6 +313,15 @@ def propose_mapping_version(
         proposer_model_version_id = None
         proposal_prompt_hash = None
 
+    # `supersedes_id` gets the SAME treatment as `proposer_model_version_id` above, and the reason
+    # is written out because S3a applied it to one field and not to the other sitting beside it.
+    # It is a self-FK, and PostgreSQL evaluates FK checks BYPASSING RLS — so the constraint happily
+    # accepts another tenant's version id and the row durably records a cross-tenant reference.
+    # Nothing downstream would catch it: `supersedes_id` is lineage prose to every read that shows
+    # it. Resolving it tenant-filtered is the only place this can be refused.
+    if supersedes_id is not None:
+        resolve_mapping_version(session, str(supersedes_id), acting_tenant=str(tenant_id))
+
     version = IngestionMappingVersion(
         tenant_id=str(tenant_id),
         data_source_id=source.id,
@@ -372,9 +381,6 @@ def ratify_mapping_version(
     if canonical_actor(actor_id) == canonical_actor(version.proposed_by_actor_id):
         raise SelfRatificationError(str(actor_id))
 
-    # Supersede the incumbent FIRST and FLUSH, so the partial unique index never sees two RATIFIED
-    # rows for the same key even transiently — the close-first ordering the FR binders use, for the
-    # same reason.
     # The incumbent is found through the RESOLUTION table too, by the same latest-row rule.
     # Reading ENT-077.status here would reintroduce the dependency this slice removed.
     incumbent_row = session.execute(
@@ -395,9 +401,12 @@ def ratify_mapping_version(
             )
         ).scalar_one_or_none()
     if incumbent is not None:
-        # CLOSE FIRST, and flush, so the partial unique index on the resolution table never sees two
-        # RATIFIED rows for this source even transiently — the ordering the FR binders use, for the
-        # same reason.
+        # CLOSE FIRST, and the ORDER IS THE INVARIANT — not a tidiness preference, and not (as an
+        # earlier draft of this comment claimed) protection for a partial unique index, which this
+        # table does not have. "Which mapping governs this source" is answered by the HIGHEST `seq`
+        # for the source. Append the SUPERSEDED row second and it outranks the new RATIFIED row, so
+        # the source reads back as having NO current mapping and every subsequent load refuses.
+        # `_next_seq` allocates in call order, so the call order IS the answer.
         session.add(
             IngestionMappingRatification(
                 tenant_id=str(acting_tenant),
@@ -627,6 +636,9 @@ def load_batch(
                     quantity=values[TARGET_QUANTITY],
                     cost_basis=values.get(TARGET_COST_BASIS),
                     quantity_unit=values.get(TARGET_QUANTITY_UNIT),
+                    # The CORRECTION's provenance is whatever produced the correction, never what
+                    # produced the row being corrected (DS3b-3, per verb).
+                    mapping_version_id=mapping.id,
                 )
                 restated.append(corrected.id)
                 continue
@@ -650,6 +662,10 @@ def load_batch(
                 quantity=values[TARGET_QUANTITY],
                 cost_basis=values.get(TARGET_COST_BASIS),
                 quantity_unit=values.get(TARGET_QUANTITY_UNIT),
+                # NOT carried from the prior version: this row was produced by THIS load. Without
+                # the explicit stamp the column would be dropped to NULL here, and a provenance FK
+                # that vanishes when the second file arrives is worse than none.
+                mapping_version_id=mapping.id,
             )
             superseded.append(newer.id)
             continue
@@ -667,6 +683,8 @@ def load_batch(
             quantity_unit=values.get(TARGET_QUANTITY_UNIT),
             now=now,
             origin_source=source,
+            # Clause (2)'s position half: the ratifying mapping version, by hard FK.
+            mapping_version_id=mapping.id,
         )
         created.append(row.id)
 

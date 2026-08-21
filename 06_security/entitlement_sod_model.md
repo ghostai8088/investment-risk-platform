@@ -133,7 +133,29 @@ portfolios until the P6+ `entitlement_grant` scope payload lands. Acceptable in 
 **ENT-P-06** is thus **partially satisfied** in P1C-1: the **tenant** attribute is enforced (RLS); the **portfolio-scope**
 attribute is **anchored, not enforced** (→ P6+).
 
-### 5C. The permission-mint checklist (CREATED at ONBOARD-1a, 2026-08-09 — ratified OQ-ONB-6)
+#
+### W19-S3b — source mapping governance (INGEST-1, REQ-INT-001 clause 6)
+
+| Code | Line | Holders | Partition |
+|---|---|---|---|
+| `ingest.mapping.propose` | maker | `data_steward` | NEVER co-held with `.ratify` |
+| `ingest.mapping.ratify` | checker | `risk_manager_2l` | NEVER co-held with `.propose` |
+| `ingest.mapping.view` | read | `data_steward`, `risk_manager_2l`, `auditor_3l` | read-only; held by both sides and by 3L |
+
+A source mapping decides what a client's file MEANS, so the act of proposing one and the act of
+agreeing to it are separated at ROLE level — the `breach.respond` / `breach.review` cross-line
+shape, not the `limit.manage` / `limit.approve` person-level shape, which deliberately shares a
+role. Person-level SoD holds too (`ratified_by != proposed_by`, canonicalized), but the role
+partition is what makes the separation structural rather than advisory.
+
+`ingest.mapping.view` exists because the reads were gated on the MAKER's `data.upload`, so a
+ratifier-only holder would have been refused the screens showing what they were about to approve.
+A checker who cannot read the artifact is not a checker.
+
+`platform_admin` holds all three, by construction rather than by decision:
+`ROLE_TEMPLATES["platform_admin"] = list(ALL_CODES)`.
+
+## 5C. The permission-mint checklist (CREATED at ONBOARD-1a, 2026-08-09 — ratified OQ-ONB-6)
 
 Every permission mint executes ALL rows or records an explicit refusal with reason. P11 is the
 standing rule; this is its checklist, created here because until ONBOARD-1a no such list existed

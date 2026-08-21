@@ -1731,3 +1731,171 @@ def test_a_withdrawn_version_cannot_load_and_cannot_be_ratified(session: Session
             actor=PositionActor(actor_id="ops"),
             source_type=SOURCE_TYPE_POSITIONS,
         )
+
+
+# --- W19-S3b: the position FK, and the trap on BOTH sides of it --------------------------------
+
+
+def test_a_loaded_row_binds_its_mapping_version(session: Session) -> None:
+    """Clause (2), the position half, on a first capture."""
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _book(session, tenant)
+    mapping = _ratified(session, tenant, source_id)
+    batch = _batch(session, tenant, source_id, [_row()])
+    load_batch(
+        session,
+        batch=batch,
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    session.flush()
+    assert _open_head(session).mapping_version_id == mapping.id
+
+
+def test_the_binding_SURVIVES_a_second_file(session: Session) -> None:
+    """THE trap, and it would have shipped silently.
+
+    The FR binders build each new version from `{**carried, **new_fields}` where `carried` is
+    exactly `POSITION_FIELDS`. A column outside that set is dropped to NULL on every supersede and
+    every correction — and `load_batch` issues BOTH verbs. So a naive column is populated on first
+    capture and NULL on every subsequent load of the same holding: a provenance FK that vanishes
+    exactly when the second file arrives.
+
+    A ONE-file load cannot see this. That is why this test loads TWO.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _book(session, tenant)
+    v1 = _ratified(session, tenant, source_id)
+    load_batch(
+        session,
+        batch=_batch(session, tenant, source_id, [_row()]),
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    session.flush()
+    assert _open_head(session).mapping_version_id == v1.id
+
+    # a LATER-dated file supersedes — the verb that would have nulled the column
+    load_batch(
+        session,
+        batch=_batch(session, tenant, source_id, [_row(qty="14.0", as_at="31/08/2026")]),
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    session.flush()
+    head = _open_head(session)
+    assert head.quantity == Decimal("14000.0")
+    assert head.mapping_version_id == v1.id, (
+        "the mapping binding was dropped on supersede — the column is outside POSITION_FIELDS, so "
+        "it is NOT carried and must be stamped explicitly per verb"
+    )
+
+
+def test_a_MANUAL_supersede_does_NOT_inherit_a_mapping_version(session: Session) -> None:
+    """The MIRROR trap, and it is the reason membership in `POSITION_FIELDS` is not the fix.
+
+    Inside that set the column would carry forward blindly, so a hand-typed supersede of a
+    file-loaded holding would inherit a mapping version that never produced it — DS3a-4's
+    false-provenance class re-entering by the other door. Worse than no attribution, because a
+    reader cannot tell it from a real one.
+
+    A two-file load cannot prove this direction: every row a load writes goes through the
+    interpreter. It needs a manual binder call, which is what this is.
+    """
+    from irp_shared.position import supersede_position
+
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    portfolio_id, instrument_id = _book(session, tenant)
+    mapping = _ratified(session, tenant, source_id)
+    load_batch(
+        session,
+        batch=_batch(session, tenant, source_id, [_row()]),
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="ops"),
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    session.flush()
+    assert _open_head(session).mapping_version_id == mapping.id  # positive control
+
+    manual = supersede_position(
+        session,
+        portfolio_id=portfolio_id,
+        instrument_id=instrument_id,
+        acting_tenant=tenant,
+        actor=PositionActor(actor_id="a.human"),
+        effective_at=datetime(2026, 9, 30, tzinfo=UTC),
+        quantity=Decimal("999.0"),
+    )
+    session.flush()
+    assert manual.mapping_version_id is None, (
+        "a hand-typed supersede inherited a mapping version that never produced it — the "
+        "false-provenance class, which is worse than no attribution"
+    )
+
+
+def test_the_position_content_hash_does_NOT_carry_the_mapping_binding() -> None:
+    """A frozen key-set pin, because `position_content` had none.
+
+    `var_result_content` has such a pin and this one did not, so the next slice to "complete" the
+    serializer would redden every POSITION component in every seeded database — measured, not
+    reasoned: every component currently re-serializes to its stored hash, and adding this key with
+    a NULL value breaks all of them across a third of the snapshots.
+
+    *The affected surface is `verify_snapshot`, NOT the CTRL-018 sweep* — S3a's records named the
+    sweep, which does not read snapshot content hashes at all. Right conclusion, wrong mechanism,
+    corrected here and in the S3b remit's Part 0.
+    """
+    from irp_shared.snapshot.serialize import position_content
+
+    tenant = _tenant()
+    row = Position(
+        tenant_id=tenant,
+        portfolio_id=str(uuid.uuid4()),
+        instrument_id=str(uuid.uuid4()),
+        quantity=Decimal("1"),
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        system_from=datetime(2026, 1, 1, tzinfo=UTC),
+        record_version=1,
+    )
+    keys = set(position_content(row))
+    assert "mapping_version_id" not in keys, (
+        "the mapping binding entered the snapshot content hash — every previously stored POSITION "
+        "component would now fail verify_snapshot"
+    )
+    assert "position_source" in keys  # the key set is real, so the absence above is meaningful
+
+
+def test_supersedes_cannot_reach_into_ANOTHER_tenant(session: Session) -> None:
+    """A cross-tenant `supersedes_id` is refused at PROPOSAL, not admitted by the FK.
+
+    This was a live defect until W19-S3b. `propose_mapping_version` re-resolved
+    `proposer_model_version_id` tenant-filtered with a docstring explaining that PostgreSQL
+    evaluates FK checks BYPASSING RLS — and then stamped `supersedes_id`, the self-FK sitting three
+    lines below it, with no check at all. The constraint would have accepted another tenant's
+    version id and the row would have durably recorded a cross-tenant reference that every read
+    showing lineage would have repeated as fact.
+
+    NEGATIVE by construction: delete the `resolve_mapping_version` call in `propose_mapping_version`
+    and this test fails, because nothing else in the write path looks at the value.
+    """
+    tenant_a, tenant_b = _tenant(), _tenant()
+    theirs = _ratified(session, tenant_b, _source(session, tenant_b, code="THEIRS"))
+    session.flush()
+
+    with pytest.raises(MappingNotVisible):
+        propose_mapping_version(
+            session,
+            tenant_id=tenant_a,
+            data_source_id=_source(session, tenant_a),
+            source_type=SOURCE_TYPE_POSITIONS,
+            version_label="v1",
+            operations=list(DEMO_OPS),
+            actor_id=PROPOSER,
+            supersedes_id=theirs.id,
+        )

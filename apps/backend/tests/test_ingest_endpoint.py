@@ -57,10 +57,21 @@ def ctx() -> Iterator[tuple[TestClient, Principal, Session, str]]:
     role = Role(tenant_id=tenant_id, code="r", name="R")
     db.add_all([user, role])
     db.flush()
-    perm = Permission(code="data.upload", description="d")
-    db.add(perm)
-    db.flush()
-    db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+    # W19-S3b: the reads moved onto `ingest.mapping.view` and the verbs onto their own codes, so
+    # this fixture's principal now holds all four. It deliberately holds BOTH sides of the
+    # partition — the role-level separation is asserted in test_entitlement_bootstrap.py against
+    # the real ROLE_TEMPLATES, and re-asserting it through a synthetic fixture role here would test
+    # the fixture rather than the catalog.
+    for code in (
+        "data.upload",
+        "ingest.mapping.propose",
+        "ingest.mapping.ratify",
+        "ingest.mapping.view",
+    ):
+        perm = Permission(code=code, description="d")
+        db.add(perm)
+        db.flush()
+        db.add(RolePermission(role_id=role.id, permission_id=perm.id))
     db.add(UserRole(tenant_id=tenant_id, user_id=user.id, role_id=role.id))
     # Provenance source + one active generic staging rule so the happy path yields a PASS.
     source = register_data_source(
@@ -365,3 +376,160 @@ def test_mapping_reads_are_permission_gated(
         f"/ingest/mappings/{version.id}/batches",
     ):
         assert client.get(path, headers=stranger).status_code == 403, path
+
+
+# --- W19-S3b: the mapping LIFECYCLE verbs over HTTP --------------------------------------------
+
+
+def _propose_body(source_id: str, label: str = "v1") -> dict:
+    return {
+        "data_source_id": source_id,
+        "source_type": "POSITIONS",
+        "version_label": label,
+        "operations": _MAPPING_OPS,
+    }
+
+
+def test_propose_then_ratify_over_http(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """The maker's verb and the checker's verb, each behind its own minted code."""
+    client, principal, db, source_id = ctx
+    created = client.post(
+        "/ingest/mappings", json=_propose_body(source_id), headers=_headers(principal)
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["status"] == "PROPOSED"
+    mapping_id = created.json()["id"]
+
+    # a DIFFERENT principal ratifies — the same user would be a 409, asserted below
+    other = AppUser(tenant_id=principal.tenant_id, display_name="checker")
+    db.add(other)
+    db.flush()
+    role_id = db.execute(select(Role.id).where(Role.tenant_id == principal.tenant_id)).scalar_one()
+    db.add(UserRole(tenant_id=principal.tenant_id, user_id=other.id, role_id=str(role_id)))
+    db.commit()
+
+    ratified = client.post(
+        f"/ingest/mappings/{mapping_id}/ratify",
+        json={"reason": "checked against the custodian's spec"},
+        headers={"X-User-Id": other.id, "X-Tenant-Id": principal.tenant_id},
+    )
+    assert ratified.status_code == 200, ratified.text
+    assert ratified.json()["status"] == "RATIFIED"
+    assert ratified.json()["ratified_by_actor_id"] == other.id
+
+
+def test_self_ratification_is_a_409_not_a_403(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """The distinction matters operationally. The caller HAS the ratify permission; the act is
+    refused on WHO THEY ARE relative to this proposal. A 403 would send an operator to ask for a
+    permission they already hold."""
+    client, principal, _, source_id = ctx
+    mapping_id = client.post(
+        "/ingest/mappings", json=_propose_body(source_id), headers=_headers(principal)
+    ).json()["id"]
+    same = client.post(
+        f"/ingest/mappings/{mapping_id}/ratify", json={}, headers=_headers(principal)
+    )
+    assert same.status_code == 409, same.text
+    assert "may not ratify" in same.json()["detail"]
+
+
+def test_withdraw_requires_a_reason_and_the_proposer(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """A proposal removed from the queue with no explanation is indistinguishable from one that was
+    never made; and withdrawal is the proposer's own act, not a rejection verb for a checker."""
+    client, principal, db, source_id = ctx
+    mapping_id = client.post(
+        "/ingest/mappings", json=_propose_body(source_id), headers=_headers(principal)
+    ).json()["id"]
+
+    no_reason = client.post(
+        f"/ingest/mappings/{mapping_id}/withdraw", json={}, headers=_headers(principal)
+    )
+    assert no_reason.status_code == 422
+
+    stranger = AppUser(tenant_id=principal.tenant_id, display_name="someone else")
+    db.add(stranger)
+    db.flush()
+    role_id = db.execute(select(Role.id).where(Role.tenant_id == principal.tenant_id)).scalar_one()
+    db.add(UserRole(tenant_id=principal.tenant_id, user_id=stranger.id, role_id=str(role_id)))
+    db.commit()
+    theirs = client.post(
+        f"/ingest/mappings/{mapping_id}/withdraw",
+        json={"reason": "not mine"},
+        headers={"X-User-Id": stranger.id, "X-Tenant-Id": principal.tenant_id},
+    )
+    assert theirs.status_code == 409, theirs.text
+
+    mine = client.post(
+        f"/ingest/mappings/{mapping_id}/withdraw",
+        json={"reason": "the custodian re-issued the file"},
+        headers=_headers(principal),
+    )
+    assert mine.status_code == 200, mine.text
+    assert mine.json()["status"] == "WITHDRAWN"
+
+
+def test_an_incoherent_proposal_is_422_not_500(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """A mapping that could never load anything must not reach a ratification queue — and the
+    refusal must be a governed 4xx, not an unhandled exception."""
+    client, principal, _, source_id = ctx
+    body = _propose_body(source_id, "bad")
+    body["operations"] = [dict(op, op="regex_replace") for op in _MAPPING_OPS]
+    resp = client.post("/ingest/mappings", json=body, headers=_headers(principal))
+    assert resp.status_code == 422, resp.text
+    assert "regex_replace" in resp.json()["detail"]
+
+
+def test_superseding_an_invisible_version_is_an_INDISTINGUISHABLE_404(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """A `supersedes_id` the caller cannot see answers 404 — the same answer an id that does not
+    exist gets.
+
+    The first draft of `propose_mapping` caught only `MappingError`, and `MappingNotVisible` is a
+    subclass of it, so this case answered **422 with the refusal's message attached**. That is a
+    cross-tenant existence oracle: a caller could enumerate another tenant's mapping ids by the
+    difference in the reply. The clause ordering in the route is the fix, and clause ordering is
+    exactly the kind of thing that gets reshuffled by a later edit — hence a test that pins it.
+    """
+    client, principal, _, source_id = ctx
+    body = _propose_body(source_id, "v-super")
+    body["supersedes_id"] = str(uuid.uuid4())  # never existed
+    absent = client.post("/ingest/mappings", json=body, headers=_headers(principal))
+    assert absent.status_code == 404, absent.text
+    assert absent.json()["detail"] == "mapping not found"
+
+
+def test_the_lifecycle_verbs_are_permission_gated(
+    ctx: tuple[TestClient, Principal, Session, str],
+) -> None:
+    """Deny-by-default on all three, and on the re-gated reads."""
+    client, principal, _, source_id = ctx
+    mapping_id = client.post(
+        "/ingest/mappings", json=_propose_body(source_id), headers=_headers(principal)
+    ).json()["id"]
+    stranger = {"X-User-Id": str(uuid.uuid4()), "X-Tenant-Id": principal.tenant_id}
+    assert (
+        client.post(
+            "/ingest/mappings", json=_propose_body(source_id, "x"), headers=stranger
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(f"/ingest/mappings/{mapping_id}/ratify", json={}, headers=stranger).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            f"/ingest/mappings/{mapping_id}/withdraw", json={"reason": "r"}, headers=stranger
+        ).status_code
+        == 403
+    )
+    assert client.get("/ingest/mappings", headers=stranger).status_code == 403

@@ -19,7 +19,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 #: The platform's current migration head. A new migration updates THIS LINE ONLY.
-EXPECTED_MIGRATION_HEAD = "0076_mapping_ratification"  # W19-S3b: ENT-078, four-eyes
+EXPECTED_MIGRATION_HEAD = "0077_bind_position_to_mapping"  # W19-S3b: position binds its mapping
 
 
 def _script() -> ScriptDirectory:

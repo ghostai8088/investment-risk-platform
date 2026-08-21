@@ -80,7 +80,11 @@ UNROUTED_FORWARD_GATES: dict[str, str] = {
 # +3 W19-S3a: GET /ingest/mappings, GET /ingest/mappings/{id}, GET /ingest/mappings/{id}/batches.
 # READS ONLY — the propose/ratify verbs land at S3b with their own minted codes (DS3a-1), so all
 # three sit behind the existing `data.upload` rather than a governed act sharing an upload code.
-EXPECTED_ROUTE_COUNT = 311  # W19-S3a: +3 mapping reads (ENT-077, Rule 7)
+# +3 W19-S3b: POST /ingest/mappings (propose), POST .../ratify, POST .../withdraw. The three S3a
+# READS also MOVED from  onto the new  code — a re-gating, not a
+# count change, so it does not appear in this arithmetic. Re-derived rather than incremented: this
+# comment block had its sum repaired once already at the Wave-18 close.
+EXPECTED_ROUTE_COUNT = 314  # W19-S3b: +3 mapping lifecycle verbs (ENT-078, REQ-INT-001 clause 6)
 
 
 def _api_routes(routes: Any) -> Iterator[APIRoute]:

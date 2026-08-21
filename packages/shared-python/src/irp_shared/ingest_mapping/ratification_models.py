@@ -26,10 +26,15 @@ after it.
 
 **This table OWNS the "at most one RATIFIED mapping per source" invariant** (DS3b-5,
 owner-ratified). ``data_source_id`` and ``source_type`` are denormalized onto the row for one
-reason: so a partial unique index can key on the append-only surface instead of on ENT-077's mutable
-``status``. The slice's headline claim is that approval facts must be unfalsifiable; leaving the
-invariant enforced on the column the table exists to stop trusting would have left that claim
-resting on the thing it just argued against.
+reason: so the question "which mapping is current for this source?" is answered from the
+append-only surface instead of from ENT-077's mutable ``status``. The slice's headline claim is that
+approval facts must be unfalsifiable; leaving the invariant resting on the column the table exists
+to stop trusting would have left that claim resting on the thing it just argued against.
+
+It is enforced STRUCTURALLY — the latest resolution row per source, made unique by ``uq_..._seq`` —
+and **not** by a partial unique index. Two index drafts were written and the database refused both.
+The ``__table_args__`` comment records why, because that is where a reader looking for the missing
+index will go.
 """
 
 from __future__ import annotations
@@ -140,9 +145,10 @@ class IngestionMappingRatification(PrimaryKeyMixin, TenantMixin, ImmutableAppend
         index=True,
     )
 
-    #: Denormalized from the version SO THIS TABLE CAN ENFORCE THE INVARIANT (DS3b-5). Not a
-    #: convenience: without them the partial unique index above cannot exist, and the invariant
-    #: falls back to ENT-077's mutable column.
+    #: Denormalized from the version SO THIS TABLE CAN ANSWER THE INVARIANT'S QUESTION (DS3b-5).
+    #: Not a convenience: `ratified_mapping_for(source)` filters the resolution log on these two
+    #: columns and takes the highest `seq`. Without them that read would have to join back to
+    #: ENT-077 and filter on its mutable `status` — the column this table exists to stop trusting.
     data_source_id: Mapped[str] = mapped_column(GUID, nullable=False)
     source_type: Mapped[str] = mapped_column(String(30), nullable=False)
 
