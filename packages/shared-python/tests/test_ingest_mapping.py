@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from irp_shared.audit.models import AuditEvent
@@ -62,6 +62,7 @@ from irp_shared.ingest_mapping.models import (
     STATUS_SUPERSEDED,
     IngestionMappingVersion,
 )
+from irp_shared.ingest_mapping.ratification_models import IngestionMappingRatification
 from irp_shared.ingest_mapping.service import (
     assert_only_lifecycle_fields_change,
     canonical_operations_hash,
@@ -1475,3 +1476,258 @@ def test_the_DEMONSTRATING_mapping_itself_clears_the_clause_8_floor() -> None:
 
     kinds = declared_operation_kinds(committed_operations())
     assert len(kinds) >= 3, f"the shipped demonstrating mapping declares only {sorted(kinds)}"
+
+
+# --- W19-S3b: four-eyes as an APPEND-ONLY resolution row (ENT-078) ----------------------------
+
+
+def _resolutions(session: Session, tenant: str) -> list[IngestionMappingRatification]:
+    return list(
+        session.execute(
+            select(IngestionMappingRatification)
+            .where(IngestionMappingRatification.tenant_id == tenant)
+            .order_by(IngestionMappingRatification.seq)
+        )
+        .scalars()
+        .all()
+    )
+
+
+def test_ratifying_appends_a_resolution_row_rather_than_only_a_status(session: Session) -> None:
+    """The decision is a ROW. ENT-077's status is a projection of it, never the authority."""
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    version = _ratified(session, tenant, source_id)
+    session.flush()
+
+    rows = _resolutions(session, tenant)
+    assert [r.outcome for r in rows] == ["RATIFIED"]
+    assert rows[0].mapping_version_id == version.id
+    assert rows[0].resolved_by == RATIFIER
+    assert rows[0].seq == 1
+    # the denormalized source, without which the invariant has nothing to key on
+    assert rows[0].data_source_id == source_id
+    assert rows[0].source_type == SOURCE_TYPE_POSITIONS
+
+
+def test_a_resolution_row_cannot_be_edited(session: Session) -> None:
+    """The one property that matters here. A decision that can be edited after the fact is not
+    evidence of a decision — the ENT-075 lesson, applied rather than re-learned."""
+    from irp_shared.audit.models import AppendOnlyViolation
+
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _ratified(session, tenant, source_id)
+    session.flush()
+    row = _resolutions(session, tenant)[0]
+    row.outcome = "WITHDRAWN"
+    with pytest.raises(AppendOnlyViolation):
+        session.flush()
+    session.rollback()
+
+
+def test_the_load_gate_reads_the_RESOLUTION_not_the_status(session: Session) -> None:
+    """The re-pointing, proven the only way that means anything: force ENT-077's status to RATIFIED
+    with NO resolution row behind it, and the load must still refuse.
+
+    Without this the append-only table would be evidence nobody consults — a governance record
+    placed beside the real gate instead of in front of it.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _book(session, tenant)
+    version = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v1",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    session.flush()
+    # the shape a non-ORM UPDATE produces: the projection says RATIFIED, nobody decided anything
+    session.execute(
+        text("UPDATE ingestion_mapping_version SET status = 'RATIFIED' WHERE id = :i"),
+        {"i": version.id},
+    )
+    session.flush()
+    assert not _resolutions(session, tenant)
+
+    batch = _batch(session, tenant, source_id, [_row()])
+    with pytest.raises(UnratifiedMappingError):
+        load_batch(
+            session,
+            batch=batch,
+            acting_tenant=tenant,
+            actor=PositionActor(actor_id="ops"),
+            source_type=SOURCE_TYPE_POSITIONS,
+        )
+
+
+def test_supersession_is_its_own_appended_fact_and_the_latest_row_governs(
+    session: Session,
+) -> None:
+    """The invariant, enforced structurally rather than by an index.
+
+    On an append-only log the incumbent's ratification is still there after it is superseded, so
+    "is there a RATIFIED row" is true forever once it has been true once. The current decision is
+    the LAST one made, and the seq uniqueness makes that unique by construction.
+    """
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    v1 = _ratified(session, tenant, source_id)
+    v2 = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v2",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+        supersedes_id=v1.id,
+    )
+    ratify_mapping_version(
+        session, mapping_version_id=v2.id, acting_tenant=tenant, actor_id=RATIFIER
+    )
+    session.flush()
+
+    rows = _resolutions(session, tenant)
+    assert [r.outcome for r in rows] == ["RATIFIED", "SUPERSEDED", "RATIFIED"]
+    assert [r.seq for r in rows] == [1, 2, 3]
+    # v1's ORIGINAL ratification is still on the log — it happened, and it is not erased
+    assert rows[0].mapping_version_id == v1.id
+    assert rows[1].mapping_version_id == v1.id  # the supersession, as its own fact
+    assert rows[2].mapping_version_id == v2.id
+    # ...and the gate follows the LATEST row
+    current = ratified_mapping_for(
+        session,
+        acting_tenant=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+    )
+    assert current.id == v2.id
+
+
+def test_the_seq_is_monotonic_per_tenant_and_does_not_leak_across_tenants(
+    session: Session,
+) -> None:
+    """A DB-monotonic ordering key, because a wall clock ties and two ratifiers acting in the same
+    millisecond is exactly what this table adjudicates."""
+    tenant_a, tenant_b = _tenant(), _tenant()
+    _ratified(session, tenant_a, _source(session, tenant_a))
+    _ratified(session, tenant_b, _source(session, tenant_b, code="OTHER"))
+    session.flush()
+    assert [r.seq for r in _resolutions(session, tenant_a)] == [1]
+    assert [r.seq for r in _resolutions(session, tenant_b)] == [1]
+
+
+# --- the withdraw verb (DS3b-6) ----------------------------------------------------------------
+
+
+def test_the_proposer_can_withdraw_their_own_proposal(session: Session) -> None:
+    """`STATUS_WITHDRAWN` was declared at S3a with no path producing it — the inert-state class the
+    ENT-075 review struck when it deleted REJECTED. This is the verb that makes it real."""
+    from irp_shared.ingest_mapping.models import STATUS_WITHDRAWN
+    from irp_shared.ingest_mapping.service import withdraw_mapping_version
+
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    version = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v1",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    withdrawn = withdraw_mapping_version(
+        session,
+        mapping_version_id=version.id,
+        acting_tenant=tenant,
+        actor_id=PROPOSER,
+        reason="the custodian re-issued the file with different headers",
+    )
+    session.flush()
+    assert withdrawn.status == STATUS_WITHDRAWN
+    rows = _resolutions(session, tenant)
+    assert [r.outcome for r in rows] == ["WITHDRAWN"]
+    assert rows[0].reason.startswith("the custodian")
+
+
+def test_a_third_party_cannot_withdraw_someone_elses_proposal(session: Session) -> None:
+    """Withdrawal is the PROPOSER's own act. Letting a third party do it would be a rejection verb
+    wearing a withdrawal's name — and this platform deliberately has no rejection verb, because a
+    checker's refusal to ratify is inaction."""
+    from irp_shared.ingest_mapping.errors import NotTheProposerError
+    from irp_shared.ingest_mapping.service import withdraw_mapping_version
+
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    proposer = str(uuid.uuid4())
+    version = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v1",
+        operations=list(DEMO_OPS),
+        actor_id=proposer,
+    )
+    with pytest.raises(NotTheProposerError):
+        withdraw_mapping_version(
+            session,
+            mapping_version_id=version.id,
+            acting_tenant=tenant,
+            actor_id=str(uuid.uuid4()),
+            reason="not mine to withdraw",
+        )
+    # ...and the UPPERCASE spelling of the proposer's OWN id is still the proposer (the S3a vector)
+    ok = withdraw_mapping_version(
+        session,
+        mapping_version_id=version.id,
+        acting_tenant=tenant,
+        actor_id=proposer.upper(),
+        reason="mine, spelled differently",
+    )
+    assert ok.status == "WITHDRAWN"
+
+
+def test_a_withdrawn_version_cannot_load_and_cannot_be_ratified(session: Session) -> None:
+    """The alternate-path half: a gate that fires only in the obvious state is not a control."""
+    from irp_shared.ingest_mapping.service import withdraw_mapping_version
+
+    tenant = _tenant()
+    source_id = _source(session, tenant)
+    _book(session, tenant)
+    version = propose_mapping_version(
+        session,
+        tenant_id=tenant,
+        data_source_id=source_id,
+        source_type=SOURCE_TYPE_POSITIONS,
+        version_label="v1",
+        operations=list(DEMO_OPS),
+        actor_id=PROPOSER,
+    )
+    withdraw_mapping_version(
+        session,
+        mapping_version_id=version.id,
+        acting_tenant=tenant,
+        actor_id=PROPOSER,
+        reason="withdrawn",
+    )
+    session.flush()
+    with pytest.raises(MappingLifecycleError):
+        ratify_mapping_version(
+            session, mapping_version_id=version.id, acting_tenant=tenant, actor_id=RATIFIER
+        )
+    batch = _batch(session, tenant, source_id, [_row()])
+    with pytest.raises(UnratifiedMappingError):
+        load_batch(
+            session,
+            batch=batch,
+            acting_tenant=tenant,
+            actor=PositionActor(actor_id="ops"),
+            source_type=SOURCE_TYPE_POSITIONS,
+        )

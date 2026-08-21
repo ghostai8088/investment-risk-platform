@@ -106,6 +106,9 @@ _NAME_READS: dict[tuple[str, str, str], str] = {
     ("irp_shared.db.types", "load_dialect_impl", "dialect"): E,
     ("irp_shared.db.types", "process_bind_param", "dialect"): E,
     ("irp_shared.entitlement.admin_service", "_lock_tenant", "session.bind.dialect"): E,
+    # W19-S3b: the SAME dialect read, in the mapping lifecycle's own tenant lock — the
+    # admin_service pattern reused rather than re-invented, so it classifies identically.
+    ("irp_shared.ingest_mapping.service", "_lock_tenant", "session.bind.dialect"): E,
     ("irp_shared.entitlement.sync", "sync_catalog", "bind.dialect"): E,
     ("irp_shared.limit.lifecycle", "select_overdue_breaches", "session.get_bind().dialect"): E,
 }
