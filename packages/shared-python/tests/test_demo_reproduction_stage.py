@@ -5,12 +5,18 @@ Carry (m) asked for the demo/deploy half of "the control is startable". Its v1 w
 artifacts that DO: this one (the campaign registers the demo tenant and creates its nightly
 schedule) and the deployed second-tenant arm in `prove_reproduction.sh`.
 
-**Where the seeding lives, and why it moved.** It was first written into `run_demo_campaign`'s
-body. The full-PG battery refused that: a reproduction schedule existing before stage 15 makes
-that stage's tick dispatch TWO schedules where it asserts exactly one, and every downstream count
-pin then came up one COMPLETED run short. Adding a schedule to a shared demo tenant is not a local
-act — it changes what every subsequent tick does. It is now demo stage 24, seeded LAST, which
-leaves every existing stage's meaning untouched.
+**Where the seeding lives, and why it moved — CORRECTED, because the original wording moved two
+things as one and only one of them had a reason.** The SCHEDULE was first written into
+`run_demo_campaign`'s body and the full-PG battery refused it: a reproduction schedule existing
+before stage 15 makes that stage's tick dispatch TWO schedules where it asserts exactly one, and
+every downstream count pin then came up one COMPLETED run short. Adding a schedule to a shared demo
+tenant is not a local act. So the schedule is demo stage 24, seeded LAST.
+
+The TENANT REGISTRATION had no such reason and travelled along anyway. A registry row changes no
+tick and no count — and with it living only here, a demo seeded through the documented entry point
+was unreachable over HTTP entirely. Registration now happens in `run_demo_campaign` via the shared
+`admit_demo_tenant` writer, which this stage also calls; the assertions below are unchanged, because
+the stage must still be runnable on its own.
 
 **What makes this worth a test rather than a line in the campaign.** The schedule alone proves
 nothing: under registry discovery a schedule belonging to an UNREGISTERED tenant is a schedule the

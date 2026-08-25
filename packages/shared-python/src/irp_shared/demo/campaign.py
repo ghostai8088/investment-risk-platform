@@ -353,6 +353,72 @@ def _resolve_permission(session: Session, code: str) -> Permission:
     return perm
 
 
+def admit_demo_tenant(session: Session) -> bool:
+    """Put the demo tenant in the ENT-074 registry. Returns True if this call created the row.
+
+    **THE ONE WRITER.** Idempotent, and called from two places: :func:`run_demo_campaign`, where the
+    demo tenant is born, and the REPRO-2 stage, which needs the same row for a different reason (the
+    supervisor discovers ACTIVE tenants from the registry, so an unregistered tenant is one the
+    engine never visits).
+
+    **Why this moved.** The row used to be written ONLY inside
+    ``_register_and_schedule_reproduction`` — demo stage 24. So a demo seeded through the documented
+    entry point, ``scripts/run_demo_campaign.py``, produced a tenant that **401s on every HTTP
+    request** against a deployed stack: ``get_principal`` calls ``assert_tenant_admitted`` before it
+    arms any tenant context, and an unregistered tenant is refused with the same opaque
+    "invalid credentials" every other resolution failure returns. Admission was a SIDE EFFECT of an
+    unrelated stage, and nothing named the dependency.
+
+    **Why no test caught it.** ``assert_tenant_admitted`` is a **no-op off PostgreSQL** by design
+    (its own docstring says so), and every backend endpoint test runs on SQLite. The check that
+    would have failed never executes at the unit tier.
+
+    **The proof is split, and the split is the point.**
+    ``tests/test_demo_tenant_admission.py`` is the CAUSAL half — a fresh in-memory database per
+    test, so the row it finds can only have been written by the code under test. The ``_pg`` half
+    proves the real gate ACCEPTS the tenant and can still refuse (its negative control), which no
+    SQLite engine can say. Neither half alone is enough: a passing admission check on an engine
+    where the function returns immediately proves nothing, and a row that exists in a shared
+    database proves nothing about who wrote it. *An earlier version of this docstring called the
+    ``_pg`` test "this function's real proof"; that test runs on a fixture which deliberately
+    tolerates an already-seeded tenant, and mutation ``M-DEMO-1`` survived it on a leftover row.*
+
+    **On an ALREADY-SEEDED demo database this call does not repair anything**, and that is worth
+    knowing rather than discovering: ``run_demo_campaign`` refuses with
+    ``DemoCampaignAlreadySeededError`` before reaching here, and the CLI rolls back. A demo seeded
+    by the pre-fix code stays unreachable until it is reset — which is the documented remedy for an
+    already-seeded demo anyway.
+
+    **The guard is on the ID, not the code.** An operator who has separately onboarded some other
+    tenant under the code ``demo`` would hit ``uq_tenant_code`` as a raw IntegrityError here. That
+    is left as-is: the demo tenant's id is uuid5-derived and fixed, so the collision requires
+    deliberately taking its name, and inventing a fallback code would make the demo's identity
+    depend on what else happens to be in the database.
+
+    **And why migration 0067 does not cover it.** That backfill registers any tenant already holding
+    ``app_user`` rows, which helps a database seeded BEFORE the migration ran. A fresh deploy
+    migrates an EMPTY database and seeds afterwards, so the backfill finds nothing and the gap is
+    exactly the case a new demo hits.
+
+    A tenant is admitted when it is created, not when some later stage happens to need it.
+    """
+    from irp_shared.tenancy.models import PROVENANCE_ONBOARDED, TENANT_STATUS_ACTIVE, Tenant
+
+    if session.get(Tenant, DEMO_TENANT_ID) is not None:
+        return False
+    session.add(
+        Tenant(
+            id=DEMO_TENANT_ID,
+            code="demo",
+            display_name="Demo tenant",
+            status=TENANT_STATUS_ACTIVE,
+            provenance=PROVENANCE_ONBOARDED,
+        )
+    )
+    session.flush()
+    return True
+
+
 def _seed_principals(session: Session) -> tuple[str, str]:
     """The tenant-local role wiring (the endpoint-test pattern — the only working one): the 2L
     ``app_user`` NAMED FOR THE USER (the validator of record per OD-MG-1-G) + a 1L registrar for
@@ -1077,19 +1143,10 @@ def _register_and_schedule_reproduction(session: Session, registrar_id: str) -> 
     from irp_shared.scheduling.events import CADENCE_INTERVAL, SchedulingActor
     from irp_shared.scheduling.models import Schedule
     from irp_shared.scheduling.service import create_schedule
-    from irp_shared.tenancy.models import PROVENANCE_ONBOARDED, TENANT_STATUS_ACTIVE, Tenant
 
-    if session.get(Tenant, DEMO_TENANT_ID) is None:
-        session.add(
-            Tenant(
-                id=DEMO_TENANT_ID,
-                code="demo",
-                display_name="Demo tenant",
-                status=TENANT_STATUS_ACTIVE,
-                provenance=PROVENANCE_ONBOARDED,
-            )
-        )
-        session.flush()
+    # ONE writer, shared with `run_demo_campaign`. This stage used to own the only copy, which is
+    # how tenant admission became a side effect of a reproduction-scheduling stage.
+    admit_demo_tenant(session)
 
     existing = session.execute(
         select(Schedule.id).where(
@@ -1127,6 +1184,9 @@ def run_demo_campaign(session: Session) -> CampaignSummary:
         if existing:
             raise DemoCampaignAlreadySeededError(int(existing))
 
+        # ADMIT THE TENANT FIRST. Before this line existed, a demo seeded through the documented
+        # entry point produced a tenant that 401s on every HTTP request against a deployed stack.
+        admit_demo_tenant(session)
         registrar_id, validator_id = _seed_principals(session)
         book = _seed_book(session, registrar_id)
         versions = _register_models(session, registrar_id)
