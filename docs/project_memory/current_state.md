@@ -1,12 +1,74 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-21 — W19-S3b MERGED: four-eyes that cannot be edited into existence) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-08-25 — the demo can be OPENED; W19-S3b before it) — read this block; everything below it is HISTORY
 
-**Main `6dcb4e4` (PR #236, W19-S3b — the 43rd autonomous merge), tree clean. CI green on all nine
-checks at head `328219f`, verified per conclusion, zero non-success. Migration head
-`0077_bind_position_to_mapping`, one head. Next free canonical id **ENT-079** (ENT-078
-`ingestion_mapping_ratification` minted here; all live pointer copies advanced). Next free control
-id CTRL-040. NEXT = WAVE-19 SLICE S1 (PRESENT-1: the presentation contract + the governed chart).**
+**Main `95ac1d7` (PR #238, the demo-tenant admission fix — the 44th autonomous merge), tree clean.
+CI green on all nine checks at head `d196f2c`, verified per conclusion, zero non-success. Migration
+head `0077_bind_position_to_mapping`, one head — UNCHANGED, this fix ships no migration. Next free
+canonical id **ENT-079**. Next free control id CTRL-040. NEXT = WAVE-19 SLICE S1 (PRESENT-1: the
+presentation contract + the governed chart).**
+
+### The demo-tenant fix (2026-08-25, PR #238 = `d196f2c`)
+
+**The demo could not be opened at all.** `run_demo_campaign` seeded a full governed book and never
+put its tenant in the ENT-074 registry; `assert_tenant_admitted` runs BEFORE any tenant context is
+armed, so every HTTP request for the demo tenant returned the same opaque "invalid credentials" a
+bad password gets. The registry row was written only inside demo **stage 24** — admission was a side
+effect of a reproduction-scheduling stage. Found by deploying the stack and trying to open the demo.
+
+Hidden by two things at once: `assert_tenant_admitted` is a documented **no-op off PostgreSQL** and
+every backend endpoint test runs on SQLite, and migration `0067`'s backfill only registers tenants
+already holding `app_user` rows — which covers databases seeded BEFORE it ran, not a fresh deploy
+that migrates an empty database and seeds afterwards.
+
+**Only one of the two halves ever had a reason to live in stage 24.** The SCHEDULE genuinely had to
+move there (it makes stage 15's tick dispatch two schedules where it asserts one). The tenant ROW
+changes no tick and no count, travelled along anyway, and took the demo's front door with it. The
+row is back in the campaign through a shared `admit_demo_tenant` writer; the schedule stays.
+Full-PG at **3,730** is the measurement that says they were separable.
+
+**THE REVIEW WAS HARDER ON THE PROOF THAN ON THE FIX, and was right** (Fable, 23 agents, ZERO
+errors — checked, after the previous session's seven-lane silent failure; 19 raised / 12 confirmed /
+7 refuted):
+
+- **The ordering test could not fire.** It never called `run_demo_campaign` — it called the writer
+  directly and asserted zero `AppUser` rows, both trivially true under ANY ordering, while its
+  docstring claimed it prevented exactly the drift it could not see. FOUR lanes reproduced it. The
+  P9 could-never-fire class, inside the file whose whole purpose is causal proof. Rewritten around a
+  seam and EXECUTED against the drift to prove it fails, then restored to prove it passes.
+- **The first proof passed on RESIDUE** — it lived only in the `_pg` file, whose fixture tolerates an
+  already-seeded tenant, and `M-DEMO-1` survived it on a leftover row. A test asserting a row EXISTS
+  proves nothing about who wrote it.
+- **A mutant for this defect already existed and was GREEN.** `R-D7` was anchored on stage 24's copy,
+  so killing it only ever proved one of two callers worked. **A mutant is scoped to the SITE it
+  mutates, never to the claim in its `why`.** Re-anchored and moved into the battery this fix runs.
+- **`M-DEMO-2` was unkillable for its own stated reason**, and its `why` named a tenant status
+  `TENANT_STATUSES` does not contain.
+- **No mutant covered stage 24's own call site** — the one-of-two-callers blind spot that let the
+  original defect ship, reappearing in its fix. `M-DEMO-3` added.
+
+**Corrected from the session's own earlier report:** the demo personas' "thin" role grants are NOT a
+defect. `_AUDITOR_PERMS` is a deliberately curated eleven-code walk read set and the `/reports` 403
+is by design.
+
+**FLAGGED, NOT FIXED — `R-D5` is NONDETERMINISTIC.** Its mutation `matches = members[:1]` survives
+whenever the cohort's first member happens to be the matching one: measured 12/30 single-test and
+4/8 file runs surviving on identical bytes. That makes the `repro-2b` battery intermittently red,
+which trains re-run-until-green. Pre-existing, belongs to the shrinkage slice; `R-D7` was moved out
+of that group partly to avoid depending on it.
+
+**Gates:** `make check` exit 0 (3,061 passed / 669 skipped) · full-PG from a clean four-part reset
+**3,730 passed, ZERO skips** · anchors 171/171 · demo-tenant battery **4/4 killed** · CI
+nine-for-nine at `d196f2c`. **Acceptance:** stack torn down, redeployed from source, seeded through
+`scripts/run_demo_campaign.py`, and every endpoint the six-step walk fetches returns 200 — with NO
+manual SQL.
+
+**Ledger sweep, proportionate to a defect fix:** L1 canonical data model — no ENT id minted, pointer
+unmoved. L2 audit taxonomy — **nothing minted**, stated rather than left silent; the fix adds no
+event and reuses no reserved code. L3 control matrix — **no control moved**; this is a demo-seeding
+path, and no CTRL row changes status. L5 backbone + RTM — no requirement status changes; the demo
+campaign is not a requirement subject. L6 counts MEASURED above. L7 — the claims in the commit body
+were verified against the merged diff before this stamp, and verify-on-main ran AFTER the merge.
 
 ### The slice in six lines
 
