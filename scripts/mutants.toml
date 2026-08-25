@@ -937,14 +937,22 @@ tests = ["packages/shared-python/tests/test_reproduction_families_private.py"]
 
 [[mutant]]
 id = "R-D7"
-group = "repro-2b"
-why = "the demo campaign stops registering the demo tenant in ENT-074 — the nightly schedule it creates would belong to a tenant the discovering worker never visits, which is the LQ-1 inert-control shape (a control that exists, is believed, and never runs)"
+# MOVED from group "repro-2b" at the demo-tenant fix. Its anchor is now the shared
+# `admit_demo_tenant` writer, so the prescribed proof run for that fix (`--group demo-tenant`) must
+# be the run that exercises it — a review found it was in neither battery anyone would actually
+# execute for this change. Moving it also decouples it from `repro-2b`, whose R-D5 mutant is
+# nondeterministic (measured ~40-50% survival on identical bytes) and would otherwise make this
+# mutant's group intermittently red.
+group = "demo-tenant"
+why = "the ONE writer stops registering the demo tenant in ENT-074 — the nightly schedule it creates would belong to a tenant the discovering worker never visits, the LQ-1 inert-control shape. RE-ANCHORED at the demo-tenant fix, and the re-anchoring is the finding: this mutant was GREEN while the defect it names shipped, because its subject was demo stage 24 rather than the entry point. Stage 24 registered the tenant and `run_demo_campaign` did not, so killing this mutant proved only that ONE of two callers worked. A mutant is scoped to the site it mutates, never to the claim in its `why`."
 file = "packages/shared-python/src/irp_shared/demo/campaign.py"
-find = """    if session.get(Tenant, DEMO_TENANT_ID) is None:
-        session.add("""
-replace = """    if False:
-        session.add("""
-tests = ["packages/shared-python/tests/test_demo_reproduction_stage.py"]
+find = """    if session.get(Tenant, DEMO_TENANT_ID) is not None:
+        return False
+    session.add("""
+replace = """    if True:
+        return False
+    session.add("""
+tests = ["packages/shared-python/tests/test_demo_reproduction_stage.py", "packages/shared-python/tests/test_demo_tenant_admission.py"]
 
 # ---------------------------------------------------------------------------------------------
 # RPT-3: report generation from the UI. The FE carries no mutation battery (the harness is
@@ -2017,3 +2025,37 @@ file = "packages/shared-python/src/irp_shared/ingest_mapping/ratification_models
 find = """            "resolved_by IS NOT NULL AND length(resolved_by) > 0","""
 replace = """            "resolved_by IS NOT NULL","""
 tests = ["packages/shared-python/tests/test_ingest_mapping.py"]
+
+[[mutant]]
+id = "M-DEMO-1"
+group = "demo-tenant"
+why = "the demo campaign stops admitting its tenant to the ENT-074 registry, so a demo seeded through the documented entry point 401s on EVERY HTTP request against a deployed stack — `get_principal` calls `assert_tenant_admitted` before it arms any tenant context. This was the live defect, found by deploying the stack and trying to open the demo; it hid because `assert_tenant_admitted` is a documented no-op off PostgreSQL and every backend endpoint test runs on SQLite. This mutant SURVIVED its first control: that proof lived only in the _pg file, whose fixture tolerates an already-seeded tenant, so it passed on a LEFTOVER row from an earlier run. A test asserting a row EXISTS proves nothing about who wrote it unless the database provably started without one."
+file = "packages/shared-python/src/irp_shared/demo/campaign.py"
+find = """        admit_demo_tenant(session)
+        registrar_id, validator_id = _seed_principals(session)"""
+replace = """        registrar_id, validator_id = _seed_principals(session)"""
+tests = ["packages/shared-python/tests/test_demo_tenant_admission.py"]
+
+[[mutant]]
+id = "M-DEMO-2"
+group = "demo-tenant"
+needs_pg = true
+why = "the admission gate is widened to accept ANY registered tenant regardless of status, so a SUSPENDED tenant keeps reaching the API and the registry records a suspension the boundary ignores. (An earlier `why` here also named DEPROVISIONED — `TENANT_STATUSES` enumerates SYSTEM, ACTIVE and SUSPENDED only, and a mutant whose stated failure cannot occur is prose, not a control.)"
+file = "packages/shared-python/src/irp_shared/tenancy/boundary.py"
+find = """    if status not in ADMITTED_TENANT_STATUSES:
+        raise TenantNotAdmitted(tenant_id, f"status {status}")"""
+replace = """    if False:
+        raise TenantNotAdmitted(tenant_id, f"status {status}")"""
+tests = ["packages/shared-python/tests/test_demo_campaign_pg.py", "packages/shared-python/tests/test_tenancy_pg.py"]  # the demo _pg file gained `test_a_registered_but_SUSPENDED_tenant_is_REFUSED`, which fires the STATUS arm; its other negative control fires only the not-registered arm and could not kill this.
+
+[[mutant]]
+id = "M-DEMO-3"
+group = "demo-tenant"
+why = "demo stage 24 stops admitting the tenant on its own — the campaign still does, so a demo seeded through the entry point looks fine, but the stage is documented as runnable standalone and under registry discovery the supervisor would never visit a tenant it did not register. R-D7 mutates the SHARED writer and so breaks both callers at once; M-DEMO-1 deletes the campaign's call. Neither covers this call site, which a review pointed out is exactly the one-of-two-callers blind spot that let the original defect ship."
+file = "packages/shared-python/src/irp_shared/demo/campaign.py"
+find = """    # ONE writer, shared with `run_demo_campaign`. This stage used to own the only copy, which is
+    # how tenant admission became a side effect of a reproduction-scheduling stage.
+    admit_demo_tenant(session)"""
+replace = """    # ONE writer, shared with `run_demo_campaign`. This stage used to own the only copy, which is
+    # how tenant admission became a side effect of a reproduction-scheduling stage."""
+tests = ["packages/shared-python/tests/test_demo_tenant_admission.py", "packages/shared-python/tests/test_demo_reproduction_stage.py"]

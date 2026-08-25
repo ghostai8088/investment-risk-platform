@@ -1,15 +1,26 @@
 """Demo stage 24 (REPRO-2, OQ-REP2-5) — the demo tenant becomes DISCOVERABLE and gets its sweep.
 
-Runs LAST, and the position is load-bearing rather than tidy. The seeding was first written into
+Runs LAST, and the position is load-bearing rather than tidy — **but only for one of its two
+halves, and conflating them cost the platform a broken demo.**
+
+**The SCHEDULE is what had to move, and it still does.** It was first written into
 `run_demo_campaign`'s body; the full-PG battery refused it, because a reproduction schedule
 existing before stage 15 makes that stage's tick dispatch TWO schedules where it asserts exactly
 one — and every downstream count pin then came up one COMPLETED run short. Adding a schedule to a
 shared demo tenant changes what every subsequent tick does, so it goes last.
 
-What the stage delivers is a PAIR, and either half alone would be a green test over a dead control:
-the tenant is registered ACTIVE in the ENT-074 registry (without it the discovering worker never
-visits, and the schedule is inert), and the schedule is created through the REAL `create_schedule`
-service (a demo that seeds around its own service demonstrates nothing about the service).
+**The TENANT REGISTRATION never needed to move, and moving it with the schedule is what broke the
+demo.** A registry row changes no tick and no count; it only makes the tenant reachable. Because
+both halves travelled together, a demo seeded through the documented entry point had no registry
+row at all, and every HTTP request for it returned 401 at `assert_tenant_admitted`. Registration is
+now back in `run_demo_campaign`, through the shared `admit_demo_tenant` writer this stage also
+calls; the schedule stays here. Full-PG is green with that split, which is the measurement that
+says the two halves really were separable.
+
+What the stage delivers is still a PAIR, and either half alone would be a green test over a dead
+control: the tenant is registered ACTIVE in the ENT-074 registry (without it the discovering worker
+never visits, and the schedule is inert), and the schedule is created through the REAL
+`create_schedule` service (a demo that seeds around its own service demonstrates nothing).
 """
 
 from __future__ import annotations

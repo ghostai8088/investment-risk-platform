@@ -273,3 +273,107 @@ def test_second_run_refuses_not_skips(factory) -> None:  # noqa: ANN001
         session.rollback()
     finally:
         session.close()
+
+
+# --- the demo tenant must be REACHABLE, not merely seeded -----------------------------------------
+
+
+def test_the_real_admission_GATE_accepts_the_demo_tenant(db: Session) -> None:
+    """The demo tenant passes the REAL gate on the engine where that gate actually runs.
+
+    **This test does NOT claim the campaign wrote the row**, and its name used to. The fixture above
+    deliberately tolerates an already-seeded demo tenant, so a row found here may be a leftover from
+    an earlier run — mutation `M-DEMO-1`, which deletes the campaign's admission call outright,
+    SURVIVED the version of this test that claimed causality. Who wrote the row is proven in
+    `test_demo_tenant_admission.py`, on a fresh in-memory database per test. What is proven HERE is
+    the half SQLite cannot reach: that `assert_tenant_admitted` accepts this tenant on PostgreSQL.
+
+    The defect behind all of it:
+
+    `run_demo_campaign` seeded a rich governed book and never put its tenant in the ENT-074
+    registry — that row was written only inside demo stage 24
+    (`_register_and_schedule_reproduction`), so admission was a SIDE EFFECT of a
+    reproduction-scheduling stage nobody running the documented
+    entry point would think to invoke. `get_principal` calls `assert_tenant_admitted` BEFORE it arms
+    any tenant context, so on a deployed stack every request for the demo tenant returned the same
+    opaque "invalid credentials" as a bad password. Found by deploying the stack and trying to open
+    the demo.
+
+    **This assertion is a PostgreSQL one on purpose.** `assert_tenant_admitted` is a documented
+    no-op off PostgreSQL, and every backend endpoint test runs on SQLite — which is exactly why
+    nothing caught this. The negative control below is what stops this test passing for that same
+    reason.
+    """
+    from irp_shared.tenancy.boundary import assert_tenant_admitted
+    from irp_shared.tenancy.models import ADMITTED_TENANT_STATUSES, Tenant
+
+    row = db.get(Tenant, DEMO_TENANT_ID)
+    assert row is not None, (
+        "the demo tenant is not in the ENT-074 registry — every HTTP request for it will 401 at "
+        "the admission check, whatever else the campaign seeded"
+    )
+    assert (
+        row.status in ADMITTED_TENANT_STATUSES
+    ), f"registered but not admitted: status {row.status}"
+    assert row.code == "demo"
+
+    # ...and the real gate agrees, driven rather than re-implemented.
+    assert_tenant_admitted(db, DEMO_TENANT_ID)
+
+
+def test_the_admission_check_actually_FIRES_on_this_engine(db: Session) -> None:
+    """The negative control, and without it the test above is worthless.
+
+    `assert_tenant_admitted` returns immediately on any non-PostgreSQL engine. A passing admission
+    check therefore proves nothing unless something also proves the function is capable of refusing
+    here. An unregistered id must raise.
+    """
+    import uuid as _uuid
+
+    from irp_shared.tenancy.boundary import TenantNotAdmitted, assert_tenant_admitted
+
+    with pytest.raises(TenantNotAdmitted):
+        assert_tenant_admitted(db, str(_uuid.uuid4()))
+
+
+def test_a_registered_but_SUSPENDED_tenant_is_REFUSED(db: Session) -> None:
+    """The gate's OTHER arm, and it had no test at all.
+
+    `assert_tenant_admitted` refuses on two distinct grounds — not registered, and registered with a
+    status outside `ADMITTED_TENANT_STATUSES`. The negative control above fires only the first.
+    Mutation `M-DEMO-2` widens the status branch to `if False`, and every test in this file passed
+    under it: a SUSPENDED tenant would have kept reaching the API while the registry recorded a
+    suspension nobody enforced.
+
+    Written as a raw INSERT of a throwaway tenant, because no service verb produces a suspended row
+    on this path and a test that cannot reach the branch is not testing the branch.
+    """
+    import uuid as _uuid
+
+    from irp_shared.tenancy.boundary import TenantNotAdmitted, assert_tenant_admitted
+    from irp_shared.tenancy.models import TENANT_STATUS_SUSPENDED
+
+    suspended = str(_uuid.uuid4())
+    db.execute(
+        text(
+            "INSERT INTO tenant (id, code, display_name, status, provenance, created_at, "
+            " updated_at) VALUES (CAST(:i AS uuid), :c, 'Suspended', :s, 'ONBOARDED', now(), now())"
+        ),
+        {"i": suspended, "c": f"susp-{suspended[:8]}", "s": TENANT_STATUS_SUSPENDED},
+    )
+    db.flush()
+    try:
+        with pytest.raises(TenantNotAdmitted):
+            assert_tenant_admitted(db, suspended)
+    finally:
+        db.rollback()
+
+
+def test_admitting_the_demo_tenant_is_IDEMPOTENT(db: Session) -> None:
+    """Two callers share the writer — the campaign and demo stage 24 — so a second call must be a
+    no-op rather than a duplicate-key error. The campaign has already run in this fixture, so the
+    first return value here is the second call."""
+    from irp_shared.demo.campaign import admit_demo_tenant
+
+    assert admit_demo_tenant(db) is False
+    assert admit_demo_tenant(db) is False
