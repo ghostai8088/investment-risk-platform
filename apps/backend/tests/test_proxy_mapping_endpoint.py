@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -37,9 +37,21 @@ _VF = datetime(2020, 1, 1, tzinfo=UTC)
 #: The capture endpoint stamps valid_from = now (no backdating exposed), so supersede's effective_at
 #: must be in the FUTURE for a coherent valid window; reconstruct BETWEEN now and _FUTURE sees the
 #: original head, AT _FAR sees the superseded/corrected head.
-_FUTURE = "2027-01-01T00:00:00+00:00"
-_MID = "2026-09-01T00:00:00+00:00"
-_FAR = "2030-01-01T00:00:00+00:00"
+# RELATIVE TO NOW, and that is a bug fix rather than a style choice.
+#
+# These were hard-coded instants: _MID = "2026-09-01". The capture below is created with a
+# now-based `valid_from`, so the test only held while the wall clock was BEHIND _MID. On
+# 2026-09-01 the clock overtook it, the as-of read at _MID found no row valid at that instant,
+# and the endpoint correctly answered 404 — a TIME BOMB that made a correct endpoint look broken.
+# It went red with no commit touching it and stayed red until the next `make check`, which is the
+# worst property a test can have: its greenness depended on the date it was run.
+#
+# Derived from `now()` so the ordering the test actually depends on — capture < _MID < _FUTURE <
+# _FAR — is guaranteed by construction on every future date rather than by luck on some of them.
+_NOW = datetime.now(UTC)
+_MID = (_NOW + timedelta(days=1)).isoformat()
+_FUTURE = (_NOW + timedelta(days=400)).isoformat()
+_FAR = (_NOW + timedelta(days=2000)).isoformat()
 
 
 @pytest.fixture
