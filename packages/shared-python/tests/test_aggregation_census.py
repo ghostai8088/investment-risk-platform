@@ -103,6 +103,10 @@ _ALLOWLIST: dict[tuple[str, str, str], tuple[int, str]] = {
     ("irp_shared.marketdata.benchmark_series", "_current_open", "augassign-add"): (1, P),
     ("irp_shared.marketdata.benchmark_series", "_reconstruct", "augassign-add"): (1, P),
     # --- counters, version bumps, chains, demo/synthetic bookkeeping ---
+    # W19-S1: the chart's count of pinned values it could not plot. A tally of EXCLUDED points, not
+    # a measure — it is disclosed in the fragment so the chart cannot claim a completeness it does
+    # not have, and summing it with anything would be meaningless.
+    ("irp_shared.presentation.chart", "select_series", "augassign-add"): (1, N),
     ("irp_shared.audit.service", "verify_chain", "augassign-add"): (1, N),
     ("irp_shared.demo.bt3_stage7", "run_demo_bt3_stage7", "augassign-add"): (1, N),
     ("irp_shared.demo.campaign", "_assign_tiers", "augassign-add"): (1, N),

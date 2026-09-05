@@ -15,9 +15,11 @@ from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
+from irp_shared.presentation.contracts import PresentationContractError
 from irp_shared.report.families import REPORT_FAMILIES, family_for
 from irp_shared.report.service import (
-    RENDERER_VERSION,
+    RENDERER_VERSION_RPT1,
+    RENDERER_VERSION_RPT2,
     ReportInputError,
     canonical_known_at,
     render_report_html,
@@ -30,12 +32,21 @@ def _section(
     family_key: str = "concentration",
     values: list[tuple[str, str]] | None = None,
     model_code: str | None = None,
+    renderer_version: str = RENDERER_VERSION_RPT1,
+    presentation_contract: dict | None = None,
 ) -> dict:
     """One PINNED section, shaped exactly as ``governed_value_content`` produces it.
 
     ``model_code`` defaults to the family's first registered model. It is a parameter because the
     VaR family registers SEVEN, and a helper that silently picked one would let a test claim
     "every family renders its methodology" while exercising a seventh of the VaR family.
+
+    **``renderer_version`` defaults to RPT-1, and that is deliberate rather than lazy.** This helper
+    used to stamp the LIVE ``RENDERER_VERSION`` constant, so the moment W19-S1 bumped it every test
+    here silently became an rpt-2 test — constructing sections with no presentation contract, which
+    the rpt-2 renderer correctly refuses. Eight tests detonated at once. Defaulting to the OLD
+    version keeps each test's subject stable across future bumps: a test about escaping should not
+    change what it is testing because a renderer shipped. rpt-2 coverage is explicit, below.
     """
     fam = family_for(family_key)
     code = model_code or sorted(fam.registered_methodologies)[0]
@@ -48,11 +59,12 @@ def _section(
         "source_run_id": "11111111-1111-1111-1111-111111111111",
         "source_snapshot_id": "33333333-3333-3333-3333-333333333333",
         "source_known_at": "2026-07-01T12:00:00+00:00",
-        "renderer_version": RENDERER_VERSION,
+        "renderer_version": renderer_version,
         "values": [
             {"metric": m, "value": v}
             for m, v in (values or [("MAX_SHARE:__SUMMARY__", "0.412300")])
         ],
+        **({"presentation_contract": presentation_contract} if presentation_contract else {}),
     }
 
 
@@ -208,3 +220,110 @@ def test_the_KNOWN_AT_string_is_ENGINE_INDEPENDENT() -> None:
     assert canonical_known_at(offset) == canonical_known_at(aware)
     later = datetime(2026, 7, 1, 12, 0, 1, tzinfo=UTC)
     assert canonical_known_at(later) != canonical_known_at(aware), "a different instant collapsed"
+
+
+# --- W19-S1 (PRESENT-1): the contract is pinned, carried forward, and CONSUMED -------------------
+
+
+_CONTRACT_RR = {
+    "mark": "path",
+    "unit": "fraction",
+    "precision": 12,
+    "identity": ("metric_type", "window_months"),
+    "series_selector": {"metric_type": "ROLLING_VOLATILITY", "window_months": 12},
+}
+
+
+def _rr_values() -> list[tuple[str, str]]:
+    """A rolling_risk section shaped like the real one: several series, and a SUPPRESSED row.
+
+    Every seeded rolling_risk run has five suppressed rows, so a fixture without one would test a
+    shape the platform never produces.
+    """
+    return [
+        ("ROLLING_VOLATILITY:12m:2026-01", "0.110000000000"),
+        ("ROLLING_VOLATILITY:12m:2026-02", "0.130000000000"),
+        ("ROLLING_VOLATILITY:12m:2026-03", "0.120000000000"),
+        ("MAX_DRAWDOWN:12m:2026-01", "-0.080000000000"),  # a DIFFERENT series, must be excluded
+        ("ROLLING_VOLATILITY:36m:2026-01", "SUPPRESSED (insufficient history)"),
+    ]
+
+
+def test_an_RPT1_section_renders_BYTE_FOR_BYTE_as_it_always_did() -> None:
+    """The dispatch's whole point: a section pinned by the old renderer is untouched by the new one.
+
+    This is what makes "a regenerated historical report is byte-identical" structural. If the
+    dispatch ever defaults an rpt-1 section into the rpt-2 path, this fails.
+    """
+    section = _section(renderer_version=RENDERER_VERSION_RPT1)
+    body = render_report_html(portfolio_code="P", as_of=_AS_OF, sections=[section]).body
+    assert "governed-chart" not in body
+    assert "class='identity'" not in body
+    assert "<table>" in body  # the rpt-1 shape is still fully rendered
+
+
+def test_an_RPT2_section_CONSUMES_its_pinned_contract() -> None:
+    """Identity fields, unit and precision reach the BYTES. A contract that changed no bytes would
+    be the inert declaration this slice exists to remove."""
+    section = _section(
+        family_key="rolling_risk",
+        values=_rr_values(),
+        renderer_version=RENDERER_VERSION_RPT2,
+        presentation_contract=_CONTRACT_RR,
+    )
+    body = render_report_html(portfolio_code="P", as_of=_AS_OF, sections=[section]).body
+    assert "metric_type, window_months" in body  # identity fields RENDERED, not merely declared
+    assert "fraction" in body and "12 dp" in body
+    assert "governed-chart" in body
+
+
+def test_an_RPT2_section_WITHOUT_a_contract_is_REFUSED() -> None:
+    """P9 — 'a family whose contract no renderer can resolve FAILS', fired. A default here would
+    reintroduce the inert declaration inside its own fix."""
+    section = _section(renderer_version=RENDERER_VERSION_RPT2)  # no contract
+    with pytest.raises(PresentationContractError):
+        render_report_html(portfolio_code="P", as_of=_AS_OF, sections=[section])
+
+
+def test_an_UNKNOWN_renderer_version_is_REFUSED_rather_than_guessed() -> None:
+    """A section pinned by a renderer this build does not have cannot be rendered as something
+    else — its bytes would mean nothing."""
+    section = _section(renderer_version="rpt-99-html-v1")
+    with pytest.raises(PresentationContractError):
+        render_report_html(portfolio_code="P", as_of=_AS_OF, sections=[section])
+
+
+def test_a_CONTRACT_EDIT_moves_NEW_bytes_and_leaves_the_OLD_ONES_ALONE() -> None:
+    """BOTH HALVES, in one test, with the 'before' rendered FIRST.
+
+    This is the clause the whole pinning design exists for. The edit is applied to the PINNED
+    contract of the new section — which is what a contract edit actually does, since the contract is
+    resolved at pin time — while the previously pinned section is re-rendered untouched.
+    """
+    before_section = _section(
+        family_key="rolling_risk",
+        values=_rr_values(),
+        renderer_version=RENDERER_VERSION_RPT2,
+        presentation_contract=_CONTRACT_RR,
+    )
+    before = render_report_html(portfolio_code="P", as_of=_AS_OF, sections=[before_section])
+
+    edited = {**_CONTRACT_RR, "precision": 4}  # the declared precision changes
+    after_section = _section(
+        family_key="rolling_risk",
+        values=_rr_values(),
+        renderer_version=RENDERER_VERSION_RPT2,
+        presentation_contract=edited,
+    )
+    after = render_report_html(portfolio_code="P", as_of=_AS_OF, sections=[after_section])
+
+    assert after.content_hash != before.content_hash, (
+        "a declared precision change did not move a NEW report's bytes — the contract is pinned "
+        "but not consumed"
+    )
+    # ...and the ORIGINAL regenerates byte-identically, because it renders through ITS pin.
+    again = render_report_html(portfolio_code="P", as_of=_AS_OF, sections=[before_section])
+    assert again.content_hash == before.content_hash, (
+        "a report generated before the edit no longer regenerates byte-identically — the render is "
+        "reaching for the live contract instead of the pinned one"
+    )

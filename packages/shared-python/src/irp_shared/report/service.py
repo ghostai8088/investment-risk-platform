@@ -28,6 +28,11 @@ from irp_shared.calc.models import RunStatus
 from irp_shared.calc.runs import resolve_completed_run_of_type
 from irp_shared.calc.service import create_run, update_run_status
 from irp_shared.classification.service import canonical_tenant_id
+from irp_shared.presentation.chart import render_series_chart
+from irp_shared.presentation.contracts import (
+    PresentationContractError,
+    contract_for_family_key,
+)
 from irp_shared.report.families import REPORT_FAMILIES, family_for
 from irp_shared.report.models import (
     RENDER_FORMAT_HTML,
@@ -46,7 +51,18 @@ from irp_shared.snapshot.models import (
 #: changes the bytes, and a report regenerated under a DIFFERENT renderer must not silently claim
 #: byte-identity with one produced by the old one. Stored in the pinned content, so the mismatch is
 #: visible as data rather than inferred from a hash that simply differs.
-RENDERER_VERSION = "rpt-1-html-v1"
+#: The renderer a NEWLY pinned section is rendered by. Bumped at W19-S1.
+#:
+#: **This constant is inside the bytes `verify_snapshot` compares.** `_reresolve_content` re-derives
+#: a GOVERNED_VALUE component by calling `governed_value_content` and the result is hash-compared
+#: against the pin, so stamping a live constant would make every pre-S1 pin redden the moment this
+#: line changed. That is why `governed_value_content` now takes it as a PARAMETER and the re-derive
+#: passes the PINNED value forward. Four different-engine lanes caught the version of this slice's
+#: plan that bumped it without parameterising.
+RENDERER_VERSION_RPT1 = "rpt-1-html-v1"
+RENDERER_VERSION_RPT2 = "rpt-2-html-v1"
+RENDERER_VERSION = RENDERER_VERSION_RPT2
+KNOWN_RENDERER_VERSIONS: frozenset[str] = frozenset({RENDERER_VERSION_RPT1, RENDERER_VERSION_RPT2})
 
 
 class ReportInputError(ValueError):
@@ -103,6 +119,8 @@ def governed_value_content(
     source_snapshot_id: str,
     source_known_at: str,
     values: list[tuple[str, str]],
+    renderer_version: str = RENDERER_VERSION,
+    presentation_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The pinned content for one family section — the values AND their full provenance.
 
@@ -122,7 +140,7 @@ def governed_value_content(
     one. It comes from the PINNED source snapshot, which is IA append-only, so rendering it
     costs nothing in determinism.
     """
-    return {
+    content: dict[str, Any] = {
         "family": family_key,
         "section_title": section_title,
         "model_code": model_code,
@@ -131,9 +149,19 @@ def governed_value_content(
         "source_run_id": str(run_id),
         "source_snapshot_id": str(source_snapshot_id),
         "source_known_at": str(source_known_at),
-        "renderer_version": RENDERER_VERSION,
+        "renderer_version": renderer_version,
         "values": [{"metric": m, "value": v} for m, v in values],
     }
+    # PRESENT-1: the key is OMITTED, not set to None, when there is no contract.
+    #
+    # The `source_known_at` carry-forward analogy is not exact and the difference is load-bearing:
+    # pre-S1 pins contain a `renderer_version` key but contain NO `presentation_contract` key at
+    # all. `serialize_content` canonicalizes over sorted keys, so emitting the key with a null value
+    # would change the serialized bytes of every historical pin and redden it at `verify_snapshot`
+    # — the exact defect this parameterisation exists to avoid, reintroduced one line lower.
+    if presentation_contract is not None:
+        content["presentation_contract"] = presentation_contract
+    return content
 
 
 def build_report_snapshot(
@@ -270,6 +298,11 @@ def build_report_snapshot(
                     source_snapshot_id=str(run.input_snapshot_id),
                     source_known_at=canonical_known_at(source_snapshot.as_of_known_at),
                     values=values,
+                    # PRESENT-1: resolved HERE and PINNED, never looked up at render time. An
+                    # unpinned lookup would make one precision edit re-render every pre-edit report
+                    # to different bytes, and CTRL-018's daily sweep regenerates every report and
+                    # compares its content hash — so every one of them would verdict DIVERGED.
+                    presentation_contract=dict(contract_for_family_key(family.key)),
                 ),
             )
         )
@@ -299,6 +332,34 @@ def _run_type_for(family_key: str) -> str:
     }
     family_for(family_key)  # refuses an unknown key loudly before the lookup below
     return mapping[family_key]
+
+
+def _render_contract_parts(section: dict[str, Any]) -> list[str]:
+    """The rpt-2 additions to a section: the contract's disclosure line and, where the contract
+    declares a series, the governed chart.
+
+    Both come from the section's OWN pinned contract. Resolving the live one here would be the
+    render-time lookup the requirement forbids.
+    """
+    contract = section.get("presentation_contract")
+    if not contract:
+        raise PresentationContractError(
+            f"section for family {section.get('family')!r} is pinned as "
+            f"{RENDERER_VERSION_RPT2} but carries no presentation contract. An rpt-2 section "
+            f"without one cannot be rendered, and defaulting would make the contract decorative."
+        )
+    parts: list[str] = [
+        # Identity fields CONSUMED, not merely declared. "No rendered number is anonymous" is a
+        # property of these bytes; a contract that named identity fields nobody rendered would be
+        # the inert declaration this slice exists to remove.
+        "<p class='identity'>Each value is identified by "
+        + escape(", ".join(str(f) for f in contract.get("identity", ())))
+        + f" · shown in {escape(str(contract.get('unit')))}"
+        + f" to {escape(str(contract.get('precision')))} dp</p>"
+    ]
+    if contract.get("series_selector"):
+        parts.append(render_series_chart(section, contract))
+    return parts
 
 
 def render_report_html(
@@ -338,6 +399,18 @@ def render_report_html(
             f"methodology <code>{escape(str(section['methodology_ref']))}</code>"
             "</p>"
         )
+        # THE DISPATCH. `renderer_version` has been pinned into every section since RPT-1 and
+        # nothing has ever branched on it. Branching is what makes "a regenerated historical report
+        # renders the PINNED contract" structural rather than hopeful: an rpt-1 section renders
+        # byte-for-byte as it always did, because that is what its own pin says it is.
+        pinned_version = str(section.get("renderer_version", RENDERER_VERSION_RPT1))
+        if pinned_version not in KNOWN_RENDERER_VERSIONS:
+            raise PresentationContractError(
+                f"section for family {section.get('family')!r} was pinned by renderer "
+                f"{pinned_version!r}, which this build cannot render. Refusing rather than "
+                f"rendering it as something else — a report that silently renders under the wrong "
+                f"renderer is a report whose bytes mean nothing."
+            )
         parts.append("<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>")
         for item in section["values"]:
             parts.append(
@@ -345,6 +418,8 @@ def render_report_html(
                 f"<td class='mono'>{escape(str(item['value']))}</td></tr>"
             )
         parts.append("</tbody></table>")
+        if pinned_version == RENDERER_VERSION_RPT2:
+            parts.extend(_render_contract_parts(section))
         parts.append("</section>")
     body = "\n".join(parts)
     return RenderedReport(body=body, content_hash=_sha256(body))

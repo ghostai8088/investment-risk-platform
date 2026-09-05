@@ -3893,6 +3893,14 @@ def _reresolve_content(
             # only definition. Re-reading it live would just re-read the same immutable row.
             source_known_at=str(pinned["source_known_at"]),
             values=values,
+            # PRESENT-1: BOTH carried forward from the pin, for the same reason `source_known_at`
+            # is. A renderer version and a presentation contract are properties of the RENDER that
+            # produced this component, not of the family's rows — re-deriving them live would ask a
+            # different question and would redden every historical report the moment either
+            # changed. `presentation_contract` uses `.get`, so a pre-S1 pin (which has no such key)
+            # re-derives WITHOUT the key and its serialized bytes are unchanged.
+            renderer_version=str(pinned["renderer_version"]),
+            presentation_contract=pinned.get("presentation_contract"),
         )
     if comp.component_kind == COMPONENT_KIND_HOLIDAY_CALENDAR:
         # CAL-1b, RE-DERIVE flavored (the CLASSIFICATION precedent): re-read the calendar HEAD by
