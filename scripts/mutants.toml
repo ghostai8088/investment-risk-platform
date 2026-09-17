@@ -2059,3 +2059,87 @@ find = """    # ONE writer, shared with `run_demo_campaign`. This stage used to 
 replace = """    # ONE writer, shared with `run_demo_campaign`. This stage used to own the only copy, which is
     # how tenant admission became a side effect of a reproduction-scheduling stage."""
 tests = ["packages/shared-python/tests/test_demo_tenant_admission.py", "packages/shared-python/tests/test_demo_reproduction_stage.py"]
+
+[[mutant]]
+id = "M-S1-1"
+group = "w19-s1"
+why = "the GOVERNED_VALUE re-derive stops carrying renderer_version forward from the pin and stamps the live constant instead, so EVERY pre-S1 report snapshot reddens at verify_snapshot the moment the renderer version changes — the BLOCKING defect a different-engine pass found in this slice's own plan, which had mandated the bump while fencing only the contract field"
+file = "packages/shared-python/src/irp_shared/snapshot/service.py"
+find = """            renderer_version=str(pinned["renderer_version"]),"""
+replace = """            renderer_version="rpt-2-html-v1","""
+tests = ["packages/shared-python/tests/test_report_identity.py"]
+
+[[mutant]]
+id = "M-S1-2"
+group = "w19-s1"
+why = "governed_value_content emits presentation_contract UNCONDITIONALLY, so a pre-S1 pin — which has no such key — re-derives with an extra null-valued key. serialize_content canonicalizes over sorted keys, so the bytes differ and every historical report snapshot reddens. This is the half the source_known_at carry-forward analogy does NOT cover: carrying the VALUE forward is not enough, key ABSENCE must be reproduced too"
+file = "packages/shared-python/src/irp_shared/report/service.py"
+find = """    if presentation_contract is not None:
+        content["presentation_contract"] = presentation_contract"""
+replace = """    content["presentation_contract"] = presentation_contract"""
+tests = ["packages/shared-python/tests/test_report_identity.py"]
+
+[[mutant]]
+id = "M-S1-3"
+group = "w19-s1"
+why = "the renderer stops branching on the section's pinned renderer_version and renders every section through the rpt-2 path, so a historical rpt-1 section is re-rendered as something it was never pinned as — the seam that had never fired, un-fired"
+file = "packages/shared-python/src/irp_shared/report/service.py"
+find = """        if pinned_version == RENDERER_VERSION_RPT2:
+            parts.extend(_render_contract_parts(section))"""
+replace = """        if pinned_version != "zz-never":
+            parts.extend(_render_contract_parts(section))"""
+tests = ["packages/shared-python/tests/test_report_identity.py"]
+
+[[mutant]]
+id = "M-S1-4"
+group = "w19-s1"
+why = "an rpt-2 section with no pinned contract renders a default instead of refusing, recreating the inert-declaration shape inside the slice built to remove one (REQ-PRS-001: a family whose contract no renderer can resolve FAILS)"
+file = "packages/shared-python/src/irp_shared/report/service.py"
+find = """    contract = section.get("presentation_contract")
+    if not contract:
+        raise PresentationContractError("""
+replace = """    contract = section.get("presentation_contract") or {"mark": "path", "unit": "x", "precision": 2, "identity": ("x",)}
+    if False:
+        raise PresentationContractError("""
+tests = ["packages/shared-python/tests/test_report_identity.py"]
+
+[[mutant]]
+id = "M-S1-5"
+group = "w19-s1"
+why = "the chart's series selector goes back to SUBSTRING matching on the pinned metric key, so `ROLLING_VOLATILITY:36m:2026-12-31` — a December period end in a THIRTY-SIX month window — is matched by the 12-month selector and two series are silently drawn as one line. This was a live defect in the first implementation, found by writing the test against the real key format rather than the fixture"
+file = "packages/shared-python/src/irp_shared/presentation/chart.py"
+find = """        parts = metric.split(":")
+        if len(parts) < 2 or parts[0] != want_metric or parts[1] != want_window:
+            continue"""
+replace = """        if not all(t in metric for t in (want_metric, want_window[:-1])):
+            continue"""
+tests = ["packages/shared-python/tests/test_presentation_chart.py"]
+
+[[mutant]]
+id = "M-S1-6"
+group = "w19-s1"
+why = "the chart stops disclosing how many pinned values it could not plot, so a chart that silently dropped five SUPPRESSED rolling-risk points claims a completeness it does not have"
+file = "packages/shared-python/src/irp_shared/presentation/chart.py"
+find = """        f"data-points='{len(points)}' data-skipped='{skipped}'>\""""
+replace = """        f"data-points='{len(points)}' data-skipped='0'>\""""
+tests = ["packages/shared-python/tests/test_presentation_chart.py"]
+
+[[mutant]]
+id = "M-S1-7"
+group = "w19-s1"
+why = "the presentation census stops reporting families declared in NEITHER the contract set nor the exclusion set, so a new governed family ships with no declared presentation at all and the census passes over it"
+file = "packages/shared-python/tests/test_presentation_census.py"
+find = """    return vocabulary, declared, vocabulary - declared"""
+replace = """    return vocabulary, declared, set()"""
+tests = ["packages/shared-python/tests/test_presentation_census.py"]
+
+[[mutant]]
+id = "M-S1-8"
+group = "w19-s1"
+why = "a zero-range series (every value equal — a quiet month on a real book) divides by zero instead of rendering flat at mid-height"
+file = "packages/shared-python/src/irp_shared/presentation/chart.py"
+find = """        if span == 0:
+            return _PAD + inner_h / 2  # flat series: mid-height, never a division by zero"""
+replace = """        if False:
+            return _PAD + inner_h / 2"""
+tests = ["packages/shared-python/tests/test_presentation_chart.py"]
