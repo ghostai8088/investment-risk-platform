@@ -2,8 +2,9 @@
 
 ## ⚠️ CURRENT TRUTH (2026-09-17 — the SECOND product re-baseline: Wave 19 CLOSED EARLY, Wave 20 = "A CRO CAN USE IT", G5 minted) — read this block; everything below it is HISTORY
 
-**Main: the ratification PR of `product-rebaseline-2026-09-17` (stamp to follow after merge with the
-merged SHA and the per-conclusion CI verdict). Migration head `0077_bind_position_to_mapping`, one
+**Main `c669f14` (PR #241, the second product re-baseline — the 45th autonomous merge), tree
+clean. CI green on all nine checks at head `03f1b37`, verified per conclusion (every check-run
+`completed | success`, zero non-success). Migration head `0077_bind_position_to_mapping`, one
 head — UNCHANGED, this gate ships no migration. Next free canonical id **ENT-079**. Next free control
 id CTRL-040. NEXT = WAVE-20 SLICE 1, BOOK-1a (the public demo tenant), after this PR merges.**
 
@@ -63,7 +64,8 @@ to a declared no-scope (the parked S1 withdrawn) · the seven-ledger sweep below
 CTRL row; CTRL-040 stays next free). 4. This block. 5. Backbone + RTM: no row edited, no
 acceptance text touched, no adjudication lapsed (verified: `make g2-check` exit 0). 6. Counts
 MEASURED on a fresh battery: see `wave_19_close_review.md` §3. 7. Delivery claims verified against
-the branch diff; the merged-SHA stamp lands after the merge.
+the branch diff and, after the merge, on `main` at `c669f14` (close review, gate script, Part
+2.22 and the journey lines all present; `journey-check` and `capability-check` exit 0 on main).
 
 ### Position
 
