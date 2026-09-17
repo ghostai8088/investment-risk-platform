@@ -361,3 +361,25 @@ def test_every_wave_the_roadmap_has_moved_past_has_a_review_TODAY(sandbox: Path)
     text = (sandbox / gate.ROADMAP).read_text()
     assert len(set(gate._ROADMAP_WAVE.findall(text))) >= 10
     assert gate.closed_waves_without_a_review() == []
+
+
+def test_an_UNNUMBERED_part2_header_EXITS_TWO(sandbox: Path) -> None:
+    """A Part-2 header that opens a wave without its number would not raise the highest wave, so
+    the wave before it would owe no review (the 2026-09-17 verifier's LOW)."""
+    roadmap = sandbox / gate.ROADMAP
+    roadmap.write_text(roadmap.read_text() + "\n\n## Part 2.99 — The next wave, unnumbered\n")
+    with pytest.raises(SystemExit) as exc:
+        gate.main()
+    assert exc.value.code == 2
+
+
+def test_a_PROSE_mention_of_the_G4_heading_does_not_hijack_the_section(sandbox: Path) -> None:
+    """The substring-search defect the G5 verifier found; this gate had the identical pattern."""
+    _write_close_review(
+        sandbox,
+        18,
+        f"## Method\n\nThis review carries a `{gate.G4_HEADING}` section below, or else says "
+        f"{gate.G4_NONE_MARK} with a sentence of reason as the gate requires of every close.\n\n"
+        f"{gate.G4_HEADING}\n\n| Capability | Label | Slice |\n|---|---|---|\n| 99.9 | Nope | X |",
+    )
+    assert gate.main() == 1

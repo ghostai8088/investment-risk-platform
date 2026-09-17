@@ -229,10 +229,12 @@ deployed stack, walks each declared line as the named persona, and answers, in t
 **The bookkeeping.** `02_requirements/journey_walk_ledger.jsonl`, one row per walked line:
 `{line, line_hash, persona, walked_by, deployed_head, route, verdict, decision, driving_value,
 reasoning, walked_at}`. WALKABLE requires non-empty `decision` and `driving_value` and reasoning
-of at least 120 characters. `line_hash` is the hash of the journey line's text, computed by the
-script's own parser against the committed blob, so editing the line lapses every walk of it (the
-P20 T2 analogue). `scripts/check_journey_walks.py`, a `make check` member and a CI step of its
-own (as G1 and G2 are: `ci.yml:904, 914`), checks paperwork only:
+of at least 120 characters. `line_hash` is the hash of the journey line's text, computed with the
+script's own `line_hash` (the writer computes it against the COMMITTED blob, never the working
+tree, on the G2 rule; the script hashes the tree it runs in, which in CI is the commit), so
+editing the line lapses every walk of it (the P20 T2 analogue). `scripts/check_journey_walks.py`,
+a `make check` member and a CI step of its own (as G1 and G2 are: `ci.yml:909, 919`), checks
+paperwork only:
 
 - `02_requirements/journey_slice_scope.json` declares, at the slice gate, the journey lines the
   slice makes walkable and the front-end source directories that serve them, or declares none with
@@ -244,9 +246,18 @@ own (as G1 and G2 are: `ci.yml:904, 914`), checks paperwork only:
 - a row is STALE, and the line must be re-walked, when any file under the declared source
   directories changed after `deployed_head`;
 - a wave close review from Wave 20 on carries a `## Journey coverage (G5)` section listing the
-  lines that became walkable, each cited to its ledger row; a wave that made nothing walkable
-  writes NO NEW JOURNEY COVERAGE plus a sentence; a close whose slices declared lines but whose
-  ledger holds no WALKABLE rows for them fails.
+  lines that became walkable; every listed line must have a WALKABLE ledger row on this lineage,
+  or the close fails; a wave that made nothing walkable writes NO NEW JOURNEY COVERAGE plus a
+  sentence. **What the script does not check, said plainly:** a close that OMITS a declared but
+  unwalked line from its table passes, because the scope file is single-slice and overwritten and
+  the gate cannot know what a whole wave declared. The close review's verifier lane checks the
+  table against the roadmap's Journey-lines column for that wave (a P7 clause-b act, bound to
+  the close);
+- every WALKABLE row also carries a decision of at least forty characters, a driving value with a
+  number in it, reasoning that is not filler, the persona the line belongs to, and an ISO date;
+  and every declared source directory sits under the front end and exists at the commit being
+  checked, because a directory that is not there makes the stale rule watch nothing (the
+  ratification-diff verifier's attack, folded).
 
 **What G5 does not do.** It does not judge whether the decision the walker named is a good one.
 That is the walker's job. It never gets cited as a check on product quality, on the P20 precedent.
@@ -414,8 +425,9 @@ unamended.
 `w19-s1-present` holds four commits: the contracts, the dispatch, the chart renderer, proofs, a
 review fold (which fixed a live injection) and the session log. **Park it, unmerged.** The
 presentation contract and the server-side renderer are the right substrate for reports and are
-picked up when S2 enters a wave; by then the route census and the migration head will have moved,
-so resuming is a rebase of a full slice. That is accepted here explicitly (a P7 clause-c
+picked up if and when the Wave-21 planning gate sequences S2 (that gate is the decision moment;
+S2 is a candidate, not a sequenced slice); by then the route census and the migration head will
+have moved, so resuming is a rebase of a full slice. That is accepted here explicitly (a P7 clause-c
 acceptance) rather than left to be discovered. REQ-PRS-001 and REQ-PRS-002 keep their
 adjudications; their acceptance text is not edited by this record.
 
@@ -497,7 +509,7 @@ Nothing else. BOOK-1a starts after the ratification PR merges.
 
 ## Part 7 — Different-engine verification (Fable 5.1, three lanes, 2026-09-17)
 
-Three fresh-context lanes on the first draft (`5ab0dab`), then a fourth lane on the fold (`8fe5578`; its ten findings are folded in this text and listed at the end): A, an adversarial governance read; F, a
+Four fresh-context lanes: three on the first draft (`5ab0dab`), a fourth on the fold (`8fe5578`; its ten findings are folded in this text and listed as Lane G), and a fifth on the RATIFICATION DIFF (`06acc39`; Lane R at the end): A, an adversarial governance read; F, a
 feasibility read of Part 3 and Part 4 against the code; C, a citation-and-count check. Totals:
 **6 BLOCKING, 23 HIGH, 19 MED, 13 LOW, 61 in all.** Every finding is listed; the disposition names where the
 fold landed. Two findings were refuted in part and are kept with the refutation.
@@ -605,6 +617,31 @@ draft's author had the same recon the verifiers had.
 **Verified by the fold lane and not listed:** every other FOLDED disposition lands where it says;
 all forty-one new numbers and locators hold; the cut line, the slice numbering and the journey
 line ids are consistent across 4.2, 4.5, Part 5 and Part 7.
+
+---
+
+### Lane R — the ratification diff (0 BLOCKING, 1 HIGH, 5 MED, 7 LOW; 19 P20 attacks executed against the gate, 7 passed when they should not)
+
+| # | Finding | Disposition |
+|---|---|---|
+| R-H1 | A declared `source_dirs` entry that does not exist (or is blank, or is elsewhere) defeats the STALE rule: `git diff -- <nothing>` exits 0 empty. | FOLDED: refused under the front end only, no `..`, and must exist at the commit being checked (Structural); three controls; mutants M-G5-9, M-G5-10. |
+| R-M1 | `decision: "."`, `driving_value: "n/a"`, filler reasoning pass. | FOLDED: floors (forty characters; a digit; twenty distinct characters); three controls; mutants M-G5-11, M-G5-12. |
+| R-M2 | The G5 heading was found by substring; a prose mention hijacked the check. G4 had the same pattern. | FOLDED in both gates: line-anchored, exactly one; controls in both suites; mutants M-G5-14, M-G4-6. |
+| R-M3 | The record claimed the hash is computed "against the committed blob"; the script reads the working tree. | FOLDED: the claim now says who computes what against what (4.1); the script is unchanged, CI runs on the commit. |
+| R-M4 | 4.1 overstated the close check (omission of a declared line is not detected; no citation is checked). | FOLDED: 4.1 says what the script does and does not do; the omission check is a P7 clause-b act on the close review's verifier lane. |
+| R-M5 | PR #240 stamped with its head SHA in three places; every other stamp is the merge commit. | FOLDED: `f3bfbee` (head `e992861`) in all three. |
+| R-L1 | The G4 roadmap regex would miss an unnumbered Part-2 header. | FOLDED: an unnumbered Part-2 header is a Structural refusal; control; mutant M-G4-7. |
+| R-L2 | `persona`, `walked_at`, `route` unvalidated. | FOLDED: vocabulary, line-prefix agreement, ISO date, leading slash; three controls; mutant M-G5-13 (re-anchored once: the vocabulary check alone was subsumed by the prefix chain). |
+| R-L3 | A bolded id in a G5 table false-failed. | FOLDED: matcher aligned; control. |
+| R-L4 | Close claims bound to `walked_any`, which admitted walks outside the lineage. | FOLDED: the ancestor check precedes `walked_any`; control. |
+| R-L5 | `ci.yml:904, 914` moved to 909, 919 after the `fetch-depth` insert. | FOLDED. |
+| R-L6 | Part 7's heading said three lanes; four were listed. | FOLDED. |
+| R-L7 | Carry 1 (S1) chained to a candidate, not a sequenced host. | FOLDED: the Wave-21 planning gate is named as the decision moment (4.6; close review carry 1). |
+
+Two mutants written for this fold were EQUIVALENT on first run and re-anchored, both recorded in
+`mutants.toml`: M-G5-1 (the floors subsumed the emptiness check) and M-G5-13 (the prefix chain
+subsumed the vocabulary check). A mutant that survives because another line catches the same
+attack is not a survivor; it is a mutant aimed at the wrong site, and the site was moved.
 
 ---
 

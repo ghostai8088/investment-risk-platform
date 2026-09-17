@@ -34,7 +34,9 @@ would recognize."* The record `02_requirements/product_rebaseline_2026-09-17.md`
 ### Verified on a different engine BEFORE ratification
 
 Four Fable 5.1 lanes on the draft and the fold: **71 findings, 6 BLOCKING, all folded** (Part 7 of
-the record). The BLOCKING ones: the VaR drill was false at its own citation (`var_value` is
+the record); a fifth lane on the ratification diff ran 19 P20 attacks against the new gate and 7
+passed when they should not (1 HIGH: a nonexistent source directory silently defeated the stale
+rule) — all 13 findings folded with controls and mutants (Lane R). The BLOCKING ones: the VaR drill was false at its own citation (`var_value` is
 NOT_AGGREGATABLE; no node read exists); "no new governed number" hid LIM-3's migration; the wave
 was closing with no close review (G4 would have gone green over a document that does not exist);
 the first G5 draft had a P20 exploit (describe five tables of strings → WALKABLE); the demo book
@@ -49,8 +51,8 @@ Part 2.22 Wave 20 (BOOK-1a → BOOK-1b → CRO-1 → UTIL-1 → PM-1 → DRILL-1
 only), Part 4 rule 8 (G5), four Part 5 rows incl. the 2026-08-12 row never written · DoD D18
 amended · realism rule gains names/counts/totals · operating instructions P21 section + index ·
 `CLAUDE.md` invariant line · the G5 script, empty ledger, no-scope declaration, Makefile target, CI
-step (docs-check job now `fetch-depth: 0` for the ancestor question), 34 controls, 9 mutants 9/9
-killed (one SURVIVED its first run and its control was extended) · the G4 gate gains a control
+step (docs-check job now `fetch-depth: 0` for the ancestor question), 48 controls, 17 mutants 17/17
+killed (three were equivalent on first run and re-anchored to the load-bearing site) · the G4 gate gains a control
 refusing a wave closed with no close review, proven to fire on the real tree · `g2_slice_scope.json`
 to a declared no-scope (the parked S1 withdrawn) · the seven-ledger sweep below.
 

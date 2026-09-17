@@ -26,7 +26,7 @@ All nine decision points of `product_rebaseline_2026-09-17.md` Part 5 ratified a
 | **S3a — INGEST-1 spine** | PR #234 = `7682a1c` (2026-08-21; stamp #235) | ENT-077 `ingestion_mapping_version` (migration `0075`); the anti-corruption upload path; propose and ratify verbs; the P9 mechanical limb (every refusal subclass proven to fire, from `__subclasses__()`). Six defects found by execution, none by reading. |
 | **S3b — INGEST-1 governance** | PR #236 = `6dcb4e4` (2026-08-21; stamp #237) | ENT-078 `ingestion_mapping_ratification` (migration `0076`, an append-only four-eyes row); the R-07 mint of `ingest.mapping.propose` / `.ratify` / `.view`; migration `0077` binds `position` to its mapping; REQ-INT-001 DELIVERED; REQ-PPM-002's census clause delivered. Two BLOCKING found by the review (a withdrawal that shadowed a live ratification; a quoted exit code from an unreproducible state). |
 | **Demo-tenant admission fix** | PR #238 = `95ac1d7` (2026-08-25; stamp #239) | The campaign never admitted its tenant to the ENT-074 registry, so every HTTP request 401'd; hidden because the admission check no-ops off PostgreSQL. Found by trying to open the demo. |
-| **S1 — PRESENT-1 planning gate** | PR #240 = `e992861` (2026-09-05) | Ratified after two different-engine passes and one retraction; plus a time-bomb test fix (a hard-coded as-of instant the wall clock overtook on 2026-09-01). |
+| **S1 — PRESENT-1 planning gate** | PR #240 = `f3bfbee` (head `e992861`) (2026-09-05) | Ratified after two different-engine passes and one retraction; plus a time-bomb test fix (a hard-coded as-of instant the wall clock overtook on 2026-09-01). |
 | **S1 — PRESENT-1 build** | branch `w19-s1-present`, four commits to `81d3247`, **PARKED UNMERGED** | Presentation contracts with an exact-set census, renderer-version dispatch, a byte-identical server-side SVG chart inside report HTML; 13/13 mutants; full-PG 3,758; review 39 raised / 38 confirmed / 2 BLOCKING, one folded and one (Outcome 4, the run-detail chart surface) left outstanding and now dropped. |
 
 S2 (RPT-W19) and S5 (SHOW-1) did not start. Both have hosts (section 4).
@@ -55,16 +55,16 @@ delivered substance against them.
 
 ## 3. Counts and gates at the close (MEASURED, exit codes captured without pipes)
 
-- `make check` = 0 — **3,097** unit-tier tests passed, 669 skipped (the PG-only tier); that
-  includes the **34** new G5 controls and the two new G4 controls (`CHECK_EXIT=0`, captured
+- `make check` = 0 — **3,113** unit-tier tests passed, 669 skipped (the PG-only tier); that
+  includes the **48** G5 controls and the **four** new G4 controls (`CHECK_EXIT=0`, captured
   without a pipe).
 - Full-PG battery on a fresh four-part reset at this close: **exit 0, 3,730 passed, zero skips**
   (`PYTEST_EXIT=0`, measured on the main tree `f3bfbee` before the gate script landed; the gate
   controls are SQLite-tier and counted above).
 - fe-check: unchanged from the S1 branch's measurement, 39 files / 284 tests; this close touches no
   front-end file.
-- Mutation battery: **180 anchors, 180/180 match**; the new `rebaseline-2026-09-17` group **9/9
-  killed** (one mutant, M-G5-7, SURVIVED its first run because the roster check masked the MODEL
+- Mutation battery: **188 anchors, 188/188 match**; the new `rebaseline-2026-09-17` group **17/17
+  killed** (nine at the ratification commit, eight more folded from the ratification-diff verifier) (one mutant, M-G5-7, SURVIVED its first run because the roster check masked the MODEL
   check; the control was extended to a model ON the roster and to an out-of-scope row, and the
   mutant then died).
 - Route census: **315** operations, 178 GET (unchanged; this close ships no route).
@@ -78,9 +78,10 @@ delivered substance against them.
 
 ## 4. Carries out of Wave 19 (P19 — each names a host or trigger, or is a DECISION)
 
-1. **S1 (PRESENT-1 build)** — parked on `w19-s1-present`. Host: it is resumed when S2 enters a wave
-   sequence; resumption is a rebase of a full slice (route census and migration head will have
-   moved), accepted explicitly at the re-baseline (Part 4.6, a P7 clause-c acceptance).
+1. **S1 (PRESENT-1 build)** — parked on `w19-s1-present`. Host: the **Wave-21 planning gate**,
+   which decides whether S2 is sequenced and with it whether S1 resumes; resumption is a rebase of
+   a full slice (route census and migration head will have moved), accepted explicitly at the
+   re-baseline (Part 4.6, a P7 clause-c acceptance).
 2. **S2 (RPT-W19, the report definition entity)** — host: the **Wave-21 candidate list** (a
    sequenced host; the earlier "trigger" was a judgement and P19 says a judgement is a decision).
 3. **ING-2 (external market data)** — host: the **Wave-21 candidate list** (was DP-19-9's Wave-20

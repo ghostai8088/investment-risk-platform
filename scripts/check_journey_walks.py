@@ -75,9 +75,24 @@ _ANY_LINE_ROW = re.compile(r"^\|\s*\**J-[A-Z]{2,4}-\d")
 _EMPHASIS = re.compile(r"[*_`]")
 _WAVE_NUM = re.compile(r"wave_(\d+)_close_review\.md$")
 _HEX = re.compile(r"^[0-9a-f]{7,40}$")
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+#: The persona vocabulary of personas_and_user_journeys.md section 2. A J-CRO line walked "as" the
+#: PM is not a walk of that line.
+PERSONAS = frozenset(
+    {"P-CRO", "P-RM", "P-RA", "P-PM", "P-MV", "P-DS", "P-CO", "P-IA", "P-ADM", "P-BRD", "P-OPS"}
+)
+#: Every declared source directory must sit under the front end: the STALE rule watches the
+#: screen, and a directory elsewhere (or nowhere) is a way to declare a watch that sees nothing.
+SOURCE_DIR_PREFIX = "apps/frontend/"
 
 VERDICTS = frozenset({"WALKABLE", "NOT WALKABLE"})
 MIN_REASONING = 120
+#: Floors that a "." cannot pass. Paperwork, still: they prove a sentence was written, not that
+#: it was a good one. The verifier's attack A1 (decision ".", driving_value "n/a", reasoning a
+#: repeated character) passed the first version; these are its residue.
+MIN_DECISION = 40
+MIN_REASONING_DISTINCT_CHARS = 20
+_HAS_DIGIT = re.compile(r"\d")
 MIN_NO_SCOPE_REASON = 60
 #: A floor on the parsed journey lines, not merely "more than zero". Twelve exist at birth.
 MIN_JOURNEY_LINES = 10
@@ -89,7 +104,10 @@ G5_MIN_NONE_REASON = 60
 #: Eighteen close reviews existed when this gate was written and nineteen when it shipped. A
 #: discovery glob that finds fewer has gone blind, and a blind glob reports green.
 G5_MIN_CLOSE_REVIEWS = 18
-_G5_TABLE_LINE = re.compile(r"^\|\s*(J-[A-Z]{2,4}-\d{1,2})\s*\|", re.M)
+_G5_TABLE_LINE = re.compile(r"^\|\s*\**(J-[A-Z]{2,4}-\d{1,2})\**\s*\|", re.M)
+#: The G5 section heading, LINE-ANCHORED. A substring search took a prose mention of the heading
+#: earlier in the file as the section (verifier attack A7c) and read the remainder as its body.
+_G5_HEADING_LINE = re.compile(r"^#{2,3} Journey coverage \(G5\)\s*$", re.M)
 
 
 class Structural(Exception):
@@ -183,21 +201,42 @@ def validate_entries(entries: list[dict], roster: set[str], lines: dict[str, str
             errors.append(f"{tag}: verdict {verdict!r} is not one of {sorted(VERDICTS)}")
         if not _HEX.match(str(e.get("deployed_head", ""))):
             errors.append(f"{tag}: deployed_head is not a commit hash")
-        if len(str(e.get("reasoning", ""))) < MIN_REASONING:
+        reasoning = str(e.get("reasoning", ""))
+        if len(reasoning) < MIN_REASONING:
             errors.append(
                 f"{tag}: reasoning is under {MIN_REASONING} characters. 'Looks fine' is not a walk"
             )
+        elif len(set(reasoning)) < MIN_REASONING_DISTINCT_CHARS:
+            errors.append(f"{tag}: reasoning is {len(reasoning)} characters of filler")
         if verdict == "WALKABLE":
-            if (
-                not str(e.get("decision", "")).strip()
-                or not str(e.get("driving_value", "")).strip()
-            ):
+            decision = str(e.get("decision", "")).strip()
+            driving = str(e.get("driving_value", "")).strip()
+            if not decision or not driving:
                 errors.append(
                     f"{tag}: WALKABLE with no decision or no driving_value. Describing a screen is "
                     f"not using it; the walker names the decision the persona would take and the "
                     f"value that drove it, or the line is NOT WALKABLE"
                 )
-        if not str(e.get("route", "")).strip():
+            else:
+                if len(decision) < MIN_DECISION:
+                    errors.append(
+                        f"{tag}: decision is {len(decision)} characters (minimum {MIN_DECISION}). "
+                        f"A decision is a sentence, not a mark"
+                    )
+                if not _HAS_DIGIT.search(driving):
+                    errors.append(
+                        f"{tag}: driving_value {driving!r} carries no number. The value that drove "
+                        f"a risk decision is a number on the screen"
+                    )
+        if e.get("persona") not in PERSONAS:
+            errors.append(f"{tag}: persona {e.get('persona')!r} is not one of {sorted(PERSONAS)}")
+        elif line[:5] == "J-CRO" and e.get("persona") not in {"P-CRO", "P-RM"}:
+            errors.append(f"{tag}: a J-CRO line walked as {e.get('persona')} is not a walk of it")
+        elif line[:4] == "J-PM" and e.get("persona") != "P-PM":
+            errors.append(f"{tag}: a J-PM line walked as {e.get('persona')} is not a walk of it")
+        if not _ISO_DATE.match(str(e.get("walked_at", ""))):
+            errors.append(f"{tag}: walked_at is not an ISO date")
+        if not str(e.get("route", "")).strip().startswith("/"):
             errors.append(f"{tag}: no route recorded")
     return errors
 
@@ -213,12 +252,19 @@ def check_scope_declaration(scope_doc: dict) -> None:
             f"refuses; "
             f"a slice with genuinely no journey line declares no slice and writes the reason."
         )
-    if slice_id and not [d for d in scope_doc.get("source_dirs", []) if d]:
+    dirs = [str(d).strip() for d in scope_doc.get("source_dirs", []) if str(d).strip()]
+    if slice_id and not dirs:
         raise Structural(
             f"slice {slice_id!r} declares journey lines and no source_dirs — the STALE rule would "
             f"have nothing to watch, so a post-walk rewrite of the screen would merge on the "
             f"old walk."
         )
+    for d in dirs:
+        if not d.startswith(SOURCE_DIR_PREFIX) or ".." in d.split("/"):
+            raise Structural(
+                f"source_dirs entry {d!r} is not under {SOURCE_DIR_PREFIX}. The STALE rule watches "
+                f"the screen; a directory anywhere else is a watch that sees nothing."
+            )
     reason = str(scope_doc.get("no_scope_reason", "")).strip()
     if not slice_id and len(reason) < MIN_NO_SCOPE_REASON:
         raise Structural(
@@ -254,6 +300,22 @@ def is_ancestor(deployed_head: str, head: str) -> bool:
 
 
 def changed_under(deployed_head: str, head: str, source_dirs: list[str]) -> list[str]:
+    """Files under the declared directories that moved after the walked build.
+
+    **A directory that does not exist at HEAD is a refusal, not an empty diff.** ``git diff --
+    <path matching nothing>`` exits 0 with no output, so a scope file naming a directory that is
+    not there (a typo, or the laziest edit a builder can make) would report the screen unchanged
+    while it was rewritten — the verifier's attack A4. The check is made HERE and not at
+    declaration time because the directories are declared at the planning gate, before the screen
+    exists; they must exist by the time a walk is being credited.
+    """
+    for d in source_dirs:
+        probe = _git("ls-tree", "-d", head, "--", d.rstrip("/"))
+        if probe.returncode != 0 or not probe.stdout.strip():
+            raise Structural(
+                f"declared source directory {d!r} does not exist at {head[:12]} — the STALE rule "
+                f"would be watching nothing"
+            )
     r = _git("diff", "--name-only", deployed_head, head, "--", *source_dirs)
     if r.returncode != 0:
         raise Structural(f"git diff {deployed_head[:12]}..{head[:12]} failed: {r.stderr.strip()}")
@@ -277,24 +339,34 @@ def close_reviews() -> list[tuple[int, Path]]:
 def g5_close_errors(walked_ok: set[str], lines: dict[str, str]) -> list[str]:
     """From Wave 20 on, a close review's journey-coverage section is a required output.
 
-    A listed line must exist and must have at least one WALKABLE ledger row by a roster member. The
-    ledger is append-only, so this is monotone: a line once walked stays walked in the close that
-    claimed it, and a later edit of the line lapses the SLICE gate (which asks for the current
-    hash), not the historical close (which recorded an act that happened).
+    A listed line must exist and must have at least one WALKABLE ledger row by a roster member on
+    a build in this commit's lineage. The ledger is append-only, so this is monotone: a line once
+    walked stays walked in the close that claimed it, and a later edit of the line lapses the
+    SLICE gate (which asks for the current hash), not the historical close (which recorded an act
+    that happened).
+
+    **What this does NOT check, stated so nobody cites it as if it did:** a close that OMITS a
+    declared-but-unwalked line from its table passes. The scope file is single-slice and
+    overwritten, so the gate cannot know what a whole wave's slices declared. The wave close's
+    verifier lane checks the table against the roadmap's Journey-lines column for that wave; this
+    is a P7 clause-b act bound to the close review, recorded here rather than left implied.
     """
     errors: list[str] = []
     for wave, path in close_reviews():
         if wave < G5_FROM_WAVE:
             continue
         text = path.read_text(encoding="utf-8")
-        if G5_HEADING not in text:
+        heads = list(_G5_HEADING_LINE.finditer(text))
+        if not heads:
             errors.append(
                 f"{path.name} closes wave {wave} and has no '{G5_HEADING}' section. Which journey "
                 f"lines a wave made walkable is a required OUTPUT of its close, not a good "
                 f"intention."
             )
             continue
-        body = text.split(G5_HEADING, 1)[1]
+        if len(heads) > 1:
+            raise Structural(f"{path.name} has {len(heads)} '{G5_HEADING}' headings")
+        body = text[heads[0].end() :]
         body = re.split(r"^## ", body, maxsplit=1, flags=re.M)[0]
         listed = _G5_TABLE_LINE.findall(body)
         if not listed:
@@ -346,11 +418,13 @@ def main() -> int:
                 continue
             if str(e.get("walked_by", "")).startswith("MODEL:") or e.get("walked_by") not in roster:
                 continue
-            walked_any.add(line)
-            if e.get("line_hash") != lines[line]:
-                continue
             dh = str(e.get("deployed_head", ""))
             if not _HEX.match(dh) or not is_ancestor(dh, head):
+                # A walk on a build outside this lineage is a walk of a different product; it
+                # counts for nothing here, not even for a close review's claim.
+                continue
+            walked_any.add(line)
+            if e.get("line_hash") != lines[line]:
                 continue
             if line in scope and changed_under(dh, head, source_dirs):
                 continue

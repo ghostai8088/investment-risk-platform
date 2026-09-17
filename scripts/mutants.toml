@@ -2068,13 +2068,12 @@ tests = ["packages/shared-python/tests/test_demo_tenant_admission.py", "packages
 [[mutant]]
 id = "M-G5-1"
 group = "rebaseline-2026-09-17"
-why = "the WALKABLE-needs-a-decision check is removed — the exploit the different engine found returns: a description of five tables of strings is accepted as a walk"
+why = "the WALKABLE-needs-a-decision check is removed — the exploit the different engine found returns: a description of five tables of strings is accepted as a walk. (Re-anchored twice: after the floors landed, removing only the emptiness test left the floors to catch the same rows, an equivalent mutant; the anchor is now the whole WALKABLE block.)"
 file = "scripts/check_journey_walks.py"
-find = """            if (
-                not str(e.get("decision", "")).strip()
-                or not str(e.get("driving_value", "")).strip()
-            ):"""
-replace = """            if False:"""
+find = """        if verdict == "WALKABLE":
+            decision = str(e.get("decision", "")).strip()"""
+replace = """        if False:
+            decision = str(e.get("decision", "")).strip()"""
 tests = ["apps/backend/tests/test_journey_walks.py"]
 
 [[mutant]]
@@ -2103,6 +2102,8 @@ group = "rebaseline-2026-09-17"
 why = "the ancestor check is unplugged — a walk on some other branch's build accepts this commit"
 file = "scripts/check_journey_walks.py"
 find = """            if not _HEX.match(dh) or not is_ancestor(dh, head):
+                # A walk on a build outside this lineage is a walk of a different product; it
+                # counts for nothing here, not even for a close review's claim.
                 continue"""
 replace = """            pass"""
 tests = ["apps/backend/tests/test_journey_walks.py"]
@@ -2161,4 +2162,78 @@ find = """    for w in closed_waves_without_a_review():
         errors.append("""
 replace = """    for w in []:
         errors.append("""
+tests = ["apps/backend/tests/test_capability_coverage.py"]
+
+# The ratification-diff verifier's attacks (Fable, 2026-09-17), each folded with a control and a mutant.
+
+[[mutant]]
+id = "M-G5-9"
+group = "rebaseline-2026-09-17"
+why = "a declared source directory that does not exist at HEAD is treated as an empty diff — the STALE rule watches nothing and a rewritten screen merges on the old walk (verifier attack A4)"
+file = "scripts/check_journey_walks.py"
+find = """        if probe.returncode != 0 or not probe.stdout.strip():"""
+replace = """        if False:"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-10"
+group = "rebaseline-2026-09-17"
+why = "a source directory outside the front end (or climbing out of it) is accepted — a watch that sees nothing"
+file = "scripts/check_journey_walks.py"
+find = """        if not d.startswith(SOURCE_DIR_PREFIX) or ".." in d.split("/"):"""
+replace = """        if False:"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-11"
+group = "rebaseline-2026-09-17"
+why = "a one-character decision passes — '.' is accepted as the decision a CRO would take (verifier attack A1)"
+file = "scripts/check_journey_walks.py"
+find = """                if len(decision) < MIN_DECISION:"""
+replace = """                if False:"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-12"
+group = "rebaseline-2026-09-17"
+why = "a driving value with no number passes — 'n/a' is accepted as the value that drove a risk decision"
+file = "scripts/check_journey_walks.py"
+find = """                if not _HAS_DIGIT.search(driving):"""
+replace = """                if False:"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-13"
+group = "rebaseline-2026-09-17"
+why = "the persona is unvalidated — a J-CRO line walked as the PM counts as a walk of it (verifier attack A9). (First anchored on the vocabulary check, which SURVIVED: the line-prefix chain below it caught both attacks on its own; re-anchored to the chain.)"
+file = "scripts/check_journey_walks.py"
+find = """        elif line[:5] == "J-CRO" and e.get("persona") not in {"P-CRO", "P-RM"}:"""
+replace = """        elif False:"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-14"
+group = "rebaseline-2026-09-17"
+why = "the G5 section is found by substring again — a prose mention of the heading hijacks the check and an unwalked line in the real table passes (verifier attack A7c)"
+file = "scripts/check_journey_walks.py"
+find = """        heads = list(_G5_HEADING_LINE.finditer(text))"""
+replace = """        heads = list(re.finditer(re.escape(G5_HEADING), text))[:1]"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G4-6"
+group = "rebaseline-2026-09-17"
+why = "the G4 section is found by substring again — the same hijack, inherited by the gate G5 was copied from"
+file = "scripts/check_capability_coverage.py"
+find = """        heads = list(_G4_HEADING_LINE.finditer(text))"""
+replace = """        heads = list(re.finditer(re.escape(G4_HEADING), text))[:1]"""
+tests = ["apps/backend/tests/test_capability_coverage.py"]
+
+[[mutant]]
+id = "M-G4-7"
+group = "rebaseline-2026-09-17"
+why = "an unnumbered Part-2 roadmap header is silently skipped — a wave opened without its number leaves the wave before it owing no close review"
+file = "scripts/check_capability_coverage.py"
+find = """    if len(_ROADMAP_PART2.findall(text)) != len(_ROADMAP_WAVE.findall(text)):"""
+replace = """    if False:"""
 tests = ["apps/backend/tests/test_capability_coverage.py"]

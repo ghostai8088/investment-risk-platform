@@ -243,6 +243,7 @@ def test_a_MODEL_on_the_roster_STILL_FAILS(sandbox: Path) -> None:
             line="J-PM-3",
             line_hash=_hash_of(sandbox, "J-PM-3"),
             walked_by="MODEL:claude-opus-5",
+            persona="P-PM",
         ),
     )
     assert gate.main() == 1
@@ -297,7 +298,9 @@ def test_a_scoped_line_that_is_NOT_a_journey_line_FAILS(sandbox: Path) -> None:
 
 def test_a_line_OUTSIDE_the_scope_is_never_blocking(sandbox: Path) -> None:
     _write_scope(sandbox, slice=None, journey_lines=[], source_dirs=[])
-    _write_ledger(sandbox, _row(sandbox, line="J-PM-3", line_hash=_hash_of(sandbox, "J-PM-3")))
+    _write_ledger(
+        sandbox, _row(sandbox, line="J-PM-3", line_hash=_hash_of(sandbox, "J-PM-3"), persona="P-PM")
+    )
     assert gate.main() == 0
 
 
@@ -409,3 +412,116 @@ def test_HISTORICAL_close_reviews_are_NOT_retro_fitted(sandbox: Path) -> None:
         if wave < gate.G5_FROM_WAVE:
             assert gate.G5_HEADING not in path.read_text()
     assert gate.main() == 0
+
+
+# --- the ratification-diff verifier's attacks (Fable, 2026-09-17), each now a control ------------
+
+
+def test_a_source_dir_that_does_NOT_EXIST_at_HEAD_EXITS_TWO(sandbox: Path) -> None:
+    """Attack A4: `git diff -- <nothing>` exits 0 with no output, so a typo'd or invented directory
+    made the STALE rule report the screen unchanged while it was rewritten."""
+    _write_scope(
+        sandbox, slice="CRO-1", journey_lines=[_SUBJECT], source_dirs=["apps/frontend/src/nope"]
+    )
+    _write_ledger(sandbox, _row(sandbox))
+    (sandbox / _SOURCE_DIR / "FundOverview.tsx").write_text("export const v = 3;\n")
+    _commit(sandbox, "rewrote the screen; the scope watches a directory that is not there")
+    assert gate.main() == 2
+
+
+def test_a_BLANK_source_dir_is_not_a_declaration(sandbox: Path) -> None:
+    """Attack A4b: `" "` is truthy."""
+    _write_scope(sandbox, slice="CRO-1", journey_lines=[_SUBJECT], source_dirs=[" "])
+    assert gate.main() == 2
+
+
+def test_a_source_dir_OUTSIDE_the_front_end_EXITS_TWO(sandbox: Path) -> None:
+    _write_scope(sandbox, slice="CRO-1", journey_lines=[_SUBJECT], source_dirs=["docs"])
+    assert gate.main() == 2
+
+
+def test_a_source_dir_that_climbs_out_EXITS_TWO(sandbox: Path) -> None:
+    _write_scope(
+        sandbox, slice="CRO-1", journey_lines=[_SUBJECT], source_dirs=["apps/frontend/../../docs"]
+    )
+    assert gate.main() == 2
+
+
+def test_a_ONE_CHARACTER_decision_FAILS(sandbox: Path) -> None:
+    """Attack A1: decision '.', driving_value 'n/a', reasoning one repeated character."""
+    _declare(sandbox, _SUBJECT)
+    _write_ledger(sandbox, _row(sandbox, decision="."))
+    assert gate.main() == 1
+
+
+def test_a_driving_value_with_NO_NUMBER_FAILS(sandbox: Path) -> None:
+    _declare(sandbox, _SUBJECT)
+    _write_ledger(sandbox, _row(sandbox, driving_value="n/a"))
+    assert gate.main() == 1
+
+
+def test_FILLER_reasoning_FAILS(sandbox: Path) -> None:
+    _declare(sandbox, _SUBJECT)
+    _write_ledger(sandbox, _row(sandbox, reasoning="." * 140))
+    assert gate.main() == 1
+
+
+def test_a_J_CRO_line_walked_AS_THE_PM_FAILS(sandbox: Path) -> None:
+    """Attack A9: the persona was unvalidated."""
+    _declare(sandbox, _SUBJECT)
+    _write_ledger(sandbox, _row(sandbox, persona="P-PM"))
+    assert gate.main() == 1
+
+
+def test_an_UNKNOWN_persona_FAILS(sandbox: Path) -> None:
+    _declare(sandbox, _SUBJECT)
+    _write_ledger(sandbox, _row(sandbox, persona="P-XYZ"))
+    assert gate.main() == 1
+
+
+def test_a_missing_walked_at_FAILS(sandbox: Path) -> None:
+    _declare(sandbox, _SUBJECT)
+    _write_ledger(sandbox, _row(sandbox, walked_at=""))
+    assert gate.main() == 1
+
+
+def test_a_PROSE_mention_of_the_G5_heading_does_not_hijack_the_section(sandbox: Path) -> None:
+    """Attack A7c: the first version located the section by substring, so a method paragraph
+    quoting the heading, followed by the real section listing an UNWALKED line, passed."""
+    _write_close(
+        sandbox,
+        20,
+        f"## Method\n\nThis close carries a `{gate.G5_HEADING}` section below, or else says "
+        f"{gate.G5_NONE_MARK} with a reason of at least sixty characters as the gate requires.\n\n"
+        f"{gate.G5_HEADING}\n\n| Line | Slice |\n|---|---|\n| {_SUBJECT} | CRO-1 |",
+    )
+    assert gate.main() == 1
+
+
+def test_TWO_G5_headings_EXIT_TWO(sandbox: Path) -> None:
+    _write_close(sandbox, 20, f"{gate.G5_HEADING}\n\ntext\n\n{gate.G5_HEADING}\n\nmore")
+    assert gate.main() == 2
+
+
+def test_a_BOLDED_id_in_the_G5_table_is_read(sandbox: Path) -> None:
+    """Attack A12 false-failed: the table matcher lacked the line parser's emphasis tolerance."""
+    _write_ledger(sandbox, _row(sandbox))
+    _write_close(
+        sandbox, 20, f"{gate.G5_HEADING}\n\n| Line | Slice |\n|---|---|\n| **{_SUBJECT}** | CRO-1 |"
+    )
+    _commit(sandbox)
+    assert gate.main() == 0
+
+
+def test_a_close_claim_backed_only_by_a_walk_OUTSIDE_this_lineage_FAILS(sandbox: Path) -> None:
+    base = _git(sandbox, "rev-parse", "HEAD")
+    _git(sandbox, "checkout", "-q", "-b", "elsewhere")
+    (sandbox / "elsewhere.txt").write_text("x")
+    other = _commit(sandbox, "elsewhere")
+    _git(sandbox, "checkout", "-q", "-")
+    assert _git(sandbox, "rev-parse", "HEAD") == base
+    _write_ledger(sandbox, _row(sandbox, deployed_head=other))
+    _write_close(
+        sandbox, 20, f"{gate.G5_HEADING}\n\n| Line | Slice |\n|---|---|\n| {_SUBJECT} | CRO-1 |"
+    )
+    assert gate.main() == 1
