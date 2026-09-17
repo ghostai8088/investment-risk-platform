@@ -230,6 +230,23 @@ def test_PROXY_WEIGHT_ESTIMATE_shrinkage_reproduces_and_detects_a_plant(session:
         f"the cohort's residual stdevs are not distinct ({raw_stdevs}) — a wrong-target recovery "
         "would then reproduce anyway and this test would prove nothing about it"
     )
+    # BOOK-1a rider B (2026-09-17): the target is the cohort member whose pinned SUMMARY ROW sorts
+    # LAST. The pinned components are ordered by target_entity_id, a uuid4, so "the first member"
+    # under the stored ordering is a coin toss; a mutant that recovers members[0] instead of the
+    # matching member therefore hit the true target one time in three and survived 12 of 30 runs
+    # on identical bytes (R-D5). Choosing the last-sorting summary row makes the wrong recovery
+    # wrong every time, so the mutant is killed deterministically and the anchor stays.
+    summary_ids = {
+        rid: str(
+            next(
+                r
+                for r in list_proxy_weight_results(session, rid, acting_tenant=tenant)
+                if r.metric_type == METRIC_TYPE_ESTIMATION_SUMMARY
+            ).id
+        )
+        for rid in cohort
+    }
+    target = max(cohort, key=lambda rid: summary_ids[rid])
     stored = run_residual_shrinkage(
         session,
         acting_tenant=tenant,
@@ -237,12 +254,10 @@ def test_PROXY_WEIGHT_ESTIMATE_shrinkage_reproduces_and_detects_a_plant(session:
         code_version="v1",
         environment_id="test",
         model_version_id=_eb_version(session, tenant),
-        # The LAST cohort member, deliberately, not the first. The mutation battery proved why:
-        # a mutant that recovers "the first cohort member" instead of the MATCHING one survived a
-        # version of this test that shrank cohort[0] — the wrong answer and the right answer were
-        # the same run. Targeting a non-first member is what makes the recovery's correctness
-        # observable at all.
-        target_estimate_run_id=cohort[-1],
+        # The member whose summary row sorts LAST under the stored component ordering (above),
+        # never the first: a mutant that recovers "the first cohort member" instead of the
+        # MATCHING one must be wrong on every run, not two runs in three.
+        target_estimate_run_id=target,
         cohort_estimate_run_ids=cohort,
     )
     session.commit()

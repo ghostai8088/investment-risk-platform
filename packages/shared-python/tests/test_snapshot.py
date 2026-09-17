@@ -929,6 +929,7 @@ def test_nothing_imports_snapshot() -> None:
             or "perf" in path.parts
             or "pacing" in path.parts
             or "demo" in path.parts
+            or "demo_tenant" in path.parts  # BOOK-1a: an orchestrator of `demo`'s class
             # RPT-1 (ENT-072): the report binder builds the REPORT_INPUT snapshot and renders from
             # its pinned components — the same AD-014 single-bind class as perf/pacing/liquidity/
             # concentration. Amended HERE, visibly, on CON-1's ratified grounds (OQ-CON-1-19): a new

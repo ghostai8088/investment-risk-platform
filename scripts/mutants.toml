@@ -2237,3 +2237,92 @@ file = "scripts/check_capability_coverage.py"
 find = """    if len(_ROADMAP_PART2.findall(text)) != len(_ROADMAP_WAVE.findall(text)):"""
 replace = """    if False:"""
 tests = ["apps/backend/tests/test_capability_coverage.py"]
+
+# ---------------------------------------------------------------------------------------------
+# W20 BOOK-1a — the Northlight seed. Unit-tier hosts: test_demo_tenant_seed.py seeds a FRESH
+# in-memory database (no leftover row can mask a mutant, the M-DEMO-1 lesson), and
+# test_demo_tenant_book.py is the book's own fence.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "M-B1A-1"
+group = "w20-book1a"
+why = "the tenant is not admitted to the ENT-074 registry — the 2026-08-25 defect returns: every HTTP request against the deployed demo 401s"
+file = "packages/shared-python/src/irp_shared/demo_tenant/seed.py"
+find = """    session.add(
+        Tenant(
+            id=book.TENANT_ID,
+            code=book.TENANT_CODE,
+            display_name=book.TENANT_NAME,
+            status=TENANT_STATUS_ACTIVE,
+            provenance=PROVENANCE_ONBOARDED,
+        )
+    )"""
+replace = """    pass  # admission removed"""
+tests = ["packages/shared-python/tests/test_demo_tenant_seed.py"]
+
+[[mutant]]
+id = "M-B1A-2"
+group = "w20-book1a"
+why = "refuse-not-skip removed — a second seed converges instead of refusing, and append-only governed rows are double-filed"
+file = "packages/shared-python/src/irp_shared/demo_tenant/seed.py"
+find = """    if session.get(Tenant, book.TENANT_ID) is not None:
+        raise DemoTenantAlreadySeededError()"""
+replace = """    if session.get(Tenant, book.TENANT_ID) is not None:
+        return"""
+tests = ["packages/shared-python/tests/test_demo_tenant_seed.py"]
+
+[[mutant]]
+id = "M-B1A-3"
+group = "w20-book1a"
+why = "one instrument is left unmarked on every boundary — the exact-date pin makes every exposure run FAIL, and a seed that tolerated it would ship a book with no numbers"
+file = "packages/shared-python/src/irp_shared/demo_tenant/seed.py"
+find = """    for i, on in enumerate(book.BOUNDARIES):
+        for spec in book.INSTRUMENTS:
+            create_valuation("""
+replace = """    for i, on in enumerate(book.BOUNDARIES):
+        for spec in book.INSTRUMENTS[1:]:
+            create_valuation("""
+tests = ["packages/shared-python/tests/test_demo_tenant_seed.py"]
+
+[[mutant]]
+id = "M-B1A-4"
+group = "w20-book1a"
+why = "the seed reads the clock for its captures' valid_from — the marked year becomes a time bomb and every as-of read moves with the deploy date"
+file = "packages/shared-python/src/irp_shared/demo_tenant/book.py"
+find = """T0 = datetime(2025, 1, 1, tzinfo=UTC)"""
+replace = """T0 = datetime.now(UTC)"""
+tests = ["packages/shared-python/tests/test_demo_tenant_book.py"]
+
+[[mutant]]
+id = "M-B1A-5"
+group = "w20-book1a"
+why = "the marked year loses its opening month-end — twelve month-ends, and the twelve-month rolling window writes SUPPRESSED rows with no value for every fund (the remit's BLOCKING finding B-1)"
+file = "packages/shared-python/src/irp_shared/demo_tenant/book.py"
+find = """YEAR_START = date(2025, 6, 30)"""
+replace = """YEAR_START = date(2025, 7, 1)"""
+tests = ["packages/shared-python/tests/test_demo_tenant_book.py"]
+
+[[mutant]]
+id = "M-B1A-6"
+group = "w20-book1a"
+why = "a fixture name slips into the book — the realism rule's names clause is what the fence is for"
+file = "packages/shared-python/src/irp_shared/demo_tenant/book.py"
+find = """        "CSDA",
+        "ZZ0000000011",
+        "Cascadia Semiconductor Corp","""
+replace = """        "CSDA",
+        "ZZ0000000011",
+        "Demo instrument 1","""
+tests = ["packages/shared-python/tests/test_demo_tenant_book.py"]
+
+[[mutant]]
+id = "M-B1A-7"
+group = "w20-book1a"
+why = "factor returns are generated on calendar days again (the base campaign's shape) — weekend equity-factor returns, and the 30-observation window spans 30 calendar days"
+file = "packages/shared-python/src/irp_shared/demo_tenant/book.py"
+find = """RETURN_DAYS: tuple[date, ...] = tuple(business_days(RETURNS_START, YEAR_END))"""
+replace = """RETURN_DAYS: tuple[date, ...] = tuple(
+    RETURNS_START + timedelta(days=i) for i in range((YEAR_END - RETURNS_START).days + 1)
+)"""
+tests = ["packages/shared-python/tests/test_demo_tenant_book.py"]
