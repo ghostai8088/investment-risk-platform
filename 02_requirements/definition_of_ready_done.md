@@ -10,7 +10,7 @@
 | Owner | R-01 Product Manager AI (with R-09 QA/Test Engineer AI) |
 | Approver | H-07 Product Owner (H-06 Engineering Lead co-owns DoD) |
 | Created | 2026-06-18 |
-| Last Reviewed | 2026-06-18 |
+| Last Reviewed | 2026-09-17 (D18 amended at the product re-baseline) |
 | Related Documents | requirements_backbone.md, requirements_traceability_matrix.md, ../00_ai_operating_model/build_rules.md, ../09_compliance_controls/control_matrix_skeleton.md, ../08_testing_qa/ci_enforcement_overview.md |
 | Supported Build Rules | BR-1 … BR-19 |
 
@@ -64,7 +64,7 @@ A requirement/story is **Done** only when ALL of the following are satisfied and
 | D15 | Human approval obtained for restricted change types (Tier-1 model, security, compliance, entitlement, audit, prod deploy) | BR-15 | approval record (CTRL-015) |
 | D16 | Material AI agent actions logged | BR-16 | agent-log test (CTRL-016) |
 | D17 | SoD/maker-checker enforced where required | BR-7, BR-15 | SoD tests (CTRL-021/025/031) |
-| D18 | Acceptance criteria demonstrably met; PO/2L sign-off where required | — | review + release readiness |
+| D18 | Acceptance criteria demonstrably met; PO/2L sign-off where required. **AMENDED 2026-09-17 (product re-baseline, DP-RB2-2): for a presentation requirement, sign-off IS a WALKABLE G5 ledger row per journey line the slice declared — a roster member walked the line on the deployed stack as the named persona and recorded the decision the persona would take and the value that drove it (`02_requirements/journey_walk_ledger.jsonl`). This criterion existed from 2026-06-18 bound to no trigger and never fired; the walk is its trigger.** | — | review + release readiness; `journey-check` (G5, bookkeeping only) |
 | D19 | RTM updated: requirement Status moved (Draft→In-Progress→Done); control matrix status updated | — | docs-check / review |
 
 A criterion that is **Not Applicable** to a given requirement must be explicitly marked N/A with a one-line justification — it

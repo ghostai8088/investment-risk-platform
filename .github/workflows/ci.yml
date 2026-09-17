@@ -889,6 +889,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # G5 (below) asks git whether a walked build is an ANCESTOR of this commit and whether the
+          # screen's source moved after it. A depth-1 checkout cannot answer either and the gate
+          # refuses (exit 2) rather than guessing, so this job fetches full history.
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -912,6 +917,16 @@ jobs:
         # So G2 is a HUMAN act (P20) and this step checks only that the act happened and has not
         # lapsed. It must never be described as a check on requirement quality.
         run: python scripts/check_g2_adjudication.py
+      - name: G5 journey-walk ledger (bookkeeping, NOT quality)
+        # Product re-baseline 2026-09-17. The 2026-08-12 gates all read the requirements register
+        # and the first presentation slice built under them shipped a chart nobody can see on any
+        # screen; the gate meant to catch that passed it. The register describes what a system
+        # does, never what a person experiences. So G5 is a HUMAN act — walk the declared journey
+        # lines on the deployed stack and name the decision the persona would take — and this step
+        # checks only that the act happened, by a roster member, on an ancestor of this commit,
+        # against the line's current text, with the screen unchanged since. Never describe it as a
+        # check on product quality.
+        run: python scripts/check_journey_walks.py
 
   # DEP-1 (Wave-15, OQ-W15P-1): CI BUILDS the three images it has always only tested the source of.
   #

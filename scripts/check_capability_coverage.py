@@ -178,6 +178,17 @@ G4_NONE_MARK = "NO NEW CAPABILITY COVERAGE"
 G4_MIN_NONE_REASON = 60
 _WAVE_NUM = re.compile(r"wave_(\d+)_close_review\.md$")
 _G4_TABLE_LEAF = re.compile(r"^\|\s*(\d{1,2}\.\d{1,2}[a-z]?)\s*\|", re.M)
+ROADMAP = "10_delivery_backlog/delivery_roadmap.md"
+#: A wave header in the roadmap's Part 2: "## Part 2.21 — Wave 19: ...". The highest wave number
+#: with a header is the wave currently open; every wave below it is CLOSED and owes a close review.
+_ROADMAP_WAVE = re.compile(r"^## Part 2(?:\.\d+)? — Wave (\d+)\b", re.M)
+#: EVERY Part-2 header, numbered wave or not. A header that opens a wave without naming its number
+#: would not raise the "highest wave" and the wave before it would owe no review (verifier LOW);
+#: so an unnumbered Part-2 header is a structural refusal, not a silent skip.
+_ROADMAP_PART2 = re.compile(r"^## Part 2(?:\.\d+)? — ", re.M)
+#: The G4 heading, LINE-ANCHORED. A substring search takes a prose mention of the heading earlier
+#: in the file as the section (the G5 verifier's attack A7c; this gate had the same pattern).
+_G4_HEADING_LINE = re.compile(r"^#{2,3} Capability coverage \(G4\)\s*$", re.M)
 
 
 def close_reviews() -> list[tuple[int, Path]]:
@@ -198,6 +209,32 @@ def close_reviews() -> list[tuple[int, Path]]:
     return sorted(found)
 
 
+def closed_waves_without_a_review() -> list[int]:
+    """Every wave the roadmap has moved past must have a close review on disk.
+
+    **Why this exists (2026-09-17 re-baseline, verifier finding A-B4).** G4 binds only the close
+    reviews it FINDS. A wave that is closed by opening the next one in the roadmap, with no close
+    review ever written, is invisible to it: the coverage table it demands is a required output of
+    a document that does not exist, and the gate reports green having checked nothing — the same
+    vacuity class the second G2 bake-off found inside the G2 gate. The roadmap's own wave headers
+    are the declaration of which waves exist; the highest is open, the rest are closed.
+    """
+    text = _read(ROADMAP)
+    waves = sorted({int(w) for w in _ROADMAP_WAVE.findall(text)})
+    if not waves:
+        print("capability-coverage: no wave headers found in the roadmap Part 2", file=sys.stderr)
+        sys.exit(2)
+    if len(_ROADMAP_PART2.findall(text)) != len(_ROADMAP_WAVE.findall(text)):
+        print(
+            "capability-coverage: a roadmap Part-2 header names no wave number — every Part-2 "
+            "header opens a wave, and a wave without a number cannot owe a close review",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    reviewed = {w for w, _ in close_reviews()}
+    return [w for w in range(1, max(waves)) if w not in reviewed]
+
+
 def g4_errors(cited: set[str], leaves: dict[str, str]) -> list[str]:
     """G4 — every close review from wave 18 on carries a verifiable capability-coverage table.
 
@@ -216,13 +253,17 @@ def g4_errors(cited: set[str], leaves: dict[str, str]) -> list[str]:
         if wave < G4_FROM_WAVE:
             continue
         text = path.read_text(encoding="utf-8")
-        if G4_HEADING not in text:
+        heads = list(_G4_HEADING_LINE.finditer(text))
+        if not heads:
             errors.append(
                 f"{path.name} closes wave {wave} and has no '{G4_HEADING}' section. The coverage "
                 f"table is a required OUTPUT of a close review, not a good intention."
             )
             continue
-        body = text.split(G4_HEADING, 1)[1]
+        if len(heads) > 1:
+            print(f"capability-coverage: {path.name} has {len(heads)} G4 headings", file=sys.stderr)
+            sys.exit(2)
+        body = text[heads[0].end() :]
         body = re.split(r"^## ", body, maxsplit=1, flags=re.M)[0]
         listed = _G4_TABLE_LEAF.findall(body)
         if not listed:
@@ -323,6 +364,13 @@ def main() -> int:
     reviews = close_reviews()
     bound = [w for w, _ in reviews if w >= G4_FROM_WAVE]
     errors.extend(g4_errors(cited, leaves))
+    for w in closed_waves_without_a_review():
+        errors.append(
+            f"the roadmap has opened a wave after wave {w} and NO wave_{w}_close_review.md exists. "
+            f"A wave is closed by its close review (the G4 table, the P19 carry sweep, the "
+            f"measured "
+            f"counts), not by starting the next one; without the document G4 has nothing to bind."
+        )
     print(f"close reviews found        : {len(reviews)} — {len(bound)} bound by G4")
 
     if errors:

@@ -43,6 +43,7 @@ _INPUTS = (
     "02_requirements/requirements_backbone.md",
     "02_requirements/requirements_traceability_matrix.md",
     "02_requirements/capability_coverage_baseline.json",
+    "10_delivery_backlog/delivery_roadmap.md",
 )
 
 
@@ -336,3 +337,49 @@ def test_a_BLIND_DISCOVERY_GLOB_EXITS_TWO(sandbox: Path) -> None:
     with pytest.raises(SystemExit) as exc:
         gate.main()
     assert exc.value.code == 2
+
+
+# --- a closed wave with no close review (2026-09-17 re-baseline, verifier finding A-B4) --------
+
+
+def test_a_wave_the_roadmap_moved_past_with_NO_close_review_FAILS(sandbox: Path) -> None:
+    """G4 binds only the reviews it finds. Closing a wave by opening the next one in the roadmap,
+    with no close review written, left the gate green over a document that did not exist."""
+    roadmap = sandbox / gate.ROADMAP
+    text = roadmap.read_text()
+    top = max(int(w) for w in gate._ROADMAP_WAVE.findall(text))
+    roadmap.write_text(
+        text + f"\n\n## Part 2.99 — Wave {top + 2}: a wave opened with no close behind it\n"
+    )
+    assert top + 1 not in {w for w, _ in gate.close_reviews()}
+    assert gate.main() == 1
+
+
+def test_every_wave_the_roadmap_has_moved_past_has_a_review_TODAY(sandbox: Path) -> None:
+    """The positive half, discovered rather than listed: whatever the roadmap's highest wave is,
+    every wave below it has a review on disk. Non-vacuous because the roadmap holds many."""
+    text = (sandbox / gate.ROADMAP).read_text()
+    assert len(set(gate._ROADMAP_WAVE.findall(text))) >= 10
+    assert gate.closed_waves_without_a_review() == []
+
+
+def test_an_UNNUMBERED_part2_header_EXITS_TWO(sandbox: Path) -> None:
+    """A Part-2 header that opens a wave without its number would not raise the highest wave, so
+    the wave before it would owe no review (the 2026-09-17 verifier's LOW)."""
+    roadmap = sandbox / gate.ROADMAP
+    roadmap.write_text(roadmap.read_text() + "\n\n## Part 2.99 — The next wave, unnumbered\n")
+    with pytest.raises(SystemExit) as exc:
+        gate.main()
+    assert exc.value.code == 2
+
+
+def test_a_PROSE_mention_of_the_G4_heading_does_not_hijack_the_section(sandbox: Path) -> None:
+    """The substring-search defect the G5 verifier found; this gate had the identical pattern."""
+    _write_close_review(
+        sandbox,
+        18,
+        f"## Method\n\nThis review carries a `{gate.G4_HEADING}` section below, or else says "
+        f"{gate.G4_NONE_MARK} with a sentence of reason as the gate requires of every close.\n\n"
+        f"{gate.G4_HEADING}\n\n| Capability | Label | Slice |\n|---|---|---|\n| 99.9 | Nope | X |",
+    )
+    assert gate.main() == 1

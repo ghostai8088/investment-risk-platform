@@ -84,7 +84,7 @@ fix:
 	-$(PY) -m ruff check --fix .
 	npm run -w apps/frontend format
 
-check: lint typecheck test secret-scan docs-check capability-check g2-check mutant-anchors
+check: lint typecheck test secret-scan docs-check capability-check g2-check journey-check mutant-anchors
 
 # BOTH tiers in one command (DEP-1 / Wave-15 process fold). `check` covers Python only and
 # `fe-check` has to be REMEMBERED — and the six-consecutive-red-push episode of 2026-08-03 began
@@ -159,6 +159,16 @@ capability-check:
 	@# documents Claude did not generate — every prior audit used the requirement register as its
 	@# yardstick, which is exactly where the Wave 1-17 drift lived.
 	$(PY) scripts/check_capability_coverage.py
+
+.PHONY: journey-check
+journey-check:
+	@# G5 (product re-baseline, 2026-09-17). BOOKKEEPING ONLY — it proves a named human walked each
+	@# journey line a slice declared, on a deployed build that is an ancestor of this commit, and
+	@# wrote down the decision the persona would take and the value that drove it. It lapses when
+	@# the line's text moves and when the screen's source moves after the walk. It has no opinion
+	@# about whether the decision was sensible or the screen any good. Never cite it as a check on
+	@# product quality: the 2026-08-12 gates read the register and passed a chart nobody could see.
+	$(PY) scripts/check_journey_walks.py
 
 .PHONY: g2-check
 g2-check:

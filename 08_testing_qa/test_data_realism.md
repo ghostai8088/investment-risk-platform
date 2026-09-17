@@ -31,6 +31,15 @@ Classify each economic-value fixture site into exactly one bucket:
 - **Confidence levels** (0.90/0.95/0.99, and formula-exercising values like 0.60/0.75/0.80) are parameters,
   not returns — legitimate as-is.
 
+## Names, counts and totals (added 2026-09-17 at the product re-baseline, DP-RB2-4)
+For the DEPLOYED demo tenant, plausibility covers more than values: instrument and fund NAMES must read as
+a real book's would (fictional, so nobody asks whether it is licensed market data; never `INSTR-1`, `CN-ALPHA`,
+"Demo unassessed holding"), position COUNTS must be those of a fund rather than a fixture (three positions is a
+unit test, not a book), and book TOTALS must sit where a mid-sized manager's would. The per-stage `DEMO-*` books
+in the PostgreSQL battery are exempt: their goldens must not move, and they stop being what a deployed stack
+holds. Why: the 2026-09-17 re-baseline found the deployed demo was one three-position book with a fictional
+"ACME Corp" in it, and a CRO could not recognise it as a portfolio however plausible each mark was.
+
 ## What is out of scope
 Plumbing values — tenant/actor/GUID ids, `code_version`, `environment_id`, opaque labels — where realism is
 meaningless. Do not churn them.

@@ -53,6 +53,12 @@ This file is the auto-loaded pointer; the discipline lives in the documents belo
   in one pass; the ratification commit then yielded 39 more (3 BLOCKING), **all three in control rows that same
   commit had just minted**. Control rows assert their own proof — review them hardest. And re-measure the
   verifier: one of its counts was wrong, and my correction of it was wrong too.
+- **A presentation slice is accepted by a HUMAN WALKING its journey lines (G5, P21, ratified 2026-09-17):** the
+  remit declares lines in `02_requirements/journey_slice_scope.json`; a roster member walks each on the DEPLOYED
+  stack and records the decision the persona would take in `journey_walk_ledger.jsonl`; `make journey-check` is
+  paperwork, never quality. The 2026-08-12 gates all read the register, and the first slice under them shipped a
+  chart nobody could see. The yardstick is the person, not the register. See
+  `02_requirements/product_rebaseline_2026-09-17.md`.
 - Governed derived numbers bind `dataset_snapshot` + `calculation_run` + a registered `model_version` (where a
   model applies) and are IA append-only; captured inputs bind none of those. Pick the pattern correctly.
 
