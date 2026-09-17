@@ -17,6 +17,8 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
+import pytest
+
 from irp_shared.presentation.chart import render_series_chart, select_series
 
 _CONTRACT = {
@@ -180,3 +182,82 @@ def test_no_FLOAT_appears_anywhere_in_the_projection() -> None:
             assert node.func.id != "float", "float() in the coordinate projection"
         if isinstance(node, ast.Constant) and isinstance(node.value, float):
             raise AssertionError(f"float literal {node.value} in the chart module")
+
+
+# --- what the different-engine review found, each now a permanent control ------------------------
+
+
+def test_the_marks_actually_PAINT() -> None:
+    """The first implementation shipped an INVISIBLE chart and every test passed.
+
+    `<path d='...' fill='none' />` with no stroke renders nothing at all. Every assertion in this
+    file checked STRUCTURE — the element is present, the coordinate count is right — and none
+    checked the marks were visible. A review rendered it and looked.
+    """
+    svg = render_series_chart(_section(_REAL), _CONTRACT)
+    path = re.search(r"<path[^>]*>", svg).group(0)
+    assert "stroke=" in path and "stroke-width=" in path, f"the path paints nothing: {path}"
+
+    rects = render_series_chart(_section(_REAL), {**_CONTRACT, "mark": "rect"})
+    assert re.search(r"<rect[^>]*fill=", rects), "rect marks have no fill — nothing is painted"
+
+    circles = render_series_chart(_section(_REAL), {**_CONTRACT, "mark": "circle"})
+    assert re.search(r"<circle[^>]*fill=", circles)
+
+    lines = render_series_chart(_section(_REAL), {**_CONTRACT, "mark": "line"})
+    assert re.search(r"<line[^>]*stroke=", lines)
+
+
+def test_a_SINGLE_POINT_line_is_visible_rather_than_zero_length() -> None:
+    """A zero-length line paints nothing. The module's own docstring says a single point gets "a
+    single mark"; an invisible one is not a mark."""
+    one = [("ROLLING_VOLATILITY:12m:2026-01-31", "0.11")]
+    svg = render_series_chart(_section(one), {**_CONTRACT, "mark": "line"})
+    match = re.search(r"<line x1='([-0-9.]+)'[^>]*x2='([-0-9.]+)'", svg)
+    assert match and match.group(1) != match.group(2), "the single-point line has zero length"
+
+
+def test_a_QUOTE_in_a_pinned_field_cannot_BREAK_OUT_of_its_attribute() -> None:
+    """A live injection, executed by a review against the first implementation.
+
+    `xml.sax.saxutils.escape` handles `&`, `<` and `>` and leaves quotes alone. Every attribute here
+    is single-quoted, so `x' onload='alert(1)` rendered as `data-run-id='x' onload='alert(1)'` — an
+    injected event handler in a GOVERNED report, from a field read straight off a pinned snapshot.
+    """
+    evil = "x' onload='alert(1)"
+    svg = render_series_chart(_section(_REAL, run_id=evil), _CONTRACT)
+    assert "onload='alert(1)'" not in svg, f"attribute breakout: {svg[:200]}"
+    assert "&apos;" in svg, "the quote was not escaped at all"
+    # ...and the value is still FAITHFULLY carried, not silently stripped
+    assert "onload=&apos;alert(1)" in svg
+
+    # the same for the mark attribute, which is also interpolated
+    assert "<" not in re.search(r"data-mark='([^']*)'", svg).group(1)
+
+
+def test_an_UNKNOWN_mark_is_REFUSED_rather_than_drawn_as_something_else() -> None:
+    """P9. `contracts.py` claimed "the renderer refuses it"; the renderer drew a line chart.
+
+    A default here makes the declared mark decorative — a contract could name anything and get a
+    line — which is the inert-declaration shape this slice exists to remove.
+    """
+    from irp_shared.presentation.contracts import PresentationContractError
+
+    with pytest.raises(PresentationContractError):
+        render_series_chart(_section(_REAL), {**_CONTRACT, "mark": "hexagon"})
+    # ...and a MISSING mark is refused too, rather than defaulting to path
+    with pytest.raises(PresentationContractError):
+        render_series_chart(_section(_REAL), {k: v for k, v in _CONTRACT.items() if k != "mark"})
+
+
+def test_a_NON_FINITE_pinned_value_is_SKIPPED_rather_than_crashing_the_report() -> None:
+    """`Decimal("NaN")` and `Decimal("Infinity")` PARSE. They then poison every comparison and blow
+    up in quantize — so one bad pin would crash the render of an entire governed report, not just
+    its chart."""
+    for bad in ("NaN", "Infinity", "-Infinity", "sNaN"):
+        values = [("ROLLING_VOLATILITY:12m:2026-01-31", bad), *_REAL[:3]]
+        svg = render_series_chart(_section(values), _CONTRACT)
+        assert "data-points='3'" in svg, f"{bad} was plotted instead of skipped"
+        # _REAL[:3] are the three plottable 12m points and carry no suppressed row, so the
+        # non-finite value is the ONLY skipped point.
+        assert "data-skipped='1'" in svg, f"{bad} was not disclosed as skipped"

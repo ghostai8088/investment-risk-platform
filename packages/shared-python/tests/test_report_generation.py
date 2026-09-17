@@ -36,8 +36,10 @@ from irp_shared.perf.events import RUN_TYPE_ROLLING_RISK
 from irp_shared.report.families import VAR_REGISTERED_METHODOLOGIES, ReportProvenanceError
 from irp_shared.report.models import ReportGeneration
 from irp_shared.report.service import (
+    RENDERER_VERSION_RPT2,
     ReportIdentityError,
     ReportInputError,
+    _pinned_sections,
     generate_report,
     regenerate_report,
 )
@@ -591,6 +593,20 @@ def test_the_VAR_family_cites_the_model_ITS_OWN_RUN_bound(session: Session) -> N
         family_runs={"var": run_id},
         generated_at=_NOW,
     )
+    # W19-S1: the RENDERED value is contracted (VAR declares 2 dp); the PINNED value stays
+    # verbatim. This assertion used to read `"2449954.980675" in rendered.body` — true before a
+    # presentation contract governed the display, and the change was ratified by the owner on
+    # 2026-09-17 after a review found the report was printing "to 2 dp" above six decimals.
+    assert "2449954.98" in rendered.body
+    assert (
+        "2449954.980675" not in rendered.body
+    ), "the rendered value ignores its own declared precision — the disclosure line would be false"
+    pinned = _pinned_sections(
+        session, snapshot_id=str(_row.input_snapshot_id), acting_tenant=TENANT
+    )
+    assert any(
+        v["value"] == "2449954.980675" for s in pinned for v in s["values"]
+    ), "the PIN lost its verbatim value — evidence stays unrounded even when the display does not"
     assert VAR_UNIFIED_MODEL_CODE in rendered.body
     assert VAR_UNIFIED_METHODOLOGY_REF in rendered.body
     assert (
@@ -599,7 +615,10 @@ def test_the_VAR_family_cites_the_model_ITS_OWN_RUN_bound(session: Session) -> N
     # The metric key names WHICH VaR and in what currency — "VaR: 2,449,954" alone is a disclosure
     # defect when one table holds parametric, total, unified, historical and both ES families.
     assert "VAR_PARAMETRIC_UNIFIED:USD" in rendered.body
-    assert "2449954.980675" in rendered.body
+    # ...and the CONTRACTED rendering of that value. Asserted here too, beside the metric key,
+    # because the disclosure defect this line guards against is the PAIR being wrong: a number
+    # without its metric key, or a number that contradicts the precision declared above it.
+    assert "2449954.98" in rendered.body
 
 
 def test_a_TENANT_STAMPED_methodology_ref_is_REFUSED_not_cited(session: Session) -> None:
@@ -1230,3 +1249,55 @@ def test_ISSUER_identity_rows_NEVER_reach_the_report(session: Session) -> None:
     assert "ACME-CORP-ISSUER" not in rendered.body, "an ISSUER bucket reached the report"
     assert issuer_uuid not in rendered.body, "issuer IDENTITY reached the report"
     assert "0.777700" not in rendered.body, "the issuer row's share reached the report"
+
+
+# --- W19-S1: the slice must be REACHABLE from the real entry point --------------------------------
+
+
+def test_a_REALLY_GENERATED_report_pins_and_renders_its_presentation_contract(
+    session: Session,
+) -> None:
+    """THE gate-tests-must-call-the-entry-point proof, and this slice shipped without it.
+
+    Every other PRESENT-1 test hand-builds a section through a helper. A different-engine review
+    changed ONE line — `RENDERER_VERSION = RENDERER_VERSION_RPT2` back to `RPT1` — and ran the whole
+    suite: **3,050 passed**. Every newly generated report silently reverted to rpt-1, pinning no
+    contract and rendering no disclosure and no chart, while the feature's own tests stayed green
+    because they build their sections by hand. The slice was fully severed from production and
+    nothing noticed.
+
+    This is the recorded 2026-08-14 lesson verbatim — helper tests prove the logic, not that it is
+    REACHABLE — reproduced in a slice written by someone who had that lesson in memory.
+
+    So this drives the real path: seed a real run, call `generate_report`, and assert the contract
+    reached BOTH the pin and the bytes.
+    """
+    run_id, pf = _seed_concentration_run(session)
+    row, rendered_hash = _generate(session, run_id, pf)
+    session.flush()
+
+    # 1. the PIN carries the contract and the new renderer version
+    sections = _pinned_sections(
+        session, snapshot_id=str(row.input_snapshot_id), acting_tenant=TENANT
+    )
+    assert sections, "the generated report pinned no sections at all"
+    for section in sections:
+        assert section["renderer_version"] == RENDERER_VERSION_RPT2, (
+            f"a newly generated report pinned renderer {section['renderer_version']!r} — the build "
+            f"path is not on the new renderer, so the whole slice is disconnected from production"
+        )
+        assert section.get("presentation_contract"), (
+            "a newly generated section carries NO presentation contract — REQ-PRS-001's 'the "
+            "section's PINNED content carries the contract the render used' is unmet on the real "
+            "path, whatever the hand-built tests say"
+        )
+
+    # 2. the BYTES carry it too — a pin nothing renders is a declaration nobody reads
+    body = regenerate_report(session, report_id=str(row.id), acting_tenant=TENANT).body
+    assert "class='identity'" in body, (
+        "the regenerated report renders no identity disclosure — the contract reached the pin but "
+        "not the bytes"
+    )
+    assert regenerate_report(session, report_id=str(row.id), acting_tenant=TENANT).content_hash == (
+        rendered_hash
+    )

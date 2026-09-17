@@ -18,6 +18,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import ROUND_HALF_EVEN, Decimal
 from html import escape
 from typing import Any
 
@@ -127,6 +128,16 @@ def governed_value_content(
     Values are carried as STRINGS, verbatim from the source rows' Decimal repr. Round-tripping
     them through float for JSON would change the number a governed report shows, which is the one
     thing a governed report may never do.
+
+    **Qualified at W19-S1, owner-ratified 2026-09-17.** That invariant governs the PIN, and the pin
+    is still verbatim: the evidence a snapshot carries is unrounded and verifiable. What the
+    rendered
+    report SHOWS is now governed by the section's pinned presentation contract, so a currency VaR
+    displays at its declared 2 dp while `2449954.980675` remains the pinned value. The distinction
+    is
+    deliberate and was put to the owner rather than taken: a contract whose declared precision
+    changed nothing would be an inert declaration, and a report that announced "to 2 dp" above six
+    decimals — which is what the first implementation did — states something false.
 
     ``model_version_id`` and ``source_snapshot_id`` are pinned rather than merely the model CODE:
     I5 names "run ID, snapshot verification, model version, methodology ref", and a code without a
@@ -334,6 +345,40 @@ def _run_type_for(family_key: str) -> str:
     return mapping[family_key]
 
 
+def _present_value(raw: object, contract: dict[str, Any] | None) -> str:
+    """The value as the section's PINNED contract says to show it (DS1-3, owner-ratified).
+
+    Formatting happens HERE, at render, from the pinned contract — never at pin time. The pinned
+    value stays verbatim from the source Decimal repr, which is the invariant
+    `governed_value_content` documents; the contract governs how it is SHOWN.
+
+    **This was the missing half of the slice.** The first implementation rendered the value
+    verbatim and printed a disclosure line claiming a declared precision, so a VaR section
+    announced "to 2 dp" directly above `677.677357`. A false statement in a governed report is a
+    disclosure defect, not a formatting nit — and a declared precision nothing applies is the inert
+    declaration this slice exists to remove. A review caught both halves at once.
+
+    A NON-NUMERIC pinned value passes through untouched: `rolling_risk` pins `SUPPRESSED (reason)`
+    by design, and quantizing that is neither possible nor meaningful.
+    """
+    text = str(raw)
+    if contract is None:
+        return text
+    precision = contract.get("precision")
+    if not isinstance(precision, int):
+        raise PresentationContractError(
+            f"contract declares precision {precision!r}, which is not an integer — a value cannot "
+            f"be shown to a precision that is not a number"
+        )
+    try:
+        number = Decimal(text)
+    except (ArithmeticError, ValueError, TypeError):
+        return text  # SUPPRESSED(...) and friends: pinned by design, shown as pinned
+    if not number.is_finite():
+        return text
+    return format(number.quantize(Decimal(1).scaleb(-precision), rounding=ROUND_HALF_EVEN), "f")
+
+
 def _render_contract_parts(section: dict[str, Any]) -> list[str]:
     """The rpt-2 additions to a section: the contract's disclosure line and, where the contract
     declares a series, the governed chart.
@@ -411,11 +456,16 @@ def render_report_html(
                 f"rendering it as something else — a report that silently renders under the wrong "
                 f"renderer is a report whose bytes mean nothing."
             )
+        contract = (
+            section.get("presentation_contract")
+            if pinned_version == (RENDERER_VERSION_RPT2)
+            else None
+        )
         parts.append("<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>")
         for item in section["values"]:
             parts.append(
                 f"<tr><td>{escape(str(item['metric']))}</td>"
-                f"<td class='mono'>{escape(str(item['value']))}</td></tr>"
+                f"<td class='mono'>{escape(_present_value(item['value'], contract))}</td></tr>"
             )
         parts.append("</tbody></table>")
         if pinned_version == RENDERER_VERSION_RPT2:

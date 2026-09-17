@@ -2143,3 +2143,50 @@ find = """        if span == 0:
 replace = """        if False:
             return _PAD + inner_h / 2"""
 tests = ["packages/shared-python/tests/test_presentation_chart.py"]
+
+[[mutant]]
+id = "M-S1-9"
+group = "w19-s1"
+why = "the BUILD path reverts to the old renderer, so every newly generated report pins no contract and renders no disclosure and no chart — the entire slice silently disconnected from production. A different-engine review made exactly this one-line change and ran the suite: 3,050 PASSED. Every PRESENT-1 test hand-built its sections, so nothing proved the feature was REACHABLE. That is the recorded gate-tests-must-call-the-entry-point lesson, reproduced by an author who had it in memory; this mutant exists so it cannot happen silently again"
+file = "packages/shared-python/src/irp_shared/report/service.py"
+find = """RENDERER_VERSION = RENDERER_VERSION_RPT2"""
+replace = """RENDERER_VERSION = RENDERER_VERSION_RPT1"""
+tests = ["packages/shared-python/tests/test_report_generation.py"]
+
+[[mutant]]
+id = "M-S1-10"
+group = "w19-s1"
+why = "the build path stops PINNING the resolved contract, so a generated section carries none and the rpt-2 renderer's own refusal is the only thing standing between the platform and an unrenderable report. Pairs with M-S1-9: that one severs the renderer VERSION, this one severs the CONTRACT, and before the entry-point test neither was covered"
+file = "packages/shared-python/src/irp_shared/report/service.py"
+find = """                    presentation_contract=dict(contract_for_family_key(family.key)),"""
+replace = """                    presentation_contract=None,"""
+tests = ["packages/shared-python/tests/test_report_generation.py"]
+
+[[mutant]]
+id = "M-S1-11"
+group = "w19-s1"
+why = "SVG attributes stop escaping quotes, so a value containing a single quote closes its attribute and everything after it parses as markup. A review EXECUTED the breakout: a run id of `x' onload='alert(1)` rendered as data-run-id='x' onload='alert(1)' — a live injection into a governed report, from a field read straight off a pinned snapshot"
+file = "packages/shared-python/src/irp_shared/presentation/chart.py"
+find = """    return _escape_text(str(raw), {"'": "&apos;", '"': "&quot;"})"""
+replace = """    return _escape_text(str(raw))"""
+tests = ["packages/shared-python/tests/test_presentation_chart.py"]
+
+[[mutant]]
+id = "M-S1-12"
+group = "w19-s1"
+why = "the path mark loses its stroke, so the chart paints NOTHING — `fill='none'` with no stroke is an invisible line. The first implementation shipped exactly this and every test passed, because each asserted STRUCTURE (element present, coordinate count) and none asserted the marks were visible"
+file = "packages/shared-python/src/irp_shared/presentation/chart.py"
+find = """stroke='currentColor' stroke-width='1.5' />\")"""
+replace = """/>\")"""
+tests = ["packages/shared-python/tests/test_presentation_chart.py"]
+
+[[mutant]]
+id = "M-S1-13"
+group = "w19-s1"
+why = "an unknown mark is silently drawn as a line instead of being refused, so a contract declaring `hexagon` renders a line chart while contracts.py's docstring claims the renderer refuses it — a default that makes the declaration decorative and the prose false at its citation"
+file = "packages/shared-python/src/irp_shared/presentation/chart.py"
+find = """    if mark not in MARK_TYPES:
+        raise PresentationContractError("""
+replace = """    if False:
+        raise PresentationContractError("""
+tests = ["packages/shared-python/tests/test_presentation_chart.py"]
