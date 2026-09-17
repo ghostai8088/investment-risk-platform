@@ -2,7 +2,7 @@
 
 **Status: DRAFT, PENDING RATIFICATION.** Authored 2026-09-17 on `product-rebaseline-2026-09-17`
 by Claude (Opus 5) from four recon censuses of the repository. Verified on a different engine
-(Fable 5.1, three fresh-context lanes) and folded; the full ledger of findings and dispositions is
+(Fable 5.1, three fresh-context lanes on the draft and a fourth on the fold) and folded; the full ledger is
 Part 7. Nothing in this document is ratified until the owner says so. The decision points in
 Part 5 are the owner's. No hash moves in this record: it edits no acceptance text, and the G5
 ledger it proposes is born empty. This is the second re-baseline of the product; it exists because
@@ -50,7 +50,7 @@ built 2026-09-05 to 2026-09-17 on `w19-s1-present`. It delivered a presentation 
 result family, a renderer-version dispatch, and a governed chart: a byte-identical inline SVG
 emitted into report HTML and covered by the report content hash. It passed its census, its
 mutation battery (13 of 13 killed), full-PG at 3,758 tests, and an adversarial review (39 raised,
-38 confirmed, 2 BLOCKING, folded). **No person can see the chart on any screen of the product
+38 confirmed, 2 BLOCKING: one folded, one left outstanding, Outcome 4, which this record drops). **No person can see the chart on any screen of the product
 except through a sandboxed iframe on an operations page.** The slice is a faithful execution of
 REQ-PRS-002, whose acceptance text is entirely about bytes, hashes, run ids and SVG element names
 (`requirements_backbone.md:347`).
@@ -84,8 +84,8 @@ UJ-2 step 1 is "Review portfolio/aggregate risk and scenario results" (`:67`). I
 "Journeys are the basis for per-phase user stories" (`:57`).
 
 Measured on 2026-09-17: no user story was ever written. No document authored after June 2026
-carries a `UJ-` id; the only citers of the journeys document are the four June P1A plans and two
-slice records that cite its segregation-of-duties table. The 2026-08-12 re-baseline does not cite
+carries a `UJ-` id; outside the register and the RTM, the only citers of the journeys document are
+the four June P1A plans and two slice records that cite its segregation-of-duties table. The 2026-08-12 re-baseline does not cite
 it once. Neither does any wave planning record, any wave close review, the operating instructions,
 or Parts 1 to 4 of the roadmap. The Definition of Done has one user-perspective criterion, D18
 ("Acceptance criteria demonstrably met; PO/2L sign-off where required",
@@ -107,7 +107,7 @@ that choice is what the product looks like today. The recommendation was Claude'
    Wave 17 and 18 closes without finding it, because it lives in a decision record's scope line,
    not in a carry register.
 2. **The engines exist and the aggregates do not.** 178 GET endpoints serve 20 calculation
-   families across 22 run types, with 27 registered model codes. Per-portfolio latest reads exist
+   families across 22 run types; the test campaign registers 27 model codes against them. Per-portfolio latest reads exist
    for VaR, ES, tracking error, exposure total, concentration amounts and shares by sector,
    country and issuer, liquidity shares, rolling risk, Sharpe and returns (Part 3). There is no
    exposure aggregate by asset class, by currency or by factor family: factor exposures come back
@@ -134,7 +134,7 @@ It is not a failure of the engines, the governance or the tests. About 105,000 l
 and shared source, 77 migrations, 20 calculation families with cited methodology, symmetric
 row-level security, a frozen audit service, reproduction on demand and 3,700 PostgreSQL-tier
 tests are the hard part of an enterprise risk platform and they are built. It is not a failure of
-effort on the front end either: 34,500 lines and 274 tests. It is a failure of the question every
+effort on the front end either: 34,500 lines and 284 tests. It is a failure of the question every
 gate asks. Eighteen closes asked "did we build it correctly"; the 2026-08-12 fix added "does the
 register cover the taxonomy"; nobody has yet asked "can the CRO use it".
 
@@ -301,8 +301,9 @@ opens it and sees:
    J-CRO-3.*
 3. **Any open breach in scope**, with the first-line response form on the same page. Decision:
    respond now or escalate.
-4. **The same headline numbers the CRO sees** for this fund, so the two never argue about a
-   value. Decision: none; this line is walked by comparing the two screens.
+4. **The same headline numbers the CRO sees** for this fund, walked by opening both screens.
+   Decision: escalate if the two screens disagree on any value; the driving value is the pair
+   compared.
 
 Pre-trade what-if is not in UJ-1 and is not proposed; a CRO reading J-CRO will look for it and it
 is named here as out of scope for Wave 20.
@@ -357,7 +358,7 @@ feasibility lane found (Part 7 F-2, F-8, F-9, F-12, F-14, F-16, F-20) designed i
   boundaries for the last quarter (about sixty-three), each boundary with every instrument marked
   and every FX pair captured on that exact date, because one missing mark fails the run; the
   calendar captured into the tenant;
-- **private funds with three years of quarterly appraisals ending before the daily-marked year
+- **private funds with three years of quarterly appraisals ending before the marked year
   begins**, because the desmoothing binder pins every mark in its window with no frequency
   filter, so daily carry inside the window would pollute the appraisal series; one desmooth,
   regression and promotion chain per private fund; commitments, calls and distributions with a
@@ -380,8 +381,8 @@ carrying its G4 table for S3a and S3b, the P19 clause-B carry sweep, measured co
 6b outward section. Its dispositions: S3a and S3b delivered; S1 parked (4.6); **S2 and ING-2 go
 to the Wave-21 candidate list**, a sequenced host, because "the first journey that needs a report
 a fixed family set cannot produce" is a judgement and P19 says a judgement is a decision, not a
-trigger; S5 becomes SHOW-1 at the end of Wave 20; the ratified Wave-20 spine of DP-19-1 (pricing,
-then risk decomposition) becomes the Wave-21 spine, and DP-19-2's commissioned algorithm decision
+trigger; S5 becomes SHOW-1 at the end of Wave 20; the ratified Wave-20 spine of DP-19-1 (pricing, risk
+decomposition and derivative expressibility, `wave_19_planning.md:35`) becomes the Wave-21 spine, and DP-19-2's commissioned algorithm decision
 stands unchanged.
 
 **Wave 20 = "A CRO CAN USE IT".** Each slice has its own remit and gate under the existing
@@ -392,7 +393,7 @@ per-slice discipline plus G5. The XL was split on the ONBOARD-1 precedent.
 | 1 | **BOOK-1a — the public book** | The 4.4 tenant without its private sleeves: three funds, hierarchy, instruments, benchmarks, calendar, the loadings-family factor model, weekly boundaries, and every public family run; the orchestrator and the post-verification deploy step. No new engine. | none; it is what the others are walked over | L |
 | 2 | **BOOK-1b — the private sleeves and the limits** | Appraisal history, desmoothing and regression chains, commitments and pacing, total and unified VaR, the limits with their breaches, and the daily last quarter. | none | M/L |
 | 3 | **CRO-1 — the CRO overview** | The restarted shell, tokens, fund selector; J-CRO lines 1, 2, 4, 5, 6, 7 over the Part-3 reads; three additive reads: exposure by dimension, a portfolio-scoped scenario read, and the one-call summary. Line 3 shows state words until UTIL-1. No new governed number. | J-CRO-1, 2, 4, 5, 6, 7 | L |
-| 4 | **UTIL-1 — utilisation as a governed number** | LIM-3 as its own slice: ENT-032 realised, migration, P17, REQ-LIM-002's two open gaps (direction semantics; what a refused evaluation stores) resolved at its gate under P20 T1. | J-CRO-3 | M |
+| 4 | **UTIL-1 — utilisation as a governed number** | LIM-3 as its own slice: ENT-032 realised, migration, P17; every utilisation row carries portfolio scope, observed value and threshold, and the read carries a date range so the trend is visible; REQ-LIM-002's two open gaps (direction semantics; what a refused evaluation stores) resolved at its gate under P20 T1. | J-CRO-3, J-PM-2 | M |
 | 5 | **PM-1 — the PM daily review** | J-PM lines 1 to 4, entitlement-scoped, including the stale-mark tolerance read and the breach response form re-homed. | J-PM-1 to 4 | M |
 | 6 | **DRILL-1 — the exposure drill** | REQ-PRS-004's first realisation on the one measure that is additive: total exposure to nodes to holdings over the existing rollup read, sums holding. | J-CRO-8 | S/M |
 | 7 | **SHOW-1 — deployed OIDC posture** | Wave 19's S5, unchanged in content; the wave's exit: J-CRO and J-PM re-walked over real identity. Not cuttable. | re-walk all | M/L |
@@ -493,9 +494,9 @@ Nothing else. BOOK-1a starts after the ratification PR merges.
 
 ## Part 7 — Different-engine verification (Fable 5.1, three lanes, 2026-09-17)
 
-Three fresh-context lanes on the first draft (`5ab0dab`): A, an adversarial governance read; F, a
+Three fresh-context lanes on the first draft (`5ab0dab`), then a fourth lane on the fold (`8fe5578`; its ten findings are folded in this text and listed at the end): A, an adversarial governance read; F, a
 feasibility read of Part 3 and Part 4 against the code; C, a citation-and-count check. Totals:
-**6 BLOCKING, 22 HIGH, 19 MED, 13 LOW.** Every finding is listed; the disposition names where the
+**6 BLOCKING, 23 HIGH, 19 MED, 13 LOW, 61 in all.** Every finding is listed; the disposition names where the
 fold landed. Two findings were refuted in part and are kept with the refutation.
 
 ### Lane A — adversarial governance (4 BLOCKING, 9 HIGH, 7 MED, 3 LOW)
@@ -526,7 +527,7 @@ fold landed. Two findings were refuted in part and are kept with the refutation.
 | A-L2 | LIM-3 "declined" vs "folded into CRO-1". | FOLDED: UTIL-1. |
 | A-L3 | Could not find g2-check in CI. | REFUTED IN PART: CI runs the scripts directly (`ci.yml:904, 914`), not the make targets; G5 is wired the same way (4.1). |
 
-### Lane F — feasibility (2 BLOCKING, 10 HIGH, 4 MED, 4 LOW)
+### Lane F — feasibility (2 BLOCKING, 11 HIGH including the sizing finding, 4 MED, 4 LOW)
 
 | # | Finding | Disposition |
 |---|---|---|
@@ -540,7 +541,7 @@ fold landed. Two findings were refuted in part and are kept with the refutation.
 | F-8 | Illiquid-share limit cannot be created (limit targets are VaR, tracking error, concentration). | FOLDED: 4.4. |
 | F-9 | Flagship factor model is currency-only; wider path needs captured loadings per pair and one regression chain per private fund. | FOLDED: 4.4. |
 | F-10 | Seeding before deploy verification breaks `deploy.sh:120, 161` and `prove_backup_restore.sh:56`. | FOLDED: post-verification step (4.4). |
-| F-11 | "No orchestrator" overstated (nine per-stage CLIs); the stronger fact: nothing in the deploy path seeds any book. | FOLDED: preamble and 1.4(3). |
+| F-11 | "No orchestrator" overstated (nine per-stage CLIs); the stronger fact: nothing in the deploy path seeds any book. | REFUTED IN PART, then FOLDED: preamble and 1.4(3). |
 | F-12 | Tracking error refuses without pinned benchmark constituents. | FOLDED: 4.4. |
 | F-13 | Sector and country amounts DO exist in concentration rows; by-factor-family is contract-legal to sum. | FOLDED: Part 3 and 1.4(2) corrected; sums server-side (DP-RB2-8). |
 | F-14 | The VaR trend is one covariance and one VaR run per boundary per metric per fund. | FOLDED: 4.4 run counts in the remit. |
@@ -562,7 +563,7 @@ fold landed. Two findings were refuted in part and are kept with the refutation.
 | C-M1 | Nine per-stage CLIs exist. | FOLDED with F-11. |
 | C-M2 | 15 routes, ten ops and admin. | FOLDED: 1.4(4). |
 | C-M3 | API-1b merged 2026-07-21. | FOLDED. |
-| C-M4 | 274 front-end tests on main. | FOLDED: 1.5. |
+| C-M4 | The test count was wrong. | FOLDED: 284 (measured at HEAD by the fold-check lane; the citation lane's 274 was itself wrong). |
 | C-M5 | Eighteen close reviews, not seventeen. | FOLDED: 1.5. |
 | C-M6 | Eleven persona rows over ten ids. | FOLDED: 1.3. |
 | C-M7 | DoD D1 is line 50. | FOLDED. |
@@ -580,6 +581,27 @@ that realises an entity, a wave closed with no close review, a gate with the exp
 to catch, a demo book whose private sleeve would corrupt its own desmoothing, and a screen that
 could not be walked over the tenant proposed for it. None was visible from the draft. The
 draft's author had the same recon the verifiers had.
+
+---
+
+### Lane G — the fold check (0 BLOCKING, 1 HIGH, 5 MED, 4 LOW; 61 dispositions and 41 new claims checked)
+
+| # | Finding | Disposition |
+|---|---|---|
+| G-H1 | J-PM-4 had "Decision: none" and so could never be WALKABLE, yet PM-1 declared it. | FOLDED: J-PM-4 now names its decision (4.2). |
+| G-M1 | Part 7's totals did not sum to its rows (F-size had no severity; 61 rows against "60"). | FOLDED: F-size is HIGH; totals re-summed to 61. |
+| G-M2 | "274 tests" wrong; HEAD runs 284, and the roadmap already said so. | FOLDED: 1.5 and C-M4. The citation lane's own correction was wrong; a re-measurement is not right because it is a re-measurement. |
+| G-M3 | S1's review described as fully folded; its fold commit left one BLOCKING outstanding. | FOLDED: 1.1. |
+| G-M4 | F-5's disposition claimed a UTIL-1 requirement 4.5 did not carry. | FOLDED: the UTIL-1 row. |
+| G-M5 | "Two findings refuted in part" but one row said so. | FOLDED: F-11 marked. |
+| G-L1 | "27 registered model codes" has no registry; it is the test campaign's census. | FOLDED: 1.4(2). |
+| G-L2 | The register and the RTM also cite the journeys document. | FOLDED: 1.3. |
+| G-L3 | "daily-marked year" contradicted the weekly-plus-daily bullet. | FOLDED: 4.4. |
+| G-L4 | The DP-19-1 spine was abbreviated. | FOLDED: 4.5. |
+
+**Verified by the fold lane and not listed:** every other FOLDED disposition lands where it says;
+all forty-one new numbers and locators hold; the cut line, the slice numbering and the journey
+line ids are consistent across 4.2, 4.5, Part 5 and Part 7.
 
 ---
 
