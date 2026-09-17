@@ -4,7 +4,7 @@
 (RATIFIED 2026-09-17, PR #241) Part 4.4 and Part 7 Lane F, and `delivery_roadmap.md` Part 2.22 row 1.
 Where this remit and the record disagree, the record wins and the disagreement is a FINDING.
 
-**Status: DRAFT, PENDING RATIFICATION** (DS-B1a-1 to DS-B1a-9, Part 4).
+**Status: RATIFIED by the owner 2026-09-17** ("proceed"; DS-B1a-1 to DS-B1a-9 all as recommended, Part 4). Planning gate merged as its own PR; the build follows on `w20-book1a`.
 
 Planned against main `ed298e7`, tree clean. Migration head `0077_bind_position_to_mapping`, one
 head. Next free canonical id **ENT-079**; next free control id CTRL-040. CI green on all nine checks
@@ -276,7 +276,7 @@ R-D5's survival is chance: under the mutant, recovery takes `members[0]`, whose 
 
 ---
 
-## Part 4 — Decisions this slice cannot make for itself
+## Part 4 — Decisions this slice cannot make for itself (ALL RATIFIED AS RECOMMENDED, 2026-09-17)
 
 **DS-B1a-1 — The fictional naming scheme.** Tenant `northlight`, "Northlight Capital Partners";
 funds as Part 2.1; instruments named like real issuers of their kind ("Cascadia Semiconductor",

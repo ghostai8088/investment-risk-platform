@@ -5,5 +5,5 @@
  "journey_lines": [],
  "source_dirs": [],
  "_no_scope_reason_why": "An empty scope must be a DECLARED emptiness. The G2 gate's first version exited 0 with an empty scope having adjudicated nothing; this gate was born with the refusal.",
- "no_scope_reason": "The 2026-09-17 product re-baseline ratification is a gate, not a build slice: it closes Wave 19 and sequences Wave 20. No screen is entering build. The first scope is declared at the BOOK-1a planning gate, and BOOK-1a itself is expected to declare no journey line (it is the tenant the later screens are walked over); CRO-1 is the first slice that declares lines."
+ "no_scope_reason": "Declared emptiness, 2026-09-17 (BOOK-1a planning gate, w20_book1a_remit.md): BOOK-1a makes no journey line walkable; it is the tenant the later screens are walked over. CRO-1 (Wave 20 slice 3) is the first slice that declares lines (J-CRO-1, 2, 4, 5, 6, 7)."
 }
