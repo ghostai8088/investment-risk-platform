@@ -74,7 +74,9 @@ delivered substance against them.
 - G2: no slice in flight (declared emptiness; the parked S1's scope withdrawn). G4: this section.
   G5: born this close, ledger empty by design, its empty-ledger control instructs its own deletion
   at the first walk.
-- Verify-on-main: to be stamped in `current_state.md` after the ratification PR merges.
+- Verify-on-main: PR #241 merged as `c669f14`; the close review, the gate script, roadmap Part
+  2.22 and the twelve journey lines are present on `main`, and `journey-check` and
+  `capability-check` exit 0 there. CI nine-for-nine at `03f1b37`, per conclusion.
 
 ## 4. Carries out of Wave 19 (P19 — each names a host or trigger, or is a DECISION)
 
