@@ -1,6 +1,75 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-08-25 — the demo can be OPENED; W19-S3b before it) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-09-17 — the SECOND product re-baseline: Wave 19 CLOSED EARLY, Wave 20 = "A CRO CAN USE IT", G5 minted) — read this block; everything below it is HISTORY
+
+**Main: the ratification PR of `product-rebaseline-2026-09-17` (stamp to follow after merge with the
+merged SHA and the per-conclusion CI verdict). Migration head `0077_bind_position_to_mapping`, one
+head — UNCHANGED, this gate ships no migration. Next free canonical id **ENT-079**. Next free control
+id CTRL-040. NEXT = WAVE-20 SLICE 1, BOOK-1a (the public demo tenant), after this PR merges.**
+
+### What happened (2026-09-17)
+
+The owner opened the deployed demo and said *"Wow, this is way off ... not something a CRO or PM
+would recognize."* The record `02_requirements/product_rebaseline_2026-09-17.md` (RATIFIED,
+"Proceed", nine decision points as recommended) measures why and decides a PARTIAL RESTART:
+
+- **Keep** the governed spine: about 105,000 lines of backend and shared source, 77 migrations, 20
+  calculation families across 22 run types, symmetric FORCE RLS, the frozen audit service, 3,730
+  PostgreSQL-tier tests.
+- **Restart the presentation layer persona-first.** Today: 15 routes, ten of them operations or
+  admin screens, three the governance walk, two a run ledger; no screen shows a portfolio's risk;
+  no chart exists in the deployed product (the S1 chart lives on an unmerged branch, visible only in
+  a sandboxed iframe on an ops page).
+- **Replace the deployed demo book.** Today it is ONE three-position book, seeded BY HAND on
+  2026-08-25; nothing in the deploy path seeds any book; the 27 extension stages exist only as
+  ordered PG test modules.
+- **Change the yardstick: G5.** The 2026-08-12 re-baseline answered the same complaint by rebuilding
+  the requirements register and keeping it as the yardstick; every gate it built reads the register;
+  the first slice under them (W19-S1) passed every gate and shipped a chart nobody can see, and G3
+  passed it. So a human walks each declared journey line on the DEPLOYED stack and names the
+  DECISION the persona would take and the value that drove it (`scripts/check_journey_walks.py`,
+  `make journey-check`, CI; paperwork only, never quality). Twelve journey lines J-CRO-1..8 and
+  J-PM-1..4 ratified into `personas_and_user_journeys.md`, a document no gate had cited since June.
+
+### Verified on a different engine BEFORE ratification
+
+Four Fable 5.1 lanes on the draft and the fold: **71 findings, 6 BLOCKING, all folded** (Part 7 of
+the record). The BLOCKING ones: the VaR drill was false at its own citation (`var_value` is
+NOT_AGGREGATABLE; no node read exists); "no new governed number" hid LIM-3's migration; the wave
+was closing with no close review (G4 would have gone green over a document that does not exist);
+the first G5 draft had a P20 exploit (describe five tables of strings → WALKABLE); the demo book
+would have corrupted its own desmoothing window; J-CRO was unwalkable over a one-fund tenant. Also:
+the citation lane's own test-count correction was wrong (274 → measured 284).
+
+### What this gate carried (Part 6 of the record, all done on the branch)
+
+`wave_19_close_review.md` (G4 table 18.1 + 1.2; twelve P19 carries with hosts, two of them
+DECISIONS for BOOK-1a's gate) · roadmap Part 2.21 stamped (S3a #234, S3b #236 were never stamped),
+Part 2.22 Wave 20 (BOOK-1a → BOOK-1b → CRO-1 → UTIL-1 → PM-1 → DRILL-1 → SHOW-1; cut line DRILL-1
+only), Part 4 rule 8 (G5), four Part 5 rows incl. the 2026-08-12 row never written · DoD D18
+amended · realism rule gains names/counts/totals · operating instructions P21 section + index ·
+`CLAUDE.md` invariant line · the G5 script, empty ledger, no-scope declaration, Makefile target, CI
+step (docs-check job now `fetch-depth: 0` for the ancestor question), 34 controls, 9 mutants 9/9
+killed (one SURVIVED its first run and its control was extended) · the G4 gate gains a control
+refusing a wave closed with no close review, proven to fire on the real tree · `g2_slice_scope.json`
+to a declared no-scope (the parked S1 withdrawn) · the seven-ledger sweep below.
+
+### Seven-ledger sweep (2026-09-17)
+
+1. Canonical model: no ENT minted; next free ENT-079 unchanged. 2. Audit taxonomy: no code minted.
+3. Control matrix: **no control moved** (G5 is a process gate on the P18 precedent, not a
+CTRL row; CTRL-040 stays next free). 4. This block. 5. Backbone + RTM: no row edited, no
+acceptance text touched, no adjudication lapsed (verified: `make g2-check` exit 0). 6. Counts
+MEASURED on a fresh battery: see `wave_19_close_review.md` §3. 7. Delivery claims verified against
+the branch diff; the merged-SHA stamp lands after the merge.
+
+### Position
+
+S1 (`w19-s1-present`, four commits to `81d3247`, pushed) is PARKED UNMERGED, not deleted. The
+deployed stack `irp-dep1` still runs the 2026-08-25 build with the hand-seeded three-position book;
+BOOK-1a replaces what it holds.
+
+## Previous truth — superseded at the 2026-09-17 product re-baseline (2026-08-25 — the demo can be OPENED; W19-S3b before it)
 
 **Main `95ac1d7` (PR #238, the demo-tenant admission fix — the 44th autonomous merge), tree clean.
 CI green on all nine checks at head `d196f2c`, verified per conclusion, zero non-success. Migration

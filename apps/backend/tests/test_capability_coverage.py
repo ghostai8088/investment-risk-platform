@@ -43,6 +43,7 @@ _INPUTS = (
     "02_requirements/requirements_backbone.md",
     "02_requirements/requirements_traceability_matrix.md",
     "02_requirements/capability_coverage_baseline.json",
+    "10_delivery_backlog/delivery_roadmap.md",
 )
 
 
@@ -336,3 +337,27 @@ def test_a_BLIND_DISCOVERY_GLOB_EXITS_TWO(sandbox: Path) -> None:
     with pytest.raises(SystemExit) as exc:
         gate.main()
     assert exc.value.code == 2
+
+
+# --- a closed wave with no close review (2026-09-17 re-baseline, verifier finding A-B4) --------
+
+
+def test_a_wave_the_roadmap_moved_past_with_NO_close_review_FAILS(sandbox: Path) -> None:
+    """G4 binds only the reviews it finds. Closing a wave by opening the next one in the roadmap,
+    with no close review written, left the gate green over a document that did not exist."""
+    roadmap = sandbox / gate.ROADMAP
+    text = roadmap.read_text()
+    top = max(int(w) for w in gate._ROADMAP_WAVE.findall(text))
+    roadmap.write_text(
+        text + f"\n\n## Part 2.99 — Wave {top + 2}: a wave opened with no close behind it\n"
+    )
+    assert top + 1 not in {w for w, _ in gate.close_reviews()}
+    assert gate.main() == 1
+
+
+def test_every_wave_the_roadmap_has_moved_past_has_a_review_TODAY(sandbox: Path) -> None:
+    """The positive half, discovered rather than listed: whatever the roadmap's highest wave is,
+    every wave below it has a review on disk. Non-vacuous because the roadmap holds many."""
+    text = (sandbox / gate.ROADMAP).read_text()
+    assert len(set(gate._ROADMAP_WAVE.findall(text))) >= 10
+    assert gate.closed_waves_without_a_review() == []

@@ -2059,3 +2059,106 @@ find = """    # ONE writer, shared with `run_demo_campaign`. This stage used to 
 replace = """    # ONE writer, shared with `run_demo_campaign`. This stage used to own the only copy, which is
     # how tenant admission became a side effect of a reproduction-scheduling stage."""
 tests = ["packages/shared-python/tests/test_demo_tenant_admission.py", "packages/shared-python/tests/test_demo_reproduction_stage.py"]
+
+# ---------------------------------------------------------------------------------------------
+# Product re-baseline 2026-09-17 — the G5 journey-walk gate. Each mutant is one way the gate goes
+# green while checking nothing; every control runs through main(), the real entry point.
+# ---------------------------------------------------------------------------------------------
+
+[[mutant]]
+id = "M-G5-1"
+group = "rebaseline-2026-09-17"
+why = "the WALKABLE-needs-a-decision check is removed — the exploit the different engine found returns: a description of five tables of strings is accepted as a walk"
+file = "scripts/check_journey_walks.py"
+find = """            if (
+                not str(e.get("decision", "")).strip()
+                or not str(e.get("driving_value", "")).strip()
+            ):"""
+replace = """            if False:"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-2"
+group = "rebaseline-2026-09-17"
+why = "the lapse hash is ignored — a journey line can be rewritten after its walk and the old walk still accepts the new text"
+file = "scripts/check_journey_walks.py"
+find = """            if e.get("line_hash") != lines[line]:
+                continue"""
+replace = """            pass"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-3"
+group = "rebaseline-2026-09-17"
+why = "the STALE rule is unplugged — the screen can be rewritten after the walk and merge on the old walk"
+file = "scripts/check_journey_walks.py"
+find = """            if line in scope and changed_under(dh, head, source_dirs):
+                continue"""
+replace = """            pass"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-4"
+group = "rebaseline-2026-09-17"
+why = "the ancestor check is unplugged — a walk on some other branch's build accepts this commit"
+file = "scripts/check_journey_walks.py"
+find = """            if not _HEX.match(dh) or not is_ancestor(dh, head):
+                continue"""
+replace = """            pass"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-5"
+group = "rebaseline-2026-09-17"
+why = "the slice gate is unplugged from main() — declared lines nobody walked pass (the 2026-08-14 entry-point class)"
+file = "scripts/check_journey_walks.py"
+find = """        for line in scope:
+            if line not in lines:"""
+replace = """        for line in []:
+            if line not in lines:"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-6"
+group = "rebaseline-2026-09-17"
+why = "the wave-close section check is unplugged from main() — a Wave-20 close can claim a line the ledger never saw walked"
+file = "scripts/check_journey_walks.py"
+find = """        errors.extend(g5_close_errors(walked_any, lines))"""
+replace = """        pass  # close check unplugged"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-7"
+group = "rebaseline-2026-09-17"
+why = "a model may record a walk — the one gate a model cannot answer for itself is answered by one"
+file = "scripts/check_journey_walks.py"
+find = """        if who.startswith("MODEL:"):
+            errors.append(
+                f"{tag}: walked_by {who!r} is a model. G5 is the gate a model cannot answer "
+                f"for itself"
+            )"""
+replace = """        if False:
+            pass"""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G5-8"
+group = "rebaseline-2026-09-17"
+why = "the declared-empty-scope refusal is removed — a slice declared with no journey line exits 0 having walked nothing (the vacuity found inside G2)"
+file = "scripts/check_journey_walks.py"
+find = """    if slice_id and not scope:
+        raise Structural("""
+replace = """    if False:
+        raise Structural("""
+tests = ["apps/backend/tests/test_journey_walks.py"]
+
+[[mutant]]
+id = "M-G4-5"
+group = "rebaseline-2026-09-17"
+why = "the missing-close-review check is unplugged from main() — a wave closed by opening the next one, with no close review ever written, leaves G4 green over a document that does not exist"
+file = "scripts/check_capability_coverage.py"
+find = """    for w in closed_waves_without_a_review():
+        errors.append("""
+replace = """    for w in []:
+        errors.append("""
+tests = ["apps/backend/tests/test_capability_coverage.py"]

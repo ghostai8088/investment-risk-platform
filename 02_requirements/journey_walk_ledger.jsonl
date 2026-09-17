@@ -1,0 +1,18 @@
+// G5 — the journey-walk ledger (product re-baseline 2026-09-17, DP-RB2-2). APPEND-ONLY.
+// One JSON object per line, one per walked journey line, written by a HUMAN on the roster
+// (02_requirements/g2_adjudicators.json) after walking the line on the DEPLOYED stack as the named
+// persona. Fields:
+//   line          the journey line id, e.g. "J-CRO-2" (02_requirements/personas_and_user_journeys.md)
+//   line_hash     sha256 of the line's text, computed by scripts/check_journey_walks.py's own parser
+//                 against the committed file — edit the line and every walk of it LAPSES
+//   persona       the persona walked as, e.g. "P-CRO"
+//   walked_by     roster member; a value starting "MODEL:" is rejected
+//   deployed_head the commit the walked stack was built from; must be an ancestor of the PR head
+//   route         the route walked, e.g. "/funds/{id}"
+//   verdict       "WALKABLE" or "NOT WALKABLE"
+//   decision      WALKABLE only: the decision the persona would take from this screen today
+//   driving_value WALKABLE only: the value on the screen that drove it
+//   reasoning     at least 120 characters; what was on the screen and why the decision follows
+//   walked_at     ISO date
+// The gate checks paperwork, never quality: it proves a person walked the line and named a
+// decision. It has no opinion about whether the decision is a good one.

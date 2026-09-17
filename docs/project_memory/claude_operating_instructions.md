@@ -18,7 +18,8 @@ carry pin + census + SoD row · P12 execute the plainest alternative before reco
 clause) · P15 shared-assumption proofs count once (+ the different-engine trigger) · P16 citations
 re-verified at the PR boundary · P17 a mint isn't minted until a migration delivers it · P18
 harnesses get controls and get committed · P19 a carry names a slice or a trigger, else it is a
-decision.
+decision · P20 a requirement row is adjudicated by a human before it enters a slice · P21 a
+presentation slice is accepted by a human walking its journey lines (G5).
 
 **Unnumbered standing sections (conventions, same force, enumerated so none is invisible):** the
 adversarial review pattern · verification & objectivity · gate tiers · commit discipline ·
@@ -676,6 +677,46 @@ when the text moves. *It must never be cited in a status document as a check on 
 quality* — that framing is the failure this whole rule exists because of. **RATIFIED 2026-08-13 by
 the user** at the G2 decision gate (option A, as recommended), the design having been produced by
 the bake-off's own refutation of its brief.
+
+## A presentation slice is accepted by a human WALKING its journey lines (standing, RATIFIED 2026-09-17, P21 — gate G5)
+The 2026-08-12 re-baseline diagnosed the drift ("the register is the yardstick") and then rebuilt the
+register. The first presentation slice built under its gates, W19-S1, passed its census, its
+battery, full-PG and a 39-finding review, and shipped a chart nobody can see on any screen (a
+byte-identical SVG inside report HTML, visible only through a sandboxed iframe on an ops page).
+G3, "an acceptance criterion a human can see", passed it, because a rendered artifact asserted on
+by a test is a rendered artifact. **The register can only describe what a system does; every gate
+that reads the register inherits that limit.** The owner's verdict on 2026-09-17: *"not something
+a CRO or PM would recognize."*
+
+**The rule, bound to two moments.** *(T1)* At a slice's planning gate, the remit declares the
+journey lines it will make walkable in `02_requirements/journey_slice_scope.json` (line ids from
+`02_requirements/personas_and_user_journeys.md`, plus the front-end source directories that serve
+them), or declares no slice with a written reason; a declared slice with an empty scope is refused.
+*(T2)* Before the slice merges, a person on the roster (`02_requirements/g2_adjudicators.json`)
+opens the DEPLOYED stack, walks each declared line as the named persona, and answers, per line:
+
+> *"Name the decision the persona would take from this screen today, and the value on the screen
+> that drove it. If no decision follows from what is shown, the verdict is NOT WALKABLE."*
+
+The answer is a row in `02_requirements/journey_walk_ledger.jsonl` carrying `decision`,
+`driving_value`, at least 120 characters of reasoning, the `deployed_head` walked, and the hash of
+the line's text. **Why the question is a construction and not a description:** the first draft
+asked the walker to describe the screen, and a different engine broke it in one pass — five stacked
+tables of verbatim strings, a 120-character description, WALKABLE. Describing a screen is not using
+it. **The walk lapses** when the line's text changes (P20 T2's analogue) and goes STALE when any
+file under the declared source directories changes after the walked build; the walked build must
+be an ancestor of the PR head. From Wave 20 on, a close review carries `## Journey coverage (G5)`.
+
+**The mechanical half** is `scripts/check_journey_walks.py` + `make journey-check` + CI, and it
+checks **paperwork, never quality**: that the act happened, by a human, with a decision named, on
+this lineage, against this text. *It must never be cited as a check on product quality.* The
+walker is the owner until the owner names someone else; P15 applies to the walker too, and
+DP-RB2-9 requires one walk by a practising risk manager or PM who did not build the product before
+Wave 20 closes. Claude may draft a journey line and its draft is never the yardstick: the lines are
+ratified by the owner (DP-RB2-3), because the builder must not author what it is measured against.
+**RATIFIED 2026-09-17 by the user** ("Proceed" on `02_requirements/product_rebaseline_2026-09-17.md`,
+nine decision points as recommended; the record verified on a different engine first, four lanes,
+6 BLOCKING found and folded).
 
 ## Prohibited behavior
 

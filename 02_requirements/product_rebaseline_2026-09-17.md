@@ -1,12 +1,15 @@
 # Product re-baseline — 2026-09-17: a CRO cannot recognise it
 
-**Status: DRAFT, PENDING RATIFICATION.** Authored 2026-09-17 on `product-rebaseline-2026-09-17`
-by Claude (Opus 5) from four recon censuses of the repository. Verified on a different engine
-(Fable 5.1, three fresh-context lanes on the draft and a fourth on the fold) and folded; the full ledger is
-Part 7. Nothing in this document is ratified until the owner says so. The decision points in
-Part 5 are the owner's. No hash moves in this record: it edits no acceptance text, and the G5
-ledger it proposes is born empty. This is the second re-baseline of the product; it exists because
-the first one, `product_rebaseline.md` (2026-08-12), did not work, and Part 1 says why.
+**Status: RATIFIED 2026-09-17 by the owner** — "Proceed", all nine decision points in Part 5 as
+recommended, after the brief that closed with the four decisions the owner was asked to read rather
+than accept on trust (direction; the journey lines; the Wave-20 sequence; an outside walker).
+Authored 2026-09-17 on `product-rebaseline-2026-09-17` by Claude (Opus 5) from four recon censuses
+of the repository. Verified on a different engine before ratification (Fable 5.1, three fresh-context
+lanes on the draft and a fourth on the fold) and folded; the full ledger is Part 7. No hash moves in
+this record: it edits no acceptance text, and the G5 ledger it proposes is born empty. This is the
+second re-baseline of the product; it exists because the first one, `product_rebaseline.md`
+(2026-08-12), did not work, and Part 1 says why. **What the ratification commit carried is Part 6,
+each item done; the close review is `10_delivery_backlog/wave_19_close_review.md`.**
 
 **Why it exists.** On 2026-09-17 the owner opened the deployed demo and said: *"Wow, this is way
 off."* Asked to state the purpose of the application, Claude gave the ratified answer (a
@@ -255,7 +258,7 @@ empty and instructs its own deletion at the first walk).
 WALKABLE G5 ledger row per journey line the slice declared". D18 was the user-perspective
 criterion the DoD already had, bound to nothing.
 
-### 4.2 The journeys, made concrete (proposals; DP-RB2-3)
+### 4.2 The journeys, made concrete (RATIFIED as written, DP-RB2-3; the owner's text now lives in `personas_and_user_journeys.md`)
 
 The eight journeys of REQ-PERSONA-001 are the frame. Two are made concrete now, as the yardstick
 for Wave 20. Each line names what is on the screen and the decision it supports, so a walker can
@@ -437,7 +440,7 @@ the J-CRO lines rest on the owner's ratification (DP-RB2-3), not on an outward c
 
 ---
 
-## Part 5 — Decision points (Tier 3, the owner's)
+## Part 5 — Decision points (Tier 3, the owner's — ALL RATIFIED AS RECOMMENDED 2026-09-17)
 
 | # | Decision | Recommendation |
 |---|---|---|
@@ -457,7 +460,7 @@ orchestrator's name and CLI shape; the fictional naming scheme for the tenant.
 
 ---
 
-## Part 6 — What the ratification commit must carry
+## Part 6 — What the ratification commit carries (DONE 2026-09-17, on this branch)
 
 No hash moves in this record, so the two-commit rule does not apply; the order below is the
 dependency order.
