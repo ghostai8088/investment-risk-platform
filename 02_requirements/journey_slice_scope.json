@@ -5,5 +5,5 @@
  "journey_lines": [],
  "source_dirs": [],
  "_no_scope_reason_why": "An empty scope must be a DECLARED emptiness. The G2 gate's first version exited 0 with an empty scope having adjudicated nothing; this gate was born with the refusal.",
- "no_scope_reason": "Declared emptiness, 2026-09-17 (BOOK-1a planning gate, w20_book1a_remit.md): BOOK-1a makes no journey line walkable; it is the tenant the later screens are walked over. CRO-1 (Wave 20 slice 3) is the first slice that declares lines (J-CRO-1, 2, 4, 5, 6, 7)."
+ "no_scope_reason": "Declared emptiness, 2026-09-18 (BOOK-1b planning gate, w20_book1b_remit.md): BOOK-1b makes no journey line walkable; it seeds the private sleeves, limits, breaches and the daily quarter that J-CRO-1, J-CRO-5 and J-CRO-7 will be walked over at CRO-1 (Wave 20 slice 3), the first slice that declares lines (J-CRO-1, 2, 4, 5, 6, 7). Earlier: BOOK-1a (2026-09-17) declared no scope for the same reason."
 }

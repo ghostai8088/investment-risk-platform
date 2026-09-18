@@ -54,10 +54,10 @@ Each phase has an exit that a person can check. Phases 0 and 1 run in parallel.
   them locally. Exit: `DEPLOY VERIFIED` printed by `deploy.sh --with-demo` on a fresh database, Northlight
   present, DEMO-GLOBAL absent, `northlight-cro` signs in. This is a hygiene insertion under roadmap Part 4
   rule 3; it ratifies before it starts but it is not a calculation slice.
-- **0b OUTWARD BENCHMARK (G-3).** Write the 4.7 section: at least two public vendor or regulatory sources
+- **0b OUTWARD BENCHMARK (G-3) — DONE 2026-09-18** (`02_requirements/outward_benchmark_cro_overview_2026-09-18.md`, seven sources, 33 of 33 quotes verified verbatim by an Opus citation lane). Original text: Write the 4.7 section: at least two public vendor or regulatory sources
   on what a CRO risk overview shows, quoted verbatim with locators, read by a citation lane that sees only
   the sources. Exit: the section lands in the CRO-1 planning record and the citation lane passes.
-- **0c WALK CALENDAR (G-4).** The owner names a walk slot per slice exit (CRO-1, UTIL-1, PM-1, DRILL-1,
+- **0c WALK CALENDAR (G-4) — OPEN, asked 2026-09-18, due before CRO-1's exit.** Added the same day, **0d:** a `record-walk` command that fills the seven mechanical ledger fields (line id, sha256 hash, persona, roster name, deployed head, route, date) and takes the walker's four (verdict, decision, driving value, reasoning), landing with CRO-1 before its first walk; today nothing fills them and nobody should type a sha256 by hand. Original text: The owner names a walk slot per slice exit (CRO-1, UTIL-1, PM-1, DRILL-1,
   SHOW-1) and names the outside walker (a practising risk or portfolio manager who did not build the
   product) before PM-1's gate, or records the recurrence acceptance DP-RB2-9 allows. Exit: dates and a
   name in the roadmap Part 2.22.

@@ -5,8 +5,8 @@
 **Main `1c430f9` (PR #244, W20 BOOK-1a — the 48th autonomous merge), tree clean. CI green on all
 nine checks at head `8b61b45`, verified per conclusion (every check-run `completed | success`).
 Migration head `0077_bind_position_to_mapping`, one head — UNCHANGED, this slice ships no
-migration. Next free canonical id **ENT-079**. Next free control id CTRL-040. NEXT = WAVE-20
-SLICE 2, BOOK-1b (the private sleeves and the limits) IN PARALLEL WITH PHASE 0 (remediation plan, 2026-09-18).**
+migration. Next free canonical id **ENT-079**. Next free control id CTRL-040. NEXT = the DS-B1b-3 (B)
+PRE-SLICE FOLD (unified-VaR builder conformance), then the BOOK-1b BUILD (planning RATIFIED 2026-09-18, `w20_book1b_remit.md`).**
 
 ### Re-baseline scorecard (added 2026-09-18 — "ratified" is not "done"; update at every Wave-20 slice close)
 
@@ -14,12 +14,12 @@ SLICE 2, BOOK-1b (the private sleeves and the limits) IN PARALLEL WITH PHASE 0 (
 |---|---|
 | Decision ratified, G5 gate built, journeys ratified, Wave 19 closed, S1 parked | DONE |
 | Replace the deployed demo book (4.4) | HALF — public book only (BOOK-1a); no private sleeves, limits, breaches, daily quarter (BOOK-1b) |
-| Deployed stack holds the new book, built from `main` | NO — late-August images, tenant seeded by hand, `--with-demo` never run end to end (Phase 0a) |
+| Deployed stack holds the new book, built from `main` | YES since 2026-09-18 (Phase 0a): `deploy.sh --with-demo` on a fresh volume, `DEPLOY VERIFIED`, 597 runs / 86.7 s; registry = northlight + system |
 | Front-end restart persona-first (4.3) | NOT STARTED (CRO-1) |
 | Journey lines walked (G5 ledger) | 0 of 12 |
-| Wave-20 slices | 1 of 7 (+ Phase 0 inserted 2026-09-18) |
-| Outward benchmark (4.7) before CRO-1 planning | NOT WRITTEN (Phase 0b) |
-| Outside walker named (DP-RB2-9) | NO (Phase 0c) |
+| Wave-20 slices | 1 of 7 built; BOOK-1b planning RATIFIED 2026-09-18 (+ Phase 0 inserted 2026-09-18: 0a, 0b DONE; 0c OPEN; 0d added) |
+| Outward benchmark (4.7) before CRO-1 planning | DONE 2026-09-18 (7 sources, 33/33 verbatim) |
+| Outside walker named (DP-RB2-9) | NO — asked 2026-09-18, open (Phase 0c) |
 
 The plan that tracks this: `10_delivery_backlog/purpose_mismatch_remediation_plan.md` (ratified 2026-09-18).
 
