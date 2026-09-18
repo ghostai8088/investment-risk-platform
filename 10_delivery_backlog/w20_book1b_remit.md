@@ -8,13 +8,16 @@ Where this remit and the record disagree, the record wins and the disagreement i
 **Status: RATIFIED 2026-09-18 by the owner** ("Proceed", after the brief that put nine decisions to the owner and
 named seven as routine): every DS-B1b decision as recommended — DS-B1b-1 (a), -2 (a), -3 (B), -4 (b), -5 (B),
 -6 (A), -7 (B, B, A), -8 (D), -9 (C), -9a (A), -10 (A), -11 (A), -12 (a), -13 (A), -14 (A, floor seventeen),
--15 (A). Two ratified clauses are AMENDED by this ratification and recorded in the roadmap Part 5 row dated
+-15 (A). The nine decisions BRIEFED to the owner were DS-B1b-1, -3, -4, -5, -7, -8, -9, -10 and -15; the seven
+named ROUTINE were DS-B1b-2, -6, -9a, -11, -12, -13 and -14 (each Part 4 header carries its tag; GOV-R-12). The two
+clause amendments (DS-B1b-4, DS-B1b-9) were therefore put to the owner, not carried in the routine seven.
+Two ratified clauses are AMENDED by this ratification and recorded in the roadmap Part 5 row dated
 2026-09-18 (the re-baseline record itself is not rewritten): the chain is "per MATURE private fund" (DS-B1b-4),
 and the two backtest families are NOT run in BOOK-1b (DS-B1b-9). DS-B1b-3 (B) is a PRE-SLICE FOLD with its own
 gate, before BOOK-1b's seed is written. Part 4 holds the decisions as put; Part 7 holds the fold of the four different-engine lanes (61 findings, 2026-09-18), the second-pass
 fold check (10 findings), the round-3 fold check (10 findings, every folded number re-executed), the round-4
 fold check (8 findings, every touched number re-executed), the round-5 fold check (6 findings, every touched
-number re-executed), the round-6 fold check (6 findings, folded by hand with each site re-read), the round-7 fold check (5 findings, folded by hand), the round-8 fold check (5 findings, none BLOCKING or HIGH, folded by hand; the loop exit) and the four claims that stay unverified until the seed exists.
+number re-executed), the round-6 fold check (6 findings, folded by hand with each site re-read), the round-7 fold check (5 findings, folded by hand), the round-8 fold check (5 findings, none BLOCKING or HIGH, folded by hand; the loop exit), the four claims that stay unverified until the seed exists, and the ratification-diff verification of commit `d676fc4` on a different engine (round 1: 43 findings, 3 BLOCKING; round 2: 7 findings, 1 HIGH; round 3: 4 findings, 1 HIGH; all folded 2026-09-18 in the working tree — the last three tables of Part 7).
 
 Planned on branch `w20-remediation-plan` at `323cedc` ("Phase 0a DONE"); ratified and committed on
 `w20-book1b-planning` over main `1c4f64f` (PR #246), together with Phase 0b's benchmark
@@ -24,8 +27,9 @@ Migration head `0077_bind_position_to_mapping`, unchanged by this slice. Next fr
 
 Remits state OUTCOMES and PROOFS, not steps. Plain words; short sentences.
 
-**Recon basis.** Five read-only lanes (Fable 5.1) on 2026-09-18: the private-sleeve chain; commitments
-and pacing; total and unified VaR; limits and breaches; seed mechanics for the daily quarter; and a
+**Recon basis.** SIX read-only lanes (Fable 5.1) on 2026-09-18, the roster the roadmap Part 5 row counts
+(GOV-R-09, FR-07, CC-10; the first text said "five" and listed six): (1) the private-sleeve chain; (2) commitments
+and pacing; (3) total and unified VaR; (4) limits and breaches; (5) seed mechanics for the daily quarter; (6) a
 governance lane. Every fact below carries their file:line citations. Where two lanes disagreed, the
 disagreement is written as a decision point in Part 4, not smoothed over. Executed evidence is marked
 "Executed:" and quoted.
@@ -59,7 +63,7 @@ slice scope : 0 — no slice declared / G5_EXIT=0`).
 
 ---
 
-## Part 0 — Organizing facts (recon-verified; each reshaped the plan)
+## Part 0 — Organizing facts (recon-verified by the SIX lanes numbered in the Recon basis above; each reshaped the plan)
 
 1. **The desmoothing binder pins every current-head mark in its window. No frequency filter.**
    `snapshot/service.py:2419-2431` selects `Valuation.valuation_date >= window_start` and
@@ -126,8 +130,20 @@ slice scope : 0 — no slice declared / G5_EXIT=0`).
    builder that row must be NON-ZERO, because a zero-weight pin emits no exposure row and the builder
    sees only exposure instruments (R4V-01, Part 2.3). Today the seed's
    order is `_register_models` → `_run_account_boundaries` → `_run_month_end_chain` →
-   `_run_return_chains` (`demo_tenant/seed.py:1234-1238`); a `_run_private_chain` step goes between
-   the first two (lines 1234 and 1236; C-05).
+   `_run_return_chains` → `_run_sensitivity` (`demo_tenant/seed.py:1234-1239`, re-read at the
+   ratification-diff fold). **The BOOK-1b orchestrator order, stated once (FR-01):**
+   `_register_models` → **`_run_private_chain`** (new; C-05) → `_run_account_boundaries` →
+   **`_run_daily_chain`** (new; the 59 dates of Part 2.7) → `_run_month_end_chain` (unchanged 13
+   iterations, with the LIMIT EVALUATION inside the loop at the 2026-04-30, 2026-05-29 and 2026-06-30
+   iterations, after that iteration's concentration and liquidity runs, `seed.py:1076-1104`; DS-B1b-8
+   (D)) → `_run_return_chains` → `_run_sensitivity`. The daily chain runs BEFORE the month-end chain
+   because the limit resolver orders by wall clock, not by as-of (`calc/reads.py:101-103`
+   `order_by(CalculationRun.system_from.desc(), ...)`): a daily NL-GMA VAR_PARAMETRIC run created after
+   the June evaluation would become "latest", carry no breach row, and break `limit_health` (Part 0.10,
+   Part 5 mutant 9). After `_run_month_end_chain` no step creates a run of a limited family (VAR,
+   CONCENTRATION, ACTIVE_RISK) for a fund root: `_run_return_chains` creates PORTFOLIO_RETURN,
+   BENCHMARK_RELATIVE, ROLLING_RISK and SHARPE runs only (`seed.py:1116-1179`) and `_run_sensitivity`
+   creates SENSITIVITY runs.
 7. **Unified VaR at the NL-PMF root refuses today, because the builder does not conform to its own
    registered `v1` assumption.** The registered text says the p vector sums "MANUAL-members i of
    segment s" and a repartitioned instrument is "a current-head MANUAL member of a pure-private
@@ -142,7 +158,11 @@ slice scope : 0 — no slice declared / G5_EXIT=0`).
    Omega_pp run`; `PROBE D (mixed fund, public instrument with NO manual row): COMPLETED`. The engine
    can price a mixed book; the code is non-conformant with the model version's declared assumption.
    That is DS-B1b-3, it is BLOCKING for "unified VaR" as the roadmap row writes it, and the assumption
-   question belongs to model governance (CTRL-014, the registrar, `model.validate`), not to G2, which
+   question belongs to model governance — CTRL-003, the model inventory (`register_model` /
+   `register_model_version`, `09_compliance_controls/control_matrix_skeleton.md:44`), and CTRL-022,
+   independent validation, whose `model.validate` write is 2L-only (`:63`); CTRL-014 (`:55`) is the
+   limitations register and is touched only if the `v1` version records a `model_limitation` row
+   (GOV-R-04: the first text named CTRL-014 as "the registrar") — not to G2, which
    gates requirement rows (GOV-6; C-10 corrected `:3575` to `:3574`).
 8. **Unified VaR is an NL-PMF-only number.** On NL-GMA and NL-EFI the unified builder refuses
    pre-create, but TODAY on the uncovered-held-segment gate (`snapshot/service.py:3574-3584`, Part 0.7's
@@ -168,7 +188,14 @@ slice scope : 0 — no slice declared / G5_EXIT=0`).
     root-scoped, so a root limit resolves (Executed: `latest_var_for_portfolio(root,
     metric_type='VAR_PARAMETRIC')` → `NL-GMA VAR_PARAMETRIC 1734274.488757 USD`). Evaluation is the
     tick's, importable with an injected `now` (`service.py:577`); the resolver takes the LATEST
-    COMPLETED run (`calc/reads.py:101-103`), so **evaluation is the orchestrator's last step**. A
+    COMPLETED run by wall clock (`calc/reads.py:101-103`), so **no step after the June evaluation may create a COMPLETED run of a limited family (VAR,
+    CONCENTRATION, ACTIVE_RISK) for the three fund roots** (Part 0.6's invariant in Part 0.6's words,
+    VF1-05; the first rewrite said the evaluation "must be the last step that creates a COMPLETED run",
+    but the evaluation creates no run — it appends a breach row, `limit/service.py:577-598`, and the run
+    it reads comes from `_resolve_latest` at `:586`): the daily chain runs BEFORE the month-end chain and each of the three
+    evaluations sits inside the month-end loop after its own iteration's runs (Part 0.6, FR-01; the
+    first text said "the orchestrator's last step", which would have collapsed the three
+    evaluations onto one run under `uq_breach_limit_run`). A
     breach is one row per (limit, run) (`models.py:177` `uq_breach_limit_run`); re-evaluation is
     idempotent (Executed: a second pass returned the same two ids and wrote nothing).
 11. **"Exactly one utilisation strictly between" and a CRO-recognisable grid cannot both hold.**
@@ -219,8 +246,19 @@ slice scope : 0 — no slice declared / G5_EXIT=0`).
     edit, not a P17 mint. The seed writes through services and would not notice; the deployed CRO
     would 403. That is DS-B1b-13.
 17. **Two BOOK-1a rules the private sleeves must not break.** The generator is one shared
-    `random.Random(SEED)` stream consumed in a fixed order (`book.py:1371,1394,1402-1403`); new
-    instruments appended AFTER the 55 leave the public marks and all three goldens in place. The
+    `random.Random(SEED)` stream consumed in a fixed order: the factor draws (`book.py:1371,1394,1403`),
+    then the public mark noise inside `for inst in INSTRUMENTS` (`:1438` `noise = rng.gauss(0.0, idio)
+    if idio > 0 else 0.0`), then the BENCHMARK noise inside `for fund in FUNDS` (`:1481` `noise =
+    rng.gauss(0.0, float(m.daily_sigma)) ...`). Appending instruments AFTER the 55 protects the public
+    marks but NOT the benchmark series: a private spec that takes even one draw at `:1438` shifts every
+    benchmark draw after it, and the three goldens read marks, FX and factor returns only
+    (`test_demo_tenant_book1a_pg.py:55-57`), so they would stay green while every BOOK-1a benchmark
+    return and tracking-error value moved (FR-02; the verifier's probe, twelve appended specs with
+    idio sigma 0.0100: `public marks identical : True / benchmark identical : False`). **So the private
+    specs take NO draw from the shared stream** — idio sigma zero in `generate_paths`, and their
+    appraisal and step marks come from their own `random.Random(SEED + 2)` (fence 21's pattern;
+    `SEED + 1` is the two new factors'). The proof is Part 5's determinism proof: the three goldens
+    PLUS a byte-equality assertion on the public mark and benchmark series. The
     time-bomb fence greps the package for `now(`, `today(` and any date literal later than
     2026-06-30 (`test_demo_tenant_book.py:110`); a fixed breach-detection instant must therefore
     be ON or before 2026-06-30, not 2026-07-01 (Part 3.9).
@@ -278,7 +316,7 @@ governed family run" clause (`product_rebaseline_2026-09-17.md:384-385`) that th
 amend at this gate** (DS-B1b-9; DP-RB2-7 reaches new families only, GOV-5); the fund-level return and scenario across accounts → **Wave-21
 candidates** (BOOK-1a §6.1); a fund-level unfunded rollup → **not built** (v2 per the methodology);
 running the seed inside CI's `stack-proof` job → not in this slice; the unified-builder family filter and the
-private-asset-class coverage refusal (DS-B1b-3 (B)), if DS-B1b-3 takes option B → **its own small pre-slice fold**, not this diff.
+private-asset-class coverage refusal (DS-B1b-3 (B), ratified) → **its own small pre-slice fold**, not this diff.
 
 ---
 
@@ -303,9 +341,14 @@ uses rather than "82 % financial activities". The suite asserts no private instr
 matches a fixture pattern (`^(INSTR|FUND|PE|DL)[-_]?\d`) and that at most two private instruments carry
 section K. The count and the vintage ladder follow DS-B1b-4; the
 recommended shape is twelve funds (seven PE, five direct lending), eight of them mature (DS-B1b-4's roster). The new
-instruments are appended AFTER the 55 public ones in `book.INSTRUMENTS` and take no draw from the
-public random stream (Part 0.17); their marks come from a private schedule (outcome 2), not the
-random walk. **Proof:** the suite asserts the three BOOK-1a goldens verbatim and unchanged; asserts
+instruments are appended AFTER the 55 public ones in `book.INSTRUMENTS` and take NO draw from the
+public random stream (idio sigma zero; their own `random.Random(SEED + 2)`, Part 0.17, FR-02); their marks
+come from a private schedule (outcome 2), not the random walk. **ISIN convention** (FR-08): `InstrumentSpec.isin`
+has no default (`book.py:280` `isin: str  # ISIN-shaped under the user-assigned ZZ prefix`), so each of the
+twelve LP interests carries its own `ZZ` ISIN minted through `book.isin(base)` (`book.py:42-54`, the Luhn
+check digit over an 11-character base), and the existing fence `test_demo_tenant_book.py:73-76` (unique
+ISINs, `ZZ\d{10}`, check digit valid) is asserted over all 67, not amended (Executed at the fold over the 55:
+`isin unique True check ok True`). **Proof:** the suite asserts the three BOOK-1a goldens verbatim and unchanged; asserts
 every private instrument has an issuer, a sector, a country, a tier and a position; asserts the
 NL-PMF root's 2026-06-30 exposure total equals the MARKED reserve, 45,678,907.400000 USD (Part 0.21, not
 the 45,598,600 start-price face), plus the private NAVs, with the derivation shipped beside it (MD-H1;
@@ -372,8 +415,12 @@ desmoothed with the difference".
   (`var_service.py:1245-1250`), so a direct-lending fund would enter the p vector at something like
   -7 × NAV. With return-type factors the weights are betas near 1 and Σ weights ≈ 1. The book has one
   such factor (`MKT_GLOBAL_EQ`), so BOOK-1b adds two total-return index factors to `book.FACTORS`,
-  `CREDIT_HY_TR` (US high-yield total return, daily sigma about 0.0025) and `RATES_UST_TR` (US Treasury
-  total return, about 0.0018), on the same daily grid and minted quarterly like the others.
+  `CREDIT_HY_TR` (US high-yield total return, daily sigma about 0.0025, family CREDIT_SPREAD like
+  `CREDIT_HY`, `book.py:157`) and `RATES_UST_TR` (US Treasury total return, about 0.0018, **family RATES**
+  like `RATES_USD_10Y`, `book.py:152`; FR-06), on the same daily grid and minted quarterly like the others.
+  Both families are in `LOADING_FACTOR_FAMILIES` (Executed, round 5: `'RATES'` and `'CREDIT_SPREAD'` in the
+  nine), so the eight mature funds' REGRESSION rows on either factor are pinned into the root loadings
+  snapshot and count for `_assert_full_coverage` (fence 3).
   **Constraint:** `generate_paths` draws factors first and marks after from ONE `random.Random(SEED)`
   (`book.py:1394-1405`, then the mark noise at `:1438`), so two factors appended to `FACTORS` would
   shift every public mark draw and move all three goldens; the new factors draw from their own
@@ -409,7 +456,7 @@ desmoothed with the difference".
 - One PRIVATE-family APPRAISAL factor per sleeve, a weight-1 MANUAL membership per mature member,
   one pure-private run per segment (`private_factor_service.py:13-14,284-287`), one private
   covariance over the two segments with `window_observations = 10` (`private_covariance_service.py:151-154,176-179`).
-- Young funds, if DS-B1b-4 keeps them as holdings: **a weight-1 MANUAL MEMBERSHIP of the sleeve's
+- Young funds (holdings under DS-B1b-4 (b), ratified): **a weight-1 MANUAL MEMBERSHIP of the sleeve's
   PRIVATE segment factor PLUS one NON-ZERO MANUAL loading on the sleeve's primary return-type factor**
   (PE: `MKT_GLOBAL_EQ`, family MARKET; direct lending: `CREDIT_HY_TR`, declared in family CREDIT_SPREAD
   like `CREDIT_HY`, `book.py:157`), each at weight 1.0, the sleeve proxy at beta 1; no chain, disclosed
@@ -454,8 +501,8 @@ desmoothed with the difference".
   the segment's Omega_pp; the non-zero loading makes it an exposure instrument the builder can see at
   all. The fold under DS-B1b-3 = B also adds a refusal in `build_var_unified_snapshot` when an exposure
   instrument of asset class PRIVATE_EQUITY or PRIVATE_CREDIT has neither a PRIVATE-family MANUAL
-  membership nor a REGRESSION mapping, with its own negative control (Part 3.20). This shape needs
-  DS-B1b-3 = B; without it the young funds are commitment-only pairs WITH a 2026-06-30 mark (Part 0.5).
+  membership nor a REGRESSION mapping, with its own negative control (Part 3.20). This shape rests on
+  DS-B1b-3 (B), ratified 2026-09-18; the commitment-only-pair shape of Part 0.5 is a branch not taken (VF1-04).
 - **Order:** all of the above runs in a new `_run_private_chain` step AFTER `_register_models` and
   BEFORE `_run_account_boundaries` (Part 0.6). **Proof:** the suite asserts zero FAILED runs; a mutant
   that reorders the private chain after the month-end chain makes the NL-PMF root loadings run FAIL
@@ -609,7 +656,7 @@ DS-B1b-5 (Design B, recommended) against the executed 2026-06-30 values:
 | NL-EFI VaR 99/1d | HARD | 600,000 EUR | 464,184.575474 | 77.4 % | strictly between |
 | NL-EFI Italy share (`SHARE` on `bucket_code='IT'`, country of risk) | SOFT | 0.15 | 0.158438 | 105.6 % | **BREACH** |
 | NL-EFI max issuer share | HARD | 0.35 | 0.254149 | 72.6 % | strictly between |
-| NL-PMF VaR (unified if DS-B1b-3 = B, else parametric) | HARD | derived at seed time, then frozen | BOOK-1b's number | strictly between | quoted in the record |
+| NL-PMF unified VaR (`VAR_PARAMETRIC_UNIFIED`; DS-B1b-3 (B) ratified) | HARD | derived at seed time, then frozen | BOOK-1b's number | strictly between | quoted in the record |
 | NL-PMF largest single issuer incl. the Treasury reserve (`MAX_SHARE_ISSUER`) | HARD | 0.25 (a round committee number) | about 0.18 | about 72 % | strictly between; named as the reserve |
 
 Eight rows are strictly between zero and threshold (GOV-14; seven at round 3, eight from round 4, R3-03); `NL-GMA-CR5` is the one the seed ASSERTS
@@ -645,12 +692,24 @@ file); the unit translation travels in the limit's own `name`, which is free tex
 `share_invested_long` on the DETAIL row, `limit/service.py:163-170`); `CR_5_ISSUER` and `MAX_SHARE_ISSUER` are in the concentration
 vocabulary (`concentration/models.py:59-65`), so no issuer id is resolved (ids differ per seed, Part
 3.12). The executed probe used the first draft's grid and thresholds (0.0050 / 0.0100 / 750,000) and
-produced two breaches and six in appetite; the table's numbers are re-executed in the build. The seed
-asserts the intended outcome per limit (`evaluate_limit` returned a breach, or None) and REFUSES
-otherwise, so a moved number cannot stop demonstrating silently.
+produced two breaches and six in appetite; the table's numbers are re-executed in the build. **The seed's
+per-limit guard asserts the RESOLUTION, not the return value** (FR-03): `evaluate_limit` returns None on
+three different outcomes — a non-ACTIVE limit (`limit/service.py:585`), an unresolved or REFUSED resolution
+(`:593`, "Covers BOTH 'no matching COMPLETED run' and a REFUSAL") and within appetite (`:598`) — so
+asserting None on the eight in-appetite rows would pass on a cold metric. For each of the eight the seed
+asserts `_resolve_latest(session, limit).is_resolved is True` (`:236-237`: `run_id`, `observed` set and
+`refusal` None) and `observed < threshold`, the shape `NL-GMA-CR5` already carries; for the two breach rows
+it asserts `evaluate_limit` returned a `Breach`; and it REFUSES otherwise, so a moved number cannot stop
+demonstrating silently. The NL-GMA tracking-error limit IS resolvable at all three instants: `run_active_risk`
+is called inside `_run_month_end_chain` (`seed.py:1026-1039`), one ACTIVE_RISK run per fund per month-end
+(BOOK-1a: 39 runs, `w20_book1a_slice_record.md:94`), so at each evaluation that month-end's run exists;
+the verifier's claim that `_run_return_chains` creates them was wrong at its citation (that step creates
+PORTFOLIO_RETURN, BENCHMARK_RELATIVE, ROLLING_RISK and SHARPE, `seed.py:1116-1179`).
 
-**Evaluation runs at the last three month-ends, not once** (CRO-R6): after each of the April, May and
-June month-end chains, with injected `now` = 2026-04-30T22:00Z, 2026-05-29T22:00Z and 2026-06-30T22:00Z
+**Evaluation runs at the last three month-ends, not once** (CRO-R6): inside `_run_month_end_chain`, after
+the 2026-04-30, 2026-05-29 and 2026-06-30 iterations' runs (VaR, historical VaR, active risk, concentration,
+liquidity; `seed.py:1015-1104`), with injected `now` = 2026-04-30T22:00Z, 2026-05-29T22:00Z and
+2026-06-30T22:00Z; the daily chain has already run by then (Part 0.6, FR-01)
 (all inside the time-bomb fence, Part 0.17; `detected_at` is the injected instant, `service.py:613`). A
 breach is one row per (limit, run) (`models.py:177` `uq_breach_limit_run`) and the resolver takes the
 latest COMPLETED run at evaluation time (`calc/reads.py:101-103`), so this mints a genuine breach
@@ -679,7 +738,9 @@ constant. Without the third site the GBP/EUR series stays at 56 dates and the se
 `rate=series[on]` (`seed.py:613`) raises `KeyError` on the first new date (Executed, Part 0.21: `cross
 fx KeyError on first new date: 2026-04-01`), failing the whole deploy-path seed under refuse-not-skip
 (FEAS-1); the benchmark cut (`book.py:1490`) and the return-account exposure loop (`seed.py:924`) keep
-`BOUNDARIES`, so no BOOK-1a stored value moves. The daily chain per date: one shared full-set covariance
+`BOUNDARIES`, so no BOOK-1a stored value moves. **Order** (FR-01): `_run_daily_chain` runs AFTER
+`_run_account_boundaries` and BEFORE `_run_month_end_chain`, so every daily run is older by wall clock
+than the month-end run the three limit evaluations resolve (Part 0.6; `calc/reads.py:101-103`). The daily chain per date: one shared full-set covariance
 (`seed.py:953-964` shares `cov_all` today; covariance has no portfolio input, BOOK-1a remit Part 0.3) and,
 per fund, one root exposure, one loadings factor exposure, VAR_PARAMETRIC and ES_PARAMETRIC; for NL-PMF
 also the unified run. The three Q2 month-ends are NOT re-run (Part 0.13). **Proof:** the suite asserts 59
@@ -715,9 +776,12 @@ date). They are snapshots, so neither the run total nor the capture total moves 
 
 The roadmap's literal "one covariance ... per boundary per metric per fund" would be 2 × 3 × 62 = 372
 identical covariance runs; the engine needs 59 and the count is restated in the engine's terms.
-Roadmap Part 2.22 row 2 is AMENDED in the planning commit to say so ("sixty-two business days, of which
-fifty-nine are not month-ends; one shared full-set covariance per daily date, not one per metric per
-fund; measured"), because the roadmap is the document the next gate opens (GOV-10). New captures, about
+Roadmap Part 2.22 row 2 is AMENDED to say so ("sixty-two business days, of which fifty-nine are not
+month-ends; one shared full-set covariance per daily date, not one per metric per fund; measured"), because
+the roadmap is the document the next gate opens (GOV-10). The planning commit `d676fc4` did NOT carry that
+amendment (GOV-R-01, CC-1: `awk 'NR==357'` still read "about sixty-three"); it lands at the ratification-diff
+fold, together with "per MATURE private fund" and "ten limits, two breaches, eight strictly between" in the
+same row body (CC-5). New captures, about
 **5,100** (the list sums to 5,106): public marks 55 × 49 = 2,695; FX 3 × 49 = 147 (the cross series
 included, FEAS-1); private marks 12 × 105 = 1,260; appraisal marks 8 × 12 = 96; two new public factors
 2 × 313 daily returns = 626 (`RETURN_DAYS` is 313 days, 2025-04-01..2026-06-30; DS-B1b-15); minted
@@ -727,10 +791,9 @@ sleeve-proxy MANUAL loadings on the four young funds 4 (R3-01; non-zero from rou
 110; model versions 8; limits 10 (R3-03); breach rows up to 6 (two limits, up to three evaluations
 each); instruments, issuers, positions and classification for twelve funds about 72. Total
 6,105 + 5,106 = 11,211, about **11,200** captures.
-Counts are MEASURED on a fresh battery at close, never derived (sweep item 6). If DS-B1b-4 lands at
-eight funds (five mature), the private rows scale down (chains 5, marks 8 × 105 = 840, pacing 8) and
-the totals are restated in the record; if the young funds go commitment-only, their positions go and
-their 2026-06-30 marks stay (Part 0.5).
+Counts are MEASURED on a fresh battery at close, never derived (sweep item 6). DS-B1b-4 (b) is ratified
+at twelve funds, eight mature, as holdings; the eight-fund and commitment-only scale-downs the draft
+carried here were not taken (FR-04).
 
 ### 9. Projected seed time, and which path the ceiling binds
 
@@ -781,6 +844,7 @@ suite pins all six.
 | J-CRO-1 funds ranked by headroom, change since last close | limits in force, two breaches with first-detected dates, eight strictly-between | outcome 6; `GET /limits`, `GET /limits/health`, `GET /breaches?open=true`, family latest reads at two dates |
 | J-CRO-5 private sleeve: reported vs desmoothed; unfunded and next call | appraisal history, chain, commitments, pacing — under DS-B1b-4 (b) the young funds show "proxied until history exists" in place of a desmoothed volatility, a departure from the line's "for each private fund" the owner is asked to ratify (GOV-2) | outcomes 2, 3, 4; `GET /perf/desmoothed-returns/latest`, `GET /pacing/projections/latest` per pair |
 | J-CRO-7 VaR trend over the last quarter | daily covariance and VaR per boundary per fund | outcome 7; `GET /risk/vars/latest` with `metric_type`, and the run-keyed reads over the 62 Q2 dates |
+| J-CRO-7, the ROLLING-DRAWDOWN half ("the VaR series over the last quarter **and rolling drawdown**, as charts", `personas_and_user_journeys.md:97`; GOV-R-07) | nothing new from BOOK-1b. What exists: ROLLING_RISK v2 (`perf/rolling_service.py`, ENT-064) emits MAX_DRAWDOWN on a calendar-month grid, one row per (metric, window, period_start), over the PORTFOLIO_RETURN series; BOOK-1a runs it once per fund at its return account over the year (`seed.py:1147-1158`, 3 runs) with `book.ROLLING_WINDOWS = (12,)` (`book.py:1364`) and twelve months of returns, so the kernel emits ONE complete 12-month window per fund (`rolling_kernel.py:404` `for end in range(window_months - 1, len(months))` → one) — a single MDD point, not a series. The registered domain is `(12, 36)` (`perf/bootstrap.py:794`); no shorter window is registrable. BOOK-1b adds no rolling-risk run (the return-account exposure loop keeps `BOUNDARIES`, Part 2.7). | **CRO-1 gate decision (Part 6 out (11)):** show the one 12-month MDD point as a number beside the VaR chart, or amend J-CRO-7's line to "VaR trend, with maximum drawdown over the year as a number", or compute a drawdown series client-side from the PORTFOLIO_RETURN rows (an unbound sum, CTRL-039's question). Not served as a chart by any run family today. |
 | J-CRO-2, 4, 6, 8 | nothing | BOOK-1a (`purpose_mismatch_remediation_plan.md:76`) |
 
 ### 12. The old campaign tenant's disposition (roadmap row 2, 2026-09-18 addition)
@@ -834,7 +898,10 @@ databases and `_permission` refuses an unknown code (`seed.py:323-326`); no P17 
    (`_assert_full_coverage`, `factor_service.py:414-441`, called at `:650`); PRIVATE memberships are
    not pinned (`snapshot/service.py:894-914`), so (given the `_seed_loadings` skip of fence 22, V7-01) every young fund carries one NON-ZERO MANUAL loading on
    its sleeve's primary factor (Part 2.3, fence 22; a zero-weight row satisfies this gate but emits no
-   exposure row and hides the fund from the unified builder, R4V-01).
+   exposure row and hides the fund from the unified builder, R4V-01). The families the coverage rows rely
+   on, all in `LOADING_FACTOR_FAMILIES`: MARKET (`MKT_GLOBAL_EQ`), CREDIT_SPREAD (`CREDIT_HY_TR`) and RATES
+   (`RATES_UST_TR`; FR-06) — the mature funds' REGRESSION rows sit on those three, the young funds' proxy
+   rows on the first two.
 4. **Staleness:** `age > max_estimate_age_days` refuses pre-create (`var_service.py:650-651`); 456 at
    2026-06-30 under a 548 policy, on the TOTAL flavour; the unified flavour cites no estimate while every
    private instrument is a segment member, so its age is None (Part 0.4, R4V-02).
@@ -893,7 +960,16 @@ databases and `_permission` refuses an unknown code (`seed.py:323-326`); no P17 
     (`"EXPOSURE_AGGREGATE": ...`) → each gains the daily terms of Part 2.8 (`_FUNDS *
     len(book.DAILY_CHAIN_DATES)` for exposure and factor exposure, 59 for covariance, and the new
     families' rows). `test_demo_tenant_book1a_pg.py:207` `assert held == len(book.INSTRUMENTS)` keeps
-    holding at 67 and its `50 <= held <= 80` band holds; it is read, not amended.
+    holding at 67 and its `50 <= held <= 80` band holds; it is read, not amended. **The pre-flight is wider
+    than that grep** (FR-08): `grep -n "BOUNDARIES\|len(book.INSTRUMENTS)"` cannot reach the per-instrument
+    loops of `test_demo_tenant_book.py` that iterate `book.INSTRUMENTS` without naming its length — `:73-76`
+    (ISINs unique, `ZZ\d{10}`, check digit via `book.isin`), `:89-100` (the mark fences above) and the
+    fund-holding loops at `:70-78` (every fund holds at least three instruments; no two funds share a holding;
+    the benchmark is never a subset of the fund's holdings) — so before the seed is written every function in
+    `test_demo_tenant_book.py` that iterates `book.INSTRUMENTS`, `book.FUNDS` or `book.FACTORS` is read
+    whole (`grep -n "book.INSTRUMENTS\|book.FUNDS\|book.FACTORS" test_demo_tenant_book.py`), and each site
+    is listed in the record as HOLDS or AMENDED with the reason. The ISIN fence holds over 67 by construction
+    (Part 2.1); the holding fences hold because the twelve LP interests sit under NL-PMF's two private accounts.
 15. **Refuse-not-skip, one commit** (`seed.py:307-308`; `cli.py:50`): a daily date that fails, fails the
     whole deploy-path seed. Every private-chain refusal is designed out above; the suite proves the
     seed completes on a fresh database, twice (SQLite and PG).
@@ -909,7 +985,9 @@ databases and `_permission` refuses an unknown code (`seed.py:323-326`); no P17 
     with neither a PRIVATE-family membership nor a REGRESSION mapping.
 21. **The two new factors draw from their own random stream** (`random.Random(SEED + 1)`), because the
     shared stream feeds the mark noise after the factors (`book.py:1394-1405,1438`); the three goldens
-    unchanged is the proof (DS-B1b-15).
+    unchanged is the proof (DS-B1b-15). **And the twelve private specs draw from `random.Random(SEED + 2)`**
+    with idio sigma zero at `:1438`, because the benchmark noise follows the mark noise on the same stream
+    (`:1481`) and the goldens read no benchmark value; the proof is the series digest of Part 5 (FR-02).
 22. **Sleeve-proxy loading per young fund** (R3-01, R4V-01): each young private instrument carries one
     NON-ZERO MANUAL loading (weight 1.0 on `MKT_GLOBAL_EQ` for PE, on `CREDIT_HY_TR` for direct lending)
     beside its PRIVATE membership; the suite asserts at least one LOADING-family mapping per private instrument
@@ -928,7 +1006,7 @@ databases and `_permission` refuses an unknown code (`seed.py:323-326`); no P17 
 
 ## Part 4 — Decisions this slice cannot make for itself (Tier 3, with recommendations)
 
-**DS-B1b-1 — The appraisal window end, and with it the staleness policy.** The lanes disagree.
+**DS-B1b-1 [briefed] — The appraisal window end, and with it the staleness policy.** The lanes disagree.
 (a) Window 2022-06-30 to **2025-03-31**, strictly before the marked year as the ratified text says;
 age at 2026-06-30 is 456 days; declare `max_estimate_age_days = 548` (18 months) on the total and
 unified models (binding on the total flavour only; the unified declaration is required at registration
@@ -941,14 +1019,14 @@ year the screens show, and an annual re-estimation with an 18-month tolerance is
 disclosed on every row through `estimate_age_days`. (b) puts the whole daily quarter within 35 days of
 the cliff and makes one mark carry two meanings. Either way the coverage mint is needed (DS-B1b-2).
 
-**DS-B1b-2 — Factor coverage for the regression.** (a) Mint one SIMPLE return per candidate factor per
+**DS-B1b-2 [routine] — Factor coverage for the regression.** (a) Mint one SIMPLE return per candidate factor per
 desmoothed-period end, dated on or before 2025-03-31 (30 rows; the HG-1 precedent). (b) Extend the
 daily factor series back to 2022 (about 750 business days × k factors; one lane sized it at 780).
 (c) Move the appraisals into 2025-04-01..2026-06-30 (breaks the ratified constraint and re-opens the
 pollution problem). **Recommend (a).** Measured coverage is 0 of 10 today; (a) is provably invisible to
 every daily window (Part 0.3); (b) multiplies captures for no screen value.
 
-**DS-B1b-3 — Unified VaR at the NL-PMF root against the MANUAL-loading hazard (BLOCKING).**
+**DS-B1b-3 [briefed] — Unified VaR at the NL-PMF root against the MANUAL-loading hazard (BLOCKING).**
 (A) Re-seed NL-PMF's Treasury Reserve loadings as REGRESSION rows so no public MANUAL row exists in that
 fund. (B) Add a `FACTOR_FAMILY_PRIVATE` filter to `build_var_unified_snapshot`'s MANUAL query (the query at
 `snapshot/service.py:3554-3568` selects on `mapping_method` only and joins no factor). That is the ONLY
@@ -976,9 +1054,10 @@ memberships, and PROBE D shows the binder prices a mixed book once the public in
 row. (A) also re-seeds a fund around an engine quirk and leaves the trap for the next tenant. Not verified, and worth one probe before the fold: whether a unified run
 over the ALLOCATION-family exposure at the root avoids the hazard (PROBE D used that family). If (B) is
 declined: unified is not run at the root, NL-PMF's limit and daily series use VAR_PARAMETRIC, the
-young funds of DS-B1b-4 become commitment-only, and the record says so.
+young funds of DS-B1b-4 become commitment-only, and the record says so. *(Branch not taken: (B) ratified
+2026-09-18.)*
 
-**DS-B1b-4 — The vintage ladder against the three-year history (the cross-lane conflict, Part 0.18).**
+**DS-B1b-4 [briefed] — The vintage ladder against the three-year history (the cross-lane conflict, Part 0.18).**
 (a) All private funds mature: vintages on 30 June 2019 to 2022 (a 2022 vintage needs a same-day first
 DRAWDOWN so its first mark is positive); every fund carries the full chain; smaller unfunded, the
 reserve covers all of it. (b) Mature plus young: mature funds carry the chain and the segment memberships; young funds carry
@@ -986,7 +1065,7 @@ commitments, calls, distributions, pacing, a position marked at NAV, a weight-1 
 the sleeve's PRIVATE segment factor and one NON-ZERO weight-1.0 MANUAL loading on the sleeve's primary
 return-type factor, for loadings coverage AND visibility to the unified builder (Part 2.3; the membership
 is what puts the fund in leg 2, GOV-1; the non-zero loading is what makes it an exposure instrument at
-all, R3-01, R4V-01), disclosed as proxied until history exists. Needs DS-B1b-3 = B. Any mature vintage on the grid's first date
+all, R3-01, R4V-01), disclosed as proxied until history exists. Rests on DS-B1b-3 (B), ratified. Any mature vintage on the grid's first date
 (2022-06-30) needs the same same-day first DRAWDOWN as (a), because the grid is one for every member
 (`private_factor_service.py:279-281`) and a non-positive first mark refuses
 (`desmoothing_service.py:203-206`); the ladder therefore puts no mature vintage on 2022-06-30 (N-05,
@@ -1000,8 +1079,8 @@ least 1,000,000 USD; its 2025-06-30 mark is that paid-in amount, inside Part 3.1
 one WITHOUT calls anchors its pacing snapshot on `utcnow().date()` (`snapshot/service.py:2605`) and
 breaks Part 5's one-excluded-field determinism claim — so (c) requires every pair to carry a
 2026-06-30 mark regardless, and NL-PMF's exposure still omits the young funds' paid-in NAV.
-**Recommend (b), falling back to (a) if DS-B1b-3 is declined — and (b) is a DEPARTURE the owner is
-asked to ratify** (GOV-2): the ratified clause says "one desmooth, regression and promotion chain per
+**Recommend (b) — and (b) is a DEPARTURE the owner is asked to ratify** (GOV-2; the fallback to (a) if
+DS-B1b-3 were declined is a branch not taken, DS-B1b-3 (B) ratified 2026-09-18): the ratified clause says "one desmooth, regression and promotion chain per
 private fund" (`product_rebaseline_2026-09-17.md:377-378`; roadmap `:357` repeats it) and J-CRO-5 reads
 "for each private fund, reported (appraisal) volatility beside desmoothed volatility"
 (`personas_and_user_journeys.md:95`); under (b) the young funds have no desmoothed volatility to show
@@ -1011,15 +1090,18 @@ funds looks like: a ladder of vintages, the young ones proxied. (a) is the simpl
 dependency but shows a programme that stopped committing in 2022 and a reserve larger than its
 unfunded — this remit's own judgment; the realism rule's nearest clause is "book TOTALS must sit where
 a mid-sized manager's would" (`test_data_realism.md:37-38`), which does not name that ratio (C-15).
-Roster size (CRO-R9): at eight funds over about 220M the average GP exposure is about 13 %, which a
-CRO queries on a fund of funds; the recommended roster is TWELVE underlying funds (eight mature — PE
-2019-06, 2019-12, 2020-06, 2021-06, 2021-12; DL 2020-06, 2021-06, 2021-12 — and four young — PE
-2023-06, 2024-06; DL 2024-12, 2025-06) so the average GP is 7-9 % and the largest about 12 %. The
+Roster size (CRO-R9): the denominator is the 175M PRIVATE SLEEVE (Part 2.4's NAV), not the 220.7M fund
+(FR-09). At eight funds the average GP exposure is about 13 % of the sleeve (175 / 8 = 21.9M; 9.9 % of the
+220.7M fund), which a CRO queries on a fund of funds; the recommended roster is TWELVE underlying funds
+(eight mature — PE 2019-06, 2019-12, 2020-06, 2021-06, 2021-12; DL 2020-06, 2021-06, 2021-12 — and four
+young — PE 2023-06, 2024-06; DL 2024-12, 2025-06) so the average GP is 7-9 % of the sleeve (175 / 12 =
+14.6M, 8.3 %; 6.6 % of the fund) and the largest about 12 % of the sleeve (about 9.5 % of the fund).
+The limits grid is fund-scoped, so `MAX_SHARE_ISSUER` on NL-PMF reads the fund-level figures. The
 Treasury reserve stays the largest issuer either way (Part 2.6). Sizing: about 235M committed across
 twelve pairs (Part 2.4); the census is stated at twelve (Part 2.8) and restated if the owner keeps
 eight; the record quotes the final figures.
 
-**DS-B1b-5 — How to read "two live breaches and one utilisation strictly between zero and threshold".**
+**DS-B1b-5 [briefed] — How to read "two live breaches and one utilisation strictly between zero and threshold".**
 (A) Literal: five limits, exactly two breached, exactly one strictly between, two at zero (the two
 structurally-zero TE values, Part 0.11, which is a broken row on the first screen, CRO-R5); no VaR
 ceiling on two funds, no TE ceiling on NL-GMA. (B) Demonstrating case: the grid a CRO expects (ten
@@ -1033,19 +1115,19 @@ structurally-zero value; J-CRO-1 needs a ranking with a population. Thresholds: 
 for NL-GMA and NL-EFI (goldens, stable), derived from the measured value for NL-PMF until its numbers
 exist, then frozen in the record; the seed asserts the intended outcome per limit either way.
 
-**DS-B1b-6 — Promotion age bound.** (A) None, the HG-1 precedent; the stored `promotion_age_days`
+**DS-B1b-6 [routine] — Promotion age bound.** (A) None, the HG-1 precedent; the stored `promotion_age_days`
 varies by seed day and the record says so. (B) A bound that passes today (over 536) and fails on a
 future date. **Recommend (A).** (B) is a time bomb by construction; a moving bound is a guard that
 cannot fire (the Wave-17 close class).
 
-**DS-B1b-7 — The daily boundaries.** Three linked choices. Date set: (A) extend `BOUNDARIES` (105;
+**DS-B1b-7 [briefed] — The daily boundaries.** Three linked choices. Date set: (A) extend `BOUNDARIES` (105;
 re-cuts the benchmark series, +147 return-account runs, three book fences amended) or (B) a separate
 daily set read by the mark/FX loops and the daily chain only. Dates: (A) all 62 (re-runs three
 month-ends; `MultipleResultsFound` in both suites) or (B) the 59 non-month-ends. Covariance: (A) one
 shared full-set matrix per date or (B) the roadmap's literal 372. **Recommend B, B, A.** No BOOK-1a
 stored value moves; 767 public runs instead of 914 or more.
 
-**DS-B1b-8 — Lifecycle state of the two breaches at seed.** (A) Both DETECTED: no owner, no due date,
+**DS-B1b-8 [briefed] — Lifecycle state of the two breaches at seed.** (A) Both DETECTED: no owner, no due date,
 no clock, nothing escalates. (B) Assign one to the PM with a seed-relative clock (the `ops_stage14.py:114-126`
 pattern): the deployed tick escalates it within 1 to 5 days (`events.py:161`) and the book changes by
 itself. (C) Assign with a fixed instant: permanently overdue, escalated on the first tick.
@@ -1057,7 +1139,7 @@ how far over, since when, who owns it); still no owner, no due date, no clock (C
 responding on J-PM-3 is the better demonstration, the seed stays clock-free, and a breach born in the
 same second as every other breach has no "since when".
 
-**DS-B1b-9 — The backtest families.** (A) In scope, feeding only forecasts whose next boundary is the
+**DS-B1b-9 [briefed] — The backtest families.** (A) In scope, feeding only forecasts whose next boundary is the
 next calendar day (the 1-day pairing rule, `var_backtest_service.py:369-383`: a Friday forecast cannot
 pair with Monday). (B) In scope as a demonstrated refusal. (C) Deferred until a journey line names a
 backtest; none of J-CRO-1..8 or J-PM-1..4 does. **Recommend (C), stated as what it is: a NAMED DEPARTURE from the ratified clause "every governed
@@ -1068,14 +1150,15 @@ justification is on the merits: the 1-day pairing rule makes a book whose foreca
 nine months and daily for one quarter a poor demonstration of a backtest, and no journey line shows an
 overshooting count. REQ-MKT-005 is never adjudicated; running it would be the same "delivered row" case
 as BOOK-1a's families, but nothing asks for it. If the owner declines the amendment, (A) runs in this
-slice with the pairing rule stated and the census restated.
+slice with the pairing rule stated and the census restated. *(Branch not taken: the amendment was
+ratified 2026-09-18, (C).)*
 
-**DS-B1b-9a — Which path the ten-minute ceiling binds.** (A) In-stack via `deploy.sh --with-demo`
+**DS-B1b-9a [routine] — Which path the ten-minute ceiling binds.** (A) In-stack via `deploy.sh --with-demo`
 (86.7 s today, about 198 s projected). (B) From the host (295.7 s today, about 691 s projected).
 (C) Both. **Recommend (A), with the host figure quoted.** The deploy path is the one Phase 0a measured
 and G5 uses.
 
-**DS-B1b-10 — G2 scope.** (A) Declared no-scope, dated 2026-09-18, naming REQ-LIM-001/002/003 (served
+**DS-B1b-10 [briefed] — G2 scope.** (A) Declared no-scope, dated 2026-09-18, naming REQ-LIM-001/002/003 (served
 by evaluation; LIM-002 re-asked at UTIL-1, roadmap `:359`), REQ-PRV-001/002/003/005 (served by captures)
 and REQ-MKT-005 (not run), each entering build at its own slice. (B) Scope LIM-001/002/003 and
 adjudicate all three now (two never asked, one lapsed by the 2026-08-15 pre-amendment hash). **Recommend
@@ -1083,32 +1166,32 @@ adjudicate all three now (two never asked, one lapsed by the 2026-08-15 pre-amen
 header states it: REQ-LIM-002 clause (3) is served with data, the stored number lands at UTIL-1, and
 the seed's clause-(3) assertion is evidence for UTIL-1's adjudication, GOV-7). Executed: the eight-row
 probe exits 1 with 7 never asked + 1 lapsed (N-03), so (B) would be a two-commit G2 amendment under P20
-(acceptance text first, ledger hash from the post-amendment cells via the gate's own `parse_rows`). If
-DS-B1b-3 = B, that fold declares its own scope (the demo-tenant-fix precedent: a defect fix, no row
+(acceptance text first, ledger hash from the post-amendment cells via the gate's own `parse_rows`).
+DS-B1b-3 (B) is ratified, so that fold declares its own scope (the demo-tenant-fix precedent: a defect fix, no row
 entering build, `g2_slice_scope.json` `_scope_note`).
 
-**DS-B1b-11 — A strategy-node limit for REQ-LIM-004?** (A) No; fund-root only as ratified; LIM-004 stays
+**DS-B1b-11 [routine] — A strategy-node limit for REQ-LIM-004?** (A) No; fund-root only as ratified; LIM-004 stays
 Draft (`requirements_backbone.md:244`). (B) Yes, and adjudicate it here. **Recommend (A).** (B) lets a
 Draft row enter build in a no-scope slice. The distinction from REQ-PRV-003, also Draft
 (`requirements_backbone.md:173`) and served by this slice's captures (GOV-12): LIM-004's acceptance
 names the demo-book demonstration as the deliverable, so building it delivers the row; PRV-003's also
 requires stale-NAV FLAGGING, which BOOK-1b does not build, so its captures serve a row that stays Draft.
 
-**DS-B1b-12 — The alpha convention for the Northlight private funds.** (a) DECLARED alpha (the HG-1
+**DS-B1b-12 [routine] — The alpha convention for the Northlight private funds.** (a) DECLARED alpha (the HG-1
 shape; an honest pre-smoothed generator so the OLS recovers a known structure and a hand golden
 exists; `perf/bootstrap.py:349-355` default 0.4). (b) AR1_ESTIMATED (observed 11 >= 6; small-sample
 biased, as DS-2 discloses). Both fit 12 marks. **Recommend (a).** J-CRO-5 shows "reported vs
 desmoothed"; a declared alpha makes the difference a stated assumption a CRO can read, and the golden
 is derivable by hand.
 
-**DS-B1b-13 — The roster's pacing and commitment codes: BOOK-1b or CRO-1?** (A) BOOK-1b (outcome 13).
+**DS-B1b-13 [routine] — The roster's pacing and commitment codes: BOOK-1b or CRO-1?** (A) BOOK-1b (outcome 13).
 (B) CRO-1. **Recommend (A).** The data is useless to the persona without the read code; the seed is
 where the roster lives; no mint, no P17.
 
-**DS-B1b-14 — The mutant floor.** (A) Group `w20-book1b` with at least seventeen mutants (Part 5; seventeen from round 8, V7-02), kills
+**DS-B1b-14 [routine] — The mutant floor.** (A) Group `w20-book1b` with at least seventeen mutants (Part 5; seventeen from round 8, V7-02; an eighteenth, the series digest, added at the ratification-diff fold, FR-02 — the floor "at least seventeen" holds), kills
 run by hand with exit codes quoted. (B) No floor. **Recommend (A)** (P18; the BOOK-1a 7/7 pattern).
 
-**DS-B1b-15 — Two total-return index factors added to the public book (CRO-R1, CRO-R13).** The
+**DS-B1b-15 [briefed] — Two total-return index factors added to the public book (CRO-R1, CRO-R13).** The
 regression candidates must be price-return factors, or the promoted weights are durations that enter
 the unified p vector as multiples of NAV (Part 2.3). (A) Add `CREDIT_HY_TR` and `RATES_UST_TR` to
 `book.FACTORS` (eight today, `len(book.FACTORS) == 8`) on their own random stream, so no public mark or
@@ -1142,7 +1225,10 @@ year; the strategy-focus classification of each private fund (Part 2.1).
   rather than failing an assertion, GOV-15, FEAS-6); (6) one Q2 date dropped → 59 daily rows; (7) one
   pacing pair's 2026-06-30 mark omitted → pacing refuses, the seed fails; (8) a minted quarterly return
   dated inside the daily window → the euro golden moves, anchored on the MINT site (CRO-R12);
-  (9) evaluation moved before the daily chain → `limit_health` BREACHED with `latest_breach_id` None;
+  (9) the daily chain moved AFTER the month-end chain (the order of Part 0.6 inverted, anchored on the
+  orchestrator's call sequence at `seed.py:1234-1239`) → the 59 later-created NL-GMA VAR_PARAMETRIC daily
+  runs outrank the June month-end run by `system_from`, `limit_health` resolves one of them, and
+  `NL-GMA-VAR` reads BREACHED with `latest_breach_id` None (no breach row exists for that run; FR-01);
   (10) the FX-cross comprehension left on `BOUNDARIES` → the named refusal, not a `KeyError` (FEAS-1);
   (11) one promoted weight set negative → the weight-band assertion (CRO-R1); (12) a call folded into an
   appraisal mark → the observed-return band assertion (CRO-R2); (13) the three evaluations collapsed to
@@ -1158,12 +1244,21 @@ year; the strategy-focus classification of each private fund (Part 2.1).
   FX_USD row is coverage, `factor_service.py:420-422`, and (16) collapses into (15), V7-01);
   (17) the fence-22 predicate removed from `_seed_loadings` (`seed.py:681-687`) → the assertions
   "no private instrument carries an `FX_` loading" and "exactly one LOADING-family mapping on each of the
-  four young funds" both fail (V7-02). Every mutant anchored on the SITE, one test through the real
+  four young funds" both fail (V7-02); (18) one private spec given a non-zero idio sigma at `book.py:1438`
+  (a draw from the shared stream) → the public marks stay identical, the three goldens stay green, and the
+  benchmark-series digest of the determinism proof below fails (FR-02; the oracle is the digest ALONE,
+  which is what makes the mutant distinct from every golden). Every mutant anchored on the SITE, one test through the real
   entry point, half of them negative, and each mutant's oracle distinct from its neighbours' so a kill
   is attributable to its own site.
 - **The deterministic-seed proof:** two seeds on fresh in-memory SQLite produce identical governed
   values row for row, with exactly one field excluded and named: `proxy_mapping.promotion_age_days`
-  (Part 0.5). The three BOOK-1a goldens unchanged prove the random stream did not move (Part 0.17).
+  (Part 0.5). **The shared random stream did not move:** the three BOOK-1a goldens unchanged PLUS an
+  explicit assertion that the 55 public instruments' `paths.marks` series and the three funds'
+  `paths.benchmark_returns` series are byte-identical to BOOK-1a's — pinned as a fourth golden, a stored
+  SHA-256 over the `Decimal` strings of both series in date order, derived once from `book.py` at
+  `1c430f9` and quoted in the record. The goldens alone cannot prove it: they read marks, FX and factor
+  returns only, and the benchmark noise is drawn AFTER the mark noise on the same stream (Part 0.17,
+  FR-02). Mutant (18) is the digest's negative control.
 - **The PG suite under RLS through the real admission gate:** the orchestrator runs once end to end on
   a fresh database in CI; a second run refuses and writes nothing; every new read (desmoothed latest,
   pacing latest, limits, limits/health, breaches open, VaR latest by metric_type for the three
@@ -1176,11 +1271,11 @@ year; the strategy-focus classification of each private fund (Part 2.1).
 - **The deployed smoke:** after `--with-demo`, as `northlight-cro` over HTTP: `GET /breaches?open=true`
   (two limits), `GET /limits/health` (ten rows), `GET /perf/desmoothed-returns/latest` for one mature
   pair, `GET /pacing/projections/latest` for one pair, `GET /risk/vars/latest?metric_type=VAR_PARAMETRIC_UNIFIED`
-  for NL-PMF (if DS-B1b-3 = B), each quoted.
+  for NL-PMF (DS-B1b-3 (B) ratified), each quoted.
 - CI green on all checks at the PR head, verified per conclusion via `gh api …/commits/<sha>/check-runs`.
 - The adversarial review folded before the push; P15: at least one pass on a different engine (Part 7).
 - The seven-ledger sweep with verify-on-main AFTER the merge: (1) no ENT (ENT-032 reserved);
-  (2) no audit code; (3) "no control moved": CTRL-021 is already **Operational** (`control_matrix_skeleton.md:62`, the
+  (2) no audit code; (3) "no control moved": CTRL-021 is already **Operational** (`09_compliance_controls/control_matrix_skeleton.md:62`, the
   top of the `:36` vocabulary) and its cell already records the demo exercise at OPS-1
   (`ops_stage14.py:316-319` approves on a demo book), so there is no status move and no "first time"
   (GOV-3); if its evidence cell is touched at all it states only what is new — the person-level
@@ -1202,7 +1297,7 @@ were delivered, nothing is inherited as open; the recurrence acceptance stands (
 
 **Out:** (1) the REQ-LIM-002 gaps' true location (`wave_19_planning.md:132`) and a one-line pointer
 amendment to the backbone row, a G2 amendment in two commits → **UTIL-1's gate**; (2) the unified-builder
-family filter and the private-asset-class coverage refusal (DS-B1b-3 (B)), if DS-B1b-3 = B → **its own pre-slice fold**, before this build; (3) "change since the
+family filter and the private-asset-class coverage refusal (DS-B1b-3 (B), ratified) → **its own pre-slice fold**, before this build; (3) "change since the
 last close" for J-CRO-1: two family reads against the threshold, not a stored evaluation → **CRO-1**;
 (4) the client-side unfunded sum across pairs and whether CTRL-039 governs it → **CRO-1**; (5) the
 call site of `escalate_overdue_breach` on the deployed scheduler and whether Northlight is in its
@@ -1211,16 +1306,20 @@ record**; (6) DELETED — answered by execution in Part 0.20: the census covers 
 consequence is a pre-fold check (GOV-9; a carry naming no slice and no trigger is not a carry under
 P19); (7) whether any reproduction or
 golden reads `promotion_age_days` → **open question**, decides the determinism claim's wording; (8) the
-backtest families → **the first line that needs one**; (9) roadmap row 2's "about sixty-three" → AMENDED IN THE ROW in the planning commit ("sixty-two
+backtest families → **the first line that needs one**; (9) roadmap row 2's "about sixty-three" → AMENDED IN THE ROW ("sixty-two
 business days, of which fifty-nine are not month-ends; one shared full-set covariance per daily date,
 not one per metric per fund; measured"), because the roadmap is the document the next gate opens
-(GOV-10; the OPS-H1 stale-register class). The re-baseline's `:372` "about sixty-three" is ratified text
+(GOV-10; the OPS-H1 stale-register class). The planning commit `d676fc4` did not carry it; the
+ratification-diff fold does (GOV-R-01, CC-1). The re-baseline's `:372` "about sixty-three" is ratified text
 and stays; the record notes the measured count beside it; (10) the nine codes `_READ_PERMS` already
 grants `northlight-auditor` beyond `ROLE_TEMPLATES["auditor_3l"]` (`marketdata.view`, `valuation.view`,
 `position.view`, `concentration.issuer.view`, `portfolio.view`, `snapshot.view`,
 `reference.instrument.view`, `reference.issuer.view`, `reference.classification_assignment.view`;
 executed at round 4, R3-05) → **the seven-ledger sweep or CRO-1's gate**, as an open SoD question the
-owner answers, not one this gate ratifies by silence.
+owner answers, not one this gate ratifies by silence; (11) J-CRO-7's rolling-drawdown half: no run family
+serves it as a series today (ROLLING_RISK v2 emits ONE 12-month MAX_DRAWDOWN point per fund over BOOK-1a's
+year, Part 2.11) → **CRO-1's gate**, a decision between showing the one point as a number, amending the
+line, or a client-side series over PORTFOLIO_RETURN rows under CTRL-039 (GOV-R-07).
 
 ---
 
@@ -1244,7 +1343,7 @@ list below, and a fifth was discharged by execution at the fold. Where a finding
 | GOV-7 | MED | governance | FOLDED (G2 header, DS-B1b-10) | Read `g2_slice_scope.json` `_why` ("rows currently entering build") and `requirements_backbone.md:242` clause (3); no_scope_reason now argues that test; executed gate `G2_EXIT=0` with the five figures matching. |
 | GOV-8 | MED | governance | FOLDED (Part 3.14) | Read `test_demo_tenant_book.py:89-94,:100`: `:90` KeyError path, `:92` `1.0 <= v <= 10_000`, `:94` `abs(b/a - 1) < 0.15` per consecutive mark, `:100` face_value; exclusion predicate over all five with a non-empty check added. |
 | GOV-9 | MED | governance | FOLDED (Part 0.20, Part 6 out (6) deleted) | Executed: 19 reproducible incl. DESMOOTHED_RETURN, PROXY_WEIGHT_ESTIMATE, PACING_PROJECTION, PURE_PRIVATE_FACTOR, COVARIANCE_PRIVATE, VAR; 2 unreproducible; P19 read at `claude_operating_instructions.md:602-615`. |
-| GOV-10 | MED | governance | FOLDED (Part 2.8, Part 6 out (9)) | Executed `Q2 business days 62 new 49 month-ends 3 non-month-end 59`; roadmap `:357` still "about sixty-three"; the row is amended in the planning commit. |
+| GOV-10 | MED | governance | FOLDED (Part 2.8, Part 6 out (9); the roadmap edit landed at the ratification-diff fold, not in the planning commit) | Executed `Q2 business days 62 new 49 month-ends 3 non-month-end 59`; roadmap `:357` still read "about sixty-three" at `d676fc4` (GOV-R-01, CC-1 caught the promised-but-unrun edit); amended 2026-09-18 at the fold, re-checked against the working tree: `grep -c "sixty-two business days" delivery_roadmap.md` → 1. |
 | GOV-11 | MED | governance | FOLDED (Parts 0.8, 2.5, 2.8) | Read `:384-385`; total VaR now runs on all three funds (+26), asserted `total == plain` on NL-GMA/NL-EFI; no departure. |
 | GOV-12 | LOW | governance | FOLDED (G2 header, DS-B1b-11) | Read `requirements_backbone.md:173` REQ-PRV-003 Draft and `:244`; the flagging-vs-demonstration distinction stated. |
 | GOV-13 | LOW | governance | FOLDED (Part 2.3) | `grep -rn "def register_var_unified_model"` → nothing; `risk/bootstrap.py:2915 def register_var_parametric_unified_model(`. |
@@ -1321,7 +1420,7 @@ facts; the engine's stored values are re-quoted in the record.
 
 **What the fold changed at Tier 3:** DS-B1b-4 (b) is now a named departure from the ratified
 "per private fund" clause; DS-B1b-8 gains and recommends (D); DS-B1b-9 (C) is a named departure needing
-the owner's amendment; DS-B1b-15 is new; DS-B1b-14's floor is fourteen (fifteen from round 4, sixteen from round 5); the limits grid is nine rows (ten from round 4, R3-03).
+the owner's amendment; DS-B1b-15 is new; DS-B1b-14's floor is fourteen (fifteen from round 4, sixteen from round 5, SEVENTEEN from round 8, V7-02 — the ratified floor; an eighteenth mutant added at the ratification-diff fold, FR-02); the limits grid is nine rows (ten from round 4, R3-03). *(Tallies in this paragraph are dated to the round that set them; the current figures are Part 2.6, Part 2.8 and DS-B1b-14 — FR-05.)*
 
 ### Fold check (Opus 5, 2026-09-18): 10 findings
 
@@ -1336,7 +1435,7 @@ numbered sites; the C-06 cell was also stale until round 3, S-08).
 |---|---|---|---|
 | F-01 | BLOCKING | FOLDED, option (i) (Part 2.3, DS-B1b-15 (A) and (C), Part 2.8, CRO-R13) | The first fold wrote PE and direct lending as the SAME two factors, so the union was two, the mint 20, and `RATES_UST_TR` was fitted to nothing; direct lending is now `CREDIT_HY_TR` + `RATES_UST_TR`, union three, 30 minted returns, which is what CRO-R1's fold intended (a rate leg on the credit sleeve). Executed `len(book.FACTORS) == 8`. |
 | F-02 | HIGH | FOLDED (Part 2.1, CRO-R9 disposition) | Part 2.1 said eight funds, five mature; DS-B1b-4 and the Part 2.8 census say twelve, eight mature. Part 2.1 now reads twelve (seven PE, five direct lending). |
-| F-03 | MED | FOLDED (Parts 2.8, 2.9, DS-B1b-9a, FEAS-9 (d)) | Re-added after F-01 and F-10: 2,695 + 147 + 1,260 + 96 + 626 + 30 + 16 + 2 + 12 + 12 + 110 + 8 + 9 + 6 + 72 = 5,101; total 11,206. In-stack 87 + 91 + 20 ≈ 198 s; host 296 + 318 + 77 ≈ 691 s. |
+| F-03 | MED | FOLDED (Parts 2.8, 2.9, DS-B1b-9a, FEAS-9 (d)) | Re-added after F-01 and F-10: 2,695 + 147 + 1,260 + 96 + 626 + 30 + 16 + 2 + 12 + 12 + 110 + 8 + 9 + 6 + 72 = 5,101; total 11,206 *(the round-2 tally; superseded at round 4 by 5,106 / 11,211, R3-01 and R3-03 — FR-05)*. In-stack 87 + 91 + 20 ≈ 198 s; host 296 + 318 + 77 ≈ 691 s. |
 | F-04 | MED | FOLDED (Part 7 header) | The table holds one FOLDED IN PART row (CRO-R9) and 60 FOLDED; header now 60 / 0 / 1 and FEAS-9 is out of the gloss. |
 | F-05 | MED | FOLDED (front matter, FEAS-9 list and evidence cell) | Item (e) was discharged in its own paragraph; four claims remain (a)-(d), the fifth is a one-line "discharged at the fold" note. |
 | F-06 | MED | FOLDED (Part 3.14, GOV-8 evidence) | Read `test_demo_tenant_book.py:94` `assert abs(b / a - 1) < 0.15` (the per-step fence a +20 % quarterly NAV step would hit) and `:100` `v <= inst.face_value`; the exclusion predicate now names `:90`, `:91`, `:92`, `:94` and `:100`, and the private band carries no per-step check. |
@@ -1363,13 +1462,14 @@ Part 2.4 rather than carried.
 | S-03 | HIGH | FOLDED (Part 2.9) | `sed -n 775,782p ci.yml`: `:779` `# The suite seeds the tenant end to end through the real orchestrator (~6 minutes measured` / `:780` `# locally: 636 runs, ~5,800 audited captures)`, inside the BOOK-1a step's comment block; the bracket is kept and labelled a stale local figure. |
 | S-04 | HIGH | FOLDED (Part 3.14) | `grep -n "BOUNDARIES\|len(book.INSTRUMENTS)"` over the two seed suites: `test_demo_tenant_seed.py:47,135,143,144`, `test_demo_tenant_book1a_pg.py:64,207,232,233,241`; each listed with its amendment (union-or-grid date set; per-date count split 67 / 8; `:207` holds at 67 and is read only). 55 × 105 + 12 × 105 + 8 × 12 = 7,131 marks. |
 | S-05 | MED | FOLDED (Parts 2.4, 4 sub-questions, CRO-R16 row) | The roster's twelve vintages counted: eight on 30 June, four on 31 December (PE 2019-12, PE 2021-12, DL 2021-12, DL 2024-12); executed window for one: `PE 2019-12-31 age 6 rows 6 t0 7 window 2025-12-31..2026-12-31`. Part 2.4's first clause now "a quarter end, mostly 30 June". |
-| S-06 | MED | FOLDED (Part 2.8) | A snapshot line added under the run table: 85 = 13 × 2 + 59, stated as VAR_INPUT snapshots so run total 1,506 and capture total 11,206 are unchanged. |
+| S-06 | MED | FOLDED (Part 2.8) | A snapshot line added under the run table: 85 = 13 × 2 + 59, stated as VAR_INPUT snapshots so the run total 1,506 and the capture total (11,206 at round 3; 11,211 from round 4, R3-01 and R3-03 — FR-05) were left unchanged by the snapshots. |
 | S-07 | LOW | FOLDED (FEAS-9 item (b)) | `sed -n 964,970p seed.py`: `:966` `root = refs.fund_ids[fund.code]`, `:967` `exp_run = _run_exposure(session, refs, root, ...)`, `:969` `alloc = run_factor_exposure(`. |
 | S-08 | LOW | FOLDED (C-06 row, fold-check header) | `grep -n` in `var_service.py`: `_VAR_FAMILIES` `:686-691` under its comment at `:684-685`; `build_snapshot_fn` `:840`; run ids `:845-846`; unified resolves `:1206-1216`. Header now states the re-walk covered the F-07/F-08 sites only. |
 | S-09 | LOW | FOLDED (Part 2.6, CRO-R3 row) | `sed -n 322,330p book.py`: `:324` UST, `:325` BUND, `:326` OAT, `:327` BTP, `:328` BONOS, `:329` DSL, all section O; the euro sovereigns are `:325-329`. |
 | S-10 | LOW | FOLDED (fold-check header) | ``grep -o '`book\.py:[0-9-]*' \| sort -u`` → 21 lines, one of them the header's bare `book.py:` token, so **twenty** distinct numbered `book.py:` sites (the verifier's twenty-one counted that token); the header no longer claims fifteen. |
 
-Re-added after the fixes (Executed, round 3): captures 2,695 + 147 + 1,260 + 96 + 626 + 30 + 16 + 2 +
+Re-added after the fixes (Executed, round 3; *superseded at round 4 — the current tally is the round-5
+block below, FR-05*): captures 2,695 + 147 + 1,260 + 96 + 626 + 30 + 16 + 2 +
 12 + 12 + 110 + 8 + 9 + 6 + 72 = 5,101, total 6,105 + 5,101 = 11,206; new runs 767 + 111 + 31 = 909,
 total 1,506; Part 2.9: 0.10 × 909 = 90.9 and 0.004 × 5,101 = 20.4, so 86.7 + 90.9 + 20.4 = 198.0 s
 in-stack; 0.35 × 909 = 318.15 and 0.015 × 5,101 = 76.5, so 295.7 + 318.15 + 76.5 = 690.35 ≈ 691 s
@@ -1471,3 +1571,125 @@ host (the rounded addends 296 + 318 + 77 = 691 stay quoted); CI bracket 87 × 1,
 
 The round-8 folds are not re-checked by a further round; the ratification diff's own different-engine
 verification (the standing rule) reads them.
+
+### Ratification-diff verification, round 1 (Opus 5, 2026-09-18): 43 findings (41 rows at the fold, two re-id'd at round 2)
+
+The standing rule: a different engine verifies every ratification diff. Four lanes read commit `d676fc4`
+(the planning commit) — a citation lane over the outward benchmark, a governance lane, a citations-and-counts
+lane and a fresh-reader lane — and a fifth, sources-only citation lane then re-fetched the sources behind
+the seven quotes the first benchmark fold had added without a check. **43 findings in 43 rows: 3 BLOCKING (GOV-R-01,
+CC-1, FR-01), 7 HIGH, 19 MED, 14 LOW; all 43 folded, 0 refuted** (41 rows at the fold, counted with `Counter`
+over the four-lane findings file and re-counted over this table by `awk`; two of those rows each folded two
+lanes' findings on one id — the sources-only lane's own CITE-6 and CITE-7 beside the citation lane's — so
+41 rows carried 43 findings; at round 2 the sources-only pair were re-id'd CITE-6b and CITE-7b with their own
+rows (VF1-03) and the table re-counted by `awk` → 43 rows, 3 / 7 / 19 / 14; the folder is Fable 5.1 — and the folder's first draft of this
+sentence said "2 BLOCKING, 6 HIGH, 20 MED, 13 LOW" from memory, which the count refuted). Every
+number and locator in this table was executed or grep'd at the fold; nothing is recalled. Eight rows are
+dispositioned "same edit as" another id (`grep -cE 'same edit( )as'` → 9: those eight rows and this sentence; the `( )` group keeps the cells that quote this command from matching it, so the count holds when a later round quotes it, R2F-04): the same defect seen by two lanes,
+folded once with both ids kept. Where the fix moved another file, the Disposition column names it.
+
+| Id | Sev | Lane | Disposition | Executed evidence at the fold |
+|---|---|---|---|---|
+| CITE-1 | HIGH | citation | FOLDED (benchmark status row, section 1, section 6; roadmap `:355` and `:534`; plan `:57`; `current_state.md:25`, the scorecard's benchmark row — `:21` at the fold, re-pointed at round 3, R2F-03) | `grep -c '^> ' outward_benchmark_cro_overview_2026-09-18.md` → 40 at `d676fc4`, 41 after S4-b; five of the seven fold-added passages were lane-checked in the second pass (S1-d, S3-c twice, S3-d, S6-f: verbatim) and the two from sources pass two did not fetch (S5-e, S7-f) were checked at round 2 against a fresh fetch (VF1-01; this cell first said pass two checked all seven), so every record says 41 of 41 with that split named. |
+| CITE-2 | MED | citation | FOLDED (benchmark `:55`, the S1-d locator) | Lane transcript: text VERBATIM on PDF page 34, paragraph 74; section is 3.8.1 under 3.8, not 3.6. Locator rewritten to "section 3.8 ... sub-section 3.8.1 ... paragraph 74; PDF page 34". No other prose in the file said 3.6 for S1-d: `grep -n '3\.6'` → `:35` (S1-a, 3.6.4), `:45` (S1-b, 3.6.5), `:55` (the corrected S1-d line, which now records the old value) and `:263` (the pass-two note). |
+| CITE-3 | MED | citation | FOLDED (benchmark J-CRO-2 note, section 3 tail, section 5) | Lane transcript over the re-fetched CESR text: `grep -oi 'expected shortfall' s1.txt \| wc -l` → 0; `CVaR` → 1. Both sentences now separate the source's word (S3-c names expected shortfall; S1-d names CVaR) from this file's gloss. |
+| CITE-4 | MED | citation | FOLDED (plan `:57`; roadmap `:355` 0b cell; `current_state.md:25` — `:21` at the fold, re-pointed at round 3) | Half of 0b's stated exit was unmet (`ls 10_delivery_backlog \| grep -i cro` → nothing); 0b now reads "DONE (section written and lane-checked); carried: cited from the CRO-1 planning record at its gate". |
+| CITE-5 | LOW | citation | FOLDED (benchmark: Quote S4-b inserted after S4-a; section 4 liquidity bullet cites S4-b) | The lane supplied COLL 6.12.11 R (1) and (2) verbatim from its own fetch (HTTP 200, 251,243 bytes); copied with the same joined-sub-paragraphs note as S4-a; quote count 41. |
+| CITE-6 | LOW | citation | FOLDED (benchmark `:13` method sentence) | Executed over the 41 quote lines: `grep -cP '^> .*[\x{2014}\x{2013}]'` → 3 (the whole file → 17, R3V-05) (S5-c, S6-c, S7-b keep their dashes); non-ASCII lines 6 (those three plus the bullet glyphs of S5-b, S5-c, S5-e). Sentence narrowed: quotes and apostrophes folded, dashes kept as printed; "eleven of the 33" labelled the first lane's own tally. |
+| CITE-6b | LOW | citation (sources-only) | FOLDED (benchmark `:187` — `:181` at the fold, before S4-b's inserted lines, R3V-03; the S6-f locator; re-id'd at round 2 from the merged CITE-6 row, VF1-03; severity carried as the merged row's LOW, the lane's own label was not kept apart at the fold) | S6-f re-located under "FACTOR-BASED PERFORMANCE ATTRIBUTION" per the lane's layout-aware extraction. |
+| CITE-7 | LOW | citation | FOLDED (benchmark section 6 pass-one paragraph; the Citation rule row at `:6`) | Isolation restated in rule 6a's words (`delivery_roadmap.md:448-449` "reads ONLY the cited source (never the draft's framing)"): the lane got the passages, the line texts and the claims, not the argument. |
+| CITE-7b | LOW | citation (sources-only) | FOLDED (benchmark `:91` and `:97`, the S3-c / S3-d annotations; the S3 `curl` route at `:23`; re-id'd at round 2 from the merged CITE-7 row, VF1-03; severity carried as above) | S3-c now says marker 302 dropped from passage one only; S3-d says no marker inside the span; the `/files/` path with a contact user agent recorded. |
+| GOV-R-01 | BLOCKING | governance | FOLDED (roadmap `:357` body; remit Part 2.8, Part 6 out (9), GOV-10 row) | Executed before: `grep -c "sixty-two" delivery_roadmap.md` → 0. The row body now carries "sixty-two business days, of which fifty-nine are not month-ends; one shared full-set covariance per daily date, not one per metric per fund; measured", "per MATURE private fund" and "ten limits with two live breaches and eight utilisations strictly between". Executed after: `grep -c "sixty-two business days" delivery_roadmap.md` → 1; GOV-10's disposition re-checked against the working tree and rewritten to say the planning commit did NOT carry the edit. |
+| GOV-R-02 | HIGH | governance | FOLDED (roadmap `:534`) | Counted with `awk` over Part 7 (`^\| <id> \| (BLOCKING\|HIGH\|MED\|LOW) \|`): 61 + 10 + 10 + 8 + 6 + 6 + 5 + 5 = **111** rows, 111 distinct ids; severities 12 BLOCKING / 19 HIGH / 42 MED / 38 LOW; dispositions 109 `FOLDED` + 1 `FOLDED, option (i)` (F-01) + 1 `FOLDED IN PART` (CRO-R9) = 110 folded, 1 in part, 0 refuted. `git show d676fc4:10_delivery_backlog/w20_book1b_remit.md \| grep -c "96 finding"` → 0 (the number matched no subtotal). Row rewritten to those figures. |
+| GOV-R-03 | HIGH | governance | FOLDED (`g2_slice_scope.json` `no_scope_reason`) | Rewritten to the G2 header's ratified argument; executed: 1,792 characters at this fold (1,815 after VF1-06 re-quoted clause (3) at round 2, R3V-02); `'clause (3)' in reason → True`, `'requirements_backbone.md:242' → True`, `'REQ-LIM-004' → True`; `python3 scripts/check_g2_adjudication.py` → `slice scope : 0 / blocking : 0`, `G2_EXIT=0`; `json.load` OK. |
+| GOV-R-04 | MED | governance | FOLDED (remit Part 0.7; Part 5 sweep item (3) path) | Read `09_compliance_controls/control_matrix_skeleton.md:44` (CTRL-003, `register_model`/`register_model_version`), `:55` (CTRL-014, limitations register), `:63` (CTRL-022, `model.validate` 2L-only). Routing re-cited to CTRL-003 and CTRL-022 with CTRL-014's actual relevance stated; the bare `control_matrix_skeleton.md:62` citation gained its directory. |
+| GOV-R-05 | MED | governance | FOLDED (plan `:49` header; roadmap `:355` row header; `current_state.md:24`, the Wave-20 slices row — `:20` at the fold, re-pointed at round 3) | One sentence in all three: 0a and 0b close before CRO-1's planning gate; 0c (the CRO-1 walk slot) and 0d close by CRO-1's exit; the outside walker by PM-1's gate. |
+| GOV-R-06 | MED | governance | FOLDED (`current_state.md:3-13` CURRENT TRUTH block; `:3-9` at the fold) | Executed: `git rev-parse --short main` → `1c4f64f`; `gh pr view 246 --json headRefOid,mergeCommit` → head `323cedc`, merge `1c4f64f`, merged 2026-09-18T13:18:43Z; `gh api .../commits/323cedc.../check-runs` → 18 check-runs, `{"success":18}`, nine distinct names. Block now dated 2026-09-18, main `1c4f64f` (PR #246, the 49th autonomous merge), the planning commit named as on its branch pending merge. |
+| GOV-R-07 | MED | governance | FOLDED (remit Part 2.11 new row and Part 6 out (11); plan `:75`; roadmap `:357` map clause) | Read `personas_and_user_journeys.md:97` ("and rolling drawdown, as charts"); `seed.py:1147-1158` (one ROLLING_RISK run per fund, 3 in BOOK-1a); `book.py:1364` `ROLLING_WINDOWS = (12,)`; `perf/bootstrap.py:794` `ROLLING_RISK_WINDOWS = (12, 36)`; `rolling_kernel.py:404` `for end in range(window_months - 1, len(months))` → ONE complete window over twelve months. So the drawdown half is one MAX_DRAWDOWN point per fund, not a series; recorded as a CRO-1 gate decision with the three options named. |
+| GOV-R-08 | MED | governance | FOLDED (same edit as CITE-4 and CC-8) | See CITE-4. |
+| GOV-R-09 | LOW | governance | FOLDED (remit Recon basis, Part 0 heading) | "Five" → "SIX", the six lanes numbered as the roster the roadmap counts. |
+| GOV-R-10 | LOW | governance | FOLDED (`g2_slice_scope.json` `_scope_note`) | The sentence "The scope declared here is W19-S1 ..." removed; the S1 park and the verify-by-subject lesson kept; executed at round 2 (VF1-02; the first form of this cell quoted a `False` that the expression does not produce): `note.count('The scope declared here is W19-S1')` → 1, and the fifteen characters before that one hit are `(The sentence '`, so the only occurrence is inside the removal parenthetical → True. |
+| GOV-R-11 | LOW | governance | FOLDED (`g2_slice_scope.json` `no_scope_reason`) | Split into rows served with data (LIM-001/002/003, PRV-001/002/003/005) and REQ-MKT-005 "neither served nor entering build" under DS-B1b-9 (C); executed substring check → True. |
+| GOV-R-12 | LOW | governance | FOLDED (remit status block; every Part 4 header) | Status block names the nine briefed (DS-B1b-1, 3, 4, 5, 7, 8, 9, 10, 15) and the seven routine (2, 6, 9a, 11, 12, 13, 14); executed after tagging: `grep -c "\[briefed\]"` → 9, `grep -c "\[routine\]"` → 7. Both clause amendments (DS-B1b-4, -9) are in the briefed nine. |
+| CC-1 | BLOCKING | counts | FOLDED (same edit as GOV-R-01) | The lane re-derived 62 business days (65 weekdays minus Good Friday, Memorial Day, Juneteenth); re-executed here with the book's `XNYS_HOLIDAYS`: `Q2 business days 62 / already boundaries 13 new 49 / month-ends [04-30, 05-29, 06-30] / daily-chain dates excl month-ends 59`, `Q2_EXIT=0`. |
+| CC-2 | HIGH | counts | FOLDED (same edit as GOV-R-02) | 61 + 50 = 111; the lane's severity split 8/12/24/17 for the lane pass reproduced by the same `awk` (first section 61 rows). |
+| CC-3 | HIGH | counts | FOLDED (same edit as CITE-1) | 40 − 7 = 33 confirmed as the pre-fold denominator; now 41 of 41 with both passes named. |
+| CC-4 | MED | counts | FOLDED (roadmap `:534`) | Executed `awk '/^### Fold check/{p=1} p && /^\| [A-Z0-9-]+ \| BLOCKING \|/'` → F-01, S-01, R3-01, R4V-01 (four, at remit lines 1337, 1361, 1394, 1425 before this fold). The row names all four by id; "a guard I added that could never fire" (V6-03, MED) is out of the BLOCKING sentence. |
+| CC-5 | MED | counts | FOLDED (roadmap `:357` body) | "per MATURE private fund" and "ten limits with two live breaches and eight utilisations strictly between" written into the row. The re-baseline record `:377-378` and `:384-385` stay untouched by the remit's own rule (`:11-13`, "the re-baseline record itself is not rewritten"); the roadmap row, the document the next gate opens, now carries the amendment. |
+| CC-6 | MED | counts | FOLDED (same edit as GOV-R-06) | See GOV-R-06. |
+| CC-7 | MED | counts | FOLDED (roadmap `:355` 0a cell) | The "could not pull" clause deleted as a live statement and kept as "the earlier diagnosis ... REFUTED by this run"; the plan's `:51` already carried only the true clause. |
+| CC-8 | MED | counts | FOLDED (same edit as CITE-4) | See CITE-4. |
+| CC-9 | MED | counts | FOLDED (same edit as GOV-R-05) | See GOV-R-05; CRO-1 declares six lines (roadmap `:358`), so its walk slot is bound to CRO-1's exit and the outside walker to PM-1's gate, as the plan's original text says. |
+| CC-10 | MED | counts | FOLDED (remit Recon basis and Part 0 heading) | The six-lane roster is now enumerated in the remit, so roadmap `:534`'s "six recon lanes" derives from a committed artifact (`grep -c "SIX read-only lanes" w20_book1b_remit.md` → 2: the Recon basis paragraph and this cell). |
+| CC-11 | MED | counts | FOLDED (roadmap `:355`; plan `:51`; `current_state.md:21`, the deployed-stack row — `:17` at the fold, re-pointed at round 3) | Executed: `git rev-parse --short d1c9161^` → `e17b904`; `git diff --stat e17b904 d1c9161` → three `.md` files, 152 insertions, no code path; `git diff --stat e17b904 d1c9161 -- packages apps scripts migrations deploy.sh .github` → empty. All three records now say the 0a stack was built from `w20-remediation-plan` at `d1c9161`, docs-only over `main` `e17b904`; the scorecard's "built from `main`" softened. |
+| CC-12 | LOW | counts | FOLDED (roadmap `:534`) | Part 7 holds seven fold-check sections after the lane pass (`grep -c "^### Fold check" w20_book1b_remit.md` → 7); the row now says "SEVEN rounds (the remit numbers them 2 to 8)". |
+| CC-13 | LOW | counts | FOLDED (benchmark section 3 rows J-CRO-3 and J-CRO-4, the section-3 tail, section 5, section 6 F-6 wording; roadmap `:355` 0b cell) | Executed after the edit: `grep -c "PARTIAL —"` → 5 (J-CRO-1, 3, 4, 5, 7). Roadmap 0b cell now reads "J-CRO-2, 6, 8 rest on outward evidence; J-CRO-3 and 4 in part; J-CRO-1, 5, 7 are the platform's own design". |
+| FR-01 | BLOCKING | fresh-reader | FOLDED (remit Part 0.6, Part 0.10, Part 2.6 evaluation paragraph, Part 2.7 order sentence, Part 5 mutant 9) | Read `seed.py:1234-1239` (today: `_register_models` → `_run_account_boundaries` → `_run_month_end_chain` → `_run_return_chains` → `_run_sensitivity`), `seed.py:932-1106` (`_run_month_end_chain`, one iteration per `book.MONTH_ENDS`, VaR at `:1015`, active risk at `:1026`, concentration at `:1076`, liquidity at `:1091`), `seed.py:1109-1181` (`_run_return_chains` creates no limited family), `calc/reads.py:101-103` (`order_by(CalculationRun.system_from.desc(), ...)`). The order is stated once: `_register_models` → `_run_private_chain` → `_run_account_boundaries` → `_run_daily_chain` → `_run_month_end_chain` (evaluation inside the loop at the three Q2 iterations) → `_run_return_chains` → `_run_sensitivity`; Part 0.10's "last step" sentence and mutant (9) rewritten to that invariant. |
+| FR-02 | HIGH | fresh-reader | FOLDED (remit Part 0.17, Part 2.1, fence 21, Part 5 determinism proof and mutant 18, DS-B1b-14 note) | Read `book.py:1394` (`rng = random.Random(SEED)`), `:1403` (factor draw), `:1438` (mark noise inside `for inst in INSTRUMENTS`), `:1481` (benchmark noise inside `for fund in FUNDS`): the benchmark draws follow the mark draws on one stream, so a private spec's draw shifts them. The verifier's probe transcript is quoted as the verifier's (not re-run here). Private specs now draw from `random.Random(SEED + 2)` with idio sigma zero; the proof is a SHA-256 digest over the public mark and benchmark series pinned as a fourth golden; mutant (18) is its negative control; the mutant floor stays "at least seventeen". |
+| FR-03 | HIGH | fresh-reader | FOLDED (remit Part 2.6 guard paragraph) | Read `limit/service.py:577-598`: `return None` at `:585` (non-ACTIVE), `:593` (unresolved or REFUSED) and `:598` (within appetite); `:213-237` `Resolution.is_resolved` = `run_id` and `observed` set and `refusal` None; `:458` `_resolve_latest(session, limit)`. Guard now asserts `is_resolved is True` and `observed < threshold` per in-appetite row. The lane's premise that ACTIVE_RISK runs come from `_run_return_chains` is FALSE at its citation: `run_active_risk` is at `seed.py:1026` inside `_run_month_end_chain` (BOOK-1a: 39 runs, `w20_book1a_slice_record.md:94`), so the NL-GMA TE limit resolves at all three instants; stated in Part 2.6. |
+| FR-04 | MED | fresh-reader | FOLDED (remit `:281`, `:412`, `:612`, `:731`, `:1003`, `:1070`, `:1179`, `:1205` at their pre-fold line numbers) | Each build-text fork resolved to the ratified option (the grid cell now reads "NL-PMF unified VaR (`VAR_PARAMETRIC_UNIFIED`; DS-B1b-3 (B) ratified)"); the two Part 4 fallbacks (DS-B1b-3 declined; DS-B1b-9 amendment declined) marked "Branch not taken". Executed after: `grep -n "if DS-B1b-3" w20_book1b_remit.md` → one hit, this cell; `grep -c "if DS-B1b-4 keeps\|falling back to (a) if\|If DS-B1b-4 lands"` → 0. |
+| FR-05 | MED | fresh-reader | FOLDED (remit "What the fold changed at Tier 3" paragraph; F-03 row; S-06 row; the round-3 re-add block) | Each superseded tally now carries the round that superseded it (5,101 / 11,206 → 5,106 / 11,211 at round 4; floor fourteen → seventeen at round 8); S-06's "are unchanged" rewritten as history. Current figures re-summed from Part 2.8: 2,695 + 147 + 1,260 + 96 + 626 + 30 + 16 + 2 + 12 + 4 + 12 + 110 + 8 + 10 + 6 + 72 = 5,106. |
+| FR-06 | MED | fresh-reader | FOLDED (remit Part 2.3; fence 3) | Read `book.py:152` `FactorSpec("RATES_USD_10Y", "RATES", ...)` and `:157` `CREDIT_HY ... "CREDIT_SPREAD"`; `RATES_UST_TR` declared in family RATES beside `CREDIT_HY_TR`'s CREDIT_SPREAD; both in the nine `LOADING_FACTOR_FAMILIES` (round-5 transcript); fence 3 lists the three families the coverage rows rely on. |
+| FR-07 | LOW | fresh-reader | FOLDED (same edit as GOV-R-09) | See GOV-R-09. |
+| FR-08 | LOW | fresh-reader | FOLDED (remit Part 2.1 ISIN convention; Part 3.14 pre-flight) | Read `book.py:42-54` (`def isin(base)`, Luhn check digit over 11 characters), `:280` (`isin: str`, no default), `test_demo_tenant_book.py:73-76`; executed over the 55: `isin unique True check ok True`. Twelve new `ZZ` ISINs through `book.isin`, uniqueness asserted over 67; the pre-flight now reads every `book.INSTRUMENTS` / `book.FUNDS` / `book.FACTORS` loop in that suite, not only the `BOUNDARIES` grep. |
+| FR-09 | LOW | fresh-reader | FOLDED (remit DS-B1b-4 roster paragraph) | Arithmetic named: 175M sleeve / 8 = 21.875M = 12.5 % of the sleeve, 9.9 % of the 220.7M fund; 175 / 12 = 14.58M = 8.3 % of the sleeve, 6.6 % of the fund; "largest about 12 %" of the sleeve is about 9.5 % of the fund. The sentence names the sleeve as denominator and quotes the fund-level figure beside it. |
+
+Not applied, and why: nothing. Two things this fold did NOT do, stated so they are not read as done: the
+verifier's stream probe (FR-02) and the citation lane's fetches (CITE-2, -3, -5, -6, -7) are quoted as those
+lanes' transcripts, not re-executed here; and the re-baseline record (`product_rebaseline_2026-09-17.md:377-378,
+384-385`) is still not annotated with the two amendments, by the rule at the top of this remit (CC-5 asked for
+one or the other; the roadmap row carries them).
+
+### Ratification-diff verification, round 2 (Opus 5, 2026-09-18): 7 findings
+
+The second different-engine pass read the round-1 fold (working tree over `d676fc4`). **7 findings: 0 BLOCKING,
+1 HIGH (VF1-01), 3 MED, 3 LOW; all 7 folded, 0 refuted** (counted over this table by `awk` → 7 rows, 7 distinct
+ids; the folder is Fable 5.1). Every number below was executed at this fold; nothing is recalled. Where the fix
+moved another file, the Disposition column names it.
+
+| Id | Sev | Lane | Disposition | Executed evidence at the fold |
+|---|---|---|---|---|
+| VF1-01 | HIGH | citation | FOLDED (benchmark Status row `:9` and section 6 pass-two paragraph; roadmap `:355` 0b cell and `:534`; plan `:57`; the round-1 CITE-1 cell above) | No record shows pass two fetching S5 or S7, so the "seven checked" claim is withdrawn: pass two's five (S1-d, S3-c x2, S3-d, S6-f) stay pass two's. S5-e and S7-f checked HERE against a fresh `curl` fetch: msci.com HTTP 200, 391,844 bytes, SHA-256 `c397ff88…`; blackrock.com HTTP 200, 528,114 bytes, SHA-256 `15fd3f13…`; both byte-identical to pass one's `cite/s5.pdf` and `cite/s7.html` (same digests). `norm(quote) in norm(text)` → True for S5-e (PDF page 2) and S7-f (first sentence under "Scenario analysis and portfolio modeling"), against the fresh fetch and against pass one's extraction; `CHK_EXIT=0`. So 41 of 41 stands, split 33 / 5 + S4-b / 2, and every record says so. `grep -c '^> '` → 41 after the fold. |
+| VF1-02 | MED | governance | FOLDED (the round-1 GOV-R-10 cell above) | Re-executed: `'The scope declared here is W19-S1' in note` → True (the cell's quoted False did not reproduce); `note.count(...)` → 1; the 15 characters before the hit → `(The sentence '`, inside the removal parenthetical → True. The cell now quotes the reproducing check. `_scope_note` itself unchanged. |
+| VF1-03 | MED | counts | FOLDED (round-1 heading, header sentence, CITE-6 / CITE-7 rows split into CITE-6, CITE-6b, CITE-7, CITE-7b; `current_state.md:13`) | Before: `awk` over the round-1 table → 41 rows, 41 distinct ids, 3/7/19/12; the two merged rows at the CITE-6 and CITE-7 lines each named "the lane's own" second finding. After: `awk` → 43 rows, 43 distinct ids, 3 BLOCKING / 7 HIGH / 19 MED / 14 LOW; `grep -cE 'same edit( )as'` → 9, unchanged (this cell's first form quoted the plain phrase and so made a tenth hit, R2F-04). The b-rows carry the merged rows' LOW and say so. |
+| VF1-04 | MED | fresh-reader | FOLDED (remit `:502-503` and `:1167-1168` at their pre-fold numbers; and the Part 4 DS-B1b-4 (b) option text "Needs DS-B1b-3 = B", rewritten "Rests on DS-B1b-3 (B), ratified") | Before, over wrapped lines and case-insensitive: `tr '\n' ' ' \| grep -oiE 'if *DS-B1b-3 (=) B'` → 1, `'needs *DS-B1b-3 (=) B'` → 2. After: `if` → 0; `needs` → 1, the quotation of the withdrawn text in this cell. `grep -cE 'DS-B1b-3 (=) B'` → 5: the four descriptive uses (Part 0.7 "Only after ... does the `:3570` gate become the reason", Part 2.3 "Under ...", "BLOCKING under ... (GOV-1)", "The fold under ... also adds a refusal", which describe what holds under the ratified option and are not forks) plus this cell's quotation (the first form of this cell said 0 and 4, counting before it was written, R2F-04). |
+| VF1-05 | LOW | fresh-reader | FOLDED (remit Part 0.10 bolded clause) | Restated in Part 0.6's words: "no step after the June evaluation may create a COMPLETED run of a limited family (VAR, CONCENTRATION, ACTIVE_RISK) for the three fund roots", with the reason the old form was wrong (the evaluation appends a breach row, `limit/service.py:577-598`, run from `_resolve_latest` at `:586`, re-read by the verifier; not re-read here). `grep -cE 'must be the( )last'` → 1, the sentence that records the old wording (the first form of this cell quoted the plain phrase and so was itself a second hit, R2F-04). |
+| VF1-06 | LOW | governance | FOLDED (`g2_slice_scope.json` `no_scope_reason`) | `sed -n 242p requirements_backbone.md \| grep -oi 'utili[sz]ation'` → `utilization` x4, `Utilization` x4, no `utilisation`. Clause (3) now quoted verbatim inside quotation marks with the source's spelling; JSON round-trip byte-identical before the edit (`json.dumps(indent=1)` == file), `json.load` OK after, reason 1,815 characters; `python3 scripts/check_g2_adjudication.py` → `slice scope : 0 / blocking : 0`, `G2_EXIT=0`. |
+| VF1-07 | LOW | citation | FOLDED (benchmark S5 block order) | Before: `grep -n '^Quote S5'` → a `:127`, b `:133`, c `:141`, e `:145`, d `:149`. After: a `:127`, b `:133`, c `:141`, d `:145`, e `:149`. Over the quote lines after the move: `grep -c '^> '` → 41; dash lines → 3; non-ASCII lines → 6, as section 1 says. |
+
+Not applied, and why: nothing. Two things this fold did NOT do, stated so they are not read as done: it did not
+find a transcript of pass two's fetches, so the S5 / S7 coverage claim is replaced by this fold's own fetch
+rather than confirmed; and the `limit/service.py` lines under VF1-05 are the verifier's re-read, quoted as such.
+
+### Ratification-diff verification, round 3 (Opus 5, 2026-09-18): 4 findings
+
+The third different-engine pass read the round-2 fold (working tree over `d676fc4`). **4 findings: 0 BLOCKING,
+1 HIGH (R2F-01), 3 MED, 0 LOW; all 4 folded, 0 refuted** (counted over this table by `awk` → 4 rows, 4 distinct
+ids; the folder is Fable 5.1). Every number below was executed at this fold; nothing is recalled. All four (R2F-02 included, R3V-06) are the same class: a record written at one fold that a later fold's own edits refuted (a count that
+included the cell counting it; a line number that moved when rows were inserted above it). Each re-quoted
+count now uses a `( )` regex group, so the cell that quotes the command does not match it. Where the fix
+moved another file, the Disposition column names it.
+
+| Id | Sev | Lane | Disposition | Executed evidence at the fold |
+|---|---|---|---|---|
+| R2F-01 | HIGH | counts | FOLDED (roadmap `:534`, the Part 5 row's final bolded sentence) | Before: the sentence said "41 findings ... 3 BLOCKING, 7 HIGH, 19 MED, 12 LOW" and named no round 2. Re-executed: `awk` over the round-1 table (remit `:1575-1642`) → 43 rows, 43 distinct ids, 3 BLOCKING / 7 HIGH / 19 MED / 14 LOW; over the round-2 table → 7 rows. Sentence rewritten to "43 findings on this commit (41 rows at the fold, two re-id'd at round 2; 3 / 7 / 19 / 14 — counted over the table by `awk`), all folded; a second pass (round 2) raised 7 more (1 HIGH, VF1-01) and a third (round 3) 4 more (1 HIGH, R2F-01 ...)". After: `grep -cE '41 findings( )on this commit'` over the roadmap, the remit and `current_state.md` → 0, 0, 0 (group form, so this cell is not a hit). `current_state.md:13` gained "round 3 = 4 findings, 1 HIGH, all folded" in the same edit. |
+| R2F-02 | MED | counts | FOLDED (remit `:20`, the front-matter Part 7 inventory clause) | Before: "round 1: 41 findings, 3 BLOCKING ... the last table of Part 7". After: "round 1: 43 findings, 3 BLOCKING; round 2: 7 findings, 1 HIGH; round 3: 4 findings, 1 HIGH; all folded 2026-09-18 in the working tree — the last three tables of Part 7". `grep -cE 'the last table( )of Part 7'` → 1, the quotation of the old text at the start of this cell; `grep -n '^### Ratification-diff'` → `:1575` (round 1), `:1643` (round 2) and this section's heading. |
+| R2F-03 | MED | citation | FOLDED (`current_state.md:25`, the scorecard's benchmark row; the round-1 CITE-1 and CITE-4 cells' locators; and the same drift in GOV-R-05, CC-11 and GOV-R-06) | The cell now reads "41/41 verbatim: 33 in pass one, five plus S4-b in pass two, S5-e and S7-f at the round-2 fold against a fresh fetch, VF1-01"; `grep -c '41/41 verbatim over two lane passes' current_state.md` → 0. Locators re-executed with `sed -n Np current_state.md`: `:25` = the benchmark row (CITE-1, CITE-4 said `:21`), `:24` = the Wave-20 slices row (GOV-R-05 said `:20`), `:21` = the deployed-stack row (CC-11 said `:17`), the CURRENT TRUTH block spans `:3-13` (GOV-R-06 said `:3-9`), `:13` = the round tally (VF1-03, unchanged). Each cell keeps the old number beside the new one. |
+| R2F-04 | MED | counts | FOLDED (remit round-1 header sentence `:1588`; the VF1-03, VF1-04 and VF1-05 cells) | Before, plain phrases: same-edit → 10 (eight cells, the header, VF1-03's cell), needs-form → 1 (VF1-04's own quotation), the ratified-option phrase → 5, must-be-last → 2 (`:193` plus VF1-05's cell): each cell had added the hit it counted. After, with the group form: `grep -cE 'same edit( )as'` → 9 (eight disposition cells and the header sentence; VF1-03's cell no longer matches); `tr '\n' ' ' \| grep -oiE 'if *DS-B1b-3 (=) B'` → 0; `'needs *DS-B1b-3 (=) B'` → 1 (the withdrawn text quoted in VF1-04's cell, now said there); `grep -cE 'DS-B1b-3 (=) B'` → 5 at `:171`, `:490`, `:495`, `:502`, `:1655` (four descriptive uses plus VF1-04's quotation, now said there); `grep -cE 'must be the( )last'` → 1 at `:193`. This table's cells use only the group forms, so none of these counts moves when it is read. |
+
+Not applied, and why: nothing. Two things this fold did NOT do, stated so they are not read as done: it did not
+re-fetch any benchmark source (R2F-03 is about the record of VF1-01's fetch, not the fetch); and it re-pointed
+the five drifted `current_state.md` line numbers but did not re-verify the other files' locators in the
+round-1 and round-2 tables (roadmap `:355`, `:534`; plan `:49`, `:51`, `:57`; benchmark lines), which those
+tables quote at their own fold's line numbers.
+
+### Ratification-diff verification, round 4 (Opus 5, 2026-09-18): 6 findings, all LOW — folded by hand (Fable 5.1); the loop exit
+
+| Id | Severity | Disposition | Evidence |
+|---|---|---|---|
+| R3V-01 | LOW | FOLDED (round-1 CITE-4 cell) | `:21` at the fold recorded beside `:25`. |
+| R3V-02 | LOW | FOLDED (round-1 GOV-R-03 cell) | 1,792 at the fold; 1,815 after VF1-06 (executed by the round-3 check). |
+| R3V-03 | LOW | FOLDED (round-1 CITE-6b cell) | `grep -n '^Quote S6-f'` → 187; `:181` kept as the at-fold number. |
+| R3V-04 | LOW | FOLDED (benchmark `:23`, `:91`, `:97`, `:187`, J-CRO-4 note) | The sources-only lane's ids are CITE-6b / CITE-7b since VF1-03; the benchmark's credits now say so. |
+| R3V-05 | LOW | FOLDED (benchmark `:13`; round-1 CITE-6 cell) | The command is published with its `^> ` scope; whole-file count 17 stated beside it. |
+| R3V-06 | LOW | FOLDED (round-3 header) | "All four", R2F-02 named. |

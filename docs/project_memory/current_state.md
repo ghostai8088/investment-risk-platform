@@ -1,12 +1,16 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-09-17 — BOOK-1a MERGED: a CRO's book is seedable; the re-baseline before it) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-09-18 — the remediation plan MERGED; BOOK-1b planning RATIFIED on its branch; BOOK-1a merged the day before) — read this block; everything below it is HISTORY
 
-**Main `1c430f9` (PR #244, W20 BOOK-1a — the 48th autonomous merge), tree clean. CI green on all
-nine checks at head `8b61b45`, verified per conclusion (every check-run `completed | success`).
-Migration head `0077_bind_position_to_mapping`, one head — UNCHANGED, this slice ships no
-migration. Next free canonical id **ENT-079**. Next free control id CTRL-040. NEXT = the DS-B1b-3 (B)
-PRE-SLICE FOLD (unified-VaR builder conformance), then the BOOK-1b BUILD (planning RATIFIED 2026-09-18, `w20_book1b_remit.md`).**
+**Main `1c4f64f` (PR #246, the purpose-mismatch remediation plan and Phase 0a — the 49th autonomous
+merge), tree clean. CI green on all nine checks at PR #246's head `323cedc`, verified per conclusion
+(`gh api .../commits/323cedc.../check-runs`: 18 check-runs, every one `completed | success`, nine
+distinct names). The BOOK-1b planning commit (`d676fc4` and this fold) sits on branch
+`w20-book1b-planning`, PENDING MERGE. Migration head `0077_bind_position_to_mapping`, one head —
+UNCHANGED, no slice since ships a migration. Next free canonical id **ENT-079**. Next free control id
+CTRL-040. NEXT = the DS-B1b-3 (B) PRE-SLICE FOLD (unified-VaR builder conformance), then the BOOK-1b
+BUILD (planning RATIFIED 2026-09-18, `w20_book1b_remit.md`; its ratification diff verified on a
+different engine the same day: round 1 = 43 findings (41 rows at the fold, two re-id'd at round 2), 3 BLOCKING, all folded; round 2 = 7 findings, 1 HIGH, all folded; round 3 = 4 findings, 1 HIGH, all folded; remit Part 7).**
 
 ### Re-baseline scorecard (added 2026-09-18 — "ratified" is not "done"; update at every Wave-20 slice close)
 
@@ -14,11 +18,11 @@ PRE-SLICE FOLD (unified-VaR builder conformance), then the BOOK-1b BUILD (planni
 |---|---|
 | Decision ratified, G5 gate built, journeys ratified, Wave 19 closed, S1 parked | DONE |
 | Replace the deployed demo book (4.4) | HALF — public book only (BOOK-1a); no private sleeves, limits, breaches, daily quarter (BOOK-1b) |
-| Deployed stack holds the new book, built from `main` | YES since 2026-09-18 (Phase 0a): `deploy.sh --with-demo` on a fresh volume, `DEPLOY VERIFIED`, 597 runs / 86.7 s; registry = northlight + system |
+| Deployed stack holds the new book, built from a docs-only branch over `main` | YES since 2026-09-18 (Phase 0a): `deploy.sh --with-demo` on a fresh volume, `DEPLOY VERIFIED`, 597 runs / 86.7 s; registry = northlight + system. Built from `w20-remediation-plan` at `d1c9161`, docs-only over `main` `e17b904` (code identical to `main` at the time; CC-11) — the first walk row's `deployed_head` will name whatever `main` head CRO-1 deploys |
 | Front-end restart persona-first (4.3) | NOT STARTED (CRO-1) |
 | Journey lines walked (G5 ledger) | 0 of 12 |
-| Wave-20 slices | 1 of 7 built; BOOK-1b planning RATIFIED 2026-09-18 (+ Phase 0 inserted 2026-09-18: 0a, 0b DONE; 0c OPEN; 0d added) |
-| Outward benchmark (4.7) before CRO-1 planning | DONE 2026-09-18 (7 sources, 33/33 verbatim) |
+| Wave-20 slices | 1 of 7 built; BOOK-1b planning RATIFIED 2026-09-18, on its branch pending merge (+ Phase 0 inserted 2026-09-18: 0a, 0b DONE; 0c OPEN — the CRO-1 slot by CRO-1's exit, the outside walker by PM-1's gate; 0d added, lands with CRO-1) |
+| Outward benchmark (4.7) before CRO-1 planning | DONE 2026-09-18 (7 sources, 41/41 verbatim: 33 in pass one, five plus S4-b in pass two, S5-e and S7-f at the round-2 fold against a fresh fetch, VF1-01); carried: cited from the CRO-1 planning record at its gate |
 | Outside walker named (DP-RB2-9) | NO — asked 2026-09-18, open (Phase 0c) |
 
 The plan that tracks this: `10_delivery_backlog/purpose_mismatch_remediation_plan.md` (ratified 2026-09-18).

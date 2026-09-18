@@ -46,18 +46,18 @@ late August with the Northlight tenant seeded in by hand.
 
 Each phase has an exit that a person can check. Phases 0 and 1 run in parallel.
 
-### Phase 0 — make the yardstick operable (owner: Claude; closes before CRO-1's planning gate)
+### Phase 0 — make the yardstick operable (owner: Claude; close restated 2026-09-18 at the ratification-diff fold, GOV-R-05 and CC-9: 0a and 0b close before CRO-1's planning gate; 0c, the CRO-1 walk slot, and 0d close by CRO-1's exit; the outside walker by PM-1's gate)
 
-- **0a DEPLOY-PATH (G-1, G-5) — DONE 2026-09-18.** Docker had not been running; once started, the three base images pulled first try and `deploy.sh --with-demo` printed `DEPLOY VERIFIED`, then `DEMO SEEDED` (597 runs, 86.7 s, `DEPLOY_EXIT=0`) on a fresh volume. The registry holds `northlight` and `system` only. As `northlight-cro` over HTTP: `var_value 1734274.488757` (the BOOK-1a golden); unknown tenant 401; frontend 200. One carry for CRO-1: a non-UUID `X-User-Id` in dev-header mode returns 500, not 401 (moot after SHOW-1). Original text: Prove a full rebuild and fresh deploy on this machine:
+- **0a DEPLOY-PATH (G-1, G-5) — DONE 2026-09-18.** Docker had not been running; once started, the three base images pulled first try and `deploy.sh --with-demo` printed `DEPLOY VERIFIED`, then `DEMO SEEDED` (597 runs, 86.7 s, `DEPLOY_EXIT=0`) on a fresh volume. The stack was built from branch `w20-remediation-plan` at `d1c9161`, which is docs-only over `main` `e17b904` (the head at the time; `git diff --stat e17b904 d1c9161` touches three `.md` files and no code), so the image code is `main`'s at that head (CC-11; G5 needs a `deployed_head` per walk row). The registry holds `northlight` and `system` only. As `northlight-cro` over HTTP: `var_value 1734274.488757` (the BOOK-1a golden); unknown tenant 401; frontend 200. One carry for CRO-1: a non-UUID `X-User-Id` in dev-header mode returns 500, not 401 (moot after SHOW-1). Original text: Prove a full rebuild and fresh deploy on this machine:
   start the daemon; if the three base images are in the local cache, `deploy.sh --with-demo` needs no pull;
   if not, fix the registry path (proxy or mirror) or build the images in CI's `stack-proof` job and load
   them locally. Exit: `DEPLOY VERIFIED` printed by `deploy.sh --with-demo` on a fresh database, Northlight
   present, DEMO-GLOBAL absent, `northlight-cro` signs in. This is a hygiene insertion under roadmap Part 4
   rule 3; it ratifies before it starts but it is not a calculation slice.
-- **0b OUTWARD BENCHMARK (G-3) — DONE 2026-09-18** (`02_requirements/outward_benchmark_cro_overview_2026-09-18.md`, seven sources, 33 of 33 quotes verified verbatim by an Opus citation lane). Original text: Write the 4.7 section: at least two public vendor or regulatory sources
+- **0b OUTWARD BENCHMARK (G-3) — DONE 2026-09-18 (section written and lane-checked); carried: cited from the CRO-1 planning record at its gate** (`02_requirements/outward_benchmark_cro_overview_2026-09-18.md`, seven sources, 41 of 41 quotes verified verbatim by two Opus citation-lane passes — the second pass covered five of the seven quotes added at the first fold and supplied the 41st; the two from MSCI and BlackRock were checked at the round-2 fold against a fresh fetch (VF1-01); the exit's second half, "lands in the CRO-1 planning record", is the carried step, GOV-R-08, CC-8, CITE-4). Original text: Write the 4.7 section: at least two public vendor or regulatory sources
   on what a CRO risk overview shows, quoted verbatim with locators, read by a citation lane that sees only
   the sources. Exit: the section lands in the CRO-1 planning record and the citation lane passes.
-- **0c WALK CALENDAR (G-4) — OPEN, asked 2026-09-18, due before CRO-1's exit.** Added the same day, **0d:** a `record-walk` command that fills the seven mechanical ledger fields (line id, sha256 hash, persona, roster name, deployed head, route, date) and takes the walker's four (verdict, decision, driving value, reasoning), landing with CRO-1 before its first walk; today nothing fills them and nobody should type a sha256 by hand. Original text: The owner names a walk slot per slice exit (CRO-1, UTIL-1, PM-1, DRILL-1,
+- **0c WALK CALENDAR (G-4) — OPEN, asked 2026-09-18; the CRO-1 walk slot is due by CRO-1's exit, the outside walker by PM-1's gate (the original text below).** Added the same day, **0d:** a `record-walk` command that fills the seven mechanical ledger fields (line id, sha256 hash, persona, roster name, deployed head, route, date) and takes the walker's four (verdict, decision, driving value, reasoning), landing with CRO-1 before its first walk; today nothing fills them and nobody should type a sha256 by hand. Original text: The owner names a walk slot per slice exit (CRO-1, UTIL-1, PM-1, DRILL-1,
   SHOW-1) and names the outside walker (a practising risk or portfolio manager who did not build the
   product) before PM-1's gate, or records the recurrence acceptance DP-RB2-9 allows. Exit: dates and a
   name in the roadmap Part 2.22.
@@ -72,7 +72,7 @@ test battery; absent from any deployed database after Phase 0a).
 |---|---|
 | J-CRO-1 funds ranked by headroom | limits in force, two breaches, one utilisation between 0 and threshold |
 | J-CRO-5 private sleeve, reported vs desmoothed | appraisal history, desmooth/regression/promotion chain, commitments and pacing |
-| J-CRO-7 VaR trend over the last quarter | daily boundaries, one covariance and one VaR run per boundary per fund |
+| J-CRO-7 VaR trend over the last quarter | daily boundaries, one shared covariance and one VaR run per fund per daily date (the remit's Part 2.8 census). The line's rolling-DRAWDOWN half is served by no run family as a series: ROLLING_RISK v2 gives one 12-month maximum-drawdown point per fund over BOOK-1a's year; a CRO-1 gate decision (remit Part 2.11, Part 6 out (11); GOV-R-07) |
 | J-CRO-2, 4, 6; J-CRO-8 | nothing; BOOK-1a already serves them |
 
 ### Phase 2 — CRO-1, the first screen a CRO sees
