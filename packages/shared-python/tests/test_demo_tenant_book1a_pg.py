@@ -184,6 +184,10 @@ def test_the_SYSTEM_schemes_were_RESOLVED_not_duplicated(seeded) -> None:  # noq
             .where(
                 ClassificationScheme.tenant_id == SYSTEM_TENANT_ID,
                 ClassificationScheme.scheme_family == SCHEME_FAMILY_ISIC,
+                # The version THIS seed resolves-or-creates. Other suites on the shared battery
+                # seed ISIC under other version labels; the first version of this control counted
+                # them all and read six schemes as a duplication (CI red, 2026-09-17).
+                ClassificationScheme.version_label == "Rev. 5",
             )
         ).scalar_one()
     assert n == 1

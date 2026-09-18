@@ -196,7 +196,7 @@ then, as the `northlight-cro` principal over HTTP in dev-header mode:
 | M-8 | Every benchmark was a subset of the fund's own holdings, price-only, untranslated, labelled TOTAL. | FOLDED: unheld index baskets with their own loadings, compounded from factors and translated into base (`IndexMemberSpec`). |
 | M-9 | T-bills above par; every bond's clean price drifted up by its carry. | FOLDED: bond drift zero (coupon is income); bills as rolling positions with negligible noise, never above par, asserted. |
 | M-10 | Spread loadings above modified duration. | FOLDED: 0.9 × duration. |
-| M-11 | Remit 2.6's create-once/resolve-once proof was not asserted. | FOLDED: the SQLite suite asserts one ISIC scheme on a fresh database; the PG suite asserts one on the battery's database that already holds the campaign's. |
+| M-11 | Remit 2.6's create-once/resolve-once proof was not asserted. | FOLDED: the SQLite suite asserts one ISIC Rev. 5 scheme on a fresh database; the PG suite asserts one on the battery's database that already holds the campaign's. The first version of the control counted every ISIC version under SYSTEM (other suites seed eight others) and went red on CI and on the local battery with "6 == 1"; narrowed to the version this seed resolves. |
 | L-12 | `scripts/seed_demo_tenant.py` did not exist. | FOLDED: a thin wrapper over the module CLI. |
 | L-13 | Two FX pairs delivered for "every pair among USD, EUR and GBP". | FOLDED: the GBP/EUR cross, derived from the two USD legs. |
 | L-14 | No ISIN carried a valid check digit. | FOLDED: `book.isin` computes it; asserted against a real ISIN. |

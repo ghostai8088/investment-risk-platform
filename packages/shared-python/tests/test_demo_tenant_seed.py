@@ -223,6 +223,8 @@ def test_the_SYSTEM_schemes_are_created_exactly_once(seeded: tuple[Session, Seed
         .where(
             ClassificationScheme.tenant_id == SYSTEM_TENANT_ID,
             ClassificationScheme.scheme_family == SCHEME_FAMILY_ISIC,
+            # The version THIS seed resolves-or-creates; other suites seed other version labels.
+            ClassificationScheme.version_label == "Rev. 5",
         )
     ).scalar_one()
     assert n == 1
