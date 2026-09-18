@@ -105,6 +105,7 @@ _NAME_READS: dict[tuple[str, str, str], str] = {
     ("irp_shared.demo_tenant.seed", "_seed_factors", "f"): O,
     ("irp_shared.demo_tenant.seed", "_seed_instruments", "issuer"): O,
     ("irp_shared.demo_tenant.seed", "_seed_instruments", "spec"): O,
+    ("irp_shared.demo_tenant.seed", "_seed_benchmarks", "member"): O,
     # --- engine internals (dialect names, type machinery) ---
     ("irp_worker.audit_verify", "main", "engine.dialect"): E,
     ("irp_shared.audit.service", "_lock_chain", "session.get_bind().dialect"): E,

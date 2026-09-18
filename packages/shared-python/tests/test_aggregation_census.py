@@ -116,6 +116,8 @@ _ALLOWLIST: dict[tuple[str, str, str], tuple[int, str]] = {
     ("irp_shared.demo_tenant.book", "business_days", "augassign-add"): (1, N),
     ("irp_shared.demo_tenant.book", "generate_paths", "plain-assign-add"): (1, N),
     ("irp_shared.demo_tenant.cli", "main", "plain-assign-add"): (1, N),
+    # the ISIN check-digit sum (ISO 6166), an identifier's arithmetic, not a measure's
+    ("irp_shared.demo_tenant.book", "isin", "plain-assign-add"): (1, N),
     ("irp_shared.demo.hg1_private", "_mark_series", "sum-call"): (1, N),
     ("irp_shared.demo.hg1_private", "run_demo_hg1_private", "augassign-add"): (2, N),
     ("irp_shared.demo.lim2_stage20", "_teardown_roles", "augassign-add"): (1, N),

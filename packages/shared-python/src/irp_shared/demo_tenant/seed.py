@@ -268,6 +268,7 @@ class _Refs:
     instrument_ids: dict[str, str] = field(default_factory=dict)
     factor_ids: dict[str, str] = field(default_factory=dict)
     benchmark_ids: dict[str, str] = field(default_factory=dict)
+    index_member_ids: dict[str, str] = field(default_factory=dict)
     risk_free_ids: dict[str, str] = field(default_factory=dict)
     isic_id: str = ""
     iso_id: str = ""
@@ -698,10 +699,14 @@ def _seed_loadings(session: Session, refs: _Refs) -> None:
 
 
 def _seed_benchmarks(session: Session, refs: _Refs) -> None:
+    """One composite benchmark per fund made of INDEX MEMBERS the fund does not hold (unheld
+    instruments with a currency, so active risk can map them to currency factors), constituents
+    pinned at every month-end, and a TOTAL-basis return per boundary in the fund's base from the
+    members' own factor-implied paths — never a subset of the fund's own marks."""
     paths = refs.paths
     assert paths is not None
     actor = BenchmarkActor(actor_id=refs.analyst_id)
-    specs = {i.code: i for i in book.INSTRUMENTS}
+    ref_actor = ReferenceActor(actor_id=refs.analyst_id)
     for fund in book.FUNDS:
         bm = capture_benchmark(
             session,
@@ -713,14 +718,25 @@ def _seed_benchmarks(session: Session, refs: _Refs) -> None:
             benchmark_name=fund.benchmark_name,
             index_family="COMPOSITE",
         )
-        constituents = [
-            ConstituentInput(
-                instrument_id=refs.instrument_ids[code],
-                weight=Decimal(w),
-                constituent_currency=specs[code].currency,
+        constituents: list[ConstituentInput] = []
+        for member in book.BENCHMARK_MEMBERS[fund.code]:
+            inst = create_instrument(
+                session,
+                tenant_id=book.TENANT_ID,
+                code=member.code,
+                name=member.name,
+                asset_class="INDEX_BASKET",
+                actor=ref_actor,
+                currency_code=member.currency,
+            ).id
+            refs.index_member_ids[member.code] = inst
+            constituents.append(
+                ConstituentInput(
+                    instrument_id=inst,
+                    weight=Decimal(member.weight),
+                    constituent_currency=member.currency,
+                )
             )
-            for code, w in book.BENCHMARK_CONSTITUENTS[fund.code]
-        ]
         for on in book.MONTH_ENDS:
             capture_membership(
                 session,
@@ -768,6 +784,7 @@ def _seed_benchmarks(session: Session, refs: _Refs) -> None:
                 acting_tenant=book.TENANT_ID,
                 actor=actor,
             )
+            _count(refs, "benchmark_rows")
         refs.risk_free_ids[ccy] = str(rf.id)
     session.flush()
 
@@ -898,10 +915,10 @@ def _run_exposure(
 
 
 def _run_account_boundaries(session: Session, refs: _Refs, log: Log) -> None:
-    """Every boundary's exposure run at each fund's designated return account. These feed the
-    return chain (all boundaries) and the scenario runs (month-ends), because the scenario engine,
-    like the return engine, is single-portfolio (``scenario_service.py``: "v1 is single-portfolio")
-    and refuses a fund-root run spanning several accounts."""
+    """Every boundary's exposure run at each fund's designated return account, feeding the
+    return chain. (The scenario runs over each fund's SCENARIO account at month-ends, in the
+    month-end chain: the scenario engine is single-portfolio and currency-only, so the account it
+    stresses must be one holding currencies other than the fund's base.)"""
     for fund in book.FUNDS:
         account = refs.account_ids[fund.return_account]
         for on in book.BOUNDARIES:
@@ -1020,32 +1037,42 @@ def _run_month_end_chain(session: Session, refs: _Refs, log: Log) -> dict[str, t
             )
             _require_completed(ar, f"{fund.code} active risk @{on}")
             _count(refs, "active_risk")
-            # The scenario engine is single-portfolio: it runs over the designated return
-            # account's allocation exposure, the same limitation as the return chain (DS-B1a-4).
-            account_alloc = run_factor_exposure(
-                session,
-                acting_tenant=t,
-                actor=FactorExposureActor(actor_id=a),
-                code_version=cv,
-                environment_id=env,
-                model_version_id=v["factor_exposure.allocation"].id,
-                exposure_run_id=refs.account_exposure[(fund.code, on)],
-                factor_ids=currency_factors,
-            )
-            _require_completed(account_alloc, f"{fund.return_account} allocation exposure @{on}")
-            _count(refs, "factor_exposure")
-            sc = run_scenario(
-                session,
-                acting_tenant=t,
-                actor=ScenarioActor(actor_id=a),
-                code_version=cv,
-                environment_id=env,
-                model_version_id=v["scenario"].id,
-                factor_exposure_run_id=account_alloc.run.run_id,
-                scenario_definition_id=refs.scenario_id,
-            )
-            _require_completed(sc, f"{fund.code} scenario ({fund.return_account}) @{on}")
-            _count(refs, "scenario")
+            if fund.scenario_account is not None:
+                # The scenario engine is single-portfolio AND currency-only, so it runs over
+                # the ONE account that holds currencies other than the fund's base; a fund with
+                # no such account has no meaningful FX scenario and runs none (book.FundSpec).
+                sc_exposure = _run_exposure(
+                    session,
+                    refs,
+                    refs.account_ids[fund.scenario_account],
+                    fund.base_currency,
+                    on,
+                    fund.scenario_account,
+                )
+                sc_alloc = run_factor_exposure(
+                    session,
+                    acting_tenant=t,
+                    actor=FactorExposureActor(actor_id=a),
+                    code_version=cv,
+                    environment_id=env,
+                    model_version_id=v["factor_exposure.allocation"].id,
+                    exposure_run_id=sc_exposure,
+                    factor_ids=currency_factors,
+                )
+                _require_completed(sc_alloc, f"{fund.scenario_account} allocation exposure @{on}")
+                _count(refs, "factor_exposure")
+                sc = run_scenario(
+                    session,
+                    acting_tenant=t,
+                    actor=ScenarioActor(actor_id=a),
+                    code_version=cv,
+                    environment_id=env,
+                    model_version_id=v["scenario"].id,
+                    factor_exposure_run_id=sc_alloc.run.run_id,
+                    scenario_definition_id=refs.scenario_id,
+                )
+                _require_completed(sc, f"{fund.code} scenario ({fund.scenario_account}) @{on}")
+                _count(refs, "scenario")
             con = run_concentration(
                 session,
                 acting_tenant=t,

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.pool import NullPool
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.classification.models import SCHEME_FAMILY_ISIC, ClassificationScheme
 from irp_shared.concentration.models import ConcentrationResult
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.db.tenant import persistent_tenant_context
@@ -32,12 +33,14 @@ from irp_shared.demo_tenant import (
     book,
     seed_demo_tenant,
 )
+from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.entitlement.models import AppUser
 from irp_shared.exposure.models import ExposureAggregate
 from irp_shared.liquidity.models import LiquidityResult
 from irp_shared.marketdata.models import FxRate
 from irp_shared.perf.models import RollingRiskResult
 from irp_shared.portfolio.models import Portfolio
+from irp_shared.portfolio.portfolio import resolve_tree_as_of
 from irp_shared.reference.models import Instrument
 from irp_shared.risk.models import ActiveRiskResult, VarResult
 from irp_shared.tenancy.boundary import TenantNotAdmitted, assert_tenant_admitted
@@ -49,18 +52,21 @@ pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_D
 YEAR_END = date(2026, 6, 30)
 
 #: The three hand-derived goldens (MD-H1; derivations in `w20_book1a_slice_record.md`).
-GOLDEN_GMA_MARKET_VALUE_USD = Decimal("157800377.922680")
-GOLDEN_EFI_LARGEST_SECTOR = ("O", Decimal("0.669801"))
-GOLDEN_EFI_VAR_PARAMETRIC_EUR = Decimal("454548.838555")
+GOLDEN_GMA_MARKET_VALUE_USD = Decimal("155681069.672680")
+GOLDEN_EFI_LARGEST_SECTOR = ("O", Decimal("0.647615"))
+GOLDEN_EFI_VAR_PARAMETRIC_EUR = Decimal("464184.575474")
 
 #: The exact COMPLETED run count per family the remit's table commits to (Part 2.7, recounted).
+_FUNDS = len(book.FUNDS)
+_ME = len(book.MONTH_ENDS)
+_SCENARIO_FUNDS = sum(1 for f in book.FUNDS if f.scenario_account is not None)
 EXPECTED_RUNS: dict[str, int] = {
-    "EXPOSURE_AGGREGATE": 3 * len(book.BOUNDARIES) + 3 * len(book.MONTH_ENDS),
-    "FACTOR_EXPOSURE": 3 * len(book.MONTH_ENDS) * 3,
-    "COVARIANCE": 2 * len(book.MONTH_ENDS),
-    "VAR": 3 * len(book.MONTH_ENDS) * 3,
-    "ACTIVE_RISK": 3 * len(book.MONTH_ENDS),
-    "SCENARIO": 3 * len(book.MONTH_ENDS),
+    "EXPOSURE_AGGREGATE": _FUNDS * len(book.BOUNDARIES) + _FUNDS * _ME + _SCENARIO_FUNDS * _ME,
+    "FACTOR_EXPOSURE": _FUNDS * _ME * 2 + _SCENARIO_FUNDS * _ME,
+    "COVARIANCE": 2 * _ME,
+    "VAR": _FUNDS * _ME * 3,
+    "ACTIVE_RISK": _FUNDS * _ME,
+    "SCENARIO": _SCENARIO_FUNDS * _ME,
     "CONCENTRATION": 3 * len(book.MONTH_ENDS),
     "LIQUIDITY": 3 * len(book.MONTH_ENDS),
     "PORTFOLIO_RETURN": 3,
@@ -148,18 +154,39 @@ def test_five_principals_exist_and_the_cro_can_read(seeded) -> None:  # noqa: AN
     }
 
 
-def test_three_funds_declare_their_base_and_the_tree_has_eleven_accounts(seeded) -> None:  # noqa: ANN001
+def test_three_funds_declare_their_base_and_the_tree_as_of_has_eleven_accounts(seeded) -> None:  # noqa: ANN001
+    """Through the hierarchy read (the as-of tree the portfolio structure screen calls)."""
     factory, _ = seeded
     with _session(factory) as session:
-        rows = session.execute(
-            select(Portfolio.code, Portfolio.node_type, Portfolio.base_currency_code).where(
-                Portfolio.tenant_id == TENANT_ID
+        nodes = resolve_tree_as_of(session, acting_tenant=TENANT_ID, at=datetime.now(UTC))
+    kinds: dict[str, int] = {}
+    funds: dict[str, str | None] = {}
+    for node in nodes.values():
+        kinds[node.node_type] = kinds.get(node.node_type, 0) + 1
+        if node.node_type == "FUND":
+            funds[node.name] = node.base_currency_code
+    assert funds == {
+        "Northlight Global Multi-Asset Fund": "USD",
+        "Northlight Euro Fixed Income Fund": "EUR",
+        "Northlight Private Markets Fund of Funds": "USD",
+    }
+    assert kinds.get("ACCOUNT") == 11 and kinds.get("STRATEGY") == 8
+
+
+def test_the_SYSTEM_schemes_were_RESOLVED_not_duplicated(seeded) -> None:  # noqa: ANN001
+    """Remit outcome 6's other arm: on the PostgreSQL battery the base campaign has already
+    created ISIC Rev. 5, and this tenant's seed must find it rather than create a second."""
+    factory, _ = seeded
+    with factory() as session:
+        n = session.execute(
+            select(func.count())
+            .select_from(ClassificationScheme)
+            .where(
+                ClassificationScheme.tenant_id == SYSTEM_TENANT_ID,
+                ClassificationScheme.scheme_family == SCHEME_FAMILY_ISIC,
             )
-        ).all()
-    funds = {code: base for code, kind, base in rows if kind == "FUND"}
-    assert funds == {"NL-GMA": "USD", "NL-EFI": "EUR", "NL-PMF": "USD"}
-    assert sum(1 for _, kind, _ in rows if kind == "ACCOUNT") == 11
-    assert sum(1 for _, kind, _ in rows if kind == "STRATEGY") == 8
+        ).scalar_one()
+    assert n == 1
 
 
 # --- the book -------------------------------------------------------------------------------------
@@ -168,15 +195,27 @@ def test_three_funds_declare_their_base_and_the_tree_has_eleven_accounts(seeded)
 def test_the_book_is_a_fund_with_every_mark_and_fx_leg_on_every_boundary(seeded) -> None:  # noqa: ANN001
     factory, _ = seeded
     with _session(factory) as session:
-        n_inst = session.execute(
-            select(func.count()).select_from(Instrument).where(Instrument.tenant_id == TENANT_ID)
+        held = session.execute(
+            select(func.count())
+            .select_from(Instrument)
+            .where(Instrument.tenant_id == TENANT_ID, Instrument.asset_class != "INDEX_BASKET")
         ).scalar_one()
-        assert n_inst == len(book.INSTRUMENTS)
-        assert 50 <= n_inst <= 80
+        assert held == len(book.INSTRUMENTS)
+        assert 50 <= held <= 80
+        baskets = session.execute(
+            select(func.count())
+            .select_from(Instrument)
+            .where(Instrument.tenant_id == TENANT_ID, Instrument.asset_class == "INDEX_BASKET")
+        ).scalar_one()
+        assert baskets == sum(len(m) for m in book.BENCHMARK_MEMBERS.values())
         no_issuer = session.execute(
             select(func.count())
             .select_from(Instrument)
-            .where(Instrument.tenant_id == TENANT_ID, Instrument.issuer_id.is_(None))
+            .where(
+                Instrument.tenant_id == TENANT_ID,
+                Instrument.asset_class != "INDEX_BASKET",
+                Instrument.issuer_id.is_(None),
+            )
         ).scalar_one()
         assert no_issuer == 0
         marks_per_date = dict(
@@ -196,7 +235,7 @@ def test_the_book_is_a_fund_with_every_mark_and_fx_leg_on_every_boundary(seeded)
             ).all()
         )
         assert set(fx_per_date) == set(book.BOUNDARIES)
-        assert all(n == len(book.FX_START) for n in fx_per_date.values())
+        assert all(n == len(book.FX_START) + len(book.FX_CROSS) for n in fx_per_date.values())
 
 
 # --- the runs -------------------------------------------------------------------------------------

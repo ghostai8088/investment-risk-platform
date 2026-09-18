@@ -10,7 +10,9 @@ mask a mutant behind a leftover row.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterator
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import func, select
@@ -18,6 +20,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from irp_shared.calc.models import CalculationRun
+from irp_shared.classification.models import SCHEME_FAMILY_ISIC, ClassificationScheme
 from irp_shared.db.session import make_engine, make_session_factory
 from irp_shared.demo_tenant import (
     TENANT_CODE,
@@ -27,21 +30,30 @@ from irp_shared.demo_tenant import (
     book,
     seed_demo_tenant,
 )
+from irp_shared.demo_tenant.seed import DemoTenantError
+from irp_shared.entitlement.bootstrap import SYSTEM_TENANT_ID
 from irp_shared.entitlement.models import AppUser
 from irp_shared.exposure.models import ExposureAggregate
 from irp_shared.models import Base
+from irp_shared.risk.models import VarResult
 from irp_shared.tenancy.models import TENANT_STATUS_ACTIVE, Tenant
 from irp_shared.valuation.models import Valuation
 
+_FUNDS = len(book.FUNDS)
+_ME = len(book.MONTH_ENDS)
+_SCENARIO_FUNDS = sum(1 for f in book.FUNDS if f.scenario_account is not None)
 EXPECTED_RUNS: dict[str, int] = {
-    "exposure": 3 * len(book.BOUNDARIES) + 3 * len(book.MONTH_ENDS),
-    "factor_exposure": 3 * len(book.MONTH_ENDS) * 3,
-    "covariance": 2 * len(book.MONTH_ENDS),
-    "var.parametric": 3 * len(book.MONTH_ENDS),
-    "var.es": 3 * len(book.MONTH_ENDS),
-    "var.historical": 3 * len(book.MONTH_ENDS),
-    "active_risk": 3 * len(book.MONTH_ENDS),
-    "scenario": 3 * len(book.MONTH_ENDS),
+    # return accounts at every boundary; fund roots and scenario accounts at month-ends
+    "exposure": _FUNDS * len(book.BOUNDARIES) + _FUNDS * _ME + _SCENARIO_FUNDS * _ME,
+    # per fund per month-end: allocation and loadings at the root; allocation at the scenario
+    # account
+    "factor_exposure": _FUNDS * _ME * 2 + _SCENARIO_FUNDS * _ME,
+    "covariance": 2 * _ME,
+    "var.parametric": _FUNDS * _ME,
+    "var.es": _FUNDS * _ME,
+    "var.historical": _FUNDS * _ME,
+    "active_risk": _FUNDS * _ME,
+    "scenario": _SCENARIO_FUNDS * _ME,
     "concentration": 3 * len(book.MONTH_ENDS),
     "liquidity": 3 * len(book.MONTH_ENDS),
     "portfolio_return": 3,
@@ -52,8 +64,7 @@ EXPECTED_RUNS: dict[str, int] = {
 }
 
 
-@pytest.fixture(scope="module")
-def seeded() -> Iterator[tuple[Session, SeedSummary]]:
+def _fresh_session() -> tuple[Session, object]:
     engine = make_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -61,14 +72,37 @@ def seeded() -> Iterator[tuple[Session, SeedSummary]]:
     )
     Base.metadata.create_all(engine)
     session = make_session_factory(engine)()
+    assert session.execute(select(func.count()).select_from(Tenant)).scalar_one() == 0
+    return session, engine
+
+
+@pytest.fixture(scope="module")
+def seeded() -> Iterator[tuple[Session, SeedSummary]]:
+    session, engine = _fresh_session()
     try:
-        assert session.execute(select(func.count()).select_from(Tenant)).scalar_one() == 0
         summary = seed_demo_tenant(session)
         session.commit()
         yield session, summary
     finally:
         session.close()
-        engine.dispose()
+        engine.dispose()  # type: ignore[attr-defined]
+
+
+def _june_var(session: Session, fund_id: str) -> Decimal:
+    return Decimal(
+        session.execute(
+            select(VarResult.var_value).where(
+                VarResult.metric_type == "VAR_PARAMETRIC",
+                VarResult.window_end == book.YEAR_END,
+                VarResult.calculation_run_id.in_(
+                    select(CalculationRun.run_id).where(
+                        CalculationRun.scope_portfolio_id == fund_id,
+                        CalculationRun.run_type == "VAR",
+                    )
+                ),
+            )
+        ).scalar_one()
+    )
 
 
 def test_the_seed_admits_its_tenant_at_birth(seeded: tuple[Session, SeedSummary]) -> None:
@@ -150,3 +184,81 @@ def test_a_second_seed_REFUSES_and_writes_nothing(seeded: tuple[Session, SeedSum
     session.rollback()
     after = session.execute(select(func.count()).select_from(CalculationRun)).scalar_one()
     assert before == after > 0
+
+
+def test_the_factor_model_SEES_an_equity_move(
+    seeded: tuple[Session, SeedSummary], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Remit outcome 4's proof. The base campaign's own comment names the defect a currency-only
+    model has: "an equity move the CURRENCY factor model cannot see". Here one equity's MARKET
+    loading is changed and the whole book re-seeded on a scratch database; the multi-asset fund's
+    June VaR must move, and the euro fund's, which holds no equity, must not."""
+    session, summary = seeded
+    baseline_gma = _june_var(session, summary.fund_ids["NL-GMA"])
+    baseline_efi = _june_var(session, summary.fund_ids["NL-EFI"])
+    assert baseline_gma > 0
+
+    changed = tuple(
+        dataclasses.replace(i, market_beta=i.market_beta * Decimal("2")) if i.code == "CSDA" else i
+        for i in book.INSTRUMENTS
+    )
+    monkeypatch.setattr(book, "INSTRUMENTS", changed)
+    scratch, engine = _fresh_session()
+    try:
+        alt = seed_demo_tenant(scratch)
+        scratch.commit()
+        assert _june_var(scratch, alt.fund_ids["NL-GMA"]) != baseline_gma
+        assert _june_var(scratch, alt.fund_ids["NL-EFI"]) == baseline_efi
+    finally:
+        scratch.close()
+        engine.dispose()  # type: ignore[attr-defined]
+
+
+def test_the_SYSTEM_schemes_are_created_exactly_once(seeded: tuple[Session, SeedSummary]) -> None:
+    """Remit outcome 6: on a fresh database the create arm runs, and it runs once."""
+    session, _ = seeded
+    n = session.execute(
+        select(func.count())
+        .select_from(ClassificationScheme)
+        .where(
+            ClassificationScheme.tenant_id == SYSTEM_TENANT_ID,
+            ClassificationScheme.scheme_family == SCHEME_FAMILY_ISIC,
+        )
+    ).scalar_one()
+    assert n == 1
+
+
+def test_a_missing_mark_STOPS_the_seed_at_that_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The exact-date pin (remit Part 5): one instrument unmarked on one boundary. The snapshot's
+    completeness rule refuses the build (a DataQualityError, severity ERROR) before any exposure
+    row is written, and the seed stops there with the boundaries before it done and nothing after:
+    a book with a hole in it is never shipped as a book."""
+    from irp_shared.demo_tenant import seed as seed_module
+    from irp_shared.dq.service import DataQualityError
+
+    real = seed_module.create_valuation
+    skipped = {"n": 0}
+    hole = book.MONTH_ENDS[3]
+
+    def _skip_one(session, **kwargs):  # noqa: ANN001, ANN202
+        if kwargs.get("valuation_date") == hole and skipped["n"] == 0:
+            skipped["n"] = 1
+            return None
+        return real(session, **kwargs)
+
+    monkeypatch.setattr(seed_module, "create_valuation", _skip_one)
+    scratch, engine = _fresh_session()
+    try:
+        with pytest.raises((DemoTenantError, DataQualityError)):
+            seed_demo_tenant(scratch)
+        assert skipped["n"] == 1
+        completed = scratch.execute(
+            select(func.count())
+            .select_from(CalculationRun)
+            .where(CalculationRun.status == "COMPLETED", CalculationRun.tenant_id == TENANT_ID)
+        ).scalar_one()
+        assert 0 < completed < sum(EXPECTED_RUNS.values())
+    finally:
+        scratch.rollback()
+        scratch.close()
+        engine.dispose()  # type: ignore[attr-defined]

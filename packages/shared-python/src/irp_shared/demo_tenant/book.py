@@ -39,6 +39,21 @@ def northlight_id(key: str) -> str:
     return str(uuid.uuid5(_NS, key))
 
 
+def isin(base: str) -> str:
+    """The 12-character ISIN: a well-formed check digit (ISO 6166, the Luhn form) over the
+    2-letter prefix and 9-character body, so an import tool accepts the identifier as shaped."""
+    assert len(base) == 11, base
+    digits = "".join(str(ord(c) - 55) if c.isalpha() else c for c in base)
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        n = int(ch)
+        if i % 2 == 0:
+            n = n * 2
+            n = n - 9 if n > 9 else n
+        total = total + n
+    return base + str((10 - total % 10) % 10)
+
+
 TENANT_ID = northlight_id("tenant:northlight")
 TENANT_CODE = "northlight"
 TENANT_NAME = "Northlight Capital Partners"
@@ -109,11 +124,14 @@ CURRENCIES: tuple[tuple[str, str], ...] = (
     ("GBP", "Pound Sterling"),
 )
 
-#: FX mids at YEAR_START (quote per one unit of base), then a slow deterministic drift.
+#: FX mids at YEAR_START (quote per one unit of base), then a deterministic drift from the
+#: currency factors. The third pair among USD, EUR and GBP is the cross GBP/EUR, derived from the
+#: two USD legs so the triangle is always consistent.
 FX_START: dict[tuple[str, str], Decimal] = {
     ("EUR", "USD"): Decimal("1.0850"),
     ("GBP", "USD"): Decimal("1.2700"),
 }
+FX_CROSS: tuple[tuple[str, str], ...] = (("GBP", "EUR"),)
 
 
 @dataclass(frozen=True)
@@ -165,6 +183,11 @@ class FundSpec:
     return_account: str  # the ONE account whose return chain stands for the fund (DS-B1a-4)
     benchmark_code: str
     benchmark_name: str
+    #: The account the FX scenario runs over, or None where a currency scenario has no meaning:
+    #: the scenario engine is single-portfolio AND currency-only (it consumes the allocation
+    #: family), so it can only stress an account holding currencies other than the fund's base.
+    #: A euro fund's euro bonds shocked on FX_EUR would be FX risk against its own numeraire.
+    scenario_account: str | None
 
 
 FUNDS: tuple[FundSpec, ...] = (
@@ -191,6 +214,7 @@ FUNDS: tuple[FundSpec, ...] = (
         return_account="NL-GMA-EQ-US",
         benchmark_code="NL-GMA-BM",
         benchmark_name="Northlight Global Multi-Asset Composite",
+        scenario_account="NL-GMA-EQ-INTL",
     ),
     FundSpec(
         code="NL-EFI",
@@ -212,6 +236,7 @@ FUNDS: tuple[FundSpec, ...] = (
         return_account="NL-EFI-GOV-CORE",
         benchmark_code="NL-EFI-BM",
         benchmark_name="Northlight Euro Aggregate Composite",
+        scenario_account=None,
     ),
     FundSpec(
         code="NL-PMF",
@@ -233,6 +258,7 @@ FUNDS: tuple[FundSpec, ...] = (
         return_account="NL-PMF-LIQ-TSY",
         benchmark_code="NL-PMF-BM",
         benchmark_name="Northlight Private Markets Reference",
+        scenario_account=None,
     ),
 )
 
@@ -301,7 +327,8 @@ ISSUERS: tuple[IssuerSpec, ...] = (
     IssuerSpec("BTP", "Repubblica Italiana", "IT", "O", "SOVEREIGN"),
     IssuerSpec("BONOS", "Reino de Espana", "ES", "O", "SOVEREIGN"),
     IssuerSpec("DSL", "Staat der Nederlanden", "NL", "O", "SOVEREIGN"),
-    IssuerSpec("NLCASH", "Northlight cash custodian", "US", "K", "CORPORATE"),
+    IssuerSpec("KALMAR", "Kalmar Marine Oyj", "FI", "H", "CORPORATE"),
+    IssuerSpec("HTC", "Harborside Trust Company", "US", "K", "CORPORATE"),
 )
 
 SECTORS: tuple[tuple[str, str], ...] = (
@@ -325,6 +352,7 @@ COUNTRIES: tuple[tuple[str, str], ...] = (
     ("IT", "Italy"),
     ("ES", "Spain"),
     ("CH", "Switzerland"),
+    ("FI", "Finland"),
 )
 
 _D = Decimal
@@ -343,7 +371,7 @@ def _eq(code, isin, name, ccy, issuer, account, qty, px, sigma, beta, tier="HIGH
         _D(qty),
         _D(px),
         _D(sigma) * _D("0.6"),
-        _D("0.06"),
+        _D("0.06"),  # an equity premium; the market factor carries the rest
         _D(beta),
         _D("0"),
         _D("0"),
@@ -352,7 +380,20 @@ def _eq(code, isin, name, ccy, issuer, account, qty, px, sigma, beta, tier="HIGH
     )
 
 
-def _govt(code, isin, name, ccy, issuer, account, qty, px, dur, coupon, tier="HIGHLY_LIQUID"):
+def _govt(
+    code,
+    isin,
+    name,
+    ccy,
+    issuer,
+    account,
+    qty,
+    px,
+    dur,
+    coupon,
+    tier="HIGHLY_LIQUID",
+    sigma="0.0004",
+):
     return InstrumentSpec(
         code,
         isin,
@@ -363,8 +404,8 @@ def _govt(code, isin, name, ccy, issuer, account, qty, px, dur, coupon, tier="HI
         account,
         _D(qty),
         _D(px),
-        _D("0.0004"),
-        _D("0.03"),
+        _D(sigma),
+        _D("0"),  # a bond's clean price has no drift; its coupon is income, not price
         _D("0"),
         _D(dur) * _D("-1"),
         _D("0"),
@@ -375,7 +416,8 @@ def _govt(code, isin, name, ccy, issuer, account, qty, px, dur, coupon, tier="HI
     )
 
 
-def _corp(code, isin, name, ccy, issuer, account, qty, px, dur, spread, factor, coupon, tier):
+def _corp(code, isin, name, ccy, issuer, account, qty, px, dur, factor, coupon, tier):
+    # Spread duration cannot exceed modified duration: the credit loading is 0.9 x duration.
     return InstrumentSpec(
         code,
         isin,
@@ -387,10 +429,10 @@ def _corp(code, isin, name, ccy, issuer, account, qty, px, dur, spread, factor, 
         _D(qty),
         _D(px),
         _D("0.0006"),
-        _D("0.045"),
+        _D("0"),
         _D("0"),
         _D(dur) * _D("-1"),
-        _D(spread) * _D("-1"),
+        _D(dur) * _D("-0.9"),
         factor,
         tier,
         _D("1000"),
@@ -402,7 +444,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     # NL-GMA / US Core (12 US equities)
     _eq(
         "CSDA",
-        "ZZ0000000011",
+        isin("ZZ000000001"),
         "Cascadia Semiconductor Corp",
         "USD",
         "CASCADIA",
@@ -414,7 +456,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "BWHS",
-        "ZZ0000000029",
+        isin("ZZ000000002"),
         "Brightwater Health Systems Inc",
         "USD",
         "BRIGHTWATER",
@@ -426,7 +468,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "ORRN",
-        "ZZ0000000037",
+        isin("ZZ000000003"),
         "Orrin Software Group Inc",
         "USD",
         "ORRIN",
@@ -438,7 +480,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "GRNE",
-        "ZZ0000000045",
+        isin("ZZ000000004"),
         "Granite Ridge Energy Corp",
         "USD",
         "GRANITE",
@@ -450,7 +492,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "HLCB",
-        "ZZ0000000052",
+        isin("ZZ000000005"),
         "Halcyon Consumer Brands Inc",
         "USD",
         "HALCYON",
@@ -462,7 +504,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "MRDU",
-        "ZZ0000000060",
+        isin("ZZ000000006"),
         "Meridian Utilities Holdings",
         "USD",
         "MERIDIANU",
@@ -474,7 +516,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "VNTF",
-        "ZZ0000000078",
+        isin("ZZ000000007"),
         "Vantage Freight Lines Inc",
         "USD",
         "VANTAGE",
@@ -486,7 +528,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "SMBC",
-        "ZZ0000000086",
+        isin("ZZ000000008"),
         "Summit Bancorp",
         "USD",
         "SUMMITB",
@@ -498,7 +540,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "LMNB",
-        "ZZ0000000094",
+        isin("ZZ000000009"),
         "Lumen Bioscience Inc",
         "USD",
         "LUMEN",
@@ -511,7 +553,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "TDWR",
-        "ZZ0000000102",
+        isin("ZZ000000010"),
         "Tidewater Retail Group Inc",
         "USD",
         "TIDEWATER",
@@ -523,7 +565,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "NSAR",
-        "ZZ0000000110",
+        isin("ZZ000000011"),
         "Northstar Aerospace Corp",
         "USD",
         "NORTHSTAR",
@@ -535,7 +577,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "CDPI",
-        "ZZ0000000128",
+        isin("ZZ000000012"),
         "Cedar Point Insurance Group",
         "USD",
         "CEDAR",
@@ -548,7 +590,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     # NL-GMA / International (8 EUR + 4 GBP equities)
     _eq(
         "RHWK",
-        "ZZ0000000136",
+        isin("ZZ000000013"),
         "Rheinwerk Industrie AG",
         "EUR",
         "RHEINWERK",
@@ -560,7 +602,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "ALPB",
-        "ZZ0000000144",
+        isin("ZZ000000014"),
         "Alpenbank AG",
         "EUR",
         "ALPENBANK",
@@ -572,7 +614,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "LOIR",
-        "ZZ0000000151",
+        isin("ZZ000000015"),
         "Loire Luxe SA",
         "EUR",
         "LOIRE",
@@ -584,7 +626,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "GALE",
-        "ZZ0000000169",
+        isin("ZZ000000016"),
         "Gallic Energie SA",
         "EUR",
         "GALLIC",
@@ -596,7 +638,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "NRDL",
-        "ZZ0000000177",
+        isin("ZZ000000017"),
         "Noord Logistiek NV",
         "EUR",
         "NOORD",
@@ -608,7 +650,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "TBRT",
-        "ZZ0000000185",
+        isin("ZZ000000018"),
         "Tiber Telecom SpA",
         "EUR",
         "TIBER",
@@ -620,7 +662,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "IBRN",
-        "ZZ0000000193",
+        isin("ZZ000000019"),
         "Iberia Renovables SA",
         "EUR",
         "IBERIA",
@@ -632,7 +674,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "HLVP",
-        "ZZ0000000201",
+        isin("ZZ000000020"),
         "Helvetia Pharma AG",
         "EUR",
         "HELVETIA",
@@ -644,7 +686,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "THMS",
-        "ZZ0000000219",
+        isin("ZZ000000021"),
         "Thames Utilities plc",
         "GBP",
         "THAMES",
@@ -656,7 +698,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "ALBM",
-        "ZZ0000000227",
+        isin("ZZ000000022"),
         "Albion Mining plc",
         "GBP",
         "ALBION",
@@ -668,7 +710,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "CLDN",
-        "ZZ0000000235",
+        isin("ZZ000000023"),
         "Caledon Assurance plc",
         "GBP",
         "CALEDON",
@@ -680,7 +722,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _eq(
         "SVRN",
-        "ZZ0000000243",
+        isin("ZZ000000024"),
         "Severn Grocers plc",
         "GBP",
         "SEVERN",
@@ -693,7 +735,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     # NL-GMA / Government (4 US Treasuries; per-unit price on 1000 face)
     _govt(
         "UST-27",
-        "ZZ0000000250",
+        isin("ZZ000000025"),
         "US Treasury 4.125% 2027",
         "USD",
         "UST",
@@ -705,7 +747,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _govt(
         "UST-30",
-        "ZZ0000000268",
+        isin("ZZ000000026"),
         "US Treasury 4.000% 2030",
         "USD",
         "UST",
@@ -717,7 +759,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _govt(
         "UST-35",
-        "ZZ0000000276",
+        isin("ZZ000000027"),
         "US Treasury 4.250% 2035",
         "USD",
         "UST",
@@ -729,7 +771,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _govt(
         "UST-45",
-        "ZZ0000000284",
+        isin("ZZ000000028"),
         "US Treasury 4.500% 2045",
         "USD",
         "UST",
@@ -742,7 +784,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     # NL-GMA / Credit (6 USD IG corporates)
     _corp(
         "CSDA-29",
-        "ZZ0000000292",
+        isin("ZZ000000029"),
         "Cascadia Semiconductor 4.60% 2029",
         "USD",
         "CASCADIA",
@@ -750,14 +792,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "4000",
         "997.40",
         "3.6",
-        "0.9",
         "CREDIT_IG",
         "0.0460",
         "MODERATELY_LIQUID",
     ),
     _corp(
         "MRDU-31",
-        "ZZ0000000300",
+        isin("ZZ000000030"),
         "Meridian Utilities 4.85% 2031",
         "USD",
         "MERIDIANU",
@@ -765,14 +806,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "3500",
         "1002.10",
         "5.1",
-        "1.1",
         "CREDIT_IG",
         "0.0485",
         "MODERATELY_LIQUID",
     ),
     _corp(
         "SMBC-28",
-        "ZZ0000000318",
+        isin("ZZ000000031"),
         "Summit Bancorp 5.10% 2028",
         "USD",
         "SUMMITB",
@@ -780,14 +820,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "3000",
         "1008.60",
         "2.7",
-        "1.3",
         "CREDIT_IG",
         "0.0510",
         "MODERATELY_LIQUID",
     ),
     _corp(
         "VNTF-33",
-        "ZZ0000000326",
+        isin("ZZ000000032"),
         "Vantage Freight 5.35% 2033",
         "USD",
         "VANTAGE",
@@ -795,14 +834,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "2500",
         "989.90",
         "6.4",
-        "1.4",
         "CREDIT_IG",
         "0.0535",
         "LESS_LIQUID",
     ),
     _corp(
         "HLCB-30",
-        "ZZ0000000334",
+        isin("ZZ000000033"),
         "Halcyon Consumer 4.70% 2030",
         "USD",
         "HALCYON",
@@ -810,14 +848,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "3000",
         "993.20",
         "4.4",
-        "1.0",
         "CREDIT_IG",
         "0.0470",
         "MODERATELY_LIQUID",
     ),
     _corp(
         "CDPI-34",
-        "ZZ0000000342",
+        isin("ZZ000000034"),
         "Cedar Point Insurance 5.20% 2034",
         "USD",
         "CEDAR",
@@ -825,7 +862,6 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "2000",
         "984.70",
         "7.0",
-        "1.2",
         "CREDIT_IG",
         "0.0520",
         "LESS_LIQUID",
@@ -833,11 +869,11 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     # NL-GMA / Cash
     InstrumentSpec(
         "NLUSD-CASH",
-        "ZZ0000000359",
+        isin("ZZ000000035"),
         "USD cash at custodian",
         "CASH",
         "USD",
-        "NLCASH",
+        "HTC",
         "NL-GMA-CASH-1",
         _D("18500000"),
         _D("1.00"),
@@ -852,7 +888,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     # NL-EFI / Core Govies (5 EUR sovereigns)
     _govt(
         "BUND-30",
-        "ZZ0000000367",
+        isin("ZZ000000036"),
         "Bund 2.30% 2030",
         "EUR",
         "BUND",
@@ -864,7 +900,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _govt(
         "BUND-35",
-        "ZZ0000000375",
+        isin("ZZ000000037"),
         "Bund 2.50% 2035",
         "EUR",
         "BUND",
@@ -876,7 +912,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _govt(
         "OAT-33",
-        "ZZ0000000383",
+        isin("ZZ000000038"),
         "OAT 2.75% 2033",
         "EUR",
         "OAT",
@@ -888,7 +924,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _govt(
         "BTP-31",
-        "ZZ0000000391",
+        isin("ZZ000000039"),
         "BTP 3.45% 2031",
         "EUR",
         "BTP",
@@ -901,7 +937,7 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     ),
     _govt(
         "BONOS-32",
-        "ZZ0000000409",
+        isin("ZZ000000040"),
         "Bonos 3.10% 2032",
         "EUR",
         "BONOS",
@@ -911,10 +947,22 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "5.9",
         "0.0310",
     ),
+    _govt(
+        "DSL-31",
+        isin("ZZ000000055"),
+        "Staat der Nederlanden 2.60% 2031",
+        "EUR",
+        "DSL",
+        "NL-EFI-GOV-CORE",
+        "6000",
+        "997.80",
+        "5.2",
+        "0.0260",
+    ),
     # NL-EFI / IG Credit (6 EUR IG corporates)
     _corp(
         "RHWK-30",
-        "ZZ0000000417",
+        isin("ZZ000000041"),
         "Rheinwerk Industrie 3.40% 2030",
         "EUR",
         "RHEINWERK",
@@ -922,14 +970,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "4500",
         "1001.30",
         "4.4",
-        "0.9",
         "CREDIT_IG",
         "0.0340",
         "MODERATELY_LIQUID",
     ),
     _corp(
         "ALPB-29",
-        "ZZ0000000425",
+        isin("ZZ000000042"),
         "Alpenbank 3.65% 2029",
         "EUR",
         "ALPENBANK",
@@ -937,14 +984,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "5000",
         "1004.80",
         "3.5",
-        "1.2",
         "CREDIT_IG",
         "0.0365",
         "MODERATELY_LIQUID",
     ),
     _corp(
         "GALE-32",
-        "ZZ0000000433",
+        isin("ZZ000000043"),
         "Gallic Energie 3.80% 2032",
         "EUR",
         "GALLIC",
@@ -952,14 +998,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "4000",
         "995.60",
         "5.9",
-        "1.0",
         "CREDIT_IG",
         "0.0380",
         "MODERATELY_LIQUID",
     ),
     _corp(
         "NRDL-28",
-        "ZZ0000000441",
+        isin("ZZ000000044"),
         "Noord Logistiek 3.25% 2028",
         "EUR",
         "NOORD",
@@ -967,14 +1012,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "3500",
         "999.10",
         "2.6",
-        "0.8",
         "CREDIT_IG",
         "0.0325",
         "MODERATELY_LIQUID",
     ),
     _corp(
         "HLVP-34",
-        "ZZ0000000458",
+        isin("ZZ000000045"),
         "Helvetia Pharma 3.55% 2034",
         "EUR",
         "HELVETIA",
@@ -982,30 +1026,28 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "3000",
         "990.40",
         "7.3",
-        "0.7",
         "CREDIT_IG",
         "0.0355",
         "LESS_LIQUID",
     ),
     _corp(
-        "DSL-31",
-        "ZZ0000000466",
-        "Staat der Nederlanden 2.60% 2031",
+        "KLMR-31",
+        isin("ZZ000000046"),
+        "Kalmar Marine Oyj 3.30% 2031",
         "EUR",
-        "DSL",
+        "KALMAR",
         "NL-EFI-CR-IG",
-        "6000",
-        "997.80",
+        "4000",
+        "996.40",
         "5.2",
-        "0.3",
         "CREDIT_IG",
-        "0.0260",
-        "HIGHLY_LIQUID",
+        "0.0330",
+        "MODERATELY_LIQUID",
     ),
     # NL-EFI / HY Credit (5 EUR HY corporates)
     _corp(
         "TBRT-29",
-        "ZZ0000000474",
+        isin("ZZ000000047"),
         "Tiber Telecom 6.40% 2029",
         "EUR",
         "TIBER",
@@ -1013,14 +1055,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "3000",
         "986.20",
         "3.3",
-        "2.4",
         "CREDIT_HY",
         "0.0640",
         "LESS_LIQUID",
     ),
     _corp(
         "IBRN-30",
-        "ZZ0000000482",
+        isin("ZZ000000048"),
         "Iberia Renovables 6.10% 2030",
         "EUR",
         "IBERIA",
@@ -1028,14 +1069,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "2500",
         "991.70",
         "4.1",
-        "2.2",
         "CREDIT_HY",
         "0.0610",
         "LESS_LIQUID",
     ),
     _corp(
         "LOIR-31",
-        "ZZ0000000490",
+        isin("ZZ000000049"),
         "Loire Luxe 5.75% 2031",
         "EUR",
         "LOIRE",
@@ -1043,14 +1083,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "2000",
         "1010.30",
         "4.8",
-        "1.9",
         "CREDIT_HY",
         "0.0575",
         "LESS_LIQUID",
     ),
     _corp(
         "ALBM-28",
-        "ZZ0000000508",
+        isin("ZZ000000050"),
         "Albion Mining 7.20% 2028",
         "EUR",
         "ALBION",
@@ -1058,14 +1097,13 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "2500",
         "978.90",
         "2.5",
-        "3.1",
         "CREDIT_HY",
         "0.0720",
         "ILLIQUID",
     ),
     _corp(
         "SVRN-30",
-        "ZZ0000000516",
+        isin("ZZ000000051"),
         "Severn Grocers 6.80% 2030",
         "EUR",
         "SEVERN",
@@ -1073,7 +1111,6 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         "2000",
         "983.50",
         "4.0",
-        "2.7",
         "CREDIT_HY",
         "0.0680",
         "LESS_LIQUID",
@@ -1081,35 +1118,37 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
     # NL-PMF / Treasury Reserve (2 T-bills + cash; the private sleeves are BOOK-1b's)
     _govt(
         "USTB-3M",
-        "ZZ0000000524",
-        "US Treasury Bill 3-month",
+        isin("ZZ000000052"),
+        "US Treasury bills, rolling 3-month",
         "USD",
         "UST",
         "NL-PMF-LIQ-TSY",
         "22000",
-        "988.90",
+        "989.60",
         "0.25",
         "0.0000",
+        sigma="0.00005",  # a rolling bill position barely moves and never crosses par
     ),
     _govt(
         "USTB-6M",
-        "ZZ0000000532",
-        "US Treasury Bill 6-month",
+        isin("ZZ000000053"),
+        "US Treasury bills, rolling 6-month",
         "USD",
         "UST",
         "NL-PMF-LIQ-TSY",
         "18000",
-        "978.10",
+        "979.30",
         "0.50",
         "0.0000",
+        sigma="0.00005",  # a rolling bill position barely moves and never crosses par
     ),
     InstrumentSpec(
         "NLUSD-CASH-PMF",
-        "ZZ0000000540",
+        isin("ZZ000000054"),
         "USD cash at custodian (PMF)",
         "CASH",
         "USD",
-        "NLCASH",
+        "HTC",
         "NL-PMF-LIQ-TSY",
         _D("6200000"),
         _D("1.00"),
@@ -1167,27 +1206,132 @@ RISK_FREE: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
 }
 
-#: Benchmark constituents per fund: (instrument code, weight), currency taken from the instrument.
-BENCHMARK_CONSTITUENTS: dict[str, tuple[tuple[str, str], ...]] = {
+
+@dataclass(frozen=True)
+class IndexMemberSpec:
+    """A benchmark constituent the fund does NOT hold: an index basket with its own factor
+    loadings, so benchmark-relative measures the fund against something other than a subset of
+    itself. The member's return per boundary is compounded from the factor returns through these
+    loadings plus its own noise, and translated into the fund's base through the currency factor
+    where the member's currency differs from it."""
+
+    code: str
+    name: str
+    currency: str
+    weight: str
+    market_beta: str
+    rate_loading: str  # applied to the member's own currency's RATES factor
+    credit_loading: str
+    credit_factor: str | None
+    daily_sigma: str
+
+
+BENCHMARK_MEMBERS: dict[str, tuple[IndexMemberSpec, ...]] = {
     "NL-GMA": (
-        ("CSDA", "0.12"),
-        ("ORRN", "0.10"),
-        ("BWHS", "0.08"),
-        ("RHWK", "0.10"),
-        ("LOIR", "0.08"),
-        ("THMS", "0.07"),
-        ("UST-30", "0.20"),
-        ("UST-35", "0.15"),
-        ("MRDU-31", "0.10"),
+        IndexMemberSpec(
+            "NLX-US-LC",
+            "Northlight US Large Cap Index basket",
+            "USD",
+            "0.35",
+            "1.00",
+            "0",
+            "0",
+            None,
+            "0.0020",
+        ),
+        IndexMemberSpec(
+            "NLX-EU-LC",
+            "Northlight Europe Large Cap Index basket",
+            "EUR",
+            "0.15",
+            "0.95",
+            "0",
+            "0",
+            None,
+            "0.0020",
+        ),
+        IndexMemberSpec(
+            "NLX-UK-LC",
+            "Northlight UK Large Cap Index basket",
+            "GBP",
+            "0.10",
+            "0.90",
+            "0",
+            "0",
+            None,
+            "0.0020",
+        ),
+        IndexMemberSpec(
+            "NLX-US-TSY",
+            "Northlight US Treasury 5-10y Index basket",
+            "USD",
+            "0.25",
+            "0",
+            "-6.5",
+            "0",
+            None,
+            "0.0004",
+        ),
+        IndexMemberSpec(
+            "NLX-US-IG",
+            "Northlight US IG Credit Index basket",
+            "USD",
+            "0.15",
+            "0",
+            "-5.5",
+            "-5.0",
+            "CREDIT_IG",
+            "0.0005",
+        ),
     ),
     "NL-EFI": (
-        ("BUND-30", "0.30"),
-        ("BUND-35", "0.20"),
-        ("OAT-33", "0.20"),
-        ("BTP-31", "0.15"),
-        ("RHWK-30", "0.15"),
+        IndexMemberSpec(
+            "NLX-EU-GOV",
+            "Northlight Euro Government Index basket",
+            "EUR",
+            "0.60",
+            "0",
+            "-6.8",
+            "0",
+            None,
+            "0.0004",
+        ),
+        IndexMemberSpec(
+            "NLX-EU-IG",
+            "Northlight Euro IG Credit Index basket",
+            "EUR",
+            "0.30",
+            "0",
+            "-4.8",
+            "-4.3",
+            "CREDIT_IG",
+            "0.0005",
+        ),
+        IndexMemberSpec(
+            "NLX-EU-HY",
+            "Northlight Euro High Yield Index basket",
+            "EUR",
+            "0.10",
+            "0",
+            "-3.5",
+            "-3.2",
+            "CREDIT_HY",
+            "0.0008",
+        ),
     ),
-    "NL-PMF": (("USTB-3M", "0.60"), ("USTB-6M", "0.40")),
+    "NL-PMF": (
+        IndexMemberSpec(
+            "NLX-US-BILL",
+            "Northlight US T-Bill Index basket",
+            "USD",
+            "1.00",
+            "0",
+            "-0.25",
+            "0",
+            None,
+            "0.0001",
+        ),
+    ),
 }
 
 # --- scenario and curve -----------------------------------------------------------------------
@@ -1271,6 +1415,10 @@ def generate_paths() -> Paths:
             if d in BOUNDARIES:
                 series[d] = _q(Decimal(repr(level)), _Q4)
         fx[(base, quote)] = series
+    for base, quote in FX_CROSS:
+        fx[(base, quote)] = {
+            d: _q(fx[(base, "USD")][d] / fx[(quote, "USD")][d], _Q4) for d in BOUNDARIES
+        }
     # 3. marks: each instrument's price follows its loadings on the factors plus its own noise
     marks: dict[str, dict[date, Decimal]] = {}
     for inst in INSTRUMENTS:
@@ -1302,19 +1450,50 @@ def generate_paths() -> Paths:
             if d in BOUNDARIES:
                 series[d] = _q(Decimal(repr(price)), _Q4)
         marks[inst.code] = series
-    # 4. benchmark returns per boundary: the weighted return of the constituents' marks
+    # 4. benchmark returns per boundary: each index member compounds its factor-implied daily
+    #    return (plus its own noise) between boundaries, translated into the fund's base through
+    #    the currency factor where its currency differs; the benchmark is the weighted sum.
     benchmark_returns: dict[str, dict[date, Decimal]] = {}
     for fund in FUNDS:
+        levels = {m.code: 1.0 for m in BENCHMARK_MEMBERS[fund.code]}
         series = {}
-        prev: date | None = None
-        for d in BOUNDARIES:
-            if prev is not None:
+        prev_levels = dict(levels)
+        for d in days:
+            if d < YEAR_START:
+                continue
+            for m in BENCHMARK_MEMBERS[fund.code]:
+                rate_code = "RATES_USD_10Y" if m.currency == "USD" else "RATES_EUR_10Y"
+                credit = (
+                    0.0
+                    if m.credit_factor is None
+                    else float(m.credit_loading) * float(factor_returns[m.credit_factor][d])
+                )
+                fx_leg = (
+                    0.0
+                    if m.currency == fund.base_currency
+                    else float(factor_returns[f"FX_{m.currency}"][d])
+                    - (
+                        float(factor_returns[f"FX_{fund.base_currency}"][d])
+                        if fund.base_currency != "USD"
+                        else 0.0
+                    )
+                )
+                noise = rng.gauss(0.0, float(m.daily_sigma)) if float(m.daily_sigma) > 0 else 0.0
+                r = (
+                    float(m.market_beta) * float(factor_returns["MKT_GLOBAL_EQ"][d])
+                    + float(m.rate_loading) * float(factor_returns[rate_code][d])
+                    + credit
+                    + fx_leg
+                    + noise
+                )
+                levels[m.code] *= 1.0 + r
+            if d in BOUNDARIES and d != YEAR_START:
                 total = Decimal("0")
-                for code, w in BENCHMARK_CONSTITUENTS[fund.code]:
-                    m0, m1 = marks[code][prev], marks[code][d]
-                    total = total + Decimal(w) * (m1 / m0 - Decimal("1"))
+                for m in BENCHMARK_MEMBERS[fund.code]:
+                    member_return = Decimal(repr(levels[m.code] / prev_levels[m.code] - 1.0))
+                    total = total + Decimal(m.weight) * member_return
                 series[d] = _q(total, _Q6)
-            prev = d
+                prev_levels = dict(levels)
         benchmark_returns[fund.code] = series
     return Paths(
         factor_returns=factor_returns, fx=fx, marks=marks, benchmark_returns=benchmark_returns

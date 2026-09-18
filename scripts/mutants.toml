@@ -2309,11 +2309,11 @@ group = "w20-book1a"
 why = "a fixture name slips into the book — the realism rule's names clause is what the fence is for"
 file = "packages/shared-python/src/irp_shared/demo_tenant/book.py"
 find = """        "CSDA",
-        "ZZ0000000011",
+        isin("ZZ000000001"),
         "Cascadia Semiconductor Corp","""
 replace = """        "CSDA",
-        "ZZ0000000011",
-        "Demo instrument 1","""
+        isin("ZZ000000001"),
+        "Sample Holding 1","""
 tests = ["packages/shared-python/tests/test_demo_tenant_book.py"]
 
 [[mutant]]

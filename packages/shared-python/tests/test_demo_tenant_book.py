@@ -18,7 +18,13 @@ from decimal import Decimal
 from irp_shared.demo_tenant import book
 
 _PKG = pathlib.Path(book.__file__).resolve().parent
-_FIXTURE_NAMES = re.compile(r"\bINSTR-|\bCN-|\bDemo\b|\bdemo\b|\bTEST\b|\bFIXTURE\b")
+#: Fixture vocabulary, case-insensitive: the reviewer's probes ("Test Holding", "Sample Holding",
+#: "Fixture A", "Placeholder Corp", "Dummy plc", "Instrument 1") all passed the first version.
+_FIXTURE_NAMES = re.compile(
+    r"\bINSTR-|\bCN-|\bdemo\b|\btest\b|\bfixture\b|\bsample\b|\bplaceholder\b|\bdummy\b"
+    r"|\bfoo\b|\bbar\b|\binstrument \d|\bholding \d|\bsecurity \d|\bacme\b",
+    re.IGNORECASE,
+)
 
 
 def test_the_marked_year_opens_and_closes_on_a_month_end_with_thirteen_of_them() -> None:
@@ -44,9 +50,9 @@ def test_the_book_is_a_fund_not_a_fixture() -> None:
     assert len(set(codes)) == len(codes)
     isins = [i.isin for i in book.INSTRUMENTS]
     assert len(set(isins)) == len(isins)
-    assert all(
-        re.fullmatch(r"ZZ\d{10}", isin) for isin in isins
-    ), "ISIN-shaped, user-assigned prefix"
+    assert all(re.fullmatch(r"ZZ\d{10}", i) for i in isins), "ISIN-shaped, user-assigned prefix"
+    assert all(book.isin(i[:11]) == i for i in isins), "every ISIN carries its check digit"
+    assert book.isin("US037833100") == "US0378331005"  # the algorithm against a known real ISIN
     issuers = {i.code for i in book.ISSUERS}
     for inst in book.INSTRUMENTS:
         assert inst.issuer in issuers
@@ -55,10 +61,27 @@ def test_the_book_is_a_fund_not_a_fixture() -> None:
             assert inst.face_value is not None and inst.coupon_rate is not None
     accounts = {a.code for f in book.FUNDS for s in f.sleeves for a in s.accounts}
     assert all(i.account in accounts for i in book.INSTRUMENTS)
+    held_by_fund: dict[str, set[str]] = {}
     for fund in book.FUNDS:
         assert fund.return_account in accounts
-        weights = sum(Decimal(w) for _, w in book.BENCHMARK_CONSTITUENTS[fund.code])
+        assert fund.scenario_account is None or fund.scenario_account in accounts
+        weights = sum(Decimal(m.weight) for m in book.BENCHMARK_MEMBERS[fund.code])
         assert weights == Decimal("1")
+        fund_accounts = {a.code for s in fund.sleeves for a in s.accounts}
+        held_by_fund[fund.code] = {i.code for i in book.INSTRUMENTS if i.account in fund_accounts}
+        assert len(held_by_fund[fund.code]) >= 3, fund.code
+        # The benchmark is never a subset of the fund's own holdings.
+        assert not ({m.code for m in book.BENCHMARK_MEMBERS[fund.code]} & held_by_fund[fund.code])
+    # Three DIFFERENT funds: no two share a holding.
+    codes = list(held_by_fund)
+    for x in codes:
+        for y in codes:
+            if x < y:
+                assert not (held_by_fund[x] & held_by_fund[y]), (x, y)
+    prices = {i.start_price for i in book.INSTRUMENTS if i.asset_class == "EQUITY"}
+    assert len(prices) >= 20, "equities priced individually, not at one round number"
+    quantities = {i.quantity for i in book.INSTRUMENTS}
+    assert len(quantities) >= 20, "positions sized individually"
 
 
 def test_values_sit_inside_the_realism_bands() -> None:
@@ -71,6 +94,12 @@ def test_values_sit_inside_the_realism_bands() -> None:
             assert abs(b / a - 1) < 0.15, (inst.code, a, b)  # a boundary is a week
     for series in paths.fx.values():
         assert all(Decimal("0.5") <= v <= Decimal("200") for v in series.values())
+    for inst in book.INSTRUMENTS:
+        if inst.coupon_rate == Decimal("0") and inst.face_value is not None:
+            # a zero-coupon bill never trades above par
+            assert all(v <= inst.face_value for v in paths.marks[inst.code].values()), inst.code
+    for fund in book.FUNDS:
+        assert len(paths.benchmark_returns[fund.code]) == len(book.BOUNDARIES) - 1
     for code, series in paths.factor_returns.items():
         assert all(abs(v) < Decimal("0.05") for v in series.values()), code
         assert set(series) == set(book.RETURN_DAYS)
