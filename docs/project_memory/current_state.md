@@ -1,6 +1,54 @@
 # Current State
 
-## ⚠️ CURRENT TRUTH (2026-09-17 — the SECOND product re-baseline: Wave 19 CLOSED EARLY, Wave 20 = "A CRO CAN USE IT", G5 minted) — read this block; everything below it is HISTORY
+## ⚠️ CURRENT TRUTH (2026-09-17 — BOOK-1a MERGED: a CRO's book is seedable; the re-baseline before it) — read this block; everything below it is HISTORY
+
+**Main `1c430f9` (PR #244, W20 BOOK-1a — the 48th autonomous merge), tree clean. CI green on all
+nine checks at head `8b61b45`, verified per conclusion (every check-run `completed | success`).
+Migration head `0077_bind_position_to_mapping`, one head — UNCHANGED, this slice ships no
+migration. Next free canonical id **ENT-079**. Next free control id CTRL-040. NEXT = WAVE-20
+SLICE 2, BOOK-1b (the private sleeves and the limits).**
+
+### BOOK-1a in six lines (2026-09-17, `w20_book1a_slice_record.md`)
+
+- **What:** the Northlight tenant — three funds (global multi-asset USD, euro fixed income EUR,
+  private-markets fund of funds USD), FUND → STRATEGY → ACCOUNT, 55 fictional instruments with
+  check-digit ISINs, a fixed marked year 2025-06-30..2026-06-30 (56 boundaries, 13 month-ends),
+  an eight-factor loadings model, independent index-basket benchmarks, every public family run:
+  **597 COMPLETED runs, 6,105 audited captures, 296 s** into the deployed PostgreSQL.
+- **How:** `irp_shared.demo_tenant` (book, seed, cli), `scripts/seed_demo_tenant.py`,
+  `deploy.sh --with-demo` (after DEPLOY VERIFIED, migrate image, superuser), a CI step.
+- **What the build found:** the scenario engine is single-portfolio AND currency-only (the FX
+  scenario runs on the one account with foreign-currency holdings; two funds run none); a
+  home-currency loading of one is FX risk against the fund's own numeraire (now zero); tracking
+  error is currency-only by engine; `GET /exposure/latest/sum` is LEAF-ONLY (the fund total is the
+  rollup read — a CRO-1 carry); three of the year's Fridays are exchange holidays.
+- **Proofs:** a SQLite suite seeding a FRESH database in 33 s (the mutants' host; the model sees
+  an equity move; a missing mark stops the seed); a PG suite under RLS through the real admission
+  gate (12/12); the book fence; three hand-derived goldens (`scripts/derive_northlight_var.py`
+  reproduces the VaR to the last digit); mutants 7/7; R-D5 deterministic 10/10; the one live
+  time bomb fixed.
+- **Review:** Fable, 61 claims / 17 findings (2 HIGH: the euro fund's FX scenario against its own
+  numeraire; the model-sees-an-equity-move proof missing), all folded (record §7).
+- **Deployed smoke, by hand:** VaR 1,734,274.488757 USD, fund rollup 155,681,069.672680 USD,
+  concentration O 0.647615, unknown tenant 401 — over HTTP as `northlight-cro`. The Docker daemon
+  on this machine cannot pull base images (Desktop 4.7.1 behind a proxy), so `--with-demo` end to
+  end is a carry: the first stack-proof on main and SHOW-1.
+
+### Seven-ledger sweep (2026-09-17, BOOK-1a)
+
+1. Canonical model: no ENT minted; ENT-079 next. 2. Audit taxonomy: no code minted. 3. Control
+matrix: **no control moved**. 4. This block. 5. Backbone + RTM: no row edited (BOOK-1a declared
+no G2 scope); no adjudication lapsed (`g2-check` 0). 6. Counts MEASURED: `make check` 3,127 /
+681 skipped; full-PG **3,808, exit 0**; anchors 195/195. 7. Delivery claims verified against the
+merged diff on `main` at `1c430f9` (package, flag, suites present).
+
+### Position
+
+`irp-dep1` on this machine runs the three-week-old images with the Northlight tenant seeded into
+its database by hand (the smoke above); the CRO principal signs in with `northlight-cro`. The
+parked S1 branch is unchanged.
+
+## Previous truth — superseded at the BOOK-1a merge, 2026-09-17 (2026-09-17 — the SECOND product re-baseline: Wave 19 CLOSED EARLY, Wave 20 = "A CRO CAN USE IT", G5 minted) — read this block; everything below it is HISTORY
 
 **Main `c669f14` (PR #241, the second product re-baseline — the 45th autonomous merge), tree
 clean. CI green on all nine checks at head `03f1b37`, verified per conclusion (every check-run

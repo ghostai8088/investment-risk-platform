@@ -4,7 +4,7 @@
 PR #243 = `d00cca8`). This record states what was built against each outcome, what the build
 found that the remit did not know, the three hand derivations, and the measured gates.
 
-**Status: BUILT 2026-09-17, REVIEWED on a different engine (17 findings, all folded, §7), re-measured; merge stamps below as they land.**
+**Status: MERGED 2026-09-17 — PR #244 = `1c430f9` (the 48th autonomous merge), CI nine-for-nine at head `8b61b45` per conclusion; full-PG 3,808 passed, exit 0, on a fresh reset; verified on `main`.**
 
 ## 1. What was built, outcome by outcome
 
@@ -161,8 +161,9 @@ then, as the `northlight-cro` principal over HTTP in dev-header mode:
 
 
 - `make check` = **0** — 3,127 passed, 681 skipped (`CHECK_EXIT=0`), after the fold.
-- Full-PG battery on a fresh four-part reset: **3,804 passed, exit 0** before the fold (the first
-  build's book); the post-fold run is stamped in the PR and `current_state`.
+- Full-PG battery on a fresh four-part reset: **3,808 passed, exit 0** on the merged head's tree
+  (`PYTEST_EXIT=0`); 3,804 before the fold. One control went red on the first post-fold battery
+  and on CI (§7 M-11's note): it counted every ISIC version under SYSTEM; narrowed and re-measured.
 - The Northlight PostgreSQL suite alone: **12 passed**, the three goldens confirmed on stored
   rows under RLS.
 - Mutation battery: anchors **195/195**; group `w20-book1a` **7/7 killed** (one re-anchored twice
@@ -170,8 +171,10 @@ then, as the `northlight-cro` principal over HTTP in dev-header mode:
   group `repro-2b` **6/6** across ten consecutive runs (Rider B).
 - The three censuses and four fences: aggregation, portfolio-name, holdings-consumption,
   fx/snapshot/risk/exposure import direction, all green with the new package admitted by name.
-- The deployed smoke: `deploy.sh --with-demo` on this machine — *stamped below.*
-- CI, the adversarial review and the ledger sweep: *stamped below.*
+- The deployed smoke: by hand on the existing images, quoted above; the flag's end-to-end run is
+  carried (§2.9).
+- CI: all nine checks `completed | success` at `8b61b45`, verified per conclusion via the check-runs
+  API. The adversarial review: §7. The ledger sweep: `current_state.md`.
 
 ## 6. Carries out of this slice (P19)
 
