@@ -567,8 +567,19 @@ def test_the_schedulable_set_is_derived_from_the_registry() -> None:
 #: (widening the fence, or hiding the imports behind a lazy indirection) would have removed the
 #: review step this whitelist exists to force. Admitted BY NAME, on CON-1's ratified OQ-CON-1-19
 #: posture: a new package earns its exemption by an explicit edit someone reads.
+# BOOK-1a (2026-09-17): `demo_tenant` joined BOTH fences on `demo`'s grounds — an orchestrator
+# above every domain that drives the real registration and run services; nothing imports it.
 _RISK_IMPORTERS = frozenset(
-    {"models.py", "demo", "snapshot", "limit", "scheduling", "report", "reproduction"}
+    {
+        "models.py",
+        "demo",
+        "demo_tenant",
+        "snapshot",
+        "limit",
+        "scheduling",
+        "report",
+        "reproduction",
+    }
 )
 _EXPOSURE_IMPORTERS = frozenset(
     # CON-1 (2026-07-30): `concentration` joined — its binder consumes an EXPLICITLY SELECTED
@@ -587,6 +598,7 @@ _EXPOSURE_IMPORTERS = frozenset(
     {
         "models.py",
         "demo",
+        "demo_tenant",
         "snapshot",
         "risk",
         "scheduling",

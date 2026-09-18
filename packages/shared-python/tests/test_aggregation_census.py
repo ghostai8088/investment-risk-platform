@@ -110,6 +110,14 @@ _ALLOWLIST: dict[tuple[str, str, str], tuple[int, str]] = {
     ("irp_shared.demo.campaign", "_seed_book", "augassign-add"): (2, N),
     ("irp_shared.demo.con1_stage19", "_census_and_teardown_entitlements", "augassign-add"): (1, N),
     ("irp_shared.demo.ds2_stage6", "run_demo_ds2_stage6", "augassign-add"): (1, N),
+    # BOOK-1a (2026-09-17): the Northlight seed's own arithmetic — a calendar walk, the generated
+    # benchmark series (a weighted sum of the book's OWN generated marks, seeding, not a rollup of
+    # governed rows), and the CLI's run counter. None consumes a governed result.
+    ("irp_shared.demo_tenant.book", "business_days", "augassign-add"): (1, N),
+    ("irp_shared.demo_tenant.book", "generate_paths", "plain-assign-add"): (1, N),
+    ("irp_shared.demo_tenant.cli", "main", "plain-assign-add"): (1, N),
+    # the ISIN check-digit sum (ISO 6166), an identifier's arithmetic, not a measure's
+    ("irp_shared.demo_tenant.book", "isin", "plain-assign-add"): (1, N),
     ("irp_shared.demo.hg1_private", "_mark_series", "sum-call"): (1, N),
     ("irp_shared.demo.hg1_private", "run_demo_hg1_private", "augassign-add"): (2, N),
     ("irp_shared.demo.lim2_stage20", "_teardown_roles", "augassign-add"): (1, N),

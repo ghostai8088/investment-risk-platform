@@ -96,6 +96,16 @@ _NAME_READS: dict[tuple[str, str, str], str] = {
     ("irp_shared.reproduction.families", "_compared", "c"): E,  # SQLAlchemy Column.name
     ("irp_shared.risk.scenario", "_def_summary", "row"): O,
     ("irp_shared.snapshot.serialize", "instrument_content", "row"): O,
+    # BOOK-1a (2026-09-17): the Northlight seed reads `.name` off its OWN spec dataclasses
+    # (FundSpec, SleeveSpec, AccountSpec, FactorSpec, IssuerSpec, InstrumentSpec) to pass the
+    # name INTO the capture services. The receiver is never a portfolio row; nothing is computed.
+    ("irp_shared.demo_tenant.seed", "_seed_funds", "fund"): O,
+    ("irp_shared.demo_tenant.seed", "_seed_funds", "sleeve"): O,
+    ("irp_shared.demo_tenant.seed", "_seed_funds", "account"): O,
+    ("irp_shared.demo_tenant.seed", "_seed_factors", "f"): O,
+    ("irp_shared.demo_tenant.seed", "_seed_instruments", "issuer"): O,
+    ("irp_shared.demo_tenant.seed", "_seed_instruments", "spec"): O,
+    ("irp_shared.demo_tenant.seed", "_seed_benchmarks", "member"): O,
     # --- engine internals (dialect names, type machinery) ---
     ("irp_worker.audit_verify", "main", "engine.dialect"): E,
     ("irp_shared.audit.service", "_lock_chain", "session.get_bind().dialect"): E,

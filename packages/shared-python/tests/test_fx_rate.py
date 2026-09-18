@@ -542,6 +542,7 @@ def test_nothing_imports_marketdata() -> None:
             or "risk" in path.parts
             or "perf" in path.parts
             or "demo" in path.parts
+            or "demo_tenant" in path.parts  # BOOK-1a: an orchestrator of exactly `demo`'s class
             or "synthetic" in path.parts
             or path.name == "models.py"
         ):

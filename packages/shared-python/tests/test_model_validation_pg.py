@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import select, text
@@ -36,7 +36,12 @@ URL = os.environ.get("IRP_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="requires PostgreSQL (IRP_TEST_DATABASE_URL)")
 
 _TABLES = ("model_validation", "model_validation_finding", "model_validation_evidence")
-_DUE = "2027-06-01"
+# BOOK-1a rider A (2026-09-17): this was the literal "2027-06-01". The EXCEPTION re-grant below
+# asserts the version still BINDS, and `model/service.py` refuses an exception whose
+# `next_review_due` is earlier than the REAL clock's today — so on 2027-06-02 this suite would have
+# gone red with no diff (the `d78f3d5` class). A due date a year ahead of today can never be
+# overtaken; the INITIAL validations that also cite it are display-only and unaffected.
+_DUE = (date.today() + timedelta(days=365)).isoformat()
 
 
 def _is_rls_violation(error: ProgrammingError) -> bool:

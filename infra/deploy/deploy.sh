@@ -17,8 +17,14 @@
 # command returned 0 is the same class of claim this project spent Wave 14 learning to distrust:
 # it asserts the deployment happened rather than demonstrating the deployment works.
 #
-# Usage:  ./infra/deploy/deploy.sh [--keep]
-#         --keep   leave the stack running afterwards (default: tear down, including volumes)
+# Usage:  ./infra/deploy/deploy.sh [--keep] [--with-demo]
+#         --keep       leave the stack running afterwards (default: tear down, including volumes)
+#         --with-demo  after DEPLOY VERIFIED, seed the Northlight demo tenant (BOOK-1a) into the
+#                      deployed database through the migrate image, as the SUPERUSER, exactly as
+#                      the prepare step's SYSTEM seed runs. Implies --keep: a seeded stack that is
+#                      torn down on exit was never a demo. Runs AFTER the verification because the
+#                      verification asserts an EMPTY tenant registry and four seeded currencies,
+#                      both of which a demo tenant would falsify (w20_book1a_remit.md, Part 0.6).
 
 set -euo pipefail
 
@@ -31,7 +37,14 @@ COMPOSE="docker compose -p ${PROJECT}"
 # a deploy, and this collision is invisible until something actually starts the stack.
 export POSTGRES_PUBLISH_PORT="${POSTGRES_PUBLISH_PORT:-55432}"
 KEEP=0
-[ "${1:-}" = "--keep" ] && KEEP=1
+WITH_DEMO=0
+for arg in "$@"; do
+  case "$arg" in
+    --keep) KEEP=1 ;;
+    --with-demo) WITH_DEMO=1; KEEP=1 ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
@@ -188,3 +201,20 @@ log "DEPLOY VERIFIED — images built from source, empty database migrated and s
     governed prepare step (twice, proving idempotency), API and frontend both reachable, and the
     worker PROVEN to idle LOUDLY on an empty registry while still failing closed on a restriction
     that names a tenant the registry does not know (REPRO-2's discovery supersession, both arms)."
+
+if [ "$WITH_DEMO" -eq 1 ]; then
+  log "9. SEED the Northlight demo tenant (--with-demo; BOOK-1a) — after verification, by design"
+  # IRP_ALLOW_DEMO_SEED is the arming switch: the module writes governed rows into whatever
+  # DATABASE_URL names and refuses without it. The migrate image carries the OWNER (superuser) url,
+  # the prepare step's own shape; this is the second superuser seeding path and never an app path.
+  $COMPOSE run --rm -e IRP_ALLOW_DEMO_SEED=1 --entrypoint python migrate \
+    -m irp_shared.demo_tenant.cli
+  n_demo=$($COMPOSE exec -T db psql -U "${POSTGRES_USER:-irp}" -d "${POSTGRES_DB:-irp}" -tAc \
+    "SELECT count(*) FROM tenant WHERE code = 'northlight'")
+  if [ "${n_demo//[[:space:]]/}" != "1" ]; then
+    log "FAILED: the demo tenant is not in the registry after the seed"
+    exit 1
+  fi
+  log "DEMO SEEDED — Northlight Capital Partners is in the registry; sign in on :5173 as the
+    northlight-cro or northlight-pm principal (dev_header mode)."
+fi
