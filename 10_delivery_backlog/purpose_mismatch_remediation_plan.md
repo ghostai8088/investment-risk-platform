@@ -48,7 +48,7 @@ Each phase has an exit that a person can check. Phases 0 and 1 run in parallel.
 
 ### Phase 0 — make the yardstick operable (owner: Claude; closes before CRO-1's planning gate)
 
-- **0a DEPLOY-PATH (G-1, G-5).** Prove a full rebuild and fresh deploy on this machine:
+- **0a DEPLOY-PATH (G-1, G-5) — DONE 2026-09-18.** Docker had not been running; once started, the three base images pulled first try and `deploy.sh --with-demo` printed `DEPLOY VERIFIED`, then `DEMO SEEDED` (597 runs, 86.7 s, `DEPLOY_EXIT=0`) on a fresh volume. The registry holds `northlight` and `system` only. As `northlight-cro` over HTTP: `var_value 1734274.488757` (the BOOK-1a golden); unknown tenant 401; frontend 200. One carry for CRO-1: a non-UUID `X-User-Id` in dev-header mode returns 500, not 401 (moot after SHOW-1). Original text: Prove a full rebuild and fresh deploy on this machine:
   start the daemon; if the three base images are in the local cache, `deploy.sh --with-demo` needs no pull;
   if not, fix the registry path (proxy or mirror) or build the images in CI's `stack-proof` job and load
   them locally. Exit: `DEPLOY VERIFIED` printed by `deploy.sh --with-demo` on a fresh database, Northlight
